@@ -36,7 +36,7 @@ export async function GET(req: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let q = (admin as any)
     .from('support_tickets')
-    .select('id,user_id,email,subject,body,status,admin_response,responded_at,created_at,updated_at')
+    .select('id,user_id,email,subject,body,status,admin_response,responded_at,created_at,updated_at,tier,priority')
     .order('created_at', { ascending: false })
     .limit(500)
   if (status !== 'all' && (VALID_STATUS as readonly string[]).includes(status)) {
@@ -45,12 +45,14 @@ export async function GET(req: Request) {
   const { data, error } = await q
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  // Surface actionable tickets first: open → answered → closed, newest-first
-  // within each bucket. (Can't do this in the DB order() — alphabetical sort
-  // would bury "open" beneath "answered"/"closed".)
+  // Surface actionable tickets first: PRIORITY (Pro/Studio) above standard, then
+  // open → answered → closed, newest-first within each bucket. (Can't do this in
+  // the DB order() — alphabetical status sort would bury "open".)
   const rank: Record<string, number> = { open: 0, answered: 1, closed: 2 }
-  const tickets = ((data ?? []) as Array<{ status: string }>).slice().sort(
-    (a, b) => (rank[a.status] ?? 9) - (rank[b.status] ?? 9),
+  const tickets = ((data ?? []) as Array<{ status: string; priority?: boolean }>).slice().sort(
+    (a, b) =>
+      (b.priority ? 1 : 0) - (a.priority ? 1 : 0) ||
+      (rank[a.status] ?? 9) - (rank[b.status] ?? 9),
   )
   return NextResponse.json({ tickets })
 }

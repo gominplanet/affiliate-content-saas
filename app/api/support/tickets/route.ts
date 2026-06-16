@@ -13,6 +13,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { sendEmail, isEmailConfigured } from '@/services/email'
+import { notifyDiscord } from '@/lib/discord'
 
 export interface SupportTicket {
   id: string
@@ -84,30 +85,51 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Message is too long (5000 characters max).' }, { status: 400 })
   }
 
+  // Stamp the submitter's tier + priority flag (migration 130) so the admin
+  // inbox surfaces paying customers first and the Discord ping can flag them.
+  // This is the real backing for the "priority support" plan claim.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: tierRow } = await (supabase as any)
+    .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+  const tier = (tierRow?.tier as string) || 'trial'
+  const priority = tier === 'pro' || tier === 'studio'
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
     .from('support_tickets')
-    .insert({ user_id: user.id, email: user.email ?? null, subject, body })
+    .insert({ user_id: user.id, email: user.email ?? null, subject, body, tier, priority })
     .select('id,subject,body,status,admin_response,responded_at,created_at')
     .single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://www.mvpaffiliate.io'
+  const tierLabel = priority ? `PRIORITY · ${tier}` : tier
+
   // Best-effort founder alert — never block ticket creation on the email.
   if (isEmailConfigured()) {
     const alertTo = process.env.SUPPORT_ALERT_EMAIL || 'gominunlimited@gmail.com'
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://www.mvpaffiliate.io'
     try {
       await sendEmail({
         to: alertTo,
-        subject: `New MVP help ticket: ${subject}`,
-        text: `${user.email ?? 'A user'} opened a help ticket.\n\nSubject: ${subject}\n\n${body}\n\nReply in the admin inbox: ${appUrl}/admin/support-tickets`,
-        html: `<p><strong>${user.email ?? 'A user'}</strong> opened a help ticket.</p>`
+        subject: `${priority ? '⚡ Priority ' : ''}MVP help ticket (${tier}): ${subject}`,
+        text: `${user.email ?? 'A user'} [${tierLabel}] opened a help ticket.\n\nSubject: ${subject}\n\n${body}\n\nReply in the admin inbox: ${appUrl}/admin/support-tickets`,
+        html: `<p><strong>${user.email ?? 'A user'}</strong> <em>[${escapeHtml(tierLabel)}]</em> opened a help ticket.</p>`
           + `<p><strong>Subject:</strong> ${escapeHtml(subject)}</p>`
           + `<p style="white-space:pre-wrap">${escapeHtml(body)}</p>`
           + `<p><a href="${appUrl}/admin/support-tickets">Reply in the admin inbox →</a></p>`,
       })
     } catch { /* alert is a convenience; the ticket is already saved */ }
   }
+
+  // Best-effort Discord ping (dormant until DISCORD_WEBHOOK_URL is set). Priority
+  // tickets are flagged so Pro/Studio support genuinely jumps the queue.
+  await notifyDiscord(
+    `${priority ? '🔴 **PRIORITY** support ticket' : '🆕 Support ticket'} (${tier})\n`
+    + `**${subject}**\n`
+    + `${body.length > 280 ? body.slice(0, 280) + '…' : body}\n`
+    + `From: ${user.email ?? user.id}\n`
+    + `→ ${appUrl}/admin/support-tickets`,
+  )
 
   return NextResponse.json({ ticket: data as SupportTicket })
 }

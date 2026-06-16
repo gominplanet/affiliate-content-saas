@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import PageHero from '@/components/layout/PageHero'
-import { Loader2, AlertCircle, Send, CheckCircle2, Clock, Archive } from 'lucide-react'
+import { Loader2, AlertCircle, Send, CheckCircle2, Clock, Archive, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface AdminTicket {
@@ -15,6 +15,8 @@ interface AdminTicket {
   admin_response: string | null
   responded_at: string | null
   created_at: string
+  tier?: string | null
+  priority?: boolean
 }
 
 const FILTERS = ['open', 'answered', 'closed', 'all'] as const
@@ -108,13 +110,20 @@ export default function AdminSupportTicketsPage() {
             <div key={t.id} className="card p-5">
               <div className="flex items-start justify-between gap-3 mb-1">
                 <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] flex-1">{t.subject}</p>
-                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold ${
-                  t.status === 'open' ? 'bg-amber-500/15 text-amber-500'
-                    : t.status === 'answered' ? 'bg-[#34c759]/15 text-[#34c759]'
-                    : 'bg-gray-500/15 text-gray-400'
-                }`}>
-                  {t.status === 'open' ? <Clock size={12} /> : <CheckCircle2 size={12} />} {t.status}
-                </span>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {t.priority && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-[#7C3AED]/15 text-[#7C3AED]">
+                      <Zap size={12} /> Priority{t.tier ? ` · ${t.tier}` : ''}
+                    </span>
+                  )}
+                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                    t.status === 'open' ? 'bg-amber-500/15 text-amber-500'
+                      : t.status === 'answered' ? 'bg-[#34c759]/15 text-[#34c759]'
+                      : 'bg-gray-500/15 text-gray-400'
+                  }`}>
+                    {t.status === 'open' ? <Clock size={12} /> : <CheckCircle2 size={12} />} {t.status}
+                  </span>
+                </div>
               </div>
               <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mb-2">
                 {t.email || t.user_id} · {new Date(t.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
