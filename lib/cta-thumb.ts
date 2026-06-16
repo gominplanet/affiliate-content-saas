@@ -1,50 +1,53 @@
 /**
  * "Get it now" CTA-card thumbnail helpers.
  *
- * The shared blog-writer template (services/claude) hard-codes a YouTube
- * thumbnail (<img …/{VIDEO_ID}/…>) inside the CTA card. That's correct for
- * video-based reviews, but CAMPAIGN / PartnerBoost posts have no video — and
- * the writer, told "there is no video", inconsistently EITHER keeps that
- * <img> with a broken {VIDEO_ID} src OR drops the thumb element entirely.
+ * The shared blog-writer template (services/claude) bundles the CTA card's
+ * sizing CSS (.gr-cta-thumb width/aspect-ratio + the 1fr/220px grid) inside the
+ * VIDEO-EMBED <style> block. CAMPAIGN / PartnerBoost posts are told "there is
+ * no video", so the writer drops that block AND its CSS — leaving the thumb
+ * <img> with no size constraint (it renders full-size). It also inconsistently
+ * keeps a broken {VIDEO_ID} thumb or drops the thumb element entirely.
  *
- * `setCtaThumb` therefore INSERTS-OR-REPLACES so the CTA box ALWAYS carries an
- * image (an absolute rule): if the thumb <img> exists we swap its src; if the
- * writer dropped it we re-inject the wrapper. `stripCtaThumb` is the last
- * resort only when we genuinely have no image to show.
+ * So `setCtaThumb` writes a fully self-contained, INLINE-STYLED thumb wrapper
+ * (sized + bordered without any stylesheet) and INSERTS it if the writer left
+ * none — guaranteeing the CTA box always carries a correctly-sized image (an
+ * absolute rule). `stripCtaThumb` is the last resort when there's no image.
  */
 
-// Matches the CTA card's product thumbnail <img>, regardless of attribute order.
-const CTA_THUMB_IMG = /<img\b[^>]*class="gr-cta-thumb"[^>]*>/gi
-// The CTA card's text column. Its children are <p>/<a> (no nested <div>), so a
-// non-greedy match to the first </div> is the body's own close.
+// A self-contained thumb wrapper: inline-styled so it sizes correctly even when
+// the post never shipped the .gr-cta-* stylesheet. max-width caps it in plain
+// block flow; in the grid (when the CSS *is* present) the 220px column wins.
+function thumbWrap(url: string): string {
+  return (
+    `<div class="gr-cta-thumb-wrap" style="max-width:240px;align-self:center;border:2px solid #111;border-radius:4px;overflow:hidden;line-height:0">` +
+    `<img src="${url}" alt="" loading="lazy" class="gr-cta-thumb" style="display:block;width:100%;height:auto" />` +
+    `</div>`
+  )
+}
+
+// The existing thumb wrapper (whatever the writer emitted), its bare <img>, the
+// text column, and the card open — tried in that order.
+const CTA_WRAP = /<div class="gr-cta-thumb-wrap">[\s\S]*?<\/div>/i
+const CTA_THUMB_IMG = /<img\b[^>]*class="gr-cta-thumb"[^>]*>/i
 const CTA_BODY_BLOCK = /<div class="gr-cta-body">[\s\S]*?<\/div>/i
 const CTA_CARD_OPEN = /<div class="gr-cta-card">/i
 
 /**
- * Point the CTA thumb at `url` (the generated hero / product photo), inserting
- * the thumb wrapper if the writer omitted it. The `:has(.gr-cta-thumb-wrap)`
- * grid lights up automatically once the wrapper is present.
+ * Point the CTA thumb at `url`, replacing whatever the writer emitted with a
+ * self-sized wrapper — and inserting one if the writer dropped the thumb.
+ * Function replacements avoid `$` in the URL being read as a backref.
  */
 export function setCtaThumb(html: string, url: string): string {
-  const img = `<img src="${url}" alt="" loading="lazy" class="gr-cta-thumb" />`
-  const wrap = `<div class="gr-cta-thumb-wrap">${img}</div>`
-
-  // 1. A thumb already exists (incl. a broken {VIDEO_ID} one) → swap its src.
-  //    Function replacement avoids `$` in the URL being read as a backref.
-  if (html.includes('class="gr-cta-thumb"')) {
-    return html.replace(CTA_THUMB_IMG, () => img)
-  }
-  // 2. Writer dropped the thumb → inject the wrap as the card's 2nd child
-  //    (right after the text body) so it lands in the 220px grid column.
-  if (CTA_BODY_BLOCK.test(html)) {
-    return html.replace(CTA_BODY_BLOCK, (m) => `${m}\n    ${wrap}`)
-  }
-  // 3. Body div was flattened but the card exists → inject after the card open
-  //    so the image still renders.
-  if (CTA_CARD_OPEN.test(html)) {
-    return html.replace(CTA_CARD_OPEN, (m) => `${m}\n    ${wrap}`)
-  }
-  // 4. No CTA card at all → nothing to do.
+  const wrap = thumbWrap(url)
+  // 1. A full thumb wrapper exists (incl. a broken {VIDEO_ID} one) → replace it.
+  if (CTA_WRAP.test(html)) return html.replace(CTA_WRAP, () => wrap)
+  // 2. A bare thumb <img> with no wrapper → swap it for the wrapper.
+  if (CTA_THUMB_IMG.test(html)) return html.replace(CTA_THUMB_IMG, () => wrap)
+  // 3. Writer dropped the thumb → inject after the text body (2nd grid column).
+  if (CTA_BODY_BLOCK.test(html)) return html.replace(CTA_BODY_BLOCK, (m) => `${m}\n    ${wrap}`)
+  // 4. Body div was flattened but the card exists → inject after the card open.
+  if (CTA_CARD_OPEN.test(html)) return html.replace(CTA_CARD_OPEN, (m) => `${m}\n    ${wrap}`)
+  // 5. No CTA card at all → nothing to do.
   return html
 }
 

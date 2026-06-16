@@ -24,6 +24,8 @@ import { buildPartnerBoostDeepLink } from '@/services/partnerboost'
 import { fetchAmazonProduct, isValidAsin, type AmazonProduct } from '@/services/amazon'
 import { researchProduct } from '@/services/research'
 import { setCtaThumb, stripCtaThumb } from '@/lib/cta-thumb'
+import { buildCampaignHero } from '@/lib/hero-image'
+import { pickProductReferenceImage } from '@/lib/product-image'
 import { scrubBanned } from '@/lib/scrub'
 import type { Tier } from '@/lib/tier'
 
@@ -201,23 +203,45 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: `WordPress publish failed: ${err instanceof Error ? err.message : 'unknown'}` }, { status: 502 })
     }
 
-    // ── Featured image + CTA thumb. The CTA box must ALWAYS carry an image
-    //    (absolute rule): try every product-image candidate until one uploads,
-    //    fall back to the remote URL if all uploads fail, and only strip the
-    //    placeholder when we genuinely have no image (better a clean card than
-    //    a broken {VIDEO_ID} thumb). setCtaThumb inserts the wrapper if the
-    //    writer dropped it — so the photo lands even on video-less posts. ─────
-    const imageCandidates = [amz?.imageUrl, ...(amz?.images ?? []), p.image]
+    // ── Designed thumbnail + CTA image. Mirror the EPC hero pipeline: vision-
+    //    pick the clean product shot, build a 16:9 hero (AI scene, else the
+    //    product letterboxed on white — never a raw oversized cutout), upload it
+    //    as the featured image, and point the CTA thumb at it. The CTA box must
+    //    ALWAYS carry an image (absolute rule); setCtaThumb inline-sizes it so
+    //    it renders correctly even on these video-less posts (no .gr-cta CSS).
+    const galleryImages = (amz?.images?.length ? amz.images : (p.image ? [p.image] : []))
       .filter((u): u is string => !!u && /^https?:\/\//i.test(u))
+    let cleanProductImage: string | null = null
+    try {
+      cleanProductImage = (await pickProductReferenceImage(galleryImages, effTitle, { userId: user.id, tier })) || galleryImages[0] || null
+    } catch { cleanProductImage = galleryImages[0] || null }
+
     let heroMediaId: number | null = null
     let heroUrl: string | null = null
-    for (const cand of imageCandidates) {
+    try {
+      const hero = await buildCampaignHero({
+        heroPrompt: generated.imagePrompts?.hero,
+        productImageUrl: cleanProductImage,
+        ctx: { userId: user.id, tier },
+      })
+      if (hero) {
+        const media = await wpService.uploadImageFromBase64(hero.b64, `${(p.sku || 'wmt')}-hero.jpg`, hero.mime)
+        heroMediaId = media.id ?? null
+        heroUrl = media.source_url || null
+      }
+    } catch { /* fall through to the raw-photo floor below */ }
+
+    // Floor: hero build failed but we have the product photo → upload it so the
+    // featured image + CTA are NEVER empty.
+    if (!heroUrl && cleanProductImage) {
       try {
-        const media = await wpService.uploadImageFromUrl(cand, `${(p.sku || 'wmt')}-product.jpg`)
-        if (media?.source_url) { heroUrl = media.source_url; heroMediaId = media.id ?? null; break }
-      } catch { /* try the next candidate */ }
+        const media = await wpService.uploadImageFromUrl(cleanProductImage, `${(p.sku || 'wmt')}-product.jpg`)
+        heroMediaId = media.id ?? null
+        heroUrl = media.source_url || null
+      } catch { /* non-fatal — post is live without the featured image */ }
     }
-    const ctaImage = heroUrl || imageCandidates[0] || null
+
+    const ctaImage = heroUrl || cleanProductImage || null
     let contentChanged = false
     if (ctaImage) {
       const fixed = setCtaThumb(content, ctaImage)
