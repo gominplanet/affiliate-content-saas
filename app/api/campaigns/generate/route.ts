@@ -26,6 +26,7 @@ import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { fetchWpProxySecret } from '@/lib/wp-proxy'
 import { maybeEncrypt } from '@/lib/secrets'
 import { setCtaThumb, stripCtaThumb } from '@/lib/cta-thumb'
+import { injectInlineAffiliateLinks } from '@/lib/inline-affiliate'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
 import { pickProductReferenceImage } from '@/lib/product-image'
@@ -379,6 +380,17 @@ export async function POST(request: Request) {
     }
 
     const slug = generated.slug ? slugify(generated.slug) : slugify(generated.title)
+
+    // Weave the affiliate link into the body a few times (on the product name),
+    // not just the CTA buttons. Idempotent — no-ops if the writer/prior run
+    // already placed inline links. Covers fresh generation + re-publish; runs
+    // before the draft is persisted so the stored copy carries the links too.
+    generated.content = injectInlineAffiliateLinks(
+      generated.content,
+      product?.title || generated.title,
+      affiliateUrl,
+      { max: 3 },
+    )
 
     // Persist the finished post BEFORE publishing (fresh runs only — a
     // re-publish already has it stored). The Opus write is the expensive part;
