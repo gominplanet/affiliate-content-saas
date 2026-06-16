@@ -178,9 +178,3 @@ export async function createLevantaLink(
   })
   return { url: json?.url ?? '', mobileUrl: json?.mobileOptimizedUrl ?? null }
 }
-
-/** Debug-only: raw, unmapped GET so we can inspect the live field names
- *  (the published docs have diverged from the actual response shape). */
-export async function levantaRaw(token: string, path: string) {
-  return levantaFetch(path, token)
-}

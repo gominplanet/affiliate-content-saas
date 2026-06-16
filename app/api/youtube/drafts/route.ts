@@ -111,7 +111,7 @@ export async function GET(request: Request) {
 
   const { data: intRow } = await supabase
     .from('integrations')
-    .select('youtube_oauth_access_token,youtube_oauth_refresh_token,youtube_oauth_token_expiry')
+    .select('youtube_oauth_access_token,youtube_oauth_refresh_token,youtube_oauth_token_expiry,tier')
     .eq('user_id', user.id)
     .single()
 
@@ -294,7 +294,7 @@ export async function GET(request: Request) {
       (v: ReturnType<typeof buildDraftVideo>) => includePublished || v.status !== 'public',
     )
 
-    if (searchParams.get('debug') === '1') {
+    if (searchParams.get('debug') === '1' && intRow.tier === 'admin') {
       return NextResponse.json({
         fromCache: usedCache,
         cacheAgeMinutes: Math.round(cacheAge / 60000),

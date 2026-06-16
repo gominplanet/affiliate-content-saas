@@ -113,6 +113,75 @@ create index if not exists scheduled_posts_updated_at_idx
   add column if not exists blog_image_count int
     check (blog_image_count is null or (blog_image_count >= 0 and blog_image_count <= 4));`,
   },
+  // ── Recent migrations (115+). Probed by a definite column on each table
+  //    (table-add migrations probe a column that ships with the table, so a
+  //    missing TABLE is flagged too). For brevity the SQL points at the migration
+  //    file — run it in the Supabase SQL editor (all are idempotent). ──────────
+  {
+    id: '117', what: 'Brand-voice distilled feedback (blog writer)',
+    table: 'brand_profiles', column: 'distilled_feedback',
+    sql: `alter table public.brand_profiles add column if not exists distilled_feedback text;\nalter table public.brand_profiles add column if not exists distilled_feedback_at timestamptz;`,
+  },
+  {
+    id: '118', what: 'Brand-voice edit-pattern feedback (blog writer)',
+    table: 'brand_profiles', column: 'edit_pattern_feedback',
+    sql: `alter table public.brand_profiles add column if not exists edit_pattern_feedback text;\nalter table public.brand_profiles add column if not exists edit_pattern_feedback_at timestamptz;`,
+  },
+  {
+    id: '119', what: 'Async generation queue (generation_jobs)',
+    table: 'generation_jobs', column: 'status',
+    sql: `-- Apply migration 119: run supabase/migrations/119_generation_jobs.sql in the Supabase SQL editor.`,
+  },
+  {
+    id: '120', what: 'SEO ranking-decay tracking (post_seo.best_position)',
+    table: 'post_seo', column: 'best_position',
+    sql: `alter table public.post_seo add column if not exists best_position int;\nalter table public.post_seo add column if not exists best_position_at timestamptz;`,
+  },
+  {
+    id: '122', what: 'Saved thumbnail brand style',
+    table: 'brand_profiles', column: 'thumbnail_brand_style',
+    sql: `alter table public.brand_profiles add column if not exists thumbnail_brand_style jsonb;`,
+  },
+  {
+    id: '123', what: 'YouTube Co-Pilot uploads cache (youtube_video_cache)',
+    table: 'youtube_video_cache', column: 'uploads_playlist_id',
+    sql: `-- Apply migration 123: run supabase/migrations/123_youtube_video_cache.sql in the Supabase SQL editor.`,
+  },
+  {
+    id: '125', what: 'Onboarding funnel (integrations.onboarding_step)',
+    table: 'integrations', column: 'onboarding_step',
+    sql: `alter table public.integrations add column if not exists onboarding_completed boolean not null default false;\nalter table public.integrations add column if not exists onboarding_step int;`,
+  },
+  {
+    id: '126', what: 'In-app support tickets (support_tickets)',
+    table: 'support_tickets', column: 'user_id',
+    sql: `-- Apply migration 126: run supabase/migrations/126_support_tickets.sql in the Supabase SQL editor.`,
+  },
+  {
+    id: '127', what: 'Multi-channel YouTube (youtube_channels)',
+    table: 'youtube_channels', column: 'user_id',
+    sql: `-- Apply migration 127: run supabase/migrations/127_youtube_channels.sql in the Supabase SQL editor.`,
+  },
+  {
+    id: '128', what: 'Campaign draft persistence (campaigns.generated_content)',
+    table: 'campaigns', column: 'generated_content',
+    sql: `alter table public.campaigns add column if not exists generated_title text;\nalter table public.campaigns add column if not exists generated_content text;\nalter table public.campaigns add column if not exists generated_excerpt text;\nalter table public.campaigns add column if not exists generated_slug text;`,
+  },
+  {
+    id: '130', what: 'Support ticket priority (support_tickets.priority)',
+    table: 'support_tickets', column: 'priority',
+    sql: `alter table public.support_tickets add column if not exists tier text;\nalter table public.support_tickets add column if not exists priority int not null default 0;`,
+  },
+  {
+    id: '132', what: 'Co-Pilot load-more cursor (youtube_video_cache.next_cursor)',
+    table: 'youtube_video_cache', column: 'next_cursor',
+    sql: `alter table public.youtube_video_cache add column if not exists next_cursor text;`,
+  },
+  {
+    id: '133', what: 'External Integrations / per-user API keys (external_api_keys)',
+    table: 'external_api_keys', column: 'encrypted_key',
+    sql: `-- Apply migration 133: run supabase/migrations/133_external_api_keys.sql in the Supabase SQL editor.`,
+  },
 ]
 
 export async function GET() {
@@ -154,12 +223,19 @@ export async function GET() {
       if (!error) {
         exists = true
       } else {
-        // 42703 = undefined_column. Anything else (RLS, table missing,
-        // network) is treated as "unknown" — fail OPEN (assume applied)
-        // so a transient blip doesn't flag a false drift to the admin.
+        // 42703 = undefined_column, 42P01 = undefined_table, PGRST205 =
+        // PostgREST "table not in schema cache" (a missing table-add migration).
+        // We flag all three as drift. Anything else (RLS, auth, network) is
+        // "unknown" → fail OPEN (assume applied) so a transient blip doesn't
+        // flag a false drift to the admin.
         const msg = String((error as { code?: string; message?: string }).message ?? '')
         const code = String((error as { code?: string }).code ?? '')
-        exists = !(code === '42703' || /column .* does not exist/i.test(msg))
+        exists = !(
+          code === '42703' || code === '42P01' || code === 'PGRST205' ||
+          /column .* does not exist/i.test(msg) ||
+          /relation .* does not exist/i.test(msg) ||
+          /could not find the table/i.test(msg)
+        )
       }
     } catch {
       exists = true  // fail open on any thrown error
