@@ -32,6 +32,7 @@ import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { spendGate } from '@/lib/ai-spend'
+import { checkGenerationLimit } from '@/lib/tier'
 import { scrubAiHtml } from '@/lib/html-scrub'
 
 export const maxDuration = 300
@@ -527,6 +528,12 @@ export async function POST(req: Request) {
   // Monthly AI-spend circuit breaker (Sonnet writer + hero image).
   const spendBlocked = await spendGate(user.id, tier)
   if (spendBlocked) return spendBlocked
+
+  // One buying guide = one content piece against the monthly pool.
+  const gen = await checkGenerationLimit(supabase, user.id)
+  if (!gen.allowed) {
+    return NextResponse.json({ error: gen.reason, limitReached: true, cap: 'generations', currentTier: gen.tier, upgrade: gen.upgrade }, { status: 429 })
+  }
 
   // POST accepts three flows:
   //   1. { topic }                            → FULL AUTO: pick + write + publish

@@ -47,7 +47,7 @@ import { recordUsage } from '@/lib/ai-usage'
 import { scrubDealHtml, DEAL_VOICE_RULES } from '@/lib/deal-scrub'
 import { scrubEmDashes } from '@/lib/html-scrub'
 import { getOccasion, detectOccasion, listOccasions, type DealOccasionSlug } from '@/lib/deal-occasion'
-import { checkDealsUsage } from '@/lib/tier'
+import { TIERS, normalizeTier, checkGenerationLimit } from '@/lib/tier'
 import { spendGate } from '@/lib/ai-spend'
 
 export const maxDuration = 300
@@ -316,23 +316,22 @@ export async function POST(req: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  // Tier gate + monthly cap (Studio 5/mo, Pro 30/mo). checkDealsUsage
-  // does both: the access gate (cap === 0 means tier doesn't get Deals)
-  // and the monthly counter. Wired in 2026-06-04 audit — was previously
-  // only blocking by raw tier, so Studio + Pro could publish unlimited
-  // deals against the per-tier cap defined in lib/tier.ts.
-  const dealsCheck = await checkDealsUsage(supabase, user.id)
-  if (!dealsCheck.allowed) {
-    return NextResponse.json({
-      error: dealsCheck.reason,
-      code: 'tier_not_allowed',
-      currentTier: dealsCheck.tier,
-      cap: dealsCheck.cap,
-      used: dealsCheck.used,
-      upgrade: dealsCheck.upgrade,
-    }, { status: dealsCheck.cap === 0 ? 403 : 429 })
+  // Deals are a Studio+ feature; as of the 2026-06-15 pricing model they draw
+  // from the unified content-piece pool (postsPerMonth), not a separate deals
+  // counter. Access gate by tier first, then the shared generation cap.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: dealIntg } = await (supabase as any)
+    .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+  const tier = normalizeTier(dealIntg?.tier)
+  const dealsCap = TIERS[tier].dealsPerMonth // number | null (null = admin, unlimited)
+  const hasDealsAccess = tier === 'admin' || (typeof dealsCap === 'number' && dealsCap > 0)
+  if (!hasDealsAccess) {
+    return NextResponse.json({ error: 'Deals are a Studio & Pro feature.', code: 'tier_not_allowed', currentTier: tier }, { status: 403 })
   }
-  const tier = dealsCheck.tier
+  const dealUsage = await checkGenerationLimit(supabase, user.id)
+  if (!dealUsage.allowed) {
+    return NextResponse.json({ error: dealUsage.reason, limitReached: true, cap: 'generations', currentTier: dealUsage.tier, upgrade: dealUsage.upgrade }, { status: 429 })
+  }
 
   // Monthly AI-spend circuit breaker (Sonnet writer + nano-banana thumbnails).
   const spendBlocked = await spendGate(user.id, tier)

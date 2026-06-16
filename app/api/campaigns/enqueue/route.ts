@@ -17,7 +17,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { enqueueGenerationJob } from '@/lib/generation-jobs'
-import { tierAllowsCampaigns, type Tier } from '@/lib/tier'
+import { tierAllowsCampaigns, checkGenerationLimit, type Tier } from '@/lib/tier'
 import { spendGate } from '@/lib/ai-spend'
 import { extractAsin } from '@/services/amazon'
 
@@ -52,6 +52,12 @@ export async function POST(request: Request) {
   }
   const spendBlocked = await spendGate(user.id, tier)
   if (spendBlocked) return spendBlocked
+
+  // One campaign = one content piece against the monthly pool.
+  const usage = await checkGenerationLimit(supabase, user.id)
+  if (!usage.allowed) {
+    return NextResponse.json({ error: usage.reason, limitReached: true, cap: 'generations', currentTier: usage.tier, upgrade: usage.upgrade }, { status: 429 })
+  }
 
   const admin = createAdminClient()
 

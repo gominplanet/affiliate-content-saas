@@ -31,7 +31,7 @@ import { createGeniuslinkService } from '@/services/geniuslink'
 import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
 import { pickProductReferenceImage } from '@/lib/product-image'
 import { researchProduct } from '@/services/research'
-import { tierAllowsCampaigns, type Tier } from '@/lib/tier'
+import { tierAllowsCampaigns, checkGenerationLimit, type Tier } from '@/lib/tier'
 import { spendGate } from '@/lib/ai-spend'
 import { scrubBanned } from '@/lib/scrub'
 import { buildCampaignHero } from '@/lib/hero-image'
@@ -121,6 +121,15 @@ export async function POST(request: Request) {
     // Monthly AI-spend circuit breaker (Opus campaign writer).
     const spendBlocked = await spendGate(user.id, tier)
     if (spendBlocked) return spendBlocked
+
+    // Content-piece cap — skip on the worker self-call (enqueue already gated
+    // it; re-checking at generate time could fail an already-queued job).
+    if (!isServiceCall) {
+      const usage = await checkGenerationLimit(supabase, user.id)
+      if (!usage.allowed) {
+        return NextResponse.json({ error: usage.reason, limitReached: true, cap: 'generations', currentTier: usage.tier, upgrade: usage.upgrade }, { status: 429 })
+      }
+    }
     // WordPress credentials MUST come from getWordPressCredentials — it reads
     // the canonical multi-site table AND transparently DECRYPTS app_password +
     // api_token (the 2026-06-02 secrets rollout stores them enc:v1:…). Reading

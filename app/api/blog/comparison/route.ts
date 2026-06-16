@@ -20,7 +20,7 @@ import { resolveFinalUrl } from '@/lib/product-link'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
 import { researchProductFromUrl } from '@/services/research'
-import { checkUsageLimit, normalizeTier } from '@/lib/tier'
+import { checkUsageLimit, checkGenerationLimit, normalizeTier } from '@/lib/tier'
 import { scrubBanned, BANNED_RULE } from '@/lib/scrub'
 import { learnProfileToPrompt } from '@/lib/learn'
 import { recordUsage, usageFromAnthropic } from '@/lib/ai-usage'
@@ -257,6 +257,14 @@ export async function POST(request: Request) {
       return NextResponse.json({
         error: usage.reason, limitReached: true, cap: 'posts',
         currentTier: usage.tier, upgrade: usage.upgrade,
+      }, { status: 429 })
+    }
+    // One comparison = one content piece against the monthly pool.
+    const gen = await checkGenerationLimit(supabase, user.id)
+    if (!gen.allowed) {
+      return NextResponse.json({
+        error: gen.reason, limitReached: true, cap: 'generations',
+        currentTier: gen.tier, upgrade: gen.upgrade,
       }, { status: 429 })
     }
   }

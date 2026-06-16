@@ -25,7 +25,7 @@ import { resolveFinalUrl } from '@/lib/product-link'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
 import { researchProductFromUrl, fetchProductImageFromPage } from '@/services/research'
-import { checkUsageLimit, normalizeTier } from '@/lib/tier'
+import { checkUsageLimit, checkGenerationLimit, normalizeTier } from '@/lib/tier'
 import { scrubBanned, BANNED_RULE } from '@/lib/scrub'
 import { learnProfileToPrompt } from '@/lib/learn'
 import { recordUsage, usageFromAnthropic } from '@/lib/ai-usage'
@@ -111,10 +111,14 @@ export async function POST(req: Request) {
   const site = await getWordPressCredentials(supabase, ownerId, siteId)
   if (!site) return NextResponse.json({ error: 'Connect your WordPress site first (Set Up → WordPress).' }, { status: 400 })
 
-  // One review = one post against the cap.
+  // One review = one content piece against the cap (trial lifetime + monthly pool).
   const usage = await checkUsageLimit(supabase, user.id)
   if (!usage.allowed) {
     return NextResponse.json({ error: usage.reason, limitReached: true, cap: 'posts', currentTier: usage.tier, upgrade: usage.upgrade }, { status: 429 })
+  }
+  const gen = await checkGenerationLimit(supabase, user.id)
+  if (!gen.allowed) {
+    return NextResponse.json({ error: gen.reason, limitReached: true, cap: 'generations', currentTier: gen.tier, upgrade: gen.upgrade }, { status: 429 })
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
