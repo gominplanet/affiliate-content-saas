@@ -10,6 +10,19 @@
 
 const LEVANTA_BASE = 'https://app.levanta.io/api/creator/v2'
 
+// Coerce API values to safe primitives so a nested object/array (live key drift)
+// can NEVER reach a React text child — that throws "Objects are not valid as a
+// React child" and blanks the page. `??` only guards null/undefined, not objects.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const asStr = (v: any): string => (typeof v === 'string' ? v : typeof v === 'number' ? String(v) : '')
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const asStrOrNull = (v: any): string | null => { const s = asStr(v); return s || null }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const asNum = (v: any): number | null =>
+  typeof v === 'number' && isFinite(v) ? v
+    : typeof v === 'string' && v.trim() !== '' && isFinite(Number(v)) ? Number(v)
+    : null
+
 export interface LevantaBrand {
   brandId: string
   brandName: string
@@ -83,15 +96,18 @@ export async function listLevantaBrands(
     // from the published docs (e.g. the brand id arrived under `id`/`brand_id`,
     // not `brandId`), which left the products lookup with an empty id.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    brands: list.map((b: any): LevantaBrand => ({
-      brandId: String(b.brandId ?? b.brand_id ?? b.id ?? ''),
-      brandName: b.brandName ?? b.brand_name ?? b.name ?? '',
-      bio: b.bio ?? b.description ?? '',
-      image: b.image ?? b.logo ?? null,
-      access: !!(b.access ?? b.partnered ?? b.hasAccess),
-      url: b.url ?? b.brandUrl ?? b.site_url ?? '',
-      marketplace: b.marketplace ?? '',
-    })),
+    brands: list.map((b: any): LevantaBrand => {
+      const img = b.image ?? b.logo
+      return {
+        brandId: asStr(b.brandId ?? b.brand_id ?? b.id),
+        brandName: asStr(b.brandName ?? b.brand_name ?? b.name),
+        bio: asStr(b.bio ?? b.description),
+        image: typeof img === 'string' ? img : null,
+        access: !!(b.access ?? b.partnered ?? b.hasAccess),
+        url: asStr(b.url ?? b.brandUrl ?? b.site_url),
+        marketplace: asStr(b.marketplace),
+      }
+    }),
     cursor: json?.cursor ?? null,
   }
 }
@@ -115,22 +131,22 @@ export async function listLevantaProducts(
     // Defensive field reads — tolerate doc/live key drift (same reason as brands).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     products: list.map((p: any): LevantaProduct => {
-      const bid = p.brandId ?? p.brand_id ?? p.brandID
+      const img = p.image ?? p.imageUrl ?? p.image_url
       return {
-        asin: p.asin ?? p.ASIN ?? p.primary_id ?? '',
-        marketplace: p.marketplace ?? '',
-        price: p?.pricing?.price ?? p.price ?? null,
-        currency: p?.pricing?.currency ?? p.currency ?? null,
-        commission: p.commission ?? p.commissionRate ?? p.commission_rate ?? null,
-        title: p.title ?? p.name ?? p.product_name ?? '',
+        asin: asStr(p.asin ?? p.ASIN ?? p.primary_id),
+        marketplace: asStr(p.marketplace),
+        price: asNum(p?.pricing?.price ?? p.price),
+        currency: asStrOrNull(p?.pricing?.currency ?? p.currency),
+        commission: asNum(p.commission ?? p.commissionRate ?? p.commission_rate),
+        title: asStr(p.title ?? p.name ?? p.product_name),
         inStock: !!(p.inStock ?? p.in_stock),
-        category: p.category ?? null,
-        brandId: bid != null ? String(bid) : null,
+        category: asStrOrNull(p.category),
+        brandId: asStrOrNull(p.brandId ?? p.brand_id ?? p.brandID),
         access: !!p.access,
-        image: p.image ?? p.imageUrl ?? p.image_url ?? null,
-        rating: p.rating != null ? String(p.rating) : null,
-        ratingsTotal: p.ratingsTotal ?? p.ratings_total ?? null,
-        platformEpc: p.platformEpc ?? p.platform_epc ?? null,
+        image: typeof img === 'string' ? img : null,
+        rating: asStrOrNull(p.rating),
+        ratingsTotal: asNum(p.ratingsTotal ?? p.ratings_total),
+        platformEpc: asNum(p.platformEpc ?? p.platform_epc),
       }
     }),
     cursor: json?.cursor ?? null,
