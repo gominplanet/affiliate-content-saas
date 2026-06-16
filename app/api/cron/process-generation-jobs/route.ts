@@ -27,6 +27,39 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { claimNextJob, completeJob, failJob, type GenerationJob } from '@/lib/generation-jobs'
 import { runGenerationJob } from '@/lib/generation-job-runner'
+import { alertOps } from '@/lib/ops-alert'
+
+// ── Failure-spike alert ─────────────────────────────────────────────────────
+// The async queue is live but its failures were operator-invisible (no admin
+// surface reads generation_jobs). A systemic break — expired Anthropic key,
+// model outage, a poison input pattern — would fail every queued job silently
+// until users complained. So when terminal failures cross a threshold in the
+// trailing hour, we email + Discord the operator. Throttled per warm instance
+// (the once-a-minute cron reuses the same Lambda, so this holds in practice)
+// so a sustained incident doesn't alert every tick. Env-tunable threshold.
+const FAIL_ALERT_THRESHOLD = Math.max(1, Number(process.env.GENERATION_FAIL_ALERT_THRESHOLD) || 5)
+const FAIL_ALERT_THROTTLE_MS = 30 * 60_000
+let lastFailAlertAt = 0
+
+async function maybeAlertFailSpike(admin: ReturnType<typeof createAdminClient>): Promise<void> {
+  const now = Date.now()
+  if (now - lastFailAlertAt < FAIL_ALERT_THROTTLE_MS) return
+  const hourAgo = new Date(now - 60 * 60_000).toISOString()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { count } = await (admin as any)
+    .from('generation_jobs')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'failed')
+    .gte('finished_at', hourAgo)
+  const failed = count ?? 0
+  if (failed >= FAIL_ALERT_THRESHOLD) {
+    lastFailAlertAt = now
+    await alertOps(
+      `Generation failures spiking — ${failed} jobs failed in the last hour`,
+      `Threshold is ${FAIL_ALERT_THRESHOLD}. This usually means a systemic break (expired Anthropic key, model outage, WordPress/proxy down, or a bad input pattern) failing every queued job, not isolated user errors. Check recent generation_jobs.error values and the model/API keys.`,
+    )
+  }
+}
 
 // Each blog job invokes the full generation route via an internal HTTP self-call
 // and AWAITS it (up to ~290s) — but the heavy generation runs in its OWN function
@@ -126,6 +159,12 @@ export async function GET(req: Request) {
       ? s.value
       : { id: claimed[i].id, ok: false, error: s.reason instanceof Error ? s.reason.message : 'job crashed' },
   )
+
+  // If anything failed this tick, check the trailing-hour failure rate and
+  // alert the operator on a spike. Best-effort — never let it break the tick.
+  if (processed.some(p => !p.ok)) {
+    try { await maybeAlertFailSpike(admin) } catch { /* alerting is best-effort */ }
+  }
 
   return NextResponse.json({
     processed: processed.length,

@@ -1,7 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getStripe } from '@/lib/stripe'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { alertOps } from '@/lib/ops-alert'
 import type { Tier } from '@/lib/tier'
+
+/**
+ * A tier-write failed. Release this event's idempotency claim so Stripe's retry
+ * RE-processes it (without this, the dedup gate would 200 the retry and the
+ * write would never be re-attempted), alert the operator (a paid customer may
+ * be stuck on their old tier), and return 500 so Stripe retries. Retries are
+ * safe — the idempotency gate makes reprocessing idempotent.
+ */
+async function releaseAndRetry(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  admin: any, eventId: string, label: string, error: { message?: string } | null,
+): Promise<NextResponse> {
+  console.error(`[stripe-webhook] ${label} DB write failed`, { eventId, error: error?.message })
+  try { await admin.from('stripe_webhook_events').delete().eq('event_id', eventId) } catch { /* best-effort */ }
+  await alertOps(
+    `Stripe webhook ${label} failed to write — a paid tier may not have applied`,
+    `event_id ${eventId}: ${error?.message ?? 'unknown error'}. Stripe will retry automatically; if it keeps failing, fix the tier manually in Supabase.`,
+  )
+  return NextResponse.json({ error: 'write failed, will retry' }, { status: 500 })
+}
 
 export const config = { api: { bodyParser: false } }
 
@@ -84,7 +105,7 @@ export async function POST(request: NextRequest) {
     // payloads, but defensive).
     const priceId = session.line_items?.data?.[0]?.price?.id
     const tier: Tier = (priceId && PRICE_TO_TIER[priceId]) || session.metadata.tier
-    await admin.from('integrations').upsert(
+    const { error } = await admin.from('integrations').upsert(
       {
         user_id,
         tier,
@@ -94,6 +115,7 @@ export async function POST(request: NextRequest) {
       },
       { onConflict: 'user_id' },
     )
+    if (error) return releaseAndRetry(admin, event.id, 'checkout.session.completed', error)
   }
 
   // Handle .created the same as .updated so a fresh Pro signup gets
@@ -135,11 +157,10 @@ export async function POST(request: NextRequest) {
       // checkout.session.completed hasn't run yet (no chicken-and-egg on the
       // stripe_customer_id). Otherwise fall back to matching by customer id
       // (renewals / older subscriptions without our metadata).
-      if (userId) {
-        await admin.from('integrations').upsert({ user_id: userId, ...fields }, { onConflict: 'user_id' })
-      } else {
-        await admin.from('integrations').update(fields).eq('stripe_customer_id', sub.customer)
-      }
+      const { error } = userId
+        ? await admin.from('integrations').upsert({ user_id: userId, ...fields }, { onConflict: 'user_id' })
+        : await admin.from('integrations').update(fields).eq('stripe_customer_id', sub.customer)
+      if (error) return releaseAndRetry(admin, event.id, event.type, error)
     } else {
       console.warn('[stripe-webhook] subscription event with no resolvable tier', { priceId, subId: sub.id, hasMetaTier: !!sub.metadata?.tier })
     }
@@ -157,7 +178,7 @@ export async function POST(request: NextRequest) {
     // id is the same. Now we ALSO require the subscription id to
     // match the row's current `stripe_subscription_id` — so a stale
     // delete for an old subscription is harmless.
-    await admin.from('integrations')
+    const { error } = await admin.from('integrations')
       .update({
         tier: 'trial',
         stripe_subscription_id: null,
@@ -167,6 +188,7 @@ export async function POST(request: NextRequest) {
       })
       .eq('stripe_customer_id', sub.customer)
       .eq('stripe_subscription_id', sub.id)
+    if (error) return releaseAndRetry(admin, event.id, 'customer.subscription.deleted', error)
   }
 
   if (event.type === 'invoice.payment_failed') {
@@ -174,9 +196,10 @@ export async function POST(request: NextRequest) {
     // Mark as past_due so the UI can show a warning. We do NOT downgrade
     // immediately — Stripe will retry per the dunning settings, and emit
     // customer.subscription.deleted if it eventually gives up.
-    await admin.from('integrations')
+    const { error } = await admin.from('integrations')
       .update({ subscription_status: 'past_due' })
       .eq('stripe_customer_id', invoice.customer)
+    if (error) return releaseAndRetry(admin, event.id, 'invoice.payment_failed', error)
   }
 
   return NextResponse.json({ received: true })
