@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
   const error = searchParams.get('error')
 
   if (error || !code) {
-    return NextResponse.redirect(`${appUrl}/setup?threads_error=${encodeURIComponent(error || 'no_code')}`)
+    return NextResponse.redirect(`${appUrl}/connect-socials?threads_error=${encodeURIComponent(error || 'no_code')}`)
   }
 
   const supabase = await createServerClient()
@@ -54,12 +54,12 @@ export async function GET(request: NextRequest) {
       })
     } catch { /* non-fatal — connection works without the handle */ }
 
-    return NextResponse.redirect(`${appUrl}/setup?threads_connected=1`)
+    return NextResponse.redirect(`${appUrl}/connect-socials?threads_connected=1`)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     // eslint-disable-next-line no-console
     console.error(`[threads callback] ${step} failed:`, msg)
     const detail = encodeURIComponent(`${step}: ${msg}`.slice(0, 300))
-    return NextResponse.redirect(`${appUrl}/setup?threads_error=${detail}`)
+    return NextResponse.redirect(`${appUrl}/connect-socials?threads_error=${detail}`)
   }
 }

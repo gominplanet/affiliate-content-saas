@@ -81,14 +81,78 @@ export async function getLongLivedToken(shortToken: string): Promise<string> {
 }
 
 export async function getPages(userToken: string): Promise<FacebookPage[]> {
+  // Primary: Pages the user has a direct role on. Covers Classic Pages and
+  // most of the New Pages Experience.
+  const direct = await fetchMeAccounts(userToken)
+  if (direct.length > 0) return dedupePages(direct)
+
+  // Fallback: Business-Manager-owned / client Pages. This is the case where a
+  // real business's Pages live under a Business Manager and /me/accounts comes
+  // back EMPTY even though the user picked Pages during consent. Needs the
+  // `business_management` permission — granted immediately for the app's own
+  // admins/developers/testers, and for customers once that scope clears App
+  // Review. Best-effort: any failure (permission not granted, no businesses,
+  // no page token returned) just yields [], so this can never regress an
+  // account that already worked via /me/accounts.
+  const viaBusiness = await fetchBusinessPages(userToken)
+  return dedupePages(viaBusiness)
+}
+
+async function fetchMeAccounts(userToken: string): Promise<FacebookPage[]> {
   const url = new URL(`${GRAPH}/me/accounts`)
   url.searchParams.set('access_token', userToken)
   url.searchParams.set('fields', 'id,name,access_token')
-
+  url.searchParams.set('limit', '100')
   const res = await fetch(url.toString())
   const body = await res.json()
   if (!res.ok) throw new Error(`Failed to fetch Facebook pages: ${JSON.stringify(body)}`)
-  return (body.data ?? []) as FacebookPage[]
+  return ((body.data ?? []) as FacebookPage[]).filter((p) => p.id && p.access_token)
+}
+
+// New Pages Experience / Business-owned pages: enumerate the user's Business
+// Managers, then each business's owned + client Pages (requesting the page
+// access_token so we can post). Entirely best-effort.
+async function fetchBusinessPages(userToken: string): Promise<FacebookPage[]> {
+  try {
+    const bizUrl = new URL(`${GRAPH}/me/businesses`)
+    bizUrl.searchParams.set('access_token', userToken)
+    bizUrl.searchParams.set('fields', 'id')
+    bizUrl.searchParams.set('limit', '50')
+    const bizRes = await fetch(bizUrl.toString())
+    const bizBody = await bizRes.json()
+    if (!bizRes.ok) return []
+    const businessIds: string[] = ((bizBody.data ?? []) as Array<{ id: string }>).map((b) => b.id)
+    const out: FacebookPage[] = []
+    for (const bizId of businessIds) {
+      for (const edge of ['owned_pages', 'client_pages']) {
+        try {
+          const pUrl = new URL(`${GRAPH}/${bizId}/${edge}`)
+          pUrl.searchParams.set('access_token', userToken)
+          pUrl.searchParams.set('fields', 'id,name,access_token')
+          pUrl.searchParams.set('limit', '100')
+          const pRes = await fetch(pUrl.toString())
+          const pBody = await pRes.json()
+          if (pRes.ok) {
+            for (const p of (pBody.data ?? []) as FacebookPage[]) {
+              if (p.id && p.access_token) out.push(p)
+            }
+          }
+        } catch { /* skip this edge — best-effort */ }
+      }
+    }
+    return out
+  } catch {
+    return []
+  }
+}
+
+function dedupePages(pages: FacebookPage[]): FacebookPage[] {
+  const seen = new Set<string>()
+  const out: FacebookPage[] = []
+  for (const p of pages) {
+    if (p.id && !seen.has(p.id)) { seen.add(p.id); out.push(p) }
+  }
+  return out
 }
 
 export function createFacebookService(pageAccessToken: string, pageId: string) {

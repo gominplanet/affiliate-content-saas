@@ -17,7 +17,11 @@ export async function GET() {
   }
 
   const redirectUri = `${appUrl}/api/auth/facebook/callback`
-  const scope = 'pages_show_list,pages_manage_posts'
+  // business_management surfaces Business-Manager-owned / New Pages Experience
+  // Pages (the /me/accounts-empty case). It works immediately for the app's own
+  // admins/devs/testers; for customers it's granted only after App Review and
+  // is silently dropped until then — so it can't regress the live connect flow.
+  const scope = 'pages_show_list,pages_manage_posts,business_management'
 
   // CSRF protection: pass the user's id as `state`, then verify at the
   // callback that the returning user matches. Without this, an attacker

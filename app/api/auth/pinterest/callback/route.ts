@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
   const error = searchParams.get('error')
 
   if (error || !code) {
-    return NextResponse.redirect(`${appUrl}/setup?pinterest_error=${encodeURIComponent(error || 'no_code')}`)
+    return NextResponse.redirect(`${appUrl}/connect-socials?pinterest_error=${encodeURIComponent(error || 'no_code')}`)
   }
 
   const supabase = await createServerClient()
@@ -49,12 +49,12 @@ export async function GET(request: NextRequest) {
     // pill would stay red with no explanation (exactly this bug class).
     if (saveErr) throw new Error(saveErr.message || 'token save failed')
 
-    return NextResponse.redirect(`${appUrl}/setup?pinterest_connected=1`)
+    return NextResponse.redirect(`${appUrl}/connect-socials?pinterest_connected=1`)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     // eslint-disable-next-line no-console
     console.error(`[pinterest callback] ${step} failed:`, msg)
     const detail = encodeURIComponent(`${step}: ${msg}`.slice(0, 300))
-    return NextResponse.redirect(`${appUrl}/setup?pinterest_error=${detail}`)
+    return NextResponse.redirect(`${appUrl}/connect-socials?pinterest_error=${detail}`)
   }
 }
