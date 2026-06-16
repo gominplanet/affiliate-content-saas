@@ -17,10 +17,12 @@
 
 import { useState } from 'react'
 import dynamic from 'next/dynamic'
-import { Facebook, MessageCircle } from 'lucide-react'
+import { toast } from 'sonner'
+import { Facebook, MessageCircle, Pin } from 'lucide-react'
 import { SocialPill } from '@/components/content/SocialPill'
 import { tierAllowsSocial } from '@/lib/tier'
 import type { Tier } from '@/lib/tier'
+import type { PinPreviewData } from '@/components/PinterestPreviewModal'
 
 const SocialPreviewModal = dynamic(
   () => import('@/components/content/SocialPreviewModal').then(m => ({ default: m.SocialPreviewModal })),
@@ -49,6 +51,7 @@ export function OrphanPostShare(props: {
   postUrl: string | null
   userTier: Tier
   fbConnected: boolean
+  pinterestConnected: boolean
   threadsConnected: boolean
   linkedInConnected: boolean
   twitterConnected: boolean
@@ -57,15 +60,39 @@ export function OrphanPostShare(props: {
   brandDisclaimer?: string
   brandFacebookGroups?: Array<{ name: string; url: string }>
   fbAccounts?: Array<{ id: string; externalId: string; displayName: string | null; isDefault: boolean }>
+  /** Bubble the generated pin assets up to the page-level PinterestPreviewModal
+   *  (shared with VideoCard) — Pinterest uses an image flow, not the text
+   *  SocialPreviewModal the other platforms here use. */
+  onPinPreview: (data: PinPreviewData) => void
 }) {
   const {
     postId, postUrl, userTier,
-    fbConnected, threadsConnected, linkedInConnected, twitterConnected, blueskyConnected, telegramConnected,
-    brandDisclaimer, brandFacebookGroups, fbAccounts,
+    fbConnected, pinterestConnected, threadsConnected, linkedInConnected, twitterConnected, blueskyConnected, telegramConnected,
+    brandDisclaimer, brandFacebookGroups, fbAccounts, onPinPreview,
   } = props
 
   const [posted, setPosted] = useState<Set<SchedulablePlatform>>(new Set())
   const [open, setOpen] = useState<PlatformCfg | null>(null)
+  const [pinLoading, setPinLoading] = useState(false)
+
+  // Pinterest pins an IMAGE, so it doesn't use the text SocialPreviewModal —
+  // fetch the pin assets, then hand them to the page's PinterestPreviewModal
+  // (the exact flow VideoCard uses). The pinterest-preview/-post routes resolve
+  // this row's WordPress post id to the blog_posts row server-side.
+  async function handlePinPreview() {
+    setPinLoading(true)
+    try {
+      const res = await fetch('/api/blog/pinterest-preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ postId }),
+      })
+      const d = await res.json()
+      if (!res.ok) { toast.error(d.error || 'Failed to generate pin preview'); return }
+      onPinPreview({ postId, ...d })
+    } catch { toast.error('Failed to generate pin preview') }
+    finally { setPinLoading(false) }
+  }
 
   const platforms: PlatformCfg[] = [
     { key: 'twitter', label: 'X', postedLabel: 'On X', brand: '#000000', icon: X_ICON, endpoint: '/api/blog/twitter-post', connected: twitterConnected },
@@ -77,7 +104,7 @@ export function OrphanPostShare(props: {
   ]
 
   const visible = platforms.filter(p => p.connected)
-  if (visible.length === 0) return null
+  if (visible.length === 0 && !pinterestConnected) return null
 
   const defaultFbAccount = fbAccounts?.find(a => a.isDefault) || fbAccounts?.[0]
 
@@ -97,6 +124,20 @@ export function OrphanPostShare(props: {
           locked={!tierAllowsSocial(userTier, p.key)}
         />
       ))}
+
+      {/* Pinterest — image flow, opens the shared page-level preview modal. */}
+      {pinterestConnected && (
+        <SocialPill
+          brand="#E60023"
+          icon={<Pin size={11} />}
+          label="Pinterest"
+          postedLabel="Pinned"
+          posted={false}
+          loading={pinLoading}
+          onClick={handlePinPreview}
+          locked={!tierAllowsSocial(userTier, 'pinterest')}
+        />
+      )}
 
       {open && (
         <SocialPreviewModal

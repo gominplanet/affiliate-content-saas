@@ -3148,6 +3148,7 @@ export default function ContentPage() {
                 postUrl={post.link}
                 userTier={userTier}
                 fbConnected={fbConnected}
+                pinterestConnected={pinterestConnected}
                 threadsConnected={threadsConnected}
                 linkedInConnected={linkedInConnected}
                 twitterConnected={twitterConnected}
@@ -3156,6 +3157,7 @@ export default function ContentPage() {
                 brandDisclaimer={brandDisclaimer}
                 brandFacebookGroups={brandFacebookGroups}
                 fbAccounts={fbAccounts}
+                onPinPreview={setPinPreview}
               />
             </div>
                   )

@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { buildPinAssets } from '@/lib/pin-assets'
+import { resolveBlogPostId } from '@/lib/resolve-post-id'
 
 export const maxDuration = 60
 
@@ -16,8 +17,11 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { postId } = await request.json()
-  if (!postId) return NextResponse.json({ error: 'postId required' }, { status: 400 })
+  const { postId: rawPostId } = await request.json()
+  if (!rawPostId) return NextResponse.json({ error: 'postId required' }, { status: 400 })
+  // Video-less "Published Posts" rows (guides/comparisons/link posts) send the
+  // WordPress post id, not the blog_posts UUID — map it so the lookup resolves.
+  const postId = (await resolveBlogPostId(supabase, user.id, rawPostId)) || rawPostId
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [{ data: post }, { data: integration }] = await Promise.all([
