@@ -201,23 +201,38 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: `WordPress publish failed: ${err instanceof Error ? err.message : 'unknown'}` }, { status: 502 })
     }
 
-    // ── Featured image + CTA thumb = the product photo (Amazon main if enriched) ─
+    // ── Featured image + CTA thumb. The CTA box must ALWAYS carry an image
+    //    (absolute rule): try every product-image candidate until one uploads,
+    //    fall back to the remote URL if all uploads fail, and only strip the
+    //    placeholder when we genuinely have no image (better a clean card than
+    //    a broken {VIDEO_ID} thumb). setCtaThumb inserts the wrapper if the
+    //    writer dropped it — so the photo lands even on video-less posts. ─────
+    const imageCandidates = [amz?.imageUrl, ...(amz?.images ?? []), p.image]
+      .filter((u): u is string => !!u && /^https?:\/\//i.test(u))
+    let heroMediaId: number | null = null
     let heroUrl: string | null = null
-    if (heroImage) {
+    for (const cand of imageCandidates) {
       try {
-        const media = await wpService.uploadImageFromUrl(heroImage, `${(p.sku || 'wmt')}-product.jpg`)
-        heroUrl = media.source_url || null
-        const fixed = heroUrl ? setCtaThumb(content, heroUrl) : stripCtaThumb(content)
-        const changed = fixed !== content
-        if (changed) content = fixed
-        await wpService.updatePost(wpPost.id, {
-          ...(media.id ? { featured_media: media.id } : {}),
-          ...(changed ? { content } : {}),
-        })
-      } catch { /* non-fatal — post is live without the featured image */ }
+        const media = await wpService.uploadImageFromUrl(cand, `${(p.sku || 'wmt')}-product.jpg`)
+        if (media?.source_url) { heroUrl = media.source_url; heroMediaId = media.id ?? null; break }
+      } catch { /* try the next candidate */ }
+    }
+    const ctaImage = heroUrl || imageCandidates[0] || null
+    let contentChanged = false
+    if (ctaImage) {
+      const fixed = setCtaThumb(content, ctaImage)
+      if (fixed !== content) { content = fixed; contentChanged = true }
     } else {
       const stripped = stripCtaThumb(content)
-      if (stripped !== content) { content = stripped; try { await wpService.updatePost(wpPost.id, { content }) } catch { /* non-fatal */ } }
+      if (stripped !== content) { content = stripped; contentChanged = true }
+    }
+    if (heroMediaId || contentChanged) {
+      try {
+        await wpService.updatePost(wpPost.id, {
+          ...(heroMediaId ? { featured_media: heroMediaId } : {}),
+          ...(contentChanged ? { content } : {}),
+        })
+      } catch { /* non-fatal — post is live without the featured image */ }
     }
 
     // ── Persist a blog_posts row so it shows in Library / social fan-out ─────
