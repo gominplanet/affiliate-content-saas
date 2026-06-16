@@ -156,6 +156,15 @@ export async function POST(request: NextRequest) {
       if (research?.brief) researchBrief = research.brief
     } catch { /* keep the datafeed-only brief */ }
 
+    // ── Retailer label drives the CTA copy ("Get the best price on Walmart →").
+    //    The affiliate link goes to the network's store, so the button must name
+    //    it — never default to Amazon for a Walmart product. ───────────────────
+    const net = (body.network || 'Walmart').trim().toLowerCase()
+    const retailer: { isAmazon: boolean; label: string | null } =
+      net === 'amazon' ? { isAmazon: true, label: 'Amazon' }
+      : net === 'walmart' ? { isAmazon: false, label: 'Walmart' }
+      : { isAmazon: false, label: null } // DTC / other → neutral "Get the best price today →"
+
     // ── Generate (reuses the campaign writer — informational, no fake testing) ─
     const claude = createClaudeService()
     const generated = await claude.generateCampaignBlogPost(
@@ -171,6 +180,7 @@ export async function POST(request: NextRequest) {
         },
         researchBrief,
         affiliateUrl,
+        retailer,
       },
       { userId: user.id, tier },
     )

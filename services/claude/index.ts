@@ -152,6 +152,11 @@ function buildSystemPrompt(
    *  image setting). When omitted (e.g. the campaign path), the generic
    *  scorecard + universal rules apply unchanged. */
   nicheScaffold?: NicheScaffold,
+  /** Non-Amazon retailer name (e.g. 'Walmart') for the CTA copy → reads "Get
+   *  the best price on Walmart →". When null/undefined the isAmazon flag drives
+   *  the copy ("…on Amazon" vs neutral "…today"). Pass with isAmazon=false so
+   *  the disclaimer stays generic (not "As an Amazon Associate"). */
+  retailerLabel?: string | null,
 ): string {
   const authorLine = brand.author_name
     ? `the review blog of ${brand.author_name}`
@@ -206,8 +211,10 @@ function buildSystemPrompt(
   // 2026-06-09: unified with the price-strip voice → "Get the best price..."
   // (matches commit 9ffd01d). Same change applies to both the mid-article
   // CTA [4] and the end-of-post CTA [7] (they share ${ctaButton}).
-  const ctaEyebrow = isAmazon ? 'Get it now' : 'Learn more'
-  const ctaButton  = isAmazon ? 'Get the best price on Amazon →' : 'Get the best price today →'
+  const ctaEyebrow = (isAmazon || retailerLabel) ? 'Get it now' : 'Learn more'
+  const ctaButton  = retailerLabel
+    ? `Get the best price on ${retailerLabel} →`
+    : (isAmazon ? 'Get the best price on Amazon →' : 'Get the best price today →')
 
   // The LEARN voice profile — the writer's own taste/style training.
   // High priority: it encodes what THIS user finds fake vs trustworthy.
@@ -2275,13 +2282,18 @@ ${video.transcript ? video.transcript.slice(0, 12000) : 'No transcript available
    */
   async generateCampaignBlogPost(
     brand: BrandProfile,
-    input: { product: { asin: string; title: string; bullets: string[]; description: string; price: string | null; rating: string | null }; researchBrief: string; affiliateUrl: string },
+    input: { product: { asin: string; title: string; bullets: string[]; description: string; price: string | null; rating: string | null }; researchBrief: string; affiliateUrl: string; retailer?: { isAmazon: boolean; label: string | null } },
     ctx?: UsageCtx,
   ): Promise<BlogGenerationOutput> {
     // Per-niche scaffold (Sprint 3). The campaign path has a clean product
     // title from the Amazon scrape — the strongest possible niche signal.
     const campaignScaffold = resolveNicheScaffold(input.product.title, brand.niches)
-    const systemPrompt = buildSystemPrompt(brand, undefined, true, campaignScaffold)
+    // CTA copy follows the real affiliate destination. EPC (no retailer passed)
+    // stays Amazon; PartnerBoost passes Walmart/Amazon/DTC so the button reads
+    // "Get the best price on Walmart →" instead of always saying Amazon.
+    const isAmazon = input.retailer ? input.retailer.isAmazon : true
+    const retailerLabel = input.retailer?.label ?? null
+    const systemPrompt = buildSystemPrompt(brand, undefined, isAmazon, campaignScaffold, retailerLabel)
     const p = input.product
 
     const userMessage = `Generate a long-form, SEO-optimized INFORMATIONAL buyer's-guide article about this product. This is NOT a personal review. There is NO video — base the post entirely on the product facts and the research brief below.
