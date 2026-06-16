@@ -223,8 +223,8 @@ export default function PricingPage() {
       </div>
 
       <p className="mt-10 text-sm text-[#86868b] dark:text-[#8e8e93] max-w-2xl text-center px-4">
-        Auto-posting live today: your WordPress site, X, LinkedIn, Facebook, Instagram, Threads, Bluesky, and
-        Telegram. TikTok and Pinterest are built and switch on automatically, at no extra cost, as each
+        Auto-posting live today: your WordPress site, X, LinkedIn, Facebook, Instagram, Threads, Bluesky,
+        Telegram, and Pinterest. TikTok is built and switches on automatically, at no extra cost, once it
         completes its platform review.
       </p>
 

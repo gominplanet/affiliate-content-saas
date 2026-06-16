@@ -815,7 +815,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
           test account also skips so the App Review screencast stays clean).
           Replaces the previous "Admin only" framing — the gate isn't about
           the user's tier, it's about each platform's own approval process. */}
-      {(!isUnlocked('pinterest') || !isUnlocked('tiktok')) && (
+      {!isUnlocked('tiktok') && (
         <div
           className="card p-5"
           style={{ background: 'linear-gradient(135deg, rgba(124,58,237,0.07) 0%, rgba(124,58,237,0.02) 100%)', borderColor: 'rgba(124,58,237,0.25)' }}
@@ -826,15 +826,14 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap mb-1">
-                <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">2 integrations coming soon</p>
+                <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">1 integration coming soon</p>
                 <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full" style={{ background: '#7C3AED', color: '#fff' }}>Under review</span>
               </div>
               <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed mb-3">
-                <strong>Pinterest</strong> and <strong>TikTok</strong> are currently going through the official approval process with each platform. They&apos;ll unlock here automatically once approved. Until then, every other channel below (WordPress, Facebook, Instagram, Threads, LinkedIn, Bluesky, Twitter, Telegram, YouTube, Newsletter) works as normal.
+                <strong>TikTok</strong> is currently going through the official approval process. It&apos;ll unlock here automatically once approved. Until then, every other channel below (WordPress, Facebook, Instagram, Threads, LinkedIn, Pinterest, Bluesky, Twitter, Telegram, YouTube, Newsletter) works as normal.
               </p>
               <div className="flex flex-wrap gap-1.5">
                 {[
-                  { name: 'Pinterest', icon: <Pin size={11} />, bg: '#E60023' },
                   { name: 'TikTok', icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5.8 20.1a6.34 6.34 0 0 0 10.86-4.43V8.45a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1.84-.34z"/></svg>, bg: '#000' },
                 ].map(p => (
                   <span

@@ -7,8 +7,9 @@
  * off NEXT_PUBLIC_META_ENABLED with an admin/reviewer allowlist exception; that
  * env var is now ignored and can be deleted from the environment.)
  *
- * TikTok + Pinterest remain admin-only (TikTok sandbox, Pinterest sandbox host)
- * via `socialEnabled` until they clear their own platform reviews.
+ * Pinterest: APPROVED + LIVE (2026-06-16) — added to LIVE_SOCIAL below.
+ * TikTok remains admin-only (still in sandbox) via `socialEnabled` until it
+ * clears its own platform review.
  */
 
 /**
@@ -23,19 +24,19 @@ export function metaEnabled(_opts?: { tier?: string | null; email?: string | nul
 
 /**
  * Per-platform availability gate for the social integrations that aren't yet
- * universally live. Facebook / Instagram / Threads are APPROVED → open to all
- * (tier still decides eligibility via lib/tier `tierAllowsSocial`). TikTok +
- * Pinterest stay admin-only until their platform reviews clear.
+ * universally live. Facebook / Instagram / Threads / Pinterest are APPROVED →
+ * open to all (tier still decides eligibility via lib/tier `tierAllowsSocial`).
+ * TikTok stays admin-only until its platform review clears.
  */
 export type GatedSocialPlatform = 'facebook' | 'instagram' | 'threads' | 'tiktok' | 'pinterest'
-const LIVE_SOCIAL: ReadonlySet<GatedSocialPlatform> = new Set(['facebook', 'instagram', 'threads'])
+const LIVE_SOCIAL: ReadonlySet<GatedSocialPlatform> = new Set(['facebook', 'instagram', 'threads', 'pinterest'])
 
 export function socialEnabled(
   platform: GatedSocialPlatform,
   opts?: { tier?: string | null; email?: string | null },
 ): boolean {
-  if (LIVE_SOCIAL.has(platform)) return true // Meta approved + live 2026-06-15
-  // TikTok + Pinterest: still sandbox → admin-only.
+  if (LIVE_SOCIAL.has(platform)) return true // Meta 2026-06-15 + Pinterest 2026-06-16
+  // TikTok: still sandbox → admin-only.
   return opts?.tier === 'admin'
 }
 

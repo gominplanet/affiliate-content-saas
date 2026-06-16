@@ -22,7 +22,7 @@ import {
   Compass, HeartHandshake, PenLine, Share2, Globe, TrendingUp, Wand2,
   Youtube, ShieldCheck, Zap, Upload, X as XIcon, Check, Quote,
   Crown, Rocket, Plus, Minus,
-  LayoutTemplate, BadgePercent,
+  LayoutTemplate, BadgePercent, Pin,
 } from 'lucide-react'
 
 const DARK_VARS: React.CSSProperties = {
@@ -2317,8 +2317,9 @@ function SpokeNode({ icon, label }: { icon: React.ReactNode; label: string }) {
 /** Platform bar — slim strip under the hero naming the channels MVP
  *  publishes to LIVE today (your WordPress site + the socials). Meta
  *  (Facebook / Instagram / Threads) went LIVE 2026-06-15 after App Review.
- *  TikTok + Pinterest are intentionally NOT listed until their platform
- *  reviews clear — we don't advertise what we can't yet deliver.
+ *  Pinterest joined the live set 2026-06-16. TikTok is intentionally NOT
+ *  listed until its platform review clears — we don't advertise what we
+ *  can't yet deliver.
  *
  *  Visual: monochrome icons + names laid out horizontally, separated by
  *  thin dividers. Theme-aware via var(--text-faint). Wraps on mobile.
@@ -2363,6 +2364,7 @@ const PLATFORMS = [
   { name: 'Threads', icon: <AtSign size={14} /> },
   { name: 'Bluesky', icon: <Cloud size={14} /> },
   { name: 'Telegram', icon: <Send size={14} /> },
+  { name: 'Pinterest', icon: <Pin size={14} /> },
 ]
 
 /** Before/After visual — sits between Workflow (Section 4) and Grounded
