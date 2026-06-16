@@ -26,7 +26,13 @@ export default function AssistantPage() {
   const [sending, setSending] = useState(false)
   const [streaming, setStreaming] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [hasMore, setHasMore] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [oldestTs, setOldestTs] = useState<string | null>(null)
   const threadRef = useRef<HTMLDivElement>(null)
+  // Set before prepending older messages so the auto-scroll effect doesn't yank
+  // the view back to the bottom.
+  const skipScrollRef = useRef(false)
   // Memory panel
   const [memoryOpen, setMemoryOpen] = useState(false)
   const [memory, setMemory] = useState('')
@@ -82,6 +88,7 @@ export default function AssistantPage() {
   useEffect(() => { loadConversations() }, [loadConversations])
 
   useEffect(() => {
+    if (skipScrollRef.current) { skipScrollRef.current = false; return }
     threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight, behavior: 'smooth' })
   }, [messages, streaming])
 
@@ -89,11 +96,35 @@ export default function AssistantPage() {
     setActiveId(id)
     setError(null)
     setStreaming('')
+    setHasMore(false)
+    setOldestTs(null)
     try {
       const res = await fetch(`/api/assistant/conversations/${id}`)
       const d = await res.json()
-      setMessages((d.messages ?? []).map((m: Msg) => ({ role: m.role, content: m.content })))
+      const rows = (d.messages ?? []) as Array<Msg & { created_at?: string }>
+      setMessages(rows.map(m => ({ role: m.role, content: m.content })))
+      setHasMore(!!d.hasMore)
+      setOldestTs(rows[0]?.created_at ?? null)
     } catch { setMessages([]) }
+  }
+
+  // Page backwards through a long conversation. Prepends the previous chunk and
+  // keeps the scroll near the top (skipScrollRef) instead of jumping to bottom.
+  async function loadEarlier() {
+    if (!activeId || !oldestTs || loadingMore) return
+    setLoadingMore(true)
+    try {
+      const res = await fetch(`/api/assistant/conversations/${activeId}?before=${encodeURIComponent(oldestTs)}`)
+      const d = await res.json()
+      const rows = (d.messages ?? []) as Array<Msg & { created_at?: string }>
+      if (rows.length) {
+        skipScrollRef.current = true
+        setMessages(prev => [...rows.map(m => ({ role: m.role, content: m.content })), ...prev])
+        setOldestTs(rows[0]?.created_at ?? oldestTs)
+      }
+      setHasMore(!!d.hasMore)
+    } catch { /* leave the thread as-is */ }
+    finally { setLoadingMore(false) }
   }
 
   function newChat() {
@@ -101,6 +132,8 @@ export default function AssistantPage() {
     setMessages([])
     setStreaming('')
     setError(null)
+    setHasMore(false)
+    setOldestTs(null)
   }
 
   async function deleteConversation(id: string) {
@@ -216,6 +249,18 @@ export default function AssistantPage() {
                     </button>
                   ))}
                 </div>
+              </div>
+            )}
+            {hasMore && messages.length > 0 && (
+              <div className="flex justify-center pb-1">
+                <button
+                  onClick={loadEarlier}
+                  disabled={loadingMore}
+                  className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border border-gray-200 dark:border-white/10 text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] hover:border-[#7C3AED]/40 disabled:opacity-50"
+                >
+                  {loadingMore ? <Loader2 size={12} className="animate-spin" /> : null}
+                  {loadingMore ? 'Loading…' : 'Load earlier messages'}
+                </button>
               </div>
             )}
             {messages.map((m, i) => (

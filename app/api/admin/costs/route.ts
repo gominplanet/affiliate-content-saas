@@ -33,72 +33,71 @@ export async function GET(request: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sb = admin as any
 
-    const [{ data: rows, error }, { data: posts }, { data: paidUsers }] = await Promise.all([
-      sb.from('ai_usage')
-        .select('tier,feature,model,input_tokens,output_tokens,web_searches,images,user_id')
-        .gte('created_at', since)
-        .limit(100000),
-      // NET-NEW post volume in the same window — drives cost-per-post per tier.
-      // Count by created_at, NOT published_at: published_at gets bumped on every
-      // re-publish / update (rewrites, image refresh, schedule cascade, brand
-      // re-sync), which massively over-counted "posts" (e.g. 299 vs 56 actual
-      // generations) and made cost-per-post look artificially cheap. created_at
-      // is immutable, so this is the true count of posts generated this window.
-      sb.from('blog_posts')
-        .select('user_id,created_at')
-        .gte('created_at', since)
-        .limit(100000),
-      // ALL users + their tier — used to map each post's owner to a tier
-      // (so we can attribute posts AND exclude admin-owned posts) and to count
-      // paying users per tier for margin.
-      sb.from('integrations')
-        .select('user_id,tier')
-        .limit(100000),
+    // DB-side aggregation (migration 129) — replaces three .limit(100000) scans
+    // + the in-JS loop. costOf() still applies pricing in TS from the grouped
+    // token sums (cost is linear per model → exact parity, no SQL drift).
+    const [rollupRes, activeRes, postsRes, payingRes] = await Promise.all([
+      sb.rpc('admin_ai_cost_rollup', { p_since: since }),
+      sb.rpc('admin_ai_active_users', { p_since: since }),
+      sb.rpc('admin_posts_by_tier', { p_since: since }),
+      sb.rpc('admin_paying_users'),
     ])
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (rollupRes.error) return NextResponse.json({ error: rollupRes.error.message }, { status: 500 })
 
-    // Map every user → their current tier (so we can attribute + filter posts).
-    const userToTier: Record<string, string> = {}
-    for (const u of (paidUsers ?? [])) {
-      if (u.user_id && u.tier) userToTier[u.user_id as string] = u.tier as string
-    }
-
-    const byTier: Record<string, { cost: number; calls: number; users: Set<string> }> = {}
+    const byTier: Record<string, { cost: number; calls: number }> = {}
     const byFeature: Record<string, { cost: number; calls: number }> = {}
     let total = 0
     let calls = 0
-    for (const r of (rows ?? [])) {
-      const t = r.tier || 'unknown'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const g of ((rollupRes.data ?? []) as any[])) {
+      const t = g.tier || 'unknown'
       // Exclude-admin view: skip the founder's own testing rows entirely.
       if (excludeAdmin && t === 'admin') continue
-      const c = costOf(r)
-      total += c; calls++
-      const f = r.feature || 'unknown'
-      ;(byTier[t] ??= { cost: 0, calls: 0, users: new Set() })
-      byTier[t].cost += c
-      byTier[t].calls++
-      if (r.user_id) byTier[t].users.add(r.user_id as string)
-      ;(byFeature[f] ??= { cost: 0, calls: 0 })
-      byFeature[f].cost += c; byFeature[f].calls++
+      // Coerce bigint sums (PostgREST may serialize int8 as string) before pricing.
+      const c = costOf({
+        model: g.model,
+        input_tokens: Number(g.input_tokens) || 0,
+        output_tokens: Number(g.output_tokens) || 0,
+        web_searches: Number(g.web_searches) || 0,
+        images: Number(g.images) || 0,
+      })
+      const n = Number(g.calls) || 0
+      total += c; calls += n
+      const f = g.feature || 'unknown'
+      ;(byTier[t] ??= { cost: 0, calls: 0 }).cost += c
+      byTier[t].calls += n
+      ;(byFeature[f] ??= { cost: 0, calls: 0 }).cost += c
+      byFeature[f].calls += n
     }
 
-    // Count NEW posts per tier in the same window (excluding admin-owned when asked).
+    // Distinct active users per tier in the window.
+    const activeByTier: Record<string, number> = {}
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const a of ((activeRes.data ?? []) as any[])) {
+      const t = a.tier || 'unknown'
+      if (excludeAdmin && t === 'admin') continue
+      activeByTier[t] = Number(a.users) || 0
+    }
+
+    // NET-NEW posts per tier in the window. Counted by created_at (immutable),
+    // NOT published_at (bumped on every re-publish / image refresh / cascade /
+    // brand re-sync), which over-counted posts and understated cost-per-post.
     const postsByTier: Record<string, number> = {}
     let totalPosts = 0
-    for (const p of (posts ?? [])) {
-      const t = userToTier[p.user_id as string] || 'other'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const p of ((postsRes.data ?? []) as any[])) {
+      const t = p.tier || 'other'
       if (excludeAdmin && t === 'admin') continue
-      postsByTier[t] = (postsByTier[t] || 0) + 1
-      totalPosts++
+      const n = Number(p.posts) || 0
+      postsByTier[t] = n
+      totalPosts += n
     }
 
-    // Currently-paying user count per tier — denominator for margin. Only the
-    // real paid tiers (the integrations query now returns all users).
+    // Currently-paying users per tier — denominator for margin (creator/studio/pro).
     const payingByTier: Record<string, number> = {}
-    for (const u of (paidUsers ?? [])) {
-      const t = u.tier as string
-      if (t !== 'creator' && t !== 'studio' && t !== 'pro') continue
-      payingByTier[t] = (payingByTier[t] || 0) + 1
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const u of ((payingRes.data ?? []) as any[])) {
+      if (u.tier) payingByTier[u.tier as string] = Number(u.users) || 0
     }
 
     const round = (n: number) => Math.round(n * 100) / 100
@@ -111,7 +110,7 @@ export async function GET(request: Request) {
         Object.entries(byTier).map(([k, v]) => [k, {
           cost: round(v.cost),
           calls: v.calls,
-          activeUsers: v.users.size,
+          activeUsers: activeByTier[k] ?? 0,
         }]),
       ),
       byFeature: Object.fromEntries(

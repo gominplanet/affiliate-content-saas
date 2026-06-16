@@ -31,6 +31,7 @@ import { fetchStoryboardFrames } from '@/lib/youtube-storyboards'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 import { pickRelatedPosts, renderRelatedLinksBlock, insertRelatedLinks, type LinkCandidate } from '@/lib/internal-links'
 import { injectPriceStrip } from '@/lib/price-strip'
+import { injectInlineAffiliateLinks } from '@/lib/inline-affiliate'
 import { buildReviewSchemaGraph, parseRating, extractFaqFromHtml } from '@/lib/seo-schema'
 import { fal } from '@fal-ai/client'
 import { recordUsage } from '@/lib/ai-usage'
@@ -1208,6 +1209,21 @@ async function handleGenerate(request: Request) {
       })
     }
   } catch { /* price strip is best-effort; never block generation */ }
+
+  // Weave the affiliate link into the body a few times (on the product name),
+  // not just the CTA + price strip. Same helper the campaign/PartnerBoost paths
+  // use. Idempotent (no-ops if the writer already placed >=2 inline links);
+  // runs on both fresh generation and rebuilds (operates on the final content).
+  try {
+    if (productUrl) {
+      content = injectInlineAffiliateLinks(
+        content,
+        (generated as { productName?: string | null }).productName || generated.title,
+        productUrl,
+        { max: 3 },
+      )
+    }
+  } catch { /* inline links are best-effort; never block generation */ }
 
   // Preserve the slug of any existing live WP post so rebuilds keep the same
   // URL (and the same Google indexing history). Only fall through to the
