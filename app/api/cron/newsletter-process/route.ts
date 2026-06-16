@@ -103,11 +103,12 @@ function isAuthorized(req: Request): boolean {
     // No secret configured = open in dev only.
     return process.env.NODE_ENV !== 'production'
   }
+  // Header-only, matching the other six crons. (Vercel sends
+  // `Authorization: Bearer ${CRON_SECRET}` automatically.) The old
+  // `?cron_secret=` query-param branch was dropped — query-string secrets leak
+  // into access logs, proxies, and Referer headers.
   const auth = req.headers.get('authorization') || ''
-  if (auth === `Bearer ${expected}`) return true
-  const url = new URL(req.url)
-  if (url.searchParams.get('cron_secret') === expected) return true
-  return false
+  return auth === `Bearer ${expected}`
 }
 
 /** Fire a single scheduled broadcast. Re-renders against the live subscribers
