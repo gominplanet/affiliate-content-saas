@@ -862,12 +862,13 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
       </div>
 
       {/* Social connect cards. Source order below is stable; the visual order
-          is fixed via Tailwind order-* utilities so Meta (Facebook, Instagram,
-          Threads) renders first. Parent is flex-col, so order applies. Keep the
+          is fixed via the Tailwind order-* class on each card root (currently
+          Facebook, Pinterest, Instagram, Threads, LinkedIn, X, Telegram,
+          Bluesky, TikTok). Parent is flex-col, so order applies. Keep the
           order-N values contiguous (1..9) if you add or remove a card. */}
       <div className="flex flex-col gap-5">
       {/* LinkedIn */}
-      <div className="card p-6 order-4">
+      <div className="card p-6 order-5">
         <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: '#e8f0fb' }}>
             <Linkedin size={16} style={{ color: '#0A66C2' }} />
@@ -906,7 +907,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
       </div>
 
       {/* X (Twitter) */}
-      <div className="card p-6 order-5">
+      <div className="card p-6 order-6">
         <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-black">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="white">
@@ -949,7 +950,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
       </div>
 
       {/* Bluesky */}
-      <div className="card p-6 order-7">
+      <div className="card p-6 order-8">
         <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: '#1185fe' }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="white">
@@ -1021,7 +1022,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
       </div>
 
       {/* Telegram — Pro */}
-      <div className="card p-6 order-6">
+      <div className="card p-6 order-7">
         <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: '#229ED9' }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
@@ -1145,7 +1146,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
       )}
 
       {/* Pinterest */}
-      <div className="card p-6 order-8">
+      <div className="card p-6 order-2">
         <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: '#fef0f0' }}>
             <Pin size={16} style={{ color: '#E60023' }} />
@@ -1200,7 +1201,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
 
       {/* Threads */}
       {metaUnlocked && (
-      <div className="card p-6 order-3">
+      <div className="card p-6 order-4">
         <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
           <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center">
             <MessageCircle size={16} className="text-[#1d1d1f] dark:text-[#f5f5f7]" />
@@ -1246,7 +1247,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
 
       {/* Instagram — Pro */}
       {metaUnlocked && (
-      <div className="card p-6 order-2">
+      <div className="card p-6 order-3">
         <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
           <div
             className="w-8 h-8 rounded-lg flex items-center justify-center"
