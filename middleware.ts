@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createMiddlewareClient } from '@/lib/supabase/middleware'
 import { isPathBlockedForVa } from '@/lib/agency-routes'
+import { LABS_COOKIE, expectedLabsToken } from '@/lib/labs-access'
 
 const publicPaths = [
   '/login', '/signup', '/reset-password',
@@ -65,6 +66,35 @@ export async function middleware(request: NextRequest) {
     const url = request.nextUrl.clone()
     url.pathname = '/dashboard'
     return NextResponse.redirect(url)
+  }
+
+  // ── Labs early-access gate ──────────────────────────────────────────────
+  // EPC Scout (/epc, /api/campaigns/*) and PartnerBoost (/walmart-pb,
+  // /api/walmart/*) are limited to invited users via a single shared password
+  // (env LABS_PASSWORD), on TOP of their tier gates. When the password is set, a
+  // LABS request needs the labs_unlocked cookie — pages redirect to /labs-unlock,
+  // APIs return 401 JSON. Service self-calls (the EPC worker) were already
+  // bypassed at the top; public ingest endpoints are exempt via isPublic. With
+  // LABS_PASSWORD UNSET this is a no-op, so the feature works as before until the
+  // password is configured in Vercel.
+  if (session && !isPublic(pathname)) {
+    const isLabsPage =
+      pathname === '/epc' || pathname === '/walmart-pb' ||
+      pathname.startsWith('/epc/') || pathname.startsWith('/walmart-pb/')
+    const isLabsApi =
+      pathname.startsWith('/api/campaigns') || pathname.startsWith('/api/walmart')
+    if (isLabsPage || isLabsApi) {
+      const expected = await expectedLabsToken()
+      if (expected && request.cookies.get(LABS_COOKIE)?.value !== expected) {
+        if (isLabsApi) {
+          return NextResponse.json({ error: 'Labs access locked', labsLocked: true }, { status: 401 })
+        }
+        const url = request.nextUrl.clone()
+        url.pathname = '/labs-unlock'
+        url.searchParams.set('next', pathname)
+        return NextResponse.redirect(url)
+      }
+    }
   }
 
   // ── Virtual Assistant guard ─────────────────────────────────────────────
