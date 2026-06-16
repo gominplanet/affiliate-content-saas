@@ -11,6 +11,7 @@ import { buildPinAssets } from '@/lib/pin-assets'
 import { resolveBlogPostId } from '@/lib/resolve-post-id'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { createWordPressService } from '@/services/wordpress'
+import { tierAllowsSocial, type Tier } from '@/lib/tier'
 
 export const maxDuration = 60
 
@@ -38,6 +39,14 @@ export async function POST(request: NextRequest) {
 
   if (!p) return NextResponse.json({ error: 'Post not found' }, { status: 404 })
   if (!ig?.pinterest_access_token) return NextResponse.json({ error: 'Pinterest not connected' }, { status: 400 })
+  // Pinterest is a Studio+ feature — gate the PREVIEW too so a sub-Studio user
+  // can't spend an image generation on a pin they can't publish.
+  if (!tierAllowsSocial((ig?.tier as Tier) ?? 'trial', 'pinterest')) {
+    return NextResponse.json(
+      { error: 'Pinterest is a Studio plan feature. Upgrade to Studio or Pro to pin to Pinterest.' },
+      { status: 403 },
+    )
+  }
   // No board required to PREVIEW — the publish step resolves a board
   // (per-category, auto-created). Fresh/sandbox accounts have none yet.
 

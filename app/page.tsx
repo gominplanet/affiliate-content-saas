@@ -60,14 +60,18 @@ const LIGHT_VARS: React.CSSProperties = {
 }
 
 /** Hub diagram constants. Computed once so the SVG and the absolutely
- *  positioned spoke nodes share the same geometry. Bumped from 8 spokes
- *  to 13 (full social coverage) — container + radius widened so the pills
- *  don't crowd each other. */
-const CX = 380
-const CY = 290
-const RADIUS = 250
-const VIEW_W = 760
-const VIEW_H = 580
+ *  positioned spoke nodes share the same geometry. 18 spokes (full
+ *  live-channel coverage — Meta + Pinterest + LinkedIn added 2026-06-16).
+ *  The ring is a slight ELLIPSE (RX > RY): with 18 wide pills, a true circle
+ *  crowds the top/bottom poles (consecutive 20° steps barely separate them
+ *  vertically). Spreading horizontally clears the only axis that collides
+ *  while keeping the diagram's height inside the box. */
+const CX = 400
+const CY = 300
+const RX = 332
+const RY = 246
+const VIEW_W = 800
+const VIEW_H = 600
 
 interface Spoke {
   /** Angle in degrees, 0 = right, 90 = down, -90 = up. */
@@ -76,32 +80,37 @@ interface Spoke {
   icon: React.ReactNode
 }
 
-/** 13 spokes total, ~27.7° apart. Layout flows clockwise starting at
- *  top: 5 content outputs (blog/thumbnail/comparison/newsletter/scheduled),
- *  then 8 social platforms. Labels kept short so the pills don't overlap
- *  at the equator. */
+/** 18 spokes total, 20° apart. Flows clockwise from top: the content outputs +
+ *  outcomes on the top/right + bottom arc, then the 8 LIVE publish channels up
+ *  the left arc. Labels kept short so pills don't overlap at the equator.
+ *  WordPress isn't a separate spoke — "Blog post" is the WordPress output. */
 const SPOKES: Spoke[] = [
-  { angle:  -90.0, label: 'Blog post',       icon: <FileText size={13} /> },
-  { angle:  -62.3, label: 'Comparison',      icon: <Scale size={13} /> },
-  { angle:  -34.6, label: 'Buying guide',    icon: <Bookmark size={13} /> },
-  { angle:   -6.9, label: 'Thumbnail',       icon: <ImageIcon size={13} /> },
-  { angle:   20.8, label: 'Newsletter',      icon: <Mail size={13} /> },
-  { angle:   48.5, label: 'Script',          icon: <PenLine size={13} /> },
-  { angle:   76.2, label: 'Brand pitch',     icon: <HeartHandshake size={13} /> },
-  { angle:  103.8, label: 'Ranks on Google', icon: <TrendingUp size={13} /> },
-  { angle:  131.5, label: 'Cited by AI',     icon: <Sparkles size={13} /> },
-  { angle:  159.2, label: 'Scheduled',       icon: <Calendar size={13} /> },
-  { angle:  186.9, label: 'X',               icon: <Twitter size={13} /> },
-  { angle:  214.6, label: 'Bluesky',         icon: <Cloud size={13} /> },
-  { angle:  242.3, label: 'Telegram',        icon: <Send size={13} /> },
+  { angle:  -90, label: 'Blog post',       icon: <FileText size={13} /> },
+  { angle:  -70, label: 'Comparison',      icon: <Scale size={13} /> },
+  { angle:  -50, label: 'Buying guide',    icon: <Bookmark size={13} /> },
+  { angle:  -30, label: 'Thumbnail',       icon: <ImageIcon size={13} /> },
+  { angle:  -10, label: 'Newsletter',      icon: <Mail size={13} /> },
+  { angle:   10, label: 'Script',          icon: <PenLine size={13} /> },
+  { angle:   30, label: 'Brand pitch',     icon: <HeartHandshake size={13} /> },
+  { angle:   50, label: 'Ranks on Google', icon: <TrendingUp size={13} /> },
+  { angle:   70, label: 'Cited by AI',     icon: <Sparkles size={13} /> },
+  { angle:   90, label: 'Scheduled',       icon: <Calendar size={13} /> },
+  { angle:  110, label: 'Pinterest',       icon: <Pin size={13} /> },
+  { angle:  130, label: 'Instagram',       icon: <Instagram size={13} /> },
+  { angle:  150, label: 'Threads',         icon: <AtSign size={13} /> },
+  { angle:  170, label: 'Facebook',        icon: <Facebook size={13} /> },
+  { angle:  190, label: 'X',               icon: <Twitter size={13} /> },
+  { angle:  210, label: 'LinkedIn',        icon: <Linkedin size={13} /> },
+  { angle:  230, label: 'Bluesky',         icon: <Cloud size={13} /> },
+  { angle:  250, label: 'Telegram',        icon: <Send size={13} /> },
 ]
 
 /** Convert an angle to {x,y} on the spoke circle. */
 function spokePos(angleDeg: number) {
   const rad = (angleDeg * Math.PI) / 180
   return {
-    x: CX + RADIUS * Math.cos(rad),
-    y: CY + RADIUS * Math.sin(rad),
+    x: CX + RX * Math.cos(rad),
+    y: CY + RY * Math.sin(rad),
   }
 }
 
@@ -137,7 +146,7 @@ export default function LandingPreview() {
           to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
         }
         @keyframes mvp-line-draw {
-          from { stroke-dashoffset: 320; }
+          from { stroke-dashoffset: 380; }
           to   { stroke-dashoffset: 0; }
         }
         @keyframes mvp-line-pulse {
@@ -1507,7 +1516,7 @@ const PRICING_TIERS: PricingTier[] = [
     icon: <Sparkles size={16} />,
     features: [
       '20 posts / month (blog + thumbnail + metadata bundle)',
-      'Auto-post to Facebook, Threads, Pinterest, LinkedIn & Bluesky',
+      'Auto-post to Facebook, Threads, LinkedIn & Bluesky',
       '1 face + 1 LoRA retrain / month, 10 Photobooth headshots',
       '10 video scripts + shot-lists / month',
       'Newsletter taster: 500 subs, 1 broadcast / month',
@@ -1526,7 +1535,7 @@ const PRICING_TIERS: PricingTier[] = [
     icon: <Crown size={16} />,
     features: [
       '45 posts / month (blog + thumbnail + metadata bundle)',
-      'Adds Instagram + Telegram auto-post on top of Creator',
+      'Adds Pinterest, Instagram & Telegram auto-post on top of Creator',
       'Deals Hub: 5 deal posts / month + Amazon CSV bulk import',
       'Topic hubs + Refresh Images on published posts',
       '2 faces + 3 LoRA retrains / month, 15 Photobooth headshots',
@@ -2220,8 +2229,8 @@ function HubDiagram() {
               strokeWidth="1.5"
               strokeLinecap="round"
               style={{
-                strokeDasharray: 320,
-                strokeDashoffset: 320,
+                strokeDasharray: 380,
+                strokeDashoffset: 380,
                 animation: `
                   mvp-line-draw 0.45s ease-out ${drawDelay}s forwards,
                   mvp-line-pulse 3s ease-in-out ${pulseDelay}s infinite

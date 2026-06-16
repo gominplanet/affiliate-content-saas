@@ -64,7 +64,7 @@ const plans: PlanExt[] = [
     description: 'For creators shipping a few reviews a week across the lower-friction socials, with a taste of the Pro brand-pitch workflow.',
     features: [
       '20 full reviews per month (blog + thumbnail + metadata bundle)',
-      'Auto-post to LinkedIn + Bluesky',
+      'Auto-post to Facebook, Threads, LinkedIn & Bluesky',
       'In-body AI product images (up to 3 per post)',
       'Your Face in AI thumbnails (1 face, 1 LoRA retrain / month)',
       'Photobooth headshots (10 / month)',
@@ -86,7 +86,7 @@ const plans: PlanExt[] = [
     description: 'For the solo creator going full-time — everything in Creator plus the tools that turn a blog into a real publication: Deals Hub, topic hubs, video scripts, and a weekly newsletter on schedule.',
     features: [
       '45 full reviews per month (blog + thumbnail + metadata bundle)',
-      'Adds Telegram auto-post on top of Creator',
+      'Adds Pinterest, Instagram & Telegram auto-post on top of Creator',
       'Deals Hub: 5 deal posts / month with countdown banners + Amazon CSV bulk import',
       'Refresh Images on any published post (re-renders the in-body shots)',
       'Topic hubs auto-aggregate your reviews into category pages (built-in WP plugin)',

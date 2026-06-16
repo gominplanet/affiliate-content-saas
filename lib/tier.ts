@@ -167,10 +167,9 @@ export const TIERS = {
     bonusPosts: 0,
     sites: 1,
     youtubeChannels: 1,
-    /** Creator unlocks: LinkedIn, Bluesky, Pinterest, Facebook*, Threads*
-     *  (* = Meta App Review still gating these for non-admin/non-reviewer
-     *  users — see app-review middleware). */
-    socials: ['linkedin', 'bluesky', 'pinterest', 'facebook', 'threads'] as readonly Social[],
+    /** Creator unlocks: LinkedIn, Bluesky, Facebook, Threads. (Pinterest moved
+     *  up to Studio+ on 2026-06-16 to make it an upgrade perk.) */
+    socials: ['linkedin', 'bluesky', 'facebook', 'threads'] as readonly Social[],
     multiAccountSocial: false,
     maxSocialAccountsPerPlatform: 1 as number | null,
     publishAll: false,
@@ -225,7 +224,7 @@ export const TIERS = {
     bonusPosts: 0,
     sites: 1,
     youtubeChannels: 1,
-    /** Studio = Creator's + Instagram* + Telegram. */
+    /** Studio = Creator's + Pinterest + Instagram + Telegram. */
     socials: ['linkedin', 'bluesky', 'pinterest', 'facebook', 'threads', 'instagram', 'telegram'] as readonly Social[],
     multiAccountSocial: false,
     maxSocialAccountsPerPlatform: 1 as number | null,
