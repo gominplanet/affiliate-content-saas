@@ -7,8 +7,9 @@
 // Single source of truth for the section prose so the in-app tour and the
 // public marketing tour never drift. Server component (no hooks) so both
 // host pages stay RSC. Fact-grounded tone — every line describes something
-// that ships today; features pending third-party approval (TikTok et al.)
-// are omitted so the page never sells what doesn't work.
+// that ships today; features pending third-party approval (TikTok + Pinterest)
+// are omitted so the page never sells what doesn't work. Meta (Facebook /
+// Instagram / Threads) is LIVE as of 2026-06-15 (App Review approved).
 
 import Link from 'next/link'
 import {

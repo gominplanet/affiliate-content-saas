@@ -18,7 +18,7 @@ import { useState, useEffect } from 'react'
 import {
   FileText, Image as ImageIcon, Mail, Scale, Calendar,
   Play, Sun, Moon, Sparkles, ArrowRight, Bookmark,
-  Twitter, Cloud, Send, Linkedin,
+  Twitter, Cloud, Send, Linkedin, Facebook, Instagram, AtSign,
   Compass, HeartHandshake, PenLine, Share2, Globe, TrendingUp, Wand2,
   Youtube, ShieldCheck, Zap, Upload, X as XIcon, Check, Quote,
   Crown, Rocket, Plus, Minus,
@@ -2315,9 +2315,10 @@ function SpokeNode({ icon, label }: { icon: React.ReactNode; label: string }) {
 }
 
 /** Platform bar — slim strip under the hero naming the channels MVP
- *  publishes to LIVE today (your WordPress site + the text socials).
- *  Meta / TikTok / Pinterest are intentionally NOT listed until their
- *  platform reviews clear — we don't advertise what we can't yet deliver.
+ *  publishes to LIVE today (your WordPress site + the socials). Meta
+ *  (Facebook / Instagram / Threads) went LIVE 2026-06-15 after App Review.
+ *  TikTok + Pinterest are intentionally NOT listed until their platform
+ *  reviews clear — we don't advertise what we can't yet deliver.
  *
  *  Visual: monochrome icons + names laid out horizontally, separated by
  *  thin dividers. Theme-aware via var(--text-faint). Wraps on mobile.
@@ -2357,6 +2358,9 @@ const PLATFORMS = [
   { name: 'WordPress', icon: <Globe size={14} /> },
   { name: 'X', icon: <Twitter size={14} /> },
   { name: 'LinkedIn', icon: <Linkedin size={14} /> },
+  { name: 'Facebook', icon: <Facebook size={14} /> },
+  { name: 'Instagram', icon: <Instagram size={14} /> },
+  { name: 'Threads', icon: <AtSign size={14} /> },
   { name: 'Bluesky', icon: <Cloud size={14} /> },
   { name: 'Telegram', icon: <Send size={14} /> },
 ]
