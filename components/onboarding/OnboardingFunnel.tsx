@@ -70,9 +70,11 @@ interface StepDef {
 
 const STEPS: StepDef[] = [
   { n: 1, key: 'wp', title: 'Connect WordPress', icon: <Wrench size={16} />, done: (s) => s.wpConnected, required: true },
-  // YouTube is also required-to-proceed: the user can't advance to or jump to
-  // any later section until both WordPress AND YouTube are connected.
-  { n: 2, key: 'yt', title: 'Connect YouTube', icon: <Youtube size={16} />, done: (s) => s.ytConnected, required: true },
+  // YouTube is OPTIONAL — MVP is content-first, so a non-YouTuber affiliate
+  // blogger must be able to skip this and still finish setup. WordPress is the
+  // only hard gate (see finish()). Leaving this required trapped any user
+  // without a Google/YouTube account in onboarding with no way out.
+  { n: 2, key: 'yt', title: 'Connect YouTube', icon: <Youtube size={16} />, done: (s) => s.ytConnected },
   { n: 3, key: 'aff', title: 'Affiliate Links', icon: <Link2 size={16} />, done: (s) => s.affiliateConnected },
   { n: 4, key: 'brand', title: 'Brand Profile', icon: <Palette size={16} />, done: (s) => s.brandStarted },
   { n: 5, key: 'voice', title: 'Voice Training', icon: <Sparkles size={16} />, done: (s) => s.voiceStarted },
@@ -83,15 +85,14 @@ const STEPS: StepDef[] = [
 const ACCENT = '#7C3AED'
 
 /**
- * Navigation lock: a user can't reach step 2 until WordPress (1) is connected,
- * and can't reach any later section (3-7) until BOTH WordPress and YouTube are
- * connected. Step 1 is always open. Drives both the rail (click) and the
- * Save & next button.
+ * Navigation lock: WordPress (1) is the ONLY hard gate. Step 1 is always open;
+ * every later step unlocks once WordPress is connected. YouTube (2) is optional
+ * and never blocks progress. Drives both the rail (click) and the Save & next
+ * button.
  */
 function stepUnlocked(n: number, s: Status): boolean {
   if (n <= 1) return true
-  if (n === 2) return s.wpConnected
-  return s.wpConnected && s.ytConnected
+  return s.wpConnected
 }
 
 export default function OnboardingFunnel({
@@ -156,9 +157,8 @@ export default function OnboardingFunnel({
 
   const next = useCallback(() => {
     if (current.required && !current.done(status)) {
-      toast.error(current.key === 'wp'
-        ? 'Connect your WordPress site to continue — everything starts here.'
-        : 'Connect your YouTube to continue — it’s required before the rest of setup.')
+      // WordPress is the only required step.
+      toast.error('Connect your WordPress site to continue — everything starts here.')
       return
     }
     if (step >= STEPS.length) return
@@ -217,7 +217,7 @@ export default function OnboardingFunnel({
                 return (
                   <li key={s.key}>
                     <button
-                      onClick={() => { if (locked) { toast.error('Finish WordPress and YouTube first.'); return } goToStep(s.n) }}
+                      onClick={() => { if (locked) { toast.error('Connect WordPress first.'); return } goToStep(s.n) }}
                       aria-disabled={locked}
                       className="w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors"
                       style={{ background: active ? 'rgba(124,58,237,0.16)' : 'transparent', cursor: locked ? 'not-allowed' : 'pointer', opacity: locked ? 0.4 : 1 }}
