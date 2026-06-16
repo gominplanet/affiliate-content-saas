@@ -18,9 +18,15 @@
 // the post never shipped the .gr-cta-* stylesheet. max-width caps it in plain
 // block flow; in the grid (when the CSS *is* present) the 220px column wins.
 function thumbWrap(url: string): string {
+  // Self-contained + modest. The img drops the `gr-cta-thumb` class on purpose:
+  // that class pulls a 16:9 `object-fit:cover` crop from the writer's stylesheet,
+  // which (a) is dropped on video-less posts and (b) crops square product photos
+  // oddly. Inline-only here → a tidy ≤180px natural-aspect thumb, centred when
+  // the card stacks (no stylesheet) and contained in the 220px column when the
+  // grid IS present. Keeps the wrapper class so the `:has()` grid still triggers.
   return (
-    `<div class="gr-cta-thumb-wrap" style="max-width:240px;align-self:center;border:2px solid #111;border-radius:4px;overflow:hidden;line-height:0">` +
-    `<img src="${url}" alt="" loading="lazy" class="gr-cta-thumb" style="display:block;width:100%;height:auto" />` +
+    `<div class="gr-cta-thumb-wrap" style="max-width:180px;align-self:center;margin:4px auto 0;border:2px solid #111;border-radius:4px;overflow:hidden;line-height:0">` +
+    `<img src="${url}" alt="" loading="lazy" style="display:block;width:100%;height:auto;object-fit:contain" />` +
     `</div>`
   )
 }
