@@ -7,6 +7,7 @@ import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } from '@/lib/social-cap'
 import { normalizeTier, socialAccountCap } from '@/lib/tier'
 import { resolveSocialAccounts } from '@/lib/social-accounts'
+import { resolveBlogPostId } from '@/lib/resolve-post-id'
 import { metaEnabledForUser } from '@/lib/feature-flags'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { maybeDecrypt } from '@/lib/secrets'
@@ -21,7 +22,7 @@ export async function POST(request: NextRequest) {
     if (!(await metaEnabledForUser(supabase, user))) return NextResponse.json({ error: 'Facebook publishing is temporarily unavailable while our Meta integration is under review.' }, { status: 503 })
 
     const body = await request.json() as { postId?: string; dryRun?: boolean; text?: string; socialAccountId?: string; socialAccountIds?: string[] }
-    const postId = body.postId
+    const rawPostId = body.postId
     const dryRun = body.dryRun === true
     const overrideText = body.text?.trim()
     // Multi-account fan-out (Workstream 2): accept a list of chosen Page ids,
@@ -29,7 +30,10 @@ export async function POST(request: NextRequest) {
     const chosenAccountIds = (body.socialAccountIds && body.socialAccountIds.length)
       ? body.socialAccountIds
       : (body.socialAccountId ? [body.socialAccountId] : [])
-    if (!postId) return NextResponse.json({ error: 'postId required' }, { status: 400 })
+    if (!rawPostId) return NextResponse.json({ error: 'postId required' }, { status: 400 })
+    // Video-less "Published Posts" rows send the WordPress post id — resolve to
+    // the blog_posts UUID so the lookup/update below don't 404 ("Post not found").
+    const postId = (await resolveBlogPostId(supabase, user.id, rawPostId)) || rawPostId
 
     // ── 1. Fetch blog post ────────────────────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -9,6 +9,7 @@ import { learnProfileToPrompt } from '@/lib/learn'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } from '@/lib/social-cap'
 import { metaEnabledForUser } from '@/lib/feature-flags'
+import { resolveBlogPostId } from '@/lib/resolve-post-id'
 
 const DISCLAIMER = '#ad — As an Amazon Associate I earn from qualifying purchases.'
 
@@ -35,10 +36,13 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json() as { postId?: string; dryRun?: boolean; text?: string }
-    const postId = body.postId
+    const rawPostId = body.postId
     const dryRun = body.dryRun === true
     const overrideText = body.text?.trim()
-    if (!postId) return NextResponse.json({ error: 'postId required' }, { status: 400 })
+    if (!rawPostId) return NextResponse.json({ error: 'postId required' }, { status: 400 })
+    // Video-less "Published Posts" rows send the WordPress post id — resolve to
+    // the blog_posts UUID so the lookup/update below don't 404 ("Post not found").
+    const postId = (await resolveBlogPostId(supabase, user.id, rawPostId)) || rawPostId
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [{ data: post }, { data: integration }] = await Promise.all([

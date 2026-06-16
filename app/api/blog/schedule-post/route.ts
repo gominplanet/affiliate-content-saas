@@ -18,6 +18,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { tierAllowsSocial, normalizeTier, type Tier, type Social } from '@/lib/tier'
+import { resolveBlogPostId } from '@/lib/resolve-post-id'
 
 const SUPPORTED: Social[] = ['facebook', 'threads', 'twitter', 'linkedin', 'bluesky', 'telegram']
 
@@ -35,13 +36,17 @@ export async function POST(request: Request) {
       socialAccountId?: string
     }
 
-    const postId = body.postId
+    const rawPostId = body.postId
     const platform = body.platform as Social | undefined
     const scheduledAt = body.scheduledAt
     const text = (body.text ?? '').trim()
     const socialAccountId = body.socialAccountId
 
-    if (!postId) return NextResponse.json({ error: 'postId required' }, { status: 400 })
+    if (!rawPostId) return NextResponse.json({ error: 'postId required' }, { status: 400 })
+    // Video-less "Published Posts" rows send the WordPress post id — resolve to
+    // the blog_posts UUID so the ownership check + scheduled_posts.blog_post_id
+    // are correct (otherwise scheduling from those rows 404s).
+    const postId = (await resolveBlogPostId(supabase, user.id, rawPostId)) || rawPostId
     if (!platform || !SUPPORTED.includes(platform)) {
       return NextResponse.json({ error: `platform must be one of ${SUPPORTED.join(', ')}` }, { status: 400 })
     }
