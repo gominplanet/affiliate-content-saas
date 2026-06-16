@@ -193,7 +193,7 @@ export default function InstagramBurnerPage() {
           <AlertCircle size={18} className="text-[#ff9500] flex-shrink-0 mt-0.5" />
           <div>
             <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Temporarily unavailable</p>
-            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">Instagram publishing is paused while our Meta integration is under review. It’ll be back as soon as we’re approved. You can still create and download content elsewhere in the app.</p>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">Instagram publishing is momentarily unavailable. Please try again shortly — you can still create and download content elsewhere in the app.</p>
           </div>
         </div>
       </>

@@ -30,6 +30,7 @@ import ReferralBanner from '@/components/dashboard/ReferralBanner'
 import WpUpdateBanner from '@/components/dashboard/WpUpdateBanner'
 import AmazonSitesReminder from '@/components/dashboard/AmazonSitesReminder'
 import ProTourBanner from '@/components/dashboard/ProTourBanner'
+import MetaLiveBanner from '@/components/dashboard/MetaLiveBanner'
 import { DashboardLiveCards } from '@/components/dashboard/DashboardLiveCards'
 import {
   PlaySquare, ArrowRight, FileText, Layers, Gauge,
@@ -148,6 +149,16 @@ export default async function DashboardPage() {
   ]
   const platformsTotal = platformFlags.length
   const platformsConnected = platformFlags.filter(Boolean).length
+
+  // Meta went live 2026-06-15 (App Review approved). Nudge paid users who
+  // haven't connected any Meta account yet — listing only the platforms their
+  // tier actually unlocks (Creator = FB + Threads; Studio+ adds Instagram).
+  const metaNudgePlatforms =
+    tier === 'creator' ? ['Facebook', 'Threads']
+    : (tier === 'studio' || tier === 'pro' || tier === 'admin') ? ['Facebook', 'Instagram', 'Threads']
+    : []
+  const anyMetaConnected = !!(int?.facebook_page_id || int?.instagram_user_id || int?.threads_access_token)
+  const showMetaNudge = metaNudgePlatforms.length > 0 && !anyMetaConnected
 
   const { data: recentVideos } = await sb
     .from('youtube_videos')
@@ -285,6 +296,10 @@ export default async function DashboardPage() {
             ("don't show again") via localStorage. Component decides
             whether to render at all; we just slot it here. */}
         <ProTourBanner />
+
+        {/* Meta (FB/IG/Threads) just went live — nudge paid users who haven't
+            connected a Meta account yet. Dismissible (localStorage). */}
+        {showMetaNudge && <MetaLiveBanner platforms={metaNudgePlatforms} />}
 
         {/* ── Banners + welcome (preserved functional widgets) ──────── */}
         <NewsBanner />
