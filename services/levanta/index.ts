@@ -133,11 +133,11 @@ export async function listLevantaProducts(
     products: list.map((p: any): LevantaProduct => {
       const img = p.image ?? p.imageUrl ?? p.image_url
       return {
-        asin: asStr(p.asin ?? p.ASIN ?? p.primary_id),
+        asin: asStr(p.asin ?? p.ASIN ?? p.primary_id ?? p.primaryId ?? p.amazonAsin ?? p.amazon_asin).trim().toUpperCase(),
         marketplace: asStr(p.marketplace),
-        price: asNum(p?.pricing?.price ?? p.price),
-        currency: asStrOrNull(p?.pricing?.currency ?? p.currency),
-        commission: asNum(p.commission ?? p.commissionRate ?? p.commission_rate),
+        price: asNum(p?.pricing?.price ?? p.price ?? p.listPrice ?? p.list_price ?? p.salePrice ?? p.sale_price ?? p?.price?.amount),
+        currency: asStrOrNull(p?.pricing?.currency ?? p.currency ?? p?.price?.currency),
+        commission: asNum(p.commission ?? p.commissionRate ?? p.commission_rate ?? p.commissionPercent ?? p.commission_percent ?? p?.commission?.rate ?? p?.commission?.value),
         title: asStr(p.title ?? p.name ?? p.product_name),
         inStock: !!(p.inStock ?? p.in_stock),
         category: asStrOrNull(p.category),
@@ -169,4 +169,10 @@ export async function createLevantaLink(
     }),
   })
   return { url: json?.url ?? '', mobileUrl: json?.mobileOptimizedUrl ?? null }
+}
+
+/** Debug-only: raw, unmapped GET so we can inspect the live field names
+ *  (the published docs have diverged from the actual response shape). */
+export async function levantaRaw(token: string, path: string) {
+  return levantaFetch(path, token)
 }

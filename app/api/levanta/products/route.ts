@@ -7,7 +7,7 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { listLevantaProducts } from '@/services/levanta'
+import { listLevantaProducts, levantaRaw } from '@/services/levanta'
 import type { Tier } from '@/lib/tier'
 
 export const dynamic = 'force-dynamic'
@@ -31,6 +31,15 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url)
+
+    // Debug: return the RAW Levanta product shape so we can map live field names
+    // exactly (the docs have diverged). Admin-only; returns catalogue data, not
+    // the token. Hit /api/levanta/products?debug=1 (no brandId needed).
+    if (searchParams.get('debug') === '1') {
+      const raw = await levantaRaw(token, '/products?limit=2&marketplace=all')
+      return NextResponse.json({ ok: true, raw })
+    }
+
     const brandId = (searchParams.get('brandId') || '').trim()
     if (!brandId) return NextResponse.json({ ok: false, error: 'brandId required' }, { status: 400 })
     const cursor = searchParams.get('cursor') || undefined
