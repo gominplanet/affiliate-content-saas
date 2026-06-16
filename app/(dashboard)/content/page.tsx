@@ -1575,7 +1575,7 @@ export default function ContentPage() {
   const [scheduledItems, setScheduledItems] = useState<ScheduledItem[] | null>(null)
   const [scheduledLoading, setScheduledLoading] = useState(false)
   const [scheduledError, setScheduledError] = useState<string | null>(null)
-  const [allBlogPosts, setAllBlogPosts] = useState<{ id: number; title: string; link: string; date: string; thumbnail: string | null; videoId: string | null }[]>([])
+  const [allBlogPosts, setAllBlogPosts] = useState<{ id: number; title: string; link: string; date: string; thumbnail: string | null; videoId: string | null; rewriteCount?: number }[]>([])
   // SEO score per post (slug → score) for the Library card badge. Loaded once
   // when the Posts tab opens, from the same /api/seo/overview the SEO hub uses.
   const [seoScores, setSeoScores] = useState<Record<string, number>>({})
@@ -1598,7 +1598,7 @@ export default function ContentPage() {
   // Row-level Rewrite modal (Posts tab). Tracks the post we're about
   // to rewrite + the feedback typed by the Pro user. Modal renders at
   // the bottom of the page.
-  const [rewriteModal, setRewriteModal] = useState<{ wpPostId: number; videoId: string } | null>(null)
+  const [rewriteModal, setRewriteModal] = useState<{ wpPostId: number; videoId: string; used: number } | null>(null)
   const [rewriteModalFeedback, setRewriteModalFeedback] = useState('')
   const [postsLoading, setPostsLoading] = useState(false)
   const [postsLoaded, setPostsLoaded] = useState(false)
@@ -2066,20 +2066,24 @@ export default function ContentPage() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: sbPosts } = await supabase
         .from('blog_posts')
-        .select('wordpress_post_id,video_id')
+        .select('wordpress_post_id,video_id,rewrite_count')
         .eq('user_id', user?.id ?? '')
         .in('wordpress_post_id', wpPostIds)
         .not('video_id', 'is', null)
 
       const sbMap: Record<number, string> = {}
-      for (const p of (sbPosts ?? []) as { wordpress_post_id: number; video_id: string }[]) {
+      const rewriteMap: Record<number, number> = {}
+      for (const p of (sbPosts ?? []) as { wordpress_post_id: number; video_id: string; rewrite_count: number | null }[]) {
         if (p.wordpress_post_id && p.video_id) sbMap[p.wordpress_post_id] = p.video_id
+        if (p.wordpress_post_id) rewriteMap[p.wordpress_post_id] = (p.rewrite_count as number) ?? 0
       }
 
-      // Merge: prefer Supabase map, fall back to WP API result
+      // Merge: prefer Supabase map, fall back to WP API result. rewriteCount
+      // powers the "X of 3 rebuilds" counter in the Rewrite modal.
       const merged = (data.posts ?? []).map((p: { id: number; videoId: string | null }) => ({
         ...p,
         videoId: sbMap[p.id] ?? p.videoId ?? null,
+        rewriteCount: rewriteMap[p.id] ?? 0,
       }))
 
       setAllBlogPosts(merged)
@@ -3101,7 +3105,7 @@ export default function ContentPage() {
                     everyone else — they manually edit in WordPress. */}
                 {post.videoId && (userTier === 'pro' || userTier === 'admin') && (
                   <button
-                    onClick={() => { setRewriteModalFeedback(''); setRewriteModal({ wpPostId: post.id, videoId: post.videoId! }) }}
+                    onClick={() => { setRewriteModalFeedback(''); setRewriteModal({ wpPostId: post.id, videoId: post.videoId!, used: post.rewriteCount ?? 0 }) }}
                     disabled={rewritingPostId === post.id}
                     className="text-xs text-[#86868b] hover:text-[#7C3AED] flex items-center gap-1 px-2 py-1 rounded hover:bg-blue-50 transition-colors"
                   >
@@ -3663,6 +3667,7 @@ export default function ContentPage() {
       {rewriteModal && (
         <RewriteFeedbackModal
           value={rewriteModalFeedback}
+          used={rewriteModal.used}
           onChange={setRewriteModalFeedback}
           onCancel={() => setRewriteModal(null)}
           onSubmit={() => {
