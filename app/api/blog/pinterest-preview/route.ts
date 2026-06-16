@@ -9,6 +9,8 @@ import { createServerClient } from '@/lib/supabase/server'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { buildPinAssets } from '@/lib/pin-assets'
 import { resolveBlogPostId } from '@/lib/resolve-post-id'
+import { getWordPressCredentials } from '@/lib/wordpress-sites'
+import { createWordPressService } from '@/services/wordpress'
 
 export const maxDuration = 60
 
@@ -40,8 +42,38 @@ export async function POST(request: NextRequest) {
   // (per-category, auto-created). Fresh/sandbox accounts have none yet.
 
   const a = await buildPinAssets(p, { userId: user.id, tier: ig?.tier ?? null })
+
+  // Predict the board this pin will actually land on so the preview header is
+  // accurate. Publish (lib/pin-publish) pins to a board matching the post's
+  // WordPress CATEGORY (auto-created), then falls back to the named board →
+  // "Reviews". Mirror that order here, best-effort — never block the preview.
+  // getPostCategoryNames already HTML-decodes the names, so this matches the
+  // clean board name publish creates.
+  let predictedBoard = ''
+  try {
+    if (p.wordpress_post_id) {
+      const wp = await getWordPressCredentials(supabase, user.id, p.wordpress_site_id ?? null)
+      const wpUrl = wp?.wordpress_url ?? ig.wordpress_url
+      if (wpUrl) {
+        const wpSvc = createWordPressService(
+          wpUrl,
+          wp?.wordpress_username ?? ig.wordpress_username,
+          wp?.wordpress_app_password ?? ig.wordpress_app_password,
+          (wp?.wordpress_api_token ?? ig.wordpress_api_token) || undefined,
+        )
+        const cats = await wpSvc.getPostCategoryNames(p.wordpress_post_id)
+        predictedBoard = cats.find((c: string) => c && !/^(blog|uncategorized|general|news|misc|other|posts?)$/i.test(c)) || ''
+      }
+    }
+  } catch { /* fall back to the saved board below */ }
+
   return NextResponse.json({
     ...a,
-    boardName: ig.pinterest_board_name || ig.pinterest_board_id || 'auto-created from the post category',
+    // Category board (what publish will use) → the user's named fallback board
+    // → saved board → "Reviews". Mirrors the publish-time resolution order.
+    boardName: predictedBoard
+      || (ig.pinterest_fallback_board || '').trim()
+      || ig.pinterest_board_name
+      || 'Reviews',
   })
 }

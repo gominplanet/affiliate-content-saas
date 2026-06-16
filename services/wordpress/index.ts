@@ -725,7 +725,23 @@ export class WordPressService {
       const cats = await this.request<{ name: string }[]>(
         `/categories?post=${postId}&per_page=10&_fields=name`,
       )
-      return Array.isArray(cats) ? cats.map(c => c.name).filter(Boolean) : []
+      // WP returns category names HTML-encoded (e.g. "Electronics &amp; Tech").
+      // Decode so downstream consumers — notably the auto-created Pinterest
+      // board name — use the clean text, not the literal entity.
+      return Array.isArray(cats)
+        ? cats
+            .map(c => (c.name || '')
+              .replace(/&#0?38;|&amp;/g, '&')
+              .replace(/&#8217;|&#0?39;|&#x27;/gi, "'")
+              .replace(/&#8211;/g, '–')
+              .replace(/&#8212;/g, '—')
+              .replace(/&quot;|&#0?34;/g, '"')
+              .replace(/&nbsp;/g, ' ')
+              .replace(/&lt;/g, '<')
+              .replace(/&gt;/g, '>')
+              .trim())
+            .filter(Boolean)
+        : []
     } catch {
       return []
     }

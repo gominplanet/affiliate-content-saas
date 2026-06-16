@@ -79,7 +79,7 @@ export function PinterestPreviewModal({
               <Pin size={12} className="text-white" />
             </div>
             <span className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Preview your Pin</span>
-            <span className="text-xs text-[#86868b] dark:text-[#8e8e93] ml-1">→ {data.boardName}</span>
+            <span className="text-xs text-[#86868b] dark:text-[#8e8e93] ml-1">→ {data.boardName.replace(/&#0?38;|&amp;/g, '&')}</span>
           </div>
           <button onClick={onClose} className="text-[#86868b] dark:text-[#8e8e93] hover:text-[#1d1d1f] dark:text-[#f5f5f7] transition-colors">
             <X size={18} />
@@ -148,11 +148,15 @@ export function PinterestPreviewModal({
               </div>
             )}
 
-            {/* Disclaimer + compliance tags */}
+            {/* Disclaimer + compliance tags — exactly what gets appended to the
+                pin description. The callout bg is always the light cream below,
+                so use FIXED dark text (no dark: variant, which previously went
+                near-white and vanished on the cream in dark mode) for full
+                legibility in both themes. */}
             <div className="rounded-lg p-3" style={{ background: '#fff8f0', border: '1px solid #ffe4cc' }}>
-              <p className="text-[10px] font-semibold text-[#ff9500] uppercase tracking-wide mb-0.5">Affiliate disclaimer + tags — auto-appended</p>
-              <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">{data.disclaimer}</p>
-              <p className="text-[11px] font-semibold text-[#c0001a] mt-1.5">{data.complianceTags}</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: '#b35a00' }}>Affiliate disclaimer + tags — auto-appended</p>
+              <p className="text-xs leading-relaxed" style={{ color: '#3a3a3c' }}>{data.disclaimer}</p>
+              <p className="text-xs font-semibold mt-1.5" style={{ color: '#c0001a' }}>{data.complianceTags}</p>
             </div>
 
             {/* Pin destination — always the blog post itself */}
