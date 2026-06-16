@@ -37,7 +37,7 @@ import {
   Flame, KeyRound, Users, LogOut, ExternalLink,
   UserCog, AlertTriangle, DollarSign, Newspaper, Plug, Wrench,
   Camera, MessageCircle, Activity, BarChart3, Upload, Wand2, ShieldCheck,
-  Share2, UserSquare, Lightbulb, LifeBuoy, Link2, FlaskConical, Store, Send,
+  Share2, UserSquare, Lightbulb, LifeBuoy, Link2, FlaskConical, Store, Send, ShoppingBag,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import NotificationBell from './NotificationBell'
@@ -335,12 +335,12 @@ export default function DashboardShellV2({
       // add them as items here (set each item's gate as it opens up).
       label: 'Labs',
       items: [
-        { href: '/epc', icon: <Radar size={15} />, label: 'EPC Scout', gate: canUseLabs },
-        // Brand Boost (user-facing name; PartnerBoost-powered) — brands across
-        // all PartnerBoost networks (Walmart / Amazon / DTC / TikTok) + generate
-        // posts from a product. ADMIN-ONLY while testing (gate: isAdmin, not
-        // canUseLabs). Route stays /walmart-pb.
-        { href: '/walmart-pb', icon: <Store size={15} />, label: 'Brand Boost', gate: isAdmin },
+        { href: '/epc', icon: <Radar size={15} />, label: 'MVP x EPC', gate: canUseLabs },
+        // Labs co-brand naming convention: "MVP x <partner>". Routes/services keep
+        // their historical names (walmart-pb, levanta). All admin-only while in
+        // Labs + behind the LABS_PASSWORD gate (middleware).
+        { href: '/walmart-pb', icon: <Store size={15} />, label: 'MVP x PartnerBoost', gate: isAdmin },
+        { href: '/levanta', icon: <ShoppingBag size={15} />, label: 'MVP x Levanta', gate: isAdmin },
       ],
     },
     {

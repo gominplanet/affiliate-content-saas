@@ -352,7 +352,7 @@ export default function EpcScoutPage() {
         </span>
       </div>
       <PageHero
-        title="EPC Scout"
+        title="MVP x EPC"
         subtitle="Turn the Amazon Creator Connections campaigns you're offered into ready-to-publish blog posts — scan with SCOUT, keep the high-EPC winners, publish."
       />
 

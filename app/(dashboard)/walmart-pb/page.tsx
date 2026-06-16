@@ -173,7 +173,7 @@ export default function WalmartPBPage() {
       </div>
 
       <PageHero
-        title="Brand Boost"
+        title="MVP x PartnerBoost"
         subtitle="Your live brands across every network you've joined — commission, your join status, and the deep-link base for each. Pick a network, browse a Joined brand's products, and turn any one into a post with a cloaked affiliate link."
         accent="rgba(34,211,238,0.32)"
       />
