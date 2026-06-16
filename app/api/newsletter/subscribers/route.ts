@@ -21,24 +21,24 @@ export async function GET(req: NextRequest) {
   const format = req.nextUrl.searchParams.get('format')
   const status = req.nextUrl.searchParams.get('status') // 'pending' | 'active' | 'unsubscribed' | 'bounced'
 
+  // Shared status filter so the list view + CSV export scope identically.
+  // Default hides unsubscribed + bounced (still queryable with ?status=…) so
+  // they don't clutter the "your audience" feeling.
+  const VALID_STATUS = ['pending', 'active', 'unsubscribed', 'bounced']
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const withStatus = (q: any) =>
+    status && VALID_STATUS.includes(status) ? q.eq('status', status) : q.in('status', ['pending', 'active'])
+
   // tags is migration 090 — generated DB types may lag a regen, so we cast
   // the table reference once. Other columns are typed cleanly.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let query = (supabase as any)
-    .from('newsletter_subscribers')
-    .select('id,email,status,source,source_url,confirmed_at,unsubscribed_at,created_at,tags')
-    .eq('user_id', user.id)
-    .order('created_at', { ascending: false })
-  if (status && ['pending', 'active', 'unsubscribed', 'bounced'].includes(status)) {
-    query = query.eq('status', status)
-  } else {
-    // Default: hide unsubscribed + bounced from the main list view — they're
-    // still queryable with ?status=unsubscribed but they shouldn't clutter
-    // the "your audience" feeling.
-    query = query.in('status', ['pending', 'active'])
-  }
-
-  const { data, error } = await query.limit(5000)
+  const { data, error } = await withStatus(
+    (supabase as any)
+      .from('newsletter_subscribers')
+      .select('id,email,status,source,source_url,confirmed_at,unsubscribed_at,created_at,tags')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false }),
+  ).limit(5000)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   const rows = (data || []) as Array<{
@@ -54,6 +54,27 @@ export async function GET(req: NextRequest) {
   }>
 
   if (format === 'csv') {
+    // Full export — page past the 5,000 list cap so a large list (Pro allows up
+    // to 10k subscribers) is NEVER silently truncated. Hard backstop at 50k,
+    // far above any tier ceiling.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const allRows: Array<{ email: string; status: string; source: string | null; confirmed_at: string | null; created_at: string }> = []
+    const PAGE = 1000
+    for (let from = 0; from < 50000; from += PAGE) {
+      const { data: chunk, error: chunkErr } = await withStatus(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (supabase as any)
+          .from('newsletter_subscribers')
+          .select('email,status,source,confirmed_at,created_at')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false }),
+      ).range(from, from + PAGE - 1)
+      if (chunkErr) return NextResponse.json({ error: chunkErr.message }, { status: 500 })
+      const c = (chunk || []) as typeof allRows
+      allRows.push(...c)
+      if (c.length < PAGE) break
+    }
+
     // RFC 4180-ish — quote fields with commas/quotes, escape quotes by
     // doubling them. Standards-compliant enough for Numbers + Excel.
     const esc = (v: string | null) => {
@@ -62,7 +83,7 @@ export async function GET(req: NextRequest) {
       return v
     }
     const header = 'email,status,source,confirmed_at,created_at\n'
-    const body = rows.map(r => [
+    const body = allRows.map(r => [
       esc(r.email),
       esc(r.status),
       esc(r.source),
