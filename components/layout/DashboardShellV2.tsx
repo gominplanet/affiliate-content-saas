@@ -28,6 +28,7 @@ import Link from 'next/link'
 import { useTheme } from 'next-themes'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { getViewAsTier, setViewAsTier } from '@/lib/view-as'
+import UsageChip from '@/components/dashboard/UsageChip'
 import type { Tier } from '@/lib/tier'
 import {
   Home, Youtube, Library, Mail, Palette, Brush, TrendingUp,
@@ -584,6 +585,10 @@ export default function DashboardShellV2({
             </div>
           )}
         </nav>
+
+        {/* Post allowance — always visible so users know what's left before
+            they run out. Hidden for unlimited plans. */}
+        <UsageChip collapsed={collapsed} />
 
         {/* User pill */}
         <div className="border-t p-3" style={{ borderColor: 'var(--border)' }}>

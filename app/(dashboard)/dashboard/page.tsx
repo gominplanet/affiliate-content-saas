@@ -418,14 +418,19 @@ export default async function DashboardPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
             {usage.map(({ label, used, limit }) => {
               const unlimited = limit === null
+              const remaining = unlimited ? null : Math.max(0, (limit as number) - used)
               const pct = unlimited ? 0 : Math.min(100, Math.round((used / Math.max(1, limit as number)) * 100))
-              const near = !unlimited && pct >= 80
+              const out = !unlimited && remaining === 0
+              const near = !unlimited && !out && pct >= 60
+              const accent = out ? '#FF3B30' : near ? '#FF9500' : '#7C3AED'
               return (
                 <div key={label}>
                   <div className="flex items-center justify-between text-[12px] mb-2">
                     <span className="font-medium" style={{ color: 'var(--text-soft)' }}>{label}</span>
-                    <span className={`tabular-nums font-semibold ${near ? 'text-[#FF9500]' : ''}`} style={{ color: near ? undefined : 'var(--text)' }}>
-                      {used}{unlimited ? ' / ∞' : ` / ${limit}`}
+                    {/* Lead with what's LEFT — clearer than "used / cap" for deciding
+                        whether to upgrade. Amber as the cap nears, red when spent. */}
+                    <span className="tabular-nums font-semibold" style={{ color: (out || near) ? accent : 'var(--text)' }}>
+                      {unlimited ? `${used} / ∞` : `${remaining} left`}
                     </span>
                   </div>
                   <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--surface-bright)' }}>
@@ -433,7 +438,7 @@ export default async function DashboardPage() {
                       className="h-full rounded-full transition-[width] duration-500"
                       style={{
                         width: unlimited ? '100%' : `${pct}%`,
-                        backgroundColor: unlimited ? '#10B981' : near ? '#FF9500' : '#7C3AED',
+                        backgroundColor: unlimited ? '#10B981' : accent,
                       }}
                     />
                   </div>
