@@ -1575,7 +1575,7 @@ export default function ContentPage() {
   const [scheduledItems, setScheduledItems] = useState<ScheduledItem[] | null>(null)
   const [scheduledLoading, setScheduledLoading] = useState(false)
   const [scheduledError, setScheduledError] = useState<string | null>(null)
-  const [allBlogPosts, setAllBlogPosts] = useState<{ id: number; title: string; link: string; date: string; thumbnail: string | null; videoId: string | null; rewriteCount?: number }[]>([])
+  const [allBlogPosts, setAllBlogPosts] = useState<{ id: number; title: string; link: string; date: string; thumbnail: string | null; videoId: string | null; rewriteCount?: number; mvpId?: string | null }[]>([])
   // SEO score per post (slug → score) for the Library card badge. Loaded once
   // when the Posts tab opens, from the same /api/seo/overview the SEO hub uses.
   const [seoScores, setSeoScores] = useState<Record<string, number>>({})
@@ -2060,30 +2060,41 @@ export default function ContentPage() {
         return
       }
 
-      // Build a complete wpPostId → videoId map directly from Supabase
-      // (the WP posts API fallback misses many posts due to thumbnail naming)
-      const wpPostIds = (data.posts ?? []).map((p: { id: number }) => p.id)
+      // Map each WP post → its owning blog_posts row (UUID + videoId + rewrite
+      // count). Fetch ALL the user's rows (tiny projection) so we can match by
+      // wordpress_url too — the URL survives a rebuild that mints a NEW WP post
+      // id, whereas a stale wordpress_post_id would orphan the row. The UUID
+      // (`mvpId`) lets social pushes target the blog_posts row directly instead
+      // of relying on the WP id alone (the "Post not found" cause on video-less
+      // guide/comparison/link posts).
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: sbPosts } = await supabase
         .from('blog_posts')
-        .select('wordpress_post_id,video_id,rewrite_count')
+        .select('id,wordpress_post_id,wordpress_url,video_id,rewrite_count')
         .eq('user_id', user?.id ?? '')
-        .in('wordpress_post_id', wpPostIds)
-        .not('video_id', 'is', null)
 
       const sbMap: Record<number, string> = {}
       const rewriteMap: Record<number, number> = {}
-      for (const p of (sbPosts ?? []) as { wordpress_post_id: number; video_id: string; rewrite_count: number | null }[]) {
+      const idByWpId: Record<number, string> = {}
+      const idByUrl: Record<string, string> = {}
+      const normUrl = (u: string | null | undefined) => (u || '').replace(/\/+$/, '').toLowerCase()
+      for (const p of (sbPosts ?? []) as { id: string; wordpress_post_id: number | null; wordpress_url: string | null; video_id: string | null; rewrite_count: number | null }[]) {
         if (p.wordpress_post_id && p.video_id) sbMap[p.wordpress_post_id] = p.video_id
-        if (p.wordpress_post_id) rewriteMap[p.wordpress_post_id] = (p.rewrite_count as number) ?? 0
+        if (p.wordpress_post_id) {
+          rewriteMap[p.wordpress_post_id] = (p.rewrite_count as number) ?? 0
+          if (p.id) idByWpId[p.wordpress_post_id] = p.id
+        }
+        if (p.id && p.wordpress_url) idByUrl[normUrl(p.wordpress_url)] = p.id
       }
 
       // Merge: prefer Supabase map, fall back to WP API result. rewriteCount
-      // powers the "X of 3 rebuilds" counter in the Rewrite modal.
-      const merged = (data.posts ?? []).map((p: { id: number; videoId: string | null }) => ({
+      // powers the "X of 3 rebuilds" counter; mvpId is the blog_posts UUID
+      // (by WP id, else by URL) used for social pushes.
+      const merged = (data.posts ?? []).map((p: { id: number; videoId: string | null; link?: string }) => ({
         ...p,
         videoId: sbMap[p.id] ?? p.videoId ?? null,
         rewriteCount: rewriteMap[p.id] ?? 0,
+        mvpId: idByWpId[p.id] ?? idByUrl[normUrl(p.link)] ?? null,
       }))
 
       setAllBlogPosts(merged)
@@ -3144,7 +3155,7 @@ export default function ContentPage() {
               {/* Social fan-out — works for video-less ("from a link") posts
                   too, keyed on the WordPress post id. */}
               <OrphanPostShare
-                postId={String(post.id)}
+                postId={post.mvpId || String(post.id)}
                 postUrl={post.link}
                 userTier={userTier}
                 fbConnected={fbConnected}
