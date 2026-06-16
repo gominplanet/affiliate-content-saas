@@ -173,8 +173,8 @@ export default function WalmartPBPage() {
       </div>
 
       <PageHero
-        title="PartnerBoost"
-        subtitle="Your live PartnerBoost brands across every network — commission, your join status, and the deep-link base for each. Pick a network, browse a Joined brand's products, and turn any one into a post with a cloaked affiliate link."
+        title="Brand Boost"
+        subtitle="Your live brands across every network you've joined — commission, your join status, and the deep-link base for each. Pick a network, browse a Joined brand's products, and turn any one into a post with a cloaked affiliate link."
         accent="rgba(34,211,238,0.32)"
       />
 
@@ -196,7 +196,7 @@ export default function WalmartPBPage() {
           style={{ background: 'rgba(239,68,68,0.08)', borderColor: 'rgba(239,68,68,0.35)' }}>
           <Lock size={16} className="flex-shrink-0 mt-0.5" style={{ color: '#ef4444' }} />
           <p className="text-[13px]" style={{ color: 'var(--text)' }}>
-            PartnerBoost is admin-only while it&rsquo;s in Labs.
+            Brand Boost is admin-only while it&rsquo;s in Labs.
           </p>
         </div>
       )}
