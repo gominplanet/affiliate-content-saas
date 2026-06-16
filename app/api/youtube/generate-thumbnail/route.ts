@@ -8,7 +8,7 @@ import { fal } from '@fal-ai/client'
 import sharp from 'sharp'
 import { getValidYouTubeToken, createYouTubeOAuthService } from '@/services/youtube'
 import { recordAnthropicUsage, recordUsage } from '@/lib/ai-usage'
-import { TIERS, nextTierFor, normalizeTier, checkGenerationLimit, type Tier } from '@/lib/tier'
+import { TIERS, nextTierFor, normalizeTier, type Tier } from '@/lib/tier'
 import { spendGate } from '@/lib/ai-spend'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 import { rankThumbnails, pickBestFrame, type ThumbnailScore } from '@/lib/thumbnail-score'
@@ -806,25 +806,9 @@ export async function POST(request: Request) {
       if (autoFaceModels.length === 1) { faceModel = autoFaceModels[0]; autoFaceModels = [] }
     }
 
-    // Cap gate — unified Generations bucket (migration 101). Bundles
-    // blog + thumbnail + metadata into one count per billing period so
-    // a Creator burns one bucket of 20, not 20 of each independently.
-    // Skips for quickMode (hook-only call is essentially free, no
-    // images generated). variantCount is passed as p_units so a "2
-    // variants" click reserves 2 units up front instead of letting
-    // someone 1 below cap silently overshoot.
-    if (!quickMode) {
-      const usage = await checkGenerationLimit(supabase, user.id, { units: variantCount })
-      if (!usage.allowed) {
-        return NextResponse.json({
-          error: usage.reason,
-          limitReached: true,
-          cap: 'generations',
-          currentTier: usage.tier,
-          upgrade: usage.upgrade,
-        }, { status: 429 })
-      }
-    }
+    // Co-Pilot thumbnails are FREE enrichment of a content piece (pricing model
+    // 2026-06-15): they no longer decrement the content-piece quota. Cost is
+    // bounded by the monthly $-ceiling (spendGate, checked above) instead.
 
     // ── Quick mode: hook text only ─────────────────────────────────────────────
     if (quickMode) {

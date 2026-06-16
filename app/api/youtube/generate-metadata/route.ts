@@ -8,7 +8,8 @@ import { resolveGeniuslinkYouTubeGroupId, appendAmazonSubtag, YOUTUBE_COPILOT_GR
 import Anthropic from '@anthropic-ai/sdk'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
-import { TIERS, nextTierFor, normalizeTier, checkGenerationLimit, type Tier } from '@/lib/tier'
+import { TIERS, nextTierFor, normalizeTier, type Tier } from '@/lib/tier'
+import { spendGate } from '@/lib/ai-spend'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 import { scoreTitle } from '@/lib/thumbnail-score'
@@ -448,19 +449,12 @@ export async function POST(request: Request) {
     const tier = normalizeTier(intRow?.tier)
     TELEMETRY = { userId: user.id, tier }
 
-    // Cap gate — unified Generations bucket (migration 101). Bundles
-    // blog + thumbnail + metadata into one count per billing period.
-    // Pre-flight so we never fire the 5-agent swarm for a user at cap.
-    const usage = await checkGenerationLimit(supabase, user.id)
-    if (!usage.allowed) {
-      return NextResponse.json({
-        error: usage.reason,
-        limitReached: true,
-        cap: 'generations',
-        currentTier: usage.tier,
-        upgrade: usage.upgrade,
-      }, { status: 429 })
-    }
+    // Co-Pilot metadata is FREE enrichment of a content piece (pricing model
+    // 2026-06-15) — off the content-piece quota, bounded by the monthly
+    // $-ceiling instead. Pre-flight so we never fire the 5-agent swarm when a
+    // user has already blown their spend ceiling.
+    const spendBlocked = await spendGate(user.id, tier)
+    if (spendBlocked) return spendBlocked
 
     const brandName = (brand?.name as string) || 'our channel'
     const authorName = (brand?.author_name as string) || ''
