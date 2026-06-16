@@ -1571,6 +1571,19 @@ export default function ContentPage() {
   const [affPreviewLoading, setAffPreviewLoading] = useState(false)
   const [affApplying, setAffApplying] = useState(false)
   const [activeTab, setActiveTab] = useState<'horizontal' | 'vertical' | 'posts' | 'scheduled'>('horizontal')
+
+  // Deep-link: /content?tab=posts (the sidebar "Social Push" link) opens the
+  // "Published Posts & Social Push" tab directly. Read once on mount (after
+  // hydration, to avoid an SSR mismatch); then keep ?tab in sync with the
+  // active tab so the sidebar active-state + shareable links stay accurate.
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get('tab')
+    if (t === 'posts' || t === 'vertical' || t === 'scheduled' || t === 'horizontal') setActiveTab(t)
+  }, [])
+  useEffect(() => {
+    const url = activeTab === 'horizontal' ? '/content' : `/content?tab=${activeTab}`
+    window.history.replaceState(null, '', url)
+  }, [activeTab])
   // Scheduled posts list (loaded on demand when the Scheduled tab opens)
   const [scheduledItems, setScheduledItems] = useState<ScheduledItem[] | null>(null)
   const [scheduledLoading, setScheduledLoading] = useState(false)
@@ -2823,7 +2836,7 @@ export default function ContentPage() {
         {([
           { key: 'horizontal' as const, label: 'Horizontal Videos' },
           { key: 'vertical' as const, label: 'Vertical Videos' },
-          { key: 'posts' as const, label: `Published Posts${postsLoaded ? ` (${allBlogPosts.length})` : ''}` },
+          { key: 'posts' as const, label: `Published Posts & Social Push${postsLoaded ? ` (${allBlogPosts.length})` : ''}` },
           { key: 'scheduled' as const, label: `Scheduled${scheduledItems ? ` (${scheduledItems.filter(s => s.status === 'pending').length})` : ''}` },
         ]).map(({ key, label }) => (
           <button

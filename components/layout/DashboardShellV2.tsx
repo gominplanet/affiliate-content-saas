@@ -37,7 +37,7 @@ import {
   Flame, KeyRound, Users, LogOut, ExternalLink,
   UserCog, AlertTriangle, DollarSign, Newspaper, Plug, Wrench,
   Camera, MessageCircle, Activity, BarChart3, Upload, Wand2, ShieldCheck,
-  Share2, UserSquare, Lightbulb, LifeBuoy, Link2, FlaskConical, Store,
+  Share2, UserSquare, Lightbulb, LifeBuoy, Link2, FlaskConical, Store, Send,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import NotificationBell from './NotificationBell'
@@ -294,6 +294,9 @@ export default function DashboardShellV2({
         { href: '/co-pilot', icon: <Youtube size={15} />, label: 'YouTube Co-Pilot' },
         // "Library" renamed -> "Blog Post Generator" (2026-06-12 IA).
         { href: '/content', icon: <Library size={15} />, label: 'Blog Post Generator' },
+        // Jumps straight to the "Published Posts & Social Push" tab — publish or
+        // schedule any existing post to every connected channel.
+        { href: '/content?tab=posts', icon: <Send size={15} />, label: 'Social Push' },
         // Socials connection moved to SET UP > "Connect Socials" (it's setup,
         // not a create action). YouTube has its own SET UP > "YouTube" entry.
         { href: '/comparison', icon: <Scale size={15} />, label: 'Comparisons' },
@@ -445,6 +448,15 @@ export default function DashboardShellV2({
       if (typeof window !== 'undefined') {
         const currentTab = new URLSearchParams(window.location.search).get('tab')
         return currentTab !== 'integrations'
+      }
+      return true
+    }
+    // Blog Post Generator (/content) vs Social Push (/content?tab=posts): don't
+    // light up the base item when the Social-Push tab is the active one.
+    if (href === '/content') {
+      if (pathname !== '/content') return false
+      if (typeof window !== 'undefined') {
+        return new URLSearchParams(window.location.search).get('tab') !== 'posts'
       }
       return true
     }
