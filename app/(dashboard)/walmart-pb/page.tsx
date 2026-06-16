@@ -178,17 +178,69 @@ export default function WalmartPBPage() {
         accent="rgba(34,211,238,0.32)"
       />
 
-      {/* What this is */}
-      <div className="rounded-xl border p-4 mb-5 text-[13px] leading-relaxed"
-        style={{ background: 'var(--surface)', borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
-        <p className="font-semibold mb-1 flex items-center gap-1.5" style={{ color: 'var(--text)' }}>
-          <Store size={14} style={{ color: '#0E7490' }} /> What this shows
-        </p>
-        This is a live read of the PartnerBoost Monetization API across all networks. It can&rsquo;t join campaigns for you —
-        joining means accepting a brand&rsquo;s terms (and, for manual programs, waiting on their approval), which lives in the
-        PartnerBoost dashboard. Use <span className="font-medium">Join more in PartnerBoost</span> below, then come back and refresh
-        to see new <span style={{ color: '#10B981', fontWeight: 600 }}>Joined</span> brands.
-      </div>
+      {/* How to set up & use — full PartnerBoost onboarding. Collapsible (open
+          by default) so first-timers get the whole flow, regulars can fold it. */}
+      <details open className="rounded-xl border mb-5"
+        style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
+        <summary className="flex items-center gap-1.5 cursor-pointer select-none p-4 text-[13px] font-semibold"
+          style={{ color: 'var(--text)', listStyle: 'none' }}>
+          <Store size={14} style={{ color: '#0E7490' }} /> How to set up &amp; use Brand Boost
+        </summary>
+        <div className="px-4 pb-4 text-[13px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
+          <p className="mb-3">
+            Brand Boost turns brands from your <span className="font-medium" style={{ color: 'var(--text)' }}>PartnerBoost</span> account
+            into published, affiliate-linked posts. PartnerBoost is the affiliate network it reads from — it can&rsquo;t
+            join programs for you, so the joining happens there and the publishing happens here.
+          </p>
+
+          <p className="font-semibold mb-1 mt-4" style={{ color: '#0E7490' }}>One-time setup</p>
+          <ol className="list-decimal pl-5 space-y-1.5 mb-3">
+            <li>
+              <span className="font-medium" style={{ color: 'var(--text)' }}>Create a PartnerBoost account.</span> It&rsquo;s
+              free — this is the network Brand Boost pulls brands and products from.{' '}
+              <a href={PB_DASHBOARD} target="_blank" rel="noopener noreferrer"
+                className="font-medium inline-flex items-center gap-0.5" style={{ color: '#0E7490' }}>
+                Open PartnerBoost <ExternalLink size={11} />
+              </a>
+            </li>
+            <li>
+              <span className="font-medium" style={{ color: 'var(--text)' }}>Connect it to MVP.</span> In PartnerBoost go to{' '}
+              <span className="font-medium">Tools → API</span>, copy your <span className="font-medium">All-Channels API token</span>,
+              and add it as <code className="px-1 rounded" style={{ background: 'var(--surface-bright)' }}>PARTNERBOOST_API_TOKEN</code> in
+              your hosting environment (Vercel → Settings → Environment Variables), then redeploy. The token stays server-side
+              — you never paste it on this page — and powers Brand Boost for the whole workspace.
+            </li>
+          </ol>
+
+          <p className="font-semibold mb-1 mt-4" style={{ color: '#0E7490' }}>Then, each time you want a post</p>
+          <ol className="list-decimal pl-5 space-y-1.5" start={3}>
+            <li>
+              <span className="font-medium" style={{ color: 'var(--text)' }}>Join brands in PartnerBoost.</span> Open a
+              program and accept the brand&rsquo;s terms — some approve instantly, others need the merchant&rsquo;s OK. Use{' '}
+              <span className="font-medium">Join more in PartnerBoost</span> below, then come back and <span className="font-medium">Refresh</span>{' '}
+              to pull in your new <span style={{ color: '#10B981', fontWeight: 600 }}>Joined</span> brands.
+            </li>
+            <li>
+              <span className="font-medium" style={{ color: 'var(--text)' }}>Browse.</span> Pick a network (Walmart / Amazon / DTC)
+              and filter to <span className="font-medium">Joined</span>. Each card shows the commission %, your join status, and
+              the deep-link base.
+            </li>
+            <li>
+              <span className="font-medium" style={{ color: 'var(--text)' }}>Generate.</span> Expand a Joined brand&rsquo;s
+              <span className="font-medium"> Products</span> and hit <span className="font-medium">Generate post</span> on any item.
+              MVP writes a fact-grounded review in your voice, uses the real product image, cloaks the affiliate link (via
+              Geniuslink if you&rsquo;ve connected it), and saves it to WordPress — as a <span className="font-medium">draft</span> or{' '}
+              <span className="font-medium">live</span>, per the toggle below.
+            </li>
+          </ol>
+
+          <p className="mt-3 text-[12px]">
+            Only <span style={{ color: '#10B981', fontWeight: 600 }}>Joined</span> brands can generate. Commissions and inventory
+            come straight from PartnerBoost, so it&rsquo;s worth comparing a brand&rsquo;s rate here against your existing Amazon
+            tag before you lean on it.
+          </p>
+        </div>
+      </details>
 
       {/* Forbidden / token / error states */}
       {forbidden && (
