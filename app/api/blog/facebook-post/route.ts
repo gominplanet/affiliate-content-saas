@@ -5,8 +5,8 @@ import { createAnthropicClient } from '@/lib/anthropic'
 import { learnProfileToPrompt } from '@/lib/learn'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } from '@/lib/social-cap'
-import { normalizeTier } from '@/lib/tier'
-import { resolveSocialAccount } from '@/lib/social-accounts'
+import { normalizeTier, socialAccountCap } from '@/lib/tier'
+import { resolveSocialAccounts } from '@/lib/social-accounts'
 import { metaEnabledForUser } from '@/lib/feature-flags'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { maybeDecrypt } from '@/lib/secrets'
@@ -20,11 +20,15 @@ export async function POST(request: NextRequest) {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     if (!(await metaEnabledForUser(supabase, user))) return NextResponse.json({ error: 'Facebook publishing is temporarily unavailable while our Meta integration is under review.' }, { status: 503 })
 
-    const body = await request.json() as { postId?: string; dryRun?: boolean; text?: string; socialAccountId?: string }
+    const body = await request.json() as { postId?: string; dryRun?: boolean; text?: string; socialAccountId?: string; socialAccountIds?: string[] }
     const postId = body.postId
     const dryRun = body.dryRun === true
     const overrideText = body.text?.trim()
-    const socialAccountId = body.socialAccountId
+    // Multi-account fan-out (Workstream 2): accept a list of chosen Page ids,
+    // staying backward-compatible with the single `socialAccountId` field.
+    const chosenAccountIds = (body.socialAccountIds && body.socialAccountIds.length)
+      ? body.socialAccountIds
+      : (body.socialAccountId ? [body.socialAccountId] : [])
     if (!postId) return NextResponse.json({ error: 'postId required' }, { status: 400 })
 
     // ── 1. Fetch blog post ────────────────────────────────────────────────────
@@ -87,17 +91,19 @@ export async function POST(request: NextRequest) {
     // Resolve WHICH Facebook Page to post to. Picking a specific page (vs the
     // default) is a Pro feature — non-Pro users always post to their default.
     // Falls back to the legacy single columns when social_accounts is empty.
-    const isPro = ['pro', 'admin'].includes(normalizeTier(integration?.tier))
-    const fbAccount = await resolveSocialAccount(supabase, user.id, 'facebook', {
-      socialAccountId,
+    const tier = normalizeTier(integration?.tier)
+    const isPro = ['pro', 'admin'].includes(tier)
+    const fbAccounts = await resolveSocialAccounts(supabase, user.id, 'facebook', {
+      socialAccountIds: chosenAccountIds,
       allowSelection: isPro,
+      limit: socialAccountCap(tier),
       legacy: {
         externalId: integration?.facebook_page_id,
         accessToken: integration?.facebook_page_access_token,
         displayName: integration?.facebook_page_name,
       },
     })
-    if (!dryRun && !fbAccount) {
+    if (!dryRun && fbAccounts.length === 0) {
       return NextResponse.json({ error: 'Facebook not connected' }, { status: 400 })
     }
 
@@ -168,38 +174,49 @@ Topic: ${(post.content as string).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').
       return NextResponse.json({ ok: true, dryRun: true, text: reviewText, finalText: caption, hashtags })
     }
 
-    // ── 8. Post to Facebook ───────────────────────────────────────────────────
-    const fbService = createFacebookService(
-      fbAccount!.accessToken,
-      fbAccount!.externalId,
-    )
-
-    let result
-    if (imageUrl) {
-      result = await fbService.postPhoto({ imageUrl, caption })
-    } else {
-      result = await fbService.postLink({ message: caption, link: post.wordpress_url })
+    // ── 8. Post to Facebook — fan out to each selected Page ───────────────────
+    // Same caption to every Page; best-effort per account so one failure can't
+    // abort the rest. A single-account post (the common case) runs this loop
+    // exactly once and behaves identically to before.
+    const results: Array<{ accountId: string | null; page: string | null; ok: boolean; id?: string; error?: string }> = []
+    for (const acct of fbAccounts) {
+      try {
+        const fbService = createFacebookService(acct.accessToken, acct.externalId)
+        const r = imageUrl
+          ? await fbService.postPhoto({ imageUrl, caption })
+          : await fbService.postLink({ message: caption, link: post.wordpress_url })
+        results.push({ accountId: acct.id, page: acct.displayName, ok: true, id: r.id })
+      } catch (e) {
+        results.push({ accountId: acct.id, page: acct.displayName, ok: false, error: e instanceof Error ? e.message : String(e) })
+      }
     }
 
-    // ── 9. Save facebook_post_id ──────────────────────────────────────────────
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await supabase
-      .from('blog_posts')
-      .update({ facebook_post_id: result.id })
-      .eq('id', postId)
+    const succeeded = results.filter(r => r.ok)
+    if (succeeded.length === 0) {
+      return NextResponse.json(
+        { error: results[0]?.error || 'Facebook publish failed', results },
+        { status: 502 },
+      )
+    }
 
-    // Bump the per-post re-publish counter so the cap holds across
-    // subsequent re-publishes of the same post.
-    await incrementSocialCount(supabase, postId, 'facebook')
-    const newCount = fbSocialCount + 1
+    // ── 9. Save facebook_post_id (first success) + bump re-publish counter ────
+    const firstId = succeeded[0].id!
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await supabase.from('blog_posts').update({ facebook_post_id: firstId }).eq('id', postId)
+    // Count one re-publish per Page actually posted to, so the per-post cap
+    // holds across fan-outs and subsequent re-publishes.
+    for (let i = 0; i < succeeded.length; i++) await incrementSocialCount(supabase, postId, 'facebook')
+    const newCount = fbSocialCount + succeeded.length
 
     return NextResponse.json({
       ok: true,
-      facebookPostId: result.id,
+      // Back-compat: existing clients read facebookPostId + publishCount.
+      facebookPostId: firstId,
       publishCount: newCount,
-      // Tell the client when this was the user's last allowed publish
-      // so they can show a one-time warning ("next one will fail").
       isLastAllowed: fbCap.willBeLast,
+      // New: per-Page breakdown for the multi-account UI.
+      posted: succeeded.length,
+      results,
     })
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)

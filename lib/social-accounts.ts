@@ -139,6 +139,73 @@ export async function resolveSocialAccount(
 }
 
 /**
+ * Plural resolver for multi-account FAN-OUT (Workstream 2). Given an explicit
+ * list of chosen account ids, returns the matching ResolvedAccounts so a post
+ * route can publish the same caption to each. Backward-compatible by design:
+ *   - allowSelection false, or no/empty ids → falls back to the SINGLE
+ *     default/legacy account wrapped in a one-element array (today's behavior,
+ *     bit-for-bit — a single-account post resolves exactly as before).
+ *   - `limit` (the tier's socialAccountCap; null/undefined = unlimited) clamps
+ *     how many accounts one post may fan out to. Selection order is preserved.
+ * Bogus / non-owned ids are silently dropped; if EVERY id is bogus we fall back
+ * to the default so a post never silently no-ops.
+ */
+export async function resolveSocialAccounts(
+  supabase: any,
+  userId: string,
+  platform: SocialPlatform,
+  opts: {
+    socialAccountIds?: (string | null | undefined)[] | null
+    allowSelection: boolean
+    limit?: number | null
+    legacy?: LegacyCreds
+  },
+): Promise<ResolvedAccount[]> {
+  const { allowSelection, limit, legacy } = opts
+  const ids = (opts.socialAccountIds ?? []).filter(
+    (v): v is string => typeof v === 'string' && v.length > 0,
+  )
+
+  if (allowSelection && ids.length > 0) {
+    const { data } = await supabase
+      .from('social_accounts')
+      .select('id,external_id,access_token,display_name')
+      .eq('user_id', userId)
+      .eq('platform', platform)
+      .in('id', ids)
+    const rows: any[] = Array.isArray(data) ? data : []
+    const byId = new Map(rows.map((r) => [r.id, r]))
+    // Preserve the caller's selection order; dedupe; keep only usable rows.
+    const seen = new Set<string>()
+    const resolved: ResolvedAccount[] = []
+    for (const id of ids) {
+      if (seen.has(id)) continue
+      const r = byId.get(id)
+      if (r?.external_id && r?.access_token) {
+        resolved.push({
+          id: r.id,
+          externalId: r.external_id,
+          accessToken: maybeDecrypt(r.access_token) || '',
+          displayName: r.display_name,
+        })
+        seen.add(id)
+      }
+    }
+    const clamped = typeof limit === 'number' && limit > 0 ? resolved.slice(0, limit) : resolved
+    if (clamped.length > 0) return clamped
+    // else: every id was bogus/not theirs — fall through to the default.
+  }
+
+  // Fallback: the single default/legacy account (today's single-account path).
+  const single = await resolveSocialAccount(supabase, userId, platform, {
+    socialAccountId: null,
+    allowSelection: false,
+    legacy,
+  })
+  return single ? [single] : []
+}
+
+/**
  * Upsert all of a user's Facebook Pages into social_accounts and mark the
  * active one as default. Called from the FB connect routes so the picker
  * has every page the user manages (not just the active one). Idempotent.
