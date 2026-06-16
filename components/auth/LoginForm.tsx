@@ -1,9 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import Link from 'next/link'
+import type HCaptcha from '@hcaptcha/react-hcaptcha'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import HCaptchaField, { captchaRequired } from '@/components/auth/HCaptchaField'
 
 export default function LoginForm() {
   const router = useRouter()
@@ -15,17 +17,33 @@ export default function LoginForm() {
   const [resetMode, setResetMode] = useState(false)
   const [resetSent, setResetSent] = useState(false)
   const [resetLoading, setResetLoading] = useState(false)
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null)
+  const captchaRef = useRef<HCaptcha>(null)
+
+  function resetCaptcha() {
+    captchaRef.current?.resetCaptcha()
+    setCaptchaToken(null)
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (captchaRequired && !captchaToken) {
+      setError('Please complete the captcha below.')
+      return
+    }
     setLoading(true)
     setError(null)
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+      options: { captchaToken: captchaToken ?? undefined },
+    })
 
     if (error) {
       setError(error.message)
       setLoading(false)
+      resetCaptcha() // tokens are single-use
     } else {
       router.push('/dashboard')
       router.refresh()
@@ -34,12 +52,18 @@ export default function LoginForm() {
 
   async function handleReset(e: React.FormEvent) {
     e.preventDefault()
+    if (captchaRequired && !captchaToken) {
+      setError('Please complete the captcha below.')
+      return
+    }
     setResetLoading(true)
     setError(null)
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}/reset-password`,
+      captchaToken: captchaToken ?? undefined,
     })
     setResetLoading(false)
+    resetCaptcha() // single-use token, whether or not the call succeeded
     if (error) {
       setError(error.message)
     } else {
@@ -91,6 +115,8 @@ export default function LoginForm() {
                   {error}
                 </p>
               )}
+
+              <HCaptchaField ref={captchaRef} onVerify={setCaptchaToken} onExpire={() => setCaptchaToken(null)} />
 
               <button type="submit" disabled={resetLoading} className="btn-primary w-full mt-1">
                 {resetLoading ? 'Sending…' : 'Send reset link'}
@@ -158,6 +184,8 @@ export default function LoginForm() {
             {error}
           </p>
         )}
+
+        <HCaptchaField ref={captchaRef} onVerify={setCaptchaToken} onExpire={() => setCaptchaToken(null)} />
 
         <button type="submit" disabled={loading} className="btn-primary w-full mt-1">
           {loading ? 'Signing in…' : 'Sign in'}

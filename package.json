@@ -21,6 +21,7 @@
     "@fontsource/russo-one": "^5.2.7",
     "@fontsource/sigmar-one": "^5.2.8",
     "@google/genai": "^2.0.0",
+    "@hcaptcha/react-hcaptcha": "^2.0.2",
     "@resvg/resvg-js": "^2.6.2",
     "@supabase/ssr": "^0.10.3",
     "@supabase/supabase-js": "^2.106.2",

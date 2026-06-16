@@ -1,10 +1,12 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import Link from 'next/link'
+import type HCaptcha from '@hcaptcha/react-hcaptcha'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
+import HCaptchaField, { captchaRequired } from '@/components/auth/HCaptchaField'
 
 export default function SignupForm() {
   const router = useRouter()
@@ -31,9 +33,15 @@ export default function SignupForm() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null)
+  const captchaRef = useRef<HCaptcha>(null)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (captchaRequired && !captchaToken) {
+      setError('Please complete the captcha below.')
+      return
+    }
     setLoading(true)
     setError(null)
 
@@ -42,6 +50,7 @@ export default function SignupForm() {
       password,
       options: {
         data: { full_name: fullName },
+        captchaToken: captchaToken ?? undefined,
         // Send the email-confirmation link through our auth callback (which
         // exchanges the code for a session) and on into the onboarding funnel,
         // so a brand-new user lands exactly where setup begins. window.origin
@@ -55,6 +64,9 @@ export default function SignupForm() {
     if (error) {
       setError(error.message)
       setLoading(false)
+      // hCaptcha tokens are single-use — reset so the user can retry.
+      captchaRef.current?.resetCaptcha()
+      setCaptchaToken(null)
     } else {
       setSuccess(true)
     }
@@ -134,6 +146,8 @@ export default function SignupForm() {
             {error}
           </p>
         )}
+
+        <HCaptchaField ref={captchaRef} onVerify={setCaptchaToken} onExpire={() => setCaptchaToken(null)} />
 
         <button type="submit" disabled={loading} className="btn-primary w-full mt-1">
           {loading ? 'Creating account…' : 'Create my free account'}
