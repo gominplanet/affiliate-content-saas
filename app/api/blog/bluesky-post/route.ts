@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
       .from('brand_profiles')
       .select('name,voice_summary,learn_profile')
       .eq('user_id', user.id)
-      .single()
+      .maybeSingle()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const brand = brandRow as any
 
