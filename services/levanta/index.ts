@@ -79,14 +79,17 @@ export async function listLevantaBrands(
   const json = await levantaFetch(`/brands?${qs.toString()}`, token)
   const list = Array.isArray(json?.brands) ? json.brands : []
   return {
+    // Field names are read defensively — the live API has used keys that differ
+    // from the published docs (e.g. the brand id arrived under `id`/`brand_id`,
+    // not `brandId`), which left the products lookup with an empty id.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     brands: list.map((b: any): LevantaBrand => ({
-      brandId: String(b.brandId ?? ''),
-      brandName: b.brandName ?? '',
-      bio: b.bio ?? '',
-      image: b.image ?? null,
-      access: !!b.access,
-      url: b.url ?? '',
+      brandId: String(b.brandId ?? b.brand_id ?? b.id ?? ''),
+      brandName: b.brandName ?? b.brand_name ?? b.name ?? '',
+      bio: b.bio ?? b.description ?? '',
+      image: b.image ?? b.logo ?? null,
+      access: !!(b.access ?? b.partnered ?? b.hasAccess),
+      url: b.url ?? b.brandUrl ?? b.site_url ?? '',
       marketplace: b.marketplace ?? '',
     })),
     cursor: json?.cursor ?? null,
@@ -109,23 +112,27 @@ export async function listLevantaProducts(
   const json = await levantaFetch(`/products?${qs.toString()}`, token)
   const list = Array.isArray(json?.products) ? json.products : []
   return {
+    // Defensive field reads — tolerate doc/live key drift (same reason as brands).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    products: list.map((p: any): LevantaProduct => ({
-      asin: p.asin ?? '',
-      marketplace: p.marketplace ?? '',
-      price: p?.pricing?.price ?? null,
-      currency: p?.pricing?.currency ?? null,
-      commission: p.commission ?? null,
-      title: p.title ?? '',
-      inStock: !!p.inStock,
-      category: p.category ?? null,
-      brandId: p.brandId != null ? String(p.brandId) : null,
-      access: !!p.access,
-      image: p.image ?? null,
-      rating: p.rating ?? null,
-      ratingsTotal: p.ratingsTotal ?? null,
-      platformEpc: p.platformEpc ?? null,
-    })),
+    products: list.map((p: any): LevantaProduct => {
+      const bid = p.brandId ?? p.brand_id ?? p.brandID
+      return {
+        asin: p.asin ?? p.ASIN ?? p.primary_id ?? '',
+        marketplace: p.marketplace ?? '',
+        price: p?.pricing?.price ?? p.price ?? null,
+        currency: p?.pricing?.currency ?? p.currency ?? null,
+        commission: p.commission ?? p.commissionRate ?? p.commission_rate ?? null,
+        title: p.title ?? p.name ?? p.product_name ?? '',
+        inStock: !!(p.inStock ?? p.in_stock),
+        category: p.category ?? null,
+        brandId: bid != null ? String(bid) : null,
+        access: !!p.access,
+        image: p.image ?? p.imageUrl ?? p.image_url ?? null,
+        rating: p.rating != null ? String(p.rating) : null,
+        ratingsTotal: p.ratingsTotal ?? p.ratings_total ?? null,
+        platformEpc: p.platformEpc ?? p.platform_epc ?? null,
+      }
+    }),
     cursor: json?.cursor ?? null,
   }
 }
