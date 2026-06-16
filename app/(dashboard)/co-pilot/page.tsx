@@ -150,10 +150,10 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
   video: DraftVideo
   userTier: Tier
   playlists: Array<{ id: string; title: string }>
-  /** Fires AFTER a successful Apply to YouTube so the parent can refresh
-   *  the drafts list — the just-pushed video moves into the "🚀 Pushed
-   *  via Co-Pilot" tab automatically without the user clicking Refresh. */
-  onApplied?: () => void
+  /** Fires AFTER a successful Apply to YouTube with the pushed video's id so
+   *  the parent can move just THAT video into the "🚀 Pushed via Co-Pilot" tab
+   *  in place — no full re-fetch (which would re-scan and shrink the list). */
+  onApplied?: (videoId: string) => void
 }) {
   const isPro = userTier === 'pro' || userTier === 'admin'
   const { confirm, ConfirmHost } = useConfirm()
@@ -584,7 +584,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
         // when there's a warning — the push happened, the classification
         // should update. Small delay matches the auto-collapse so the list
         // re-renders right as the card returns to the row view.
-        if (onApplied) setTimeout(onApplied, hasWarning ? 0 : 1600)
+        if (onApplied) setTimeout(() => onApplied(video.youtubeVideoId), hasWarning ? 0 : 1600)
         return
       }
 
@@ -606,12 +606,12 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
       if (data.thumbnailWarning) {
         setApplyError(`Metadata applied ✓ — thumbnail not uploaded: ${data.thumbnailWarning}`)
         // Metadata still landed → still belongs in 🚀 Pushed.
-        if (onApplied) setTimeout(onApplied, 0)
+        if (onApplied) setTimeout(() => onApplied(video.youtubeVideoId), 0)
       } else {
         // Clean success → auto-collapse so the user can move on to the next
         // video in the list. Same UX pattern as the Pro path above.
         setTimeout(() => setExpanded(false), 1500)
-        if (onApplied) setTimeout(onApplied, 1600)
+        if (onApplied) setTimeout(() => onApplied(video.youtubeVideoId), 1600)
       }
     } catch (err) {
       setApplyError(err instanceof Error ? err.message : 'Failed to apply to YouTube')
@@ -2721,7 +2721,20 @@ export default function StudioPage() {
                     video={video}
                     userTier={userTier}
                     playlists={playlists}
-                    onApplied={() => void load({ query: activeQuery, includePublished, silent: true })}
+                    onApplied={(videoId) => {
+                      // Optimistic in-place reclassify: mark just this video
+                      // shipped so it leaves the to-do tab WITHOUT a re-fetch.
+                      // A silent re-load here would re-scan from scratch (Apply
+                      // busts the server cache) and the scan's early-stop
+                      // truncates the list back to a partial batch — wiping out
+                      // everything "Load all drafts" had pulled in. The cache
+                      // bust still reconciles on the next manual Refresh.
+                      setDrafts(prev => prev.map(v =>
+                        v.youtubeVideoId === videoId
+                          ? { ...v, metadataAppliedAt: new Date().toISOString() }
+                          : v,
+                      ))
+                    }}
                   />
                 ))}
               </div>
