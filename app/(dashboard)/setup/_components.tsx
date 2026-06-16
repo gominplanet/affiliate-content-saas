@@ -815,7 +815,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
           test account also skips so the App Review screencast stays clean).
           Replaces the previous "Admin only" framing — the gate isn't about
           the user's tier, it's about each platform's own approval process. */}
-      {!isUnlocked('facebook') && (
+      {(!isUnlocked('pinterest') || !isUnlocked('tiktok')) && (
         <div
           className="card p-5"
           style={{ background: 'linear-gradient(135deg, rgba(124,58,237,0.07) 0%, rgba(124,58,237,0.02) 100%)', borderColor: 'rgba(124,58,237,0.25)' }}
@@ -826,19 +826,16 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap mb-1">
-                <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">5 integrations coming soon</p>
+                <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">2 integrations coming soon</p>
                 <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full" style={{ background: '#7C3AED', color: '#fff' }}>Under review</span>
               </div>
               <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed mb-3">
-                <strong>Facebook</strong>, <strong>Instagram</strong>, <strong>Threads</strong>, <strong>TikTok</strong> and <strong>Pinterest</strong> are currently going through the official approval process with each platform. They&apos;ll unlock here automatically once approved. Until then, every other channel below (WordPress, LinkedIn, Bluesky, Twitter, Telegram, YouTube, Newsletter) works as normal.
+                <strong>Pinterest</strong> and <strong>TikTok</strong> are currently going through the official approval process with each platform. They&apos;ll unlock here automatically once approved. Until then, every other channel below (WordPress, Facebook, Instagram, Threads, LinkedIn, Bluesky, Twitter, Telegram, YouTube, Newsletter) works as normal.
               </p>
               <div className="flex flex-wrap gap-1.5">
                 {[
-                  { name: 'Facebook', icon: <Facebook size={11} />, bg: '#1877F2' },
-                  { name: 'Instagram', icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.16c3.2 0 3.58.012 4.85.07 1.17.054 1.8.249 2.23.413.56.218.96.479 1.38.896.42.42.68.819.9 1.381.16.42.36 1.057.41 2.227.06 1.266.07 1.646.07 4.85s-.01 3.585-.07 4.85c-.06 1.17-.26 1.806-.42 2.228-.23.562-.48.96-.9 1.382-.42.42-.83.679-1.38.896-.42.164-1.06.36-2.23.413-1.27.057-1.65.07-4.85.07s-3.59-.015-4.86-.074c-1.17-.06-1.81-.256-2.24-.421-.57-.224-.96-.479-1.38-.899-.42-.42-.69-.824-.9-1.38-.16-.42-.36-1.065-.42-2.235-.05-1.26-.06-1.65-.06-4.84 0-3.2.02-3.59.06-4.86.06-1.17.26-1.81.42-2.23.21-.57.48-.96.9-1.38.42-.42.81-.69 1.38-.9.42-.17 1.05-.36 2.22-.42 1.28-.05 1.65-.06 4.86-.06l.04.03zM12 7.84a4.16 4.16 0 1 0 0 8.32 4.16 4.16 0 0 0 0-8.32z"/></svg>, bg: 'linear-gradient(45deg, #f09433 0%, #dc2743 50%, #bc1888 100%)' },
-                  { name: 'Threads', icon: <MessageCircle size={11} />, bg: '#000' },
-                  { name: 'TikTok', icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5.8 20.1a6.34 6.34 0 0 0 10.86-4.43V8.45a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1.84-.34z"/></svg>, bg: '#000' },
                   { name: 'Pinterest', icon: <Pin size={11} />, bg: '#E60023' },
+                  { name: 'TikTok', icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5.8 20.1a6.34 6.34 0 0 0 10.86-4.43V8.45a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1.84-.34z"/></svg>, bg: '#000' },
                 ].map(p => (
                   <span
                     key={p.name}
@@ -865,8 +862,13 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
         <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Where your published posts and shorts go out. Each connect is a one-time grant — connect what you'll actually use.</p>
       </div>
 
+      {/* Social connect cards. Source order below is stable; the visual order
+          is fixed via Tailwind order-* utilities so Meta (Facebook, Instagram,
+          Threads) renders first. Parent is flex-col, so order applies. Keep the
+          order-N values contiguous (1..9) if you add or remove a card. */}
+      <div className="flex flex-col gap-5">
       {/* LinkedIn */}
-      <div className="card p-6">
+      <div className="card p-6 order-4">
         <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: '#e8f0fb' }}>
             <Linkedin size={16} style={{ color: '#0A66C2' }} />
@@ -905,7 +907,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
       </div>
 
       {/* X (Twitter) */}
-      <div className="card p-6">
+      <div className="card p-6 order-5">
         <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-black">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="white">
@@ -948,7 +950,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
       </div>
 
       {/* Bluesky */}
-      <div className="card p-6">
+      <div className="card p-6 order-7">
         <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: '#1185fe' }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="white">
@@ -1020,7 +1022,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
       </div>
 
       {/* Telegram — Pro */}
-      <div className="card p-6">
+      <div className="card p-6 order-6">
         <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: '#229ED9' }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
@@ -1085,7 +1087,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
 
       {/* Facebook */}
       {metaUnlocked && (
-      <div className="card p-6">
+      <div className="card p-6 order-1">
         <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
           <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
             <Facebook size={16} className="text-[#1877F2]" />
@@ -1144,7 +1146,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
       )}
 
       {/* Pinterest */}
-      <div className="card p-6">
+      <div className="card p-6 order-8">
         <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: '#fef0f0' }}>
             <Pin size={16} style={{ color: '#E60023' }} />
@@ -1199,7 +1201,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
 
       {/* Threads */}
       {metaUnlocked && (
-      <div className="card p-6">
+      <div className="card p-6 order-3">
         <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
           <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center">
             <MessageCircle size={16} className="text-[#1d1d1f] dark:text-[#f5f5f7]" />
@@ -1245,7 +1247,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
 
       {/* Instagram — Pro */}
       {metaUnlocked && (
-      <div className="card p-6">
+      <div className="card p-6 order-2">
         <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
           <div
             className="w-8 h-8 rounded-lg flex items-center justify-center"
@@ -1309,7 +1311,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
       )}
 
       {/* TikTok — Pro feature. Direct Post via Content Posting API. */}
-      <div className="card p-6">
+      <div className="card p-6 order-9">
         <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[#000000]">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
@@ -1370,6 +1372,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
             </div>
           )
         )}
+      </div>
       </div>
 
       {/* YouTube OAuth — hidden in 'socials' mode (YouTube lives on its own

@@ -1,8 +1,10 @@
 /**
- * Multi-account social helpers (Phase 1: Facebook Pages + Instagram).
+ * Multi-account social helpers (Facebook Pages + Instagram + Threads).
  *
  * The `social_accounts` table (migration 057) holds ONE row per connectable
- * destination — a Facebook Page, an Instagram account. Posting routes resolve
+ * destination — a Facebook Page, an Instagram account, a Threads profile.
+ * `platform` is a free-text column (no CHECK constraint) so new platforms need
+ * no migration. Posting routes resolve
  * which destination a post goes to, in priority order:
  *   1. an explicit `social_accounts.id` passed per-post  (PRO only — picking
  *      among several accounts is the Pro upgrade), else
@@ -22,7 +24,7 @@
 
 import { maybeDecrypt, maybeEncrypt } from '@/lib/secrets'
 
-export type SocialPlatform = 'facebook' | 'instagram'
+export type SocialPlatform = 'facebook' | 'instagram' | 'threads'
 
 /** A connectable destination, resolved for server-side posting. */
 export interface ResolvedAccount {
@@ -188,6 +190,43 @@ export async function syncInstagramAccount(
     {
       user_id: userId,
       platform: 'instagram',
+      external_id: account.externalId,
+      display_name: account.username,
+      kind: 'account',
+      access_token: maybeEncrypt(account.accessToken),
+      extra: account.tokenExpiry ? { token_expiry: account.tokenExpiry } : {},
+      is_default: true,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'user_id,platform,external_id' },
+  )
+}
+
+/**
+ * Upsert a Threads profile into social_accounts and make it the default.
+ *
+ * Mirrors syncInstagramAccount: multiple Threads profiles accumulate (one row
+ * each) and the most recently connected becomes the default. The legacy
+ * integrations.threads_* columns stay populated in parallel, so the existing
+ * single-account Threads post path keeps working until callers read from
+ * social_accounts. token_expiry (epoch ms) is stashed in `extra` for refresh.
+ */
+export async function syncThreadsAccount(
+  supabase: any,
+  userId: string,
+  account: { externalId: string; username: string | null; accessToken: string; tokenExpiry?: number | null },
+): Promise<void> {
+  if (!account.externalId || !account.accessToken) return
+  // This profile becomes the new default — clear the flag on the others.
+  await supabase
+    .from('social_accounts')
+    .update({ is_default: false })
+    .eq('user_id', userId)
+    .eq('platform', 'threads')
+  await supabase.from('social_accounts').upsert(
+    {
+      user_id: userId,
+      platform: 'threads',
       external_id: account.externalId,
       display_name: account.username,
       kind: 'account',

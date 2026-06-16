@@ -106,6 +106,11 @@ export const TIERS = {
     youtubeChannels: 1,
     socials: [] as readonly Social[],
     multiAccountSocial: false,
+    /** Multi-account fan-out cap: how many connected accounts of ONE platform
+     *  (Facebook Pages / Instagram / Threads) a single post may publish to.
+     *  1 = single account only (no fan-out). Pro 5, admin unlimited. Read via
+     *  socialAccountCap(tier); enforced at post time. */
+    maxSocialAccountsPerPlatform: 1 as number | null,
     publishAll: false,
     /** Cascade-only schedules per month — distinct blog_posts you can
      *  queue a "social cascade for already-live post" against. Per-post
@@ -167,6 +172,7 @@ export const TIERS = {
      *  users — see app-review middleware). */
     socials: ['linkedin', 'bluesky', 'pinterest', 'facebook', 'threads'] as readonly Social[],
     multiAccountSocial: false,
+    maxSocialAccountsPerPlatform: 1 as number | null,
     publishAll: false,
     cascadeOnlySchedulesPerMonth: 30 as number | null,
     campaigns: false,
@@ -222,6 +228,7 @@ export const TIERS = {
     /** Studio = Creator's + Instagram* + Telegram. */
     socials: ['linkedin', 'bluesky', 'pinterest', 'facebook', 'threads', 'instagram', 'telegram'] as readonly Social[],
     multiAccountSocial: false,
+    maxSocialAccountsPerPlatform: 1 as number | null,
     publishAll: false,
     cascadeOnlySchedulesPerMonth: null as number | null,
     campaigns: false,
@@ -290,6 +297,7 @@ export const TIERS = {
     socials: ['linkedin', 'bluesky', 'pinterest', 'facebook', 'threads', 'instagram', 'telegram', 'twitter', 'tiktok'] as readonly Social[],
     /** Multi-account social: per-post FB Page / IG account picker. */
     multiAccountSocial: true,
+    maxSocialAccountsPerPlatform: 5 as number | null,
     publishAll: true,
     cascadeOnlySchedulesPerMonth: null as number | null,
     campaigns: true,
@@ -340,6 +348,7 @@ export const TIERS = {
     youtubeChannels: 999,
     socials: ['facebook', 'threads', 'linkedin', 'pinterest', 'twitter', 'bluesky', 'telegram', 'instagram', 'tiktok'] as readonly Social[],
     multiAccountSocial: true,
+    maxSocialAccountsPerPlatform: null as number | null,
     publishAll: true,
     cascadeOnlySchedulesPerMonth: null as number | null,
     campaigns: true,
@@ -521,6 +530,19 @@ export function tierAllowsPublishAll(tier: Tier): boolean {
  *  NOT proxy this off a social-platform check. */
 export function tierAllowsCampaigns(tier: Tier): boolean {
   return tier === 'pro' || tier === 'admin'
+}
+
+/**
+ * How many connected accounts of a SINGLE platform (Facebook Pages /
+ * Instagram / Threads) one post may fan out to. `null` = unlimited (admin).
+ * Non-multi-account tiers are pinned to 1 (single account, no fan-out) even
+ * if the stored cap drifts. The per-post multi-select picker and the post
+ * routes both clamp the chosen account list to this number.
+ */
+export function socialAccountCap(tier: Tier): number | null {
+  const t = TIERS[tier]
+  if (!t.multiAccountSocial) return 1
+  return t.maxSocialAccountsPerPlatform ?? null
 }
 
 /**

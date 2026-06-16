@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { exchangeCodeForToken, fetchThreadsProfile } from '@/services/threads'
 import { encryptIntegrationWrite } from '@/lib/integration-secrets'
+import { syncThreadsAccount } from '@/lib/social-accounts'
 
 export async function GET(request: NextRequest) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL!
@@ -31,9 +32,13 @@ export async function GET(request: NextRequest) {
     )
     if (saveErr) throw new Error(saveErr.message || 'token save failed')
 
-    // Best-effort: fetch + store the @username for "Connected as @username".
-    // Wrapped separately so a missing threads_username column (pre-migration 064)
-    // or a profile-fetch hiccup can NEVER break the connection itself.
+    // Best-effort: fetch + store the @username for "Connected as @username",
+    // and mirror the connection into social_accounts so Threads joins the
+    // per-post multi-account picker alongside Facebook/Instagram. Wrapped
+    // separately so a missing threads_username column (pre-migration 064) or a
+    // profile-fetch hiccup can NEVER break the connection itself. The legacy
+    // integrations.threads_* columns above stay the source of truth until the
+    // post routes read social_accounts.
     try {
       const profile = await fetchThreadsProfile(access_token)
       if (profile.username) {
@@ -42,6 +47,11 @@ export async function GET(request: NextRequest) {
           .update({ threads_username: profile.username })
           .eq('user_id', user.id)
       }
+      await syncThreadsAccount(supabase, user.id, {
+        externalId: user_id,
+        username: profile.username ?? null,
+        accessToken: access_token,
+      })
     } catch { /* non-fatal — connection works without the handle */ }
 
     return NextResponse.redirect(`${appUrl}/setup?threads_connected=1`)

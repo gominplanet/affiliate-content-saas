@@ -87,6 +87,11 @@ export async function POST(request: NextRequest) {
       threads_access_token: null,
       threads_user_id: null,
     }).eq('threads_user_id', userId)
+    // Also purge the multi-account row keyed by this Threads user id (the
+    // external_id we store). Matched on platform+external_id since the webhook
+    // only carries the Threads id, not our Supabase user id.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await admin.from('social_accounts').delete().eq('platform', 'threads').eq('external_id', userId)
   }
 
   // Confirmation code — Meta uses this so the user can verify deletion went
