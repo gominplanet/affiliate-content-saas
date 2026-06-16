@@ -79,10 +79,10 @@ export async function middleware(request: NextRequest) {
   // password is configured in Vercel.
   if (session && !isPublic(pathname)) {
     const isLabsPage =
-      pathname === '/epc' || pathname === '/walmart-pb' || pathname === '/levanta' ||
-      pathname.startsWith('/epc/') || pathname.startsWith('/walmart-pb/') || pathname.startsWith('/levanta/')
+      pathname === '/epc' || pathname === '/walmart-pb' || pathname === '/levanta' || pathname === '/external-integrations' ||
+      pathname.startsWith('/epc/') || pathname.startsWith('/walmart-pb/') || pathname.startsWith('/levanta/') || pathname.startsWith('/external-integrations/')
     const isLabsApi =
-      pathname.startsWith('/api/campaigns') || pathname.startsWith('/api/walmart') || pathname.startsWith('/api/levanta')
+      pathname.startsWith('/api/campaigns') || pathname.startsWith('/api/walmart') || pathname.startsWith('/api/levanta') || pathname.startsWith('/api/integrations/external')
     if (isLabsPage || isLabsApi) {
       const expected = await expectedLabsToken()
       if (expected && request.cookies.get(LABS_COOKIE)?.value !== expected) {

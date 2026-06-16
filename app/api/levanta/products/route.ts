@@ -8,6 +8,7 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { listLevantaProducts, levantaRaw } from '@/services/levanta'
+import { getExternalKey } from '@/lib/external-keys'
 import type { Tier } from '@/lib/tier'
 
 export const dynamic = 'force-dynamic'
@@ -21,13 +22,13 @@ export async function GET(request: NextRequest) {
     const { data: intRow } = await supabase
       .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
     const tier = (intRow?.tier as Tier) ?? 'trial'
-    if (tier !== 'admin') {
-      return NextResponse.json({ ok: false, error: 'MVP x Levanta is admin-only while in Labs.' }, { status: 403 })
+    if (tier !== 'pro' && tier !== 'admin') {
+      return NextResponse.json({ ok: false, error: 'MVP x Levanta is a Pro feature.' }, { status: 403 })
     }
 
-    const token = process.env.LEVANTA_API_TOKEN?.trim()
+    const token = await getExternalKey(supabase, user.id, 'levanta')
     if (!token) {
-      return NextResponse.json({ ok: false, needsToken: true, error: 'LEVANTA_API_TOKEN is not set in the environment.' })
+      return NextResponse.json({ ok: false, needsToken: true, error: 'Connect your Levanta API key in External Integrations.' })
     }
 
     const { searchParams } = new URL(request.url)

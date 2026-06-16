@@ -336,11 +336,13 @@ export default function DashboardShellV2({
       label: 'Labs',
       items: [
         { href: '/epc', icon: <Radar size={15} />, label: 'MVP x EPC', gate: canUseLabs },
-        // Labs co-brand naming convention: "MVP x <partner>". Routes/services keep
-        // their historical names (walmart-pb, levanta). All admin-only while in
-        // Labs + behind the LABS_PASSWORD gate (middleware).
-        { href: '/walmart-pb', icon: <Store size={15} />, label: 'MVP x PartnerBoost', gate: isAdmin },
-        { href: '/levanta', icon: <ShoppingBag size={15} />, label: 'MVP x Levanta', gate: isAdmin },
+        // Labs co-brand naming: "MVP x <partner>". Routes/services keep historical
+        // names (walmart-pb, levanta). Open to Pro (canUseLabs) once the user
+        // connects their own key in External Integrations; all behind the
+        // LABS_PASSWORD gate (middleware).
+        { href: '/walmart-pb', icon: <Store size={15} />, label: 'MVP x PartnerBoost', gate: canUseLabs },
+        { href: '/levanta', icon: <ShoppingBag size={15} />, label: 'MVP x Levanta', gate: canUseLabs },
+        { href: '/external-integrations', icon: <Plug size={15} />, label: 'External Integrations', gate: canUseLabs },
       ],
     },
     {

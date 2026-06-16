@@ -111,7 +111,7 @@ export default function LevantaPage() {
       <div className="mb-3">
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold"
           style={{ background: 'rgba(34,211,238,0.14)', color: CYAN }}>
-          <FlaskConical size={11} /> MVP Labs · admin only
+          <FlaskConical size={11} /> MVP Labs · Pro
         </span>
       </div>
 
@@ -144,10 +144,9 @@ export default function LevantaPage() {
               </a>{' '}— API access is approval-gated, so request it from Levanta if you don&rsquo;t see it.
             </li>
             <li>
-              <span className="font-medium" style={{ color: 'var(--text)' }}>Connect it to MVP.</span> Copy your Levanta
-              Creator API key and add it as <code className="px-1 rounded" style={{ background: 'var(--surface-bright)' }}>LEVANTA_API_TOKEN</code>{' '}
-              in your hosting environment (Vercel → Settings → Environment Variables), then redeploy. The key stays
-              server-side — never entered on this page.
+              <span className="font-medium" style={{ color: 'var(--text)' }}>Connect it to MVP.</span> Paste your Levanta
+              Creator API key on the <a href="/external-integrations" className="font-medium" style={{ color: CYAN }}>External Integrations</a>{' '}
+              page. It&rsquo;s stored encrypted, server-side — and unlocks MVP x Levanta for your account.
             </li>
           </ol>
           <p className="font-semibold mb-1 mt-4" style={{ color: CYAN }}>Then, each time you want a post</p>
@@ -179,7 +178,7 @@ export default function LevantaPage() {
         <div className="rounded-xl border p-4 mb-4 flex items-start gap-3"
           style={{ background: 'rgba(239,68,68,0.08)', borderColor: 'rgba(239,68,68,0.35)' }}>
           <Lock size={16} className="flex-shrink-0 mt-0.5" style={{ color: '#ef4444' }} />
-          <p className="text-[13px]" style={{ color: 'var(--text)' }}>MVP x Levanta is admin-only while it&rsquo;s in Labs.</p>
+          <p className="text-[13px]" style={{ color: 'var(--text)' }}>MVP x Levanta is a Pro feature.</p>
         </div>
       )}
 
@@ -188,9 +187,8 @@ export default function LevantaPage() {
           style={{ background: 'rgba(245,158,11,0.10)', borderColor: 'rgba(245,158,11,0.40)' }}>
           <Lock size={16} className="flex-shrink-0 mt-0.5" style={{ color: '#f59e0b' }} />
           <div className="text-[13px]" style={{ color: 'var(--text)' }}>
-            <p className="font-semibold mb-1">Levanta API key not configured</p>
-            Set <code className="px-1 rounded" style={{ background: 'var(--surface-bright)' }}>LEVANTA_API_TOKEN</code> in
-            the Vercel environment (your Levanta dashboard → API key), then redeploy and refresh this page.
+            <p className="font-semibold mb-1">Levanta not connected</p>
+            Add your Levanta API key on the <a href="/external-integrations" className="font-medium underline" style={{ color: CYAN }}>External Integrations</a> page, then come back and refresh.
           </div>
         </div>
       )}

@@ -10,6 +10,7 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { listPartnerBoostProducts, listAmazonProducts, type PBBrandType } from '@/services/partnerboost'
+import { getExternalKey } from '@/lib/external-keys'
 import type { Tier } from '@/lib/tier'
 
 export const dynamic = 'force-dynamic'
@@ -22,12 +23,13 @@ export async function GET(request: NextRequest) {
 
     const { data: intRow } = await supabase
       .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
-    if (((intRow?.tier as Tier) ?? 'trial') !== 'admin') {
-      return NextResponse.json({ ok: false, error: 'Walmart PB is admin-only while in Labs.' }, { status: 403 })
+    const tier = (intRow?.tier as Tier) ?? 'trial'
+    if (tier !== 'pro' && tier !== 'admin') {
+      return NextResponse.json({ ok: false, error: 'MVP x PartnerBoost is a Pro feature.' }, { status: 403 })
     }
 
-    const token = process.env.PARTNERBOOST_API_TOKEN?.trim()
-    if (!token) return NextResponse.json({ ok: false, needsToken: true, error: 'PARTNERBOOST_API_TOKEN is not set.' })
+    const token = await getExternalKey(supabase, user.id, 'partnerboost')
+    if (!token) return NextResponse.json({ ok: false, needsToken: true, error: 'Connect your PartnerBoost API key in External Integrations.' })
 
     const { searchParams } = new URL(request.url)
     const brandId = searchParams.get('brandId') || undefined

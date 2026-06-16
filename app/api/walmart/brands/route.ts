@@ -17,6 +17,7 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { getExternalKey } from '@/lib/external-keys'
 import type { Tier } from '@/lib/tier'
 
 export const dynamic = 'force-dynamic'
@@ -35,16 +36,17 @@ export async function GET(request: NextRequest) {
       .eq('user_id', user.id)
       .maybeSingle()
     const tier = (intRow?.tier as Tier) ?? 'trial'
-    if (tier !== 'admin') {
-      return NextResponse.json({ ok: false, error: 'Walmart PB is admin-only while in Labs.' }, { status: 403 })
+    if (tier !== 'pro' && tier !== 'admin') {
+      return NextResponse.json({ ok: false, error: 'MVP x PartnerBoost is a Pro feature.' }, { status: 403 })
     }
 
-    // .trim() guards the common paste error: a trailing space/newline in the
-    // Vercel value makes PartnerBoost return "Publisher does not exist".
-    const token = process.env.PARTNERBOOST_API_TOKEN?.trim()
+    // Per-user key (External Integrations) with shared env fallback. getExternalKey
+    // already .trim()s — a trailing space made PartnerBoost return "Publisher does
+    // not exist".
+    const token = await getExternalKey(supabase, user.id, 'partnerboost')
     if (!token) {
       // Not an error — the page shows a one-time setup notice.
-      return NextResponse.json({ ok: false, needsToken: true, error: 'PARTNERBOOST_API_TOKEN is not set in the environment.' })
+      return NextResponse.json({ ok: false, needsToken: true, error: 'Connect your PartnerBoost API key in External Integrations.' })
     }
 
     const { searchParams } = new URL(request.url)

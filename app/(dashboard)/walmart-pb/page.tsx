@@ -168,7 +168,7 @@ export default function WalmartPBPage() {
       <div className="mb-2">
         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide"
           style={{ background: 'rgba(34,211,238,0.14)', color: '#0E7490' }}>
-          <FlaskConical size={11} /> MVP Labs · admin only
+          <FlaskConical size={11} /> MVP Labs · Pro
         </span>
       </div>
 
@@ -206,9 +206,8 @@ export default function WalmartPBPage() {
             <li>
               <span className="font-medium" style={{ color: 'var(--text)' }}>Connect it to MVP.</span> In PartnerBoost go to{' '}
               <span className="font-medium">Tools → API</span>, copy your <span className="font-medium">All-Channels API token</span>,
-              and add it as <code className="px-1 rounded" style={{ background: 'var(--surface-bright)' }}>PARTNERBOOST_API_TOKEN</code> in
-              your hosting environment (Vercel → Settings → Environment Variables), then redeploy. The token stays server-side
-              — you never paste it on this page — and powers Brand Boost for the whole workspace.
+              and paste it on the <a href="/external-integrations" className="font-medium" style={{ color: '#0E7490' }}>External Integrations</a>{' '}
+              page. It&rsquo;s stored encrypted, server-side — and unlocks MVP x PartnerBoost for your account.
             </li>
           </ol>
 
@@ -248,7 +247,7 @@ export default function WalmartPBPage() {
           style={{ background: 'rgba(239,68,68,0.08)', borderColor: 'rgba(239,68,68,0.35)' }}>
           <Lock size={16} className="flex-shrink-0 mt-0.5" style={{ color: '#ef4444' }} />
           <p className="text-[13px]" style={{ color: 'var(--text)' }}>
-            Brand Boost is admin-only while it&rsquo;s in Labs.
+            MVP x PartnerBoost is a Pro feature.
           </p>
         </div>
       )}
@@ -258,9 +257,8 @@ export default function WalmartPBPage() {
           style={{ background: 'rgba(245,158,11,0.10)', borderColor: 'rgba(245,158,11,0.40)' }}>
           <Lock size={16} className="flex-shrink-0 mt-0.5" style={{ color: '#f59e0b' }} />
           <div className="text-[13px]" style={{ color: 'var(--text)' }}>
-            <p className="font-semibold mb-1">PartnerBoost token not configured</p>
-            Set <code className="px-1 rounded" style={{ background: 'var(--surface-bright)' }}>PARTNERBOOST_API_TOKEN</code> in
-            the Vercel environment (your PartnerBoost dashboard → Tools → API token), then redeploy and refresh this page.
+            <p className="font-semibold mb-1">PartnerBoost not connected</p>
+            Add your PartnerBoost API token on the <a href="/external-integrations" className="font-medium underline" style={{ color: '#0E7490' }}>External Integrations</a> page, then come back and refresh.
           </div>
         </div>
       )}

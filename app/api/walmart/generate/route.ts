@@ -65,8 +65,8 @@ export async function POST(request: NextRequest) {
       .eq('user_id', user.id)
       .maybeSingle()
     const tier = (intRow?.tier as Tier) ?? 'trial'
-    if (tier !== 'admin') {
-      return NextResponse.json({ ok: false, error: 'Walmart PB is admin-only while in Labs.' }, { status: 403 })
+    if (tier !== 'pro' && tier !== 'admin') {
+      return NextResponse.json({ ok: false, error: 'MVP x PartnerBoost is a Pro feature.' }, { status: 403 })
     }
 
     const body = await request.json() as { product?: WMProductInput; brandTrackingUrl?: string; network?: string; draft?: boolean }

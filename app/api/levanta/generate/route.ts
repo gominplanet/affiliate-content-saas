@@ -19,6 +19,7 @@ import { createWordPressService } from '@/services/wordpress'
 import { createClaudeService, type BrandProfile } from '@/services/claude'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { createLevantaLink } from '@/services/levanta'
+import { getExternalKey } from '@/lib/external-keys'
 import { fetchAmazonProduct, isValidAsin, type AmazonProduct } from '@/services/amazon'
 import { researchProduct } from '@/services/research'
 import { setCtaThumb, stripCtaThumb } from '@/lib/cta-thumb'
@@ -58,17 +59,17 @@ export async function POST(request: NextRequest) {
       .eq('user_id', user.id)
       .maybeSingle()
     const tier = (intRow?.tier as Tier) ?? 'trial'
-    if (tier !== 'admin') {
-      return NextResponse.json({ ok: false, error: 'MVP x Levanta is admin-only while in Labs.' }, { status: 403 })
+    if (tier !== 'pro' && tier !== 'admin') {
+      return NextResponse.json({ ok: false, error: 'MVP x Levanta is a Pro feature.' }, { status: 403 })
     }
 
-    // Monthly AI-spend circuit breaker (catches runaway admin testing).
+    // Monthly AI-spend circuit breaker.
     const gate = await spendGate(user.id, tier)
     if (gate) return gate
 
-    const token = process.env.LEVANTA_API_TOKEN?.trim()
+    const token = await getExternalKey(supabase, user.id, 'levanta')
     if (!token) {
-      return NextResponse.json({ ok: false, error: 'LEVANTA_API_TOKEN is not set in the environment.' }, { status: 400 })
+      return NextResponse.json({ ok: false, error: 'Connect your Levanta API key in External Integrations.' }, { status: 400 })
     }
 
     const body = await request.json() as { product?: LevantaProductInput; draft?: boolean }
