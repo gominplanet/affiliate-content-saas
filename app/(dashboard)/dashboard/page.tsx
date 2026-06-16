@@ -150,15 +150,21 @@ export default async function DashboardPage() {
   const platformsTotal = platformFlags.length
   const platformsConnected = platformFlags.filter(Boolean).length
 
-  // Meta went live 2026-06-15 (App Review approved). Nudge paid users who
-  // haven't connected any Meta account yet — listing only the platforms their
-  // tier actually unlocks (Creator = FB + Threads; Studio+ adds Instagram).
-  const metaNudgePlatforms =
-    tier === 'creator' ? ['Facebook', 'Threads']
-    : (tier === 'studio' || tier === 'pro' || tier === 'admin') ? ['Facebook', 'Instagram', 'Threads']
-    : []
-  const anyMetaConnected = !!(int?.facebook_page_id || int?.instagram_user_id || int?.threads_access_token)
-  const showMetaNudge = metaNudgePlatforms.length > 0 && !anyMetaConnected
+  // Newly-live channels — Meta (Facebook/Instagram/Threads, 2026-06-15) and
+  // Pinterest (2026-06-16), both App Review approved. Nudge paid users to connect
+  // the ones their tier unlocks that they haven't connected yet. Per-platform
+  // filter (not all-or-nothing) so connecting one doesn't hide the rest.
+  // Creator = FB + Threads; Studio+ adds Instagram + Pinterest.
+  const newlyLiveChannels: Array<{ name: string; connected: boolean; tiers: string[] }> = [
+    { name: 'Facebook',  connected: !!int?.facebook_page_id,       tiers: ['creator', 'studio', 'pro', 'admin'] },
+    { name: 'Threads',   connected: !!int?.threads_access_token,   tiers: ['creator', 'studio', 'pro', 'admin'] },
+    { name: 'Instagram', connected: !!int?.instagram_user_id,      tiers: ['studio', 'pro', 'admin'] },
+    { name: 'Pinterest', connected: !!int?.pinterest_access_token, tiers: ['studio', 'pro', 'admin'] },
+  ]
+  const metaNudgePlatforms = newlyLiveChannels
+    .filter(c => c.tiers.includes(tier) && !c.connected)
+    .map(c => c.name)
+  const showMetaNudge = metaNudgePlatforms.length > 0
 
   const { data: recentVideos } = await sb
     .from('youtube_videos')

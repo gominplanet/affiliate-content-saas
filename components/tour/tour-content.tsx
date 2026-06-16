@@ -7,14 +7,15 @@
 // Single source of truth for the section prose so the in-app tour and the
 // public marketing tour never drift. Server component (no hooks) so both
 // host pages stay RSC. Fact-grounded tone — every line describes something
-// that ships today; features pending third-party approval (TikTok + Pinterest)
-// are omitted so the page never sells what doesn't work. Meta (Facebook /
-// Instagram / Threads) is LIVE as of 2026-06-15 (App Review approved).
+// that ships today; the one feature still pending third-party approval (TikTok)
+// is omitted so the page never sells what doesn't work. Meta (Facebook /
+// Instagram / Threads) went LIVE 2026-06-15 and Pinterest 2026-06-16 (App Review
+// approved) — both are showcased in the "Social auto-posting" section.
 
 import Link from 'next/link'
 import {
   FileText, Youtube, Search, Mail, Handshake, Lightbulb,
-  Layers, Users, Plug, MessageSquare, Code, Sparkles,
+  Layers, Users, Plug, MessageSquare, Code, Sparkles, Share2,
   ArrowRight, CheckCircle2, ArrowUpRight,
 } from 'lucide-react'
 
@@ -26,6 +27,7 @@ export type TourCtaMode = 'app' | 'public'
 const SECTIONS: Array<{ id: string; label: string }> = [
   { id: 'engine',       label: 'The blog content engine' },
   { id: 'copilot',      label: 'YouTube Co-Pilot' },
+  { id: 'social',       label: 'Social auto-posting' },
   { id: 'seo',          label: 'SEO that moves rank' },
   { id: 'newsletter',   label: 'Newsletter' },
   { id: 'collabs',      label: 'Brand outreach' },
@@ -207,6 +209,30 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
             so your analytics dashboard tells you whether to invest the next hour writing a blog post or recording a video.
           </p>
           {isApp && <SectionCta href="/co-pilot" label="Open YouTube Co-Pilot" />}
+        </Section>
+
+        {/* ── 2b. Social auto-posting ──────────────────────────────── */}
+        <Section id="social" icon={<Share2 size={18} />} title="Social auto-posting — one post, every channel">
+          <p>
+            Every review you publish goes out <strong>natively</strong> to your social channels, not as a bare link
+            dump. MVP writes a caption tuned to each feed — short and punchy where that wins, a proper card with the
+            thumbnail where the platform supports it — so the same post reads like it was made for that audience.
+          </p>
+          <p>
+            <strong>Live today:</strong> your WordPress blog plus Facebook, Instagram, Threads, Pinterest, X, LinkedIn,
+            Bluesky and Telegram — eight channels, real first-party API posting (no &quot;link in bio&quot; workarounds).
+            You can fire each post manually from the Social Push tab, or let it ride your publish schedule.
+          </p>
+          <ul>
+            <li><strong>Creator</strong> auto-posts to Facebook, Threads, LinkedIn and Bluesky.</li>
+            <li><strong>Studio</strong> adds Pinterest, Instagram and Telegram on top.</li>
+            <li><strong>Pro</strong> adds X (Twitter).</li>
+          </ul>
+          <p>
+            TikTok is in final platform review — it switches on automatically, at no extra cost, the moment it&apos;s
+            approved.
+          </p>
+          {isApp && <SectionCta href="/connect-socials" label="Connect your channels" />}
         </Section>
 
         {/* ── 3. SEO ───────────────────────────────────────────────── */}

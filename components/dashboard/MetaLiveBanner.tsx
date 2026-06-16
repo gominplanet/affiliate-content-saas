@@ -1,8 +1,8 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// "Meta is live" discovery banner on the dashboard — surfaces the newly-
-// approved Facebook / Instagram / Threads auto-posting to existing users who
-// haven't connected a Meta account yet. (Meta App Review approved 2026-06-15.)
+// "Newly live channels" discovery banner on the dashboard — surfaces the newly-
+// approved Facebook / Instagram / Threads (2026-06-15) AND Pinterest (2026-06-16)
+// auto-posting to existing users who haven't connected those channels yet.
 //
 // The server page decides ELIGIBILITY (paid tier + no Meta account connected)
 // and passes the tier-appropriate platform list as a prop; this client
@@ -16,7 +16,7 @@ import Link from 'next/link'
 import { Share2, ArrowRight, X } from 'lucide-react'
 
 // Bump the version to re-surface the banner after a major change.
-const STORAGE_KEY = 'mvp.metaLiveBanner.dismissed.v1'
+const STORAGE_KEY = 'mvp.metaLiveBanner.dismissed.v2'
 
 /** "A, B & C" — natural-language join for the platform list. */
 function joinList(items: string[]): string {
