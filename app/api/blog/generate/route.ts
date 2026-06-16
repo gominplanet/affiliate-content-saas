@@ -335,11 +335,14 @@ async function handleGenerate(request: Request) {
     // Admin (the owner) is unlimited — never capped at one rewrite per post.
     // Pro still gets a single AI rewrite per post.
     const usedRewrites = (existingForLimit.rewrite_count as number) ?? 0
-    if (tier !== 'admin' && usedRewrites >= 1) {
+    const REBUILD_CAP = 3
+    if (tier !== 'admin' && usedRewrites >= REBUILD_CAP) {
       return NextResponse.json({
-        error: `This post has already been rewritten once. Pro plans allow one AI rewrite per post — further edits should be made manually in WordPress.`,
+        error: `You've rebuilt this post ${REBUILD_CAP} times — that's the limit per post. Make further tweaks directly in WordPress, or generate a fresh post.`,
         limitReached: true,
         cap: 'rewrites',
+        rebuildsUsed: usedRewrites,
+        rebuildCap: REBUILD_CAP,
         currentTier: tier,
         upgrade: null,
       }, { status: 403 })
@@ -1488,7 +1491,8 @@ async function handleGenerate(request: Request) {
     // at the defaults (0 / null).
     ...(isRewrite
       ? {
-          rewrite_count: 1,
+          // Increment (not set) so the 3-per-post rebuild cap actually counts up.
+          rewrite_count: ((existingForLimit?.rewrite_count as number) ?? 0) + 1,
           last_rewrite_feedback: rewriteFeedback?.trim() || null,
         }
       : {}),

@@ -13,19 +13,26 @@
 import { useRef } from 'react'
 import { useModalA11y } from '@/components/ui/useModalA11y'
 
+const REBUILD_CAP = 3
+
 export function RewriteFeedbackModal({
   value,
   onChange,
   onCancel,
   onSubmit,
+  used,
 }: {
   value: string
   onChange: (v: string) => void
   onCancel: () => void
   onSubmit: () => void
+  /** Rebuilds already used on this post (optional — enables the "X of 3" copy). */
+  used?: number
 }) {
   const panelRef = useRef<HTMLDivElement | null>(null)
   const onA11yKey = useModalA11y(true, panelRef, onCancel)
+  const usedN = typeof used === 'number' ? used : null
+  const thisOne = usedN != null ? usedN + 1 : null
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
@@ -46,8 +53,9 @@ export function RewriteFeedbackModal({
           Rewrite this post
         </h3>
         <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-          Pro plans include <span className="font-semibold">one AI rewrite per post</span>.
-          Tell us what was missing so the second draft is actually different.
+          Each post can be rebuilt <span className="font-semibold">up to {REBUILD_CAP} times</span>
+          {usedN != null ? <> — you&apos;ve used <span className="font-semibold">{usedN} of {REBUILD_CAP}</span></> : null}.
+          Tell us what was missing so the next draft is actually different.
         </p>
         <textarea
           value={value}
@@ -73,7 +81,9 @@ export function RewriteFeedbackModal({
           </button>
         </div>
         <p className="text-[10px] text-[#86868b] mt-3">
-          Heads up — this counts as your one rewrite for this post. After this, further changes must be made manually in WordPress.
+          {thisOne != null
+            ? `Heads up — this is rebuild ${thisOne} of ${REBUILD_CAP} for this post. After ${REBUILD_CAP}, further changes are made manually in WordPress.`
+            : `Heads up — each post can be rebuilt up to ${REBUILD_CAP} times. After that, further changes are made manually in WordPress.`}
         </p>
       </div>
     </div>

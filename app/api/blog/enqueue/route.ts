@@ -95,8 +95,8 @@ export async function POST(request: Request) {
     if (tier !== 'pro' && tier !== 'admin') {
       return NextResponse.json({ error: 'Rewrite is a Pro feature. You can still edit the post manually in WordPress.', limitReached: true, cap: 'rewrites', currentTier: tier }, { status: 403 })
     }
-    if (tier !== 'admin' && ((existing.rewrite_count as number) ?? 0) >= 1) {
-      return NextResponse.json({ error: 'This post has already been rewritten once. Pro allows one AI rewrite per post.', limitReached: true, cap: 'rewrites', currentTier: tier }, { status: 403 })
+    if (tier !== 'admin' && ((existing.rewrite_count as number) ?? 0) >= 3) {
+      return NextResponse.json({ error: "You've rebuilt this post 3 times — that's the limit per post. Edit it directly in WordPress, or generate a fresh post.", limitReached: true, cap: 'rewrites', rebuildsUsed: (existing.rewrite_count as number) ?? 0, rebuildCap: 3, currentTier: tier }, { status: 403 })
     }
   } else {
     const trialUsage = await checkUsageLimit(supabase, user.id)
