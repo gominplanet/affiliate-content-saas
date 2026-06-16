@@ -621,7 +621,7 @@ const ROLES: Role[] = [
   {
     icon: <Share2 size={18} />,
     label: 'Social generator',
-    line: 'Native posts for X, LinkedIn, Bluesky & Telegram — each written for that feed. More channels rolling out.',
+    line: 'Native posts for Facebook, Instagram, Threads, Pinterest, X, LinkedIn, Bluesky & Telegram — each written for that feed. TikTok is next.',
   },
   {
     icon: <Globe size={18} />,
@@ -866,7 +866,7 @@ const STEPS: Step[] = [
   {
     icon: <Sparkles size={18} />,
     title: 'Generate 9 outputs from one video.',
-    body: 'Blog post, comparison, thumbnail, newsletter, a script for your next video, plus native posts for X, LinkedIn, Bluesky & Telegram. All in your voice. All in about four minutes.',
+    body: 'Blog post, comparison, thumbnail, newsletter, a script for your next video, plus native posts for Facebook, Instagram, Threads, Pinterest, X, LinkedIn, Bluesky & Telegram. All in your voice. All in about four minutes.',
   },
   {
     icon: <Upload size={18} />,
@@ -1507,7 +1507,7 @@ const PRICING_TIERS: PricingTier[] = [
     icon: <Sparkles size={16} />,
     features: [
       '20 posts / month (blog + thumbnail + metadata bundle)',
-      'Auto-post to LinkedIn + Bluesky',
+      'Auto-post to Facebook, Threads, Pinterest, LinkedIn & Bluesky',
       '1 face + 1 LoRA retrain / month, 10 Photobooth headshots',
       '10 video scripts + shot-lists / month',
       'Newsletter taster: 500 subs, 1 broadcast / month',
@@ -1526,7 +1526,7 @@ const PRICING_TIERS: PricingTier[] = [
     icon: <Crown size={16} />,
     features: [
       '45 posts / month (blog + thumbnail + metadata bundle)',
-      'Adds Telegram auto-post on top of Creator',
+      'Adds Instagram + Telegram auto-post on top of Creator',
       'Deals Hub: 5 deal posts / month + Amazon CSV bulk import',
       'Topic hubs + Refresh Images on published posts',
       '2 faces + 3 LoRA retrains / month, 15 Photobooth headshots',
@@ -2314,57 +2314,69 @@ function SpokeNode({ icon, label }: { icon: React.ReactNode; label: string }) {
   )
 }
 
-/** Platform bar — slim strip under the hero naming the channels MVP
- *  publishes to LIVE today (your WordPress site + the socials). Meta
- *  (Facebook / Instagram / Threads) went LIVE 2026-06-15 after App Review.
- *  Pinterest joined the live set 2026-06-16. TikTok is intentionally NOT
- *  listed until its platform review clears — we don't advertise what we
- *  can't yet deliver.
+/** Platform showcase — the distribution-reach strip under the hero. Every
+ *  generated post auto-publishes NATIVELY to each of these channels (amplifies
+ *  the content-first pitch; it's reach, not the headline). LIVE today: your
+ *  WordPress site + X, LinkedIn, Facebook, Instagram, Threads, Bluesky,
+ *  Telegram, Pinterest. Meta cleared App Review 2026-06-15, Pinterest 2026-06-16.
+ *  TikTok is intentionally NOT listed (still in review) — never advertise what
+ *  we can't yet deliver. The count is derived from PLATFORMS so it can't drift.
  *
- *  Visual: monochrome icons + names laid out horizontally, separated by
- *  thin dividers. Theme-aware via var(--text-faint). Wraps on mobile.
+ *  Visual: a count-driven headline + brand-colored channel chips that wrap.
+ *  Chip border/text are theme-aware; the icon carries the platform's brand
+ *  color (X/Threads use --text-soft so their black mark adapts to the theme).
  */
 function PlatformBar() {
   return (
-    <section className="px-6 lg:px-8 pt-2 pb-12 relative">
-      <div className="max-w-5xl mx-auto">
+    <section className="px-6 lg:px-8 pt-2 pb-14 relative">
+      <div className="max-w-4xl mx-auto text-center">
         <p
-          className="text-[10px] uppercase tracking-[0.18em] text-center mb-4"
+          className="text-[10px] uppercase tracking-[0.18em] mb-3"
           style={{ color: 'var(--text-faint)' }}
         >
-          Publishes natively to
+          One review video → published everywhere
         </p>
-        <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-3">
-          {PLATFORMS.map((p, i) => (
-            <span key={p.name} className="inline-flex items-center gap-3">
-              <span
-                className="inline-flex items-center gap-2 text-[13px]"
-                style={{ color: 'var(--text-soft)' }}
-              >
-                <span style={{ color: 'var(--text-muted)' }}>{p.icon}</span>
-                {p.name}
-              </span>
-              {i < PLATFORMS.length - 1 && (
-                <span className="hidden sm:inline" style={{ color: 'var(--text-faint)' }}>·</span>
-              )}
+        <p className="text-lg sm:text-xl font-medium mb-7 leading-snug" style={{ color: 'var(--text-soft)' }}>
+          Every post auto-publishes natively to{' '}
+          <span className="font-bold" style={{ color: '#7C3AED' }}>{PLATFORMS.length} channels</span>
+          {' '}— no copy-paste, no separate scheduler.
+        </p>
+        <div className="flex flex-wrap items-center justify-center gap-2.5">
+          {PLATFORMS.map((p) => (
+            <span
+              key={p.name}
+              className="inline-flex items-center gap-2 rounded-full px-3.5 py-2 text-[13px] font-medium"
+              style={{
+                color: 'var(--text-soft)',
+                border: '1px solid var(--text-faint)',
+                background: 'color-mix(in srgb, var(--text-soft) 4%, transparent)',
+              }}
+            >
+              <span style={{ color: p.color }}>{p.icon}</span>
+              {p.name}
             </span>
           ))}
         </div>
+        <p className="text-[11px] mt-5" style={{ color: 'var(--text-faint)' }}>
+          TikTok is in final platform review — it switches on automatically, at no extra cost, once approved.
+        </p>
       </div>
     </section>
   )
 }
 
 const PLATFORMS = [
-  { name: 'WordPress', icon: <Globe size={14} /> },
-  { name: 'X', icon: <Twitter size={14} /> },
-  { name: 'LinkedIn', icon: <Linkedin size={14} /> },
-  { name: 'Facebook', icon: <Facebook size={14} /> },
-  { name: 'Instagram', icon: <Instagram size={14} /> },
-  { name: 'Threads', icon: <AtSign size={14} /> },
-  { name: 'Bluesky', icon: <Cloud size={14} /> },
-  { name: 'Telegram', icon: <Send size={14} /> },
-  { name: 'Pinterest', icon: <Pin size={14} /> },
+  { name: 'WordPress', icon: <Globe size={15} />, color: '#21759B' },
+  // X + Threads brand marks are black/white — use the theme-aware token so
+  // they stay visible in both light and dark mode.
+  { name: 'X', icon: <Twitter size={15} />, color: 'var(--text-soft)' },
+  { name: 'LinkedIn', icon: <Linkedin size={15} />, color: '#0A66C2' },
+  { name: 'Facebook', icon: <Facebook size={15} />, color: '#1877F2' },
+  { name: 'Instagram', icon: <Instagram size={15} />, color: '#E1306C' },
+  { name: 'Threads', icon: <AtSign size={15} />, color: 'var(--text-soft)' },
+  { name: 'Bluesky', icon: <Cloud size={15} />, color: '#1185FE' },
+  { name: 'Telegram', icon: <Send size={15} />, color: '#229ED9' },
+  { name: 'Pinterest', icon: <Pin size={15} />, color: '#E60023' },
 ]
 
 /** Before/After visual — sits between Workflow (Section 4) and Grounded
