@@ -34,7 +34,8 @@ export async function GET(request: NextRequest) {
     const brandId = (searchParams.get('brandId') || '').trim()
     if (!brandId) return NextResponse.json({ ok: false, error: 'brandId required' }, { status: 400 })
     const cursor = searchParams.get('cursor') || undefined
-    const marketplace = searchParams.get('marketplace') || undefined
+    // Levanta validates `marketplace` strictly (missing/empty value 422s).
+    const marketplace = searchParams.get('marketplace') || 'all'
 
     const { products, cursor: next } = await listLevantaProducts(token, { brandIds: brandId, cursor, marketplace, limit: 60 })
     return NextResponse.json({ ok: true, products, cursor: next })

@@ -39,7 +39,9 @@ export async function GET(request: NextRequest) {
     const cursor = searchParams.get('cursor') || undefined
     const accessParam = searchParams.get('access')
     const access = accessParam === 'true' ? true : accessParam === 'false' ? false : undefined
-    const marketplace = searchParams.get('marketplace') || undefined
+    // Levanta validates `marketplace` strictly (a missing/empty value 422s).
+    // Default to 'all' so every partnered brand shows regardless of marketplace.
+    const marketplace = searchParams.get('marketplace') || 'all'
 
     const { brands, cursor: next } = await listLevantaBrands(token, { cursor, access, marketplace, limit: 100 })
     return NextResponse.json({ ok: true, brands, cursor: next })
