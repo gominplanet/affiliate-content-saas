@@ -24,6 +24,7 @@ import { buildPartnerBoostDeepLink } from '@/services/partnerboost'
 import { fetchAmazonProduct, isValidAsin, type AmazonProduct } from '@/services/amazon'
 import { researchProduct } from '@/services/research'
 import { setCtaThumb, stripCtaThumb } from '@/lib/cta-thumb'
+import { injectInlineAffiliateLinks } from '@/lib/inline-affiliate'
 import { buildCampaignHero } from '@/lib/hero-image'
 import { pickProductReferenceImage } from '@/lib/product-image'
 import { scrubBanned } from '@/lib/scrub'
@@ -189,6 +190,10 @@ export async function POST(request: NextRequest) {
     const excerpt = scrubBanned(generated.excerpt)
     let content = scrubBanned(generated.content)
     const slug = generated.slug || slugify(title)
+
+    // Weave the affiliate link into the body a few times (on the product name),
+    // so it isn't only in the CTA buttons. No-ops if the writer already did it.
+    content = injectInlineAffiliateLinks(content, effTitle, affiliateUrl, { max: 3 })
 
     // ── Publish to WordPress ─────────────────────────────────────────────────
     let tagIds: number[] = []
