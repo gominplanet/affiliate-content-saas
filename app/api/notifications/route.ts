@@ -32,18 +32,34 @@ export async function GET() {
 
   const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60_000).toISOString()
 
-  // Pull recent events + join blog_posts for title/url. The select uses
-  // an `as any` cast because the supabase-generated types don't yet know
-  // about migration 103's `kind` column. Drop after `gen types` runs.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
-    .from('scheduled_posts')
-    .select('id,kind,platform,status,scheduled_at,updated_at,error_message,blog_posts(title,wordpress_url)')
-    .eq('user_id', user.id)
-    .in('status', ['completed', 'failed'])
-    .gte('updated_at', weekAgo)
-    .order('updated_at', { ascending: false })
-    .limit(20)
+  // Both halves of the bell are independent reads — fire them together so the
+  // poll is one round-trip of latency, not two. The scheduled-posts select uses
+  // an `as any` cast because the generated types don't yet know migration 103's
+  // `kind` column. The support_tickets read is best-effort (a pre-migration-126
+  // DB must not break the bell), so its failure resolves to empty, not a throw.
+  const [scheduledRes, ticketsRes] = await Promise.all([
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any)
+      .from('scheduled_posts')
+      .select('id,kind,platform,status,scheduled_at,updated_at,error_message,blog_posts(title,wordpress_url)')
+      .eq('user_id', user.id)
+      .in('status', ['completed', 'failed'])
+      .gte('updated_at', weekAgo)
+      .order('updated_at', { ascending: false })
+      .limit(20),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any)
+      .from('support_tickets')
+      .select('id,subject,responded_at')
+      .eq('user_id', user.id)
+      .eq('status', 'answered')
+      .eq('response_seen', false)
+      .gte('responded_at', weekAgo)
+      .order('responded_at', { ascending: false })
+      .limit(20)
+      .then((r: { data: unknown }) => r, () => ({ data: null })),
+  ])
+  const { data, error } = scheduledRes
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
@@ -61,34 +77,22 @@ export async function GET() {
   }))
 
   // Answered help tickets the user hasn't opened yet (cleared when they visit
-  // /support). Best-effort — a missing support_tickets table (pre-migration
-  // 126) must not break the bell, so swallow errors. Merge + re-sort newest
-  // first, then cap to 20.
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: tickets } = await (supabase as any)
-      .from('support_tickets')
-      .select('id,subject,responded_at')
-      .eq('user_id', user.id)
-      .eq('status', 'answered')
-      .eq('response_seen', false)
-      .gte('responded_at', weekAgo)
-      .order('responded_at', { ascending: false })
-      .limit(20)
-    for (const t of (tickets ?? []) as Array<Record<string, unknown>>) {
-      events.push({
-        id: `support_${t.id as string}`,
-        kind: 'support',
-        platform: null,
-        status: 'completed',
-        blog_post_title: (t.subject as string | null) ?? 'Your ticket',
-        blog_post_url: '/support',
-        scheduled_at: (t.responded_at as string) ?? new Date().toISOString(),
-        updated_at: (t.responded_at as string) ?? new Date().toISOString(),
-        error_message: null,
-      })
-    }
-  } catch { /* table not migrated yet — skip */ }
+  // /support), from the parallel read above. Merge + re-sort newest first,
+  // then cap to 20. A missing support_tickets table resolved to data:null.
+  const tickets = (ticketsRes as { data: unknown }).data
+  for (const t of (tickets ?? []) as Array<Record<string, unknown>>) {
+    events.push({
+      id: `support_${t.id as string}`,
+      kind: 'support',
+      platform: null,
+      status: 'completed',
+      blog_post_title: (t.subject as string | null) ?? 'Your ticket',
+      blog_post_url: '/support',
+      scheduled_at: (t.responded_at as string) ?? new Date().toISOString(),
+      updated_at: (t.responded_at as string) ?? new Date().toISOString(),
+      error_message: null,
+    })
+  }
 
   events.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
 

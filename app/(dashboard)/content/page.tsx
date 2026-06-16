@@ -1720,9 +1720,17 @@ export default function ContentPage() {
         'tiktok_posted_at','instagram_posted_at',
         'created_at','updated_at',
       ].join(',')
+      // Safety cap: load the newest MAX_VIDEOS only (ordered desc), so a
+      // pathological catalogue can't pull tens of thousands of rows into the
+      // browser on every Library visit. Real channels sit well under this; if
+      // a user ever exceeds it they get the most-recent slice + a notice. The
+      // full fix (server-side pagination/virtualization) is the deferred,
+      // preview-tested follow-up — this is the guardrail until then.
+      const MAX_VIDEOS = 2500
       const all: Record<string, unknown>[] = []
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let lastError: any = null
+      let truncated = false
       for (let from = 0; ; from += PAGE) {
         const { data, error } = await sb
           .from('youtube_videos')
@@ -1740,6 +1748,10 @@ export default function ContentPage() {
         const chunk = (data as unknown as Record<string, unknown>[]) ?? []
         all.push(...chunk)
         if (chunk.length < PAGE) break
+        if (all.length >= MAX_VIDEOS) { truncated = true; break }
+      }
+      if (truncated) {
+        toast(`Showing your ${MAX_VIDEOS.toLocaleString()} most recent videos. Older ones aren't listed here yet.`)
       }
       if (lastError && all.length === 0) {
         // Surface to the user instead of silently rendering empty state.

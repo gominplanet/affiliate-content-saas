@@ -103,10 +103,14 @@ export async function GET() {
 
     // ── Load blog posts, YT videos (with codes), and WP sites in parallel ─────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const [postsRes, ytVideosRes, sitesRes] = await Promise.all([
+    const [postsRes, ytVideosRes, sitesRes, nullCodeRes] = await Promise.all([
+      // Note: `content` (full article HTML, tens of KB each) is NOT selected
+      // here — it's only needed to recover a missing geniuslink_code, so we pull
+      // it separately for just the null-code subset (nullCodeRes below). After
+      // the one-time backfill persists codes, that subset shrinks toward zero.
       supabase
         .from('blog_posts')
-        .select('id,title,wordpress_url,geniuslink_code,content,wordpress_site_id')
+        .select('id,title,wordpress_url,geniuslink_code,wordpress_site_id')
         .eq('user_id', user.id)
         .eq('status', 'published'),
       // The regenerated DB types lag migration 114 (which added
@@ -124,17 +128,29 @@ export async function GET() {
         .from('wordpress_sites')
         .select('id,label,url')
         .eq('user_id', user.id),
+      // Article HTML for ONLY the posts still missing a geniuslink_code — the
+      // sole reason content is needed. Heavy column, but a shrinking row set.
+      supabase
+        .from('blog_posts')
+        .select('id,content')
+        .eq('user_id', user.id)
+        .eq('status', 'published')
+        .is('geniuslink_code', null),
     ])
     const posts: BlogPostRow[] = (postsRes.data ?? []) as BlogPostRow[]
     const ytVideos: YouTubeVideoRow[] = ((ytVideosRes.data ?? []) as unknown) as YouTubeVideoRow[]
     const sites: WordPressSiteRow[] = (sitesRes.data ?? []) as WordPressSiteRow[]
+    const contentById = new Map<string, string | null>(
+      ((nullCodeRes.data ?? []) as Array<{ id: string; content: string | null }>)
+        .map(r => [r.id, r.content]),
+    )
 
-    // Backfill: extract geni.us/CODE from content for any post missing
-    // the column. Persist so we don't re-scrape next time.
+    // Backfill: extract geni.us/CODE from the (separately-fetched) content for
+    // any post missing the column. Persist so we don't re-scrape next time.
     const backfills: Array<{ id: string; code: string }> = []
     for (const p of posts) {
       if (p.geniuslink_code) continue
-      const code = extractCode(p.content)
+      const code = extractCode(contentById.get(p.id))
       if (code) {
         p.geniuslink_code = code
         backfills.push({ id: p.id, code })

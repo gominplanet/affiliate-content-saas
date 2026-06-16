@@ -34,13 +34,29 @@ function startOfMonthUtcIso(): string {
  */
 export async function monthlyAiSpendUsd(userId: string): Promise<number> {
   if (!userId) return 0
+  const since = startOfMonthUtcIso()
   try {
     const admin = createAdminClient()
+
+    // Fast path: the DB groups this month's rows by model (≤~20 rows back) and
+    // we price the grouped token sums in TS. Cost is linear per model, so this
+    // is exact parity with per-row pricing — but it never ships thousands of
+    // ai_usage rows over the wire on the hot generation path. See migration 134.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: grouped, error: rpcErr } = await (admin as any)
+      .rpc('user_ai_cost_rollup', { p_user: userId, p_since: since })
+    if (!rpcErr && Array.isArray(grouped)) {
+      let total = 0
+      for (const r of grouped as UsageRow[]) total += costOf(r)
+      return total
+    }
+
+    // Fallback for a pre-migration-134 DB (RPC missing): the original row scan.
     const { data, error } = await admin
       .from('ai_usage')
       .select('model, input_tokens, output_tokens, web_searches, images')
       .eq('user_id', userId)
-      .gte('created_at', startOfMonthUtcIso())
+      .gte('created_at', since)
     if (error || !data) return 0
     let total = 0
     for (const r of data as UsageRow[]) total += costOf(r)
