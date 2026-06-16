@@ -117,7 +117,8 @@ export default function WalmartPBPage() {
   const [prodLoading, setProdLoading] = useState<string | null>(null)
   const [prodErr, setProdErr] = useState<Record<string, string>>({})
   const [generating, setGenerating] = useState<string | null>(null)
-  const [results, setResults] = useState<Record<string, { url: string; cloaked: boolean }>>({})
+  const [results, setResults] = useState<Record<string, { url: string; editUrl?: string; draft?: boolean; cloaked: boolean }>>({})
+  const [publishLive, setPublishLive] = useState(false) // default: save as draft (safety net)
 
   const toggleProducts = async (b: Brand) => {
     if (!b.mcid) return
@@ -148,12 +149,12 @@ export default function WalmartPBPage() {
       const res = await fetch('/api/walmart/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ product: pr, brandTrackingUrl: b.tracking_url, network }),
+        body: JSON.stringify({ product: pr, brandTrackingUrl: b.tracking_url, network, draft: !publishLive }),
       })
       const j = await res.json()
       if (!j.ok) { toast.error(j.error || 'Generation failed'); return }
-      setResults((m) => ({ ...m, [key]: { url: j.wordpressUrl, cloaked: !!j.cloaked } }))
-      toast.success(j.cloaked ? 'Post published — link cloaked via Geniuslink' : 'Post published')
+      setResults((m) => ({ ...m, [key]: { url: j.wordpressUrl, editUrl: j.editUrl, draft: !!j.draft, cloaked: !!j.cloaked } }))
+      toast.success(`${j.draft ? 'Draft created' : 'Post published'}${j.cloaked ? ' — link cloaked via Geniuslink' : ''}`)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Network error')
     } finally {
@@ -253,6 +254,16 @@ export default function WalmartPBPage() {
               </button>
             ))}
           </div>
+          <button onClick={() => setPublishLive((v) => !v)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold"
+            style={{
+              background: publishLive ? 'rgba(16,185,129,0.14)' : 'rgba(245,158,11,0.14)',
+              color: publishLive ? '#10B981' : '#f59e0b',
+              border: '1px solid var(--border)',
+            }}
+            title="Draft = saves to WordPress as a draft to review first. Live = publishes immediately.">
+            {publishLive ? <><CheckCircle2 size={13} /> Publishing live</> : <><Clock size={13} /> Saving as draft</>}
+          </button>
           <button onClick={load} disabled={loading}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold disabled:opacity-50"
             style={{ background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}>
@@ -379,10 +390,10 @@ export default function WalmartPBPage() {
                               </p>
                             </div>
                             {done ? (
-                              <a href={done.url} target="_blank" rel="noopener noreferrer"
+                              <a href={done.draft ? (done.editUrl || done.url) : done.url} target="_blank" rel="noopener noreferrer"
                                 className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold flex-shrink-0"
                                 style={{ background: 'rgba(16,185,129,0.16)', color: '#10B981' }}>
-                                <CheckCircle2 size={12} /> View post <ExternalLink size={11} />
+                                <CheckCircle2 size={12} /> {done.draft ? 'View draft' : 'View post'} <ExternalLink size={11} />
                               </a>
                             ) : (
                               <button onClick={() => generatePost(b, pr)} disabled={gen}

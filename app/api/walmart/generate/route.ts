@@ -21,6 +21,8 @@ import { createWordPressService } from '@/services/wordpress'
 import { createClaudeService, type BrandProfile } from '@/services/claude'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { buildPartnerBoostDeepLink } from '@/services/partnerboost'
+import { fetchAmazonProduct, isValidAsin, type AmazonProduct } from '@/services/amazon'
+import { researchProduct } from '@/services/research'
 import { setCtaThumb, stripCtaThumb } from '@/lib/cta-thumb'
 import { scrubBanned } from '@/lib/scrub'
 import type { Tier } from '@/lib/tier'
@@ -64,7 +66,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: 'Walmart PB is admin-only while in Labs.' }, { status: 403 })
     }
 
-    const body = await request.json() as { product?: WMProductInput; brandTrackingUrl?: string; network?: string }
+    const body = await request.json() as { product?: WMProductInput; brandTrackingUrl?: string; network?: string; draft?: boolean }
     const p = body.product || {}
     if (!p.name || !p.url) {
       return NextResponse.json({ ok: false, error: 'A product with at least a name and URL is required.' }, { status: 400 })
@@ -115,16 +117,42 @@ export async function POST(request: NextRequest) {
       } catch { /* non-fatal — fall back to the PartnerBoost link */ }
     }
 
-    // ── Lightweight research brief from the datafeed (no web research) ───────
     const priceDisplay = p.price ? `$${p.price}` : null
-    const researchBrief = [
-      `Product: ${p.name}`,
+
+    // ── Enrich Amazon products via the existing scraper ──────────────────────
+    // The FBA datafeed has no description/bullets — fetchAmazonProduct(asin)
+    // backfills them (+ better images). Best-effort: falls back to datafeed.
+    const wantAmazon = body.network === 'Amazon' || (!!p.sku && isValidAsin(p.sku))
+    let amz: AmazonProduct | null = null
+    if (wantAmazon && p.sku && isValidAsin(p.sku)) {
+      try { amz = await fetchAmazonProduct(p.sku) } catch { amz = null }
+    }
+    const effTitle = amz?.title || p.name
+    const effDescription = amz?.description || p.description || ''
+    const effBullets = amz?.bullets ?? []
+    const effRating = amz?.rating || null
+    const heroImage = amz?.imageUrl || p.image || null
+
+    // ── Research brief: a light 2-search web pass (like the EPC path), with a
+    //    datafeed-only brief as the fallback if research errors or times out. ─
+    let researchBrief = [
+      `Product: ${effTitle}`,
       p.brand ? `Brand: ${p.brand}` : '',
       p.category ? `Category: ${p.category}` : '',
       priceDisplay ? `Price: ${priceDisplay}${p.oldPrice ? ` (was $${p.oldPrice})` : ''}` : '',
-      p.description ? `Manufacturer description: ${p.description.slice(0, 1800)}` : '',
-      `${body.network ? `Sold via ${body.network}. ` : ''}Write for a shopper deciding whether this is the right pick for them: who it suits, what problems it solves, the most common buyer questions, and the real trade-offs worth knowing before buying.`,
+      effDescription ? `Manufacturer description: ${effDescription.slice(0, 1800)}` : '',
+      `${body.network ? `Sold via ${body.network}. ` : ''}Write for a shopper deciding whether this is the right pick: who it suits, what problems it solves, common buyer questions, and the real trade-offs before buying.`,
     ].filter(Boolean).join('\n')
+    try {
+      const researchInput: AmazonProduct = amz || {
+        asin: p.sku || '', title: p.name, bullets: [], description: p.description || '',
+        price: priceDisplay, rating: null, imageUrl: p.image || null,
+        images: p.image ? [p.image] : [], priceWas: p.oldPrice || null, priceSale: null,
+        dealBadge: null, dealEndsAt: null, discountPct: null,
+      }
+      const research = await researchProduct(researchInput, { userId: user.id, tier }, { maxSearches: 2, timeoutMs: 120_000 })
+      if (research?.brief) researchBrief = research.brief
+    } catch { /* keep the datafeed-only brief */ }
 
     // ── Generate (reuses the campaign writer — informational, no fake testing) ─
     const claude = createClaudeService()
@@ -132,12 +160,12 @@ export async function POST(request: NextRequest) {
       brand,
       {
         product: {
-          asin: p.sku || '', // no ASIN for Walmart — SKU stands in as the identifier
-          title: p.name,
-          bullets: [],
-          description: p.description || '',
+          asin: p.sku || '', // Walmart/DTC: SKU stands in; Amazon: the real ASIN
+          title: effTitle,
+          bullets: effBullets,
+          description: effDescription,
           price: priceDisplay,
-          rating: null,
+          rating: effRating,
         },
         researchBrief,
         affiliateUrl,
@@ -158,11 +186,12 @@ export async function POST(request: NextRequest) {
       try { categoryIds = [await wpService.createCategory(generated.category)] } catch { /* non-fatal */ }
     }
 
+    const status: 'publish' | 'draft' = body.draft ? 'draft' : 'publish'
     let wpPost
     try {
       wpPost = await wpService.createPost({
         title, slug, content, excerpt,
-        status: 'publish',
+        status,
         tags: tagIds,
         categories: categoryIds,
         comment_status: 'closed',
@@ -172,11 +201,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: `WordPress publish failed: ${err instanceof Error ? err.message : 'unknown'}` }, { status: 502 })
     }
 
-    // ── Featured image + CTA thumb = the real Walmart product photo ───────────
+    // ── Featured image + CTA thumb = the product photo (Amazon main if enriched) ─
     let heroUrl: string | null = null
-    if (p.image) {
+    if (heroImage) {
       try {
-        const media = await wpService.uploadImageFromUrl(p.image, `${(p.sku || 'wmt')}-walmart.jpg`)
+        const media = await wpService.uploadImageFromUrl(heroImage, `${(p.sku || 'wmt')}-product.jpg`)
         heroUrl = media.source_url || null
         const fixed = heroUrl ? setCtaThumb(content, heroUrl) : stripCtaThumb(content)
         const changed = fixed !== content
@@ -197,16 +226,19 @@ export async function POST(request: NextRequest) {
       await (supabase as any).from('blog_posts').insert({
         user_id: user.id,
         title,
-        status: 'published',
+        status: status === 'draft' ? 'draft' : 'published',
         post_type: 'review',
         wordpress_url: wpPost.link,
         wordpress_post_id: wpPost.id,
       })
     } catch { /* non-fatal — the post is already live on WordPress */ }
 
+    const editUrl = `${wpCreds.wordpress_url.replace(/\/+$/, '')}/wp-admin/post.php?post=${wpPost.id}&action=edit`
     return NextResponse.json({
       ok: true,
       wordpressUrl: wpPost.link,
+      editUrl,
+      draft: status === 'draft',
       affiliateUrl,
       cloaked,
       linkSource,
