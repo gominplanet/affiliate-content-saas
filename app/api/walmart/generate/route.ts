@@ -28,6 +28,7 @@ import { injectInlineAffiliateLinks } from '@/lib/inline-affiliate'
 import { buildCampaignHero } from '@/lib/hero-image'
 import { pickProductReferenceImage } from '@/lib/product-image'
 import { scrubBanned } from '@/lib/scrub'
+import { spendGate } from '@/lib/ai-spend'
 import type { Tier } from '@/lib/tier'
 
 export const dynamic = 'force-dynamic'
@@ -68,6 +69,12 @@ export async function POST(request: NextRequest) {
     if (tier !== 'pro' && tier !== 'admin') {
       return NextResponse.json({ ok: false, error: 'MVP x PartnerBoost is a Pro feature.' }, { status: 403 })
     }
+
+    // Dollar backstop — this path runs Opus + image gen, so it must respect the
+    // monthly spend ceiling (and the global one) like every other generation
+    // route. Was previously ungated, bypassing the cost circuit-breaker.
+    const gate = await spendGate(user.id, tier)
+    if (gate) return gate
 
     const body = await request.json() as { product?: WMProductInput; brandTrackingUrl?: string; network?: string; draft?: boolean }
     const p = body.product || {}

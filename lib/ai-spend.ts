@@ -28,6 +28,51 @@ function startOfMonthUtcIso(): string {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString()
 }
 
+/** First instant of the current UTC day, as an ISO string. */
+function startOfDayUtcIso(): string {
+  const now = new Date()
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).toISOString()
+}
+
+/**
+ * Platform-wide AI spend for the current UTC day, in USD. This is the global
+ * backstop: the per-user ceiling can't stop a coordinated flood of free-trial
+ * signups (1,000 trials × $5 = $5,000) from running up an aggregate bill, so
+ * spendGate also checks this when GLOBAL_DAILY_SPEND_CEILING_USD is set.
+ *
+ * Uses the DB-side admin_ai_cost_rollup RPC (migration 129) — a GROUP BY that
+ * returns a few rows priced in TS, NOT a full-table scan. Cached in-process for
+ * 60s so concurrent generations don't each re-run the platform-wide sum.
+ * Returns 0 on any error (fail-open). Reads cross-user totals → service-role.
+ */
+let globalSpendCache: { at: number; usd: number } | null = null
+const GLOBAL_SPEND_CACHE_MS = 60_000
+export async function globalDailySpendUsd(): Promise<number> {
+  const now = Date.now()
+  if (globalSpendCache && now - globalSpendCache.at < GLOBAL_SPEND_CACHE_MS) {
+    return globalSpendCache.usd
+  }
+  try {
+    const admin = createAdminClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data, error } = await (admin as any)
+      .rpc('admin_ai_cost_rollup', { p_since: startOfDayUtcIso() })
+    if (error || !Array.isArray(data)) return 0
+    let total = 0
+    for (const r of data as UsageRow[]) total += costOf(r)
+    globalSpendCache = { at: now, usd: total }
+    return total
+  } catch {
+    return 0 // fail-open: a telemetry hiccup must never hard-block generation
+  }
+}
+
+/** The platform-wide daily ceiling in USD, or null if unset (guard disabled). */
+export function globalDailyCeilingUsd(): number | null {
+  const raw = Number(process.env.GLOBAL_DAILY_SPEND_CEILING_USD || '')
+  return Number.isFinite(raw) && raw > 0 ? raw : null
+}
+
 /**
  * Total USD of AI cost this account has incurred since the start of the
  * current calendar month. Returns 0 on any error (fail-open).
@@ -125,6 +170,22 @@ export async function checkSpendCeiling(
  */
 export async function spendGate(userId: string, tier: unknown): Promise<NextResponse | null> {
   if (!userId) return null
+
+  // Platform-wide daily backstop (off unless GLOBAL_DAILY_SPEND_CEILING_USD is
+  // set). Catches a coordinated trial-signup flood that the per-user ceiling
+  // can't — admins are exempt so the operator can still work past a paused day.
+  const globalCeiling = globalDailyCeilingUsd()
+  if (globalCeiling != null && normalizeTier(tier) !== 'admin') {
+    const globalSpent = await globalDailySpendUsd()
+    if (globalSpent >= globalCeiling) {
+      return NextResponse.json({
+        error: 'Generation is paused for a short while due to unusually high platform-wide demand. Please try again later — your usage limits are unaffected.',
+        limitReached: true,
+        cap: 'global',
+      }, { status: 503 })
+    }
+  }
+
   const status = await spendStatus(userId, tier)
   if (!status.exceeded) return null
   const next = nextTierFor(status.tier, 'postsPerMonth')
