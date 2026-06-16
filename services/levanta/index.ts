@@ -132,14 +132,22 @@ export async function listLevantaProducts(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     products: list.map((p: any): LevantaProduct => {
       const img = p.image ?? p.imageUrl ?? p.image_url
+      // Levanta nests these: price.value (string), commission.totalCommission as
+      // a FRACTION ("0.120" = 12%), availability "IN_STOCK". Map precisely;
+      // keep flat aliases as fallback for any future shape drift.
+      const commRaw = asNum(
+        p?.commission?.totalCommission ?? p?.commission?.sellerCommission ??
+        p?.commission?.rate ?? p?.commission?.value ?? p.commissionRate ?? p.commission_rate,
+      )
       return {
-        asin: asStr(p.asin ?? p.ASIN ?? p.primary_id ?? p.primaryId ?? p.amazonAsin ?? p.amazon_asin).trim().toUpperCase(),
+        asin: asStr(p.primaryId ?? p.asin ?? p.ASIN ?? p.primary_id ?? p.amazonAsin ?? p.amazon_asin).trim().toUpperCase(),
         marketplace: asStr(p.marketplace),
-        price: asNum(p?.pricing?.price ?? p.price ?? p.listPrice ?? p.list_price ?? p.salePrice ?? p.sale_price ?? p?.price?.amount),
-        currency: asStrOrNull(p?.pricing?.currency ?? p.currency ?? p?.price?.currency),
-        commission: asNum(p.commission ?? p.commissionRate ?? p.commission_rate ?? p.commissionPercent ?? p.commission_percent ?? p?.commission?.rate ?? p?.commission?.value),
+        price: asNum(p?.pricing?.price ?? p?.price?.value ?? p.listPrice ?? p.list_price ?? p.salePrice ?? p.sale_price ?? p.price),
+        currency: asStrOrNull(p?.pricing?.currency ?? p?.price?.currency ?? p.currency),
+        // Store as a percentage (0.120 → 12) so the page can render "12%".
+        commission: commRaw != null ? Math.round(commRaw * 1000) / 10 : null,
         title: asStr(p.title ?? p.name ?? p.product_name),
-        inStock: !!(p.inStock ?? p.in_stock),
+        inStock: typeof p.availability === 'string' ? p.availability.toUpperCase() === 'IN_STOCK' : !!(p.inStock ?? p.in_stock),
         category: asStrOrNull(p.category),
         brandId: asStrOrNull(p.brandId ?? p.brand_id ?? p.brandID),
         access: !!p.access,
