@@ -1917,6 +1917,16 @@ export default function ContentPage() {
 
   useEffect(() => { load() }, [load])
 
+  // Load the active tab's data on ANY activation — the tab's onClick, the
+  // sidebar "Social Push" deep-link (?tab=posts), or a restored ?tab=. The
+  // loaders were previously wired ONLY to the tab onClick, so a programmatic
+  // tab switch opened the tab but never fetched (showed "No posts live yet").
+  useEffect(() => {
+    if (activeTab === 'posts' && !postsLoaded && !postsLoading) loadWpPosts()
+    if (activeTab === 'scheduled' && scheduledItems === null && !scheduledLoading) loadScheduled()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab])
+
   // ── Active-tab-aware refresh + auto-refresh on visibility ────────────────
   // Why both: each tab loads from a different source. `load()` reloads
   // videos from Supabase; `loadWpPosts()` reloads published posts from
