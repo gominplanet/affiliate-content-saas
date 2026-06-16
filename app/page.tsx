@@ -1727,7 +1727,7 @@ interface Stat {
 const STATS: Stat[] = [
   { value: '$3M+', label: '/yr at Gominplanet', detail: 'real affiliate revenue, run on MVP' },
   { value: '4 min', label: 'average workflow', detail: 'video → 9 outputs' },
-  { value: '9', label: 'outputs per video', detail: 'blog, comparison, thumbnail, newsletter, script + 4 socials' },
+  { value: '9', label: 'outputs per video', detail: 'blog, comparison, thumbnail, newsletter, script + social fan-out' },
   { value: '0', label: 'fabricated claims', detail: 'every output grounded in your video' },
 ]
 

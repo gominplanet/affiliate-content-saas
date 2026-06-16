@@ -184,6 +184,12 @@ create index if not exists scheduled_posts_updated_at_idx
   },
 ]
 
+// Per-instance memo of the last probe result. Schema drift is not a
+// per-request concern, so a short TTL keeps the banner fresh without
+// re-probing on every admin navigation.
+const CACHE_TTL_MS = 5 * 60_000
+let cached: { at: number; applied: string[]; missing: Array<{ id: string; what: string; sql: string }> } | null = null
+
 export async function GET() {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -199,50 +205,51 @@ export async function GET() {
     return NextResponse.json({ applied: [], missing: [], notAdmin: true })
   }
 
-  const admin = createAdminClient()
-  const applied: string[] = []
-  const missing: Array<{ id: string; what: string; sql: string }> = []
+  // Serve a recent result if we have one — schema doesn't change between
+  // page loads, but this route is fetched on EVERY admin dashboard navigation
+  // (the banner is in the layout). Without this, every nav re-probes all
+  // CHECKS. In-process cache is per-warm-instance, which is plenty here.
+  const now = Date.now()
+  if (cached && now - cached.at < CACHE_TTL_MS) {
+    return NextResponse.json({ applied: cached.applied, missing: cached.missing, cached: true })
+  }
 
-  // Probe via a direct `select <col> from <table> limit 0`. PostgREST
-  // surfaces a missing-column error with a recognizable shape (code
-  // '42703' or message containing "column does not exist"). This avoids
-  // dependence on either an information_schema RPC or a custom DB
-  // function — works on every Supabase install. The previous approach
-  // tried a `column_exists` RPC that doesn't exist in this codebase
-  // and fell through to an information_schema query that Supabase JS
-  // can't run by default; net result was every migration always
-  // appeared missing (the banner showed for admins on every page load).
-  for (const c of CHECKS) {
-    let exists: boolean
+  const admin = createAdminClient()
+
+  // Probe via a direct `select <col> from <table> limit 0`. PostgREST surfaces
+  // a missing-column error with a recognizable shape (42703), a missing table
+  // as 42P01 / PGRST205. Works on every Supabase install (no information_schema
+  // RPC needed). All probes run in PARALLEL — they're independent reads, so
+  // ~19 serial round-trips collapse to one wall-clock batch.
+  const results = await Promise.all(CHECKS.map(async (c) => {
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error } = await (admin as any)
-        .from(c.table)
-        .select(c.column)
-        .limit(0)
-      if (!error) {
-        exists = true
-      } else {
-        // 42703 = undefined_column, 42P01 = undefined_table, PGRST205 =
-        // PostgREST "table not in schema cache" (a missing table-add migration).
-        // We flag all three as drift. Anything else (RLS, auth, network) is
-        // "unknown" → fail OPEN (assume applied) so a transient blip doesn't
-        // flag a false drift to the admin.
-        const msg = String((error as { code?: string; message?: string }).message ?? '')
-        const code = String((error as { code?: string }).code ?? '')
-        exists = !(
-          code === '42703' || code === '42P01' || code === 'PGRST205' ||
-          /column .* does not exist/i.test(msg) ||
-          /relation .* does not exist/i.test(msg) ||
-          /could not find the table/i.test(msg)
-        )
-      }
+      const { error } = await (admin as any).from(c.table).select(c.column).limit(0)
+      if (!error) return { c, exists: true }
+      const msg = String((error as { code?: string; message?: string }).message ?? '')
+      const code = String((error as { code?: string }).code ?? '')
+      // 42703 = undefined_column, 42P01 = undefined_table, PGRST205 = table not
+      // in schema cache. Flag all three as drift. Anything else (RLS, auth,
+      // network) is "unknown" → fail OPEN so a transient blip isn't false drift.
+      const exists = !(
+        code === '42703' || code === '42P01' || code === 'PGRST205' ||
+        /column .* does not exist/i.test(msg) ||
+        /relation .* does not exist/i.test(msg) ||
+        /could not find the table/i.test(msg)
+      )
+      return { c, exists }
     } catch {
-      exists = true  // fail open on any thrown error
+      return { c, exists: true } // fail open on any thrown error
     }
+  }))
+
+  const applied: string[] = []
+  const missing: Array<{ id: string; what: string; sql: string }> = []
+  for (const { c, exists } of results) {
     if (exists) applied.push(c.id)
     else missing.push({ id: c.id, what: c.what, sql: c.sql })
   }
 
+  cached = { at: now, applied, missing }
   return NextResponse.json({ applied, missing })
 }
