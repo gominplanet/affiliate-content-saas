@@ -25,16 +25,75 @@
 
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { claimNextJob, completeJob, failJob } from '@/lib/generation-jobs'
+import { claimNextJob, completeJob, failJob, type GenerationJob } from '@/lib/generation-jobs'
 import { runGenerationJob } from '@/lib/generation-job-runner'
 
-// A blog job invokes the full generation route internally and AWAITS it (up to
-// ~290s), so the worker needs the same 300s ceiling the sync generate route
-// uses. One heavy job per tick — the every-minute schedule + SKIP LOCKED claim
-// let successive ticks run different jobs in parallel, so a backlog still drains
-// without any single invocation juggling two long generations.
+// Each blog job invokes the full generation route via an internal HTTP self-call
+// and AWAITS it (up to ~290s) — but the heavy generation runs in its OWN function
+// invocation, so this worker just holds in-flight fetches (cheap, I/O-bound).
+// That lets one tick claim + run several jobs CONCURRENTLY (each claim uses FOR
+// UPDATE SKIP LOCKED, so they're distinct and never collide with a sibling tick),
+// multiplying drain rate without any single generation juggling another.
+//
+// CONCURRENCY is env-tunable so throughput can be raised WITHOUT a deploy — bump
+// GENERATION_WORKER_CONCURRENCY before a traffic spike. At N, effective start
+// rate is ~N jobs/min (the every-minute cron) and ticks still overlap, so the
+// queue drains ~N× faster than the old 1-at-a-time worker. Capped at 10 so a
+// fat-finger env value can't fan out unbounded concurrent generations.
 export const maxDuration = 300
-const MAX_PER_TICK = 1
+const CONCURRENCY = Math.max(1, Math.min(10, Number(process.env.GENERATION_WORKER_CONCURRENCY) || 3))
+
+/** Run a single claimed job to completion, returning a result row. Holds the
+ *  full timeout / permanent-failure / complete bookkeeping so jobs can run
+ *  concurrently. Never throws — always resolves a row. */
+async function processOneJob(
+  admin: ReturnType<typeof createAdminClient>,
+  job: GenerationJob,
+): Promise<{ id: string; ok: boolean; error?: string }> {
+  let result
+  try {
+    result = await runGenerationJob(admin, job)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    // Client-side timeout/abort: the generate route does NOT abort when we
+    // disconnect, so it may still be publishing. Do NOT requeue — a 2nd
+    // concurrent run risks a duplicate post. Leave the job 'running'; the
+    // stale-claim window (600s, > the route's 300s ceiling) re-runs it only if
+    // it truly died, and a re-run UPDATES in place (isRewrite), so no dup.
+    if (/^TIMEOUT/i.test(msg)) {
+      // MONEY-SAFETY (2026-06-12): a timed-out job left 'running' got re-run by
+      // the 600s stale-claim every ~10 min, re-billing a full Opus generation
+      // each time. Once the attempts budget is spent, fail it terminally.
+      if (job.attempts >= job.max_attempts) {
+        await failJob(
+          admin,
+          { ...job, attempts: job.max_attempts },
+          'Generation timed out repeatedly — stopped to avoid re-billing. Try a shorter length or Retry.',
+        )
+        return { id: job.id, ok: false, error: 'timeout — gave up after max attempts' }
+      }
+      return { id: job.id, ok: false, error: 'timeout — left running for stale recovery' }
+    }
+    // PERMANENT: deterministic 4xx refusal (review-worthiness gate, caps,
+    // validation) — fail terminally on the first attempt instead of replaying
+    // the same refusal until the retry budget runs out.
+    if (/^PERMANENT:\s*/i.test(msg)) {
+      const clean = msg.replace(/^PERMANENT:\s*/i, '')
+      await failJob(admin, { ...job, attempts: job.max_attempts }, clean)
+      return { id: job.id, ok: false, error: clean }
+    }
+    await failJob(admin, job, msg)
+    return { id: job.id, ok: false, error: msg }
+  }
+  // Success. Complete OUTSIDE the run-try so a transient completeJob error can't
+  // fall into the failure path and re-run an already-published post. If the
+  // status write fails, the job ran + published; a later tick / the stale window
+  // reconciles it (the .eq('status','running') guard keeps it safe).
+  try {
+    await completeJob(admin, job.id, result)
+  } catch { /* published already; status write will reconcile */ }
+  return { id: job.id, ok: true }
+}
 
 export async function GET(req: Request) {
   const authHeader = req.headers.get('authorization')
@@ -43,76 +102,34 @@ export async function GET(req: Request) {
   }
 
   const admin = createAdminClient()
-  const processed: Array<{ id: string; ok: boolean; error?: string }> = []
 
-  for (let i = 0; i < MAX_PER_TICK; i++) {
-    let job
+  // Claim up to CONCURRENCY jobs up front, then run them all in parallel.
+  const claimed: GenerationJob[] = []
+  let claimNote: string | undefined
+  for (let i = 0; i < CONCURRENCY; i++) {
+    let job: GenerationJob | null
     try {
       job = await claimNextJob(admin)
     } catch (e) {
-      // RPC missing (pre-migration 119) or a transient DB error — end the tick
-      // cleanly; next minute tries again.
-      return NextResponse.json({
-        processed: processed.length,
-        jobs: processed,
-        note: e instanceof Error ? e.message : 'claim failed',
-      })
+      // RPC missing (pre-migration 119) or a transient DB error — stop claiming,
+      // process whatever we already hold; next minute tries again.
+      claimNote = e instanceof Error ? e.message : 'claim failed'
+      break
     }
     if (!job) break // queue empty
-
-    let result
-    try {
-      result = await runGenerationJob(admin, job)
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      // Client-side timeout/abort: the generate route does NOT abort when we
-      // disconnect, so it may still be publishing. Do NOT requeue — a 2nd
-      // concurrent run risks a duplicate post. Leave the job 'running'; the
-      // stale-claim window (600s, > the route's 300s ceiling) re-runs it only if
-      // it truly died, and a re-run UPDATES in place (isRewrite), so no dup.
-      if (/^TIMEOUT/i.test(msg)) {
-        // MONEY-SAFETY (2026-06-12): a job that times out used to be left
-        // 'running' forever — the 600s stale-claim re-ran it every ~10 min, and
-        // EACH re-run bills a full Opus generation. claim_generation_job bumps
-        // `attempts` on every (re)claim, but nothing here enforced the cap, so a
-        // post too heavy to finish in 300s re-billed indefinitely. Now: once the
-        // attempts budget is spent, stop re-running and fail it terminally. Below
-        // the cap, keep the stale-recovery behaviour (re-run only if it truly
-        // died; the in-place isRewrite update prevents duplicate posts).
-        if (job.attempts >= job.max_attempts) {
-          await failJob(
-            admin,
-            { ...job, attempts: job.max_attempts },
-            'Generation timed out repeatedly — stopped to avoid re-billing. Try a shorter length or Retry.',
-          )
-          processed.push({ id: job.id, ok: false, error: 'timeout — gave up after max attempts' })
-          continue
-        }
-        processed.push({ id: job.id, ok: false, error: 'timeout — left running for stale recovery' })
-        continue
-      }
-      // PERMANENT: deterministic 4xx refusal (review-worthiness gate, caps,
-      // validation) — fail terminally on the first attempt instead of
-      // replaying the same refusal until the retry budget runs out.
-      if (/^PERMANENT:\s*/i.test(msg)) {
-        const clean = msg.replace(/^PERMANENT:\s*/i, '')
-        await failJob(admin, { ...job, attempts: job.max_attempts }, clean)
-        processed.push({ id: job.id, ok: false, error: clean })
-        continue
-      }
-      await failJob(admin, job, msg)
-      processed.push({ id: job.id, ok: false, error: msg })
-      continue
-    }
-    // Success. Complete OUTSIDE the run-try so a transient completeJob error
-    // can't fall into the failure path and re-run an already-published post. If
-    // the status write fails, the job ran + published; a later tick / the stale
-    // window reconciles it (the .eq('status','running') guard keeps it safe).
-    try {
-      await completeJob(admin, job.id, result)
-    } catch { /* published already; status write will reconcile */ }
-    processed.push({ id: job.id, ok: true })
+    claimed.push(job)
   }
 
-  return NextResponse.json({ processed: processed.length, jobs: processed })
+  const settled = await Promise.allSettled(claimed.map(job => processOneJob(admin, job)))
+  const processed = settled.map((s, i) =>
+    s.status === 'fulfilled'
+      ? s.value
+      : { id: claimed[i].id, ok: false, error: s.reason instanceof Error ? s.reason.message : 'job crashed' },
+  )
+
+  return NextResponse.json({
+    processed: processed.length,
+    jobs: processed,
+    ...(claimNote ? { note: claimNote } : {}),
+  })
 }

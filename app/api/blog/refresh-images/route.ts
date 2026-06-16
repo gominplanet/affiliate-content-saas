@@ -17,6 +17,7 @@ import { fetchStoryboardFrames } from '@/lib/youtube-storyboards'
 import { verifyProductMatch } from '@/lib/product-image'
 import { resolveProductReference } from '@/lib/resolve-product-reference'
 import { normalizeTier, allowedBlogImages, tierHas } from '@/lib/tier'
+import { spendGate } from '@/lib/ai-spend'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 import { gutenbergImageBlock, pickBodyImageOffsets, insertImagesAtOffsets } from '@/lib/blog-body-images'
 import { SHOT_PERSPECTIVES, sectionHeadings, generateBodyImagePrompts } from '@/lib/blog-image-prompts'
@@ -68,6 +69,12 @@ export async function POST(request: Request) {
       code: 'tier_not_allowed',
     }, { status: 403 })
   }
+
+  // Monthly AI-spend circuit breaker — re-rendering images burns FAL/Gemini
+  // credits, so this expensive path must respect the per-account ceiling like
+  // every other generation route (was the one image route still ungated).
+  const spendBlocked = await spendGate(user.id, tier)
+  if (spendBlocked) return spendBlocked
 
   const site = await getWordPressCredentials(
     supabase,
