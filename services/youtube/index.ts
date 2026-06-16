@@ -273,7 +273,10 @@ export class YouTubeOAuthService {
     pageToken?: string,
     cachedPlaylistId?: string,
   ): Promise<{ videos: DraftVideo[]; nextPageToken?: string; uploadsPlaylistId: string }> {
-    const uploadsPlaylistId = cachedPlaylistId ?? await this.getUploadsPlaylistId()
+    // `||` not `??`: a cached EMPTY STRING (a stale/poisoned cache row that
+    // once stored '') must fall through to a fresh channels.list resolution,
+    // not be used as the playlist id — otherwise every scan throws below.
+    const uploadsPlaylistId = cachedPlaylistId || await this.getUploadsPlaylistId()
     if (!uploadsPlaylistId) throw new Error('No uploads playlist found')
 
     // List videos (includes private), one page at a time

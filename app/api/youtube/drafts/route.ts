@@ -223,19 +223,24 @@ export async function GET(request: Request) {
       // CONTINUE from the cursor (don't restart at page 1). persist=false — we
       // merge with the existing cache below and write THAT, so the cache keeps
       // every video found so far, not just this continuation page.
-      const { videos: newVideos, nextCursor } = await runFullScanWithCursor(
+      const { videos: newVideos, nextCursor, uploadsPlaylistId: resolvedPlaylistId } = await runFullScanWithCursor(
         yt, supabase, user.id, uploadsPlaylistId, pageToken, false,
       )
 
       // Merge with existing cache (dedup by id), persist with the new cursor +
       // full_scan flag so a later cached load knows whether more remains.
+      // Persist the RESOLVED playlist id (never ''), so we don't overwrite a
+      // good id with empty and poison the next scan.
       const seen = new Set(existingVideos.map((v: ReturnType<typeof buildDraftVideo>) => v.youtubeVideoId))
       const merged = [...existingVideos, ...newVideos.filter(
         (v: ReturnType<typeof buildDraftVideo>) => !seen.has(v.youtubeVideoId),
       )]
-      await writeCache(
-        supabase, user.id, uploadsPlaylistId ?? '', merged, !nextCursor, nextCursor ?? null,
-      )
+      const playlistToPersist = resolvedPlaylistId || uploadsPlaylistId
+      if (playlistToPersist) {
+        await writeCache(
+          supabase, user.id, playlistToPersist, merged, !nextCursor, nextCursor ?? null,
+        )
+      }
 
       const filtered = newVideos.filter(
         (v: ReturnType<typeof buildDraftVideo>) => includePublished || v.status !== 'public',
@@ -263,13 +268,26 @@ export async function GET(request: Request) {
       allVideos = cache!.videos
       nextCursor = cache!.full_scan ? undefined : (cache!.next_cursor ?? undefined)
     } else {
-      // Cache is stale / missing / forced: run the scan
+      // Cache is stale / missing / forced: run the scan. If the scan fails
+      // (transient YouTube hiccup, a momentary channel-resolve miss, etc.) but
+      // we still have cached videos, serve those rather than blanking the page —
+      // the user keeps their list and a later refresh re-scans. Quota/auth
+      // errors with NO cache to fall back on still surface via the outer catch.
       const yt = createYouTubeOAuthService(token)
-      const result = await runFullScanWithCursor(
-        yt, supabase, user.id, cache?.uploads_playlist_id,
-      )
-      allVideos = result.videos
-      nextCursor = result.nextCursor
+      try {
+        const result = await runFullScanWithCursor(
+          yt, supabase, user.id, cache?.uploads_playlist_id,
+        )
+        allVideos = result.videos
+        nextCursor = result.nextCursor
+      } catch (scanErr) {
+        if (cache?.videos?.length) {
+          allVideos = cache.videos
+          nextCursor = cache.full_scan ? undefined : (cache.next_cursor ?? undefined)
+        } else {
+          throw scanErr
+        }
+      }
     }
 
     const drafts = allVideos.filter(
@@ -350,7 +368,7 @@ async function runFullScanWithCursor(
   cachedPlaylistId?: string,
   fromCursor?: string,
   persist = true,
-): Promise<{ videos: ReturnType<typeof buildDraftVideo>[]; nextCursor?: string }> {
+): Promise<{ videos: ReturnType<typeof buildDraftVideo>[]; nextCursor?: string; uploadsPlaylistId?: string }> {
   const accumulated: ReturnType<typeof buildDraftVideo>[] = []
   // Continue from the caller's cursor (load-more) instead of restarting at the
   // top of the uploads list. undefined = fresh scan from page 1.
@@ -398,7 +416,7 @@ async function runFullScanWithCursor(
     await writeCache(supabase, userId, uploadsPlaylistId, accumulated, isFullyScanFull, cursor ?? null)
   }
 
-  return { videos: accumulated, nextCursor: cursor }
+  return { videos: accumulated, nextCursor: cursor, uploadsPlaylistId }
 }
 
 // Simplified scan for search-fallback and cursor-continuation paths.
