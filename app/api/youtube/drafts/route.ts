@@ -14,6 +14,7 @@ interface CacheRow {
   videos: any[]
   cached_at: string
   full_scan: boolean
+  next_cursor?: string | null
 }
 
 async function readCache(
@@ -25,7 +26,20 @@ async function readCache(
     .select('uploads_playlist_id,videos,cached_at,full_scan')
     .eq('user_id', userId)
     .maybeSingle()
-  return data ?? null
+  if (!data) return null
+  // Read the continuation cursor as a SEPARATE best-effort select so a
+  // pre-migration DB (column absent → PostgREST 400) can never break the
+  // primary cache read above. Degrades to "no cursor" until migration 132 runs.
+  let next_cursor: string | null | undefined
+  try {
+    const { data: cur } = await (supabase as any)
+      .from('youtube_video_cache')
+      .select('next_cursor')
+      .eq('user_id', userId)
+      .maybeSingle()
+    next_cursor = cur?.next_cursor ?? null
+  } catch { /* column not migrated yet — behave as before */ }
+  return { ...data, next_cursor }
 }
 
 async function writeCache(
@@ -35,6 +49,7 @@ async function writeCache(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   videos: any[],
   fullScan: boolean,
+  nextCursor?: string | null,
 ): Promise<void> {
   await (supabase as any)
     .from('youtube_video_cache')
@@ -46,6 +61,17 @@ async function writeCache(
       cached_at: new Date().toISOString(),
       full_scan: fullScan,
     }, { onConflict: 'user_id' })
+  // Persist the continuation cursor in a SEPARATE update so a pre-migration
+  // (column-absent) DB can never break the primary cache write above. Pass
+  // null on an exhausted scan to clear a stale cursor; undefined = leave as-is.
+  if (nextCursor !== undefined) {
+    try {
+      await (supabase as any)
+        .from('youtube_video_cache')
+        .update({ next_cursor: nextCursor })
+        .eq('user_id', userId)
+    } catch { /* column not migrated yet — cursor simply isn't persisted */ }
+  }
 }
 
 // Bust the cache so the next load forces a fresh scan (called after Apply push)
@@ -194,27 +220,29 @@ export async function GET(request: Request) {
       const existingVideos: ReturnType<typeof buildDraftVideo>[] = cache?.videos ?? []
       const uploadsPlaylistId = cache?.uploads_playlist_id
 
-      const newVideos = await runFullScan(
-        yt, supabase, user.id, uploadsPlaylistId, pageToken,
+      // CONTINUE from the cursor (don't restart at page 1). persist=false — we
+      // merge with the existing cache below and write THAT, so the cache keeps
+      // every video found so far, not just this continuation page.
+      const { videos: newVideos, nextCursor } = await runFullScanWithCursor(
+        yt, supabase, user.id, uploadsPlaylistId, pageToken, false,
       )
 
-      // Merge with existing cache (dedup by id), persist
+      // Merge with existing cache (dedup by id), persist with the new cursor +
+      // full_scan flag so a later cached load knows whether more remains.
       const seen = new Set(existingVideos.map((v: ReturnType<typeof buildDraftVideo>) => v.youtubeVideoId))
       const merged = [...existingVideos, ...newVideos.filter(
         (v: ReturnType<typeof buildDraftVideo>) => !seen.has(v.youtubeVideoId),
       )]
-      const playlistId = newVideos[0]
-        ? cache?.uploads_playlist_id ?? ''
-        : cache?.uploads_playlist_id ?? ''
-      await writeCache(supabase, user.id, playlistId, merged, false)
+      await writeCache(
+        supabase, user.id, uploadsPlaylistId ?? '', merged, !nextCursor, nextCursor ?? null,
+      )
 
       const filtered = newVideos.filter(
         (v: ReturnType<typeof buildDraftVideo>) => includePublished || v.status !== 'public',
       )
       return NextResponse.json({
         drafts: await enrichWithPushState(supabase, user.id, filtered),
-        nextPageToken: (newVideos as any).__cursor,
-        pagesScanned: (newVideos as any).__pages,
+        nextPageToken: nextCursor,
         includePublished,
       })
     }
@@ -228,9 +256,12 @@ export async function GET(request: Request) {
     let nextCursor: string | undefined
 
     if (usedCache) {
-      // Serve entirely from Supabase — 0 YouTube API units
+      // Serve entirely from Supabase — 0 YouTube API units. Surface the stored
+      // continuation cursor so "Load more" still works on a cached load when the
+      // previous scan stopped early (full_scan=false). An exhausted scan stores
+      // no cursor, so the button correctly stays hidden.
       allVideos = cache!.videos
-      nextCursor = undefined
+      nextCursor = cache!.full_scan ? undefined : (cache!.next_cursor ?? undefined)
     } else {
       // Cache is stale / missing / forced: run the scan
       const yt = createYouTubeOAuthService(token)
@@ -317,9 +348,13 @@ async function runFullScanWithCursor(
   supabase: Awaited<ReturnType<typeof createServerClient>>,
   userId: string,
   cachedPlaylistId?: string,
+  fromCursor?: string,
+  persist = true,
 ): Promise<{ videos: ReturnType<typeof buildDraftVideo>[]; nextCursor?: string }> {
   const accumulated: ReturnType<typeof buildDraftVideo>[] = []
-  let cursor: string | undefined
+  // Continue from the caller's cursor (load-more) instead of restarting at the
+  // top of the uploads list. undefined = fresh scan from page 1.
+  let cursor: string | undefined = fromCursor
   let pagesScanned = 0
   let draftHits = 0
   let productHits = 0
@@ -353,10 +388,14 @@ async function runFullScanWithCursor(
     cursor = page.nextPageToken
   }
 
-  // Persist what we scanned. full_scan=true only if we actually exhausted the playlist.
+  // Persist what we scanned. full_scan=true only if we actually exhausted the
+  // playlist. persist=false for the load-more path, which merges with the
+  // existing cache and writes that itself (so the cache keeps every video, not
+  // just this continuation page). Store the cursor so a later cached load can
+  // still offer "Load more".
   const isFullyScanFull = !cursor && !hitPageLimit
-  if (uploadsPlaylistId) {
-    await writeCache(supabase, userId, uploadsPlaylistId, accumulated, isFullyScanFull)
+  if (persist && uploadsPlaylistId) {
+    await writeCache(supabase, userId, uploadsPlaylistId, accumulated, isFullyScanFull, cursor ?? null)
   }
 
   return { videos: accumulated, nextCursor: cursor }
