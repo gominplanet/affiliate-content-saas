@@ -19,7 +19,7 @@ import { createWordPressService } from '@/services/wordpress'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { fetchWpProxySecret } from '@/lib/wp-proxy'
 import { maybeEncrypt } from '@/lib/secrets'
-import { setCtaThumb, stripCtaThumb } from '@/lib/cta-thumb'
+import { setCtaThumb, stripCtaThumb, rebuildCtaCard, extractCtaCardUrl } from '@/lib/cta-thumb'
 import { fetchAmazonProduct } from '@/services/amazon'
 import { pickProductReferenceImage } from '@/lib/product-image'
 import { buildCampaignHero } from '@/lib/hero-image'
@@ -127,9 +127,11 @@ export async function POST(request: Request) {
   let heroMediaId: number | null = null
   let heroUrl: string | null = null
   let productImageUrl: string | null = null
+  let productTitle: string | null = null
   try {
     const product = await fetchAmazonProduct(asin)
     if (product) {
+      productTitle = product.title || null
       productImageUrl = (await pickProductReferenceImage(product.images, product.title, { userId: user.id, tier })) || product.imageUrl
       const hero = await buildCampaignHero({ heroPrompt: undefined, productImageUrl: productImageUrl || undefined, ctx: { userId: user.id, tier } })
       if (hero) {
@@ -155,9 +157,24 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Couldn't build the product image (Amazon fetch or image step failed). Try again in a moment." }, { status: 502 })
   }
 
-  // Always point the CTA thumb at an image (hero or product photo). stripCtaThumb
-  // only as a last resort if somehow we have no url at all.
-  const patched = content ? (heroUrl ? setCtaThumb(content, heroUrl) : stripCtaThumb(content)) : null
+  // Repair the CTA card. Preferred: fully REBUILD it inline-styled (fixes older
+  // posts whose card collapsed because the <style> block was dropped) — preserve
+  // the existing affiliate link, point the image at the fresh hero. EPC = Amazon
+  // → yellow button. Fall back to a thumb-only swap if we can't recover the link.
+  let patched: string | null = null
+  if (content) {
+    const ctaUrl = extractCtaCardUrl(content)
+    if (ctaUrl && heroUrl) {
+      patched = rebuildCtaCard(content, {
+        productName: productTitle || asin,
+        url: ctaUrl,
+        retailerLabel: 'Amazon',
+        imageUrl: heroUrl,
+      })
+    } else {
+      patched = heroUrl ? setCtaThumb(content, heroUrl) : stripCtaThumb(content)
+    }
+  }
   const contentChanged = !!patched && patched !== content
 
   try {

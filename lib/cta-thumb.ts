@@ -102,6 +102,17 @@ function findCtaCardBlock(html: string): [number, number] | null {
   return null
 }
 
+/** Pull the affiliate URL out of an existing CTA card's button — so a repair
+ *  pass can rebuild the card without losing the (already-cloaked) link. Returns
+ *  null if there's no card or no link. */
+export function extractCtaCardUrl(html: string): string | null {
+  const block = findCtaCardBlock(html)
+  if (!block) return null
+  const seg = html.slice(block[0], block[1])
+  const m = /<a\b[^>]*\bhref="([^"]+)"/i.exec(seg)
+  return m ? m[1] : null
+}
+
 /**
  * Replace the post's CTA card with a self-contained, inline-styled one. The
  * button color + copy follow the retailer (Walmart → blue, Amazon → yellow,
