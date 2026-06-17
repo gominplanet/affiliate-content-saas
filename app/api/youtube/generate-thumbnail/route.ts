@@ -299,8 +299,8 @@ function parseOneCopy(raw: string, fallbackAngle: CtrAngle): ThumbCopy {
 }
 
 // ── Claude Haiku: single ThumbCopy (kept for callers that want just one) ────
-async function generateHook(videoTitle: string): Promise<string> {
-  const c = await generateThumbCopy(videoTitle, 'NEGATION')
+async function generateHook(videoTitle: string, productContext = ''): Promise<string> {
+  const c = await generateThumbCopy(videoTitle, 'NEGATION', productContext)
   return flatCopy(c)
 }
 
@@ -317,6 +317,11 @@ MEANING FIDELITY — HIGHEST PRIORITY, overrides punchiness:
 - The overlay MUST carry the SAME core message + intent as the video title. NEVER invert, contradict, or change what the title promises.
 - The pictured PRODUCT is the HERO / the SOLUTION. The thumbnail shows the product, so "THIS", "THIS THING", "THESE", "IT" all point AT the product. NEVER write a phrase that makes the product the object of a problem, regret, conflict, or loss (e.g. implying people fight over it, waste money on it, or should avoid it) — the ONLY exception is the SKEPTIC angle, which frames doubt as a QUESTION the video answers.
 - When the title describes a problem the product SOLVES (screens, mess, boredom, pain, chores), attack THAT problem — never the product.
+
+GROUND IN THE REAL PRODUCT — anti-invention rule:
+- The problem you negate / tease / question MUST be one this specific product actually addresses, drawn from the TITLE or the PRODUCT description provided. NEVER invent a generic problem the product has nothing to do with. (E.g. for a fast-heating handheld steam cleaner that replaces 6 products, valid angles attack WAITING to heat up, SCRUBBING, CHEMICALS, or owning 6 SEPARATE TOOLS — "clutter" is NOT something it solves, so it's forbidden.)
+- Prefer anchoring on a CONCRETE claim from the source: a number, a time, a count, a weight ("HEATS IN 3 SEC", "REPLACES 6 TOOLS", "NO MORE SCRUBBING"). Specifics out-click vague vibes.
+- If the source names no clear "old problem," do NOT manufacture one — use CURIOSITY_GAP or SKEPTIC instead.
 
 CRITICAL COGNITIVE CONSTRAINTS:
 1. DESIGN BUDGET LIMITS: Line 1 must be under 15 characters. Line 2 must be under 20 characters. If text runs longer, it fails mobile glanceability.
@@ -340,7 +345,7 @@ TITLE: "Your Kids Will Stop Fighting Over Screens the Day You Get This 6-in-1 Tr
 
 OUTPUT FORMAT: Return a strictly structured JSON block with: angle, line1, line2, emphasisWord. No prose, no preamble, no markdown fences — just the JSON object.`
 
-async function generateThumbCopy(videoTitle: string, angle: CtrAngle): Promise<ThumbCopy> {
+async function generateThumbCopy(videoTitle: string, angle: CtrAngle, productContext = ''): Promise<ThumbCopy> {
   const anthropic = createAnthropicClient()
   try {
     const msg = await withAnthropicRetry(() => anthropic.messages.create({
@@ -349,7 +354,7 @@ async function generateThumbCopy(videoTitle: string, angle: CtrAngle): Promise<T
       system: THUMBNAIL_COPY_SYSTEM_PROMPT,
       messages: [{
         role: 'user',
-        content: `VIDEO: "${videoTitle}"
+        content: `VIDEO: "${videoTitle}"${productContext ? `\n\nPRODUCT (what it actually is + the real problems it solves — anchor the overlay here, do NOT invent unrelated problems):\n${productContext.slice(0, 700)}` : ''}
 ANGLE TO USE: ${angle}
 
 Generate the thumbnail copy now. Output the JSON object only.`,
@@ -952,7 +957,7 @@ export async function POST(request: Request) {
           }
           const copyVariants: ThumbCopy[] = lockedHeadline
             ? [splitLocked(lockedHeadline)]
-            : await generateThumbCopies(videoTitle, 5)
+            : await generateThumbCopies(videoTitle, 5, productDescription)
           // Flattened single-string forms for legacy consumers (overlay
           // canvas draw, picker UI, response payload).
           const titleOptions = copyVariants.map(flatCopy)
@@ -1533,7 +1538,7 @@ Ultra-sharp, professional, photorealistic.`
     // cut-out — the uploaded photo already contains the person and product.
     if (typeof uploadedPhotoUrl === 'string' && /^https?:\/\//.test(uploadedPhotoUrl)) {
       try {
-        const overlayHookU = lockedHeadline || (await generateHook(videoTitle))
+        const overlayHookU = lockedHeadline || (await generateHook(videoTitle, productDescription))
         const photoRes = await fetch(uploadedPhotoUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } })
         if (!photoRes.ok) throw new Error(`Cannot fetch uploaded photo (${photoRes.status})`)
         const falPhotoUrl = await fal.storage.upload(await photoRes.blob())
@@ -1627,7 +1632,7 @@ Ultra-sharp, professional, photorealistic.`
     // this product-only prompt feeds the Kontext / Flux-Pro no-face paths.
     const [productPrompt, generatedHook, styleBrief] = await Promise.all([
       generateProductPrompt({ videoTitle, productTitle, productDescription, productBullets, style, channelStyle }),
-      lockedHeadline ? Promise.resolve('') : generateHook(videoTitle),
+      lockedHeadline ? Promise.resolve('') : generateHook(videoTitle, productDescription),
       styleReferenceUrl ? extractStyleBrief(styleReferenceUrl) : Promise.resolve(null),
     ])
     const overlayHook = lockedHeadline || generatedHook
