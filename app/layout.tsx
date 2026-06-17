@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next'
-import { Inter, Geist_Mono } from 'next/font/google'
+import { Inter, Geist_Mono, Plus_Jakarta_Sans } from 'next/font/google'
 import Script from 'next/script'
 import { ThemeProvider } from 'next-themes'
 import './globals.css'
@@ -18,6 +18,15 @@ const geistMono = Geist_Mono({
   subsets: ['latin'],
   display: 'swap',
   variable: '--font-mono',
+})
+
+// Display font for the public /affiliates landing page (Plus Jakarta Sans).
+// Scoped via the CSS var so it ships everywhere but is only referenced there.
+const jakarta = Plus_Jakarta_Sans({
+  subsets: ['latin'],
+  weight: ['500', '600', '700', '800'],
+  display: 'swap',
+  variable: '--font-jakarta',
 })
 
 export const metadata: Metadata = {
@@ -43,7 +52,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   // dev/preview builds without the env var don't fire the script.
   const rewardfulKey = process.env.NEXT_PUBLIC_REWARDFUL_KEY
   return (
-    <html lang="en" suppressHydrationWarning className={`${inter.variable} ${geistMono.variable}`}>
+    <html lang="en" suppressHydrationWarning className={`${inter.variable} ${geistMono.variable} ${jakarta.variable}`}>
       <body suppressHydrationWarning>
         {/* Impact.com site verification. Rendered as a literal tag (not via
             metadata.other) because Impact's crawler checks the `value`

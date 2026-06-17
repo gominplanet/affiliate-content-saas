@@ -27,6 +27,10 @@ const publicPaths = [
   '/pricing', '/privacy', '/terms',
   // Public product tour — the marketing twin of the in-app /pro-tour page.
   '/tour',
+  // Public affiliate-program recruitment page. Logged-out creators must be able
+  // to read it + click through to Rewardful signup — without this it 307s to
+  // /login.
+  '/affiliates',
 ]
 
 function isPublicRoot(pathname: string) {
