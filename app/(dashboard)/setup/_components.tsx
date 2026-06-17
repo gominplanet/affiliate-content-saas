@@ -1203,7 +1203,9 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
       {metaUnlocked && (
       <div className="card p-6 order-4">
         <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
-          <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center">
+          {/* Dark-mode tint on the square so the (white-in-dark) icon isn't
+              washed out — bg-gray-100 stayed light, making a white icon invisible. */}
+          <div className="w-8 h-8 rounded-lg bg-gray-100 dark:bg-white/10 flex items-center justify-center">
             <MessageCircle size={16} className="text-[#1d1d1f] dark:text-[#f5f5f7]" />
           </div>
           <div className="flex-1 min-w-0">
