@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.52
+ * Version: 1.0.53
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -414,6 +414,35 @@ add_filter('the_content', function ($content) {
 //
 // Config in /customize → Mid-article newsletter (priority 8 so it slots
 // AFTER the trust block at 5 but BEFORE the in-content ads at 10).
+// Return the offset in $content immediately AFTER the balanced close of the
+// first `<div class="gr-verdict-box">` (which wraps the Quick Verdict text AND
+// the Buy-if / Skip-if columns), or false if there's no verdict box. Used so the
+// inline newsletter is never injected INSIDE the verdict box. Walks div opens /
+// closes to find the matching </div> (the box contains nested gr-verdict-col
+// divs, so a naive first-</div> won't do).
+if (!function_exists('mvp_affiliate_after_verdict_box')) {
+    function mvp_affiliate_after_verdict_box($content) {
+        $marker = stripos($content, 'gr-verdict-box');
+        if ($marker === false) return false;
+        $start = strrpos(substr($content, 0, $marker), '<div');
+        if ($start === false) return false;
+        $len = strlen($content);
+        $i = $start;
+        $depth = 0;
+        while ($i < $len) {
+            $open  = stripos($content, '<div', $i);
+            $close = stripos($content, '</div', $i);
+            if ($close === false) return false; // malformed — bail, don't move it
+            if ($open !== false && $open < $close) { $depth++; $i = $open + 4; }
+            else {
+                $depth--; $i = $close + 5;
+                if ($depth === 0) return $i; // matched the box's own closing </div>
+            }
+        }
+        return false;
+    }
+}
+
 add_filter('the_content', function ($content) {
     if (!is_singular('post')) return $content;
     $data = mvp_affiliate_get_data();
@@ -460,6 +489,14 @@ add_filter('the_content', function ($content) {
         // No H2 found — post might be unusually structured. Fall back to
         // scanning the whole content (same as the previous behavior).
         $body_start = 0;
+    }
+    // NEVER inject inside the Quick Verdict box. The verdict box wraps both the
+    // verdict text AND the Buy-if / Skip-if columns, so counting paragraphs from
+    // the first heading could land the form between them (a box-inside-a-box).
+    // If a verdict box exists, start the paragraph scan AFTER it closes.
+    $verdict_end = mvp_affiliate_after_verdict_box($content);
+    if ($verdict_end !== false && $verdict_end > $body_start) {
+        $body_start = $verdict_end;
     }
     $prefix = substr($content, 0, $body_start);
     $body   = substr($content, $body_start);
