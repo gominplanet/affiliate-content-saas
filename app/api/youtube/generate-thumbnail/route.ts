@@ -375,13 +375,13 @@ Generate the thumbnail copy now. Output the JSON object only.`,
 // it works on every category. SKEPTIC + VALUE_DISRUPTION cover follow-ups.
 const ANGLE_ROTATION: CtrAngle[] = ['NEGATION', 'CURIOSITY_GAP', 'SKEPTIC', 'VALUE_DISRUPTION']
 
-async function generateThumbCopies(videoTitle: string, count: number): Promise<ThumbCopy[]> {
+async function generateThumbCopies(videoTitle: string, count: number, productContext = ''): Promise<ThumbCopy[]> {
   const n = Math.max(1, Math.min(10, Math.floor(count)))
   // Fan out across angles in parallel — each call is a separate JSON-shape
   // generation, easier and more reliable than asking Haiku to return an
   // array of mixed-angle objects in one go.
   const out = await Promise.all(
-    Array.from({ length: n }, (_, i) => generateThumbCopy(videoTitle, ANGLE_ROTATION[i % ANGLE_ROTATION.length])),
+    Array.from({ length: n }, (_, i) => generateThumbCopy(videoTitle, ANGLE_ROTATION[i % ANGLE_ROTATION.length], productContext)),
   )
   return out
 }
