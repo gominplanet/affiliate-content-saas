@@ -685,51 +685,57 @@ const VideoCard = memo(function VideoCardImpl({
     // Step 2: Fire all connected & unposted social platforms in parallel
     setPublishAllStep('Publishing to social media…')
     const tasks: Promise<void>[] = []
+    // Collect per-platform failures so a silent server-side reject (expired
+    // token, a platform needing a reconnect, Meta review gate, etc.) SURFACES to
+    // the user instead of vanishing — previously every error was swallowed, so a
+    // connected-but-failing platform (e.g. Threads missing its user id) looked
+    // like it just "didn't post" with no explanation.
+    const failures: string[] = []
+    const addTask = (cond: boolean, label: string, url: string, onOk: () => void, extra?: Record<string, unknown>) => {
+      if (!cond) return
+      tasks.push(
+        fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ postId: currentPostId, ...(extra || {}) }) })
+          .then(async (r) => {
+            if (r.ok) { onOk(); return }
+            const d = await r.json().catch(() => ({} as { error?: string }))
+            failures.push(`${label} (${d.error || `HTTP ${r.status}`})`)
+          })
+          .catch((e) => { failures.push(`${label} (${e instanceof Error ? e.message : 'network error'})`) }),
+      )
+    }
 
-    if (fbConnected && !fbPosted) {
-      tasks.push(
-        fetch('/api/blog/facebook-post', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ postId: currentPostId, socialAccountId: effectiveFbAccountId ?? undefined }) })
-          .then(r => { if (r.ok) setFbPosted(true) })
-          .catch(() => { /* non-fatal */ }),
-      )
-    }
-    if (linkedInConnected && !liPosted) {
-      tasks.push(
-        fetch('/api/blog/linkedin-post', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ postId: currentPostId }) })
-          .then(r => { if (r.ok) setLiPosted(true) })
-          .catch(() => { /* non-fatal */ }),
-      )
-    }
-    if (threadsConnected && !thPosted) {
-      tasks.push(
-        fetch('/api/blog/threads-post', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ postId: currentPostId }) })
-          .then(r => { if (r.ok) setThPosted(true) })
-          .catch(() => { /* non-fatal */ }),
-      )
-    }
-    if (twitterConnected && !twPosted) {
-      tasks.push(
-        fetch('/api/blog/twitter-post', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ postId: currentPostId }) })
-          .then(r => { if (r.ok) setTwPosted(true) })
-          .catch(() => { /* non-fatal */ }),
-      )
-    }
-    if (blueskyConnected && !bsPosted) {
-      tasks.push(
-        fetch('/api/blog/bluesky-post', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ postId: currentPostId }) })
-          .then(r => { if (r.ok) setBsPosted(true) })
-          .catch(() => { /* non-fatal */ }),
-      )
-    }
-    if (telegramConnected && !tgPosted) {
-      tasks.push(
-        fetch('/api/blog/telegram-post', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ postId: currentPostId }) })
-          .then(r => { if (r.ok) setTgPosted(true) })
-          .catch(() => { /* non-fatal */ }),
-      )
+    addTask(fbConnected && !fbPosted, 'Facebook', '/api/blog/facebook-post', () => setFbPosted(true), { socialAccountId: effectiveFbAccountId ?? undefined })
+    addTask(linkedInConnected && !liPosted, 'LinkedIn', '/api/blog/linkedin-post', () => setLiPosted(true))
+    addTask(threadsConnected && !thPosted, 'Threads', '/api/blog/threads-post', () => setThPosted(true))
+    addTask(twitterConnected && !twPosted, 'X', '/api/blog/twitter-post', () => setTwPosted(true))
+    addTask(blueskyConnected && !bsPosted, 'Bluesky', '/api/blog/bluesky-post', () => setBsPosted(true))
+    addTask(telegramConnected && !tgPosted, 'Telegram', '/api/blog/telegram-post', () => setTgPosted(true))
+
+    // Pinterest — two-step (preview builds the pin image + description, then
+    // post). Auto-runs here using the configured board, skipping the manual
+    // confirm modal. Needs a board set + a pinnable image (falls into failures
+    // with the reason if either is missing).
+    if (pinterestConnected && !pinPosted) {
+      tasks.push((async () => {
+        try {
+          const pv = await fetch('/api/blog/pinterest-preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ postId: currentPostId }) })
+          const d = await pv.json().catch(() => ({} as Record<string, unknown>))
+          if (!pv.ok) throw new Error((d.error as string) || `preview failed (HTTP ${pv.status})`)
+          const pp = await fetch('/api/blog/pinterest-post', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ postId: currentPostId, title: d.title, description: d.description, imageBase64: d.imageBase64, mediaType: d.mediaType, fallbackImageUrl: d.fallbackImageUrl }),
+          })
+          const r = await pp.json().catch(() => ({} as { error?: string }))
+          if (!pp.ok) throw new Error(r.error || `Pinterest rejected the pin (HTTP ${pp.status})`)
+          setPinPosted(true)
+        } catch (e) {
+          failures.push(`Pinterest (${e instanceof Error ? e.message : 'error'})`)
+        }
+      })())
     }
 
     await Promise.allSettled(tasks)
+    if (failures.length) setPublishAllError(`Couldn't post to ${failures.join(', ')}`)
     setPublishingAll(false)
     setPublishAllStep('')
   }
@@ -926,6 +932,13 @@ const VideoCard = memo(function VideoCardImpl({
               />
               {publishAllError && (
                 <span className="text-xs text-[#ff3b30] line-clamp-1">{publishAllError}</span>
+              )}
+              {/* Explain why IG isn't in Publish-all (it needs media + a
+                  Reel/Story/Image choice) so users don't think it's broken. */}
+              {instagramConnected && post && (
+                <span className="text-[11px]" style={{ color: 'var(--text-faint)' }}>
+                  Instagram posts a video or image, so it&apos;s not in Publish-all — share it from the Instagram button.
+                </span>
               )}
             </div>
           )}
