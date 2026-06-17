@@ -142,8 +142,7 @@ export default function WalmartPBPage() {
     }
   }
 
-  const generatePost = async (b: Brand, pr: WMProduct) => {
-    const key = pr.url || pr.sku || pr.name
+  const generatePost = async (b: Brand, pr: WMProduct, key: string) => {
     setGenerating(key)
     try {
       const res = await fetch('/api/walmart/generate', {
@@ -424,8 +423,12 @@ export default function WalmartPBPage() {
                     <p className="text-[12px]" style={{ color: 'var(--text-soft)' }}>No products in the datafeed for this brand yet.</p>
                   ) : (
                     <div className="flex flex-col gap-2">
-                      {(prods || []).map((pr) => {
-                        const key = pr.url || pr.sku || pr.name
+                      {(prods || []).map((pr, idx) => {
+                        // Key by row INDEX — the datafeed has duplicate rows
+                        // (same product at different price points), so keying on
+                        // url/sku/name would flip every duplicate to "Writing…"
+                        // off a single click. Index is unique per rendered row.
+                        const key = `${idx}:${pr.url || pr.sku || pr.name}`
                         const gen = generating === key
                         const done = results[key]
                         return (
@@ -446,7 +449,7 @@ export default function WalmartPBPage() {
                                 <CheckCircle2 size={12} /> {done.draft ? 'View draft' : 'View post'} <ExternalLink size={11} />
                               </a>
                             ) : (
-                              <button onClick={() => generatePost(b, pr)} disabled={gen}
+                              <button onClick={() => generatePost(b, pr, key)} disabled={gen}
                                 className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold flex-shrink-0 disabled:opacity-60"
                                 style={{ background: 'linear-gradient(45deg, #0E7490 0%, #22D3EE 100%)', color: '#fff' }}>
                                 {gen ? <><Loader2 size={12} className="animate-spin" /> Writing…</> : <><Wand2 size={12} /> Generate post</>}
