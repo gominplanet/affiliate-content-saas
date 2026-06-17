@@ -37,7 +37,7 @@ import {
   Sun, Moon, BookOpen, BadgePercent, Handshake, Radar,
   Flame, KeyRound, Users, LogOut, ExternalLink,
   UserCog, AlertTriangle, DollarSign, Newspaper, Plug, Wrench,
-  Camera, MessageCircle, Activity, BarChart3, Upload, Wand2, ShieldCheck,
+  Camera, MessageCircle, Activity, BarChart3, Wand2, ShieldCheck,
   Share2, UserSquare, Lightbulb, LifeBuoy, Link2, FlaskConical, Store, Send, ShoppingBag,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -409,7 +409,6 @@ export default function DashboardShellV2({
         { href: '/admin/costs', icon: <DollarSign size={15} />, label: 'AI Cost (admin)' },
         { href: '/admin/blog-quality', icon: <Activity size={15} />, label: 'Blog Quality' },
         { href: '/admin/template-performance', icon: <BarChart3 size={15} />, label: 'Template Performance' },
-        { href: '/admin/creator-campaigns', icon: <Upload size={15} />, label: 'Creator Campaigns (admin)' },
         { href: '/admin/designer-text', icon: <Wand2 size={15} />, label: 'Designer Text Playground' },
         { href: '/admin/announcement', icon: <Newspaper size={15} />, label: 'News banner (admin)' },
         { href: '/admin/encrypt-secrets', icon: <ShieldCheck size={15} />, label: 'Encrypt Secrets' },
