@@ -141,8 +141,14 @@ export function rebuildCtaCard(html: string, opts: CtaCardOpts): string {
       `<img src="${opts.imageUrl}" alt="" loading="lazy" style="display:block;width:100%;height:auto;object-fit:contain" /></div>`
     : ''
 
+  // NOTE: flex-direction:row is set EXPLICITLY — the post's own <style> block
+  // defines `.gr-cta-card{flex-direction:column}`, and since we keep the
+  // gr-cta-card class (the WP plugin uses it as a "skip this region" marker for
+  // image/newsletter injection), that rule would otherwise stack the image
+  // BELOW the text. Inline wins over the stylesheet, keeping text|image side by
+  // side (wraps to stacked only on a genuinely narrow column).
   const card =
-    `<div class="gr-cta-card" style="background:#f8f9fa;border:2px solid #111;border-radius:4px;padding:24px 28px;margin:32px 0;display:flex;gap:24px;align-items:center;flex-wrap:wrap">` +
+    `<div class="gr-cta-card" style="background:#f8f9fa;border:2px solid #111;border-radius:4px;padding:24px 28px;margin:32px 0;display:flex;flex-direction:row;gap:24px;align-items:center;flex-wrap:wrap">` +
       `<div class="gr-cta-body" style="flex:1 1 260px;min-width:0;display:flex;flex-direction:column;gap:14px">` +
         `<p style="font-size:11px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:#111;margin:0;padding-bottom:12px;border-bottom:2px solid #FFC200">Get it now</p>` +
         `<p style="font-size:20px;font-weight:800;color:#111;margin:0;line-height:1.3;letter-spacing:-.3px">${esc(opts.productName)}</p>` +
