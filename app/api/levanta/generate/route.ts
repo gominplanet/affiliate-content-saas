@@ -22,7 +22,7 @@ import { createLevantaLink } from '@/services/levanta'
 import { getExternalKey } from '@/lib/external-keys'
 import { fetchAmazonProduct, isValidAsin, type AmazonProduct } from '@/services/amazon'
 import { researchProduct } from '@/services/research'
-import { setCtaThumb, stripCtaThumb } from '@/lib/cta-thumb'
+import { rebuildCtaCard } from '@/lib/cta-thumb'
 import { injectInlineAffiliateLinks } from '@/lib/inline-affiliate'
 import { buildCampaignHero } from '@/lib/hero-image'
 import { pickProductReferenceImage } from '@/lib/product-image'
@@ -212,13 +212,16 @@ export async function POST(request: NextRequest) {
 
     const ctaImage = heroUrl || cleanProductImage || null
     let contentChanged = false
-    if (ctaImage) {
-      const fixed = setCtaThumb(content, ctaImage)
-      if (fixed !== content) { content = fixed; contentChanged = true }
-    } else {
-      const stripped = stripCtaThumb(content)
-      if (stripped !== content) { content = stripped; contentChanged = true }
-    }
+    // Rebuild the CTA card fully inline-styled (video-less posts drop the
+    // stylesheet). Levanta is Amazon-sourced → yellow "Get the best price on
+    // Amazon" button + image in the right column.
+    const rebuilt = rebuildCtaCard(content, {
+      productName: effTitle,
+      url: affiliateUrl,
+      retailerLabel: 'Amazon',
+      imageUrl: ctaImage,
+    })
+    if (rebuilt !== content) { content = rebuilt; contentChanged = true }
     if (heroMediaId || contentChanged) {
       try {
         await wpService.updatePost(wpPost.id, {

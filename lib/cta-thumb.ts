@@ -63,3 +63,83 @@ export function setCtaThumb(html: string, url: string): string {
 export function stripCtaThumb(html: string): string {
   return html.replace(/<div class="gr-cta-thumb-wrap">[\s\S]*?<\/div>/gi, '')
 }
+
+// ── Fully self-contained CTA card (campaign / video-less posts) ───────────────
+//
+// The writer's `.gr-cta-card` relies on the post's <style> block for its
+// 2-column grid + button styling. VIDEO-LESS posts (campaign / PartnerBoost /
+// Levanta) drop that <style> block, and the model doesn't reliably reproduce
+// the inline styles — so the card collapses to a plain link with the image
+// stacked underneath. For those routes we REBUILD the card deterministically
+// with everything inline (layout + retailer-colored button + image on the
+// right), so it renders identically with or without a stylesheet.
+
+export interface CtaCardOpts {
+  productName: string
+  url: string
+  /** Retailer label for the button copy + color: 'Amazon' (yellow), 'Walmart'
+   *  (blue), or null for a neutral dark button ("Get the best price today"). */
+  retailerLabel?: string | null
+  imageUrl?: string | null
+  disclaimer?: string
+}
+
+/** Find the balanced `<div class="gr-cta-card">…</div>` (it nests gr-cta-body /
+ *  gr-cta-thumb-wrap divs, so a non-greedy match won't do). Returns [start,end)
+ *  offsets or null. */
+function findCtaCardBlock(html: string): [number, number] | null {
+  const m = /<div\b[^>]*class="[^"]*\bgr-cta-card\b[^"]*"[^>]*>/i.exec(html)
+  if (!m) return null
+  const start = m.index
+  let depth = 1
+  const re = /<div\b|<\/div>/gi
+  re.lastIndex = m.index + m[0].length
+  let t: RegExpExecArray | null
+  while ((t = re.exec(html))) {
+    depth += t[0].toLowerCase() === '</div>' ? -1 : 1
+    if (depth === 0) return [start, t.index + t[0].length]
+  }
+  return null
+}
+
+/**
+ * Replace the post's CTA card with a self-contained, inline-styled one. The
+ * button color + copy follow the retailer (Walmart → blue, Amazon → yellow,
+ * other → dark). The image sits in a fixed right column that wraps below on
+ * narrow screens (pure flexbox — no stylesheet or `:has()` needed). If there's
+ * no card to replace, returns the html unchanged.
+ */
+export function rebuildCtaCard(html: string, opts: CtaCardOpts): string {
+  const block = findCtaCardBlock(html)
+  if (!block) return html
+
+  const label = (opts.retailerLabel || '').trim()
+  const isWalmart = /walmart/i.test(label)
+  const isAmazon = /amazon/i.test(label)
+  const btnBg = isWalmart ? '#0071DC' : isAmazon ? '#FFC200' : '#111'
+  const btnColor = isWalmart ? '#ffffff' : isAmazon ? '#111' : '#ffffff'
+  const buttonLabel = label
+    ? `Get the best price on ${label} →`
+    : 'Get the best price today →'
+  const disclaimer = (opts.disclaimer || '').trim()
+    || 'This post contains affiliate links. I may earn a commission at no extra cost to you.'
+  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+
+  const imgCol = opts.imageUrl
+    ? `<div style="flex:0 0 200px;max-width:200px;align-self:center;line-height:0;border-radius:4px;overflow:hidden;border:2px solid #111">` +
+      `<img src="${opts.imageUrl}" alt="" loading="lazy" style="display:block;width:100%;height:auto;object-fit:contain" /></div>`
+    : ''
+
+  const card =
+    `<div class="gr-cta-card" style="background:#f8f9fa;border:2px solid #111;border-radius:4px;padding:24px 28px;margin:32px 0;display:flex;gap:24px;align-items:center;flex-wrap:wrap">` +
+      `<div class="gr-cta-body" style="flex:1 1 260px;min-width:0;display:flex;flex-direction:column;gap:14px">` +
+        `<p style="font-size:11px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:#111;margin:0;padding-bottom:12px;border-bottom:2px solid #FFC200">Get it now</p>` +
+        `<p style="font-size:20px;font-weight:800;color:#111;margin:0;line-height:1.3;letter-spacing:-.3px">${esc(opts.productName)}</p>` +
+        `<a href="${opts.url}" target="_blank" rel="noopener sponsored nofollow" style="display:flex;align-items:center;justify-content:center;gap:10px;background:${btnBg};color:${btnColor};font-size:15px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;padding:18px 24px;border-radius:3px;text-decoration:none;margin-top:4px;width:100%;box-sizing:border-box">${esc(buttonLabel)}</a>` +
+        `<p style="font-size:10px;line-height:1.4;color:#6b6b70;margin:6px 0 0;font-style:italic">${esc(disclaimer)}</p>` +
+      `</div>` +
+      imgCol +
+    `</div>`
+
+  return html.slice(0, block[0]) + card + html.slice(block[1])
+}

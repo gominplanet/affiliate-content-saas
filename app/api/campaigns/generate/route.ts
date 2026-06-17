@@ -25,7 +25,7 @@ import { createWordPressService } from '@/services/wordpress'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { fetchWpProxySecret } from '@/lib/wp-proxy'
 import { maybeEncrypt } from '@/lib/secrets'
-import { setCtaThumb, stripCtaThumb } from '@/lib/cta-thumb'
+import { rebuildCtaCard } from '@/lib/cta-thumb'
 import { injectInlineAffiliateLinks } from '@/lib/inline-affiliate'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
@@ -515,9 +515,15 @@ export async function POST(request: Request) {
     // photo. stripCtaThumb only as a last resort if we truly have no image.
     // Folded into a single PATCH with featured_media so we don't make an extra
     // round-trip. Non-fatal — the post is already live either way.
-    const fixedContent = heroUrl
-      ? setCtaThumb(generated.content, heroUrl)
-      : stripCtaThumb(generated.content)
+    // Rebuild the CTA card fully inline-styled (video-less posts drop the
+    // stylesheet, collapsing the class-based card). EPC campaigns are Amazon
+    // native → yellow "Get the best price on Amazon" button + image right column.
+    const fixedContent = rebuildCtaCard(generated.content, {
+      productName: product?.title || generated.title,
+      url: affiliateUrl,
+      retailerLabel: 'Amazon',
+      imageUrl: heroUrl || null,
+    })
     const contentChanged = fixedContent !== generated.content
     if (contentChanged) generated.content = fixedContent
     if (heroMediaId || contentChanged) {
