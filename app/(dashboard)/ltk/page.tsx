@@ -11,7 +11,7 @@
 
 import { useState } from 'react'
 import PageHero from '@/components/layout/PageHero'
-import { FlaskConical, Loader2, ExternalLink, CheckCircle2, Sparkles, Lock } from 'lucide-react'
+import { FlaskConical, Loader2, ExternalLink, CheckCircle2, XCircle, Sparkles, Lock } from 'lucide-react'
 
 const PINK = 'rgba(236,72,153,0.30)' // LTK skews fashion/lifestyle — warmer accent
 
@@ -102,8 +102,36 @@ export default function LtkPage() {
         accent={PINK}
       />
 
+      {/* At-a-glance: what it does vs. what it doesn't — so users are clear. */}
+      <div className="grid sm:grid-cols-2 gap-3 mt-5 mb-4">
+        <div className="rounded-xl border p-4" style={{ background: 'var(--surface)', borderColor: 'rgba(52,199,89,0.30)' }}>
+          <p className="text-[12px] font-bold uppercase tracking-wider mb-2.5 flex items-center gap-1.5" style={{ color: '#34c759' }}>
+            <CheckCircle2 size={13} /> What it does
+          </p>
+          <ul className="text-[13px] leading-relaxed space-y-1.5" style={{ color: 'var(--text-soft)' }}>
+            <li>Turns one LTK link into a full, SEO-friendly blog post in your voice</li>
+            <li>Uses <strong style={{ color: 'var(--text)' }}>your</strong> LTK link as the &ldquo;Shop it on LTK&rdquo; button — clicks &amp; commission stay yours</li>
+            <li>Auto-fills the product name &amp; image from your link when it can</li>
+            <li>Builds a hero image and publishes to <strong style={{ color: 'var(--text)' }}>your</strong> WordPress (draft or live)</li>
+            <li>Gives you owned content that ranks on Google and feeds your LTK shop</li>
+          </ul>
+        </div>
+        <div className="rounded-xl border p-4" style={{ background: 'var(--surface)', borderColor: 'rgba(255,107,107,0.30)' }}>
+          <p className="text-[12px] font-bold uppercase tracking-wider mb-2.5 flex items-center gap-1.5" style={{ color: '#ff6b6b' }}>
+            <XCircle size={13} /> What it doesn&apos;t do
+          </p>
+          <ul className="text-[13px] leading-relaxed space-y-1.5" style={{ color: 'var(--text-soft)' }}>
+            <li><strong style={{ color: 'var(--text)' }}>Doesn&apos;t connect to LTK</strong> — LTK has no API, so MVP never logs in, reads your shop, or posts on LTK</li>
+            <li>Doesn&apos;t scrape LTK or import your whole catalog — you bring one link at a time</li>
+            <li>Doesn&apos;t track your LTK earnings, clicks, or analytics</li>
+            <li>Doesn&apos;t change or cloak your link — it&apos;s kept as-is to protect your commission</li>
+            <li>Doesn&apos;t invent facts, and doesn&apos;t post anywhere but your WordPress</li>
+          </ul>
+        </div>
+      </div>
+
       {/* How it works — collapsible, open by default. */}
-      <details open className="rounded-xl border mt-5 mb-6" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
+      <details className="rounded-xl border mb-6" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
         <summary className="cursor-pointer select-none px-5 py-4 text-[14px] font-semibold flex items-center gap-2" style={{ color: 'var(--text)' }}>
           <Sparkles size={15} className="text-[#EC4899]" /> How this works (and why it&apos;s LTK-safe)
         </summary>
