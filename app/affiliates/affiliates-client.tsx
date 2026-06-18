@@ -26,7 +26,9 @@ const CAMPAIGN = {
   payoutThreshold: 50,
   payoutMethod: 'Stripe',
   clearanceDays: 60,
-  promoCode: 'yUrNXwso',
+  // No shared public promo code on purpose — the discount + attribution ride on
+  // each affiliate's OWN referral link, and affiliates mint their own codes in
+  // their dashboard after approval. A single public code would credit nobody.
   signupUrl: process.env.NEXT_PUBLIC_AFFILIATE_SIGNUP_URL || 'https://mvp-affiliate.getrewardful.com/signup',
   loginUrl: 'https://mvp-affiliate.getrewardful.com/login',
 } as const
@@ -162,10 +164,14 @@ function Why() {
             </div>
           ))}
         </div>
-        {/* Double-sided incentive — the kept 20%-off hook. */}
+        {/* Double-sided incentive — the kept 20%-off hook. NOTE: we never print
+            a shared public code here. The discount + the attribution both ride
+            on each affiliate's OWN referral link; affiliates mint their own
+            codes in their dashboard after approval. A single public code would
+            credit nobody (or the wrong person) and leak the discount. */}
         <div className="dual">
           <Check solid />
-          <p><b>Your audience saves too.</b> Anyone who signs up through your link — or with your promo code <code>{CAMPAIGN.promoCode}</code> — gets <b>{CAMPAIGN.audienceDiscount}</b>. The link auto-applies it at checkout; the code works anywhere a link won&apos;t fit. Same {CAMPAIGN.commissionPct}% to you either way.</p>
+          <p><b>Your audience saves too.</b> When someone signs up through <b>your</b> referral link, they automatically get <b>{CAMPAIGN.audienceDiscount}</b> — and the sale is credited to you. Prefer a code for places a link won&apos;t fit? Mint your own in your dashboard once you&apos;re approved. Either way it&apos;s the same {CAMPAIGN.commissionPct}% to you.</p>
         </div>
       </div>
     </section>
@@ -175,7 +181,7 @@ function Why() {
 function How() {
   const steps = [
     { h: 'Apply & get approved', p: 'A two-minute application. We approve for fit — creators and reviewers whose audience overlaps with ours. No follower minimums.' },
-    { h: 'Share your link or code', p: `Drop your link in video descriptions, posts, and your newsletter — or share your promo code ${CAMPAIGN.promoCode} for shoutouts. A ${CAMPAIGN.cookieDays}-day cookie means even slow decisions still get credited to you.` },
+    { h: 'Share your link or code', p: `Drop your referral link in video descriptions, posts, and your newsletter — or mint your own promo code for shoutouts where a link won't fit. Either way it carries your audience's ${CAMPAIGN.audienceDiscount} discount and credits the sale to you, with a ${CAMPAIGN.cookieDays}-day cookie so even slow decisions still count.` },
     { h: 'Earn every month', p: `${CAMPAIGN.commissionPct}% recurring, paid monthly via ${CAMPAIGN.payoutMethod} once you clear $${CAMPAIGN.payoutThreshold}. Watch clicks, signups, and commissions in your dashboard in real time.` },
   ]
   return (
@@ -312,7 +318,7 @@ function Faq() {
   const items = [
     { q: 'How much can I realistically earn?', a: `It depends on your audience and plan mix. At ${CAMPAIGN.commissionPct}% recurring: every Creator referral is about $${(49 * RATE).toFixed(2)}/mo, Studio about $${(99 * RATE).toFixed(2)}/mo, and Pro about $${(199 * RATE).toFixed(2)}/mo — for as long as they stay. Use the estimator above to model your own numbers.` },
     { q: 'When and how do I get paid?', a: `Monthly, via ${CAMPAIGN.payoutMethod}, once your balance clears $${CAMPAIGN.payoutThreshold} and the commission passes a ${CAMPAIGN.clearanceDays}-day refund-protection window. You connect your payout account once during onboarding and commissions land automatically after that.` },
-    { q: 'Does my audience get anything?', a: `Yes — it's a double-sided deal. Anyone who signs up through your link, or uses your promo code ${CAMPAIGN.promoCode}, gets ${CAMPAIGN.audienceDiscount}. The link applies it automatically; the code works anywhere a link doesn't fit.` },
+    { q: 'Does my audience get anything?', a: `Yes — it's a double-sided deal. Anyone who signs up through your referral link automatically gets ${CAMPAIGN.audienceDiscount}, and the sale is credited to you. Prefer a code? Once you're approved you can mint your own promo codes in your dashboard for places a link won't fit — each one carries the same discount and credits you.` },
     { q: 'How long does the referral cookie last?', a: `${CAMPAIGN.cookieDays} days. If someone clicks your link and signs up any time in that window, the referral is credited to you — so slow decisions still earn.` },
     { q: 'Do commissions really last for the life of the customer?', a: 'Founding affiliates earn for as long as their referral stays subscribed. You keep earning month after month with zero extra work; the stream stops only if they cancel.' },
     { q: 'Can I run paid ads to my link?', a: 'Yes — content, email, social, and paid traffic are all welcome. The one rule: no bidding on our brand terms (e.g. "MVP Affiliate") in paid search. Everything else is fair game.' },
