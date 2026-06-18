@@ -78,8 +78,11 @@ export interface CtaCardOpts {
   productName: string
   url: string
   /** Retailer label for the button copy + color: 'Amazon' (yellow), 'Walmart'
-   *  (blue), or null for a neutral dark button ("Get the best price today"). */
+   *  (blue), 'LTK' (dark), or null for a neutral dark button. */
   retailerLabel?: string | null
+  /** Override the whole button label (e.g. "Shop it on LTK →"). When omitted it's
+   *  derived from retailerLabel ("Get the best price on {retailer} →"). */
+  buttonLabel?: string
   imageUrl?: string | null
   disclaimer?: string
 }
@@ -129,9 +132,8 @@ export function rebuildCtaCard(html: string, opts: CtaCardOpts): string {
   const isAmazon = /amazon/i.test(label)
   const btnBg = isWalmart ? '#0071DC' : isAmazon ? '#FFC200' : '#111'
   const btnColor = isWalmart ? '#ffffff' : isAmazon ? '#111' : '#ffffff'
-  const buttonLabel = label
-    ? `Get the best price on ${label} →`
-    : 'Get the best price today →'
+  const buttonLabel = opts.buttonLabel?.trim()
+    || (label ? `Get the best price on ${label} →` : 'Get the best price today →')
   const disclaimer = (opts.disclaimer || '').trim()
     || 'This post contains affiliate links. I may earn a commission at no extra cost to you.'
   const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')

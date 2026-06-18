@@ -343,6 +343,7 @@ export default function DashboardShellV2({
         // LABS_PASSWORD gate (middleware).
         { href: '/walmart-pb', icon: <Store size={15} />, label: 'MVP x PartnerBoost', gate: canUseLabs },
         { href: '/levanta', icon: <ShoppingBag size={15} />, label: 'MVP x Levanta', gate: canUseLabs },
+        { href: '/ltk', icon: <Sparkles size={15} />, label: 'MVP x LTK', gate: canUseLabs },
         { href: '/external-integrations', icon: <Plug size={15} />, label: 'External Integrations', gate: canUseLabs },
       ],
     },
