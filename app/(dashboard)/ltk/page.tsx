@@ -23,8 +23,38 @@ export default function LtkPage() {
   const [publishLive, setPublishLive] = useState(false)
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<{ url?: string; editUrl?: string; draft?: boolean; error?: string; forbidden?: boolean } | null>(null)
+  const [peeking, setPeeking] = useState(false)
+  const [peeked, setPeeked] = useState('')        // the URL we last auto-filled from (dedupe)
+  const [prefillNote, setPrefillNote] = useState<string | null>(null)
 
   const canSubmit = /^https?:\/\//i.test(ltkUrl.trim()) && productName.trim().length > 1 && !busy
+
+  // Best-effort: when the link field loses focus, try to pull the product name +
+  // image off the LTK page so the creator doesn't have to type them. Only FILLS
+  // EMPTY fields — never overwrites what the creator already entered. Silent on
+  // failure (LTK is a JS SPA; OG tags are hit-or-miss), so it's a bonus, not a gate.
+  async function peek() {
+    const u = ltkUrl.trim()
+    if (!/^https?:\/\//i.test(u) || u === peeked || busy) return
+    setPeeked(u); setPeeking(true); setPrefillNote(null)
+    try {
+      const res = await fetch('/api/ltk/peek', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: u }),
+      })
+      const j = await res.json().catch(() => ({}))
+      if (!j.ok) return
+      const filled: string[] = []
+      if (j.name && !productName.trim()) { setProductName(j.name); filled.push('product name') }
+      if (j.imageUrl && !imageUrl.trim()) { setImageUrl(j.imageUrl); filled.push('image') }
+      setPrefillNote(
+        filled.length
+          ? `Pre-filled the ${filled.join(' + ')} from your link — double-check and edit if needed.`
+          : "Couldn't read product details from that link — just fill them in below.",
+      )
+    } catch { /* silent — manual fields remain the source of truth */ }
+    finally { setPeeking(false) }
+  }
 
   async function generate() {
     if (!canSubmit) return
@@ -81,7 +111,7 @@ export default function LtkPage() {
           <p><strong style={{ color: 'var(--text)' }}>LTK has no public API</strong> and its terms don&apos;t allow outside tools to read your shop or post for you — so MVP never touches LTK. Instead, <strong style={{ color: 'var(--text)' }}>you bring the link</strong>: copy your own commissionable LTK URL for a product (your <code className="px-1 rounded" style={{ background: 'var(--surface-bright)' }}>liketk.it</code> / <code className="px-1 rounded" style={{ background: 'var(--surface-bright)' }}>shopltk.com</code> link) and MVP builds the content around it.</p>
           <ol className="list-decimal pl-5 space-y-1.5">
             <li><strong style={{ color: 'var(--text)' }}>Paste your LTK link</strong> for the product (grab it from your LTK app — Copy link). Your link carries your commission + your audience&apos;s discount; MVP uses it exactly as-is.</li>
-            <li><strong style={{ color: 'var(--text)' }}>Name the product</strong> and add a couple of lines about it (what it is, who it&apos;s for). Optionally paste a product image URL for the hero.</li>
+            <li><strong style={{ color: 'var(--text)' }}>Name the product</strong> and add a couple of lines about it (what it is, who it&apos;s for). MVP tries to read the product name + image straight off your link to save you typing — confirm or tweak whatever it fills, and add your own notes (that&apos;s what makes the post genuinely yours).</li>
             <li><strong style={{ color: 'var(--text)' }}>Generate</strong> → MVP writes a fact-grounded review in your brand voice, builds a designed hero/CTA image, and publishes it to your WordPress (as a draft, or live) with a <em>&ldquo;Shop it on LTK&rdquo;</em> button pointing at your link.</li>
           </ol>
           <p>The result is SEO-able, owned content that ranks on Google and funnels readers to your LTK shop — something LTK&apos;s in-app posts can&apos;t do for you. Requires a connected WordPress site + a saved Brand Profile.</p>
@@ -91,8 +121,12 @@ export default function LtkPage() {
       {/* Form */}
       <div className="rounded-xl border p-5 space-y-4" style={{ background: 'var(--surface)', borderColor: 'var(--border)', boxShadow: 'var(--card-shadow)' }}>
         <div>
-          <label htmlFor="ltk-url" className="block text-[13px] font-medium mb-1.5" style={{ color: 'var(--text)' }}>Your LTK link <span style={{ color: '#EC4899' }}>*</span></label>
-          <input id="ltk-url" className={input} style={inputStyle} value={ltkUrl} onChange={e => setLtkUrl(e.target.value)} placeholder="https://liketk.it/…  or  https://www.shopltk.com/explore/you/…" />
+          <label htmlFor="ltk-url" className="block text-[13px] font-medium mb-1.5 flex items-center gap-2" style={{ color: 'var(--text)' }}>
+            Your LTK link <span style={{ color: '#EC4899' }}>*</span>
+            {peeking && <span className="inline-flex items-center gap-1 text-[11px] font-normal" style={{ color: 'var(--text-faint)' }}><Loader2 size={11} className="animate-spin" /> reading link…</span>}
+          </label>
+          <input id="ltk-url" className={input} style={inputStyle} value={ltkUrl} onChange={e => setLtkUrl(e.target.value)} onBlur={peek} placeholder="https://liketk.it/…  or  https://www.shopltk.com/explore/you/…" />
+          {prefillNote && <p className="mt-1.5 text-[12px]" style={{ color: 'var(--text-faint)' }}>{prefillNote}</p>}
         </div>
         <div>
           <label htmlFor="ltk-name" className="block text-[13px] font-medium mb-1.5" style={{ color: 'var(--text)' }}>Product name <span style={{ color: '#EC4899' }}>*</span></label>

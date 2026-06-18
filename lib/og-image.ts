@@ -33,6 +33,87 @@ export async function fetchOgImage(url: string): Promise<string | null> {
   }
 }
 
+// ── LTK link preview (best-effort metadata for the MVP x LTK Labs tool) ───────
+//
+// Grab og:title / og:image from the LTK page the creator pasted so we can
+// PRE-FILL the form (creator confirms/edits). Deliberately limited:
+//   • We follow redirects only WHILE we stay on an LTK-family domain. The moment
+//     the chain points OUT to a retailer (Amazon/Nordstrom/etc.) we STOP and do
+//     NOT fetch it — that would consume the creator's affiliate click (attribution
+//     risk) and retailers often block datacenter-IP bots anyway.
+//   • LTK is a JS-rendered SPA, so static OG tags are hit-or-miss; this is an
+//     enrichment, never a dependency. Returns nulls on anything generic/failed.
+
+const LTK_HOSTS = /(^|\.)(liketk\.it|shopltk\.com|liketoknow\.it|rewardstyle\.com|rstyle\.me)$/i
+
+function pickMeta(html: string, key: string): string | null {
+  // Matches property="og:x" OR name="og:x"/"twitter:x", in either attribute order.
+  const a = new RegExp(`<meta[^>]+(?:property|name)=["']${key}["'][^>]+content=["']([^"']+)["']`, 'i')
+  const b = new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']${key}["']`, 'i')
+  const m = html.match(a) || html.match(b)
+  return m?.[1]?.trim() || null
+}
+
+/** True when a scraped title is just LTK chrome ("Shop my LTK", "… | LTK") rather
+ *  than a real product name — so we don't pre-fill the form with junk. */
+function looksGeneric(title: string): boolean {
+  const t = title.trim().toLowerCase()
+  if (t.length < 3) return true
+  return /^(shop|my ltk|ltk\b|liketoknow|liketk|the ltk app)/.test(t)
+    || /'s ltk\b/.test(t)
+    || /\bltk shop\b/.test(t)
+    || t === 'ltk'
+}
+
+/** Strip trailing site-name chrome from an OG title ("Sweater | LTK" → "Sweater"). */
+function cleanTitle(raw: string): string {
+  return raw
+    .replace(/\s*[|–—-]\s*(LTK|LIKEtoKNOW\.?it|ShopLTK|rewardStyle)\s*$/i, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+export interface LtkPreview { name: string | null; imageUrl: string | null }
+
+export async function fetchLtkPreview(rawUrl: string): Promise<LtkPreview> {
+  const empty: LtkPreview = { name: null, imageUrl: null }
+  if (!rawUrl || !isSafePublicHttpUrl(rawUrl)) return empty
+  let current = rawUrl
+  try {
+    for (let hop = 0; hop < 5; hop++) {
+      let u: URL
+      try { u = new URL(current) } catch { return empty }
+      // Once the chain leaves LTK's own domains, stop — don't fetch the retailer.
+      if (!LTK_HOSTS.test(u.hostname.toLowerCase())) return empty
+      const res = await fetch(current, {
+        redirect: 'manual',
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; MVPAffiliate/1.0; +https://www.mvpaffiliate.io)' },
+      })
+      // Redirect → resolve Location and loop (bounded by the LTK-host check above).
+      if (res.status >= 300 && res.status < 400) {
+        const loc = res.headers.get('location')
+        if (!loc) return empty
+        current = new URL(loc, current).toString()
+        continue
+      }
+      if (!res.ok) return empty
+      const html = await res.text()
+      const rawTitle = pickMeta(html, 'og:title') || pickMeta(html, 'twitter:title')
+        || (html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1] ?? null)
+      const name = rawTitle && !looksGeneric(rawTitle) ? cleanTitle(rawTitle) : null
+      let imageUrl: string | null = pickMeta(html, 'og:image') || pickMeta(html, 'twitter:image')
+      if (imageUrl) {
+        try { imageUrl = new URL(imageUrl, current).toString() } catch { imageUrl = null }
+        if (imageUrl && !/^https?:\/\//i.test(imageUrl)) imageUrl = null
+      }
+      return { name, imageUrl: imageUrl || null }
+    }
+    return empty
+  } catch {
+    return empty
+  }
+}
+
 /** Remove "link in comments" / bracketed [link …] placeholders an LLM may invent
  *  in a social caption. The real link is the post's image caption or link card,
  *  never a comment — so these placeholders are always wrong/misleading. */
