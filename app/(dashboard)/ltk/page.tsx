@@ -20,14 +20,19 @@ export default function LtkPage() {
   const [productName, setProductName] = useState('')
   const [description, setDescription] = useState('')
   const [imageUrl, setImageUrl] = useState('')
+  const [widgetCode, setWidgetCode] = useState('')
   const [publishLive, setPublishLive] = useState(false)
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<{ url?: string; editUrl?: string; draft?: boolean; error?: string; forbidden?: boolean } | null>(null)
+  const [showWidgetHelp, setShowWidgetHelp] = useState(false)
   const [peeking, setPeeking] = useState(false)
   const [peeked, setPeeked] = useState('')        // the URL we last auto-filled from (dedupe)
   const [prefillNote, setPrefillNote] = useState<string | null>(null)
 
-  const canSubmit = /^https?:\/\//i.test(ltkUrl.trim()) && productName.trim().length > 1 && !busy
+  // Need a product name + at least one shoppable source: the LTK link or the widget code.
+  const hasLink = /^https?:\/\//i.test(ltkUrl.trim())
+  const hasWidget = widgetCode.trim().length > 20 && widgetCode.includes('<')
+  const canSubmit = (hasLink || hasWidget) && productName.trim().length > 1 && !busy
 
   // Best-effort: when the link field loses focus, try to pull the product name +
   // image off the LTK page so the creator doesn't have to type them. Only FILLS
@@ -64,10 +69,11 @@ export default function LtkPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ltkUrl: ltkUrl.trim(),
+          ltkUrl: ltkUrl.trim() || undefined,
           productName: productName.trim(),
           description: description.trim() || undefined,
           imageUrl: imageUrl.trim() || undefined,
+          widgetCode: widgetCode.trim() || undefined,
           draft: !publishLive,
         }),
       })
@@ -76,7 +82,7 @@ export default function LtkPage() {
       if (!j.ok) { setResult({ error: j.error || 'Generation failed' }); return }
       setResult({ url: j.wordpressUrl, editUrl: j.editUrl, draft: j.draft })
       // Clear the product fields for the next one; keep nothing sensitive.
-      setProductName(''); setDescription(''); setImageUrl('')
+      setProductName(''); setDescription(''); setImageUrl(''); setWidgetCode('')
     } catch {
       setResult({ error: 'Network error — try again.' })
     } finally {
@@ -111,6 +117,7 @@ export default function LtkPage() {
           <ul className="text-[13px] leading-relaxed space-y-1.5" style={{ color: 'var(--text-soft)' }}>
             <li>Turns one LTK link into a full, SEO-friendly blog post in your voice</li>
             <li>Uses <strong style={{ color: 'var(--text)' }}>your</strong> LTK link as the &ldquo;Shop it on LTK&rdquo; button — clicks &amp; commission stay yours</li>
+            <li>Or embeds your real LTK <strong style={{ color: 'var(--text)' }}>&ldquo;Shop the Post&rdquo; widget</strong> — the live, shoppable gallery — if you paste its code</li>
             <li>Auto-fills the product name &amp; image from your link when it can</li>
             <li>Builds a hero image and publishes to <strong style={{ color: 'var(--text)' }}>your</strong> WordPress (draft or live)</li>
             <li>Gives you owned content that ranks on Google and feeds your LTK shop</li>
@@ -150,11 +157,11 @@ export default function LtkPage() {
       <div className="rounded-xl border p-5 space-y-4" style={{ background: 'var(--surface)', borderColor: 'var(--border)', boxShadow: 'var(--card-shadow)' }}>
         <div>
           <label htmlFor="ltk-url" className="block text-[13px] font-medium mb-1.5 flex items-center gap-2" style={{ color: 'var(--text)' }}>
-            Your LTK link <span style={{ color: '#EC4899' }}>*</span>
+            Your LTK link
             {peeking && <span className="inline-flex items-center gap-1 text-[11px] font-normal" style={{ color: 'var(--text-faint)' }}><Loader2 size={11} className="animate-spin" /> reading link…</span>}
           </label>
           <input id="ltk-url" className={input} style={inputStyle} value={ltkUrl} onChange={e => setLtkUrl(e.target.value)} onBlur={peek} placeholder="https://liketk.it/…  or  https://www.shopltk.com/explore/you/…" />
-          {prefillNote && <p className="mt-1.5 text-[12px]" style={{ color: 'var(--text-faint)' }}>{prefillNote}</p>}
+          <p className="mt-1.5 text-[12px]" style={{ color: 'var(--text-faint)' }}>{prefillNote || 'Add your LTK link, the widget code below, or both — you need at least one.'}</p>
         </div>
         <div>
           <label htmlFor="ltk-name" className="block text-[13px] font-medium mb-1.5" style={{ color: 'var(--text)' }}>Product name <span style={{ color: '#EC4899' }}>*</span></label>
@@ -167,6 +174,27 @@ export default function LtkPage() {
         <div>
           <label htmlFor="ltk-img" className="block text-[13px] font-medium mb-1.5" style={{ color: 'var(--text)' }}>Product image URL <span style={{ color: 'var(--text-faint)' }}>(optional)</span></label>
           <input id="ltk-img" className={input} style={inputStyle} value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="https://…/product.jpg — used for the hero + CTA image" />
+        </div>
+        <div>
+          <label htmlFor="ltk-widget" className="block text-[13px] font-medium mb-1.5" style={{ color: 'var(--text)' }}>LTK &ldquo;Shop the Post&rdquo; widget code <span style={{ color: 'var(--text-faint)' }}>(optional)</span></label>
+          <textarea id="ltk-widget" className={`${input} font-mono`} style={{ ...inputStyle, minHeight: 80, resize: 'vertical', fontSize: 12 }} value={widgetCode} onChange={e => setWidgetCode(e.target.value)} placeholder={'Paste the HTML snippet LTK gives you for WordPress (starts with <div…> / <script…>).'} />
+          <p className="mt-1.5 text-[12px]" style={{ color: 'var(--text-faint)' }}>
+            Optional, but recommended: embeds your live, shoppable LTK gallery (images + prices + native checkout) right in the post, instead of a plain button.{' '}
+            <button type="button" onClick={() => setShowWidgetHelp(v => !v)} className="underline" style={{ color: '#EC4899' }}>{showWidgetHelp ? 'Hide steps' : 'How do I get this code?'}</button>
+          </p>
+          {showWidgetHelp && (
+            <div className="mt-2 rounded-lg border p-3 text-[12.5px] leading-relaxed" style={{ background: 'var(--surface-bright)', borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
+              <p className="mb-1.5"><strong style={{ color: 'var(--text)' }}>In your LTK Creator dashboard:</strong></p>
+              <ol className="list-decimal pl-5 space-y-1">
+                <li>Open your <strong style={{ color: 'var(--text)' }}>LTK Creator Desktop Dashboard</strong>.</li>
+                <li>Go to <strong style={{ color: 'var(--text)' }}>Tools → Shop the Post</strong>.</li>
+                <li>Pick your product folder and customize the widget.</li>
+                <li>Choose <strong style={{ color: 'var(--text)' }}>WordPress</strong> as the platform.</li>
+                <li>Copy the generated <strong style={{ color: 'var(--text)' }}>HTML code</strong> and paste it above.</li>
+              </ol>
+              <p className="mt-2" style={{ color: 'var(--text-faint)' }}>Heads up: the widget is a script. It renders on most self-hosted sites, but some hosts/roles or security plugins strip scripts — if it doesn&apos;t show, add your LTK link too and the &ldquo;Shop it on LTK&rdquo; button is your fallback.</p>
+            </div>
+          )}
         </div>
 
         <div className="flex items-center justify-between gap-4 pt-1">

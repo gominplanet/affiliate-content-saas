@@ -18,7 +18,7 @@ import { createWordPressService } from '@/services/wordpress'
 import { createClaudeService, type BrandProfile } from '@/services/claude'
 import { researchProduct } from '@/services/research'
 import type { AmazonProduct } from '@/services/amazon'
-import { rebuildCtaCard } from '@/lib/cta-thumb'
+import { rebuildCtaCard, embedLtkWidget } from '@/lib/cta-thumb'
 import { injectInlineAffiliateLinks } from '@/lib/inline-affiliate'
 import { buildCampaignHero } from '@/lib/hero-image'
 import { scrubBanned } from '@/lib/scrub'
@@ -48,14 +48,21 @@ export async function POST(request: NextRequest) {
     const gate = await spendGate(user.id, tier)
     if (gate) return gate
 
-    const body = await request.json() as { ltkUrl?: string; productName?: string; description?: string; imageUrl?: string; draft?: boolean }
+    const body = await request.json() as { ltkUrl?: string; productName?: string; description?: string; imageUrl?: string; widgetCode?: string; draft?: boolean }
     const ltkUrl = (body.ltkUrl || '').trim()
+    const widgetCode = (body.widgetCode || '').trim()
     const productName = (body.productName || '').trim()
-    if (!ltkUrl || !/^https?:\/\//i.test(ltkUrl)) {
-      return NextResponse.json({ ok: false, error: 'Paste your LTK link (your commissionable liketk.it / shopltk.com URL).' }, { status: 400 })
+    if (ltkUrl && !/^https?:\/\//i.test(ltkUrl)) {
+      return NextResponse.json({ ok: false, error: 'That LTK link doesn’t look like a URL — paste your full liketk.it / shopltk.com link.' }, { status: 400 })
+    }
+    if (widgetCode && (widgetCode.length > 20000 || !widgetCode.includes('<'))) {
+      return NextResponse.json({ ok: false, error: 'That LTK widget code doesn’t look right — paste the full HTML snippet LTK gives you for WordPress.' }, { status: 400 })
+    }
+    if (!ltkUrl && !widgetCode) {
+      return NextResponse.json({ ok: false, error: 'Add your LTK link, your LTK widget embed code, or both.' }, { status: 400 })
     }
     if (!productName) {
-      return NextResponse.json({ ok: false, error: 'A product name is required.' }, { status: 400 })
+      return NextResponse.json({ ok: false, error: 'A product name is required (it titles the post).' }, { status: 400 })
     }
     const description = (body.description || '').trim()
     const imageUrl = (body.imageUrl || '').trim() && /^https?:\/\//i.test((body.imageUrl || '').trim()) ? (body.imageUrl as string).trim() : null
@@ -124,7 +131,8 @@ export async function POST(request: NextRequest) {
     const excerpt = scrubBanned(generated.excerpt)
     let content = scrubBanned(generated.content)
     const slug = generated.slug || slugify(title)
-    content = injectInlineAffiliateLinks(content, productName, affiliateUrl, { max: 3 })
+    // Inline "Shop it on LTK" links need a real URL — only when the creator gave one.
+    if (ltkUrl) content = injectInlineAffiliateLinks(content, productName, affiliateUrl, { max: 3 })
 
     // ── Publish to WordPress ─────────────────────────────────────────────────
     let tagIds: number[] = []
@@ -163,17 +171,24 @@ export async function POST(request: NextRequest) {
       } catch { /* non-fatal */ }
     }
 
-    const ctaImage = heroUrl || imageUrl || null
-    // Self-contained CTA card → the creator's LTK link, dark "Shop it on LTK →".
-    const rebuilt = rebuildCtaCard(content, {
-      productName,
-      url: affiliateUrl,
-      retailerLabel: 'LTK',
-      buttonLabel: 'Shop it on LTK →',
-      imageUrl: ctaImage,
-    })
-    const contentChanged = rebuilt !== content
-    if (contentChanged) content = rebuilt
+    // Shoppable section: if the creator pasted their LTK "Shop the Post" widget,
+    // embed the live gallery (it replaces the synthetic button). Otherwise build
+    // the self-contained CTA card pointing at their LTK link.
+    let contentChanged = false
+    if (widgetCode) {
+      const embedded = embedLtkWidget(content, widgetCode)
+      if (embedded !== content) { content = embedded; contentChanged = true }
+    } else {
+      const ctaImage = heroUrl || imageUrl || null
+      const rebuilt = rebuildCtaCard(content, {
+        productName,
+        url: affiliateUrl,
+        retailerLabel: 'LTK',
+        buttonLabel: 'Shop it on LTK →',
+        imageUrl: ctaImage,
+      })
+      if (rebuilt !== content) { content = rebuilt; contentChanged = true }
+    }
     if (heroMediaId || contentChanged) {
       try {
         await wpService.updatePost(wpPost.id, {

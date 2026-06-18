@@ -162,3 +162,32 @@ export function rebuildCtaCard(html: string, opts: CtaCardOpts): string {
 
   return html.slice(0, block[0]) + card + html.slice(block[1])
 }
+
+/**
+ * Embed the creator's LTK "Shop the Post" widget (the HTML snippet LTK generates
+ * for WordPress) as the shoppable section. LTK provides this code expressly for
+ * WordPress, so it's pasted through verbatim — we never modify or scrub it. It's
+ * wrapped in a Gutenberg `wp:html` block (so the editor keeps it intact) with a
+ * heading + affiliate disclaimer, and REPLACES the synthetic CTA-button card if
+ * one exists (the live widget is the better call-to-action); otherwise it's
+ * appended to the end of the post.
+ *
+ * NOTE: the widget is a <script>. WordPress strips scripts on save for accounts
+ * without the `unfiltered_html` capability — fine for self-hosted admins, but it
+ * may not render on locked-down roles/hosts. The text-link CTA is the fallback.
+ */
+export function embedLtkWidget(html: string, widgetHtml: string): string {
+  const w = (widgetHtml || '').trim()
+  if (!w) return html
+  const block =
+    `<!-- wp:html -->\n` +
+    `<div class="ltk-shop-widget" style="margin:32px 0">` +
+    `<p style="font-size:11px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:#111;margin:0 0 16px;padding-bottom:12px;border-bottom:2px solid #FFC200">Shop this post on LTK</p>` +
+    w +
+    `<p style="font-size:10px;line-height:1.4;color:#6b6b70;margin:14px 0 0;font-style:italic">This post contains affiliate links. I may earn a commission at no extra cost to you.</p>` +
+    `</div>\n` +
+    `<!-- /wp:html -->`
+  const range = findCtaCardBlock(html)
+  if (range) return html.slice(0, range[0]) + block + html.slice(range[1])
+  return `${html}\n${block}`
+}
