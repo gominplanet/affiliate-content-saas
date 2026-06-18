@@ -98,7 +98,7 @@ export default function LtkPage() {
 
       <PageHero
         title="MVP x LTK"
-        subtitle="Turn any LTK pick into an SEO blog post + social content — written in your voice, with your LTK link as the call-to-action. The owned content LTK doesn't give you, funnelling traffic straight to your shop."
+        subtitle={'Paste an LTK product link and MVP writes a Google-ready blog post in your voice — with your LTK link as the "Shop" button. A new way for shoppers to find your picks and click straight through to your LTK shop.'}
         accent={PINK}
       />
 
