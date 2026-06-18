@@ -250,7 +250,7 @@ function Estimator() {
       </div>
       <div className="row-top"><label htmlFor="est-n">Active referrals</label><span className="rv">{n}</span></div>
       <input
-        id="est-n" type="range" min={1} max={300} step={1} value={n}
+        id="est-n" type="range" min={1} max={1000} step={1} value={n}
         onChange={(e) => setN(+e.target.value)}
         aria-valuetext={`${n} referrals on the ${plan} plan`}
       />
