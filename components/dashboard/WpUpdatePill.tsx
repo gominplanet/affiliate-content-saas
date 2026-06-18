@@ -73,7 +73,7 @@ export default function WpUpdatePill() {
     if (status.theme?.updateAvailable) parts.push(`theme ${status.theme.installed} → ${status.theme.latest}`)
     if (status.plugin?.updateAvailable) parts.push(`plugin ${status.plugin.installed} → ${status.plugin.latest}`)
     return (
-      <div className="flex flex-col items-end gap-1">
+      <div className="flex flex-col items-start gap-1">
         <button
           onClick={runUpdate}
           disabled={updating}
@@ -85,7 +85,7 @@ export default function WpUpdatePill() {
             ? <><Loader2 size={13} className="animate-spin" /> Updating…</>
             : <><ArrowUpCircle size={13} /> Update now</>}
         </button>
-        {error && <span className="text-[11px] max-w-[260px] text-right" style={{ color: '#ff6b6b' }}>{error}</span>}
+        {error && <span className="text-[11px] max-w-[320px]" style={{ color: '#ff6b6b' }}>{error}</span>}
       </div>
     )
   }

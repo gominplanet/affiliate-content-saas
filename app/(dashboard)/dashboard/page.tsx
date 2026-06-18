@@ -223,22 +223,20 @@ export default async function DashboardPage() {
           >
             {todayLabel}
           </p>
-          <div className="flex items-start justify-between gap-4 flex-wrap">
-            <h1
-              className="text-[36px] sm:text-[40px] leading-[1.05] font-semibold tracking-tight"
-              style={{ color: 'var(--text)' }}
-            >
-              Welcome back, {firstName}.
-            </h1>
-            {/* Site-version status, up top next to the name: "Update now" button
-                when an update is ready, else a quiet "Up to date" badge. */}
-            <div className="mt-1 shrink-0"><WpUpdatePill /></div>
-          </div>
+          <h1
+            className="text-[36px] sm:text-[40px] leading-[1.05] font-semibold tracking-tight"
+            style={{ color: 'var(--text)' }}
+          >
+            Welcome back, {firstName}.
+          </h1>
           {heroMetaParts.length > 0 && (
             <p className="text-[14px] mt-3" style={{ color: 'var(--text-soft)' }}>
               {heroMetaParts.join(' · ')}
             </p>
           )}
+          {/* Site-version status, left-aligned just under the meta line:
+              "Update now" button when an update is ready, else "Up to date". */}
+          <div className="mt-4"><WpUpdatePill /></div>
         </div>
       </section>
 
