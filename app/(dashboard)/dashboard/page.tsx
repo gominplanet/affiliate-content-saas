@@ -28,6 +28,7 @@ import NewsBanner from '@/components/dashboard/NewsBanner'
 import WhatsNewCard from '@/components/dashboard/WhatsNewCard'
 import ReferralBanner from '@/components/dashboard/ReferralBanner'
 import WpUpdateBanner from '@/components/dashboard/WpUpdateBanner'
+import WpUpdatePill from '@/components/dashboard/WpUpdatePill'
 import AmazonSitesReminder from '@/components/dashboard/AmazonSitesReminder'
 import ProTourBanner from '@/components/dashboard/ProTourBanner'
 import MetaLiveBanner from '@/components/dashboard/MetaLiveBanner'
@@ -222,12 +223,17 @@ export default async function DashboardPage() {
           >
             {todayLabel}
           </p>
-          <h1
-            className="text-[36px] sm:text-[40px] leading-[1.05] font-semibold tracking-tight"
-            style={{ color: 'var(--text)' }}
-          >
-            Welcome back, {firstName}.
-          </h1>
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <h1
+              className="text-[36px] sm:text-[40px] leading-[1.05] font-semibold tracking-tight"
+              style={{ color: 'var(--text)' }}
+            >
+              Welcome back, {firstName}.
+            </h1>
+            {/* Site-version status, up top next to the name: "Update now" button
+                when an update is ready, else a quiet "Up to date" badge. */}
+            <div className="mt-1 shrink-0"><WpUpdatePill /></div>
+          </div>
           {heroMetaParts.length > 0 && (
             <p className="text-[14px] mt-3" style={{ color: 'var(--text-soft)' }}>
               {heroMetaParts.join(' · ')}
