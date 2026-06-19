@@ -293,6 +293,16 @@ export class YouTubeOAuthService {
 
     // Get full video details including status
     const videoIds = items.map((i: any) => i.snippet.resourceId.videoId).join(',')
+    // The uploads-playlist item's publishedAt is the ADD-TO-UPLOADS time —
+    // reliably reverse-chronological and populated even for DRAFT videos, unlike
+    // the video's own snippet.publishedAt (YouTube returns a placeholder for
+    // never-published videos, which breaks newest-first sorting). Map it by id.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const addedAt: Record<string, string> = {}
+    for (const it of items as any[]) {
+      const vid = it?.snippet?.resourceId?.videoId
+      if (vid && it?.snippet?.publishedAt) addedAt[vid] = it.snippet.publishedAt as string
+    }
     const videosData = await this.get<any>('/videos', {
       part: 'snippet,status',
       id: videoIds,
@@ -307,7 +317,9 @@ export class YouTubeOAuthService {
         description: v.snippet.description ?? '',
         thumbnailUrl: v.snippet.thumbnails?.high?.url ?? v.snippet.thumbnails?.default?.url ?? '',
         status: v.status?.privacyStatus ?? 'private',
-        publishedAt: v.snippet.publishedAt,
+        // Prefer the playlist add-time (reliable for drafts); fall back to the
+        // video's own publishedAt only if the playlist item lacked one.
+        publishedAt: addedAt[v.id] ?? v.snippet.publishedAt,
         publishAt: v.status?.publishAt ?? null,
         detectedAsin: asinMatch ? asinMatch[1] : null,
       }
