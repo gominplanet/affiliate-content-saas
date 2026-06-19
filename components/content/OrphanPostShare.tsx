@@ -53,7 +53,10 @@ export function OrphanPostShare(props: {
    *  (no blog_posts row) directly, so social pushes don't 404. */
   postTitle?: string | null
   postImage?: string | null
-  /** Pin already published this session → render the pill as "Pinned". */
+  /** Platforms this post was ALREADY published to (persisted markers) — seeds
+   *  the pills as "On X / On LinkedIn / …" on load, not just after publishing. */
+  initialPosted?: string[]
+  /** Pin already published (persisted or this session) → render pill as "Pinned". */
   pinned?: boolean
   userTier: Tier
   fbConnected: boolean
@@ -72,12 +75,16 @@ export function OrphanPostShare(props: {
   onPinPreview: (data: PinPreviewData) => void
 }) {
   const {
-    postId, postUrl, postTitle, postImage, pinned, userTier,
+    postId, postUrl, postTitle, postImage, initialPosted, pinned, userTier,
     fbConnected, pinterestConnected, threadsConnected, linkedInConnected, twitterConnected, blueskyConnected, telegramConnected,
     brandDisclaimer, brandFacebookGroups, fbAccounts, onPinPreview,
   } = props
 
-  const [posted, setPosted] = useState<Set<SchedulablePlatform>>(new Set())
+  // Seed from persisted markers so already-published platforms show "On …" on
+  // load; publishing in-session adds to this set.
+  const [posted, setPosted] = useState<Set<SchedulablePlatform>>(
+    () => new Set((initialPosted ?? []) as SchedulablePlatform[]),
+  )
   const [open, setOpen] = useState<PlatformCfg | null>(null)
   const [pinLoading, setPinLoading] = useState(false)
 

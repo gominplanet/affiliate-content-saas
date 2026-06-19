@@ -1604,7 +1604,7 @@ export default function ContentPage() {
   const [scheduledItems, setScheduledItems] = useState<ScheduledItem[] | null>(null)
   const [scheduledLoading, setScheduledLoading] = useState(false)
   const [scheduledError, setScheduledError] = useState<string | null>(null)
-  const [allBlogPosts, setAllBlogPosts] = useState<{ id: number; title: string; link: string; date: string; thumbnail: string | null; videoId: string | null; rewriteCount?: number; mvpId?: string | null }[]>([])
+  const [allBlogPosts, setAllBlogPosts] = useState<{ id: number; title: string; link: string; date: string; thumbnail: string | null; videoId: string | null; rewriteCount?: number; mvpId?: string | null; posted?: string[]; pinnedPersisted?: boolean }[]>([])
   // SEO score per post (slug → score) for the Library card badge. Loaded once
   // when the Posts tab opens, from the same /api/seo/overview the SEO hub uses.
   const [seoScores, setSeoScores] = useState<Record<string, number>>({})
@@ -2124,34 +2124,66 @@ export default function ContentPage() {
       // of relying on the WP id alone (the "Post not found" cause on video-less
       // guide/comparison/link posts).
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // Also pull the per-platform "posted" markers so video-less rows
+      // (OrphanPostShare) can show their pills as already-published on load,
+      // not just within the publishing session.
       const { data: sbPosts } = await supabase
         .from('blog_posts')
-        .select('id,wordpress_post_id,wordpress_url,video_id,rewrite_count')
+        .select('id,wordpress_post_id,wordpress_url,video_id,rewrite_count,facebook_post_id,threads_post_id,linkedin_post_id,twitter_post_id,bluesky_post_uri,telegram_message_id,pinterest_pin_id')
         .eq('user_id', user?.id ?? '')
 
       const sbMap: Record<number, string> = {}
       const rewriteMap: Record<number, number> = {}
       const idByWpId: Record<number, string> = {}
       const idByUrl: Record<string, string> = {}
+      // Persisted posted-platform list + pinned flag, keyed by WP id and by URL.
+      type SbRow = { id: string; wordpress_post_id: number | null; wordpress_url: string | null; video_id: string | null; rewrite_count: number | null; facebook_post_id?: string | null; threads_post_id?: string | null; linkedin_post_id?: string | null; twitter_post_id?: string | null; bluesky_post_uri?: string | null; telegram_message_id?: string | null; pinterest_pin_id?: string | null }
+      const postedFor = (p: SbRow): string[] => {
+        const s: string[] = []
+        if (p.facebook_post_id) s.push('facebook')
+        if (p.threads_post_id) s.push('threads')
+        if (p.linkedin_post_id) s.push('linkedin')
+        if (p.twitter_post_id) s.push('twitter')
+        if (p.bluesky_post_uri) s.push('bluesky')
+        if (p.telegram_message_id) s.push('telegram')
+        return s
+      }
+      const postedByWpId: Record<number, string[]> = {}
+      const postedByUrl: Record<string, string[]> = {}
+      const pinnedByWpId: Record<number, boolean> = {}
+      const pinnedByUrl: Record<string, boolean> = {}
       const normUrl = (u: string | null | undefined) => (u || '').replace(/\/+$/, '').toLowerCase()
-      for (const p of (sbPosts ?? []) as { id: string; wordpress_post_id: number | null; wordpress_url: string | null; video_id: string | null; rewrite_count: number | null }[]) {
+      for (const p of (sbPosts ?? []) as SbRow[]) {
         if (p.wordpress_post_id && p.video_id) sbMap[p.wordpress_post_id] = p.video_id
         if (p.wordpress_post_id) {
           rewriteMap[p.wordpress_post_id] = (p.rewrite_count as number) ?? 0
           if (p.id) idByWpId[p.wordpress_post_id] = p.id
+          postedByWpId[p.wordpress_post_id] = postedFor(p)
+          pinnedByWpId[p.wordpress_post_id] = !!p.pinterest_pin_id
         }
-        if (p.id && p.wordpress_url) idByUrl[normUrl(p.wordpress_url)] = p.id
+        if (p.id && p.wordpress_url) {
+          const key = normUrl(p.wordpress_url)
+          idByUrl[key] = p.id
+          postedByUrl[key] = postedFor(p)
+          pinnedByUrl[key] = !!p.pinterest_pin_id
+        }
       }
 
       // Merge: prefer Supabase map, fall back to WP API result. rewriteCount
       // powers the "X of 3 rebuilds" counter; mvpId is the blog_posts UUID
       // (by WP id, else by URL) used for social pushes.
-      const merged = (data.posts ?? []).map((p: { id: number; videoId: string | null; link?: string }) => ({
-        ...p,
-        videoId: sbMap[p.id] ?? p.videoId ?? null,
-        rewriteCount: rewriteMap[p.id] ?? 0,
-        mvpId: idByWpId[p.id] ?? idByUrl[normUrl(p.link)] ?? null,
-      }))
+      const merged = (data.posts ?? []).map((p: { id: number; videoId: string | null; link?: string }) => {
+        const urlKey = normUrl(p.link)
+        return {
+          ...p,
+          videoId: sbMap[p.id] ?? p.videoId ?? null,
+          rewriteCount: rewriteMap[p.id] ?? 0,
+          mvpId: idByWpId[p.id] ?? idByUrl[urlKey] ?? null,
+          // Persisted social state for the OrphanPostShare pills.
+          posted: postedByWpId[p.id] ?? postedByUrl[urlKey] ?? [],
+          pinnedPersisted: pinnedByWpId[p.id] ?? pinnedByUrl[urlKey] ?? false,
+        }
+      })
 
       setAllBlogPosts(merged)
       setPostsLoaded(true)
@@ -3215,7 +3247,8 @@ export default function ContentPage() {
                 postUrl={post.link}
                 postTitle={post.title}
                 postImage={post.thumbnail}
-                pinned={pinnedPostIds.has(post.mvpId || String(post.id))}
+                initialPosted={post.posted}
+                pinned={pinnedPostIds.has(post.mvpId || String(post.id)) || !!post.pinnedPersisted}
                 userTier={userTier}
                 fbConnected={fbConnected}
                 pinterestConnected={pinterestConnected}
