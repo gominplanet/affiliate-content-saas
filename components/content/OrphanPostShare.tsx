@@ -85,7 +85,7 @@ export function OrphanPostShare(props: {
       const res = await fetch('/api/blog/pinterest-preview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ postId }),
+        body: JSON.stringify({ postId, postUrl }),
       })
       const d = await res.json()
       if (!res.ok) { toast.error(d.error || 'Failed to generate pin preview'); return }
@@ -146,6 +146,13 @@ export function OrphanPostShare(props: {
           brandColor={open.brand}
           endpoint={open.endpoint}
           postId={postId}
+          // postUrl lets the server resolve video-less rows to their blog_posts
+          // row by WordPress permalink when the WP id can't be mapped (the
+          // "Post not found" fix). socialAccountId rides along for Facebook.
+          extraBody={{
+            ...(postUrl ? { postUrl } : {}),
+            ...(open.key === 'facebook' && defaultFbAccount ? { socialAccountId: defaultFbAccount.id } : {}),
+          }}
           onClose={() => setOpen(null)}
           onPublished={() => { setPosted(prev => new Set(prev).add(open.key)); setOpen(null) }}
           onScheduled={() => { setPosted(prev => new Set(prev).add(open.key)); setOpen(null) }}
@@ -154,7 +161,6 @@ export function OrphanPostShare(props: {
                 shareUrl: postUrl || undefined,
                 shareDisclaimer: brandDisclaimer,
                 facebookGroups: brandFacebookGroups,
-                extraBody: defaultFbAccount ? { socialAccountId: defaultFbAccount.id } : undefined,
                 publishTargetLabel: defaultFbAccount?.displayName || undefined,
               }
             : {})}

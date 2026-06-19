@@ -34,6 +34,7 @@ export async function POST(request: Request) {
       scheduledAt?: string
       text?: string
       socialAccountId?: string
+      postUrl?: string
     }
 
     const rawPostId = body.postId
@@ -46,7 +47,7 @@ export async function POST(request: Request) {
     // Video-less "Published Posts" rows send the WordPress post id — resolve to
     // the blog_posts UUID so the ownership check + scheduled_posts.blog_post_id
     // are correct (otherwise scheduling from those rows 404s).
-    const postId = (await resolveBlogPostId(supabase, user.id, rawPostId)) || rawPostId
+    const postId = (await resolveBlogPostId(supabase, user.id, rawPostId, body.postUrl)) || rawPostId
     if (!platform || !SUPPORTED.includes(platform)) {
       return NextResponse.json({ error: `platform must be one of ${SUPPORTED.join(', ')}` }, { status: 400 })
     }

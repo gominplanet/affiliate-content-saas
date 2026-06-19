@@ -59,14 +59,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Telegram bot not configured on the server' }, { status: 500 })
     }
 
-    const body = await request.json() as { postId?: string; dryRun?: boolean; text?: string }
+    const body = await request.json() as { postId?: string; dryRun?: boolean; text?: string; postUrl?: string }
     const rawPostId = body.postId
     const dryRun = body.dryRun === true
     const overrideText = body.text?.trim()
     if (!rawPostId) return NextResponse.json({ error: 'postId required' }, { status: 400 })
     // Content-page "Published Posts" rows for video-less posts (guides,
     // comparisons, link posts) send the WP post id, not the blog_posts UUID.
-    const postId = (await resolveBlogPostId(supabase, user.id, rawPostId)) || rawPostId
+    const postId = (await resolveBlogPostId(supabase, user.id, rawPostId, body.postUrl)) || rawPostId
 
     // ── Fetch post + thumbnail ──────────────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

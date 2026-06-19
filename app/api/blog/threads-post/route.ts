@@ -35,14 +35,14 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const body = await request.json() as { postId?: string; dryRun?: boolean; text?: string }
+    const body = await request.json() as { postId?: string; dryRun?: boolean; text?: string; postUrl?: string }
     const rawPostId = body.postId
     const dryRun = body.dryRun === true
     const overrideText = body.text?.trim()
     if (!rawPostId) return NextResponse.json({ error: 'postId required' }, { status: 400 })
     // Video-less "Published Posts" rows send the WordPress post id — resolve to
     // the blog_posts UUID so the lookup/update below don't 404 ("Post not found").
-    const postId = (await resolveBlogPostId(supabase, user.id, rawPostId)) || rawPostId
+    const postId = (await resolveBlogPostId(supabase, user.id, rawPostId, body.postUrl)) || rawPostId
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [{ data: post }, { data: integration }] = await Promise.all([

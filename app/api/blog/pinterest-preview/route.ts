@@ -20,11 +20,11 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { postId: rawPostId } = await request.json()
+  const { postId: rawPostId, postUrl } = await request.json()
   if (!rawPostId) return NextResponse.json({ error: 'postId required' }, { status: 400 })
   // Video-less "Published Posts" rows (guides/comparisons/link posts) send the
   // WordPress post id, not the blog_posts UUID — map it so the lookup resolves.
-  const postId = (await resolveBlogPostId(supabase, user.id, rawPostId)) || rawPostId
+  const postId = (await resolveBlogPostId(supabase, user.id, rawPostId, postUrl)) || rawPostId
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [{ data: post }, { data: integration }] = await Promise.all([

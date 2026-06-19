@@ -30,11 +30,11 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const { postId: rawPostId, title, description, imageBase64, mediaType, fallbackImageUrl } = await request.json()
+  const { postId: rawPostId, title, description, imageBase64, mediaType, fallbackImageUrl, postUrl } = await request.json()
   if (!rawPostId) return NextResponse.json({ error: 'postId required' }, { status: 400 })
   if (!description) return NextResponse.json({ error: 'description required' }, { status: 400 })
   // Video-less rows send the WordPress post id — resolve to the blog_posts UUID.
-  const postId = (await resolveBlogPostId(supabase, user.id, rawPostId)) || rawPostId
+  const postId = (await resolveBlogPostId(supabase, user.id, rawPostId, postUrl)) || rawPostId
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [{ data: post }, { data: integration }] = await Promise.all([
