@@ -2354,9 +2354,17 @@ export default function StudioPage() {
       'done': [],
     }
     for (const v of drafts) buckets[classifyVideo(v)].push(v)
+    // Newest drafts first — the YouTube scan/cache order isn't reliably
+    // recency-sorted, so sort each tab by publishedAt descending so the most
+    // recent uploads surface at the top instead of old ones.
+    const byNewest = (a: DraftVideo, b: DraftVideo) => (b.publishedAt || '').localeCompare(a.publishedAt || '')
+    for (const k of Object.keys(buckets) as VideoTab[]) buckets[k].sort(byNewest)
     return buckets
   }, [drafts])
-  const visibleDrafts = activeQuery ? drafts : tabbed[activeTab]
+  // Search results also newest-first.
+  const visibleDrafts = activeQuery
+    ? [...drafts].sort((a, b) => (b.publishedAt || '').localeCompare(a.publishedAt || ''))
+    : tabbed[activeTab]
 
   // On first load, if the default tab ('todo-product') is empty, jump to the
   // FULLEST tab so Co-Pilot opens on the user's actual library instead of a
