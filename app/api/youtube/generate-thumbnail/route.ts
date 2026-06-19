@@ -1044,7 +1044,14 @@ export async function POST(request: Request) {
           // mixing in the lower-quality, oddly-lit video frame was letting the
           // model drift to a different-looking person. Fall back to the frame
           // only when no face photos are available.
-          const identityRefs = faceRefs.length > 0 ? faceRefs : (frameRef ? [frameRef] : [])
+          // Product-only (noHuman): NEVER pass the video frame as an identity
+          // reference — it contains the on-camera person (who may be a DIFFERENT
+          // creator from a curated/public video), and Nano Banana renders that
+          // face even though the prompt says "no human". Ground on product +
+          // style only. This was the "someone else's face in my thumbnail" bug.
+          const identityRefs = noHuman
+            ? []
+            : (faceRefs.length > 0 ? faceRefs : (frameRef ? [frameRef] : []))
           // ── Style references (2026-06-08, "Gemini-style" thumbnail upgrade) ──
           // 3-5 curated thumbnail examples passed as input images so the model
           // matches the visual language (cinematic blue/orange lighting, bold
@@ -1058,7 +1065,12 @@ export async function POST(request: Request) {
           const appBase = process.env.NEXT_PUBLIC_APP_URL
             || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null)
             || (request.headers.get('origin'))
-          const styleRefs = await rehostStyleRefs(appBase, 4)
+          // Product-only mode: skip the curated style refs too — they're
+          // "creator + product" example thumbnails that CONTAIN PEOPLE and teach
+          // a person+product split, which is both wrong for a product-only
+          // layout and a residual person-leak risk. Product-only grounds on the
+          // product image(s) + the no-human prompt alone.
+          const styleRefs = noHuman ? [] : await rehostStyleRefs(appBase, 4)
           const refs = [...identityRefs, ...productRefs, ...styleRefs]
           // Breadcrumb: if NB still falls through after this, the compose returned
           // nothing despite having references — surfaced via faceDebug below.
