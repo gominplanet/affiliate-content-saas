@@ -999,7 +999,9 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
         })
         return
       }
-      if (!res.ok) throw new Error((data.error as string) || 'Thumbnail generation failed')
+      // needsFaceModel (409): the user hasn't set up a Face Model and asked for
+      // a thumbnail WITH a face — surface the full guidance, not a generic error.
+      if (!res.ok) throw new Error((data.message as string) || (data.error as string) || 'Thumbnail generation failed')
       setCapError(null)
       await applyThumbnailResult(data)
     } catch (err) {
@@ -1059,7 +1061,9 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
         })
         return
       }
-      if (!res.ok) throw new Error((data.error as string) || 'Thumbnail generation failed')
+      // needsFaceModel (409): the user hasn't set up a Face Model and asked for
+      // a thumbnail WITH a face — surface the full guidance, not a generic error.
+      if (!res.ok) throw new Error((data.message as string) || (data.error as string) || 'Thumbnail generation failed')
       setCapError(null)
       await applyThumbnailResult(data)
     } catch (err) {

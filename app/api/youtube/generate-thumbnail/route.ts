@@ -822,6 +822,26 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, overlayHook, quickMode: true })
     }
 
+    // ── IDENTITY GUARD (privacy — highest priority) ────────────────────────────
+    // A rendered HUMAN face must ONLY ever come from a source the user owns:
+    // their own saved face model (face_models is user_id-scoped above) or a
+    // photo THEY uploaded this request. If the user hasn't set up a face model
+    // and isn't doing a Product-only thumbnail, we must NOT silently fall back to
+    // the video FRAME's person — that frame can contain a DIFFERENT creator
+    // (a curated/public video, or a demo). Alert the user to set up their Face
+    // Model instead of "doing whatever it wants". (Face models can never cross
+    // accounts — the DB reads are user-scoped — so this also guarantees one
+    // user's face is never rendered for another.)
+    const hasOwnedFaceIdentity = !!faceModel || autoFaceModels.length > 0 || !!uploadedPhotoUrl
+    if (!noHuman && !hasOwnedFaceIdentity) {
+      return NextResponse.json({
+        ok: false,
+        needsFaceModel: true,
+        error: 'Set up your Face Model first',
+        message: 'MVP only puts YOUR face on a thumbnail once you’ve added a Face Model — it will never use anyone else’s face or guess from the video. Add your face under Set up → Face Models, pick a saved face, or choose “Product only” for a thumbnail with no person.',
+      }, { status: 409 })
+    }
+
     // ── Resolve product data + fetch real product image from Amazon ────────────
     let productImageUrl: string | null = null
     let productTitle = providedProductTitle ?? ''
