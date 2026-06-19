@@ -22,11 +22,39 @@ export interface PinText {
   trust_factor: string
 }
 
+// Overlay colour/treatment themes. One is picked per pin (caller passes a seed)
+// so the headline + center band + badge don't look identical on every pin.
+// `band: null` renders the benefit as outlined text with no box, for variety.
+interface OverlayTheme {
+  hook: string                 // headline colour
+  band: string | null          // center benefit band background (null = no box)
+  bandText: string             // center benefit text colour
+  badgeBg: string              // bottom badge background
+  badgeText: string            // bottom badge text colour
+  badgeRadius: number          // 999 = pill, smaller = rounded rectangle
+}
+const OVERLAY_THEMES: OverlayTheme[] = [
+  // 0 — neon yellow on dark scrim (the original)
+  { hook: '#eaff00', band: 'rgba(0,0,0,0.55)', bandText: '#ffffff', badgeBg: '#ffffff', badgeText: '#111111', badgeRadius: 999 },
+  // 1 — white headline + Pinterest-red benefit bar
+  { hook: '#ffffff', band: '#e60023', bandText: '#ffffff', badgeBg: '#111111', badgeText: '#ffffff', badgeRadius: 12 },
+  // 2 — electric cyan
+  { hook: '#19e3ff', band: 'rgba(8,12,20,0.62)', bandText: '#ffffff', badgeBg: '#19e3ff', badgeText: '#06303a', badgeRadius: 999 },
+  // 3 — hot pink headline, clean white text (no box)
+  { hook: '#ff2e88', band: null, bandText: '#ffffff', badgeBg: '#ffffff', badgeText: '#111111', badgeRadius: 999 },
+  // 4 — bold white headline + amber badge
+  { hook: '#ffffff', band: 'rgba(0,0,0,0.58)', bandText: '#ffd400', badgeBg: '#ffd400', badgeText: '#111111', badgeRadius: 12 },
+]
+/** Number of overlay themes — callers seed a random index in [0, this). */
+export const PIN_OVERLAY_THEME_COUNT = OVERLAY_THEMES.length
+
 export async function composePin(
   sceneBase64: string,
   sceneMediaType: string,
   t: PinText,
+  opts?: { styleSeed?: number },
 ): Promise<{ data: string; mediaType: string } | null> {
+  const theme = OVERLAY_THEMES[((opts?.styleSeed ?? 0) % OVERLAY_THEMES.length + OVERLAY_THEMES.length) % OVERLAY_THEMES.length]
   try {
     // Normalize the AI scene to an exact 1000x1500 with NO crop: full
     // image centered over a blurred dimmed copy of itself.
@@ -58,7 +86,7 @@ export async function composePin(
             backgroundImage: 'linear-gradient(180deg, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.35) 60%, rgba(0,0,0,0) 100%)',
           }}>
             <div style={{
-              display: 'flex', color: '#eaff00', fontSize: 78, fontWeight: 800,
+              display: 'flex', color: theme.hook, fontSize: 78, fontWeight: 800,
               letterSpacing: -1, lineHeight: 1.05, textAlign: 'center',
               textShadow: '0 4px 14px rgba(0,0,0,0.85)',
             }}>{hook}</div>
@@ -71,11 +99,11 @@ export async function composePin(
               display: 'flex', justifyContent: 'center', padding: '0 70px',
             }}>
               <div style={{
-                display: 'flex', textAlign: 'center', color: '#ffffff',
+                display: 'flex', textAlign: 'center', color: theme.bandText,
                 fontSize: 56, fontWeight: 800, lineHeight: 1.1,
-                padding: '20px 34px', borderRadius: 18,
-                backgroundColor: 'rgba(0,0,0,0.55)',
-                textShadow: '0 3px 10px rgba(0,0,0,0.9)',
+                padding: theme.band ? '20px 34px' : '0', borderRadius: 18,
+                backgroundColor: theme.band ?? 'transparent',
+                textShadow: '0 3px 12px rgba(0,0,0,0.92)',
               }}>{benefit}</div>
             </div>
           )}
@@ -87,9 +115,9 @@ export async function composePin(
               display: 'flex', justifyContent: 'center',
             }}>
               <div style={{
-                display: 'flex', backgroundColor: '#ffffff', color: '#111111',
+                display: 'flex', backgroundColor: theme.badgeBg, color: theme.badgeText,
                 fontSize: 30, fontWeight: 800, padding: '14px 30px',
-                borderRadius: 999, letterSpacing: 1,
+                borderRadius: theme.badgeRadius, letterSpacing: 1,
               }}>{badge}</div>
             </div>
           )}

@@ -12,7 +12,7 @@ import { createAnthropicClient } from '@/lib/anthropic'
 import { capSocialText, SOCIAL_LIMITS } from '@/lib/social-cap'
 import { scrubBanned, BANNED_RULE } from '@/lib/scrub'
 import { recordUsage, usageFromAnthropic } from '@/lib/ai-usage'
-import { composePin } from '@/lib/pin-compose'
+import { composePin, PIN_OVERLAY_THEME_COUNT } from '@/lib/pin-compose'
 import { learnProfileToPrompt } from '@/lib/learn'
 import { createAdminClient } from '@/lib/supabase/admin'
 
@@ -126,11 +126,15 @@ Return ONLY valid JSON with these exact keys:
   const pinDescription = scrubBanned(parsed.pinterest_description)
     || `${scrubBanned(p.title)}. See the full breakdown at the link.`
 
-  const rawImage = await generatePinImage(buildViralImagePrompt(fields))
+  // Roll a fresh composition + overlay style each generation so pins vary (and
+  // re-roll on regenerate). Independent picks → many combinations.
+  const sceneVariant = Math.floor(Math.random() * PIN_COMPOSITIONS.length)
+  const styleVariant = Math.floor(Math.random() * PIN_OVERLAY_THEME_COUNT)
+  const rawImage = await generatePinImage(buildViralImagePrompt(fields, sceneVariant))
   const imageResult = rawImage
     ? await composePin(rawImage.data, rawImage.mediaType, {
         viral_hook: fields.viral_hook, main_benefit: fields.main_benefit, trust_factor: fields.trust_factor,
-      })
+      }, { styleSeed: styleVariant })
     : null
   if (rawImage) {
     recordUsage({ userId: ctx.userId, tier: ctx.tier, feature: 'pinterest_image', model: 'gemini-2.5-flash-image', images: 1 })
@@ -152,12 +156,29 @@ Return ONLY valid JSON with these exact keys:
   }
 }
 
-function buildViralImagePrompt(f: Record<string, string>): string {
+// A handful of distinct composition styles so pins don't all look like the same
+// before/after split. One is picked at random per generation (and re-rolled on
+// regenerate), which is the biggest lever on visual variety.
+const PIN_COMPOSITIONS: Array<(f: Record<string, string>) => string> = [
+  // 0 — before/after split (the original look)
+  f => `A dynamic split-screen before-and-after layout. A charismatic, expressive person (the expert) looks toward camera with a ${f.emotion} expression, gesturing toward the product. Show a clear before-vs-after transformation — before: ${f.problem}; after: ${f.solution} — with ${f.product_name} in real use.`,
+  // 1 — single bold hero reaction
+  f => `A single bold hero shot: a charismatic person holding ${f.product_name} up toward the camera with a strong ${f.emotion} expression, the product clearly the star, in a clean modern lifestyle setting that fits a ${f.product_category}.`,
+  // 2 — authentic lifestyle / in-context
+  f => `An authentic lifestyle scene: ${f.product_name} in its natural real-world environment, used as intended for a ${f.product_category}, with a person interacting naturally (slightly off-centre) in a ${f.emotion} mood. Editorial, candid, unposed feel.`,
+  // 3 — dramatic product close-up
+  f => `A dramatic, crisp close-up of ${f.product_name} filling most of the frame with shallow depth of field; a person softly out of focus in the background reacting with a ${f.emotion} expression. Premium product-photography feel.`,
+  // 4 — hands-on / point-of-view
+  f => `A hands-on point-of-view scene: human hands actively using ${f.product_name} for a ${f.product_category}, shot slightly top-down, conveying the "${f.solution}" result. Tactile, satisfying, real.`,
+  // 5 — flat-lay / styled arrangement
+  f => `A clean, styled flat-lay from directly overhead: ${f.product_name} arranged with a few complementary props that suit a ${f.product_category}, on a tasteful surface, bright and aspirational. No people.`,
+]
+
+function buildViralImagePrompt(f: Record<string, string>, variant = 0): string {
+  const composition = PIN_COMPOSITIONS[variant % PIN_COMPOSITIONS.length](f)
   return `Create a high-energy vertical photographic scene for a ${f.product_category}, 2:3 portrait aspect ratio.
 
-Composition: A dynamic split-screen / before-and-after layout.
-The Person: A charismatic, expressive person (the expert) looking toward the camera with a ${f.emotion} expression, gesturing toward the product.
-The Product: A crisp, high-definition view of ${f.product_name} in real use, showing a clear before-vs-after transformation — before: ${f.problem}, after: ${f.solution}.
+Composition: ${composition}
 
 Visual Style: Vibrant, saturated colors, high-contrast cinematic lighting, modern lifestyle / luxury-tech aesthetic, shallow depth of field so the subject pops. Leave some clean, less-busy space near the TOP and the BOTTOM of the frame (calmer areas, e.g. softer background or gradient) suitable for overlaying text later.
 
