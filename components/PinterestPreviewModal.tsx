@@ -6,6 +6,9 @@ import { useModalA11y } from '@/components/ui/useModalA11y'
 
 export interface PinPreviewData {
   postId: string
+  /** WordPress permalink — lets the publish route pin a WordPress-only post
+   *  (no blog_posts row) by resolving / synthesising from the live post. */
+  postUrl?: string | null
   title: string
   description: string
   hashtags: string[]

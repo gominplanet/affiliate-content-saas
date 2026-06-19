@@ -49,6 +49,10 @@ interface PlatformCfg {
 export function OrphanPostShare(props: {
   postId: string
   postUrl: string | null
+  /** Title + image of the WordPress post — used to publish a WP-only post
+   *  (no blog_posts row) directly, so social pushes don't 404. */
+  postTitle?: string | null
+  postImage?: string | null
   userTier: Tier
   fbConnected: boolean
   pinterestConnected: boolean
@@ -66,7 +70,7 @@ export function OrphanPostShare(props: {
   onPinPreview: (data: PinPreviewData) => void
 }) {
   const {
-    postId, postUrl, userTier,
+    postId, postUrl, postTitle, postImage, userTier,
     fbConnected, pinterestConnected, threadsConnected, linkedInConnected, twitterConnected, blueskyConnected, telegramConnected,
     brandDisclaimer, brandFacebookGroups, fbAccounts, onPinPreview,
   } = props
@@ -85,11 +89,11 @@ export function OrphanPostShare(props: {
       const res = await fetch('/api/blog/pinterest-preview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ postId, postUrl }),
+        body: JSON.stringify({ postId, postUrl, postTitle, postImage }),
       })
       const d = await res.json()
       if (!res.ok) { toast.error(d.error || 'Failed to generate pin preview'); return }
-      onPinPreview({ postId, ...d })
+      onPinPreview({ postId, postUrl, ...d })
     } catch { toast.error('Failed to generate pin preview') }
     finally { setPinLoading(false) }
   }

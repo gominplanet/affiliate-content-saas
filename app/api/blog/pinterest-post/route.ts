@@ -11,6 +11,7 @@ import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } from '@/lib/social-cap'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { resolveBlogPostId } from '@/lib/resolve-post-id'
+import { syntheticWpPost } from '@/lib/wp-post-fallback'
 
 export const maxDuration = 60
 
@@ -36,22 +37,32 @@ export async function POST(request: NextRequest) {
   // Video-less rows send the WordPress post id — resolve to the blog_posts UUID.
   const postId = (await resolveBlogPostId(supabase, user.id, rawPostId, postUrl)) || rawPostId
 
+  // .maybeSingle so a missing row → null (WordPress-only post falls through to
+  // the synthetic-post path) rather than erroring.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [{ data: post }, { data: integration }] = await Promise.all([
-    supabase.from('blog_posts').select('id,title,wordpress_url,wordpress_post_id,wordpress_site_id,social_publish_counts').eq('id', postId).single(),
+    supabase.from('blog_posts').select('id,title,wordpress_url,wordpress_post_id,wordpress_site_id,social_publish_counts').eq('id', postId).maybeSingle(),
     supabase.from('integrations').select('pinterest_access_token,pinterest_board_id,pinterest_fallback_board').eq('user_id', user.id).single(),
   ])
-  if (!post) return NextResponse.json({ error: 'Post not found' }, { status: 404 })
+  // No MVP record → pin straight from the WordPress post. `hasRow` gates the
+  // post-publish DB writes (there's no row to persist pin id / cap counts on).
+  const hasRow = !!post
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let p: any = post
+  if (!p) {
+    if (!postUrl) return NextResponse.json({ error: 'Post not found' }, { status: 404 })
+    p = syntheticWpPost({ wpPostId: rawPostId, url: postUrl, title, image: fallbackImageUrl })
+  }
 
   // Multi-site: resolve WP credentials for the SAME site the post lives on
   // so the Pinterest pin's category-board lookup hits the right WP install.
   const wpSite = await getWordPressCredentials(
     supabase,
     user.id,
-    (post as { wordpress_site_id?: string | null }).wordpress_site_id,
+    (p as { wordpress_site_id?: string | null }).wordpress_site_id,
   )
 
-  const pinSocialCount = readSocialCount(post, 'pinterest')
+  const pinSocialCount = readSocialCount(p, 'pinterest')
   const pinCap = evaluateSocialCap(pinSocialCount)
   if (pinCap.exceeded) {
     return NextResponse.json({
@@ -65,11 +76,15 @@ export async function POST(request: NextRequest) {
     // Decrypt the integrations row before handing it to publishPinForPost
     // (2026-06-02 rollout — the pin lib reads pinterest_access_token raw).
     const { pinId } = await publishPinForPost({
-      p: post, ig: decryptIntegrationRow(integration), site: wpSite, title, description, imageBase64, mediaType, fallbackImageUrl,
+      p, ig: decryptIntegrationRow(integration), site: wpSite, title, description, imageBase64, mediaType, fallbackImageUrl,
     })
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await supabase.from('blog_posts').update({ pinterest_pin_id: pinId }).eq('id', postId)
-    await incrementSocialCount(supabase, postId, 'pinterest')
+    // Persist pin id + bump the per-post cap counter — only when there's a real
+    // blog_posts row (a synthetic WP-only post has no id to write to).
+    if (hasRow) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await supabase.from('blog_posts').update({ pinterest_pin_id: pinId }).eq('id', postId)
+      await incrementSocialCount(supabase, postId, 'pinterest')
+    }
     return NextResponse.json({
       ok: true,
       pinId,

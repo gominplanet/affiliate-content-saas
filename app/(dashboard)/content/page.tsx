@@ -2024,6 +2024,7 @@ export default function ContentPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           postId: pinPreview.postId,
+          postUrl: pinPreview.postUrl,
           title,
           description,
           imageBase64: pinPreview.imageBase64,
@@ -3205,6 +3206,8 @@ export default function ContentPage() {
               <OrphanPostShare
                 postId={post.mvpId || String(post.id)}
                 postUrl={post.link}
+                postTitle={post.title}
+                postImage={post.thumbnail}
                 userTier={userTier}
                 fbConnected={fbConnected}
                 pinterestConnected={pinterestConnected}
