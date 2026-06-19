@@ -83,7 +83,8 @@ Return ONLY valid JSON with these exact keys:
   "main_benefit": "Bold center banner text, max 5 words e.g. THE ULTIMATE HACK or IT ACTUALLY WORKS",
   "trust_factor": "Small badge text e.g. TOP RATED or 100% SAFE or #1 PICK",
   "problem": "What the product solves, 3-5 words e.g. Dull aging skin or Dirty car interior",
-  "solution": "What it delivers, 3-5 words e.g. Glowing youthful skin or Spotless in minutes"
+  "solution": "What it delivers, 3-5 words e.g. Glowing youthful skin or Spotless in minutes",
+  "collage_products": ["If this post is a multi-product BUYING GUIDE / COMPARISON / roundup, list the 2-4 MOST IMPORTANT specific product names featured (short, recognizable names, most important first). If it's a single-product review, return an empty array []."]
 }`,
     }],
   })
@@ -126,15 +127,27 @@ Return ONLY valid JSON with these exact keys:
   const pinDescription = scrubBanned(parsed.pinterest_description)
     || `${scrubBanned(p.title)}. See the full breakdown at the link.`
 
-  // Roll a fresh composition + overlay style each generation so pins vary (and
-  // re-roll on regenerate). Independent picks → many combinations.
-  const sceneVariant = Math.floor(Math.random() * PIN_COMPOSITIONS.length)
+  // Multi-product guide/comparison posts get a PRODUCT-COLLAGE pin (a distinct
+  // design in the rotation); single-product reviews use the scene rotation.
+  const isRoundup = ['guide', 'comparison'].includes(String(p.post_type || '').toLowerCase())
+  const collageProducts = (Array.isArray(parsed.collage_products) ? parsed.collage_products : [])
+    .map((s: unknown) => scrubBanned(String(s)).trim()).filter(Boolean).slice(0, 4)
+  const useCollage = isRoundup && collageProducts.length >= 2
+
+  // Roll a fresh overlay style (and, for non-collage, a scene composition) each
+  // generation so pins vary — and re-roll on regenerate.
   const styleVariant = Math.floor(Math.random() * PIN_OVERLAY_THEME_COUNT)
-  const rawImage = await generatePinImage(buildViralImagePrompt(fields, sceneVariant))
+  const imagePrompt = useCollage
+    ? buildCollageImagePrompt(fields.product_category, collageProducts)
+    : buildViralImagePrompt(fields, Math.floor(Math.random() * PIN_COMPOSITIONS.length))
+  const rawImage = await generatePinImage(imagePrompt)
   const imageResult = rawImage
     ? await composePin(rawImage.data, rawImage.mediaType, {
-        viral_hook: fields.viral_hook, main_benefit: fields.main_benefit, trust_factor: fields.trust_factor,
-      }, { styleSeed: styleVariant })
+        viral_hook: fields.viral_hook,
+        // Collage: drop the center band (it'd cover the grid) and badge the count.
+        main_benefit: useCollage ? '' : fields.main_benefit,
+        trust_factor: useCollage ? `TOP ${collageProducts.length} PICKS` : fields.trust_factor,
+      }, { styleSeed: styleVariant, layout: useCollage ? 'collage' : 'standard' })
     : null
   if (rawImage) {
     recordUsage({ userId: ctx.userId, tier: ctx.tier, feature: 'pinterest_image', model: 'gemini-2.5-flash-image', images: 1 })
@@ -173,6 +186,25 @@ const PIN_COMPOSITIONS: Array<(f: Record<string, string>) => string> = [
   // 5 — flat-lay / styled arrangement
   f => `A clean, styled flat-lay from directly overhead: ${f.product_name} arranged with a few complementary props that suit a ${f.product_category}, on a tasteful surface, bright and aspirational. No people.`,
 ]
+
+// Multi-product roundup pins (buying guides / comparisons): a clean collage of
+// the actual products named in the post. Grounded by name (real photos aren't
+// stored), rendered text-free so the headline overlay sits on top.
+function buildCollageImagePrompt(category: string, products: string[]): string {
+  const list = products.slice(0, 4).join(', ')
+  const n = Math.min(products.length, 4)
+  const layout = n >= 4 ? 'a balanced 2×2 grid' : n === 3 ? 'three tiles (one larger top, two below)' : 'two side-by-side tiles'
+  return `Create a clean, premium PRODUCT-COLLAGE image for a "${category}" buying guide, 2:3 portrait aspect ratio.
+
+Composition: ${layout} showing these ${n} DISTINCT products together, each in its own tile, equally prominent and clearly separated by thin gutters: ${list}. Bright, even e-commerce/studio lighting; each product crisp, centred in its tile, and easily recognizable on a simple light neutral or soft-gradient background. Balanced, catalog-quality arrangement.
+
+Leave a calmer band across the TOP and a little space at the BOTTOM (softer background / gradient) for headline text added later.
+
+ABSOLUTELY NO TEXT: Do NOT render ANY text, letters, words, numbers, captions, labels, logos, watermarks, signage, UI, badges, stickers, price tags, or typography of ANY kind anywhere. Purely photographic product tiles with zero written characters. (Headline text is added separately afterward.)
+NO BRANDS: Do NOT render or invent any retailer/marketplace names or logos (especially "Amazon", "Prime", "Walmart", "eBay"), store logos, watermarks, or copyright/trademark symbols — only each product's own physical form/branding.
+
+Final quality: high resolution, photorealistic, professional advertising/product photography, clean and aspirational. Vertical 2:3 portrait. Completely text-free.`
+}
 
 function buildViralImagePrompt(f: Record<string, string>, variant = 0): string {
   const composition = PIN_COMPOSITIONS[variant % PIN_COMPOSITIONS.length](f)

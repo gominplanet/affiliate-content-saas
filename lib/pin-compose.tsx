@@ -52,7 +52,7 @@ export async function composePin(
   sceneBase64: string,
   sceneMediaType: string,
   t: PinText,
-  opts?: { styleSeed?: number },
+  opts?: { styleSeed?: number; layout?: 'standard' | 'collage' },
 ): Promise<{ data: string; mediaType: string } | null> {
   const theme = OVERLAY_THEMES[((opts?.styleSeed ?? 0) % OVERLAY_THEMES.length + OVERLAY_THEMES.length) % OVERLAY_THEMES.length]
   try {
@@ -92,8 +92,9 @@ export async function composePin(
             }}>{hook}</div>
           </div>
 
-          {/* Center benefit band */}
-          {benefit && (
+          {/* Center benefit band — skipped for collage so it doesn't cover the
+              product grid; collage pins rely on the top hook + bottom badge. */}
+          {benefit && opts?.layout !== 'collage' && (
             <div style={{
               position: 'absolute', top: '52%', left: 0, width: PIN_W,
               display: 'flex', justifyContent: 'center', padding: '0 70px',
