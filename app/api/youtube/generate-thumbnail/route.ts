@@ -936,7 +936,11 @@ export async function POST(request: Request) {
     // is nothing at all to ground on → product-only Kontext/Flux fallbacks.
     const haveFaceForNB = !!faceModel || autoFaceModels.length > 0
     LAST_NB_FALLTHROUGH = 'NB not entered: no video frame, no face model, no product image'
-    if (youtubeVideoId || hasCapturedFrame || haveFaceForNB || productImageUrl) {
+    // When the user uploaded their OWN photo (them + the product), that is the
+    // authoritative source — skip the composed/frame path so PATH U handles it
+    // (otherwise a video-backed Co-Pilot run would compose from the frame and
+    // the upload would be ignored / a frame face used instead of theirs).
+    if (!uploadedPhotoUrl && (youtubeVideoId || hasCapturedFrame || haveFaceForNB || productImageUrl)) {
       LAST_NB_FALLTHROUGH = 'NB entered, resolving references…'
       try {
         // Pick the best real frame (clear face + product visible) when we have
