@@ -53,6 +53,8 @@ export function OrphanPostShare(props: {
    *  (no blog_posts row) directly, so social pushes don't 404. */
   postTitle?: string | null
   postImage?: string | null
+  /** Pin already published this session → render the pill as "Pinned". */
+  pinned?: boolean
   userTier: Tier
   fbConnected: boolean
   pinterestConnected: boolean
@@ -70,7 +72,7 @@ export function OrphanPostShare(props: {
   onPinPreview: (data: PinPreviewData) => void
 }) {
   const {
-    postId, postUrl, postTitle, postImage, userTier,
+    postId, postUrl, postTitle, postImage, pinned, userTier,
     fbConnected, pinterestConnected, threadsConnected, linkedInConnected, twitterConnected, blueskyConnected, telegramConnected,
     brandDisclaimer, brandFacebookGroups, fbAccounts, onPinPreview,
   } = props
@@ -136,7 +138,7 @@ export function OrphanPostShare(props: {
           icon={<Pin size={11} />}
           label="Pinterest"
           postedLabel="Pinned"
-          posted={false}
+          posted={!!pinned}
           loading={pinLoading}
           onClick={handlePinPreview}
           locked={!tierAllowsSocial(userTier, 'pinterest')}

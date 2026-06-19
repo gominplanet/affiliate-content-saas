@@ -1570,6 +1570,9 @@ export default function ContentPage() {
   const [dismissed, setDismissed] = useState<Set<string>>(new Set())
   const [pinPreview, setPinPreview] = useState<PinPreviewData | null>(null)
   const [pinPublishingFor, setPinPublishingFor] = useState<string | null>(null)
+  // Rows (by postId) whose pin has been published this session — drives the
+  // "Pinned" state on the OrphanPostShare Pinterest pill for video-less posts.
+  const [pinnedPostIds, setPinnedPostIds] = useState<Set<string>>(new Set())
   const [fixingCategories, setFixingCategories] = useState(false)
   const [fixCatResult, setFixCatResult] = useState<string | null>(null)
   // Category-fix preview modal — dryRun the recategorize endpoint so the
@@ -2044,6 +2047,10 @@ export default function ContentPage() {
         }
         return next
       })
+      // Mark this row pinned so the OrphanPostShare Pinterest pill flips to
+      // "Pinned" (video-less rows publish at the page level, so they otherwise
+      // never learn the pin succeeded).
+      setPinnedPostIds(prev => new Set(prev).add(pinPreview.postId))
       setPinPreview(null)
       return { ok: true }
     } catch (e) {
@@ -3208,6 +3215,7 @@ export default function ContentPage() {
                 postUrl={post.link}
                 postTitle={post.title}
                 postImage={post.thumbnail}
+                pinned={pinnedPostIds.has(post.mvpId || String(post.id))}
                 userTier={userTier}
                 fbConnected={fbConnected}
                 pinterestConnected={pinterestConnected}
