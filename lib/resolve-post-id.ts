@@ -2,7 +2,23 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-const normUrl = (u: string | null | undefined) => (u || '').trim().replace(/\/+$/, '').toLowerCase()
+// Canonicalise a WP permalink for comparison. The stored `wordpress_url` and
+// the live permalink the Content page reads from WP can differ by protocol
+// (http/https) and host form (www / non-www) — gominreviews.com is non-www
+// canonical, so a www-form stored URL would never match a non-www live one.
+// Strip protocol + leading www + trailing slash + case so those all reconcile.
+// Also expose the path alone as a weaker, host-independent fallback key.
+const normUrl = (u: string | null | undefined) =>
+  (u || '').trim().toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .replace(/\/+$/, '')
+
+const urlPath = (u: string | null | undefined) => {
+  const s = normUrl(u)
+  const slash = s.indexOf('/')
+  return slash === -1 ? '' : s.slice(slash) // "/foo-bar" — empty for a bare host
+}
 
 /**
  * Normalise a `postId` from a client to the `blog_posts` UUID.
@@ -56,9 +72,18 @@ export async function resolveBlogPostId(
       .select('id,wordpress_url')
       .eq('user_id', userId)
       .limit(2000)
-    const hit = (rows as Array<{ id: string; wordpress_url: string | null }> | null)
-      ?.find(r => normUrl(r.wordpress_url) === u)
+    const list = (rows as Array<{ id: string; wordpress_url: string | null }> | null) ?? []
+    // 1) Full host+path match (after protocol/www/case normalisation).
+    const hit = list.find(r => normUrl(r.wordpress_url) === u)
     if (hit?.id) return hit.id as string
+    // 2) Path-only match — rescues a row whose stored URL is on a different host
+    //    form/domain than the live permalink. Only when exactly ONE row shares
+    //    the slug path (avoid mis-linking when paths collide across sites).
+    const p = urlPath(fallbackUrl)
+    if (p) {
+      const pathHits = list.filter(r => urlPath(r.wordpress_url) === p)
+      if (pathHits.length === 1 && pathHits[0]?.id) return pathHits[0].id as string
+    }
   }
 
   return postId
