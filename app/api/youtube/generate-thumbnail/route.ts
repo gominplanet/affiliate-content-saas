@@ -1092,6 +1092,12 @@ export async function POST(request: Request) {
           // product image(s) + the no-human prompt alone.
           const styleRefs = noHuman ? [] : await rehostStyleRefs(appBase, 4)
           const refs = [...identityRefs, ...productRefs, ...styleRefs]
+          // Creator-uploaded style reference (a competitor thumbnail / moodboard
+          // they like the look of). Distill its palette/lighting/composition into
+          // a short brief and fold it into the composed prompt below — previously
+          // this only fed the Kontext/Flux FALLBACK path, so on the primary
+          // composed path the user's upload appeared to "do nothing".
+          const userStyleBrief = styleReferenceUrl ? await extractStyleBrief(styleReferenceUrl) : null
           // Breadcrumb: if NB still falls through after this, the compose returned
           // nothing despite having references — surfaced via faceDebug below.
           LAST_NB_FALLTHROUGH = `NB entered with refs=${refs.length} (face=${faceRefs.length}, product=${productRefs.length}, style=${styleRefs.length}, frame=${frameRef ? 1 : 0}) — compose returned no image`
@@ -1256,8 +1262,15 @@ The viewer must look at the rendered thumbnail and INSTANTLY recognise this as t
             // intentional headline + arrow as the ONLY allowed text.
             // When noHuman, skip identity + outfit (no human to describe).
             const humanClauses = noHuman ? '' : `${identityClause}\n${outfitNote}\n`
+            // Creator's uploaded style reference, distilled — match its LOOK
+            // (palette/lighting/contrast/energy) while keeping our composition
+            // rules below authoritative. High priority so the upload visibly
+            // shapes the result instead of being ignored.
+            const userStyleClause = userStyleBrief
+              ? `★ MATCH THIS LOOK (the creator uploaded a style reference — follow its colour palette, lighting, contrast and overall energy): ${userStyleBrief}\n`
+              : ''
             return `Create a vibrant, high-CTR YouTube thumbnail (16:9) in the polished style of top product-review channels — a DESIGNED composite, not a touched-up screengrab.
-${humanClauses}${productRefClause}
+${userStyleClause}${humanClauses}${productRefClause}
 ${styleRefClause}
 ${compositionLine}
 ${headlineClause}
