@@ -76,32 +76,41 @@ export function HelpDeskPanel() {
       })
 
       if (!res.ok) {
-        const err = await res.json()
-        toast.error(err.error || 'Failed to get response')
+        const err = await res.json().catch(() => ({}))
+        const note = err.error || 'Sorry — I couldn’t get a response just now. Please try again.'
+        // Surface the error IN the thread, not just a toast that's easy to miss
+        // (that's what made it look like "no answer was given").
+        setMessages(prev => [...prev, { role: 'assistant', content: `⚠️ ${note}` }])
+        if (err.error) toast.error(err.error)
         setSending(false)
         return
       }
 
       const reader = res.body?.getReader()
       if (!reader) {
+        setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ Sorry — I couldn’t read the response. Please try again.' }])
         setSending(false)
         return
       }
 
       let assembled = ''
+      const decoder = new TextDecoder()
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
-        const chunk = new TextDecoder().decode(value)
-        assembled += chunk
+        assembled += decoder.decode(value, { stream: true })
         setStreaming(assembled)
       }
+      assembled += decoder.decode()
 
-      setMessages(prev => [...prev, { role: 'assistant', content: assembled }])
+      // Never leave the thread blank — if the stream returned nothing, say so
+      // instead of pushing an empty bubble.
+      const finalText = assembled.trim() || '⚠️ Sorry — I didn’t catch that. Please try again.'
+      setMessages(prev => [...prev, { role: 'assistant', content: finalText }])
       setStreaming('')
     } catch (err) {
       console.error('Help Desk error:', err)
-      toast.error('Connection error')
+      setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ Connection error — please try again.' }])
     } finally {
       setSending(false)
       inputRef.current?.focus()
