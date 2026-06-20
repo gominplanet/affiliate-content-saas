@@ -14,10 +14,13 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Sparkles, X, ArrowUpRight } from 'lucide-react'
+import { toast } from 'sonner'
 
-// Bump this whenever UPDATES changes — re-shows the card to everyone.
-const RELEASE_ID = '2026-06-14'
+// Bump this whenever UPDATES changes — re-shows the card AND fires the one-time
+// "what's new" toast to everyone (both gated per-release in localStorage).
+const RELEASE_ID = '2026-06-20'
 const STORAGE_KEY = 'mvp_whats_new_seen'
+const TOAST_KEY = 'mvp_whats_new_toasted'
 
 interface Update {
   badge: string
@@ -29,39 +32,31 @@ interface Update {
 
 const UPDATES: Update[] = [
   {
-    badge: 'PRO',
+    badge: 'NEW',
     tone: '#7C3AED',
-    title: 'Multiple YouTube channels',
-    desc: 'Connect more than one channel, pick a default per site, and pull videos from a secondary channel into any blog.',
-    href: '/connect-youtube',
+    title: 'Pick what to do, fast',
+    desc: 'The dashboard now has big, colour-coded shortcuts for every workflow — YouTube metadata, a blog from a video or a link, comparisons, guides, socials, deals and the newsletter.',
+    href: '/dashboard',
   },
   {
-    badge: 'NEW',
+    badge: 'IMPROVED',
     tone: '#34c759',
-    title: 'Published Posts, all in one place',
-    desc: 'Reviews, comparisons, guides and link posts now live together in one chronological feed — nothing hidden.',
-    href: '/content',
+    title: 'Any video works in Co-Pilot',
+    desc: 'You no longer need the Amazon ASIN in your title. We identify the product from your title and what you actually say in the video, and still add your affiliate link.',
+    href: '/co-pilot',
   },
   {
     badge: 'IMPROVED',
     tone: '#FF9500',
-    title: 'Smarter Blog Post Generator',
-    desc: 'Link posts now recloak with Geniuslink, hyperlink your affiliate link through the article, and support manual edits.',
-    href: '/content',
+    title: 'Mobile-friendly blog posts',
+    desc: 'Your published reviews now read cleanly on phones — the text, the video and the “best price” card all fit the screen. (Update your site theme from the prompt above to get it.)',
   },
   {
     badge: 'NEW',
     tone: '#0a84ff',
-    title: 'A dashboard that points you to wins',
-    desc: 'See your catalog gaps, posts one push from page 1, posts losing rank, and your real affiliate link clicks at a glance.',
+    title: 'Never miss a site update',
+    desc: 'When new theme or plugin software is ready, you’ll get a clear prompt to one-click install it — no wp-admin trip.',
     href: '/dashboard',
-  },
-  {
-    badge: 'NEW',
-    tone: '#bc1888',
-    title: 'Bulk indexing checks',
-    desc: 'On the SEO hub, hit “Check visible” to re-pull Google indexing status for every post at once.',
-    href: '/seo',
   },
 ]
 
@@ -77,6 +72,29 @@ export default function WhatsNewCard() {
     }
   }, [])
 
+  // One-time-per-release attention toast — so users actually notice new features
+  // instead of relying on them spotting the card. Separate key from the card's
+  // dismissal so the popup fires once per release regardless. "See all" scrolls
+  // to the card (a no-op if it's been dismissed).
+  useEffect(() => {
+    let toasted: string | null = null
+    try { toasted = localStorage.getItem(TOAST_KEY) } catch { /* private mode */ }
+    if (toasted === RELEASE_ID) return
+    try { localStorage.setItem(TOAST_KEY, RELEASE_ID) } catch { /* ignore */ }
+    const top = UPDATES[0]
+    const more = Math.max(0, UPDATES.length - 1)
+    toast('✨ What’s new in MVP', {
+      description: top
+        ? `${top.title}${more ? ` — and ${more} more update${more === 1 ? '' : 's'}` : ''}.`
+        : `${UPDATES.length} new update${UPDATES.length === 1 ? '' : 's'}.`,
+      duration: 11000,
+      action: {
+        label: 'See all',
+        onClick: () => { document.getElementById('mvp-whats-new')?.scrollIntoView({ behavior: 'smooth', block: 'center' }) },
+      },
+    })
+  }, [])
+
   if (dismissed) return null
 
   function dismiss() {
@@ -86,7 +104,8 @@ export default function WhatsNewCard() {
 
   return (
     <div
-      className="rounded-2xl border p-5 relative mb-6"
+      id="mvp-whats-new"
+      className="rounded-2xl border p-5 relative mb-6 scroll-mt-24"
       style={{
         background: 'linear-gradient(135deg, rgba(124, 58, 237, 0.06) 0%, rgba(188, 24, 136, 0.05) 100%)',
         borderColor: 'rgba(124, 58, 237, 0.22)',
