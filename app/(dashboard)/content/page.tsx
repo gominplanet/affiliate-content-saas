@@ -1593,8 +1593,12 @@ export default function ContentPage() {
   // hydration, to avoid an SSR mismatch); then keep ?tab in sync with the
   // active tab so the sidebar active-state + shareable links stay accurate.
   useEffect(() => {
-    const t = new URLSearchParams(window.location.search).get('tab')
+    const params = new URLSearchParams(window.location.search)
+    const t = params.get('tab')
     if (t === 'posts' || t === 'vertical' || t === 'scheduled' || t === 'horizontal') setActiveTab(t)
+    // Deep-link: /content?new=link (dashboard "Blog from a link" button) opens
+    // the New-post-from-a-link modal straight away.
+    if (params.get('new') === 'link') setFromLinkOpen(true)
   }, [])
   useEffect(() => {
     const url = activeTab === 'horizontal' ? '/content' : `/content?tab=${activeTab}`

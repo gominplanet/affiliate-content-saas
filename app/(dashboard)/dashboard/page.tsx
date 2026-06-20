@@ -35,8 +35,9 @@ import MetaLiveBanner from '@/components/dashboard/MetaLiveBanner'
 import { DashboardLiveCards } from '@/components/dashboard/DashboardLiveCards'
 import {
   PlaySquare, ArrowRight, FileText, Layers, Gauge,
-  Facebook, ExternalLink, Sparkles, PenLine, Image as ImageIcon,
-  Scale, Wand2, ArrowUpRight, BadgePercent, Eye, Clock,
+  Facebook, ExternalLink, Sparkles, Image as ImageIcon,
+  Scale, ArrowUpRight, BadgePercent, Eye, Clock,
+  Youtube, Link2, BookOpen, Send, Mail,
 } from 'lucide-react'
 import Link from 'next/link'
 import { TIERS, billingWindow, type Tier } from '@/lib/tier'
@@ -241,18 +242,21 @@ export default async function DashboardPage() {
       </section>
 
       <div className="px-6 sm:px-8 py-8 flex flex-col gap-8">
-        {/* Quick-action chips. Each maps to a real workflow the user
-            launches from the dashboard. Sit just under the hero so the
-            page is "action-first" instead of "metric-first" — matches
-            the preview design intent. */}
+        {/* Primary actions. Big, clearly-labelled buttons — one per core
+            workflow — so a user (especially a first-timer fresh off the
+            YouTube + social setup) knows exactly where to go for each task.
+            Sit just under the hero so the page is "action-first". */}
         <section>
-          <div className="flex flex-wrap gap-2">
-            <ActionChip href="/content" icon={<PenLine size={13} />} label="Generate post" />
-            <ActionChip href="/co-pilot" icon={<ImageIcon size={13} />} label="Make thumbnail" />
-            <ActionChip href="/comparison" icon={<Scale size={13} />} label="Compare products" />
-            <ActionChip href="/deals" icon={<BadgePercent size={13} />} label="Spot a deal" />
-            <ActionChip href="/seo" icon={<Wand2 size={13} />} label="Refresh SEO" />
-            <ActionChip href="/assistant" icon={<Sparkles size={13} />} label="Ask the assistant" />
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] mb-3" style={{ color: 'var(--text-faint)' }}>What do you want to do?</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <BigAction href="/co-pilot" icon={<Youtube size={17} />} title="YouTube metadata" desc="Description, tags & affiliate link" />
+            <BigAction href="/content" icon={<PlaySquare size={17} />} title="Blog from a video" desc="Turn a YouTube video into a post" />
+            <BigAction href="/content?new=link" icon={<Link2 size={17} />} title="Blog from a link" desc="Paste any product or article URL" />
+            <BigAction href="/comparison" icon={<Scale size={17} />} title="Comparison post" desc="Rank multiple products head-to-head" />
+            <BigAction href="/buying-guides" icon={<BookOpen size={17} />} title="Buying guide" desc="A multi-product guide post" />
+            <BigAction href="/content?tab=posts" icon={<Send size={17} />} title="Push to socials" desc="Send blog posts to your social accounts" />
+            <BigAction href="/deals" icon={<BadgePercent size={17} />} title="Deals Hub post" desc="Blog from Amazon's daily deals" />
+            <BigAction href="/newsletter" icon={<Mail size={17} />} title="Newsletter" desc="Manage & send to subscribers" />
           </div>
         </section>
 
@@ -509,19 +513,23 @@ export default async function DashboardPage() {
 
 // ─── Sub-components (preview-shape, real-data wired) ──────────────────────
 
-function ActionChip({ href, icon, label }: { href: string; icon: React.ReactNode; label: string }) {
+function BigAction({ href, icon, title, desc }: { href: string; icon: React.ReactNode; title: string; desc: string }) {
   return (
     <Link
       href={href}
-      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-full border text-[12px] font-medium transition-colors"
-      style={{
-        backgroundColor: 'var(--surface)',
-        borderColor: 'var(--border)',
-        color: 'var(--text-soft)',
-      }}
+      className="group rounded-xl border p-4 flex items-start gap-3 transition-all duration-200 hover:-translate-y-0.5"
+      style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', boxShadow: 'var(--card-shadow)' }}
     >
-      {icon}
-      {label}
+      <span className="grid place-items-center w-9 h-9 rounded-lg flex-shrink-0" style={{ backgroundColor: '#7C3AED1a', color: '#7C3AED' }}>
+        {icon}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-1 text-[13px] font-semibold leading-tight" style={{ color: 'var(--text)' }}>
+          {title}
+          <ArrowUpRight size={13} className="opacity-0 group-hover:opacity-60 transition-opacity flex-shrink-0" />
+        </span>
+        <span className="block text-[11px] leading-snug mt-0.5" style={{ color: 'var(--text-faint)' }}>{desc}</span>
+      </span>
     </Link>
   )
 }
