@@ -1603,6 +1603,11 @@ export default function ContentPage() {
   useEffect(() => {
     const url = activeTab === 'horizontal' ? '/content' : `/content?tab=${activeTab}`
     window.history.replaceState(null, '', url)
+    // replaceState doesn't notify React Router or the sidebar, so the sidebar's
+    // active highlight (Blog Post Generator vs Social Push, which share /content)
+    // would go stale on a tab switch. Emit an event the sidebar listens for so
+    // it re-evaluates which item is active.
+    window.dispatchEvent(new Event('mvp:locationchange'))
   }, [activeTab])
   // Scheduled posts list (loaded on demand when the Scheduled tab opens)
   const [scheduledItems, setScheduledItems] = useState<ScheduledItem[] | null>(null)

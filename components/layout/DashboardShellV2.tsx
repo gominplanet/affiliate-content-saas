@@ -198,6 +198,22 @@ export default function DashboardShellV2({
   const supabase = createBrowserClient()
   const isDark = theme !== 'light' // default to dark when unset
 
+  // Some pages mutate the query string with raw history.replaceState (e.g.
+  // /content switching to the Social-Push/Published tab). That doesn't change
+  // `pathname` or fire a router update, so the active-highlight below — which
+  // reads window.location.search — would go stale. Bump a counter on those
+  // events so isActive recomputes and the right sidebar item lights up.
+  const [locTick, setLocTick] = useState(0)
+  useEffect(() => {
+    const bump = () => setLocTick((t) => t + 1)
+    window.addEventListener('popstate', bump)
+    window.addEventListener('mvp:locationchange', bump)
+    return () => {
+      window.removeEventListener('popstate', bump)
+      window.removeEventListener('mvp:locationchange', bump)
+    }
+  }, [])
+
   // Persist collapsed state across navigations.
   const [collapsed, setCollapsed] = useState(false)
   useEffect(() => {
@@ -465,7 +481,8 @@ export default function DashboardShellV2({
       return true
     }
     return pathname.startsWith(href)
-  }, [pathname])
+    // locTick: force recompute when a page mutates ?tab via replaceState.
+  }, [pathname, locTick])
 
   async function handleLogout() {
     await supabase.auth.signOut()
