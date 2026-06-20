@@ -22,9 +22,15 @@ const BANNED = /\b(honest(?:ly)?)\b/gi
  * because those are hyphen-minus (U+002D), distinct from em/en-dash
  * (U+2014 / U+2013).
  */
-const EM_DASH = /\s*[—–]\s*/g                       // — and –
+// All three keep newlines intact: the spacing classes are [^\S\r\n] (horizontal
+// whitespace only), never \s, so multi-line copy survives — YouTube descriptions
+// with "----------" divider rows, multi-paragraph social captions, etc.
+const EM_DASH = /[^\S\r\n]*[—–][^\S\r\n]*/g          // — and –
 const ENTITY_MDASH = /&(?:mdash|ndash);|&#8211;|&#8212;|&#x201[34];/gi
-const ASCII_EMDASH = /(\S)\s*--\s*(\S)/g                       // "X -- Y" / "X--Y"
+// "word -- word" pseudo-em-dash ONLY. Both sides must be non-space AND non-hyphen,
+// so a standalone "----------" divider row (hyphens bounded by newlines) is left
+// untouched instead of being shredded into ", --, --,".
+const ASCII_EMDASH = /([^\s-])[^\S\r\n]*-{2,}[^\S\r\n]*([^\s-])/g
 
 /**
  * Drop-in instruction for any AI prompt. Keep the banned list here so
@@ -41,14 +47,15 @@ export function scrubBanned(input: string | null | undefined): string {
     .replace(ENTITY_MDASH, ', ')
     .replace(EM_DASH, ', ')
     .replace(ASCII_EMDASH, '$1, $2')
-  // Tidy artifacts left by the removals.
+  // Tidy artifacts left by the removals. All spacing classes are horizontal-only
+  // ([^\S\r\n]) so line breaks and blank-line dividers are preserved.
   s = s
-    .replace(/,\s*,/g, ',')                  // double-comma the dash sub may produce
-    .replace(/\s{2,}/g, ' ')                 // collapsed double spaces
-    .replace(/\s+([,.!?;:])/g, '$1')         // space before punctuation
-    .replace(/\b(a|an|our|my|the|this|their)\s+([,.!?])/gi, '$2') // dangling article
-    .replace(/\(\s*\)/g, '')                  // empty parens
-    .replace(/\s{2,}/g, ' ')
+    .replace(/,[^\S\r\n]*,/g, ',')           // double-comma the dash sub may produce
+    .replace(/[^\S\r\n]{2,}/g, ' ')          // collapse runs of spaces/tabs, keep newlines
+    .replace(/[^\S\r\n]+([,.!?;:])/g, '$1')  // space before punctuation
+    .replace(/\b(a|an|our|my|the|this|their)[^\S\r\n]+([,.!?])/gi, '$2') // dangling article
+    .replace(/\([^\S\r\n]*\)/g, '')          // empty parens
+    .replace(/[^\S\r\n]{2,}/g, ' ')
     .trim()
   return s
 }
