@@ -249,14 +249,14 @@ export default async function DashboardPage() {
         <section>
           <p className="text-[11px] font-semibold uppercase tracking-[0.12em] mb-3" style={{ color: 'var(--text-faint)' }}>What do you want to do?</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            <BigAction href="/co-pilot" icon={<Youtube size={17} />} title="YouTube metadata" desc="Description, tags & affiliate link" />
-            <BigAction href="/content" icon={<PlaySquare size={17} />} title="Blog from a video" desc="Turn a YouTube video into a post" />
-            <BigAction href="/content?new=link" icon={<Link2 size={17} />} title="Blog from a link" desc="Paste any product or article URL" />
-            <BigAction href="/comparison" icon={<Scale size={17} />} title="Comparison post" desc="Rank multiple products head-to-head" />
-            <BigAction href="/buying-guides" icon={<BookOpen size={17} />} title="Buying guide" desc="A multi-product guide post" />
-            <BigAction href="/content?tab=posts" icon={<Send size={17} />} title="Push to socials" desc="Send blog posts to your social accounts" />
-            <BigAction href="/deals" icon={<BadgePercent size={17} />} title="Deals Hub post" desc="Blog from Amazon's daily deals" />
-            <BigAction href="/newsletter" icon={<Mail size={17} />} title="Newsletter" desc="Manage & send to subscribers" />
+            <BigAction href="/co-pilot" icon={<Youtube size={17} />} title="YouTube metadata" desc="Description, tags & affiliate link" accent="#F43F5E" />
+            <BigAction href="/content" icon={<PlaySquare size={17} />} title="Blog from a video" desc="Turn a YouTube video into a post" accent="#8B5CF6" />
+            <BigAction href="/content?new=link" icon={<Link2 size={17} />} title="Blog from a link" desc="Paste any product or article URL" accent="#0EA5E9" />
+            <BigAction href="/comparison" icon={<Scale size={17} />} title="Comparison post" desc="Rank multiple products head-to-head" accent="#F59E0B" />
+            <BigAction href="/buying-guides" icon={<BookOpen size={17} />} title="Buying guide" desc="A multi-product guide post" accent="#10B981" />
+            <BigAction href="/content?tab=posts" icon={<Send size={17} />} title="Push to socials" desc="Send blog posts to your social accounts" accent="#3B82F6" />
+            <BigAction href="/deals" icon={<BadgePercent size={17} />} title="Deals Hub post" desc="Blog from Amazon's daily deals" accent="#EC4899" />
+            <BigAction href="/newsletter" icon={<Mail size={17} />} title="Newsletter" desc="Manage & send to subscribers" accent="#14B8A6" />
           </div>
         </section>
 
@@ -513,20 +513,24 @@ export default async function DashboardPage() {
 
 // ─── Sub-components (preview-shape, real-data wired) ──────────────────────
 
-function BigAction({ href, icon, title, desc }: { href: string; icon: React.ReactNode; title: string; desc: string }) {
+function BigAction({ href, icon, title, desc, accent }: { href: string; icon: React.ReactNode; title: string; desc: string; accent: string }) {
+  // accent drives a per-button colour. On hover the icon chip fills with the
+  // solid accent (white glyph) and the border lights up to match — clear,
+  // colourful contrast against the dark surface. `--accent`/`--accent-soft`
+  // are set inline so the static Tailwind hover classes can reference them.
   return (
     <Link
       href={href}
-      className="group rounded-xl border p-4 flex items-start gap-3 transition-all duration-200 hover:-translate-y-0.5"
-      style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', boxShadow: 'var(--card-shadow)' }}
+      style={{ '--accent': accent, '--accent-soft': `${accent}1f`, backgroundColor: 'var(--surface)', boxShadow: 'var(--card-shadow)' } as React.CSSProperties}
+      className="group rounded-xl border border-[color:var(--border)] p-4 flex items-start gap-3 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg hover:border-[color:var(--accent)]"
     >
-      <span className="grid place-items-center w-9 h-9 rounded-lg flex-shrink-0" style={{ backgroundColor: '#7C3AED1a', color: '#7C3AED' }}>
+      <span className="grid place-items-center w-9 h-9 rounded-lg flex-shrink-0 bg-[color:var(--accent-soft)] text-[color:var(--accent)] transition-colors duration-200 group-hover:bg-[color:var(--accent)] group-hover:text-white">
         {icon}
       </span>
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1 text-[13px] font-semibold leading-tight" style={{ color: 'var(--text)' }}>
           {title}
-          <ArrowUpRight size={13} className="opacity-0 group-hover:opacity-60 transition-opacity flex-shrink-0" />
+          <ArrowUpRight size={13} className="opacity-0 group-hover:opacity-100 text-[color:var(--accent)] transition-opacity flex-shrink-0" />
         </span>
         <span className="block text-[11px] leading-snug mt-0.5" style={{ color: 'var(--text-faint)' }}>{desc}</span>
       </span>
