@@ -43,16 +43,24 @@ export function firstProductUrl(description: string, ownSite?: string | null): s
   return null
 }
 
+// Bot-identifying User-Agent for internal redirect-resolution. We follow
+// geni.us / short links server-side ONLY to learn or verify a destination — not
+// a real visitor click. A browser UA ('Mozilla/5.0') made Geniuslink (and other
+// redirectors) log these as CLICKS, inflating the creator's stats. Announcing
+// ourselves as a bot opts us out of click counting on services that filter bots.
+const RESOLVER_UA = 'MVPAffiliateResolverBot/1.0 (+https://www.mvpaffiliate.io/bot; link verification, not a visitor)'
+
 /** Follow a short link / redirect to its FINAL destination. Hard 5s timeouts
  *  so a slow host can't stall a generation request. Returns the original URL
- *  on failure. */
+ *  on failure. Uses a bot UA so click-tracking redirectors don't count these
+ *  internal resolution hits as real clicks. */
 export async function resolveFinalUrl(url: string): Promise<string> {
   try {
-    const res = await fetch(url, { method: 'HEAD', redirect: 'follow', headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(5000) })
+    const res = await fetch(url, { method: 'HEAD', redirect: 'follow', headers: { 'User-Agent': RESOLVER_UA }, signal: AbortSignal.timeout(5000) })
     return res.url || url
   } catch {
     try {
-      const res = await fetch(url, { method: 'GET', redirect: 'follow', headers: { 'User-Agent': 'Mozilla/5.0', Range: 'bytes=0-0' }, signal: AbortSignal.timeout(5000) })
+      const res = await fetch(url, { method: 'GET', redirect: 'follow', headers: { 'User-Agent': RESOLVER_UA, Range: 'bytes=0-0' }, signal: AbortSignal.timeout(5000) })
       return res.url || url
     } catch {
       return url
