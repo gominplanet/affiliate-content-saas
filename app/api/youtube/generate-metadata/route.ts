@@ -428,8 +428,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'videoTitle is required' }, { status: 400 })
     }
 
-    // ── Fetch brand + credentials in parallel ─────────────────────────────────
-    const [brandResult, intResult] = await Promise.all([
+    // ── Fetch brand + credentials (+ this video's already-resolved product
+    //    link, if it was blogged) in parallel ──────────────────────────────────
+    const [brandResult, intResult, videoRowResult] = await Promise.all([
       supabase
         .from('brand_profiles')
         .select('name,author_name,niches,tone,website_url,contact_email,contact_preference,gear_sections')
@@ -441,10 +442,25 @@ export async function POST(request: Request) {
         .select('geniuslink_api_key,geniuslink_api_secret,amazon_associates_tag,tier,subscription_period_start,subscription_period_end')
         .eq('user_id', ownerId)
         .single(),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      youtubeVideoId
+        ? (supabase as any)
+            .from('youtube_videos')
+            .select('product_url')
+            .eq('user_id', ownerId)
+            .eq('youtube_video_id', youtubeVideoId)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
     ])
 
     const brand = brandResult.data as Record<string, unknown> | null
     const intRow = intResult.data
+    // The affiliate/product link the blog already resolved for this video (stored
+    // on youtube_videos.product_url at blog time). Reused so a REVIEW video keeps
+    // its affiliate link + disclaimer in the YouTube description even when the
+    // draft has no ASIN in the title and live discovery is unsure — exactly the
+    // "any video works, no ASIN needed" promise.
+    const storedProductUrl = ((videoRowResult?.data as { product_url?: string | null } | null)?.product_url || '').trim()
 
     // Populate the module-level telemetry context that runAgent reads.
     const tier = normalizeTier(intRow?.tier)
@@ -477,7 +493,10 @@ export async function POST(request: Request) {
     let storeUrl: string | null = null          // a non-Amazon product link to promote
     let storeAlreadyGenius = false               // already a geni.us link → keep as-is
     if (!isProduct) {
-      const link = await resolveProductLink(videoTitle, videoDescription || '')
+      // Append the blog-resolved product link so a REVIEW keeps product mode
+      // (affiliate link + disclaimer) even when the YouTube draft has no link.
+      const descForResolution = `${videoDescription || ''}\n${storedProductUrl}`.trim()
+      const link = await resolveProductLink(videoTitle, descForResolution)
       if (link.kind === 'amazon') {
         trimmedAsin = link.asin
         isProduct = true
