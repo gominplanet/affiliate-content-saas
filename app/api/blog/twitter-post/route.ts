@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { scrubBanned } from '@/lib/scrub'
 import { createServerClient } from '@/lib/supabase/server'
 import { decryptIntegrationRow, encryptIntegrationWrite } from '@/lib/integration-secrets'
 import { createAnthropicClient } from '@/lib/anthropic'
@@ -177,7 +178,7 @@ Return ONLY the tweet text.`,
       tweetText = tweetText.slice(0, generationBudget - 1).replace(/\s+\S*$/, '') + '…'
     }
 
-    const finalText = `${tweetText} ${post.wordpress_url}`
+    const finalText = `${scrubBanned(tweetText)} ${post.wordpress_url}`
 
     if (dryRun) {
       return NextResponse.json({ ok: true, dryRun: true, text: tweetText, finalText })

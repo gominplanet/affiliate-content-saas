@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { scrubBanned } from '@/lib/scrub'
 import { createServerClient } from '@/lib/supabase/server'
 import { createFacebookService } from '@/services/facebook'
 import { createAnthropicClient } from '@/lib/anthropic'
@@ -149,7 +150,7 @@ Return ONLY the post text, nothing else.`,
       : (video?.thumbnail_url || '')
 
     // ── 7. Build full caption ─────────────────────────────────────────────────
-    const caption = `${reviewText}\n\n🔗 Read the full post: ${post.wordpress_url}\n\n${disclaimer}`
+    const caption = `${scrubBanned(reviewText)}\n\n🔗 Read the full post: ${post.wordpress_url}\n\n${disclaimer}`
 
     if (dryRun) {
       // Generate 3 SPECIFIC, niche hashtags that fit this exact product/topic

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { scrubBanned } from '@/lib/scrub'
 import { createServerClient } from '@/lib/supabase/server'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { ThreadsService } from '@/services/threads'
@@ -107,7 +108,7 @@ Write ONLY the post text, nothing else. Do not include a disclaimer or #ad tag.`
 
     // Threads API hard caps body text at 500 chars. Cap defensively then append disclaimer.
     const sep = '\n\n'
-    const fullText = capSocialText(bodyText, SOCIAL_LIMITS.threads, `${sep}${DISCLAIMER}`)
+    const fullText = capSocialText(scrubBanned(bodyText), SOCIAL_LIMITS.threads, `${sep}${DISCLAIMER}`)
 
     if (dryRun) {
       return NextResponse.json({ ok: true, dryRun: true, text: bodyText.trim(), finalText: fullText })

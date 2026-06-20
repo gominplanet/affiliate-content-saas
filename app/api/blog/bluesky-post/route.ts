@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { scrubBanned } from '@/lib/scrub'
 import { createServerClient } from '@/lib/supabase/server'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { createAnthropicClient } from '@/lib/anthropic'
@@ -145,7 +146,7 @@ Return ONLY the post text.`,
 
     // Defensive: strip any "[link in comments]"/placeholder before capping
     // (rare here — the prompt forbids URLs — but keeps parity with LinkedIn).
-    postText = stripLinkPlaceholders(postText)
+    postText = scrubBanned(stripLinkPlaceholders(postText))
     // Always defensively cap, even user-edited (they could paste over the limit)
     if (postText.length > generationBudget) {
       postText = postText.slice(0, generationBudget - 1).replace(/\s+\S*$/, '') + '…'

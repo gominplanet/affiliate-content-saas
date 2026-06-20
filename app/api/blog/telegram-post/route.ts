@@ -13,6 +13,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
+import { scrubBanned } from '@/lib/scrub'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { sendPhoto, sendMessage, escapeMarkdownV2 } from '@/services/telegram'
@@ -152,7 +153,7 @@ Return ONLY the post text.`,
       })
     }
 
-    captionText = stripLinkPlaceholders(captionText)
+    captionText = scrubBanned(stripLinkPlaceholders(captionText))
     if (captionText.length > CAPTION_BUDGET) {
       captionText = captionText.slice(0, CAPTION_BUDGET - 1).replace(/\s+\S*$/, '') + '…'
     }

@@ -15,6 +15,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { resolveBlogPostId } from '@/lib/resolve-post-id'
+import { scrubBanned } from '@/lib/scrub'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { publishMedia, refreshLongLivedToken } from '@/services/instagram'
 import { cloudinaryConfigured, overlayCaptionOnVideo } from '@/services/cloudinary'
@@ -249,6 +250,8 @@ Return ONLY the caption text + hashtags.`,
       // Reel/feed captions can't carry a clickable URL, so direct people to the
       // bio link — the standard creator CTA. Appended above any hashtag block.
       if (feedCaption) {
+        // Scrub banned words from the live IG caption (AI or user-override).
+        feedCaption = scrubBanned(feedCaption)
         const linkLine = '👆 Link in bio'
         if (!/link in bio/i.test(feedCaption)) {
           // Insert before the trailing hashtag line(s) so it reads naturally.

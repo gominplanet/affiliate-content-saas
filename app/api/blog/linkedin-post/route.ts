@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { scrubBanned } from '@/lib/scrub'
 import { createServerClient } from '@/lib/supabase/server'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { createLinkedInService } from '@/services/linkedin'
@@ -153,7 +154,7 @@ Return ONLY the post text, no extra commentary.`,
     // Strip any "link in comments" / bracketed placeholder the model may have
     // invented — the link is the article card (ARTICLE share) or appended below
     // (IMAGE share), never a comment.
-    const cleaned = stripLinkPlaceholders(rawText)
+    const cleaned = scrubBanned(stripLinkPlaceholders(rawText))
     // For an IMAGE post the link must live in the caption (no card); for the
     // ARTICLE fallback the card carries it, so don't duplicate it.
     const withLink = (imageUrl && !cleaned.includes(post.wordpress_url))
