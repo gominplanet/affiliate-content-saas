@@ -103,13 +103,32 @@ html, body { overflow-x: clip; }
    line and the image overflows instead of wrapping. Force it to stack on
    mobile. The row direction is an INLINE style, so !important is required. */
 @media (max-width: 600px) {
-  .gr-cta-card { flex-direction: column !important; align-items: stretch !important; }
-  .gr-cta-card .gr-cta-body { flex: 1 1 auto !important; width: 100% !important; min-width: 0 !important; }
-  .gr-cta-card > div:not(.gr-cta-body) {
+  /* Force a single column on phones, whichever way the card was built:
+       - flex variant  (lib/cta-thumb.ts): inline flex-direction:row
+       - grid variant   (post <style>): display:grid + grid-template-columns:1fr 220px
+     Forcing display:flex + column overrides BOTH (a grid ignores flex-direction,
+     so the display switch is what actually fixes the grid posts). Children are
+     reset to full-width, auto-height blocks so neither the text nor the fixed
+     image column can crush the layout. */
+  .gr-cta-card {
+    display: flex !important;
+    flex-direction: column !important;
+    grid-template-columns: 1fr !important;
+    align-items: stretch !important;
+    gap: 16px !important;
+  }
+  .gr-cta-card > * {
     flex: 0 0 auto !important;
     width: 100% !important;
-    max-width: 240px !important;
-    margin: 4px auto 0 !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+  }
+  /* The image/thumbnail column (classed .gr-cta-thumb-wrap in the grid variant,
+     an unclassed div in the flex variant) — center it, capped, below the text. */
+  .gr-cta-card .gr-cta-thumb-wrap,
+  .gr-cta-card > div:not(.gr-cta-body) {
+    max-width: 320px !important;
+    margin: 0 auto !important;
   }
   .gr-cta-card img { width: 100% !important; height: auto !important; }
 }
