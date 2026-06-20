@@ -2972,7 +2972,7 @@ export default function ContentPage() {
               <li className="flex gap-2"><span className="text-[#7C3AED] flex-shrink-0">•</span><span><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Pulls the real product&apos;s details</strong> (specs and bullets from Amazon or the store page) so the review is accurate, not generic.</span></li>
               <li className="flex gap-2"><span className="text-[#7C3AED] flex-shrink-0">•</span><span><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Generates article images</strong> from reference points of the actual product (tick &quot;Include photos in the article&quot;).</span></li>
               <li className="flex gap-2"><span className="text-[#7C3AED] flex-shrink-0">•</span><span><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Publishes straight to your WordPress site</strong>, fully formatted with SEO built in (target keyword, internal links, schema, meta description) in about 60 seconds.</span></li>
-              <li className="flex gap-2"><span className="text-[#7C3AED] flex-shrink-0">•</span><span><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Fans out to social</strong>. Each post can also become an Instagram image post and push to your other connected accounts from the Published tab.</span></li>
+              <li className="flex gap-2"><span className="text-[#7C3AED] flex-shrink-0">•</span><span><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Fans out to social</strong>. From the Published tab, push each post to your connected accounts: Facebook, Instagram, Pinterest, X, LinkedIn, Threads, Bluesky and Telegram.</span></li>
             </ul>
           </div>
         </details>
