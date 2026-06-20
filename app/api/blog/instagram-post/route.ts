@@ -14,6 +14,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { resolveBlogPostId } from '@/lib/resolve-post-id'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { publishMedia, refreshLongLivedToken } from '@/services/instagram'
 import { cloudinaryConfigured, overlayCaptionOnVideo } from '@/services/cloudinary'
@@ -43,13 +44,16 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json() as {
       postId?: string
+      postUrl?: string
       kind?: 'video' | 'image'
       mode?: string
       dryRun?: boolean
       caption?: string
       socialAccountId?: string
     }
-    const postId = body.postId
+    // Resolve video-less rows' WP post id → blog_posts UUID, like every other
+    // social-post route — future-proofs IG when wired into OrphanPostShare.
+    const postId = (await resolveBlogPostId(supabase, user.id, body.postId, body.postUrl)) || body.postId
     const kind = body.kind === 'image' ? 'image' : 'video'
     const mode = body.mode ?? (kind === 'image' ? 'image' : 'reel')
     const dryRun = body.dryRun === true

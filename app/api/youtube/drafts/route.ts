@@ -21,25 +21,25 @@ async function readCache(
   supabase: Awaited<ReturnType<typeof createServerClient>>,
   userId: string,
 ): Promise<CacheRow | null> {
-  const { data } = await (supabase as any)
-    .from('youtube_video_cache')
-    .select('uploads_playlist_id,videos,cached_at,full_scan')
-    .eq('user_id', userId)
-    .maybeSingle()
-  if (!data) return null
-  // Read the continuation cursor as a SEPARATE best-effort select so a
-  // pre-migration DB (column absent → PostgREST 400) can never break the
-  // primary cache read above. Degrades to "no cursor" until migration 132 runs.
-  let next_cursor: string | null | undefined
+  // ONE query incl. next_cursor (migration 132). If the column is absent on a
+  // pre-migration DB the select 400s — fall back to the legacy projection.
+  // Saves a round-trip on every cached drafts load.
   try {
-    const { data: cur } = await (supabase as any)
+    const { data, error } = await (supabase as any)
       .from('youtube_video_cache')
-      .select('next_cursor')
+      .select('uploads_playlist_id,videos,cached_at,full_scan,next_cursor')
       .eq('user_id', userId)
       .maybeSingle()
-    next_cursor = cur?.next_cursor ?? null
-  } catch { /* column not migrated yet — behave as before */ }
-  return { ...data, next_cursor }
+    if (error) throw error
+    return data ? { ...data, next_cursor: data.next_cursor ?? null } : null
+  } catch {
+    const { data } = await (supabase as any)
+      .from('youtube_video_cache')
+      .select('uploads_playlist_id,videos,cached_at,full_scan')
+      .eq('user_id', userId)
+      .maybeSingle()
+    return data ? { ...data, next_cursor: null } : null
+  }
 }
 
 async function writeCache(
