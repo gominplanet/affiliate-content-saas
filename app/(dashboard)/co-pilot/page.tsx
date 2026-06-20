@@ -146,6 +146,27 @@ const defaultProSettings: ProPublishSettings = {
   scheduleMode: 'now',
 }
 
+// Shared GET cache across ALL VideoStudioCard instances. Face models, saved
+// thumbnail styles and feedback weights are user/niche-global, not per-video —
+// but every card fetched them on mount, so "Load all drafts" (hundreds of cards)
+// fired hundreds of identical requests. This collapses them to ONE request per
+// distinct URL (60s TTL), de-duping concurrent mounts via the shared promise.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const _coPilotGetCache = new Map<string, { at: number; p: Promise<any> }>()
+function cachedGet<T>(url: string): Promise<T> {
+  const now = Date.now()
+  const hit = _coPilotGetCache.get(url)
+  if (hit && now - hit.at < 60_000) return hit.p as Promise<T>
+  const p = fetch(url).then(r => {
+    if (!r.ok) throw new Error(String(r.status))
+    return r.json()
+  })
+  // Evict on failure so a later mount can retry.
+  p.catch(() => { if (_coPilotGetCache.get(url)?.p === p) _coPilotGetCache.delete(url) })
+  _coPilotGetCache.set(url, { at: now, p })
+  return p as Promise<T>
+}
+
 function VideoStudioCard({ video, userTier, playlists, onApplied }: {
   video: DraftVideo
   userTier: Tier
@@ -301,9 +322,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
    *  never show up until a hard reload. */
   const loadFaceModels = useCallback(async () => {
     try {
-      const r = await fetch('/api/face-models')
-      if (!r.ok) return setFaceModels([])
-      const d = await r.json()
+      const d = await cachedGet<{ models?: Array<{ id: string; name: string; trigger_token: string; status: string }> }>('/api/face-models')
       const ready = ((d.models as Array<{ id: string; name: string; trigger_token: string; status: string }>) || [])
         .filter(m => m.status === 'ready')
         .map(m => ({ id: m.id, name: m.name, trigger_token: m.trigger_token }))
@@ -318,9 +337,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
   // ── Saved thumbnail style presets ─────────────────────────────────────────
   const loadSavedStyles = useCallback(async () => {
     try {
-      const r = await fetch('/api/thumbnail-styles')
-      if (!r.ok) return
-      const d = await r.json() as { styles?: Array<{ id: string; name: string; reference_url: string }> }
+      const d = await cachedGet<{ styles?: Array<{ id: string; name: string; reference_url: string }> }>('/api/thumbnail-styles')
       setSavedStyles(d.styles ?? [])
     } catch { /* keep what's in state */ }
   }, [])
@@ -348,6 +365,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
       }
       setSavedStyles(prev => [d.style!, ...prev])
       setLoadedPresetId(d.style.id)
+      _coPilotGetCache.delete('/api/thumbnail-styles') // other cards see the new preset
     } finally {
       setSavingPreset(false)
     }
@@ -365,6 +383,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
       if (!r.ok) return
       setSavedStyles(prev => prev.filter(s => s.id !== id))
       if (loadedPresetId === id) setLoadedPresetId(null)
+      _coPilotGetCache.delete('/api/thumbnail-styles') // keep other cards in sync
     } catch { /* no-op */ }
   }, [loadedPresetId, confirm])
 
@@ -389,11 +408,8 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           const cat = (data?.selected_category as string | null)?.trim()
           if (cat) nicheParam = `&niche=${encodeURIComponent(cat)}`
         } catch { /* no category — overall weights */ }
-        const res = await fetch(`/api/thumbnail-feedback?surface=youtube${nicheParam}`)
-        if (res.ok) {
-          const fb = await res.json()
-          setYtStyleWeights({ liked: fb.liked || {}, disliked: fb.disliked || {} })
-        }
+        const fb = await cachedGet<{ liked?: Record<string, number>; disliked?: Record<string, number> }>(`/api/thumbnail-feedback?surface=youtube${nicheParam}`)
+        setYtStyleWeights({ liked: fb.liked || {}, disliked: fb.disliked || {} })
       } catch { /* silent — picker just goes uniform */ }
     })()
   }, [])
