@@ -850,6 +850,14 @@ export async function POST(request: Request) {
             // Only write when we actually got a code — preserves any prior
             // code if this generation fell back to the raw Amazon URL.
             ...(ytGeniuslinkCode ? { geniuslink_yt_code: ytGeniuslinkCode } : {}),
+            // Remember the product we resolved (the raw destination) so a LATER
+            // regeneration stays in product mode even after the first Apply
+            // replaced the ASIN-bearing draft title with the clean SEO title.
+            // Only when we resolved one AND nothing's stored yet — never clobber
+            // the blog's canonical product_url.
+            ...((trimmedAsin || storeUrl) && !storedProductUrl
+              ? { product_url: trimmedAsin ? `https://www.amazon.com/dp/${trimmedAsin}` : storeUrl }
+              : {}),
           })
           .eq('user_id', ownerId)
           .eq('youtube_video_id', youtubeVideoId)
