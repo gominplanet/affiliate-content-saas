@@ -1226,6 +1226,18 @@ a.mvp-ad-slot-filled:hover {
   font-weight: 700;
   margin: 0 0 8px;
 }
+/* Stack the "Our Pick" callout on phones — its 140px image column would
+   otherwise squeeze the text into a narrow strip. */
+@media (max-width: 600px) {
+  .mvp-ourpick { grid-template-columns: 1fr; gap: 16px; }
+  .mvp-ourpick img { max-width: 320px; margin: 0 auto; }
+}
+/* Bottom clearance for the mobile sticky "Get the best price" bar (the plugin's
+   #mvp-sticky-cta, fixed at bottom). Without it the bar covers the last line of
+   the post. ~92px clears the bar + the iOS home indicator safe-area. */
+@media (max-width: 768px) {
+  .mvp-single .mvp-single-content { padding-bottom: calc(92px + env(safe-area-inset-bottom)); }
+}
 
 /* ─── Empty states ───────────────────────────────────────────────────────── */
 .mvp-empty { text-align: center; color: var(--mvp-text-muted); padding: 40px 20px; }
