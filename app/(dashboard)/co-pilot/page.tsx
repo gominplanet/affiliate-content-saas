@@ -2560,7 +2560,7 @@ export default function StudioPage() {
     <div>
       <PageHero
         title="YouTube Co-Pilot"
-        subtitle="Generate titles, descriptions, tags, hashtags and thumbnails for any video, then push it all back to YouTube in one click. Add the Amazon ASIN to your title for an exact product review with affiliate links."
+        subtitle="Generate titles, descriptions, tags, hashtags and thumbnails for any video, then push it all back to YouTube in one click."
       />
 
 
@@ -2609,12 +2609,24 @@ export default function StudioPage() {
             <AlertCircle size={14} className="text-[#7C3AED]" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Any video works — we figure out the product for you</p>
-            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
-              Pick any video and we generate its title ideas, description, tags, hashtags and thumbnail. For a product review we identify the item automatically from your title and what you say in the video, and add your affiliate link. If it isn&apos;t a product video, you still get all the metadata around your topic (just no affiliate link).
-              {' '}<strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Optional shortcut:</strong> drop the 10-character Amazon ASIN into your title or file name — e.g.{' '}
-              <span className="font-mono text-[#1d1d1f] dark:text-[#f5f5f7] bg-white dark:bg-[#1c1c1e] px-1.5 py-0.5 rounded border border-[#d2d2d7] dark:border-[#3a3a3c]">Vacuum - B08TT4YHG1</span>
-              {' '}— to pin the exact product when you want to be sure we grab the right one.
+            <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">Works with any video — pick yours and we generate the title, description, tags, hashtags and thumbnail.</p>
+            <ul className="space-y-1.5 text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
+              <li className="flex gap-2">
+                <span className="text-[#7C3AED] font-semibold flex-shrink-0">Amazon review</span>
+                <span>We identify the product from your title and what you say in the video, and add your affiliate link automatically.</span>
+              </li>
+              <li className="flex gap-2">
+                <span className="text-[#7C3AED] font-semibold flex-shrink-0">Other product</span>
+                <span>Same thing — we still write the review and link out to wherever you sell it.</span>
+              </li>
+              <li className="flex gap-2">
+                <span className="text-[#7C3AED] font-semibold flex-shrink-0">Not a product</span>
+                <span>You still get all the metadata around your topic (just no affiliate link).</span>
+              </li>
+            </ul>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed mt-2">
+              <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Optional:</strong> to guarantee we grab the exact product, drop its 10-character Amazon ASIN into the title or file name — e.g.{' '}
+              <span className="font-mono text-[#1d1d1f] dark:text-[#f5f5f7] bg-white dark:bg-[#1c1c1e] px-1.5 py-0.5 rounded border border-[#d2d2d7] dark:border-[#3a3a3c]">Vacuum - B08TT4YHG1</span>.
             </p>
           </div>
         </div>
