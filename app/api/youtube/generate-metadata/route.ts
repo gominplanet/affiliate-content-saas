@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { scrubBanned } from '@/lib/scrub'
 import { createServerClient } from '@/lib/supabase/server'
 import { fetchAmazonProduct } from '@/services/amazon'
 import { discoverProductForVideo } from '@/lib/product-detect'
@@ -865,12 +866,15 @@ export async function POST(request: Request) {
       },
       productBullets: product.bullets,
       productDescription: contentResult.productDescription,
+      // Scrub banned words from every string the user PUBLISHES to YouTube
+      // (title/description/tags/pinned comment) — the "never HONEST" rule etc.
+      // applies to live metadata, not just blog content.
       generated: {
-        title: titleResult.best,
-        description,
-        tags: seoData.tags,
-        pinnedComment: engagementResult.pinnedComment,
-        title_alternatives: titleResult.alternatives,
+        title: scrubBanned(titleResult.best),
+        description: scrubBanned(description),
+        tags: (seoData.tags || []).map((t: string) => scrubBanned(t)),
+        pinnedComment: scrubBanned(engagementResult.pinnedComment),
+        title_alternatives: (titleResult.alternatives || []).map((t: string) => scrubBanned(t)),
         title_scores: titleScores,
       },
     })

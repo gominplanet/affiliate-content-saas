@@ -24,6 +24,7 @@ import { composeWithNanoBanana, composeWithNanoBananaPro, generateWithIdeogram, 
 import { renderDesignerOverlay } from '@/lib/thumbnail-text-templates'
 import { bakeSimpleHeadline, NEON_BORDER_STYLE_COUNT } from '@/lib/thumbnail-simple-bake'
 import { analyzeTextZone } from '@/lib/thumbnail-textzone'
+import { scrubBanned } from '@/lib/scrub'
 import { getStarredPhotoboothRefs } from '@/lib/photobooth-refs'
 import { getThumbnailFaceRef } from '@/lib/identity-anchor'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
@@ -256,8 +257,10 @@ interface ThumbCopy {
  *  draw, response payload, picker UI). Strips Gemini-style * markers. */
 function flatCopy(c: ThumbCopy | string | null | undefined): string {
   if (!c) return ''
-  if (typeof c === 'string') return c
-  return `${c.line1} ${c.line2}`.replace(/\*/g, '').trim()
+  // Scrub here too — flatCopy feeds the overlay-text draw + response payload,
+  // and string-typed hooks bypass the per-line scrub in parseThumbCopy.
+  if (typeof c === 'string') return scrubBanned(c)
+  return scrubBanned(`${c.line1} ${c.line2}`.replace(/\*/g, '').trim())
 }
 
 const ANGLE_DEFS: Record<CtrAngle, string> = {
@@ -289,9 +292,11 @@ function parseOneCopy(raw: string, fallbackAngle: CtrAngle): ThumbCopy {
     try {
       const o = JSON.parse(objMatch[0]) as Partial<ThumbCopy>
       const angle = (o.angle as CtrAngle) || fallbackAngle
-      const line1 = String(o.line1 || '').trim().toUpperCase().slice(0, 16)
-      const line2 = String(o.line2 || '').trim().toUpperCase().slice(0, 22)
-      const emphasis = String(o.emphasisWord || '').trim().toUpperCase()
+      // Scrub banned words — this headline gets BAKED into the image, so a
+      // banned word can't be fixed after render. (The "never HONEST" rule.)
+      const line1 = scrubBanned(String(o.line1 || '').trim()).toUpperCase().slice(0, 16)
+      const line2 = scrubBanned(String(o.line2 || '').trim()).toUpperCase().slice(0, 22)
+      const emphasis = scrubBanned(String(o.emphasisWord || '').trim()).toUpperCase()
       if (line1 && line2) return { angle, line1, line2, emphasisWord: emphasis || line1.split(' ')[0] }
     } catch { /* fall through */ }
   }
