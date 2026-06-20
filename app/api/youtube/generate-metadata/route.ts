@@ -446,7 +446,7 @@ export async function POST(request: Request) {
       youtubeVideoId
         ? (supabase as any)
             .from('youtube_videos')
-            .select('product_url')
+            .select('id,product_url')
             .eq('user_id', ownerId)
             .eq('youtube_video_id', youtubeVideoId)
             .maybeSingle()
@@ -461,6 +461,32 @@ export async function POST(request: Request) {
     // draft has no ASIN in the title and live discovery is unsure — exactly the
     // "any video works, no ASIN needed" promise.
     const storedProductUrl = ((videoRowResult?.data as { product_url?: string | null } | null)?.product_url || '').trim()
+
+    // Bulletproof fallback: if no product_url is stored, pull the affiliate link
+    // straight out of THIS video's published blog post (it's guaranteed present
+    // for a review). This guarantees a blogged product video keeps PRODUCT mode
+    // even when the YouTube draft has no ASIN/link and product_url was never set.
+    let reusableProductLink = storedProductUrl
+    if (!reusableProductLink) {
+      const internalVideoId = (videoRowResult?.data as { id?: string | null } | null)?.id || null
+      if (internalVideoId) {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { data: bp } = await (supabase as any)
+            .from('blog_posts')
+            .select('content')
+            .eq('video_id', internalVideoId)
+            .not('content', 'is', null)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+          const content = (bp?.content as string | null) || ''
+          // First Geniuslink or Amazon product URL in the post = the CTA link.
+          const m = content.match(/https?:\/\/(?:geni\.us|gnz\.[a-z]+|(?:[\w-]+\.)*amazon\.[a-z.]+)\/[^\s"'<>)]+/i)
+          if (m) reusableProductLink = m[0]
+        } catch { /* no post / not readable — fall through to live discovery */ }
+      }
+    }
 
     // Populate the module-level telemetry context that runAgent reads.
     const tier = normalizeTier(intRow?.tier)
@@ -493,9 +519,10 @@ export async function POST(request: Request) {
     let storeUrl: string | null = null          // a non-Amazon product link to promote
     let storeAlreadyGenius = false               // already a geni.us link → keep as-is
     if (!isProduct) {
-      // Append the blog-resolved product link so a REVIEW keeps product mode
-      // (affiliate link + disclaimer) even when the YouTube draft has no link.
-      const descForResolution = `${videoDescription || ''}\n${storedProductUrl}`.trim()
+      // Append the reused product link (from product_url or the blog post) so a
+      // REVIEW keeps product mode (affiliate link + disclaimer) even when the
+      // YouTube draft has no link.
+      const descForResolution = `${videoDescription || ''}\n${reusableProductLink}`.trim()
       const link = await resolveProductLink(videoTitle, descForResolution)
       if (link.kind === 'amazon') {
         trimmedAsin = link.asin
