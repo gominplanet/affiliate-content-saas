@@ -267,40 +267,50 @@ export default async function DashboardPage() {
             for brand-new users — the welcome card is their focus. */}
         {!isNewUser && (
           <section className="flex flex-col gap-3">
-            {(catalogGap > 0 || missingImages > 0 || scheduledPending > 0) && (
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {catalogGap > 0 && (
-                  <TodoCard
-                    href="/content"
-                    icon={<PlaySquare size={14} />}
-                    accent="#7C3AED"
-                    value={catalogGap.toLocaleString()}
-                    title="videos not yet posted"
-                    desc="Turn your back catalog into ranking blog posts — one click each."
-                  />
-                )}
-                {missingImages > 0 && (
-                  <TodoCard
-                    href="/content"
-                    icon={<ImageIcon size={14} />}
-                    accent="#FF9500"
-                    value={missingImages.toLocaleString()}
-                    title="posts have no images"
-                    desc="Add in-article photos — better engagement and on-page SEO."
-                  />
-                )}
-                {scheduledPending > 0 && (
-                  <TodoCard
-                    href="/content"
-                    icon={<Clock size={14} />}
-                    accent="#10B981"
-                    value={scheduledPending.toLocaleString()}
-                    title="posts scheduled"
-                    desc="Queued to auto-publish — the cron fires every minute."
-                  />
-                )}
-              </div>
-            )}
+            {/* auto-fit grid so the row stays balanced whether 2, 3 or 4 cards
+                are present (the conditional cards come and go). */}
+            <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))' }}>
+              {catalogGap > 0 && (
+                <TodoCard
+                  href="/content"
+                  icon={<PlaySquare size={14} />}
+                  accent="#7C3AED"
+                  value={catalogGap.toLocaleString()}
+                  title="videos not yet posted"
+                  desc="Turn your back catalog into ranking blog posts — one click each."
+                />
+              )}
+              {missingImages > 0 && (
+                <TodoCard
+                  href="/content"
+                  icon={<ImageIcon size={14} />}
+                  accent="#FF9500"
+                  value={missingImages.toLocaleString()}
+                  title="posts have no images"
+                  desc="Add in-article photos — better engagement and on-page SEO."
+                />
+              )}
+              {scheduledPending > 0 && (
+                <TodoCard
+                  href="/content"
+                  icon={<Clock size={14} />}
+                  accent="#10B981"
+                  value={scheduledPending.toLocaleString()}
+                  title="posts scheduled"
+                  desc="Queued to auto-publish — the cron fires every minute."
+                />
+              )}
+              {/* Always present (this whole section only renders once the user
+                  has published posts), so the row never looks lopsided. */}
+              <TodoCard
+                href="/content?tab=posts"
+                icon={<Send size={14} />}
+                accent="#3B82F6"
+                value={publishedCount.toLocaleString()}
+                title="posts ready to share"
+                desc="Push them to your socials for more reach and affiliate clicks."
+              />
+            </div>
             <DashboardLiveCards />
           </section>
         )}
