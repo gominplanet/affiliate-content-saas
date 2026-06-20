@@ -2950,6 +2950,33 @@ export default function ContentPage() {
         ))}
       </div>
 
+      {/* How-it-works explainer — only on the Long-form → Blog tab. Native
+          <details> so it's collapsible with zero extra state; open by default
+          so first-time users see how generation works. */}
+      {activeTab === 'horizontal' && (
+        <details open className="group mb-4 rounded-xl border border-[#7C3AED]/20 bg-[#7C3AED]/5 px-4 py-3">
+          <summary className="flex items-center gap-2 cursor-pointer list-none text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] select-none">
+            <Sparkles size={14} className="text-[#7C3AED]" />
+            How a blog post gets made
+            <ChevronRight size={15} className="ml-auto text-[#86868b] transition-transform group-open:rotate-90" />
+          </summary>
+          <div className="mt-3 text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed space-y-2">
+            <p>
+              <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Your video doesn&apos;t have to be made with MVP.</strong>{' '}
+              Any video on your channel works, even ones you uploaded years ago. Here&apos;s what happens when you hit Generate:
+            </p>
+            <ul className="space-y-1.5">
+              <li className="flex gap-2"><span className="text-[#7C3AED] flex-shrink-0">•</span><span><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Reads your video + transcript</strong> (what you actually said) and writes a fact-grounded, first-person review in your brand voice. It never invents details, only what you said and the real product specs.</span></li>
+              <li className="flex gap-2"><span className="text-[#7C3AED] flex-shrink-0">•</span><span><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Builds your affiliate link</strong> for the featured product. It uses the link in your video description, re-wraps it with your own Geniuslink if you&apos;ve connected one, and falls back to your Amazon tag. No link in the description? It identifies the product from your title and transcript.</span></li>
+              <li className="flex gap-2"><span className="text-[#7C3AED] flex-shrink-0">•</span><span><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Pulls the real product&apos;s details</strong> (specs and bullets from Amazon or the store page) so the review is accurate, not generic.</span></li>
+              <li className="flex gap-2"><span className="text-[#7C3AED] flex-shrink-0">•</span><span><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Generates article images</strong> from reference points of the actual product (tick &quot;Include photos in the article&quot;).</span></li>
+              <li className="flex gap-2"><span className="text-[#7C3AED] flex-shrink-0">•</span><span><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Publishes straight to your WordPress site</strong>, fully formatted with SEO built in (target keyword, internal links, schema, meta description) in about 60 seconds.</span></li>
+              <li className="flex gap-2"><span className="text-[#7C3AED] flex-shrink-0">•</span><span><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Fans out to social</strong>. Each post can also become an Instagram image post and push to your other connected accounts from the Published tab.</span></li>
+            </ul>
+          </div>
+        </details>
+      )}
+
       {fixCatResult && (
         <div className="flex items-center justify-between gap-3 px-4 py-2.5 rounded-lg bg-[#f5f5f7] dark:bg-[#2c2c2e] text-sm text-[#1d1d1f] dark:text-[#f5f5f7] mb-3">
           <span>{fixCatResult}</span>
