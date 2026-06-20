@@ -2699,12 +2699,17 @@ export default function ContentPage() {
   const allReady = checks?.brandReady && checks?.wpReady
   // When "Show hidden" is on, include dismissed videos so they can be found
   // and brought back; otherwise hide them as before.
-  const visibleVideos = videos.filter(v => showHidden || !dismissed.has(v.id as string))
+  // Memoised so the per-render filter/sort chain over up to ~2,500 videos only
+  // recomputes when its real inputs change — not on every keystroke elsewhere.
+  const visibleVideos = useMemo(
+    () => videos.filter(v => showHidden || !dismissed.has(v.id as string)),
+    [videos, showHidden, dismissed],
+  )
   // Split videos by orientation. is_vertical comes from YouTube sync (duration
   // ≤ 180s OR #Shorts in title). For backwards-compat rows where is_vertical
   // is null, default to horizontal (the existing behavior pre-migration).
-  const horizontalVideos = visibleVideos.filter(v => v.is_vertical !== true)
-  const verticalVideos = visibleVideos.filter(v => v.is_vertical === true)
+  const horizontalVideos = useMemo(() => visibleVideos.filter(v => v.is_vertical !== true), [visibleVideos])
+  const verticalVideos = useMemo(() => visibleVideos.filter(v => v.is_vertical === true), [visibleVideos])
   // ── Kanban filters (2026-06-06 IA shift) ────────────────────────────────
   // The Library reads as a workflow now: a video lives in "Horizontal
   // Videos" / "Vertical Videos" until it gets touched (post generated or
@@ -2717,26 +2722,26 @@ export default function ContentPage() {
   //                         instagram_posted_at both null)
   //   - Posts             = videos that DON'T match either filter above,
   //                         plus orphan blog posts (no source video)
-  const horizontalTodo = horizontalVideos.filter(v => !posts[v.id as string])
-  const verticalTodo = verticalVideos.filter(v => !v.tiktok_posted_at && !v.instagram_posted_at)
+  const horizontalTodo = useMemo(() => horizontalVideos.filter(v => !posts[v.id as string]), [horizontalVideos, posts])
+  const verticalTodo = useMemo(() => verticalVideos.filter(v => !v.tiktok_posted_at && !v.instagram_posted_at), [verticalVideos])
   // Generated horizontal videos go in Posts. Touched verticals go in Posts.
   // Union for the Posts tab's rich VideoCard render.
-  const horizontalDone = horizontalVideos.filter(v => !!posts[v.id as string])
-  const verticalDone = verticalVideos.filter(v => !!v.tiktok_posted_at || !!v.instagram_posted_at)
+  const horizontalDone = useMemo(() => horizontalVideos.filter(v => !!posts[v.id as string]), [horizontalVideos, posts])
+  const verticalDone = useMemo(() => verticalVideos.filter(v => !!v.tiktok_posted_at || !!v.instagram_posted_at), [verticalVideos])
   // Which set the current tab shows. Vertical tab gets Shorts only.
   const currentTabVideos = activeTab === 'vertical' ? verticalTodo : horizontalTodo
   const generatedCount = Object.keys(posts).length
 
   // Unique channel list, derived from the current tab's videos — drives the
   // channel filter dropdown. Sorted alphabetically for stable UI.
-  const tabChannels = Array.from(new Set(
+  const tabChannels = useMemo(() => Array.from(new Set(
     currentTabVideos.map(v => (v.channel_title as string) || '').filter(Boolean)
-  )).sort((a, b) => a.localeCompare(b))
+  )).sort((a, b) => a.localeCompare(b)), [currentTabVideos])
 
   // Apply search + channel + generated filter, then sort. Pure derivation —
-  // the underlying `videos` array is never mutated.
+  // the underlying `videos` array is never mutated. Memoised over its inputs.
   const search = videoSearch.trim().toLowerCase()
-  const displayVideos = currentTabVideos
+  const displayVideos = useMemo(() => currentTabVideos
     .filter(v => {
       if (videoChannel && (v.channel_title as string) !== videoChannel) return false
       if (videoGenFilter !== 'all') {
@@ -2762,14 +2767,14 @@ export default function ContentPage() {
         default:
           return new Date(b.published_at as string).getTime() - new Date(a.published_at as string).getTime()
       }
-    })
+    }), [currentTabVideos, videoChannel, videoGenFilter, posts, search, videoSort])
   const filtersActive = !!(search || videoChannel || videoGenFilter !== 'all' || videoSort !== 'newest')
 
   // Posts-tab search query (lowercased; HTML entities stripped at match time
   // for a forgiving title match). Drives the single merged Published Posts
   // stream below.
   const postQuery = postSearch.trim().toLowerCase()
-  const videoIdsInLibrary = new Set(videos.map(v => v.id as string))
+  const videoIdsInLibrary = useMemo(() => new Set(videos.map(v => v.id as string)), [videos])
   // "Orphans" = posts whose source video isn't in the current youtube_videos
   // list (comparisons, buying guides, link posts, older/deleted-video reviews).
   // These render as the lightweight card in the merged stream; library-video
@@ -2777,10 +2782,14 @@ export default function ContentPage() {
   // single post. `filteredPosts` also backs the bulk-select toolbar (no-
   // thumbnail / select-all → delete / rewrite), which targets standalone posts.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const orphanPosts = allBlogPosts.filter((p: any) => !p.videoId || !videoIdsInLibrary.has(p.videoId))
-  const filteredPosts = postQuery
+  const orphanPosts = useMemo(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    () => allBlogPosts.filter((p: any) => !p.videoId || !videoIdsInLibrary.has(p.videoId)),
+    [allBlogPosts, videoIdsInLibrary],
+  )
+  const filteredPosts = useMemo(() => postQuery
     ? orphanPosts.filter(p => (p.title || '').replace(/<[^>]+>/g, '').toLowerCase().includes(postQuery))
-    : orphanPosts
+    : orphanPosts, [orphanPosts, postQuery])
 
   return (
     <>
