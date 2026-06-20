@@ -32,6 +32,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createHmac, timingSafeEqual } from 'crypto'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { maybeDecrypt } from '@/lib/secrets'
 import { normalizeTier, allowedNewsletterSubscribers } from '@/lib/tier'
 import { sendEmail, isEmailConfigured } from '@/services/email'
 import {
@@ -103,7 +104,10 @@ async function verifyFormHmac(
     } catch { return false }
   })
   if (!match) return { valid: false, reason: 'origin does not match any registered WP site' }
-  const secret = String(match.api_token)
+  // wordpress_sites.api_token is stored encrypted; the WP plugin signs with the
+  // PLAINTEXT proxy secret, so we must decrypt before the HMAC compare or every
+  // public-signup signature fails. maybeDecrypt is a no-op on legacy plaintext.
+  const secret = maybeDecrypt(String(match.api_token || ''))
   if (!secret) return { valid: null, reason: 'site has no api_token persisted' }
 
   const expected = createHmac('sha256', secret)

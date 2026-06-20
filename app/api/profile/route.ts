@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { decryptIntegrationRow } from '@/lib/integration-secrets'
 
 // GET — load profile + brand data
 export async function GET() {
@@ -83,11 +84,15 @@ export async function POST(request: Request) {
 
     // If brand data changed and WP is connected, push to WordPress
     if (authorBio !== undefined || authorName !== undefined || logoUrl !== undefined || headshotUrl !== undefined) {
-      const { data: intRow } = await sb
+      const { data: intRowRaw } = await sb
         .from('integrations')
         .select('wordpress_url,wordpress_username,wordpress_app_password,wordpress_api_token')
         .eq('user_id', user.id)
-        .single()
+        .maybeSingle()
+      // Decrypt the WP secret columns — they're stored encrypted, and pushing
+      // ciphertext as the Basic-auth password / proxy token = a silent 401.
+      // Idempotent + null-safe (no-op on plaintext rows).
+      const intRow = decryptIntegrationRow(intRowRaw)
 
       if (intRow?.wordpress_url) {
         await pushProfileToWordPress({

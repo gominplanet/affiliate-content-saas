@@ -14,6 +14,8 @@
 // Best-effort: if WP isn't connected, or the push fails, we log and
 // move on. The dashboard save MUST NOT fail because WP is offline.
 
+import { maybeDecrypt } from '@/lib/secrets'
+
 // We deliberately avoid importing SupabaseClient<Database> here — the two
 // callers (newsletter/settings, customizations route) hand us differently-
 // typed clients (server vs. service-role) and matching either narrows the
@@ -139,7 +141,9 @@ export async function pushNewsletterToWp(
 
   const results = await Promise.all(siteRows.map(async (s) => {
     const wpBase = s.url.replace(/\/$/, '')
-    const cleanPw = s.app_password.replace(/\s+/g, '')
+    // app_password is stored encrypted in both wordpress_sites and integrations;
+    // decrypt before building Basic auth or the REST write 401s. No-op on plaintext.
+    const cleanPw = (maybeDecrypt(s.app_password || '') || '').replace(/\s+/g, '')
     const authHeader = `Basic ${Buffer.from(`${s.username}:${cleanPw}`).toString('base64')}`
 
     let existing: Record<string, unknown> = {}
