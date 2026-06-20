@@ -304,9 +304,37 @@ function parseOneCopy(raw: string, fallbackAngle: CtrAngle): ThumbCopy {
 }
 
 // ── Claude Haiku: single ThumbCopy (kept for callers that want just one) ────
-async function generateHook(videoTitle: string, productContext = ''): Promise<string> {
-  const c = await generateThumbCopy(videoTitle, 'NEGATION', productContext)
+async function generateHook(videoTitle: string, productContext = '', claimsSheet = ''): Promise<string> {
+  const c = await generateThumbCopy(videoTitle, 'NEGATION', productContext, claimsSheet)
   return flatCopy(c)
+}
+
+// ── Claude Haiku: distil the video transcript into a compact "claims sheet" ──
+// The thumbnail copy was only ever grounded in the TITLE + the product listing,
+// so a video could emphasise one thing while the title (and thus the thumbnail)
+// emphasised another. This pulls the most click-worthy TRUE specifics the
+// creator actually said — concrete numbers, the exact problem named, the
+// standout moment — as raw material the angle generator anchors on. Best-effort:
+// any failure returns '' and the caller falls back to title+product only.
+async function distillThumbnailClaims(transcript: string): Promise<string> {
+  const t = (transcript || '').trim()
+  if (t.length < 80) return ''
+  const anthropic = createAnthropicClient()
+  try {
+    const msg = await withAnthropicRetry(() => anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 220,
+      system: 'You extract the most click-worthy TRUE specifics a creator said in a product video, as raw material for a thumbnail headline. Output 3 to 6 ultra-short bullet lines, no preamble, no markdown. Capture: concrete numbers / specs / times / counts the creator stated; the EXACT problem they named; the single standout feature or moment they reacted most strongly to; any surprising result. ONLY what is actually in the transcript — never invent. No hashtags, no marketing fluff, no banned words.',
+      messages: [{ role: 'user', content: `TRANSCRIPT:\n${t.slice(0, 6000)}\n\nReturn the bullet lines only.` }],
+    }))
+    recordAnthropicUsage(msg, {
+      userId: TELEMETRY.userId, tier: TELEMETRY.tier,
+      feature: 'yt_thumb_claims', model: 'claude-haiku-4-5-20251001',
+    })
+    return scrubBanned((msg.content[0] as { type: string; text: string }).text || '').trim()
+  } catch {
+    return ''
+  }
 }
 
 // System prompt sets the model's PERMANENT identity for every copy call.
@@ -350,7 +378,7 @@ TITLE: "Your Kids Will Stop Fighting Over Screens the Day You Get This 6-in-1 Tr
 
 OUTPUT FORMAT: Return a strictly structured JSON block with: angle, line1, line2, emphasisWord. No prose, no preamble, no markdown fences — just the JSON object.`
 
-async function generateThumbCopy(videoTitle: string, angle: CtrAngle, productContext = ''): Promise<ThumbCopy> {
+async function generateThumbCopy(videoTitle: string, angle: CtrAngle, productContext = '', claimsSheet = ''): Promise<ThumbCopy> {
   const anthropic = createAnthropicClient()
   try {
     const msg = await withAnthropicRetry(() => anthropic.messages.create({
@@ -359,7 +387,7 @@ async function generateThumbCopy(videoTitle: string, angle: CtrAngle, productCon
       system: THUMBNAIL_COPY_SYSTEM_PROMPT,
       messages: [{
         role: 'user',
-        content: `VIDEO: "${videoTitle}"${productContext ? `\n\nPRODUCT (what it actually is + the real problems it solves — anchor the overlay here, do NOT invent unrelated problems):\n${productContext.slice(0, 700)}` : ''}
+        content: `VIDEO: "${videoTitle}"${productContext ? `\n\nPRODUCT (what it actually is + the real problems it solves — anchor the overlay here, do NOT invent unrelated problems):\n${productContext.slice(0, 700)}` : ''}${claimsSheet ? `\n\nWHAT THE CREATOR ACTUALLY SAID IN THIS VIDEO (the strongest grounding — prefer these REAL spoken specifics: numbers, the exact problem, the standout moment. The overlay must reflect what the video is genuinely about, not a generic angle):\n${claimsSheet.slice(0, 600)}` : ''}
 ANGLE TO USE: ${angle}
 
 Generate the thumbnail copy now. Output the JSON object only.`,
@@ -380,13 +408,13 @@ Generate the thumbnail copy now. Output the JSON object only.`,
 // it works on every category. SKEPTIC + VALUE_DISRUPTION cover follow-ups.
 const ANGLE_ROTATION: CtrAngle[] = ['NEGATION', 'CURIOSITY_GAP', 'SKEPTIC', 'VALUE_DISRUPTION']
 
-async function generateThumbCopies(videoTitle: string, count: number, productContext = ''): Promise<ThumbCopy[]> {
+async function generateThumbCopies(videoTitle: string, count: number, productContext = '', claimsSheet = ''): Promise<ThumbCopy[]> {
   const n = Math.max(1, Math.min(10, Math.floor(count)))
   // Fan out across angles in parallel — each call is a separate JSON-shape
   // generation, easier and more reliable than asking Haiku to return an
   // array of mixed-angle objects in one go.
   const out = await Promise.all(
-    Array.from({ length: n }, (_, i) => generateThumbCopy(videoTitle, ANGLE_ROTATION[i % ANGLE_ROTATION.length], productContext)),
+    Array.from({ length: n }, (_, i) => generateThumbCopy(videoTitle, ANGLE_ROTATION[i % ANGLE_ROTATION.length], productContext, claimsSheet)),
   )
   return out
 }
@@ -772,6 +800,26 @@ export async function POST(request: Request) {
     const variantCount = Math.min(10, Math.max(1, Number(rawVariantCount) || 1))
     const lockedHeadline = (customHeadline || '').trim().toUpperCase()
 
+    // Ground the thumbnail copy in what the creator ACTUALLY said: pull the
+    // cached transcript and distil it to a claims sheet. Kicked off now so it
+    // overlaps the rest of the pipeline (image gen) rather than adding latency;
+    // awaited at the copy call sites. Skipped for a locked headline (no copy
+    // gen) or when there's no video. Any failure → '' → title+product only.
+    const claimsSheetPromise: Promise<string> = (!lockedHeadline && youtubeVideoId)
+      ? (async () => {
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const { data: vid } = await (supabase as any)
+              .from('youtube_videos')
+              .select('transcript')
+              .eq('user_id', user.id)
+              .eq('youtube_video_id', youtubeVideoId)
+              .maybeSingle()
+            return await distillThumbnailClaims((vid?.transcript as string | null) || '')
+          } catch { return '' }
+        })()
+      : Promise.resolve('')
+
     // Face comes straight from the request — the Co-Pilot block's face chips
     // (Auto / Off / Product only / a likeness model) drive it live. The saved
     // brand style is applied CLIENT-side (it prefills the block), so the route
@@ -823,7 +871,7 @@ export async function POST(request: Request) {
     // ── Quick mode: hook text only ─────────────────────────────────────────────
     if (quickMode) {
       // Locked headline short-circuits the hook agent — no AI call needed.
-      const overlayHook = lockedHeadline || (await generateHook(videoTitle))
+      const overlayHook = lockedHeadline || (await generateHook(videoTitle, '', await claimsSheetPromise))
       return NextResponse.json({ ok: true, overlayHook, quickMode: true })
     }
 
@@ -986,7 +1034,7 @@ export async function POST(request: Request) {
           }
           const copyVariants: ThumbCopy[] = lockedHeadline
             ? [splitLocked(lockedHeadline)]
-            : await generateThumbCopies(videoTitle, 5, productDescription)
+            : await generateThumbCopies(videoTitle, 5, productDescription, await claimsSheetPromise)
           // Flattened single-string forms for legacy consumers (overlay
           // canvas draw, picker UI, response payload).
           const titleOptions = copyVariants.map(flatCopy)
@@ -1592,7 +1640,7 @@ Ultra-sharp, professional, photorealistic.`
     // cut-out — the uploaded photo already contains the person and product.
     if (typeof uploadedPhotoUrl === 'string' && /^https?:\/\//.test(uploadedPhotoUrl)) {
       try {
-        const overlayHookU = lockedHeadline || (await generateHook(videoTitle, productDescription))
+        const overlayHookU = lockedHeadline || (await generateHook(videoTitle, productDescription, await claimsSheetPromise))
         const photoRes = await fetch(uploadedPhotoUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } })
         if (!photoRes.ok) throw new Error(`Cannot fetch uploaded photo (${photoRes.status})`)
         const falPhotoUrl = await fal.storage.upload(await photoRes.blob())
@@ -1684,9 +1732,10 @@ Ultra-sharp, professional, photorealistic.`
     // ── Generate scene prompt + hook + (optional) style brief in parallel ───
     // The face path (gpt-image, PATH G below) builds its own prompt inline;
     // this product-only prompt feeds the Kontext / Flux-Pro no-face paths.
+    const claimsForHook = await claimsSheetPromise
     const [productPrompt, generatedHook, styleBrief] = await Promise.all([
       generateProductPrompt({ videoTitle, productTitle, productDescription, productBullets, style, channelStyle }),
-      lockedHeadline ? Promise.resolve('') : generateHook(videoTitle, productDescription),
+      lockedHeadline ? Promise.resolve('') : generateHook(videoTitle, productDescription, claimsForHook),
       styleReferenceUrl ? extractStyleBrief(styleReferenceUrl) : Promise.resolve(null),
     ])
     const overlayHook = lockedHeadline || generatedHook
