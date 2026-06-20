@@ -97,6 +97,23 @@ html, body { overflow-x: clip; }
 .mvp-single-body pre { max-width: 100%; overflow-x: auto; }
 .mvp-single-body table { display: block; width: 100%; max-width: 100%; overflow-x: auto; }
 
+/* In-article "Get it now" product CTA card. It's an inline-styled flex ROW
+   (text column + fixed 200px image column). The text column can shrink but the
+   image column can't, so on a phone flexbox crushes the text to one-word-per-
+   line and the image overflows instead of wrapping. Force it to stack on
+   mobile. The row direction is an INLINE style, so !important is required. */
+@media (max-width: 600px) {
+  .gr-cta-card { flex-direction: column !important; align-items: stretch !important; }
+  .gr-cta-card .gr-cta-body { flex: 1 1 auto !important; width: 100% !important; min-width: 0 !important; }
+  .gr-cta-card > div:not(.gr-cta-body) {
+    flex: 0 0 auto !important;
+    width: 100% !important;
+    max-width: 240px !important;
+    margin: 4px auto 0 !important;
+  }
+  .gr-cta-card img { width: 100% !important; height: auto !important; }
+}
+
 /* ─── Utility bar (disclaimer + socials) ─────────────────────────────────── */
 .mvp-utilitybar {
   background: #111;
