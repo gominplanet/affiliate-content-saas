@@ -2918,9 +2918,9 @@ export default function ContentPage() {
           and Vertical (9:16 Shorts, Instagram source) since the workflows differ */}
       <div className="flex items-center gap-1 border-b border-gray-200 dark:border-white/10 mb-4 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
         {([
-          { key: 'horizontal' as const, label: 'Horizontal Videos' },
-          { key: 'vertical' as const, label: 'Vertical Videos' },
-          { key: 'posts' as const, label: `Published Posts & Social Push${postsLoaded ? ` (${allBlogPosts.length})` : ''}` },
+          { key: 'horizontal' as const, label: 'Long-form → Blog' },
+          { key: 'vertical' as const, label: 'Shorts → Social' },
+          { key: 'posts' as const, label: `Published${postsLoaded ? ` (${allBlogPosts.length})` : ''}` },
           { key: 'scheduled' as const, label: `Scheduled${scheduledItems ? ` (${scheduledItems.filter(s => s.status === 'pending').length})` : ''}` },
         ]).map(({ key, label }) => (
           <button
@@ -3306,12 +3306,12 @@ export default function ContentPage() {
       ) : currentTabVideos.length === 0 ? (
         <div className="card p-8 max-w-md flex flex-col items-center text-center gap-3">
           <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-            {activeTab === 'vertical' ? 'No vertical videos found' : 'No horizontal videos found'}
+            {activeTab === 'vertical' ? 'No Shorts found' : 'No long-form videos found'}
           </p>
           <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] max-w-sm">
             {activeTab === 'vertical'
               ? 'No YouTube Shorts yet — these are the source for Instagram Reels & Stories. Record one on YouTube, hit Sync again, and it shows up here.'
-              : 'All your synced videos look like Shorts. Hit Sync again to refresh, or open the Vertical Videos tab to publish them as Reels.'}
+              : 'All your synced videos look like Shorts. Hit Sync again to refresh, or open the Shorts → Social tab to publish them as Reels.'}
           </p>
           <button onClick={() => syncVideos()} disabled={syncing} className="btn-secondary text-xs">
             {syncing ? <><Loader2 size={11} className="animate-spin" /> Syncing {syncProgress ? `(${syncProgress.pulled})` : ''}…</> : <><RefreshCw size={11} /> Re-sync videos</>}

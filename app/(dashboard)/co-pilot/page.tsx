@@ -35,12 +35,12 @@ interface DraftVideo {
   metadataAppliedAt?: string | null
 }
 
-// ── Tab classification (2026-06-08) ────────────────────────────────────────
-// FOUR workflow buckets the YouTube Co-Pilot surfaces:
-//   - todo-product:    has an ASIN/Amazon signal in title or description,
-//                      but no affiliate link yet → ready to generate metadata
-//   - todo-no-product: no product signal anywhere → general/topic content
-//                      that still needs metadata
+// ── Tab classification (2026-06-08, simplified 2026-06-20) ─────────────────
+// THREE workflow buckets the YouTube Co-Pilot surfaces:
+//   - todo:            any unpublished draft that still needs metadata, with
+//                      or without a detected product. (The old product /
+//                      no-product split was merged — both are processable, so
+//                      product presence is now a per-ROW badge, not a tab.)
 //   - shipped:         WE pushed metadata to YouTube via /api/youtube/apply
 //                      or update-metadata — authoritative "done" signal,
 //                      backed by the youtube_copilot_pushes table (mig 109)
@@ -49,19 +49,20 @@ interface DraftVideo {
 //                      other tools or manual edits (not by Co-Pilot).
 // Per user spec 2026-06-08. Classification runs CLIENT-side off the existing
 // drafts payload so the user can tweak rules without redeploying the API.
-type VideoTab = 'todo-product' | 'todo-no-product' | 'shipped' | 'done'
+// 'todo' merges the old 'todo-product' / 'todo-no-product' split (2026-06-20):
+// now that the metadata generator identifies the product from the title +
+// transcript when there's no ASIN, both kinds of draft are equally
+// processable, so the product/no-product distinction lives as a per-ROW badge
+// (the orange "ASIN:" pill) instead of a top-level tab that implied
+// "no product = dead end".
+type VideoTab = 'todo' | 'shipped' | 'done'
 
 // ASIN format on Amazon: 10 alphanumerics, almost always starting with B0.
 // We allow the broader 10-alphanum pattern but anchor on word boundaries so
 // random letters in a title don't false-match.
 const ASIN_RE = /\b(B0[A-Z0-9]{8})\b/i
-// "Any Amazon presence" — used to tag an UNPUBLISHED draft as a product video
-// (ASIN in the title, or any Amazon/Geniuslink URL in the title/description).
-const AMAZON_PRESENCE_RE = /(?:geni\.us\/|amzn\.to\/|amazon\.[a-z.]+\/)/i
-
 function classifyVideo(v: Pick<DraftVideo, 'title' | 'description' | 'detectedAsin' | 'metadataAppliedAt' | 'status' | 'publishAt'>): VideoTab {
   const title = v.title || ''
-  const desc = v.description || ''
 
   // SHIPPED wins first: if we pushed metadata via Co-Pilot, that's the
   // authoritative signal — overrides everything, regardless of status.
@@ -79,20 +80,20 @@ function classifyVideo(v: Pick<DraftVideo, 'title' | 'description' | 'detectedAs
   // "Generate YouTube metadata" signal — exactly what "With product" is for. This
   // BEATS the scheduled check below: the creator schedules raw drafts too, so a
   // scheduled raw product draft is still work to do and stays in "With product".
+  // RAW PRODUCT DRAFT stays in the to-do queue even when scheduled: a raw
+  // ASIN-in-title upload is still work to finish, so it must NOT fall through to
+  // the 'shipped' (publishAt) check below. (Per user 2026-06-10.)
   const hasAsin = !!v.detectedAsin || ASIN_RE.test(title)
-  if (hasAsin) return 'todo-product'
+  if (hasAsin) return 'todo'
 
   // SCHEDULED (private/unlisted but a publishAt is set) and NOT a raw ASIN draft =
   // a finished/polished video queued to go live (the purple full-title ones) →
   // "Pushed via Co-Pilot", out of the to-do queue. (Per user 2026-06-10.)
   if (v.publishAt) return 'shipped'
 
-  // Unscheduled, no title-ASIN: a product draft if there's any Amazon link (the
-  // "No product" generate uses it as a fallback); otherwise a plain topic draft.
-  const hasAmazonAnywhere = AMAZON_PRESENCE_RE.test(title) || AMAZON_PRESENCE_RE.test(desc)
-  if (hasAmazonAnywhere) return 'todo-product'
-
-  return 'todo-no-product'
+  // Everything else still unpublished — whether or not a product was detected —
+  // is work to do. (Product presence shows as a per-row badge, not a tab.)
+  return 'todo'
 }
 
 interface GeneratedMetadata {
@@ -2346,11 +2347,10 @@ export default function StudioPage() {
   // drafts (they stopped appearing under "With product"). Tick it to also pull
   // the already-live library.
   const [includePublished, setIncludePublished] = useState(false)
-  // Active workflow tab. Starts at 'todo-product' (highest value: product videos
-  // = affiliate $$), but if that bucket is empty on load we auto-jump to the
-  // first tab that actually has videos (effect below) so the page never opens
-  // on a blank list.
-  const [activeTab, setActiveTab] = useState<VideoTab>('todo-product')
+  // Active workflow tab. Starts at 'todo' (the actionable queue), but if that
+  // bucket is empty on load we auto-jump to the first tab that actually has
+  // videos (effect below) so the page never opens on a blank list.
+  const [activeTab, setActiveTab] = useState<VideoTab>('todo')
   const autoTabPicked = React.useRef(false)
   // Server-side search across the user's entire channel (not just the
   // currently-loaded uploads-playlist page). Debounced 350ms below so we
@@ -2364,8 +2364,7 @@ export default function StudioPage() {
   // tab filtering: search results show across all categories.
   const tabbed = useMemo(() => {
     const buckets: Record<VideoTab, DraftVideo[]> = {
-      'todo-product': [],
-      'todo-no-product': [],
+      'todo': [],
       'shipped': [],
       'done': [],
     }
@@ -2382,7 +2381,7 @@ export default function StudioPage() {
     ? [...drafts].sort((a, b) => (b.publishedAt || '').localeCompare(a.publishedAt || ''))
     : tabbed[activeTab]
 
-  // On first load, if the default tab ('todo-product') is empty, jump to the
+  // On first load, if the default tab ('todo') is empty, jump to the
   // FULLEST tab so Co-Pilot opens on the user's actual library instead of a
   // blank actionable-queue (an established channel is mostly "Done elsewhere").
   // Runs once; a manual tab click also marks this done (below) so we never
@@ -2391,7 +2390,7 @@ export default function StudioPage() {
     if (autoTabPicked.current || activeQuery || drafts.length === 0) return
     autoTabPicked.current = true
     if (tabbed[activeTab].length === 0) {
-      const order: VideoTab[] = ['todo-product', 'todo-no-product', 'shipped', 'done']
+      const order: VideoTab[] = ['todo', 'shipped', 'done']
       const fullest = order.reduce((best, t) => (tabbed[t].length > tabbed[best].length ? t : best), order[0])
       if (tabbed[fullest].length > 0) setActiveTab(fullest)
     }
@@ -2610,11 +2609,12 @@ export default function StudioPage() {
             <AlertCircle size={14} className="text-[#7C3AED]" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Reviewing an Amazon product? Put the ASIN in your title for the best result</p>
+            <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Any video works — we figure out the product for you</p>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
-              If your video reviews an Amazon product, drop the 10-character ASIN into the YouTube title (or the video file name) — e.g.{' '}
-              <span className="font-mono text-[#1d1d1f] dark:text-[#f5f5f7] bg-white dark:bg-[#1c1c1e] px-1.5 py-0.5 rounded border border-[#d2d2d7] dark:border-[#3a3a3c]">Vacuum - B08TT4YHG1</span>.
-              That pins the exact product so we pull its real Amazon data and add your affiliate link. <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">It&apos;s optional, though</strong> — with no ASIN we try to identify the product from your title automatically, and if it isn&apos;t a product video we still generate title ideas, description, tags, hashtags and thumbnail around your topic (just no affiliate link).
+              Pick any video and we generate its title ideas, description, tags, hashtags and thumbnail. For a product review we identify the item automatically from your title and what you say in the video, and add your affiliate link. If it isn&apos;t a product video, you still get all the metadata around your topic (just no affiliate link).
+              {' '}<strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Optional shortcut:</strong> drop the 10-character Amazon ASIN into your title or file name — e.g.{' '}
+              <span className="font-mono text-[#1d1d1f] dark:text-[#f5f5f7] bg-white dark:bg-[#1c1c1e] px-1.5 py-0.5 rounded border border-[#d2d2d7] dark:border-[#3a3a3c]">Vacuum - B08TT4YHG1</span>
+              {' '}— to pin the exact product when you want to be sure we grab the right one.
             </p>
           </div>
         </div>
@@ -2643,10 +2643,9 @@ export default function StudioPage() {
           {!activeQuery && drafts.length > 0 && (
             <div className="flex items-center gap-1 mb-3 border-b border-gray-200 dark:border-white/10">
               {([
-                { id: 'todo-product' as const, label: '🛒 With product', sub: 'Unpublished drafts with a product (ASIN or Amazon link)' },
-                { id: 'todo-no-product' as const, label: '✍️ No product', sub: 'Unpublished drafts — no product detected' },
+                { id: 'todo' as const, label: '📝 To do', sub: 'Unpublished drafts that still need metadata — with or without a product (the orange ASIN pill marks the ones with a detected product)' },
                 { id: 'shipped' as const, label: '🚀 Shipped / Scheduled', sub: 'Pushed to YouTube through Co-Pilot, or scheduled to go live' },
-                { id: 'done' as const, label: '✅ Done elsewhere', sub: 'Already published on YouTube (not via Co-Pilot)' },
+                { id: 'done' as const, label: '✅ Published', sub: 'Already live on YouTube (published outside Co-Pilot)' },
               ]).map(t => {
                 const count = tabbed[t.id].length
                 const active = activeTab === t.id
@@ -2714,8 +2713,7 @@ export default function StudioPage() {
                 // which tab to switch to OR that they're all done.
                 <>
                   <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">
-                    {activeTab === 'todo-product' && 'No unpublished product drafts waiting'}
-                    {activeTab === 'todo-no-product' && 'No unpublished drafts without a product'}
+                    {activeTab === 'todo' && 'No unpublished drafts waiting'}
                     {activeTab === 'shipped' && 'Nothing pushed via Co-Pilot yet'}
                     {activeTab === 'done' && 'No published videos here'}
                   </p>
