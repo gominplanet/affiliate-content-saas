@@ -69,6 +69,25 @@ p { margin: 0 0 1em; }
   .mvp-container { padding: 0 16px; }
 }
 
+/* ─── Mobile overflow hardening ───────────────────────────────────────────
+   Stops any single wide element (a long URL printed as text, a wide
+   comparison table, an oversized embed) from pushing the page wider than the
+   screen and clipping the whole layout on phones. `overflow-x: clip` (not
+   hidden) kills the sideways scroll WITHOUT breaking the sticky table of
+   contents / sticky CTA. Long words wrap, media is capped to 100%, and wide
+   tables scroll inside their own box instead of widening the article. */
+html, body { overflow-x: clip; }
+.mvp-single-content, .mvp-single-title, .mvp-single-dek, .mvp-single-body, .mvp-single-body p, .mvp-single-body li, .mvp-single-body h2, .mvp-single-body h3 {
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+}
+.mvp-single-body img, .mvp-single-body iframe, .mvp-single-body video, .mvp-single-body embed, .mvp-single-body object {
+  max-width: 100%;
+  height: auto;
+}
+.mvp-single-body pre { max-width: 100%; overflow-x: auto; }
+.mvp-single-body table { display: block; width: 100%; max-width: 100%; overflow-x: auto; }
+
 /* ─── Utility bar (disclaimer + socials) ─────────────────────────────────── */
 .mvp-utilitybar {
   background: #111;
@@ -78,20 +97,17 @@ p { margin: 0 0 1em; }
 }
 .mvp-utilitybar-inner {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
   gap: 16px;
   padding: 6px 24px;
 }
-.mvp-utilitybar-disclaimer {
-  margin: 0;
-  font-size: 11.5px;
-  color: rgba(255,255,255,0.65);
-  line-height: 1.4;
-  flex: 1;
-  min-width: 0;
+.mvp-utilitybar-socials { display: flex; flex-wrap: wrap; gap: 4px; }
+/* Social-only bar: center the icons on phones so they're not jammed in a
+   corner now that the disclaimer no longer shares the row. */
+@media (max-width: 640px) {
+  .mvp-utilitybar-inner { justify-content: center; }
 }
-.mvp-utilitybar-socials { display: flex; gap: 4px; flex-shrink: 0; }
 .mvp-utilitybar-social {
   display: inline-flex; align-items: center; justify-content: center;
   width: 30px; height: 30px;

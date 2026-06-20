@@ -73,11 +73,15 @@ if ($disclaimer === '') {
 }
 ?>
 
-<!-- Utility bar: disclaimer + socials -->
+<!-- Utility bar: socials only. The affiliate disclaimer is NOT shown here —
+     it lived in this slim strip and got crushed to one-word-per-line on mobile,
+     wrecking the layout. The disclaimer still appears in-article (the highlighted
+     box under the title) and in the footer, which is where readers expect it and
+     where Amazon's policy is satisfied. The bar only renders when there are
+     social links, so it's never an empty black strip. -->
+<?php if (!empty($socials)): ?>
 <div class="mvp-utilitybar">
   <div class="mvp-container mvp-utilitybar-inner">
-    <p class="mvp-utilitybar-disclaimer"><?php echo esc_html($disclaimer); ?></p>
-    <?php if (!empty($socials)): ?>
     <div class="mvp-utilitybar-socials">
       <?php foreach ($socials as $key => $url):
         $svg = mvp_affiliate_social_svg($key);
@@ -90,9 +94,9 @@ if ($disclaimer === '') {
       </a>
       <?php endforeach; ?>
     </div>
-    <?php endif; ?>
   </div>
 </div>
+<?php endif; ?>
 
 <!-- Logo banner (small centered logo, or full wide banner if uploaded) -->
 <?php if ($top_img): ?>
