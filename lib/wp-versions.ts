@@ -26,7 +26,7 @@
 
 export const WP_VERSIONS = {
   theme: {
-    version: '1.4.23',
+    version: '1.4.24',
     downloadUrl: 'https://www.mvpaffiliate.io/mvp-affiliate-theme.zip',
   },
   plugin: {

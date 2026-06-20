@@ -85,6 +85,15 @@ html, body { overflow-x: clip; }
   max-width: 100%;
   height: auto;
 }
+/* Embedded videos (YouTube etc.) carry fixed width/height attributes that
+   otherwise overflow the column on phones. Force them full-width 16:9. */
+.mvp-single-content iframe, .mvp-single-body iframe {
+  width: 100%;
+  max-width: 100%;
+  aspect-ratio: 16 / 9;
+  height: auto;
+  border: 0;
+}
 .mvp-single-body pre { max-width: 100%; overflow-x: auto; }
 .mvp-single-body table { display: block; width: 100%; max-width: 100%; overflow-x: auto; }
 
@@ -248,16 +257,21 @@ html, body { overflow-x: clip; }
 }
 
 @media (max-width: 900px) {
+  /* Allow the nav to drop to its own full-width row when the hamburger opens.
+     Without flex-wrap the nav (flex-basis:100%) can't wrap, so it got crushed
+     into a narrow right-hand column and the category links were cut off. */
+  .mvp-header-inner { flex-wrap: wrap; }
   .mvp-header-menu-toggle { display: inline-flex; }
   .mvp-header-nav {
     display: none;
     flex-basis: 100%;
+    width: 100%;
     order: 99;
     padding-bottom: 12px;
   }
   .mvp-header-open .mvp-header-nav { display: flex; justify-content: flex-start; }
-  .mvp-header-open .mvp-nav-menu { flex-direction: column; width: 100%; }
-  .mvp-header-open .mvp-nav-menu a { display: block; padding: 10px 14px; }
+  .mvp-header-open .mvp-nav-menu { flex-direction: column; width: 100%; gap: 0; }
+  .mvp-header-open .mvp-nav-menu a { display: block; padding: 10px 14px; white-space: nowrap; }
 }
 
 /* ─── Hero ───────────────────────────────────────────────────────────────── */
@@ -692,7 +706,11 @@ a.mvp-ad-slot-filled:hover {
   align-items: start;
 }
 @media (max-width: 1000px) {
-  .mvp-single-layout { grid-template-columns: 1fr; gap: 32px; }
+  /* minmax(0, 1fr) — NOT plain 1fr. Plain 1fr is minmax(auto, 1fr), whose
+     `auto` minimum is the content's min-content width, so a fixed-size video
+     iframe would force the column (and every paragraph in it) wider than the
+     phone screen. minmax(0, …) lets the column shrink to the viewport. */
+  .mvp-single-layout { grid-template-columns: minmax(0, 1fr); gap: 32px; }
 }
 
 .mvp-single-header { margin-bottom: 24px; }
