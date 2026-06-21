@@ -41,6 +41,40 @@ const PRICE_TO_TIER: Record<string, Tier> = Object.fromEntries(
   ).filter(([id]) => !!id) as Array<[string, Tier]>,
 )
 
+/** Resolve a Supabase auth user_id from an email. Used as a LAST-RESORT link
+ *  when a subscription/checkout carries no user_id metadata and we have no
+ *  stripe_customer_id on file yet (e.g. a subscription created via a Stripe
+ *  Payment Link, the Stripe dashboard, or a coupon link rather than MVP's own
+ *  checkout). Paginates auth.users; bounded so it can't run away. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function findUserIdByEmail(admin: any, email: string | null | undefined): Promise<string | null> {
+  const normalized = (email || '').trim().toLowerCase()
+  if (!normalized) return null
+  const PAGE_SIZE = 1000
+  const MAX_PAGES = 50
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data, error } = await (admin.auth.admin as any).listUsers({ page, perPage: PAGE_SIZE })
+    if (error || !data?.users) return null
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const hit = data.users.find((u: any) => (u.email ?? '').toLowerCase() === normalized)
+    if (hit) return hit.id as string
+    if (data.users.length < PAGE_SIZE) break
+  }
+  return null
+}
+
+/** The email on a Stripe customer (for the email fallback above). */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function stripeCustomerEmail(stripe: any, customerId: string | null | undefined): Promise<string | null> {
+  if (!customerId) return null
+  try {
+    const c = await stripe.customers.retrieve(customerId)
+    if (c && !c.deleted) return (c.email as string | null) || null
+  } catch { /* customer gone / API error — caller falls through */ }
+  return null
+}
+
 export async function POST(request: NextRequest) {
   const body = await request.text()
   const sig = request.headers.get('stripe-signature')!
@@ -97,14 +131,35 @@ export async function POST(request: NextRequest) {
       // price + metadata.tier pair). Discovered in the 2026-06-02
       // audit — was a P1 trust-the-client bug.
       line_items?: { data?: { price?: { id?: string } }[] }
+      customer_email?: string | null
+      customer_details?: { email?: string | null }
     }
-    const { user_id } = session.metadata
     // Derive tier from the actual priceId — never trust metadata.tier
     // for paid status. Fall back to metadata.tier only if Stripe
     // somehow doesn't expand line_items (shouldn't happen in webhook
     // payloads, but defensive).
     const priceId = session.line_items?.data?.[0]?.price?.id
-    const tier: Tier = (priceId && PRICE_TO_TIER[priceId]) || session.metadata.tier
+    const tier: Tier = (priceId && PRICE_TO_TIER[priceId]) || session.metadata?.tier
+    // Runtime guard (TS types tier as Tier, but a Payment-Link session can have
+    // empty metadata AND an unmapped price → undefined at runtime). Never write a
+    // blank tier; alert so the price→tier env mapping gets fixed.
+    if (!tier) {
+      console.warn('[stripe-webhook] checkout.session.completed with no resolvable tier', { priceId, customer: session.customer })
+      await alertOps('Stripe checkout completed but tier could not be resolved', `customer ${session.customer}, price ${priceId} not in STRIPE_PRICE_* env map. Set their tier manually in /admin/users and add the price ID to the env mapping.`)
+      return NextResponse.json({ received: true, unresolvedTier: true })
+    }
+    // Resolve the user: metadata (MVP checkout) → else the checkout's email
+    // (Payment Link / dashboard-created session that carries no user_id).
+    let user_id = session.metadata?.user_id || null
+    if (!user_id) {
+      user_id = await findUserIdByEmail(admin, session.customer_details?.email || session.customer_email)
+        || await findUserIdByEmail(admin, await stripeCustomerEmail(stripe, session.customer))
+    }
+    if (!user_id) {
+      console.warn('[stripe-webhook] checkout.session.completed with no resolvable user', { customer: session.customer, priceId })
+      await alertOps('Stripe checkout completed but no MVP user matched', `customer ${session.customer}, price ${priceId}. Set their tier manually in /admin/users.`)
+      return NextResponse.json({ received: true, unmatched: true })
+    }
     const { error } = await admin.from('integrations').upsert(
       {
         user_id,
@@ -138,7 +193,15 @@ export async function POST(request: NextRequest) {
     // subscription at checkout so a stale/missing env mapping can't silently
     // skip the upgrade.
     const tier = PRICE_TO_TIER[priceId] ?? sub.metadata?.tier
-    const userId = sub.metadata?.user_id
+    // Resolve the user: metadata (MVP checkout) → else the Stripe customer's
+    // email. The email path links subscriptions created OUTSIDE MVP's checkout
+    // (Payment Link, dashboard, coupon link) where there's no user_id metadata
+    // AND the user has no stripe_customer_id on file yet — previously these
+    // matched 0 rows and the paid tier silently never applied.
+    let userId = sub.metadata?.user_id || null
+    if (tier && !userId) {
+      userId = await findUserIdByEmail(admin, await stripeCustomerEmail(stripe, sub.customer))
+    }
     if (tier) {
       const fields = {
         tier,
