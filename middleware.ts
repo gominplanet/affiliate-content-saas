@@ -6,6 +6,12 @@ import { LABS_COOKIE, expectedLabsToken } from '@/lib/labs-access'
 const publicPaths = [
   '/login', '/signup', '/reset-password',
   '/api/auth', '/api/proxy-image', '/api/cron', '/api/wp-version', '/api/campaigns/ingest',
+  // Stripe webhook — Stripe POSTs with no session cookie, so without this the
+  // middleware 307-redirects every event to /login and Stripe (which never
+  // follows redirects) marks the delivery failed → paid customers never get
+  // upgraded. The route enforces its own auth via constructEvent signature
+  // verification, exactly like the newsletter webhooks below.
+  '/api/stripe/webhook',
   // Newsletter public surfaces — these are hit by the WP blog form, by Resend's
   // webhook, and by anonymous click-through links in delivered emails. Each
   // route enforces its OWN auth (HMAC for /subscribe, Svix sig for the webhook,
