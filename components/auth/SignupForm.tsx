@@ -33,6 +33,7 @@ export default function SignupForm() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
+  const [paidIntent, setPaidIntent] = useState(false)
   const [captchaToken, setCaptchaToken] = useState<string | null>(null)
   const captchaRef = useRef<HCaptcha>(null)
 
@@ -45,6 +46,20 @@ export default function SignupForm() {
     setLoading(true)
     setError(null)
 
+    // Where to send them AFTER they confirm their email. A logged-out visitor
+    // who clicked a paid plan ("Get Pro") is bounced here as
+    // /signup?next=/pricing&tier=pro — we must carry that checkout intent
+    // through email confirmation, or they land on /onboarding (trial) and are
+    // never charged. Paid intent → back to /pricing with an auto-resume flag
+    // so checkout fires the moment they return (Rewardful referral cookie is
+    // still in their browser, so affiliate attribution survives). Everyone else
+    // → /onboarding, the normal new-user setup funnel.
+    const sp = new URLSearchParams(window.location.search)
+    const tierParam = sp.get('tier')
+    const paid = !!tierParam && ['creator', 'studio', 'pro'].includes(tierParam)
+    setPaidIntent(paid)
+    const dest = paid ? `/pricing?checkout=${tierParam}` : '/onboarding'
+
     const { error } = await supabase.auth.signUp({
       email,
       password,
@@ -52,12 +67,11 @@ export default function SignupForm() {
         data: { full_name: fullName },
         captchaToken: captchaToken ?? undefined,
         // Send the email-confirmation link through our auth callback (which
-        // exchanges the code for a session) and on into the onboarding funnel,
-        // so a brand-new user lands exactly where setup begins. window.origin
+        // exchanges the code for a session) and on to `dest`. window.origin
         // keeps it correct across preview + prod. NOTE: the Supabase dashboard's
         // Auth → URL Configuration redirect allow-list must include
         // <site>/api/auth/callback (already used by the existing flow).
-        emailRedirectTo: `${window.location.origin}/api/auth/callback?next=/onboarding`,
+        emailRedirectTo: `${window.location.origin}/api/auth/callback?next=${encodeURIComponent(dest)}`,
       },
     })
 
@@ -82,8 +96,10 @@ export default function SignupForm() {
         </div>
         <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">Check your inbox</h2>
         <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0]">
-          We sent a confirmation link to <strong>{email}</strong>. Click it to unlock your 5 free
-          reviews — no card required. (Check spam if it doesn&apos;t show in a minute.)
+          We sent a confirmation link to <strong>{email}</strong>.{' '}
+          {paidIntent
+            ? <>Click it to confirm your email — we&apos;ll take you straight to checkout to start your plan. (Check spam if it doesn&apos;t show in a minute.)</>
+            : <>Click it to unlock your 5 free reviews — no card required. (Check spam if it doesn&apos;t show in a minute.)</>}
         </p>
       </div>
     )

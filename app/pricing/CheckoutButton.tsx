@@ -62,6 +62,7 @@ export function CheckoutButton({
   const [loading, setLoading] = useState(false)
   const [referral, setReferral] = useState<string | null>(null)
   const [couponId, setCouponId] = useState<string | null>(null)
+  const [autoFired, setAutoFired] = useState(false)
 
   // Capture Rewardful referral ID + double-sided-incentive coupon once the
   // tracking script signals ready. The coupon ID is what makes the discount
@@ -74,6 +75,28 @@ export function CheckoutButton({
       setCouponId(window.Rewardful?.coupon?.id ?? null)
     })
   }, [])
+
+  // Auto-resume checkout when a just-confirmed user is sent back here as
+  // /pricing?checkout=<tier> from the signup flow. Without this, a logged-out
+  // visitor who clicked "Get Pro" signs up, confirms email, lands on trial, and
+  // is never charged — the exact bug that left referred customers stuck. We
+  // wait briefly for Rewardful to resolve the referral (the cookie is still in
+  // their browser) so affiliate attribution survives, then fire the same
+  // checkout the button would. Only the card whose tier matches fires.
+  useEffect(() => {
+    if (autoFired || typeof window === 'undefined') return
+    if (new URLSearchParams(window.location.search).get('checkout') !== tier) return
+    setAutoFired(true)
+    let fired = false
+    const go = () => { if (!fired) { fired = true; void handleCheckout() } }
+    if (window.rewardful) {
+      window.rewardful('ready', go)
+      window.setTimeout(go, 2500) // fallback if 'ready' never fires (blocked script)
+    } else {
+      go()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoFired, tier])
 
   async function handleCheckout() {
     if (tier === 'trial') {
@@ -97,7 +120,14 @@ export function CheckoutButton({
       const res = await fetch('/api/stripe/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tier, referral, couponId }),
+        // Prefer React state, but fall back to the live Rewardful globals — on
+        // the auto-resume path the checkout can fire before state has flushed,
+        // and we must not drop the affiliate referral/coupon.
+        body: JSON.stringify({
+          tier,
+          referral: referral ?? window.Rewardful?.referral ?? null,
+          couponId: couponId ?? window.Rewardful?.coupon?.id ?? null,
+        }),
       })
       const { url, error } = await res.json()
       if (error) { alert(error); return }
