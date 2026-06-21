@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import Link from 'next/link'
 import type HCaptcha from '@hcaptcha/react-hcaptcha'
 import { createBrowserClient } from '@/lib/supabase/client'
@@ -33,9 +33,19 @@ export default function SignupForm() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
-  const [paidIntent, setPaidIntent] = useState(false)
+  const [paidTier, setPaidTier] = useState<string | null>(null)
   const [captchaToken, setCaptchaToken] = useState<string | null>(null)
   const captchaRef = useRef<HCaptcha>(null)
+
+  // A logged-out visitor who clicked a paid plan ("Get Pro") arrives as
+  // /signup?tier=pro. In that case this form runs the PAID flow: create the
+  // account + go straight to Stripe, no email confirmation. Read it once on
+  // mount so the heading + button reflect "you're buying", not "free trial".
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get('tier')
+    if (t && ['creator', 'studio', 'pro'].includes(t)) setPaidTier(t)
+  }, [])
+  const tierLabel = paidTier ? paidTier.charAt(0).toUpperCase() + paidTier.slice(1) : ''
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -46,32 +56,54 @@ export default function SignupForm() {
     setLoading(true)
     setError(null)
 
-    // Where to send them AFTER they confirm their email. A logged-out visitor
-    // who clicked a paid plan ("Get Pro") is bounced here as
-    // /signup?next=/pricing&tier=pro — we must carry that checkout intent
-    // through email confirmation, or they land on /onboarding (trial) and are
-    // never charged. Paid intent → back to /pricing with an auto-resume flag
-    // so checkout fires the moment they return (Rewardful referral cookie is
-    // still in their browser, so affiliate attribution survives). Everyone else
-    // → /onboarding, the normal new-user setup funnel.
-    const sp = new URLSearchParams(window.location.search)
-    const tierParam = sp.get('tier')
-    const paid = !!tierParam && ['creator', 'studio', 'pro'].includes(tierParam)
-    setPaidIntent(paid)
-    const dest = paid ? `/pricing?checkout=${tierParam}` : '/onboarding'
+    // PAID PLAN — one flow: create the account already-confirmed + go straight
+    // to Stripe, no email-confirmation interrupt. The referral/coupon come from
+    // the Rewardful cookie set when the visitor arrived via an affiliate link.
+    if (paidTier) {
+      try {
+        const rw = (window as unknown as {
+          Rewardful?: { referral?: string | null; coupon?: { id?: string } | null }
+        }).Rewardful
+        const res = await fetch('/api/auth/signup-paid', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email,
+            password,
+            fullName,
+            tier: paidTier,
+            referral: rw?.referral ?? null,
+            couponId: rw?.coupon?.id ?? null,
+          }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok || !data.url) {
+          setError(data.error || 'Could not start checkout. Please try again.')
+          setLoading(false)
+          captchaRef.current?.resetCaptcha()
+          setCaptchaToken(null)
+          return
+        }
+        window.location.href = data.url as string // → Stripe Checkout
+      } catch {
+        setError('Connection error — please try again.')
+        setLoading(false)
+      }
+      return
+    }
 
+    // TRIAL — normal email-confirmation signup into the onboarding funnel.
     const { error } = await supabase.auth.signUp({
       email,
       password,
       options: {
         data: { full_name: fullName },
         captchaToken: captchaToken ?? undefined,
-        // Send the email-confirmation link through our auth callback (which
-        // exchanges the code for a session) and on to `dest`. window.origin
-        // keeps it correct across preview + prod. NOTE: the Supabase dashboard's
-        // Auth → URL Configuration redirect allow-list must include
-        // <site>/api/auth/callback (already used by the existing flow).
-        emailRedirectTo: `${window.location.origin}/api/auth/callback?next=${encodeURIComponent(dest)}`,
+        // Send the confirmation link through our auth callback (which exchanges
+        // the code for a session) and on to onboarding. window.origin keeps it
+        // correct across preview + prod. NOTE: the Supabase Auth → URL
+        // Configuration redirect allow-list must include <site>/api/auth/callback.
+        emailRedirectTo: `${window.location.origin}/api/auth/callback?next=${encodeURIComponent('/onboarding')}`,
       },
     })
 
@@ -96,10 +128,8 @@ export default function SignupForm() {
         </div>
         <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">Check your inbox</h2>
         <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0]">
-          We sent a confirmation link to <strong>{email}</strong>.{' '}
-          {paidIntent
-            ? <>Click it to confirm your email — we&apos;ll take you straight to checkout to start your plan. (Check spam if it doesn&apos;t show in a minute.)</>
-            : <>Click it to unlock your 5 free reviews — no card required. (Check spam if it doesn&apos;t show in a minute.)</>}
+          We sent a confirmation link to <strong>{email}</strong>. Click it to unlock your 5 free
+          reviews — no card required. (Check spam if it doesn&apos;t show in a minute.)
         </p>
       </div>
     )
@@ -107,8 +137,10 @@ export default function SignupForm() {
 
   return (
     <div className="card p-8">
-      <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Start free — 5 reviews on the house</h2>
-      <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mb-6">No credit card. The full agent pipeline, the YouTube autopilot, and a branded review site — unlocked the moment you confirm your email.</p>
+      <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">{paidTier ? `Start your ${tierLabel} plan` : 'Start free — 5 reviews on the house'}</h2>
+      <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mb-6">{paidTier
+        ? `Create your account, then continue to secure checkout — you go straight to ${tierLabel}, no free trial.`
+        : 'No credit card. The full agent pipeline, the YouTube autopilot, and a branded review site — unlocked the moment you confirm your email.'}</p>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div>
@@ -166,10 +198,14 @@ export default function SignupForm() {
         <HCaptchaField ref={captchaRef} onVerify={setCaptchaToken} onExpire={() => setCaptchaToken(null)} />
 
         <button type="submit" disabled={loading} className="btn-primary w-full mt-1">
-          {loading ? 'Creating account…' : 'Create my free account'}
+          {loading
+            ? (paidTier ? 'Starting checkout…' : 'Creating account…')
+            : (paidTier ? 'Continue to payment →' : 'Create my free account')}
         </button>
         <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] text-center mt-1">
-          No credit card · Cancel anytime · 5 free reviews to try the full workflow
+          {paidTier
+            ? 'Secure checkout by Stripe · Cancel anytime'
+            : 'No credit card · Cancel anytime · 5 free reviews to try the full workflow'}
         </p>
       </form>
 

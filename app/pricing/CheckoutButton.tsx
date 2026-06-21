@@ -114,7 +114,10 @@ export function CheckoutButton({
       const supabase = createBrowserClient()
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) {
-        router.push(`/signup?next=/pricing&tier=${tier}`)
+        // Logged-out + a paid plan → the combined paid signup (email+password
+        // then straight to Stripe, no email-confirmation interrupt). The signup
+        // form reads ?tier and runs /api/auth/signup-paid.
+        router.push(`/signup?tier=${tier}`)
         return
       }
       const res = await fetch('/api/stripe/checkout', {
