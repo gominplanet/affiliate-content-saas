@@ -27,7 +27,7 @@ export const maxDuration = 60
 
 interface TestResult {
   /** Stable id for the test (UI key + analytics). */
-  id: 'rest_root' | 'basic_auth_get' | 'basic_auth_post' | 'mvp_plugin' | 'proxy_write'
+  id: 'rest_root' | 'basic_auth_get' | 'basic_auth_post' | 'mvp_plugin' | 'proxy_write' | 'ai_ready'
   /** Display name shown in the doctor UI. */
   label: string
   /** Did this test pass? null = couldn't run (prior dependency failed). */
@@ -233,6 +233,41 @@ export async function GET(req: Request) {
     label: 'Body-auth proxy (header-strip workaround)',
     ok: proxyOk,
     detail: proxyDetail,
+  })
+
+  // ── AI-readiness (ADVISORY — does NOT gate `healthy`): is /llms.txt served
+  //     and does robots.txt carry the AI-crawler allowlist? (plugin v1.0.54+).
+  //     A STATIC robots.txt file on disk silently bypasses the plugin's virtual
+  //     robots filter, so this catches "AI allowlist not applying" — the one
+  //     gotcha that costs AI visibility without any other symptom.
+  const aiUa = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
+  const aiBase = site.wordpress_url.replace(/\/$/, '')
+  let llmsOk = false
+  let robotsAllow = false
+  try {
+    const r = await fetch(`${aiBase}/llms.txt`, { headers: { 'User-Agent': aiUa }, signal: AbortSignal.timeout(12_000), redirect: 'follow' })
+    llmsOk = r.status === 200
+  } catch { /* network — leave false */ }
+  try {
+    const r = await fetch(`${aiBase}/robots.txt`, { headers: { 'User-Agent': aiUa }, signal: AbortSignal.timeout(12_000), redirect: 'follow' })
+    const robotsBody = await r.text()
+    robotsAllow = /MVP Affiliate AI-readiness|GPTBot/i.test(robotsBody)
+  } catch { /* network — leave false */ }
+  let aiDetail: string
+  if (!llmsOk && !robotsAllow) {
+    aiDetail = 'Update the MVP Affiliate plugin to v1.0.54+. If it\'s already updated, a static robots.txt or a CDN/cache is overriding the plugin.'
+  } else if (!robotsAllow) {
+    aiDetail = 'A static robots.txt likely overrides WordPress — add AI-crawler Allow rules there (GPTBot, OAI-SearchBot, ChatGPT-User, ClaudeBot, PerplexityBot, Google-Extended), or delete it so the plugin manages it.'
+  } else if (!llmsOk) {
+    aiDetail = '/llms.txt isn\'t being served — a cache/CDN or security plugin may be intercepting it.'
+  } else {
+    aiDetail = 'AI shopping agents can read this site (llms.txt + crawler allowlist present).'
+  }
+  tests.push({
+    id: 'ai_ready',
+    label: 'AI discoverability (llms.txt + AI-crawler access)',
+    ok: llmsOk && robotsAllow,
+    detail: aiDetail,
   })
 
   // ── Step 3: synthesize the overall verdict + summary.

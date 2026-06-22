@@ -78,10 +78,17 @@ export interface SeoSchemaInput {
     name: string
     imageUrl?: string | null
     brand?: string | null
-    /** The affiliate/destination URL for the product. */
+    /** The affiliate/destination URL for the product → Product.url + Offer.url. */
     url?: string | null
     /** Short verdict text → Review.reviewBody (a quotable, attributable extract). */
     reviewBody?: string | null
+    /** Optional live price → Offer.price. Omit unless it's CURRENT — a stale
+     *  price hurts agent trust more than no price. */
+    price?: number | string | null
+    /** ISO 4217 (default "USD") → Offer.priceCurrency. */
+    priceCurrency?: string | null
+    /** schema.org availability URL (default InStock) → Offer.availability. */
+    availability?: string | null
   } | null
   /** Numeric rating out of `ratingMax` (default 5). Null → no Review stars. */
   rating?: number | null
@@ -168,6 +175,17 @@ export function parseRating(raw: string | number | null | undefined, max = 5): n
 function clampRating(n: number, max: number): number | null {
   if (!isFinite(n) || n <= 0) return null
   return Math.min(Math.round(n * 10) / 10, max)
+}
+
+/** Parse a price like "$29.99", "29,99", "1,299.00" → 29.99 (number) or null. */
+export function parsePrice(raw: string | number | null | undefined): number | null {
+  if (raw == null) return null
+  if (typeof raw === 'number') return isFinite(raw) && raw > 0 ? Math.round(raw * 100) / 100 : null
+  const cleaned = String(raw).replace(/[^0-9.,]/g, '').replace(/,(?=\d{3}\b)/g, '').replace(',', '.')
+  const m = cleaned.match(/\d+(?:\.\d+)?/)
+  if (!m) return null
+  const n = parseFloat(m[0])
+  return isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null
 }
 
 /** Seconds → ISO 8601 duration ("PT12M34S"). */
@@ -272,6 +290,26 @@ export function buildReviewSchemaGraph(input: SeoSchemaInput): { '@context': str
     }
     if (input.product.imageUrl) product.image = [input.product.imageUrl]
     if (input.product.brand) product.brand = { '@type': 'Brand', name: input.product.brand }
+
+    // Offer: where to buy + availability — the fields AI shopping agents weight
+    // most when surfacing a product. The buy-URL + availability are always
+    // accurate for an affiliate review; `price` is emitted ONLY when a CURRENT
+    // one is supplied (a stale price hurts agent trust more than no price).
+    const buyUrl = (input.product.url || '').trim()
+    if (buyUrl) product.url = buyUrl
+    const offerPrice = parsePrice(input.product.price)
+    if (buyUrl || offerPrice != null) {
+      const offer: Node = {
+        '@type': 'Offer',
+        availability: input.product.availability || 'https://schema.org/InStock',
+      }
+      if (buyUrl) offer.url = buyUrl
+      if (offerPrice != null) {
+        offer.price = offerPrice
+        offer.priceCurrency = input.product.priceCurrency || 'USD'
+      }
+      product.offers = offer
+    }
 
     // Only emit a Review when there's a real rating, and link it from the
     // Product (product.review → @id). Per Google, a Review reached via its
