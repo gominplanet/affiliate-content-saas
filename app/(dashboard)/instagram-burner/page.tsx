@@ -38,6 +38,7 @@ export default function InstagramBurnerPage() {
   // gets in while the public stays gated.
   const [metaUnlocked, setMetaUnlocked] = useState(metaEnabled())
   const [igUsername, setIgUsername] = useState<string | null>(null)
+  const [ttUsername, setTtUsername] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   const [mode, setMode] = useState<'single' | 'batch'>('single')
@@ -73,9 +74,10 @@ export default function InstagramBurnerPage() {
     if (user) {
       // Select only non-sensitive columns — never the access token.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data } = await supabase.from('integrations').select('tier,instagram_username').eq('user_id', user.id).single()
+      const { data } = await supabase.from('integrations').select('tier,instagram_username,tiktok_username').eq('user_id', user.id).single()
       resolvedTier = (data?.tier as string) || 'trial'
       setIgUsername((data?.instagram_username as string) || null)
+      setTtUsername((data?.tiktok_username as string) || null)
     }
     setMetaUnlocked(metaEnabled({ tier: resolvedTier, email: user?.email }))
     setRealTier(resolvedTier)
@@ -240,18 +242,31 @@ export default function InstagramBurnerPage() {
           <div className="flex items-center gap-2 text-sm text-[#86868b] py-12 justify-center"><Loader2 size={14} className="animate-spin" /> Loading…</div>
         ) : (
           <>
-            {/* Connected Instagram account (profile info read via instagram_business_basic) */}
-            {igUsername ? (
-              <div className="flex items-center gap-2 mb-4 rounded-lg border border-[#E1306C]/25 bg-[#E1306C]/5 px-3 py-2 w-fit">
-                <Instagram size={15} className="text-[#E1306C] flex-shrink-0" />
-                <span className="text-[12px] text-[#1d1d1f] dark:text-[#f5f5f7]">Connected as <span className="font-semibold">@{igUsername}</span></span>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 mb-4 rounded-lg border border-gray-200 dark:border-white/10 px-3 py-2 w-fit">
-                <Instagram size={15} className="text-[#86868b] flex-shrink-0" />
-                <span className="text-[12px] text-[#6e6e73] dark:text-[#ebebf0]">No Instagram connected — <Link href="/setup?tab=integrations" className="text-[#7C3AED] font-semibold hover:underline">connect under Setup → Integrations</Link> to publish.</span>
-              </div>
-            )}
+            {/* Connected accounts — Instagram + TikTok, the two publish targets. */}
+            <div className="flex flex-wrap items-center gap-2 mb-4">
+              {igUsername ? (
+                <div className="flex items-center gap-2 rounded-lg border border-[#E1306C]/25 bg-[#E1306C]/5 px-3 py-2 w-fit">
+                  <Instagram size={15} className="text-[#E1306C] flex-shrink-0" />
+                  <span className="text-[12px] text-[#1d1d1f] dark:text-[#f5f5f7]">Instagram: <span className="font-semibold">@{igUsername}</span></span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 rounded-lg border border-gray-200 dark:border-white/10 px-3 py-2 w-fit">
+                  <Instagram size={15} className="text-[#86868b] flex-shrink-0" />
+                  <span className="text-[12px] text-[#6e6e73] dark:text-[#ebebf0]">No Instagram — <Link href="/connect-socials" className="text-[#7C3AED] font-semibold hover:underline">connect</Link></span>
+                </div>
+              )}
+              {ttUsername ? (
+                <div className="flex items-center gap-2 rounded-lg border border-black/15 bg-black/[0.04] dark:bg-white/5 px-3 py-2 w-fit">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" className="flex-shrink-0 text-black dark:text-white"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5.8 20.1a6.34 6.34 0 0 0 10.86-4.43V8.45a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1.84-.34z"/></svg>
+                  <span className="text-[12px] text-[#1d1d1f] dark:text-[#f5f5f7]">TikTok: <span className="font-semibold">@{ttUsername}</span></span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 rounded-lg border border-gray-200 dark:border-white/10 px-3 py-2 w-fit">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" className="flex-shrink-0 text-[#86868b]"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5.8 20.1a6.34 6.34 0 0 0 10.86-4.43V8.45a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1.84-.34z"/></svg>
+                  <span className="text-[12px] text-[#6e6e73] dark:text-[#ebebf0]">No TikTok — <Link href="/connect-socials" className="text-[#7C3AED] font-semibold hover:underline">connect</Link></span>
+                </div>
+              )}
+            </div>
 
             <div className="flex gap-2 mb-4">
               <button onClick={() => setMode('single')} className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${mode === 'single' ? 'border-[#7C3AED] bg-[#7C3AED]/5 text-[#7C3AED]' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0]'}`}>Single video</button>
