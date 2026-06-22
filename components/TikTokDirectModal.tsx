@@ -78,9 +78,12 @@ export function TikTokDirectModal({
 
   const [caption, setCaption] = useState('')
   const [privacy, setPrivacy] = useState<PrivacyLevel | ''>('')
-  const [allowComment, setAllowComment] = useState(true)
-  const [allowDuet, setAllowDuet] = useState(true)
-  const [allowStitch, setAllowStitch] = useState(true)
+  // TikTok Content Sharing Guidelines: interaction abilities must be OFF by
+  // default — the creator opts in. (Greyed out + forced off when the account
+  // disables them, handled in the Toggle render below.)
+  const [allowComment, setAllowComment] = useState(false)
+  const [allowDuet, setAllowDuet] = useState(false)
+  const [allowStitch, setAllowStitch] = useState(false)
   const [isCommercial, setIsCommercial] = useState(false)
   const [brandedContent, setBrandedContent] = useState(false)
   const [brandedPartnership, setBrandedPartnership] = useState(false)
@@ -164,7 +167,15 @@ export function TikTokDirectModal({
     return () => clearInterval(id)
   }, [publishId, publishStatus, videoId, onPosted])
 
-  const canPost = !!info && !!meta?.videoUrl && privacy !== '' && !posting && publishStatus === 'idle'
+  // Commercial-content rules (TikTok Content Sharing Guidelines):
+  //  - if the commercial toggle is ON, at least one of Your Brand / Branded
+  //    Content must be selected;
+  //  - Branded Content (paid partnership) cannot be posted as private.
+  const commercialNeedsChoice = isCommercial && !brandedContent && !brandedPartnership
+  const brandedNoPrivate = isCommercial && brandedPartnership && privacy === 'SELF_ONLY'
+  const canPost = !!info && !!meta?.videoUrl && privacy !== ''
+    && !commercialNeedsChoice && !brandedNoPrivate
+    && !posting && publishStatus === 'idle'
 
   // Re-fetch the caption with whatever product input the user has typed.
   // Idempotent — safe to call on every change of productInput (debounced
@@ -402,10 +413,18 @@ export function TikTokDirectModal({
                   className="w-full text-sm px-3 py-2 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-[#f5f5f7]"
                 >
                   <option value="">Choose...</option>
-                  {info.privacyLevelOptions.map(opt => (
-                    <option key={opt} value={opt}>{PRIVACY_LABELS[opt] || opt}</option>
-                  ))}
+                  {info.privacyLevelOptions.map(opt => {
+                    const blockedForBranded = opt === 'SELF_ONLY' && isCommercial && brandedPartnership
+                    return (
+                      <option key={opt} value={opt} disabled={blockedForBranded}>
+                        {PRIVACY_LABELS[opt] || opt}{blockedForBranded ? ' — not allowed for branded content' : ''}
+                      </option>
+                    )
+                  })}
                 </select>
+                {brandedNoPrivate && (
+                  <p className="text-[10px] text-[#ff3b30] mt-1">Branded content visibility can&apos;t be set to private.</p>
+                )}
               </div>
 
               {/* Interaction toggles */}
@@ -424,9 +443,23 @@ export function TikTokDirectModal({
               <div className="rounded-lg border border-gray-200 dark:border-white/10 p-3">
                 <Toggle icon={<Lock size={13} />} label="This is commercial content" value={isCommercial} onChange={setIsCommercial} />
                 {isCommercial && (
-                  <div className="mt-2.5 pl-5 flex flex-col gap-1.5 border-l border-gray-200 dark:border-white/10">
-                    <Toggle label="Your own brand" value={brandedContent} onChange={setBrandedContent} small />
-                    <Toggle label="Branded content (partnership)" value={brandedPartnership} onChange={setBrandedPartnership} small />
+                  <div className="mt-2.5 pl-5 flex flex-col gap-2 border-l border-gray-200 dark:border-white/10">
+                    <Toggle label="Your Brand" value={brandedContent} onChange={setBrandedContent} small />
+                    <Toggle
+                      label="Branded Content"
+                      value={brandedPartnership}
+                      // Branded Content can't be private — clear an invalid SELF_ONLY pick the moment it's turned on.
+                      onChange={(v) => { setBrandedPartnership(v); if (v && privacy === 'SELF_ONLY') setPrivacy('') }}
+                      small
+                    />
+                    {(brandedContent || brandedPartnership) && (
+                      <p className="text-[10px] text-[#86868b]">
+                        Your post will be labeled as <strong>{brandedPartnership ? '“Paid partnership”' : '“Promotional content”'}</strong>.
+                      </p>
+                    )}
+                    {commercialNeedsChoice && (
+                      <p className="text-[10px] text-[#ff3b30]">You need to indicate if your content promotes yourself, a third party, or both.</p>
+                    )}
                   </div>
                 )}
               </div>
@@ -435,7 +468,11 @@ export function TikTokDirectModal({
               <div className="rounded-lg bg-[#f5f5f7] dark:bg-[#2c2c2e] p-3 flex items-start gap-2 text-[11px] text-[#3a3a3c] dark:text-[#d2d2d7] leading-relaxed">
                 <Music size={13} className="text-[#86868b] flex-shrink-0 mt-0.5" />
                 <p>
-                  By posting, you confirm your video complies with TikTok&apos;s <a href="https://www.tiktok.com/legal/page/global/music-usage-confirmation/en" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">Music Usage Confirmation</a>.
+                  By posting, you agree to TikTok&apos;s{' '}
+                  {isCommercial && brandedPartnership && (
+                    <><a href="https://www.tiktok.com/legal/page/global/bc-policy/en" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">Branded Content Policy</a> and </>
+                  )}
+                  <a href="https://www.tiktok.com/legal/page/global/music-usage-confirmation/en" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">Music Usage Confirmation</a>.
                 </p>
               </div>
 
@@ -501,6 +538,11 @@ export function TikTokDirectModal({
             <button
               onClick={() => void submit()}
               disabled={!canPost}
+              title={commercialNeedsChoice
+                ? 'You need to indicate if your content promotes yourself, a third party, or both'
+                : brandedNoPrivate
+                  ? "Branded content visibility can't be set to private"
+                  : undefined}
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#ff0050] hover:bg-[#e6004a] disabled:opacity-50"
             >
               {posting

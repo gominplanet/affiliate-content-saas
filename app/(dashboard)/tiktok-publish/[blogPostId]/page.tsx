@@ -65,9 +65,10 @@ export default function TikTokPublishPage() {
   // Form state — every field is user-editable as required by the audit
   const [caption, setCaption] = useState('')
   const [privacy, setPrivacy] = useState<PrivacyLevel | ''>('')        // NO default
-  const [allowComment, setAllowComment] = useState(true)
-  const [allowDuet, setAllowDuet] = useState(true)
-  const [allowStitch, setAllowStitch] = useState(true)
+  // TikTok Content Sharing Guidelines: interaction abilities OFF by default.
+  const [allowComment, setAllowComment] = useState(false)
+  const [allowDuet, setAllowDuet] = useState(false)
+  const [allowStitch, setAllowStitch] = useState(false)
   const [isCommercial, setIsCommercial] = useState(false)
   const [brandedContent, setBrandedContent] = useState(false)         // your own brand
   const [brandedPartnership, setBrandedPartnership] = useState(false) // someone else's
@@ -140,7 +141,11 @@ export default function TikTokPublishPage() {
     return () => clearInterval(id)
   }, [publishId, publishStatus, blogPostId])
 
-  const canPost = !!info && !!meta?.videoUrl && privacy !== '' && !posting && publishStatus === 'idle'
+  const commercialNeedsChoice = isCommercial && !brandedContent && !brandedPartnership
+  const brandedNoPrivate = isCommercial && brandedPartnership && privacy === 'SELF_ONLY'
+  const canPost = !!info && !!meta?.videoUrl && privacy !== ''
+    && !commercialNeedsChoice && !brandedNoPrivate
+    && !posting && publishStatus === 'idle'
 
   const submit = useCallback(async () => {
     if (!canPost) return
@@ -258,11 +263,19 @@ export default function TikTokPublishPage() {
               className="w-full text-sm px-3 py-2 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-[#f5f5f7]"
             >
               <option value="">Choose...</option>
-              {info.privacyLevelOptions.map(opt => (
-                <option key={opt} value={opt}>{PRIVACY_LABELS[opt] || opt}</option>
-              ))}
+              {info.privacyLevelOptions.map(opt => {
+                const blockedForBranded = opt === 'SELF_ONLY' && isCommercial && brandedPartnership
+                return (
+                  <option key={opt} value={opt} disabled={blockedForBranded}>
+                    {PRIVACY_LABELS[opt] || opt}{blockedForBranded ? ' — not allowed for branded content' : ''}
+                  </option>
+                )
+              })}
             </select>
             <p className="text-[11px] text-[#86868b] mt-1">Pulled live from your TikTok account settings.</p>
+            {brandedNoPrivate && (
+              <p className="text-[11px] text-[#ff3b30] mt-1">Branded content visibility can&apos;t be set to private.</p>
+            )}
           </div>
 
           {/* ── Interaction toggles ──────────────────────────────────── */}
@@ -309,20 +322,25 @@ export default function TikTokPublishPage() {
             {isCommercial && (
               <div className="mt-3 pl-6 flex flex-col gap-2 border-l border-gray-200 dark:border-white/10">
                 <Toggle
-                  label="Your own brand"
+                  label="Your Brand"
                   value={brandedContent}
                   onChange={setBrandedContent}
                   small
                 />
                 <Toggle
-                  label="Branded content (someone else)"
+                  label="Branded Content"
                   value={brandedPartnership}
-                  onChange={setBrandedPartnership}
+                  onChange={(v) => { setBrandedPartnership(v); if (v && privacy === 'SELF_ONLY') setPrivacy('') }}
                   small
                 />
-                <p className="text-[11px] text-[#86868b] mt-1">
-                  You must disclose paid partnerships or self-promoting commercial content. TikTok will surface a disclosure label on the post.
-                </p>
+                {(brandedContent || brandedPartnership) && (
+                  <p className="text-[11px] text-[#86868b]">
+                    Your post will be labeled as <strong>{brandedPartnership ? '“Paid partnership”' : '“Promotional content”'}</strong>.
+                  </p>
+                )}
+                {commercialNeedsChoice && (
+                  <p className="text-[11px] text-[#ff3b30]">You need to indicate if your content promotes yourself, a third party, or both.</p>
+                )}
               </div>
             )}
           </div>
@@ -331,7 +349,11 @@ export default function TikTokPublishPage() {
           <div className="mb-4 rounded-lg bg-[#f5f5f7] dark:bg-[#2c2c2e] p-3 flex items-start gap-2 text-[12px] text-[#3a3a3c] dark:text-[#d2d2d7] leading-relaxed">
             <Music size={14} className="text-[#86868b] flex-shrink-0 mt-0.5" />
             <p>
-              By posting, you confirm your video complies with TikTok&apos;s <a href="https://www.tiktok.com/legal/page/global/music-usage-confirmation/en" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">Music Usage Confirmation</a>.
+              By posting, you agree to TikTok&apos;s{' '}
+              {isCommercial && brandedPartnership && (
+                <><a href="https://www.tiktok.com/legal/page/global/bc-policy/en" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">Branded Content Policy</a> and </>
+              )}
+              <a href="https://www.tiktok.com/legal/page/global/music-usage-confirmation/en" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">Music Usage Confirmation</a>.
             </p>
           </div>
 
@@ -371,6 +393,11 @@ export default function TikTokPublishPage() {
           <button
             onClick={() => void submit()}
             disabled={!canPost}
+            title={commercialNeedsChoice
+              ? 'You need to indicate if your content promotes yourself, a third party, or both'
+              : brandedNoPrivate
+                ? "Branded content visibility can't be set to private"
+                : undefined}
             className="w-full flex items-center justify-center gap-1.5 px-4 py-3 rounded-lg text-sm font-semibold text-white bg-[#ff0050] hover:bg-[#e6004a] disabled:opacity-50"
           >
             {posting
