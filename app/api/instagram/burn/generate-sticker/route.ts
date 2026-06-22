@@ -102,8 +102,23 @@ The badge must be a self-contained graphic centred on a PLAIN SOLID FLAT WHITE b
     })
     if (upErr) return NextResponse.json({ error: `Could not save the badge: ${upErr.message}` }, { status: 500 })
     const { data: urlData } = supabase.storage.from('instagram-videos').getPublicUrl(path)
+    const stickerUrl = urlData.publicUrl
 
-    return NextResponse.json({ ok: true, stickerUrl: urlData.publicUrl, tag })
+    // Keep it in the creator's reusable "My boxes" list (migration 136) so they
+    // don't pay to regenerate the same design later. Best-effort — a failed
+    // insert shouldn't block the burn the user is about to do.
+    let savedId: string | null = null
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: row } = await (supabase as any)
+        .from('cta_stickers')
+        .insert({ user_id: user.id, url: stickerUrl, tag })
+        .select('id')
+        .single()
+      savedId = (row?.id as string) ?? null
+    } catch { /* table may not exist yet — non-fatal */ }
+
+    return NextResponse.json({ ok: true, stickerUrl, tag, id: savedId })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error('[burn/generate-sticker] error:', msg)

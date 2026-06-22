@@ -63,6 +63,8 @@ export default function InstagramBurnerPage() {
   const [genStickerUrl, setGenStickerUrl] = useState<string | null>(null)
   const [genStickerLoading, setGenStickerLoading] = useState(false)
   const [genStickerError, setGenStickerError] = useState<string | null>(null)
+  // The creator's saved CTA boxes (reusable across sessions) — {id,url,tag}.
+  const [myStickers, setMyStickers] = useState<Array<{ id: string | null; url: string; tag: string }>>([])
   const [caption, setCaption] = useState('LINK IN BIO')
   const [position, setPosition] = useState('lower-left')
   const [style, setStyle] = useState('white-pill')
@@ -231,12 +233,36 @@ export default function InstagramBurnerPage() {
       })
       const d = await res.json().catch(() => ({} as Record<string, unknown>))
       if (!res.ok) throw new Error((d.error as string) || `Failed (HTTP ${res.status})`)
-      setGenStickerUrl(d.stickerUrl as string)
+      const url = d.stickerUrl as string
+      setGenStickerUrl(url)
       setStickerId(null) // a generated badge replaces any gallery selection
+      // Add to the reusable "My boxes" list (it's already persisted server-side).
+      setMyStickers(prev => [{ id: (d.id as string) ?? null, url, tag: (d.tag as string) || t }, ...prev])
     } catch (e) {
       setGenStickerError(e instanceof Error ? e.message : 'Could not generate the box')
     } finally {
       setGenStickerLoading(false)
+    }
+  }
+
+  // Load the creator's saved CTA boxes once, so they can reuse a past design.
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/instagram/burn/my-stickers')
+      .then(r => r.json())
+      .then((d: { stickers?: Array<{ id: string; url: string; tag: string }> }) => {
+        if (!cancelled && Array.isArray(d.stickers)) setMyStickers(d.stickers)
+      })
+      .catch(() => { /* non-fatal */ })
+    return () => { cancelled = true }
+  }, [])
+
+  async function deleteSticker(id: string | null, url: string) {
+    setMyStickers(prev => prev.filter(s => s.url !== url))
+    if (genStickerUrl === url) setGenStickerUrl(null)
+    if (id) {
+      try { await fetch(`/api/instagram/burn/my-stickers?id=${encodeURIComponent(id)}`, { method: 'DELETE' }) }
+      catch { /* best-effort */ }
     }
   }
 
@@ -561,17 +587,35 @@ export default function InstagramBurnerPage() {
                         </button>
                       </div>
                       {genStickerError && <p className="text-[11px] text-[#ff3b30] mt-1.5">{genStickerError}</p>}
-                      {genStickerUrl && (
-                        <button
-                          onClick={() => setStickerId(null)}
-                          className={`mt-2 w-full p-1.5 rounded-lg border ${!stickerId ? 'border-[#7C3AED] bg-white dark:bg-white/5' : 'border-gray-200 dark:border-white/10'}`}
-                        >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={genStickerUrl} alt="Your CTA box" className="w-full h-auto rounded bg-[#1d1d1f]/5" />
-                          <span className="block text-[11px] text-center mt-1 text-[#7C3AED] font-medium">Your box — selected</span>
-                        </button>
+                      <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-1.5">1–6 words. MVP designs a transparent badge in our box style (~20s). Saved to “My boxes” to reuse anytime.</p>
+
+                      {/* My boxes — the creator's saved designs, reusable across sessions */}
+                      {myStickers.length > 0 && (
+                        <div className="mt-3">
+                          <p className="text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">My boxes</p>
+                          <div className="grid grid-cols-2 gap-2">
+                            {myStickers.map(s => (
+                              <div key={s.url} className="relative">
+                                <button
+                                  onClick={() => { setGenStickerUrl(s.url); setStickerId(null) }}
+                                  className={`w-full p-1.5 rounded-lg border transition-colors ${genStickerUrl === s.url ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-gray-300'}`}
+                                >
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img src={s.url} alt={s.tag || 'CTA box'} className="w-full h-auto rounded bg-[#1d1d1f]/5" />
+                                  {s.tag && <span className="block text-[10px] text-center mt-1 truncate text-[#1d1d1f] dark:text-[#f5f5f7]">{s.tag}</span>}
+                                </button>
+                                <button
+                                  onClick={() => void deleteSticker(s.id, s.url)}
+                                  title="Delete this box"
+                                  className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/55 text-white flex items-center justify-center hover:bg-black/80"
+                                >
+                                  <Trash2 size={11} />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
                       )}
-                      <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-1.5">1–6 words. MVP designs a transparent badge in our box style (~20s).</p>
                     </div>
 
                     {CTA_STICKERS.length > 0 && (
