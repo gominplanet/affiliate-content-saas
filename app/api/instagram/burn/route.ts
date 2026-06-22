@@ -20,7 +20,7 @@ import { getCtaSticker, ctaStickerUrl } from '@/lib/cta-stickers'
 
 export const maxDuration = 300
 
-const POSITIONS: OverlayPosition[] = ['lower-third', 'center']
+const POSITIONS: OverlayPosition[] = ['lower-left', 'upper-left']
 const STYLES: CaptionStyle[] = ['white-pill', 'black-pill', 'yellow-pill', 'white-shadow']
 
 export async function POST(request: Request) {
@@ -54,7 +54,7 @@ export async function POST(request: Request) {
     const videoUrl = (body.videoUrl || '').trim()
     if (!/^https:\/\//i.test(videoUrl)) return NextResponse.json({ error: 'Upload a video first.' }, { status: 400 })
     const overlayText = (body.caption || 'LINK IN BIO').trim().slice(0, 60) || 'LINK IN BIO'
-    const position = (POSITIONS.includes(body.position as OverlayPosition) ? body.position : 'lower-third') as OverlayPosition
+    const position = (POSITIONS.includes(body.position as OverlayPosition) ? body.position : 'lower-left') as OverlayPosition
     const style = (STYLES.includes(body.style as CaptionStyle) ? body.style : 'white-pill') as CaptionStyle
     // Optional CTA sticker (a pre-designed PNG from public/cta-burner/). When
     // chosen, it's burned in place of the text caption.
@@ -67,7 +67,7 @@ export async function POST(request: Request) {
     // ── 1. Burn the overlay into the video (1080×1920) ────────────────────────
     // A CTA sticker (PNG) takes precedence over the text caption when picked.
     const burned = await overlayCaptionOnVideo(videoUrl, overlayText, sticker
-      ? { position: sticker.position ?? position, stickerUrl: ctaStickerUrl(sticker.file), stickerWidthPct: sticker.widthPct }
+      ? { position, stickerUrl: ctaStickerUrl(sticker.file), stickerWidthPct: sticker.widthPct }
       : { position, style })
     if (!burned?.url) {
       return NextResponse.json({ error: `Could not burn the caption: ${getLastOverlayError() || 'unknown error'}` }, { status: 500 })

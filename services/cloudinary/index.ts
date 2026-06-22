@@ -59,7 +59,7 @@ export interface OverlaidVideo { url: string; publicId: string }
  * or Instagram. Returns null when Cloudinary isn't configured or anything fails
  * (callers fall back to the original video); the reason is in getLastOverlayError().
  */
-export type OverlayPosition = 'lower-third' | 'bottom' | 'center' | 'top' | 'lower-left' | 'lower-right'
+export type OverlayPosition = 'lower-third' | 'bottom' | 'center' | 'top' | 'lower-left' | 'lower-right' | 'upper-left' | 'upper-right'
 export type CaptionStyle = 'white-pill' | 'black-pill' | 'yellow-pill' | 'white-shadow'
 
 /** Visual look for the burned caption. */
@@ -86,6 +86,8 @@ function placement(pos: OverlayPosition): { gravity: string; x: number; y: numbe
     case 'top': return { gravity: 'north', x: 0, y: 220 }
     case 'lower-left': return { gravity: 'south_west', x: 60, y: 320 }
     case 'lower-right': return { gravity: 'south_east', x: 60, y: 320 }
+    case 'upper-left': return { gravity: 'north_west', x: 60, y: 240 }
+    case 'upper-right': return { gravity: 'north_east', x: 60, y: 240 }
     case 'lower-third':
     default: return { gravity: 'south', x: 0, y: 360 }
   }

@@ -21,8 +21,8 @@ import { Flame, Loader2, Sparkles, Download, AlertCircle, UploadCloud, Video, Ch
 
 const CAPTION_PRESETS = ['LINK IN BIO', 'LINK IN BIO 👆', 'FULL REVIEW ON YOUTUBE', 'WATCH THE FULL VIDEO', 'FOLLOW FOR MORE']
 const POSITIONS: Array<{ key: string; label: string; desc: string }> = [
-  { key: 'lower-third', label: 'Lower third', desc: 'Recommended — clears Instagram & TikTok UI' },
-  { key: 'center', label: 'Middle', desc: 'Center of the screen' },
+  { key: 'lower-left', label: 'Lower third', desc: 'Bottom-left — clears Instagram & TikTok UI' },
+  { key: 'upper-left', label: 'Upper third', desc: 'Top-left of the screen' },
 ]
 const STYLES: Array<{ key: string; label: string; desc: string }> = [
   { key: 'white-pill', label: 'White on dark', desc: 'White text, dark pill' },
@@ -59,7 +59,7 @@ export default function InstagramBurnerPage() {
   const [overlayType, setOverlayType] = useState<'text' | 'sticker'>('text')
   const [stickerId, setStickerId] = useState<string | null>(null)
   const [caption, setCaption] = useState('LINK IN BIO')
-  const [position, setPosition] = useState('lower-third')
+  const [position, setPosition] = useState('lower-left')
   const [style, setStyle] = useState('white-pill')
   const [product, setProduct] = useState('')
   const [productName, setProductName] = useState('')
@@ -729,7 +729,7 @@ const STATUS_STYLE: Record<string, string> = {
 function BatchBurner({ supabase }: { supabase: ReturnType<typeof createBrowserClient> }) {
   const [items, setItems] = useState<BatchItem[]>([{ id: crypto.randomUUID(), url: null, uploading: false, caption: 'LINK IN BIO', product: '' }])
   const [bStyle, setBStyle] = useState('white-pill')
-  const [bPos, setBPos] = useState('lower-third')
+  const [bPos, setBPos] = useState('lower-left')
   const [startAt, setStartAt] = useState(defaultStartLocal())
   const [intervalHours, setIntervalHours] = useState(24)
   const [submitting, setSubmitting] = useState(false)

@@ -14,7 +14,7 @@ import { normalizeTier, type Tier } from '@/lib/tier'
 import { metaEnabledForUser } from '@/lib/feature-flags'
 
 const STYLES = ['white-pill', 'black-pill', 'yellow-pill', 'white-shadow']
-const POSITIONS = ['lower-third', 'center']
+const POSITIONS = ['lower-left', 'upper-left']
 const MAX_BATCH = 5
 
 export async function POST(request: Request) {
@@ -40,7 +40,7 @@ export async function POST(request: Request) {
     if (videos.length === 0) return NextResponse.json({ error: 'Upload at least one video.' }, { status: 400 })
 
     const style = STYLES.includes(body.style || '') ? body.style! : 'white-pill'
-    const position = POSITIONS.includes(body.position || '') ? body.position! : 'lower-third'
+    const position = POSITIONS.includes(body.position || '') ? body.position! : 'lower-left'
     const startMs = body.startAt && !isNaN(Date.parse(body.startAt)) ? Date.parse(body.startAt) : Date.now()
     const intervalHours = Math.max(0, Math.min(24 * 30, Number(body.intervalHours) || 0)) // 0 = post all ASAP
 
