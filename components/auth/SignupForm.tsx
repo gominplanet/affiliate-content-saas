@@ -42,7 +42,11 @@ export default function SignupForm() {
   // account + go straight to Stripe, no email confirmation. Read it once on
   // mount so the heading + button reflect "you're buying", not "free trial".
   useEffect(() => {
-    const t = new URLSearchParams(window.location.search).get('tier')
+    // Accept BOTH ?tier= (the /pricing CheckoutButton) and ?plan= (the homepage
+    // pricing cards link to /signup?plan=pro). Either should trigger the paid
+    // flow — otherwise a homepage "Get Pro" click falls back to trial + email.
+    const sp = new URLSearchParams(window.location.search)
+    const t = sp.get('tier') || sp.get('plan')
     if (t && ['creator', 'studio', 'pro'].includes(t)) setPaidTier(t)
   }, [])
   const tierLabel = paidTier ? paidTier.charAt(0).toUpperCase() + paidTier.slice(1) : ''
