@@ -90,6 +90,17 @@ export default function InstagramBurnerPage() {
   }, [supabase])
   useEffect(() => { load() }, [load])
 
+  // Prefill from deep-link params (e.g. the "Burn CTA" pill on a Short card
+  // passes ?productName=&product= so the caption is grounded out of the gate).
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const sp = new URLSearchParams(window.location.search)
+    const pn = sp.get('productName')
+    const p = sp.get('product')
+    if (pn) setProductName(pn)
+    if (p) setProduct(p)
+  }, [])
+
   // Admin View-as override — re-resolve effective tier whenever the chip
   // flips so the FeatureLockedCard appears/disappears live.
   useEffect(() => {

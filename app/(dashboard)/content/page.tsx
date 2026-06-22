@@ -26,7 +26,7 @@ import { effectiveTier } from '@/lib/view-as'
 import { metaEnabled } from '@/lib/feature-flags'
 import {
   Youtube, Wand2, ExternalLink, CheckCircle, AlertCircle,
-  RefreshCw, Loader2, ChevronRight, Sparkles, X, Facebook, Pin, MessageCircle, Save, Upload, Search, Calendar,
+  RefreshCw, Loader2, ChevronRight, Sparkles, X, Facebook, Pin, MessageCircle, Save, Upload, Search, Calendar, Flame,
 } from 'lucide-react'
 import type { PinPreviewData } from '@/components/PinterestPreviewModal'
 
@@ -1021,6 +1021,27 @@ const VideoCard = memo(function VideoCardImpl({
                       locked={!tierAllowsSocial(userTier, 'instagram')}
                     />
                   )}
+                  {/* Burn CTA — opens the Shop Burner preloaded with this
+                      Short's title + product link, to burn a CTA box / caption
+                      onto the clip before posting to IG/TikTok. Pro-only. */}
+                  <SocialPill
+                    brand="#FF6B00"
+                    icon={<Flame size={11} />}
+                    label="Burn CTA"
+                    postedLabel="Burn CTA"
+                    posted={false}
+                    loading={false}
+                    onClick={() => {
+                      const t = ((video.title as string) || '').replace(/#\w+/g, '').trim()
+                      const p = deriveProductUrl(video) || ''
+                      const params = new URLSearchParams()
+                      if (t) params.set('productName', t)
+                      if (p) params.set('product', p)
+                      const qs = params.toString()
+                      window.open(`/instagram-burner${qs ? `?${qs}` : ''}`, '_blank', 'noopener')
+                    }}
+                    locked={userTier !== 'pro' && userTier !== 'admin'}
+                  />
                 </div>
               )
             }
