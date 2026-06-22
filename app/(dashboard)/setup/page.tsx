@@ -446,7 +446,7 @@ function Step1({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
         </div>
         <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Get hosting + a domain</h2>
         <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0]">
-          Your blog needs to live somewhere. Hostinger is what we recommend — under $3/month and includes a free domain for year one.
+          Your blog needs to live somewhere. Hostinger is what we recommend — under $3/month, a free domain for year one, and <strong>20% off through our link</strong>.
         </p>
       </div>
 
@@ -459,10 +459,10 @@ function Step1({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
           <div className="flex-1">
             <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-0.5">Sign up for Hostinger</p>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">
-              Free domain (year one), 1-click WordPress installer, fast SSD hosting, free SSL.
+              <strong className="text-[#7C3AED]">20% off through our link</strong> · free domain (year one) · 1-click WordPress installer · fast SSD hosting · free SSL.
             </p>
             <a href="https://geni.us/MVPhosting" target="_blank" rel="noopener noreferrer" className="btn-primary text-sm">
-              Sign up for Hostinger → <ExternalLink size={13} />
+              Sign up for Hostinger — 20% off → <ExternalLink size={13} />
             </a>
           </div>
         </div>
@@ -1201,13 +1201,13 @@ function SetupPageInner() {
             link (geni.us/MVPhosting). */}
         <div className="card p-5 flex items-start gap-3 border border-[#7C3AED]/30 bg-[#7C3AED]/[0.04]">
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Need hosting for a new blog?</p>
+            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Need hosting for a new blog? <span className="text-[#7C3AED]">Save 20%</span></p>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5 leading-relaxed">
-              We recommend <strong>Hostinger</strong> — under $3/month, a free domain for year one, and a 1-click WordPress installer. It&apos;s exactly what MVP is built to publish to.
+              We recommend <strong>Hostinger</strong> — under $3/month, a free domain for year one, and a 1-click WordPress installer. <strong>20% off through our link.</strong> It&apos;s exactly what MVP is built to publish to.
             </p>
           </div>
           <a href="https://geni.us/MVPhosting" target="_blank" rel="noopener noreferrer" className="btn-primary text-xs flex-shrink-0 inline-flex items-center gap-1.5">
-            Get Hostinger <ExternalLink size={13} />
+            Get Hostinger — 20% off <ExternalLink size={13} />
           </a>
         </div>
 

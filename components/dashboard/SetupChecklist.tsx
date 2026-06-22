@@ -18,7 +18,7 @@ const steps: Step[] = [
   {
     id: 'hostinger',
     label: 'Get a domain + WordPress host',
-    description: 'Your reviews need somewhere to live. Hostinger gives you a domain + WordPress install in about 5 minutes — that\'s the only piece that isn\'t built into MVP.',
+    description: 'Your reviews need somewhere to live. Hostinger gives you a domain + WordPress install in about 5 minutes — and 20% off through our link. It\'s the only piece that isn\'t built into MVP.',
     href: 'https://geni.us/MVPhosting',
     required: true,
     done: false,

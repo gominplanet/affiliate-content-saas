@@ -513,7 +513,7 @@ function WordPressStep({ connected, onConnected }: { connected: boolean; onConne
   if (mode === 'need') {
     return (
       <>
-        <StepHeading title="Get your blog" blurb="You’ll need WordPress hosting. Hostinger is what we recommend — cheap, fast, and one-click WordPress. Set it up, then come back and connect it." />
+        <StepHeading title="Get your blog" blurb="You’ll need WordPress hosting. Hostinger is what we recommend — cheap, fast, one-click WordPress, and 20% off through our link. Set it up, then come back and connect it." />
         <ol className="space-y-2.5 text-sm text-[#c7c7cc] mb-6 list-decimal pl-5">
           <li>Grab a plan + domain on Hostinger (Premium is plenty).</li>
           <li>Use Hostinger’s one-click WordPress installer.</li>
@@ -522,7 +522,7 @@ function WordPressStep({ connected, onConnected }: { connected: boolean; onConne
         <div className="flex flex-wrap items-center gap-3">
           <a href={HOSTINGER_URL} target="_blank" rel="noopener noreferrer"
             className="inline-flex items-center gap-1.5 rounded-xl px-5 py-2.5 text-sm font-semibold text-white hover:opacity-90 transition-opacity" style={{ background: ACCENT }}>
-            Get hosting on Hostinger <ExternalLink size={14} />
+            Get hosting on Hostinger — 20% off <ExternalLink size={14} />
           </a>
           <button onClick={() => setMode('have')} className="text-sm text-[#a1a1a6] hover:text-white transition-colors">
             I’ve set it up — connect now →

@@ -427,7 +427,7 @@ function AddSiteModal({
             before the token/app-password fields. */}
         <div className="flex items-center justify-between gap-3 rounded-xl border border-[#7C3AED]/30 bg-[#7C3AED]/[0.05] px-3.5 py-3 mb-4">
           <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
-            Don&apos;t have this blog yet? We recommend <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Hostinger</strong> — under $3/mo, free domain year one, 1-click WordPress.
+            Don&apos;t have this blog yet? We recommend <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Hostinger</strong> — under $3/mo, free domain year one, 1-click WordPress, and <strong className="text-[#7C3AED]">20% off through our link</strong>.
           </p>
           <a
             href="https://geni.us/MVPhosting"
@@ -435,7 +435,7 @@ function AddSiteModal({
             rel="noopener noreferrer"
             className="btn-primary text-xs flex-shrink-0 inline-flex items-center gap-1.5 whitespace-nowrap"
           >
-            Get Hostinger <ExternalLink size={12} />
+            Get Hostinger — 20% off <ExternalLink size={12} />
           </a>
         </div>
 
