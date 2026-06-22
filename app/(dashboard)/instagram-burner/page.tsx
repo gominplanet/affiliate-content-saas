@@ -429,13 +429,14 @@ export default function InstagramBurnerPage() {
                           </button>
                         ))}
                     </div>
-                    {/* Selected Short has no stored MP4 → link out to YouTube. */}
+                    {/* Selected Short has no stored MP4 → link to YouTube Studio,
+                        where the owner has a real Download button (⋮ → Download). */}
                     {selectedShortId && ytDownloadHint && !sourceUrl && (
                       <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-2 leading-relaxed">
                         We don&apos;t have this Short&apos;s MP4 yet.{' '}
                         {ytDownloadHint.youtubeVideoId && (
-                          <a href={`https://www.youtube.com/shorts/${ytDownloadHint.youtubeVideoId}`} target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] font-semibold hover:underline">Open it on YouTube</a>
-                        )}{ytDownloadHint.youtubeVideoId ? ' to download, then ' : 'Download it from YouTube, then '}
+                          <a href={`https://studio.youtube.com/video/${ytDownloadHint.youtubeVideoId}/edit`} target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] font-semibold hover:underline">Open it in YouTube Studio</a>
+                        )}{ytDownloadHint.youtubeVideoId ? ' → ⋮ → Download, then ' : 'Download it from YouTube Studio, then '}
                         <button onClick={() => setSourceMode('upload')} className="text-[#7C3AED] font-semibold hover:underline">upload it here</button> once.
                       </p>
                     )}
@@ -460,8 +461,8 @@ export default function InstagramBurnerPage() {
                       <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1.5 leading-relaxed">
                         We don&apos;t have this Short&apos;s MP4 yet.{' '}
                         {ytDownloadHint.youtubeVideoId && (
-                          <a href={`https://www.youtube.com/shorts/${ytDownloadHint.youtubeVideoId}`} target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] font-semibold hover:underline">Open it on YouTube</a>
-                        )}{ytDownloadHint.youtubeVideoId ? ' to download, then upload it here once.' : 'Download it from YouTube Studio, then upload it here once.'}
+                          <a href={`https://studio.youtube.com/video/${ytDownloadHint.youtubeVideoId}/edit`} target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] font-semibold hover:underline">Open it in YouTube Studio</a>
+                        )}{ytDownloadHint.youtubeVideoId ? ' → ⋮ → Download, then upload it here once.' : 'Download it from YouTube Studio, then upload it here once.'}
                       </p>
                     )}
                   </>
