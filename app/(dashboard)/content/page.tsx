@@ -1610,7 +1610,10 @@ export default function ContentPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const t = params.get('tab')
-    if (t === 'posts' || t === 'vertical' || t === 'scheduled' || t === 'horizontal') setActiveTab(t)
+    // Shorts → Social moved to the Shop Burner (it never made a blog). Send any
+    // old ?tab=vertical deep-link straight there.
+    if (t === 'vertical') { window.location.replace('/instagram-burner'); return }
+    if (t === 'posts' || t === 'scheduled' || t === 'horizontal') setActiveTab(t)
     // Deep-link: /content?new=link (dashboard "Blog from a link" button) opens
     // the New-post-from-a-link modal straight away.
     if (params.get('new') === 'link') setFromLinkOpen(true)
@@ -2943,7 +2946,6 @@ export default function ContentPage() {
       <div className="flex items-center gap-1 border-b border-gray-200 dark:border-white/10 mb-4 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
         {([
           { key: 'horizontal' as const, label: 'Long-form → Blog' },
-          { key: 'vertical' as const, label: 'Shorts → Social' },
           { key: 'posts' as const, label: `Published${postsLoaded ? ` (${allBlogPosts.length})` : ''}` },
           { key: 'scheduled' as const, label: `Scheduled${scheduledItems ? ` (${scheduledItems.filter(s => s.status === 'pending').length})` : ''}` },
         ]).map(({ key, label }) => (
@@ -2968,6 +2970,15 @@ export default function ContentPage() {
             {label}
           </button>
         ))}
+        {/* Shorts → Social lives in the Shop Burner now (it never made a blog) —
+            link out instead of holding a tab here. */}
+        <a
+          href="/instagram-burner"
+          className="px-4 py-2 text-sm font-medium border-b-2 border-transparent text-[#6e6e73] dark:text-[#ebebf0] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] transition-colors whitespace-nowrap flex-shrink-0 inline-flex items-center gap-1"
+          title="Turn your Shorts into Reels & TikToks in the Shop Burner"
+        >
+          Shorts → Social <ExternalLink size={12} />
+        </a>
       </div>
 
       {/* How-it-works explainer — only on the Long-form → Blog tab. Native

@@ -17,7 +17,7 @@ import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { TikTokDirectModal } from '@/components/TikTokDirectModal'
 import { CTA_STICKERS, ctaStickerUrl } from '@/lib/cta-stickers'
 import type { Tier } from '@/lib/tier'
-import { Flame, Loader2, Sparkles, Download, AlertCircle, UploadCloud, Video, CheckCircle, Copy, Instagram, Plus, Trash2, Clock } from 'lucide-react'
+import { Flame, Loader2, Sparkles, Download, AlertCircle, UploadCloud, Video, CheckCircle, Copy, Instagram, Plus, Trash2, Clock, Search } from 'lucide-react'
 
 const CAPTION_PRESETS = ['LINK IN BIO', 'LINK IN BIO 👆', 'FULL REVIEW ON YOUTUBE', 'WATCH THE FULL VIDEO', 'FOLLOW FOR MORE']
 const POSITIONS: Array<{ key: string; label: string; desc: string }> = [
@@ -30,6 +30,18 @@ const STYLES: Array<{ key: string; label: string; desc: string }> = [
   { key: 'black-pill', label: 'Black on white', desc: 'Black text, white pill' },
   { key: 'white-shadow', label: 'White + shadow', desc: 'White text, soft shadow, no pill' },
 ]
+
+/** A vertical YouTube Short the creator can pick to run through the burner. */
+interface ShortItem {
+  id: string
+  title: string
+  thumbnailUrl: string | null
+  views: number | null
+  productUrl: string | null
+  hasVideo: boolean
+  youtubeVideoId: string | null
+  posted: boolean
+}
 
 export default function InstagramBurnerPage() {
   const supabase = createBrowserClient()
@@ -60,6 +72,13 @@ export default function InstagramBurnerPage() {
   const [loadingShort, setLoadingShort] = useState(false)
   const [shortLoaded, setShortLoaded] = useState(false)
   const [ytDownloadHint, setYtDownloadHint] = useState<{ youtubeVideoId: string | null } | null>(null)
+  // Source mode: pick from the creator's own YouTube Shorts, or upload a file.
+  // Defaults to 'shorts' once we discover they have any; else 'upload'.
+  const [sourceMode, setSourceMode] = useState<'shorts' | 'upload'>('upload')
+  const [shorts, setShorts] = useState<ShortItem[] | null>(null)
+  const [loadingShorts, setLoadingShorts] = useState(false)
+  const [shortsQuery, setShortsQuery] = useState('')
+  const [selectedShortId, setSelectedShortId] = useState<string | null>(null)
   const [burning, setBurning] = useState(false)
   const [resultUrl, setResultUrl] = useState<string | null>(null)
   const [igCaption, setIgCaption] = useState<string | null>(null)
@@ -96,8 +115,31 @@ export default function InstagramBurnerPage() {
   }, [supabase])
   useEffect(() => { load() }, [load])
 
-  // Prefill from deep-link params (e.g. the "Burn CTA" pill on a Short card
-  // passes ?productName=&product= so the caption is grounded out of the gate).
+  // Load a Short's already-stored MP4 (or surface the YouTube-download hint
+  // when none is stored). Shared by the deep-link (?videoId=) and the in-page
+  // Shorts picker.
+  const loadShortVideo = useCallback(async (videoId: string) => {
+    setLoadingShort(true); setShortLoaded(false); setYtDownloadHint(null)
+    setSourceUrl(null); setResultUrl(null); setError(null)
+    try {
+      const r = await fetch(`/api/instagram/burn/source?videoId=${encodeURIComponent(videoId)}`)
+      const d = await r.json() as { videoUrl?: string | null; youtubeVideoId?: string | null; noVideo?: boolean }
+      if (d.videoUrl) { setSourceUrl(d.videoUrl); setShortLoaded(true) }
+      else if (d.noVideo) { setYtDownloadHint({ youtubeVideoId: d.youtubeVideoId ?? null }) }
+    } catch { /* non-fatal — user can still upload manually */ }
+    finally { setLoadingShort(false) }
+  }, [])
+
+  // Pick a Short from the in-page gallery → prefill name/product + load its MP4.
+  const pickShort = useCallback((s: ShortItem) => {
+    setSelectedShortId(s.id)
+    if (s.title) setProductName(s.title.replace(/#\w+/g, '').trim())
+    if (s.productUrl) setProduct(s.productUrl)
+    void loadShortVideo(s.id)
+  }, [loadShortVideo])
+
+  // Prefill from deep-link params (the Short pills pass ?productName=&product=
+  // &videoId= so the clip + caption are grounded the moment you land here).
   useEffect(() => {
     if (typeof window === 'undefined') return
     const sp = new URLSearchParams(window.location.search)
@@ -106,24 +148,31 @@ export default function InstagramBurnerPage() {
     const videoId = sp.get('videoId')
     if (pn) setProductName(pn)
     if (p) setProduct(p)
-    // Came from a Short card → pull its already-stored MP4 so the creator
-    // doesn't have to re-upload. If none is stored, surface a link to grab
-    // it from YouTube (we can't download it server-side — YouTube ToS).
     if (videoId && /^[0-9a-f-]{36}$/i.test(videoId)) {
-      setLoadingShort(true)
-      fetch(`/api/instagram/burn/source?videoId=${encodeURIComponent(videoId)}`)
-        .then(r => r.json())
-        .then((d: { videoUrl?: string | null; youtubeVideoId?: string | null; noVideo?: boolean }) => {
-          if (d.videoUrl) {
-            setSourceUrl(d.videoUrl)
-            setShortLoaded(true)
-          } else if (d.noVideo) {
-            setYtDownloadHint({ youtubeVideoId: d.youtubeVideoId ?? null })
-          }
-        })
-        .catch(() => { /* non-fatal — user can still upload manually */ })
-        .finally(() => setLoadingShort(false))
+      setSourceMode('shorts')
+      setSelectedShortId(videoId)
+      void loadShortVideo(videoId)
     }
+  }, [loadShortVideo])
+
+  // Discover the creator's own Shorts so they can pick one without leaving the
+  // burner. If they have any, default the source mode to "from my Shorts".
+  useEffect(() => {
+    let cancelled = false
+    setLoadingShorts(true)
+    fetch('/api/instagram/burn/shorts')
+      .then(r => r.json())
+      .then((d: { shorts?: ShortItem[] }) => {
+        if (cancelled) return
+        const list = Array.isArray(d.shorts) ? d.shorts : []
+        setShorts(list)
+        // Only auto-switch to Shorts mode when nothing's been chosen/uploaded.
+        if (list.length > 0 && !sourceUrl) setSourceMode('shorts')
+      })
+      .catch(() => { if (!cancelled) setShorts([]) })
+      .finally(() => { if (!cancelled) setLoadingShorts(false) })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Admin View-as override — re-resolve effective tier whenever the chip
@@ -276,7 +325,7 @@ export default function InstagramBurnerPage() {
     <>
       <PageHero
         title="Shop Burner"
-        subtitle="Burn a call-to-action onto your vertical videos, then publish straight to Instagram Reels and TikTok — or download for Stories."
+        subtitle="Pick one of your YouTube Shorts (or upload a clip), burn a caption or CTA box onto it, then publish straight to Instagram Reels and TikTok — or download for Stories."
       />
 
       <div className="max-w-4xl">
@@ -320,39 +369,102 @@ export default function InstagramBurnerPage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Controls */}
             <div className="card p-5 space-y-4">
-              {/* Upload */}
+              {/* 1. Source video — pick one of your own Shorts, or upload a file */}
               <div>
                 <label className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">1. Your video <span className="font-normal text-[#86868b]">(vertical, under 300MB)</span></label>
-                <input ref={fileRef} type="file" accept="video/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUpload(f) }} />
-                <button
-                  onClick={() => fileRef.current?.click()}
-                  disabled={uploading || loadingShort}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg border border-dashed border-gray-300 dark:border-white/15 text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#7C3AED] transition-colors disabled:opacity-60"
-                >
-                  {loadingShort
-                    ? <><Loader2 size={14} className="animate-spin" /> Loading your Short…</>
-                    : uploading
-                    ? <><Loader2 size={14} className="animate-spin" /> Uploading…</>
-                    : shortLoaded && sourceUrl
-                    ? <><Video size={14} className="text-[#34c759]" /> Short loaded — pick another to replace</>
-                    : sourceUrl
-                    ? <><Video size={14} className="text-[#34c759]" /> Video ready — pick another</>
-                    : <><UploadCloud size={14} /> Upload video</>}
-                </button>
-                {/* Came from a Short with no stored MP4 — link out to grab it
-                    from YouTube (we can't pull it server-side per YouTube ToS). */}
-                {ytDownloadHint && !sourceUrl && (
-                  <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1.5 leading-relaxed">
-                    We don&apos;t have this Short&apos;s MP4 yet.{' '}
-                    {ytDownloadHint.youtubeVideoId && (
-                      <a
-                        href={`https://www.youtube.com/shorts/${ytDownloadHint.youtubeVideoId}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-[#7C3AED] font-semibold hover:underline"
-                      >Open it on YouTube</a>
-                    )}{ytDownloadHint.youtubeVideoId ? ' to download, then upload it here once.' : 'Download it from YouTube Studio, then upload it here once.'}
-                  </p>
+                <input ref={fileRef} type="file" accept="video/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) { setShortLoaded(false); setSelectedShortId(null); setYtDownloadHint(null); handleUpload(f) } }} />
+
+                {/* Mode toggle — only when the creator actually has Shorts. */}
+                {shorts && shorts.length > 0 && (
+                  <div className="grid grid-cols-2 gap-2 mb-3">
+                    <button
+                      onClick={() => setSourceMode('shorts')}
+                      className={`text-center px-3 py-2 rounded-lg border text-[13px] font-medium transition-colors ${sourceMode === 'shorts' ? 'border-[#7C3AED] bg-[#7C3AED]/5 text-[#7C3AED]' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:border-gray-300'}`}
+                    >From my Shorts</button>
+                    <button
+                      onClick={() => setSourceMode('upload')}
+                      className={`text-center px-3 py-2 rounded-lg border text-[13px] font-medium transition-colors ${sourceMode === 'upload' ? 'border-[#7C3AED] bg-[#7C3AED]/5 text-[#7C3AED]' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:border-gray-300'}`}
+                    >Upload a file</button>
+                  </div>
+                )}
+
+                {sourceMode === 'shorts' && shorts && shorts.length > 0 ? (
+                  <>
+                    <div className="relative mb-2">
+                      <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#86868b]" />
+                      <input
+                        type="text"
+                        value={shortsQuery}
+                        onChange={(e) => setShortsQuery(e.target.value)}
+                        placeholder="Search your Shorts…"
+                        className="input-field text-sm pl-8"
+                      />
+                    </div>
+                    <div className="max-h-[300px] overflow-y-auto -mx-1 px-1 space-y-1.5">
+                      {shorts
+                        .filter(s => !shortsQuery || s.title.toLowerCase().includes(shortsQuery.toLowerCase()))
+                        .map(s => (
+                          <button
+                            key={s.id}
+                            onClick={() => pickShort(s)}
+                            className={`w-full flex items-center gap-2.5 p-1.5 rounded-lg border text-left transition-colors ${selectedShortId === s.id ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-gray-300'}`}
+                          >
+                            {s.thumbnailUrl
+                              // eslint-disable-next-line @next/next/no-img-element
+                              ? <img src={s.thumbnailUrl} alt="" className="w-11 h-11 rounded object-cover flex-shrink-0 bg-black/5" />
+                              : <div className="w-11 h-11 rounded bg-black/5 dark:bg-white/5 flex-shrink-0" />}
+                            <span className="min-w-0 flex-1">
+                              <span className="block text-[12px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] line-clamp-2 leading-snug">{s.title || 'Untitled Short'}</span>
+                              <span className="block text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-0.5">
+                                {s.hasVideo ? 'Ready to burn' : 'Needs download from YouTube'}{s.posted ? ' · already posted' : ''}
+                              </span>
+                            </span>
+                            {selectedShortId === s.id && (
+                              loadingShort
+                                ? <Loader2 size={14} className="animate-spin text-[#7C3AED] flex-shrink-0" />
+                                : shortLoaded
+                                ? <CheckCircle size={14} className="text-[#34c759] flex-shrink-0" />
+                                : null
+                            )}
+                          </button>
+                        ))}
+                    </div>
+                    {/* Selected Short has no stored MP4 → link out to YouTube. */}
+                    {selectedShortId && ytDownloadHint && !sourceUrl && (
+                      <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-2 leading-relaxed">
+                        We don&apos;t have this Short&apos;s MP4 yet.{' '}
+                        {ytDownloadHint.youtubeVideoId && (
+                          <a href={`https://www.youtube.com/shorts/${ytDownloadHint.youtubeVideoId}`} target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] font-semibold hover:underline">Open it on YouTube</a>
+                        )}{ytDownloadHint.youtubeVideoId ? ' to download, then ' : 'Download it from YouTube, then '}
+                        <button onClick={() => setSourceMode('upload')} className="text-[#7C3AED] font-semibold hover:underline">upload it here</button> once.
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => fileRef.current?.click()}
+                      disabled={uploading || loadingShort}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg border border-dashed border-gray-300 dark:border-white/15 text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#7C3AED] transition-colors disabled:opacity-60"
+                    >
+                      {uploading
+                        ? <><Loader2 size={14} className="animate-spin" /> Uploading…</>
+                        : sourceUrl
+                        ? <><Video size={14} className="text-[#34c759]" /> Video ready — pick another</>
+                        : <><UploadCloud size={14} /> Upload video</>}
+                    </button>
+                    {loadingShorts && !shorts && (
+                      <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1.5 flex items-center gap-1"><Loader2 size={11} className="animate-spin" /> Checking for your Shorts…</p>
+                    )}
+                    {ytDownloadHint && !sourceUrl && (
+                      <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1.5 leading-relaxed">
+                        We don&apos;t have this Short&apos;s MP4 yet.{' '}
+                        {ytDownloadHint.youtubeVideoId && (
+                          <a href={`https://www.youtube.com/shorts/${ytDownloadHint.youtubeVideoId}`} target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] font-semibold hover:underline">Open it on YouTube</a>
+                        )}{ytDownloadHint.youtubeVideoId ? ' to download, then upload it here once.' : 'Download it from YouTube Studio, then upload it here once.'}
+                      </p>
+                    )}
+                  </>
                 )}
               </div>
 
