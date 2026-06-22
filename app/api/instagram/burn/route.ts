@@ -16,6 +16,7 @@ import { cloudinaryConfigured, overlayCaptionOnVideo, getLastOverlayError, type 
 import { recordUsage } from '@/lib/ai-usage'
 import { researchProductContext, composeReelCaption } from '@/lib/ig-burn'
 import { metaEnabledForUser } from '@/lib/feature-flags'
+import { getCtaSticker, ctaStickerUrl } from '@/lib/cta-stickers'
 
 export const maxDuration = 300
 
@@ -48,20 +49,26 @@ export async function POST(request: Request) {
 
     const body = await request.json() as {
       videoUrl?: string; caption?: string; position?: string; style?: string
-      product?: string; productName?: string
+      product?: string; productName?: string; stickerId?: string
     }
     const videoUrl = (body.videoUrl || '').trim()
     if (!/^https:\/\//i.test(videoUrl)) return NextResponse.json({ error: 'Upload a video first.' }, { status: 400 })
     const overlayText = (body.caption || 'LINK IN BIO').trim().slice(0, 60) || 'LINK IN BIO'
     const position = (POSITIONS.includes(body.position as OverlayPosition) ? body.position : 'lower-third') as OverlayPosition
     const style = (STYLES.includes(body.style as CaptionStyle) ? body.style : 'white-pill') as CaptionStyle
+    // Optional CTA sticker (a pre-designed PNG from public/cta-burner/). When
+    // chosen, it's burned in place of the text caption.
+    const sticker = body.stickerId ? getCtaSticker(body.stickerId.trim()) : undefined
     const productInput = (body.product || '').trim()
     // Creator-supplied product name — used as the caption source for TikTok Shop
     // links (which we never scrape) and as a fallback when a store URL won't parse.
     const productName = (body.productName || '').trim()
 
-    // ── 1. Burn the styled caption into the video (1080×1920) ─────────────────
-    const burned = await overlayCaptionOnVideo(videoUrl, overlayText, { position, style })
+    // ── 1. Burn the overlay into the video (1080×1920) ────────────────────────
+    // A CTA sticker (PNG) takes precedence over the text caption when picked.
+    const burned = await overlayCaptionOnVideo(videoUrl, overlayText, sticker
+      ? { position: sticker.position ?? position, stickerUrl: ctaStickerUrl(sticker.file), stickerWidthPct: sticker.widthPct }
+      : { position, style })
     if (!burned?.url) {
       return NextResponse.json({ error: `Could not burn the caption: ${getLastOverlayError() || 'unknown error'}` }, { status: 500 })
     }

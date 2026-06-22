@@ -124,7 +124,17 @@ async function waitForVideo(url: string, timeoutMs: number): Promise<{ ready: bo
 export async function overlayCaptionOnVideo(
   sourceVideoUrl: string,
   caption = 'LINK IN BIO',
-  opts?: { position?: OverlayPosition; fontSize?: number; style?: CaptionStyle },
+  opts?: {
+    position?: OverlayPosition
+    fontSize?: number
+    style?: CaptionStyle
+    /** When set, burn this PNG (a CTA box from public/cta-burner/) onto the
+     *  video INSTEAD of the text caption. Must be an absolute, public URL —
+     *  Cloudinary fetches it via l_fetch and overlays it. */
+    stickerUrl?: string
+    /** Sticker width as a fraction of video width (0–1, default 0.85). */
+    stickerWidthPct?: number
+  },
 ): Promise<OverlaidVideo | null> {
   if (!ensureConfig() || !sourceVideoUrl) return null
   lastOverlayError = null
@@ -142,8 +152,29 @@ export async function overlayCaptionOnVideo(
     })
     const publicId = up.public_id
 
+    // The overlay layer: a fetched PNG (CTA sticker) when stickerUrl is given,
+    // else the styled text caption. Cloudinary needs the remote URL passed as
+    // `{ overlay: { url } }`, which it encodes to l_fetch:<base64url>.
+    const overlayLayer = opts?.stickerUrl
+      ? {
+          overlay: { url: opts.stickerUrl },
+          width: opts?.stickerWidthPct ?? 0.85,
+          crop: 'scale',
+          flags: 'relative', // size relative to the base video width
+          gravity,
+          y,
+        }
+      : {
+          overlay: { font_family: 'Arial', font_size: opts?.fontSize ?? 64, font_weight: 'bold', text: safeCaption },
+          color: sp.color,
+          ...(sp.background ? { background: sp.background, radius: sp.radius ?? 20 } : {}),
+          ...(sp.effect ? { effect: sp.effect } : {}),
+          gravity,
+          y,
+        }
+
     // 2. Build the derived URL: normalize to the IG Reel spec (1080×1920, 9:16,
-    //    center-crop + scale, h264 mp4), then burn the caption.
+    //    center-crop + scale, h264 mp4), then burn the overlay (sticker or text).
     const url = cloudinary.url(publicId, {
       resource_type: 'video',
       secure: true,
@@ -151,14 +182,7 @@ export async function overlayCaptionOnVideo(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       transformation: [
         { width: 1080, height: 1920, crop: 'fill', gravity: 'center', video_codec: 'h264' },
-        {
-          overlay: { font_family: 'Arial', font_size: opts?.fontSize ?? 64, font_weight: 'bold', text: safeCaption },
-          color: sp.color,
-          ...(sp.background ? { background: sp.background, radius: sp.radius ?? 20 } : {}),
-          ...(sp.effect ? { effect: sp.effect } : {}),
-          gravity,
-          y,
-        },
+        overlayLayer,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ] as any,
     })

@@ -15,6 +15,7 @@ import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
 import { metaEnabled } from '@/lib/feature-flags'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { TikTokDirectModal } from '@/components/TikTokDirectModal'
+import { CTA_STICKERS, ctaStickerUrl } from '@/lib/cta-stickers'
 import type { Tier } from '@/lib/tier'
 import { Flame, Loader2, Sparkles, Download, AlertCircle, UploadCloud, Video, CheckCircle, Copy, Instagram, Plus, Trash2, Clock } from 'lucide-react'
 
@@ -42,6 +43,9 @@ export default function InstagramBurnerPage() {
   const [loading, setLoading] = useState(true)
 
   const [mode, setMode] = useState<'single' | 'batch'>('single')
+  // Overlay type: a styled text caption, or a pre-designed CTA box (PNG sticker).
+  const [overlayType, setOverlayType] = useState<'text' | 'sticker'>('text')
+  const [stickerId, setStickerId] = useState<string | null>(null)
   const [caption, setCaption] = useState('LINK IN BIO')
   const [position, setPosition] = useState('lower-third')
   const [style, setStyle] = useState('white-pill')
@@ -126,6 +130,7 @@ export default function InstagramBurnerPage() {
 
   async function burn() {
     if (!sourceUrl) { setError('Upload a video first.'); return }
+    if (overlayType === 'sticker' && !stickerId) { setError('Pick a CTA box, or switch to text.'); return }
     setBurning(true); setError(null); setResultUrl(null); setIgCaption(null); setPublished(false); setIgError(null)
     try {
       const res = await fetch('/api/instagram/burn', {
@@ -136,6 +141,7 @@ export default function InstagramBurnerPage() {
           caption: caption.trim() || 'LINK IN BIO',
           position,
           style,
+          stickerId: overlayType === 'sticker' ? stickerId : undefined,
           product: product.trim() || undefined,
           productName: productName.trim() || undefined,
         }),
@@ -291,31 +297,66 @@ export default function InstagramBurnerPage() {
                 </button>
               </div>
 
-              {/* Caption */}
+              {/* Overlay — styled text caption OR a pre-designed CTA box (PNG) */}
               <div>
-                <label className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">2. Caption text</label>
-                <input
-                  type="text"
-                  value={caption}
-                  onChange={(e) => setCaption(e.target.value)}
-                  maxLength={60}
-                  className="input-field text-sm"
-                  placeholder="LINK IN BIO"
-                />
-                <div className="flex flex-wrap gap-1.5 mt-2">
-                  {CAPTION_PRESETS.map(p => (
-                    <button key={p} onClick={() => setCaption(p)} className={`text-[11px] px-2 py-1 rounded-full border transition-colors ${caption === p ? 'border-[#7C3AED] bg-[#7C3AED]/5 text-[#7C3AED]' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:border-gray-300'}`}>{p}</button>
-                  ))}
+                <label className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">2. Overlay</label>
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                  <button
+                    onClick={() => setOverlayType('text')}
+                    className={`text-center px-3 py-2 rounded-lg border text-[13px] font-medium transition-colors ${overlayType === 'text' ? 'border-[#7C3AED] bg-[#7C3AED]/5 text-[#7C3AED]' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:border-gray-300'}`}
+                  >Caption text</button>
+                  <button
+                    onClick={() => setOverlayType('sticker')}
+                    className={`text-center px-3 py-2 rounded-lg border text-[13px] font-medium transition-colors ${overlayType === 'sticker' ? 'border-[#7C3AED] bg-[#7C3AED]/5 text-[#7C3AED]' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:border-gray-300'}`}
+                  >CTA box</button>
                 </div>
-                {/* Style */}
-                <div className="grid grid-cols-2 gap-2 mt-3">
-                  {STYLES.map(s => (
-                    <button key={s.key} onClick={() => setStyle(s.key)} className={`text-left p-2 rounded-lg border transition-colors ${style === s.key ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-gray-300'}`}>
-                      <span className="block text-[13px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{s.label}</span>
-                      <span className="block text-[10px] text-[#86868b] dark:text-[#8e8e93]">{s.desc}</span>
-                    </button>
-                  ))}
-                </div>
+
+                {overlayType === 'text' ? (
+                  <>
+                    <input
+                      type="text"
+                      value={caption}
+                      onChange={(e) => setCaption(e.target.value)}
+                      maxLength={60}
+                      className="input-field text-sm"
+                      placeholder="LINK IN BIO"
+                    />
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {CAPTION_PRESETS.map(p => (
+                        <button key={p} onClick={() => setCaption(p)} className={`text-[11px] px-2 py-1 rounded-full border transition-colors ${caption === p ? 'border-[#7C3AED] bg-[#7C3AED]/5 text-[#7C3AED]' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:border-gray-300'}`}>{p}</button>
+                      ))}
+                    </div>
+                    {/* Style */}
+                    <div className="grid grid-cols-2 gap-2 mt-3">
+                      {STYLES.map(s => (
+                        <button key={s.key} onClick={() => setStyle(s.key)} className={`text-left p-2 rounded-lg border transition-colors ${style === s.key ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-gray-300'}`}>
+                          <span className="block text-[13px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{s.label}</span>
+                          <span className="block text-[10px] text-[#86868b] dark:text-[#8e8e93]">{s.desc}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  CTA_STICKERS.length === 0 ? (
+                    <p className="text-[12px] text-[#86868b] dark:text-[#8e8e93] p-3 rounded-lg border border-dashed border-gray-200 dark:border-white/10">
+                      No CTA boxes yet. Drop transparent PNGs into <code className="text-[11px]">public/cta-burner/</code> and they&apos;ll appear here.
+                    </p>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-2">
+                      {CTA_STICKERS.map(s => (
+                        <button
+                          key={s.id}
+                          onClick={() => setStickerId(s.id)}
+                          className={`p-1.5 rounded-lg border transition-colors ${stickerId === s.id ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-gray-300'}`}
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={ctaStickerUrl(s.file)} alt={s.label} className="w-full h-auto rounded bg-[#1d1d1f]/5" />
+                          <span className="block text-[11px] text-center mt-1 text-[#1d1d1f] dark:text-[#f5f5f7]">{s.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )
+                )}
               </div>
 
               {/* Position */}
