@@ -1195,6 +1195,22 @@ function SetupPageInner() {
           </a>
         </div>
 
+        {/* Hosting recommendation — the wizard's Hostinger CTA isn't shown once
+            a site is connected, so returning users (e.g. spinning up a 2nd blog)
+            never see it. Surface it here as a clear recommendation. Affiliate
+            link (geni.us/MVPhosting). */}
+        <div className="card p-5 flex items-start gap-3 border border-[#7C3AED]/30 bg-[#7C3AED]/[0.04]">
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Need hosting for a new blog?</p>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5 leading-relaxed">
+              We recommend <strong>Hostinger</strong> — under $3/month, a free domain for year one, and a 1-click WordPress installer. It&apos;s exactly what MVP is built to publish to.
+            </p>
+          </div>
+          <a href="https://geni.us/MVPhosting" target="_blank" rel="noopener noreferrer" className="btn-primary text-xs flex-shrink-0 inline-flex items-center gap-1.5">
+            Get Hostinger <ExternalLink size={13} />
+          </a>
+        </div>
+
         {/* Footnote — for the rare user who wants to build ANOTHER brand-new
             blog from scratch (Hostinger sign-up → install). Most "add a
             site" cases are handled by WordPressSitesManager's own

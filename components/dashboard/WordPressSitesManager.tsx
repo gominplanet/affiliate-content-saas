@@ -422,6 +422,23 @@ function AddSiteModal({
             : 'Paste an Application Password from any WordPress site you control. Step-by-step instructions below.'}
         </p>
 
+        {/* Hosting recommendation — many "add a site" users don't have the
+            second blog yet. Point them at our recommended host (affiliate link)
+            before the token/app-password fields. */}
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-[#7C3AED]/30 bg-[#7C3AED]/[0.05] px-3.5 py-3 mb-4">
+          <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
+            Don&apos;t have this blog yet? We recommend <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Hostinger</strong> — under $3/mo, free domain year one, 1-click WordPress.
+          </p>
+          <a
+            href="https://geni.us/MVPhosting"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-primary text-xs flex-shrink-0 inline-flex items-center gap-1.5 whitespace-nowrap"
+          >
+            Get Hostinger <ExternalLink size={12} />
+          </a>
+        </div>
+
         {/* Mode switcher — Token (default, MVP plugin path) vs.
             Application Password (legacy/no-plugin path). Same one-of-two
             pattern used elsewhere in the wizard so the UI stays
