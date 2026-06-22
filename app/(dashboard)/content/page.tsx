@@ -26,7 +26,7 @@ import { effectiveTier } from '@/lib/view-as'
 import { metaEnabled } from '@/lib/feature-flags'
 import {
   Youtube, Wand2, ExternalLink, CheckCircle, AlertCircle,
-  RefreshCw, Loader2, ChevronRight, Sparkles, X, Facebook, Pin, MessageCircle, Save, Upload, Search, Calendar, Flame,
+  RefreshCw, Loader2, ChevronRight, Sparkles, X, Facebook, Pin, MessageCircle, Save, Upload, Search, Calendar,
 } from 'lucide-react'
 import type { PinPreviewData } from '@/components/PinterestPreviewModal'
 
@@ -994,6 +994,20 @@ const VideoCard = memo(function VideoCardImpl({
               // Even with NO blog post yet, the TikTok direct flow works —
               // the only requirement is the vertical MP4 being uploaded.
               if (!tiktokConnected && !instagramConnected) return null
+              // Posting a Short routes through the Shop Burner — clicking
+              // TikTok or Instagram opens it carrying this video's title +
+              // product link (and which pill they came from), so the caption
+              // is grounded and they can burn a CTA box before publishing.
+              const openBurner = (from: 'tiktok' | 'instagram') => {
+                const t = ((video.title as string) || '').replace(/#\w+/g, '').trim()
+                const p = deriveProductUrl(video) || ''
+                const params = new URLSearchParams()
+                if (t) params.set('productName', t)
+                if (p) params.set('product', p)
+                params.set('from', from)
+                window.open(`/instagram-burner?${params.toString()}`, '_blank', 'noopener')
+              }
+              const burnerLocked = userTier !== 'pro' && userTier !== 'admin'
               return (
                 <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
                   <span className="text-[10px] font-semibold uppercase tracking-wider text-[#86868b] dark:text-[#8e8e93] mr-1">Post Short to</span>
@@ -1005,8 +1019,8 @@ const VideoCard = memo(function VideoCardImpl({
                       postedLabel="On TikTok"
                       posted={ttDirectPosted}
                       loading={false}
-                      onClick={() => setTtModalOpen(true)}
-                      locked={!tierAllowsSocial(userTier, 'tiktok')}
+                      onClick={() => openBurner('tiktok')}
+                      locked={burnerLocked}
                     />
                   )}
                   {instagramConnected && (
@@ -1017,31 +1031,10 @@ const VideoCard = memo(function VideoCardImpl({
                       postedLabel={igDirectPosted ? 'On Instagram' : 'Post Reel'}
                       posted={igDirectPosted}
                       loading={false}
-                      onClick={() => setIgDirectModalOpen(true)}
-                      locked={!tierAllowsSocial(userTier, 'instagram')}
+                      onClick={() => openBurner('instagram')}
+                      locked={burnerLocked}
                     />
                   )}
-                  {/* Burn CTA — opens the Shop Burner preloaded with this
-                      Short's title + product link, to burn a CTA box / caption
-                      onto the clip before posting to IG/TikTok. Pro-only. */}
-                  <SocialPill
-                    brand="#FF6B00"
-                    icon={<Flame size={11} />}
-                    label="Burn CTA"
-                    postedLabel="Burn CTA"
-                    posted={false}
-                    loading={false}
-                    onClick={() => {
-                      const t = ((video.title as string) || '').replace(/#\w+/g, '').trim()
-                      const p = deriveProductUrl(video) || ''
-                      const params = new URLSearchParams()
-                      if (t) params.set('productName', t)
-                      if (p) params.set('product', p)
-                      const qs = params.toString()
-                      window.open(`/instagram-burner${qs ? `?${qs}` : ''}`, '_blank', 'noopener')
-                    }}
-                    locked={userTier !== 'pro' && userTier !== 'admin'}
-                  />
                 </div>
               )
             }
