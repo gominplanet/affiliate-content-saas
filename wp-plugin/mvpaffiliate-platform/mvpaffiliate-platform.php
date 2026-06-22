@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.54
+ * Version: 1.0.55
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -3920,6 +3920,9 @@ add_action('init', function () {
         wp_reset_postdata();
 
         $lines[] = '';
+        $lines[] = '## Product catalog';
+        $lines[] = '- [Machine-readable product feed (JSON)](' . home_url('/products.json') . ') — every reviewed product with its buy link, price/availability, and rating.';
+        $lines[] = '';
         $lines[] = '## About';
         $lines[] = '- [Home](' . home_url('/') . ')';
 
@@ -3933,12 +3936,17 @@ add_action('init', function () {
     exit;
 }, 1);
 
-// Bust the llms.txt cache on any publish / update / delete so it stays current.
+// Bust the llms.txt + products.json caches on any publish/update/delete so they
+// stay current.
 add_action('save_post', function ($post_id) {
     if (wp_is_post_revision($post_id)) return;
     delete_transient('mvp_llms_txt');
+    delete_transient('mvp_products_json');
 });
-add_action('deleted_post', function () { delete_transient('mvp_llms_txt'); });
+add_action('deleted_post', function () {
+    delete_transient('mvp_llms_txt');
+    delete_transient('mvp_products_json');
+});
 
 // (b) AI-crawler allowlist appended to WordPress's virtual robots.txt.
 //     CAVEAT: only applies when WP serves the virtual robots.txt (no static
@@ -3958,5 +3966,84 @@ add_filter('robots_txt', function ($output) {
         $extra .= "User-agent: {$b}\nAllow: /\n\n";
     }
     $extra .= '# AI content map: ' . home_url('/llms.txt') . "\n";
+    $extra .= '# Product catalog: ' . home_url('/products.json') . "\n";
     return $output . $extra;
 }, 10, 1);
+
+// (c) /products.json — a machine-readable product catalog (the affiliate-
+//     publisher analog of Shopify's Catalog API). Aggregates every reviewed
+//     product from the per-post schema we already emit (post meta mvp_jsonld:
+//     Product + Offer + Review), so AI shopping agents can ingest the whole
+//     catalogue in one fetch: name, buy link, price/availability, rating.
+//     Cached 6h (busted on post save/delete above). Public + CORS-open.
+add_action('init', function () {
+    $path = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH);
+    if ($path !== '/products.json') return;
+
+    $body = get_transient('mvp_products_json');
+    if ($body === false) {
+        $products = [];
+        $q = new WP_Query([
+            'post_type'           => 'post',
+            'post_status'         => 'publish',
+            'posts_per_page'      => 500,
+            'orderby'             => 'date',
+            'order'               => 'DESC',
+            'no_found_rows'       => true,
+            'ignore_sticky_posts' => true,
+            'meta_key'            => 'mvp_jsonld', // only posts that carry our schema
+        ]);
+        foreach ($q->posts as $p) {
+            $raw = get_post_meta($p->ID, 'mvp_jsonld', true);
+            if (!$raw) continue;
+            $data = json_decode($raw, true);
+            if (!is_array($data) || empty($data['@graph']) || !is_array($data['@graph'])) continue;
+
+            $product = null; $review = null;
+            foreach ($data['@graph'] as $node) {
+                $t = $node['@type'] ?? '';
+                if ($t === 'Product' && !$product) $product = $node;
+                if ($t === 'Review' && !$review) $review = $node;
+            }
+            if (!$product || empty($product['name'])) continue;
+
+            $entry = [
+                'name'      => $product['name'],
+                'reviewUrl' => get_permalink($p),
+            ];
+            if (!empty($product['image'])) {
+                $entry['image'] = is_array($product['image']) ? ($product['image'][0] ?? null) : $product['image'];
+            }
+            if (!empty($product['brand']['name'])) $entry['brand'] = $product['brand']['name'];
+            if (!empty($product['url'])) $entry['buyUrl'] = $product['url'];
+            if (!empty($product['offers']) && is_array($product['offers'])) {
+                $offer = $product['offers'];
+                if (!empty($offer['url'])) $entry['buyUrl'] = $offer['url'];
+                if (isset($offer['price'])) $entry['price'] = $offer['price'];
+                if (!empty($offer['priceCurrency'])) $entry['priceCurrency'] = $offer['priceCurrency'];
+                if (!empty($offer['availability'])) $entry['availability'] = $offer['availability'];
+            }
+            if ($review && !empty($review['reviewRating']['ratingValue'])) {
+                $entry['rating'] = $review['reviewRating']['ratingValue'];
+                $entry['ratingMax'] = $review['reviewRating']['bestRating'] ?? 5;
+            }
+            $entry['datePublished'] = get_the_date('c', $p);
+            $products[] = $entry;
+        }
+        wp_reset_postdata();
+
+        $body = wp_json_encode([
+            'site'      => home_url('/'),
+            'name'      => get_bloginfo('name'),
+            'generated' => gmdate('c'),
+            'count'     => count($products),
+            'products'  => $products,
+        ], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
+        set_transient('mvp_products_json', $body, 6 * HOUR_IN_SECONDS);
+    }
+
+    header('Content-Type: application/json; charset=utf-8');
+    header('Access-Control-Allow-Origin: *'); // public catalog — agents fetch cross-origin
+    echo $body;
+    exit;
+}, 1);
