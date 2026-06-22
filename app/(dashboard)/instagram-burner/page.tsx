@@ -188,7 +188,7 @@ export default function InstagramBurnerPage() {
   if (!metaUnlocked) {
     return (
       <>
-        <PageHero title="Instagram Burner" subtitle="Add an on-screen caption to your videos and publish them as Instagram Reels." />
+        <PageHero title="Instagram Burner" subtitle="Burn a call-to-action onto your vertical videos, then publish to Instagram Reels — or download to post on TikTok and Stories." />
         <div className="card p-6 max-w-xl flex items-start gap-3">
           <AlertCircle size={18} className="text-[#ff9500] flex-shrink-0 mt-0.5" />
           <div>
@@ -228,7 +228,7 @@ export default function InstagramBurnerPage() {
     <>
       <PageHero
         title="Instagram Burner"
-        subtitle="Upload a vertical video and burn a caption (like “LINK IN BIO”) into it — then download it for Reels, Stories, or TikTok."
+        subtitle="Burn a call-to-action onto your vertical videos, then publish to Instagram Reels — or download to post on TikTok and Stories."
       />
 
       <div className="max-w-4xl">
