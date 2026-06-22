@@ -20,7 +20,7 @@ import { Flame, Loader2, Sparkles, Download, AlertCircle, UploadCloud, Video, Ch
 
 const CAPTION_PRESETS = ['LINK IN BIO', 'LINK IN BIO 👆', 'FULL REVIEW ON YOUTUBE', 'WATCH THE FULL VIDEO', 'FOLLOW FOR MORE']
 const POSITIONS: Array<{ key: string; label: string; desc: string }> = [
-  { key: 'lower-third', label: 'Lower third', desc: 'Recommended — clears IG’s buttons' },
+  { key: 'lower-third', label: 'Lower third', desc: 'Recommended — clears Instagram & TikTok UI' },
   { key: 'center', label: 'Middle', desc: 'Center of the screen' },
 ]
 const STYLES: Array<{ key: string; label: string; desc: string }> = [
@@ -192,7 +192,7 @@ export default function InstagramBurnerPage() {
   if (!metaUnlocked) {
     return (
       <>
-        <PageHero title="Shop Burner" subtitle="Burn a call-to-action onto your vertical videos, then publish to Instagram Reels — or download to post on TikTok and Stories." />
+        <PageHero title="Shop Burner" subtitle="Burn a call-to-action onto your vertical videos, then publish straight to Instagram Reels and TikTok — or download for Stories." />
         <div className="card p-6 max-w-xl flex items-start gap-3">
           <AlertCircle size={18} className="text-[#ff9500] flex-shrink-0 mt-0.5" />
           <div>
@@ -213,7 +213,7 @@ export default function InstagramBurnerPage() {
       <FeatureLockedCard
         icon={<Flame size={28} strokeWidth={1.8} />}
         feature="Shop Burner"
-        description='Upload a vertical video, pick a caption (like "LINK IN BIO"), and burn it onto the video as an on-screen overlay. Download the result for Reels, Stories, or TikTok — or publish straight to your connected Instagram with one click.'
+        description='Upload a vertical video, burn a call-to-action onto it (like "LINK IN BIO"), then publish straight to Instagram Reels and TikTok — or download it to post anywhere.'
         bullets={[
           'Caption presets ("LINK IN BIO", "WATCH THE FULL VIDEO", "FOLLOW FOR MORE") + custom text',
           'Lower-third or center placement (lower-third clears Instagram\'s UI buttons)',
@@ -232,7 +232,7 @@ export default function InstagramBurnerPage() {
     <>
       <PageHero
         title="Shop Burner"
-        subtitle="Burn a call-to-action onto your vertical videos, then publish to Instagram Reels — or download to post on TikTok and Stories."
+        subtitle="Burn a call-to-action onto your vertical videos, then publish straight to Instagram Reels and TikTok — or download for Stories."
       />
 
       <div className="max-w-4xl">
