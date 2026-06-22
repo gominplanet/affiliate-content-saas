@@ -1005,6 +1005,7 @@ const VideoCard = memo(function VideoCardImpl({
                 if (t) params.set('productName', t)
                 if (p) params.set('product', p)
                 params.set('from', from)
+                params.set('videoId', id) // burner auto-loads this Short's stored MP4
                 window.open(`/instagram-burner?${params.toString()}`, '_blank', 'noopener')
               }
               const burnerLocked = userTier !== 'pro' && userTier !== 'admin'

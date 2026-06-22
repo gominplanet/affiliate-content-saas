@@ -54,6 +54,12 @@ export default function InstagramBurnerPage() {
 
   const [uploading, setUploading] = useState(false)
   const [sourceUrl, setSourceUrl] = useState<string | null>(null)
+  // When opened from a Short card (?videoId=), we auto-load the Short's
+  // already-stored MP4. shortLoaded = the clip came from the Short (not a
+  // manual upload); ytDownloadHint = no stored MP4 yet, link out to YouTube.
+  const [loadingShort, setLoadingShort] = useState(false)
+  const [shortLoaded, setShortLoaded] = useState(false)
+  const [ytDownloadHint, setYtDownloadHint] = useState<{ youtubeVideoId: string | null } | null>(null)
   const [burning, setBurning] = useState(false)
   const [resultUrl, setResultUrl] = useState<string | null>(null)
   const [igCaption, setIgCaption] = useState<string | null>(null)
@@ -97,8 +103,27 @@ export default function InstagramBurnerPage() {
     const sp = new URLSearchParams(window.location.search)
     const pn = sp.get('productName')
     const p = sp.get('product')
+    const videoId = sp.get('videoId')
     if (pn) setProductName(pn)
     if (p) setProduct(p)
+    // Came from a Short card → pull its already-stored MP4 so the creator
+    // doesn't have to re-upload. If none is stored, surface a link to grab
+    // it from YouTube (we can't download it server-side — YouTube ToS).
+    if (videoId && /^[0-9a-f-]{36}$/i.test(videoId)) {
+      setLoadingShort(true)
+      fetch(`/api/instagram/burn/source?videoId=${encodeURIComponent(videoId)}`)
+        .then(r => r.json())
+        .then((d: { videoUrl?: string | null; youtubeVideoId?: string | null; noVideo?: boolean }) => {
+          if (d.videoUrl) {
+            setSourceUrl(d.videoUrl)
+            setShortLoaded(true)
+          } else if (d.noVideo) {
+            setYtDownloadHint({ youtubeVideoId: d.youtubeVideoId ?? null })
+          }
+        })
+        .catch(() => { /* non-fatal — user can still upload manually */ })
+        .finally(() => setLoadingShort(false))
+    }
   }, [])
 
   // Admin View-as override — re-resolve effective tier whenever the chip
@@ -301,11 +326,34 @@ export default function InstagramBurnerPage() {
                 <input ref={fileRef} type="file" accept="video/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUpload(f) }} />
                 <button
                   onClick={() => fileRef.current?.click()}
-                  disabled={uploading}
+                  disabled={uploading || loadingShort}
                   className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg border border-dashed border-gray-300 dark:border-white/15 text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#7C3AED] transition-colors disabled:opacity-60"
                 >
-                  {uploading ? <><Loader2 size={14} className="animate-spin" /> Uploading…</> : sourceUrl ? <><Video size={14} className="text-[#34c759]" /> Video ready — pick another</> : <><UploadCloud size={14} /> Upload video</>}
+                  {loadingShort
+                    ? <><Loader2 size={14} className="animate-spin" /> Loading your Short…</>
+                    : uploading
+                    ? <><Loader2 size={14} className="animate-spin" /> Uploading…</>
+                    : shortLoaded && sourceUrl
+                    ? <><Video size={14} className="text-[#34c759]" /> Short loaded — pick another to replace</>
+                    : sourceUrl
+                    ? <><Video size={14} className="text-[#34c759]" /> Video ready — pick another</>
+                    : <><UploadCloud size={14} /> Upload video</>}
                 </button>
+                {/* Came from a Short with no stored MP4 — link out to grab it
+                    from YouTube (we can't pull it server-side per YouTube ToS). */}
+                {ytDownloadHint && !sourceUrl && (
+                  <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1.5 leading-relaxed">
+                    We don&apos;t have this Short&apos;s MP4 yet.{' '}
+                    {ytDownloadHint.youtubeVideoId && (
+                      <a
+                        href={`https://www.youtube.com/shorts/${ytDownloadHint.youtubeVideoId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[#7C3AED] font-semibold hover:underline"
+                      >Open it on YouTube</a>
+                    )}{ytDownloadHint.youtubeVideoId ? ' to download, then upload it here once.' : 'Download it from YouTube Studio, then upload it here once.'}
+                  </p>
+                )}
               </div>
 
               {/* Overlay — styled text caption OR a pre-designed CTA box (PNG) */}
