@@ -181,6 +181,7 @@ interface DashboardShellV2Props {
   tier: Tier | string
   showBuyingGuides: boolean
   showDeals: boolean
+  showBurner: boolean
   children: React.ReactNode
 }
 
@@ -190,6 +191,7 @@ export default function DashboardShellV2({
   tier,
   showBuyingGuides,
   showDeals,
+  showBurner,
   children,
 }: DashboardShellV2Props) {
   const pathname = usePathname() || ''
@@ -321,7 +323,10 @@ export default function DashboardShellV2({
         { href: '/deals', icon: <BadgePercent size={15} />, label: 'Deals Hub', gate: showDeals },
         { href: '/script', icon: <PenLine size={15} />, label: 'Scriptwriter' },
         { href: '/newsletter', icon: <Mail size={15} />, label: 'Newsletter' },
-        // Instagram Burner hidden 2026-06-12 (not ready). Route stays alive.
+        // Instagram Burner — re-surfaced 2026-06-22 after Meta publishing was
+        // approved (2026-06-15) and a live burn→publish test passed. Pro-gated
+        // via showBurner; the route enforces Pro + metaEnabled server-side too.
+        { href: '/instagram-burner', icon: <Flame size={15} />, label: 'Instagram Burner', gate: showBurner },
       ],
     },
     {

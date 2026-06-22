@@ -86,6 +86,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
   // it (so the View-as-Studio/Pro preview also exposes it for screenshots).
   const showDeals = tier === 'studio' || tier === 'pro' || tier === 'admin'
 
+  // Instagram Burner gate — Pro-only (the publish route requires Pro), and only
+  // now that Meta publishing is approved (metaEnabled is globally on as of
+  // 2026-06-15). Admin sees it too for testing / view-as previews. Re-surfaced
+  // 2026-06-22 after a live burn→publish test confirmed the pipeline works.
+  const showBurner = tier === 'pro' || tier === 'admin'
+
   return (
     <HelpDeskProvider>
       <DashboardShellV2
@@ -94,6 +100,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         tier={tier}
         showBuyingGuides={showBuyingGuides}
         showDeals={showDeals}
+        showBurner={showBurner}
       >
         {/* Migration drift banner — admin-only sticky warning that
             recent feature-gating migrations haven't been applied on the
