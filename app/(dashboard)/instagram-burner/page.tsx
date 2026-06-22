@@ -56,7 +56,7 @@ export default function InstagramBurnerPage() {
 
   const [mode, setMode] = useState<'single' | 'batch'>('single')
   // Overlay type: a styled text caption, or a pre-designed CTA box (PNG sticker).
-  const [overlayType, setOverlayType] = useState<'text' | 'sticker'>('text')
+  const [overlayType, setOverlayType] = useState<'text' | 'sticker'>('sticker')
   const [stickerId, setStickerId] = useState<string | null>(null)
   // AI-generated CTA box from a typed tag (transparent PNG hosted on Supabase).
   const [tagText, setTagText] = useState('')
@@ -529,13 +529,13 @@ export default function InstagramBurnerPage() {
                 <label className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">2. Overlay</label>
                 <div className="grid grid-cols-2 gap-2 mb-3">
                   <button
-                    onClick={() => setOverlayType('text')}
-                    className={`text-center px-3 py-2 rounded-lg border text-[13px] font-medium transition-colors ${overlayType === 'text' ? 'border-[#7C3AED] bg-[#7C3AED]/5 text-[#7C3AED]' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:border-gray-300'}`}
-                  >Caption text</button>
-                  <button
                     onClick={() => setOverlayType('sticker')}
                     className={`text-center px-3 py-2 rounded-lg border text-[13px] font-medium transition-colors ${overlayType === 'sticker' ? 'border-[#7C3AED] bg-[#7C3AED]/5 text-[#7C3AED]' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:border-gray-300'}`}
                   >CTA box</button>
+                  <button
+                    onClick={() => setOverlayType('text')}
+                    className={`text-center px-3 py-2 rounded-lg border text-[13px] font-medium transition-colors ${overlayType === 'text' ? 'border-[#7C3AED] bg-[#7C3AED]/5 text-[#7C3AED]' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:border-gray-300'}`}
+                  >Caption text</button>
                 </div>
 
                 {overlayType === 'text' ? (
