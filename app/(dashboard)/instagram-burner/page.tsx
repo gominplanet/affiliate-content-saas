@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * Instagram Burner — upload a vertical video and burn a caption (e.g.
+ * Shop Burner — upload a vertical video and burn a caption (e.g.
  * "LINK IN BIO") into the lower third via Cloudinary, then preview the result.
  * From there the user can explicitly publish it as a Reel to their connected
  * Instagram (separate action — never auto-posted) or download it for Reels /
@@ -44,6 +44,7 @@ export default function InstagramBurnerPage() {
   const [position, setPosition] = useState('lower-third')
   const [style, setStyle] = useState('white-pill')
   const [product, setProduct] = useState('')
+  const [productName, setProductName] = useState('')
 
   const [uploading, setUploading] = useState(false)
   const [sourceUrl, setSourceUrl] = useState<string | null>(null)
@@ -132,6 +133,7 @@ export default function InstagramBurnerPage() {
           position,
           style,
           product: product.trim() || undefined,
+          productName: productName.trim() || undefined,
         }),
       })
       const d = await res.json().catch(() => ({} as Record<string, unknown>))
@@ -188,7 +190,7 @@ export default function InstagramBurnerPage() {
   if (!metaUnlocked) {
     return (
       <>
-        <PageHero title="Instagram Burner" subtitle="Burn a call-to-action onto your vertical videos, then publish to Instagram Reels — or download to post on TikTok and Stories." />
+        <PageHero title="Shop Burner" subtitle="Burn a call-to-action onto your vertical videos, then publish to Instagram Reels — or download to post on TikTok and Stories." />
         <div className="card p-6 max-w-xl flex items-start gap-3">
           <AlertCircle size={18} className="text-[#ff9500] flex-shrink-0 mt-0.5" />
           <div>
@@ -208,7 +210,7 @@ export default function InstagramBurnerPage() {
     return (
       <FeatureLockedCard
         icon={<Flame size={28} strokeWidth={1.8} />}
-        feature="Instagram Burner"
+        feature="Shop Burner"
         description='Upload a vertical video, pick a caption (like "LINK IN BIO"), and burn it onto the video as an on-screen overlay. Download the result for Reels, Stories, or TikTok — or publish straight to your connected Instagram with one click.'
         bullets={[
           'Caption presets ("LINK IN BIO", "WATCH THE FULL VIDEO", "FOLLOW FOR MORE") + custom text',
@@ -227,7 +229,7 @@ export default function InstagramBurnerPage() {
   return (
     <>
       <PageHero
-        title="Instagram Burner"
+        title="Shop Burner"
         subtitle="Burn a call-to-action onto your vertical videos, then publish to Instagram Reels — or download to post on TikTok and Stories."
       />
 
@@ -312,17 +314,27 @@ export default function InstagramBurnerPage() {
                 </div>
               </div>
 
-              {/* Product (optional) */}
+              {/* Product (optional) — ASIN / store URL / TikTok Shop link → smart caption */}
               <div>
-                <label className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">4. Product <span className="font-normal text-[#86868b]">(optional)</span></label>
+                <label className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">4. Product link <span className="font-normal text-[#86868b]">(optional)</span></label>
                 <input
                   type="text"
                   value={product}
                   onChange={(e) => setProduct(e.target.value)}
                   className="input-field text-sm"
-                  placeholder="Amazon ASIN or product URL"
+                  placeholder="Amazon ASIN, store URL, or TikTok Shop link"
                 />
-                <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">If set, we research it and write a Reel caption (3 hashtags + #ad disclosure) to post with the video.</p>
+                {/tiktok\.com|vt\.tiktok|tiktok\.shop|tiktokshop/i.test(product) && (
+                  <p className="text-[11px] text-[#FF6B00] mt-1">TikTok links can&apos;t be read automatically — add the product name below so we can write the caption. The link is still used as your CTA.</p>
+                )}
+                <input
+                  type="text"
+                  value={productName}
+                  onChange={(e) => setProductName(e.target.value)}
+                  className="input-field text-sm mt-2"
+                  placeholder="Product name (e.g. Stanley 40oz Tumbler) — optional for Amazon/store links"
+                />
+                <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">We research the link (or use the name) and write a caption — 3 niche hashtags + #ad disclosure — to post with the video.</p>
               </div>
 
               {error && <p className="text-xs text-[#ff3b30] flex items-center gap-1.5"><AlertCircle size={12} /> {error}</p>}

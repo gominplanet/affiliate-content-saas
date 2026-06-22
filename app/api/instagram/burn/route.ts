@@ -48,7 +48,7 @@ export async function POST(request: Request) {
 
     const body = await request.json() as {
       videoUrl?: string; caption?: string; position?: string; style?: string
-      product?: string
+      product?: string; productName?: string
     }
     const videoUrl = (body.videoUrl || '').trim()
     if (!/^https:\/\//i.test(videoUrl)) return NextResponse.json({ error: 'Upload a video first.' }, { status: 400 })
@@ -56,6 +56,9 @@ export async function POST(request: Request) {
     const position = (POSITIONS.includes(body.position as OverlayPosition) ? body.position : 'lower-third') as OverlayPosition
     const style = (STYLES.includes(body.style as CaptionStyle) ? body.style : 'white-pill') as CaptionStyle
     const productInput = (body.product || '').trim()
+    // Creator-supplied product name — used as the caption source for TikTok Shop
+    // links (which we never scrape) and as a fallback when a store URL won't parse.
+    const productName = (body.productName || '').trim()
 
     // ── 1. Burn the styled caption into the video (1080×1920) ─────────────────
     const burned = await overlayCaptionOnVideo(videoUrl, overlayText, { position, style })
@@ -67,7 +70,9 @@ export async function POST(request: Request) {
     // ── 2. Research the product (if given) + compose the Reel caption ─────────
     // Publishing is intentionally NOT done here. The user reviews the preview +
     // caption, then publishes via an explicit action (/api/instagram/publish-burned).
-    const productContext = productInput ? await researchProductContext(productInput, { userId: user.id, tier }) : ''
+    const productContext = (productInput || productName)
+      ? await researchProductContext(productInput, { userId: user.id, tier }, { productName })
+      : ''
     const composedCaption = productContext ? await composeReelCaption(productContext, { userId: user.id, tier }) : null
 
     return NextResponse.json({

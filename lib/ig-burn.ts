@@ -11,23 +11,46 @@ import { researchProductFromUrl } from '@/services/research'
 
 export interface IgBurnCtx { userId: string; tier: string | null }
 
-/** Resolve product context from an ASIN or URL (best-effort). Falls back to the
- *  raw input when research turns up nothing. */
-export async function researchProductContext(productInput: string, ctx: IgBurnCtx): Promise<string> {
+/** A pasted link that we deliberately do NOT scrape — TikTok actively bot-walls
+ *  non-browser requests and scraping it breaks their ToS (and risks MVP's TikTok
+ *  API approval). For these the creator supplies the product name instead. */
+export function isUnscrapableShopLink(input: string): boolean {
+  return /tiktok\.com|vt\.tiktok|tiktok\.shop|tiktokshop/i.test(input || '')
+}
+
+/** Resolve product context for the caption from a link + optional creator-supplied
+ *  product name. Amazon ASIN → scrape the public listing; generic store URL →
+ *  best-effort scrape; TikTok Shop link → name only (never scrape — see above);
+ *  no link → just the name. The name is always folded in when present. */
+export async function researchProductContext(
+  productInput: string,
+  ctx: IgBurnCtx,
+  opts?: { productName?: string },
+): Promise<string> {
   const input = (productInput || '').trim()
-  if (!input) return ''
+  const name = (opts?.productName || '').trim()
+
+  // Amazon ASIN → richest context (title + bullets + description).
   const asin = extractAsin(input)
   if (asin) {
     try {
       const p = await fetchAmazonProduct(asin)
       const c = [p.title, (p.bullets || []).slice(0, 4).join(' · '), (p.description || '').slice(0, 400)].filter(Boolean).join('\n')
-      if (c) return c
+      if (c) return name ? `${name}\n${c}` : c
     } catch { /* fall through */ }
   }
+
+  // TikTok links: don't scrape (bot wall + ToS). Lean on the creator's name.
+  if (isUnscrapableShopLink(input)) return name || input
+
+  // Generic store URL → best-effort public scrape, fall back to the name.
   if (/^https?:\/\//i.test(input)) {
-    try { const r = await researchProductFromUrl(input, '', ctx); if (r) return r } catch { /* fall through */ }
+    try { const r = await researchProductFromUrl(input, '', ctx); if (r) return name ? `${name}\n${r}` : r } catch { /* fall through */ }
+    return name || input
   }
-  return input
+
+  // No link → use the supplied name (or whatever raw text was typed).
+  return name || input
 }
 
 /** Compose a punchy IG Reel caption: hook + value + 3 niche hashtags + an #ad

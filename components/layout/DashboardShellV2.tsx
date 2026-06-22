@@ -326,7 +326,7 @@ export default function DashboardShellV2({
         // Instagram Burner — re-surfaced 2026-06-22 after Meta publishing was
         // approved (2026-06-15) and a live burn→publish test passed. Pro-gated
         // via showBurner; the route enforces Pro + metaEnabled server-side too.
-        { href: '/instagram-burner', icon: <Flame size={15} />, label: 'Instagram Burner', gate: showBurner },
+        { href: '/instagram-burner', icon: <Flame size={15} />, label: 'Shop Burner', gate: showBurner },
       ],
     },
     {
