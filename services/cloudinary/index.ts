@@ -59,7 +59,7 @@ export interface OverlaidVideo { url: string; publicId: string }
  * or Instagram. Returns null when Cloudinary isn't configured or anything fails
  * (callers fall back to the original video); the reason is in getLastOverlayError().
  */
-export type OverlayPosition = 'lower-third' | 'bottom' | 'center' | 'top'
+export type OverlayPosition = 'lower-third' | 'bottom' | 'center' | 'top' | 'lower-left' | 'lower-right'
 export type CaptionStyle = 'white-pill' | 'black-pill' | 'yellow-pill' | 'white-shadow'
 
 /** Visual look for the burned caption. */
@@ -75,15 +75,19 @@ function styleParams(style: CaptionStyle): { color: string; background?: string;
   }
 }
 
-/** Map a friendly position to Cloudinary gravity + pixel y-offset (tuned for
- *  a 1080×1920 vertical video). lower-third sits clear of IG's bottom UI. */
-function placement(pos: OverlayPosition): { gravity: string; y: number } {
+/** Map a friendly position to Cloudinary gravity + pixel x/y offsets (tuned for
+ *  a 1080×1920 vertical video). lower-third sits clear of IG's bottom UI; the
+ *  corner positions tuck in from the edge, clear of TikTok/IG's right-side
+ *  action buttons (lower-left) and bottom caption strip. */
+function placement(pos: OverlayPosition): { gravity: string; x: number; y: number } {
   switch (pos) {
-    case 'bottom': return { gravity: 'south', y: 130 }
-    case 'center': return { gravity: 'center', y: 0 }
-    case 'top': return { gravity: 'north', y: 220 }
+    case 'bottom': return { gravity: 'south', x: 0, y: 130 }
+    case 'center': return { gravity: 'center', x: 0, y: 0 }
+    case 'top': return { gravity: 'north', x: 0, y: 220 }
+    case 'lower-left': return { gravity: 'south_west', x: 60, y: 320 }
+    case 'lower-right': return { gravity: 'south_east', x: 60, y: 320 }
     case 'lower-third':
-    default: return { gravity: 'south', y: 360 }
+    default: return { gravity: 'south', x: 0, y: 360 }
   }
 }
 
@@ -139,7 +143,7 @@ export async function overlayCaptionOnVideo(
   if (!ensureConfig() || !sourceVideoUrl) return null
   lastOverlayError = null
   try {
-    const { gravity, y } = placement(opts?.position ?? 'lower-third')
+    const { gravity, x, y } = placement(opts?.position ?? 'lower-third')
     const sp = styleParams(opts?.style ?? 'white-pill')
     // Cloudinary's Arial text layer can't render emoji / non-ASCII and 400s the
     // transform — strip to plain text for the burned caption.
@@ -162,6 +166,7 @@ export async function overlayCaptionOnVideo(
           crop: 'scale',
           flags: 'relative', // size relative to the base video width
           gravity,
+          ...(x ? { x } : {}),
           y,
         }
       : {
@@ -170,6 +175,7 @@ export async function overlayCaptionOnVideo(
           ...(sp.background ? { background: sp.background, radius: sp.radius ?? 20 } : {}),
           ...(sp.effect ? { effect: sp.effect } : {}),
           gravity,
+          ...(x ? { x } : {}),
           y,
         }
 

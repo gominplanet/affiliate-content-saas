@@ -17,7 +17,7 @@
  * need to exist at the matching path.
  */
 
-export type CtaStickerPosition = 'lower-third' | 'center' | 'bottom' | 'top'
+export type CtaStickerPosition = 'lower-third' | 'center' | 'bottom' | 'top' | 'lower-left' | 'lower-right'
 
 export interface CtaSticker {
   /** Stable id (sent from the UI, resolved server-side). */
@@ -39,11 +39,11 @@ export interface CtaSticker {
  *   { id: 'shop-now',    label: 'Shop now',    file: 'shop-now.png',    position: 'lower-third', widthPct: 0.8 },
  */
 export const CTA_STICKERS: CtaSticker[] = [
-  { id: 'buy-now',           label: 'Buy now (badge)',     file: 'buynowburner05.png', position: 'lower-third', widthPct: 0.52 },
-  { id: 'shop-here',         label: 'Shop here (circle)',  file: 'buynowburner02.png', position: 'lower-third', widthPct: 0.5 },
-  { id: 'shop-below-burst',  label: 'Shop below (burst)',  file: 'buynowburner01.png', position: 'lower-third', widthPct: 0.52 },
-  { id: 'shop-below-bold',   label: 'Shop below (bold)',   file: 'buynowburner04.png', position: 'lower-third', widthPct: 0.45 },
-  { id: 'shop-follow',       label: 'Shop & follow',       file: 'buynowburner03.png', position: 'lower-third', widthPct: 0.45 },
+  { id: 'buy-now',           label: 'Buy now (badge)',     file: 'buynowburner05.png', position: 'lower-left', widthPct: 0.52 },
+  { id: 'shop-here',         label: 'Shop here (circle)',  file: 'buynowburner02.png', position: 'lower-left', widthPct: 0.5 },
+  { id: 'shop-below-burst',  label: 'Shop below (burst)',  file: 'buynowburner01.png', position: 'lower-left', widthPct: 0.52 },
+  { id: 'shop-below-bold',   label: 'Shop below (bold)',   file: 'buynowburner04.png', position: 'lower-left', widthPct: 0.45 },
+  { id: 'shop-follow',       label: 'Shop & follow',       file: 'buynowburner03.png', position: 'lower-left', widthPct: 0.45 },
 ]
 
 /** Absolute, publicly-fetchable URL for a sticker file (Cloudinary needs an
