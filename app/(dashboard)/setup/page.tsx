@@ -461,7 +461,7 @@ function Step1({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">
               Free domain (year one), 1-click WordPress installer, fast SSD hosting, free SSL.
             </p>
-            <a href="https://geni.us/ANaArQ" target="_blank" rel="noopener noreferrer" className="btn-primary text-sm">
+            <a href="https://geni.us/MVPhosting" target="_blank" rel="noopener noreferrer" className="btn-primary text-sm">
               Sign up for Hostinger → <ExternalLink size={13} />
             </a>
           </div>

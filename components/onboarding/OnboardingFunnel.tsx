@@ -28,7 +28,7 @@ import {
   ArrowRight, ArrowLeft, ExternalLink, Loader2, PartyPopper, Lock,
 } from 'lucide-react'
 
-const HOSTINGER_URL = 'https://geni.us/ANaArQ'
+const HOSTINGER_URL = 'https://geni.us/MVPhosting'
 const GENIUSLINK_URL = 'https://geni.us/Y70p9R'
 const PLUGIN_ZIP = '/mvp-affiliate.zip'
 const THEME_ZIP = '/mvp-affiliate-theme.zip'
