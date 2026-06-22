@@ -58,6 +58,11 @@ export default function InstagramBurnerPage() {
   // Overlay type: a styled text caption, or a pre-designed CTA box (PNG sticker).
   const [overlayType, setOverlayType] = useState<'text' | 'sticker'>('text')
   const [stickerId, setStickerId] = useState<string | null>(null)
+  // AI-generated CTA box from a typed tag (transparent PNG hosted on Supabase).
+  const [tagText, setTagText] = useState('')
+  const [genStickerUrl, setGenStickerUrl] = useState<string | null>(null)
+  const [genStickerLoading, setGenStickerLoading] = useState(false)
+  const [genStickerError, setGenStickerError] = useState<string | null>(null)
   const [caption, setCaption] = useState('LINK IN BIO')
   const [position, setPosition] = useState('lower-left')
   const [style, setStyle] = useState('white-pill')
@@ -213,9 +218,31 @@ export default function InstagramBurnerPage() {
     }
   }
 
+  // Generate a CTA box from a typed tag (AI badge → transparent PNG). On
+  // success it becomes the active sticker (clears any gallery pick).
+  async function generateSticker() {
+    const t = tagText.trim()
+    if (!t) { setGenStickerError('Type a short tag first.'); return }
+    setGenStickerLoading(true); setGenStickerError(null)
+    try {
+      const res = await fetch('/api/instagram/burn/generate-sticker', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tag: t }),
+      })
+      const d = await res.json().catch(() => ({} as Record<string, unknown>))
+      if (!res.ok) throw new Error((d.error as string) || `Failed (HTTP ${res.status})`)
+      setGenStickerUrl(d.stickerUrl as string)
+      setStickerId(null) // a generated badge replaces any gallery selection
+    } catch (e) {
+      setGenStickerError(e instanceof Error ? e.message : 'Could not generate the box')
+    } finally {
+      setGenStickerLoading(false)
+    }
+  }
+
   async function burn() {
     if (!sourceUrl) { setError('Upload a video first.'); return }
-    if (overlayType === 'sticker' && !stickerId) { setError('Pick a CTA box, or switch to text.'); return }
+    if (overlayType === 'sticker' && !stickerId && !genStickerUrl) { setError('Pick a CTA box or make one from text, or switch to caption text.'); return }
     setBurning(true); setError(null); setResultUrl(null); setIgCaption(null); setPublished(false); setIgError(null)
     try {
       const res = await fetch('/api/instagram/burn', {
@@ -226,7 +253,9 @@ export default function InstagramBurnerPage() {
           caption: caption.trim() || 'LINK IN BIO',
           position,
           style,
-          stickerId: overlayType === 'sticker' ? stickerId : undefined,
+          // A generated badge takes precedence over a gallery pick.
+          customStickerUrl: overlayType === 'sticker' ? (genStickerUrl || undefined) : undefined,
+          stickerId: overlayType === 'sticker' && !genStickerUrl ? stickerId : undefined,
           product: product.trim() || undefined,
           productName: productName.trim() || undefined,
         }),
@@ -509,25 +538,61 @@ export default function InstagramBurnerPage() {
                     </div>
                   </>
                 ) : (
-                  CTA_STICKERS.length === 0 ? (
-                    <p className="text-[12px] text-[#86868b] dark:text-[#8e8e93] p-3 rounded-lg border border-dashed border-gray-200 dark:border-white/10">
-                      No CTA boxes yet. Drop transparent PNGs into <code className="text-[11px]">public/cta-burner/</code> and they&apos;ll appear here.
-                    </p>
-                  ) : (
-                    <div className="grid grid-cols-2 gap-2">
-                      {CTA_STICKERS.map(s => (
+                  <>
+                    {/* Make a CTA box from a typed tag (AI → transparent PNG, in our box style) */}
+                    <div className="mb-3 p-2.5 rounded-lg border border-[#7C3AED]/25 bg-[#7C3AED]/5">
+                      <span className="flex items-center gap-1 text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5"><Sparkles size={11} className="text-[#7C3AED]" /> Make one from text</span>
+                      <div className="flex gap-1.5">
+                        <input
+                          type="text"
+                          value={tagText}
+                          onChange={e => setTagText(e.target.value)}
+                          maxLength={40}
+                          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void generateSticker() } }}
+                          placeholder="e.g. BUY BEFORE IT'S GONE"
+                          className="input-field text-sm flex-1"
+                        />
                         <button
-                          key={s.id}
-                          onClick={() => setStickerId(s.id)}
-                          className={`p-1.5 rounded-lg border transition-colors ${stickerId === s.id ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-gray-300'}`}
+                          onClick={() => void generateSticker()}
+                          disabled={genStickerLoading || !tagText.trim()}
+                          className="px-3 py-2 rounded-lg bg-[#7C3AED] text-white text-[13px] font-semibold disabled:opacity-50 inline-flex items-center gap-1.5 flex-shrink-0"
+                        >
+                          {genStickerLoading ? <><Loader2 size={13} className="animate-spin" /> Making…</> : <><Sparkles size={13} /> Make</>}
+                        </button>
+                      </div>
+                      {genStickerError && <p className="text-[11px] text-[#ff3b30] mt-1.5">{genStickerError}</p>}
+                      {genStickerUrl && (
+                        <button
+                          onClick={() => setStickerId(null)}
+                          className={`mt-2 w-full p-1.5 rounded-lg border ${!stickerId ? 'border-[#7C3AED] bg-white dark:bg-white/5' : 'border-gray-200 dark:border-white/10'}`}
                         >
                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={ctaStickerUrl(s.file)} alt={s.label} className="w-full h-auto rounded bg-[#1d1d1f]/5" />
-                          <span className="block text-[11px] text-center mt-1 text-[#1d1d1f] dark:text-[#f5f5f7]">{s.label}</span>
+                          <img src={genStickerUrl} alt="Your CTA box" className="w-full h-auto rounded bg-[#1d1d1f]/5" />
+                          <span className="block text-[11px] text-center mt-1 text-[#7C3AED] font-medium">Your box — selected</span>
                         </button>
-                      ))}
+                      )}
+                      <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-1.5">1–6 words. MVP designs a transparent badge in our box style (~20s).</p>
                     </div>
-                  )
+
+                    {CTA_STICKERS.length > 0 && (
+                      <>
+                        <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mb-1.5">…or pick a ready-made box:</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {CTA_STICKERS.map(s => (
+                            <button
+                              key={s.id}
+                              onClick={() => { setStickerId(s.id); setGenStickerUrl(null) }}
+                              className={`p-1.5 rounded-lg border transition-colors ${stickerId === s.id ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-gray-300'}`}
+                            >
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={ctaStickerUrl(s.file)} alt={s.label} className="w-full h-auto rounded bg-[#1d1d1f]/5" />
+                              <span className="block text-[11px] text-center mt-1 text-[#1d1d1f] dark:text-[#f5f5f7]">{s.label}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </>
                 )}
               </div>
 

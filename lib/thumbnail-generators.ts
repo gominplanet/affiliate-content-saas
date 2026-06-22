@@ -270,6 +270,31 @@ export async function composeWithNanoBananaPro(opts: {
   }
 }
 
+/** fal background-removal model (salient-object segmentation, returns RGBA). */
+export const REMBG_MODEL = 'fal-ai/imageutils/rembg'
+
+/**
+ * Strip the background off a generated badge so it overlays cleanly on video.
+ * Uses fal's rembg (semantic segmentation — keeps the whole badge, including
+ * any white inside it, unlike a naive chroma key). Returns a transparent-PNG
+ * URL, or null on failure (caller can fall back to the original).
+ */
+export async function removeBackground(imageUrl: string): Promise<string | null> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await fal.subscribe(REMBG_MODEL as any, {
+      input: { image_url: imageUrl },
+      pollInterval: 1500,
+    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data = result.data as any
+    return (data?.image?.url as string) || (data?.images?.[0]?.url as string) || null
+  } catch (err) {
+    console.warn('[rembg] background removal failed:', err instanceof Error ? err.message : String(err))
+    return null
+  }
+}
+
 /**
  * Generate text-forward thumbnails with Ideogram v3 (legible baked-in
  * typography). Pure text-to-image — no reference images. [] on failure.

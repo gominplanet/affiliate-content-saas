@@ -49,16 +49,21 @@ export async function POST(request: Request) {
 
     const body = await request.json() as {
       videoUrl?: string; caption?: string; position?: string; style?: string
-      product?: string; productName?: string; stickerId?: string
+      product?: string; productName?: string; stickerId?: string; customStickerUrl?: string
     }
     const videoUrl = (body.videoUrl || '').trim()
     if (!/^https:\/\//i.test(videoUrl)) return NextResponse.json({ error: 'Upload a video first.' }, { status: 400 })
     const overlayText = (body.caption || 'LINK IN BIO').trim().slice(0, 60) || 'LINK IN BIO'
     const position = (POSITIONS.includes(body.position as OverlayPosition) ? body.position : 'lower-left') as OverlayPosition
     const style = (STYLES.includes(body.style as CaptionStyle) ? body.style : 'white-pill') as CaptionStyle
-    // Optional CTA sticker (a pre-designed PNG from public/cta-burner/). When
-    // chosen, it's burned in place of the text caption.
+    // Optional CTA sticker. Either a pre-designed PNG from the gallery
+    // (stickerId → public/cta-burner/) OR an AI-generated badge the user just
+    // made (customStickerUrl, hosted on our Supabase storage). Custom wins.
     const sticker = body.stickerId ? getCtaSticker(body.stickerId.trim()) : undefined
+    const customStickerUrl = (body.customStickerUrl || '').trim()
+    // Only accept generated badges from our own Supabase storage — never an
+    // arbitrary remote URL passed in by the client.
+    const customOk = /^https:\/\/[^/]+\.supabase\.(co|in)\//i.test(customStickerUrl)
     const productInput = (body.product || '').trim()
     // Creator-supplied product name — used as the caption source for TikTok Shop
     // links (which we never scrape) and as a fallback when a store URL won't parse.
@@ -66,8 +71,9 @@ export async function POST(request: Request) {
 
     // ── 1. Burn the overlay into the video (1080×1920) ────────────────────────
     // A CTA sticker (PNG) takes precedence over the text caption when picked.
-    const burned = await overlayCaptionOnVideo(videoUrl, overlayText, sticker
-      ? { position, stickerUrl: ctaStickerUrl(sticker.file), stickerWidthPct: sticker.widthPct }
+    const stickerOverlayUrl = customOk ? customStickerUrl : sticker ? ctaStickerUrl(sticker.file) : null
+    const burned = await overlayCaptionOnVideo(videoUrl, overlayText, stickerOverlayUrl
+      ? { position, stickerUrl: stickerOverlayUrl, stickerWidthPct: customOk ? 0.78 : sticker?.widthPct }
       : { position, style })
     if (!burned?.url) {
       return NextResponse.json({ error: `Could not burn the caption: ${getLastOverlayError() || 'unknown error'}` }, { status: 500 })
