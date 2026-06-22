@@ -73,7 +73,7 @@ export async function POST(request: Request) {
     // A CTA sticker (PNG) takes precedence over the text caption when picked.
     const stickerOverlayUrl = customOk ? customStickerUrl : sticker ? ctaStickerUrl(sticker.file) : null
     const burned = await overlayCaptionOnVideo(videoUrl, overlayText, stickerOverlayUrl
-      ? { position, stickerUrl: stickerOverlayUrl, stickerWidthPct: customOk ? 0.78 : sticker?.widthPct }
+      ? { position, stickerUrl: stickerOverlayUrl, stickerWidthPct: customOk ? 0.55 : sticker?.widthPct }
       : { position, style })
     if (!burned?.url) {
       return NextResponse.json({ error: `Could not burn the caption: ${getLastOverlayError() || 'unknown error'}` }, { status: 500 })

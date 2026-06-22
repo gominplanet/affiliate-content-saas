@@ -16,6 +16,7 @@
  * Output: { ok: true, stickerUrl } | { error }
  */
 import { NextResponse } from 'next/server'
+import sharp from 'sharp'
 import { createServerClient } from '@/lib/supabase/server'
 import { fal } from '@fal-ai/client'
 import { normalizeTier, type Tier } from '@/lib/tier'
@@ -83,7 +84,17 @@ The badge must be a self-contained graphic centred on a PLAIN SOLID FLAT WHITE b
     // ephemeral). Same bucket + {uid}/ path shape as the burner's own uploads.
     const imgRes = await fetch(cutout)
     if (!imgRes.ok) return NextResponse.json({ error: 'Could not fetch the generated badge.' }, { status: 502 })
-    const bytes = new Uint8Array(await imgRes.arrayBuffer())
+    const inputBuf = Buffer.from(await imgRes.arrayBuffer())
+    // Trim the transparent margins so the badge's bounding box is tight — this
+    // is what makes the lower-/upper-LEFT placement actually sit against the
+    // left edge instead of looking centred (the generated canvas has wide
+    // transparent padding around the graphic). Best-effort.
+    let bytes: Buffer | Uint8Array
+    try {
+      bytes = await sharp(inputBuf).trim().png().toBuffer()
+    } catch {
+      bytes = new Uint8Array(inputBuf)
+    }
     const path = `${user.id}/cta-${crypto.randomUUID()}.png`
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error: upErr } = await (supabase.storage as any).from('instagram-videos').upload(path, bytes, {

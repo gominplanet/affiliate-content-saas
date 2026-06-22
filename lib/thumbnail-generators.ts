@@ -270,29 +270,34 @@ export async function composeWithNanoBananaPro(opts: {
   }
 }
 
-/** fal background-removal model (salient-object segmentation, returns RGBA). */
+/** fal background-removal models — BiRefNet gives crisper edges (less halo)
+ *  than rembg; we try it first and fall back to rembg. Both segment the
+ *  salient object, so white INSIDE the badge is preserved (not chroma-keyed). */
+export const BIREFNET_MODEL = 'fal-ai/birefnet/v2'
 export const REMBG_MODEL = 'fal-ai/imageutils/rembg'
 
 /**
  * Strip the background off a generated badge so it overlays cleanly on video.
- * Uses fal's rembg (semantic segmentation — keeps the whole badge, including
- * any white inside it, unlike a naive chroma key). Returns a transparent-PNG
- * URL, or null on failure (caller can fall back to the original).
+ * Returns a transparent-PNG URL, or null on failure (caller can fall back to
+ * the original).
  */
 export async function removeBackground(imageUrl: string): Promise<string | null> {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result = await fal.subscribe(REMBG_MODEL as any, {
-      input: { image_url: imageUrl },
-      pollInterval: 1500,
-    })
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const data = result.data as any
-    return (data?.image?.url as string) || (data?.images?.[0]?.url as string) || null
-  } catch (err) {
-    console.warn('[rembg] background removal failed:', err instanceof Error ? err.message : String(err))
-    return null
+  for (const model of [BIREFNET_MODEL, REMBG_MODEL]) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const result = await fal.subscribe(model as any, {
+        input: { image_url: imageUrl },
+        pollInterval: 1500,
+      })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data = result.data as any
+      const url = (data?.image?.url as string) || (data?.images?.[0]?.url as string) || null
+      if (url) return url
+    } catch (err) {
+      console.warn(`[bg-removal] ${model} failed:`, err instanceof Error ? err.message : String(err))
+    }
   }
+  return null
 }
 
 /**
