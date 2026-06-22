@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.53
+ * Version: 1.0.54
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -3868,3 +3868,95 @@ if (!function_exists('mvp_affiliate_rewrite_legacy_cta')) {
         return $content;
     }
 }
+
+// ─── 14. AI-readiness: /llms.txt + AI-crawler robots allowlist ───────────────
+// Make every MVP-managed blog discoverable + citable by AI shopping agents
+// (ChatGPT, Claude, Perplexity, Google AI). This is the affiliate-publisher
+// analog of Shopify's UCP "discovery layer": we don't transact, we make the
+// content the agent trusts, quotes, and links.
+//
+//   (a) /llms.txt — a markdown "map for AI" (llmstxt.org convention): site
+//       summary + a prioritized list of review / guide / comparison posts.
+//   (b) robots.txt — explicitly ALLOW the major AI crawlers (many hosts and
+//       security plugins block them by default → silent invisibility to AI).
+
+// (a) Serve /llms.txt. Intercept early on `init` by the raw request path so it
+//     works regardless of permalink / rewrite state. Cached 6h in a transient
+//     so it's one query per refresh, not per hit; busted on post save/delete.
+add_action('init', function () {
+    $path = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH);
+    if ($path !== '/llms.txt') return;
+
+    $body = get_transient('mvp_llms_txt');
+    if ($body === false) {
+        $name = get_bloginfo('name');
+        $desc = get_bloginfo('description');
+        $lines = [];
+        $lines[] = '# ' . $name;
+        if ($desc) $lines[] = '> ' . $desc;
+        $lines[] = '';
+        $lines[] = 'Fact-grounded product reviews, comparisons, and buying guides based on real hands-on testing and verified product specs, written to help shoppers and AI shopping assistants make an accurate choice. Posts may contain affiliate links.';
+        $lines[] = '';
+        $lines[] = '## Reviews & guides';
+
+        $q = new WP_Query([
+            'post_type'           => 'post',
+            'post_status'         => 'publish',
+            'posts_per_page'      => 200,
+            'orderby'             => 'date',
+            'order'               => 'DESC',
+            'no_found_rows'       => true,
+            'ignore_sticky_posts' => true,
+        ]);
+        foreach ($q->posts as $p) {
+            $title = trim(get_the_title($p));
+            $url   = get_permalink($p);
+            $ex    = trim(wp_strip_all_tags(get_the_excerpt($p)));
+            if (strlen($ex) > 160) $ex = substr($ex, 0, 157) . '...';
+            if ($title === '' || !$url) continue;
+            $lines[] = $ex !== '' ? '- [' . $title . '](' . $url . '): ' . $ex
+                                  : '- [' . $title . '](' . $url . ')';
+        }
+        wp_reset_postdata();
+
+        $lines[] = '';
+        $lines[] = '## About';
+        $lines[] = '- [Home](' . home_url('/') . ')';
+
+        $body = implode("\n", $lines) . "\n";
+        set_transient('mvp_llms_txt', $body, 6 * HOUR_IN_SECONDS);
+    }
+
+    header('Content-Type: text/plain; charset=utf-8');
+    header('X-Robots-Tag: noindex'); // the map file itself needn't be indexed
+    echo $body;
+    exit;
+}, 1);
+
+// Bust the llms.txt cache on any publish / update / delete so it stays current.
+add_action('save_post', function ($post_id) {
+    if (wp_is_post_revision($post_id)) return;
+    delete_transient('mvp_llms_txt');
+});
+add_action('deleted_post', function () { delete_transient('mvp_llms_txt'); });
+
+// (b) AI-crawler allowlist appended to WordPress's virtual robots.txt.
+//     CAVEAT: only applies when WP serves the virtual robots.txt (no static
+//     robots.txt file on disk). If a static file exists, these blocks must be
+//     added there manually.
+add_filter('robots_txt', function ($output) {
+    $bots = [
+        'GPTBot', 'OAI-SearchBot', 'ChatGPT-User',  // OpenAI
+        'ClaudeBot', 'Claude-Web', 'anthropic-ai',  // Anthropic
+        'PerplexityBot',                            // Perplexity
+        'Google-Extended',                          // Google AI / Gemini
+        'Applebot-Extended',                        // Apple Intelligence
+        'Amazonbot', 'meta-externalagent',          // Amazon, Meta
+    ];
+    $extra = "\n# AI assistants - explicitly allowed (MVP Affiliate AI-readiness)\n";
+    foreach ($bots as $b) {
+        $extra .= "User-agent: {$b}\nAllow: /\n\n";
+    }
+    $extra .= '# AI content map: ' . home_url('/llms.txt') . "\n";
+    return $output . $extra;
+}, 10, 1);
