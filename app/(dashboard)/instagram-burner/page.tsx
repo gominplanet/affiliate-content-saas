@@ -14,6 +14,7 @@ import PageHero from '@/components/layout/PageHero'
 import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
 import { metaEnabled } from '@/lib/feature-flags'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
+import { TikTokDirectModal } from '@/components/TikTokDirectModal'
 import type { Tier } from '@/lib/tier'
 import { Flame, Loader2, Sparkles, Download, AlertCircle, UploadCloud, Video, CheckCircle, Copy, Instagram, Plus, Trash2, Clock } from 'lucide-react'
 
@@ -52,6 +53,7 @@ export default function InstagramBurnerPage() {
   const [resultUrl, setResultUrl] = useState<string | null>(null)
   const [igCaption, setIgCaption] = useState<string | null>(null)
   const [publishing, setPublishing] = useState(false)
+  const [ttOpen, setTtOpen] = useState(false)
   const [published, setPublished] = useState(false)
   // Final preview-and-confirm gate before anything is posted to Instagram.
   const [confirmPublish, setConfirmPublish] = useState(false)
@@ -393,6 +395,16 @@ export default function InstagramBurnerPage() {
                     </>
                   )}
 
+                  {/* Post the burned video straight to TikTok — opens the
+                      audit-compliant composer (privacy picker, disclosure, etc.). */}
+                  <button
+                    onClick={() => setTtOpen(true)}
+                    className="inline-flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-lg text-xs font-semibold text-white hover:opacity-90 bg-black"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="white"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5.8 20.1a6.34 6.34 0 0 0 10.86-4.43V8.45a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1.84-.34z" /></svg>
+                    Post to TikTok
+                  </button>
+
                   <button onClick={download} className="inline-flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-lg text-xs font-semibold bg-[#34c759] text-white hover:opacity-90">
                     <Download size={13} /> Download captioned video
                   </button>
@@ -409,6 +421,15 @@ export default function InstagramBurnerPage() {
           </>
         )}
       </div>
+
+      {/* TikTok publish — burned video → audit-compliant TikTok composer. */}
+      {ttOpen && resultUrl && (
+        <TikTokDirectModal
+          burnedVideoUrl={resultUrl}
+          initialCaption={igCaption || caption}
+          onClose={() => setTtOpen(false)}
+        />
+      )}
 
       {/* Final preview + confirm before anything is posted to Instagram. */}
       {confirmPublish && resultUrl && (

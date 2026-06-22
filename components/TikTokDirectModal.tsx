@@ -54,15 +54,23 @@ const PRIVACY_LABELS: Record<PrivacyLevel, string> = {
 
 export function TikTokDirectModal({
   videoId,
+  burnedVideoUrl,
+  initialCaption,
   onClose,
   onPosted,
 }: {
-  videoId: string
+  videoId?: string
+  /** Shop Burner mode: a burned Cloudinary video URL to post directly (no
+   *  youtube_videos row). When set, the modal posts via /api/tiktok/publish-burned
+   *  and skips the videoId-only bits (product input, upload zone, YT links). */
+  burnedVideoUrl?: string
+  initialCaption?: string
   onClose: () => void
   /** Fires once when the publish status flips to "published". The Vertical
    *  Videos row uses this to update its TikTok pill state. */
   onPosted?: () => void
 }) {
+  const isBurned = !!burnedVideoUrl
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [info, setInfo] = useState<CreatorInfo | null>(null)
@@ -106,10 +114,7 @@ export function TikTokDirectModal({
     setLoading(true)
     setLoadError(null)
     try {
-      const [infoRes, metaRes] = await Promise.all([
-        fetch('/api/blog/tiktok-post/creator-info'),
-        fetch(`/api/blog/tiktok-post/video-meta?videoId=${encodeURIComponent(videoId)}`),
-      ])
+      const infoRes = await fetch('/api/blog/tiktok-post/creator-info')
       const infoJson = await infoRes.json()
       if (!infoRes.ok) {
         setLoadError(infoJson.error || 'Could not load your TikTok account info.')
@@ -117,6 +122,16 @@ export function TikTokDirectModal({
         return
       }
       setInfo(infoJson.info as CreatorInfo)
+
+      // Shop Burner: video is an already-burned Cloudinary URL — no
+      // youtube_videos meta to fetch. Seed synthetic meta + the passed caption.
+      if (isBurned) {
+        setMeta({ title: '', videoUrl: burnedVideoUrl!, defaultCaption: initialCaption || '', hashtags: [], hook: '' })
+        setCaption(initialCaption || '')
+        return
+      }
+
+      const metaRes = await fetch(`/api/blog/tiktok-post/video-meta?videoId=${encodeURIComponent(videoId || '')}`)
       const metaJson = await metaRes.json()
       setYoutubeId((metaJson.youtubeVideoId as string | null) ?? null)
       if (metaRes.ok && metaJson.videoUrl) {
@@ -132,7 +147,7 @@ export function TikTokDirectModal({
     } finally {
       setLoading(false)
     }
-  }, [videoId])
+  }, [videoId, isBurned, burnedVideoUrl, initialCaption])
 
   useEffect(() => { void loadMeta() }, [loadMeta])
 
@@ -141,7 +156,10 @@ export function TikTokDirectModal({
     if (!publishId || publishStatus === 'published' || publishStatus === 'failed' || publishStatus === 'inbox') return
     const tick = async () => {
       try {
-        const res = await fetch(`/api/blog/tiktok-post/video/status?videoId=${encodeURIComponent(videoId)}`)
+        const statusUrl = isBurned
+          ? `/api/tiktok/publish-burned/status?publishId=${encodeURIComponent(publishId)}`
+          : `/api/blog/tiktok-post/video/status?videoId=${encodeURIComponent(videoId || '')}`
+        const res = await fetch(statusUrl)
         const json = await res.json()
         if (!res.ok) {
           setPublishError(json.error || 'Status check failed.')
@@ -165,7 +183,7 @@ export function TikTokDirectModal({
     const id = setInterval(tick, 5000)
     void tick()
     return () => clearInterval(id)
-  }, [publishId, publishStatus, videoId, onPosted])
+  }, [publishId, publishStatus, videoId, isBurned, onPosted])
 
   // Commercial-content rules (TikTok Content Sharing Guidelines):
   //  - if the commercial toggle is ON, at least one of Your Brand / Branded
@@ -183,7 +201,7 @@ export function TikTokDirectModal({
   const regenerateCaption = useCallback(async () => {
     setRegenerating(true)
     try {
-      const url = `/api/blog/tiktok-post/video-meta?videoId=${encodeURIComponent(videoId)}${productInput.trim() ? `&productInput=${encodeURIComponent(productInput.trim())}` : ''}`
+      const url = `/api/blog/tiktok-post/video-meta?videoId=${encodeURIComponent(videoId || '')}${productInput.trim() ? `&productInput=${encodeURIComponent(productInput.trim())}` : ''}`
       const res = await fetch(url)
       const json = await res.json()
       if (res.ok && json.defaultCaption) {
@@ -199,11 +217,11 @@ export function TikTokDirectModal({
     setPosting(true)
     setPostError(null)
     try {
-      const res = await fetch('/api/blog/tiktok-post/video', {
+      const res = await fetch(isBurned ? '/api/tiktok/publish-burned' : '/api/blog/tiktok-post/video', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          videoId,
+          ...(isBurned ? { videoUrl: burnedVideoUrl } : { videoId }),
           caption,
           privacyLevel: privacy,
           disableComment: !allowComment || (info?.commentDisabled ?? false),
@@ -227,7 +245,7 @@ export function TikTokDirectModal({
     } finally {
       setPosting(false)
     }
-  }, [canPost, videoId, caption, privacy, allowComment, allowDuet, allowStitch, isCommercial, brandedContent, brandedPartnership, info])
+  }, [canPost, videoId, isBurned, burnedVideoUrl, caption, privacy, allowComment, allowDuet, allowStitch, isCommercial, brandedContent, brandedPartnership, info])
 
   // Cancel is always allowed — even mid-processing the user can walk
   // away. The status keeps persisting server-side; reopening the modal
@@ -289,7 +307,7 @@ export function TikTokDirectModal({
               {/* Studio download + drop. Studio's Download button hands
                   the creator the original MP4 they uploaded — no quality
                   loss, no bot-wall drama. */}
-              {!reconnectRequired && (
+              {!reconnectRequired && !isBurned && (
                 <>
                   {youtubeId && (
                     <div className="rounded-lg border border-[#7C3AED]/20 bg-[#7C3AED]/5 p-4 flex flex-col items-center gap-2.5">
@@ -306,7 +324,7 @@ export function TikTokDirectModal({
                       </a>
                     </div>
                   )}
-                  <ShortVideoUpload videoId={videoId} onUploaded={loadMeta} />
+                  <ShortVideoUpload videoId={videoId || ''} onUploaded={loadMeta} />
                 </>
               )}
             </div>
@@ -346,13 +364,14 @@ export function TikTokDirectModal({
                       <ExternalLink size={10} /> Wrong video? Open in YouTube Studio to grab the right one
                     </a>
                   )}
-                  <ShortVideoUpload videoId={videoId} onUploaded={loadMeta} compact />
+                  {!isBurned && <ShortVideoUpload videoId={videoId || ''} onUploaded={loadMeta} compact />}
                 </div>
               )}
 
-              {/* Product input — optional. Paste an ASIN / Amazon URL /
-                  Geniuslink and we re-fetch the caption with real product
-                  info baked in (hook + value line + better hashtags). */}
+              {/* Product input — optional. Hidden in Shop Burner mode (the
+                  caption is already composed upstream). Paste an ASIN / Amazon
+                  URL / Geniuslink and we re-fetch the caption with product info. */}
+              {!isBurned && (
               <div>
                 <label className="block text-[10px] font-semibold text-[#3a3a3c] dark:text-[#d2d2d7] uppercase tracking-wide mb-1.5 flex items-center gap-1">
                   <Package size={11} /> Product (optional)
@@ -386,6 +405,7 @@ export function TikTokDirectModal({
                   <p className="text-[10px] text-[#86868b] mt-1">Click Refresh to apply the product to the caption.</p>
                 )}
               </div>
+              )}
 
               {/* Caption */}
               <div>
@@ -496,16 +516,17 @@ export function TikTokDirectModal({
                     <p className="text-[10px] text-[#86868b]">TikTok status: <span className="font-mono">{rawStatus}</span></p>
                   )}
                   {/* Diagnostic — opens the proxy URL TikTok is pulling from
-                      in a new tab. If it plays, the proxy is fine. If it
-                      404s or hangs, that's our smoking gun. */}
-                  <a
-                    href={`/api/proxy-short/${videoId}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[10px] text-[#7C3AED] hover:underline inline-flex items-center gap-1 self-start"
-                  >
-                    Test the proxy URL in a new tab <ExternalLink size={9} />
-                  </a>
+                      in a new tab. Only meaningful for the videoId/proxy path. */}
+                  {!isBurned && (
+                    <a
+                      href={`/api/proxy-short/${videoId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[10px] text-[#7C3AED] hover:underline inline-flex items-center gap-1 self-start"
+                    >
+                      Test the proxy URL in a new tab <ExternalLink size={9} />
+                    </a>
+                  )}
                 </div>
               )}
               {publishStatus === 'inbox' && (
