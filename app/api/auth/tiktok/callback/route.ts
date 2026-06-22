@@ -92,7 +92,9 @@ export async function GET(request: Request) {
         client_secret: clientSecret,
         code,
         grant_type: 'authorization_code',
-        redirect_uri: `${appUrl}/api/auth/tiktok/callback`,
+        // MUST be byte-identical to the redirect_uri sent in the authorize step
+        // (app/api/auth/tiktok/route.ts) — TikTok rejects the exchange otherwise.
+        redirect_uri: process.env.TIKTOK_REDIRECT_URI || `${appUrl}/api/auth/tiktok/callback`,
       }).toString(),
     })
     tokens = await res.json() as TikTokTokenResponse

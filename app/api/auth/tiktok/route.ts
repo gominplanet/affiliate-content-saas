@@ -45,7 +45,11 @@ export async function GET() {
   // current user id so the callback can validate it matches the session
   // and bind the new TikTok tokens to the right MVP user.
   const state = user.id
-  const redirectUri = `${appUrl}/api/auth/tiktok/callback`
+  // TikTok matches redirect_uri EXACTLY (no wildcards, www ≠ non-www) and a Live
+  // app's redirect URI can't be edited without a re-review. So allow an env
+  // override to match whatever's registered on the TikTok app (currently the
+  // non-www form). Must be identical here and in the token-exchange (callback).
+  const redirectUri = process.env.TIKTOK_REDIRECT_URI || `${appUrl}/api/auth/tiktok/callback`
 
   const url = new URL('https://www.tiktok.com/v2/auth/authorize/')
   url.searchParams.set('client_key', clientKey)
