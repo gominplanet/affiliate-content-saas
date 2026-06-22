@@ -164,7 +164,9 @@ export async function overlayCaptionOnVideo(
     const overlayLayer = opts?.stickerUrl
       ? {
           overlay: { url: opts.stickerUrl },
-          width: opts?.stickerWidthPct ?? 0.85,
+          // Global 0.75 down-scale — every CTA box burns at 75% of its nominal
+          // width so it sits as a badge, not a banner across the frame.
+          width: (opts?.stickerWidthPct ?? 0.85) * 0.75,
           crop: 'scale',
           flags: 'relative', // size relative to the base video width
           gravity,
