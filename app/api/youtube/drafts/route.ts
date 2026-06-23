@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { createYouTubeOAuthService, getValidYouTubeToken } from '@/services/youtube'
+import { createYouTubeOAuthService } from '@/services/youtube'
+import { getChannelOAuthToken } from '@/lib/youtube-channels'
 
 // Cache TTL: 15 minutes.  Reads within this window return DB rows — zero
 // YouTube API units.  Explicit ?refresh=1 forces a re-scan regardless of age.
@@ -111,34 +112,28 @@ export async function GET(request: Request) {
 
   const { data: intRow } = await supabase
     .from('integrations')
-    .select('youtube_oauth_access_token,youtube_oauth_refresh_token,youtube_oauth_token_expiry,tier')
+    .select('tier')
     .eq('user_id', user.id)
     .single()
 
-  if (!intRow?.youtube_oauth_access_token) {
-    return NextResponse.json({ error: 'YouTube OAuth not connected', needsAuth: true }, { status: 401 })
-  }
-
   try {
-    const intData = intRow as Record<string, unknown>
-    const expiry = intData.youtube_oauth_token_expiry as number | null
-    const needsRefresh = expiry && Date.now() > expiry - 120_000
-    const token = await getValidYouTubeToken(intData)
-
-    if (needsRefresh) {
-      await supabase
-        .from('integrations')
-        .update({
-          youtube_oauth_access_token: token,
-          youtube_oauth_token_expiry: Date.now() + 3600 * 1000,
-        })
-        .eq('user_id', user.id)
-    }
-
     const { searchParams } = new URL(request.url)
     const forceRefresh = searchParams.get('refresh') === '1'
     const pageToken = searchParams.get('pageToken') || undefined
     const q = (searchParams.get('q') || '').trim().slice(0, 200)
+    // Which YouTube channel to list. Explicit ?channelId=<UC…|uuid> (the
+    // Co-Pilot channel picker) scopes everything to that channel; otherwise we
+    // resolve the user's DEFAULT channel (youtube_channels, falling back to the
+    // legacy integrations token). getChannelOAuthToken refreshes + persists.
+    const channelId = (searchParams.get('channelId') || '').trim() || null
+    // When a specific channel is picked we BYPASS the per-user cache entirely
+    // (it's keyed by user, not channel) so one channel's videos never bleed
+    // into another's. The default view keeps caching as before.
+    const channelScoped = !!channelId
+    const token = await getChannelOAuthToken(supabase, user.id, channelId)
+    if (!token) {
+      return NextResponse.json({ error: 'YouTube OAuth not connected', needsAuth: true }, { status: 401 })
+    }
     const includePublished = searchParams.get('includePublished') === '1'
 
     // ── Search mode ─────────────────────────────────────────────────────────
@@ -169,8 +164,10 @@ export async function GET(request: Request) {
       // 2. Supplement with cache TITLE matches (title-only so a loose
       //    description hit can't inject an unrelated video — that was the
       //    "Bamboo Mattress" surfacing for "boom" bug). Fresh cache only — a
-      //    search should never trigger a full uploads scan.
-      const cache = await readCache(supabase, user.id)
+      //    search should never trigger a full uploads scan. Skipped entirely
+      //    when a specific channel is picked (the cache is per-user, not
+      //    per-channel) so live search alone scopes the results.
+      const cache = channelScoped ? null : await readCache(supabase, user.id)
       const cacheAge = cache ? Date.now() - new Date(cache.cached_at).getTime() : Infinity
       const cacheFresh = !!cache && cacheAge < CACHE_TTL_MS
       if (cacheFresh) {
@@ -184,7 +181,7 @@ export async function GET(request: Request) {
       if (byId.size === 0 && !cacheFresh) {
         try {
           const yt = createYouTubeOAuthService(token)
-          const scanned = await runFullScan(yt, supabase, user.id, cache?.uploads_playlist_id, undefined)
+          const scanned = await runFullScan(yt, supabase, user.id, cache?.uploads_playlist_id, undefined, !channelScoped)
           for (const v of scanned) {
             if (v.title.toLowerCase().includes(lower) || (v.description ?? '').toLowerCase().includes(lower)) add(v)
           }
@@ -216,7 +213,7 @@ export async function GET(request: Request) {
     // cache, and return the new batch.
     if (pageToken) {
       const yt = createYouTubeOAuthService(token)
-      const cache = await readCache(supabase, user.id)
+      const cache = channelScoped ? null : await readCache(supabase, user.id)
       const existingVideos: ReturnType<typeof buildDraftVideo>[] = cache?.videos ?? []
       const uploadsPlaylistId = cache?.uploads_playlist_id
 
@@ -236,7 +233,7 @@ export async function GET(request: Request) {
         (v: ReturnType<typeof buildDraftVideo>) => !seen.has(v.youtubeVideoId),
       )]
       const playlistToPersist = resolvedPlaylistId || uploadsPlaylistId
-      if (playlistToPersist) {
+      if (playlistToPersist && !channelScoped) {
         await writeCache(
           supabase, user.id, playlistToPersist, merged, !nextCursor, nextCursor ?? null,
         )
@@ -253,7 +250,7 @@ export async function GET(request: Request) {
     }
 
     // ── Default load: serve from cache if fresh, scan if stale/forced ────────
-    const cache = await readCache(supabase, user.id)
+    const cache = channelScoped ? null : await readCache(supabase, user.id)
     const cacheAge = cache ? Date.now() - new Date(cache.cached_at).getTime() : Infinity
     const usedCache = cache && cacheAge < CACHE_TTL_MS && !forceRefresh
 
@@ -276,7 +273,7 @@ export async function GET(request: Request) {
       const yt = createYouTubeOAuthService(token)
       try {
         const result = await runFullScanWithCursor(
-          yt, supabase, user.id, cache?.uploads_playlist_id,
+          yt, supabase, user.id, cache?.uploads_playlist_id, undefined, !channelScoped,
         )
         allVideos = result.videos
         nextCursor = result.nextCursor
@@ -294,7 +291,7 @@ export async function GET(request: Request) {
       (v: ReturnType<typeof buildDraftVideo>) => includePublished || v.status !== 'public',
     )
 
-    if (searchParams.get('debug') === '1' && intRow.tier === 'admin') {
+    if (searchParams.get('debug') === '1' && intRow?.tier === 'admin') {
       return NextResponse.json({
         fromCache: usedCache,
         cacheAgeMinutes: Math.round(cacheAge / 60000),
@@ -427,8 +424,9 @@ async function runFullScan(
   userId: string,
   cachedPlaylistId?: string,
   fromPageToken?: string,
+  persist = true,
 ): Promise<ReturnType<typeof buildDraftVideo>[]> {
-  const result = await runFullScanWithCursor(yt, supabase, userId, cachedPlaylistId)
+  const result = await runFullScanWithCursor(yt, supabase, userId, cachedPlaylistId, fromPageToken, persist)
   return result.videos
 }
 

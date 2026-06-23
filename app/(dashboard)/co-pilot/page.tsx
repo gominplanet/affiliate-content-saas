@@ -2358,6 +2358,11 @@ export default function StudioPage() {
   // costs ~100x more quota than the default listing.
   const [searchQuery, setSearchQuery] = useState('')
   const [activeQuery, setActiveQuery] = useState('') // post-debounce value driving the fetch
+  // Multi-channel (migration 127): which connected YouTube channel Co-Pilot is
+  // pulling drafts from. null = the account default. Only shown when the user
+  // has more than one channel connected.
+  const [channels, setChannels] = useState<Array<{ channelId: string; channelTitle: string; isDefault: boolean }>>([])
+  const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null)
 
   // Bucket the current drafts list into the 4 workflow tabs. Recomputes
   // whenever drafts change — cheap (just regex per video). Search bypasses
@@ -2440,6 +2445,7 @@ export default function StudioPage() {
     if (query) params.set('q', query)
     if (wantPublished) params.set('includePublished', '1')
     if (opts?.forceRefresh) params.set('refresh', '1')
+    if (selectedChannelId) params.set('channelId', selectedChannelId)
     const url = params.toString() ? `/api/youtube/drafts?${params.toString()}` : '/api/youtube/drafts'
     const res = await fetch(url)
     const data = await res.json()
@@ -2464,7 +2470,7 @@ export default function StudioPage() {
     }
     if (append) setLoadingMore(false)
     else if (!silent) setLoading(false)
-  }, [supabase])
+  }, [supabase, selectedChannelId])
 
   // Debounce search input → fetch when the user pauses typing. Empty query
   // re-loads the default (drafts-only) page.
@@ -2541,6 +2547,23 @@ export default function StudioPage() {
   }, [load, activeQuery])
 
   useEffect(() => { load() }, [load])
+
+  // Discover the user's connected YouTube channels so we can offer a picker
+  // when they run more than one (migration 127). Selecting one re-loads the
+  // drafts scoped to that channel (load() reads selectedChannelId).
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/youtube/channels')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (cancelled || !d?.channels) return
+        setChannels(d.channels.map((c: { channelId: string; channelTitle: string; isDefault?: boolean }) => ({
+          channelId: c.channelId, channelTitle: c.channelTitle, isDefault: !!c.isDefault,
+        })))
+      })
+      .catch(() => { /* non-fatal — single-channel users just see no picker */ })
+    return () => { cancelled = true }
+  }, [])
 
   if (loading) {
     return (
@@ -2638,6 +2661,24 @@ export default function StudioPage() {
               query falls back to the default ASIN-only listing of the
               uploads playlist. Debounced 350ms — search.list costs ~100x
               more YouTube quota than playlistItems, so we don't spam it. */}
+          {/* Channel picker — only when the creator runs more than one YouTube
+              channel. Selecting one re-loads the drafts scoped to that channel
+              (the default channel flag no longer silently controls Co-Pilot). */}
+          {channels.length > 1 && (
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-xs font-semibold text-[#6e6e73] dark:text-[#8e8e93]">📺 Channel</span>
+              <select
+                value={selectedChannelId ?? (channels.find(c => c.isDefault)?.channelId ?? channels[0].channelId)}
+                onChange={(e) => setSelectedChannelId(e.target.value)}
+                className="text-sm px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] max-w-[280px]"
+              >
+                {channels.map(c => (
+                  <option key={c.channelId} value={c.channelId}>{c.channelTitle}{c.isDefault ? ' (default)' : ''}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <div className="relative mb-4">
             <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#86868b]" />
             <input
