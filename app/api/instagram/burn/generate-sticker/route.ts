@@ -22,6 +22,7 @@ import { fal } from '@fal-ai/client'
 import { normalizeTier, type Tier } from '@/lib/tier'
 import { spendGate } from '@/lib/ai-spend'
 import { recordUsage } from '@/lib/ai-usage'
+import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 import {
   composeWithNanoBananaPro, rehostAll, removeBackground, NANO_BANANA_PRO_COST_MODEL,
 } from '@/lib/thumbnail-generators'
@@ -31,6 +32,10 @@ export const maxDuration = 120
 
 // Example badges whose comic/pop look anchors the generated style.
 const STYLE_REF_FILES = ['burner07.png', 'burner08.png', 'burner013.png']
+// Monthly cap on AI CTA-box generation (the only paid step in the burner —
+// ~$0.13/box on Nano Banana Pro). Pro gets this many designs per billing
+// period; admin is unlimited. One number to tune.
+const CTA_BOX_MONTHLY_CAP = 50
 
 export async function POST(request: Request) {
   try {
@@ -40,7 +45,7 @@ export async function POST(request: Request) {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: intRow } = await supabase
-      .from('integrations').select('tier').eq('user_id', user.id).single()
+      .from('integrations').select('tier,subscription_period_start,subscription_period_end').eq('user_id', user.id).single()
     const tier = normalizeTier(intRow?.tier) as Tier
     if (tier !== 'pro' && tier !== 'admin') {
       return NextResponse.json({
@@ -52,6 +57,23 @@ export async function POST(request: Request) {
 
     const spendBlocked = await spendGate(user.id, tier)
     if (spendBlocked) return spendBlocked
+
+    // Per-period cap on AI CTA-box generation (admin = unlimited). Counts
+    // cta_sticker_gen rows in ai_usage this billing window. Checked BEFORE we
+    // spend on the model. Picking a saved box / built-in gallery box is free
+    // and uncapped — only fresh generation counts.
+    const capLimit = tier === 'admin' ? null : CTA_BOX_MONTHLY_CAP
+    const capCheck = await checkUsageCap(
+      supabase, user.id, PRIMARY_FEATURE.ctaBox, capLimit,
+      (intRow?.subscription_period_start as string | null) ?? null,
+      (intRow?.subscription_period_end as string | null) ?? null,
+    )
+    if (capCheck?.exceeded) {
+      return NextResponse.json({
+        error: `You've used all ${capLimit} custom CTA boxes for this billing period. Your saved boxes still work — reuse any of them free. Resets ${capCheck.resetLabel}.`,
+        limitReached: true, cap: 'cta_box', currentTier: tier,
+      }, { status: 429 })
+    }
 
     const body = await request.json() as { tag?: string }
     const tag = (body.tag || '').replace(/\s+/g, ' ').trim().slice(0, 40)

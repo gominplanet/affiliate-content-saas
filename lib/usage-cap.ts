@@ -31,6 +31,9 @@ export const PRIMARY_FEATURE = {
   assistant: ['assistant_message'] as string[],
   /** Photobooth headshot — one row per successful generation. */
   photobooth: ['photobooth_image'] as string[],
+  /** Shop Burner "Make one from text" CTA box — one row per generation
+   *  (the Nano Banana Pro render). Caps the only paid step in the burner. */
+  ctaBox: ['cta_sticker_gen'] as string[],
 }
 
 interface CapCheck {
