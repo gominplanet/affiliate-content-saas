@@ -15,6 +15,8 @@ import { recordUsage, usageFromAnthropic } from '@/lib/ai-usage'
 import { composePin, PIN_OVERLAY_THEME_COUNT } from '@/lib/pin-compose'
 import { learnProfileToPrompt } from '@/lib/learn'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
+import { pickProductReferenceImage } from '@/lib/product-image'
 
 export const AFFILIATE_DISCLAIMER = '📌 Disclosure: As an Amazon Associate I earn from qualifying purchases. This post may contain affiliate links — I may earn a small commission at no extra cost to you.'
 export const COMPLIANCE_TAGS = '#ad #affiliate'
@@ -134,13 +136,46 @@ Return ONLY valid JSON with these exact keys:
     .map((s: unknown) => scrubBanned(String(s)).trim()).filter(Boolean).slice(0, 4)
   const useCollage = isRoundup && collageProducts.length >= 2
 
+  // Ground the pin's IMAGE on the REAL product — not a name-guess. The blog
+  // post links to a product via its source video, whose row stores the clean,
+  // vision-picked product photo used in the article. Use that as the generation
+  // reference so the rendered product matches reality (the #1 cause of "wrong
+  // product" pins was pure text-to-image off a guessed name). Fallbacks:
+  // scrape the product link → the article's own hero image. Single-product
+  // scenes only; the multi-product collage stays name-grounded.
+  let referenceImageUrl: string | null = null
+  if (ctx.userId && p.video_id && !useCollage) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: vid } = await (createAdminClient() as any)
+        .from('youtube_videos')
+        .select('product_image_url, product_url')
+        .eq('id', p.video_id)
+        .maybeSingle()
+      referenceImageUrl = (vid?.product_image_url as string | null)?.trim() || null
+      if (!referenceImageUrl && vid?.product_url) {
+        const url = String(vid.product_url)
+        const asin = url.toUpperCase().match(/\/(?:DP|GP\/PRODUCT)\/([A-Z0-9]{10})/)?.[1] || extractAsin(url.toUpperCase())
+        if (asin) {
+          try {
+            const prod = await fetchAmazonProduct(asin)
+            const picked = await pickProductReferenceImage(prod.images, prod.title, { userId: ctx.userId })
+            referenceImageUrl = (typeof picked === 'string' ? picked : null) || prod.imageUrl || null
+          } catch { /* scrape failed — fall through */ }
+        }
+      }
+    } catch { /* no video row — fall through */ }
+  }
+  referenceImageUrl = referenceImageUrl
+    || (p.featured_image_url as string | null) || (p.thumbnail_url as string | null) || null
+
   // Roll a fresh overlay style (and, for non-collage, a scene composition) each
   // generation so pins vary — and re-roll on regenerate.
   const styleVariant = Math.floor(Math.random() * PIN_OVERLAY_THEME_COUNT)
   const imagePrompt = useCollage
     ? buildCollageImagePrompt(fields.product_category, collageProducts)
-    : buildViralImagePrompt(fields, Math.floor(Math.random() * PIN_COMPOSITIONS.length))
-  const rawImage = await generatePinImage(imagePrompt)
+    : buildViralImagePrompt(fields, Math.floor(Math.random() * PIN_COMPOSITIONS.length), !!referenceImageUrl)
+  const rawImage = await generatePinImage(imagePrompt, useCollage ? null : referenceImageUrl)
   const imageResult = rawImage
     ? await composePin(rawImage.data, rawImage.mediaType, {
         viral_hook: fields.viral_hook,
@@ -206,11 +241,17 @@ NO BRANDS: Do NOT render or invent any retailer/marketplace names or logos (espe
 Final quality: high resolution, photorealistic, professional advertising/product photography, clean and aspirational. Vertical 2:3 portrait. Completely text-free.`
 }
 
-function buildViralImagePrompt(f: Record<string, string>, variant = 0): string {
+function buildViralImagePrompt(f: Record<string, string>, variant = 0, hasReference = false): string {
   const composition = PIN_COMPOSITIONS[variant % PIN_COMPOSITIONS.length](f)
+  // When a real product photo is attached, the rendered product MUST match it —
+  // this is what stops the model inventing a different/wrong product.
+  const referenceClause = hasReference
+    ? `\nREFERENCE PRODUCT (CRITICAL): The attached image shows the EXACT product to feature. Render THAT product faithfully — its real shape, proportions, colour, materials and design must match the reference. Do NOT substitute, restyle, or invent a different product. If the reference is retail packaging, a box, or a marketing infographic, depict the REAL unpackaged product and ignore any text/logos/badges printed on it. Use the reference ONLY to learn what the product physically looks like — compose a fresh scene around it.\n`
+    : ''
   return `Create a high-energy vertical photographic scene for a ${f.product_category}, 2:3 portrait aspect ratio.
 
 Composition: ${composition}
+${referenceClause}
 
 Visual Style: Vibrant, saturated colors, high-contrast cinematic lighting, modern lifestyle / luxury-tech aesthetic, shallow depth of field so the subject pops. Leave some clean, less-busy space near the TOP and the BOTTOM of the frame (calmer areas, e.g. softer background or gradient) suitable for overlaying text later.
 
@@ -220,13 +261,33 @@ NO BRANDS: Do NOT render or invent any retailer/marketplace names or logos (espe
 Final quality: high resolution, photorealistic, professional advertising photography, cinematic post-processing. Vertical 2:3 portrait. Completely text-free.`
 }
 
-async function generatePinImage(prompt: string): Promise<{ data: string; mediaType: string } | null> {
+async function generatePinImage(prompt: string, referenceImageUrl?: string | null): Promise<{ data: string; mediaType: string } | null> {
+  // Fetch the real product photo (best-effort) so we can pass it as a visual
+  // reference — the model renders the ACTUAL product instead of guessing.
+  let inlineRef: { mimeType: string; data: string } | null = null
+  if (referenceImageUrl && /^https?:\/\//i.test(referenceImageUrl)) {
+    try {
+      const res = await fetch(referenceImageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+      if (res.ok) {
+        const buf = Buffer.from(await res.arrayBuffer())
+        // Skip absurdly large refs; Gemini inline limit is generous but be safe.
+        if (buf.byteLength > 0 && buf.byteLength < 12 * 1024 * 1024) {
+          inlineRef = { mimeType: (res.headers.get('content-type') || 'image/jpeg').split(';')[0], data: buf.toString('base64') }
+        }
+      }
+    } catch { /* reference fetch failed — fall back to text-only generation */ }
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const contents: any = inlineRef
+    ? [{ role: 'user', parts: [{ inlineData: inlineRef }, { text: prompt }] }]
+    : prompt
+
   let delay = 8000
   for (let attempt = 1; attempt <= 4; attempt++) {
     try {
       const response = await genai.models.generateContent({
         model: 'gemini-2.5-flash-image',
-        contents: prompt,
+        contents,
         config: { responseModalities: ['IMAGE'] },
       })
       const parts = response.candidates?.[0]?.content?.parts
