@@ -1695,6 +1695,9 @@ export default function ContentPage() {
   const [videoSearch, setVideoSearch] = useState('')
   const [videoChannel, setVideoChannel] = useState<string>('') // '' = all channels
   const [videoGenFilter, setVideoGenFilter] = useState<'all' | 'ungenerated' | 'generated'>('all')
+  // Channel filter (multi-channel): 'all' or a youtube channel_id (UC…). Lets a
+  // creator view/blog just one channel's videos when several are synced.
+  const [channelFilter, setChannelFilter] = useState<string>('all')
   // When on, dismissed (hidden) videos are revealed so they can be brought
   // back — otherwise a dismissed video is invisible with no way to recover it.
   const [showHidden, setShowHidden] = useState(false)
@@ -1754,7 +1757,7 @@ export default function ContentPage() {
       // and silently empty the entire Library again.
       const COLS = [
         'id','user_id','youtube_video_id','title','thumbnail_url',
-        'published_at','selected_category','product_url',
+        'published_at','selected_category','product_url','channel_id',
         'duration_seconds','view_count','is_vertical',
         'instagram_video_url','instagram_image_url','instagram_story_image_url',
         // Vertical-kanban (2026-06-06): tiktok_posted_at + instagram_posted_at
@@ -2729,8 +2732,11 @@ export default function ContentPage() {
   // Memoised so the per-render filter/sort chain over up to ~2,500 videos only
   // recomputes when its real inputs change — not on every keystroke elsewhere.
   const visibleVideos = useMemo(
-    () => videos.filter(v => showHidden || !dismissed.has(v.id as string)),
-    [videos, showHidden, dismissed],
+    () => videos.filter(v =>
+      (showHidden || !dismissed.has(v.id as string)) &&
+      (channelFilter === 'all' || (v.channel_id as string | null) === channelFilter),
+    ),
+    [videos, showHidden, dismissed, channelFilter],
   )
   // Split videos by orientation. is_vertical comes from YouTube sync (duration
   // ≤ 180s OR #Shorts in title). For backwards-compat rows where is_vertical
@@ -2831,7 +2837,7 @@ export default function ContentPage() {
             : activeTab === 'vertical'
               ? `Shorts to Instagram Reels & Stories. Click the Instagram pill on a card to publish. ${verticalVideos.length} vertical video${verticalVideos.length !== 1 ? 's' : ''}.`
               : horizontalVideos.length > 0
-                ? `Long-form videos to blog posts + Instagram image posts. Click Generate Post to start. ${horizontalVideos.length} video${horizontalVideos.length !== 1 ? 's' : ''} · ${generatedCount} published.`
+                ? `Your videos to blog posts + Instagram image posts. Click Generate Post to start. ${horizontalVideos.length} video${horizontalVideos.length !== 1 ? 's' : ''} · ${generatedCount} published.`
                 : 'Hit Sync to pull every YouTube video into your generation queue.'
         }
         actions={
@@ -2945,7 +2951,7 @@ export default function ContentPage() {
           and Vertical (9:16 Shorts, Instagram source) since the workflows differ */}
       <div className="flex items-center gap-1 border-b border-gray-200 dark:border-white/10 mb-4 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
         {([
-          { key: 'horizontal' as const, label: 'Long-form → Blog' },
+          { key: 'horizontal' as const, label: 'Video to Blog' },
           { key: 'posts' as const, label: `Published${postsLoaded ? ` (${allBlogPosts.length})` : ''}` },
           { key: 'scheduled' as const, label: `Scheduled${scheduledItems ? ` (${scheduledItems.filter(s => s.status === 'pending').length})` : ''}` },
         ]).map(({ key, label }) => (
@@ -3412,6 +3418,21 @@ export default function ContentPage() {
               <option value="ungenerated">Not yet posted</option>
               <option value="generated">Already posted</option>
             </select>
+            {/* Channel filter — only when more than one channel is connected.
+                View/blog a single channel's videos at a time. */}
+            {ytChannels.length > 1 && (
+              <select
+                value={channelFilter}
+                onChange={e => setChannelFilter(e.target.value)}
+                className="text-xs px-2 py-1.5 rounded-md bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] focus:border-[#7C3AED] focus:outline-none max-w-[200px]"
+                title="Filter by YouTube channel"
+              >
+                <option value="all">All channels</option>
+                {ytChannels.map(c => (
+                  <option key={c.id} value={c.channelId}>{c.channelTitle}{c.isDefault ? ' (default)' : ''}</option>
+                ))}
+              </select>
+            )}
             <select
               value={videoSort}
               onChange={e => setVideoSort(e.target.value as 'newest' | 'oldest' | 'views' | 'title')}
