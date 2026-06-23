@@ -26,7 +26,7 @@ export async function GET(req: Request) {
   // Encode user ID (+ optional return path) in state so the callback can
   // identify the user without a session cookie. JSON now; the callback still
   // accepts the legacy bare-uid format for any in-flight old requests.
-  const state = Buffer.from(JSON.stringify({ uid: user.id, rt: returnTo })).toString('base64url')
+  const state = Buffer.from(JSON.stringify({ uid: user.id, rt: returnTo, add: addChannel })).toString('base64url')
   const redirectUri = `${appUrl}/api/auth/youtube/callback`
 
   const url = new URL('https://accounts.google.com/o/oauth2/v2/auth')

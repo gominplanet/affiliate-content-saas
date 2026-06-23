@@ -17,15 +17,19 @@ export async function GET(request: NextRequest) {
   // sent the bare uid string.
   let userId: string | null = null
   let returnTo = ''
+  // True when the user clicked "Connect ANOTHER channel" — lets us tell a real
+  // new-channel add from Google handing back the same channel they already have.
+  let wantNew = false
   if (state) {
     try {
       const decoded = Buffer.from(state, 'base64url').toString('utf-8')
       if (decoded.startsWith('{')) {
-        const parsed = JSON.parse(decoded) as { uid?: string; rt?: string }
+        const parsed = JSON.parse(decoded) as { uid?: string; rt?: string; add?: boolean }
         userId = typeof parsed.uid === 'string' ? parsed.uid : null
         // Re-validate the return path on the way out too (defence in depth
         // against a tampered state): same-origin relative only.
         if (typeof parsed.rt === 'string' && /^\/(?!\/)/.test(parsed.rt)) returnTo = parsed.rt
+        wantNew = parsed.add === true
       } else {
         userId = decoded
       }
@@ -183,6 +187,15 @@ export async function GET(request: NextRequest) {
     // default (or its push token) before the Phase-3 picker lands.
     const isDefaultChannel = existing ? existing.is_default : total === 0
     if (isDefaultChannel) await writeIntegrations()
+
+    // The user clicked "Connect ANOTHER channel" but Google handed back a
+    // channel they already have (almost always: their 2nd channel is a Brand
+    // Account under the same Google login, and the account chooser can't reach
+    // it). Tokens were refreshed, but no new channel was added — say so clearly
+    // instead of a misleading "connected!".
+    if (existing && wantNew) {
+      return NextResponse.redirect(dest('youtube_error=same_channel'))
+    }
 
     return NextResponse.redirect(dest('youtube_oauth_connected=1'))
   } catch (err) {

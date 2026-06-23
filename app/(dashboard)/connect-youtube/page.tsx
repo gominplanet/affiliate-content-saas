@@ -54,6 +54,11 @@ export default function ConnectYouTubePage() {
         toast.error('Connecting more than one YouTube channel is a Pro feature.', {
           action: { label: 'Upgrade', onClick: () => { window.location.href = '/pricing' } },
         })
+      } else if (decoded === 'same_channel') {
+        // Not a failure — Google returned a channel they already had. Tell them
+        // how to actually reach the other one.
+        toast('That’s the channel you already connected. To add a different one, sign in with the other Google account — or if it’s a Brand channel on the same login, switch your active YouTube channel at youtube.com first, then click “Connect another channel” again.', { duration: 12000 })
+        void load()
       } else {
         toast.error(`Couldn’t connect YouTube: ${decoded}`)
       }
