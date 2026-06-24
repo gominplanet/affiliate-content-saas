@@ -12,7 +12,7 @@ import { createAnthropicClient } from '@/lib/anthropic'
 import { capSocialText, SOCIAL_LIMITS } from '@/lib/social-cap'
 import { scrubBanned, BANNED_RULE } from '@/lib/scrub'
 import { recordUsage, usageFromAnthropic } from '@/lib/ai-usage'
-import { composePin, PIN_OVERLAY_THEME_COUNT } from '@/lib/pin-compose'
+import { composePin, PIN_OVERLAY_THEME_COUNT, PIN_LAYOUT_COUNT } from '@/lib/pin-compose'
 import { learnProfileToPrompt } from '@/lib/learn'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
@@ -81,9 +81,9 @@ Return ONLY valid JSON with these exact keys:
   "product_category": "e.g. Face Cream, Vacuum Cleaner, Dog Toy",
   "product_name": "The specific product name from the post",
   "emotion": "One word emotion for the expert in the image: shocked | excited | relieved | disgusted | happy | amazed",
-  "viral_hook": "Short all-caps hook for top of image, max 4 words e.g. STOP DOING THIS! or GAME CHANGER!",
-  "main_benefit": "Bold center banner text, max 5 words e.g. THE ULTIMATE HACK or IT ACTUALLY WORKS",
-  "trust_factor": "Small badge text e.g. TOP RATED or 100% SAFE or #1 PICK",
+  "viral_hook": "Short all-caps hook for the image, max 4 words. VARY the angle — rotate among curiosity ('YOU NEED THIS'), warning ('DON'T BUY YET'), result ('GAME CHANGER'), question ('WORTH IT?'). Do NOT reuse a template you'd use for every product.",
+  "main_benefit": "Bold benefit text, max 5 words e.g. THE ULTIMATE HACK or IT ACTUALLY WORKS. Make it specific to THIS product, not generic.",
+  "trust_factor": "Tiny badge text, 1-3 words. ROTATE the angle every time — do NOT always start with the same word (especially avoid the 'TESTED AND ___' pattern). Mix: a rating (TOP RATED, 4.8★), social proof (CREATOR PICK, 10K+ SOLD), a rank (#1 PICK, BEST OF 2026), or a verdict (WORTH IT, TRIED & TRUE).",
   "problem": "What the product solves, 3-5 words e.g. Dull aging skin or Dirty car interior",
   "solution": "What it delivers, 3-5 words e.g. Glowing youthful skin or Spotless in minutes",
   "collage_products": ["If this post is a multi-product BUYING GUIDE / COMPARISON / roundup, list the 2-4 MOST IMPORTANT specific product names featured (short, recognizable names, most important first). If it's a single-product review, return an empty array []."]
@@ -172,6 +172,7 @@ Return ONLY valid JSON with these exact keys:
   // Roll a fresh overlay style (and, for non-collage, a scene composition) each
   // generation so pins vary — and re-roll on regenerate.
   const styleVariant = Math.floor(Math.random() * PIN_OVERLAY_THEME_COUNT)
+  const layoutVariant = Math.floor(Math.random() * PIN_LAYOUT_COUNT)
   const imagePrompt = useCollage
     ? buildCollageImagePrompt(fields.product_category, collageProducts)
     : buildViralImagePrompt(fields, Math.floor(Math.random() * PIN_COMPOSITIONS.length), !!referenceImageUrl)
@@ -197,7 +198,7 @@ Return ONLY valid JSON with these exact keys:
         // Collage: drop the center band (it'd cover the grid) and badge the count.
         main_benefit: useCollage ? '' : fields.main_benefit,
         trust_factor: useCollage ? `TOP ${collageProducts.length} PICKS` : fields.trust_factor,
-      }, { styleSeed: styleVariant, layout: useCollage ? 'collage' : 'standard' })
+      }, { styleSeed: styleVariant, layoutSeed: layoutVariant, layout: useCollage ? 'collage' : 'standard' })
     : null
   // (usage already recorded per generation above, incl. the QC retry)
 
