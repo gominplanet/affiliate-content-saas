@@ -14,7 +14,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
-import { CheckCircle, Loader2, RefreshCw, Wand2, X } from 'lucide-react'
+import { CheckCircle, Loader2, RefreshCw, Wand2, X, Flame } from 'lucide-react'
 import { toast } from 'sonner'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { useModalA11y } from '@/components/ui/useModalA11y'
@@ -659,6 +659,18 @@ export function InstagramPublishModal({
                   </>
                 )}
               </label>
+            )}
+            {/* No vertical video yet → also offer to make one in Shop Burner
+                (adds a “Shop Now” sticker). The burner stores the 9:16 render on
+                the same field, so it's ready here AND on TikTok afterwards. */}
+            {videoKind === 'vertical' && !uploading && (
+              <a
+                href={`/instagram-burner?videoId=${encodeURIComponent(videoDbId)}&from=instagram`}
+                className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-[#7C3AED] hover:underline"
+              >
+                <Flame size={14} />
+                or make one in Shop Burner (add a “Shop Now” sticker)
+              </a>
             )}
             {uploadError && <p className="text-[11px] text-[#ff3b30] mt-2">{uploadError}</p>}
           </div>
