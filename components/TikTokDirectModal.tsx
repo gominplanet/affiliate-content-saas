@@ -110,6 +110,11 @@ export function TikTokDirectModal({
   const [alsoIg, setAlsoIg] = useState(false)
   const [igResult, setIgResult] = useState<'idle' | 'posting' | 'done' | 'failed'>('idle')
   const [igErr, setIgErr] = useState<string | null>(null)
+  // …and a Pinterest video pin (needs a cover — only offered when we have the
+  // Short's YouTube thumbnail to use). Links to the creator's blog (route default).
+  const [alsoPin, setAlsoPin] = useState(false)
+  const [pinResult, setPinResult] = useState<'idle' | 'posting' | 'done' | 'failed'>('idle')
+  const [pinErr, setPinErr] = useState<string | null>(null)
   // Schedule-for-later (only for real video targets — a URL-only burned clip has
   // no DB row to schedule against).
   const [scheduleOpen, setScheduleOpen] = useState(false)
@@ -274,12 +279,38 @@ export function TikTokDirectModal({
           setIgResult('failed'); setIgErr(e instanceof Error ? e.message : 'Instagram post failed.')
         }
       }
+
+      // …and a Pinterest video pin. Cover = the Short's YouTube thumbnail when we
+      // have it, else the route derives a frame from the (Cloudinary) burn. Link
+      // defaults to the creator's blog (route-side) — never an affiliate redirect.
+      if (alsoPin) {
+        const vUrl = isBurned ? burnedVideoUrl : meta?.videoUrl
+        if (vUrl) {
+          setPinResult('posting'); setPinErr(null)
+          try {
+            const pr = await fetch('/api/pinterest/video-pin', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                videoUrl: vUrl,
+                coverImageUrl: youtubeId ? `https://i.ytimg.com/vi/${youtubeId}/hqdefault.jpg` : undefined,
+                title: (caption || '').split('\n')[0].slice(0, 100),
+                description: caption,
+              }),
+            })
+            const pj = await pr.json().catch(() => ({}))
+            if (pr.ok) setPinResult('done')
+            else { setPinResult('failed'); setPinErr((pj.error as string) || 'Pinterest pin failed.') }
+          } catch (e) {
+            setPinResult('failed'); setPinErr(e instanceof Error ? e.message : 'Pinterest pin failed.')
+          }
+        }
+      }
     } catch (e) {
       setPostError(e instanceof Error ? e.message : 'Posting failed.')
     } finally {
       setPosting(false)
     }
-  }, [canPost, videoId, isBurned, burnedVideoUrl, caption, privacy, allowComment, allowDuet, allowStitch, isCommercial, brandedContent, brandedPartnership, info, alsoIg])
+  }, [canPost, videoId, isBurned, burnedVideoUrl, caption, privacy, allowComment, allowDuet, allowStitch, isCommercial, brandedContent, brandedPartnership, info, alsoIg, alsoPin, youtubeId, meta?.videoUrl])
 
   // Schedule this Short for a future time (real video targets only — a URL-only
   // burned clip has no DB row, so it can't be queued).
@@ -628,11 +659,18 @@ export function TikTokDirectModal({
               <input type="checkbox" checked={alsoIg} onChange={e => setAlsoIg(e.target.checked)} className="h-4 w-4 accent-[#E1306C]" />
               <span className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7]">Also post to Instagram as a Reel <span className="text-[#86868b]">(same video + caption)</span></span>
             </label>
+            <label className="mt-1.5 flex items-center gap-2.5 cursor-pointer select-none">
+              <input type="checkbox" checked={alsoPin} onChange={e => setAlsoPin(e.target.checked)} className="h-4 w-4 accent-[#E60023]" />
+              <span className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7]">Also pin to Pinterest as a video <span className="text-[#86868b]">(links to your blog)</span></span>
+            </label>
           </div>
         )}
         {igResult === 'posting' && <p className="px-5 pb-1 text-[11px] text-[#E1306C] flex items-center gap-1.5"><Loader2 size={11} className="animate-spin" /> Also sending to Instagram…</p>}
         {igResult === 'done' && <p className="px-5 pb-1 text-[11px] text-[#34c759] flex items-center gap-1.5"><CheckCircle size={11} /> Sent to Instagram too.</p>}
         {igResult === 'failed' && <p className="px-5 pb-1 text-[11px] text-[#ff3b30] flex items-center gap-1.5"><AlertCircle size={11} /> Instagram: {igErr || 'failed'} (TikTok was unaffected.)</p>}
+        {pinResult === 'posting' && <p className="px-5 pb-1 text-[11px] text-[#E60023] flex items-center gap-1.5"><Loader2 size={11} className="animate-spin" /> Also pinning to Pinterest (processing the video)…</p>}
+        {pinResult === 'done' && <p className="px-5 pb-1 text-[11px] text-[#34c759] flex items-center gap-1.5"><CheckCircle size={11} /> Pinned to Pinterest too.</p>}
+        {pinResult === 'failed' && <p className="px-5 pb-1 text-[11px] text-[#ff3b30] flex items-center gap-1.5"><AlertCircle size={11} /> Pinterest: {pinErr || 'failed'} (TikTok was unaffected.)</p>}
 
         {/* Schedule for later (real video targets only, before posting) */}
         {!loading && !loadError && info && meta && canSchedule && publishStatus === 'idle' && (

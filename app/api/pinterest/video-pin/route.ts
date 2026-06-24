@@ -30,16 +30,25 @@ export async function POST(request: Request) {
   let body: { videoUrl?: string; coverImageUrl?: string; link?: string; title?: string; description?: string; boardName?: string }
   try { body = await request.json() } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }) }
   const videoUrl = (body.videoUrl || '').trim()
-  const coverImageUrl = (body.coverImageUrl || '').trim()
-  const link = (body.link || '').trim()
   if (!/^https:\/\//i.test(videoUrl)) return NextResponse.json({ error: 'A video URL is required.' }, { status: 400 })
-  if (!/^https:\/\//i.test(coverImageUrl)) return NextResponse.json({ error: 'Pinterest video pins need a cover image.' }, { status: 400 })
-  if (!/^https?:\/\//i.test(link)) return NextResponse.json({ error: 'A destination link (your blog/site) is required — Pinterest pins can\'t link to an affiliate redirect.' }, { status: 400 })
+  // Cover image: use the one passed (e.g. a post's featured image), else derive
+  // a first-frame JPG from the video when it's a Cloudinary asset (burner output
+  // always is). Pinterest requires a cover for video pins.
+  let coverImageUrl = (body.coverImageUrl || '').trim()
+  if (!coverImageUrl && /res\.cloudinary\.com\/.+\/video\/upload\//i.test(videoUrl)) {
+    coverImageUrl = videoUrl.replace('/video/upload/', '/video/upload/so_0,w_720,c_fill/').replace(/\.(mp4|mov|webm|m4v)(\?.*)?$/i, '.jpg')
+  }
+  if (!/^https:\/\//i.test(coverImageUrl)) return NextResponse.json({ error: 'Pinterest video pins need a cover image (pass coverImageUrl, or use a Cloudinary-hosted video so MVP can derive one).' }, { status: 400 })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: intRaw } = await supabase.from('integrations').select('*').eq('user_id', user.id).single()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const ig = decryptIntegrationRow(intRaw as any)
+  // Destination link: an explicit page (the blog post) wins; otherwise fall back
+  // to the creator's own blog homepage. NEVER an affiliate redirect (Pinterest +
+  // Amazon ToS) — both of these are the creator's own site, which is compliant.
+  const link = (body.link || '').trim() || (ig?.wordpress_url || '').trim()
+  if (!/^https?:\/\//i.test(link)) return NextResponse.json({ error: 'Set your blog/site URL (or pass a link) — Pinterest pins must link to a real page, not an affiliate redirect.' }, { status: 400 })
   const tier = (ig?.tier as Tier) ?? 'trial'
   if (!tierAllowsSocial(tier, 'pinterest')) {
     return NextResponse.json({ error: 'Pinterest is a Studio plan feature.' }, { status: 403 })
