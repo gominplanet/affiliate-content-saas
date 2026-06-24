@@ -197,7 +197,7 @@ export async function POST(request: NextRequest) {
     let heroMediaId: number | null = null
     let heroUrl: string | null = null
     try {
-      const hero = await buildCampaignHero({ heroPrompt: generated.imagePrompts?.hero, productImageUrl: cleanProductImage, ctx: { userId: user.id, tier } })
+      const hero = await buildCampaignHero({ heroPrompt: generated.imagePrompts?.hero, productImageUrl: cleanProductImage, productTitle: effTitle, ctx: { userId: user.id, tier } })
       if (hero) {
         const media = await wpService.uploadImageFromBase64(hero.b64, `${asin}-hero.jpg`, hero.mime)
         heroMediaId = media.id ?? null; heroUrl = media.source_url || null

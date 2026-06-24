@@ -244,6 +244,7 @@ export async function POST(request: NextRequest) {
       const hero = await buildCampaignHero({
         heroPrompt: generated.imagePrompts?.hero,
         productImageUrl: cleanProductImage,
+        productTitle: effTitle,
         ctx: { userId: user.id, tier },
       })
       if (hero) {

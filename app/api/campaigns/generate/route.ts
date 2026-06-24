@@ -489,6 +489,7 @@ export async function POST(request: Request) {
       const hero = await buildCampaignHero({
         heroPrompt: generated.imagePrompts?.hero,
         productImageUrl: cleanProductImage || undefined,
+        productTitle: product?.title,
         ctx: { userId: user.id, tier },
       })
       if (hero) {

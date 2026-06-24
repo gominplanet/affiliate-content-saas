@@ -2,6 +2,7 @@
 import sharp from 'sharp'
 import { createOpenAIService } from '@/services/openai'
 import { recordUsage } from '@/lib/ai-usage'
+import { verifyProductMatch } from '@/lib/product-image'
 
 /**
  * Builds the 16:9 featured image for a campaign post.
@@ -34,26 +35,51 @@ export interface HeroImage {
 export async function buildCampaignHero(opts: {
   heroPrompt: string | null | undefined
   productImageUrl: string | null | undefined
+  /** Product name — used to ground the Claude vision right-product check. */
+  productTitle?: string | null
   ctx?: { userId?: string | null; tier?: string | null }
 }): Promise<HeroImage | null> {
-  const { heroPrompt, productImageUrl, ctx } = opts
+  const { heroPrompt, productImageUrl, productTitle, ctx } = opts
 
   // ── Primary: AI hero ──────────────────────────────────────────────
   if (heroPrompt && process.env.OPENAI_API_KEY) {
-    try {
-      const b64 = await createOpenAIService().generateHeroImage(heroPrompt)
-      recordUsage({
-        userId: ctx?.userId, tier: ctx?.tier,
-        // 1792x1024 standard quality — priced at $0.08 in PRICING.
-        feature: 'campaign_hero_image', model: 'dall-e-3-1792', images: 1,
-      })
-      const jpeg = await sharp(Buffer.from(b64, 'base64'))
-        .resize(W, H, { fit: 'cover', position: 'attention' })
-        .jpeg({ quality: 86 })
-        .toBuffer()
-      return { b64: jpeg.toString('base64'), mime: 'image/jpeg', kind: 'ai' }
-    } catch {
-      /* fall through to the product-photo fallback */
+    // Up to 2 attempts: render → Claude-vision verify it shows the RIGHT
+    // product (when we have a real product photo to compare against). On a
+    // confident mismatch, regenerate once; if it STILL doesn't match, fall
+    // through to the product-photo floor rather than ship the wrong product.
+    // Mirrors the Pinterest/Instagram/blog QC gate so every product-image
+    // generator is double-checked, not just those four.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const b64 = await createOpenAIService().generateHeroImage(heroPrompt)
+        recordUsage({
+          userId: ctx?.userId, tier: ctx?.tier,
+          // 1792x1024 standard quality — priced at $0.08 in PRICING.
+          feature: 'campaign_hero_image', model: 'dall-e-3-1792', images: 1,
+        })
+        const jpeg = await sharp(Buffer.from(b64, 'base64'))
+          .resize(W, H, { fit: 'cover', position: 'attention' })
+          .jpeg({ quality: 86 })
+          .toBuffer()
+        const heroB64 = jpeg.toString('base64')
+
+        // No reference photo → nothing to verify against; accept it.
+        if (!productImageUrl) {
+          return { b64: heroB64, mime: 'image/jpeg', kind: 'ai' }
+        }
+        const verdict = await verifyProductMatch(
+          productImageUrl,
+          { base64: heroB64, mediaType: 'image/jpeg' },
+          productTitle || 'this product',
+          { userId: ctx?.userId ?? null, tier: ctx?.tier ?? null },
+        )
+        if (verdict.match) return { b64: heroB64, mime: 'image/jpeg', kind: 'ai' }
+        // Mismatch: on the last attempt, drop to the product-photo floor below.
+        if (attempt === 1) break
+        // else loop and regenerate once.
+      } catch {
+        break // generation/verify failed — fall through to the fallback
+      }
     }
   }
 
