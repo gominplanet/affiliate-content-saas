@@ -839,6 +839,14 @@ function BatchBurner({ supabase }: { supabase: ReturnType<typeof createBrowserCl
   const [items, setItems] = useState<BatchItem[]>([{ id: crypto.randomUUID(), url: null, uploading: false, caption: 'LINK IN BIO', product: '' }])
   const [bStyle, setBStyle] = useState('white-pill')
   const [bPos, setBPos] = useState('lower-left')
+  // Overlay (all videos): a pre-designed CTA box (PNG) or plain caption text —
+  // mirrors the single-video burner. Default to the CTA box.
+  const [bOverlay, setBOverlay] = useState<'sticker' | 'text'>('sticker')
+  const [bBoxUrl, setBBoxUrl] = useState<string | null>(null)       // selected CTA box URL (all videos)
+  const [boxes, setBoxes] = useState<Array<{ id: string | null; url: string; tag: string }>>([])
+  const [genTag, setGenTag] = useState('')
+  const [genLoading, setGenLoading] = useState(false)
+  const [genErr, setGenErr] = useState<string | null>(null)
   const [startAt, setStartAt] = useState(defaultStartLocal())
   const [intervalHours, setIntervalHours] = useState(24)
   const [submitting, setSubmitting] = useState(false)
@@ -846,6 +854,39 @@ function BatchBurner({ supabase }: { supabase: ReturnType<typeof createBrowserCl
   const [msg, setMsg] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [jobs, setJobs] = useState<Job[]>([])
+
+  // Load the creator's saved CTA boxes (shared with the single-video burner).
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/instagram/burn/my-stickers')
+      .then(r => r.json())
+      .then((d: { stickers?: Array<{ id: string; url: string; tag: string }> }) => {
+        if (!cancelled && Array.isArray(d.stickers)) setBoxes(d.stickers)
+      })
+      .catch(() => { /* non-fatal */ })
+    return () => { cancelled = true }
+  }, [])
+
+  // Make a CTA box from a typed tag → becomes the active box (all videos).
+  async function generateBox() {
+    const t = genTag.trim()
+    if (!t) { setGenErr('Type a short tag first.'); return }
+    setGenLoading(true); setGenErr(null)
+    try {
+      const res = await fetch('/api/instagram/burn/generate-sticker', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tag: t }),
+      })
+      const d = await res.json().catch(() => ({} as Record<string, unknown>))
+      if (!res.ok) throw new Error((d.error as string) || `Failed (HTTP ${res.status})`)
+      const url = d.stickerUrl as string
+      setBBoxUrl(url)
+      setBoxes(prev => [{ id: (d.id as string) ?? null, url, tag: (d.tag as string) || t }, ...prev])
+      setGenTag('')
+    } catch (e) {
+      setGenErr(e instanceof Error ? e.message : 'Could not generate the box')
+    } finally { setGenLoading(false) }
+  }
 
   const loadJobs = useCallback(async () => {
     try {
@@ -896,6 +937,7 @@ function BatchBurner({ supabase }: { supabase: ReturnType<typeof createBrowserCl
   // Step 1: open the review panel (no posting happens yet).
   function openReview() {
     if (readyItems.length === 0) { setErr('Upload at least one video.'); return }
+    if (bOverlay === 'sticker' && !bBoxUrl) { setErr('Pick a CTA box or make one from text, or switch to caption text.'); return }
     setErr(null); setMsg(null); setReviewing(true)
   }
 
@@ -910,6 +952,8 @@ function BatchBurner({ supabase }: { supabase: ReturnType<typeof createBrowserCl
         body: JSON.stringify({
           videos: ready.map(it => ({ videoUrl: it.url, caption: it.caption, product: it.product.trim() || undefined })),
           style: bStyle, position: bPos,
+          // CTA box (all videos) when in sticker mode; omit for caption-text mode.
+          stickerUrl: bOverlay === 'sticker' ? (bBoxUrl || undefined) : undefined,
           startAt: new Date(startAt).toISOString(),
           intervalHours,
         }),
@@ -952,9 +996,53 @@ function BatchBurner({ supabase }: { supabase: ReturnType<typeof createBrowserCl
           </div>
         </div>
 
+        {/* Overlay (all videos) — CTA box or caption text, same as single video */}
+        <div>
+          <label className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">2. Overlay (all videos)</label>
+          <div className="grid grid-cols-2 gap-2 mb-2">
+            <button onClick={() => setBOverlay('sticker')} className={`text-center px-3 py-2 rounded-lg border text-[13px] font-medium transition-colors ${bOverlay === 'sticker' ? 'border-[#7C3AED] bg-[#7C3AED]/5 text-[#7C3AED]' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:border-gray-300'}`}>CTA box</button>
+            <button onClick={() => setBOverlay('text')} className={`text-center px-3 py-2 rounded-lg border text-[13px] font-medium transition-colors ${bOverlay === 'text' ? 'border-[#7C3AED] bg-[#7C3AED]/5 text-[#7C3AED]' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:border-gray-300'}`}>Caption text</button>
+          </div>
+          {bOverlay === 'text' ? (
+            <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Each video burns its own caption from the “Caption text” field above.</p>
+          ) : (
+            <div className="rounded-lg border border-[#7C3AED]/15 bg-[#7C3AED]/[0.03] p-2.5">
+              {/* Make a CTA box from a typed tag */}
+              <span className="flex items-center gap-1 text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5"><Sparkles size={11} className="text-[#7C3AED]" /> Make one from text</span>
+              <div className="flex gap-1.5">
+                <input type="text" value={genTag} onChange={(e) => setGenTag(e.target.value)} maxLength={40} placeholder="e.g. BUY BEFORE IT'S GONE" className="input-field text-[12px] flex-1" onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void generateBox() } }} />
+                <button onClick={() => void generateBox()} disabled={genLoading || !genTag.trim()} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-[12px] font-semibold text-white bg-[#7C3AED] hover:bg-[#6D28D9] disabled:opacity-50">
+                  {genLoading ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} Make
+                </button>
+              </div>
+              {genErr && <p className="text-[10px] text-[#ff3b30] mt-1">{genErr}</p>}
+              <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-1.5">1–6 words. Burned onto every video in this batch. Saved to “My boxes” to reuse anytime.</p>
+
+              {boxes.length > 0 && (
+                <div className="mt-2">
+                  <p className="text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">My boxes</p>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {boxes.map(b => (
+                      <button
+                        key={b.url}
+                        onClick={() => setBBoxUrl(b.url)}
+                        title={b.tag || 'CTA box'}
+                        className={`p-1.5 rounded-lg border transition-colors ${bBoxUrl === b.url ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-gray-300'}`}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={b.url} alt={b.tag || 'CTA box'} className="w-full h-auto rounded bg-[#1d1d1f]/5" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* Shared style */}
         <div>
-          <label className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">2. Style (all videos)</label>
+          <label className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">3. Style (all videos)</label>
           <div className="grid grid-cols-2 gap-2">
             {STYLES.map(s => (
               <button key={s.key} onClick={() => setBStyle(s.key)} className={`text-left p-2 rounded-lg border transition-colors ${bStyle === s.key ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-gray-300'}`}>
@@ -966,7 +1054,7 @@ function BatchBurner({ supabase }: { supabase: ReturnType<typeof createBrowserCl
 
         {/* Shared position */}
         <div>
-          <label className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">3. Position (all videos)</label>
+          <label className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">4. Position (all videos)</label>
           <div className="grid grid-cols-2 gap-2">
             {POSITIONS.map(p => (
               <button key={p.key} onClick={() => setBPos(p.key)} className={`text-left p-2.5 rounded-lg border transition-colors ${bPos === p.key ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-gray-300'}`}>
@@ -978,7 +1066,7 @@ function BatchBurner({ supabase }: { supabase: ReturnType<typeof createBrowserCl
 
         {/* Schedule */}
         <div>
-          <label className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">4. Schedule</label>
+          <label className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">5. Schedule</label>
           <div className="flex flex-col gap-2">
             <div>
               <span className="block text-[11px] text-[#86868b] mb-1">First post at</span>
@@ -1055,7 +1143,7 @@ function BatchBurner({ supabase }: { supabase: ReturnType<typeof createBrowserCl
               ))}
             </div>
             <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mb-4">
-              Style: {STYLES.find(s => s.key === bStyle)?.label} · Position: {POSITIONS.find(p => p.key === bPos)?.label}
+              Overlay: {bOverlay === 'sticker' ? 'CTA box' : 'Caption text'}{bOverlay === 'text' ? ` · Style: ${STYLES.find(s => s.key === bStyle)?.label}` : ''} · Position: {POSITIONS.find(p => p.key === bPos)?.label}
             </p>
             {err && <p className="text-xs text-[#ff3b30] flex items-center gap-1.5 mb-3"><AlertCircle size={12} /> {err}</p>}
             <div className="flex gap-2">

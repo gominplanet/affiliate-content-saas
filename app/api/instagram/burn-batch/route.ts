@@ -35,12 +35,19 @@ export async function POST(request: Request) {
       videos?: Array<{ videoUrl?: string; caption?: string; product?: string }>
       style?: string; position?: string
       startAt?: string; intervalHours?: number
+      stickerUrl?: string
     }
     const videos = (body.videos || []).filter(v => typeof v?.videoUrl === 'string' && /^https:\/\//i.test(v.videoUrl)).slice(0, MAX_BATCH)
     if (videos.length === 0) return NextResponse.json({ error: 'Upload at least one video.' }, { status: 400 })
 
     const style = STYLES.includes(body.style || '') ? body.style! : 'white-pill'
     const position = POSITIONS.includes(body.position || '') ? body.position! : 'lower-left'
+    // CTA box (shared across all videos) — a transparent PNG on our Supabase
+    // storage. Validated against the storage host so an arbitrary remote image
+    // can never be burned. NULL = caption-text mode (the worker burns caption_text).
+    const stickerUrl = (typeof body.stickerUrl === 'string' && /^https:\/\/[^/]+\.supabase\.(co|in)\//i.test(body.stickerUrl))
+      ? body.stickerUrl
+      : null
     const startMs = body.startAt && !isNaN(Date.parse(body.startAt)) ? Date.parse(body.startAt) : Date.now()
     const intervalHours = Math.max(0, Math.min(24 * 30, Number(body.intervalHours) || 0)) // 0 = post all ASAP
 
@@ -50,6 +57,7 @@ export async function POST(request: Request) {
       caption_text: (v.caption || 'LINK IN BIO').trim().slice(0, 60) || 'LINK IN BIO',
       style,
       position,
+      sticker_url: stickerUrl,
       product: (v.product || '').trim() || null,
       scheduled_at: new Date(startMs + i * intervalHours * 3600_000).toISOString(),
       status: 'pending',

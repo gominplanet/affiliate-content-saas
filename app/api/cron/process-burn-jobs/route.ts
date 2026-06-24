@@ -26,6 +26,7 @@ interface BurnJob {
   caption_text: string
   style: string
   position: string
+  sticker_url: string | null
   product: string | null
 }
 
@@ -48,20 +49,32 @@ export async function GET(request: Request) {
     .update({ status: 'processing', claimed_at: nowIso })
     .eq('status', 'pending')
     .lte('scheduled_at', nowIso)
-    .select('id,user_id,source_video_url,caption_text,style,position,product')
+    .select('id,user_id,source_video_url,caption_text,style,position,sticker_url,product')
     .order('scheduled_at', { ascending: true })
     .limit(1)
   if (claimErr) return NextResponse.json({ error: `Claim failed: ${claimErr.message}` }, { status: 500 })
 
-  const job: BurnJob | undefined = (claimed ?? [])[0]
+  // sticker_url isn't in the generated types until codegen reruns post-139 —
+  // cast through it (same pattern used elsewhere for fresh columns).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const job: BurnJob | undefined = ((claimed ?? []) as any[])[0] as BurnJob | undefined
   if (!job) return NextResponse.json({ ok: true, processed: 0 })
 
   try {
-    // 1. Burn the caption.
-    const burned = await overlayCaptionOnVideo(job.source_video_url, job.caption_text, {
-      position: job.position as OverlayPosition,
-      style: job.style as CaptionStyle,
-    })
+    // 1. Burn the overlay — a CTA box sticker (PNG) when set, else the caption
+    //    text. Matches the single-video burner: sticker mode passes an empty
+    //    caption + the sticker URL; caption mode passes the text.
+    const burned = job.sticker_url
+      ? await overlayCaptionOnVideo(job.source_video_url, '', {
+          position: job.position as OverlayPosition,
+          style: job.style as CaptionStyle,
+          stickerUrl: job.sticker_url,
+          stickerWidthPct: 0.55,
+        })
+      : await overlayCaptionOnVideo(job.source_video_url, job.caption_text, {
+          position: job.position as OverlayPosition,
+          style: job.style as CaptionStyle,
+        })
     if (!burned?.url) throw new Error(`burn failed: ${getLastOverlayError() || 'unknown'}`)
     recordUsage({ userId: job.user_id, tier: null, feature: 'instagram_burn', model: 'cloudinary', images: 1 })
 
