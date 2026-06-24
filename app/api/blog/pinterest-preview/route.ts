@@ -61,6 +61,19 @@ export async function POST(request: NextRequest) {
 
   const a = await buildPinAssets(p, { userId: user.id, tier: ig?.tier ?? null })
 
+  // The post's vertical render (if any) — lets the preview offer a VIDEO pin
+  // instead of the still image. Resolved from the linked Short.
+  let videoUrl: string | null = null
+  try {
+    const vid = (p as { video_id?: string | null }).video_id
+    if (vid) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: v } = await (supabase as any)
+        .from('youtube_videos').select('instagram_video_url').eq('id', vid).maybeSingle()
+      videoUrl = (v?.instagram_video_url as string | null) ?? null
+    }
+  } catch { /* no render — image pin only */ }
+
   // Predict the board this pin will actually land on so the preview header is
   // accurate. Publish (lib/pin-publish) pins to a board matching the post's
   // WordPress CATEGORY (auto-created), then falls back to the named board →
@@ -87,6 +100,7 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({
     ...a,
+    videoUrl,
     // Category board (what publish will use) → the user's named fallback board
     // → saved board → "Reviews". Mirrors the publish-time resolution order.
     boardName: predictedBoard

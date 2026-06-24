@@ -19,6 +19,8 @@ export interface PinPreviewData {
   mediaType: string | null
   fallbackImageUrl: string | null
   boardName: string
+  /** The post's vertical render, when it has one — enables a VIDEO pin. */
+  videoUrl?: string | null
 }
 
 /** Editable Pinterest pin preview. Shared by Library & Social Push and
@@ -36,6 +38,9 @@ export function PinterestPreviewModal({
   const [description, setDescription] = useState(data.description)
   const [publishing, setPublishing] = useState(false)
   const [pubError, setPubError] = useState<string | null>(null)
+  // Pin as a VIDEO (when the post has a render). Defaults on if a render exists,
+  // since a video pin generally outperforms a still.
+  const [asVideo, setAsVideo] = useState(!!data.videoUrl)
 
   const tagLine = data.hashtags.length ? data.hashtags.map(t => `#${t}`).join(' ') : ''
 
@@ -48,6 +53,30 @@ export function PinterestPreviewModal({
     setPubError(null)
     // Compliance tags always last, at the very end of the description.
     const composed = [description, tagLine, data.disclaimer, data.complianceTags].filter(Boolean).join('\n\n')
+
+    // VIDEO pin — publish the post's render directly (cover = featured image,
+    // link = the blog post). Distinct route from the still-image onPublish path.
+    if (asVideo && data.videoUrl) {
+      try {
+        const res = await fetch('/api/pinterest/video-pin', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            videoUrl: data.videoUrl,
+            coverImageUrl: data.fallbackImageUrl || undefined,
+            link: data.link,
+            title: title.trim() || data.title,
+            description: composed,
+          }),
+        })
+        const j = await res.json().catch(() => ({}))
+        if (!res.ok) { setPubError((j.error as string) || 'Video pin failed. Try again.'); setPublishing(false); return }
+        onClose()
+      } catch (e) {
+        setPubError(e instanceof Error ? e.message : 'Video pin failed.'); setPublishing(false)
+      }
+      return
+    }
+
     const result = await onPublish(composed, title.trim() || data.title)
     if (!result.ok) {
       setPubError(result.error || 'Publish failed. Try again.')
@@ -172,6 +201,15 @@ export function PinterestPreviewModal({
               )}
             </div>
 
+            {/* Pin as video — when the post has a vertical render. The still
+                image above is used as the video cover. */}
+            {data.videoUrl && (
+              <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                <input type="checkbox" checked={asVideo} onChange={(e) => setAsVideo(e.target.checked)} className="h-4 w-4 accent-[#E60023]" />
+                <span className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7]">Pin as a <span className="font-semibold">video</span> <span className="text-[#86868b]">(uses your Short; the image is the cover)</span></span>
+              </label>
+            )}
+
             {/* Actions */}
             <div className="flex items-center gap-3 pt-1">
               <button
@@ -182,7 +220,7 @@ export function PinterestPreviewModal({
               >
                 {publishing
                   ? <><Loader2 size={14} className="animate-spin" /> Publishing…</>
-                  : <><Pin size={14} /> Publish Pin</>
+                  : <><Pin size={14} /> {asVideo && data.videoUrl ? 'Publish Video Pin' : 'Publish Pin'}</>
                 }
               </button>
               <button onClick={onClose} className="text-sm text-[#86868b] dark:text-[#8e8e93] hover:text-[#1d1d1f] dark:text-[#f5f5f7] transition-colors">
