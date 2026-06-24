@@ -14,7 +14,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
-import { CheckCircle, Loader2, RefreshCw, Wand2, X, Flame } from 'lucide-react'
+import { CheckCircle, Loader2, RefreshCw, Wand2, X, Flame, ExternalLink } from 'lucide-react'
 import { toast } from 'sonner'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { useModalA11y } from '@/components/ui/useModalA11y'
@@ -64,6 +64,8 @@ export function InstagramPublishModal({
   })
   // Media-ready URL — instagram_video_url for vertical, instagram_image_url for horizontal
   const [existingUrl, setExistingUrl] = useState<string | null>(null)
+  // Real YouTube video id — deep-links to Studio to download the source MP4.
+  const [ytVideoId, setYtVideoId] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<string>('')
   const [uploadError, setUploadError] = useState<string | null>(null)
@@ -248,9 +250,10 @@ export function InstagramPublishModal({
   useEffect(() => {
     const col = videoKind === 'horizontal' ? 'instagram_image_url' : 'instagram_video_url'
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;supabase.from('youtube_videos').select(col).eq('id', videoDbId).single().then(({ data }: { data: Record<string, string | null> | null }) => {
+    ;supabase.from('youtube_videos').select(`${col},youtube_video_id`).eq('id', videoDbId).single().then(({ data }: { data: Record<string, string | null> | null }) => {
       const url = data?.[col]
       if (url) setExistingUrl(url)
+      setYtVideoId(data?.youtube_video_id ?? null)
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoDbId, videoKind])
@@ -660,17 +663,31 @@ export function InstagramPublishModal({
                 )}
               </label>
             )}
-            {/* No vertical video yet → also offer to make one in Shop Burner
+            {/* No vertical video yet → help them get the source MP4 (download
+                from their own YouTube video) and offer to make one in Shop Burner
                 (adds a “Shop Now” sticker). The burner stores the 9:16 render on
                 the same field, so it's ready here AND on TikTok afterwards. */}
             {videoKind === 'vertical' && !uploading && (
-              <a
-                href={`/instagram-burner?videoId=${encodeURIComponent(videoDbId)}&from=instagram`}
-                className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-[#7C3AED] hover:underline"
-              >
-                <Flame size={14} />
-                or make one in Shop Burner (add a “Shop Now” sticker)
-              </a>
+              <div className="mt-2 flex flex-col gap-1.5">
+                {ytVideoId && (
+                  <a
+                    href={`https://studio.youtube.com/video/${encodeURIComponent(ytVideoId)}/edit`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-[#7C3AED] hover:underline"
+                  >
+                    <ExternalLink size={14} />
+                    Don&apos;t have the file? Download it from your YouTube video
+                  </a>
+                )}
+                <a
+                  href={`/instagram-burner?videoId=${encodeURIComponent(videoDbId)}&from=instagram`}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-[#7C3AED] hover:underline"
+                >
+                  <Flame size={14} />
+                  or make one in Shop Burner (add a “Shop Now” sticker)
+                </a>
+              </div>
             )}
             {uploadError && <p className="text-[11px] text-[#ff3b30] mt-2">{uploadError}</p>}
           </div>

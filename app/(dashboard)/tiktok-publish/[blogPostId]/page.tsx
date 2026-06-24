@@ -44,6 +44,8 @@ interface BlogPostMeta {
   videoUrl: string | null
   /** youtube_videos.id — needed to attach a vertical render in-place. */
   videoId: string | null
+  /** Real YouTube video id — deep-links to Studio to download the source MP4. */
+  youtubeVideoId: string | null
   /** Amazon/affiliate product link — passed to Shop Burner for context. */
   productUrl: string | null
   defaultCaption: string
@@ -259,6 +261,19 @@ export default function TikTokPublishPage() {
                   {/* In-place upload — patches this post's vertical render, then
                       refetches so the preview + Post button light up. */}
                   <ShortVideoUpload videoId={meta.videoId} onUploaded={refetchMeta} />
+                  {/* Don't have the MP4 on hand? Send them to their own video in
+                      YouTube Studio, which has a real Download button. */}
+                  {meta.youtubeVideoId && (
+                    <a
+                      href={`https://studio.youtube.com/video/${encodeURIComponent(meta.youtubeVideoId)}/edit`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-[#7C3AED] hover:underline"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      Don&apos;t have the file? Download it from your YouTube video
+                    </a>
+                  )}
                   <div className="flex items-center gap-3 my-3">
                     <div className="h-px flex-1 bg-[#e5e5ea] dark:bg-white/10" />
                     <span className="text-[11px] uppercase tracking-wide text-[#86868b]">or</span>

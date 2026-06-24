@@ -22,7 +22,7 @@ export async function GET(request: Request) {
   const sb = supabase as any
   const { data: post } = await sb
     .from('blog_posts')
-    .select('title,excerpt,youtube_videos(id,instagram_video_url,title,product_url)')
+    .select('title,excerpt,youtube_videos(id,youtube_video_id,instagram_video_url,title,product_url)')
     .eq('id', blogPostId)
     .eq('user_id', user.id)
     .maybeSingle()
@@ -37,6 +37,10 @@ export async function GET(request: Request) {
   // patches (and the id Shop Burner loads to add a CTA box). Null only for
   // video-less posts (guides/comparisons) that can't have a vertical render.
   const videoId = (ytRow?.id as string | null) ?? null
+  // The REAL YouTube video id (11-char) — used to deep-link the creator to their
+  // own video in YouTube Studio, where they can download the source MP4 to
+  // upload here. Distinct from videoId above (the youtube_videos row UUID).
+  const youtubeVideoId = (ytRow?.youtube_video_id as string | null) ?? null
   const productUrl = (ytRow?.product_url as string | null) ?? null
   const title = (post.title as string) || (ytRow?.title as string) || ''
   const excerpt = (post.excerpt as string) || ''
@@ -49,6 +53,7 @@ export async function GET(request: Request) {
     title,
     videoUrl,
     videoId,
+    youtubeVideoId,
     productUrl,
     defaultCaption,
   })
