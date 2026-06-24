@@ -305,6 +305,9 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
   const [borderIndex, setBorderIndex] = useState<number | null>(null) // null = keep borders varied
   const [accentColor, setAccentColor] = useState<string>('#FFE034')   // title emphasis colour
   const [selectedFaceModelId, setSelectedFaceModelId] = useState<string | null>(null)
+  /** "Break frame" effect: run rembg to cut out the creator and composite
+   *  them OVER the neon border. Off by default — enables in ~20s. */
+  const [breakFrame, setBreakFrame] = useState(false)
   // Tier-cap-reached state — keyed separately from the red error toast
   // so we can render an amber upgrade banner with a /pricing CTA instead.
   const [capError, setCapError] = useState<{ message: string; info: { cap: string; currentTier?: string; upgrade?: { tier: string; label: string; limit: number | null } | null } } | null>(null)
@@ -1006,6 +1009,9 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           // the title into the image (more integrated, but may misspell).
           textMode: opts?.textMode ?? 'clean',
           capturedFrames: capturedFrames.length ? capturedFrames : undefined,
+          // "Break frame" effect: composites the creator OVER the neon border.
+          // Off by default (costs ~20s for the rembg pass).
+          breakFrame: breakFrame || undefined,
         }),
       })
       const data = await safeJson(res)
@@ -1068,6 +1074,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           // Composed scene + crisp canvas title by default (matches the manual
           // Generate button). 'Try AI-baked text' re-runs as 'baked'.
           textMode: 'clean',
+          breakFrame: breakFrame || undefined,
         }),
       })
       const data = await safeJson(res)
@@ -1835,6 +1842,19 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                   setAccentColor={setAccentColor}
                   disabled={generatingThumbnail}
                 />
+
+                {/* Break-frame toggle — off by default to keep generation fast.
+                    Enable to run rembg and cut the creator out over the border. */}
+                <label className="flex items-center gap-2 text-xs text-[#6e6e73] dark:text-[#98989d] cursor-pointer select-none mt-1">
+                  <input
+                    type="checkbox"
+                    checked={breakFrame}
+                    onChange={e => setBreakFrame(e.target.checked)}
+                    disabled={generatingThumbnail || selectedFaceModelId === 'no-human'}
+                    className="accent-[#7C3AED]"
+                  />
+                  Break-frame effect <span className="text-[#98989d]">(creator extends past border · +20s)</span>
+                </label>
 
                 {thumbnailError && (
                   <p className="text-xs text-[#ff3b30] mb-3">{thumbnailError}</p>
