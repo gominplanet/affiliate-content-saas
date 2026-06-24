@@ -28,6 +28,7 @@ export async function POST(request: Request) {
 
     const body = await request.json() as {
       blogPostId?: string
+      videoId?: string
       scheduledAt?: string
       caption?: string
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -35,8 +36,9 @@ export async function POST(request: Request) {
       instagram?: { mode?: 'reel' | 'story' | 'both' }
     }
     const blogPostId = (body.blogPostId || '').trim()
+    const videoId = (body.videoId || '').trim()
     const caption = (body.caption || '').slice(0, 2200)
-    if (!blogPostId) return NextResponse.json({ error: 'blogPostId required' }, { status: 400 })
+    if (!blogPostId && !videoId) return NextResponse.json({ error: 'blogPostId or videoId required' }, { status: 400 })
     if (!body.tiktok && !body.instagram) return NextResponse.json({ error: 'Pick at least one platform.' }, { status: 400 })
     if (body.tiktok && !body.tiktok.privacyLevel) return NextResponse.json({ error: 'Pick a TikTok privacy option before scheduling.' }, { status: 400 })
 
@@ -49,24 +51,29 @@ export async function POST(request: Request) {
     const { data: tierRow } = await sb.from('integrations').select('tier').eq('user_id', user.id).single()
     const tier = (tierRow?.tier as Tier) ?? 'trial'
 
-    // Post must exist, be owned, and have a 9:16 render to schedule.
-    const { data: post } = await sb
-      .from('blog_posts')
-      .select('id,youtube_videos(instagram_video_url)')
-      .eq('id', blogPostId).eq('user_id', user.id).maybeSingle()
-    if (!post) return NextResponse.json({ error: 'Post not found' }, { status: 404 })
-    const yt = post.youtube_videos
-    const ytRow = Array.isArray(yt) ? yt[0] : yt
-    if (!ytRow?.instagram_video_url) {
-      return NextResponse.json({ error: 'Add a vertical video to this post before scheduling.' }, { status: 400 })
+    // Target must exist, be owned, and have a 9:16 render to schedule. A Short
+    // (videoId) keys directly on youtube_videos; a blog post resolves through it.
+    if (videoId) {
+      const { data: v } = await sb
+        .from('youtube_videos').select('instagram_video_url').eq('id', videoId).eq('user_id', user.id).maybeSingle()
+      if (!v) return NextResponse.json({ error: 'Video not found' }, { status: 404 })
+      if (!v.instagram_video_url) return NextResponse.json({ error: 'Add a vertical video before scheduling.' }, { status: 400 })
+    } else {
+      const { data: post } = await sb
+        .from('blog_posts').select('id,youtube_videos(instagram_video_url)').eq('id', blogPostId).eq('user_id', user.id).maybeSingle()
+      if (!post) return NextResponse.json({ error: 'Post not found' }, { status: 404 })
+      const yt = post.youtube_videos
+      const ytRow = Array.isArray(yt) ? yt[0] : yt
+      if (!ytRow?.instagram_video_url) return NextResponse.json({ error: 'Add a vertical video to this post before scheduling.' }, { status: 400 })
     }
+    const targetCols = videoId ? { video_id: videoId } : { blog_post_id: blogPostId }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rows: any[] = []
     if (body.tiktok) {
       if (!tierAllowsSocial(tier, 'tiktok')) return NextResponse.json({ error: 'TikTok auto-publish is a Pro feature.' }, { status: 403 })
       rows.push({
-        user_id: user.id, blog_post_id: blogPostId, platform: 'tiktok',
+        user_id: user.id, ...targetCols, platform: 'tiktok',
         scheduled_at: when.toISOString(), body_text: caption, status: 'pending',
         options: {
           privacyLevel: body.tiktok.privacyLevel,
@@ -81,7 +88,7 @@ export async function POST(request: Request) {
     if (body.instagram) {
       if (!tierAllowsSocial(tier, 'instagram')) return NextResponse.json({ error: 'Instagram auto-publish is a Pro feature.' }, { status: 403 })
       rows.push({
-        user_id: user.id, blog_post_id: blogPostId, platform: 'instagram',
+        user_id: user.id, ...targetCols, platform: 'instagram',
         scheduled_at: when.toISOString(), body_text: caption, status: 'pending',
         options: { mode: body.instagram.mode || 'reel' },
       })
@@ -92,8 +99,8 @@ export async function POST(request: Request) {
     if (insertErr) {
       // A failed insert on the platform check / missing options column means the
       // operator hasn't run migration 137 yet — surface that clearly.
-      const hint = /options|check constraint|scheduled_posts_platform/i.test(insertErr.message)
-        ? ' (run migration 137 in Supabase first)'
+      const hint = /options|video_id|check constraint|scheduled_posts_platform|scheduled_posts_target|null value/i.test(insertErr.message)
+        ? ' (run migrations 137 + 138 in Supabase first)'
         : ''
       return NextResponse.json({ error: insertErr.message + hint }, { status: 500 })
     }

@@ -1,9 +1,12 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
 // Reusable TikTok Direct-Post core, callable with EITHER a cookie-scoped
-// server client (the interactive route) OR the service-role admin client (the
-// scheduled-post cron). Mirrors app/api/blog/tiktok-post/route.ts so the two
-// paths can't drift on what a correct publish looks like.
+// server client (the interactive routes) OR the service-role admin client (the
+// scheduled-post cron). Works for BOTH targets MVP posts from:
+//   • a blog post  → resolves the render via blog_posts, persists on blog_posts
+//   • a Short      → resolves + persists directly on youtube_videos (no blog post)
+// Mirrors app/api/blog/tiktok-post/route.ts + .../video/route.ts so the
+// interactive and scheduled paths can't drift.
 
 import {
   getValidTikTokToken,
@@ -23,23 +26,29 @@ export interface TikTokScheduleOptions {
   brandOrganicToggle?: boolean
 }
 
+/** Exactly one of these identifies what to post. */
+export interface PublishTarget {
+  blogPostId?: string | null
+  videoId?: string | null
+}
+
 /**
- * Direct-Post a post's vertical render to the creator's TikTok. Throws Error on
- * any failure (the caller maps it to a 502 / a failed scheduled row). Returns
- * the TikTok publish id on success and persists the initial state on blog_posts.
- *
- * `sb` may be the cookie server client or the admin client — both expose the
- * same query surface, and getValidTikTokToken refreshes against whichever.
+ * Direct-Post a vertical render to the creator's TikTok. Throws on any failure.
+ * Returns the TikTok publish id and persists the initial state on the matching
+ * row (blog_posts for a blog target, youtube_videos for a Short target).
  */
-export async function publishTikTokForBlogPost(
+export async function publishTikTokForTarget(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   sb: any,
   userId: string,
-  blogPostId: string,
+  target: PublishTarget,
   caption: string,
   opts: TikTokScheduleOptions,
 ): Promise<{ publishId: string }> {
   if (!opts?.privacyLevel) throw new Error('Pick a privacy option before posting.')
+  const blogPostId = target.blogPostId || null
+  const videoId = target.videoId || null
+  if (!blogPostId && !videoId) throw new Error('Nothing to post — no blog post or video given.')
 
   // Scope + token gates (tokens can change between scheduling and firing).
   const { data: integ } = await sb
@@ -50,10 +59,12 @@ export async function publishTikTokForBlogPost(
   const token = await getValidTikTokToken(sb, userId)
   if (!token) throw new Error("TikTok isn't connected. Connect it in Integrations first.")
 
-  // Daily cap (TikTok's documented 25/24h/account).
+  // Daily cap (TikTok's documented 25/24h/account), counted on whichever table
+  // this target persists to.
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+  const capTable = videoId ? 'youtube_videos' : 'blog_posts'
   const { count } = await sb
-    .from('blog_posts')
+    .from(capTable)
     .select('id', { count: 'exact', head: true })
     .eq('user_id', userId)
     .not('tiktok_publish_id', 'is', null)
@@ -63,18 +74,21 @@ export async function publishTikTokForBlogPost(
   }
 
   // Resolve the shared 9:16 render.
-  const { data: post } = await sb
-    .from('blog_posts')
-    .select('id,user_id,video_id,youtube_videos(instagram_video_url)')
-    .eq('id', blogPostId)
-    .eq('user_id', userId)
-    .maybeSingle()
-  if (!post) throw new Error('Post not found.')
-  const yt = post.youtube_videos
-  const ytRow = Array.isArray(yt) ? yt[0] : yt
-  const storageUrl = ytRow?.instagram_video_url as string | undefined
+  let storageUrl: string | undefined
+  if (videoId) {
+    const { data: v } = await sb
+      .from('youtube_videos').select('instagram_video_url').eq('id', videoId).eq('user_id', userId).maybeSingle()
+    if (!v) throw new Error('Video not found.')
+    storageUrl = v.instagram_video_url as string | undefined
+  } else {
+    const { data: post } = await sb
+      .from('blog_posts').select('youtube_videos(instagram_video_url)').eq('id', blogPostId).eq('user_id', userId).maybeSingle()
+    if (!post) throw new Error('Post not found.')
+    const yt = post.youtube_videos
+    storageUrl = (Array.isArray(yt) ? yt[0] : yt)?.instagram_video_url as string | undefined
+  }
   if (!storageUrl || !/^https:\/\//.test(storageUrl)) {
-    throw new Error('No vertical video for this post — add a 9:16 render before it can post.')
+    throw new Error('No vertical video for this — add a 9:16 render before it can post.')
   }
 
   const result = await directPostVideoUpload(token, {
@@ -88,17 +102,23 @@ export async function publishTikTokForBlogPost(
     upstreamUrl: storageUrl,
   })
 
-  await sb
-    .from('blog_posts')
-    .update({
-      tiktok_publish_id: result.publishId,
-      tiktok_publish_status: 'processing',
-      tiktok_posted_at: new Date().toISOString(),
-      tiktok_error_message: null,
-      tiktok_share_url: null,
-    })
-    .eq('id', blogPostId)
-    .eq('user_id', userId)
+  const patch = {
+    tiktok_publish_id: result.publishId,
+    tiktok_publish_status: 'processing',
+    tiktok_posted_at: new Date().toISOString(),
+    tiktok_error_message: null,
+    tiktok_share_url: null,
+  }
+  if (videoId) await sb.from('youtube_videos').update(patch).eq('id', videoId).eq('user_id', userId)
+  else await sb.from('blog_posts').update(patch).eq('id', blogPostId).eq('user_id', userId)
 
   return { publishId: result.publishId }
+}
+
+/** Back-compat shim — older callers passed a bare blogPostId. */
+export async function publishTikTokForBlogPost(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  sb: any, userId: string, blogPostId: string, caption: string, opts: TikTokScheduleOptions,
+): Promise<{ publishId: string }> {
+  return publishTikTokForTarget(sb, userId, { blogPostId }, caption, opts)
 }

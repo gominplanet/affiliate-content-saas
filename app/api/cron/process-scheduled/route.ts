@@ -32,8 +32,8 @@ import { maybeDecrypt } from '@/lib/secrets'
 import { createWordPressService } from '@/services/wordpress'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { pingIndexNowForUrl } from '@/lib/seo-on-publish'
-import { publishTikTokForBlogPost, type TikTokScheduleOptions } from '@/lib/tiktok-publish'
-import { publishInstagramForBlogPost, type IgMode } from '@/lib/instagram-publish'
+import { publishTikTokForTarget, type TikTokScheduleOptions } from '@/lib/tiktok-publish'
+import { publishInstagramForTarget, type IgMode } from '@/lib/instagram-publish'
 
 // Vercel cron functions run with a generous timeout but we still want
 // to cap the per-tick work — if the batch is huge we'll catch the
@@ -234,10 +234,16 @@ async function publishOne(
   // schema-safe on DBs that predate the column.
   if (row.platform === 'tiktok' || row.platform === 'instagram') {
     let options: Record<string, unknown> = {}
+    let videoId: string | null = null
     try {
-      const { data: optRow } = await admin.from('scheduled_posts').select('options').eq('id', row.id).maybeSingle()
+      // options + video_id added in migrations 137/138 — fetched here (not in the
+      // main claim) so the cron keeps running on DBs that predate them. These
+      // rows can only exist post-migration anyway.
+      const { data: optRow } = await admin.from('scheduled_posts').select('options,video_id').eq('id', row.id).maybeSingle()
       if (optRow?.options && typeof optRow.options === 'object') options = optRow.options as Record<string, unknown>
-    } catch { /* options column absent (pre-137) — these rows can't exist there */ }
+      videoId = (optRow?.video_id as string | null) ?? null
+    } catch { /* columns absent on an old DB — these rows can't exist there */ }
+    const target = { blogPostId: row.blog_post_id || null, videoId }
     if (row.platform === 'tiktok') {
       const tkOpts: TikTokScheduleOptions = {
         privacyLevel: (options.privacyLevel as TikTokScheduleOptions['privacyLevel']) || 'SELF_ONLY',
@@ -247,10 +253,10 @@ async function publishOne(
         brandContentToggle: !!options.brandContentToggle,
         brandOrganicToggle: !!options.brandOrganicToggle,
       }
-      const { publishId } = await publishTikTokForBlogPost(admin, row.user_id, row.blog_post_id, row.body_text, tkOpts)
+      const { publishId } = await publishTikTokForTarget(admin, row.user_id, target, row.body_text, tkOpts)
       return { externalId: publishId }
     }
-    const r = await publishInstagramForBlogPost(admin, row.user_id, row.blog_post_id, row.body_text, (options.mode as IgMode) || 'reel')
+    const r = await publishInstagramForTarget(admin, row.user_id, target, row.body_text, (options.mode as IgMode) || 'reel')
     return { externalId: r.reelId || r.storyId || undefined }
   }
 

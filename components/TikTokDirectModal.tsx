@@ -15,7 +15,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import {
   Loader2, AlertCircle, CheckCircle, Send, ExternalLink, X,
-  MessageSquare, Users, Scissors, Music, Lock, RefreshCw, Package,
+  MessageSquare, Users, Scissors, Music, Lock, RefreshCw, Package, Clock,
 } from 'lucide-react'
 import { ShortVideoUpload } from '@/components/ShortVideoUpload'
 import { useModalA11y } from '@/components/ui/useModalA11y'
@@ -106,6 +106,13 @@ export function TikTokDirectModal({
   // PROCESSING_UPLOAD, etc.). Surfaced under the processing banner so a
   // stuck post tells us WHY it's stuck instead of looping forever.
   const [rawStatus, setRawStatus] = useState<string | null>(null)
+  // Schedule-for-later (only for real video targets — a URL-only burned clip has
+  // no DB row to schedule against).
+  const [scheduleOpen, setScheduleOpen] = useState(false)
+  const [scheduleAt, setScheduleAt] = useState('')
+  const [scheduling, setScheduling] = useState(false)
+  const [scheduledMsg, setScheduledMsg] = useState<string | null>(null)
+  const [scheduleError, setScheduleError] = useState<string | null>(null)
   // 11-char YouTube id stashed separately so we can build the Studio link
   // even on the error path (where `meta` is null).
   const [youtubeId, setYoutubeId] = useState<string | null>(null)
@@ -246,6 +253,40 @@ export function TikTokDirectModal({
       setPosting(false)
     }
   }, [canPost, videoId, isBurned, burnedVideoUrl, caption, privacy, allowComment, allowDuet, allowStitch, isCommercial, brandedContent, brandedPartnership, info])
+
+  // Schedule this Short for a future time (real video targets only — a URL-only
+  // burned clip has no DB row, so it can't be queued).
+  const canSchedule = !isBurned && !!videoId && !!meta?.videoUrl && privacy !== '' && !commercialNeedsChoice && !brandedNoPrivate
+  const scheduleSubmit = useCallback(async () => {
+    if (!canSchedule || !scheduleAt) return
+    setScheduling(true); setScheduleError(null); setScheduledMsg(null)
+    try {
+      const res = await fetch('/api/blog/tiktok-post/schedule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          videoId,
+          caption,
+          scheduledAt: new Date(scheduleAt).toISOString(),
+          tiktok: {
+            privacyLevel: privacy,
+            disableComment: !allowComment || (info?.commentDisabled ?? false),
+            disableDuet: !allowDuet || (info?.duetDisabled ?? false),
+            disableStitch: !allowStitch || (info?.stitchDisabled ?? false),
+            brandContentToggle: isCommercial && brandedPartnership,
+            brandOrganicToggle: isCommercial && brandedContent,
+          },
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok) setScheduleError(json.error || 'Scheduling failed.')
+      else setScheduledMsg(`Scheduled for ${new Date(json.scheduledAt).toLocaleString()}.`)
+    } catch (e) {
+      setScheduleError(e instanceof Error ? e.message : 'Scheduling failed.')
+    } finally {
+      setScheduling(false)
+    }
+  }, [canSchedule, videoId, caption, scheduleAt, privacy, allowComment, allowDuet, allowStitch, isCommercial, brandedPartnership, brandedContent, info])
 
   // Cancel is always allowed — even mid-processing the user can walk
   // away. The status keeps persisting server-side; reopening the modal
@@ -552,6 +593,40 @@ export function TikTokDirectModal({
             </div>
           )}
         </div>
+
+        {/* Schedule for later (real video targets only, before posting) */}
+        {!loading && !loadError && info && meta && canSchedule && publishStatus === 'idle' && (
+          <div className="px-5 pb-3">
+            {!scheduleOpen ? (
+              <button onClick={() => setScheduleOpen(true)} className="inline-flex items-center gap-1.5 text-xs font-medium text-[#7C3AED] hover:underline">
+                <Clock size={13} /> Schedule for later instead
+              </button>
+            ) : (
+              <div className="card p-3 border-[#7C3AED]/20 bg-[#7C3AED]/[0.03]">
+                <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2 flex items-center gap-1.5"><Clock size={13} /> Schedule this Short</p>
+                <input
+                  type="datetime-local"
+                  value={scheduleAt}
+                  onChange={e => { setScheduleAt(e.target.value); setScheduledMsg(null); setScheduleError(null) }}
+                  className="w-full text-sm px-3 py-2 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-[#f5f5f7]"
+                />
+                <p className="text-[11px] text-[#86868b] mt-1">Uses your settings + caption above. Fires automatically — you can close this.</p>
+                {scheduledMsg && <p className="mt-2 text-[11px] text-[#34c759] flex items-center gap-1.5"><CheckCircle size={11} /> {scheduledMsg}</p>}
+                {scheduleError && <p className="mt-2 text-[11px] text-[#ff3b30] flex items-center gap-1.5"><AlertCircle size={11} /> {scheduleError}</p>}
+                <div className="flex gap-2 mt-2">
+                  <button
+                    onClick={() => void scheduleSubmit()}
+                    disabled={scheduling || !scheduleAt || !!scheduledMsg}
+                    className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold text-white bg-[#7C3AED] hover:bg-[#6d28d9] disabled:opacity-50"
+                  >
+                    {scheduling ? <><Loader2 size={13} className="animate-spin" /> Scheduling…</> : <>Schedule</>}
+                  </button>
+                  <button onClick={() => setScheduleOpen(false)} className="px-3 py-2 rounded-lg text-sm btn-secondary">Cancel</button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {!loading && !loadError && info && meta && (
           <div className="flex items-center justify-end gap-2 p-5 border-t border-gray-100 dark:border-white/10">
