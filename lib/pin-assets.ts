@@ -12,7 +12,7 @@ import { createAnthropicClient } from '@/lib/anthropic'
 import { capSocialText, SOCIAL_LIMITS } from '@/lib/social-cap'
 import { scrubBanned, BANNED_RULE } from '@/lib/scrub'
 import { recordUsage, usageFromAnthropic } from '@/lib/ai-usage'
-import { composePin, PIN_OVERLAY_THEME_COUNT, PIN_LAYOUT_COUNT } from '@/lib/pin-compose'
+import { composePin, PIN_DESIGN_COUNT } from '@/lib/pin-compose'
 import { learnProfileToPrompt } from '@/lib/learn'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
@@ -187,10 +187,10 @@ Return ONLY valid JSON with these exact keys:
   // honest rather than falsely "verified". (The hero still serves as the plain
   // fallbackImageUrl returned to the client.)
 
-  // Roll a fresh overlay style (and, for non-collage, a scene composition) each
-  // generation so pins vary — and re-roll on regenerate.
-  const styleVariant = Math.floor(Math.random() * PIN_OVERLAY_THEME_COUNT)
-  const layoutVariant = Math.floor(Math.random() * PIN_LAYOUT_COUNT)
+  // Roll a fresh DESIGN preset (position + treatment + case + badge shape) and,
+  // for non-collage, a scene composition each generation so pins vary — and
+  // re-roll on regenerate.
+  const designVariant = Math.floor(Math.random() * PIN_DESIGN_COUNT)
   const imagePrompt = useCollage
     ? buildCollageImagePrompt(fields.product_category, collageProducts)
     : buildViralImagePrompt(fields, Math.floor(Math.random() * PIN_COMPOSITIONS.length), !!referenceImageUrl)
@@ -216,7 +216,7 @@ Return ONLY valid JSON with these exact keys:
         // Collage: drop the center band (it'd cover the grid) and badge the count.
         main_benefit: useCollage ? '' : fields.main_benefit,
         trust_factor: useCollage ? `TOP ${collageProducts.length} PICKS` : fields.trust_factor,
-      }, { styleSeed: styleVariant, layoutSeed: layoutVariant, layout: useCollage ? 'collage' : 'standard' })
+      }, { designSeed: designVariant, layout: useCollage ? 'collage' : 'standard' })
     : null
   // (usage already recorded per generation above, incl. the QC retry)
 
