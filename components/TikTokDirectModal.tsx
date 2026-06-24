@@ -106,6 +106,10 @@ export function TikTokDirectModal({
   // PROCESSING_UPLOAD, etc.). Surfaced under the processing banner so a
   // stuck post tells us WHY it's stuck instead of looping forever.
   const [rawStatus, setRawStatus] = useState<string | null>(null)
+  // One-click cross-post: also publish the same video to Instagram as a Reel.
+  const [alsoIg, setAlsoIg] = useState(false)
+  const [igResult, setIgResult] = useState<'idle' | 'posting' | 'done' | 'failed'>('idle')
+  const [igErr, setIgErr] = useState<string | null>(null)
   // Schedule-for-later (only for real video targets — a URL-only burned clip has
   // no DB row to schedule against).
   const [scheduleOpen, setScheduleOpen] = useState(false)
@@ -247,12 +251,35 @@ export function TikTokDirectModal({
       }
       setPublishId(json.publishId)
       setPublishStatus('processing')
+
+      // One-click cross-post: also publish the same video to Instagram as a Reel.
+      // Burned clip → /publish-burned (by URL); a Short → /post-direct-video (by
+      // videoId). Reported separately so a failed IG post never masks TikTok.
+      if (alsoIg) {
+        setIgResult('posting'); setIgErr(null)
+        try {
+          const igRes = isBurned
+            ? await fetch('/api/instagram/publish-burned', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ videoUrl: burnedVideoUrl, caption }),
+              })
+            : await fetch('/api/instagram/post-direct-video', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ videoId, caption, mode: 'reel' }),
+              })
+          const igJson = await igRes.json().catch(() => ({}))
+          if (igRes.ok) setIgResult('done')
+          else { setIgResult('failed'); setIgErr((igJson.error as string) || 'Instagram post failed.') }
+        } catch (e) {
+          setIgResult('failed'); setIgErr(e instanceof Error ? e.message : 'Instagram post failed.')
+        }
+      }
     } catch (e) {
       setPostError(e instanceof Error ? e.message : 'Posting failed.')
     } finally {
       setPosting(false)
     }
-  }, [canPost, videoId, isBurned, burnedVideoUrl, caption, privacy, allowComment, allowDuet, allowStitch, isCommercial, brandedContent, brandedPartnership, info])
+  }, [canPost, videoId, isBurned, burnedVideoUrl, caption, privacy, allowComment, allowDuet, allowStitch, isCommercial, brandedContent, brandedPartnership, info, alsoIg])
 
   // Schedule this Short for a future time (real video targets only — a URL-only
   // burned clip has no DB row, so it can't be queued).
@@ -593,6 +620,19 @@ export function TikTokDirectModal({
             </div>
           )}
         </div>
+
+        {/* One-click cross-post to Instagram */}
+        {!loading && !loadError && info && meta && publishStatus === 'idle' && (
+          <div className="px-5 pb-1">
+            <label className="flex items-center gap-2.5 cursor-pointer select-none">
+              <input type="checkbox" checked={alsoIg} onChange={e => setAlsoIg(e.target.checked)} className="h-4 w-4 accent-[#E1306C]" />
+              <span className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7]">Also post to Instagram as a Reel <span className="text-[#86868b]">(same video + caption)</span></span>
+            </label>
+          </div>
+        )}
+        {igResult === 'posting' && <p className="px-5 pb-1 text-[11px] text-[#E1306C] flex items-center gap-1.5"><Loader2 size={11} className="animate-spin" /> Also sending to Instagram…</p>}
+        {igResult === 'done' && <p className="px-5 pb-1 text-[11px] text-[#34c759] flex items-center gap-1.5"><CheckCircle size={11} /> Sent to Instagram too.</p>}
+        {igResult === 'failed' && <p className="px-5 pb-1 text-[11px] text-[#ff3b30] flex items-center gap-1.5"><AlertCircle size={11} /> Instagram: {igErr || 'failed'} (TikTok was unaffected.)</p>}
 
         {/* Schedule for later (real video targets only, before posting) */}
         {!loading && !loadError && info && meta && canSchedule && publishStatus === 'idle' && (
