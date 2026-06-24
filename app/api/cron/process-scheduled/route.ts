@@ -32,6 +32,8 @@ import { maybeDecrypt } from '@/lib/secrets'
 import { createWordPressService } from '@/services/wordpress'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { pingIndexNowForUrl } from '@/lib/seo-on-publish'
+import { publishTikTokForBlogPost, type TikTokScheduleOptions } from '@/lib/tiktok-publish'
+import { publishInstagramForBlogPost, type IgMode } from '@/lib/instagram-publish'
 
 // Vercel cron functions run with a generous timeout but we still want
 // to cap the per-tick work — if the batch is huge we'll catch the
@@ -53,7 +55,7 @@ interface ScheduledRow {
    *  doesn't generate these rows — WP's own cron handles the flip). */
   kind: 'social' | 'blog_publish'
   /** Required when kind='social'; null when kind='blog_publish'. */
-  platform: 'facebook' | 'threads' | 'twitter' | 'linkedin' | 'bluesky' | 'telegram' | null
+  platform: 'facebook' | 'threads' | 'twitter' | 'linkedin' | 'bluesky' | 'telegram' | 'tiktok' | 'instagram' | null
   body_text: string
   /** Optional chosen destination (multi-account). Null = use the user's
    *  default / legacy integrations credentials. */
@@ -224,6 +226,34 @@ async function publishOne(
   if (!row.platform) {
     throw new Error(`scheduled_posts row ${row.id}: kind=social but platform is null (DB invariant broken)`)
   }
+
+  // Vertical video posts (TikTok / Instagram Reels) resolve the 9:16 render from
+  // blog_post_id and Direct-Post via the shared publishers — they don't need the
+  // text-social WP-URL + integration path below. Per-platform settings live in
+  // `options` (migration 137); fetched here so the main claim query stays
+  // schema-safe on DBs that predate the column.
+  if (row.platform === 'tiktok' || row.platform === 'instagram') {
+    let options: Record<string, unknown> = {}
+    try {
+      const { data: optRow } = await admin.from('scheduled_posts').select('options').eq('id', row.id).maybeSingle()
+      if (optRow?.options && typeof optRow.options === 'object') options = optRow.options as Record<string, unknown>
+    } catch { /* options column absent (pre-137) — these rows can't exist there */ }
+    if (row.platform === 'tiktok') {
+      const tkOpts: TikTokScheduleOptions = {
+        privacyLevel: (options.privacyLevel as TikTokScheduleOptions['privacyLevel']) || 'SELF_ONLY',
+        disableComment: !!options.disableComment,
+        disableDuet: !!options.disableDuet,
+        disableStitch: !!options.disableStitch,
+        brandContentToggle: !!options.brandContentToggle,
+        brandOrganicToggle: !!options.brandOrganicToggle,
+      }
+      const { publishId } = await publishTikTokForBlogPost(admin, row.user_id, row.blog_post_id, row.body_text, tkOpts)
+      return { externalId: publishId }
+    }
+    const r = await publishInstagramForBlogPost(admin, row.user_id, row.blog_post_id, row.body_text, (options.mode as IgMode) || 'reel')
+    return { externalId: r.reelId || r.storyId || undefined }
+  }
+
   // Pull the blog post + integration creds
   const [postRes, intRes] = await Promise.all([
     admin

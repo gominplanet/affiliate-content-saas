@@ -22,7 +22,7 @@ import { useParams, useRouter } from 'next/navigation'
 import PageHero from '@/components/layout/PageHero'
 import {
   Loader2, AlertCircle, CheckCircle, Send, ExternalLink, X,
-  MessageSquare, Users, Scissors, Music, Lock, Flame,
+  MessageSquare, Users, Scissors, Music, Lock, Flame, Clock,
 } from 'lucide-react'
 import { ShortVideoUpload } from '@/components/ShortVideoUpload'
 import { createBrowserClient } from '@/lib/supabase/client'
@@ -99,6 +99,12 @@ export default function TikTokPublishPage() {
   const [alsoInstagram, setAlsoInstagram] = useState(false)
   const [igResult, setIgResult] = useState<'idle' | 'posting' | 'done' | 'failed'>('idle')
   const [igError, setIgError] = useState<string | null>(null)
+  // Schedule-for-later
+  const [scheduleOpen, setScheduleOpen] = useState(false)
+  const [scheduleAt, setScheduleAt] = useState('')
+  const [scheduling, setScheduling] = useState(false)
+  const [scheduledMsg, setScheduledMsg] = useState<string | null>(null)
+  const [scheduleError, setScheduleError] = useState<string | null>(null)
 
   // ── Load creator_info LIVE every time the screen opens (TikTok rule) ─────
   useEffect(() => {
@@ -293,6 +299,39 @@ export default function TikTokPublishPage() {
       setPosting(false)
     }
   }, [canPost, blogPostId, caption, privacy, allowComment, allowDuet, allowStitch, isCommercial, brandedContent, brandedPartnership, info, alsoInstagram, meta?.videoId])
+
+  // Schedule the same post (TikTok, + IG if the toggle is on) for a future time.
+  const scheduleSubmit = useCallback(async () => {
+    if (!meta?.videoUrl || privacy === '' || !scheduleAt) return
+    setScheduling(true); setScheduleError(null); setScheduledMsg(null)
+    try {
+      const res = await fetch('/api/blog/tiktok-post/schedule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          blogPostId,
+          caption,
+          scheduledAt: new Date(scheduleAt).toISOString(),
+          tiktok: {
+            privacyLevel: privacy,
+            disableComment: !allowComment || (info?.commentDisabled ?? false),
+            disableDuet: !allowDuet || (info?.duetDisabled ?? false),
+            disableStitch: !allowStitch || (info?.stitchDisabled ?? false),
+            brandContentToggle: isCommercial && brandedPartnership,
+            brandOrganicToggle: isCommercial && brandedContent,
+          },
+          instagram: alsoInstagram ? { mode: 'reel' } : undefined,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok) setScheduleError(json.error || 'Scheduling failed.')
+      else setScheduledMsg(`Scheduled for ${new Date(json.scheduledAt).toLocaleString()}${alsoInstagram ? ' (TikTok + Instagram)' : ''}.`)
+    } catch (e) {
+      setScheduleError(e instanceof Error ? e.message : 'Scheduling failed.')
+    } finally {
+      setScheduling(false)
+    }
+  }, [meta?.videoUrl, privacy, scheduleAt, blogPostId, caption, allowComment, allowDuet, allowStitch, isCommercial, brandedPartnership, brandedContent, alsoInstagram, info])
 
   return (
     <>
@@ -634,6 +673,42 @@ export default function TikTokPublishPage() {
               : <><Send size={14} /> Post to TikTok</>
             }
           </button>
+
+          {/* ── Schedule for later ───────────────────────────────────── */}
+          {meta?.videoUrl && publishStatus === 'idle' && (
+            <div className="mt-3 text-center">
+              {!scheduleOpen ? (
+                <button onClick={() => setScheduleOpen(true)} className="inline-flex items-center gap-1.5 text-xs font-medium text-[#7C3AED] hover:underline">
+                  <Clock size={13} /> Schedule for later instead
+                </button>
+              ) : (
+                <div className="text-left card p-3 border-[#7C3AED]/20 bg-[#7C3AED]/[0.03]">
+                  <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2 flex items-center gap-1.5">
+                    <Clock size={13} /> Schedule this post{alsoInstagram ? ' (TikTok + Instagram)' : ''}
+                  </p>
+                  <input
+                    type="datetime-local"
+                    value={scheduleAt}
+                    onChange={e => { setScheduleAt(e.target.value); setScheduledMsg(null); setScheduleError(null) }}
+                    className="w-full text-sm px-3 py-2 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-[#f5f5f7]"
+                  />
+                  <p className="text-[11px] text-[#86868b] mt-1">Uses your settings + caption above. Fires automatically — you can close the page.</p>
+                  {scheduledMsg && <p className="mt-2 text-[11px] text-[#34c759] flex items-center gap-1.5"><CheckCircle size={11} /> {scheduledMsg}</p>}
+                  {scheduleError && <p className="mt-2 text-[11px] text-[#ff3b30] flex items-center gap-1.5"><AlertCircle size={11} /> {scheduleError}</p>}
+                  <div className="flex gap-2 mt-2">
+                    <button
+                      onClick={() => void scheduleSubmit()}
+                      disabled={scheduling || !scheduleAt || privacy === '' || commercialNeedsChoice || brandedNoPrivate || !!scheduledMsg}
+                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold text-white bg-[#7C3AED] hover:bg-[#6d28d9] disabled:opacity-50"
+                    >
+                      {scheduling ? <><Loader2 size={13} className="animate-spin" /> Scheduling…</> : <>Schedule</>}
+                    </button>
+                    <button onClick={() => setScheduleOpen(false)} className="px-3 py-2 rounded-lg text-sm btn-secondary">Cancel</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </>
