@@ -818,7 +818,7 @@ export default function InstagramBurnerPage() {
 }
 
 // ── Batch & schedule ─────────────────────────────────────────────────────────
-interface BatchItem { id: string; url: string | null; uploading: boolean; caption: string; product: string }
+interface BatchItem { id: string; url: string | null; uploading: boolean; caption: string; product: string; videoId?: string; label?: string }
 interface Job { id: string; caption_text: string; status: string; scheduled_at: string; result_url: string | null; ig_published: boolean; error_message: string | null }
 
 function defaultStartLocal(): string {
@@ -847,6 +847,12 @@ function BatchBurner({ supabase }: { supabase: ReturnType<typeof createBrowserCl
   const [genTag, setGenTag] = useState('')
   const [genLoading, setGenLoading] = useState(false)
   const [genErr, setGenErr] = useState<string | null>(null)
+  // Source: pick from the creator's own Shorts (resolves the stored MP4) or
+  // upload files — same options as single-video mode.
+  const [bSource, setBSource] = useState<'shorts' | 'upload'>('upload')
+  const [shorts, setShorts] = useState<ShortItem[] | null>(null)
+  const [shortsQuery, setShortsQuery] = useState('')
+  const [addingId, setAddingId] = useState<string | null>(null)
   const [startAt, setStartAt] = useState(defaultStartLocal())
   const [intervalHours, setIntervalHours] = useState(24)
   const [submitting, setSubmitting] = useState(false)
@@ -886,6 +892,43 @@ function BatchBurner({ supabase }: { supabase: ReturnType<typeof createBrowserCl
     } catch (e) {
       setGenErr(e instanceof Error ? e.message : 'Could not generate the box')
     } finally { setGenLoading(false) }
+  }
+
+  // Discover the creator's own Shorts so they can add them without uploading.
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/instagram/burn/shorts')
+      .then(r => r.json())
+      .then((d: { shorts?: ShortItem[] }) => {
+        if (cancelled) return
+        const list = Array.isArray(d.shorts) ? d.shorts : []
+        setShorts(list)
+        if (list.some(s => s.hasVideo)) setBSource('shorts') // default to Shorts when any are ready
+      })
+      .catch(() => { if (!cancelled) setShorts([]) })
+    return () => { cancelled = true }
+  }, [])
+
+  // Add a Short as a batch item — resolves its stored 9:16 MP4. Capped at 5,
+  // de-duped, and a Short with no render shows a clear error.
+  async function addShort(s: ShortItem) {
+    if (items.filter(it => it.url).length >= 5) { setErr('Up to 5 videos per batch.'); return }
+    if (items.some(it => it.videoId === s.id)) return
+    setAddingId(s.id); setErr(null)
+    try {
+      const r = await fetch(`/api/instagram/burn/source?videoId=${encodeURIComponent(s.id)}`)
+      const d = await r.json() as { videoUrl?: string | null; noVideo?: boolean }
+      if (!d.videoUrl) { setErr(`“${s.title.slice(0, 40)}” has no MP4 yet — download it from YouTube or upload the file.`); return }
+      const newItem: BatchItem = { id: crypto.randomUUID(), url: d.videoUrl, uploading: false, caption: 'LINK IN BIO', product: s.productUrl || '', videoId: s.id, label: s.title }
+      setItems(prev => {
+        // Replace a blank placeholder row if there is one, else append (cap 5).
+        const blank = prev.findIndex(it => !it.url && !it.uploading && !it.videoId)
+        if (blank >= 0) { const next = [...prev]; next[blank] = newItem; return next }
+        return prev.length >= 5 ? prev : [...prev, newItem]
+      })
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Could not add that Short')
+    } finally { setAddingId(null) }
   }
 
   const loadJobs = useCallback(async () => {
@@ -975,18 +1018,61 @@ function BatchBurner({ supabase }: { supabase: ReturnType<typeof createBrowserCl
       <div className="card p-5 space-y-4">
         <div>
           <div className="flex items-center justify-between mb-1.5">
-            <label className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">1. Videos <span className="font-normal text-[#86868b]">({items.length}/5)</span></label>
-            <button onClick={addItem} disabled={items.length >= 5} className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#7C3AED] hover:underline disabled:opacity-40"><Plus size={11} /> Add video</button>
+            <label className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">1. Videos <span className="font-normal text-[#86868b]">({items.filter(it => it.url).length}/5)</span></label>
+            {bSource === 'upload' && <button onClick={addItem} disabled={items.length >= 5} className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#7C3AED] hover:underline disabled:opacity-40"><Plus size={11} /> Add video</button>}
           </div>
+
+          {/* Source toggle — From my Shorts | Upload (same as single video) */}
+          {shorts && shorts.length > 0 && (
+            <div className="grid grid-cols-2 gap-2 mb-2">
+              <button onClick={() => setBSource('shorts')} className={`text-center px-3 py-2 rounded-lg border text-[13px] font-medium transition-colors ${bSource === 'shorts' ? 'border-[#7C3AED] bg-[#7C3AED]/5 text-[#7C3AED]' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:border-gray-300'}`}>From my Shorts</button>
+              <button onClick={() => setBSource('upload')} className={`text-center px-3 py-2 rounded-lg border text-[13px] font-medium transition-colors ${bSource === 'upload' ? 'border-[#7C3AED] bg-[#7C3AED]/5 text-[#7C3AED]' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:border-gray-300'}`}>Upload</button>
+            </div>
+          )}
+
+          {/* Shorts picker — click to add (up to 5) */}
+          {bSource === 'shorts' && shorts && shorts.length > 0 && (
+            <div className="mb-2">
+              <div className="relative mb-1.5">
+                <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#86868b]" />
+                <input type="text" value={shortsQuery} onChange={(e) => setShortsQuery(e.target.value)} placeholder="Search your Shorts…" className="input-field text-[12px] pl-8" />
+              </div>
+              <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+                {shorts.filter(s => !shortsQuery || s.title.toLowerCase().includes(shortsQuery.toLowerCase())).slice(0, 40).map(s => {
+                  const added = items.some(it => it.videoId === s.id)
+                  return (
+                    <button key={s.id} onClick={() => addShort(s)} disabled={added || addingId === s.id} className={`w-full flex items-center gap-2 rounded-lg border p-1.5 text-left transition-colors ${added ? 'border-[#34c759]/40 bg-[#34c759]/5' : 'border-gray-200 dark:border-white/10 hover:border-[#7C3AED]'} disabled:opacity-70`}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      {s.thumbnailUrl ? <img src={s.thumbnailUrl} alt="" className="w-10 h-10 rounded object-cover flex-shrink-0" /> : <div className="w-10 h-10 rounded bg-[#1d1d1f]/5 flex-shrink-0" />}
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[12px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] truncate">{s.title}</p>
+                        <p className="text-[10px] text-[#86868b]">{s.hasVideo ? 'Ready to burn' : 'Needs download from YouTube'}{s.posted ? ' · already posted' : ''}</p>
+                      </div>
+                      <span className="text-[11px] font-semibold flex-shrink-0 pr-1">{addingId === s.id ? <Loader2 size={12} className="animate-spin" /> : added ? <CheckCircle size={13} className="text-[#34c759]" /> : <Plus size={13} className="text-[#7C3AED]" />}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* The chosen videos — caption + product + remove. Upload control only
+              in upload mode; shorts-added rows show their title. */}
           <div className="space-y-2">
             {items.map((it, i) => (
               <div key={it.id} className="rounded-lg border border-gray-200 dark:border-white/10 p-2.5 space-y-2">
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] font-semibold text-[#86868b] w-4">{i + 1}.</span>
-                  <label className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md border border-dashed text-[12px] cursor-pointer ${it.url ? 'border-[#34c759]/40 text-[#34c759]' : 'border-gray-300 dark:border-white/15 text-[#6e6e73] dark:text-[#ebebf0] hover:border-[#7C3AED]'}`}>
-                    <input type="file" accept="video/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadItem(it.id, f); e.currentTarget.value = '' }} />
-                    {it.uploading ? <><Loader2 size={12} className="animate-spin" /> Uploading…</> : it.url ? <><Video size={12} /> Ready</> : <><UploadCloud size={12} /> Upload</>}
-                  </label>
+                  {bSource === 'shorts' || it.videoId ? (
+                    <span className={`flex-1 flex items-center gap-1.5 px-2 py-1.5 rounded-md border text-[12px] ${it.url ? 'border-[#34c759]/40 text-[#34c759]' : 'border-dashed border-gray-300 dark:border-white/15 text-[#86868b]'}`}>
+                      {it.url ? <><Video size={12} /> {it.label ? it.label.slice(0, 32) : 'Ready'}</> : 'Pick a Short above'}
+                    </span>
+                  ) : (
+                    <label className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md border border-dashed text-[12px] cursor-pointer ${it.url ? 'border-[#34c759]/40 text-[#34c759]' : 'border-gray-300 dark:border-white/15 text-[#6e6e73] dark:text-[#ebebf0] hover:border-[#7C3AED]'}`}>
+                      <input type="file" accept="video/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadItem(it.id, f); e.currentTarget.value = '' }} />
+                      {it.uploading ? <><Loader2 size={12} className="animate-spin" /> Uploading…</> : it.url ? <><Video size={12} /> Ready</> : <><UploadCloud size={12} /> Upload</>}
+                    </label>
+                  )}
                   {items.length > 1 && <button onClick={() => removeItem(it.id)} className="text-[#86868b] hover:text-[#ff3b30] p-1"><Trash2 size={13} /></button>}
                 </div>
                 <input type="text" value={it.caption} onChange={(e) => setField(it.id, 'caption', e.target.value)} maxLength={60} placeholder="Caption text (e.g. LINK IN BIO)" className="input-field text-[12px]" />
@@ -994,6 +1080,9 @@ function BatchBurner({ supabase }: { supabase: ReturnType<typeof createBrowserCl
               </div>
             ))}
           </div>
+          {bSource === 'shorts' && items.filter(it => it.url).length === 0 && (
+            <p className="text-[11px] text-[#86868b] mt-1.5">Pick a Short above to add it (up to 5).</p>
+          )}
         </div>
 
         {/* Overlay (all videos) — CTA box or caption text, same as single video */}
