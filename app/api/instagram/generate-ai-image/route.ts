@@ -21,7 +21,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
-import { pickProductReferenceImage } from '@/lib/product-image'
+import { pickProductReferenceImage, verifyProductMatch } from '@/lib/product-image'
 import { fal } from '@fal-ai/client'
 import { recordAnthropicUsage, recordUsage } from '@/lib/ai-usage'
 import { spendGate } from '@/lib/ai-spend'
@@ -473,6 +473,19 @@ Ultra-sharp, photorealistic, 4:5 portrait.`
           const fb = await composeWithNanoBanana({ prompt: igPrompt, referenceImageUrls: refs, aspectRatio: '4:5', numImages: 1 })
           imageUrl = fb[0] || null
           if (imageUrl) recordUsage({ userId: user.id, tier, feature: 'ig_ai_thumbnail_image', model: NANO_BANANA_COST_MODEL, images: 1 })
+        }
+        // Vision QC (Claude): confirm the rendered product matches the real one.
+        // On a confident mismatch, regenerate ONCE and keep the retry. Compares
+        // against the clean product photo (productImageUrl), ignoring scene/face.
+        if (imageUrl && productImageUrl) {
+          const verdict = await verifyProductMatch(productImageUrl, imageUrl, productTitle || (video.title as string), { userId: user.id, tier })
+          if (!verdict.match) {
+            const retry = await composeWithNanoBananaPro({ prompt: igPrompt, referenceImageUrls: refs, aspectRatio: '4:5', numImages: 1 })
+            if (retry[0]) {
+              imageUrl = retry[0]
+              recordUsage({ userId: user.id, tier, feature: 'ig_ai_thumbnail_image', model: NANO_BANANA_PRO_COST_MODEL, images: 1 })
+            }
+          }
         }
       } catch (err) {
         console.warn('[ig-ai-image] Nano Banana composed path failed, falling back:', err)

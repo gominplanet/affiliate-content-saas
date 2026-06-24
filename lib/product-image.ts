@@ -85,11 +85,17 @@ Reply with ONLY the image number.`,
  */
 export async function verifyProductMatch(
   referenceUrl: string,
-  generatedUrl: string,
+  // The generated image to check: a URL (fal/Gemini-hosted) OR raw base64 bytes
+  // (the Pinterest path produces base64 in-memory before it's ever uploaded).
+  generated: string | { base64: string; mediaType: string },
   productTitle: string,
-  ctx?: { userId?: string; tier?: string | null },
+  ctx?: { userId?: string | null; tier?: string | null },
 ): Promise<{ match: boolean; reason: string }> {
-  if (!referenceUrl || !generatedUrl) return { match: true, reason: 'no-reference-to-compare' }
+  if (!referenceUrl || !generated) return { match: true, reason: 'no-reference-to-compare' }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const generatedSource: any = typeof generated === 'string'
+    ? { type: 'url', url: generated }
+    : { type: 'base64', media_type: generated.mediaType, data: generated.base64 }
   try {
     const client = createAnthropicClient()
     const resp = await client.messages.create({
@@ -99,7 +105,7 @@ export async function verifyProductMatch(
         role: 'user',
         content: [
           { type: 'image', source: { type: 'url', url: referenceUrl } },
-          { type: 'image', source: { type: 'url', url: generatedUrl } },
+          { type: 'image', source: generatedSource },
           {
             type: 'text',
             text: `Image 1 is the reference photo for the product "${productTitle}". Image 2 is a generated marketing photo that is supposed to show the EXACT same product, just in a different scene/background.

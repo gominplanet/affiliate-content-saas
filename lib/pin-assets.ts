@@ -16,7 +16,7 @@ import { composePin, PIN_OVERLAY_THEME_COUNT } from '@/lib/pin-compose'
 import { learnProfileToPrompt } from '@/lib/learn'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
-import { pickProductReferenceImage } from '@/lib/product-image'
+import { pickProductReferenceImage, verifyProductMatch } from '@/lib/product-image'
 
 export const AFFILIATE_DISCLAIMER = '📌 Disclosure: As an Amazon Associate I earn from qualifying purchases. This post may contain affiliate links — I may earn a small commission at no extra cost to you.'
 export const COMPLIANCE_TAGS = '#ad #affiliate'
@@ -175,7 +175,22 @@ Return ONLY valid JSON with these exact keys:
   const imagePrompt = useCollage
     ? buildCollageImagePrompt(fields.product_category, collageProducts)
     : buildViralImagePrompt(fields, Math.floor(Math.random() * PIN_COMPOSITIONS.length), !!referenceImageUrl)
-  const rawImage = await generatePinImage(imagePrompt, useCollage ? null : referenceImageUrl)
+  let rawImage = await generatePinImage(imagePrompt, useCollage ? null : referenceImageUrl)
+  if (rawImage) recordUsage({ userId: ctx.userId, tier: ctx.tier, feature: 'pinterest_image', model: 'gemini-2.5-flash-image', images: 1 })
+
+  // Vision QC (Claude): confirm we rendered the RIGHT product. Single-product
+  // scenes with a real reference only. On a confident mismatch, regenerate ONCE
+  // and keep the retry — better a fresh attempt than a published wrong product.
+  if (rawImage && !useCollage && referenceImageUrl) {
+    const verdict = await verifyProductMatch(referenceImageUrl, { base64: rawImage.data, mediaType: rawImage.mediaType }, fields.product_name, { userId: ctx.userId, tier: ctx.tier })
+    if (!verdict.match) {
+      const retry = await generatePinImage(imagePrompt, referenceImageUrl)
+      if (retry) {
+        recordUsage({ userId: ctx.userId, tier: ctx.tier, feature: 'pinterest_image', model: 'gemini-2.5-flash-image', images: 1 })
+        rawImage = retry
+      }
+    }
+  }
   const imageResult = rawImage
     ? await composePin(rawImage.data, rawImage.mediaType, {
         viral_hook: fields.viral_hook,
@@ -184,9 +199,7 @@ Return ONLY valid JSON with these exact keys:
         trust_factor: useCollage ? `TOP ${collageProducts.length} PICKS` : fields.trust_factor,
       }, { styleSeed: styleVariant, layout: useCollage ? 'collage' : 'standard' })
     : null
-  if (rawImage) {
-    recordUsage({ userId: ctx.userId, tier: ctx.tier, feature: 'pinterest_image', model: 'gemini-2.5-flash-image', images: 1 })
-  }
+  // (usage already recorded per generation above, incl. the QC retry)
 
   const fallbackImageUrl = p.featured_image_url || p.thumbnail_url
     || (p.video_id ? `https://i.ytimg.com/vi/${p.video_id}/hqdefault.jpg` : null)
