@@ -22,8 +22,9 @@ import { useParams, useRouter } from 'next/navigation'
 import PageHero from '@/components/layout/PageHero'
 import {
   Loader2, AlertCircle, CheckCircle, Send, ExternalLink, X,
-  MessageSquare, Users, Scissors, Music, Lock,
+  MessageSquare, Users, Scissors, Music, Lock, Flame,
 } from 'lucide-react'
+import { ShortVideoUpload } from '@/components/ShortVideoUpload'
 
 type PrivacyLevel = 'PUBLIC_TO_EVERYONE' | 'MUTUAL_FOLLOW_FRIENDS' | 'SELF_ONLY' | 'FOLLOWER_OF_CREATOR'
 
@@ -41,6 +42,10 @@ interface CreatorInfo {
 interface BlogPostMeta {
   title: string
   videoUrl: string | null
+  /** youtube_videos.id — needed to attach a vertical render in-place. */
+  videoId: string | null
+  /** Amazon/affiliate product link — passed to Shop Burner for context. */
+  productUrl: string | null
   defaultCaption: string
 }
 
@@ -114,6 +119,18 @@ export default function TikTokPublishPage() {
       }
     })()
     return () => { cancelled = true }
+  }, [blogPostId])
+
+  // Re-pull post-meta after the user attaches a vertical video in-place (the
+  // ShortVideoUpload below), so the preview + Post button light up without a
+  // full reload. Leaves the caption alone — don't clobber the user's edits.
+  const refetchMeta = useCallback(async () => {
+    if (!blogPostId) return
+    try {
+      const res = await fetch(`/api/blog/tiktok-post/post-meta?blogPostId=${encodeURIComponent(blogPostId)}`)
+      const json = await res.json()
+      if (res.ok) setMeta(json as BlogPostMeta)
+    } catch { /* non-fatal — the user can refresh */ }
   }, [blogPostId])
 
   // ── Status polling — only active once we've kicked off a Direct Post ─────
@@ -232,8 +249,37 @@ export default function TikTokPublishPage() {
               <video src={meta.videoUrl} controls playsInline className="w-full h-full" />
             </div>
           ) : (
-            <div className="mb-4 rounded-lg bg-[#ff9500]/8 border border-[#ff9500]/20 p-3 text-xs text-[#9a5d00]">
-              No vertical video file for this post yet. Upload one in the Instagram pane first — TikTok and Instagram share the same 9:16 render.
+            <div className="mb-4 rounded-xl border border-dashed border-[#d2d2d7] dark:border-white/15 bg-[#f5f5f7]/60 dark:bg-white/[0.03] p-4">
+              <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Add a vertical video to post</p>
+              <p className="text-xs text-[#86868b] mb-3">
+                TikTok needs a 9:16 video. Add one here — it&apos;s shared with Instagram, so you only do this once.
+              </p>
+              {meta.videoId ? (
+                <>
+                  {/* In-place upload — patches this post's vertical render, then
+                      refetches so the preview + Post button light up. */}
+                  <ShortVideoUpload videoId={meta.videoId} onUploaded={refetchMeta} />
+                  <div className="flex items-center gap-3 my-3">
+                    <div className="h-px flex-1 bg-[#e5e5ea] dark:bg-white/10" />
+                    <span className="text-[11px] uppercase tracking-wide text-[#86868b]">or</span>
+                    <div className="h-px flex-1 bg-[#e5e5ea] dark:bg-white/10" />
+                  </div>
+                  {/* Make one with a Shop Burner CTA box, carrying this post's
+                      product context. The burner stores the 9:16 render on the
+                      same field, so returning here shows it ready to post. */}
+                  <a
+                    href={`/instagram-burner?videoId=${encodeURIComponent(meta.videoId)}&productName=${encodeURIComponent(meta.title)}${meta.productUrl ? `&product=${encodeURIComponent(meta.productUrl)}` : ''}&from=tiktok`}
+                    className="inline-flex items-center gap-2 text-sm font-medium text-[#7C3AED] hover:underline"
+                  >
+                    <Flame className="w-4 h-4" />
+                    Make one in Shop Burner (add a “Shop Now” sticker)
+                  </a>
+                </>
+              ) : (
+                <p className="text-xs text-[#9a5d00] bg-[#ff9500]/8 border border-[#ff9500]/20 rounded-lg p-2.5">
+                  This post isn&apos;t linked to a video, so there&apos;s no 9:16 render to post. TikTok needs a video — start from a YouTube Short / video-backed post instead.
+                </p>
+              )}
             </div>
           )}
 

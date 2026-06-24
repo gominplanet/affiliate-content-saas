@@ -125,7 +125,7 @@ export async function POST(request: Request) {
   const ytVideoId = ytRow?.youtube_video_id as string | undefined
   if (!storageUrl || !/^https:\/\//.test(storageUrl)) {
     return NextResponse.json({
-      error: 'No vertical video file for this post yet. Upload one in the Instagram pane first — TikTok and Instagram share the same 9:16 render.',
+      error: 'No vertical video for this post yet. Add one on the Post to TikTok screen — upload a 9:16 file or make one in Shop Burner. (It\'s shared with Instagram.)',
     }, { status: 400 })
   }
   // FILE_UPLOAD path: push video bytes directly to TikTok's one-time

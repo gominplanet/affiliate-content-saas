@@ -22,7 +22,7 @@ export async function GET(request: Request) {
   const sb = supabase as any
   const { data: post } = await sb
     .from('blog_posts')
-    .select('title,excerpt,youtube_videos(instagram_video_url,title)')
+    .select('title,excerpt,youtube_videos(id,instagram_video_url,title,product_url)')
     .eq('id', blogPostId)
     .eq('user_id', user.id)
     .maybeSingle()
@@ -33,6 +33,11 @@ export async function GET(request: Request) {
   const yt = (post as any).youtube_videos
   const ytRow = Array.isArray(yt) ? yt[0] : yt
   const videoUrl = (ytRow?.instagram_video_url as string | null) ?? null
+  // youtube_videos.id — the row whose vertical render the empty-state uploader
+  // patches (and the id Shop Burner loads to add a CTA box). Null only for
+  // video-less posts (guides/comparisons) that can't have a vertical render.
+  const videoId = (ytRow?.id as string | null) ?? null
+  const productUrl = (ytRow?.product_url as string | null) ?? null
   const title = (post.title as string) || (ytRow?.title as string) || ''
   const excerpt = (post.excerpt as string) || ''
 
@@ -43,6 +48,8 @@ export async function GET(request: Request) {
   return NextResponse.json({
     title,
     videoUrl,
+    videoId,
+    productUrl,
     defaultCaption,
   })
 }
