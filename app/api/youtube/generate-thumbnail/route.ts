@@ -890,6 +890,28 @@ export async function POST(request: Request) {
         .map(m => ({ id: m.id, name: m.name, source_images: m.source_images }))
       // Only one face on file → no need to match, just use it.
       if (autoFaceModels.length === 1) { faceModel = autoFaceModels[0]; autoFaceModels = [] }
+      // When multiple models exist, promote the STARRED photo to source_images[0]
+      // so matchFaceModelToFrame uses the best/clearest shot of each person.
+      // Without this, source_images[0] is arbitrary and can mislead the match.
+      if (autoFaceModels.length > 1) {
+        const autoIds = autoFaceModels.map(m => m.id)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: starredRows } = await (supabase as any)
+          .from('face_model_photos')
+          .select('face_model_id,storage_path')
+          .in('face_model_id', autoIds)
+          .eq('user_id', user.id)
+          .eq('starred', true)
+        const typedStarred = (starredRows as Array<{ face_model_id: string; storage_path: string }> | null) ?? []
+        if (typedStarred.length > 0) {
+          const starredByModel = new Map(typedStarred.map(r => [r.face_model_id, r.storage_path]))
+          autoFaceModels = autoFaceModels.map(m => {
+            const starred = starredByModel.get(m.id)
+            if (!starred) return m
+            return { ...m, source_images: [starred, ...m.source_images.filter((s: string) => s !== starred)] }
+          })
+        }
+      }
     }
 
     // Co-Pilot thumbnails are FREE enrichment of a content piece (pricing model
@@ -1096,7 +1118,7 @@ export async function POST(request: Request) {
           if (!faceModel && autoFaceModels.length > 0) {
             faceModel = frameRef
               ? await matchFaceModelToFrame(frameRef, autoFaceModels, supabase, { userId: user.id, tier })
-              : autoFaceModels[0]
+              : null // no frame → can't vision-match; leave null so the frame drives identity
           }
           // "Your Face" identity references: if the user has a face model, pass
           // a few of their real photos alongside the video frame so Nano Banana
