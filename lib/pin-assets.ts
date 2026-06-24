@@ -17,6 +17,8 @@ import { learnProfileToPrompt } from '@/lib/learn'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
 import { pickProductReferenceImage, verifyProductMatch } from '@/lib/product-image'
+import { resolveTrueDestination } from '@/lib/affiliate-resolve'
+import { asinFromAmazonUrl } from '@/lib/product-link'
 
 export const AFFILIATE_DISCLAIMER = '📌 Disclosure: As an Amazon Associate I earn from qualifying purchases. This post may contain affiliate links — I may earn a small commission at no extra cost to you.'
 export const COMPLIANCE_TAGS = '#ad #affiliate'
@@ -155,7 +157,17 @@ Return ONLY valid JSON with these exact keys:
       referenceImageUrl = (vid?.product_image_url as string | null)?.trim() || null
       if (!referenceImageUrl && vid?.product_url) {
         const url = String(vid.product_url)
-        const asin = url.toUpperCase().match(/\/(?:DP|GP\/PRODUCT)\/([A-Z0-9]{10})/)?.[1] || extractAsin(url.toUpperCase())
+        // Try the raw link first; if it's a Geniuslink/short link (geni.us,
+        // amzn.to, a.co…) the ASIN isn't in the URL, so follow it to its true
+        // Amazon destination and read the ASIN there. resolveTrueDestination
+        // uses MVP's bot UA — this is link RESOLUTION, never a counted click.
+        let asin = asinFromAmazonUrl(url) || extractAsin(url.toUpperCase())
+        if (!asin) {
+          try {
+            const finalUrl = await resolveTrueDestination(url)
+            asin = asinFromAmazonUrl(finalUrl) || extractAsin(finalUrl.toUpperCase())
+          } catch { /* couldn't unwrap — leave asin null */ }
+        }
         if (asin) {
           try {
             const prod = await fetchAmazonProduct(asin)
@@ -166,8 +178,14 @@ Return ONLY valid JSON with these exact keys:
       }
     } catch { /* no video row — fall through */ }
   }
-  referenceImageUrl = referenceImageUrl
-    || (p.featured_image_url as string | null) || (p.thumbnail_url as string | null) || null
+  // IMPORTANT: do NOT fall back to the article's own featured/thumbnail image as
+  // the grounding reference. For MVP those are AI-GENERATED hero scenes (not a
+  // real product photo) — grounding on a hallucinated scene reproduces its wrong
+  // shape, and the vision QC then compares the new render against that SAME
+  // wrong reference and rubber-stamps it. A genuine product photo or nothing:
+  // with no real reference we render text-to-image and skip QC (below), which is
+  // honest rather than falsely "verified". (The hero still serves as the plain
+  // fallbackImageUrl returned to the client.)
 
   // Roll a fresh overlay style (and, for non-collage, a scene composition) each
   // generation so pins vary — and re-roll on regenerate.
@@ -260,7 +278,7 @@ function buildViralImagePrompt(f: Record<string, string>, variant = 0, hasRefere
   // When a real product photo is attached, the rendered product MUST match it —
   // this is what stops the model inventing a different/wrong product.
   const referenceClause = hasReference
-    ? `\nREFERENCE PRODUCT (CRITICAL): The attached image shows the EXACT product to feature. Render THAT product faithfully — its real shape, proportions, colour, materials and design must match the reference. Do NOT substitute, restyle, or invent a different product. If the reference is retail packaging, a box, or a marketing infographic, depict the REAL unpackaged product and ignore any text/logos/badges printed on it. Use the reference ONLY to learn what the product physically looks like — compose a fresh scene around it.\n`
+    ? `\nREFERENCE PRODUCT (CRITICAL): The attached image shows the EXACT product to feature. Render THAT product faithfully — its real SILHOUETTE/outline, shape, proportions, colour, materials and design must match the reference exactly. Do NOT substitute, restyle, reshape, or invent a different product. Do NOT add unrelated extra objects, accessories, props, or duplicate copies of the product that aren't in the reference — keep the real product the single clear hero. If the reference is retail packaging, a box, or a marketing infographic, depict the REAL unpackaged product and ignore any text/logos/badges printed on it. Use the reference ONLY to learn what the product physically looks like — compose a fresh, simple scene around it.\n`
     : ''
   return `Create a high-energy vertical photographic scene for a ${f.product_category}, 2:3 portrait aspect ratio.
 
