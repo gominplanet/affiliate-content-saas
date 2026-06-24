@@ -1485,49 +1485,6 @@ Ultra-sharp, professional, photorealistic.`
 
             const rank = await rankVariants(nbUrls, overlayHookNB, { userId: TELEMETRY.userId, tier: TELEMETRY.tier })
 
-            // ── FACE-LOCK PASS (Kontext Multi) ───────────────────────────
-            // After NB Pro generates the scene, run a targeted Kontext Multi
-            // edit on the ranked #1 variant to tighten the creator's face
-            // fidelity. Kontext sees the NB Pro scene + real face reference
-            // photos and is instructed to fix ONLY the face — background,
-            // clothing, product and body stay untouched.
-            // Only runs when we have ≥2 real face references (Photobooth or
-            // starred shots) — a single frame reference isn't reliable enough
-            // to anchor a Kontext edit. Best-effort: failure keeps original.
-            // One call on the #1 variant keeps cost down; the others stay
-            // as NB Pro output (they're alternatives the user picks from).
-            if (!noHuman && faceRefs.length >= 2 && rank.urls.length > 0) {
-              try {
-                const faceLockRefs = faceRefs.slice(0, 3)
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const faceLockResult = await (fal as any).subscribe('fal-ai/flux-pro/kontext/multi', {
-                  input: {
-                    image_urls: [rank.urls[0], ...faceLockRefs],
-                    prompt: `The first image is a YouTube thumbnail scene. Images 2–${faceLockRefs.length + 1} are real reference photos of the SAME person who appears in that scene. The face in Image 1 does not closely resemble the person in the reference photos. Fix the face in Image 1 to be a PHOTO-IDENTICAL match to the person shown in the reference images: same exact bone structure, eye shape and colour, nose shape, mouth, hair colour and length, skin tone and apparent age. Do NOT change anything else in Image 1 — keep the background, body, clothing, pose, lighting, and product EXACTLY AS IS. Only update the face region.`,
-                    aspect_ratio: '16:9',
-                    safety_tolerance: '6',
-                  },
-                  pollInterval: 2000,
-                })
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const fixedUrl = (faceLockResult.data as any)?.images?.[0]?.url as string | undefined
-                if (fixedUrl) {
-                  // Remap the top rank URL to the face-fixed version. Keep
-                  // the rest as NB Pro output. The `nbUrls.indexOf` look-up
-                  // in the designer overlay below will miss the fixed URL and
-                  // fall back to origIdx=0, which is correct for the top
-                  // variant.
-                  rank.urls = [fixedUrl, ...rank.urls.slice(1)]
-                  recordUsage({
-                    userId: TELEMETRY.userId, tier: TELEMETRY.tier,
-                    feature: 'yt_thumb_face_lock_kontext', model: 'fal-flux-pro-kontext-multi', images: 1,
-                  })
-                }
-              } catch (e) {
-                console.warn('[face-lock] Kontext multi pass failed (non-fatal):', e instanceof Error ? e.message : String(e))
-              }
-            }
-
             // Per-variant headline placement (overlay path): we composed the
             // host on a KNOWN side per variant (even=LEFT, odd=RIGHT), so the
             // title goes in the opposite TOP corner — deterministic, no vision
