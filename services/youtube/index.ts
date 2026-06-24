@@ -593,6 +593,68 @@ export class YouTubeOAuthService {
   }
 
   /**
+   * Upload a vertical video to the creator's channel as a Short. YouTube
+   * auto-classifies a video as a Short from its aspect ratio + duration (≤3min),
+   * so a 9:16 burner render lands as a Short. Two-step resumable upload:
+   * initiate (metadata) → PUT bytes. Requires the `youtube.upload` scope — a 403
+   * here means the connection predates that scope (reconnect needed).
+   *
+   * Returns the new video id. privacyStatus defaults to 'public' (cross-post
+   * intent); pass 'unlisted'/'private' to hold it back.
+   */
+  async uploadShort(
+    videoBytes: Uint8Array,
+    opts: { title: string; description?: string; privacyStatus?: 'public' | 'unlisted' | 'private' },
+  ): Promise<{ id: string }> {
+    const meta = {
+      snippet: {
+        title: (opts.title || 'Short').slice(0, 100),
+        description: (opts.description || '').slice(0, 4900),
+      },
+      status: {
+        privacyStatus: opts.privacyStatus || 'public',
+        selfDeclaredMadeForKids: false,
+      },
+    }
+    const body = videoBytes.buffer.slice(videoBytes.byteOffset, videoBytes.byteOffset + videoBytes.byteLength) as ArrayBuffer
+
+    // 1) Initiate a resumable upload session — the upload URL comes back in Location.
+    const initRes = await fetch(
+      'https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.accessToken}`,
+          'Content-Type': 'application/json; charset=UTF-8',
+          'X-Upload-Content-Type': 'video/*',
+          'X-Upload-Content-Length': String(videoBytes.byteLength),
+        },
+        body: JSON.stringify(meta),
+      },
+    )
+    if (!initRes.ok) {
+      const b = await initRes.text()
+      throw new Error(`YouTube upload init failed ${initRes.status}: ${b.slice(0, 400)}`)
+    }
+    const uploadUrl = initRes.headers.get('location')
+    if (!uploadUrl) throw new Error('YouTube upload: no resumable session URL returned.')
+
+    // 2) PUT the bytes to the session URL.
+    const putRes = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'video/*', 'Content-Length': String(videoBytes.byteLength) },
+      body,
+    })
+    if (!putRes.ok) {
+      const b = await putRes.text()
+      throw new Error(`YouTube upload failed ${putRes.status}: ${b.slice(0, 400)}`)
+    }
+    const json = await putRes.json() as { id?: string }
+    if (!json.id) throw new Error('YouTube upload: no video id in response.')
+    return { id: json.id }
+  }
+
+  /**
    * Fetch the transcript for a video via the OFFICIAL YouTube Data API
    * (captions.list + captions.download). Reliable for videos the user has
    * uploaded captions on; auto-generated captions ARE listed but YouTube

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { youtubeUploadEnabled } from '@/lib/feature-flags'
 
 export async function GET(req: Request) {
   const clientId = process.env.GOOGLE_CLIENT_ID
@@ -36,6 +37,10 @@ export async function GET(req: Request) {
   url.searchParams.set('scope', [
     'https://www.googleapis.com/auth/youtube',
     'https://www.googleapis.com/auth/youtube.force-ssl',
+    // Sensitive: lets MVP publish a video TO the creator's channel (Shorts
+    // cross-post). Only requested once Google has verified the app for it —
+    // gated so we don't break every connect with an unverified-scope warning.
+    ...(youtubeUploadEnabled() ? ['https://www.googleapis.com/auth/youtube.upload'] : []),
   ].join(' '))
   url.searchParams.set('access_type', 'offline')
   // 'consent' forces a refresh token; 'select_account' (added when connecting an

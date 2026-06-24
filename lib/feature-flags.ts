@@ -33,6 +33,18 @@ export function metaEnabled(_opts?: { tier?: string | null; email?: string | nul
 export type GatedSocialPlatform = 'facebook' | 'instagram' | 'threads' | 'tiktok' | 'pinterest'
 const LIVE_SOCIAL: ReadonlySet<GatedSocialPlatform> = new Set(['facebook', 'instagram', 'threads', 'pinterest', 'tiktok'])
 
+/**
+ * YouTube Shorts UPLOAD (publishing a video TO YouTube) gate. OFF by default:
+ * it needs the sensitive `youtube.upload` OAuth scope, which requires Google
+ * verification of the app AND every creator to reconnect YouTube to grant it.
+ * Flip on by setting NEXT_PUBLIC_YOUTUBE_UPLOAD_ENABLED=true in Vercel ONLY after
+ * Google verification is approved. NEXT_PUBLIC so the client (toggle visibility)
+ * and the server (scope request + publish route) read the same flag.
+ */
+export function youtubeUploadEnabled(): boolean {
+  return process.env.NEXT_PUBLIC_YOUTUBE_UPLOAD_ENABLED === 'true'
+}
+
 export function socialEnabled(
   platform: GatedSocialPlatform,
   opts?: { tier?: string | null; email?: string | null },
