@@ -1512,6 +1512,7 @@ Ultra-sharp, professional, photorealistic.`
             let lastBakePath: string | null = null
             let lastOpentypeError: string | null = null
             let finalUrls: string[] = rank.urls
+            let displayRankUrls: string[] = rank.urls
             let designerApplied = false
             if (wantClean) {
               designerApplied = true
@@ -1535,6 +1536,14 @@ Ultra-sharp, professional, photorealistic.`
                   // composes the subject differently than asked — vision
                   // ground-truth keeps the overlay out of the face/product.
                   const zone = await analyzeTextZone(cleanUrl, { ctx: { userId: TELEMETRY.userId, tier: TELEMETRY.tier } })
+
+                  // Reject variants where the face is at the very top of the
+                  // frame — means NB Pro composed the creator too tall and the
+                  // head is cut off. Better to drop the variant than ship a
+                  // headless thumbnail. (face y < 4% of frame height = cropped)
+                  if (!noHuman && zone?.faceBox && zone.faceBox.y < 0.04) {
+                    return { url: cleanUrl, templateId: null, baked: false, rankIdx: i }
+                  }
 
                   // 2026-06-08: FACE-FIRST side detection. The faceBox is
                   // ground-truth (vision drew a literal bounding box around
@@ -1648,14 +1657,25 @@ Ultra-sharp, professional, photorealistic.`
                     templateId: `simple-bake:${result.bakePath ?? 'unknown'}`,
                     bakePath: result.bakePath,
                     opentypeError: result.opentypeError,
+                    baked: true,
+                    rankIdx: i,
                   }
                 } catch (e) {
                   console.warn('[designer-overlay] variant fell back to clean image', i, e instanceof Error ? e.message : String(e))
-                  return { url: cleanUrl, templateId: null }
+                  return { url: cleanUrl, templateId: null, baked: false, rankIdx: i }
                 }
               }))
-              finalUrls = designerResults.map(r => r.url)
-              designerTemplateIds = designerResults.map(r => r.templateId)
+              // Only surface variants that were successfully baked (text +
+              // border applied). Falling back to the raw NB Pro image looks
+              // like a raw photograph and confuses users. If ALL bakes fail,
+              // keep the full set so we still return something.
+              const bakedResults = designerResults.filter(r => r.baked)
+              const displayResults = bakedResults.length > 0 ? bakedResults : designerResults
+              finalUrls = displayResults.map(r => r.url)
+              designerTemplateIds = displayResults.map(r => r.templateId)
+              // Track which rank.urls indices survived — needed to align
+              // overlayHooks with finalUrls (they must have the same length).
+              displayRankUrls = displayResults.map(r => rank.urls[r.rankIdx])
               // Collect opentype diagnostics across variants so the response
               // can surface which renderer ran + why opentype failed (if it
               // did). Keeps the data we need to debug the silent-fail bug.
@@ -1704,7 +1724,7 @@ Ultra-sharp, professional, photorealistic.`
               // Per-variant titles + placements, aligned to rank.urls order so
               // the client overlays the matching headline + corner on each
               // variant (the host side — and so the clear corner — rotates).
-              overlayHooks: rank.urls.map(u => flatCopy(hooks[Math.max(0, nbUrls.indexOf(u))]) || overlayHookNB),
+              overlayHooks: (wantClean && designerApplied ? displayRankUrls : rank.urls).map(u => flatCopy(hooks[Math.max(0, nbUrls.indexOf(u))]) || overlayHookNB),
               textPositions: wantClean && !designerApplied ? textPositions : undefined,
               // Diagnostic: which designer template each variant used. Null
               // entries = render fell back to the clean image for that slot.
