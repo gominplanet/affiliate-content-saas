@@ -91,6 +91,7 @@ export interface ThumbCopyForBake {
   line1: string
   line2: string
   emphasisWord: string
+  decoration?: ThumbDecoration
 }
 
 export interface BakeOptions {
@@ -227,6 +228,111 @@ const NEON_BORDER_STYLES: NeonBorderStyle[] = [
  *  saved brand-style index stay in range without duplicating the magic number. */
 export const NEON_BORDER_STYLE_COUNT = NEON_BORDER_STYLES.length
 
+// ── Decoration types ────────────────────────────────────────────────────────
+// Four distinct visual emphasis shapes drawn below the text block. Picked by
+// the angle / content energy of the thumbnail, with anti-repeat so a batch of
+// 4 variants gets 4 different decorations.
+export type ThumbDecoration = 'stars' | 'check' | 'arrow' | 'speedlines' | 'none'
+
+function starPolygonPoints(cx: number, cy: number, R: number): string {
+  const r = R * 0.382
+  const pts: string[] = []
+  for (let i = 0; i < 5; i++) {
+    const oa = ((i * 72 - 90) * Math.PI) / 180
+    const ia = ((i * 72 - 54) * Math.PI) / 180
+    pts.push(`${(cx + R * Math.cos(oa)).toFixed(1)},${(cy + R * Math.sin(oa)).toFixed(1)}`)
+    pts.push(`${(cx + r * Math.cos(ia)).toFixed(1)},${(cy + r * Math.sin(ia)).toFixed(1)}`)
+  }
+  return pts.join(' ')
+}
+
+function buildDecorationSvg(
+  decoration: ThumbDecoration,
+  anchorX: number,
+  decorationY: number,
+  svgW: number,
+  svgH: number,
+  scaleBase: number,
+  svgAnchor: 'start' | 'end',
+): string | null {
+  if (decoration === 'none') return null
+
+  let content = ''
+
+  if (decoration === 'stars') {
+    const R = Math.round(scaleBase * 0.024)
+    const spacing = R * 2.65
+    const totalW = 5 * spacing
+    const startX = svgAnchor === 'start' ? anchorX : anchorX - totalW
+    const cy = decorationY + R
+    const polygons = Array.from({ length: 5 }, (_, i) => {
+      const cx = startX + R + i * spacing
+      return `<polygon points="${starPolygonPoints(cx, cy, R)}"/>`
+    }).join('')
+    const sw = Math.max(1, Math.round(R * 0.22))
+    content = `<g fill="#FFD700" stroke="#000000" stroke-width="${sw}" stroke-linejoin="round" paint-order="stroke fill">${polygons}</g>`
+
+  } else if (decoration === 'check') {
+    const sz = Math.round(scaleBase * 0.09)
+    const x1 = svgAnchor === 'start' ? anchorX : anchorX - sz
+    const y1 = decorationY + sz * 0.45
+    const x2 = x1 + sz * 0.36
+    const y2 = y1 + sz * 0.4
+    const x3 = x1 + sz
+    const y3 = y1 - sz * 0.18
+    const sw = Math.round(sz * 0.13)
+    content = [
+      `<polyline points="${x1},${y1} ${x2},${y2} ${x3},${y3}" fill="none" stroke="#000000" stroke-width="${sw + 5}" stroke-linecap="round" stroke-linejoin="round"/>`,
+      `<polyline points="${x1},${y1} ${x2},${y2} ${x3},${y3}" fill="none" stroke="#00D444" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"/>`,
+    ].join('')
+
+  } else if (decoration === 'arrow') {
+    const sz = Math.round(scaleBase * 0.12)
+    const dir = svgAnchor === 'start' ? 1 : -1
+    const x1 = svgAnchor === 'start' ? anchorX : anchorX - sz * 0.3
+    const y1 = decorationY + sz * 0.1
+    const x2 = x1 + dir * sz * 1.1
+    const y2 = y1 + sz * 0.28
+    const qx = x1 + dir * sz * 0.5
+    const qy = y1 - sz * 0.18
+    const headLen = sz * 0.28
+    const endAngle = Math.atan2(y2 - qy, x2 - qx)
+    const hx1 = (x2 + headLen * Math.cos(endAngle + 2.45)).toFixed(1)
+    const hy1 = (y2 + headLen * Math.sin(endAngle + 2.45)).toFixed(1)
+    const hx2 = (x2 + headLen * Math.cos(endAngle - 2.45)).toFixed(1)
+    const hy2 = (y2 + headLen * Math.sin(endAngle - 2.45)).toFixed(1)
+    const sw = Math.round(sz * 0.1)
+    content = [
+      `<path d="M ${x1},${y1} Q ${qx},${qy} ${x2.toFixed(1)},${y2.toFixed(1)}" fill="none" stroke="#000000" stroke-width="${sw + 5}" stroke-linecap="round"/>`,
+      `<path d="M ${x1},${y1} Q ${qx},${qy} ${x2.toFixed(1)},${y2.toFixed(1)}" fill="none" stroke="#FF3B3B" stroke-width="${sw}" stroke-linecap="round"/>`,
+      `<polyline points="${hx1},${hy1} ${x2.toFixed(1)},${y2.toFixed(1)} ${hx2},${hy2}" fill="none" stroke="#000000" stroke-width="${sw + 5}" stroke-linecap="round" stroke-linejoin="round"/>`,
+      `<polyline points="${hx1},${hy1} ${x2.toFixed(1)},${y2.toFixed(1)} ${hx2},${hy2}" fill="none" stroke="#FF3B3B" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"/>`,
+    ].join('')
+
+  } else if (decoration === 'speedlines') {
+    const originX = svgAnchor === 'start' ? anchorX + scaleBase * 0.06 : anchorX - scaleBase * 0.06
+    const originY = decorationY - scaleBase * 0.04
+    const dir = svgAnchor === 'start' ? 1 : -1
+    const lineAngles = [-55, -30, -10, 10, 30, 55, 78].map(d => (d * Math.PI) / 180)
+    const lines = lineAngles.map((a, i) => {
+      const len = scaleBase * (0.32 + (i % 3) * 0.09)
+      const opacity = (0.3 + (i % 4) * 0.13).toFixed(2)
+      const ex = (originX + Math.cos(a) * len * dir).toFixed(1)
+      const ey = (originY + Math.sin(a) * len).toFixed(1)
+      const sw = Math.round(scaleBase * 0.004) + (i % 2 === 0 ? 1 : 0)
+      return `<line x1="${originX.toFixed(1)}" y1="${originY.toFixed(1)}" x2="${ex}" y2="${ey}" stroke-width="${sw}" opacity="${opacity}"/>`
+    })
+    content = `<g stroke="#FFFFFF" stroke-linecap="round">${lines.join('')}</g>`
+  }
+
+  if (!content) return null
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg width="${svgW}" height="${svgH}" viewBox="0 0 ${svgW} ${svgH}" xmlns="http://www.w3.org/2000/svg">
+  ${content}
+</svg>`
+}
+
 function neonGradientCoords(angle: NeonBorderStyle['angle']): string {
   if (angle === 'vertical') return 'x1="0%" y1="0%" x2="0%" y2="100%"'
   if (angle === 'horizontal') return 'x1="0%" y1="0%" x2="100%" y2="0%"'
@@ -307,6 +413,10 @@ export async function bakeSimpleHeadline(
   // (face or product) so text can never bleed into it.
   const colMaxWidth = Math.round(width * 0.55) - padX
 
+  // decorationY: baseline below line 2 where the decoration element sits.
+  // Set inside the opentype block where fontSizeLine2 is known; falls back
+  // to 32% of canvas height if opentype fails to parse the font.
+  let decorationY = Math.round(height * 0.32)
   let textSvg: string | null = null
   let opentypeErrorMessage: string | undefined
   try {
@@ -329,6 +439,7 @@ export async function bakeSimpleHeadline(
     const fontSizeLine2 = fitFontToWidth(font, copy.line2, ceilLine2, colMaxWidth, MIN_FONT_PX)
     const baselineLine1 = Math.round(height * 0.22)
     const baselineLine2 = baselineLine1 + Math.round(fontSizeLine2 * 1.05)
+    decorationY = baselineLine2 + Math.round(scaleBase * 0.045)
     // Emphasis-word colour: the creator's saved brand accent, else default yellow.
     const accentColor = opts.accentColor || '#FFE034'
     const line1 = lineToPaths(font, copy.line1, copy.emphasisWord, fontSizeLine1, startX, baselineLine1, svgAnchor, accentColor)
@@ -439,9 +550,30 @@ export async function bakeSimpleHeadline(
       }
     }
 
+    // ── Decoration layer (stars / check / arrow / speedlines) ──────────────
+    let decorationPng: Buffer | null = null
+    if (copy.decoration && copy.decoration !== 'none') {
+      const decSvg = buildDecorationSvg(copy.decoration, startX, decorationY, width, height, scaleBase, svgAnchor)
+      if (decSvg) {
+        try {
+          const decResvg = new Resvg(decSvg, {
+            fitTo: { mode: 'width', value: width },
+            background: 'rgba(0,0,0,0)',
+          })
+          decorationPng = decResvg.render().asPng()
+        } catch (e) {
+          console.warn('[simple-bake] decoration render failed (non-fatal):', e instanceof Error ? e.message : String(e))
+        }
+      }
+    }
+
     const compositeLayers: sharp.OverlayOptions[] = [
       { input: borderPng, top: 0, left: 0 },
     ]
+    // Decoration sits above the border but below the person cutout + text.
+    if (decorationPng) {
+      compositeLayers.push({ input: decorationPng, top: 0, left: 0 })
+    }
     if (opts.personCutoutPng) {
       compositeLayers.push({ input: opts.personCutoutPng, top: 0, left: 0 })
     }

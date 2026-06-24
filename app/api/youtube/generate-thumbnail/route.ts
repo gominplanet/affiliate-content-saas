@@ -22,7 +22,7 @@ import { composeWithNanoBanana, composeWithNanoBananaPro, generateWithIdeogram, 
 // that produced soft/blurry edges). Kept around as a fallback option for
 // admin/preview surfaces that may still reference it.
 import { renderDesignerOverlay } from '@/lib/thumbnail-text-templates'
-import { bakeSimpleHeadline, NEON_BORDER_STYLE_COUNT } from '@/lib/thumbnail-simple-bake'
+import { bakeSimpleHeadline, NEON_BORDER_STYLE_COUNT, type ThumbDecoration } from '@/lib/thumbnail-simple-bake'
 import { analyzeTextZone } from '@/lib/thumbnail-textzone'
 import { scrubBanned } from '@/lib/scrub'
 import { getStarredPhotoboothRefs } from '@/lib/photobooth-refs'
@@ -252,6 +252,19 @@ interface ThumbCopy {
    *  without guessing. Falls back to the most loaded word if the model
    *  returned junk. */
   emphasisWord: string
+  /** Visual decoration drawn below the text block. Picked by the Haiku model
+   *  based on the angle/content energy; falls back to the angle-default mapping
+   *  if the model omits it. */
+  decoration?: ThumbDecoration
+}
+
+// Natural decoration for each angle — ensures 4 distinct decorations in a
+// 4-variant batch when the model doesn't suggest one.
+const ANGLE_DECORATION: Record<CtrAngle, ThumbDecoration> = {
+  NEGATION: 'check',          // problem solved ✓
+  CURIOSITY_GAP: 'arrow',     // pointing at the hidden thing
+  SKEPTIC: 'none',            // skeptical / clean
+  VALUE_DISRUPTION: 'stars',  // 5-star value signal
 }
 
 /** Flatten to a single "LINE1 LINE2" string for legacy callers (overlay
@@ -298,7 +311,9 @@ function parseOneCopy(raw: string, fallbackAngle: CtrAngle): ThumbCopy {
       const line1 = scrubBanned(String(o.line1 || '').trim()).toUpperCase().slice(0, 16)
       const line2 = scrubBanned(String(o.line2 || '').trim()).toUpperCase().slice(0, 22)
       const emphasis = scrubBanned(String(o.emphasisWord || '').trim()).toUpperCase()
-      if (line1 && line2) return { angle, line1, line2, emphasisWord: emphasis || line1.split(' ')[0] }
+      const VALID_DECORATIONS = new Set<ThumbDecoration>(['stars', 'check', 'arrow', 'speedlines', 'none'])
+      const decoration = VALID_DECORATIONS.has(o.decoration as ThumbDecoration) ? (o.decoration as ThumbDecoration) : undefined
+      if (line1 && line2) return { angle, line1, line2, emphasisWord: emphasis || line1.split(' ')[0], decoration }
     } catch { /* fall through */ }
   }
   return { angle: fallbackAngle, line1: 'WORTH IT?', line2: 'WATCH FIRST', emphasisWord: 'WORTH' }
@@ -377,7 +392,14 @@ TITLE: "Your Kids Will Stop Fighting Over Screens the Day You Get This 6-in-1 Tr
 - CORRECT CURIOSITY_GAP → line1 "THE TOY THAT", line2 "ENDS SCREEN TIME".
 - WRONG → "NEVER FIGHT / OVER THIS AGAIN" — here "THIS" is the pictured trampoline, so it says kids fight over the PRODUCT: the exact OPPOSITE of the title. Forbidden.
 
-OUTPUT FORMAT: Return a strictly structured JSON block with: angle, line1, line2, emphasisWord. No prose, no preamble, no markdown fences — just the JSON object.`
+OUTPUT FORMAT: Return a strictly structured JSON block with: angle, line1, line2, emphasisWord, decoration. No prose, no preamble, no markdown fences — just the JSON object.
+
+decoration: ONE visual element drawn beneath the text. Match to angle + product energy:
+- "stars" → 5 gold stars. Best for VALUE_DISRUPTION or a strong quality/approval signal.
+- "check" → green checkmark. Best for NEGATION (problem solved / approved).
+- "arrow" → red curved arrow pointing toward the subject. Best for CURIOSITY_GAP.
+- "speedlines" → white speed lines. Best for fast / instant / powerful benefit angles.
+- "none" → clean text only. Best for SKEPTIC or when energy is understated.\``
 
 async function generateThumbCopy(videoTitle: string, angle: CtrAngle, productContext = '', claimsSheet = ''): Promise<ThumbCopy> {
   const anthropic = createAnthropicClient()
@@ -1033,9 +1055,25 @@ export async function POST(request: Request) {
               emphasisWord: words[0]?.toUpperCase() || '',
             }
           }
-          const copyVariants: ThumbCopy[] = lockedHeadline
+          const rawVariants: ThumbCopy[] = lockedHeadline
             ? [splitLocked(lockedHeadline)]
             : await generateThumbCopies(videoTitle, 5, productDescription, await claimsSheetPromise)
+          // Assign decorations: use the model's suggestion when valid, else fall
+          // back to the angle-default mapping. Track which decorations have been
+          // assigned in this batch so each variant gets a DIFFERENT one (natural
+          // variety — the 4-angle rotation produces 4 different defaults).
+          const usedDecorations = new Set<ThumbDecoration>()
+          const copyVariants: ThumbCopy[] = rawVariants.map((c) => {
+            const preferred = c.decoration ?? ANGLE_DECORATION[c.angle]
+            let decoration: ThumbDecoration = preferred
+            if (preferred !== 'none' && usedDecorations.has(preferred)) {
+              // This decoration was already used this batch — pick the next fresh one.
+              const ALL_DECORATIONS: ThumbDecoration[] = ['check', 'arrow', 'stars', 'speedlines', 'none']
+              decoration = ALL_DECORATIONS.find(d => !usedDecorations.has(d)) ?? preferred
+            }
+            usedDecorations.add(decoration)
+            return { ...c, decoration }
+          })
           // Flattened single-string forms for legacy consumers (overlay
           // canvas draw, picker UI, response payload).
           const titleOptions = copyVariants.map(flatCopy)
