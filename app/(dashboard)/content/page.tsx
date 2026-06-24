@@ -97,7 +97,7 @@ interface ScheduledItem {
   blog_post_id: string
   kind: 'social' | 'blog_publish'
   parent_id: string | null
-  platform: 'facebook' | 'threads' | 'twitter' | 'linkedin' | 'bluesky' | 'telegram' | null
+  platform: 'facebook' | 'threads' | 'twitter' | 'linkedin' | 'bluesky' | 'telegram' | 'tiktok' | 'instagram' | null
   scheduled_at: string
   body_text: string
   status: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled'
@@ -106,6 +106,9 @@ interface ScheduledItem {
   external_id: string | null
   created_at: string
   blog_posts?: { title: string | null; wordpress_url: string | null } | null
+  /** Set on vertical Short-direct rows (no blog post) — gives them a title. */
+  video_id?: string | null
+  youtube_videos?: { title: string | null } | null
 }
 
 // ── Readiness gate ────────────────────────────────────────────────────────────
@@ -1338,6 +1341,8 @@ const PLATFORM_META: Record<NonNullable<ScheduledItem['platform']>, { label: str
   linkedin: { label: 'LinkedIn', color: '#0a66c2' },
   bluesky:  { label: 'Bluesky',  color: '#1185fe' },
   telegram: { label: 'Telegram', color: '#229ED9' },
+  tiktok:   { label: 'TikTok',   color: '#000000' },
+  instagram:{ label: 'Instagram',color: '#E1306C' },
 }
 
 const STATUS_PILL: Record<ScheduledItem['status'], { label: string; bg: string; fg: string }> = {
@@ -1508,7 +1513,7 @@ function ScheduledList({
                 </span>
               </div>
               <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] truncate mb-1">
-                {item.blog_posts?.title ?? 'Untitled post'}
+                {item.blog_posts?.title ?? item.youtube_videos?.title ?? (item.video_id ? 'Short (direct)' : 'Untitled post')}
               </p>
               <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] line-clamp-2 italic">
                 &ldquo;{item.body_text.slice(0, 150)}{item.body_text.length > 150 ? '…' : ''}&rdquo;
