@@ -438,8 +438,15 @@ export default function WalmartPBPage() {
                             </div>
                             <div className="min-w-0 flex-1">
                               <p className="text-[12.5px] font-medium truncate" style={{ color: 'var(--text)' }}>{pr.name}</p>
-                              <p className="text-[11px]" style={{ color: 'var(--text-soft)' }}>
-                                {pr.price ? `$${pr.price}` : '—'}{pr.oldPrice ? ` (was $${pr.oldPrice})` : ''}{pr.category ? ` · ${pr.category}` : ''}
+                              <p className="text-[11px] flex items-center gap-1.5" style={{ color: 'var(--text-soft)' }}>
+                                <span>{pr.price ? `$${pr.price}` : '—'}{pr.oldPrice ? ` (was $${pr.oldPrice})` : ''}{pr.category ? ` · ${pr.category}` : ''}</span>
+                                {pr.url && (
+                                  <a href={pr.url} target="_blank" rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-0.5 hover:underline flex-shrink-0"
+                                    style={{ color: '#0E7490' }}>
+                                    See product <ExternalLink size={9} />
+                                  </a>
+                                )}
                               </p>
                             </div>
                             {done ? (

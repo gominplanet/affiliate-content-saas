@@ -298,11 +298,14 @@ export default function LevantaPage() {
                             : <div className="w-12 h-12 rounded flex-shrink-0" style={{ background: 'var(--surface)' }} />}
                           <div className="flex-1 min-w-0">
                             <p className="text-[13px] font-medium leading-snug line-clamp-2" style={{ color: 'var(--text)' }}>{p.title || p.asin}</p>
-                            <p className="text-[11px] mt-0.5 flex flex-wrap gap-x-2" style={{ color: 'var(--text-soft)' }}>
+                            <p className="text-[11px] mt-0.5 flex flex-wrap gap-x-2 items-center" style={{ color: 'var(--text-soft)' }}>
                               {p.price != null && <span>${p.price}</span>}
                               {p.commission != null && <span style={{ color: '#10B981', fontWeight: 600 }}>{p.commission}% commission</span>}
                               {p.rating && <span>★ {p.rating}</span>}
-                              <span className="opacity-60">{p.asin}</span>
+                              <a href={`https://www.amazon.com/dp/${p.asin}`} target="_blank" rel="noopener noreferrer"
+                                className="inline-flex items-center gap-0.5 hover:underline" style={{ color: CYAN }}>
+                                {p.asin} <ExternalLink size={9} />
+                              </a>
                             </p>
                           </div>
                           <div className="flex-shrink-0">
