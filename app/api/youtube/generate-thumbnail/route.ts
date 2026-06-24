@@ -27,6 +27,7 @@ import { analyzeTextZone } from '@/lib/thumbnail-textzone'
 import { scrubBanned } from '@/lib/scrub'
 import { getStarredPhotoboothRefs } from '@/lib/photobooth-refs'
 import { getThumbnailFaceRef } from '@/lib/identity-anchor'
+import { verifyFaceIdentity } from '@/lib/product-image'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
 import { fetchStoryboardFrames } from '@/lib/youtube-storyboards'
 
@@ -1346,6 +1347,11 @@ Ultra-sharp, professional, photorealistic.`
           // composition). Title is overlaid (default) or baked (toggle).
           let nbModelKey = NANO_BANANA_PRO_COST_MODEL
           let nbModelUsed = wantClean ? 'nano-banana-pro' : 'nano-banana-pro-baked'
+          // Identity-verification telemetry (face path only). 'verified' = every
+          // surviving variant passed the Claude face-match check; 'unverified' =
+          // none matched even after a regenerate (kept + flagged, never blanked).
+          let faceIdentityChecked = false
+          let faceIdentityWarning = false
 
           // Fire `variantCount` parallel single-image composes — each with its
           // own prompt (rotating host side + title style) so variants differ.
@@ -1383,6 +1389,45 @@ Ultra-sharp, professional, photorealistic.`
                 feature: 'yt_thumb_nanobanana_image', model: nbModelKey, images: 1,
               })
             }
+            // ── FACE-IDENTITY VERIFICATION ───────────────────────────────
+            // When the thumbnail is meant to show the creator's OWN face, Claude-
+            // vision check every composed variant against their identity reference
+            // (the first faceRef = starred Photobooth shot / identity anchor / best
+            // source photo) and DROP any where the rendered person isn't them — the
+            // compositor occasionally drifts the likeness. Privacy-critical: a
+            // thumbnail must only show the user's own face, never a stranger or a
+            // generic stand-in. If at least one variant matches, keep only those.
+            // If NONE match, regenerate once; if that still fails, keep the set but
+            // flag it (better to return something than blank the result). Skipped
+            // for product-only / no-owned-face generations (faceRefs empty).
+            if (faceRefs.length > 0 && nbUrls.length > 0) {
+              faceIdentityChecked = true
+              const idRef = faceRefs[0]
+              const idCtx = { userId: TELEMETRY.userId, tier: TELEMETRY.tier }
+              const verdicts = await Promise.all(nbUrls.map(u => verifyFaceIdentity(idRef, u, idCtx)))
+              let matching = nbUrls.filter((_, i) => verdicts[i].match)
+              if (matching.length === 0) {
+                // One regeneration attempt for the whole set, then re-verify.
+                const retry = (await Promise.all(
+                  Array.from({ length: variantCount }, (_, i) =>
+                    composeWithNanoBananaPro({ prompt: promptFor(i), referenceImageUrls: refs, aspectRatio: '16:9', numImages: 1 }),
+                  ),
+                )).flat().filter(Boolean).slice(0, variantCount)
+                const retryGraded = retry.length > 0 ? await Promise.all(retry.map(applyMoodyGrade)) : []
+                for (let i = 0; i < retryGraded.length; i++) {
+                  recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'yt_thumb_nanobanana_image', model: NANO_BANANA_PRO_COST_MODEL, images: 1 })
+                }
+                if (retryGraded.length > 0) {
+                  const v2 = await Promise.all(retryGraded.map(u => verifyFaceIdentity(idRef, u, idCtx)))
+                  const ok2 = retryGraded.filter((_, i) => v2[i].match)
+                  if (ok2.length > 0) { nbUrls = ok2; matching = ok2 }
+                  else faceIdentityWarning = true // keep original nbUrls, flag it
+                } else faceIdentityWarning = true
+              } else if (matching.length < nbUrls.length) {
+                nbUrls = matching // drop the non-matching variants
+              }
+            }
+
             const rank = await rankVariants(nbUrls, overlayHookNB, { userId: TELEMETRY.userId, tier: TELEMETRY.tier })
             // Per-variant headline placement (overlay path): we composed the
             // host on a KNOWN side per variant (even=LEFT, odd=RIGHT), so the
@@ -1622,7 +1667,11 @@ Ultra-sharp, professional, photorealistic.`
               // Which face model the likeness was locked to (Auto-match result),
               // surfaced so the user can confirm it picked the right person.
               faceUsed: faceModel?.name ?? null,
-              faceDebug: `nano-banana composed (source=${hasCapturedFrame ? `extension-frame[${validFrames.length || 1}]` : frameRef ? 'maxres' : 'face+product (no frame)'}, face=${faceModel?.name ?? 'none'}, faceRefs=${faceRefs.length}, productRefs=${productRefs.length}${customProductRefs.length > 0 ? ' [user-supplied]' : ''}, title=${wantClean ? 'overlay' : 'baked'})`,
+              // Claude face-identity gate result: true = every shown variant was
+              // verified as the creator; false = checked but none matched (kept +
+              // flagged); null = not a face thumbnail (nothing to verify).
+              faceIdentityVerified: faceIdentityChecked ? !faceIdentityWarning : null,
+              faceDebug: `nano-banana composed (source=${hasCapturedFrame ? `extension-frame[${validFrames.length || 1}]` : frameRef ? 'maxres' : 'face+product (no frame)'}, face=${faceModel?.name ?? 'none'}, faceRefs=${faceRefs.length}, productRefs=${productRefs.length}${customProductRefs.length > 0 ? ' [user-supplied]' : ''}, title=${wantClean ? 'overlay' : 'baked'}, faceIdentity=${faceIdentityChecked ? (faceIdentityWarning ? 'unverified' : 'verified') : 'n/a'})`,
             })
           }
           console.warn('[generate-thumbnail] Nano Banana (frame) returned no image; falling through')

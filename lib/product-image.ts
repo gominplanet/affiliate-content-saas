@@ -132,3 +132,60 @@ MATCH: yes/no — <one short reason under 12 words>`,
     return { match: true, reason: 'verification-skipped' }
   }
 }
+
+/**
+ * Vision-verify that a generated thumbnail shows the SAME PERSON as the
+ * creator's own face reference. Privacy- and identity-critical: a rendered
+ * thumbnail face must only ever be the user's own likeness, and the compositing
+ * model occasionally drifts the identity (loose likeness average, or rendering a
+ * generic stand-in). This is the face analogue of verifyProductMatch.
+ *
+ * Returns match:true when it's confidently the same individual. Anthropic/network
+ * errors default to match:true ('verification-skipped') so a transient outage
+ * never blocks a thumbnail — innocent until proven guilty, only reject on a
+ * confident "different person".
+ */
+export async function verifyFaceIdentity(
+  referenceUrl: string,
+  // The generated thumbnail to check: a URL (fal-hosted) OR raw base64 bytes.
+  generated: string | { base64: string; mediaType: string },
+  ctx?: { userId?: string | null; tier?: string | null },
+): Promise<{ match: boolean; reason: string }> {
+  if (!referenceUrl || !generated) return { match: true, reason: 'no-reference-to-compare' }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const generatedSource: any = typeof generated === 'string'
+    ? { type: 'url', url: generated }
+    : { type: 'base64', media_type: generated.mediaType, data: generated.base64 }
+  try {
+    const client = createAnthropicClient()
+    const resp = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 120,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image', source: { type: 'url', url: referenceUrl } },
+          { type: 'image', source: generatedSource },
+          {
+            type: 'text',
+            text: `Image 1 is a reference photo of a specific person (the creator). Image 2 is a generated YouTube thumbnail that is supposed to feature THAT SAME person.
+
+Is the main person shown in Image 2 the SAME individual as in Image 1 — same facial identity, bone structure, and likeness? Hairstyle, expression, lighting, makeup, camera angle and the surrounding scene are EXPECTED to differ; ignore those. Judge identity only.
+
+Answer "no" if Image 2 shows a clearly DIFFERENT person (a generic stand-in, the wrong gender/age/ethnicity, or a loose likeness that isn't really them), OR if Image 2 has no recognisable human face at all.
+
+Reply with EXACTLY one line in this format:
+MATCH: yes/no — <one short reason under 12 words>`,
+          },
+        ],
+      }],
+    })
+    if (ctx?.userId) recordAnthropicUsage(resp, { userId: ctx.userId, tier: ctx.tier, feature: 'yt_thumb_face_verify', model: 'claude-haiku-4-5-20251001' })
+    const txt = ((resp.content[0] as { type: string; text: string })?.text || '').trim()
+    const yes = /MATCH:\s*yes/i.test(txt)
+    const reason = txt.replace(/^MATCH:\s*(yes|no)\s*[—:-]\s*/i, '').slice(0, 200).trim() || 'no reason given'
+    return { match: yes, reason }
+  } catch {
+    return { match: true, reason: 'verification-skipped' }
+  }
+}
