@@ -15,10 +15,11 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import {
   Loader2, AlertCircle, CheckCircle, Send, ExternalLink, X,
-  MessageSquare, Users, Scissors, Music, Lock, RefreshCw, Package, Clock,
+  MessageSquare, Users, Scissors, Music, Lock, RefreshCw, Package, Clock, Youtube,
 } from 'lucide-react'
 import { ShortVideoUpload } from '@/components/ShortVideoUpload'
 import { useModalA11y } from '@/components/ui/useModalA11y'
+import { youtubeUploadEnabled } from '@/lib/feature-flags'
 
 type PrivacyLevel = 'PUBLIC_TO_EVERYONE' | 'MUTUAL_FOLLOW_FRIENDS' | 'SELF_ONLY' | 'FOLLOWER_OF_CREATOR'
 
@@ -115,6 +116,14 @@ export function TikTokDirectModal({
   const [alsoPin, setAlsoPin] = useState(false)
   const [pinResult, setPinResult] = useState<'idle' | 'posting' | 'done' | 'failed'>('idle')
   const [pinErr, setPinErr] = useState<string | null>(null)
+  // …and a YouTube Short (publishes the same vertical render TO the creator's
+  // own channel). Gated behind the youtube.upload scope flag — invisible until
+  // Google verifies the app and the flag is flipped on.
+  const ytEnabled = youtubeUploadEnabled()
+  const [alsoYt, setAlsoYt] = useState(false)
+  const [ytResult, setYtResult] = useState<'idle' | 'posting' | 'done' | 'failed'>('idle')
+  const [ytErr, setYtErr] = useState<string | null>(null)
+  const [ytUrl, setYtUrl] = useState<string | null>(null)
   // Schedule-for-later (only for real video targets — a URL-only burned clip has
   // no DB row to schedule against).
   const [scheduleOpen, setScheduleOpen] = useState(false)
@@ -305,12 +314,39 @@ export function TikTokDirectModal({
           }
         }
       }
+
+      // …and a YouTube Short — publish the same vertical render to the creator's
+      // own channel. Privacy mirrors the TikTok choice (public / private / else
+      // unlisted). Reported separately so a YouTube failure never masks TikTok.
+      if (ytEnabled && alsoYt) {
+        const vUrl = isBurned ? burnedVideoUrl : meta?.videoUrl
+        if (vUrl) {
+          setYtResult('posting'); setYtErr(null); setYtUrl(null)
+          const privacyStatus = privacy === 'PUBLIC_TO_EVERYONE' ? 'public' : privacy === 'SELF_ONLY' ? 'private' : 'unlisted'
+          try {
+            const yr = await fetch('/api/youtube/upload-short', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                videoUrl: vUrl,
+                title: (caption || meta?.title || '').split('\n')[0].slice(0, 100) || 'New Short',
+                description: caption,
+                privacyStatus,
+              }),
+            })
+            const yj = await yr.json().catch(() => ({}))
+            if (yr.ok) { setYtResult('done'); setYtUrl((yj.url as string) || null) }
+            else { setYtResult('failed'); setYtErr((yj.error as string) || 'YouTube upload failed.') }
+          } catch (e) {
+            setYtResult('failed'); setYtErr(e instanceof Error ? e.message : 'YouTube upload failed.')
+          }
+        }
+      }
     } catch (e) {
       setPostError(e instanceof Error ? e.message : 'Posting failed.')
     } finally {
       setPosting(false)
     }
-  }, [canPost, videoId, isBurned, burnedVideoUrl, caption, privacy, allowComment, allowDuet, allowStitch, isCommercial, brandedContent, brandedPartnership, info, alsoIg, alsoPin, youtubeId, meta?.videoUrl])
+  }, [canPost, videoId, isBurned, burnedVideoUrl, caption, privacy, allowComment, allowDuet, allowStitch, isCommercial, brandedContent, brandedPartnership, info, alsoIg, alsoPin, ytEnabled, alsoYt, youtubeId, meta?.videoUrl, meta?.title])
 
   // Schedule this Short for a future time (real video targets only — a URL-only
   // burned clip has no DB row, so it can't be queued).
@@ -663,6 +699,12 @@ export function TikTokDirectModal({
               <input type="checkbox" checked={alsoPin} onChange={e => setAlsoPin(e.target.checked)} className="h-4 w-4 accent-[#E60023]" />
               <span className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7]">Also pin to Pinterest as a video <span className="text-[#86868b]">(links to your blog)</span></span>
             </label>
+            {ytEnabled && (
+              <label className="mt-1.5 flex items-center gap-2.5 cursor-pointer select-none">
+                <input type="checkbox" checked={alsoYt} onChange={e => setAlsoYt(e.target.checked)} className="h-4 w-4 accent-[#FF0000]" />
+                <span className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7] flex items-center gap-1"><Youtube size={13} className="text-[#FF0000]" /> Also post to YouTube as a Short <span className="text-[#86868b]">(to your channel)</span></span>
+              </label>
+            )}
           </div>
         )}
         {igResult === 'posting' && <p className="px-5 pb-1 text-[11px] text-[#E1306C] flex items-center gap-1.5"><Loader2 size={11} className="animate-spin" /> Also sending to Instagram…</p>}
@@ -671,6 +713,9 @@ export function TikTokDirectModal({
         {pinResult === 'posting' && <p className="px-5 pb-1 text-[11px] text-[#E60023] flex items-center gap-1.5"><Loader2 size={11} className="animate-spin" /> Also pinning to Pinterest (processing the video)…</p>}
         {pinResult === 'done' && <p className="px-5 pb-1 text-[11px] text-[#34c759] flex items-center gap-1.5"><CheckCircle size={11} /> Pinned to Pinterest too.</p>}
         {pinResult === 'failed' && <p className="px-5 pb-1 text-[11px] text-[#ff3b30] flex items-center gap-1.5"><AlertCircle size={11} /> Pinterest: {pinErr || 'failed'} (TikTok was unaffected.)</p>}
+        {ytResult === 'posting' && <p className="px-5 pb-1 text-[11px] text-[#FF0000] flex items-center gap-1.5"><Loader2 size={11} className="animate-spin" /> Also uploading to YouTube as a Short…</p>}
+        {ytResult === 'done' && <p className="px-5 pb-1 text-[11px] text-[#34c759] flex items-center gap-1.5"><CheckCircle size={11} /> Posted to YouTube too.{ytUrl && <a href={ytUrl} target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline inline-flex items-center gap-0.5 ml-1">Open <ExternalLink size={9} /></a>}</p>}
+        {ytResult === 'failed' && <p className="px-5 pb-1 text-[11px] text-[#ff3b30] flex items-center gap-1.5"><AlertCircle size={11} /> YouTube: {ytErr || 'failed'} (TikTok was unaffected.)</p>}
 
         {/* Schedule for later (real video targets only, before posting) */}
         {!loading && !loadError && info && meta && canSchedule && publishStatus === 'idle' && (
