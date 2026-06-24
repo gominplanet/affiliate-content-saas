@@ -189,3 +189,134 @@ MATCH: yes/no — <one short reason under 12 words>`,
     return { match: true, reason: 'verification-skipped' }
   }
 }
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function toImageSource(generated: string | { base64: string; mediaType: string }): any {
+  return typeof generated === 'string'
+    ? { type: 'url', url: generated }
+    : { type: 'base64', media_type: generated.mediaType, data: generated.base64 }
+}
+
+/**
+ * Vision proof-check for text BAKED INTO an image (a thumbnail headline the
+ * image model rendered, vs our pixel-perfect Satori overlay). Image models
+ * routinely misspell — "REVEIW", "TESETD", dropped/doubled letters. Also flags
+ * the banned word "HONEST" if it rendered inside the image (the text-only
+ * scrubber can't see pixels). Returns ok:false ONLY on a confident typo / banned
+ * word so a good thumbnail is never rejected by a flaky read. Fail-open on error.
+ */
+export async function verifyBakedText(
+  generated: string | { base64: string; mediaType: string },
+  intendedText: string,
+  ctx?: { userId?: string | null; tier?: string | null },
+): Promise<{ ok: boolean; reason: string }> {
+  const intended = (intendedText || '').trim()
+  if (!generated || !intended) return { ok: true, reason: 'nothing-to-check' }
+  try {
+    const client = createAnthropicClient()
+    const resp = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 80,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image', source: toImageSource(generated) },
+          {
+            type: 'text',
+            text: `This image has a large headline baked into it. The headline is SUPPOSED to read exactly: "${intended}".
+
+Read the actual headline text in the image. Two checks:
+1) SPELLING: is every word spelled correctly with no typos, missing letters, doubled letters, or garbled/nonsense characters? Minor differences in line breaks, capitalization or trailing punctuation are FINE — only flag real misspellings or garbled letterforms.
+2) BANNED: does ANY visible text in the image contain the word "HONEST" (in any casing)?
+
+Reply with EXACTLY one line:
+OK: yes/no — <under 12 words: the misspelling, or "HONEST present", or "clean">`,
+          },
+        ],
+      }],
+    })
+    if (ctx?.userId) recordAnthropicUsage(resp, { userId: ctx.userId, tier: ctx.tier, feature: 'image_baked_text_verify', model: 'claude-haiku-4-5-20251001' })
+    const txt = ((resp.content[0] as { type: string; text: string })?.text || '').trim()
+    const ok = /OK:\s*yes/i.test(txt)
+    const reason = txt.replace(/^OK:\s*(yes|no)\s*[—:-]\s*/i, '').slice(0, 200).trim() || 'no reason given'
+    return { ok, reason }
+  } catch {
+    return { ok: true, reason: 'verification-skipped' }
+  }
+}
+
+/**
+ * Vision compliance scan for BRAND LEAKS in a generated image. Every image
+ * prompt forbids retailer/marketplace logos (Amazon, Prime, Walmart, eBay),
+ * store watermarks, and ™/© symbols — but nothing verified the model obeyed.
+ * Returns clean:false ONLY on a confident, readable brand mark (the product's
+ * OWN physical branding is allowed and must NOT trip it). Fail-open on error.
+ */
+export async function verifyNoBrandLeak(
+  generated: string | { base64: string; mediaType: string },
+  ctx?: { userId?: string | null; tier?: string | null },
+): Promise<{ clean: boolean; reason: string }> {
+  if (!generated) return { clean: true, reason: 'nothing-to-check' }
+  try {
+    const client = createAnthropicClient()
+    const resp = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 80,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image', source: toImageSource(generated) },
+          {
+            type: 'text',
+            text: `Compliance check for a marketing image. Look ONLY for things that should NOT be here:
+- A RETAILER / MARKETPLACE logo or wordmark: Amazon, Amazon smile arrow, "Prime", Walmart, eBay, Target, Best Buy, etc.
+- A store/site watermark or overlaid copyright/trademark symbol (™, ©, ®) used as a graphic.
+- An obvious third-party brand logo unrelated to the product itself.
+
+The product's OWN physical branding printed on the product is ALLOWED — do NOT flag that. Only flag retailer/marketplace/watermark leaks.
+
+Reply with EXACTLY one line:
+CLEAN: yes/no — <under 12 words: which logo/watermark, or "none">`,
+          },
+        ],
+      }],
+    })
+    if (ctx?.userId) recordAnthropicUsage(resp, { userId: ctx.userId, tier: ctx.tier, feature: 'image_brand_leak_verify', model: 'claude-haiku-4-5-20251001' })
+    const txt = ((resp.content[0] as { type: string; text: string })?.text || '').trim()
+    const clean = /CLEAN:\s*yes/i.test(txt)
+    const reason = txt.replace(/^CLEAN:\s*(yes|no)\s*[—:-]\s*/i, '').slice(0, 200).trim() || 'no reason given'
+    return { clean, reason }
+  } catch {
+    return { clean: true, reason: 'verification-skipped' }
+  }
+}
+
+/** Majority-vote a yes/no verifier `votes` times (default 3) for a stronger
+ *  guarantee on the ONE image that actually publishes. Each vote is an
+ *  independent Claude call; passes when ≥ ceil(votes/2) affirm. Fail-open votes
+ *  count as "yes" so an Anthropic blip never rejects a good image. */
+export async function verifyProductMatchConsensus(
+  referenceUrl: string,
+  generated: string | { base64: string; mediaType: string },
+  productTitle: string,
+  ctx?: { userId?: string | null; tier?: string | null },
+  votes = 3,
+): Promise<{ match: boolean; yes: number; votes: number }> {
+  if (!referenceUrl || !generated) return { match: true, yes: votes, votes }
+  const rs = await Promise.all(Array.from({ length: votes }, () => verifyProductMatch(referenceUrl, generated, productTitle, ctx)))
+  const yes = rs.filter(r => r.match).length
+  return { match: yes >= Math.ceil(votes / 2), yes, votes }
+}
+
+/** Majority-vote the face-identity check (see verifyProductMatchConsensus). */
+export async function verifyFaceIdentityConsensus(
+  referenceUrl: string,
+  generated: string | { base64: string; mediaType: string },
+  ctx?: { userId?: string | null; tier?: string | null },
+  votes = 3,
+): Promise<{ match: boolean; yes: number; votes: number }> {
+  if (!referenceUrl || !generated) return { match: true, yes: votes, votes }
+  const rs = await Promise.all(Array.from({ length: votes }, () => verifyFaceIdentity(referenceUrl, generated, ctx)))
+  const yes = rs.filter(r => r.match).length
+  return { match: yes >= Math.ceil(votes / 2), yes, votes }
+}

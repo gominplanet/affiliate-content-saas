@@ -2,7 +2,7 @@
 import sharp from 'sharp'
 import { createOpenAIService } from '@/services/openai'
 import { recordUsage } from '@/lib/ai-usage'
-import { verifyProductMatch } from '@/lib/product-image'
+import { verifyProductMatchConsensus, verifyNoBrandLeak } from '@/lib/product-image'
 
 /**
  * Builds the 16:9 featured image for a campaign post.
@@ -62,21 +62,25 @@ export async function buildCampaignHero(opts: {
           .jpeg({ quality: 86 })
           .toBuffer()
         const heroB64 = jpeg.toString('base64')
+        const gen = { base64: heroB64, mediaType: 'image/jpeg' as const }
+        const idCtx = { userId: ctx?.userId ?? null, tier: ctx?.tier ?? null }
 
-        // No reference photo → nothing to verify against; accept it.
-        if (!productImageUrl) {
-          return { b64: heroB64, mime: 'image/jpeg', kind: 'ai' }
-        }
-        const verdict = await verifyProductMatch(
-          productImageUrl,
-          { base64: heroB64, mediaType: 'image/jpeg' },
-          productTitle || 'this product',
-          { userId: ctx?.userId ?? null, tier: ctx?.tier ?? null },
-        )
-        if (verdict.match) return { b64: heroB64, mime: 'image/jpeg', kind: 'ai' }
-        // Mismatch: on the last attempt, drop to the product-photo floor below.
+        // Brand-leak scan (compliance): reject a hero with a retailer/marketplace
+        // logo or watermark even if the product is right. Runs whether or not we
+        // have a reference photo.
+        const leak = await verifyNoBrandLeak(gen, idCtx)
+
+        // Right-product check — DOUBLE-VERIFIED (2-of-3 consensus) on this hero
+        // since it's the image that publishes. Skipped when there's no reference
+        // photo to compare against.
+        const productOk = !productImageUrl
+          ? true
+          : (await verifyProductMatchConsensus(productImageUrl, gen, productTitle || 'this product', idCtx)).match
+
+        if (productOk && leak.clean) return { b64: heroB64, mime: 'image/jpeg', kind: 'ai' }
+        // Failed product match or leaked a brand mark. On the last attempt, drop
+        // to the product-photo floor below; otherwise regenerate once.
         if (attempt === 1) break
-        // else loop and regenerate once.
       } catch {
         break // generation/verify failed — fall through to the fallback
       }

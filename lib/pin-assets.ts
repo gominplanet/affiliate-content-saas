@@ -16,7 +16,7 @@ import { composePin, PIN_DESIGN_COUNT } from '@/lib/pin-compose'
 import { learnProfileToPrompt } from '@/lib/learn'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
-import { pickProductReferenceImage, verifyProductMatch } from '@/lib/product-image'
+import { pickProductReferenceImage, verifyProductMatchConsensus, verifyNoBrandLeak } from '@/lib/product-image'
 import { resolveTrueDestination } from '@/lib/affiliate-resolve'
 import { asinFromAmazonUrl } from '@/lib/product-link'
 
@@ -197,13 +197,34 @@ Return ONLY valid JSON with these exact keys:
   let rawImage = await generatePinImage(imagePrompt, useCollage ? null : referenceImageUrl)
   if (rawImage) recordUsage({ userId: ctx.userId, tier: ctx.tier, feature: 'pinterest_image', model: 'gemini-2.5-flash-image', images: 1 })
 
-  // Vision QC (Claude): confirm we rendered the RIGHT product. Single-product
-  // scenes with a real reference only. On a confident mismatch, regenerate ONCE
-  // and keep the retry — better a fresh attempt than a published wrong product.
-  if (rawImage && !useCollage && referenceImageUrl) {
-    const verdict = await verifyProductMatch(referenceImageUrl, { base64: rawImage.data, mediaType: rawImage.mediaType }, fields.product_name, { userId: ctx.userId, tier: ctx.tier })
-    if (!verdict.match) {
+  // Vision QC (Claude) on the SCENE (before the Satori text overlay, so the
+  // checks read the photo, not our own caption):
+  //   • right product — DOUBLE-VERIFIED (2-of-3 consensus), single-product
+  //     scenes with a real reference only;
+  //   • brand-leak scan — no Amazon/retailer logo or watermark (all scenes,
+  //     incl. collage).
+  // On a confident failure of either, regenerate ONCE and keep the retry.
+  if (rawImage && !useCollage) {
+    const gen = { base64: rawImage.data, mediaType: rawImage.mediaType }
+    const idCtx = { userId: ctx.userId, tier: ctx.tier }
+    const [prod, leak] = await Promise.all([
+      referenceImageUrl
+        ? verifyProductMatchConsensus(referenceImageUrl, gen, fields.product_name, idCtx)
+        : Promise.resolve({ match: true, yes: 0, votes: 0 }),
+      verifyNoBrandLeak(gen, idCtx),
+    ])
+    if (!prod.match || !leak.clean) {
       const retry = await generatePinImage(imagePrompt, referenceImageUrl)
+      if (retry) {
+        recordUsage({ userId: ctx.userId, tier: ctx.tier, feature: 'pinterest_image', model: 'gemini-2.5-flash-image', images: 1 })
+        rawImage = retry
+      }
+    }
+  } else if (rawImage && useCollage) {
+    // Collage roundup: no single reference to match, but still scan for leaks.
+    const leak = await verifyNoBrandLeak({ base64: rawImage.data, mediaType: rawImage.mediaType }, { userId: ctx.userId, tier: ctx.tier })
+    if (!leak.clean) {
+      const retry = await generatePinImage(imagePrompt, null)
       if (retry) {
         recordUsage({ userId: ctx.userId, tier: ctx.tier, feature: 'pinterest_image', model: 'gemini-2.5-flash-image', images: 1 })
         rawImage = retry

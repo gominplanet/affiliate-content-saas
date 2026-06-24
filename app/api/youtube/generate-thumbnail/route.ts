@@ -27,7 +27,7 @@ import { analyzeTextZone } from '@/lib/thumbnail-textzone'
 import { scrubBanned } from '@/lib/scrub'
 import { getStarredPhotoboothRefs } from '@/lib/photobooth-refs'
 import { getThumbnailFaceRef } from '@/lib/identity-anchor'
-import { verifyFaceIdentity } from '@/lib/product-image'
+import { verifyFaceIdentity, verifyFaceIdentityConsensus, verifyNoBrandLeak, verifyBakedText } from '@/lib/product-image'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
 import { fetchStoryboardFrames } from '@/lib/youtube-storyboards'
 
@@ -1347,11 +1347,12 @@ Ultra-sharp, professional, photorealistic.`
           // composition). Title is overlaid (default) or baked (toggle).
           let nbModelKey = NANO_BANANA_PRO_COST_MODEL
           let nbModelUsed = wantClean ? 'nano-banana-pro' : 'nano-banana-pro-baked'
-          // Identity-verification telemetry (face path only). 'verified' = every
-          // surviving variant passed the Claude face-match check; 'unverified' =
-          // none matched even after a regenerate (kept + flagged, never blanked).
+          // Image-QC telemetry. faceIdentityChecked = the face dimension ran (a
+          // creator-face thumbnail). qcWarning = the QC gate (face + brand-leak +
+          // baked-text) couldn't be satisfied even after a regenerate, so the set
+          // was kept + flagged rather than blanked.
           let faceIdentityChecked = false
-          let faceIdentityWarning = false
+          let qcWarning = false
 
           // Fire `variantCount` parallel single-image composes — each with its
           // own prompt (rotating host side + title style) so variants differ.
@@ -1389,25 +1390,35 @@ Ultra-sharp, professional, photorealistic.`
                 feature: 'yt_thumb_nanobanana_image', model: nbModelKey, images: 1,
               })
             }
-            // ── FACE-IDENTITY VERIFICATION ───────────────────────────────
-            // When the thumbnail is meant to show the creator's OWN face, Claude-
-            // vision check every composed variant against their identity reference
-            // (the first faceRef = starred Photobooth shot / identity anchor / best
-            // source photo) and DROP any where the rendered person isn't them — the
-            // compositor occasionally drifts the likeness. Privacy-critical: a
-            // thumbnail must only show the user's own face, never a stranger or a
-            // generic stand-in. If at least one variant matches, keep only those.
-            // If NONE match, regenerate once; if that still fails, keep the set but
-            // flag it (better to return something than blank the result). Skipped
-            // for product-only / no-owned-face generations (faceRefs empty).
-            if (faceRefs.length > 0 && nbUrls.length > 0) {
-              faceIdentityChecked = true
-              const idRef = faceRefs[0]
+            // ── IMAGE QC GATE (per variant) ──────────────────────────────
+            // Drop any composed variant that fails ANY of:
+            //   • FACE — doesn't show the creator's own face (face thumbnails only;
+            //     idRef = starred Photobooth shot / identity anchor / best photo).
+            //     Privacy-critical: never a stranger or a generic stand-in.
+            //   • BRAND LEAK — a retailer/marketplace logo or watermark rendered.
+            //   • BAKED TEXT — (baked-title mode only) the headline is misspelled
+            //     or the banned word rendered inside the image.
+            // If at least one variant survives, keep only those. If NONE survive,
+            // regenerate once and re-audit; if that still fails, keep the set but
+            // flag it (better to return something than blank the result).
+            if (nbUrls.length > 0) {
               const idCtx = { userId: TELEMETRY.userId, tier: TELEMETRY.tier }
-              const verdicts = await Promise.all(nbUrls.map(u => verifyFaceIdentity(idRef, u, idCtx)))
-              let matching = nbUrls.filter((_, i) => verdicts[i].match)
-              if (matching.length === 0) {
-                // One regeneration attempt for the whole set, then re-verify.
+              const idRef = faceRefs[0] || null
+              if (idRef) faceIdentityChecked = true
+              // Audit one variant against all enabled dimensions. baked-text maps
+              // the variant back to its per-variant headline via nbUrls index.
+              const auditVariant = async (u: string): Promise<boolean> => {
+                const idx = Math.max(0, nbUrls.indexOf(u))
+                const [face, leak, baked] = await Promise.all([
+                  idRef ? verifyFaceIdentity(idRef, u, idCtx) : Promise.resolve({ match: true, reason: '' }),
+                  verifyNoBrandLeak(u, idCtx),
+                  !wantClean ? verifyBakedText(u, flatCopy(hooks[idx % hooks.length]) || overlayHookNB, idCtx) : Promise.resolve({ ok: true, reason: '' }),
+                ])
+                return face.match && leak.clean && baked.ok
+              }
+              const pass1 = await Promise.all(nbUrls.map(auditVariant))
+              const surviving = nbUrls.filter((_, i) => pass1[i])
+              if (surviving.length === 0) {
                 const retry = (await Promise.all(
                   Array.from({ length: variantCount }, (_, i) =>
                     composeWithNanoBananaPro({ prompt: promptFor(i), referenceImageUrls: refs, aspectRatio: '16:9', numImages: 1 }),
@@ -1418,13 +1429,14 @@ Ultra-sharp, professional, photorealistic.`
                   recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'yt_thumb_nanobanana_image', model: NANO_BANANA_PRO_COST_MODEL, images: 1 })
                 }
                 if (retryGraded.length > 0) {
-                  const v2 = await Promise.all(retryGraded.map(u => verifyFaceIdentity(idRef, u, idCtx)))
-                  const ok2 = retryGraded.filter((_, i) => v2[i].match)
-                  if (ok2.length > 0) { nbUrls = ok2; matching = ok2 }
-                  else faceIdentityWarning = true // keep original nbUrls, flag it
-                } else faceIdentityWarning = true
-              } else if (matching.length < nbUrls.length) {
-                nbUrls = matching // drop the non-matching variants
+                  nbUrls = retryGraded // remap auditVariant's index space to the retry set
+                  const pass2 = await Promise.all(retryGraded.map(auditVariant))
+                  const ok2 = retryGraded.filter((_, i) => pass2[i])
+                  if (ok2.length > 0) nbUrls = ok2
+                  else qcWarning = true // keep the retry set, flag it
+                } else qcWarning = true
+              } else if (surviving.length < nbUrls.length) {
+                nbUrls = surviving // drop the failing variants
               }
             }
 
@@ -1618,6 +1630,17 @@ Ultra-sharp, professional, photorealistic.`
                 lastBakePath = (firstWithPath as any).bakePath as string
               }
             }
+
+            // ── DOUBLE-VERIFY THE FINAL IMAGE ────────────────────────────
+            // The one thumbnail that actually publishes (finalUrls[0]) gets a
+            // 2-of-3 CONSENSUS face check — the strongest guarantee, run once on
+            // the winner (the per-variant gate above already filtered the set).
+            // Face path only; flags qcWarning if the published image fails.
+            if (faceRefs.length > 0 && finalUrls[0] && !qcWarning) {
+              const consensus = await verifyFaceIdentityConsensus(faceRefs[0], finalUrls[0], { userId: TELEMETRY.userId, tier: TELEMETRY.tier })
+              if (!consensus.match) qcWarning = true
+            }
+
             return NextResponse.json({
               ok: true,
               // Designer overlay (if applied) replaces the rank URLs with
@@ -1667,11 +1690,14 @@ Ultra-sharp, professional, photorealistic.`
               // Which face model the likeness was locked to (Auto-match result),
               // surfaced so the user can confirm it picked the right person.
               faceUsed: faceModel?.name ?? null,
-              // Claude face-identity gate result: true = every shown variant was
-              // verified as the creator; false = checked but none matched (kept +
-              // flagged); null = not a face thumbnail (nothing to verify).
-              faceIdentityVerified: faceIdentityChecked ? !faceIdentityWarning : null,
-              faceDebug: `nano-banana composed (source=${hasCapturedFrame ? `extension-frame[${validFrames.length || 1}]` : frameRef ? 'maxres' : 'face+product (no frame)'}, face=${faceModel?.name ?? 'none'}, faceRefs=${faceRefs.length}, productRefs=${productRefs.length}${customProductRefs.length > 0 ? ' [user-supplied]' : ''}, title=${wantClean ? 'overlay' : 'baked'}, faceIdentity=${faceIdentityChecked ? (faceIdentityWarning ? 'unverified' : 'verified') : 'n/a'})`,
+              // Image-QC gate result: true = the shown set passed face + brand-
+              // leak + baked-text checks (and the published image double-verified);
+              // false = QC couldn't be satisfied so it was kept + flagged.
+              imageQcVerified: !qcWarning,
+              // Back-compat: face-only view of the same result (null when this
+              // wasn't a creator-face thumbnail).
+              faceIdentityVerified: faceIdentityChecked ? !qcWarning : null,
+              faceDebug: `nano-banana composed (source=${hasCapturedFrame ? `extension-frame[${validFrames.length || 1}]` : frameRef ? 'maxres' : 'face+product (no frame)'}, face=${faceModel?.name ?? 'none'}, faceRefs=${faceRefs.length}, productRefs=${productRefs.length}${customProductRefs.length > 0 ? ' [user-supplied]' : ''}, title=${wantClean ? 'overlay' : 'baked'}, qc=${qcWarning ? 'flagged' : 'verified'})`,
             })
           }
           console.warn('[generate-thumbnail] Nano Banana (frame) returned no image; falling through')
