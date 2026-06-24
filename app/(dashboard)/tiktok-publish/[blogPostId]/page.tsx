@@ -25,6 +25,7 @@ import {
   MessageSquare, Users, Scissors, Music, Lock, Flame,
 } from 'lucide-react'
 import { ShortVideoUpload } from '@/components/ShortVideoUpload'
+import { createBrowserClient } from '@/lib/supabase/client'
 
 type PrivacyLevel = 'PUBLIC_TO_EVERYONE' | 'MUTUAL_FOLLOW_FRIENDS' | 'SELF_ONLY' | 'FOLLOWER_OF_CREATOR'
 
@@ -87,6 +88,18 @@ export default function TikTokPublishPage() {
   const [shareUrl, setShareUrl] = useState<string | null>(null)
   const [publishError, setPublishError] = useState<string | null>(null)
 
+  // Pre-post validation — read the attached video's real duration/aspect/size
+  // and warn BEFORE posting so TikTok doesn't reject it after the upload.
+  const [videoWarnings, setVideoWarnings] = useState<string[]>([])
+  // "Use one you already made" picker — the user's existing 9:16 renders.
+  const [renders, setRenders] = useState<Array<{ videoId: string; title: string; thumbnailUrl: string | null; videoUrl: string }> | null>(null)
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [attaching, setAttaching] = useState(false)
+  // One upload → both platforms: also fire an Instagram Reel after TikTok.
+  const [alsoInstagram, setAlsoInstagram] = useState(false)
+  const [igResult, setIgResult] = useState<'idle' | 'posting' | 'done' | 'failed'>('idle')
+  const [igError, setIgError] = useState<string | null>(null)
+
   // ── Load creator_info LIVE every time the screen opens (TikTok rule) ─────
   useEffect(() => {
     if (!blogPostId) return
@@ -134,6 +147,67 @@ export default function TikTokPublishPage() {
       if (res.ok) setMeta(json as BlogPostMeta)
     } catch { /* non-fatal — the user can refresh */ }
   }, [blogPostId])
+
+  // "Use one you already made" — list the user's existing 9:16 renders, minus
+  // the one already on this post.
+  const loadRenders = useCallback(async () => {
+    try {
+      const res = await fetch('/api/blog/tiktok-post/my-renders')
+      const json = await res.json()
+      if (res.ok) setRenders((json.renders || []).filter((r: { videoId: string }) => r.videoId !== meta?.videoId))
+      else setRenders([])
+    } catch { setRenders([]) }
+  }, [meta?.videoId])
+
+  // Attach a chosen render to THIS post's video (owner-scoped via RLS), then
+  // refetch so the preview + Post button light up.
+  const attachRender = useCallback(async (videoUrl: string) => {
+    if (!meta?.videoId) return
+    setAttaching(true)
+    try {
+      const supabase = createBrowserClient()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase as any).from('youtube_videos').update({ instagram_video_url: videoUrl }).eq('id', meta.videoId)
+      await refetchMeta()
+      setPickerOpen(false)
+    } finally {
+      setAttaching(false)
+    }
+  }, [meta?.videoId, refetchMeta])
+
+  // Pre-post validation — read the attached render's real duration/aspect/size
+  // and surface warnings before the user posts (TikTok rejects out-of-spec
+  // videos AFTER the upload otherwise). Runs when a video URL is present.
+  useEffect(() => {
+    const url = meta?.videoUrl
+    if (!url) { setVideoWarnings([]); return }
+    let cancelled = false
+    const warns: string[] = []
+    const finish = () => { if (!cancelled) setVideoWarnings([...warns]) }
+    // Duration + aspect via a detached <video> element.
+    const v = document.createElement('video')
+    v.preload = 'metadata'
+    v.onloadedmetadata = () => {
+      const dur = v.duration
+      const w = v.videoWidth, h = v.videoHeight
+      if (dur && dur < 3) warns.push('Video is under 3s — TikTok may reject it.')
+      if (dur && dur > 600) warns.push('Video is over 10 minutes — trim it before posting.')
+      if (w && h) {
+        const ratio = w / h
+        if (ratio > 0.62) warns.push('This isn\'t a 9:16 vertical video — it\'ll be letterboxed or cropped.')
+      }
+      finish()
+    }
+    v.onerror = () => finish()
+    v.src = url
+    // Size via a HEAD request (best-effort; storage returns content-length).
+    void fetch(url, { method: 'HEAD' }).then(r => {
+      const len = Number(r.headers.get('content-length') || 0)
+      if (len > 287 * 1024 * 1024) warns.push('File is close to the 300 MB cap — compress it if the post fails.')
+      finish()
+    }).catch(() => { /* ignore — non-fatal */ })
+    return () => { cancelled = true }
+  }, [meta?.videoUrl])
 
   // ── Status polling — only active once we've kicked off a Direct Post ─────
   useEffect(() => {
@@ -194,12 +268,31 @@ export default function TikTokPublishPage() {
       }
       setPublishId(json.publishId)
       setPublishStatus('processing')
+
+      // One upload → both platforms: also fire an Instagram Reel with the same
+      // render + caption. Independent of TikTok's outcome — reported separately
+      // so a failed IG post never masks a successful TikTok post.
+      if (alsoInstagram && meta?.videoId) {
+        setIgResult('posting'); setIgError(null)
+        try {
+          const igRes = await fetch('/api/instagram/post-direct-video', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ videoId: meta.videoId, caption, mode: 'reel' }),
+          })
+          const igJson = await igRes.json()
+          if (igRes.ok) setIgResult('done')
+          else { setIgResult('failed'); setIgError(igJson.error || 'Instagram post failed.') }
+        } catch (e) {
+          setIgResult('failed'); setIgError(e instanceof Error ? e.message : 'Instagram post failed.')
+        }
+      }
     } catch (e) {
       setPostError(e instanceof Error ? e.message : 'Posting failed.')
     } finally {
       setPosting(false)
     }
-  }, [canPost, blogPostId, caption, privacy, allowComment, allowDuet, allowStitch, isCommercial, brandedContent, brandedPartnership, info])
+  }, [canPost, blogPostId, caption, privacy, allowComment, allowDuet, allowStitch, isCommercial, brandedContent, brandedPartnership, info, alsoInstagram, meta?.videoId])
 
   return (
     <>
@@ -289,6 +382,45 @@ export default function TikTokPublishPage() {
                     <Flame className="w-4 h-4" />
                     Make one in Shop Burner (add a “Shop Now” sticker)
                   </a>
+
+                  {/* Use a render the creator already made (past upload / burn) —
+                      no re-upload. Lists their existing 9:16 videos; clicking one
+                      copies its render onto this post. */}
+                  <button
+                    type="button"
+                    onClick={() => { setPickerOpen(o => !o); if (!renders) void loadRenders() }}
+                    className="block mt-2 text-sm font-medium text-[#7C3AED] hover:underline"
+                  >
+                    {pickerOpen ? 'Hide your videos' : 'Use one you already made'}
+                  </button>
+                  {pickerOpen && (
+                    <div className="mt-2">
+                      {renders === null ? (
+                        <p className="text-xs text-[#86868b]">Loading your videos…</p>
+                      ) : renders.length === 0 ? (
+                        <p className="text-xs text-[#86868b]">No vertical videos made yet — upload or burn one above.</p>
+                      ) : (
+                        <div className="grid grid-cols-4 gap-2">
+                          {renders.map(r => (
+                            <button
+                              key={r.videoId}
+                              type="button"
+                              disabled={attaching}
+                              onClick={() => attachRender(r.videoUrl)}
+                              title={r.title}
+                              className="group relative aspect-[9/16] rounded-md overflow-hidden border border-[#e5e5ea] dark:border-white/10 hover:border-[#7C3AED] disabled:opacity-50"
+                            >
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              {r.thumbnailUrl
+                                ? <img src={r.thumbnailUrl} alt={r.title} className="w-full h-full object-cover" />
+                                : <div className="w-full h-full bg-[#f5f5f7] dark:bg-white/5" />}
+                              <span className="absolute inset-x-0 bottom-0 px-1 py-0.5 text-[8px] leading-tight text-white bg-black/55 line-clamp-2 text-left">{r.title}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </>
               ) : (
                 <p className="text-xs text-[#9a5d00] bg-[#ff9500]/8 border border-[#ff9500]/20 rounded-lg p-2.5">
@@ -448,6 +580,42 @@ export default function TikTokPublishPage() {
                 </a>
               )}
             </div>
+          )}
+
+          {/* ── Pre-post validation warnings ─────────────────────────── */}
+          {meta?.videoUrl && videoWarnings.length > 0 && publishStatus === 'idle' && (
+            <div className="mb-3 card p-3 border-[#ff9500]/25 bg-[#ff9500]/5">
+              {videoWarnings.map((w, i) => (
+                <p key={i} className="text-[11px] text-[#9a5d00] flex items-start gap-1.5">
+                  <AlertCircle size={12} className="mt-0.5 flex-shrink-0" /> {w}
+                </p>
+              ))}
+            </div>
+          )}
+
+          {/* ── Also post to Instagram (one upload → both) ────────────── */}
+          {meta?.videoUrl && publishStatus === 'idle' && (
+            <label className="mb-3 flex items-center gap-2.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={alsoInstagram}
+                onChange={e => setAlsoInstagram(e.target.checked)}
+                className="h-4 w-4 accent-[#E1306C]"
+              />
+              <span className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7]">
+                Also post to Instagram as a Reel <span className="text-[#86868b]">(same video + caption)</span>
+              </span>
+            </label>
+          )}
+          {/* IG cross-post result — reported separately so it never masks TikTok. */}
+          {igResult === 'posting' && (
+            <p className="mb-2 text-[11px] text-[#E1306C] flex items-center gap-1.5"><Loader2 size={11} className="animate-spin" /> Also sending to Instagram…</p>
+          )}
+          {igResult === 'done' && (
+            <p className="mb-2 text-[11px] text-[#34c759] flex items-center gap-1.5"><CheckCircle size={11} /> Sent to Instagram too.</p>
+          )}
+          {igResult === 'failed' && (
+            <p className="mb-2 text-[11px] text-[#ff3b30] flex items-center gap-1.5"><AlertCircle size={11} /> Instagram: {igError || 'failed'} (TikTok was unaffected.)</p>
           )}
 
           {/* ── Post button ──────────────────────────────────────────── */}
