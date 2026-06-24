@@ -1482,9 +1482,13 @@ function ScheduledList({
         // kind='blog_publish' rows have platform=null (they're the WP
         // publish-itself row in draft-flip mode, not a social push).
         // Render those with the WordPress brand label + icon stand-in.
+        // Bulletproof: an unknown/new platform must NEVER crash the whole list
+        // (a missing PLATFORM_META key would make `meta` undefined → blank app).
+        // Fall back to a capitalised label + neutral accent for anything new.
         const meta = item.kind === 'blog_publish'
           ? { label: 'WordPress', color: '#21759b' }
-          : PLATFORM_META[item.platform ?? 'linkedin']  // fallback impossible — kind=social ensures platform is non-null
+          : (PLATFORM_META[item.platform ?? 'linkedin']
+              ?? { label: item.platform ? item.platform.charAt(0).toUpperCase() + item.platform.slice(1) : 'Social', color: '#7C3AED' })
         const pill = STATUS_PILL[item.status]
         const when = new Date(item.scheduled_at)
         const dt = when.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
