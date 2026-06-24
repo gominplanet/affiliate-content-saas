@@ -14,16 +14,16 @@ const ACCENT_SWATCHES = ['#FFE034', '#FFFFFF', '#FF3B3B', '#39FF14', '#33B5FF', 
 
 interface SavedStyle { borderStyleIndex: number | null; accentColor: string | null; face: string | null }
 
-// The parent's selectedFaceModelId uses 'auto' | null(off) | 'no-human'(product) | <uuid>.
-// The saved API uses                    'auto' | 'off'      | 'product'          | <uuid>.
+// The parent's selectedFaceModelId uses null(off) | 'no-human'(product) | <uuid>.
+// The saved API uses                    'off'      | 'product'          | <uuid>.
+// Legacy 'auto' saved values are treated as null (Off) — auto was removed.
 function faceToSaved(sel: string | null): string {
-  if (sel === 'auto') return 'auto'
   if (sel === 'no-human') return 'product'
   if (sel == null) return 'off'
   return sel
 }
 function savedToFace(face: string | null): string | null {
-  if (face === 'auto') return 'auto'
+  if (face === 'auto') return null // legacy — treat as Off
   if (face === 'product') return 'no-human'
   if (face === 'off' || face == null) return null
   return face
@@ -151,7 +151,6 @@ export default function BrandStylePanel({
 
       <div className="flex items-center gap-2 mb-2 flex-wrap">
         <span className="text-[11px] text-[#86868b]">Face</span>
-        {faceChip('auto', 'Auto', 'Match the video to the right person from your Photobooth faces')}
         {faceChip(null, 'Off', "Don't lock a face — use the video frame as-is")}
         {faceChip('no-human', 'Product only', 'No creator face — a product-only thumbnail')}
         {faceModels.map(fm => faceChip(fm.id, fm.name, `Lock ${fm.name}'s likeness from your Photobooth photos`))}

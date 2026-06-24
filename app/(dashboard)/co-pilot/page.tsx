@@ -331,10 +331,8 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
         .filter(m => m.status === 'ready')
         .map(m => ({ id: m.id, name: m.name, trigger_token: m.trigger_token }))
       setFaceModels(ready)
-      // Default to 'auto' — the server vision-matches the video to the right
-      // face (e.g. Seb vs Michelle), so we never lock the wrong person. The
-      // user can still pick a specific face or turn it off.
-      setSelectedFaceModelId(prev => prev ?? (ready.length ? 'auto' : null))
+      // Default to the first ready face model (most users have only one person).
+      setSelectedFaceModelId(prev => prev ?? (ready.length ? ready[0].id : null))
     } catch { setFaceModels([]) }
   }, [])
 
@@ -989,8 +987,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           borderStyleIndex: borderIndex ?? undefined,
           accentColor,
           // "Your Face" — lock the host's likeness from their uploaded photos.
-          faceModelId: (selectedFaceModelId && selectedFaceModelId !== 'auto' && selectedFaceModelId !== 'no-human') ? selectedFaceModelId : undefined,
-          faceAuto: selectedFaceModelId === 'auto' || undefined,
+          faceModelId: (selectedFaceModelId && selectedFaceModelId !== 'no-human') ? selectedFaceModelId : undefined,
           // 'no-human' → product-only thumbnail, no face composition at all.
           noHuman: selectedFaceModelId === 'no-human' || undefined,
           styleReferenceUrl: styleReferenceUrl || undefined,
@@ -1061,8 +1058,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           variantCount,
           borderStyleIndex: borderIndex ?? undefined,
           accentColor,
-          faceModelId: (selectedFaceModelId && selectedFaceModelId !== 'auto' && selectedFaceModelId !== 'no-human') ? selectedFaceModelId : undefined,
-          faceAuto: selectedFaceModelId === 'auto' || undefined,
+          faceModelId: (selectedFaceModelId && selectedFaceModelId !== 'no-human') ? selectedFaceModelId : undefined,
           // 'no-human' → product-only thumbnail, no face composition at all.
           noHuman: selectedFaceModelId === 'no-human' || undefined,
           styleReferenceUrl: styleReferenceUrl || undefined,
