@@ -344,6 +344,22 @@ export default function DashboardShellV2({
         { href: '/agency', icon: <Users size={15} />, label: 'Virtual Assistant' },
       ],
     },
+    // Recommended tools — external partner-affiliate links the user earns
+    // commission on. Placed ABOVE Labs (user request 2026-06-23) so the
+    // revenue-converting discovery links sit higher than the experimental Labs
+    // zone. Each opens in a new tab via external:true. Order is intentional,
+    // NOT alphabetical: Oink first (highest revenue converter), Geniuslink
+    // second (the user's own wrapping tool), then programs in revenue-rank order.
+    {
+      label: 'Recommended tools',
+      items: [
+        { href: 'https://geni.us/2y5sBo', icon: <ExternalLink size={13} />, label: 'Oink', external: true, highlight: '#E0218A' },
+        { href: 'https://geni.us/Y70p9R', icon: <ExternalLink size={13} />, label: 'Geniuslink', external: true },
+        { href: 'https://geni.us/GCad5Q', icon: <ExternalLink size={13} />, label: 'Levanta', external: true },
+        { href: 'https://geni.us/Z0q3hY', icon: <ExternalLink size={13} />, label: 'PartnerBoost', external: true },
+        { href: 'https://geni.us/khuHTe', icon: <ExternalLink size={13} />, label: 'Archer Affiliate', external: true },
+      ],
+    },
     {
       // LABS — MVP's experimental / bonus tools we're trying out: opt-in extras
       // that may change and aren't part of the core engine. Given its own
@@ -387,26 +403,6 @@ export default function DashboardShellV2({
       items: [
         { href: '/billing', icon: <CreditCard size={15} />, label: 'Plan & Billing' },
         // API Access (/developers) + White-label (/branding) remain hidden.
-      ],
-    },
-    // Recommended tools — external partner-affiliate links the user earns
-    // commission on. Carried over from the legacy Sidebar's "RECOMMENDED
-    // TOOLS" block. Sits low in the IA (last public-user group) because
-    // they're discovery items, not daily-driver routes. Each opens in a
-    // new tab via external:true.
-    //
-    // Order is intentional, NOT alphabetical: Oink first (highest revenue
-    // converter for this user), Geniuslink second (the user's own
-    // wrapping tool that ties into every other affiliate link in the
-    // dashboard), then the three programs in revenue-rank order.
-    {
-      label: 'Recommended tools',
-      items: [
-        { href: 'https://geni.us/2y5sBo', icon: <ExternalLink size={13} />, label: 'Oink', external: true, highlight: '#E0218A' },
-        { href: 'https://geni.us/Y70p9R', icon: <ExternalLink size={13} />, label: 'Geniuslink', external: true },
-        { href: 'https://geni.us/GCad5Q', icon: <ExternalLink size={13} />, label: 'Levanta', external: true },
-        { href: 'https://geni.us/Z0q3hY', icon: <ExternalLink size={13} />, label: 'PartnerBoost', external: true },
-        { href: 'https://geni.us/khuHTe', icon: <ExternalLink size={13} />, label: 'Archer Affiliate', external: true },
       ],
     },
     // Admin-only block. Only added to NAV_GROUPS when isAdmin so
