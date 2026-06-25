@@ -948,7 +948,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
     }
   }
 
-  async function generateThumbnail(opts?: { textMode?: 'baked' | 'clean' | 'graphic'; lockedHeadline?: string; noHuman?: boolean }) {
+  async function generateThumbnail(opts?: { textMode?: 'baked' | 'clean' | 'graphic'; lockedHeadline?: string; noHuman?: boolean; skipFaceModel?: boolean }) {
     setGeneratingThumbnail(true)
     setThumbnailError(null)
     setThumbnailStatus('')
@@ -958,14 +958,17 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
     // closure reads customHeadline, which is what made the route fall back to
     // generic hooks even after the user picked from the modal.
     const headline = ((opts?.lockedHeadline ?? customHeadline).trim()) || undefined
+    // SCOUT path (skipFaceModel:true): the person IN the video IS the identity
+    // source — we never use the selected face model, even if Seb is auto-matched
+    // to a video where Michelle appears. The captured frame carries the right face.
+    const effectiveFaceModelId = opts?.skipFaceModel ? null : selectedFaceModelId
     // Determine textMode early so we know how many frames to request.
     // 'graphic' (gpt-image-1) is only used when the user has a face model
-    // selected — it's slower (30-60s) and requires OPENAI_API_KEY. For
-    // frame-only thumbnails, 'clean' (NB/Gemini, 20-30s) is faster and
-    // more reliable.
+    // explicitly selected — it's slower (30-60s) and requires OPENAI_API_KEY.
+    // SCOUT / frame-only thumbnails always use 'clean' (NB/Gemini, 20-30s).
     const effectiveTextMode = opts?.textMode ?? (
       isProductOnly ? 'clean' :
-      (selectedFaceModelId && selectedFaceModelId !== 'no-human') ? 'graphic' :
+      (effectiveFaceModelId && effectiveFaceModelId !== 'no-human') ? 'graphic' :
       'clean'
     )
     try {
@@ -1013,7 +1016,8 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           borderStyleIndex: borderIndex ?? undefined,
           accentColor,
           // "Your Face" — lock the host's likeness from their uploaded photos.
-          faceModelId: (!isProductOnly && selectedFaceModelId && selectedFaceModelId !== 'no-human') ? selectedFaceModelId : undefined,
+          // effectiveFaceModelId is null when skipFaceModel:true (SCOUT path).
+          faceModelId: (!isProductOnly && effectiveFaceModelId && effectiveFaceModelId !== 'no-human') ? effectiveFaceModelId : undefined,
           // 'no-human' → product-only thumbnail, no face composition at all.
           noHuman: isProductOnly || undefined,
           styleReferenceUrl: styleReferenceUrl || undefined,
@@ -1661,12 +1665,12 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                       <button
                         type="button"
                         onClick={() => {
-                          // Don't reset selectedFaceModelId here — setState is async
-                          // and the closure in generateThumbnail() would read the old
-                          // value. SCOUT always captures a real frame regardless of
-                          // face model selection; the route uses frame for the scene
-                          // and the face model (if set) for identity lock.
-                          void generateThumbnail()
+                          // skipFaceModel:true → the person IN the video is the
+                          // identity source. The selected face model (e.g. "Seb")
+                          // is IGNORED — only the captured video frame is sent.
+                          // This prevents the wrong face appearing in the thumbnail
+                          // when the auto-matcher selected the wrong model.
+                          void generateThumbnail({ skipFaceModel: true })
                         }}
                         disabled={generatingThumbnail || extensionInstalled === null}
                         className="flex items-center gap-4 w-full px-4 py-4 rounded-xl border-2 border-[#FF9500] text-left transition-all hover:bg-[#FF9500]/5 disabled:opacity-50"
