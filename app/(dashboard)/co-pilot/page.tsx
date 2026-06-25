@@ -985,9 +985,10 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
             if (await isExtensionAvailable()) {
               setThumbnailError(null)
               setThumbnailStatus('Opening your video to capture a frame…')
-              // 1 frame is enough for both NB and graphic paths — keeps capture
-              // under ~12s and the payload well under Vercel's body limit.
-              const frames = await requestVideoFrames(video.youtubeVideoId, [0.3])
+              // 7 frames spread across the video so the vision picker can choose
+              // the best one (clear face, product visible, sharp). The extension
+              // processes them serially (~3s each + ~10s startup ≈ 30s total).
+              const frames = await requestVideoFrames(video.youtubeVideoId, [0.1, 0.2, 0.3, 0.4, 0.5, 0.65, 0.8])
               if (frames.length) {
                 capturedFrames = frames
                 capturedFramesRef.current = { videoId: video.youtubeVideoId, frames }

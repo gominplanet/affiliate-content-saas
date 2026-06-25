@@ -1077,7 +1077,15 @@ export async function POST(request: Request) {
         // uses quality:'high' (~2min) since there's no pre-grounded identity.
         let photoBytes: Buffer | Uint8Array
         if (capturedFrames?.length) {
-          const base64 = capturedFrames[0].replace(/^data:[^;]+;base64,/, '')
+          // Vision-pick the best frame (face visible, product visible, sharp) when
+          // we have several — the extension now sends 7 frames across the video.
+          let bestIdx = 0
+          if (capturedFrames.length > 1) {
+            try {
+              bestIdx = await pickBestFrame(capturedFrames, { productName: productTitle || undefined, ctx: { userId: user.id, tier } })
+            } catch { /* keep 0 on vision failure */ }
+          }
+          const base64 = capturedFrames[bestIdx].replace(/^data:[^;]+;base64,/, '')
           photoBytes = await normalizeToPng(Buffer.from(base64, 'base64'))
         } else if (gfxStoryboardFrame) {
           photoBytes = await normalizeToPng(new Uint8Array(gfxStoryboardFrame.buffer))
@@ -1109,6 +1117,17 @@ export async function POST(request: Request) {
             const line1 = (copy.line1 || '').toUpperCase()
             const line2 = (copy.line2 || '').toUpperCase()
             const accentGlow = idx % 2 === 0 ? 'cyan (#00E5FF)' : 'purple (#7C3AED)'
+            // Rotate through varied, bokeh-blurred environments so thumbnails
+            // don't all look the same. Each scene is naturally blurred in the
+            // background so the host + product stay the clear focal point.
+            const GFX_BACKGROUNDS = [
+              'a warmly lit living room — a softly blurred couch and bookshelf in the far background, shallow depth of field, natural daylight from a window, cream and warm-wood tones',
+              'a modern kitchen — softly blurred countertops and cabinets in the background, warm overhead lighting, clean and aspirational, shallow depth of field',
+              'a sunny outdoor patio or deck — softly blurred garden or yard behind, bright natural light, green and warm tones, shallow depth of field',
+              'deep dark gradient (near-black → deep navy/charcoal) with a subtle ' + accentGlow + ' neon glow radiating from behind the product and a cinematic vignette at the edges',
+              'a bright modern home office — a softly blurred desk and shelving in the background, clean white walls with a hint of colour, daylight, shallow depth of field',
+            ]
+            const bg = GFX_BACKGROUNDS[idx % GFX_BACKGROUNDS.length]
 
             const prompt = [
               'Professional YouTube thumbnail, 1536×1024 px, 16:9 landscape. High energy, high contrast.',
@@ -1126,9 +1145,9 @@ export async function POST(request: Request) {
               `    Show from waist-up with excited/confident expression, pointing LEFT toward the product.`,
               `    FACE MUST MATCH Image 1 exactly — same person, same features, same appearance.`,
               '',
-              `BACKGROUND: Deep dark gradient (near-black → deep navy/charcoal). Subtle ${accentGlow} neon glow radiating from behind the product. Cinematic vignette at edges. No white space.`,
+              `BACKGROUND: ${bg}. No white space.`,
               '',
-              'STYLE: High-production YouTube creator thumbnail. Neon accents. Bold and punchy.',
+              'STYLE: High-production YouTube creator thumbnail. Bold and punchy. Background must be noticeably blurred (bokeh) so the host and product are the sharpest elements in the frame.',
               'No logos, no watermarks, no brand names rendered in the image itself.',
             ].join('\n')
 
