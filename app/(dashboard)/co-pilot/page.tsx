@@ -310,6 +310,8 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
   /** "Break frame" effect: run rembg to cut out the creator and composite
    *  them OVER the neon border. Off by default — enables in ~20s. */
   const [breakFrame, setBreakFrame] = useState(false)
+  /** null = still checking (ping in progress), true/false = known state. */
+  const [extensionInstalled, setExtensionInstalled] = useState<boolean | null>(null)
   // Tier-cap-reached state — keyed separately from the red error toast
   // so we can render an amber upgrade banner with a /pricing CTA instead.
   const [capError, setCapError] = useState<{ message: string; info: { cap: string; currentTier?: string; upgrade?: { tier: string; label: string; limit: number | null } | null } } | null>(null)
@@ -394,6 +396,8 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
   // Load once on mount.
   useEffect(() => { loadFaceModels() }, [loadFaceModels])
   useEffect(() => { loadSavedStyles() }, [loadSavedStyles])
+  // Check once on mount — drives the "install SCOUT" vs "generate" Card 4 UI.
+  useEffect(() => { isExtensionAvailable().then(ok => setExtensionInstalled(ok)) }, [])
 
   // Pull aggregated 👍/👎 history for the YouTube surface so the random
   // style picker biases toward styles this user has rewarded.
@@ -1601,25 +1605,71 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                       <ChevronDown size={14} className={`flex-shrink-0 text-[#86868b] transition-transform ${thumbnailMode === 'product-only' ? 'rotate-180' : ''}`} />
                     </button>
 
-                    {/* Card 4: Create MVP Thumbnail — direct action, no picker needed */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedFaceModelId(null)
-                        void generateThumbnail()
-                      }}
-                      disabled={generatingThumbnail}
-                      className="flex items-center gap-4 w-full px-4 py-4 rounded-xl border-2 border-[#FF9500] text-left transition-all hover:bg-[#FF9500]/5 disabled:opacity-50"
-                      style={{ background: generatingThumbnail ? undefined : 'linear-gradient(135deg, rgba(255,149,0,0.08) 0%, rgba(255,107,0,0.05) 100%)' }}
-                    >
-                      <div className="w-10 h-10 rounded-xl bg-[#FF9500]/15 flex items-center justify-center flex-shrink-0">
-                        {generatingThumbnail ? <Loader2 size={18} className="text-[#FF9500] animate-spin" /> : <Sparkles size={18} className="text-[#FF9500]" />}
+                    {/* Card 4: extension installed → generate; not installed → install CTA */}
+                    {extensionInstalled === false ? (
+                      <div className="rounded-xl border-2 border-[#FF9500] overflow-hidden"
+                        style={{ background: 'linear-gradient(135deg, rgba(255,149,0,0.08) 0%, rgba(255,107,0,0.05) 100%)' }}>
+                        {/* Step badge */}
+                        <div className="flex items-center gap-3 px-4 pt-4 pb-3">
+                          <div className="w-10 h-10 rounded-xl bg-[#FF9500]/15 flex items-center justify-center flex-shrink-0">
+                            <Download size={18} className="text-[#FF9500]" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-bold text-[#FF9500]">Install the SCOUT Extension</p>
+                            <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-0.5">Required — private &amp; draft videos need it to capture your frames</p>
+                          </div>
+                        </div>
+                        {/* Install steps */}
+                        <div className="px-4 pb-3 space-y-1.5">
+                          <p className="text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Two steps:</p>
+                          <ol className="text-[11px] text-[#86868b] dark:text-[#8e8e93] space-y-1 list-decimal list-inside">
+                            <li>Download &amp; unzip the extension</li>
+                            <li>Chrome → <span className="font-mono">chrome://extensions</span> → Developer mode ON → Load unpacked → select the unzipped folder</li>
+                          </ol>
+                        </div>
+                        <div className="px-4 pb-4 flex items-center gap-2">
+                          <a
+                            href="/mvp-scout-extension.zip"
+                            download="mvp-scout-extension.zip"
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#FF9500] text-white text-xs font-semibold hover:bg-[#e6860a] transition-colors"
+                          >
+                            <Download size={12} />
+                            Download extension
+                          </a>
+                          <button
+                            type="button"
+                            onClick={() => isExtensionAvailable().then(ok => setExtensionInstalled(ok))}
+                            className="text-xs text-[#FF9500] hover:underline"
+                          >
+                            I installed it — check again
+                          </button>
+                        </div>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-bold text-[#FF9500]">Create my MVP Thumbnail</p>
-                        <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-0.5">{generatingThumbnail ? 'Generating…' : 'MVP recreates you from your video'}</p>
-                      </div>
-                    </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedFaceModelId(null)
+                          void generateThumbnail()
+                        }}
+                        disabled={generatingThumbnail || extensionInstalled === null}
+                        className="flex items-center gap-4 w-full px-4 py-4 rounded-xl border-2 border-[#FF9500] text-left transition-all hover:bg-[#FF9500]/5 disabled:opacity-50"
+                        style={{ background: generatingThumbnail ? undefined : 'linear-gradient(135deg, rgba(255,149,0,0.08) 0%, rgba(255,107,0,0.05) 100%)' }}
+                      >
+                        <div className="w-10 h-10 rounded-xl bg-[#FF9500]/15 flex items-center justify-center flex-shrink-0">
+                          {generatingThumbnail ? <Loader2 size={18} className="text-[#FF9500] animate-spin" /> : <Sparkles size={18} className="text-[#FF9500]" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold text-[#FF9500]">Create my MVP Thumbnail</p>
+                          <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-0.5">
+                            {generatingThumbnail ? 'Capturing frames + generating…' : extensionInstalled === null ? 'Checking for extension…' : 'Captures your video frames automatically'}
+                          </p>
+                        </div>
+                        {extensionInstalled && (
+                          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-[#34c759]/15 text-[#34c759] flex-shrink-0">SCOUT ✓</span>
+                        )}
+                      </button>
+                    )}
 
                   </div>
 
