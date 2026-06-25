@@ -1569,272 +1569,17 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
 
               {/* Thumbnail Generator */}
               <div className="border-t border-gray-100 dark:border-white/10 pt-5">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <Image size={13} className="text-[#7C3AED]" />
-                    <span className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">AI Thumbnail Generator</span>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#7C3AED]/10 text-[#7C3AED] font-medium">1280×720</span>
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'linear-gradient(135deg, #7C3AED 0%, #5856d6 100%)' }}>
+                    <Image size={13} className="text-white" />
                   </div>
-                </div>
-
-                {/* Optional style reference — inline control. Variants
-                    were removed; we always generate one thumbnail to keep
-                    token spend predictable. The headline question is asked
-                    via modal at click-time. */}
-                <div className="mb-3 p-3 rounded-lg bg-[#f5f5f7] dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10">
                   <div>
-                    <label className="block text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">
-                      Style reference <span className="text-[#86868b] dark:text-[#8e8e93] font-normal">(optional — upload a thumbnail whose look you want to match)</span>
-                    </label>
-                    {/* Saved presets — one-click apply a look the user has pinned
-                        before. Each chip is the saved style's reference image; the
-                        × deletes the preset. Hidden when the user has none yet. */}
-                    {savedStyles.length > 0 && (
-                      <div className="flex items-center gap-2 mb-2 flex-wrap">
-                        <span className="text-[10px] text-[#86868b]">Presets:</span>
-                        {savedStyles.map(s => (
-                          <div
-                            key={s.id}
-                            className={`group relative flex items-center gap-1.5 pl-1 pr-2 py-1 rounded-md border cursor-pointer transition-colors ${loadedPresetId === s.id ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-[#7C3AED]'}`}
-                            onClick={() => applyPreset(s.id, s.reference_url)}
-                            title={`Use the "${s.name}" style`}
-                          >
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={s.reference_url} alt={s.name} className="w-7 h-4 object-cover rounded-sm" />
-                            <span className="text-[11px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{s.name}</span>
-                            <button
-                              type="button"
-                              onClick={(e) => { e.stopPropagation(); deletePreset(s.id) }}
-                              className="text-[10px] text-[#86868b] hover:text-[#ff3b30] opacity-0 group-hover:opacity-100 transition-opacity"
-                              title="Delete this preset"
-                            >
-                              ✕
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    {styleReferenceUrl ? (
-                      <div className="flex items-center gap-2">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={styleReferenceUrl} alt="Style reference" className="w-16 h-9 object-cover rounded-md border border-gray-200 dark:border-white/10" />
-                        <span className="text-[11px] text-[#34c759] flex items-center gap-1">
-                          <CheckCircle size={11} /> {loadedPresetId ? (savedStyles.find(s => s.id === loadedPresetId)?.name || 'Style locked in') : 'Style locked in'}
-                        </span>
-                        {/* Save the current style as a named preset (only when
-                            it isn't already loaded FROM a saved preset). */}
-                        {!loadedPresetId && (
-                          <button
-                            type="button"
-                            onClick={saveCurrentAsPreset}
-                            disabled={generatingThumbnail || savingPreset}
-                            className="text-[11px] text-[#7C3AED] hover:underline disabled:opacity-60 ml-1"
-                            title="Save this look as a reusable preset"
-                          >
-                            {savingPreset ? 'Saving…' : 'Save as preset'}
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => { setStyleReferenceUrl(null); setLoadedPresetId(null) }}
-                          disabled={generatingThumbnail}
-                          className="text-[11px] text-[#86868b] hover:text-[#ff3b30] ml-1"
-                          title="Remove style reference"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    ) : (
-                      <label className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold border cursor-pointer transition-colors ${styleRefUploading ? 'opacity-60 cursor-wait' : 'hover:border-[#7C3AED]'}`}
-                        style={{ borderColor: '#d2d2d7', color: '#1d1d1f', background: 'white' }}>
-                        <input
-                          type="file"
-                          accept="image/jpeg,image/png,image/webp"
-                          className="hidden"
-                          disabled={generatingThumbnail || styleRefUploading}
-                          onChange={(e) => {
-                            const f = e.target.files?.[0]
-                            if (f) handleStyleReferenceUpload(f)
-                            e.target.value = ''
-                          }}
-                        />
-                        {styleRefUploading
-                          ? <><Loader2 size={11} className="animate-spin" /> Uploading…</>
-                          : <><Upload size={11} /> Upload style reference</>}
-                      </label>
-                    )}
+                    <span className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">AI Thumbnail Generator</span>
+                    <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded-full bg-[#7C3AED]/10 text-[#7C3AED] font-medium">1280×720</span>
                   </div>
                 </div>
 
-                {/* Optional: upload your OWN photo (you + the product). When
-                    set, we clean it up / re-render it into a polished
-                    thumbnail scene and overlay the title — no AI scene, no
-                    face cut-out. */}
-                <div className="mb-3 p-3 rounded-lg bg-[#f5f5f7] dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10">
-                  <label className="block text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">
-                    Use your own photo <span className="text-[#86868b] dark:text-[#8e8e93] font-normal">(optional — a photo of YOU with the product; we clean it up &amp; re-render it)</span>
-                  </label>
-                  {uploadedPhotoUrl ? (
-                    <div className="flex items-center gap-2 mb-2">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={uploadedPhotoUrl} alt="Your photo" className="w-16 h-9 object-cover rounded-md border border-gray-200 dark:border-white/10" />
-                      <span className="text-[11px] text-[#34c759] flex items-center gap-1"><CheckCircle size={11} /> Photo added</span>
-                      <button
-                        type="button"
-                        onClick={() => { setUploadedPhotoUrl(null); setCleanupPrompt('') }}
-                        disabled={generatingThumbnail}
-                        className="text-[11px] text-[#86868b] hover:text-[#ff3b30] ml-1"
-                        title="Remove your photo"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  ) : (
-                    <label className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold border cursor-pointer transition-colors ${photoUploading ? 'opacity-60 cursor-wait' : 'hover:border-[#7C3AED]'}`}
-                      style={{ borderColor: '#d2d2d7', color: '#1d1d1f', background: 'white' }}>
-                      <input
-                        type="file"
-                        accept="image/jpeg,image/png,image/webp"
-                        className="hidden"
-                        disabled={generatingThumbnail || photoUploading}
-                        onChange={(e) => {
-                          const f = e.target.files?.[0]
-                          if (f) handlePhotoUpload(f)
-                          e.target.value = ''
-                        }}
-                      />
-                      {photoUploading
-                        ? <><Loader2 size={11} className="animate-spin" /> Uploading…</>
-                        : <><Upload size={11} /> Upload your photo</>}
-                    </label>
-                  )}
-                  {uploadedPhotoUrl && (
-                    <input
-                      type="text"
-                      value={cleanupPrompt}
-                      onChange={(e) => setCleanupPrompt(e.target.value)}
-                      maxLength={400}
-                      placeholder="Optional direction — e.g. bright kitchen, surprised face"
-                      disabled={generatingThumbnail}
-                      className="mt-1 w-full text-[11px] px-2 py-1 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-[#f5f5f7]"
-                    />
-                  )}
-                </div>
-
-                {/* 3C — Product reference photos (up to 5) + composition note.
-                    Different from "Use your own photo" above: these are CLEAN
-                    product shots — front view, side angle, OR multiple products
-                    for a comparison thumbnail. The server replaces the single
-                    Amazon-scraped image with these as the references it feeds
-                    to Nano Banana Pro, so the thumbnail composes around the
-                    actual product(s) the creator wants to show. */}
-                <div className="mb-3 p-3 rounded-lg bg-[#f5f5f7] dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10">
-                  <label className="block text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">
-                    Product photos <span className="text-[#86868b] dark:text-[#8e8e93] font-normal">(optional — up to 5 — front view, side angle, OR multiple products for a comparison thumbnail)</span>
-                  </label>
-                  <div className="flex items-center gap-2 flex-wrap mb-2">
-                    {productImageUrls.map((u) => (
-                      <div key={u} className="relative w-16 h-9 rounded-md overflow-hidden border border-gray-200 dark:border-white/10">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={u} alt="Product reference" className="w-full h-full object-cover" />
-                        <button
-                          type="button"
-                          onClick={() => removeProductImage(u)}
-                          disabled={generatingThumbnail}
-                          aria-label="Remove product photo"
-                          className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-black/70 hover:bg-[#ff3b30] text-white flex items-center justify-center"
-                        >
-                          <X size={9} />
-                        </button>
-                      </div>
-                    ))}
-                    {productImageUrls.length < 5 && (
-                      <label className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold border cursor-pointer transition-colors ${productImagesUploading ? 'opacity-60 cursor-wait' : 'hover:border-[#7C3AED]'}`}
-                        style={{ borderColor: '#d2d2d7', color: '#1d1d1f', background: 'white' }}>
-                        <input
-                          type="file"
-                          accept="image/jpeg,image/png,image/webp"
-                          multiple
-                          className="hidden"
-                          disabled={generatingThumbnail || productImagesUploading}
-                          onChange={(e) => {
-                            handleProductImagesUpload(e.target.files)
-                            e.target.value = ''
-                          }}
-                        />
-                        {productImagesUploading
-                          ? <><Loader2 size={11} className="animate-spin" /> Uploading…</>
-                          : <><Upload size={11} /> {productImageUrls.length === 0 ? 'Upload product photos' : `Add more (${productImageUrls.length}/5)`}</>}
-                      </label>
-                    )}
-                  </div>
-                  {/* Composition note only makes sense once there's more than
-                      one photo to arrange — the model needs to know how. With
-                      a single photo it's just decoration. */}
-                  {productImageUrls.length >= 2 && (
-                    <input
-                      type="text"
-                      value={productCompositionNote}
-                      onChange={(e) => setProductCompositionNote(e.target.value)}
-                      maxLength={400}
-                      placeholder='Optional composition — e.g. "front view on the left, side angle on the right"'
-                      disabled={generatingThumbnail}
-                      className="w-full text-[11px] px-2 py-1 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-[#f5f5f7]"
-                    />
-                  )}
-                </div>
-
-                {/* Generate buttons */}
-                <div className="flex items-center gap-2 mb-3 flex-wrap">
-                  <button
-                    onClick={() => {
-                      // Skip the headline-picker modal (2026-06-08): the
-                      // new 4-angle copy framework generates 5 variants
-                      // with 5 distinct psychological hooks (NEGATION,
-                      // CURIOSITY_GAP, SKEPTIC, VALUE_DISRUPTION rotated)
-                      // baked into the images directly. Picking copy
-                      // from flat strings BEFORE seeing the rendered
-                      // thumbnail was guessing — now the user picks the
-                      // winner from the actual images. customHeadline
-                      // input below still works as an explicit override
-                      // when the user has a specific line in mind.
-                      const locked = customHeadline.trim()
-                      void generateThumbnail(locked ? { lockedHeadline: locked } : undefined)
-                    }}
-                    disabled={generatingThumbnail}
-                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-60 transition-opacity hover:opacity-90"
-                    style={{ background: 'linear-gradient(135deg, #7C3AED 0%, #5856d6 100%)' }}
-                  >
-                    {generatingThumbnail
-                      ? <><Loader2 size={12} className="animate-spin" /> Generating…</>
-                      : <><Sparkles size={12} /> {thumbnailUrl ? 'Regenerate' : 'Generate Thumbnail'}</>}
-                  </button>
-
-                  {/* Upload your own — skips AI, uses the user's file as-is.
-                      Border + text colors via Tailwind so the button
-                      reads correctly in dark mode (was hardcoded
-                      borderColor + color in inline style which left
-                      the label as near-black on dark bg). 2026-06-07. */}
-                  <label
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-[#d2d2d7] dark:border-white/15 text-[#1d1d1f] dark:text-[#f5f5f7] bg-white dark:bg-[#1c1c1e] cursor-pointer disabled:opacity-60 transition-colors hover:bg-gray-50 dark:hover:bg-white/5"
-                    title="Use your own thumbnail (JPG/PNG, ≤ 2 MB, 1280×720 recommended)"
-                  >
-                    <input
-                      type="file"
-                      accept="image/jpeg,image/png,image/gif,image/bmp"
-                      className="hidden"
-                      onChange={e => {
-                        const f = e.target.files?.[0]
-                        if (f) handleThumbnailUpload(f)
-                        e.target.value = '' // allow re-uploading the same file
-                      }}
-                      disabled={generatingThumbnail}
-                    />
-                    <Upload size={12} /> Upload your own
-                  </label>
-                </div>
-
-                {/* Face / border / accent all live in the single thumbnail-style block below. */}
+                {/* 1. Face / border / accent — the primary choice, drives the whole mode */}
                 <BrandStylePanel
                   faceModels={faceModels}
                   selectedFaceModelId={selectedFaceModelId}
@@ -1846,18 +1591,142 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                   disabled={generatingThumbnail}
                 />
 
-                {/* Break-frame toggle — off by default to keep generation fast.
-                    Enable to run rembg and cut the creator out over the border. */}
-                <label className="flex items-center gap-2 text-xs text-[#6e6e73] dark:text-[#98989d] cursor-pointer select-none mt-1">
-                  <input
-                    type="checkbox"
-                    checked={breakFrame}
-                    onChange={e => setBreakFrame(e.target.checked)}
-                    disabled={generatingThumbnail || selectedFaceModelId === 'no-human'}
-                    className="accent-[#7C3AED]"
-                  />
-                  Break-frame effect <span className="text-[#98989d]">(creator extends past border · +20s)</span>
-                </label>
+                {/* 2. Optional add-ons — compact row of upload chips */}
+                <div className="mt-3 mb-4">
+                  <p className="text-[10px] font-semibold text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide mb-2">Optional add-ons</p>
+                  <div className="flex flex-wrap gap-2">
+
+                    {/* Product photos */}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {productImageUrls.map((u) => (
+                        <div key={u} className="relative w-14 h-8 rounded-md overflow-hidden border border-gray-200 dark:border-white/10">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={u} alt="Product reference" className="w-full h-full object-cover" />
+                          <button
+                            type="button"
+                            onClick={() => removeProductImage(u)}
+                            disabled={generatingThumbnail}
+                            aria-label="Remove product photo"
+                            className="absolute top-0.5 right-0.5 w-3.5 h-3.5 rounded-full bg-black/70 hover:bg-[#ff3b30] text-white flex items-center justify-center"
+                          >
+                            <X size={8} />
+                          </button>
+                        </div>
+                      ))}
+                      {productImageUrls.length < 5 && (
+                        <label className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium border cursor-pointer transition-all ${productImagesUploading ? 'opacity-60 cursor-wait' : 'hover:border-[#7C3AED] hover:text-[#7C3AED]'} border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#98989d] bg-white dark:bg-[#1c1c1e]`}
+                          title="Upload clean product shots — up to 5, front/side views or multiple products">
+                          <input type="file" accept="image/jpeg,image/png,image/webp" multiple className="hidden" disabled={generatingThumbnail || productImagesUploading}
+                            onChange={(e) => { handleProductImagesUpload(e.target.files); e.target.value = '' }} />
+                          {productImagesUploading
+                            ? <><Loader2 size={11} className="animate-spin" /> Uploading…</>
+                            : <><Upload size={11} /> {productImageUrls.length === 0 ? 'Product photos' : `+photo (${productImageUrls.length}/5)`}</>}
+                        </label>
+                      )}
+                      {productImageUrls.length >= 2 && (
+                        <input type="text" value={productCompositionNote} onChange={(e) => setProductCompositionNote(e.target.value)} maxLength={400}
+                          placeholder='e.g. "front left, side right"' disabled={generatingThumbnail}
+                          className="text-[11px] px-2 py-1 rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] w-44" />
+                      )}
+                    </div>
+
+                    {/* Your own photo */}
+                    {uploadedPhotoUrl ? (
+                      <div className="flex items-center gap-1.5">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={uploadedPhotoUrl} alt="Your photo" className="w-14 h-8 object-cover rounded-md border border-[#34c759]" />
+                        <button type="button" onClick={() => { setUploadedPhotoUrl(null); setCleanupPrompt('') }} disabled={generatingThumbnail}
+                          className="text-[11px] text-[#86868b] hover:text-[#ff3b30]">✕</button>
+                      </div>
+                    ) : (
+                      <label className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium border cursor-pointer transition-all ${photoUploading ? 'opacity-60 cursor-wait' : 'hover:border-[#7C3AED] hover:text-[#7C3AED]'} border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#98989d] bg-white dark:bg-[#1c1c1e]`}
+                        title="Upload a photo of you with the product — we clean it up and re-render it">
+                        <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" disabled={generatingThumbnail || photoUploading}
+                          onChange={(e) => { const f = e.target.files?.[0]; if (f) handlePhotoUpload(f); e.target.value = '' }} />
+                        {photoUploading ? <><Loader2 size={11} className="animate-spin" /> Uploading…</> : <><Upload size={11} /> Your photo</>}
+                      </label>
+                    )}
+                    {uploadedPhotoUrl && (
+                      <input type="text" value={cleanupPrompt} onChange={(e) => setCleanupPrompt(e.target.value)} maxLength={400}
+                        placeholder="e.g. bright kitchen, surprised face" disabled={generatingThumbnail}
+                        className="text-[11px] px-2 py-1 rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] w-44" />
+                    )}
+
+                    {/* Style reference — Scene mode only */}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {savedStyles.length > 0 && savedStyles.map(s => (
+                        <div key={s.id}
+                          className={`group relative flex items-center gap-1.5 pl-1 pr-2 py-1 rounded-lg border cursor-pointer transition-all text-[11px] font-medium ${loadedPresetId === s.id ? 'border-[#7C3AED] bg-[#7C3AED]/5 text-[#7C3AED]' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] hover:border-[#7C3AED]'}`}
+                          onClick={() => applyPreset(s.id, s.reference_url)} title={`Style preset: ${s.name}`}>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={s.reference_url} alt={s.name} className="w-7 h-4 object-cover rounded-sm" />
+                          {s.name}
+                          <button type="button" onClick={(e) => { e.stopPropagation(); deletePreset(s.id) }}
+                            className="text-[10px] text-[#86868b] hover:text-[#ff3b30] opacity-0 group-hover:opacity-100 transition-opacity ml-0.5">✕</button>
+                        </div>
+                      ))}
+                      {styleReferenceUrl ? (
+                        <div className="flex items-center gap-1.5">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={styleReferenceUrl} alt="Style ref" className="w-14 h-8 object-cover rounded-md border border-[#34c759]" />
+                          <span className="text-[11px] text-[#34c759] flex items-center gap-1"><CheckCircle size={10} /> Style set</span>
+                          {!loadedPresetId && (
+                            <button type="button" onClick={saveCurrentAsPreset} disabled={generatingThumbnail || savingPreset}
+                              className="text-[11px] text-[#7C3AED] hover:underline disabled:opacity-60">
+                              {savingPreset ? 'Saving…' : 'Save preset'}
+                            </button>
+                          )}
+                          <button type="button" onClick={() => { setStyleReferenceUrl(null); setLoadedPresetId(null) }} disabled={generatingThumbnail}
+                            className="text-[11px] text-[#86868b] hover:text-[#ff3b30]">✕</button>
+                        </div>
+                      ) : (
+                        <label className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium border cursor-pointer transition-all ${styleRefUploading ? 'opacity-60 cursor-wait' : 'hover:border-[#7C3AED] hover:text-[#7C3AED]'} border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#98989d] bg-white dark:bg-[#1c1c1e]`}
+                          title={selectedFaceModelId && selectedFaceModelId !== 'no-human' ? 'Style reference applies to Scene mode only (switch face to Off or Product only)' : 'Upload a thumbnail whose look you want to match'}>
+                          <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" disabled={generatingThumbnail || styleRefUploading}
+                            onChange={(e) => { const f = e.target.files?.[0]; if (f) handleStyleReferenceUpload(f); e.target.value = '' }} />
+                          {styleRefUploading
+                            ? <><Loader2 size={11} className="animate-spin" /> Uploading…</>
+                            : <><Upload size={11} /> Style ref{selectedFaceModelId && selectedFaceModelId !== 'no-human' ? <span className="opacity-60 ml-0.5">(scene only)</span> : ''}</>}
+                        </label>
+                      )}
+                    </div>
+
+                  </div>
+                </div>
+
+                {/* 3. Generate CTA — prominent */}
+                <div className="flex items-center gap-2.5 mb-3">
+                  <button
+                    onClick={() => {
+                      const locked = customHeadline.trim()
+                      void generateThumbnail(locked ? { lockedHeadline: locked } : undefined)
+                    }}
+                    disabled={generatingThumbnail}
+                    className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold text-white disabled:opacity-60 transition-all hover:opacity-90 active:scale-[0.98] shadow-sm"
+                    style={{ background: 'linear-gradient(135deg, #7C3AED 0%, #5856d6 100%)' }}
+                  >
+                    {generatingThumbnail
+                      ? <><Loader2 size={14} className="animate-spin" /> Generating…</>
+                      : <><Sparkles size={14} /> {thumbnailUrl ? 'Regenerate Thumbnail' : 'Generate Thumbnail'}</>}
+                  </button>
+                  <label
+                    className="flex items-center justify-center gap-1.5 px-4 py-3 rounded-xl text-sm font-semibold border border-[#d2d2d7] dark:border-white/15 text-[#1d1d1f] dark:text-[#f5f5f7] bg-white dark:bg-[#1c1c1e] cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-white/5 whitespace-nowrap"
+                    title="Use your own thumbnail (JPG/PNG, ≤ 2 MB, 1280×720 recommended)"
+                  >
+                    <input type="file" accept="image/jpeg,image/png,image/gif,image/bmp" className="hidden" disabled={generatingThumbnail}
+                      onChange={e => { const f = e.target.files?.[0]; if (f) handleThumbnailUpload(f); e.target.value = '' }} />
+                    <Upload size={13} /> Upload
+                  </label>
+                </div>
+
+                {/* Break-frame — only relevant for Scene mode (no-face or product-only) */}
+                {(!selectedFaceModelId || selectedFaceModelId === 'no-human') && (
+                  <label className="flex items-center gap-2 text-xs text-[#6e6e73] dark:text-[#98989d] cursor-pointer select-none mb-1">
+                    <input type="checkbox" checked={breakFrame} onChange={e => setBreakFrame(e.target.checked)}
+                      disabled={generatingThumbnail || selectedFaceModelId === 'no-human'} className="accent-[#7C3AED]" />
+                    Break-frame effect <span className="text-[#98989d]">(creator extends past border · +20s)</span>
+                  </label>
+                )}
 
                 {thumbnailError && (
                   <p className="text-xs text-[#ff3b30] mb-3">{thumbnailError}</p>
