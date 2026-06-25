@@ -852,7 +852,8 @@ export async function POST(request: Request) {
     // (Auto / Off / Product only / a likeness model) drive it live. The saved
     // brand style is applied CLIENT-side (it prefills the block), so the route
     // never reads it; it just honours the border/accent/face it's handed.
-    const effectiveFaceModelId = faceModelId || undefined
+    const isRandomFace = faceModelId === 'random'
+    const effectiveFaceModelId = (isRandomFace || !faceModelId) ? undefined : faceModelId
 
     // ── Load the user's face model if they picked one ─────────────────────────
     // Only honored when status='ready' and lora_url is populated. If the
@@ -879,7 +880,7 @@ export async function POST(request: Request) {
       if (fm && srcImages.length > 0) {
         faceModel = { id: effectiveFaceModelId, name: fm.name, source_images: srcImages }
       }
-    } else if (faceAuto) {
+    } else if (faceAuto || isRandomFace) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: fms } = await supabase
         .from('face_models')
@@ -910,6 +911,13 @@ export async function POST(request: Request) {
             if (!starred) return m
             return { ...m, source_images: [starred, ...m.source_images.filter((s: string) => s !== starred)] }
           })
+        }
+        // Random mode: pick one at random rather than auto-matching from the frame.
+        // Starred photos are already promoted to source_images[0] above, so the
+        // picked model's best reference photo is already in position.
+        if (isRandomFace) {
+          faceModel = autoFaceModels[Math.floor(Math.random() * autoFaceModels.length)]
+          autoFaceModels = []
         }
       }
     }

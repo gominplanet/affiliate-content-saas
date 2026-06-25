@@ -154,6 +154,7 @@ export default function BrandStylePanel({
         {faceChip(null, 'Off', "Don't lock a face — use the video frame as-is")}
         {faceChip('no-human', 'Product only', 'No creator face — a product-only thumbnail')}
         {faceModels.map(fm => faceChip(fm.id, fm.name, `Lock ${fm.name}'s likeness from your Photobooth photos`))}
+        {faceModels.length > 1 && faceChip('random', '🎲 Random', 'MVP picks one of your face models at random each generation')}
         {faceModels.length === 0 && (
           <span className="text-[10px] text-[#86868b]">Add your likeness in <a href="/face-training" className="text-[#7C3AED] hover:underline">Photobooth</a></span>
         )}
