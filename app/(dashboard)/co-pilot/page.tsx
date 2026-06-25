@@ -959,10 +959,13 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
     // generic hooks even after the user picked from the modal.
     const headline = ((opts?.lockedHeadline ?? customHeadline).trim()) || undefined
     // Determine textMode early so we know how many frames to request.
+    // 'graphic' (gpt-image-1) is only used when the user has a face model
+    // selected — it's slower (30-60s) and requires OPENAI_API_KEY. For
+    // frame-only thumbnails, 'clean' (NB/Gemini, 20-30s) is faster and
+    // more reliable.
     const effectiveTextMode = opts?.textMode ?? (
       isProductOnly ? 'clean' :
       (selectedFaceModelId && selectedFaceModelId !== 'no-human') ? 'graphic' :
-      video.youtubeVideoId ? 'graphic' :
       'clean'
     )
     try {
@@ -980,10 +983,9 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
             if (await isExtensionAvailable()) {
               setThumbnailError(null)
               setThumbnailStatus('Opening your video to capture a frame…')
-              // Graphic path uses only capturedFrames[0], so 1 frame is enough
-              // and keeps the capture under ~15s. NB path benefits from several.
-              const fracs = effectiveTextMode === 'graphic' ? [0.3] : [0.1, 0.25, 0.4, 0.55, 0.7]
-              const frames = await requestVideoFrames(video.youtubeVideoId, fracs)
+              // 1 frame is enough for both NB and graphic paths — keeps capture
+              // under ~12s and the payload well under Vercel's body limit.
+              const frames = await requestVideoFrames(video.youtubeVideoId, [0.3])
               if (frames.length) {
                 capturedFrames = frames
                 capturedFramesRef.current = { videoId: video.youtubeVideoId, frames }
@@ -1027,12 +1029,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           // graphic = gpt-image-1 (identity-grounded, ~20s with video frame or ~2min with Photobooth).
           // Use graphic whenever there's an identity source: face model OR a YouTube video to pull frames from.
           // Product-only / selfie → 'clean' (NB Pro, fast, no face composition).
-          textMode: opts?.textMode ?? (
-            isProductOnly ? 'clean' :
-            (selectedFaceModelId && selectedFaceModelId !== 'no-human') ? 'graphic' :
-            video.youtubeVideoId ? 'graphic' :
-            'clean'
-          ),
+          textMode: effectiveTextMode,
           capturedFrames: capturedFrames.length ? capturedFrames : undefined,
           // "Break frame" effect: composites the creator OVER the neon border.
           // Off by default (costs ~20s for the rembg pass).
@@ -1685,6 +1682,15 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                           <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-[#34c759]/15 text-[#34c759] flex-shrink-0">SCOUT ✓</span>
                         )}
                       </button>
+                    )}
+
+                    {/* Thumbnail error — was silently swallowed before (error set but never rendered) */}
+                    {thumbnailError && (
+                      <div className="flex items-start gap-2 rounded-lg bg-[#ff3b30]/10 border border-[#ff3b30]/30 px-3 py-2.5 mt-1">
+                        <span className="text-[#ff3b30] text-sm flex-shrink-0 mt-0.5">⚠</span>
+                        <p className="text-xs text-[#ff3b30] leading-relaxed flex-1 min-w-0 break-words">{thumbnailError}</p>
+                        <button type="button" onClick={() => setThumbnailError(null)} className="text-[#ff3b30]/50 hover:text-[#ff3b30] flex-shrink-0 text-lg leading-none">×</button>
+                      </div>
                     )}
 
                   </div>
