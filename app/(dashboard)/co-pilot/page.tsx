@@ -11,11 +11,11 @@ import { pickWeightedStyleIndex, OVERLAY_STYLES, drawHeadline, type HeadlinePosi
 import { isExtensionAvailable, requestVideoFrames } from '@/lib/extension-frame'
 import { effectiveTier } from '@/lib/view-as'
 import type { Tier } from '@/lib/tier'
-import BrandStylePanel from '@/components/co-pilot/BrandStylePanel'
+import BrandStylePanel, { BORDER_NAMES } from '@/components/co-pilot/BrandStylePanel'
 import {
   Youtube, Wand2, CheckCircle, AlertCircle, Loader2, ExternalLink,
   Copy, ChevronDown, ChevronUp, RefreshCw, Link2, Tag, Lock, Eye, Globe,
-  Image, Download, Sparkles, Upload, X, Search, Calendar,
+  Image, Download, Sparkles, Upload, X, Search, Calendar, Camera, Package, Plus,
 } from 'lucide-react'
 
 interface DraftVideo {
@@ -301,6 +301,12 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
   const [borderIndex, setBorderIndex] = useState<number | null>(null) // null = keep borders varied
   const [accentColor, setAccentColor] = useState<string>('#FFE034')   // title emphasis colour
   const [selectedFaceModelId, setSelectedFaceModelId] = useState<string | null>(null)
+  /** Which thumbnail mode card is active. Drives the 4-card picker UI.
+   *  'selfie'       → upload a photo of yourself with the product
+   *  'own-design'   → upload a finished thumbnail (raw, no AI)
+   *  'product-only' → AI generates product-only scene, no face
+   *  'face-model'   → AI generates with your saved face model */
+  const [thumbnailMode, setThumbnailMode] = useState<'selfie' | 'own-design' | 'product-only' | 'face-model' | null>(null)
   /** "Break frame" effect: run rembg to cut out the creator and composite
    *  them OVER the neon border. Off by default — enables in ~20s. */
   const [breakFrame, setBreakFrame] = useState(false)
@@ -1423,38 +1429,6 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
             </div>
           )}
 
-          {/* Agent Insights */}
-          {agentInsights && (agentInsights.topBenefits.length > 0 || agentInsights.painPoints.length > 0) && (
-            <div className="mx-5 mb-3 p-3 rounded-xl bg-[#7C3AED]/5 border border-[#7C3AED]/10">
-              <p className="text-[10px] font-semibold text-[#7C3AED] mb-2 flex items-center gap-1">
-                <Sparkles size={10} /> Agent insights
-              </p>
-              {agentInsights.targetBuyer && (
-                <p className="text-[10px] text-[#6e6e73] dark:text-[#ebebf0] mb-2">
-                  <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Target buyer:</span> {agentInsights.targetBuyer}
-                </p>
-              )}
-              <div className="flex gap-4">
-                {agentInsights.topBenefits.length > 0 && (
-                  <div className="flex-1">
-                    <p className="text-[9px] font-semibold text-[#34c759] mb-1">✓ Top benefits</p>
-                    {agentInsights.topBenefits.map((b, i) => (
-                      <p key={i} className="text-[9px] text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">• {b}</p>
-                    ))}
-                  </div>
-                )}
-                {agentInsights.painPoints.length > 0 && (
-                  <div className="flex-1">
-                    <p className="text-[9px] font-semibold text-[#ff9500] mb-1">⚡ Pain points solved</p>
-                    {agentInsights.painPoints.map((p, i) => (
-                      <p key={i} className="text-[9px] text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">• {p}</p>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
           {/* Geniuslink warning */}
           {geniuslinkUsed === false && geniuslinkError && (
             <div className="mx-5 mb-3 px-3 py-2 rounded-lg bg-[#ff9500]/10 border border-[#ff9500]/20 text-xs text-[#ff9500]">
@@ -1474,6 +1448,12 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
 
           {expanded && (
             <div className="px-5 pb-5 flex flex-col gap-5">
+              {/* Two-column layout: metadata left, thumbnail right */}
+              <div className="flex gap-6 items-start">
+
+                {/* ── Left column: metadata ── */}
+                <div className="flex-1 min-w-0 flex flex-col gap-5">
+
               {/* Title */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
@@ -1567,390 +1547,373 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
 
               </div>
 
-              {/* Thumbnail Generator */}
-              <div className="border-t border-gray-100 dark:border-white/10 pt-5">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'linear-gradient(135deg, #7C3AED 0%, #5856d6 100%)' }}>
-                    <Image size={13} className="text-white" />
-                  </div>
-                  <div>
-                    <span className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">AI Thumbnail Generator</span>
-                    <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded-full bg-[#7C3AED]/10 text-[#7C3AED] font-medium">1280×720</span>
-                  </div>
-                </div>
+                </div> {/* ── end left column ── */}
 
-                {/* 1. Face / border / accent — the primary choice, drives the whole mode */}
-                <BrandStylePanel
-                  faceModels={faceModels}
-                  selectedFaceModelId={selectedFaceModelId}
-                  setSelectedFaceModelId={setSelectedFaceModelId}
-                  borderIndex={borderIndex}
-                  setBorderIndex={setBorderIndex}
-                  accentColor={accentColor}
-                  setAccentColor={setAccentColor}
-                  disabled={generatingThumbnail}
-                />
+                {/* ── Right column: AI Thumbnail Generator ── */}
+                <div className="w-[360px] flex-shrink-0 flex flex-col gap-4">
 
-                {/* 2. Optional add-ons — compact row of upload chips */}
-                <div className="mt-3 mb-4">
-                  <p className="text-[10px] font-semibold text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide mb-2">Optional add-ons</p>
-                  <div className="flex flex-wrap gap-2">
-
-                    {/* Product photos */}
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      {productImageUrls.map((u) => (
-                        <div key={u} className="relative w-14 h-8 rounded-md overflow-hidden border border-gray-200 dark:border-white/10">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={u} alt="Product reference" className="w-full h-full object-cover" />
-                          <button
-                            type="button"
-                            onClick={() => removeProductImage(u)}
-                            disabled={generatingThumbnail}
-                            aria-label="Remove product photo"
-                            className="absolute top-0.5 right-0.5 w-3.5 h-3.5 rounded-full bg-black/70 hover:bg-[#ff3b30] text-white flex items-center justify-center"
-                          >
-                            <X size={8} />
-                          </button>
-                        </div>
-                      ))}
-                      {productImageUrls.length < 5 && (
-                        <label className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium border cursor-pointer transition-all ${productImagesUploading ? 'opacity-60 cursor-wait' : 'hover:border-[#7C3AED] hover:text-[#7C3AED]'} border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#98989d] bg-white dark:bg-[#1c1c1e]`}
-                          title="Upload clean product shots — up to 5, front/side views or multiple products">
-                          <input type="file" accept="image/jpeg,image/png,image/webp" multiple className="hidden" disabled={generatingThumbnail || productImagesUploading}
-                            onChange={(e) => { handleProductImagesUpload(e.target.files); e.target.value = '' }} />
-                          {productImagesUploading
-                            ? <><Loader2 size={11} className="animate-spin" /> Uploading…</>
-                            : <><Upload size={11} /> {productImageUrls.length === 0 ? 'Product photos' : `+photo (${productImageUrls.length}/5)`}</>}
-                        </label>
-                      )}
-                      {productImageUrls.length >= 2 && (
-                        <input type="text" value={productCompositionNote} onChange={(e) => setProductCompositionNote(e.target.value)} maxLength={400}
-                          placeholder='e.g. "front left, side right"' disabled={generatingThumbnail}
-                          className="text-[11px] px-2 py-1 rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] w-44" />
-                      )}
+                  {/* Header */}
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'linear-gradient(135deg, #7C3AED 0%, #5856d6 100%)' }}>
+                      <Image size={13} className="text-white" />
                     </div>
+                    <div>
+                      <span className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">AI Thumbnail Generator</span>
+                      <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded-full bg-[#7C3AED]/10 text-[#7C3AED] font-medium">1280×720</span>
+                    </div>
+                  </div>
 
-                    {/* Your own photo */}
-                    {uploadedPhotoUrl ? (
-                      <div className="flex items-center gap-1.5">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={uploadedPhotoUrl} alt="Your photo" className="w-14 h-8 object-cover rounded-md border border-[#34c759]" />
-                        <button type="button" onClick={() => { setUploadedPhotoUrl(null); setCleanupPrompt('') }} disabled={generatingThumbnail}
-                          className="text-[11px] text-[#86868b] hover:text-[#ff3b30]">✕</button>
+                  {/* 4 mode cards — 2×2 grid */}
+                  <div className="grid grid-cols-2 gap-3">
+
+                    {/* Card 1: Upload Selfie */}
+                    <button
+                      type="button"
+                      onClick={() => setThumbnailMode(m => m === 'selfie' ? null : 'selfie')}
+                      className={`flex flex-col items-start gap-2 p-3 rounded-xl border-2 text-left transition-all ${thumbnailMode === 'selfie' ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-[#7C3AED]/50 bg-white dark:bg-[#1c1c1e]'}`}
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-[#7C3AED]/10 flex items-center justify-center">
+                        <Camera size={15} className="text-[#7C3AED]" />
                       </div>
-                    ) : (
-                      <label className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium border cursor-pointer transition-all ${photoUploading ? 'opacity-60 cursor-wait' : 'hover:border-[#7C3AED] hover:text-[#7C3AED]'} border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#98989d] bg-white dark:bg-[#1c1c1e]`}
-                        title="Upload a photo of you with the product — we clean it up and re-render it">
-                        <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" disabled={generatingThumbnail || photoUploading}
-                          onChange={(e) => { const f = e.target.files?.[0]; if (f) handlePhotoUpload(f); e.target.value = '' }} />
-                        {photoUploading ? <><Loader2 size={11} className="animate-spin" /> Uploading…</> : <><Upload size={11} /> Your photo</>}
-                      </label>
-                    )}
-                    {uploadedPhotoUrl && (
-                      <input type="text" value={cleanupPrompt} onChange={(e) => setCleanupPrompt(e.target.value)} maxLength={400}
-                        placeholder="e.g. bright kitchen, surprised face" disabled={generatingThumbnail}
-                        className="text-[11px] px-2 py-1 rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] w-44" />
-                    )}
+                      <div>
+                        <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Upload Selfie</p>
+                        <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-0.5 leading-snug">You + product → AI thumbnail</p>
+                      </div>
+                    </button>
 
-                    {/* Style reference — Scene mode only */}
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      {savedStyles.length > 0 && savedStyles.map(s => (
-                        <div key={s.id}
-                          className={`group relative flex items-center gap-1.5 pl-1 pr-2 py-1 rounded-lg border cursor-pointer transition-all text-[11px] font-medium ${loadedPresetId === s.id ? 'border-[#7C3AED] bg-[#7C3AED]/5 text-[#7C3AED]' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] hover:border-[#7C3AED]'}`}
-                          onClick={() => applyPreset(s.id, s.reference_url)} title={`Style preset: ${s.name}`}>
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={s.reference_url} alt={s.name} className="w-7 h-4 object-cover rounded-sm" />
-                          {s.name}
-                          <button type="button" onClick={(e) => { e.stopPropagation(); deletePreset(s.id) }}
-                            className="text-[10px] text-[#86868b] hover:text-[#ff3b30] opacity-0 group-hover:opacity-100 transition-opacity ml-0.5">✕</button>
-                        </div>
-                      ))}
-                      {styleReferenceUrl ? (
-                        <div className="flex items-center gap-1.5">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={styleReferenceUrl} alt="Style ref" className="w-14 h-8 object-cover rounded-md border border-[#34c759]" />
-                          <span className="text-[11px] text-[#34c759] flex items-center gap-1"><CheckCircle size={10} /> Style set</span>
-                          {!loadedPresetId && (
-                            <button type="button" onClick={saveCurrentAsPreset} disabled={generatingThumbnail || savingPreset}
-                              className="text-[11px] text-[#7C3AED] hover:underline disabled:opacity-60">
-                              {savingPreset ? 'Saving…' : 'Save preset'}
-                            </button>
-                          )}
-                          <button type="button" onClick={() => { setStyleReferenceUrl(null); setLoadedPresetId(null) }} disabled={generatingThumbnail}
-                            className="text-[11px] text-[#86868b] hover:text-[#ff3b30]">✕</button>
-                        </div>
-                      ) : (
-                        <label className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium border cursor-pointer transition-all ${styleRefUploading ? 'opacity-60 cursor-wait' : 'hover:border-[#7C3AED] hover:text-[#7C3AED]'} border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#98989d] bg-white dark:bg-[#1c1c1e]`}
-                          title={selectedFaceModelId && selectedFaceModelId !== 'no-human' ? 'Style reference applies to Scene mode only (switch face to Off or Product only)' : 'Upload a thumbnail whose look you want to match'}>
-                          <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" disabled={generatingThumbnail || styleRefUploading}
-                            onChange={(e) => { const f = e.target.files?.[0]; if (f) handleStyleReferenceUpload(f); e.target.value = '' }} />
-                          {styleRefUploading
-                            ? <><Loader2 size={11} className="animate-spin" /> Uploading…</>
-                            : <><Upload size={11} /> Style ref{selectedFaceModelId && selectedFaceModelId !== 'no-human' ? <span className="opacity-60 ml-0.5">(scene only)</span> : ''}</>}
-                        </label>
-                      )}
-                    </div>
+                    {/* Card 2: Upload My Design */}
+                    <button
+                      type="button"
+                      onClick={() => setThumbnailMode(m => m === 'own-design' ? null : 'own-design')}
+                      className={`flex flex-col items-start gap-2 p-3 rounded-xl border-2 text-left transition-all ${thumbnailMode === 'own-design' ? 'border-[#5856d6] bg-[#5856d6]/5' : 'border-gray-200 dark:border-white/10 hover:border-[#5856d6]/50 bg-white dark:bg-[#1c1c1e]'}`}
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-[#5856d6]/10 flex items-center justify-center">
+                        <Image size={15} className="text-[#5856d6]" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Upload My Design</p>
+                        <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-0.5 leading-snug">Use your own thumbnail</p>
+                      </div>
+                    </button>
+
+                    {/* Card 3: Product Only */}
+                    <button
+                      type="button"
+                      onClick={() => setThumbnailMode(m => m === 'product-only' ? null : 'product-only')}
+                      className={`flex flex-col items-start gap-2 p-3 rounded-xl border-2 text-left transition-all ${thumbnailMode === 'product-only' ? 'border-[#34c759] bg-[#34c759]/5' : 'border-gray-200 dark:border-white/10 hover:border-[#34c759]/50 bg-white dark:bg-[#1c1c1e]'}`}
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-[#34c759]/10 flex items-center justify-center">
+                        <Package size={15} className="text-[#34c759]" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Product Only</p>
+                        <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-0.5 leading-snug">No photo needed</p>
+                      </div>
+                    </button>
+
+                    {/* Card 4: Face Model */}
+                    <button
+                      type="button"
+                      onClick={() => setThumbnailMode(m => m === 'face-model' ? null : 'face-model')}
+                      className={`flex flex-col items-start gap-2 p-3 rounded-xl border-2 text-left transition-all ${thumbnailMode === 'face-model' ? 'border-[#FF9500] bg-[#FF9500]/5' : 'border-gray-200 dark:border-white/10 hover:border-[#FF9500]/50 bg-white dark:bg-[#1c1c1e]'}`}
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-[#FF9500]/10 flex items-center justify-center">
+                        <Eye size={15} className="text-[#FF9500]" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Face Model</p>
+                        <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-0.5 leading-snug">AI recreates you</p>
+                      </div>
+                    </button>
 
                   </div>
-                </div>
 
-                {/* 3. Generate CTA — prominent */}
-                <div className="flex items-center gap-2.5 mb-3">
-                  <button
-                    onClick={() => {
-                      const locked = customHeadline.trim()
-                      void generateThumbnail(locked ? { lockedHeadline: locked } : undefined)
-                    }}
-                    disabled={generatingThumbnail}
-                    className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold text-white disabled:opacity-60 transition-all hover:opacity-90 active:scale-[0.98] shadow-sm"
-                    style={{ background: 'linear-gradient(135deg, #7C3AED 0%, #5856d6 100%)' }}
-                  >
-                    {generatingThumbnail
-                      ? <><Loader2 size={14} className="animate-spin" /> Generating…</>
-                      : <><Sparkles size={14} /> {thumbnailUrl ? 'Regenerate Thumbnail' : 'Generate Thumbnail'}</>}
-                  </button>
-                  <label
-                    className="flex items-center justify-center gap-1.5 px-4 py-3 rounded-xl text-sm font-semibold border border-[#d2d2d7] dark:border-white/15 text-[#1d1d1f] dark:text-[#f5f5f7] bg-white dark:bg-[#1c1c1e] cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-white/5 whitespace-nowrap"
-                    title="Use your own thumbnail (JPG/PNG, ≤ 2 MB, 1280×720 recommended)"
-                  >
-                    <input type="file" accept="image/jpeg,image/png,image/gif,image/bmp" className="hidden" disabled={generatingThumbnail}
-                      onChange={e => { const f = e.target.files?.[0]; if (f) handleThumbnailUpload(f); e.target.value = '' }} />
-                    <Upload size={13} /> Upload
-                  </label>
-                </div>
-
-                {/* Break-frame — only relevant for Scene mode (no-face or product-only) */}
-                {(!selectedFaceModelId || selectedFaceModelId === 'no-human') && (
-                  <label className="flex items-center gap-2 text-xs text-[#6e6e73] dark:text-[#98989d] cursor-pointer select-none mb-1">
-                    <input type="checkbox" checked={breakFrame} onChange={e => setBreakFrame(e.target.checked)}
-                      disabled={generatingThumbnail || selectedFaceModelId === 'no-human'} className="accent-[#7C3AED]" />
-                    Break-frame effect <span className="text-[#98989d]">(creator extends past border · +20s)</span>
-                  </label>
-                )}
-
-                {thumbnailError && (
-                  <p className="text-xs text-[#ff3b30] mb-3">{thumbnailError}</p>
-                )}
-
-                {/* Result */}
-                {thumbnailUrl && (
-                  <div className="flex flex-col gap-2">
-                    <div className="rounded-xl overflow-hidden border border-gray-100 dark:border-white/10 bg-gray-50 dark:bg-white/5">
-                      <img src={thumbnailUrl} alt="Generated thumbnail" className="w-full object-cover" style={{ aspectRatio: '16/9' }} />
-                    </div>
-
-                    {/* Title picker — 5 AI options. Click one to put it on the
-                        thumbnail; it's re-drawn instantly on the text-free image
-                        (no regeneration). Hidden on the baked-text path. */}
-                    {titleOptions.length > 1 && titleOverlayCtx && (
-                      <div className="flex flex-col gap-1.5">
-                        <span className="text-[11px] text-[#86868b]">
-                          Pick a title — click to put it on the thumbnail{retitling ? ' · applying…' : ''}
-                        </span>
-                        <div className="flex flex-wrap gap-1.5">
-                          {titleOptions.map((t, i) => (
-                            <button
-                              key={i}
-                              onClick={() => selectTitle(i)}
-                              disabled={retitling}
-                              className={`text-[11px] px-2.5 py-1 rounded-md border font-semibold transition disabled:opacity-60 ${i === selectedTitleIdx ? 'bg-[#7C3AED] border-[#7C3AED] text-white' : 'border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#7C3AED]'}`}
-                              title="Use this title on the thumbnail"
-                            >
-                              {t}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Test & Compare grid — when 2+ variants were generated,
-                        show them ranked (best-first) with their CTR score.
-                        Click one to make it the active preview / download /
-                        apply target. The top variant is pre-selected. */}
-                    {thumbnailVariants.length > 1 && (
-                      <div className="flex flex-col gap-1.5">
-                        <span className="text-[11px] text-[#86868b]">Compare variants — click to select (★ = highest predicted CTR)</span>
-                        <div className="grid grid-cols-3 gap-2">
-                          {thumbnailVariants.map((v, i) => {
-                            const selected = v.url === thumbnailUrl
-                            return (
-                              <button
-                                key={v.url}
-                                onClick={() => { setThumbnailUrl(v.url); setThumbnailFeedbackSent(null) }}
-                                className={`relative rounded-lg overflow-hidden border-2 transition ${selected ? 'border-[#7C3AED]' : 'border-transparent hover:border-gray-300 dark:hover:border-white/20'}`}
-                                title={v.score !== null ? `Predicted CTR score: ${v.score}/100` : 'Variant'}
-                              >
-                                <img src={v.url} alt={`Variant ${i + 1}`} className="w-full object-cover" style={{ aspectRatio: '16/9' }} />
-                                <span className="absolute top-1 left-1 text-[9px] px-1.5 py-0.5 rounded-full bg-black/60 text-white font-semibold">
-                                  {i === 0 ? '★ ' : ''}{v.score !== null ? `${v.score}` : `#${i + 1}`}
-                                </span>
-                              </button>
-                            )
-                          })}
-                        </div>
-                        <p className="text-[10px] text-[#86868b] leading-snug">
-                          A/B test on YouTube: publish your top pick, then after ~a week swap to the runner-up from <span className="font-medium">YouTube → Content → Edit → Thumbnail</span> and compare impressions-CTR in <span className="font-medium">Analytics → Content</span>. Keep the winner.
-                        </p>
-                      </div>
-                    )}
-                    {/* Visual Style Analysis text was here — removed so the
-                        AI's internal prompt/notes aren't surfaced to users. */}
-                    <div className="flex items-center gap-3 flex-wrap">
-                      {thumbnailUrl.startsWith('data:') ? (
-                        // Canvas data URL — use a regular <a> with href
-                        <a
-                          href={thumbnailUrl}
-                          download="thumbnail.jpg"
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-opacity hover:opacity-90"
-                          style={{ background: '#34c759' }}
-                        >
-                          <Download size={12} /> Download Thumbnail
-                        </a>
-                      ) : (
-                        <a
-                          href={thumbnailUrl}
-                          download="thumbnail.jpg"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-opacity hover:opacity-90"
-                          style={{ background: '#34c759' }}
-                        >
-                          <Download size={12} /> Download Thumbnail
-                        </a>
-                      )}
-                      {/* Composed designed thumbnail — default draws the title
-                          via crisp canvas overlay (perfect spelling); the baked
-                          variant integrates it into the image (may misspell). */}
-                      {thumbnailFaceUsed && (
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#7C3AED]/10 text-[#7C3AED] font-medium" title="Face locked to this person's photos (auto-matched)">
-                          👤 {thumbnailFaceUsed}
-                        </span>
-                      )}
-                      {thumbnailModel === 'gpt-image-graphic' && (
-                        <>
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#FF6B00]/10 text-[#FF6B00] font-medium">
-                            🎨 Graphic Design mode
-                          </span>
-                          <button
-                            onClick={() => generateThumbnail({ textMode: 'clean' })}
-                            disabled={generatingThumbnail}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 dark:border-white/10 hover:border-[#7C3AED] text-[#1d1d1f] dark:text-[#f5f5f7] transition disabled:opacity-60"
-                          >
-                            <RefreshCw size={12} /> Switch to Scene mode
-                          </button>
-                          {/* Inline retitle — lets the user set their own title and regenerate without hunting for the headline picker */}
-                          <div className="flex items-center gap-1.5 w-full mt-1.5">
-                            <input
-                              type="text"
-                              value={gfxTitleInput}
-                              onChange={e => setGfxTitleInput(e.target.value)}
-                              onKeyDown={e => { if (e.key === 'Enter' && gfxTitleInput.trim()) generateThumbnail({ textMode: 'graphic', lockedHeadline: gfxTitleInput.trim() }) }}
-                              placeholder="Type your own title, press Enter or click →"
-                              className="flex-1 min-w-0 text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-white/10 bg-transparent text-[#1d1d1f] dark:text-[#f5f5f7] placeholder:text-gray-400 focus:outline-none focus:border-[#FF6B00] transition"
-                            />
-                            <button
-                              onClick={() => { if (gfxTitleInput.trim()) generateThumbnail({ textMode: 'graphic', lockedHeadline: gfxTitleInput.trim() }) }}
-                              disabled={generatingThumbnail || !gfxTitleInput.trim()}
-                              className="flex-shrink-0 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-[#FF6B00] text-white hover:bg-[#e55a00] transition disabled:opacity-50"
-                            >
-                              Regenerate →
+                  {/* Inline expand: Upload Selfie */}
+                  {thumbnailMode === 'selfie' && (
+                    <div className="flex flex-col gap-3 p-4 rounded-xl bg-[#7C3AED]/5 border border-[#7C3AED]/20">
+                      <p className="text-[11px] font-semibold text-[#7C3AED]">Upload 1–3 photos of you with the product</p>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {uploadedPhotoUrl && (
+                          <div className="relative">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={uploadedPhotoUrl} alt="Selfie" className="w-16 h-10 object-cover rounded-lg border border-[#7C3AED]/30" />
+                            <button type="button" onClick={() => { setUploadedPhotoUrl(null); setCleanupPrompt('') }}
+                              className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-[#ff3b30] text-white flex items-center justify-center">
+                              <X size={8} />
                             </button>
                           </div>
-                        </>
-                      )}
-                      {(thumbnailModel === 'nano-banana-pro' || thumbnailModel === 'nano-banana') && (
-                        <>
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#34c759]/10 text-[#34c759] font-medium">
-                            ✨ Scene mode · crisp text
-                          </span>
-                          <button
-                            onClick={() => generateThumbnail({ textMode: 'baked' })}
-                            disabled={generatingThumbnail}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 dark:border-white/10 hover:border-[#5856d6] text-[#1d1d1f] dark:text-[#f5f5f7] transition disabled:opacity-60"
-                            title="Re-render with the headline baked into the image (more integrated, but may have typos)"
-                          >
-                            <RefreshCw size={12} /> Try baked text
-                          </button>
-                          {selectedFaceModelId && selectedFaceModelId !== 'no-human' && (
-                            <button
-                              onClick={() => generateThumbnail({ textMode: 'graphic' })}
-                              disabled={generatingThumbnail}
-                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 dark:border-white/10 hover:border-[#FF6B00] text-[#1d1d1f] dark:text-[#f5f5f7] transition disabled:opacity-60"
-                            >
-                              🎨 Back to Graphic Design
-                            </button>
-                          )}
-                        </>
-                      )}
-                      {(thumbnailModel === 'nano-banana-pro-baked' || thumbnailModel === 'nano-banana-baked') && (
-                        <>
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#5856d6]/10 text-[#5856d6] font-medium">
-                            ✨ Designed · baked text (may have typos)
-                          </span>
-                          <button
-                            onClick={() => generateThumbnail({ textMode: 'clean' })}
-                            disabled={generatingThumbnail}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 dark:border-white/10 hover:border-[#7C3AED] text-[#1d1d1f] dark:text-[#f5f5f7] transition disabled:opacity-60"
-                            title="Re-render with the headline drawn as a crisp, perfect overlay instead of baked into the image"
-                          >
-                            <RefreshCw size={12} /> Switch to crisp text
-                          </button>
-                        </>
-                      )}
-                      {thumbnailModel === 'kontext-upload' && (
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#7C3AED]/10 text-[#7C3AED] font-medium">
-                          📤 Your upload
-                        </span>
-                      )}
-                      {/* Fallback render paths (the primary "Designed" Nano Banana
-                          path didn't return an image this time). Surfaced so we can
-                          see when the designed path falls through to a scene composite. */}
-                      {!!thumbnailModel && thumbnailModel !== 'kontext-upload' && (thumbnailModel.startsWith('kontext-') || thumbnailModel.startsWith('ideogram-') || thumbnailModel.startsWith('flux')) && (
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#ff9500]/10 text-[#ff9500] font-medium" title="Rendered via the scene-composite fallback — the primary designed (Nano Banana) path didn't return an image this time.">
-                          🎨 Scene render (fallback)
-                        </span>
-                      )}
-                      {/* "Copy prompt" button removed — internal AI prompt
-                          shouldn't be exposed to users. */}
-                    </div>
-                    {/* Diagnostic: on a fallback render, show WHY the primary
-                        designed path didn't run (carried in faceDebug). */}
-                    {!!thumbnailDebug && !!thumbnailModel && thumbnailModel !== 'kontext-upload' && (thumbnailModel.startsWith('kontext-') || thumbnailModel.startsWith('ideogram-') || thumbnailModel.startsWith('flux')) && (
-                      <p className="text-[10px] text-[#86868b] mt-1 leading-snug break-words">
-                        Why fallback: {thumbnailDebug}
-                      </p>
-                    )}
-                    {/* 👍 / 👎 feedback row — only when we have a styleId
-                        (i.e. the overlay actually ran on this thumbnail).
-                        Uploads and raw video frames without overlay skip
-                        this. Drives the weighted style picker. */}
-                    {thumbnailModel !== 'kontext-upload' && (
-                      <div className="flex items-center gap-2 pt-1">
-                        <span className="text-[10px] text-[#86868b]">Train the AI:</span>
-                        <button
-                          onClick={() => submitYtThumbnailFeedback('like')}
-                          disabled={thumbnailFeedbackSent !== null}
-                          className={`text-[11px] px-2 py-0.5 rounded border transition ${thumbnailFeedbackSent === 'like' ? 'bg-[#34c759]/20 border-[#34c759] text-[#34c759]' : 'border-gray-200 dark:border-white/10 hover:border-[#34c759]'} disabled:opacity-60`}
-                          title="I'd use this style"
-                        >
-                          👍
-                        </button>
-                        <button
-                          onClick={() => submitYtThumbnailFeedback('dislike')}
-                          disabled={thumbnailFeedbackSent !== null}
-                          className={`text-[11px] px-2 py-0.5 rounded border transition ${thumbnailFeedbackSent === 'dislike' ? 'bg-[#ff3b30]/20 border-[#ff3b30] text-[#ff3b30]' : 'border-gray-200 dark:border-white/10 hover:border-[#ff3b30]'} disabled:opacity-60`}
-                          title="Not this style"
-                        >
-                          👎
-                        </button>
-                        {thumbnailFeedbackSent && (
-                          <span className="text-[10px] text-[#86868b]">Thanks — saved.</span>
+                        )}
+                        {!uploadedPhotoUrl && (
+                          <label className={`flex flex-col items-center justify-center gap-1 w-16 h-10 rounded-lg border-2 border-dashed cursor-pointer transition-all ${photoUploading ? 'opacity-60 cursor-wait border-[#7C3AED]/30' : 'border-[#7C3AED]/40 hover:border-[#7C3AED] hover:bg-[#7C3AED]/5'}`}>
+                            <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" disabled={generatingThumbnail || photoUploading}
+                              onChange={e => { const f = e.target.files?.[0]; if (f) handlePhotoUpload(f); e.target.value = '' }} />
+                            {photoUploading ? <Loader2 size={11} className="animate-spin text-[#7C3AED]" /> : <Plus size={11} className="text-[#7C3AED]" />}
+                          </label>
                         )}
                       </div>
-                    )}
+                      <input
+                        type="text"
+                        value={cleanupPrompt}
+                        onChange={e => setCleanupPrompt(e.target.value)}
+                        maxLength={400}
+                        placeholder="Scene hint: bright kitchen, excited expression…"
+                        disabled={generatingThumbnail}
+                        className="text-xs px-3 py-2 rounded-lg border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] placeholder:text-gray-400 focus:outline-none focus:border-[#7C3AED] transition"
+                      />
+                      <button
+                        onClick={() => {
+                          setSelectedFaceModelId(null)
+                          void generateThumbnail()
+                        }}
+                        disabled={generatingThumbnail || !uploadedPhotoUrl}
+                        className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 transition-all hover:opacity-90"
+                        style={{ background: 'linear-gradient(135deg, #7C3AED 0%, #5856d6 100%)' }}
+                      >
+                        {generatingThumbnail ? <><Loader2 size={13} className="animate-spin" /> Generating…</> : <><Sparkles size={13} /> Generate Thumbnail</>}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Inline expand: Upload My Design */}
+                  {thumbnailMode === 'own-design' && (
+                    <div className="flex flex-col gap-3 p-4 rounded-xl bg-[#5856d6]/5 border border-[#5856d6]/20">
+                      <p className="text-[11px] font-semibold text-[#5856d6]">Upload your finished thumbnail design</p>
+                      {thumbnailUrl && thumbnailModel === 'kontext-upload' ? (
+                        <div className="flex flex-col gap-2">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={thumbnailUrl} alt="Your design" className="w-full rounded-lg border border-[#5856d6]/30" style={{ aspectRatio: '16/9' }} />
+                          <label className="flex items-center justify-center gap-1.5 py-2 rounded-lg border-2 border-dashed border-[#5856d6]/40 hover:border-[#5856d6] cursor-pointer text-xs text-[#5856d6] transition-all">
+                            <input type="file" accept="image/jpeg,image/png,image/gif,image/bmp" className="hidden" disabled={generatingThumbnail}
+                              onChange={e => { const f = e.target.files?.[0]; if (f) handleThumbnailUpload(f); e.target.value = '' }} />
+                            <Upload size={11} /> Replace design
+                          </label>
+                        </div>
+                      ) : (
+                        <label className={`flex flex-col items-center justify-center gap-2 py-8 rounded-xl border-2 border-dashed cursor-pointer transition-all ${generatingThumbnail ? 'opacity-60 cursor-not-allowed border-[#5856d6]/20' : 'border-[#5856d6]/40 hover:border-[#5856d6] hover:bg-[#5856d6]/5'}`}>
+                          <input type="file" accept="image/jpeg,image/png,image/gif,image/bmp" className="hidden" disabled={generatingThumbnail}
+                            onChange={e => { const f = e.target.files?.[0]; if (f) handleThumbnailUpload(f); e.target.value = '' }} />
+                          <Upload size={20} className="text-[#5856d6]" />
+                          <span className="text-xs font-medium text-[#5856d6]">Drop or click to upload</span>
+                          <span className="text-[10px] text-[#86868b]">JPG, PNG · 1280×720</span>
+                        </label>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Inline expand: Product Only */}
+                  {thumbnailMode === 'product-only' && (
+                    <div className="flex flex-col gap-3 p-4 rounded-xl bg-[#34c759]/5 border border-[#34c759]/20">
+                      <p className="text-[11px] font-semibold text-[#34c759]">Product scene — no face needed</p>
+                      <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0]">MVP places your product in a professional scene with your video title.</p>
+                      <button
+                        onClick={() => {
+                          setSelectedFaceModelId('no-human')
+                          void generateThumbnail()
+                        }}
+                        disabled={generatingThumbnail}
+                        className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 transition-all hover:opacity-90"
+                        style={{ background: 'linear-gradient(135deg, #34c759 0%, #30d158 100%)' }}
+                      >
+                        {generatingThumbnail ? <><Loader2 size={13} className="animate-spin" /> Generating…</> : <><Sparkles size={13} /> Generate Product Thumbnail</>}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Inline expand: Face Model */}
+                  {thumbnailMode === 'face-model' && (
+                    <div className="flex flex-col gap-3 p-4 rounded-xl bg-[#FF9500]/5 border border-[#FF9500]/20">
+                      <p className="text-[11px] font-semibold text-[#FF9500]">Generate with your AI face model</p>
+                      {faceModels.length === 0 ? (
+                        <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0]">No face models yet. Set one up in <strong>Face Models</strong>.</p>
+                      ) : (
+                        <>
+                          <select
+                            value={selectedFaceModelId ?? ''}
+                            onChange={e => setSelectedFaceModelId(e.target.value || null)}
+                            disabled={generatingThumbnail}
+                            className="text-xs px-3 py-2 rounded-lg border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] focus:outline-none focus:border-[#FF9500] transition"
+                          >
+                            <option value="">— Select face model —</option>
+                            {faceModels.map(fm => (
+                              <option key={fm.id} value={fm.id}>{fm.name}</option>
+                            ))}
+                          </select>
+                          <button
+                            onClick={() => void generateThumbnail()}
+                            disabled={generatingThumbnail || !selectedFaceModelId}
+                            className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 transition-all hover:opacity-90"
+                            style={{ background: 'linear-gradient(135deg, #FF9500 0%, #FF6B00 100%)' }}
+                          >
+                            {generatingThumbnail ? <><Loader2 size={13} className="animate-spin" /> Generating…</> : <><Sparkles size={13} /> Generate with Face Model</>}
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Border style dropdown */}
+                  <div>
+                    <label className="text-[10px] font-semibold text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide block mb-1.5">Border style</label>
+                    <select
+                      value={borderIndex === null ? '' : borderIndex}
+                      onChange={e => setBorderIndex(e.target.value === '' ? null : Number(e.target.value))}
+                      disabled={generatingThumbnail}
+                      className="w-full text-xs px-3 py-2 rounded-lg border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] focus:outline-none focus:border-[#7C3AED] transition"
+                    >
+                      <option value="">Random / varied</option>
+                      {BORDER_NAMES.map((name, i) => (
+                        <option key={i} value={i}>{name}</option>
+                      ))}
+                    </select>
                   </div>
-                )}
-              </div>
+
+                  {/* BrandStylePanel mounted hidden — fires its saved-defaults useEffect on mount */}
+                  <div className="hidden">
+                    <BrandStylePanel
+                      faceModels={faceModels}
+                      selectedFaceModelId={selectedFaceModelId}
+                      setSelectedFaceModelId={setSelectedFaceModelId}
+                      borderIndex={borderIndex}
+                      setBorderIndex={setBorderIndex}
+                      accentColor={accentColor}
+                      setAccentColor={setAccentColor}
+                      disabled={generatingThumbnail}
+                    />
+                  </div>
+
+                  {/* Result */}
+                  {thumbnailUrl && (
+                    <div className="flex flex-col gap-2">
+                      <div className="rounded-xl overflow-hidden border border-gray-100 dark:border-white/10 bg-gray-50 dark:bg-white/5">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={thumbnailUrl} alt="Generated thumbnail" className="w-full object-cover" style={{ aspectRatio: '16/9' }} />
+                      </div>
+                      {titleOptions.length > 1 && titleOverlayCtx && (
+                        <div className="flex flex-col gap-1.5">
+                          <span className="text-[11px] text-[#86868b]">Pick a title{retitling ? ' · applying…' : ''}</span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {titleOptions.map((t, i) => (
+                              <button key={i} onClick={() => selectTitle(i)} disabled={retitling}
+                                className={`text-[11px] px-2.5 py-1 rounded-md border font-semibold transition disabled:opacity-60 ${i === selectedTitleIdx ? 'bg-[#7C3AED] border-[#7C3AED] text-white' : 'border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#7C3AED]'}`}>
+                                {t}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {thumbnailVariants.length > 1 && (
+                        <div className="flex flex-col gap-1.5">
+                          <span className="text-[11px] text-[#86868b]">Compare variants (★ = best CTR)</span>
+                          <div className="grid grid-cols-3 gap-1.5">
+                            {thumbnailVariants.map((v, i) => {
+                              const sel = v.url === thumbnailUrl
+                              return (
+                                <button key={v.url} onClick={() => { setThumbnailUrl(v.url); setThumbnailFeedbackSent(null) }}
+                                  className={`relative rounded-lg overflow-hidden border-2 transition ${sel ? 'border-[#7C3AED]' : 'border-transparent hover:border-gray-300 dark:hover:border-white/20'}`}>
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img src={v.url} alt={`Variant ${i + 1}`} className="w-full object-cover" style={{ aspectRatio: '16/9' }} />
+                                  <span className="absolute top-1 left-1 text-[9px] px-1.5 py-0.5 rounded-full bg-black/60 text-white font-semibold">
+                                    {i === 0 ? '★ ' : ''}{v.score !== null ? `${v.score}` : `#${i + 1}`}
+                                  </span>
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {thumbnailUrl.startsWith('data:') ? (
+                          <a href={thumbnailUrl} download="thumbnail.jpg"
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-opacity hover:opacity-90"
+                            style={{ background: '#34c759' }}>
+                            <Download size={12} /> Download
+                          </a>
+                        ) : (
+                          <a href={thumbnailUrl} download="thumbnail.jpg" target="_blank" rel="noopener noreferrer"
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-opacity hover:opacity-90"
+                            style={{ background: '#34c759' }}>
+                            <Download size={12} /> Download
+                          </a>
+                        )}
+                        {thumbnailFaceUsed && (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#7C3AED]/10 text-[#7C3AED] font-medium">👤 {thumbnailFaceUsed}</span>
+                        )}
+                        {thumbnailModel === 'gpt-image-graphic' && (
+                          <>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#FF6B00]/10 text-[#FF6B00] font-medium">🎨 Graphic Design</span>
+                            <button onClick={() => generateThumbnail({ textMode: 'clean' })} disabled={generatingThumbnail}
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 dark:border-white/10 hover:border-[#7C3AED] text-[#1d1d1f] dark:text-[#f5f5f7] transition disabled:opacity-60">
+                              <RefreshCw size={12} /> Scene
+                            </button>
+                            <div className="flex items-center gap-1.5 w-full">
+                              <input type="text" value={gfxTitleInput} onChange={e => setGfxTitleInput(e.target.value)}
+                                onKeyDown={e => { if (e.key === 'Enter' && gfxTitleInput.trim()) generateThumbnail({ textMode: 'graphic', lockedHeadline: gfxTitleInput.trim() }) }}
+                                placeholder="Custom title → Enter"
+                                className="flex-1 min-w-0 text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-white/10 bg-transparent text-[#1d1d1f] dark:text-[#f5f5f7] placeholder:text-gray-400 focus:outline-none focus:border-[#FF6B00] transition" />
+                              <button onClick={() => { if (gfxTitleInput.trim()) generateThumbnail({ textMode: 'graphic', lockedHeadline: gfxTitleInput.trim() }) }}
+                                disabled={generatingThumbnail || !gfxTitleInput.trim()}
+                                className="flex-shrink-0 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-[#FF6B00] text-white hover:bg-[#e55a00] transition disabled:opacity-50">→</button>
+                            </div>
+                          </>
+                        )}
+                        {(thumbnailModel === 'nano-banana-pro' || thumbnailModel === 'nano-banana') && (
+                          <>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#34c759]/10 text-[#34c759] font-medium">✨ Scene · crisp text</span>
+                            <button onClick={() => generateThumbnail({ textMode: 'baked' })} disabled={generatingThumbnail}
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 dark:border-white/10 hover:border-[#5856d6] text-[#1d1d1f] dark:text-[#f5f5f7] transition disabled:opacity-60">
+                              <RefreshCw size={12} /> Baked text
+                            </button>
+                            {selectedFaceModelId && selectedFaceModelId !== 'no-human' && (
+                              <button onClick={() => generateThumbnail({ textMode: 'graphic' })} disabled={generatingThumbnail}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 dark:border-white/10 hover:border-[#FF6B00] text-[#1d1d1f] dark:text-[#f5f5f7] transition disabled:opacity-60">
+                                🎨 Graphic
+                              </button>
+                            )}
+                          </>
+                        )}
+                        {(thumbnailModel === 'nano-banana-pro-baked' || thumbnailModel === 'nano-banana-baked') && (
+                          <>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#5856d6]/10 text-[#5856d6] font-medium">✨ Baked text</span>
+                            <button onClick={() => generateThumbnail({ textMode: 'clean' })} disabled={generatingThumbnail}
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 dark:border-white/10 hover:border-[#7C3AED] text-[#1d1d1f] dark:text-[#f5f5f7] transition disabled:opacity-60">
+                              <RefreshCw size={12} /> Crisp text
+                            </button>
+                          </>
+                        )}
+                        {thumbnailModel === 'kontext-upload' && (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#7C3AED]/10 text-[#7C3AED] font-medium">📤 Your upload</span>
+                        )}
+                        {!!thumbnailModel && thumbnailModel !== 'kontext-upload' && (thumbnailModel.startsWith('kontext-') || thumbnailModel.startsWith('ideogram-') || thumbnailModel.startsWith('flux')) && (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#ff9500]/10 text-[#ff9500] font-medium" title="Scene-composite fallback">
+                            🎨 Scene (fallback)
+                          </span>
+                        )}
+                      </div>
+                      {!!thumbnailDebug && !!thumbnailModel && thumbnailModel !== 'kontext-upload' && (thumbnailModel.startsWith('kontext-') || thumbnailModel.startsWith('ideogram-') || thumbnailModel.startsWith('flux')) && (
+                        <p className="text-[10px] text-[#86868b] leading-snug break-words">Why fallback: {thumbnailDebug}</p>
+                      )}
+                      {thumbnailModel !== 'kontext-upload' && (
+                        <div className="flex items-center gap-2 pt-1">
+                          <span className="text-[10px] text-[#86868b]">Train the AI:</span>
+                          <button onClick={() => submitYtThumbnailFeedback('like')} disabled={thumbnailFeedbackSent !== null}
+                            className={`text-[11px] px-2 py-0.5 rounded border transition ${thumbnailFeedbackSent === 'like' ? 'bg-[#34c759]/20 border-[#34c759] text-[#34c759]' : 'border-gray-200 dark:border-white/10 hover:border-[#34c759]'} disabled:opacity-60`}>
+                            👍
+                          </button>
+                          <button onClick={() => submitYtThumbnailFeedback('dislike')} disabled={thumbnailFeedbackSent !== null}
+                            className={`text-[11px] px-2 py-0.5 rounded border transition ${thumbnailFeedbackSent === 'dislike' ? 'bg-[#ff3b30]/20 border-[#ff3b30] text-[#ff3b30]' : 'border-gray-200 dark:border-white/10 hover:border-[#ff3b30]'} disabled:opacity-60`}>
+                            👎
+                          </button>
+                          {thumbnailFeedbackSent && (
+                            <span className="text-[10px] text-[#86868b]">Thanks — saved.</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                </div> {/* ── end right column ── */}
+
+              </div> {/* ── end two-column flex ── */}
 
               {/* Pro batch-apply settings panel — Pro/admin only */}
               {isPro && (

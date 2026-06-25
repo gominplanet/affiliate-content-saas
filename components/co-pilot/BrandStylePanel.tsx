@@ -5,7 +5,7 @@ import { toast } from 'sonner'
 
 // Order MUST match NEON_BORDER_STYLES in lib/thumbnail-simple-bake.ts (index =
 // borderStyleIndex). Plain const because that lib is server-only (sharp/opentype).
-const BORDER_NAMES = [
+export const BORDER_NAMES = [
   'Cyan ↔ magenta', 'All-yellow', 'Neon green', 'Pink ↔ purple', 'Fire (orange↔red)',
   'Ice blue', 'Gold', 'Lime ↔ cyan', 'Rainbow', 'Electric blue',
 ]
