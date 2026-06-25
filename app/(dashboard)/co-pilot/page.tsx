@@ -1007,7 +1007,11 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           // headline drawn by our pixel-perfect canvas overlay — guaranteed
           // correct spelling. "Try AI-baked text" re-runs with 'baked' to bake
           // the title into the image (more integrated, but may misspell).
-          textMode: opts?.textMode ?? 'clean',
+          // Graphic Design mode is the default when a face model is active —
+          // it uses gpt-image-1 with the creator's Photobooth photo + product
+          // image as references for a professional composite. Falls back to NB
+          // Pro ('clean') when no face model is selected or on gpt-image failure.
+          textMode: opts?.textMode ?? ((selectedFaceModelId && selectedFaceModelId !== 'no-human') ? 'graphic' : 'clean'),
           capturedFrames: capturedFrames.length ? capturedFrames : undefined,
           // "Break frame" effect: composites the creator OVER the neon border.
           // Off by default (costs ~20s for the rembg pass).
@@ -1988,24 +1992,25 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                       {(thumbnailModel === 'nano-banana-pro' || thumbnailModel === 'nano-banana') && (
                         <>
                           <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#34c759]/10 text-[#34c759] font-medium">
-                            ✨ Designed · crisp text
+                            ✨ Scene mode · crisp text
                           </span>
                           <button
                             onClick={() => generateThumbnail({ textMode: 'baked' })}
                             disabled={generatingThumbnail}
                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 dark:border-white/10 hover:border-[#5856d6] text-[#1d1d1f] dark:text-[#f5f5f7] transition disabled:opacity-60"
-                            title="Re-render with the headline baked into the image by MVP (more integrated, but may have typos)"
+                            title="Re-render with the headline baked into the image (more integrated, but may have typos)"
                           >
-                            <RefreshCw size={12} /> Try MVP-baked text
+                            <RefreshCw size={12} /> Try baked text
                           </button>
-                          <button
-                            onClick={() => generateThumbnail({ textMode: 'graphic' })}
-                            disabled={generatingThumbnail}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 dark:border-white/10 hover:border-[#FF6B00] text-[#1d1d1f] dark:text-[#f5f5f7] transition disabled:opacity-60"
-                            title="Try Graphic Design mode — creator + product composited into a bold graphic layout with native text"
-                          >
-                            🎨 Try Graphic Design
-                          </button>
+                          {selectedFaceModelId && selectedFaceModelId !== 'no-human' && (
+                            <button
+                              onClick={() => generateThumbnail({ textMode: 'graphic' })}
+                              disabled={generatingThumbnail}
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 dark:border-white/10 hover:border-[#FF6B00] text-[#1d1d1f] dark:text-[#f5f5f7] transition disabled:opacity-60"
+                            >
+                              🎨 Back to Graphic Design
+                            </button>
+                          )}
                         </>
                       )}
                       {(thumbnailModel === 'nano-banana-pro-baked' || thumbnailModel === 'nano-banana-baked') && (
