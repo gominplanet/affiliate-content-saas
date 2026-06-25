@@ -15,7 +15,7 @@ import BrandStylePanel from '@/components/co-pilot/BrandStylePanel'
 import {
   Youtube, Wand2, CheckCircle, AlertCircle, Loader2, ExternalLink,
   Copy, ChevronDown, ChevronUp, RefreshCw, Link2, Tag, Lock, Eye, Globe,
-  Image, Download, Sparkles, Upload, X, Search,
+  Image, Download, Sparkles, Upload, X, Search, Calendar,
 } from 'lucide-react'
 
 interface DraftVideo {
@@ -85,11 +85,6 @@ function classifyVideo(v: Pick<DraftVideo, 'title' | 'description' | 'detectedAs
   // the 'shipped' (publishAt) check below. (Per user 2026-06-10.)
   const hasAsin = !!v.detectedAsin || ASIN_RE.test(title)
   if (hasAsin) return 'todo'
-
-  // SCHEDULED (private/unlisted but a publishAt is set) and NOT a raw ASIN draft =
-  // a finished/polished video queued to go live (the purple full-title ones) →
-  // "Pushed via Co-Pilot", out of the to-do queue. (Per user 2026-06-10.)
-  if (v.publishAt) return 'shipped'
 
   // Everything else still unpublished — whether or not a product was detected —
   // is work to do. (Product presence shows as a per-row badge, not a tab.)
@@ -1317,6 +1312,11 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
             {video.detectedAsin && (
               <span className="flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-[#ff9500]/10 text-[#ff9500]">
                 <Tag size={9} /> ASIN: {video.detectedAsin}
+              </span>
+            )}
+            {video.publishAt && (
+              <span className="flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-[#5856d6]/10 text-[#5856d6]">
+                <Calendar size={9} /> Goes live {new Date(video.publishAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
               </span>
             )}
           </div>
@@ -2630,7 +2630,7 @@ export default function StudioPage() {
             <div className="flex items-center gap-1 mb-3 border-b border-gray-200 dark:border-white/10">
               {([
                 { id: 'todo' as const, label: '📝 To do', sub: 'Unpublished drafts that still need metadata — with or without a product (the orange ASIN pill marks the ones with a detected product)' },
-                { id: 'shipped' as const, label: '🚀 Shipped / Scheduled', sub: 'Pushed to YouTube through Co-Pilot, or scheduled to go live' },
+                { id: 'shipped' as const, label: '🚀 Shipped', sub: 'Pushed to YouTube through Co-Pilot — re-generate thumbnail or metadata anytime' },
                 { id: 'done' as const, label: '✅ Published', sub: 'Already live on YouTube (published outside Co-Pilot)' },
               ]).map(t => {
                 const count = tabbed[t.id].length
