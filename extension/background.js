@@ -19,7 +19,7 @@ const CAPTURE_TIMEOUT_MS = 50000
 // its own scope (it's serialized + injected).
 async function grabFramesInPage(fractions) {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
-  const deadline = Date.now() + 25000
+  const deadline = Date.now() + 15000
 
   // 1. Wait for the player's <video> with real duration.
   let video = null
