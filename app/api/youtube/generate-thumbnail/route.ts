@@ -751,7 +751,7 @@ export async function POST(request: Request) {
       /** 'baked' (default): the headline typography is rendered INTO the image
        *  for the cohesive "designed" look. 'clean': return a text-free scene so
        *  the client can draw its crisp canvas overlay (the fallback). */
-      textMode?: 'baked' | 'clean'
+      textMode?: 'baked' | 'clean' | 'graphic'
       /** A single REAL frame grabbed by the extension (jpeg data: URL). Legacy
        *  single-frame path. Superseded by capturedFrames. */
       capturedFrameDataUrl?: string | null
@@ -1005,6 +1005,128 @@ export async function POST(request: Request) {
 
     // ── Fetch channel thumbnails + analyse style (best-effort) ───────────────
     fal.config({ credentials: falKey })
+
+    // ── PATH GFX: gpt-image-1 graphic-design thumbnail ────────────────────────
+    // Triggered by textMode='graphic'. Downloads the starred Photobooth photo +
+    // the Amazon product image, then calls gpt-image-1 ONCE PER VARIANT with a
+    // detailed graphic-design layout prompt. The model composites creator, product,
+    // and bold text natively — no NB Pro scene, no rembg cutout.
+    // Falls through to the NB path on any failure so generation never blanks.
+    if (textMode === 'graphic' && faceModel) {
+      try {
+        const openaiGfx = createOpenAIService()
+        const claimsSheetGfx = await claimsSheetPromise
+        // Inline locked-headline split (mirrors the NB block's splitLocked).
+        const splitH = (h: string) => {
+          const words = h.trim().split(/\s+/)
+          const half = Math.ceil(words.length / 2)
+          return {
+            line1: words.slice(0, half).join(' ').toUpperCase().slice(0, 18),
+            line2: (words.slice(half).join(' ').toUpperCase() || words.slice(0, half).join(' ').toUpperCase()).slice(0, 22),
+            angle: 'NEGATION' as const,
+            emphasisWord: '',
+          }
+        }
+        const gfxCopies = lockedHeadline
+          ? [splitH(lockedHeadline)]
+          : await generateThumbCopies(videoTitle, variantCount, productDescription, claimsSheetGfx)
+
+        // Best face photo: starred Photobooth shot first, then first source image.
+        const starredGfx = await getStarredPhotoboothRefs(user.id, faceModel.id, { maxRefs: 1 })
+        const photoUrl = starredGfx[0] ?? faceModel.source_images[0]
+        if (!photoUrl) throw new Error('no face photo for graphic mode')
+
+        // Download creator photo + product image as buffers in parallel.
+        const [photoAb, productAb] = await Promise.all([
+          fetch(photoUrl, { signal: AbortSignal.timeout(12000) })
+            .then(r => r.ok ? r.arrayBuffer() : Promise.reject(new Error(`face photo ${r.status}`))),
+          productImageUrl
+            ? fetch(productImageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(12000) })
+                .then(r => r.ok ? r.arrayBuffer() : null).catch(() => null)
+            : Promise.resolve(null),
+        ])
+
+        const photoBytes = await normalizeToPng(new Uint8Array(photoAb))
+        const productBytes = productAb
+          ? await normalizeToPng(new Uint8Array(productAb)).catch(() => null)
+          : null
+
+        const gfxModel = process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1'
+        const productLabel = productTitle || 'the product'
+
+        // One gpt-image-1 call per variant, all in parallel.
+        const gfxRawUrls = await Promise.all(
+          gfxCopies.slice(0, variantCount).map(async (copy, idx) => {
+            const line1 = (copy.line1 || '').toUpperCase()
+            const line2 = (copy.line2 || '').toUpperCase()
+            const accentGlow = idx % 2 === 0 ? 'cyan (#00E5FF)' : 'purple (#7C3AED)'
+
+            const prompt = [
+              'Professional YouTube thumbnail, 1536×1024 px, 16:9 landscape. High energy, high contrast.',
+              '',
+              'LAYOUT (strict, left to right):',
+              `  LEFT 40% — text block on a semi-transparent dark panel:`,
+              `    Top line: "${line1}" — large white bold capitals, dark stroke outline for readability.`,
+              `    Main line: "${line2}" — even larger, bright yellow (#FFE034) bold capitals — the dominant visual element.`,
+              `    Text must be CRISP and FULLY READABLE. No other text in the image.`,
+              '',
+              `  CENTER 30% — ${productLabel}.`,
+              `    Recreate the product from Image ${productBytes ? 2 : 1} in dramatic studio lighting — 3D pop, vivid colours, realistic shadows, floating or resting naturally.`,
+              '',
+              `  RIGHT 35% — creator (Image 1).`,
+              `    Show from waist-up with excited/confident expression, pointing LEFT toward the product.`,
+              `    FACE MUST MATCH Image 1 exactly — same person, same features, same appearance.`,
+              '',
+              `BACKGROUND: Deep dark gradient (near-black → deep navy/charcoal). Subtle ${accentGlow} neon glow radiating from behind the product. Cinematic vignette at edges. No white space.`,
+              '',
+              'STYLE: High-production YouTube creator thumbnail. Neon accents. Bold and punchy.',
+              'No logos, no watermarks, no brand names rendered in the image itself.',
+            ].join('\n')
+
+            const refs: Array<{ data: Buffer | Uint8Array; filename: string; mime: string }> = [
+              { data: photoBytes, filename: 'creator.png', mime: 'image/png' },
+            ]
+            if (productBytes) refs.push({ data: productBytes, filename: 'product.png', mime: 'image/png' })
+
+            const b64 = await openaiGfx.generateWithReferences({ prompt, images: refs, size: '1536x1024', quality: 'high' })
+            recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'yt_thumb_graphic', model: gfxModel, images: 1 })
+            return rehostToFal(`data:image/png;base64,${b64}`)
+          })
+        )
+
+        const gfxUrls = gfxRawUrls.filter((u): u is string => !!u)
+        if (gfxUrls.length === 0) throw new Error('all graphic variants failed to rehost')
+
+        const gfxHook = flatCopy(gfxCopies[0])
+        return NextResponse.json({
+          ok: true,
+          thumbnailUrl: gfxUrls[0],
+          thumbnailUrls: gfxUrls,
+          thumbnailScores: gfxUrls.map(() => 0),
+          thumbnailScore: 0,
+          belowThreshold: false,
+          overlayHook: gfxHook,
+          overlayHooks: gfxCopies.slice(0, gfxUrls.length).map(c => flatCopy(c)),
+          headlineLocked: !!lockedHeadline,
+          prompt: 'graphic-design-mode',
+          styleBriefApplied: false,
+          channelStyle: null,
+          modelUsed: 'gpt-image-graphic',
+          baked: true,
+          textPosition: null,
+          faceBox: null,
+          composited: true,
+          headshotUsed: false,
+          personCutoutUrl: null,
+          faceUsed: faceModel.name,
+          qcWarning: false,
+          faceIdentityChecked: false,
+        })
+      } catch (gfxErr) {
+        console.warn('[generate-thumbnail] graphic path failed, falling through to NB:', gfxErr instanceof Error ? gfxErr.message : String(gfxErr))
+        // Fall through to NB Pro path.
+      }
+    }
 
     // ── PATH NB (PRIMARY): Nano Banana, grounded on the REAL video frame ─────
     // Mirrors how the fast competitor works: the creator + product are ALREADY

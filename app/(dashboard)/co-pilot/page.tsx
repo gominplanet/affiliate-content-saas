@@ -938,7 +938,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
     }
   }
 
-  async function generateThumbnail(opts?: { textMode?: 'baked' | 'clean'; lockedHeadline?: string }) {
+  async function generateThumbnail(opts?: { textMode?: 'baked' | 'clean' | 'graphic'; lockedHeadline?: string }) {
     setGeneratingThumbnail(true)
     setThumbnailError(null)
     // Caller passes the picked headline DIRECTLY (not via setCustomHeadline +
@@ -1950,6 +1950,20 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                           👤 {thumbnailFaceUsed}
                         </span>
                       )}
+                      {thumbnailModel === 'gpt-image-graphic' && (
+                        <>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#FF6B00]/10 text-[#FF6B00] font-medium">
+                            🎨 Graphic Design mode
+                          </span>
+                          <button
+                            onClick={() => generateThumbnail({ textMode: 'clean' })}
+                            disabled={generatingThumbnail}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 dark:border-white/10 hover:border-[#7C3AED] text-[#1d1d1f] dark:text-[#f5f5f7] transition disabled:opacity-60"
+                          >
+                            <RefreshCw size={12} /> Switch to Scene mode
+                          </button>
+                        </>
+                      )}
                       {(thumbnailModel === 'nano-banana-pro' || thumbnailModel === 'nano-banana') && (
                         <>
                           <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#34c759]/10 text-[#34c759] font-medium">
@@ -1962,6 +1976,14 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                             title="Re-render with the headline baked into the image by MVP (more integrated, but may have typos)"
                           >
                             <RefreshCw size={12} /> Try MVP-baked text
+                          </button>
+                          <button
+                            onClick={() => generateThumbnail({ textMode: 'graphic' })}
+                            disabled={generatingThumbnail}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 dark:border-white/10 hover:border-[#FF6B00] text-[#1d1d1f] dark:text-[#f5f5f7] transition disabled:opacity-60"
+                            title="Try Graphic Design mode — creator + product composited into a bold graphic layout with native text"
+                          >
+                            🎨 Try Graphic Design
                           </button>
                         </>
                       )}
