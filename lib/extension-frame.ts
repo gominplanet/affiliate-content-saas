@@ -68,9 +68,9 @@ export async function getScoutStatus(): Promise<{ installed: boolean; version: s
  */
 export async function requestVideoFrames(
   youtubeVideoId: string,
-  // Front/mid-weighted, never near the tail — 0.8 lands in the end-screen-card
-  // zone (last ~5-20s) which injects stray UI boxes into the capture.
-  fractions: number[] = [0.2, 0.35, 0.5, 0.65],
+  // 15 evenly-spaced fractions from 5% to 75% of the runtime.
+  // Stops at 75% to avoid the end-screen card zone (last ~20s injects UI boxes).
+  fractions: number[] = [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75],
 ): Promise<string[]> {
   const resp = await sendToExtension<{ ok?: boolean; frames?: string[]; dataUrl?: string; error?: string }>(
     { type: 'MVP_CAPTURE_FRAME', youtubeVideoId, fractions },

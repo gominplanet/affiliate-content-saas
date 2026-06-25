@@ -1004,9 +1004,15 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           // tells the model how to arrange them.
           customProductImageUrls: productImageUrls.length > 0 ? productImageUrls : undefined,
           productCompositionNote: productCompositionNote.trim() || undefined,
-          // Face model → 'graphic' (gpt-image-1, highest quality likeness, ~2-3 min).
-          // Product-only / selfie → 'clean' (NB Pro, fast).
-          textMode: opts?.textMode ?? ((!isProductOnly && selectedFaceModelId && selectedFaceModelId !== 'no-human') ? 'graphic' : 'clean'),
+          // graphic = gpt-image-1 (identity-grounded, ~20s with video frame or ~2min with Photobooth).
+          // Use graphic whenever there's an identity source: face model OR a YouTube video to pull frames from.
+          // Product-only / selfie → 'clean' (NB Pro, fast, no face composition).
+          textMode: opts?.textMode ?? (
+            isProductOnly ? 'clean' :
+            (selectedFaceModelId && selectedFaceModelId !== 'no-human') ? 'graphic' :
+            video.youtubeVideoId ? 'graphic' :
+            'clean'
+          ),
           capturedFrames: capturedFrames.length ? capturedFrames : undefined,
           // "Break frame" effect: composites the creator OVER the neon border.
           // Off by default (costs ~20s for the rembg pass).
@@ -1590,20 +1596,24 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                       <ChevronDown size={14} className={`flex-shrink-0 text-[#86868b] transition-transform ${thumbnailMode === 'product-only' ? 'rotate-180' : ''}`} />
                     </button>
 
-                    {/* Card 4: Face Model */}
+                    {/* Card 4: Create MVP Thumbnail — direct action, no picker needed */}
                     <button
                       type="button"
-                      onClick={() => setThumbnailMode(m => m === 'face-model' ? null : 'face-model')}
-                      className={`flex items-center gap-4 w-full px-4 py-4 rounded-xl border-2 text-left transition-all ${thumbnailMode === 'face-model' ? 'border-[#FF9500] bg-[#FF9500]/5' : 'border-gray-200 dark:border-white/10 hover:border-[#FF9500]/50 bg-white dark:bg-[#1c1c1e]'}`}
+                      onClick={() => {
+                        setSelectedFaceModelId(null)
+                        void generateThumbnail()
+                      }}
+                      disabled={generatingThumbnail}
+                      className="flex items-center gap-4 w-full px-4 py-4 rounded-xl border-2 border-[#FF9500] text-left transition-all hover:bg-[#FF9500]/5 disabled:opacity-50"
+                      style={{ background: generatingThumbnail ? undefined : 'linear-gradient(135deg, rgba(255,149,0,0.08) 0%, rgba(255,107,0,0.05) 100%)' }}
                     >
-                      <div className="w-10 h-10 rounded-xl bg-[#FF9500]/10 flex items-center justify-center flex-shrink-0">
-                        <Eye size={18} className="text-[#FF9500]" />
+                      <div className="w-10 h-10 rounded-xl bg-[#FF9500]/15 flex items-center justify-center flex-shrink-0">
+                        {generatingThumbnail ? <Loader2 size={18} className="text-[#FF9500] animate-spin" /> : <Sparkles size={18} className="text-[#FF9500]" />}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Face Model</p>
-                        <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-0.5">AI recreates you from saved model</p>
+                        <p className="text-sm font-bold text-[#FF9500]">Create my MVP Thumbnail</p>
+                        <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-0.5">{generatingThumbnail ? 'Generating…' : 'MVP recreates you from your video'}</p>
                       </div>
-                      <ChevronDown size={14} className={`flex-shrink-0 text-[#86868b] transition-transform ${thumbnailMode === 'face-model' ? 'rotate-180' : ''}`} />
                     </button>
 
                   </div>
@@ -1699,42 +1709,6 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                     </div>
                   )}
 
-                  {/* Inline expand: Face Model */}
-                  {thumbnailMode === 'face-model' && (
-                    <div className="flex flex-col gap-3 p-4 rounded-xl bg-[#FF9500]/5 border border-[#FF9500]/20">
-                      <p className="text-[11px] font-semibold text-[#FF9500]">Generate with your AI face model</p>
-                      {faceModels.length === 0 && !video.youtubeVideoId ? (
-                        <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0]">No face models yet. Set one up in <strong>Face Models</strong>.</p>
-                      ) : (
-                        <>
-                          {faceModels.length > 0 && (
-                            <select
-                              value={selectedFaceModelId ?? ''}
-                              onChange={e => setSelectedFaceModelId(e.target.value || null)}
-                              disabled={generatingThumbnail}
-                              className="text-xs px-3 py-2 rounded-lg border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] focus:outline-none focus:border-[#FF9500] transition"
-                            >
-                              <option value="">— Select face model —</option>
-                              {faceModels.map(fm => (
-                                <option key={fm.id} value={fm.id}>{fm.name}</option>
-                              ))}
-                            </select>
-                          )}
-                          {!selectedFaceModelId && video.youtubeVideoId && (
-                            <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0]">Using your video frame as identity reference (~20s)</p>
-                          )}
-                          <button
-                            onClick={() => void generateThumbnail()}
-                            disabled={generatingThumbnail || (!selectedFaceModelId && !video.youtubeVideoId)}
-                            className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 transition-all hover:opacity-90"
-                            style={{ background: 'linear-gradient(135deg, #FF9500 0%, #FF6B00 100%)' }}
-                          >
-                            {generatingThumbnail ? <><Loader2 size={13} className="animate-spin" /> Generating…</> : <><Sparkles size={13} /> Generate with Face Model</>}
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  )}
 
                   {/* Border style dropdown */}
                   <div>
