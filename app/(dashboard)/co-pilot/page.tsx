@@ -1563,67 +1563,71 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                     </div>
                   </div>
 
-                  {/* 4 mode cards — 2×2 grid */}
-                  <div className="grid grid-cols-2 gap-3">
+                  {/* 4 mode cards — stacked, full-width */}
+                  <div className="flex flex-col gap-2">
 
                     {/* Card 1: Upload Selfie */}
                     <button
                       type="button"
                       onClick={() => setThumbnailMode(m => m === 'selfie' ? null : 'selfie')}
-                      className={`flex flex-col items-start gap-2 p-3 rounded-xl border-2 text-left transition-all ${thumbnailMode === 'selfie' ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-[#7C3AED]/50 bg-white dark:bg-[#1c1c1e]'}`}
+                      className={`flex items-center gap-4 w-full px-4 py-4 rounded-xl border-2 text-left transition-all ${thumbnailMode === 'selfie' ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-[#7C3AED]/50 bg-white dark:bg-[#1c1c1e]'}`}
                     >
-                      <div className="w-8 h-8 rounded-lg bg-[#7C3AED]/10 flex items-center justify-center">
-                        <Camera size={15} className="text-[#7C3AED]" />
+                      <div className="w-10 h-10 rounded-xl bg-[#7C3AED]/10 flex items-center justify-center flex-shrink-0">
+                        <Camera size={18} className="text-[#7C3AED]" />
                       </div>
-                      <div>
-                        <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Upload Selfie</p>
-                        <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-0.5 leading-snug">You + product → AI thumbnail</p>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Upload Selfie</p>
+                        <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-0.5">You + product → AI thumbnail</p>
                       </div>
+                      <ChevronDown size={14} className={`flex-shrink-0 text-[#86868b] transition-transform ${thumbnailMode === 'selfie' ? 'rotate-180' : ''}`} />
                     </button>
 
                     {/* Card 2: Upload My Design */}
                     <button
                       type="button"
                       onClick={() => setThumbnailMode(m => m === 'own-design' ? null : 'own-design')}
-                      className={`flex flex-col items-start gap-2 p-3 rounded-xl border-2 text-left transition-all ${thumbnailMode === 'own-design' ? 'border-[#5856d6] bg-[#5856d6]/5' : 'border-gray-200 dark:border-white/10 hover:border-[#5856d6]/50 bg-white dark:bg-[#1c1c1e]'}`}
+                      className={`flex items-center gap-4 w-full px-4 py-4 rounded-xl border-2 text-left transition-all ${thumbnailMode === 'own-design' ? 'border-[#5856d6] bg-[#5856d6]/5' : 'border-gray-200 dark:border-white/10 hover:border-[#5856d6]/50 bg-white dark:bg-[#1c1c1e]'}`}
                     >
-                      <div className="w-8 h-8 rounded-lg bg-[#5856d6]/10 flex items-center justify-center">
-                        <Image size={15} className="text-[#5856d6]" />
+                      <div className="w-10 h-10 rounded-xl bg-[#5856d6]/10 flex items-center justify-center flex-shrink-0">
+                        <Image size={18} className="text-[#5856d6]" />
                       </div>
-                      <div>
-                        <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Upload My Design</p>
-                        <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-0.5 leading-snug">Use your own thumbnail</p>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Upload My Design</p>
+                        <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-0.5">Use your own finished thumbnail</p>
                       </div>
+                      <ChevronDown size={14} className={`flex-shrink-0 text-[#86868b] transition-transform ${thumbnailMode === 'own-design' ? 'rotate-180' : ''}`} />
                     </button>
 
                     {/* Card 3: Product Only */}
                     <button
                       type="button"
                       onClick={() => setThumbnailMode(m => m === 'product-only' ? null : 'product-only')}
-                      className={`flex flex-col items-start gap-2 p-3 rounded-xl border-2 text-left transition-all ${thumbnailMode === 'product-only' ? 'border-[#34c759] bg-[#34c759]/5' : 'border-gray-200 dark:border-white/10 hover:border-[#34c759]/50 bg-white dark:bg-[#1c1c1e]'}`}
+                      className={`flex items-center gap-4 w-full px-4 py-4 rounded-xl border-2 text-left transition-all ${thumbnailMode === 'product-only' ? 'border-[#34c759] bg-[#34c759]/5' : 'border-gray-200 dark:border-white/10 hover:border-[#34c759]/50 bg-white dark:bg-[#1c1c1e]'}`}
                     >
-                      <div className="w-8 h-8 rounded-lg bg-[#34c759]/10 flex items-center justify-center">
-                        <Package size={15} className="text-[#34c759]" />
+                      <div className="w-10 h-10 rounded-xl bg-[#34c759]/10 flex items-center justify-center flex-shrink-0">
+                        <Package size={18} className="text-[#34c759]" />
                       </div>
-                      <div>
-                        <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Product Only</p>
-                        <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-0.5 leading-snug">No photo needed</p>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Product Only</p>
+                        <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-0.5">No photo needed — product scene</p>
                       </div>
+                      <ChevronDown size={14} className={`flex-shrink-0 text-[#86868b] transition-transform ${thumbnailMode === 'product-only' ? 'rotate-180' : ''}`} />
                     </button>
 
                     {/* Card 4: Face Model */}
                     <button
                       type="button"
                       onClick={() => setThumbnailMode(m => m === 'face-model' ? null : 'face-model')}
-                      className={`flex flex-col items-start gap-2 p-3 rounded-xl border-2 text-left transition-all ${thumbnailMode === 'face-model' ? 'border-[#FF9500] bg-[#FF9500]/5' : 'border-gray-200 dark:border-white/10 hover:border-[#FF9500]/50 bg-white dark:bg-[#1c1c1e]'}`}
+                      className={`flex items-center gap-4 w-full px-4 py-4 rounded-xl border-2 text-left transition-all ${thumbnailMode === 'face-model' ? 'border-[#FF9500] bg-[#FF9500]/5' : 'border-gray-200 dark:border-white/10 hover:border-[#FF9500]/50 bg-white dark:bg-[#1c1c1e]'}`}
                     >
-                      <div className="w-8 h-8 rounded-lg bg-[#FF9500]/10 flex items-center justify-center">
-                        <Eye size={15} className="text-[#FF9500]" />
+                      <div className="w-10 h-10 rounded-xl bg-[#FF9500]/10 flex items-center justify-center flex-shrink-0">
+                        <Eye size={18} className="text-[#FF9500]" />
                       </div>
-                      <div>
-                        <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Face Model</p>
-                        <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-0.5 leading-snug">AI recreates you</p>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Face Model</p>
+                        <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-0.5">AI recreates you from saved model</p>
                       </div>
+                      <ChevronDown size={14} className={`flex-shrink-0 text-[#86868b] transition-transform ${thumbnailMode === 'face-model' ? 'rotate-180' : ''}`} />
                     </button>
 
                   </div>
