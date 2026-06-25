@@ -1004,10 +1004,9 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           // tells the model how to arrange them.
           customProductImageUrls: productImageUrls.length > 0 ? productImageUrls : undefined,
           productCompositionNote: productCompositionNote.trim() || undefined,
-          // Default 'clean': NB Pro path — fast Flux-based composition rendered
-          // TEXT-FREE, headline drawn by pixel-perfect canvas overlay. Use the
-          // "🎨 Graphic" button for the gpt-image-1 composite path.
-          textMode: opts?.textMode ?? 'clean',
+          // Face model → 'graphic' (gpt-image-1, highest quality likeness, ~2-3 min).
+          // Product-only / selfie → 'clean' (NB Pro, fast).
+          textMode: opts?.textMode ?? ((!isProductOnly && selectedFaceModelId && selectedFaceModelId !== 'no-human') ? 'graphic' : 'clean'),
           capturedFrames: capturedFrames.length ? capturedFrames : undefined,
           // "Break frame" effect: composites the creator OVER the neon border.
           // Off by default (costs ~20s for the rembg pass).
