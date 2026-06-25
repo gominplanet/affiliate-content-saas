@@ -106,6 +106,10 @@ interface NewsletterInlineData {
  */
 interface PostMetaData {
   showDate: boolean
+  /** Include current Amazon price in Product schema. Default ON. Disable
+   *  to omit price entirely (avoids GSC "missing price" warnings but also
+   *  means posts won't qualify for Google Merchant price rich results). */
+  schemaIncludePrice: boolean
 }
 
 /**
@@ -204,7 +208,7 @@ const defaultCustomizations: BlogCustomizations = {
   about: emptyAbout,
   authorBlock: emptyAuthorBlock,
   newsletterInline: emptyNewsletterInline,
-  postMeta: { showDate: true },
+  postMeta: { showDate: true, schemaIncludePrice: true },
   footer: emptyFooter,
   pickOfDay: defaultPickOfDay,
   featuredPosts: ['', '', '', '', ''],
@@ -541,7 +545,10 @@ export default function CustomizePage() {
         authorBlock,
         newsletterInline,
         // Dates default ON — only an explicit saved false turns them off.
-        postMeta: { showDate: bc.postMeta?.showDate !== false },
+        postMeta: {
+          showDate: bc.postMeta?.showDate !== false,
+          schemaIncludePrice: bc.postMeta?.schemaIncludePrice !== false,
+        },
         // Always exactly 5 slots (hero + 4 strip), padded/truncated.
         featuredPosts: Array.from({ length: 5 }, (_, i) =>
           typeof bc.featuredPosts?.[i] === 'string' ? bc.featuredPosts[i] : ''),
@@ -831,6 +838,28 @@ export default function CustomizePage() {
               aria-label="Toggle post dates"
             >
               {data.postMeta.showDate
+                ? <ToggleRight size={28} className="text-[#7C3AED]" />
+                : <ToggleLeft size={28} />}
+            </button>
+          </div>
+        </Section>
+
+        {/* Product price in schema */}
+        <Section
+          title="Product price in schema"
+          description="When enabled, MVP records the current Amazon price in your posts' structured data with a 7-day expiry — helping Google qualify your posts for Merchant Listing rich results (price badge, availability). Disable if you'd rather keep prices out of your schema entirely."
+        >
+          <div className="flex items-center justify-between p-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border-2)]">
+            <div>
+              <p className="text-sm font-medium text-[var(--text)]">Include price in product schema</p>
+              <p className="text-xs text-[var(--text-3)]">Captured at generation time with a 7-day validity window. Use &quot;Refresh all prices&quot; on the SEO page to update existing posts.</p>
+            </div>
+            <button
+              onClick={() => setData(d => ({ ...d, postMeta: { ...d.postMeta, schemaIncludePrice: !d.postMeta.schemaIncludePrice } }))}
+              className="text-[var(--text-3)]"
+              aria-label="Toggle product price in schema"
+            >
+              {data.postMeta.schemaIncludePrice
                 ? <ToggleRight size={28} className="text-[#7C3AED]" />
                 : <ToggleLeft size={28} />}
             </button>

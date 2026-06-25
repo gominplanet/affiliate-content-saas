@@ -89,6 +89,9 @@ export interface SeoSchemaInput {
     priceCurrency?: string | null
     /** schema.org availability URL (default InStock) → Offer.availability. */
     availability?: string | null
+    /** ISO 8601 date (YYYY-MM-DD) — when this price snapshot expires. Signals
+     *  to Google the price was accurate at generation time but may have changed. */
+    priceValidUntil?: string | null
   } | null
   /** Numeric rating out of `ratingMax` (default 5). Null → no Review stars. */
   rating?: number | null
@@ -307,6 +310,7 @@ export function buildReviewSchemaGraph(input: SeoSchemaInput): { '@context': str
       if (offerPrice != null) {
         offer.price = offerPrice
         offer.priceCurrency = input.product.priceCurrency || 'USD'
+        if (input.product.priceValidUntil) offer.priceValidUntil = input.product.priceValidUntil
       }
       product.offers = offer
     }

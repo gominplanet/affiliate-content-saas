@@ -852,12 +852,14 @@ async function handleGenerate(request: Request) {
   //          no user accounts (see lib/keyword-research.ts).
   let targetKeyword: string | null = null
   let supportingKeywords: string[] = []
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let amazonStep: any = null
   if (asinOverride) {
     // ONE Amazon fetch, two jobs: (a) the AUTHORITATIVE product identity + specs
     // for the writer — the listing TITLE carries the real brand and the bullets
     // carry real specs; (b) the keyword-research seed. Best-effort + time-boxed;
     // on any failure we fall back to prior behavior (model derives everything).
-    const amazonStep = await withTimeout(
+    amazonStep = await withTimeout(
       (async () => {
         const product = await fetchAmazonProduct(asinOverride!).catch(() => null)
         if (!product?.title) return null
@@ -884,7 +886,7 @@ async function handleGenerate(request: Request) {
       const amazonFacts = [
         'AUTHORITATIVE PRODUCT LISTING (Amazon) — the exact item the affiliate link sells. Use THIS for the product\'s real brand + name; it overrides any generic descriptor the creator used on camera.',
         `Title: ${a.title}`,
-        a.bullets.length ? `About this item:\n${a.bullets.map((b) => `- ${b}`).join('\n')}` : '',
+        a.bullets.length ? `About this item:\n${a.bullets.map((b: string) => `- ${b}`).join('\n')}` : '',
       ].filter(Boolean).join('\n')
       productResearch = productResearch ? `${amazonFacts}\n\n${productResearch}` : amazonFacts
     }
@@ -1668,8 +1670,12 @@ async function handleGenerate(request: Request) {
     // before the fact-check or image gen, which are the things that can hang or
     // exhaust the after() budget), then optionally again once images resolve to
     // upgrade og:image to the AI hero + the real product name/image. Non-fatal.
-    const writeSeoMeta = async (ogImage: string, productName: string, productImage: string | null) => {
+    const writeSeoMeta = async (ogImage: string, productName: string, productImage: string | null, productPrice: string | null = null) => {
       try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const bc = brand as Record<string, any>
+        const blogCustom = (bc?.blog_customizations ?? {}) as Record<string, any>
+        const includePrice = blogCustom?.postMeta?.schemaIncludePrice !== false
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const b = brand as Record<string, any>
         const vrow = v as Record<string, unknown>
@@ -1702,7 +1708,17 @@ async function handleGenerate(request: Request) {
           category: generated.category || null,
           inLanguage: 'en',
           product: (effectiveAsin || productUrl)
-            ? { name: productName, url: productUrl || null, imageUrl: productImage, reviewBody: (generated.excerpt || '').slice(0, 600) }
+            ? {
+                name: productName,
+                url: productUrl || null,
+                imageUrl: productImage,
+                reviewBody: (generated.excerpt || '').slice(0, 600),
+                ...(includePrice && productPrice ? {
+                  price: productPrice,
+                  priceCurrency: 'USD',
+                  priceValidUntil: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+                } : {}),
+              }
             : null,
           rating: parseRating(generated.rating),
           thirdPartyProduct: true,
@@ -1733,7 +1749,7 @@ async function handleGenerate(request: Request) {
     }
 
     // GUARANTEED early write — runs before anything that can hang.
-    await writeSeoMeta(ytThumb, generated.title, initialProductImage)
+    await writeSeoMeta(ytThumb, generated.title, initialProductImage, amazonStep?.product?.price ?? null)
 
     // ── Fact-check pass (post-response so the main request never 504s) ───────
     // Strip any product spec/price the transcript + product info don't support,
@@ -2183,7 +2199,7 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
     // AI hero to og:image and use the real Amazon product name/image. Skipped
     // when nothing improved over the guaranteed early write. Best-effort.
     if (heroImageUrl || schemaProductName !== generated.title || schemaProductImage !== initialProductImage) {
-      await writeSeoMeta(heroImageUrl || ytThumb, schemaProductName, schemaProductImage)
+      await writeSeoMeta(heroImageUrl || ytThumb, schemaProductName, schemaProductImage, amazonStep?.product?.price ?? null)
     }
 
     // Purge the page cache LAST — now content + images + SEO meta are all

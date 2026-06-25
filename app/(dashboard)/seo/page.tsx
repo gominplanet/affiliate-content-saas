@@ -12,7 +12,7 @@ import { generateBlogRequest } from '@/lib/blog-generate-client'
 import OpportunitiesPanel from '@/components/seo/OpportunitiesPanel'
 import Link from 'next/link'
 import PageHero from '@/components/layout/PageHero'
-import { Gauge, Loader2, RefreshCw, ExternalLink, CheckCircle, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight, Wand2, X, Zap, Youtube } from 'lucide-react'
+import { Gauge, Loader2, RefreshCw, ExternalLink, CheckCircle, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight, Wand2, X, Zap, Youtube, DollarSign } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { type Tier } from '@/lib/tier'
 import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
@@ -78,6 +78,7 @@ export default function SeoPage() {
     aborted: boolean
   } | null>(null)
   const BULK_INDEX_CAP = 50
+  const [refreshPriceProgress, setRefreshPriceProgress] = useState<{ done: number; total: number; current?: string } | null>(null)
   // "Rebuild from video" modal state — the user pastes a YouTube URL for a
   // legacy post that pre-dates MVP, we link it + run the full generation
   // pipeline against the existing WP post id (preserves URL + indexing).
@@ -555,6 +556,48 @@ export default function SeoPage() {
     return p
   }, [data, sort, filterNotIndexed])
 
+  const refreshPrices = useCallback(async () => {
+    setRefreshPriceProgress({ done: 0, total: 0 })
+    try {
+      const res = await fetch('/api/blog/refresh-prices')
+      if (!res.ok || !res.body) {
+        const d = await res.json().catch(() => ({}))
+        if ((d as { skipped?: boolean }).skipped) {
+          setFixMsg({ ok: true, text: 'Price schema is disabled in Customize Blog — enable it first.' })
+        } else {
+          setFixMsg({ ok: false, text: (d as { error?: string }).error || 'Price refresh failed.' })
+        }
+        setRefreshPriceProgress(null)
+        return
+      }
+      const reader = res.body.getReader()
+      const dec = new TextDecoder()
+      let buf = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buf += dec.decode(value, { stream: true })
+        const parts = buf.split('\n\n')
+        buf = parts.pop() ?? ''
+        for (const part of parts) {
+          const line = part.replace(/^data: /, '').trim()
+          if (!line) continue
+          try {
+            const ev = JSON.parse(line) as { done: number; total: number; current?: string; finished?: boolean }
+            setRefreshPriceProgress({ done: ev.done, total: ev.total, current: ev.current })
+            if (ev.finished) {
+              setFixMsg({ ok: true, text: `Updated prices on ${ev.done} post${ev.done !== 1 ? 's' : ''}.` })
+              setRefreshPriceProgress(null)
+            }
+          } catch { /* partial chunk */ }
+        }
+      }
+    } catch (e) {
+      setFixMsg({ ok: false, text: e instanceof Error ? e.message : 'Price refresh failed.' })
+      setRefreshPriceProgress(null)
+    }
+  }, [])
+
   return (
     <>
       <PageHero
@@ -576,6 +619,17 @@ export default function SeoPage() {
               title="Auto-fix every post's fixable SEO issues"
             >
               {bulkLoading ? <><Loader2 size={13} className="animate-spin" /> Scanning…</> : <><Wand2 size={13} /> Fix all posts</>}
+            </button>
+            <button
+              onClick={refreshPrices}
+              disabled={!!refreshPriceProgress}
+              className="px-3.5 py-2 rounded-lg border text-[13px] font-semibold inline-flex items-center gap-1.5 transition-colors disabled:opacity-50"
+              style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border-bright)', color: 'var(--text)' }}
+              title="Re-fetch current Amazon prices and update all posts' product schema"
+            >
+              {refreshPriceProgress
+                ? <><Loader2 size={13} className="animate-spin" /> {refreshPriceProgress.total > 0 ? `${refreshPriceProgress.done}/${refreshPriceProgress.total}` : 'Scanning…'}</>
+                : <><DollarSign size={13} /> Refresh prices</>}
             </button>
             <button
               onClick={load}
