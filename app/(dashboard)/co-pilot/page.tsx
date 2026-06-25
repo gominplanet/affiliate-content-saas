@@ -977,6 +977,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
       const res = await fetch('/api/youtube/generate-thumbnail', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(120000),
         body: JSON.stringify({
           videoTitle: editTitle || video.title,
           asin: video.detectedAsin ?? undefined,
@@ -1026,6 +1027,10 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           info: { cap: (data.cap as string) || 'thumbnails', currentTier: data.currentTier as string | undefined, upgrade: data.upgrade as { tier: string; label: string; limit: number | null } | null | undefined },
         })
         return
+      }
+      // needsExtension (409): private/inaccessible video with no face identity source.
+      if (!res.ok && data.needsExtension) {
+        throw new Error("This video is private. Install the SCOUT extension (chrome://extensions → Load unpacked → extension/ folder) to capture frames, or select a Face Model under \"Your Face\".")
       }
       // needsFaceModel (409): the user hasn't set up a Face Model and asked for
       // a thumbnail WITH a face — surface the full guidance, not a generic error.

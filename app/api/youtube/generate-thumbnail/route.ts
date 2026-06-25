@@ -1037,6 +1037,17 @@ export async function POST(request: Request) {
     // Falls through to the NB path on any failure so generation never blanks.
     const gfxStoryboardFrame = textMode === 'graphic' ? await gfxStoryboardPromise : null
     const hasVideoFrame = !!(capturedFrames?.length) || !!gfxStoryboardFrame
+    // Private / inaccessible video: storyboard failed, no extension frames, no
+    // Photobooth or uploaded photo → return a clear 409 rather than falling
+    // through to NB which has nothing to ground on and would hang or produce junk.
+    if (textMode === 'graphic' && !hasVideoFrame && !faceModel && autoFaceModels.length === 0 && !uploadedPhotoUrl) {
+      return NextResponse.json({
+        ok: false,
+        needsExtension: true,
+        error: 'No identity source available',
+        message: "This video is private — MVP can't pull frames from it without the browser extension. Install the SCOUT extension to capture your video frames, or add a Face Model under \"Your Face\" to generate a thumbnail.",
+      }, { status: 409 })
+    }
     if (textMode === 'graphic' && (faceModel || hasVideoFrame)) {
       try {
         const openaiGfx = createOpenAIService()
