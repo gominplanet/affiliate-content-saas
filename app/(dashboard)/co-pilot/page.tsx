@@ -969,13 +969,12 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
       'clean'
     )
     try {
-      // Real video frames are only needed as the LIKENESS source when there's NO
-      // face in play. With a face selected (specific or Auto), the face comes
-      // from the creator's Photobooth bank and the route uses the YouTube
-      // thumbnail for layout — so we skip opening/scrubbing the video entirely.
-      // Only when "No face" is chosen do we grab frames (the host's likeness).
+      // Always try to capture a real video frame with SCOUT — it provides the
+      // scene context (the creator in their actual video, the product in context).
+      // A face model (if selected) is used for identity lock IN ADDITION to the
+      // frame, not instead of it. Product-only mode skips frame capture entirely.
       let capturedFrames: string[] = []
-      if (video.youtubeVideoId && !isProductOnly && selectedFaceModelId === null) {
+      if (video.youtubeVideoId && !isProductOnly) {
         if (capturedFramesRef.current?.videoId === video.youtubeVideoId && capturedFramesRef.current.frames.length) {
           capturedFrames = capturedFramesRef.current.frames
         } else {
@@ -1662,7 +1661,11 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                       <button
                         type="button"
                         onClick={() => {
-                          setSelectedFaceModelId(null)
+                          // Don't reset selectedFaceModelId here — setState is async
+                          // and the closure in generateThumbnail() would read the old
+                          // value. SCOUT always captures a real frame regardless of
+                          // face model selection; the route uses frame for the scene
+                          // and the face model (if set) for identity lock.
                           void generateThumbnail()
                         }}
                         disabled={generatingThumbnail || extensionInstalled === null}
