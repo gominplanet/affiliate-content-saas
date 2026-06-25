@@ -31,7 +31,6 @@ import WpUpdateBanner from '@/components/dashboard/WpUpdateBanner'
 import WpUpdatePill from '@/components/dashboard/WpUpdatePill'
 import AmazonSitesReminder from '@/components/dashboard/AmazonSitesReminder'
 import ProTourBanner from '@/components/dashboard/ProTourBanner'
-import TutorialCard from '@/components/dashboard/TutorialCard'
 import MetaLiveBanner from '@/components/dashboard/MetaLiveBanner'
 import { DashboardLiveCards } from '@/components/dashboard/DashboardLiveCards'
 import {
@@ -236,17 +235,22 @@ export default async function DashboardPage() {
               {heroMetaParts.join(' · ')}
             </p>
           )}
-          {/* Site-version status, left-aligned just under the meta line:
-              "Update now" button when an update is ready, else "Up to date". */}
-          <div className="mt-4"><WpUpdatePill /></div>
+          {/* Site-version status + Tutorials shortcut, left-aligned under the meta line. */}
+          <div className="mt-4 flex items-center gap-3 flex-wrap">
+            <WpUpdatePill />
+            <Link
+              href="/tutorials"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-semibold transition-opacity hover:opacity-80"
+              style={{ background: 'linear-gradient(135deg, #7C3AED, #DB2777)', color: '#fff' }}
+            >
+              <BookOpen size={12} />
+              Tutorials
+            </Link>
+          </div>
         </div>
       </section>
 
       <div className="px-6 sm:px-8 py-8 flex flex-col gap-8">
-        {/* Tutorial video — dismissible card so new users can watch right
-            here, returning users can hide it and it stays gone. */}
-        <TutorialCard />
-
         {/* Primary actions. Big, clearly-labelled buttons — one per core
             workflow — so a user (especially a first-timer fresh off the
             YouTube + social setup) knows exactly where to go for each task.

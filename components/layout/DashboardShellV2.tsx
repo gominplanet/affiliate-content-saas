@@ -39,7 +39,6 @@ import {
   UserCog, AlertTriangle, DollarSign, Newspaper, Plug, Wrench,
   Camera, MessageCircle, Activity, BarChart3, Wand2, ShieldCheck,
   Share2, UserSquare, Lightbulb, LifeBuoy, Link2, FlaskConical, Store, Send, ShoppingBag,
-  Play,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import NotificationBell from './NotificationBell'
@@ -296,7 +295,7 @@ export default function DashboardShellV2({
       // Geniuslink into its own funnel card/route.
       label: 'Set up',
       items: [
-        { href: 'https://www.youtube.com/watch?v=aBo0ruDuVuE', icon: <Play size={15} />, label: 'Watch intro', external: true },
+        { href: '/tutorials', icon: <BookOpen size={15} />, label: 'Tutorials' },
         { href: '/setup', icon: <Wrench size={15} />, label: 'WordPress' },
         // YouTube gets its OWN focused page (it's the most important integration
         // — every video→blog flow starts here), separate from the full socials
