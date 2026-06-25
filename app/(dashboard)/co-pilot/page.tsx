@@ -209,6 +209,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
   const [thumbnailPrompt, setThumbnailPrompt] = useState<string | null>(null)
   const [thumbnailModel, setThumbnailModel] = useState<string | null>(null)
   const [thumbnailHook, setThumbnailHook] = useState<string | null>(null)
+  const [gfxTitleInput, setGfxTitleInput] = useState('')
   // Which face the composed thumbnail locked to (Auto-match result), shown so
   // the user can confirm it picked the right person.
   const [thumbnailFaceUsed, setThumbnailFaceUsed] = useState<string | null>(null)
@@ -672,7 +673,9 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
       setThumbnailUrl(rawList[0])
       setThumbnailHook(hook)
       setThumbnailPrompt((data.prompt as string) ?? null)
-      setThumbnailModel((data.modelUsed as string) ?? null)
+      const usedModel = (data.modelUsed as string) ?? null
+      setThumbnailModel(usedModel)
+      if (usedModel === 'gpt-image-graphic') setGfxTitleInput(hook)
       setSceneAnalysis((data.channelStyle as string) ?? null)
       // Baked text is IN the image — there's no text-free base to re-title, so
       // the title picker is hidden on this path.
@@ -1962,6 +1965,24 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                           >
                             <RefreshCw size={12} /> Switch to Scene mode
                           </button>
+                          {/* Inline retitle — lets the user set their own title and regenerate without hunting for the headline picker */}
+                          <div className="flex items-center gap-1.5 w-full mt-1.5">
+                            <input
+                              type="text"
+                              value={gfxTitleInput}
+                              onChange={e => setGfxTitleInput(e.target.value)}
+                              onKeyDown={e => { if (e.key === 'Enter' && gfxTitleInput.trim()) generateThumbnail({ textMode: 'graphic', lockedHeadline: gfxTitleInput.trim() }) }}
+                              placeholder="Type your own title, press Enter or click →"
+                              className="flex-1 min-w-0 text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-white/10 bg-transparent text-[#1d1d1f] dark:text-[#f5f5f7] placeholder:text-gray-400 focus:outline-none focus:border-[#FF6B00] transition"
+                            />
+                            <button
+                              onClick={() => { if (gfxTitleInput.trim()) generateThumbnail({ textMode: 'graphic', lockedHeadline: gfxTitleInput.trim() }) }}
+                              disabled={generatingThumbnail || !gfxTitleInput.trim()}
+                              className="flex-shrink-0 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-[#FF6B00] text-white hover:bg-[#e55a00] transition disabled:opacity-50"
+                            >
+                              Regenerate →
+                            </button>
+                          </div>
                         </>
                       )}
                       {(thumbnailModel === 'nano-banana-pro' || thumbnailModel === 'nano-banana') && (

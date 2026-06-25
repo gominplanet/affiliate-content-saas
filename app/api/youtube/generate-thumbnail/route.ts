@@ -1027,9 +1027,14 @@ export async function POST(request: Request) {
             emphasisWord: '',
           }
         }
+        // Prepend a graphic-mode hint so the copy model knows text is displayed
+        // very large (40% of image) and abstract negations don't land well.
+        const gfxProductCtx = productDescription
+          ? `[GRAPHIC DESIGN THUMBNAIL — text is the dominant visual element, displayed at very large scale. Prefer CURIOSITY_GAP or VALUE_DISRUPTION; avoid abstract NEGATION unless the problem is crystal-clear from the product description. Be concrete: name what the product IS or does.]\n\n${productDescription}`
+          : '[GRAPHIC DESIGN THUMBNAIL — text dominates. Use CURIOSITY_GAP or a direct benefit. Be concrete about what the product does.]'
         const gfxCopies = lockedHeadline
           ? [splitH(lockedHeadline)]
-          : await generateThumbCopies(videoTitle, variantCount, productDescription, claimsSheetGfx)
+          : await generateThumbCopies(videoTitle, variantCount, gfxProductCtx, claimsSheetGfx)
 
         // Best face photo: starred Photobooth shot first, then first source image.
         const starredGfx = await getStarredPhotoboothRefs(user.id, faceModel.id, { maxRefs: 1 })
