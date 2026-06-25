@@ -1665,12 +1665,11 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                       <button
                         type="button"
                         onClick={() => {
-                          // skipFaceModel:true → the person IN the video is the
-                          // identity source. The selected face model (e.g. "Seb")
-                          // is IGNORED — only the captured video frame is sent.
-                          // This prevents the wrong face appearing in the thumbnail
-                          // when the auto-matcher selected the wrong model.
-                          void generateThumbnail({ skipFaceModel: true })
+                          // textMode:'graphic' → gpt-image-1 uses the captured
+                          // video frame as the sole identity source (tight likeness).
+                          // skipFaceModel:true → the selected face model (e.g. "Seb")
+                          // is ignored even if auto-matched — only the frame is used.
+                          void generateThumbnail({ skipFaceModel: true, textMode: 'graphic' })
                         }}
                         disabled={generatingThumbnail || extensionInstalled === null}
                         className="flex items-center gap-4 w-full px-4 py-4 rounded-xl border-2 border-[#FF9500] text-left transition-all hover:bg-[#FF9500]/5 disabled:opacity-50"
