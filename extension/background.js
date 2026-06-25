@@ -134,7 +134,7 @@ async function grabFramesInPage(fractions) {
   return { ok: true, frames }
 }
 
-async function captureYouTubeFrames({ youtubeVideoId, fractions }) {
+async function captureYouTubeFrames({ youtubeVideoId, fractions, callerTabId }) {
   if (!youtubeVideoId || !/^[a-zA-Z0-9_-]{6,20}$/.test(youtubeVideoId)) {
     return { ok: false, error: 'bad-video-id' }
   }
@@ -145,6 +145,8 @@ async function captureYouTubeFrames({ youtubeVideoId, fractions }) {
   // &vq=hd1080 nudges YouTube to start at HD so captures aren't soft 360/480p.
   const url = `https://www.youtube.com/watch?v=${youtubeVideoId}&vq=hd1080`
   try {
+    // Open foreground so Chrome initialises the video player at full priority
+    // (background tabs get throttled timers and deferred media loading).
     const tab = await chrome.tabs.create({ url, active: true })
     tabId = tab.id
 
@@ -159,6 +161,14 @@ async function captureYouTubeFrames({ youtubeVideoId, fractions }) {
       chrome.tabs.onUpdated.addListener(onUpdated)
       setTimeout(() => { chrome.tabs.onUpdated.removeListener(onUpdated); resolve() }, 15000)
     })
+
+    // Page is loaded — switch the user straight back to MVP. Chrome keeps the
+    // video running and allows canvas captures even in a background tab, so all
+    // the seeking + frame grabs below happen silently while the user stays on
+    // the app. requestVideoFrameCallback fires regardless of tab visibility.
+    if (callerTabId != null) {
+      try { await chrome.tabs.update(callerTabId, { active: true }) } catch (e) {}
+    }
 
     const results = await chrome.scripting.executeScript({
       target: { tabId },
@@ -269,8 +279,9 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     const fractions = Array.isArray(msg.fractions) && msg.fractions.length
       ? msg.fractions
       : [typeof msg.seekFraction === 'number' ? msg.seekFraction : 0.5]
+    const callerTabId = sender && sender.tab ? sender.tab.id : null
     const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), CAPTURE_TIMEOUT_MS)
-    captureYouTubeFrames({ youtubeVideoId: msg.youtubeVideoId, fractions })
+    captureYouTubeFrames({ youtubeVideoId: msg.youtubeVideoId, fractions, callerTabId })
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async response — keep the channel open
