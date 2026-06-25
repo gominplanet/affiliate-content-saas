@@ -317,7 +317,7 @@ export const TIERS = {
     regularPrice: 0,
     /** Even internal/admin accounts get a ceiling — this is the lever that
      *  catches the uncapped-testing overnight-$60 case. Generous, not infinite. */
-    monthlyAiSpendCeilingUsd: 150 as number | null,
+    monthlyAiSpendCeilingUsd: 500 as number | null,
     postsPerMonth: null as number | null,
     lifetimeMax: null as number | null,
     collabsPerMonth: null as number | null,
