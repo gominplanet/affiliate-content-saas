@@ -25,8 +25,11 @@ import { toast } from 'sonner'
 import { createBrowserClient } from '@/lib/supabase/client'
 import {
   Check, Wrench, Youtube, Link2, Palette, Sparkles, Brush, UserSquare,
-  ArrowRight, ArrowLeft, ExternalLink, Loader2, PartyPopper, Lock,
+  ArrowRight, ArrowLeft, ExternalLink, Loader2, PartyPopper, Lock, Play,
 } from 'lucide-react'
+
+// ── Replace with your real YouTube video ID (e.g. "dQw4w9WgXcQ") ────────────
+const ONBOARDING_VIDEO_ID = 'aBo0ruDuVuE'
 
 const HOSTINGER_URL = 'https://geni.us/MVPhosting'
 const GENIUSLINK_URL = 'https://geni.us/Y70p9R'
@@ -69,6 +72,7 @@ interface StepDef {
 }
 
 const STEPS: StepDef[] = [
+  { n: 0, key: 'intro', title: 'Watch intro', icon: <Play size={16} />, done: () => false },
   { n: 1, key: 'wp', title: 'Connect WordPress', icon: <Wrench size={16} />, done: (s) => s.wpConnected, required: true },
   // YouTube is OPTIONAL — MVP is content-first, so a non-YouTuber affiliate
   // blogger must be able to skip this and still finish setup. WordPress is the
@@ -182,7 +186,9 @@ export default function OnboardingFunnel({
     }
   }, [router, status.wpConnected])
 
-  const completedCount = STEPS.filter((s) => s.done(status)).length
+  // Step 0 (intro video) is not a "setup" step — exclude from the setup counter.
+  const setupSteps = STEPS.filter((s) => s.n > 0)
+  const completedCount = setupSteps.filter((s) => s.done(status)).length
 
   return (
     <div className="min-h-screen w-full text-[#f5f5f7]" style={{ background: 'radial-gradient(1200px 600px at 50% -10%, rgba(124,58,237,0.18), transparent), #0a0a0f' }}>
@@ -207,7 +213,7 @@ export default function OnboardingFunnel({
           {/* Progress rail */}
           <nav className="hidden md:block">
             <p className="text-[11px] uppercase tracking-[0.14em] font-semibold text-[#86868b] mb-3">
-              Set up · {completedCount}/{STEPS.length}
+              Set up · {completedCount}/{setupSteps.length}
             </p>
             <ol className="flex flex-col gap-1">
               {STEPS.map((s) => {
@@ -229,7 +235,7 @@ export default function OnboardingFunnel({
                           color: done || active ? '#fff' : '#a1a1a6',
                         }}
                       >
-                        {done ? <Check size={13} /> : locked ? <Lock size={11} /> : s.n}
+                        {done ? <Check size={13} /> : locked ? <Lock size={11} /> : s.n === 0 ? <Play size={11} /> : s.n}
                       </span>
                       <span className="text-sm" style={{ color: active ? '#fff' : '#c7c7cc' }}>{s.title}</span>
                     </button>
@@ -244,7 +250,9 @@ export default function OnboardingFunnel({
             <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 md:p-8 min-h-[420px] flex flex-col">
               <div className="flex items-center gap-2.5 mb-1.5 text-[#a1a1a6]">
                 <span className="grid place-items-center w-7 h-7 rounded-lg" style={{ background: 'rgba(124,58,237,0.16)', color: ACCENT }}>{current.icon}</span>
-                <span className="text-xs uppercase tracking-wider">Step {current.n} of {STEPS.length}</span>
+                <span className="text-xs uppercase tracking-wider">
+                  {current.n === 0 ? 'Welcome' : `Step ${current.n} of ${setupSteps.length}`}
+                </span>
                 {current.done(status) && (
                   <span className="ml-auto inline-flex items-center gap-1 text-xs text-[#34c759]"><Check size={13} /> Done</span>
                 )}
@@ -311,6 +319,7 @@ export default function OnboardingFunnel({
 
 function StepBody({ stepKey, status, onConnected }: { stepKey: string; status: Status; onConnected: () => void }) {
   switch (stepKey) {
+    case 'intro': return <IntroVideoStep />
     case 'wp': return <WordPressStep connected={status.wpConnected} onConnected={onConnected} />
     case 'yt': return <YouTubeStep connected={status.ytConnected} />
     case 'aff': return <AffiliateStep done={status.affiliateConnected} onSaved={onConnected} />
@@ -350,6 +359,48 @@ function CheckRow({ ok, checking, label }: { ok: boolean; checking: boolean; lab
       </span>
       <span style={{ color: ok ? '#f5f5f7' : '#a1a1a6' }}>{label}</span>
     </div>
+  )
+}
+
+/* Step 0 — Intro video (watch before setting up) */
+function IntroVideoStep() {
+  return (
+    <>
+      <StepHeading
+        title="Welcome to MVP Affiliate"
+        blurb="Watch this quick walkthrough to see how MVP turns your YouTube videos into blog posts, affiliate revenue, and cross-platform content — all in your voice. Then hit Save & next below to start connecting your tools."
+      />
+      {/* Responsive 16:9 iframe container */}
+      <div style={{
+        position: 'relative',
+        paddingBottom: '56.25%',
+        height: 0,
+        overflow: 'hidden',
+        borderRadius: 12,
+        border: '1px solid rgba(255,255,255,0.1)',
+        marginBottom: 20,
+        background: 'rgba(0,0,0,0.4)',
+      }}>
+        <iframe
+          src={`https://www.youtube.com/embed/${ONBOARDING_VIDEO_ID}?rel=0&modestbranding=1`}
+          title="MVP Affiliate — getting started"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          allowFullScreen
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            border: 0,
+            borderRadius: 12,
+          }}
+        />
+      </div>
+      <p className="text-sm text-[#a1a1a6]">
+        Prefer to dive straight in? Hit <span className="text-white">Skip for now</span> below.
+      </p>
+    </>
   )
 }
 

@@ -56,7 +56,9 @@ export default async function OnboardingPage() {
     faceReady: (faceCount ?? 0) > 0,
   }
 
-  const initialStep = Math.min(7, Math.max(1, Number(intRow?.onboarding_step) || 1))
+  // New users (no saved step) land on step 0 = the intro video first.
+  const savedStep = intRow?.onboarding_step != null ? Number(intRow.onboarding_step) : 0
+  const initialStep = Math.min(7, Math.max(0, savedStep))
 
   return (
     <OnboardingFunnel
