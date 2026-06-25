@@ -1454,6 +1454,15 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                 {/* ── Left column: metadata ── */}
                 <div className="flex-1 min-w-0 flex flex-col gap-5">
 
+                  {/* Step 1 header */}
+                  <div className="flex items-center gap-3 pb-1 border-b border-gray-100 dark:border-white/10">
+                    <span className="w-7 h-7 rounded-full bg-[#7C3AED] text-white text-sm font-bold flex items-center justify-center flex-shrink-0 shadow-sm">1</span>
+                    <div>
+                      <p className="text-sm font-bold text-[#1d1d1f] dark:text-[#f5f5f7]">Review Metadata</p>
+                      <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Edit title, description & tags if needed</p>
+                    </div>
+                  </div>
+
               {/* Title */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
@@ -1519,47 +1528,20 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                 </div>
               </div>
 
-              {/* Manual: paste in YouTube Studio — items YT API can't push */}
-              <div className="rounded-xl border border-[#ff9500]/30 bg-[#ff9500]/5 p-4">
-                <div className="flex items-start gap-2 mb-3">
-                  <AlertCircle size={14} className="text-[#ff9500] mt-0.5 flex-shrink-0" />
-                  <div>
-                    <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Manual: paste these on YouTube after Apply</p>
-                    <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
-                      YouTube&apos;s API doesn&apos;t allow programmatic pinned comments or end-screen elements. We generate the content — you paste it in (90 seconds).
-                    </p>
-                  </div>
-                </div>
-
-                {/* Pinned comment */}
-                <div className="mb-4">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Pinned comment</label>
-                    <button onClick={() => copy(generated.pinnedComment, 'pin')} className="text-[10px] text-[#7C3AED] hover:underline flex items-center gap-0.5">
-                      <Copy size={10} /> {copied === 'pin' ? 'Copied!' : 'Copy'}
-                    </button>
-                  </div>
-                  <div className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7] p-3 rounded-lg bg-white dark:bg-[#1c1c1e] border border-[#d2d2d7] dark:border-[#3a3a3c] leading-relaxed">
-                    {generated.pinnedComment}
-                  </div>
-                  <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-1.5">After the video is public: post this as a comment, then click the three-dot menu → <strong>Pin</strong>.</p>
-                </div>
-
-              </div>
-
                 </div> {/* ── end left column ── */}
 
                 {/* ── Right column: AI Thumbnail Generator ── */}
                 <div className="w-[360px] flex-shrink-0 flex flex-col gap-4">
 
-                  {/* Header */}
-                  <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'linear-gradient(135deg, #7C3AED 0%, #5856d6 100%)' }}>
-                      <Image size={13} className="text-white" />
-                    </div>
+                  {/* Step 2 header */}
+                  <div className="flex items-center gap-3 pb-1 border-b border-gray-100 dark:border-white/10">
+                    <span className="w-7 h-7 rounded-full bg-[#7C3AED] text-white text-sm font-bold flex items-center justify-center flex-shrink-0 shadow-sm">2</span>
                     <div>
-                      <span className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">AI Thumbnail Generator</span>
-                      <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded-full bg-[#7C3AED]/10 text-[#7C3AED] font-medium">1280×720</span>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-bold text-[#1d1d1f] dark:text-[#f5f5f7]">AI Thumbnail Generator</p>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#7C3AED]/10 text-[#7C3AED] font-medium">1280×720</span>
+                      </div>
+                      <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Pick a style and generate your thumbnail</p>
                     </div>
                   </div>
 
@@ -1919,12 +1901,41 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
 
               </div> {/* ── end two-column flex ── */}
 
+              {/* ── Step 3: Pinned Comment ── */}
+              <div className="flex flex-col gap-3 pt-1">
+                <div className="flex items-center gap-3 pb-1 border-b border-gray-100 dark:border-white/10">
+                  <span className="w-7 h-7 rounded-full bg-[#ff9500]/15 border border-[#ff9500]/40 text-[#ff9500] text-sm font-bold flex items-center justify-center flex-shrink-0">3</span>
+                  <div>
+                    <p className="text-sm font-bold text-[#1d1d1f] dark:text-[#f5f5f7]">Pinned Comment <span className="text-[11px] font-normal text-[#86868b]">— optional</span></p>
+                    <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">YouTube's API can't pin — copy & paste this after your video goes live</p>
+                  </div>
+                </div>
+                <div className="rounded-xl border border-[#ff9500]/30 bg-[#ff9500]/5 p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Pinned comment</label>
+                    <button onClick={() => copy(generated.pinnedComment, 'pin')} className="text-[10px] text-[#7C3AED] hover:underline flex items-center gap-0.5">
+                      <Copy size={10} /> {copied === 'pin' ? 'Copied!' : 'Copy'}
+                    </button>
+                  </div>
+                  <div className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7] p-3 rounded-lg bg-white dark:bg-[#1c1c1e] border border-[#d2d2d7] dark:border-[#3a3a3c] leading-relaxed">
+                    {generated.pinnedComment}
+                  </div>
+                  <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-2">After the video is public: post this as a comment, then click the three-dot menu → <strong>Pin</strong>.</p>
+                </div>
+              </div>
+
               {/* Pro batch-apply settings panel — Pro/admin only */}
               {isPro && (
                 <div className="border border-[#7C3AED]/20 bg-[#7C3AED]/5 rounded-xl p-4 flex flex-col gap-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#7C3AED] text-white font-semibold uppercase tracking-wide">Pro</span>
-                    <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">One-click Studio settings</p>
+                  <div className="flex items-center gap-3 pb-1 border-b border-[#7C3AED]/10">
+                    <span className="w-7 h-7 rounded-full bg-[#7C3AED] text-white text-sm font-bold flex items-center justify-center flex-shrink-0 shadow-sm">4</span>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-bold text-[#1d1d1f] dark:text-[#f5f5f7]">Studio Settings</p>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#7C3AED] text-white font-semibold uppercase tracking-wide">Pro</span>
+                      </div>
+                      <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Playlist, visibility, schedule & notification</p>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -2002,20 +2013,20 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
               )}
 
               {/* Actions */}
-              <div className="flex flex-col gap-2 pt-1">
+              <div className="flex flex-col gap-2 pt-2">
                 <div className="flex items-center gap-3">
                   <button
                     onClick={applyToYouTube}
                     disabled={applying || applied}
-                    className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-60 transition-colors"
-                    style={{ background: applied ? '#34c759' : '#ff0000' }}
+                    className="flex items-center justify-center gap-2.5 flex-1 py-3.5 rounded-xl text-base font-bold text-white disabled:opacity-60 transition-all shadow-lg hover:opacity-90 active:scale-[0.98]"
+                    style={{ background: applied ? '#34c759' : 'linear-gradient(135deg, #ff0000 0%, #cc0000 100%)', boxShadow: applied ? undefined : '0 4px 14px rgba(255,0,0,0.35)' }}
                   >
-                    {applying ? <><Loader2 size={14} className="animate-spin" /> {proSettings.privacyStatus === 'draft' ? 'Saving draft…' : 'Applying…'}</>
-                      : applied ? <><CheckCircle size={14} /> {proSettings.privacyStatus === 'draft' ? 'Saved to draft' : 'Applied to YouTube'}</>
-                      : <><Youtube size={14} /> {proSettings.privacyStatus === 'draft' ? 'Save draft to YouTube' : 'Apply to YouTube'}</>}
+                    {applying ? <><Loader2 size={16} className="animate-spin" /> {proSettings.privacyStatus === 'draft' ? 'Saving draft…' : 'Pushing to YouTube…'}</>
+                      : applied ? <><CheckCircle size={16} /> {proSettings.privacyStatus === 'draft' ? 'Saved to Draft' : 'Pushed to YouTube!'}</>
+                      : <><Youtube size={16} /> {proSettings.privacyStatus === 'draft' ? 'Save Draft to YouTube' : 'Push to YouTube'}</>}
                   </button>
                   <button onClick={() => generate()} disabled={generating}
-                    className="flex items-center gap-1 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#7C3AED] transition-colors">
+                    className="flex items-center gap-1 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#7C3AED] transition-colors flex-shrink-0">
                     <RefreshCw size={11} /> Regenerate
                   </button>
                 </div>
