@@ -848,6 +848,17 @@ export async function POST(request: Request) {
         })()
       : Promise.resolve('')
 
+    // For graphic mode: prefetch a storyboard frame to use as identity reference,
+    // running in parallel with face-model loading + product resolution below.
+    // Extension-captured frames (capturedFrames) are used if present; storyboard
+    // is the server-side fallback when the extension isn't running.
+    const gfxStoryboardPromise: Promise<import('@/lib/youtube-storyboards').StoryboardFrame | null> =
+      (textMode === 'graphic' && youtubeVideoId && !capturedFrames?.length)
+        ? fetchStoryboardFrames(youtubeVideoId as string, { maxFrames: 2 })
+            .then(frames => frames[0] ?? null)
+            .catch(() => null)
+        : Promise.resolve(null)
+
     // Face comes straight from the request — the Co-Pilot block's face chips
     // (Auto / Off / Product only / a likeness model) drive it live. The saved
     // brand style is applied CLIENT-side (it prefills the block), so the route
@@ -943,7 +954,9 @@ export async function POST(request: Request) {
     // Model instead of "doing whatever it wants". (Face models can never cross
     // accounts — the DB reads are user-scoped — so this also guarantees one
     // user's face is never rendered for another.)
-    const hasOwnedFaceIdentity = !!faceModel || autoFaceModels.length > 0 || !!uploadedPhotoUrl
+    // youtubeVideoId means Co-Pilot context — always the user's own channel video,
+    // so the person visible in storyboard frames is the user's own face.
+    const hasOwnedFaceIdentity = !!faceModel || autoFaceModels.length > 0 || !!uploadedPhotoUrl || !!youtubeVideoId
     if (!noHuman && !hasOwnedFaceIdentity) {
       return NextResponse.json({
         ok: false,
@@ -1015,12 +1028,16 @@ export async function POST(request: Request) {
     fal.config({ credentials: falKey })
 
     // ── PATH GFX: gpt-image-1 graphic-design thumbnail ────────────────────────
-    // Triggered by textMode='graphic'. Downloads the starred Photobooth photo +
-    // the Amazon product image, then calls gpt-image-1 ONCE PER VARIANT with a
-    // detailed graphic-design layout prompt. The model composites creator, product,
-    // and bold text natively — no NB Pro scene, no rembg cutout.
+    // Triggered by textMode='graphic'. Identity source priority:
+    //   1. Extension-captured frame (capturedFrames) — highest resolution
+    //   2. Storyboard frame (gfxStoryboardPromise) — server-side, no friction
+    //   3. Photobooth face model — fallback when no video context
+    // Drops to quality:'medium' when a real video frame is available (identity
+    // is already grounded) — that brings gpt-image-1 from ~2min down to ~20s.
     // Falls through to the NB path on any failure so generation never blanks.
-    if (textMode === 'graphic' && faceModel) {
+    const gfxStoryboardFrame = textMode === 'graphic' ? await gfxStoryboardPromise : null
+    const hasVideoFrame = !!(capturedFrames?.length) || !!gfxStoryboardFrame
+    if (textMode === 'graphic' && (faceModel || hasVideoFrame)) {
       try {
         const openaiGfx = createOpenAIService()
         const claimsSheetGfx = await claimsSheetPromise
@@ -1044,22 +1061,30 @@ export async function POST(request: Request) {
           ? [splitH(lockedHeadline)]
           : await generateThumbCopies(videoTitle, variantCount, gfxProductCtx, claimsSheetGfx)
 
-        // Best face photo: starred Photobooth shot first, then first source image.
-        const starredGfx = await getStarredPhotoboothRefs(user.id, faceModel.id, { maxRefs: 1 })
-        const photoUrl = starredGfx[0] ?? faceModel.source_images[0]
-        if (!photoUrl) throw new Error('no face photo for graphic mode')
+        // Identity source: extension frame > storyboard frame > Photobooth photo.
+        // Extension/storyboard frames use quality:'medium' (~20s); Photobooth-only
+        // uses quality:'high' (~2min) since there's no pre-grounded identity.
+        let photoBytes: Buffer | Uint8Array
+        if (capturedFrames?.length) {
+          const base64 = capturedFrames[0].replace(/^data:[^;]+;base64,/, '')
+          photoBytes = await normalizeToPng(Buffer.from(base64, 'base64'))
+        } else if (gfxStoryboardFrame) {
+          photoBytes = await normalizeToPng(new Uint8Array(gfxStoryboardFrame.buffer))
+        } else {
+          if (!faceModel) throw new Error('no face identity for graphic mode')
+          const starredGfx = await getStarredPhotoboothRefs(user.id, faceModel.id, { maxRefs: 1 })
+          const photoUrl = starredGfx[0] ?? faceModel.source_images[0]
+          if (!photoUrl) throw new Error('no face photo for graphic mode')
+          const photoAb = await fetch(photoUrl, { signal: AbortSignal.timeout(12000) })
+            .then(r => r.ok ? r.arrayBuffer() : Promise.reject(new Error(`face photo ${r.status}`)))
+          photoBytes = await normalizeToPng(new Uint8Array(photoAb))
+        }
 
-        // Download creator photo + product image as buffers in parallel.
-        const [photoAb, productAb] = await Promise.all([
-          fetch(photoUrl, { signal: AbortSignal.timeout(12000) })
-            .then(r => r.ok ? r.arrayBuffer() : Promise.reject(new Error(`face photo ${r.status}`))),
-          productImageUrl
-            ? fetch(productImageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(12000) })
-                .then(r => r.ok ? r.arrayBuffer() : null).catch(() => null)
-            : Promise.resolve(null),
-        ])
-
-        const photoBytes = await normalizeToPng(new Uint8Array(photoAb))
+        // Product image (unchanged — fetched separately).
+        const productAb = productImageUrl
+          ? await fetch(productImageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(12000) })
+              .then(r => r.ok ? r.arrayBuffer() : null).catch(() => null)
+          : null
         const productBytes = productAb
           ? await normalizeToPng(new Uint8Array(productAb)).catch(() => null)
           : null
@@ -1101,7 +1126,8 @@ export async function POST(request: Request) {
             ]
             if (productBytes) refs.push({ data: productBytes, filename: 'product.png', mime: 'image/png' })
 
-            const b64 = await openaiGfx.generateWithReferences({ prompt, images: refs, size: '1536x1024', quality: 'high' })
+            const gfxQuality = hasVideoFrame ? 'medium' : 'high'
+            const b64 = await openaiGfx.generateWithReferences({ prompt, images: refs, size: '1536x1024', quality: gfxQuality })
             recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'yt_thumb_graphic', model: gfxModel, images: 1 })
             return rehostToFal(`data:image/png;base64,${b64}`)
           })
@@ -1131,7 +1157,7 @@ export async function POST(request: Request) {
           composited: true,
           headshotUsed: false,
           personCutoutUrl: null,
-          faceUsed: faceModel.name,
+          faceUsed: hasVideoFrame ? (capturedFrames?.length ? 'video-frame-extension' : 'video-frame-storyboard') : (faceModel?.name ?? 'photobooth'),
           qcWarning: false,
           faceIdentityChecked: false,
         })

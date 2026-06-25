@@ -1703,24 +1703,29 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                   {thumbnailMode === 'face-model' && (
                     <div className="flex flex-col gap-3 p-4 rounded-xl bg-[#FF9500]/5 border border-[#FF9500]/20">
                       <p className="text-[11px] font-semibold text-[#FF9500]">Generate with your AI face model</p>
-                      {faceModels.length === 0 ? (
+                      {faceModels.length === 0 && !video.youtubeVideoId ? (
                         <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0]">No face models yet. Set one up in <strong>Face Models</strong>.</p>
                       ) : (
                         <>
-                          <select
-                            value={selectedFaceModelId ?? ''}
-                            onChange={e => setSelectedFaceModelId(e.target.value || null)}
-                            disabled={generatingThumbnail}
-                            className="text-xs px-3 py-2 rounded-lg border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] focus:outline-none focus:border-[#FF9500] transition"
-                          >
-                            <option value="">— Select face model —</option>
-                            {faceModels.map(fm => (
-                              <option key={fm.id} value={fm.id}>{fm.name}</option>
-                            ))}
-                          </select>
+                          {faceModels.length > 0 && (
+                            <select
+                              value={selectedFaceModelId ?? ''}
+                              onChange={e => setSelectedFaceModelId(e.target.value || null)}
+                              disabled={generatingThumbnail}
+                              className="text-xs px-3 py-2 rounded-lg border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] focus:outline-none focus:border-[#FF9500] transition"
+                            >
+                              <option value="">— Select face model —</option>
+                              {faceModels.map(fm => (
+                                <option key={fm.id} value={fm.id}>{fm.name}</option>
+                              ))}
+                            </select>
+                          )}
+                          {!selectedFaceModelId && video.youtubeVideoId && (
+                            <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0]">Using your video frame as identity reference (~20s)</p>
+                          )}
                           <button
                             onClick={() => void generateThumbnail()}
-                            disabled={generatingThumbnail || !selectedFaceModelId}
+                            disabled={generatingThumbnail || (!selectedFaceModelId && !video.youtubeVideoId)}
                             className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 transition-all hover:opacity-90"
                             style={{ background: 'linear-gradient(135deg, #FF9500 0%, #FF6B00 100%)' }}
                           >
