@@ -146,7 +146,7 @@ export async function applyMoodyGrade(url: string): Promise<string> {
     const cx = w * 0.5, cy = h * 0.42
     const maxR = Math.hypot(Math.max(cx, w - cx), Math.max(cy, h - cy))
     const INNER = 0.45   // inner fraction of the radius kept fully bright
-    const EDGE = 120     // corner multiplier value (120/255 ≈ 0.47 brightness)
+    const EDGE = 175     // corner multiplier value (175/255 ≈ 0.69 brightness)
     const vig = Buffer.alloc(w * h * 3)
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
@@ -162,10 +162,10 @@ export async function applyMoodyGrade(url: string): Promise<string> {
     }
 
     const out = await base
-      // Slight global darken + richer colour.
-      .modulate({ brightness: 0.94, saturation: 1.12 })
-      // Contrast bump: slope > 1 with a negative offset deepens the shadows.
-      .linear(1.12, -12)
+      // Very slight global darken + richer colour.
+      .modulate({ brightness: 0.97, saturation: 1.08 })
+      // Gentle contrast lift: small slope + minimal offset — just adds depth.
+      .linear(1.05, -4)
       // Multiply the vignette so the centre is untouched and the edges fall off.
       .composite([{ input: vig, raw: { width: w, height: h, channels: 3 }, blend: 'multiply' }])
       .jpeg({ quality: 90 })

@@ -942,9 +942,10 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
     }
   }
 
-  async function generateThumbnail(opts?: { textMode?: 'baked' | 'clean' | 'graphic'; lockedHeadline?: string }) {
+  async function generateThumbnail(opts?: { textMode?: 'baked' | 'clean' | 'graphic'; lockedHeadline?: string; noHuman?: boolean }) {
     setGeneratingThumbnail(true)
     setThumbnailError(null)
+    const isProductOnly = opts?.noHuman ?? (selectedFaceModelId === 'no-human')
     // Caller passes the picked headline DIRECTLY (not via setCustomHeadline +
     // setTimeout) — React state may not have flushed yet when this function's
     // closure reads customHeadline, which is what made the route fall back to
@@ -957,7 +958,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
       // thumbnail for layout — so we skip opening/scrubbing the video entirely.
       // Only when "No face" is chosen do we grab frames (the host's likeness).
       let capturedFrames: string[] = []
-      if (video.youtubeVideoId && selectedFaceModelId === null) {
+      if (video.youtubeVideoId && !isProductOnly && selectedFaceModelId === null) {
         if (capturedFramesRef.current?.videoId === video.youtubeVideoId && capturedFramesRef.current.frames.length) {
           capturedFrames = capturedFramesRef.current.frames
         } else {
@@ -991,9 +992,9 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           borderStyleIndex: borderIndex ?? undefined,
           accentColor,
           // "Your Face" — lock the host's likeness from their uploaded photos.
-          faceModelId: (selectedFaceModelId && selectedFaceModelId !== 'no-human') ? selectedFaceModelId : undefined,
+          faceModelId: (!isProductOnly && selectedFaceModelId && selectedFaceModelId !== 'no-human') ? selectedFaceModelId : undefined,
           // 'no-human' → product-only thumbnail, no face composition at all.
-          noHuman: selectedFaceModelId === 'no-human' || undefined,
+          noHuman: isProductOnly || undefined,
           styleReferenceUrl: styleReferenceUrl || undefined,
           uploadedPhotoUrl: uploadedPhotoUrl || undefined,
           cleanupPrompt: cleanupPrompt.trim() || undefined,
@@ -1003,16 +1004,10 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           // tells the model how to arrange them.
           customProductImageUrls: productImageUrls.length > 0 ? productImageUrls : undefined,
           productCompositionNote: productCompositionNote.trim() || undefined,
-          // Default 'clean': the composed, vidIQ-style designed scene (host +
-          // hero product + reimagined background) rendered TEXT-FREE, with the
-          // headline drawn by our pixel-perfect canvas overlay — guaranteed
-          // correct spelling. "Try AI-baked text" re-runs with 'baked' to bake
-          // the title into the image (more integrated, but may misspell).
-          // Graphic Design mode is the default when a face model is active —
-          // it uses gpt-image-1 with the creator's Photobooth photo + product
-          // image as references for a professional composite. Falls back to NB
-          // Pro ('clean') when no face model is selected or on gpt-image failure.
-          textMode: opts?.textMode ?? ((selectedFaceModelId && selectedFaceModelId !== 'no-human') ? 'graphic' : 'clean'),
+          // Default 'clean': NB Pro path — fast Flux-based composition rendered
+          // TEXT-FREE, headline drawn by pixel-perfect canvas overlay. Use the
+          // "🎨 Graphic" button for the gpt-image-1 composite path.
+          textMode: opts?.textMode ?? 'clean',
           capturedFrames: capturedFrames.length ? capturedFrames : undefined,
           // "Break frame" effect: composites the creator OVER the neon border.
           // Off by default (costs ~20s for the rembg pass).
@@ -1694,7 +1689,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                       <button
                         onClick={() => {
                           setSelectedFaceModelId('no-human')
-                          void generateThumbnail()
+                          void generateThumbnail({ noHuman: true })
                         }}
                         disabled={generatingThumbnail}
                         className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 transition-all hover:opacity-90"
