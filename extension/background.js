@@ -139,7 +139,7 @@ async function captureYouTubeFrames({ youtubeVideoId, fractions }) {
     return { ok: false, error: 'bad-video-id' }
   }
   const fracs = Array.isArray(fractions) && fractions.length
-    ? fractions.filter((n) => typeof n === 'number' && n > 0 && n < 1).slice(0, 15)
+    ? fractions.filter((n) => typeof n === 'number' && n > 0 && n < 1).slice(0, 5)
     : [0.5]
   let tabId = null
   // &vq=hd1080 nudges YouTube to start at HD so captures aren't soft 360/480p.

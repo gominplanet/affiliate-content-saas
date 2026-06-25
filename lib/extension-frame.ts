@@ -68,9 +68,9 @@ export async function getScoutStatus(): Promise<{ installed: boolean; version: s
  */
 export async function requestVideoFrames(
   youtubeVideoId: string,
-  // 15 evenly-spaced fractions from 5% to 75% of the runtime.
-  // Stops at 75% to avoid the end-screen card zone (last ~20s injects UI boxes).
-  fractions: number[] = [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75],
+  // 5 evenly-spaced fractions — enough for the vision picker to find a good
+  // face+product frame without blowing Vercel's 4.5 MB request-body limit.
+  fractions: number[] = [0.1, 0.25, 0.4, 0.55, 0.7],
 ): Promise<string[]> {
   const resp = await sendToExtension<{ ok?: boolean; frames?: string[]; dataUrl?: string; error?: string }>(
     { type: 'MVP_CAPTURE_FRAME', youtubeVideoId, fractions },
