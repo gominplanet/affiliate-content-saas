@@ -312,6 +312,8 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
   const [breakFrame, setBreakFrame] = useState(false)
   /** null = still checking (ping in progress), true/false = known state. */
   const [extensionInstalled, setExtensionInstalled] = useState<boolean | null>(null)
+  /** Live status shown inside the Card 4 button while generating. */
+  const [thumbnailStatus, setThumbnailStatus] = useState<string>('')
   // Tier-cap-reached state — keyed separately from the red error toast
   // so we can render an amber upgrade banner with a /pricing CTA instead.
   const [capError, setCapError] = useState<{ message: string; info: { cap: string; currentTier?: string; upgrade?: { tier: string; label: string; limit: number | null } | null } } | null>(null)
@@ -949,12 +951,20 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
   async function generateThumbnail(opts?: { textMode?: 'baked' | 'clean' | 'graphic'; lockedHeadline?: string; noHuman?: boolean }) {
     setGeneratingThumbnail(true)
     setThumbnailError(null)
+    setThumbnailStatus('')
     const isProductOnly = opts?.noHuman ?? (selectedFaceModelId === 'no-human')
     // Caller passes the picked headline DIRECTLY (not via setCustomHeadline +
     // setTimeout) — React state may not have flushed yet when this function's
     // closure reads customHeadline, which is what made the route fall back to
     // generic hooks even after the user picked from the modal.
     const headline = ((opts?.lockedHeadline ?? customHeadline).trim()) || undefined
+    // Determine textMode early so we know how many frames to request.
+    const effectiveTextMode = opts?.textMode ?? (
+      isProductOnly ? 'clean' :
+      (selectedFaceModelId && selectedFaceModelId !== 'no-human') ? 'graphic' :
+      video.youtubeVideoId ? 'graphic' :
+      'clean'
+    )
     try {
       // Real video frames are only needed as the LIKENESS source when there's NO
       // face in play. With a face selected (specific or Auto), the face comes
@@ -969,7 +979,11 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           try {
             if (await isExtensionAvailable()) {
               setThumbnailError(null)
-              const frames = await requestVideoFrames(video.youtubeVideoId)
+              setThumbnailStatus('Opening your video to capture a frame…')
+              // Graphic path uses only capturedFrames[0], so 1 frame is enough
+              // and keeps the capture under ~15s. NB path benefits from several.
+              const fracs = effectiveTextMode === 'graphic' ? [0.3] : [0.1, 0.25, 0.4, 0.55, 0.7]
+              const frames = await requestVideoFrames(video.youtubeVideoId, fracs)
               if (frames.length) {
                 capturedFrames = frames
                 capturedFramesRef.current = { videoId: video.youtubeVideoId, frames }
@@ -978,6 +992,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           } catch { /* ignore — fall back to the maxres frame */ }
         }
       }
+      setThumbnailStatus('Generating your thumbnail…')
       const res = await fetch('/api/youtube/generate-thumbnail', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1045,6 +1060,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
       setThumbnailError(err instanceof Error ? err.message : 'Failed to generate thumbnail')
     } finally {
       setGeneratingThumbnail(false)
+      setThumbnailStatus('')
     }
   }
 
@@ -1662,7 +1678,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-bold text-[#FF9500]">Create my MVP Thumbnail</p>
                           <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-0.5">
-                            {generatingThumbnail ? 'Capturing frames + generating…' : extensionInstalled === null ? 'Checking for extension…' : 'Captures your video frames automatically'}
+                            {generatingThumbnail ? (thumbnailStatus || 'Starting…') : extensionInstalled === null ? 'Checking for extension…' : 'Captures your video frames automatically'}
                           </p>
                         </div>
                         {extensionInstalled && (
