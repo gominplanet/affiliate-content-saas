@@ -55,7 +55,10 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
         if (cancelled) return
         setData(d as RecapData)
         setBrand((d.brandGuess as string) || '')
-        setEnabled(Object.fromEntries((d.links as RecapLink[]).map(l => [l.platform, true])))
+        // Default every CONTENT link on, but the product link OFF — it's the
+        // brand's own listing, so it doesn't belong in a "here's where our
+        // content is live" recap (it stays available as the button + an opt-in).
+        setEnabled(Object.fromEntries((d.links as RecapLink[]).map(l => [l.platform, l.platform !== 'product'])))
         setMessage((d.message as string) || '')
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load')
@@ -169,7 +172,10 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
                         onChange={e => { setEnabled(s => ({ ...s, [l.platform]: e.target.checked })); setEdited(false) }}
                         className="accent-[#7C3AED] w-3.5 h-3.5"
                       />
-                      <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7] w-28 shrink-0">{l.label}</span>
+                      <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7] w-28 shrink-0">
+                        {l.label}
+                        {l.platform === 'product' && <span className="block text-[10px] font-normal text-[#86868b]">their own listing</span>}
+                      </span>
                       <a href={l.url} target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline truncate flex-1" title={l.url}>{l.url}</a>
                     </label>
                   ))}

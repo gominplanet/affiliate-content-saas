@@ -16,12 +16,39 @@ import { createServerClient } from '@/lib/supabase/server'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { resolveBlogPostId } from '@/lib/resolve-post-id'
 import {
-  buildRecapLinks, guessBrandName, fillRecapMessage,
+  buildRecapLinks, guessBrandName, cleanProductName, fillRecapMessage,
   DEFAULT_RECAP_TEMPLATE, isAmazonUrl,
   type BrandRecapSettings, type RecapLink,
 } from '@/lib/brand-recap'
+import { resolveTrueDestination } from '@/lib/affiliate-resolve'
+import { asinFromAmazonUrl } from '@/lib/product-link'
+import { extractAsin, fetchAmazonProduct } from '@/services/amazon'
 
 export const dynamic = 'force-dynamic'
+
+/** Best-effort: go to the source link, resolve to the real Amazon listing, and
+ *  read the ACTUAL product title — so the brand name + product name come from
+ *  the listing ("AEOCKY 4200 ft² Air Purifier"), not the clickbait video title
+ *  ("Can One Air Purifier…"). Bounded by a timeout; returns null on any miss
+ *  (the brand field stays editable, so a miss is recoverable). */
+async function resolveProductIdentity(productUrl: string | null): Promise<{ name: string; brand: string } | null> {
+  if (!productUrl) return null
+  const withTimeout = <T,>(p: Promise<T>, ms: number) =>
+    Promise.race([p, new Promise<never>((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))])
+  try {
+    let asin = asinFromAmazonUrl(productUrl) || extractAsin(productUrl)
+    if (!asin) {
+      const dest = await withTimeout(resolveTrueDestination(productUrl), 5000)
+      asin = asinFromAmazonUrl(dest) || extractAsin(dest)
+    }
+    if (!asin) return null
+    const p = await withTimeout(fetchAmazonProduct(asin), 7000)
+    if (!p?.title) return null
+    return { name: cleanProductName(p.title), brand: guessBrandName(p.title) }
+  } catch {
+    return null
+  }
+}
 
 /** Server-side mirror of the Content page's deriveProductUrl — the first
  *  affiliate/product link in the video description, a stored product_url, or
@@ -104,13 +131,22 @@ export async function GET(request: Request, { params }: { params: Promise<{ post
     }
 
     const links: RecapLink[] = buildRecapLinks({ post, youtubeUrl, productUrl })
-    const productName = (video?.title as string) || (post.title as string) || ''
-    const brandGuess = guessBrandName(productName)
+
+    // Brand + product NAME come from the real listing at the source link when
+    // we can resolve it; the clickbait video title is only a last-resort
+    // fallback. When there's a product URL but the fetch missed, leave the
+    // brand blank (the user types it) rather than guess "Can" off the title.
+    const real = await resolveProductIdentity(productUrl)
+    const titleFallback = (video?.title as string) || (post.title as string) || ''
+    const productName = real?.name || titleFallback
+    const brandGuess = real?.brand ?? (productUrl ? '' : guessBrandName(titleFallback))
 
     const message = fillRecapMessage(settings.template, {
       brand: brandGuess,
       product: productName,
-      links,
+      // Default message lists the creator's CONTENT only — not the brand's own
+      // product link (the modal keeps that as an opt-in + the product button).
+      links: links.filter(l => l.platform !== 'product'),
       name: settings.senderName,
       site: settings.siteUrl,
     })

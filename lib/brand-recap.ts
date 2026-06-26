@@ -95,7 +95,10 @@ export function buildRecapLinks(opts: {
 }): RecapLink[] {
   const { post, youtubeUrl, productUrl } = opts
   const out: RecapLink[] = []
-  if (productUrl) out.push({ platform: 'product', label: productLinkLabel(productUrl), url: productUrl })
+  // Product = the brand's OWN listing. Neutral label (not "Amazon") so the
+  // message never implies the creator's content lives on Amazon — and the
+  // modal defaults this OFF (a brand doesn't need their own link sent back).
+  if (productUrl) out.push({ platform: 'product', label: 'Product page', url: productUrl })
   if (post.wordpress_url) out.push({ platform: 'blog', label: 'Full written review', url: post.wordpress_url })
   if (youtubeUrl) out.push({ platform: 'youtube', label: 'YouTube', url: youtubeUrl })
   if (post.tiktok_share_url) out.push({ platform: 'tiktok', label: 'TikTok', url: post.tiktok_share_url })
@@ -104,6 +107,18 @@ export function buildRecapLinks(opts: {
   if (post.facebook_post_id) out.push({ platform: 'facebook', label: 'Facebook', url: `https://www.facebook.com/${post.facebook_post_id}` })
   if (post.linkedin_post_id) out.push({ platform: 'linkedin', label: 'LinkedIn', url: linkedinUpdateUrl(post.linkedin_post_id) })
   return out
+}
+
+/** Trim a giant Amazon listing title down to "Brand + product type" for the
+ *  message — e.g. "AEOCKY 4200 ft² Whole-House Air Purifier with 515 sq ft…"
+ *  → "AEOCKY 4200 ft² Whole-House Air Purifier". Cuts at the first comma/pipe
+ *  or a " with "/" for " feature clause, capped to a readable length. */
+export function cleanProductName(amazonTitle?: string | null): string {
+  const t = (amazonTitle || '').trim()
+  if (!t) return ''
+  let cut = t.split(/\s*[,|]\s*/)[0]
+  cut = cut.split(/\s+(?:with|for|featuring)\s+/i)[0]
+  return cut.slice(0, 72).trim()
 }
 
 /** First-word best guess at the brand from a product title (Amazon titles
