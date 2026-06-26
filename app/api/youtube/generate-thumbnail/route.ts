@@ -1235,7 +1235,7 @@ export async function POST(request: Request) {
               '',
               'LAYOUT (strict, left to right):',
               `  LEFT 40% — text block on a VERTICALLY CENTERED semi-transparent dark panel:`,
-              `    VERTICAL POSITION: The panel is centered in the image height — leave at least 18% of empty canvas ABOVE and BELOW the panel. The top line of text must NEVER be closer than 15% of the image height from the top edge.`,
+              `    VERTICAL POSITION: The panel must be centered in the image height. Leave at least 28% of empty canvas ABOVE the panel and at least 20% BELOW it. The top line of text must NEVER be closer than 25% of the image height from the top edge — there must be a clear visible gap above the text.`,
               `    Top line: "${line1}" — large white bold capitals, dark stroke outline for readability.`,
               `    Main line: "${line2}" — even larger, bright yellow (#FFE034) bold capitals — the dominant visual element.`,
               `    Text must be CRISP and FULLY READABLE. No other text in the image.`,
