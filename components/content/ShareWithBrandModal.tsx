@@ -1,0 +1,228 @@
+'use client'
+
+/**
+ * ShareWithBrandModal — the "Share with brand" action on each Blog Post
+ * Generator card. Pulls every link MVP stored for the post, assembles a
+ * ready-to-send recap message from the creator's template, and lets them:
+ *   - Copy the message (paste into Creator Connections, an email, a DM)
+ *   - Email it (opens a pre-filled draft)
+ *   - Open the product page (so OINK users can message the brand on Creator
+ *     Connections right from the Amazon listing)
+ *   - Polish it with AI (optional, keeps every link intact)
+ *
+ * Brand name is an EDITABLE, pre-filled field — never sent blind. The message
+ * re-fills live as the brand name / link toggles change, until the user hand-
+ * edits it (then it leaves their text alone; "Reset" re-generates).
+ */
+
+import { useEffect, useState, useCallback } from 'react'
+import { toast } from 'sonner'
+import { X, Copy, Mail, ExternalLink, Loader2, Sparkles, Check, RotateCcw } from 'lucide-react'
+import { fillRecapMessage, type RecapLink, type BrandRecapSettings } from '@/lib/brand-recap'
+
+interface RecapData {
+  brandGuess: string
+  product: { name: string; url: string | null; isAmazon: boolean }
+  links: RecapLink[]
+  settings: BrandRecapSettings
+  message: string
+}
+
+export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
+  postId: string
+  wpUrl?: string | null
+  onClose: () => void
+}) {
+  const [data, setData] = useState<RecapData | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [brand, setBrand] = useState('')
+  const [enabled, setEnabled] = useState<Record<string, boolean>>({})
+  const [message, setMessage] = useState('')
+  const [edited, setEdited] = useState(false)
+  const [polishing, setPolishing] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      setLoading(true); setError(null)
+      try {
+        const url = `/api/blog/brand-recap/${postId}${wpUrl ? `?wpUrl=${encodeURIComponent(wpUrl)}` : ''}`
+        const res = await fetch(url)
+        const d = await res.json()
+        if (!res.ok) throw new Error(d.error || 'Could not load this post’s links')
+        if (cancelled) return
+        setData(d as RecapData)
+        setBrand((d.brandGuess as string) || '')
+        setEnabled(Object.fromEntries((d.links as RecapLink[]).map(l => [l.platform, true])))
+        setMessage((d.message as string) || '')
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [postId, wpUrl])
+
+  const refill = useCallback(() => {
+    if (!data) return
+    const active = data.links.filter(l => enabled[l.platform])
+    setMessage(fillRecapMessage(data.settings.template, {
+      brand, product: data.product.name, links: active,
+      name: data.settings.senderName, site: data.settings.siteUrl,
+    }))
+  }, [data, brand, enabled])
+
+  // Auto-refill on brand/toggle change — unless the user has hand-edited.
+  useEffect(() => {
+    if (!edited) refill()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [brand, enabled])
+
+  async function copyMessage() {
+    try {
+      await navigator.clipboard.writeText(message)
+      setCopied(true); setTimeout(() => setCopied(false), 1800)
+      toast.success('Message copied — paste it anywhere')
+    } catch {
+      toast.error('Couldn’t copy — select the text and copy manually')
+    }
+  }
+
+  function emailMessage() {
+    const subject = data?.product.name ? `Our review of ${data.product.name} is live` : 'Our review is live'
+    window.open(`mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(message)}`, '_blank')
+  }
+
+  async function polish() {
+    if (!data) return
+    setPolishing(true)
+    try {
+      const res = await fetch('/api/blog/brand-recap/polish', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message, tone: data.settings.tone }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error || 'Polish failed')
+      setMessage(d.message); setEdited(true)
+      toast.success(d.polished ? 'Polished ✨' : 'Kept your draft (couldn’t improve it safely)')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Polish failed')
+    } finally {
+      setPolishing(false)
+    }
+  }
+
+  const productUrl = data?.product.url || null
+  const productBtnLabel = data?.product.isAmazon ? 'Open on Amazon' : 'Open product page'
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
+      <div
+        className="card w-full max-w-lg max-h-[88vh] overflow-y-auto p-5"
+        style={{ background: 'var(--surface, #fff)' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between mb-1">
+          <div>
+            <h3 className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Share with the brand</h3>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">A ready-to-send recap of everywhere this is live.</p>
+          </div>
+          <button onClick={onClose} className="text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-white p-1" title="Close"><X size={18} /></button>
+        </div>
+
+        {loading ? (
+          <div className="flex items-center gap-2 text-sm text-[#86868b] py-12 justify-center">
+            <Loader2 size={16} className="animate-spin" /> Gathering your links…
+          </div>
+        ) : error ? (
+          <div className="py-8 text-center">
+            <p className="text-sm text-[#ff3b30]">{error}</p>
+          </div>
+        ) : data && (
+          <div className="flex flex-col gap-4 mt-3">
+            {/* Brand name — editable, pre-filled */}
+            <div>
+              <label className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Brand name <span className="font-normal text-[#86868b]">(check this is right)</span></label>
+              <input
+                value={brand}
+                onChange={e => { setBrand(e.target.value); setEdited(false) }}
+                placeholder="e.g. SHEHDS"
+                className="w-full px-3 py-2 rounded-lg border border-[var(--border-2,#e5e5e7)] bg-[var(--surface,#fff)] text-sm focus:outline-none focus:border-[#7C3AED]"
+              />
+            </div>
+
+            {/* Links checklist */}
+            <div>
+              <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Links to include</p>
+              {data.links.length === 0 ? (
+                <p className="text-xs text-[#86868b]">No shareable links found yet — publish this post / its socials first.</p>
+              ) : (
+                <div className="flex flex-col gap-1">
+                  {data.links.map(l => (
+                    <label key={l.platform} className="flex items-center gap-2 text-xs cursor-pointer py-1">
+                      <input
+                        type="checkbox"
+                        checked={!!enabled[l.platform]}
+                        onChange={e => { setEnabled(s => ({ ...s, [l.platform]: e.target.checked })); setEdited(false) }}
+                        className="accent-[#7C3AED] w-3.5 h-3.5"
+                      />
+                      <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7] w-28 shrink-0">{l.label}</span>
+                      <a href={l.url} target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline truncate flex-1" title={l.url}>{l.url}</a>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Message */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Message</label>
+                <div className="flex items-center gap-3">
+                  {edited && (
+                    <button onClick={() => { setEdited(false); refill() }} className="text-[11px] text-[#86868b] hover:text-[#7C3AED] inline-flex items-center gap-1"><RotateCcw size={11} /> Reset</button>
+                  )}
+                  <button onClick={polish} disabled={polishing} className="text-[11px] text-[#7C3AED] hover:underline inline-flex items-center gap-1 disabled:opacity-50">
+                    {polishing ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />} Polish with AI
+                  </button>
+                </div>
+              </div>
+              <textarea
+                value={message}
+                onChange={e => { setMessage(e.target.value); setEdited(true) }}
+                rows={11}
+                className="w-full px-3 py-2 rounded-lg border border-[var(--border-2,#e5e5e7)] bg-[var(--surface,#fff)] text-[13px] leading-relaxed resize-none focus:outline-none focus:border-[#7C3AED]"
+                spellCheck
+              />
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <button onClick={copyMessage} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-[#7C3AED] text-white hover:bg-[#6D28D9]">
+                {copied ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy message</>}
+              </button>
+              <button onClick={emailMessage} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border border-[var(--border-2,#e5e5e7)] text-[#1d1d1f] dark:text-[#f5f5f7] hover:bg-[var(--surface-hover,#f5f5f7)]">
+                <Mail size={13} /> Email
+              </button>
+              {productUrl && (
+                <a
+                  href={productUrl} target="_blank" rel="noopener noreferrer"
+                  title="Open the product page — message the brand on Creator Connections from here (e.g. with the Oink extension)"
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-[#FFC200] text-[#1d1d1f] hover:bg-[#FFD000]"
+                >
+                  <ExternalLink size={13} /> {productBtnLabel}
+                </a>
+              )}
+            </div>
+            <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] -mt-1">
+              Tip: on the product page you can message the brand directly through Amazon Creator Connections (e.g. with the Oink extension).
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}

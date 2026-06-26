@@ -21,12 +21,13 @@ import { errText } from '@/lib/err-text'
 import { generateBlogRequest } from '@/lib/blog-generate-client'
 import { GenerateButton } from '@/components/content/GenerateButton'
 import { InstagramPublishModal } from '@/components/content/InstagramPublishModal'
+import ShareWithBrandModal from '@/components/content/ShareWithBrandModal'
 import { renderThumbnailOverlay, pickWeightedStyleIndex } from '@/lib/thumbnail-overlay'
 import { effectiveTier } from '@/lib/view-as'
 import { metaEnabled } from '@/lib/feature-flags'
 import {
   Youtube, Wand2, ExternalLink, CheckCircle, AlertCircle,
-  RefreshCw, Loader2, ChevronRight, Sparkles, X, Facebook, Pin, MessageCircle, Save, Upload, Search, Calendar,
+  RefreshCw, Loader2, ChevronRight, Sparkles, X, Facebook, Pin, MessageCircle, Save, Upload, Search, Calendar, Handshake,
 } from 'lucide-react'
 import type { PinPreviewData } from '@/components/PinterestPreviewModal'
 
@@ -592,6 +593,10 @@ const VideoCard = memo(function VideoCardImpl({
   const scheduledLabel = isScheduledPending && scheduledForDate
     ? scheduledForDate.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
     : null
+
+  // "Share with brand" modal — assembles every published link for this post
+  // into a ready-to-send recap message the creator sends the brand.
+  const [shareBrandOpen, setShareBrandOpen] = useState(false)
   // Per-post Facebook Page choice (Pro multi-account). Defaults to the
   // user's default page. The picker renders whenever the user has at least
   // one connected Page (Pro loads the list) so it's discoverable/testable —
@@ -1168,6 +1173,26 @@ const VideoCard = memo(function VideoCardImpl({
                 />
               )}
             </div>
+          )}
+
+          {/* Share with brand — assembles every published link for this post
+              into a ready-to-send recap message (Copy / Email / open product
+              page for Creator Connections). Shown for any post; sits under the
+              social pills as the user requested. */}
+          {post?.postId && (
+            <div className="mt-1">
+              <button
+                onClick={() => setShareBrandOpen(true)}
+                title="Send the brand a recap of everywhere this content is live"
+                className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-lg whitespace-nowrap border transition-colors hover:bg-[rgba(124,58,237,0.10)]"
+                style={{ borderColor: 'var(--border-bright, rgba(0,0,0,0.12))', color: 'var(--text, #1d1d1f)' }}
+              >
+                <Handshake size={12} /> Share with brand
+              </button>
+            </div>
+          )}
+          {shareBrandOpen && post?.postId && (
+            <ShareWithBrandModal postId={post.postId} wpUrl={post.url} onClose={() => setShareBrandOpen(false)} />
           )}
 
           {/* Social preview/edit modal — shown when previewBeforePublish is on
