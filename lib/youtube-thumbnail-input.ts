@@ -20,6 +20,7 @@
 // 2026-06-07: shipped after the user reported "thumbnail does not get
 // saved within youtube".
 import 'server-only'
+import sharp from 'sharp'
 
 export interface ResolvedThumbnail {
   buffer: Buffer
@@ -28,11 +29,22 @@ export interface ResolvedThumbnail {
   source: 'data-uri' | 'http'
 }
 
-/** Maximum size YouTube accepts for a thumbnail upload — 2 MB. We
- *  defensively bound HTTP fetches at this size to fail-fast on rogue
- *  large images instead of trickling a multi-megabyte download into
- *  the YouTube API. */
+/** Maximum size YouTube accepts for a thumbnail upload — 2 MB. */
 const YT_THUMBNAIL_MAX_BYTES = 2 * 1024 * 1024
+
+/**
+ * Compress a raw image buffer to JPEG at ≤ 2 MB so YouTube's
+ * thumbnails.set API accepts it. gpt-image-1 outputs 1536×1024 PNGs
+ * that routinely land at 3–5 MB. We resize to 1280×720 (YouTube's
+ * recommended size) and compress to JPEG 90%.
+ */
+async function compressForYouTube(buffer: Buffer): Promise<{ buffer: Buffer<ArrayBuffer>; mimeType: string }> {
+  const compressed = await sharp(buffer)
+    .resize(1280, 720, { fit: 'inside', withoutEnlargement: true })
+    .jpeg({ quality: 90 })
+    .toBuffer() as Buffer<ArrayBuffer>
+  return { buffer: compressed, mimeType: 'image/jpeg' }
+}
 
 /**
  * Resolve a thumbnail input into a Buffer + mime type, or null if the
@@ -41,6 +53,10 @@ const YT_THUMBNAIL_MAX_BYTES = 2 * 1024 * 1024
  * Throws when an HTTPS URL was provided but the fetch failed — so the
  * caller can surface "Thumbnail upload failed: …" instead of silently
  * dropping the user's image. Returns null only for unparseable input.
+ *
+ * Oversized images (> 2 MB) are automatically recompressed to JPEG at
+ * 1280×720 / 90% quality rather than throwing — gpt-image-1 PNGs
+ * routinely exceed the 2 MB YouTube limit.
  */
 export async function resolveThumbnailInput(input: string): Promise<ResolvedThumbnail | null> {
   if (!input || typeof input !== 'string') return null
@@ -51,7 +67,12 @@ export async function resolveThumbnailInput(input: string): Promise<ResolvedThum
   const dataMatch = trimmed.match(/^data:([^;]+);base64,(.+)$/)
   if (dataMatch) {
     const mimeType = dataMatch[1]
-    const buffer = Buffer.from(dataMatch[2], 'base64')
+    let buffer = Buffer.from(dataMatch[2], 'base64')
+    if (buffer.byteLength > YT_THUMBNAIL_MAX_BYTES) {
+      const result = await compressForYouTube(buffer)
+      buffer = result.buffer
+      return { buffer, mimeType: result.mimeType, source: 'data-uri' }
+    }
     return { buffer, mimeType, source: 'data-uri' }
   }
 
@@ -68,10 +89,8 @@ export async function resolveThumbnailInput(input: string): Promise<ResolvedThum
       throw new Error(`Thumbnail fetch failed (${res.status}) from ${trimmed.slice(0, 80)}`)
     }
     const ab = await res.arrayBuffer()
-    const buffer = Buffer.from(ab)
-    if (buffer.byteLength > YT_THUMBNAIL_MAX_BYTES) {
-      throw new Error(`Thumbnail too large for YouTube (${(buffer.byteLength / 1024 / 1024).toFixed(1)} MB, max 2 MB)`)
-    }
+    let buffer = Buffer.from(ab)
+
     // Prefer the server's Content-Type; sniff from the URL only when
     // the response doesn't disclose one (some CDNs send octet-stream).
     let mimeType = res.headers.get('content-type')?.split(';')[0]?.trim() || ''
@@ -79,8 +98,18 @@ export async function resolveThumbnailInput(input: string): Promise<ResolvedThum
       if (/\.png(\?|$)/i.test(trimmed)) mimeType = 'image/png'
       else if (/\.jpe?g(\?|$)/i.test(trimmed)) mimeType = 'image/jpeg'
       else if (/\.webp(\?|$)/i.test(trimmed)) mimeType = 'image/webp'
-      else mimeType = 'image/png' // YouTube accepts PNG/JPG/GIF/BMP; pick a safe default
+      else mimeType = 'image/png'
     }
+
+    // gpt-image-1 returns 1536×1024 PNGs that are typically 3–5 MB —
+    // above YouTube's 2 MB ceiling. Recompress to JPEG 1280×720
+    // automatically so the upload always lands.
+    if (buffer.byteLength > YT_THUMBNAIL_MAX_BYTES) {
+      const result = await compressForYouTube(buffer)
+      buffer = result.buffer
+      mimeType = result.mimeType
+    }
+
     return { buffer, mimeType, source: 'http' }
   }
 
