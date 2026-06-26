@@ -53,6 +53,16 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
   const [scanDiag, setScanDiag] = useState<string | null>(null)
   const [oinkMissing, setOinkMissing] = useState(false)
 
+  // While this modal is open, tell the content page NOT to auto-refresh on
+  // visibilitychange — the auto-find opens an Amazon tab (focus leaves +
+  // returns), and a list reload would tear this modal down mid-flow.
+  useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(window as any).__mvpBrandModalOpen = true
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return () => { (window as any).__mvpBrandModalOpen = false }
+  }, [])
+
   useEffect(() => {
     let cancelled = false
     ;(async () => {

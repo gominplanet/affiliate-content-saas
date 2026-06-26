@@ -2044,6 +2044,11 @@ export default function ContentPage() {
   useEffect(() => {
     function onVisible() {
       if (document.visibilityState !== 'visible') return
+      // Don't reload while the Share-with-brand modal is open — its auto-find
+      // briefly opens an Amazon tab (focus leaves + returns), and a reload here
+      // would swap the post list and tear the modal down mid-flow.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if ((window as any).__mvpBrandModalOpen) return
       const now = Date.now()
       if (now - lastAutoRefreshRef.current < 30_000) return // 30s throttle
       lastAutoRefreshRef.current = now
