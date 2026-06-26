@@ -1021,9 +1021,10 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           // The thumbnail-style block drives every generation (border + accent, live).
           borderStyleIndex: borderIndex ?? undefined,
           accentColor,
-          // "Your Face" — lock the host's likeness from their uploaded photos.
-          // effectiveFaceModelId is null when skipFaceModel:true (SCOUT path).
+          // "Your Face" — explicit face model pick takes priority; when none is
+          // selected the route auto-loads the user's ready face model(s) via faceAuto.
           faceModelId: (!isProductOnly && effectiveFaceModelId && effectiveFaceModelId !== 'no-human') ? effectiveFaceModelId : undefined,
+          faceAuto: (!isProductOnly && !effectiveFaceModelId) ? true : undefined,
           // 'no-human' → product-only thumbnail, no face composition at all.
           noHuman: isProductOnly || undefined,
           styleReferenceUrl: styleReferenceUrl || undefined,
@@ -1625,7 +1626,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                       <button
                         type="button"
                         onClick={() => {
-                          void generateThumbnail({ skipFaceModel: true, textMode: 'graphic' })
+                          void generateThumbnail({ textMode: 'graphic' })
                         }}
                         disabled={generatingThumbnail || extensionInstalled === null}
                         className={`flex items-center gap-4 w-full px-5 py-5 rounded-2xl text-left transition-all shadow-md hover:shadow-lg hover:scale-[1.01] active:scale-[0.99] ${generatingThumbnail ? 'opacity-80 cursor-not-allowed' : ''}`}
