@@ -1633,17 +1633,12 @@ export default function ContentPage() {
   // Global "Brand message settings" — the recap template every per-post
   // "Share with brand" modal pre-fills from.
   const [brandSettingsOpen, setBrandSettingsOpen] = useState(false)
-  // "How a blog post gets made" explainer — open on the FIRST visit, collapsed
-  // afterwards (a returning user has read it). A manual toggle is remembered.
-  // Default open for SSR/first paint; the effect collapses it for return users.
-  const [explainerOpen, setExplainerOpen] = useState(true)
+  // "How a blog post gets made" explainer — collapsed by default; expands only
+  // when the user clicks it. A manual open is remembered so power users who
+  // want it open keep it. Default closed for SSR/first paint = no flash.
+  const [explainerOpen, setExplainerOpen] = useState(false)
   useEffect(() => {
-    try {
-      const choice = localStorage.getItem('mvp_blog_explainer_open')
-      const seen = localStorage.getItem('mvp_blog_explainer_seen')
-      setExplainerOpen(choice != null ? choice === '1' : seen == null)
-      localStorage.setItem('mvp_blog_explainer_seen', '1')
-    } catch { /* private mode — leave it open */ }
+    try { setExplainerOpen(localStorage.getItem('mvp_blog_explainer_open') === '1') } catch { /* stays collapsed */ }
   }, [])
   // Affiliate-link repair — dryRun finds posts with a broken affiliate link
   // (e.g. a dead amazon.com/dp/UNDERWATER) and previews old→new before writing.
