@@ -364,6 +364,77 @@ async function harvestAmazonVideosInPage() {
   }
 }
 
+// ── Piggyback on OINK: read the creator's video off the PRODUCT page ────────
+// Manage Content has 0 vdp links in its HTML (loaded via private API). But the
+// PRODUCT page DOES — the OINK extension injects a "Content Made" anchor whose
+// href is the creator's /vdp/ video. So open the product page for the post's
+// ASIN, wait for OINK to inject, and harvest that link. Also detect whether
+// OINK is present so the app can recommend it when it isn't.
+async function harvestProductVideoInPage(asin) {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  const want = (asin || '').toUpperCase()
+  const asinOf = (href) => {
+    try { const a = new URL(href, location.origin).searchParams.get('product'); if (a) return a.toUpperCase() } catch (e) {}
+    const m = href.match(/[?&]product=([A-Za-z0-9]{10})/)
+    return m ? m[1].toUpperCase() : null
+  }
+  const findVdp = () => {
+    const anchors = [...document.querySelectorAll('a[href*="/vdp/"]')]
+    // Prefer one whose product= matches our ASIN; else accept any vdp anchor.
+    for (const a of anchors) { if (want && (asinOf(a.href) === want)) return a.href }
+    return anchors[0] ? anchors[0].href : null
+  }
+  const oinkPresent = () =>
+    !!document.querySelector('[class*="oink" i],[id*="oink" i],[data-oink]') ||
+    /content made/i.test(document.body ? document.body.innerText : '')
+
+  // OINK injects asynchronously (it calls Amazon's content API first) — poll up
+  // to ~14s, and keep going a beat after OINK appears so its link can paint.
+  let vdp = null, sawOink = false
+  for (let i = 0; i < 28; i++) {
+    if (!sawOink && oinkPresent()) sawOink = true
+    vdp = findVdp()
+    if (vdp) break
+    await sleep(500)
+  }
+  return {
+    ok: true,
+    video: vdp ? { vdpUrl: vdp, asin: asinOf(vdp) || want } : null,
+    oinkDetected: sawOink || oinkPresent(),
+    signedOut: /\/ap\/signin/.test(location.href),
+    diag: {
+      url: location.href.slice(0, 140),
+      vdpAnchors: document.querySelectorAll('a[href*="/vdp/"]').length,
+      oink: sawOink,
+    },
+  }
+}
+
+async function scanAmazonVideoForAsin(asin, callerTabId) {
+  if (!/^[A-Za-z0-9]{10}$/.test(asin || '')) return { ok: false, error: 'bad-asin' }
+  const url = `https://www.amazon.com/dp/${asin}`
+  let tabId = null
+  try {
+    // FOREGROUND so OINK's content script + its API-driven injection run
+    // reliably (same trade-off as the CC scout). Focus returns to the caller.
+    const tab = await chrome.tabs.create({ url, active: true })
+    tabId = tab.id
+    await waitForTabLoad(tabId, 25000)
+    await _sleep(2000) // give OINK a head start before we poll
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: harvestProductVideoInPage,
+      args: [asin],
+    })
+    return (results && results[0] && results[0].result) || { ok: false, error: 'no-result' }
+  } catch (e) {
+    return { ok: false, error: 'scan-failed' }
+  } finally {
+    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+    if (callerTabId != null) { try { await chrome.tabs.update(callerTabId, { active: true }) } catch (e) {} }
+  }
+}
+
 async function scanAmazonVideos(callerTabId) {
   // Reuse an open Manage Content / storefront tab; else open Manage Content
   // FOREGROUND (Amazon's content list is client-rendered + session-scoped, and
@@ -403,10 +474,12 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     return // sync response
   }
   if (msg.type === 'MVP_AMZ_SCAN') {
-    // Open/focus Manage Content + scroll + harvest — allow up to 2 minutes.
+    // With an ASIN → piggyback on OINK via the product page (the reliable path).
+    // Without → legacy Manage Content scrape. Allow up to 2 minutes.
     const callerTabId = sender && sender.tab ? sender.tab.id : null
     const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 120000)
-    scanAmazonVideos(callerTabId)
+    const job = msg.asin ? scanAmazonVideoForAsin(msg.asin, callerTabId) : scanAmazonVideos(callerTabId)
+    job
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async response — keep the channel open

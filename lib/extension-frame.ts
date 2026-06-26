@@ -138,6 +138,36 @@ export async function requestAmazonVideos(): Promise<AmazonScanResult> {
   return { ok: false, error: resp.error || 'scan-failed', diag: resp.diag }
 }
 
+/** Result of the OINK-piggyback scan: open the product page for an ASIN and
+ *  read the creator's video link OINK injects there. `oinkDetected` lets the
+ *  app recommend OINK when it isn't installed. */
+export interface AmazonVideoForAsinResult {
+  ok: boolean
+  video?: AmazonVideo | null
+  oinkDetected?: boolean
+  signedOut?: boolean
+  error?: string
+}
+
+/**
+ * Find the creator's Amazon video for ONE product by ASIN, by piggybacking on
+ * OINK: the extension opens the product page (their logged-in session), waits
+ * for OINK to inject its "Content Made" /vdp/ link, and returns it. Best-effort.
+ */
+export async function requestAmazonVideoForAsin(asin: string): Promise<AmazonVideoForAsinResult> {
+  if (!asin) return { ok: false, error: 'no-asin' }
+  if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
+  const resp = await sendToExtension<{ ok?: boolean; video?: AmazonVideo | null; oinkDetected?: boolean; signedOut?: boolean; error?: string }>(
+    { type: 'MVP_AMZ_SCAN', asin },
+    60000,
+  )
+  if (!resp) return { ok: false, error: 'timeout' }
+  if (resp.ok) {
+    return { ok: true, video: resp.video ?? null, oinkDetected: !!resp.oinkDetected, signedOut: resp.signedOut }
+  }
+  return { ok: false, error: resp.error || 'scan-failed' }
+}
+
 /** A raw Creator Connections campaign row as scraped by the extension. All
  *  filtering / ranking happens in the app — this is the unfiltered harvest. */
 export interface ScoutedCampaign {

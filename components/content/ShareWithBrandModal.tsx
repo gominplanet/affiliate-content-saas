@@ -19,7 +19,10 @@ import { useEffect, useState, useCallback } from 'react'
 import { toast } from 'sonner'
 import { X, Copy, Mail, ExternalLink, Loader2, Sparkles, Check, RotateCcw, Video } from 'lucide-react'
 import { fillRecapMessage, type RecapLink, type BrandRecapSettings } from '@/lib/brand-recap'
-import { requestAmazonVideos } from '@/lib/extension-frame'
+import { requestAmazonVideoForAsin } from '@/lib/extension-frame'
+
+/** MVP's OINK affiliate link (same as the sidebar Recommended Tools row). */
+const OINK_AFFILIATE_URL = 'https://geni.us/2y5sBo'
 
 interface RecapData {
   brandGuess: string
@@ -48,6 +51,7 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
   const [showPaste, setShowPaste] = useState(false)
   const [pasteUrl, setPasteUrl] = useState('')
   const [scanDiag, setScanDiag] = useState<string | null>(null)
+  const [oinkMissing, setOinkMissing] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -151,33 +155,36 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
     return true
   }
 
-  // Find the creator's Amazon Influencer video via the extension's Manage
-  // Content scan, matched to this post by ASIN, and add it to the recap.
+  // Find the creator's Amazon video by piggybacking on OINK: the extension
+  // opens the product page for this ASIN and reads the "Content Made" /vdp/
+  // link OINK injects there. If OINK isn't detected, recommend it.
   async function findAmazonVideo() {
     if (!data?.product.asin) return
     const asin = data.product.asin.toUpperCase()
-    setFindingVideo(true); setScanDiag(null)
+    setFindingVideo(true); setScanDiag(null); setOinkMissing(false)
     try {
-      const res = await requestAmazonVideos()
+      const res = await requestAmazonVideoForAsin(asin)
       if (!res.ok) {
         toast.error(res.error === 'not-installed'
-          ? 'Install / open the MVP extension and sign in to Amazon, then try again.'
-          : 'Couldn’t read your Amazon videos — open Amazon (signed in) and try again.')
+          ? 'Open MVP with the SCOUT extension installed, then try again.'
+          : 'Couldn’t open Amazon — make sure you’re signed in, then try again.')
         setShowPaste(true)
         return
       }
-      const match = res.videos.find(v => (v.asin || '').toUpperCase() === asin)
-      if (!match) {
-        // Surface what the scan saw so we can tune it; offer manual paste.
-        const dg = res.diag
-        setScanDiag(dg
-          ? `Scanned: ${dg.title || dg.url || 'a page'} · found ${res.videos.length} video link(s) (${dg.vdpHtmlHits ?? 0} vdp refs in HTML). None matched ASIN ${asin}.`
-          : `Found ${res.videos.length} video(s), none for ASIN ${asin}.`)
-        setShowPaste(true)
-        toast('No Amazon video matched this product — paste the link below, or check you’re on your Manage Content page.', { duration: 7000 })
+      if (res.video?.vdpUrl) {
+        if (await saveAmazonVideo(res.video.vdpUrl)) toast.success('Found your Amazon video — added to the recap.')
         return
       }
-      if (await saveAmazonVideo(match.vdpUrl)) toast.success('Found your Amazon video — added to the recap.')
+      // No video found on the product page.
+      if (res.oinkDetected) {
+        // OINK is there but had no "Content Made" link for this product.
+        setScanDiag('OINK is installed, but it didn’t show a video for this product. Upload it on Amazon first, or paste the link below.')
+        setShowPaste(true)
+      } else {
+        // No OINK → recommend it (it surfaces the video link automatically).
+        setOinkMissing(true)
+        setShowPaste(true)
+      }
     } catch {
       toast.error('Couldn’t scan Amazon. Paste the link below instead.')
       setShowPaste(true)
@@ -252,33 +259,43 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
                 </div>
               )}
               {canFindVideo && (
-                <div className="mt-2.5 rounded-lg border border-[var(--border-2,#e5e5e7)] bg-[var(--surface-2,#f7f7f8)] p-2.5 flex flex-col gap-1.5">
+                <div className="mt-2.5 rounded-lg border border-[var(--border-2,#e5e5e7)] bg-[var(--surface-2,#f7f7f8)] p-2.5 flex flex-col gap-2">
                   <p className="text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] flex items-center gap-1.5"><Video size={12} className="text-[#7C3AED]" /> Add your Amazon video</p>
-                  <p className="text-[10px] text-[#86868b] leading-snug">
-                    On the product page, right-click Amazon&rsquo;s <strong>&ldquo;Content Made&rdquo;</strong> (or your video) link → <strong>Copy link</strong>, and paste it here.
-                  </p>
-                  <div className="flex items-center gap-1.5">
-                    <input
-                      value={pasteUrl}
-                      onChange={e => setPasteUrl(e.target.value)}
-                      placeholder="https://www.amazon.com/vdp/…"
-                      className="flex-1 px-2 py-1.5 rounded-md border border-[var(--border-2,#e5e5e7)] bg-[var(--surface,#fff)] text-[11px] font-mono focus:outline-none focus:border-[#7C3AED]"
-                    />
-                    <button
-                      onClick={async () => { if (pasteUrl.trim() && await saveAmazonVideo(pasteUrl.trim())) { setPasteUrl(''); toast.success('Added your Amazon video.') } }}
-                      className="px-2.5 py-1.5 rounded-md text-[11px] font-semibold bg-[#7C3AED] text-white hover:bg-[#6D28D9]"
-                    >Add</button>
-                  </div>
                   <button
                     onClick={findAmazonVideo}
                     disabled={findingVideo}
-                    title="Experimental: scan your Amazon Manage Content for this product's video"
-                    className="self-start inline-flex items-center gap-1 text-[10px] text-[#86868b] hover:text-[#7C3AED] disabled:opacity-50"
+                    title="Open the product page and grab your Amazon video link (works with the OINK extension installed)"
+                    className="self-start inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-semibold bg-[#7C3AED] text-white hover:bg-[#6D28D9] disabled:opacity-50"
                   >
-                    {findingVideo ? <Loader2 size={10} className="animate-spin" /> : null}
-                    {findingVideo ? 'Scanning…' : 'or try auto-detect (beta)'}
+                    {findingVideo ? <Loader2 size={12} className="animate-spin" /> : <Video size={12} />}
+                    {findingVideo ? 'Looking on Amazon…' : 'Find it automatically'}
                   </button>
+
+                  {oinkMissing && (
+                    <div className="rounded-md p-2 text-[10px] leading-snug" style={{ background: 'rgba(224,33,138,0.08)', border: '1px solid rgba(224,33,138,0.30)' }}>
+                      <p className="text-[#1d1d1f] dark:text-[#f5f5f7]">Auto-detect needs the free <strong>OINK</strong> extension — it surfaces your Amazon video link right on the product page.</p>
+                      <a href={OINK_AFFILIATE_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 mt-1 font-semibold" style={{ color: '#E0218A' }}>
+                        Get OINK (free) <ExternalLink size={10} />
+                      </a>
+                    </div>
+                  )}
                   {scanDiag && <p className="text-[10px] text-[#86868b] leading-snug">{scanDiag}</p>}
+
+                  <div className="border-t border-[var(--border-2,#e5e5e7)] pt-2">
+                    <p className="text-[10px] text-[#86868b] leading-snug mb-1">…or paste it: on the product page, right-click Amazon&rsquo;s <strong>&ldquo;Content Made&rdquo;</strong> link → <strong>Copy link</strong>.</p>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        value={pasteUrl}
+                        onChange={e => setPasteUrl(e.target.value)}
+                        placeholder="https://www.amazon.com/vdp/…"
+                        className="flex-1 px-2 py-1.5 rounded-md border border-[var(--border-2,#e5e5e7)] bg-[var(--surface,#fff)] text-[11px] font-mono focus:outline-none focus:border-[#7C3AED]"
+                      />
+                      <button
+                        onClick={async () => { if (pasteUrl.trim() && await saveAmazonVideo(pasteUrl.trim())) { setPasteUrl(''); toast.success('Added your Amazon video.') } }}
+                        className="px-2.5 py-1.5 rounded-md text-[11px] font-semibold border border-[var(--border-2,#e5e5e7)] text-[#1d1d1f] dark:text-[#f5f5f7] hover:bg-[var(--surface-hover,#f0f0f2)]"
+                      >Add</button>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
