@@ -22,6 +22,11 @@ export interface BrandProfile {
   author_bio: string | null
   target_audience: string | null
   words_to_avoid: string | null
+  /** Brand colors (Brand Profile). secondary_color paints the in-post CTA
+   *  button so every site's buy button matches its brand; primary_color is a
+   *  fallback. Both optional — default to the signature yellow when unset. */
+  primary_color?: string | null
+  secondary_color?: string | null
   /** Structured LEARN voice profile (jsonb). Shape validated in lib/learn. */
   learn_profile?: unknown
   /** Per-user toggle for the "What we'd improve" section (#14, 2026-06-08).
@@ -219,6 +224,29 @@ function buildSystemPrompt(
   const ctaButton  = retailerLabel
     ? `Get the best price on ${retailerLabel} →`
     : (isAmazon ? 'Get the best price on Amazon →' : 'Get the best price today →')
+
+  // CTA button color — paint the in-post "Get the best price" button with the
+  // brand's SECONDARY color so every site's buy button matches its brand (was
+  // hardcoded #FFC200 on every post — the brand colors did nothing here).
+  // Primary is the fallback; the signature yellow is the final fallback when no
+  // brand colors are set. Text color flips black/white by luminance so the
+  // label stays legible on any chosen hue.
+  const hex6 = (c?: string | null): string | null => {
+    if (!c) return null
+    let h = c.trim().replace(/^#/, '')
+    if (/^[0-9a-fA-F]{3}$/.test(h)) h = h.split('').map(ch => ch + ch).join('')
+    return /^[0-9a-fA-F]{6}$/.test(h) ? `#${h.toLowerCase()}` : null
+  }
+  const ctaBg = hex6(brand.secondary_color) || hex6(brand.primary_color) || '#FFC200'
+  // WCAG relative-luminance pick: dark text on light buttons, white on dark.
+  const ctaText = (() => {
+    const r = parseInt(ctaBg.slice(1, 3), 16) / 255
+    const g = parseInt(ctaBg.slice(3, 5), 16) / 255
+    const b = parseInt(ctaBg.slice(5, 7), 16) / 255
+    const lin = (v: number) => (v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4))
+    const L = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+    return L > 0.45 ? '#111' : '#fff'
+  })()
 
   // CTA style — the creator's Brand Profile choice for HOW the post asks for
   // the click. The yellow CTA card markup is fixed (it's the affiliate-link
@@ -954,14 +982,14 @@ Use exactly this structure with {VIDEO_ID} replaced:
 .gr-rating-score{font-size:52px;font-weight:900;color:#FFC200;line-height:1;letter-spacing:-2px}
 .gr-rating-label{font-size:11px;color:rgba(255,255,255,.5);letter-spacing:1px;text-transform:uppercase;margin-top:4px}
 .gr-rating-text{font-size:15px;color:rgba(255,255,255,.8);line-height:1.6;max-width:480px}
-.gr-cta-link{display:inline-flex;align-items:center;gap:8px;background:#FFC200;color:#111;font-size:13px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;padding:14px 24px;border-radius:3px;text-decoration:none;margin:8px 0}
+.gr-cta-link{display:inline-flex;align-items:center;gap:8px;background:${ctaBg};color:${ctaText};font-size:13px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;padding:14px 24px;border-radius:3px;text-decoration:none;margin:8px 0}
 .gr-cta-link:hover{background:#111;color:#FFC200}
 .gr-cta-card{background:#f8f9fa;border:2px solid #111;border-radius:4px;padding:24px 28px;margin:32px 0;display:flex;flex-direction:column;gap:14px}
 .gr-cta-card:has(.gr-cta-thumb-wrap){display:grid;grid-template-columns:1fr 220px;gap:24px;align-items:center}
 .gr-cta-card .gr-cta-body{display:flex;flex-direction:column;gap:14px;min-width:0}
 .gr-cta-card .gr-cta-eyebrow{font-size:11px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:#111;margin:0;padding-bottom:12px;border-bottom:2px solid #FFC200}
 .gr-cta-card .gr-cta-product-name{font-size:20px;font-weight:800;color:#111;margin:0;line-height:1.3;letter-spacing:-.3px}
-.gr-cta-card .gr-cta-btn{display:flex;align-items:center;justify-content:center;gap:10px;background:#FFC200;color:#111;font-size:15px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;padding:18px 24px;border-radius:3px;text-decoration:none;margin-top:4px;width:100%;box-sizing:border-box}
+.gr-cta-card .gr-cta-btn{display:flex;align-items:center;justify-content:center;gap:10px;background:${ctaBg};color:${ctaText};font-size:15px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;padding:18px 24px;border-radius:3px;text-decoration:none;margin-top:4px;width:100%;box-sizing:border-box}
 .gr-cta-card .gr-cta-btn:hover{background:#111;color:#FFC200}
 .gr-cta-card .gr-cta-thumb-wrap{line-height:0;border-radius:4px;overflow:hidden;border:2px solid #111}
 .gr-cta-card .gr-cta-thumb{width:100%;height:auto;aspect-ratio:16/9;object-fit:cover;display:block}
@@ -1294,7 +1322,7 @@ unknown, leave that spec out.
     <div class="gr-cta-body">
       <p class="gr-cta-eyebrow">${ctaEyebrow}</p>
       <p class="gr-cta-product-name">{Clean product name — 2-6 words, no ASIN, no fluff}</p>
-      <a href="{AFFILIATE_URL}" target="_blank" rel="noopener sponsored nofollow" class="gr-cta-btn" style="display:flex;align-items:center;justify-content:center;gap:10px;background:#FFC200;color:#111;font-size:15px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;padding:18px 24px;border-radius:3px;text-decoration:none;margin-top:4px;width:100%;box-sizing:border-box">
+      <a href="{AFFILIATE_URL}" target="_blank" rel="noopener sponsored nofollow" class="gr-cta-btn" style="display:flex;align-items:center;justify-content:center;gap:10px;background:${ctaBg};color:${ctaText};font-size:15px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;padding:18px 24px;border-radius:3px;text-decoration:none;margin-top:4px;width:100%;box-sizing:border-box">
         ${ctaButton}
       </a>
       <p class="gr-cta-disclaimer" style="font-size:10px;line-height:1.4;color:#6b6b70;margin:6px 0 0;font-style:italic">${disclaimer}</p>
@@ -1419,7 +1447,7 @@ Use the exact same product name string here as in the mid-article CTA from [4]:
   <div class="gr-cta-body">
     <p class="gr-cta-eyebrow">${ctaEyebrow}</p>
     <p class="gr-cta-product-name">{Clean product name — 2-6 words, no ASIN, no fluff}</p>
-    <a href="{AFFILIATE_URL}" target="_blank" rel="noopener sponsored nofollow" class="gr-cta-btn" style="display:flex;align-items:center;justify-content:center;gap:10px;background:#FFC200;color:#111;font-size:15px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;padding:18px 24px;border-radius:3px;text-decoration:none;margin-top:4px;width:100%;box-sizing:border-box">
+    <a href="{AFFILIATE_URL}" target="_blank" rel="noopener sponsored nofollow" class="gr-cta-btn" style="display:flex;align-items:center;justify-content:center;gap:10px;background:${ctaBg};color:${ctaText};font-size:15px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;padding:18px 24px;border-radius:3px;text-decoration:none;margin-top:4px;width:100%;box-sizing:border-box">
       ${ctaButton}
     </a>
     <p class="gr-cta-disclaimer" style="font-size:10px;line-height:1.4;color:#6b6b70;margin:6px 0 0;font-style:italic">${disclaimer}</p>

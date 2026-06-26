@@ -962,6 +962,10 @@ async function handleGenerate(request: Request) {
         tone: ((brand as Record<string, unknown>).tone as string[]) || [],
         post_length: (brand as Record<string, unknown>).post_length as string || 'medium',
         cta_style: (brand as Record<string, unknown>).cta_style as string || 'soft_recommendation',
+        // Brand colors → the in-post CTA button is painted with secondary_color
+        // (primary fallback) so each site's buy button matches its brand.
+        primary_color: (brand as Record<string, unknown>).primary_color as string | null,
+        secondary_color: (brand as Record<string, unknown>).secondary_color as string | null,
         affiliate_disclaimer: (brand as Record<string, unknown>).affiliate_disclaimer as string | null,
         writing_sample: (brand as Record<string, unknown>).writing_sample as string | null,
         author_bio: (brand as Record<string, unknown>).author_bio as string | null,
