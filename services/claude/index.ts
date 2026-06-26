@@ -183,17 +183,21 @@ function buildSystemPrompt(
   const niches = brand.niches?.length ? brand.niches.join(', ') : 'general consumer products'
   const tones = brand.tone?.length ? brand.tone.join(', ') : 'conversational, candid'
 
-  // Word-count tiers (2026-06-12 cost control). Hard ceiling 1,500 words —
-  // long-form was driving Opus output cost with no payoff. SHORT=500,
-  // MEDIUM=550–750, DEEP DIVE=up to 1,500. ('long' kept as an alias under the
-  // cap for any stored profiles that still use it.)
+  // Word-count tiers — these MUST match the labels the user picks in
+  // Brand Profile → Content Preferences (app/(dashboard)/brand/page.tsx),
+  // otherwise the selector silently lies: a creator choosing "Long" expecting
+  // 1,500–2,500 was getting ~1,000 because the prompt both under-targeted AND
+  // hard-capped at 1,500, collapsing Long and Deep to the same output (the
+  // "always the same length" bug, fixed 2026-06-26). Cost is governed by the
+  // per-account monthly AI-spend ceiling (lib/ai-spend.ts), not an artificial
+  // word cap — so the length the user asks for is the length we write to.
   const lengthMap: Record<string, string> = {
-    short: 'about 500 words',
-    medium: '550–750 words',
-    long: '900–1,100 words',
-    deep: '1,200–1,500 words',
+    short: '600–900 words',
+    medium: '900–1,500 words',
+    long: '1,500–2,500 words',
+    deep: '2,500–3,200 words',
   }
-  const targetLength = lengthMap[brand.post_length] || '550–750 words'
+  const targetLength = lengthMap[brand.post_length] || '900–1,500 words'
 
   const disclaimer = brand.affiliate_disclaimer
     || (isAmazon
@@ -437,13 +441,14 @@ CRITICAL RULES — FOLLOW STRICTLY
    Wrap all links with: target="_blank" rel="noopener sponsored nofollow"
    Must appear: intro paragraph + naturally 2–3× in body + final CTA.
 
-5. LENGTH — Hit the target length above, and NEVER exceed 1,500 words total, no
-   matter what. Tighter is better: every sentence earns its place. A focused
-   500–750 word review that answers the buyer's question beats a padded 2,000-
-   word one — do NOT inflate with filler, restated points, or throat-clearing to
-   reach a length. The target is a ceiling to write UP TO only if the substance
-   is genuinely there; if you've said everything worth saying in fewer words,
-   stop.
+5. LENGTH — Hit the target length above; the creator chose it deliberately and
+   the post should genuinely land inside that range. Earn the words with real
+   substance — specs, comparisons, lived detail from the transcript, buyer
+   questions answered — NEVER with filler, restated points, or throat-clearing.
+   If you reach the bottom of the range and still have substance worth adding,
+   keep going to the top of it; if you've truly said everything of value before
+   the bottom of the range, stop rather than pad. Quality at the chosen length
+   beats both a thin post AND a bloated one.
 
 6. NO CAPTIONS — Never output any <p class="gr-img-caption"> or caption text.
    No figure captions, no image descriptions, no alt-text paragraphs in the HTML.
@@ -2167,10 +2172,13 @@ ${video.transcript ? video.transcript.slice(0, 12000) : 'No transcript available
       // Safety CEILING, not the cost control — adaptive thinking tokens count
       // toward max_tokens, so 10000 was truncating real posts (heavy thinking
       // ate the budget before the META/CONTENT blocks finished → "invalid JSON").
-      // 16000 clears thinking + a ≤1,500-word article + the meta block with
-      // headroom. The actual cost is held down by the word-count prompt rule +
-      // effort:'medium' (you only pay for tokens generated, not the ceiling).
-      max_tokens: 16000,  // raised from 10000 on 2026-06-12 to stop truncation
+      // 24000 clears thinking + up to a ~3,200-word Deep-dive article + the
+      // meta block with headroom. Raised from 16000 on 2026-06-26 when the
+      // length tiers were uncapped (Long now targets 1,500–2,500, Deep 2,500+)
+      // — at 16000 the longest posts risked truncating the trailing META/CONTENT
+      // block into "invalid JSON". max_tokens is a CEILING: you only pay for
+      // tokens generated, so the real cost cap stays the per-account $ ceiling.
+      max_tokens: 24000,  // raised from 16000 on 2026-06-26 for the uncapped length tiers
       // Writer upgraded Sonnet 4.6 → Opus 4.8 (2026-06-09) for prose quality.
       // Opus 4.8 removed the fixed `budget_tokens` thinking budget (it 400s)
       // and only accepts ADAPTIVE thinking, so the model self-decides depth.
@@ -2333,10 +2341,13 @@ Return in the same %%META_START%% / %%META_END%% then %%CONTENT_START%% / %%CONT
       // Safety CEILING, not the cost control — adaptive thinking tokens count
       // toward max_tokens, so 10000 was truncating real posts (heavy thinking
       // ate the budget before the META/CONTENT blocks finished → "invalid JSON").
-      // 16000 clears thinking + a ≤1,500-word article + the meta block with
-      // headroom. The actual cost is held down by the word-count prompt rule +
-      // effort:'medium' (you only pay for tokens generated, not the ceiling).
-      max_tokens: 16000,  // raised from 10000 on 2026-06-12 to stop truncation
+      // 24000 clears thinking + up to a ~3,200-word Deep-dive article + the
+      // meta block with headroom. Raised from 16000 on 2026-06-26 when the
+      // length tiers were uncapped (Long now targets 1,500–2,500, Deep 2,500+)
+      // — at 16000 the longest posts risked truncating the trailing META/CONTENT
+      // block into "invalid JSON". max_tokens is a CEILING: you only pay for
+      // tokens generated, so the real cost cap stays the per-account $ ceiling.
+      max_tokens: 24000,  // raised from 16000 on 2026-06-26 for the uncapped length tiers
       // Opus 4.8 writer + adaptive thinking, effort-capped to stay inside the
       // shared 300s pipeline budget (see generateBlogPost for the full
       // rationale — campaign generation runs the same passes downstream).
