@@ -557,7 +557,12 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
       // that decision and just produce whatever the defaults are. The
       // user clicks "Generate Thumbnail" explicitly when they're ready.
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to generate')
+      const msg = err instanceof Error ? err.message : 'Failed to generate'
+      // "Failed to fetch" = browser-level TypeError; the server never responded
+      // (Vercel hit maxDuration, ISP hiccup, etc.). Give an actionable message.
+      setError(msg === 'Failed to fetch'
+        ? 'Request timed out — please try again'
+        : msg)
     } finally {
       setGenerating(false)
     }
