@@ -30,6 +30,33 @@ import { CTA_STICKERS, ctaStickerUrl } from '@/lib/cta-stickers'
 
 export const maxDuration = 120
 
+/**
+ * Safety-net transparency: flood-fill the near-white background (connected to
+ * the image border) to alpha 0. Used ONLY when fal rembg fails — the badge is
+ * generated on a plain white background, so without this we'd save an OPAQUE
+ * box that shows as a white rectangle burned onto the video. Interior whites
+ * (text, highlights) are NOT connected to the border, so they're preserved.
+ */
+async function whiteBgToTransparent(buf: Buffer): Promise<Buffer> {
+  const { data, info } = await sharp(buf).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+  const { width: w, height: h, channels: c } = info
+  const N = w * h
+  const near = (i: number, t: number) => data[i] >= t && data[i + 1] >= t && data[i + 2] >= t
+  const visited = new Uint8Array(N)
+  const stack: number[] = []
+  const seed = (x: number, y: number) => { const p = y * w + x; if (!visited[p] && near(p * c, 230)) { visited[p] = 1; stack.push(p) } }
+  for (let x = 0; x < w; x++) { seed(x, 0); seed(x, h - 1) }
+  for (let y = 0; y < h; y++) { seed(0, y); seed(w - 1, y) }
+  while (stack.length) {
+    const p = stack.pop() as number
+    data[p * c + (c - 1)] = 0
+    const x = p % w, y = (p - x) / w
+    if (x > 0) seed(x - 1, y); if (x < w - 1) seed(x + 1, y)
+    if (y > 0) seed(x, y - 1); if (y < h - 1) seed(x, y + 1)
+  }
+  return await sharp(data, { raw: { width: w, height: h, channels: c } }).png().toBuffer()
+}
+
 // Example badges whose comic/pop look anchors the generated style.
 const STYLE_REF_FILES = ['burner07.png', 'burner08.png', 'burner013.png']
 // Monthly cap on AI CTA-box generation (the only paid step in the burner —
@@ -98,15 +125,22 @@ The badge must be a self-contained graphic centred on a PLAIN SOLID FLAT WHITE b
     if (!rawUrl) return NextResponse.json({ error: 'Could not generate the badge — try again or tweak the wording.' }, { status: 502 })
     recordUsage({ userId: user.id, tier, feature: 'cta_sticker_gen', model: NANO_BANANA_PRO_COST_MODEL, images: 1 })
 
-    // Strip the solid background → transparent PNG. Fall back to the raw image
-    // only if removal fails (still usable, just not transparent).
-    const cutout = await removeBackground(rawUrl) || rawUrl
+    // Strip the solid background → transparent PNG via fal rembg.
+    const cutoutUrl = await removeBackground(rawUrl)
+    const rembgOk = !!cutoutUrl
+    const cutout = cutoutUrl || rawUrl
 
     // Persist to storage so the burner has a stable public URL (the fal URL is
     // ephemeral). Same bucket + {uid}/ path shape as the burner's own uploads.
     const imgRes = await fetch(cutout)
     if (!imgRes.ok) return NextResponse.json({ error: 'Could not fetch the generated badge.' }, { status: 502 })
-    const inputBuf = Buffer.from(await imgRes.arrayBuffer())
+    let inputBuf: Buffer = Buffer.from(await imgRes.arrayBuffer())
+    // Safety net: if rembg FAILED, the badge is still on its white background —
+    // flood-fill it to transparent so we never save an opaque box that burns a
+    // white rectangle onto the video.
+    if (!rembgOk) {
+      try { inputBuf = await whiteBgToTransparent(inputBuf) } catch { /* keep raw — better than nothing */ }
+    }
     // Trim the transparent margins so the badge's bounding box is tight — this
     // is what makes the lower-/upper-LEFT placement actually sit against the
     // left edge instead of looking centred (the generated canvas has wide
