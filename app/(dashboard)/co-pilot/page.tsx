@@ -2715,6 +2715,23 @@ export default function StudioPage() {
         subtitle="Generate titles, descriptions, tags, hashtags and thumbnails for any video, then push it all back to YouTube in one click."
       />
 
+      {/* Prominent Refresh — pulls the newest uploads + drafts straight from
+          YouTube (forces a fresh scan, ignoring the 15-min cache). Mirrors the
+          Blog Post Generator's action row so it's easy to find. */}
+      {!needsAuth && (
+        <div className="flex justify-end -mt-2 mb-5">
+          <button
+            onClick={refresh}
+            disabled={loading}
+            title="Pull your newest uploaded and drafted videos straight from YouTube"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border border-[#7C3AED]/30 text-[#7C3AED] bg-[#7C3AED]/5 hover:bg-[#7C3AED]/10 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+          >
+            <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
+            {loading ? 'Refreshing from YouTube…' : 'Refresh from YouTube'}
+          </button>
+        </div>
+      )}
+
 
       {/* Connect YouTube OAuth banner */}
       {needsAuth && (
@@ -2876,8 +2893,8 @@ export default function StudioPage() {
                   Include published
                 </label>
               )}
-              <button onClick={refresh} className="flex items-center gap-1 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#7C3AED] transition-colors">
-                <RefreshCw size={11} /> Refresh
+              <button onClick={refresh} disabled={loading} className="flex items-center gap-1 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#7C3AED] disabled:opacity-60 transition-colors">
+                <RefreshCw size={11} className={loading ? 'animate-spin' : ''} /> {loading ? 'Refreshing…' : 'Refresh'}
               </button>
             </div>
           </div>
