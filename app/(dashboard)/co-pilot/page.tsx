@@ -405,6 +405,23 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
   // Check once on mount — drives the "install SCOUT" vs "generate" Card 4 UI.
   useEffect(() => { isExtensionAvailable().then(ok => setExtensionInstalled(ok)) }, [])
 
+  // Pre-capture SCOUT frames the moment the card expands so they're ready
+  // by the time the user clicks Generate (the user spends ~15-20s reading
+  // title/description, which hides most of the 20-30s capture wait).
+  useEffect(() => {
+    if (!expanded || !video.youtubeVideoId) return
+    if (capturedFramesRef.current?.videoId === video.youtubeVideoId && capturedFramesRef.current.frames.length) return
+    ;(async () => {
+      try {
+        if (await isExtensionAvailable()) {
+          const frames = await requestVideoFrames(video.youtubeVideoId!, [0.15, 0.3, 0.5, 0.7])
+          if (frames.length) capturedFramesRef.current = { videoId: video.youtubeVideoId!, frames }
+        }
+      } catch { /* ignore — generateThumbnail retries */ }
+    })()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expanded, video.youtubeVideoId])
+
   // Pull aggregated 👍/👎 history for the YouTube surface so the random
   // style picker biases toward styles this user has rewarded.
   useEffect(() => {
@@ -994,10 +1011,10 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
             if (await isExtensionAvailable()) {
               setThumbnailError(null)
               setThumbnailStatus('Opening your video to capture a frame…')
-              // 7 frames spread across the video so the vision picker can choose
-              // the best one (clear face, product visible, sharp). The extension
-              // processes them serially (~3s each + ~10s startup ≈ 30s total).
-              const frames = await requestVideoFrames(video.youtubeVideoId, [0.1, 0.2, 0.3, 0.4, 0.5, 0.65, 0.8])
+              // 4 frames spread across the video — enough for the vision picker
+              // while keeping capture time to ~20s. Pre-capture on expand means
+              // these are usually ready before the user clicks Generate.
+              const frames = await requestVideoFrames(video.youtubeVideoId, [0.15, 0.3, 0.5, 0.7])
               if (frames.length) {
                 capturedFrames = frames
                 capturedFramesRef.current = { videoId: video.youtubeVideoId, frames }

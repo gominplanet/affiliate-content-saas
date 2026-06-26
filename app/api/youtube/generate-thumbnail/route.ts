@@ -1119,19 +1119,19 @@ export async function POST(request: Request) {
             }
           }
           if (scoutFaceModel) {
-            const starredRefs = await getStarredPhotoboothRefs(user.id, scoutFaceModel.id, { maxRefs: 2 })
-            const photoUrls = (starredRefs.length > 0 ? starredRefs : scoutFaceModel.source_images).slice(0, 2)
-            let first = true
+            // 1 face photo (best starred) + 1 frame crop = 2 refs total.
+            // Fewer refs = faster gpt-image-1 processing with no meaningful quality loss.
+            const starredRefs = await getStarredPhotoboothRefs(user.id, scoutFaceModel.id, { maxRefs: 1 })
+            const photoUrls = (starredRefs.length > 0 ? starredRefs : scoutFaceModel.source_images).slice(0, 1)
             for (const url of photoUrls) {
               try {
                 const ab = await fetch(url, { signal: AbortSignal.timeout(12000) })
                   .then(r => r.ok ? r.arrayBuffer() : Promise.reject(new Error(`${r.status}`)))
-                const buf = await normalizeToPng(new Uint8Array(ab))
-                if (first) { photoBytes = buf; first = false; scoutUsedFaceModel = true }
-                else extraPhotoBytes.push(buf)
+                photoBytes = await normalizeToPng(new Uint8Array(ab))
+                scoutUsedFaceModel = true
               } catch { /* skip unreadable photo */ }
             }
-            // Append the video frame crop as a context ref after the portrait photos.
+            // Append the video frame crop as context ref.
             if (scoutUsedFaceModel) extraPhotoBytes.push(bestFrameCrop)
           }
 
