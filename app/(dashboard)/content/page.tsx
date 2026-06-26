@@ -1633,6 +1633,18 @@ export default function ContentPage() {
   // Global "Brand message settings" — the recap template every per-post
   // "Share with brand" modal pre-fills from.
   const [brandSettingsOpen, setBrandSettingsOpen] = useState(false)
+  // "How a blog post gets made" explainer — open on the FIRST visit, collapsed
+  // afterwards (a returning user has read it). A manual toggle is remembered.
+  // Default open for SSR/first paint; the effect collapses it for return users.
+  const [explainerOpen, setExplainerOpen] = useState(true)
+  useEffect(() => {
+    try {
+      const choice = localStorage.getItem('mvp_blog_explainer_open')
+      const seen = localStorage.getItem('mvp_blog_explainer_seen')
+      setExplainerOpen(choice != null ? choice === '1' : seen == null)
+      localStorage.setItem('mvp_blog_explainer_seen', '1')
+    } catch { /* private mode — leave it open */ }
+  }, [])
   // Affiliate-link repair — dryRun finds posts with a broken affiliate link
   // (e.g. a dead amazon.com/dp/UNDERWATER) and previews old→new before writing.
   const [affPreview, setAffPreview] = useState<{ postId: string; title: string; oldUrl: string; newUrl: string }[] | null>(null)
@@ -3038,11 +3050,19 @@ export default function ContentPage() {
         </a>
       </div>
 
-      {/* How-it-works explainer — only on the Long-form → Blog tab. Native
-          <details> so it's collapsible with zero extra state; open by default
-          so first-time users see how generation works. */}
+      {/* How-it-works explainer — only on the Long-form → Blog tab. Open the
+          first time (so newcomers learn the flow), collapsed for return users;
+          a manual toggle is remembered in localStorage. */}
       {activeTab === 'horizontal' && (
-        <details open className="group mb-4 rounded-xl border border-[#7C3AED]/20 bg-[#7C3AED]/5 px-4 py-3">
+        <details
+          open={explainerOpen}
+          onToggle={(e) => {
+            const o = (e.target as HTMLDetailsElement).open
+            setExplainerOpen(o)
+            try { localStorage.setItem('mvp_blog_explainer_open', o ? '1' : '0') } catch { /* ignore */ }
+          }}
+          className="group mb-4 rounded-xl border border-[#7C3AED]/20 bg-[#7C3AED]/5 px-4 py-3"
+        >
           <summary className="flex items-center gap-2 cursor-pointer list-none text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] select-none">
             <Sparkles size={14} className="text-[#7C3AED]" />
             How a blog post gets made
