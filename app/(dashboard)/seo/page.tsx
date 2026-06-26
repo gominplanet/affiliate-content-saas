@@ -23,6 +23,10 @@ interface PostRow {
   /** WordPress post id — present whenever the post is live on WP. Used by the
    *  "Rebuild from video" modal to link a YouTube URL to this exact post. */
   wordpressPostId: number | null
+  /** Whether MVP has this post's body stored. Legacy/imported posts are live on
+   *  WP but have an empty blog_posts.content — the auto-fixer edits the STORED
+   *  body, so without it "Fix all" can't run. False → steer to Rebuild. */
+  hasBody?: boolean
   score: number; checks: Check[]
   indexed: boolean | null; coverageState: string | null
   inSitemap: boolean | null
@@ -43,11 +47,13 @@ const scoreColor = (s: number) => (s >= 80 ? '#34c759' : s >= 60 ? '#ff9500' : '
 // fixable only when the engine can actually ACT on it. title_length is auto-
 // fixable ONLY when the title is too LONG (>65) — we never auto-EXPAND a short
 // title (that would mean inventing a hook), so a short title gets a manual-edit
-// hint instead of a dead "Fix" button. Keeping this in lockstep with the server
-// is what stops "Fix all N" from promising fixes the engine silently skips.
-const isAutoFixable = (postTitle: string, c: Check): boolean => {
-  if (c.pass) return false
-  if (c.id === 'title_length') return (postTitle || '').length > 65
+// hint instead of a dead "Fix" button. And nothing is auto-fixable when MVP
+// has no stored body for the post (the fixer edits the stored HTML) — those
+// posts get steered to Rebuild-from-video. Keeping this in lockstep with the
+// server is what stops "Fix all N" from promising fixes the engine then skips.
+const isAutoFixable = (p: { title: string; hasBody?: boolean }, c: Check): boolean => {
+  if (c.pass || p.hasBody === false) return false
+  if (c.id === 'title_length') return (p.title || '').length > 65
   return c.id === 'internal_links' || c.id === 'faq' || c.id === 'image_alt'
 }
 
@@ -918,7 +924,7 @@ export default function SeoPage() {
             ) : posts.map((p) => {
               const open = expanded === p.postId
               const failing = p.checks.filter(c => !c.pass && c.weight > 0)
-              const autoFixable = p.checks.filter(c => isAutoFixable(p.title, c)).length
+              const autoFixable = p.checks.filter(c => isAutoFixable(p, c)).length
               const selectable = !!p.url && p.indexed !== true && data.connected
               const isSelected = selectedPostIds.has(p.postId)
               const bulkOutcome = bulkIndexProgress?.results[p.postId]
@@ -1034,7 +1040,7 @@ export default function SeoPage() {
                   {open && (
                     <div className="px-4 pb-4 pl-12">
                       {(() => {
-                        const fixableCount = p.checks.filter(c => isAutoFixable(p.title, c)).length
+                        const fixableCount = p.checks.filter(c => isAutoFixable(p, c)).length
                         if (fixableCount < 2) return null  // a single fix → just use its own button
                         const busy = fixing === `${p.postId}:all`
                         return (
@@ -1047,6 +1053,15 @@ export default function SeoPage() {
                           </button>
                         )
                       })()}
+                      {/* Body-less posts (legacy/imported: live on WP, no stored
+                          content in MVP) can't be auto-fixed — the engine edits
+                          the stored HTML. Say so and point at Rebuild instead of
+                          showing a "Fix all" that 422s. */}
+                      {p.hasBody === false && failing.length > 0 && (
+                        <p className="mb-3 text-xs text-[#86868b] max-w-prose">
+                          MVP doesn&apos;t have this post&apos;s text stored, so these can&apos;t be auto-fixed. {canRebuild ? 'Use “Rebuild from video” below to regenerate the body' : 'Edit the post directly in WordPress'} — then auto-fix becomes available.
+                        </p>
+                      )}
                       {/* Inline outcome — the result/error lives RIGHT under the
                           buttons the user clicked, not in a banner at the top of
                           the page they can't see while scrolled down to a row.
@@ -1079,7 +1094,7 @@ export default function SeoPage() {
                       )}
                       <ul className="flex flex-col gap-1.5">
                         {p.checks.filter(c => c.weight > 0).map(c => {
-                          const fixable = isAutoFixable(p.title, c)
+                          const fixable = isAutoFixable(p, c)
                           const key = `${p.postId}:${c.id}`
                           return (
                             <li key={c.id} className="flex items-start gap-2 text-xs">

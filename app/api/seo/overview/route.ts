@@ -264,6 +264,12 @@ export async function GET() {
       // Site identity so the UI can show "Wine Reviews" / "Tech Picks" pill
       // next to each row when the user has multi-site connected.
       wordpressSiteId: p.wordpress_site_id,
+      // Whether MVP has this post's body stored locally. Legacy/imported posts
+      // are live on WP but have an empty blog_posts.content — the auto-fixer
+      // edits the STORED body, so without it "Fix all" can't run (the route
+      // 422s). The UI uses this to steer those rows to Rebuild-from-video
+      // instead of offering a fix that always fails.
+      hasBody: !!(p.content && p.content.trim()),
       score, checks,
       indexed: indexedState === 'indexed' ? true : indexedState === 'not_indexed' ? false : null,
       inSitemap,
