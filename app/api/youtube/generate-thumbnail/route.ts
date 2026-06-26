@@ -1147,44 +1147,85 @@ export async function POST(request: Request) {
             ]
             const bg = GFX_BACKGROUNDS[idx % GFX_BACKGROUNDS.length]
 
-            // Build creator reference label and product image number for the prompt.
-            // Creator frames come first; product (if any) is the last image.
-            const creatorCount = 1 + extraPhotoBytes.length
-            const productImgNum = productBytes ? creatorCount + 1 : null
-            const creatorRefLabel = extraPhotoBytes.length > 0
-              ? `Images 1–${creatorCount} (multiple real video frames of the SAME person — use ALL for identity lock)`
-              : 'Image 1'
+            // SCOUT path: transform the ACTUAL video frame into a thumbnail.
+            // The creator's face is already IN the frame — we ask the edit API
+            // to keep it exactly as-is and add the text panel + product around
+            // them. This preserves identity far better than regenerating a new
+            // person from reference images (which always loses fidelity because
+            // the person appears small in a wide video frame).
+            //
+            // Face-model / storyboard path: the face reference IS the identity
+            // source, so we still generate a composed scene from it.
+            const isScoutFrameMode = !!(capturedFrames?.length)
+            const productImgNum = productBytes
+              ? (isScoutFrameMode ? 1 + Math.min(extraPhotoBytes.length, 1) : 1 + extraPhotoBytes.length) + 1
+              : null
 
-            const prompt = [
-              'Professional YouTube thumbnail, 1536×1024 px, 16:9 landscape. High energy, high contrast.',
-              '',
-              'LAYOUT (strict, left to right):',
-              `  LEFT 40% — text block on a semi-transparent dark panel:`,
-              `    Top line: "${line1}" — large white bold capitals, dark stroke outline for readability.`,
-              `    Main line: "${line2}" — even larger, bright yellow (#FFE034) bold capitals — the dominant visual element.`,
-              `    Text must be CRISP and FULLY READABLE. No other text in the image.`,
-              '',
-              `  CENTER 30% — ${productLabel}.`,
-              `    Recreate the product from Image ${productImgNum ?? creatorCount} in dramatic studio lighting — 3D pop, vivid colours, realistic shadows, floating or resting naturally.`,
-              '',
-              `  RIGHT 35% — creator (${creatorRefLabel}).`,
-              `    CRITICAL IDENTITY: The face MUST be recognizably the EXACT same real person shown in the creator reference image(s) — match their facial structure, skin tone, hair colour, and features precisely. A viewer who knows this person must recognise them immediately.`,
-              `    Show from waist-up with excited/confident expression, pointing LEFT toward the product.`,
-              '',
-              `BACKGROUND: ${bg}. No white space.`,
-              '',
-              'STYLE: High-production YouTube creator thumbnail. Bold and punchy. Background must be noticeably blurred (bokeh) so the host and product are the sharpest elements in the frame.',
-              'No logos, no watermarks, no brand names rendered in the image itself.',
-            ].join('\n')
+            let prompt: string
+            let refs: Array<{ data: Buffer | Uint8Array; filename: string; mime: string }>
 
-            const refs: Array<{ data: Buffer | Uint8Array; filename: string; mime: string }> = [
-              { data: photoBytes, filename: 'creator.png', mime: 'image/png' },
-              ...extraPhotoBytes.map((b, i) => ({ data: b, filename: `creator_${i + 2}.png`, mime: 'image/png' as const })),
-            ]
-            if (productBytes) refs.push({ data: productBytes, filename: 'product.png', mime: 'image/png' })
+            if (isScoutFrameMode) {
+              // TRANSFORM the real video frame — keep the person exactly as they
+              // appear, add text overlay + product around them.
+              prompt = [
+                `Transform this video frame into a professional YouTube thumbnail, 1536×1024 px.`,
+                '',
+                `CREATOR IDENTITY — HIGHEST PRIORITY: The person in the video frame MUST appear in the output with their EXACT same face, skin tone, hair, and features. Do NOT alter or regenerate their appearance. Edit the existing image so they remain recognisable as the same real person.`,
+                '',
+                `LAYOUT (left to right across the 1536×1024 canvas):`,
+                `  LEFT 40%: Add a bold text overlay panel on a dark semi-transparent background:`,
+                `    Top line: "${line1}" — large white bold capitals, dark stroke outline.`,
+                `    Main line: "${line2}" — even larger, BRIGHT YELLOW (#FFE034) bold capitals. The dominant visual.`,
+                `    Text must be CRISP and FULLY READABLE. No other text in the image.`,
+                '',
+                `  CENTER 30%: ${productBytes ? `Feature the ${productLabel} from the product reference image (Image ${productImgNum ?? 2})` : `Feature the ${productLabel} prominently`} — vivid studio lighting, 3D pop, sharp.`,
+                '',
+                `  RIGHT 35%: The creator (from the video frame). Keep their EXACT appearance. Clean up the background behind them to a softly blurred ${bg}. Show them with an excited expression.`,
+                '',
+                `OVERALL: High-production YouTube thumbnail. Vivid, punchy, professional. No logos, no watermarks, no extra text beyond the two lines above.`,
+              ].join('\n')
+              refs = [
+                { data: photoBytes, filename: 'video_frame.png', mime: 'image/png' },
+                // One extra frame for supplemental identity context
+                ...extraPhotoBytes.slice(0, 1).map((b, i) => ({ data: b, filename: `frame_${i + 2}.png`, mime: 'image/png' as const })),
+              ]
+              if (productBytes) refs.push({ data: productBytes, filename: 'product.png', mime: 'image/png' })
+            } else {
+              // Face-model or storyboard path: generate a composed scene using
+              // the reference photo(s) as the creator's identity source.
+              const creatorCount = 1 + extraPhotoBytes.length
+              const creatorRefLabel = extraPhotoBytes.length > 0
+                ? `Images 1–${creatorCount} (multiple reference shots of the SAME person — use ALL for identity lock)`
+                : 'Image 1'
+              prompt = [
+                'Professional YouTube thumbnail, 1536×1024 px, 16:9 landscape. High energy, high contrast.',
+                '',
+                'LAYOUT (strict, left to right):',
+                `  LEFT 40% — text block on a semi-transparent dark panel:`,
+                `    Top line: "${line1}" — large white bold capitals, dark stroke outline for readability.`,
+                `    Main line: "${line2}" — even larger, bright yellow (#FFE034) bold capitals — the dominant visual element.`,
+                `    Text must be CRISP and FULLY READABLE. No other text in the image.`,
+                '',
+                `  CENTER 30% — ${productLabel}.`,
+                `    Recreate the product from Image ${productImgNum ?? creatorCount} in dramatic studio lighting — 3D pop, vivid colours, realistic shadows, floating or resting naturally.`,
+                '',
+                `  RIGHT 35% — creator (${creatorRefLabel}).`,
+                `    CRITICAL IDENTITY: The face MUST be the EXACT same real person — match facial structure, skin tone, hair, and features precisely. A viewer who knows them must recognise them immediately.`,
+                `    Show from waist-up with excited/confident expression, pointing LEFT toward the product.`,
+                '',
+                `BACKGROUND: ${bg}. No white space.`,
+                '',
+                'STYLE: High-production YouTube creator thumbnail. Bold and punchy. Background must be noticeably blurred (bokeh) so the host and product are the sharpest elements in the frame.',
+                'No logos, no watermarks, no brand names rendered in the image itself.',
+              ].join('\n')
+              refs = [
+                { data: photoBytes, filename: 'creator.png', mime: 'image/png' },
+                ...extraPhotoBytes.map((b, i) => ({ data: b, filename: `creator_${i + 2}.png`, mime: 'image/png' as const })),
+              ]
+              if (productBytes) refs.push({ data: productBytes, filename: 'product.png', mime: 'image/png' })
+            }
 
-            const gfxQuality = hasVideoFrame ? 'medium' : 'high'
-            const b64 = await openaiGfx.generateWithReferences({ prompt, images: refs, size: '1536x1024', quality: gfxQuality })
+            const b64 = await openaiGfx.generateWithReferences({ prompt, images: refs, size: '1536x1024', quality: 'high' })
             recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'yt_thumb_graphic', model: gfxModel, images: 1 })
             return rehostToFal(`data:image/png;base64,${b64}`)
           })
