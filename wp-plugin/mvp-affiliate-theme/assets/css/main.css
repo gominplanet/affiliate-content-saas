@@ -337,7 +337,10 @@ html, body { overflow-x: clip; }
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 28px;
-  border-bottom: 2px solid var(--mvp-text);
+  /* Branded accent line under every section title — uses the brand's
+     SECONDARY color so each site gets a distinct signature rule (was a flat
+     dark line; secondary_color previously went unused anywhere). */
+  border-bottom: 2px solid var(--mvp-secondary);
   padding-bottom: 12px;
 }
 .mvp-section-title {
@@ -538,7 +541,10 @@ a.mvp-ad-slot-filled:hover {
 }
 .mvp-newsletter-button {
   padding: 12px 24px;
-  background: var(--mvp-text);
+  /* Action-color system: the brand SECONDARY color paints the action buttons
+     (this signup button + the in-post "Get the best price" CTA), while PRIMARY
+     stays on links/nav. Gives each site a branded call-to-action. */
+  background: var(--mvp-secondary);
   color: #fff;
   border: 0;
   border-radius: 4px;
