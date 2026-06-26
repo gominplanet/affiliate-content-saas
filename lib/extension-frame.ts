@@ -68,9 +68,10 @@ export async function getScoutStatus(): Promise<{ installed: boolean; version: s
  */
 export async function requestVideoFrames(
   youtubeVideoId: string,
-  // 5 evenly-spaced fractions — enough for the vision picker to find a good
-  // face+product frame without blowing Vercel's 4.5 MB request-body limit.
-  fractions: number[] = [0.1, 0.25, 0.4, 0.55, 0.7],
+  // 8 frames spread across the video — gives the vision picker more face-shot
+  // options, and 3 of them are sent as identity refs to gpt-image for better
+  // likeness lock. Avoids the end-screen zone (>85%). ~200KB each = ~1.6 MB total.
+  fractions: number[] = [0.08, 0.18, 0.28, 0.38, 0.48, 0.58, 0.68, 0.78],
 ): Promise<string[]> {
   const resp = await sendToExtension<{ ok?: boolean; frames?: string[]; dataUrl?: string; error?: string }>(
     { type: 'MVP_CAPTURE_FRAME', youtubeVideoId, fractions },

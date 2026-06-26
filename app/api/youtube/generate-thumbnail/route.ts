@@ -1076,9 +1076,12 @@ export async function POST(request: Request) {
         // Extension/storyboard frames use quality:'medium' (~20s); Photobooth-only
         // uses quality:'high' (~2min) since there's no pre-grounded identity.
         let photoBytes: Buffer | Uint8Array
+        // Supplementary frames sent alongside the best one — more angles of the
+        // same face give gpt-image-1 a much stronger identity lock (same logic as
+        // generateFaceCutout sending up to 5 reference photos).
+        let extraPhotoBytes: (Buffer | Uint8Array)[] = []
         if (capturedFrames?.length) {
-          // Vision-pick the best frame (face visible, product visible, sharp) when
-          // we have several — the extension now sends 7 frames across the video.
+          // Vision-pick the best frame (face visible, product visible, sharp).
           let bestIdx = 0
           if (capturedFrames.length > 1) {
             try {
@@ -1087,6 +1090,21 @@ export async function POST(request: Request) {
           }
           const base64 = capturedFrames[bestIdx].replace(/^data:[^;]+;base64,/, '')
           photoBytes = await normalizeToPng(Buffer.from(base64, 'base64'))
+          // Pick 2 supplementary frames from different moments in the video.
+          // Spread at 25% and 75% of the array = different timestamps = different
+          // poses/angles of the same person without re-running the vision picker.
+          if (capturedFrames.length >= 3) {
+            const extras = [
+              Math.floor(capturedFrames.length * 0.25),
+              Math.floor(capturedFrames.length * 0.75),
+            ].filter(i => i !== bestIdx)
+            for (const ei of extras.slice(0, 2)) {
+              try {
+                const eb64 = capturedFrames[ei].replace(/^data:[^;]+;base64,/, '')
+                extraPhotoBytes.push(await normalizeToPng(Buffer.from(eb64, 'base64')))
+              } catch { /* skip bad frame */ }
+            }
+          }
         } else if (gfxStoryboardFrame) {
           photoBytes = await normalizeToPng(new Uint8Array(gfxStoryboardFrame.buffer))
         } else {
@@ -1129,6 +1147,14 @@ export async function POST(request: Request) {
             ]
             const bg = GFX_BACKGROUNDS[idx % GFX_BACKGROUNDS.length]
 
+            // Build creator reference label and product image number for the prompt.
+            // Creator frames come first; product (if any) is the last image.
+            const creatorCount = 1 + extraPhotoBytes.length
+            const productImgNum = productBytes ? creatorCount + 1 : null
+            const creatorRefLabel = extraPhotoBytes.length > 0
+              ? `Images 1–${creatorCount} (multiple real video frames of the SAME person — use ALL for identity lock)`
+              : 'Image 1'
+
             const prompt = [
               'Professional YouTube thumbnail, 1536×1024 px, 16:9 landscape. High energy, high contrast.',
               '',
@@ -1139,11 +1165,11 @@ export async function POST(request: Request) {
               `    Text must be CRISP and FULLY READABLE. No other text in the image.`,
               '',
               `  CENTER 30% — ${productLabel}.`,
-              `    Recreate the product from Image ${productBytes ? 2 : 1} in dramatic studio lighting — 3D pop, vivid colours, realistic shadows, floating or resting naturally.`,
+              `    Recreate the product from Image ${productImgNum ?? creatorCount} in dramatic studio lighting — 3D pop, vivid colours, realistic shadows, floating or resting naturally.`,
               '',
-              `  RIGHT 35% — creator (Image 1).`,
+              `  RIGHT 35% — creator (${creatorRefLabel}).`,
+              `    CRITICAL IDENTITY: The face MUST be recognizably the EXACT same real person shown in the creator reference image(s) — match their facial structure, skin tone, hair colour, and features precisely. A viewer who knows this person must recognise them immediately.`,
               `    Show from waist-up with excited/confident expression, pointing LEFT toward the product.`,
-              `    FACE MUST MATCH Image 1 exactly — same person, same features, same appearance.`,
               '',
               `BACKGROUND: ${bg}. No white space.`,
               '',
@@ -1153,6 +1179,7 @@ export async function POST(request: Request) {
 
             const refs: Array<{ data: Buffer | Uint8Array; filename: string; mime: string }> = [
               { data: photoBytes, filename: 'creator.png', mime: 'image/png' },
+              ...extraPhotoBytes.map((b, i) => ({ data: b, filename: `creator_${i + 2}.png`, mime: 'image/png' as const })),
             ]
             if (productBytes) refs.push({ data: productBytes, filename: 'product.png', mime: 'image/png' })
 
