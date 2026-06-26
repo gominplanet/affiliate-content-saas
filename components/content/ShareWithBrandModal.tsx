@@ -45,6 +45,9 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
   const [polishing, setPolishing] = useState(false)
   const [copied, setCopied] = useState(false)
   const [findingVideo, setFindingVideo] = useState(false)
+  const [showPaste, setShowPaste] = useState(false)
+  const [pasteUrl, setPasteUrl] = useState('')
+  const [scanDiag, setScanDiag] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -121,43 +124,63 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
     }
   }
 
+  // Add an Amazon video (vdp) URL to the recap (shared by extension-find + paste).
+  function addAmazonVideoLink(url: string) {
+    setData(d => {
+      if (!d) return d
+      if (d.links.some(l => l.platform === 'amazon_video')) {
+        return { ...d, amazonVideoUrl: url, links: d.links.map(l => l.platform === 'amazon_video' ? { ...l, url } : l) }
+      }
+      const at = d.links.findIndex(l => l.platform === 'product')
+      const next = [...d.links]
+      next.splice(at >= 0 ? at + 1 : 0, 0, { platform: 'amazon_video', label: 'Amazon video review', url })
+      return { ...d, amazonVideoUrl: url, links: next }
+    })
+    setEnabled(s => ({ ...s, amazon_video: true }))
+    setEdited(false)
+  }
+
+  async function saveAmazonVideo(url: string): Promise<boolean> {
+    const res = await fetch(`/api/blog/brand-recap/${postId}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amazonVideoUrl: url, wpUrl }),
+    })
+    const d = await res.json().catch(() => ({}))
+    if (!res.ok) { toast.error(d.error || 'Couldn’t save that link'); return false }
+    addAmazonVideoLink(url)
+    return true
+  }
+
   // Find the creator's Amazon Influencer video via the extension's Manage
   // Content scan, matched to this post by ASIN, and add it to the recap.
   async function findAmazonVideo() {
     if (!data?.product.asin) return
     const asin = data.product.asin.toUpperCase()
-    setFindingVideo(true)
+    setFindingVideo(true); setScanDiag(null)
     try {
       const res = await requestAmazonVideos()
       if (!res.ok) {
         toast.error(res.error === 'not-installed'
           ? 'Install / open the MVP extension and sign in to Amazon, then try again.'
-          : 'Couldn’t read your Amazon videos — make sure you’re signed in to Amazon.')
+          : 'Couldn’t read your Amazon videos — open Amazon (signed in) and try again.')
+        setShowPaste(true)
         return
       }
       const match = res.videos.find(v => (v.asin || '').toUpperCase() === asin)
       if (!match) {
-        toast.error('No Amazon video found for this product yet. Upload it on Amazon first, or paste the link.')
+        // Surface what the scan saw so we can tune it; offer manual paste.
+        const dg = res.diag
+        setScanDiag(dg
+          ? `Scanned: ${dg.title || dg.url || 'a page'} · found ${res.videos.length} video link(s) (${dg.vdpHtmlHits ?? 0} vdp refs in HTML). None matched ASIN ${asin}.`
+          : `Found ${res.videos.length} video(s), none for ASIN ${asin}.`)
+        setShowPaste(true)
+        toast('No Amazon video matched this product — paste the link below, or check you’re on your Manage Content page.', { duration: 7000 })
         return
       }
-      // Persist + add to the recap.
-      await fetch(`/api/blog/brand-recap/${postId}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amazonVideoUrl: match.vdpUrl, wpUrl }),
-      }).catch(() => {})
-      setData(d => {
-        if (!d) return d
-        if (d.links.some(l => l.platform === 'amazon_video')) return d
-        const at = d.links.findIndex(l => l.platform === 'product')
-        const next = [...d.links]
-        next.splice(at >= 0 ? at + 1 : 0, 0, { platform: 'amazon_video', label: 'Amazon video review', url: match.vdpUrl })
-        return { ...d, amazonVideoUrl: match.vdpUrl, links: next }
-      })
-      setEnabled(s => ({ ...s, amazon_video: true }))
-      setEdited(false)
-      toast.success('Found your Amazon video — added to the recap.')
+      if (await saveAmazonVideo(match.vdpUrl)) toast.success('Found your Amazon video — added to the recap.')
     } catch {
-      toast.error('Couldn’t scan Amazon. Try again.')
+      toast.error('Couldn’t scan Amazon. Paste the link below instead.')
+      setShowPaste(true)
     } finally {
       setFindingVideo(false)
     }
@@ -229,15 +252,37 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
                 </div>
               )}
               {canFindVideo && (
-                <button
-                  onClick={findAmazonVideo}
-                  disabled={findingVideo}
-                  title="Read your Amazon Manage Content in your logged-in session and add your Amazon video for this product"
-                  className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#7C3AED] hover:underline disabled:opacity-50"
-                >
-                  {findingVideo ? <Loader2 size={12} className="animate-spin" /> : <Video size={12} />}
-                  {findingVideo ? 'Scanning Amazon…' : 'Find my Amazon video'}
-                </button>
+                <div className="mt-2 flex flex-col gap-1.5">
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={findAmazonVideo}
+                      disabled={findingVideo}
+                      title="Read your Amazon Manage Content in your logged-in session and add your Amazon video for this product"
+                      className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#7C3AED] hover:underline disabled:opacity-50"
+                    >
+                      {findingVideo ? <Loader2 size={12} className="animate-spin" /> : <Video size={12} />}
+                      {findingVideo ? 'Scanning Amazon…' : 'Find my Amazon video'}
+                    </button>
+                    <button onClick={() => setShowPaste(v => !v)} className="text-[11px] text-[#86868b] hover:text-[#7C3AED]">
+                      paste link
+                    </button>
+                  </div>
+                  {scanDiag && <p className="text-[10px] text-[#86868b] leading-snug">{scanDiag}</p>}
+                  {showPaste && (
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        value={pasteUrl}
+                        onChange={e => setPasteUrl(e.target.value)}
+                        placeholder="https://www.amazon.com/vdp/…"
+                        className="flex-1 px-2 py-1.5 rounded-md border border-[var(--border-2,#e5e5e7)] bg-[var(--surface,#fff)] text-[11px] font-mono focus:outline-none focus:border-[#7C3AED]"
+                      />
+                      <button
+                        onClick={async () => { if (pasteUrl.trim() && await saveAmazonVideo(pasteUrl.trim())) { setPasteUrl(''); setShowPaste(false); toast.success('Added your Amazon video.') } }}
+                        className="px-2.5 py-1.5 rounded-md text-[11px] font-semibold bg-[#7C3AED] text-white hover:bg-[#6D28D9]"
+                      >Add</button>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
 

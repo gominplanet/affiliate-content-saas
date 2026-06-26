@@ -102,9 +102,21 @@ export interface AmazonVideo {
   title?: string
 }
 
+/** What the harvester saw — surfaced so a 0-result is debuggable (which page it
+ *  landed on, signed-in state, how many /vdp/ references existed). */
+export interface AmazonScanDiag {
+  url?: string
+  title?: string
+  htmlLen?: number
+  anchorCount?: number
+  vdpAnchorCount?: number
+  vdpHtmlHits?: number
+  vdpHtmlMatched?: number
+}
+
 export type AmazonScanResult =
-  | { ok: true; videos: AmazonVideo[]; signedOut?: boolean }
-  | { ok: false; error: 'not-installed' | 'scan-failed' | 'timeout' | string }
+  | { ok: true; videos: AmazonVideo[]; signedOut?: boolean; diag?: AmazonScanDiag }
+  | { ok: false; error: 'not-installed' | 'scan-failed' | 'timeout' | string; diag?: AmazonScanDiag }
 
 /**
  * Ask the extension to read the user's Amazon Manage Content page and return
@@ -114,16 +126,16 @@ export type AmazonScanResult =
  */
 export async function requestAmazonVideos(): Promise<AmazonScanResult> {
   if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
-  const resp = await sendToExtension<{ ok?: boolean; videos?: AmazonVideo[]; signedOut?: boolean; error?: string }>(
+  const resp = await sendToExtension<{ ok?: boolean; videos?: AmazonVideo[]; signedOut?: boolean; error?: string; diag?: AmazonScanDiag }>(
     { type: 'MVP_AMZ_SCAN' },
     120000,
   )
   if (!resp) return { ok: false, error: 'timeout' }
   if (resp.ok && Array.isArray(resp.videos)) {
     const videos = resp.videos.filter(v => v && typeof v.vdpUrl === 'string')
-    return { ok: true, videos, signedOut: resp.signedOut }
+    return { ok: true, videos, signedOut: resp.signedOut, diag: resp.diag }
   }
-  return { ok: false, error: resp.error || 'scan-failed' }
+  return { ok: false, error: resp.error || 'scan-failed', diag: resp.diag }
 }
 
 /** A raw Creator Connections campaign row as scraped by the extension. All

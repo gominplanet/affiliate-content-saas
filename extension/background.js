@@ -298,7 +298,9 @@ async function scanCreatorConnections(callerTabId) {
 const AMZ_MANAGE_URL = 'https://www.amazon.com/manage-content'
 
 // Injected into the Manage Content page. Scrolls to load everything, then
-// harvests each video link + its product ASIN. Self-contained (serialized).
+// harvests each video link + its product ASIN. Robust: pulls /vdp/ links from
+// anchors AND from the raw rendered HTML (data-attrs, inline JSON, onclick),
+// and returns a diag block so a 0-result is debuggable. Self-contained.
 async function harvestAmazonVideosInPage() {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   // Lazy-loaded list — scroll until the page height stops growing.
@@ -311,26 +313,55 @@ async function harvestAmazonVideosInPage() {
     last = h
   }
   window.scrollTo(0, 0)
+  await sleep(400)
 
   const out = []
   const seen = new Set()
   const asinFrom = (href) => {
     try { const a = new URL(href, location.origin).searchParams.get('product'); if (a) return a.toUpperCase() } catch (e) {}
-    const m = href.match(/[?&]product=([A-Za-z0-9]{10})/) || href.match(/\/dp\/([A-Z0-9]{10})/)
+    const m = href.match(/[?&]product=([A-Za-z0-9]{10})/) ||
+              href.match(/%26product%3D([A-Za-z0-9]{10})/i) ||
+              href.match(/\/dp\/([A-Z0-9]{10})/)
     return m ? m[1].toUpperCase() : null
   }
-  // Primary signal: anchors pointing at a video detail page (/vdp/).
-  for (const a of document.querySelectorAll('a[href*="/vdp/"]')) {
-    const href = a.href
-    if (!href || seen.has(href)) continue
-    seen.add(href)
-    out.push({
-      vdpUrl: href,
-      asin: asinFrom(href),
-      title: (a.getAttribute('aria-label') || a.textContent || '').trim().slice(0, 140),
-    })
+  const push = (url, title) => {
+    if (!url) return
+    const clean = url.replace(/&amp;/g, '&').replace(/\\u002F/gi, '/').replace(/\\\//g, '/')
+    if (seen.has(clean)) return
+    seen.add(clean)
+    out.push({ vdpUrl: clean, asin: asinFrom(clean), title: (title || '').trim().slice(0, 140) })
   }
-  return { ok: true, videos: out, count: out.length, signedOut: /ap\/signin/.test(location.href) }
+
+  // 1) Anchors anywhere whose href contains /vdp/.
+  const anchors = [...document.querySelectorAll('a[href]')]
+  let vdpAnchorCount = 0
+  for (const a of anchors) {
+    const href = a.href || a.getAttribute('href') || ''
+    if (/\/vdp\//.test(href)) { vdpAnchorCount++; push(href, a.getAttribute('aria-label') || a.textContent) }
+  }
+
+  // 2) Raw HTML scan — catches vdp URLs in data-* attrs, inline React/JSON
+  //    state, or onclick handlers that never become real anchors.
+  const html = document.documentElement.innerHTML
+  const re = /https?:(?:\\?\/){2}(?:www\.)?amazon\.[a-z.]+(?:\\?\/)vdp(?:\\?\/)[A-Za-z0-9]+[^"'\\\s)<>]*/gi
+  let m, htmlVdpHits = 0
+  while ((m = re.exec(html)) !== null) { htmlVdpHits++; push(m[0], '') }
+
+  return {
+    ok: true,
+    videos: out,
+    count: out.length,
+    signedOut: /\/ap\/signin/.test(location.href),
+    diag: {
+      url: location.href.slice(0, 160),
+      title: (document.title || '').slice(0, 100),
+      htmlLen: html.length,
+      anchorCount: anchors.length,
+      vdpAnchorCount,
+      vdpHtmlHits: (html.match(/\/vdp\//g) || []).length,
+      vdpHtmlMatched: htmlVdpHits,
+    },
+  }
 }
 
 async function scanAmazonVideos(callerTabId) {
