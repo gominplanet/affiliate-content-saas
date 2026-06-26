@@ -1230,6 +1230,8 @@ const VideoCard = memo(function VideoCardImpl({
                   shareDisclaimer: brandDisclaimer || '#ad #sponsored',
                   facebookGroups: brandFacebookGroups,
                   publishTargetLabel: fbPageLabel,
+                  // Let the modal show a Page dropdown when >1 connected Page.
+                  facebookPages: fbAccounts.map(a => ({ id: a.id, name: a.displayName || 'Facebook Page', isDefault: a.isDefault })),
                 }
               : {}
             return (

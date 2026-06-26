@@ -40,6 +40,7 @@ export function SocialPreviewModal({
   shareDisclaimer,
   facebookGroups,
   publishTargetLabel,
+  facebookPages,
 }: {
   /** Display label, e.g. "Threads" — shows in the modal header. */
   platform: string
@@ -72,6 +73,10 @@ export function SocialPreviewModal({
   /** Name of the exact destination the Publish button posts to (e.g. the
    *  selected Facebook Page). Shown next to the button so it's unambiguous. */
   publishTargetLabel?: string
+  /** Facebook-only: the user's connected Pages. When provided, the modal shows
+   *  a Page dropdown so they can pick which Page to publish to right here; the
+   *  chosen page's id overrides extraBody.socialAccountId on publish/schedule. */
+  facebookPages?: Array<{ id: string; name: string; isDefault?: boolean }>
 }) {
   const [loading, setLoading] = useState(true)
   const [text, setText] = useState('')
@@ -89,6 +94,24 @@ export function SocialPreviewModal({
   const [scheduling, setScheduling] = useState(false)
   const [scheduleError, setScheduleError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+
+  // ── Facebook Page picker ─────────────────────────────────────────────────
+  // Which Page the Publish button targets. Defaults to whatever the parent
+  // pre-selected (extraBody.socialAccountId), else the default/first Page.
+  const [selectedPageId, setSelectedPageId] = useState<string | undefined>(() =>
+    (extraBody?.socialAccountId as string | undefined)
+    ?? facebookPages?.find(p => p.isDefault)?.id
+    ?? facebookPages?.[0]?.id,
+  )
+  const hasPagePicker = !!facebookPages && facebookPages.length > 0
+  // Override extraBody's socialAccountId with the in-modal pick so publish AND
+  // schedule both target the chosen Page.
+  const effectiveExtraBody = hasPagePicker && selectedPageId
+    ? { ...extraBody, socialAccountId: selectedPageId }
+    : extraBody
+  const activePageLabel = hasPagePicker
+    ? (facebookPages!.find(p => p.id === selectedPageId)?.name ?? publishTargetLabel)
+    : publishTargetLabel
   // Niche hashtags generated server-side for THIS product/topic (preferred over
   // the generic brand-niche fallback passed in via shareHashtags).
   const [serverHashtags, setServerHashtags] = useState('')
@@ -139,7 +162,7 @@ export function SocialPreviewModal({
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ postId, text, ...extraBody }),
+        body: JSON.stringify({ postId, text, ...effectiveExtraBody }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || 'Publish failed')
@@ -173,7 +196,7 @@ export function SocialPreviewModal({
           platform: platformKey,
           scheduledAt: when.toISOString(),
           text,
-          ...extraBody,
+          ...effectiveExtraBody,
         }),
       })
       const data = await res.json().catch(() => ({}))
@@ -340,14 +363,31 @@ export function SocialPreviewModal({
                 </div>
               )}
 
-              {publishTargetLabel && !scheduleEnabled && (
+              {/* Facebook Page picker — pick which connected Page to publish to,
+                  right here. Falls back to a static label for a single Page or
+                  for platforms that don't pass a page list. */}
+              {hasPagePicker && !scheduleEnabled ? (
+                <div className="mb-2 flex items-center gap-2 rounded-lg bg-[#1877f2]/8 border border-[#1877f2]/20 px-3 py-2">
+                  <CheckCircle size={12} className="text-[#1877f2] flex-shrink-0" />
+                  <span className="text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7] flex-shrink-0">Publish to Page:</span>
+                  <select
+                    value={selectedPageId ?? ''}
+                    onChange={(e) => setSelectedPageId(e.target.value)}
+                    className="flex-1 min-w-0 text-[11px] font-semibold rounded-md border border-[#1877f2]/30 bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] px-2 py-1"
+                  >
+                    {facebookPages!.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}{p.isDefault ? ' (default)' : ''}</option>
+                    ))}
+                  </select>
+                </div>
+              ) : publishTargetLabel && !scheduleEnabled ? (
                 <div className="mb-2 flex items-center gap-1.5 rounded-lg bg-[#1877f2]/8 border border-[#1877f2]/20 px-3 py-2">
                   <CheckCircle size={12} className="text-[#1877f2] flex-shrink-0" />
                   <span className="text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7]">
                     Publish posts to your Page: <span className="font-semibold">{publishTargetLabel}</span>
                   </span>
                 </div>
-              )}
+              ) : null}
 
               <div className="flex items-center justify-end gap-2">
                 <button
@@ -378,7 +418,7 @@ export function SocialPreviewModal({
                   >
                     {publishing
                       ? <><Loader2 size={12} className="animate-spin" /> Publishing…</>
-                      : <><CheckCircle size={12} /> Publish to {publishTargetLabel || platform}</>
+                      : <><CheckCircle size={12} /> Publish to {activePageLabel || platform}</>
                     }
                   </button>
                 )}
