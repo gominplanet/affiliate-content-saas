@@ -8,7 +8,7 @@ import PageHero from '@/components/layout/PageHero'
 import { CapReachedBanner } from '@/components/CapReachedBanner'
 import { useConfirm } from '@/components/ui/useConfirm'
 import { pickWeightedStyleIndex, OVERLAY_STYLES, drawHeadline, type HeadlinePosition, type FaceBox } from '@/lib/thumbnail-overlay'
-import { isExtensionAvailable, requestVideoFrames } from '@/lib/extension-frame'
+import { isExtensionAvailable, requestVideoFrames, requestAmazonProduct } from '@/lib/extension-frame'
 import { SCOUT_DOWNLOAD_URL } from '@/lib/scout-version'
 import { effectiveTier } from '@/lib/view-as'
 import type { Tier } from '@/lib/tier'
@@ -524,7 +524,8 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
       // already retries 8× internally, but if it still surfaces we automatically
       // retry once more on the client after a back-off so the user doesn't have
       // to click again. Total ceiling ≈ server attempts + 2 client tries.
-      const callOnce = () => fetch('/api/youtube/generate-metadata', {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const callOnce = (productOverride?: any) => fetch('/api/youtube/generate-metadata', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -537,6 +538,8 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           youtubeVideoId: video.youtubeVideoId,
           // "Generate anyway" → bypass the ASIN-mismatch tripwire.
           skipAsinCheck,
+          // SCOUT-scraped product (only on the fallback retry below).
+          ...(productOverride ? { productOverride } : {}),
         }),
       })
 
@@ -549,6 +552,22 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
         await new Promise(r => setTimeout(r, 8000 + i * 4000))
         res = await callOnce()
         data = await safeJson(res)
+      }
+
+      // Amazon blocked the SERVER scrape (datacenter IP). Fetch the product
+      // through SCOUT — it runs in the user's own browser / logged-in Amazon
+      // session, which Amazon doesn't block — and retry once with that data.
+      if (!res.ok && data.scrapeFailed && video.detectedAsin) {
+        try {
+          if (await isExtensionAvailable()) {
+            setError('Amazon blocked our server — grabbing the product through SCOUT…')
+            const prod = await requestAmazonProduct(video.detectedAsin)
+            if (prod.ok && prod.product?.title) {
+              res = await callOnce(prod.product)
+              data = await safeJson(res)
+            }
+          }
+        } catch { /* fall through to the normal error handling below */ }
       }
       if (data.limitReached) {
         setCapError({

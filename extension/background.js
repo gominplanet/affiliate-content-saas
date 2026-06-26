@@ -450,6 +450,108 @@ async function scanAmazonVideoForAsin(asin, callerTabId) {
   }
 }
 
+// ── Read the Amazon PRODUCT page (title / bullets / description / image) ─────
+// Runs in the user's logged-in browser, so it succeeds where the MVP server's
+// scrape is blocked (Amazon hard-blocks datacenter IPs). Self-contained — runs
+// in the page context via executeScript, no access to extension scope.
+async function harvestAmazonProductInPage(wantAsin) {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  const clean = (s) => (s || '').replace(/\s+/g, ' ').trim()
+  const txt = (sel) => { try { const e = document.querySelector(sel); return e ? clean(e.textContent) : '' } catch (e) { return '' } }
+
+  // Amazon /dp pages are server-rendered, but give a slow interstitial a beat.
+  let title = ''
+  for (let i = 0; i < 14; i++) {
+    title = txt('#productTitle')
+    if (title) break
+    await sleep(500)
+  }
+
+  const bodyText = document.body ? document.body.innerText : ''
+  const captcha = /Enter the characters you see below|Robot Check|api-services-support@amazon|To discuss automated access/i.test(bodyText)
+  const signedOut = /\/ap\/signin/.test(location.href)
+
+  // Bullets — skip Amazon's hidden / template list items.
+  const bullets = []
+  try {
+    document.querySelectorAll('#feature-bullets li, #feature-bullets ul li').forEach((li) => {
+      if (li.classList && (li.classList.contains('aok-hidden') || li.id === 'replacementPartsFitmentBulletInner')) return
+      const t = clean(li.textContent)
+      if (t && t.length > 4 && !/^see more/i.test(t)) bullets.push(t)
+    })
+  } catch (e) {}
+
+  let description = txt('#productDescription') || txt('#bookDescription_feature_div')
+
+  // Price — the offscreen node holds the clean formatted price.
+  let price = txt('#corePrice_feature_div .a-offscreen') || txt('#corePriceDisplay_desktop_feature_div .a-offscreen') || txt('.a-price .a-offscreen') || ''
+  price = price ? price.split(/\s/)[0] : ''
+
+  // Rating
+  let rating = ''
+  try {
+    const rEl = document.querySelector('#acrPopover')
+    const rTxt = (rEl ? (rEl.getAttribute('title') || rEl.textContent) : '') || txt('[data-hook="rating-out-of-text"]') || txt('.a-icon-star .a-icon-alt')
+    const m = (rTxt || '').match(/(\d+(?:\.\d+)?)\s*out of\s*5/i)
+    if (m) rating = m[1]
+  } catch (e) {}
+
+  // Images — main hi-res first, then the dynamic-image set + gallery.
+  const images = []
+  try {
+    const main = document.querySelector('#landingImage') || document.querySelector('#imgTagWrapperId img')
+    const mainUrl = main ? (main.getAttribute('data-old-hires') || main.getAttribute('src') || '') : ''
+    if (/^https/.test(mainUrl)) images.push(mainUrl)
+    const dyn = main && main.getAttribute('data-a-dynamic-image')
+    if (dyn) { try { Object.keys(JSON.parse(dyn)).forEach((u) => { if (/^https/.test(u)) images.push(u) }) } catch (e) {} }
+    // hi-res gallery URLs embedded in the page's image-block JSON
+    const hi = (document.documentElement.innerHTML.match(/"hiRes"\s*:\s*"(https:\/\/[^"]+\.jpg[^"]*)"/g) || [])
+    hi.forEach((s) => { const u = s.match(/"(https:\/\/[^"]+)"/); if (u) images.push(u[1]) })
+  } catch (e) {}
+  const uniqImages = Array.from(new Set(images)).filter(Boolean).slice(0, 8)
+
+  return {
+    ok: !!title,
+    product: title ? {
+      asin: wantAsin,
+      title: title,
+      bullets: bullets.slice(0, 12),
+      description: description.slice(0, 1500),
+      price: price || null,
+      rating: rating || null,
+      imageUrl: uniqImages[0] || null,
+      images: uniqImages,
+    } : null,
+    signedOut: signedOut,
+    captcha: captcha,
+    diag: { url: location.href.slice(0, 140), titleLen: title.length, bullets: bullets.length },
+  }
+}
+
+async function scanAmazonProductForAsin(asin, callerTabId) {
+  if (!/^[A-Za-z0-9]{10}$/.test(asin || '')) return { ok: false, error: 'bad-asin' }
+  const url = `https://www.amazon.com/dp/${asin}`
+  let tabId = null
+  try {
+    // FOREGROUND so the product page fully renders (background tabs throttle).
+    const tab = await chrome.tabs.create({ url, active: true })
+    tabId = tab.id
+    await waitForTabLoad(tabId, 25000)
+    await _sleep(800)
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: harvestAmazonProductInPage,
+      args: [asin],
+    })
+    return (results && results[0] && results[0].result) || { ok: false, error: 'no-result' }
+  } catch (e) {
+    return { ok: false, error: 'scan-failed' }
+  } finally {
+    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+    if (callerTabId != null) { try { await chrome.tabs.update(callerTabId, { active: true }) } catch (e) {} }
+  }
+}
+
 async function scanAmazonVideos(callerTabId) {
   // Reuse an open Manage Content / storefront tab; else open Manage Content
   // FOREGROUND (Amazon's content list is client-rendered + session-scoped, and
@@ -495,6 +597,16 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 120000)
     const job = msg.asin ? scanAmazonVideoForAsin(msg.asin, callerTabId) : scanAmazonVideos(callerTabId)
     job
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true // async response — keep the channel open
+  }
+  if (msg.type === 'MVP_AMZ_PRODUCT') {
+    // Open the product page in the user's logged-in browser and read its
+    // details — the fallback when MVP's server scrape is IP-blocked.
+    const callerTabId = sender && sender.tab ? sender.tab.id : null
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 60000)
+    scanAmazonProductForAsin(msg.asin, callerTabId)
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async response — keep the channel open

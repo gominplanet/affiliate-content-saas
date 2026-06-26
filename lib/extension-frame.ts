@@ -168,6 +168,47 @@ export async function requestAmazonVideoForAsin(asin: string): Promise<AmazonVid
   return { ok: false, error: resp.error || 'scan-failed' }
 }
 
+/** Product details SCOUT scraped off the Amazon product page (in the user's
+ *  own browser / residential IP — the request Amazon doesn't block). Used as a
+ *  fallback when the server-side scrape is blocked. */
+export interface ScrapedAmazonProduct {
+  asin: string
+  title: string
+  bullets: string[]
+  description: string
+  price: string | null
+  rating: string | null
+  imageUrl: string | null
+  images: string[]
+}
+
+export interface AmazonProductResult {
+  ok: boolean
+  product?: ScrapedAmazonProduct | null
+  signedOut?: boolean
+  captcha?: boolean
+  error?: string
+}
+
+/**
+ * Fetch an Amazon product's details by ASIN through the extension — it opens
+ * amazon.com/dp/<ASIN> in the user's logged-in browser and reads the title,
+ * bullets, description, price, rating and images off the rendered page. This
+ * succeeds where the server scrape fails because the request comes from a real
+ * residential IP, not a datacenter. Best-effort: resolves, never throws.
+ */
+export async function requestAmazonProduct(asin: string): Promise<AmazonProductResult> {
+  if (!asin) return { ok: false, error: 'no-asin' }
+  if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
+  const resp = await sendToExtension<{ ok?: boolean; product?: ScrapedAmazonProduct | null; signedOut?: boolean; captcha?: boolean; error?: string }>(
+    { type: 'MVP_AMZ_PRODUCT', asin },
+    60000,
+  )
+  if (!resp) return { ok: false, error: 'timeout' }
+  if (resp.ok) return { ok: true, product: resp.product ?? null, signedOut: resp.signedOut, captcha: resp.captcha }
+  return { ok: false, error: resp.error || 'scan-failed' }
+}
+
 /** A raw Creator Connections campaign row as scraped by the extension. All
  *  filtering / ranking happens in the app — this is the unfiltered harvest. */
 export interface ScoutedCampaign {

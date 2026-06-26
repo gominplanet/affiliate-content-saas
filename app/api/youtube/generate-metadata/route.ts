@@ -407,7 +407,7 @@ export async function POST(request: Request) {
     if (auth.error) return auth.error
     const { user, ownerId } = auth
 
-    const { asin, videoTitle, videoDescription, youtubeVideoId, skipAsinCheck = false } = await request.json() as {
+    const { asin, videoTitle, videoDescription, youtubeVideoId, skipAsinCheck = false, productOverride = null } = await request.json() as {
       asin?: string | null
       videoTitle: string
       videoDescription?: string
@@ -419,6 +419,14 @@ export async function POST(request: Request) {
        *  tripwire when the creator confirms the product is right (the word-overlap
        *  heuristic can false-fire on casual titles vs keyword-stuffed Amazon titles). */
       skipAsinCheck?: boolean
+      /** Product details the SCOUT extension scraped client-side (the user's
+       *  residential IP / logged-in Amazon session). The client passes this on a
+       *  RETRY after the server-side scrape was blocked — we trust it over a
+       *  re-scrape so a datacenter-IP block can't stop generation. */
+      productOverride?: {
+        title?: string; bullets?: string[]; description?: string
+        price?: string | null; rating?: string | null; imageUrl?: string | null
+      } | null
     }
 
     // ASIN is OPTIONAL. With a valid ASIN we treat the video as a product
@@ -563,10 +571,24 @@ export async function POST(request: Request) {
     let geniuslinkError: string | null = null
 
     if (isProduct) {
-      try {
-        product = await fetchAmazonProduct(trimmedAsin)
-      } catch {
-        product = { asin: trimmedAsin, title: videoTitle, bullets: [], description: '', price: null, rating: null, imageUrl: null }
+      if (productOverride && productOverride.title && productOverride.title.trim()) {
+        // SCOUT extension already fetched the product on the user's residential
+        // IP — trust it instead of re-scraping (which the server can't reach).
+        product = {
+          asin: trimmedAsin,
+          title: productOverride.title.trim(),
+          bullets: Array.isArray(productOverride.bullets) ? productOverride.bullets.filter(b => typeof b === 'string') : [],
+          description: typeof productOverride.description === 'string' ? productOverride.description : '',
+          price: productOverride.price ?? null,
+          rating: productOverride.rating ?? null,
+          imageUrl: productOverride.imageUrl ?? null,
+        }
+      } else {
+        try {
+          product = await fetchAmazonProduct(trimmedAsin)
+        } catch {
+          product = { asin: trimmedAsin, title: videoTitle, bullets: [], description: '', price: null, rating: null, imageUrl: null }
+        }
       }
 
       // 2026-06-09: ASIN-mismatch tripwire. Block early if the fetched
