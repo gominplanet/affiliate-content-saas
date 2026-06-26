@@ -1238,9 +1238,19 @@ export default function CustomizePage() {
         {/* Site verification / head meta tags */}
         <Section
           title="Site Verification & Meta Tags"
-          description="Paste verification <meta> tags from Google Search Console, Pinterest, Facebook, Bing, etc. They're injected into your site's <head> on every page. One full tag per box."
+          description="Prove you own this site so outside services unlock their tools for you — Google Search Console (see your search traffic + get pages indexed), Pinterest (Rich Pins), Bing Webmaster, Facebook, and affiliate networks like Impact. Each gives you a short verification <meta> tag; paste it here and MVP drops it into every page's <head>, so the check passes without you ever editing WordPress."
         >
           <div className="flex flex-col gap-2">
+            {/* Plain-language how-to so non-technical creators aren't left guessing
+                what a "verification meta tag" is or where to get one. */}
+            <div className="rounded-xl border border-[var(--border-2)] bg-[var(--surface-2)] px-4 py-3 text-xs text-[var(--text-2)] leading-relaxed">
+              <p className="font-semibold text-[var(--text)] mb-1.5">How to use it</p>
+              <ol className="list-decimal pl-4 space-y-1">
+                <li>On the service (e.g. <strong>Google Search Console → add your site → choose &ldquo;HTML tag&rdquo;</strong>), copy the whole line it gives you — it looks like <code className="bg-[var(--surface)] px-1 rounded">&lt;meta name=&quot;…&quot; content=&quot;…&quot;&gt;</code>.</li>
+                <li>Click <strong>Add meta tag</strong> below, paste one full tag per box, then hit <strong>Save changes</strong> at the top.</li>
+                <li>Go back to that service and click its <strong>Verify</strong> button — it&rsquo;ll now find the tag on your live site. It stays on every page, so verification keeps passing.</li>
+              </ol>
+            </div>
             {data.headMetaTags.map((tag, i) => (
               <div key={i} className="flex items-start gap-2">
                 <textarea
