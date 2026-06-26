@@ -39,6 +39,24 @@ export interface AmazonProduct {
   discountPct: number | null
 }
 
+/** Decode the HTML entities Amazon leaves in titles/bullets/descriptions —
+ *  our regex parse strips tags but NOT entities, so without this `29&#34;`
+ *  (= 29"), `&amp;`, `&#39;` etc. leak raw into the product name and the
+ *  generated copy. Handles numeric (&#34; / &#x22;) + the common named ones.
+ *  &amp; is decoded last so it never double-decodes another entity. */
+function decodeEntities(s: string): string {
+  if (!s || s.indexOf('&') === -1) return s
+  return s
+    .replace(/&#(\d+);/g, (_, n) => { try { return String.fromCharCode(parseInt(n, 10)) } catch { return _ } })
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, n) => { try { return String.fromCharCode(parseInt(n, 16)) } catch { return _ } })
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+}
+
 /** True if `token` looks like a real Amazon ASIN rather than an ordinary
  *  word. Canonical modern ASINs are `B0` + 8 chars; older/book ASINs are 10
  *  chars but ALWAYS contain at least one digit. Plain 10-letter English words
@@ -163,7 +181,7 @@ export async function fetchAmazonProduct(asin: string): Promise<AmazonProduct> {
 
   // Title
   const titleMatch = html.match(/<span[^>]*id="productTitle"[^>]*>\s*([\s\S]*?)\s*<\/span>/)
-  const title = titleMatch ? titleMatch[1].replace(/<[^>]+>/g, '').trim() : ''
+  const title = titleMatch ? decodeEntities(titleMatch[1].replace(/<[^>]+>/g, '').trim()) : ''
 
   // Bullet points
   const bulletsMatch = html.match(/<div[^>]*id="feature-bullets"[^>]*>([\s\S]*?)<\/div>/)
@@ -171,7 +189,7 @@ export async function fetchAmazonProduct(asin: string): Promise<AmazonProduct> {
   if (bulletsMatch) {
     const liMatches = bulletsMatch[1].matchAll(/<li[^>]*>\s*<span[^>]*>([\s\S]*?)<\/span>/g)
     for (const m of liMatches) {
-      const text = m[1].replace(/<[^>]+>/g, '').trim()
+      const text = decodeEntities(m[1].replace(/<[^>]+>/g, '').trim())
       if (text && text.length > 5) bullets.push(text)
     }
   }
@@ -179,7 +197,7 @@ export async function fetchAmazonProduct(asin: string): Promise<AmazonProduct> {
   // Description
   const descMatch = html.match(/<div[^>]*id="productDescription"[^>]*>([\s\S]*?)<\/div>/)
   const description = descMatch
-    ? descMatch[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().slice(0, 1000)
+    ? decodeEntities(descMatch[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()).slice(0, 1000)
     : ''
 
   // Price

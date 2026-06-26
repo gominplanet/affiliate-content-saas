@@ -1536,10 +1536,15 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
             </div>
           )}
 
-          {/* Geniuslink warning */}
+          {/* Geniuslink warning. A TIMEOUT / 5xx is a transient Geniuslink-side
+              blip — don't tell the user to fix their credentials for that (it's
+              misleading). Only point at credentials for a real auth/config error. */}
           {geniuslinkUsed === false && geniuslinkError && (
             <div className="mx-5 mb-3 px-3 py-2 rounded-lg bg-[#ff9500]/10 border border-[#ff9500]/20 text-xs text-[#ff9500]">
-              ⚠️ Geniuslink not used — {geniuslinkError}. Go to <strong>Brand Profile → Affiliate Link Routing</strong> to add or update your credentials.
+              ⚠️ Geniuslink not used — {geniuslinkError}.{' '}
+              {/timeout|aborted|transient|temporar|\b5\d\d\b/i.test(geniuslinkError)
+                ? <>This is usually a temporary Geniuslink hiccup — your Amazon tag was used as a fallback, and a <strong>Regenerate</strong> normally goes through with Geniuslink.</>
+                : <>Go to <strong>Brand Profile → Affiliate Link Routing</strong> to add or update your credentials.</>}
             </div>
           )}
 
