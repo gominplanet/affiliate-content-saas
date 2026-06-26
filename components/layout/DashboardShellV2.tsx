@@ -43,6 +43,7 @@ import {
 import { cn } from '@/lib/utils'
 import NotificationBell from './NotificationBell'
 import WpUpdateTopbarButton from './WpUpdateTopbarButton'
+import ScoutTopbarButton from './ScoutTopbarButton'
 import { HelpDeskButton } from '@/components/HelpDeskSidebar'
 
 // Wrapper to handle context safely
@@ -672,6 +673,10 @@ export default function DashboardShellV2({
           </Link>
 
           <div className="ml-auto flex items-center gap-3">
+            {/* Get / Update SCOUT — a load-unpacked extension never auto-
+                updates, so the latest zip is reachable here next to the WP
+                theme-update button. Renders nothing when SCOUT is current. */}
+            <ScoutTopbarButton />
             {/* WP admin shortcut — links straight into wp-admin if a site
                 is connected. */}
             {wpSiteUrl && (

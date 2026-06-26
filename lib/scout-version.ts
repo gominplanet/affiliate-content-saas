@@ -10,11 +10,16 @@
  *
  * Also drop a one-liner in SCOUT_WHATS_NEW so the banner says what changed.
  */
-export const SCOUT_LATEST_VERSION = '1.7.3'
+export const SCOUT_LATEST_VERSION = '1.10.1'
 
 /** One-line "what's new", shown in the update banner. Keep it user-facing. */
 export const SCOUT_WHATS_NEW =
-  'Rebuilt SCOUT: search Amazon by keyword, filter by EPC, pick the winners, and Push to MVP — with a one-time connected token that tucks away.'
+  'SCOUT can now find your Amazon Influencer video for a product (matched by ASIN) so the new "Share with brand" recap includes it automatically.'
+
+/** Canonical download for the latest SCOUT build (public/, rebuilt from
+ *  extension/ on every version bump). Used by the EPC banner + the top-bar
+ *  "Get / Update SCOUT" button so there's ONE source of the URL. */
+export const SCOUT_DOWNLOAD_URL = '/mvp-cc-scout.zip'
 
 /** True when the installed version is older than SCOUT_LATEST_VERSION.
  *  Returns false for a missing/unknown version (that's "not installed",

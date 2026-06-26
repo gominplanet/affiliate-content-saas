@@ -25,7 +25,7 @@ import PageHero from '@/components/layout/PageHero'
 import { Loader2, ExternalLink, CheckCircle2, Sparkles, Search, Puzzle, Download, Copy, RefreshCw, KeyRound, Trash2, Lock, FlaskConical } from 'lucide-react'
 import { toast } from 'sonner'
 import { getScoutStatus } from '@/lib/extension-frame'
-import { SCOUT_LATEST_VERSION, SCOUT_WHATS_NEW, isScoutOutdated } from '@/lib/scout-version'
+import { SCOUT_LATEST_VERSION, SCOUT_WHATS_NEW, SCOUT_DOWNLOAD_URL, isScoutOutdated } from '@/lib/scout-version'
 
 const CC_URL = 'https://www.amazon.com/creatorconnections/'
 
@@ -370,7 +370,7 @@ export default function EpcScoutPage() {
               {SCOUT_WHATS_NEW} Load-unpacked extensions don&rsquo;t auto-update — download the latest, unzip over your SCOUT folder, then open <code className="text-[11px]">chrome://extensions</code> and click the reload&nbsp;↻ on <span className="font-medium">MVP SCOUT</span>.
             </p>
             <div className="flex items-center gap-3 mt-2 flex-wrap">
-              <a href="/mvp-cc-scout.zip" download
+              <a href={SCOUT_DOWNLOAD_URL} download
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold text-white"
                 style={{ background: '#7C3AED' }}>
                 <Download size={13} /> Download v{SCOUT_LATEST_VERSION}
@@ -438,7 +438,7 @@ export default function EpcScoutPage() {
               <p className="text-[13px] font-semibold inline-flex items-center gap-2" style={{ color: 'var(--text)' }}>
                 <Puzzle size={14} className="text-[#7C3AED]" /> Install the Scout extension
               </p>
-              <a href="/mvp-cc-scout.zip" download
+              <a href={SCOUT_DOWNLOAD_URL} download
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold text-white"
                 style={{ background: 'linear-gradient(45deg, #7C3AED 0%, #bc1888 100%)' }}>
                 <Download size={13} /> Download (.zip)
