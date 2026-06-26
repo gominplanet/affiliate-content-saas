@@ -1072,55 +1072,73 @@ export async function POST(request: Request) {
           ? [splitH(lockedHeadline)]
           : await generateThumbCopies(videoTitle, variantCount, gfxProductCtx, claimsSheetGfx)
 
-        // Identity source: extension frame > storyboard frame > Photobooth photo.
-        // Extension/storyboard frames use quality:'medium' (~20s); Photobooth-only
-        // uses quality:'high' (~2min) since there's no pre-grounded identity.
         let photoBytes: Buffer | Uint8Array
-        // Supplementary frames sent alongside the best one — more angles of the
-        // same face give gpt-image-1 a much stronger identity lock (same logic as
-        // generateFaceCutout sending up to 5 reference photos).
         let extraPhotoBytes: (Buffer | Uint8Array)[] = []
+        // True when SCOUT frames are the source AND we loaded a face model for
+        // identity (close-up portrait refs → reliable face). False = video frame
+        // crops were used, which are wide shots the model can't reproduce accurately.
+        let scoutUsedFaceModel = false
         if (capturedFrames?.length) {
-          // Vision-pick the best frame (face visible, product visible, sharp).
+          // Vision-pick the best frame for product / moment selection.
           let bestIdx = 0
           if (capturedFrames.length > 1) {
             try {
               bestIdx = await pickBestFrame(capturedFrames, { productName: productTitle || undefined, ctx: { userId: user.id, tier } })
             } catch { /* keep 0 on vision failure */ }
           }
-          const base64 = capturedFrames[bestIdx].replace(/^data:[^;]+;base64,/, '')
-          const fullPng = await normalizeToPng(Buffer.from(base64, 'base64'))
-          // Crop the right 55% of the frame — creators in review videos typically
-          // stand in the right half. This makes the face occupy a much larger
-          // proportion of the reference image, giving gpt-image a stronger identity
-          // lock vs. a full 16:9 wide shot where the person is small.
-          const cropFrame = async (png: Buffer | Uint8Array): Promise<Buffer | Uint8Array> => {
-            try {
-              const meta = await sharp(Buffer.from(png)).metadata()
-              const w = meta.width ?? 1280
-              const h = meta.height ?? 720
-              const left = Math.round(w * 0.38)
-              return await sharp(Buffer.from(png))
-                .extract({ left, top: 0, width: w - left, height: h })
-                .png()
-                .toBuffer()
-            } catch { return png }
-          }
-          photoBytes = await cropFrame(fullPng)
-          // Pick 2 supplementary frames from different moments in the video.
-          // Spread at 25% and 75% of the array = different timestamps = different
-          // poses/angles of the same person without re-running the vision picker.
-          if (capturedFrames.length >= 3) {
-            const extras = [
-              Math.floor(capturedFrames.length * 0.25),
-              Math.floor(capturedFrames.length * 0.75),
-            ].filter(i => i !== bestIdx)
-            for (const ei of extras.slice(0, 2)) {
+
+          // For face identity, prefer the user's face model over video frame crops.
+          // gpt-image cannot reliably reproduce faces from wide 16:9 shots even when
+          // cropped — the identity lock is too weak and produces wrong faces.
+          // Face model = close-up portrait photos → strong, reliable identity.
+          const scoutFaceModel = faceModel ?? (autoFaceModels.length > 0 ? autoFaceModels[0] : null)
+          if (scoutFaceModel) {
+            const starredRefs = await getStarredPhotoboothRefs(user.id, scoutFaceModel.id, { maxRefs: 3 })
+            const photoUrls = (starredRefs.length > 0 ? starredRefs : scoutFaceModel.source_images).slice(0, 3)
+            let first = true
+            for (const url of photoUrls) {
               try {
-                const eb64 = capturedFrames[ei].replace(/^data:[^;]+;base64,/, '')
-                const ep = await normalizeToPng(Buffer.from(eb64, 'base64'))
-                extraPhotoBytes.push(await cropFrame(ep))
-              } catch { /* skip bad frame */ }
+                const ab = await fetch(url, { signal: AbortSignal.timeout(12000) })
+                  .then(r => r.ok ? r.arrayBuffer() : Promise.reject(new Error(`${r.status}`)))
+                const buf = await normalizeToPng(new Uint8Array(ab))
+                if (first) { photoBytes = buf; first = false; scoutUsedFaceModel = true }
+                else extraPhotoBytes.push(buf)
+              } catch { /* skip unreadable photo */ }
+            }
+          }
+
+          // No face model (or all photo loads failed): fall back to a cropped
+          // video frame. quality:'medium' keeps generation under ~30s instead of
+          // 3+ minutes — the identity lock from a wide video frame crop is too
+          // weak to justify quality:'high' anyway.
+          if (!scoutUsedFaceModel) {
+            const b64 = capturedFrames[bestIdx].replace(/^data:[^;]+;base64,/, '')
+            const fullPng = await normalizeToPng(Buffer.from(b64, 'base64'))
+            const cropFrame = async (png: Buffer | Uint8Array): Promise<Buffer | Uint8Array> => {
+              try {
+                const meta = await sharp(Buffer.from(png)).metadata()
+                const w = meta.width ?? 1280
+                const h = meta.height ?? 720
+                const left = Math.round(w * 0.38)
+                return await sharp(Buffer.from(png))
+                  .extract({ left, top: 0, width: w - left, height: h })
+                  .png()
+                  .toBuffer()
+              } catch { return png }
+            }
+            photoBytes = await cropFrame(fullPng)
+            if (capturedFrames.length >= 3) {
+              const extras = [
+                Math.floor(capturedFrames.length * 0.25),
+                Math.floor(capturedFrames.length * 0.75),
+              ].filter(i => i !== bestIdx)
+              for (const ei of extras.slice(0, 2)) {
+                try {
+                  const eb64 = capturedFrames[ei].replace(/^data:[^;]+;base64,/, '')
+                  const ep = await normalizeToPng(Buffer.from(eb64, 'base64'))
+                  extraPhotoBytes.push(await cropFrame(ep))
+                } catch { /* skip bad frame */ }
+              }
             }
           }
         } else if (gfxStoryboardFrame) {
@@ -1178,9 +1196,12 @@ export async function POST(request: Request) {
             // identity lock than the old "transform this frame" approach, which
             // required a full layout restructuring and caused the face to drift.
             const creatorCount = 1 + extraPhotoBytes.length
+            // Describe refs accurately: face model = close-up portrait photos;
+            // SCOUT without face model = portrait crops from the video frame.
+            const usingFaceModel = scoutUsedFaceModel || (!isScoutFrameMode && !gfxStoryboardFrame)
             const creatorRefLabel = creatorCount > 1
-              ? `Images 1–${creatorCount} (${isScoutFrameMode ? 'portrait crops from different video frames' : 'multiple reference shots'} of the SAME person — use ALL for identity lock)`
-              : `Image 1 (${isScoutFrameMode ? 'portrait crop from the video' : 'creator reference photo'})`
+              ? `Images 1–${creatorCount} (${usingFaceModel ? 'close-up portrait photos' : 'portrait crops from different video frames'} of the SAME person — use ALL for identity lock)`
+              : `Image 1 (${usingFaceModel ? 'close-up portrait photo' : 'portrait crop from the video'})`
             const productRefNum = productBytes ? creatorCount + 1 : null
             prompt = [
               'Professional YouTube thumbnail, 1536×1024 px, 16:9 landscape. High energy, high contrast.',
@@ -1198,7 +1219,7 @@ export async function POST(request: Request) {
                 : `    Feature the ${productLabel} prominently in dramatic studio lighting — 3D pop, sharp.`,
               '',
               `  RIGHT 35% — creator (${creatorRefLabel}).`,
-              `    CRITICAL IDENTITY: ${isScoutFrameMode ? 'These are portrait-cropped regions from the creator\'s actual video — the face fills most of each reference image.' : 'These are reference photos of the creator.'} Reproduce this EXACT person's face with pixel-level accuracy: same facial structure, skin tone, hair colour and style, age, and distinctive features. A viewer who knows them must recognise them INSTANTLY.`,
+              `    CRITICAL IDENTITY: ${usingFaceModel ? 'These are close-up portrait photos of the creator — use them for a strong face identity lock.' : 'These are portrait-cropped regions from the creator\'s actual video — the face fills most of each reference image.'} Reproduce this EXACT person's face with pixel-level accuracy: same facial structure, skin tone, hair colour and style, age, and distinctive features. A viewer who knows them must recognise them INSTANTLY.`,
               `    Show from waist-up with excited/confident expression, pointing LEFT toward the product.`,
               '',
               `BACKGROUND: ${bg}. No white space.`,
@@ -1207,12 +1228,15 @@ export async function POST(request: Request) {
               'No logos, no watermarks, no brand names rendered in the image itself.',
             ].join('\n')
             refs = [
-              { data: photoBytes, filename: isScoutFrameMode ? 'creator_crop.png' : 'creator.png', mime: 'image/png' },
+              { data: photoBytes, filename: usingFaceModel ? 'creator_portrait.png' : 'creator_crop.png', mime: 'image/png' },
               ...extraPhotoBytes.map((b, i) => ({ data: b, filename: `creator_${i + 2}.png`, mime: 'image/png' as const })),
             ]
             if (productBytes) refs.push({ data: productBytes, filename: 'product.png', mime: 'image/png' })
 
-            const b64 = await openaiGfx.generateWithReferences({ prompt, images: refs, size: '1536x1024', quality: 'high' })
+            // quality:'high' when we have a face model (portrait refs → worth the 2min wait);
+            // quality:'medium' (~30s) for video frame crops — identity lock is too weak to justify 'high'.
+            const gfxQuality: 'high' | 'medium' = (isScoutFrameMode && !scoutUsedFaceModel) ? 'medium' : 'high'
+            const b64 = await openaiGfx.generateWithReferences({ prompt, images: refs, size: '1536x1024', quality: gfxQuality })
             recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'yt_thumb_graphic', model: gfxModel, images: 1 })
             return rehostToFal(`data:image/png;base64,${b64}`)
           })
