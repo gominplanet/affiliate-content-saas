@@ -1345,8 +1345,19 @@ export default function CustomizePage() {
                 <p className="text-xs text-[#ff9500]">⚠ ID format looks off — should be <code>GTM-</code> followed by uppercase letters/numbers (e.g. <code>GTM-P9NPW64B</code>). It won&apos;t inject until the format is valid.</p>
               )}
               <p className="text-xs text-[var(--text-3)] leading-relaxed">
-                Only needed if you want to manage <b>several</b> tags in one place (Google Ads, Facebook/Meta Pixel, Pinterest tag, custom conversions). Create a free <b>Web</b> container at <a href="https://tagmanager.google.com" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">tagmanager.google.com</a>, copy the <code>GTM-XXXXXXX</code> ID, and paste it here — the theme injects both GTM snippets (head + body) automatically. You&apos;d then add your GA4 tag inside GTM. <b>If you just want Google Analytics, use the GA4 box above and leave this blank.</b>
+                Most creators can skip this. <b className="text-[var(--text-2)]">Just want Google Analytics? Use the GA4 box above and leave this blank.</b>
               </p>
+
+              <details className="mt-1 rounded-lg border border-[var(--border-2)] bg-[var(--surface-2)] p-3 text-xs text-[var(--text-2)] leading-relaxed">
+                <summary className="cursor-pointer font-medium text-[var(--text)] select-none">What is Tag Manager — and when do I need it?</summary>
+                <p className="mt-3">Tag Manager is a single dashboard for running <b>several</b> marketing tags at once — Google Ads, Meta/Facebook Pixel, Pinterest tag, custom conversions. If you only want blog traffic stats, you don&apos;t need it.</p>
+                <ol className="list-decimal ml-4 mt-3 flex flex-col gap-2">
+                  <li>Create a free <b>Web</b> container at <a href="https://tagmanager.google.com" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">tagmanager.google.com</a> — it gives you a <code>GTM-XXXXXXX</code> ID.</li>
+                  <li>Paste that ID into the box above and click <b>Save</b>. The theme adds both GTM snippets (head + body) for you — no code to copy.</li>
+                  <li>Inside Tag Manager, add the tags you want (your GA4 tag, Meta Pixel, etc.) and <b>Publish</b> the container.</li>
+                </ol>
+                <p className="mt-3 text-[var(--text-3)]"><b>Don&apos;t double up:</b> if you put your GA4 tag inside Tag Manager, leave the GA4 box above blank — using both counts every visit twice.</p>
+              </details>
             </div>
           </div>
         </Section>
