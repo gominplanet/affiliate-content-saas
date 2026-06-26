@@ -9,6 +9,8 @@ import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } 
 import { normalizeTier, socialAccountCap } from '@/lib/tier'
 import { resolveSocialAccounts } from '@/lib/social-accounts'
 import { resolveBlogPostId } from '@/lib/resolve-post-id'
+import { recordSocialPermalink } from '@/lib/social-permalink'
+import { socialPermalink } from '@/lib/brand-recap'
 import { metaEnabledForUser } from '@/lib/feature-flags'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { maybeDecrypt } from '@/lib/secrets'
@@ -208,6 +210,8 @@ Topic: ${(post.content as string).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').
     const firstId = succeeded[0].id!
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await supabase.from('blog_posts').update({ facebook_post_id: firstId }).eq('id', postId)
+    // Record the permalink so the brand-recap links straight to the post.
+    await recordSocialPermalink(supabase, postId, 'facebook', socialPermalink.facebook(firstId))
     // Count one re-publish per Page actually posted to, so the per-post cap
     // holds across fan-outs and subsequent re-publishes.
     for (let i = 0; i < succeeded.length; i++) await incrementSocialCount(supabase, postId, 'facebook')

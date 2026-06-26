@@ -22,6 +22,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { createSession as createBlueskySession, createPost as createBlueskyPost } from '@/services/bluesky'
 import { createTweet, refreshAccessToken as refreshTwitterToken } from '@/services/twitter'
 import { ThreadsService } from '@/services/threads'
+import { recordSocialPermalink } from '@/lib/social-permalink'
+import { socialPermalink } from '@/lib/brand-recap'
 import { createFacebookService } from '@/services/facebook'
 import { createLinkedInService } from '@/services/linkedin'
 import { fetchOgImage, stripLinkPlaceholders } from '@/lib/og-image'
@@ -336,6 +338,7 @@ async function publishOne(
       const finalText = `${row.body_text} ${url}`
       const result = await createTweet(accessToken!, finalText)
       await admin.from('blog_posts').update({ twitter_post_id: result.id }).eq('id', row.blog_post_id)
+      await recordSocialPermalink(admin, row.blog_post_id, 'x', socialPermalink.x(result.id))
       return { externalId: result.id }
     }
 
@@ -350,6 +353,7 @@ async function publishOne(
       const threads = new ThreadsService(integration.threads_access_token, integration.threads_user_id)
       const result = await threads.createPost(fullText, imageUrl)
       await admin.from('blog_posts').update({ threads_post_id: result.id }).eq('id', row.blog_post_id)
+      if (result.permalink) await recordSocialPermalink(admin, row.blog_post_id, 'threads', result.permalink)
       return { externalId: result.id }
     }
 
@@ -388,6 +392,9 @@ async function publishOne(
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await admin.from('blog_posts').update({ linkedin_post_id: (result as any).id ?? null }).eq('id', row.blog_post_id)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const liId = (result as any).id as string | undefined
+      if (liId) await recordSocialPermalink(admin, row.blog_post_id, 'linkedin', socialPermalink.linkedin(liId))
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return { externalId: (result as any).id }
     }
@@ -436,6 +443,7 @@ async function publishOne(
         ? await fb.postPhoto({ imageUrl, caption })
         : await fb.postLink({ message: caption, link: url })
       await admin.from('blog_posts').update({ facebook_post_id: result.id }).eq('id', row.blog_post_id)
+      await recordSocialPermalink(admin, row.blog_post_id, 'facebook', socialPermalink.facebook(result.id))
       return { externalId: result.id }
     }
 

@@ -12,6 +12,8 @@ import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } from '@/lib/social-cap'
 import { resolveBlogPostId } from '@/lib/resolve-post-id'
+import { recordSocialPermalink } from '@/lib/social-permalink'
+import { socialPermalink } from '@/lib/brand-recap'
 
 export const maxDuration = 60
 
@@ -193,6 +195,8 @@ Return ONLY the tweet text.`,
       .from('blog_posts')
       .update({ twitter_post_id: tweet.id })
       .eq('id', postId)
+    // Record the real permalink so the brand-recap links straight to the tweet.
+    await recordSocialPermalink(supabase, postId!, 'x', socialPermalink.x(tweet.id))
     await incrementSocialCount(supabase, postId!, 'twitter')
 
     return NextResponse.json({

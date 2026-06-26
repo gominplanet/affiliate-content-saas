@@ -84,6 +84,21 @@ function linkedinUpdateUrl(id: string): string {
   return `https://www.linkedin.com/feed/update/${raw}`
 }
 
+/** Canonical public URL for a post on each platform, derived from the id the
+ *  platform's API returned. SINGLE SOURCE OF TRUTH — both buildRecapLinks (for
+ *  posts published before permalink-capture existed) and the post routes (which
+ *  store the result via recordSocialPermalink at publish time) use these, so a
+ *  stored permalink always matches what the builder would construct. */
+export const socialPermalink = {
+  /** x.com/i/web/status/<id> reliably redirects to the real tweet without
+   *  needing the @handle. */
+  x: (id: string) => `https://x.com/i/web/status/${id}`,
+  /** facebook.com/<pageId>_<postId> resolves to the post. */
+  facebook: (id: string) => `https://www.facebook.com/${id}`,
+  linkedin: (id: string) => linkedinUpdateUrl(id),
+  pinterest: (id: string) => `https://www.pinterest.com/pin/${id}/`,
+}
+
 /**
  * Build the ordered list of links that actually exist for a post. Product
  * first (the brand cares most), then the full review, then video + socials.
@@ -113,13 +128,13 @@ export function buildRecapLinks(opts: {
   // id-derived URL for platforms where that reliably resolves.
   const tiktok = pl.tiktok || post.tiktok_share_url
   if (tiktok) out.push({ platform: 'tiktok', label: 'TikTok', url: tiktok })
-  const pinterest = pl.pinterest || (post.pinterest_pin_id ? `https://www.pinterest.com/pin/${post.pinterest_pin_id}/` : null)
+  const pinterest = pl.pinterest || (post.pinterest_pin_id ? socialPermalink.pinterest(post.pinterest_pin_id) : null)
   if (pinterest) out.push({ platform: 'pinterest', label: 'Pinterest', url: pinterest })
-  const x = pl.x || (post.twitter_post_id ? `https://x.com/i/web/status/${post.twitter_post_id}` : null)
+  const x = pl.x || (post.twitter_post_id ? socialPermalink.x(post.twitter_post_id) : null)
   if (x) out.push({ platform: 'x', label: 'X', url: x })
-  const facebook = pl.facebook || (post.facebook_post_id ? `https://www.facebook.com/${post.facebook_post_id}` : null)
+  const facebook = pl.facebook || (post.facebook_post_id ? socialPermalink.facebook(post.facebook_post_id) : null)
   if (facebook) out.push({ platform: 'facebook', label: 'Facebook', url: facebook })
-  const linkedin = pl.linkedin || (post.linkedin_post_id ? linkedinUpdateUrl(post.linkedin_post_id) : null)
+  const linkedin = pl.linkedin || (post.linkedin_post_id ? socialPermalink.linkedin(post.linkedin_post_id) : null)
   if (linkedin) out.push({ platform: 'linkedin', label: 'LinkedIn', url: linkedin })
   // Platforms with NO reliable id-derived public URL — included only when we
   // captured a real permalink at post-time.

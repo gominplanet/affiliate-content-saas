@@ -11,6 +11,8 @@ import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } from '@/lib/social-cap'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { resolveBlogPostId } from '@/lib/resolve-post-id'
+import { recordSocialPermalink } from '@/lib/social-permalink'
+import { socialPermalink } from '@/lib/brand-recap'
 import { syntheticWpPost } from '@/lib/wp-post-fallback'
 
 export const maxDuration = 60
@@ -83,6 +85,8 @@ export async function POST(request: NextRequest) {
     if (hasRow) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await supabase.from('blog_posts').update({ pinterest_pin_id: pinId }).eq('id', postId)
+      // Record the canonical pin URL so the brand-recap links straight to it.
+      await recordSocialPermalink(supabase, postId, 'pinterest', socialPermalink.pinterest(pinId))
       await incrementSocialCount(supabase, postId, 'pinterest')
     }
     return NextResponse.json({

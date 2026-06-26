@@ -10,6 +10,8 @@ import { learnProfileToPrompt } from '@/lib/learn'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } from '@/lib/social-cap'
 import { resolveBlogPostId } from '@/lib/resolve-post-id'
+import { recordSocialPermalink } from '@/lib/social-permalink'
+import { socialPermalink } from '@/lib/brand-recap'
 import { fetchOgImage, stripLinkPlaceholders } from '@/lib/og-image'
 
 export const maxDuration = 60
@@ -202,6 +204,8 @@ Return ONLY the post text, no extra commentary.`,
       .from('blog_posts')
       .update({ linkedin_post_id: result.id })
       .eq('id', postId)
+    // Record the real permalink so the brand-recap links straight to the post.
+    await recordSocialPermalink(supabase, postId!, 'linkedin', socialPermalink.linkedin(result.id))
     await incrementSocialCount(supabase, postId!, 'linkedin')
 
     return NextResponse.json({
