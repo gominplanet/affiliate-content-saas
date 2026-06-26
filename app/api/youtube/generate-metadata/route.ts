@@ -809,16 +809,20 @@ export async function POST(request: Request) {
       return `${section.title}: (Amazon affiliate links)\n${itemLines}`
     }).join('\n\n')
 
-    // Description assembly differs by mode. Product mode leads with the
-    // affiliate link + disclosure; general mode opens straight with the
-    // video summary and skips the affiliate / ASIN / disclaimer block.
+    // Description assembly differs by mode. Any video that resolved an
+    // affiliate / product link leads with that link + disclosure; general
+    // mode (no link at all) opens straight with the video summary.
     const descParts: string[] = []
-    if (isProduct) {
+    if (affiliateUrl) {
+      const shopLabel = isProduct ? 'AMAZON' : 'the product'
+      const disclosureLine = isProduct
+        ? `Disclosure: As an Amazon Associate and Influencer I earn commissions, at no cost to you, made out of qualifying purchases.`
+        : `Disclosure: This video contains affiliate links. I may earn a commission at no extra cost to you.`
       descParts.push(
-        `Check Today's Price and Availability on AMAZON here: ${affiliateUrl}`,
+        `Check Today's Price and Availability on ${shopLabel} here: ${affiliateUrl}`,
         `(affiliate link)`,
         `----------`,
-        `Disclosure: As an Amazon Associate and Influencer I earn commissions, at no cost to you, made out of qualifying purchases.`,
+        disclosureLine,
         seoData.hashtags,
         `----------`,
         `Thank you for watching! If you enjoyed this video review and found it useful, please subscribe and like for more product reviews :)`,
