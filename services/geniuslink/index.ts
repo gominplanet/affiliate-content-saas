@@ -33,7 +33,10 @@ export class GeniuslinkService {
   async listGroups(): Promise<Array<{ Id: number; Name: string; Enabled: number }>> {
     const res = await fetch(`${GENIUSLINK_API}/v1/groups/list`, {
       headers: this.authHeaders,
-      signal: AbortSignal.timeout(8000),
+      // 12s — Geniuslink's API is intermittently slow; 8s was cutting off the
+      // first-time group resolve. Only runs on a cache miss (the group id is
+      // persisted afterwards), so it's a one-time cost, not per-generation.
+      signal: AbortSignal.timeout(12000),
     })
     const text = await res.text()
     if (!res.ok) throw new Error(`Geniuslink groups error ${res.status}: ${text.slice(0, 200)}`)
@@ -234,27 +237,45 @@ export class GeniuslinkService {
     // call). Without retry we fall through to the Amazon Associates
     // fallback and surface a "Geniuslink not used" warning to the user
     // for what's effectively a temporary blip. 2026-06-07.
-    let res: Response
-    let text: string
-    let attempt = 0
-    while (true) {
-      // 12s per attempt × 2 attempts + 1.5s backoff = ~25s worst case.
-      // Before 2026-06-09 there was NO timeout here; a stuck Geniuslink
-      // call could (and did) eat the entire blog-generation budget and
-      // surface as the client's 4-min abort with no clue about the cause.
-      res = await fetch(`${GENIUSLINK_API}/v3/shorturls?${params.toString()}`, {
-        method: 'POST',
-        headers: this.authHeaders,
-        signal: AbortSignal.timeout(12000),
-      })
-      text = await res.text()
-      if (res.ok || res.status < 500 || attempt >= 1) break
-      attempt++
-      await new Promise(r => setTimeout(r, 1500))
+    // Geniuslink's API is intermittently slow. The OLD loop only retried on a
+    // 5xx *response* — a TIMEOUT threw an AbortError that escaped the loop and
+    // fell straight through to the Amazon-tag fallback with zero retries, which
+    // is exactly the "operation was aborted due to timeout" users kept hitting.
+    // Now we retry on BOTH timeouts/network blips AND 5xx, with a more patient
+    // per-attempt budget. maxDuration on the callers is 120s and the metadata
+    // swarm uses ~30-40s, so ~3×15s here stays well within budget.
+    const ATTEMPTS = 3
+    const PER_ATTEMPT_MS = 15000
+    let res: Response | null = null
+    let text = ''
+    let lastErr: unknown = null
+    for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
+      try {
+        const resp = await fetch(`${GENIUSLINK_API}/v3/shorturls?${params.toString()}`, {
+          method: 'POST',
+          headers: this.authHeaders,
+          signal: AbortSignal.timeout(PER_ATTEMPT_MS),
+        })
+        text = await resp.text()
+        // Success or a 4xx (auth/request-shape problem — retrying won't help) → done.
+        if (resp.ok || resp.status < 500) { res = resp; break }
+        res = resp // keep the last 5xx for the error message
+        lastErr = new Error(`Geniuslink ${resp.status}`)
+      } catch (err) {
+        // Timeout / network blip — retry instead of giving up on the first one.
+        lastErr = err
+        res = null
+      }
+      if (attempt < ATTEMPTS) await new Promise(r => setTimeout(r, 1200 * attempt))
+    }
+    if (!res) {
+      // Every attempt timed out / errored — surface a clear, retryable message.
+      const msg = lastErr instanceof Error ? lastErr.message : String(lastErr)
+      throw new Error(`Geniuslink create failed after ${ATTEMPTS} attempts: ${msg}`)
     }
     if (!res.ok) {
       // 4xx -- auth or request shape problem, won't help to retry.
-      // 5xx after retry -- Geniuslink server side; user can re-run later.
+      // 5xx after retries -- Geniuslink server side; user can re-run later.
       // Strip HTML + cap at 200 chars so the toast shows a clean
       // message, not a full ASP.NET stack trace.
       const cleanBody = text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200)
