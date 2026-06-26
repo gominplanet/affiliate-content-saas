@@ -2417,6 +2417,10 @@ export default function StudioPage() {
   // videos (effect below) so the page never opens on a blank list.
   const [activeTab, setActiveTab] = useState<VideoTab>('todo')
   const autoTabPicked = React.useRef(false)
+  // One-shot guard: when the To-do queue lands empty but more drafts remain
+  // unfetched, we auto-walk forward to surface them (effect below). Reset on
+  // each fresh (non-append) load so a refresh / channel switch can re-dig.
+  const autoFilledTodo = React.useRef(false)
   // Server-side search across the user's entire channel (not just the
   // currently-loaded uploads-playlist page). Debounced 350ms below so we
   // don't hammer YouTube's search endpoint on every keystroke — that one
@@ -2458,13 +2462,18 @@ export default function StudioPage() {
   // override the user's choice afterward.
   useEffect(() => {
     if (autoTabPicked.current || activeQuery || drafts.length === 0) return
+    // If To-do is empty but more pages remain unfetched, hold off — the
+    // auto-fill effect below digs for to-do drafts first. Only fall back to the
+    // fullest tab once the channel is fully loaded and To-do is genuinely empty,
+    // so we never strand the user on "Shipped" while real to-do work loads in.
+    if (tabbed.todo.length === 0 && nextPageToken) return
     autoTabPicked.current = true
     if (tabbed[activeTab].length === 0) {
       const order: VideoTab[] = ['todo', 'shipped', 'done']
       const fullest = order.reduce((best, t) => (tabbed[t].length > tabbed[best].length ? t : best), order[0])
       if (tabbed[fullest].length > 0) setActiveTab(fullest)
     }
-  }, [tabbed, drafts.length, activeQuery, activeTab])
+  }, [tabbed, drafts.length, activeQuery, activeTab, nextPageToken])
 
   /** load() handles three modes:
    *    - Initial / refresh / new search: replaces the drafts list. (append=false, no pageToken)
@@ -2482,6 +2491,9 @@ export default function StudioPage() {
     if (append) setLoadingMore(true)
     else if (!silent) setLoading(true)
     setError(null)
+    // A fresh (non-append) load replaces the list, so let the to-do auto-fill
+    // re-evaluate against the new results.
+    if (!append && !opts?.pageToken) autoFilledTodo.current = false
 
     const pageToken = opts?.pageToken
     const query = (opts?.query ?? '').trim()
@@ -2597,6 +2609,58 @@ export default function StudioPage() {
       setLoadingMore(false)
     }
   }, [nextPageToken, loadingMore, activeQuery, includePublished])
+
+  /** Dig forward through the uploads list until at least one TO-DO draft
+   *  surfaces (or the budget / cursor runs out). The server scan already gates
+   *  its early-stop on unshipped drafts, so this only kicks in for a deep
+   *  channel whose to-do work sits past the first scan window — without it, a
+   *  creator whose newest drafts were all already pushed would open Co-Pilot on
+   *  an empty "To do" tab even though older unshipped drafts are waiting.
+   *  Bounded to a handful of rounds to keep YouTube quota in check. */
+  const autoFillTodo = useCallback(async () => {
+    if (loadingMore) return
+    let cursor: string | undefined = nextPageToken
+    if (!cursor) return
+    setLoadingMore(true)
+    setError(null)
+    let rounds = 0
+    const ROUND_BUDGET = 8
+    try {
+      while (cursor && rounds < ROUND_BUDGET) {
+        rounds++
+        const params = new URLSearchParams()
+        params.set('pageToken', cursor)
+        if (includePublished) params.set('includePublished', '1')
+        if (selectedChannelId) params.set('channelId', selectedChannelId)
+        const res = await fetch(`/api/youtube/drafts?${params.toString()}`)
+        const data = await res.json()
+        if (!res.ok) { setError(data.error || 'Failed to load more drafts — try Refresh.'); break }
+        const incoming = (data.drafts as DraftVideo[] | undefined) || []
+        setDrafts(prev => {
+          const seen = new Set(prev.map(v => v.youtubeVideoId))
+          return [...prev, ...incoming.filter(v => !seen.has(v.youtubeVideoId))]
+        })
+        cursor = data.nextPageToken as string | undefined
+        setNextPageToken(cursor)
+        // Stop as soon as this batch surfaced a real to-do draft.
+        if (incoming.some(v => classifyVideo(v) === 'todo')) break
+        if (!cursor) break
+      }
+    } finally {
+      setLoadingMore(false)
+    }
+  }, [nextPageToken, loadingMore, includePublished, selectedChannelId])
+
+  // Trigger the dig once per fresh load, only when To-do is empty AND more
+  // pages remain. If To-do already has items, or the channel is fully loaded,
+  // mark it done and leave the auto-tab-pick to handle an empty queue.
+  useEffect(() => {
+    if (autoFilledTodo.current || activeQuery || loading || loadingMore) return
+    if (drafts.length === 0) return
+    if (tabbed.todo.length > 0 || !nextPageToken) { autoFilledTodo.current = true; return }
+    autoFilledTodo.current = true
+    void autoFillTodo()
+  }, [tabbed.todo.length, nextPageToken, drafts.length, activeQuery, loading, loadingMore, autoFillTodo])
 
   const refresh = useCallback(() => {
     setNextPageToken(undefined)

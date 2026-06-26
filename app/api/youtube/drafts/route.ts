@@ -355,8 +355,34 @@ function buildDraftVideo(v: Record<string, unknown>) {
 // "Load more" can continue — we don't claim full_scan=true unless the cursor
 // is actually exhausted.
 const MAX_PAGES = 15
-const MIN_DRAFT_HITS = 12
-const MIN_PRODUCT_HITS = 6
+// The early-stop fires once we've found this many UNSHIPPED drafts — i.e.
+// actual "To do" work. We gate on unshipped (not total) drafts because a draft
+// we already pushed metadata for lands in the "Shipped" tab; counting those
+// toward the quota made the scan stop on a wall of already-shipped drafts and
+// never reach the user's real to-do queue ("To do" showed 0 while the work sat
+// deeper in the uploads list). See support_yt_copilot_draft_discovery.
+const MIN_TODO_HITS = 12
+
+/** All YouTube video IDs the user has already pushed metadata for via Co-Pilot
+ *  (youtube_copilot_pushes). Used to gate the scan's early-stop on UNSHIPPED
+ *  drafts so the to-do queue is actually surfaced. Best-effort: an empty set on
+ *  failure just means the scan treats every draft as to-do (its old behaviour). */
+async function loadPushedIds(
+  supabase: Awaited<ReturnType<typeof createServerClient>>,
+  userId: string,
+): Promise<Set<string>> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data } = await (supabase as any)
+      .from('youtube_copilot_pushes')
+      .select('youtube_video_id')
+      .eq('user_id', userId)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return new Set((data ?? []).map((r: any) => r.youtube_video_id).filter(Boolean) as string[])
+  } catch {
+    return new Set<string>()
+  }
+}
 
 async function runFullScanWithCursor(
   yt: ReturnType<typeof createYouTubeOAuthService>,
@@ -367,12 +393,14 @@ async function runFullScanWithCursor(
   persist = true,
 ): Promise<{ videos: ReturnType<typeof buildDraftVideo>[]; nextCursor?: string; uploadsPlaylistId?: string }> {
   const accumulated: ReturnType<typeof buildDraftVideo>[] = []
+  // The set of videos we've already shipped metadata for — those belong in
+  // "Shipped", not "To do", so they must NOT satisfy the to-do quota below.
+  const pushedIds = await loadPushedIds(supabase, userId)
   // Continue from the caller's cursor (load-more) instead of restarting at the
   // top of the uploads list. undefined = fresh scan from page 1.
   let cursor: string | undefined = fromCursor
   let pagesScanned = 0
-  let draftHits = 0
-  let productHits = 0
+  let todoHits = 0
   let uploadsPlaylistId = cachedPlaylistId
   let hitPageLimit = false
 
@@ -382,13 +410,15 @@ async function runFullScanWithCursor(
     pagesScanned++
     for (const v of page.videos) {
       accumulated.push(v as ReturnType<typeof buildDraftVideo>)
-      if (v.status !== 'public') {
-        draftHits++
-        if (v.detectedAsin) productHits++
+      // A to-do item = an unpublished draft we HAVEN'T already pushed metadata
+      // for. Only these count toward the early-stop, so the scan keeps digging
+      // past a block of already-shipped drafts until it surfaces real work.
+      if (v.status !== 'public' && !pushedIds.has(v.youtubeVideoId)) {
+        todoHits++
       }
     }
-    // Stop scanning if we hit both minimums (unless we haven't scanned much yet)
-    if (draftHits >= MIN_DRAFT_HITS && productHits >= MIN_PRODUCT_HITS && pagesScanned >= 3) {
+    // Stop once we've surfaced enough genuine to-do drafts (after a min depth).
+    if (todoHits >= MIN_TODO_HITS && pagesScanned >= 3) {
       if (!page.nextPageToken) { cursor = undefined } else { cursor = page.nextPageToken }
       break
     }
