@@ -51,10 +51,16 @@ const scoreColor = (s: number) => (s >= 80 ? '#34c759' : s >= 60 ? '#ff9500' : '
 // route hydrates the live body from WordPress first, so we don't gate on
 // hasBody here. Keeping this in lockstep with the server is what stops "Fix all
 // N" from promising fixes the engine then skips.
+const AUTO_FIX_IDS = ['internal_links', 'faq', 'image_alt', 'disclosure', 'keyword_intro', 'keyword_subhead'] as const
+type AutoFixId = typeof AUTO_FIX_IDS[number] | 'title_length'
 const isAutoFixable = (p: { title: string }, c: Check): boolean => {
   if (c.pass) return false
+  // title_length is auto-fixable only when too LONG (we shorten; never auto-
+  // expand). keyword_title is intentionally absent — the user fixes titles by
+  // hand. The keyword_intro/keyword_subhead checks only fail when a target
+  // keyword IS set, so offering their Fix here is always actionable.
   if (c.id === 'title_length') return (p.title || '').length > 65
-  return c.id === 'internal_links' || c.id === 'faq' || c.id === 'image_alt'
+  return (AUTO_FIX_IDS as readonly string[]).includes(c.id)
 }
 
 // Google Search Console deep links expect LITERAL ':' and '/' in resource_id
@@ -175,7 +181,7 @@ export default function SeoPage() {
     finally { setSyncingBodies(false) }
   }, [load])
 
-  const runFix = useCallback(async (postId: string, fix: 'internal_links' | 'faq' | 'title_length' | 'image_alt' | 'all') => {
+  const runFix = useCallback(async (postId: string, fix: AutoFixId | 'all') => {
     setFixing(`${postId}:${fix}`); setFixMsg(null)
     try {
       const res = await fetch('/api/seo/fix', {
@@ -1152,7 +1158,7 @@ export default function SeoPage() {
                               </span>
                               {fixable && (
                                 <button
-                                  onClick={() => runFix(p.postId, c.id as 'internal_links' | 'faq' | 'title_length' | 'image_alt')}
+                                  onClick={() => runFix(p.postId, c.id as AutoFixId)}
                                   disabled={fixing === key}
                                   className="flex-shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold text-white bg-[#7C3AED] hover:bg-[#6D28D9] disabled:opacity-60 transition-colors"
                                 >
@@ -1256,7 +1262,7 @@ export default function SeoPage() {
               <div>
                 <h3 className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Fix all posts</h3>
                 <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
-                  {bulkPreview.toFix} of {bulkPreview.total} posts have auto-fixable issues ({bulkPreview.totalFixes} fixes total). Each gets its title trimmed, internal links + alt text + FAQ added as needed, then republished. Nothing&apos;s saved yet.
+                  {bulkPreview.toFix} of {bulkPreview.total} posts have auto-fixable issues ({bulkPreview.totalFixes} fixes total). Each gets, as needed: title trimmed, internal links + alt text + FAQ added, an affiliate disclosure added, and the target keyword worked into the opening + a subhead — then republished. Nothing&apos;s saved yet.
                 </p>
               </div>
               <button onClick={() => !bulkApplying && setBulkPreview(null)} disabled={bulkApplying} className="text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] disabled:opacity-40">
