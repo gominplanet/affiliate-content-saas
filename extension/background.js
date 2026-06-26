@@ -14,14 +14,54 @@
 
 const CAPTURE_TIMEOUT_MS = 120000
 
-// Self-contained capture routine injected into the YouTube tab. Captures a
-// frame at EACH fraction in one page visit. Must not reference anything outside
-// its own scope (it's serialized + injected).
+// Phase 1: injected while the YouTube tab is still FOREGROUND.
+// Waits for any pre-roll ad to fully complete before returning.
+// Chrome pauses ads in background tabs, so we MUST do this before switching
+// focus to MVP — otherwise the ad never ends and all captures return null.
+async function waitForAdInPage() {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  const vDeadline = Date.now() + 15000
+  let video = null
+  while (Date.now() < vDeadline) {
+    video = document.querySelector('video.html5-main-video') || document.querySelector('video')
+    if (video && isFinite(video.duration) && video.duration > 0) break
+    await sleep(300)
+  }
+  if (!video) return
+  video.muted = true
+  try { await video.play() } catch (e) {}
+
+  // Sleep 2.5s so the pre-roll ad has time to appear — it starts 1-2s after the
+  // player initialises, so checking immediately gives a false "no ad" result.
+  await sleep(2500)
+
+  const isAd = () => {
+    const p = document.querySelector('.html5-video-player')
+    if (p && (p.classList.contains('ad-showing') || p.classList.contains('ad-interrupting'))) return true
+    if (document.querySelector('.ytp-ad-module, .ytp-ad-duration-remaining, .ytp-ad-player-overlay')) return true
+    return false
+  }
+  if (!isAd()) return // no pre-roll, nothing to wait for
+
+  // Ad is confirmed. Click skip as soon as it appears; for non-skippable ads
+  // (max 30s on YouTube) just wait them out — 60s gives plenty of buffer.
+  const until = Date.now() + 60000
+  while (Date.now() < until) {
+    if (!isAd()) return
+    const skip = document.querySelector('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button')
+    if (skip) { try { skip.click() } catch (e) {} }
+    await sleep(500)
+  }
+}
+
+// Phase 2: injected after the tab switches to background (ad already gone).
+// Seeks to each fraction and captures a frame. Must not reference anything
+// outside its own scope (it is serialized + injected).
 async function grabFramesInPage(fractions) {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const deadline = Date.now() + 15000
 
-  // 1. Wait for the player's <video> with real duration.
+  // 1. Re-find the video (still playing from Phase 1).
   let video = null
   while (Date.now() < deadline) {
     video = document.querySelector('video.html5-main-video') || document.querySelector('video')
@@ -36,57 +76,25 @@ async function grabFramesInPage(fractions) {
   video.muted = true
   try { await video.play() } catch (e) {}
 
-  // YouTube serves ads (pre-roll AND mid-roll, often triggered by seeking) in
-  // the same <video> element, flagged by .ad-showing / .ad-interrupting on the
-  // player. We must NEVER capture during an ad — that'd put an advertiser's
-  // footage/branding in the thumbnail or article.
-  const isAdShowing = () => {
-    const p = document.querySelector('.html5-video-player')
-    return !!(p && (p.classList.contains('ad-showing') || p.classList.contains('ad-interrupting')))
-      || !!document.querySelector('.video-ads .ytp-ad-player-overlay, .video-ads .ytp-ad-player-overlay-layout')
-  }
-  // Click skip if offered, otherwise wait the ad out. Returns true if the ad
-  // cleared within `ms`, false if it's still showing.
-  const waitOutAds = async (ms) => {
-    const until = Date.now() + ms
-    while (Date.now() < until) {
-      if (!isAdShowing()) return true
-      const skip = document.querySelector('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button')
-      if (skip) { try { skip.click() } catch (e) {} }
-      await sleep(500)
-    }
-    return !isAdShowing()
-  }
-
-  // 2. Wait for any pre-roll ad on monetized / published videos.
-  //
-  // Race condition: YouTube's player starts the pre-roll 1-2 seconds AFTER the
-  // page is marked "complete" and the <video> element reports a duration. Our
-  // initial isAdShowing() call used to fire before the ad class was set, so we
-  // skipped straight to captures and got ad frames (or nulls).
-  //
-  // Fix: sleep 2.5s to let the player fully initialise and show the pre-roll if
-  // one is coming, THEN check. The progress-bar-click trick does NOT work —
-  // YouTube sets pointer-events:none on the bar during ads. The only reliable
-  // path for non-skippable ads is to wait them out (max 30s on YouTube).
-  await sleep(2500)
-
-  // Also broaden ad detection: some formats only expose .ytp-ad-module or the
-  // duration-remaining badge rather than the .ad-showing player class.
+  // Ad-detection used for mid-roll guards inside the seek loop below.
   const isAdShowingFull = () => {
     const p = document.querySelector('.html5-video-player')
     if (p && (p.classList.contains('ad-showing') || p.classList.contains('ad-interrupting'))) return true
     if (document.querySelector('.ytp-ad-module, .ytp-ad-duration-remaining, .ytp-ad-player-overlay')) return true
     return false
   }
-
-  if (isAdShowingFull()) {
-    // Skippable ads: click skip button the moment it appears (every 500ms loop)
-    // Non-skippable: just wait — 55s covers any 30s ad + buffer.
-    await waitOutAds(55000)
+  const waitOutAds = async (ms) => {
+    const until = Date.now() + ms
+    while (Date.now() < until) {
+      if (!isAdShowingFull()) return true
+      const skip = document.querySelector('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button')
+      if (skip) { try { skip.click() } catch (e) {} }
+      await sleep(500)
+    }
+    return !isAdShowingFull()
   }
 
-  // 2b. Wait for the player to ramp to HD. A freshly-opened tab serves low-res
+  // 2. Wait for the player to ramp to HD. A freshly-opened tab serves low-res
   // first, and setPlaybackQuality is a no-op now, so just poll videoWidth.
   const hdDeadline = Date.now() + 8000
   while (Date.now() < hdDeadline) {
@@ -187,10 +195,19 @@ async function captureYouTubeFrames({ youtubeVideoId, fractions, callerTabId }) 
       setTimeout(() => { chrome.tabs.onUpdated.removeListener(onUpdated); resolve() }, 15000)
     })
 
-    // Page is loaded — switch the user straight back to MVP. Chrome keeps the
-    // video running and allows canvas captures even in a background tab, so all
-    // the seeking + frame grabs below happen silently while the user stays on
-    // the app. requestVideoFrameCallback fires regardless of tab visibility.
+    // Phase 1 — run while the YouTube tab is still FOREGROUND.
+    // This waits out any pre-roll ad (Chrome pauses ads in background tabs, so
+    // we MUST clear the ad before switching focus to MVP).
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      func: waitForAdInPage,
+      args: [],
+    })
+
+    // Phase 2 — switch to MVP now that the ad is gone (or there was none).
+    // Chrome keeps the video running in background; canvas captures + seeks
+    // work fine in a background tab. requestVideoFrameCallback fires regardless
+    // of tab visibility.
     if (callerTabId != null) {
       try { await chrome.tabs.update(callerTabId, { active: true }) } catch (e) {}
     }
