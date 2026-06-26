@@ -1458,21 +1458,18 @@ export default function BrandPage() {
               <div>
                 <label className="flex items-center gap-1.5 text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1.5">
                   Images per article
-                  <InfoTip>How many AI photos drop inside each post body. They&rsquo;re always spaced through the article — never side-by-side, never at the very start or end. Pick &ldquo;0&rdquo; if you prefer text-only posts. &ldquo;Default&rdquo; uses the tier&rsquo;s word-scaled count (~1 per 1500 words).</InfoTip>
+                  <InfoTip>How many AI photos drop inside each post body. They&rsquo;re always spaced through the article — never side-by-side, never at the very start or end. Pick &ldquo;0&rdquo; if you prefer text-only posts. &ldquo;Default&rdquo; scales with length (1 per ~750 words) up to the 2-image max. Each image adds a little AI cost, so 2 is the ceiling.</InfoTip>
                 </label>
                 {(() => {
-                  // Tier ceiling derived inline to avoid bundling the full
-                  // TIERS config into the client. Mirrors lib/tier.ts
-                  // blogImagesPerPost. Capped at 4 in the UI per the
-                  // 2026-06-07 product call.
-                  const tierCap = userTier === 'trial' ? 2
-                    : userTier === 'creator' ? 3
-                    : userTier === 'studio' ? 3
-                    : userTier === 'pro' ? 4
-                    : userTier === 'admin' ? 4
-                    : 2
+                  // Hard global cap of 2 in-body images per post (2026-06-26
+                  // product call — images are the main per-post AI cost driver,
+                  // ~$0.04–0.05 each + a vision QC). Options are Default / 0 / 1
+                  // / 2 for every tier. Mirrors the HARD_IMAGE_CAP in
+                  // lib/tier.ts allowedBlogImages, which enforces the same
+                  // ceiling server-side so "Default" can't exceed it either.
+                  const maxImages = 2
                   const options: Array<number | 'default'> = ['default']
-                  for (let i = 0; i <= tierCap; i++) options.push(i)
+                  for (let i = 0; i <= maxImages; i++) options.push(i)
                   return (
                     <select
                       value={data.blog_image_count === null ? 'default' : String(data.blog_image_count)}

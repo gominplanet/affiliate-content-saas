@@ -374,12 +374,15 @@ export function allowedBlogImages(
   wordCount: number,
   userPreference?: number | null,
 ): number {
-  // HARD COST CAP (2026-06-12): at most ONE in-body image per 750 words, on
-  // top of the tier ceiling and any user preference. Posts are capped at 1,500
-  // words, so this resolves to 1 (≤750w) or 2 (751–1,500w). Replaces the old
-  // "1 per 1,500 words, minimum 2" rule that over-generated images.
+  // HARD COST CAP: at most ONE in-body image per 750 words, AND never more than
+  // 2 images per post total. The global 2-cap (2026-06-26) is the cost backstop
+  // now that post length is uncapped (a Deep-dive is 2,500–3,200 words, so the
+  // per-750 rule alone would allow 4–5) — images are the main per-post AI cost
+  // driver, so 2 is the ceiling regardless of tier, length, or stored
+  // preference. Mirrors the Default/0/1/2 options in the Brand Profile UI.
+  const HARD_IMAGE_CAP = 2
   const wordCap = Math.max(1, Math.ceil((wordCount || 0) / 750))
-  const ceiling = Math.min(TIERS[normalizeTier(tier)].blogImagesPerPost, wordCap)
+  const ceiling = Math.min(TIERS[normalizeTier(tier)].blogImagesPerPost, wordCap, HARD_IMAGE_CAP)
   if (typeof userPreference === 'number' && userPreference >= 0) {
     // User has an explicit preference — respect it, clamped to the (now
     // word-capped) ceiling. 0 is valid and means "no in-body images".
