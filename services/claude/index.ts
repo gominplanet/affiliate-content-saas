@@ -220,6 +220,24 @@ function buildSystemPrompt(
     ? `Get the best price on ${retailerLabel} →`
     : (isAmazon ? 'Get the best price on Amazon →' : 'Get the best price today →')
 
+  // CTA style — the creator's Brand Profile choice for HOW the post asks for
+  // the click. The yellow CTA card markup is fixed (it's the affiliate-link
+  // mechanism); this shapes the PROSE that closes the review and leads into
+  // that card, so the four options produce visibly different endings.
+  // (Before 2026-06-26 this setting was saved but never reached the prompt —
+  // every post closed the same way regardless of the dropdown.)
+  const ctaStyleMap: Record<string, string> = {
+    soft_recommendation:
+      'CTA STYLE — Soft recommendation: close with a low-pressure, advisory suggestion woven into the verdict. No imperatives, no urgency. Frame it as "if this sounds like your situation, it\'s an easy one to try." The reader should feel informed, never sold to.',
+    direct_cta:
+      'CTA STYLE — Direct CTA: close with an explicit, confident call to action right before the CTA card — a clear imperative ("If you want X, get it here"). Confident and decisive, with light natural urgency, but NO hype, fake scarcity, or countdown language.',
+    comparison_table:
+      'CTA STYLE — Comparison framing: just before the final CTA card, close by positioning THIS product against the realistic alternative the buyer is weighing — make the "why pick this one over that" explicit in 2–3 lines (or the spec/compare table if a real alternative exists) so the click is the obvious next step.',
+    pros_cons:
+      'CTA STYLE — Pros/cons recap: just before the final CTA card, distil the decision into a tight scannable recap — the 2–3 biggest wins vs the 1–2 honest drawbacks — then a one-line verdict so the reader can make the call at a glance and click.',
+  }
+  const ctaGuidance = ctaStyleMap[brand.cta_style] || ctaStyleMap.soft_recommendation
+
   // The LEARN voice profile — the writer's own taste/style training.
   // High priority: it encodes what THIS user finds fake vs trustworthy.
   const learnSection = learnProfileToPrompt(brand.learn_profile)
@@ -356,6 +374,7 @@ ${audienceLine}
 Brand niche: ${niches}
 Brand voice: ${tones}
 Target post length: ${targetLength}
+${ctaGuidance}
 ${writingGuidance}
 ${avoidLine}
 ${learnSection}
