@@ -1623,8 +1623,8 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                           void generateThumbnail({ skipFaceModel: true, textMode: 'graphic' })
                         }}
                         disabled={generatingThumbnail || extensionInstalled === null}
-                        className="flex items-center gap-4 w-full px-5 py-5 rounded-2xl text-left transition-all disabled:opacity-50 shadow-md hover:shadow-lg hover:scale-[1.01] active:scale-[0.99]"
-                        style={{ background: generatingThumbnail ? 'linear-gradient(135deg, rgba(255,149,0,0.15) 0%, rgba(255,107,0,0.10) 100%)' : 'linear-gradient(135deg, #FF9500 0%, #FF6B00 100%)', border: '2px solid transparent' }}
+                        className={`flex items-center gap-4 w-full px-5 py-5 rounded-2xl text-left transition-all shadow-md hover:shadow-lg hover:scale-[1.01] active:scale-[0.99] ${generatingThumbnail ? 'opacity-80 cursor-not-allowed' : ''}`}
+                        style={{ background: 'linear-gradient(135deg, #FF9500 0%, #FF6B00 100%)', border: '2px solid transparent' }}
                       >
                         <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
                           {generatingThumbnail ? <Loader2 size={22} className="text-white animate-spin" /> : <Sparkles size={22} className="text-white" />}
