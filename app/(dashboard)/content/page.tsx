@@ -1633,13 +1633,6 @@ export default function ContentPage() {
   // Global "Brand message settings" — the recap template every per-post
   // "Share with brand" modal pre-fills from.
   const [brandSettingsOpen, setBrandSettingsOpen] = useState(false)
-  // "How a blog post gets made" explainer — collapsed by default; expands only
-  // when the user clicks it. A manual open is remembered so power users who
-  // want it open keep it. Default closed for SSR/first paint = no flash.
-  const [explainerOpen, setExplainerOpen] = useState(false)
-  useEffect(() => {
-    try { setExplainerOpen(localStorage.getItem('mvp_blog_explainer_open') === '1') } catch { /* stays collapsed */ }
-  }, [])
   // Affiliate-link repair — dryRun finds posts with a broken affiliate link
   // (e.g. a dead amazon.com/dp/UNDERWATER) and previews old→new before writing.
   const [affPreview, setAffPreview] = useState<{ postId: string; title: string; oldUrl: string; newUrl: string }[] | null>(null)
@@ -3076,17 +3069,11 @@ export default function ContentPage() {
         </a>
       </div>
 
-      {/* How-it-works explainer — only on the Long-form → Blog tab. Open the
-          first time (so newcomers learn the flow), collapsed for return users;
-          a manual toggle is remembered in localStorage. */}
+      {/* How-it-works explainer — only on the Long-form → Blog tab. ALWAYS
+          collapsed on load; it's a plain native <details> that expands only
+          when the user clicks the summary. No persisted/remembered open state. */}
       {activeTab === 'horizontal' && (
         <details
-          open={explainerOpen}
-          onToggle={(e) => {
-            const o = (e.target as HTMLDetailsElement).open
-            setExplainerOpen(o)
-            try { localStorage.setItem('mvp_blog_explainer_open', o ? '1' : '0') } catch { /* ignore */ }
-          }}
           className="group mb-4 rounded-xl border border-[#7C3AED]/20 bg-[#7C3AED]/5 px-4 py-3"
         >
           <summary className="flex items-center gap-2 cursor-pointer list-none text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] select-none">
