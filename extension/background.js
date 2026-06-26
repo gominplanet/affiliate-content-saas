@@ -533,11 +533,17 @@ async function scanAmazonProductForAsin(asin, callerTabId) {
   const url = `https://www.amazon.com/dp/${asin}`
   let tabId = null
   try {
-    // FOREGROUND so the product page fully renders (background tabs throttle).
-    const tab = await chrome.tabs.create({ url, active: true })
+    // BACKGROUND tab (active:false) — the /dp page is SERVER-RENDERED, so we can
+    // read its title/bullets/image without an active, focused tab. Opening it in
+    // the background means SCOUT never steals focus or pops a window to the front
+    // — it loads quietly, gets read, and closes. (The video-finder path still
+    // opens foreground because OINK's API-driven injection needs an active tab;
+    // this product read does not.) A little extra settle time covers any
+    // background-tab throttling of the page's late-loading bits.
+    const tab = await chrome.tabs.create({ url, active: false })
     tabId = tab.id
     await waitForTabLoad(tabId, 25000)
-    await _sleep(800)
+    await _sleep(1200)
     const results = await chrome.scripting.executeScript({
       target: { tabId },
       func: harvestAmazonProductInPage,
@@ -547,8 +553,10 @@ async function scanAmazonProductForAsin(asin, callerTabId) {
   } catch (e) {
     return { ok: false, error: 'scan-failed' }
   } finally {
+    // Only close our background tab. We never stole focus, so there's nothing to
+    // restore — and re-activating the caller here would itself yank the user
+    // back if they'd switched tabs while generation ran.
     if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
-    if (callerTabId != null) { try { await chrome.tabs.update(callerTabId, { active: true }) } catch (e) {} }
   }
 }
 

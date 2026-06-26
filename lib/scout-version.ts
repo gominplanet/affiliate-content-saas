@@ -10,11 +10,11 @@
  *
  * Also drop a one-liner in SCOUT_WHATS_NEW so the banner says what changed.
  */
-export const SCOUT_LATEST_VERSION = '1.10.5'
+export const SCOUT_LATEST_VERSION = '1.10.6'
 
 /** One-line "what's new", shown in the update banner. Keep it user-facing. */
 export const SCOUT_WHATS_NEW =
-  'When Amazon blocks our server from reading a product, SCOUT now grabs the details through your own browser so YouTube metadata still generates from the real product. Re-download + reload once to apply.'
+  'The Amazon product grab now happens in a quiet background tab — no more window popping to the front while metadata generates. Re-download + reload once to apply.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
