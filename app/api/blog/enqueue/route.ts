@@ -25,6 +25,25 @@ import { spendGate } from '@/lib/ai-spend'
 export const dynamic = 'force-dynamic'
 
 export async function POST(request: Request) {
+  // Top-level guard: this route has many awaits (auth, several DB reads, the
+  // spend gate, the enqueue RPC). An unhandled throw in any of them would let
+  // Next.js return its own HTML 500 page — which the client then tries to
+  // JSON.parse, producing the cryptic "Unexpected token '<'" error users see
+  // instead of a real reason. Wrapping the whole handler guarantees a JSON
+  // body on every path so the client always gets an actionable message.
+  try {
+    return await handleEnqueue(request)
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('[blog/enqueue]', msg)
+    return NextResponse.json(
+      { error: `Couldn't queue the post (${msg}). Try again, or use the standard Generate flow.` },
+      { status: 500 },
+    )
+  }
+}
+
+async function handleEnqueue(request: Request) {
   // KILL-SWITCH. Increment C is COMPLETE (2026-06-11): the retry/completion
   // cluster (#255) and the enqueue caps (#256) are fixed, and every dashboard
   // generate call site now routes through generateBlogRequest() (lib/
