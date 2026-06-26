@@ -142,8 +142,8 @@ async function captureYouTubeFrames({ youtubeVideoId, fractions, callerTabId }) 
     ? fractions.filter((n) => typeof n === 'number' && n > 0 && n < 1).slice(0, 8)
     : [0.5]
   let tabId = null
-  // &vq=hd1080 nudges YouTube to start at HD so captures aren't soft 360/480p.
-  const url = `https://www.youtube.com/watch?v=${youtubeVideoId}&vq=hd1080`
+  // &mute=1 silences the tab immediately; &vq=hd1080 nudges YouTube to HD.
+  const url = `https://www.youtube.com/watch?v=${youtubeVideoId}&mute=1&vq=hd1080`
   try {
     // Open foreground so Chrome initialises the video player at full priority
     // (background tabs get throttled timers and deferred media loading).

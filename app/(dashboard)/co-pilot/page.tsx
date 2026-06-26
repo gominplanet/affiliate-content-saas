@@ -1567,7 +1567,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                         <p className="text-sm font-bold text-[#1d1d1f] dark:text-[#f5f5f7]">AI Thumbnail Generator</p>
                         <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#7C3AED]/10 text-[#7C3AED] font-medium">1280×720</span>
                       </div>
-                      <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Pick a style and generate your thumbnail</p>
+                      <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Pick a method and generate your thumbnail</p>
                     </div>
                   </div>
 
