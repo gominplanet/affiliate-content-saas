@@ -97,6 +97,11 @@ export default function SeoPage() {
   } | null>(null)
   const BULK_INDEX_CAP = 50
   const [refreshPriceProgress, setRefreshPriceProgress] = useState<{ done: number; total: number; current?: string } | null>(null)
+  // "Sync bodies from WordPress" — one-time repair for legacy/imported posts
+  // whose blog_posts.content is empty (they score near-zero because the overview
+  // scores the STORED body). Pulls the live body for all such posts so the whole
+  // list reads true. null = idle.
+  const [syncingBodies, setSyncingBodies] = useState(false)
   // "Rebuild from video" modal state — the user pastes a YouTube URL for a
   // legacy post that pre-dates MVP, we link it + run the full generation
   // pipeline against the existing WP post id (preserves URL + indexing).
@@ -149,6 +154,26 @@ export default function SeoPage() {
     finally { setLoading(false) }
   }, [])
   useEffect(() => { load() }, [load])
+
+  // One-time repair: pull live bodies from WordPress for legacy/imported posts
+  // whose stored body is empty (they score near-zero). After it runs, reload so
+  // the overview re-scores the real bodies and the whole list reads true.
+  const syncBodies = useCallback(async () => {
+    setSyncingBodies(true); setFixMsg(null)
+    try {
+      const res = await fetch('/api/seo/backfill-bodies', { method: 'POST' })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok || d.error) { setFixMsg({ ok: false, text: d.error || 'Couldn’t sync from WordPress. Try again in a moment.' }); return }
+      const n = d.backfilled ?? 0
+      const tail = d.remaining ? ` ${d.remaining} more to go — click again to finish.` : ''
+      const fails = d.failed ? ` (${d.failed} couldn’t be read.)` : ''
+      setFixMsg({ ok: true, text: n === 0
+        ? 'Nothing to sync — every post already has its text stored.'
+        : `Synced ${n} post${n !== 1 ? 's' : ''} from WordPress — scores now reflect the real content.${tail}${fails}` })
+      await load()
+    } catch { setFixMsg({ ok: false, text: 'Couldn’t sync from WordPress. Try again in a moment.' }) }
+    finally { setSyncingBodies(false) }
+  }, [load])
 
   const runFix = useCallback(async (postId: string, fix: 'internal_links' | 'faq' | 'title_length' | 'image_alt' | 'all') => {
     setFixing(`${postId}:${fix}`); setFixMsg(null)
@@ -772,6 +797,35 @@ export default function SeoPage() {
           {/* Missed demand (Phase 3 GSC loop) — queries the site already gets
               impressions for with no post squarely targeting them. */}
           {data.connected && <QueryGapsCard />}
+
+          {/* One-time "sync bodies from WordPress" prompt. Legacy/imported posts
+              are live on WP but have no body stored in MVP, so they score near-
+              zero (the overview scores the STORED body). One click pulls the real
+              bodies in → scores read true + they become auto-fixable in place. */}
+          {(() => {
+            const missingBodies = (data.posts || []).filter(p => p.hasBody === false).length
+            if (missingBodies === 0) return null
+            const plural = missingBodies !== 1
+            return (
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3 px-4 py-3 rounded-xl border border-[#7C3AED]/30 bg-[#7C3AED]/5">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                    {missingBodies} older post{plural ? 's' : ''} {plural ? 'score' : 'scores'} low because {plural ? 'their' : 'its'} text isn&apos;t synced to MVP yet
+                  </p>
+                  <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
+                    They&apos;re live on WordPress — pull the real bodies in so the scores read true and you can auto-fix them in place. No rebuild needed.
+                  </p>
+                </div>
+                <button
+                  onClick={syncBodies}
+                  disabled={syncingBodies}
+                  className="flex-shrink-0 inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold text-white bg-[#7C3AED] hover:bg-[#6D28D9] disabled:opacity-60 transition-colors"
+                >
+                  {syncingBodies ? <><Loader2 size={13} className="animate-spin" /> Syncing…</> : <><RefreshCw size={13} /> Sync {missingBodies} from WordPress</>}
+                </button>
+              </div>
+            )
+          })()}
 
           {/* Sort controls */}
           <div className="flex items-center gap-2 text-xs">
