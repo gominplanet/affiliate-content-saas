@@ -994,7 +994,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
     setGeneratingThumbnail(true)
     setThumbnailError(null)
     setThumbnailStatus('')
-    const isProductOnly = opts?.noHuman ?? (selectedFaceModelId === 'no-human')
+    const isProductOnly = opts?.noHuman ?? (selectedFaceModelId === 'no-human' || scoutFaceSelection === 'no-human')
     // Caller passes the picked headline DIRECTLY (not via setCustomHeadline +
     // setTimeout) — React state may not have flushed yet when this function's
     // closure reads customHeadline, which is what made the route fall back to
@@ -1058,22 +1058,27 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           // The thumbnail-style block drives every generation (border + accent, live).
           borderStyleIndex: borderIndex ?? undefined,
           accentColor,
-          // Face identity — SCOUT path uses the explicit picker (scoutFaceSelection);
-          // non-SCOUT falls back to selectedFaceModelId / auto-load.
+          // Face identity. The "Who's in this video?" picker (scoutFaceSelection)
+          // is the user's EXPLICIT choice — honour it whether or not SCOUT managed
+          // to capture frames. Previously, a failed/empty frame capture fell back
+          // to the unrelated selectedFaceModelId (which the picker never sets), so
+          // the picked person (e.g. Michelle) was silently dropped and the route
+          // auto-matched the WRONG face.
           faceModelId: (() => {
             if (isProductOnly) return undefined
-            if (capturedFrames.length > 0) {
-              return (scoutFaceSelection !== 'auto' && scoutFaceSelection !== 'no-human') ? scoutFaceSelection : undefined
-            }
+            if (scoutFaceSelection !== 'auto' && scoutFaceSelection !== 'no-human') return scoutFaceSelection
             return (effectiveFaceModelId && effectiveFaceModelId !== 'no-human') ? effectiveFaceModelId : undefined
           })(),
           faceAuto: (() => {
             if (isProductOnly) return undefined
-            if (capturedFrames.length > 0) return scoutFaceSelection === 'auto' ? true : undefined
-            return !effectiveFaceModelId ? true : undefined
+            // An explicit person (or No-face) was picked → never auto-detect.
+            if (scoutFaceSelection !== 'auto') return undefined
+            // Auto picker: let the route vision-match (frames present) or auto-load
+            // every model when no specific legacy model was chosen.
+            return (capturedFrames.length > 0 || !effectiveFaceModelId) ? true : undefined
           })(),
-          // 'no-human' → product-only; also honoured when picker is set to No face.
-          noHuman: (isProductOnly || (capturedFrames.length > 0 && scoutFaceSelection === 'no-human')) || undefined,
+          // 'no-human' → product-only; honoured whenever the picker is on No face.
+          noHuman: (isProductOnly || scoutFaceSelection === 'no-human') || undefined,
           styleReferenceUrl: styleReferenceUrl || undefined,
           uploadedPhotoUrl: uploadedPhotoUrl || undefined,
           cleanupPrompt: cleanupPrompt.trim() || undefined,
@@ -1145,9 +1150,13 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           variantCount,
           borderStyleIndex: borderIndex ?? undefined,
           accentColor,
-          faceModelId: (selectedFaceModelId && selectedFaceModelId !== 'no-human') ? selectedFaceModelId : undefined,
+          // Honour an explicit "Who's in this video?" pick here too, so the
+          // auto-thumbnail doesn't render the wrong person.
+          faceModelId: (scoutFaceSelection !== 'auto' && scoutFaceSelection !== 'no-human')
+            ? scoutFaceSelection
+            : ((selectedFaceModelId && selectedFaceModelId !== 'no-human') ? selectedFaceModelId : undefined),
           // 'no-human' → product-only thumbnail, no face composition at all.
-          noHuman: selectedFaceModelId === 'no-human' || undefined,
+          noHuman: (selectedFaceModelId === 'no-human' || scoutFaceSelection === 'no-human') || undefined,
           styleReferenceUrl: styleReferenceUrl || undefined,
           // 3C — Carry the user's uploaded product photos + composition note
           // through the auto-thumbnail path too (post-metadata fire-and-forget).

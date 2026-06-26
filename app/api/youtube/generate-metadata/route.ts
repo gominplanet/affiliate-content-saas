@@ -605,6 +605,32 @@ export async function POST(request: Request) {
         }
       }
 
+      // Empty-scrape guard (2026-06-26). The mismatch tripwire above only fires
+      // when Amazon returned a REAL product (title !== videoTitle). When the
+      // scrape comes back with NOTHING usable — no bullets, no description, and
+      // the title still the raw video title — we have zero real product data to
+      // ground on, and the writer will HALLUCINATE a plausible-but-wrong product
+      // from the bare filename (e.g. "Clear with black" → a "clear storage
+      // organizer" when the video is actually Christmas ornaments). Refuse
+      // instead of fabricating. The usual cause is Amazon rate-limiting the
+      // server IP, so a retry typically succeeds. skipAsinCheck overrides.
+      const scrapeEmpty =
+        !skipAsinCheck &&
+        !!trimmedAsin &&
+        product.bullets.length === 0 &&
+        !product.description &&
+        (!product.title || product.title === videoTitle)
+      if (scrapeEmpty) {
+        return NextResponse.json({
+          error:
+            `We couldn't pull the product details for ASIN ${trimmedAsin} from Amazon just now ` +
+            `(Amazon sometimes rate-limits us). Rather than guess at the product and write the wrong ` +
+            `thing, we stopped. Hit Regenerate in a moment — it usually goes through on a retry. ` +
+            `If it keeps failing, double-check the ASIN in your title.`,
+          scrapeFailed: true,
+        }, { status: 422 })
+      }
+
       // 2026-06-09: YT Co-Pilot routes EVERY description link to the
       // per-user "MVP-YOUTUBE" Geniuslink group — never the per-site
       // group used by /api/blog/generate. The split lets the creator
