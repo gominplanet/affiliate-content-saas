@@ -1491,17 +1491,15 @@ export default function BrandPage() {
               <div>
                 <label className="flex items-center gap-1.5 text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1.5">
                   CTA style
-                  <InfoTip>How the review nudges readers to buy. &quot;Soft recommendation&quot; reads like advice; &quot;Direct CTA&quot; is more salesy; &quot;Comparison table&quot; / &quot;Pros &amp; cons&quot; structure the verdict block differently.</InfoTip>
+                  <InfoTip>How the review asks for the click. &quot;Soft recommendation&quot; closes like advice — low-pressure. &quot;Direct CTA&quot; is an explicit, confident ask. (Pros/cons and comparison blocks are controlled separately under Post Sections below.)</InfoTip>
                 </label>
                 <select
-                  value={data.cta_style}
+                  value={data.cta_style === 'soft_recommendation' ? 'soft_recommendation' : data.cta_style === 'direct_cta' ? 'direct_cta' : 'soft_recommendation'}
                   onChange={(e) => set('cta_style', e.target.value)}
                   className="input-field text-xs"
                 >
                   <option value="soft_recommendation">Soft recommendation</option>
                   <option value="direct_cta">Direct CTA</option>
-                  <option value="comparison_table">Comparison table</option>
-                  <option value="pros_cons">Pros / cons list</option>
                 </select>
               </div>
               <div>
