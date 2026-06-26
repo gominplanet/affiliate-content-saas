@@ -327,21 +327,31 @@ export default function PhotoboothPage() {
 
       <div className={`max-w-4xl flex flex-col gap-6 ${!isPaid ? 'opacity-60 pointer-events-none' : ''}`}>
 
-        {/* ── Explainer ─────────────────────────────────────────────────────── */}
-        <div className="card p-5">
-          <h2 className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Start here: teach MVP your face</h2>
-          <p className="text-[13px] leading-relaxed text-[#3a3a3c] dark:text-[#ebebf0] mb-3">
-            Before MVP can put <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">you</strong> in your thumbnails and posts, it has to learn what you look like. Set this up once and MVP will cast the real you everywhere — thumbnails, Instagram images, and the headshots below — instead of a stock-photo stranger.
-          </p>
-          <ul className="text-[13px] leading-relaxed text-[#3a3a3c] dark:text-[#ebebf0] flex flex-col gap-1.5 list-disc pl-5">
-            <li>Click <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Add a face</strong> and upload <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">{MIN_IMAGES}–{MAX_IMAGES} clear photos</strong> of yourself. More is better — mix angles, expressions, and lighting.</li>
-            <li>It&apos;s ready <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">instantly</strong> — no training wait.</li>
-            <li>From then on it&apos;s the reference for your face everywhere MVP casts you. More (and clearer) photos = stronger likeness.</li>
-          </ul>
-          <p className="text-[12px] text-[#86868b] dark:text-[#8e8e93] mt-3">
-            This is the highest-leverage thing you can set up — a real, recognizable face dramatically out-clicks a generic one.
-          </p>
-        </div>
+        {/* ── Explainer — FULL onboarding for first-timers; once a face exists
+              it collapses to a quiet "How it works" so returning users land
+              straight on their faces + the generator (no wall of text). ──── */}
+        {!loading && (hasFace ? (
+          <details className="card p-4">
+            <summary className="cursor-pointer select-none flex items-center gap-2 text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+              <Sparkles size={14} className="text-[#7C3AED]" /> How Face Models work
+            </summary>
+            <div className="mt-3 flex flex-col gap-2 text-[13px] leading-relaxed text-[#3a3a3c] dark:text-[#ebebf0]">
+              <p>Each face is a set of your photos MVP uses as the reference whenever it casts you — thumbnails, Instagram images, and the headshots below.</p>
+              <p>Add {MIN_IMAGES}–{MAX_IMAGES} clear photos per face (mix angles, expressions, lighting). It&apos;s ready instantly — more and clearer photos = stronger likeness.</p>
+            </div>
+          </details>
+        ) : (
+          <div className="card p-5">
+            <h2 className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Start here: teach MVP your face</h2>
+            <p className="text-[13px] leading-relaxed text-[#3a3a3c] dark:text-[#ebebf0] mb-3">
+              Before MVP can put <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">you</strong> in your thumbnails and posts, it has to learn what you look like — so it casts the real you everywhere instead of a stock-photo stranger.
+            </p>
+            <ul className="text-[13px] leading-relaxed text-[#3a3a3c] dark:text-[#ebebf0] flex flex-col gap-1.5 list-disc pl-5">
+              <li>Click <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Add a face</strong> and upload <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">{MIN_IMAGES}–{MAX_IMAGES} clear photos</strong> — mix angles, expressions, and lighting.</li>
+              <li>Ready <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">instantly</strong>, no training wait. More (and clearer) photos = stronger likeness.</li>
+            </ul>
+          </div>
+        ))}
 
         {/* ── Your faces (create/manage) ────────────────────────────────────── */}
         <div>
