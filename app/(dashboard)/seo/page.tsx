@@ -39,6 +39,18 @@ interface Overview {
 
 const scoreColor = (s: number) => (s >= 80 ? '#34c759' : s >= 60 ? '#ff9500' : '#ff3b30')
 
+// Mirror the server's fixableFailing rule (lib/seo-fix): a check is auto-
+// fixable only when the engine can actually ACT on it. title_length is auto-
+// fixable ONLY when the title is too LONG (>65) — we never auto-EXPAND a short
+// title (that would mean inventing a hook), so a short title gets a manual-edit
+// hint instead of a dead "Fix" button. Keeping this in lockstep with the server
+// is what stops "Fix all N" from promising fixes the engine silently skips.
+const isAutoFixable = (postTitle: string, c: Check): boolean => {
+  if (c.pass) return false
+  if (c.id === 'title_length') return (postTitle || '').length > 65
+  return c.id === 'internal_links' || c.id === 'faq' || c.id === 'image_alt'
+}
+
 // Google Search Console deep links expect LITERAL ':' and '/' in resource_id
 // and id. encodeURIComponent turns them into %3A / %2F, which makes GSC return
 // a 404. Encode everything else (spaces, &, #, ?) but keep those two literal.
@@ -52,7 +64,7 @@ export default function SeoPage() {
   const [sort, setSort] = useState<'score' | 'clicks' | 'impressions'>('score')
   const [filterNotIndexed, setFilterNotIndexed] = useState(false)  // "Request indexing" worklist
   const [fixing, setFixing] = useState<string | null>(null)   // `${postId}:${fix}`
-  const [fixMsg, setFixMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [fixMsg, setFixMsg] = useState<{ ok: boolean; text: string; postId?: string } | null>(null)
   const [pinging, setPinging] = useState(false)
   const [bulkPreview, setBulkPreview] = useState<{ total: number; toFix: number; totalFixes: number; preview: { postId: string; title: string; fixes: number }[] } | null>(null)
   const [bulkLoading, setBulkLoading] = useState(false)
@@ -140,13 +152,13 @@ export default function SeoPage() {
         body: JSON.stringify({ postId, fix }),
       })
       const d = await res.json()
-      if (d.error) { setFixMsg({ ok: false, text: d.error }); return }
+      if (d.error) { setFixMsg({ ok: false, text: d.error, postId }); return }
       const n = Array.isArray(d.applied) ? d.applied.length : 1
       setFixMsg(n === 0
-        ? { ok: true, text: 'Nothing left to auto-fix on this post.' }
-        : { ok: true, text: `Applied ${n} fix${n !== 1 ? 'es' : ''} — re-scored to ${d.score}/100 and republished.` })
+        ? { ok: false, text: 'Nothing could be auto-applied here — these checks need a manual edit in WordPress (or a rebuild from the source video).', postId }
+        : { ok: true, text: `Applied ${n} fix${n !== 1 ? 'es' : ''} — re-scored to ${d.score}/100 and republished.`, postId })
       await load()
-    } catch { setFixMsg({ ok: false, text: 'Something went wrong.' }) }
+    } catch { setFixMsg({ ok: false, text: 'Something went wrong.', postId }) }
     finally { setFixing(null) }
   }, [load])
 
@@ -658,7 +670,10 @@ export default function SeoPage() {
               leverage fix. Only shown when GSC is connected (the page already
               renders a prominent connect prompt below when it isn't). */}
           {data.connected && <OpportunitiesPanel />}
-          {fixMsg && (
+          {/* Post-scoped fix results render INLINE under that post's button (so a
+              user scrolled down to a row actually sees the outcome). Only page-
+              level messages — bulk fix-all, sitemap, indexing — show up here. */}
+          {fixMsg && !fixMsg.postId && (
             <div className={`flex items-start justify-between gap-3 px-4 py-2.5 rounded-lg text-sm ${fixMsg.ok ? 'bg-[#34c759]/10 text-[#1d1d1f] dark:text-[#f5f5f7] border border-[#34c759]/30' : 'bg-[#ff3b30]/5 text-[#ff3b30] border border-[#ff3b30]/30'}`}>
               <span className="whitespace-pre-line">{fixMsg.text}</span>
               <button onClick={() => setFixMsg(null)} className="text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] flex-shrink-0 mt-0.5"><X size={14} /></button>
@@ -903,6 +918,7 @@ export default function SeoPage() {
             ) : posts.map((p) => {
               const open = expanded === p.postId
               const failing = p.checks.filter(c => !c.pass && c.weight > 0)
+              const autoFixable = p.checks.filter(c => isAutoFixable(p.title, c)).length
               const selectable = !!p.url && p.indexed !== true && data.connected
               const isSelected = selectedPostIds.has(p.postId)
               const bulkOutcome = bulkIndexProgress?.results[p.postId]
@@ -952,7 +968,11 @@ export default function SeoPage() {
                     </span>
                     <span className="flex-1 min-w-0">
                       <span className="block text-sm text-[#1d1d1f] dark:text-[#f5f5f7] truncate">{p.title}</span>
-                      <span className="block text-[11px] text-[#86868b] truncate">{failing.length === 0 ? 'All checks pass' : `${failing.length} fix${failing.length !== 1 ? 'es' : ''} suggested`}</span>
+                      <span className="block text-[11px] text-[#86868b] truncate">{failing.length === 0
+                        ? 'All checks pass'
+                        : autoFixable > 0
+                          ? `${failing.length} to improve · ${autoFixable} auto-fixable`
+                          : `${failing.length} to improve — manual edits`}</span>
                     </span>
                     {p.inSitemap === false && (
                       <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-medium text-[#ff9500] flex-shrink-0" title="Not in your sitemap — Google may not discover it">
@@ -1014,7 +1034,7 @@ export default function SeoPage() {
                   {open && (
                     <div className="px-4 pb-4 pl-12">
                       {(() => {
-                        const fixableCount = p.checks.filter(c => !c.pass && ['internal_links', 'faq', 'title_length', 'image_alt'].includes(c.id)).length
+                        const fixableCount = p.checks.filter(c => isAutoFixable(p.title, c)).length
                         if (fixableCount < 2) return null  // a single fix → just use its own button
                         const busy = fixing === `${p.postId}:all`
                         return (
@@ -1027,6 +1047,22 @@ export default function SeoPage() {
                           </button>
                         )
                       })()}
+                      {/* Inline outcome — the result/error lives RIGHT under the
+                          buttons the user clicked, not in a banner at the top of
+                          the page they can't see while scrolled down to a row.
+                          Fixes (esp. FAQ generation + WP republish) can take ~30s,
+                          so a clear "Applying…" state matters too. */}
+                      {fixing?.startsWith(`${p.postId}:`) && (
+                        <p className="mb-3 flex items-center gap-1.5 text-xs font-medium text-[#7C3AED]">
+                          <Loader2 size={12} className="animate-spin" /> Applying fixes — this can take up to a minute…
+                        </p>
+                      )}
+                      {fixMsg?.postId === p.postId && !fixing && (
+                        <div className={`mb-3 flex items-start justify-between gap-3 px-3 py-2 rounded-lg text-xs ${fixMsg.ok ? 'bg-[#34c759]/10 text-[#1d1d1f] dark:text-[#f5f5f7] border border-[#34c759]/30' : 'bg-[#ff3b30]/5 text-[#ff3b30] border border-[#ff3b30]/30'}`}>
+                          <span className="whitespace-pre-line">{fixMsg.text}</span>
+                          <button onClick={() => setFixMsg(null)} className="flex-shrink-0 text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] mt-0.5"><X size={13} /></button>
+                        </div>
+                      )}
                       {/* Rebuild-from-video — for low-score / legacy posts where
                           the auto-fixer can't help (no comparison table, thin
                           body, fabricated patterns). Paste the YouTube URL and
@@ -1043,7 +1079,7 @@ export default function SeoPage() {
                       )}
                       <ul className="flex flex-col gap-1.5">
                         {p.checks.filter(c => c.weight > 0).map(c => {
-                          const fixable = !c.pass && ['internal_links', 'faq', 'title_length', 'image_alt'].includes(c.id)
+                          const fixable = isAutoFixable(p.title, c)
                           const key = `${p.postId}:${c.id}`
                           return (
                             <li key={c.id} className="flex items-start gap-2 text-xs">
