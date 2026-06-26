@@ -252,36 +252,33 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
                 </div>
               )}
               {canFindVideo && (
-                <div className="mt-2 flex flex-col gap-1.5">
-                  <div className="flex items-center gap-3">
+                <div className="mt-2.5 rounded-lg border border-[var(--border-2,#e5e5e7)] bg-[var(--surface-2,#f7f7f8)] p-2.5 flex flex-col gap-1.5">
+                  <p className="text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] flex items-center gap-1.5"><Video size={12} className="text-[#7C3AED]" /> Add your Amazon video</p>
+                  <p className="text-[10px] text-[#86868b] leading-snug">
+                    On the product page, right-click Amazon&rsquo;s <strong>&ldquo;Content Made&rdquo;</strong> (or your video) link → <strong>Copy link</strong>, and paste it here.
+                  </p>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      value={pasteUrl}
+                      onChange={e => setPasteUrl(e.target.value)}
+                      placeholder="https://www.amazon.com/vdp/…"
+                      className="flex-1 px-2 py-1.5 rounded-md border border-[var(--border-2,#e5e5e7)] bg-[var(--surface,#fff)] text-[11px] font-mono focus:outline-none focus:border-[#7C3AED]"
+                    />
                     <button
-                      onClick={findAmazonVideo}
-                      disabled={findingVideo}
-                      title="Read your Amazon Manage Content in your logged-in session and add your Amazon video for this product"
-                      className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#7C3AED] hover:underline disabled:opacity-50"
-                    >
-                      {findingVideo ? <Loader2 size={12} className="animate-spin" /> : <Video size={12} />}
-                      {findingVideo ? 'Scanning Amazon…' : 'Find my Amazon video'}
-                    </button>
-                    <button onClick={() => setShowPaste(v => !v)} className="text-[11px] text-[#86868b] hover:text-[#7C3AED]">
-                      paste link
-                    </button>
+                      onClick={async () => { if (pasteUrl.trim() && await saveAmazonVideo(pasteUrl.trim())) { setPasteUrl(''); toast.success('Added your Amazon video.') } }}
+                      className="px-2.5 py-1.5 rounded-md text-[11px] font-semibold bg-[#7C3AED] text-white hover:bg-[#6D28D9]"
+                    >Add</button>
                   </div>
+                  <button
+                    onClick={findAmazonVideo}
+                    disabled={findingVideo}
+                    title="Experimental: scan your Amazon Manage Content for this product's video"
+                    className="self-start inline-flex items-center gap-1 text-[10px] text-[#86868b] hover:text-[#7C3AED] disabled:opacity-50"
+                  >
+                    {findingVideo ? <Loader2 size={10} className="animate-spin" /> : null}
+                    {findingVideo ? 'Scanning…' : 'or try auto-detect (beta)'}
+                  </button>
                   {scanDiag && <p className="text-[10px] text-[#86868b] leading-snug">{scanDiag}</p>}
-                  {showPaste && (
-                    <div className="flex items-center gap-1.5">
-                      <input
-                        value={pasteUrl}
-                        onChange={e => setPasteUrl(e.target.value)}
-                        placeholder="https://www.amazon.com/vdp/…"
-                        className="flex-1 px-2 py-1.5 rounded-md border border-[var(--border-2,#e5e5e7)] bg-[var(--surface,#fff)] text-[11px] font-mono focus:outline-none focus:border-[#7C3AED]"
-                      />
-                      <button
-                        onClick={async () => { if (pasteUrl.trim() && await saveAmazonVideo(pasteUrl.trim())) { setPasteUrl(''); setShowPaste(false); toast.success('Added your Amazon video.') } }}
-                        className="px-2.5 py-1.5 rounded-md text-[11px] font-semibold bg-[#7C3AED] text-white hover:bg-[#6D28D9]"
-                      >Add</button>
-                    </div>
-                  )}
                 </div>
               )}
             </div>
