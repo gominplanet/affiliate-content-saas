@@ -282,7 +282,7 @@ export function SocialPreviewModal({
                   </div>
                   <pre className="text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7] whitespace-pre-wrap font-mono leading-relaxed max-h-32 overflow-y-auto p-2 rounded-lg bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10">{groupCopy}</pre>
                   <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-1.5 leading-relaxed">
-                    Copy this, then open a Group below and paste it into a new post. (Facebook can&apos;t post to Groups via API — Pages only.)
+                    Facebook blocks apps from posting to Groups — copy this and paste it into a new post in the Group below.
                   </p>
                   {facebookGroups && facebookGroups.length > 0 ? (
                     <div className="mt-2 flex flex-col gap-1">
