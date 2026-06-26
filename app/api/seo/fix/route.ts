@@ -34,19 +34,11 @@ export async function POST(request: Request) {
     .from('blog_posts')
     .select('id,title,slug,content,seo_keyword,post_type,wordpress_post_id,wordpress_site_id')
     .eq('user_id', ownerId).eq('id', postId).maybeSingle()
-  // Split the old catch-all "Post not found or not published" so the inline
-  // message says what's actually wrong — and steers the common case (a
-  // published post whose BODY isn't stored in MVP, e.g. legacy/imported posts:
-  // score ~10, every content check failing) to Rebuild-from-video instead of
-  // leaving a button that silently 404s.
   if (!post) {
     return NextResponse.json({ error: 'Post not found.' }, { status: 404 })
   }
   if (!post.wordpress_post_id) {
     return NextResponse.json({ error: 'This post isn’t published to WordPress yet.' }, { status: 404 })
-  }
-  if (!post.content || !String(post.content).trim()) {
-    return NextResponse.json({ error: 'We don’t have this post’s text stored to auto-edit. Click “Rebuild from video” to regenerate the body (or edit it in WordPress) — then auto-fix will work.' }, { status: 422 })
   }
 
   // Tier comes from the owner's integrations; WP credentials route to the
@@ -67,10 +59,28 @@ export async function POST(request: Request) {
   const wpBase = site.wordpress_url.replace(/\/$/, '')
   const wpService = createWordPressService(site.wordpress_url ?? '', site.wordpress_username ?? '', site.wordpress_app_password ?? '', site.wordpress_api_token || undefined)
 
+  // HYDRATE FROM WORDPRESS when MVP has no stored body. Legacy/imported posts
+  // are live on WP but have an empty blog_posts.content; the auto-fixer edits
+  // the STORED HTML, so without the real body it can't run. Rather than force a
+  // rebuild (the post is already there — the user just wants to fix a few
+  // things), we pull the live body, fix it IN PLACE, and backfill the stored
+  // copy so the score + future fixes stop treating it as empty.
+  let workingPost = post as FixablePost
+  if (!post.content || !String(post.content).trim()) {
+    const live = await wpService.getPostContent(post.wordpress_post_id)
+    if (!live || !live.content.trim()) {
+      return NextResponse.json({ error: 'We couldn’t load this post’s content from WordPress to edit. Try again in a moment — or use “Rebuild from video” to regenerate it.' }, { status: 422 })
+    }
+    workingPost = { ...(post as FixablePost), content: live.content, title: post.title || live.title }
+    // Best-effort backfill so the next overview scores the real body (and this
+    // row stops showing the misleading near-zero score).
+    await supabase.from('blog_posts').update({ content: live.content, ...(post.title ? {} : { title: live.title }) }).eq('id', post.id)
+  }
+
   try {
     const result = await applyPostFixes({
       supabase, userId: ownerId, wpService, wpBase, tier: wp?.tier,
-      post: post as FixablePost,
+      post: workingPost,
       fixes: fix === 'all' ? 'all' : [fix as SeoFixType],
     })
     // Single-fix mode: if the requested fix didn't apply, surface why.

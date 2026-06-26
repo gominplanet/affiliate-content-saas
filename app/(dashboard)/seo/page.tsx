@@ -47,12 +47,12 @@ const scoreColor = (s: number) => (s >= 80 ? '#34c759' : s >= 60 ? '#ff9500' : '
 // fixable only when the engine can actually ACT on it. title_length is auto-
 // fixable ONLY when the title is too LONG (>65) — we never auto-EXPAND a short
 // title (that would mean inventing a hook), so a short title gets a manual-edit
-// hint instead of a dead "Fix" button. And nothing is auto-fixable when MVP
-// has no stored body for the post (the fixer edits the stored HTML) — those
-// posts get steered to Rebuild-from-video. Keeping this in lockstep with the
-// server is what stops "Fix all N" from promising fixes the engine then skips.
-const isAutoFixable = (p: { title: string; hasBody?: boolean }, c: Check): boolean => {
-  if (c.pass || p.hasBody === false) return false
+// hint instead of a dead "Fix" button. Body-less posts ARE auto-fixable: the
+// route hydrates the live body from WordPress first, so we don't gate on
+// hasBody here. Keeping this in lockstep with the server is what stops "Fix all
+// N" from promising fixes the engine then skips.
+const isAutoFixable = (p: { title: string }, c: Check): boolean => {
+  if (c.pass) return false
   if (c.id === 'title_length') return (p.title || '').length > 65
   return c.id === 'internal_links' || c.id === 'faq' || c.id === 'image_alt'
 }
@@ -1053,15 +1053,6 @@ export default function SeoPage() {
                           </button>
                         )
                       })()}
-                      {/* Body-less posts (legacy/imported: live on WP, no stored
-                          content in MVP) can't be auto-fixed — the engine edits
-                          the stored HTML. Say so and point at Rebuild instead of
-                          showing a "Fix all" that 422s. */}
-                      {p.hasBody === false && failing.length > 0 && (
-                        <p className="mb-3 text-xs text-[#86868b] max-w-prose">
-                          MVP doesn&apos;t have this post&apos;s text stored, so these can&apos;t be auto-fixed. {canRebuild ? 'Use “Rebuild from video” below to regenerate the body' : 'Edit the post directly in WordPress'} — then auto-fix becomes available.
-                        </p>
-                      )}
                       {/* Inline outcome — the result/error lives RIGHT under the
                           buttons the user clicked, not in a banner at the top of
                           the page they can't see while scrolled down to a row.

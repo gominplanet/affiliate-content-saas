@@ -666,6 +666,28 @@ export class WordPressService {
     })
   }
 
+  /** Pull a single post's raw title + body straight from WordPress. Used to
+   *  HYDRATE the SEO auto-fixer for legacy/imported posts whose blog_posts.content
+   *  is empty — so we can fix them IN PLACE instead of forcing a rebuild.
+   *  context=edit returns the unrendered block HTML our fixers expect; falls back
+   *  to context=view (rendered) when the edit context is denied. Returns null if
+   *  the post can't be read or has no body. */
+  async getPostContent(id: number): Promise<{ title: string; content: string } | null> {
+    type Field = string | { raw?: string; rendered?: string } | undefined
+    type RawPost = { title?: Field; content?: Field }
+    const flat = (f: Field): string => (typeof f === 'string' ? f : (f?.raw ?? f?.rendered ?? ''))
+    const pick = (r: RawPost | null): { title: string; content: string } | null =>
+      r ? { title: String(flat(r.title) || ''), content: String(flat(r.content) || '') } : null
+    for (const ctx of ['edit', 'view'] as const) {
+      try {
+        const r = await this.request<RawPost>(`/posts/${id}?context=${ctx}&_fields=id,title,content`, { method: 'GET' })
+        const got = pick(r)
+        if (got && got.content.trim()) return got
+      } catch { /* edit context may be denied → try view; both failing → null */ }
+    }
+    return null
+  }
+
   async deletePost(id: number): Promise<void> {
     await this.request(`/posts/${id}?force=true`, { method: 'DELETE' })
   }
