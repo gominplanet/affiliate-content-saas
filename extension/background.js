@@ -178,9 +178,12 @@ async function captureYouTubeFrames({ youtubeVideoId, fractions, callerTabId }) 
   // &mute=1 silences the tab immediately; &vq=hd1080 nudges YouTube to HD.
   const url = `https://www.youtube.com/watch?v=${youtubeVideoId}&mute=1&vq=hd1080`
   try {
-    // Open foreground so Chrome initialises the video player at full priority
-    // (background tabs get throttled timers and deferred media loading).
-    const tab = await chrome.tabs.create({ url, active: true })
+    // Open in the BACKGROUND so the user's current tab keeps focus.
+    // Draft/private videos have no pre-roll ads, so the old foreground
+    // ad-clearing phase is not needed. If Chrome doesn't render the video
+    // in the background the frame array will be empty and the caller falls
+    // back to the maxres storyboard thumbnail automatically.
+    const tab = await chrome.tabs.create({ url, active: false })
     tabId = tab.id
 
     // Wait for the tab to finish loading.
@@ -194,23 +197,6 @@ async function captureYouTubeFrames({ youtubeVideoId, fractions, callerTabId }) 
       chrome.tabs.onUpdated.addListener(onUpdated)
       setTimeout(() => { chrome.tabs.onUpdated.removeListener(onUpdated); resolve() }, 15000)
     })
-
-    // Phase 1 — run while the YouTube tab is still FOREGROUND.
-    // This waits out any pre-roll ad (Chrome pauses ads in background tabs, so
-    // we MUST clear the ad before switching focus to MVP).
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      func: waitForAdInPage,
-      args: [],
-    })
-
-    // Phase 2 — switch to MVP now that the ad is gone (or there was none).
-    // Chrome keeps the video running in background; canvas captures + seeks
-    // work fine in a background tab. requestVideoFrameCallback fires regardless
-    // of tab visibility.
-    if (callerTabId != null) {
-      try { await chrome.tabs.update(callerTabId, { active: true }) } catch (e) {}
-    }
 
     const results = await chrome.scripting.executeScript({
       target: { tabId },
