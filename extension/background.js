@@ -379,10 +379,25 @@ async function harvestProductVideoInPage(asin) {
     return m ? m[1].toUpperCase() : null
   }
   const findVdp = () => {
-    const anchors = [...document.querySelectorAll('a[href*="/vdp/"]')]
-    // Prefer one whose product= matches our ASIN; else accept any vdp anchor.
-    for (const a of anchors) { if (want && (asinOf(a.href) === want)) return a.href }
-    return anchors[0] ? anchors[0].href : null
+    // 1. Strongest signal: the vdp link OINK injected lives inside its own
+    //    container. That's the CREATOR'S OWN video for this product — exactly
+    //    what we want, even on OINK builds that omit the product= param.
+    const oinkScope = document.querySelector('[class*="oink" i],[id*="oink" i],[data-oink]')
+    if (oinkScope) {
+      const inOink = oinkScope.querySelector('a[href*="/vdp/"]')
+      if (inOink) return inOink.href
+    }
+    // 2. Else, a vdp anchor whose product= matches THIS product's ASIN.
+    //    We deliberately do NOT fall back to "any vdp on the page" — Amazon's
+    //    native "Videos for this product" carousel surfaces OTHER creators'
+    //    videos, and attaching one of those to the brand recap would tell the
+    //    brand "here's our review" pointing at a stranger's content. Better to
+    //    find nothing and let the user paste their link than to guess wrong.
+    if (want) {
+      const anchors = [...document.querySelectorAll('a[href*="/vdp/"]')]
+      for (const a of anchors) { if (asinOf(a.href) === want) return a.href }
+    }
+    return null
   }
   const oinkPresent = () =>
     !!document.querySelector('[class*="oink" i],[id*="oink" i],[data-oink]') ||

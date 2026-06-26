@@ -9,6 +9,7 @@ import { CapReachedBanner } from '@/components/CapReachedBanner'
 import { useConfirm } from '@/components/ui/useConfirm'
 import { pickWeightedStyleIndex, OVERLAY_STYLES, drawHeadline, type HeadlinePosition, type FaceBox } from '@/lib/thumbnail-overlay'
 import { isExtensionAvailable, requestVideoFrames } from '@/lib/extension-frame'
+import { SCOUT_DOWNLOAD_URL } from '@/lib/scout-version'
 import { effectiveTier } from '@/lib/view-as'
 import type { Tier } from '@/lib/tier'
 import BrandStylePanel, { BORDER_NAMES } from '@/components/co-pilot/BrandStylePanel'
@@ -1683,8 +1684,8 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                         </div>
                         <div className="px-4 pb-4 flex items-center gap-2">
                           <a
-                            href="/mvp-scout-extension.zip"
-                            download="mvp-scout-extension.zip"
+                            href={SCOUT_DOWNLOAD_URL}
+                            download
                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#FF9500] text-white text-xs font-semibold hover:bg-[#e6860a] transition-colors"
                           >
                             <Download size={12} />

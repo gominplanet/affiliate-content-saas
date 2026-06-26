@@ -247,6 +247,14 @@ function buildSystemPrompt(
     const L = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
     return L > 0.45 ? '#111' : '#fff'
   })()
+  // Hover = the brand button, darkened ~18%, so the buy button stays on-brand
+  // on hover instead of flipping to the old hardcoded signature yellow (which
+  // ignored the creator's brand colors entirely). Text colour is kept.
+  const ctaHover = (() => {
+    const ch = (i: number) => Math.round(parseInt(ctaBg.slice(i, i + 2), 16) * 0.82)
+      .toString(16).padStart(2, '0')
+    return `#${ch(1)}${ch(3)}${ch(5)}`
+  })()
 
   // CTA style — the creator's Brand Profile choice for HOW the post asks for
   // the click. The yellow CTA card markup is fixed (it's the affiliate-link
@@ -983,14 +991,14 @@ Use exactly this structure with {VIDEO_ID} replaced:
 .gr-rating-label{font-size:11px;color:rgba(255,255,255,.5);letter-spacing:1px;text-transform:uppercase;margin-top:4px}
 .gr-rating-text{font-size:15px;color:rgba(255,255,255,.8);line-height:1.6;max-width:480px}
 .gr-cta-link{display:inline-flex;align-items:center;gap:8px;background:${ctaBg};color:${ctaText};font-size:13px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;padding:14px 24px;border-radius:3px;text-decoration:none;margin:8px 0}
-.gr-cta-link:hover{background:#111;color:#FFC200}
+.gr-cta-link:hover{background:${ctaHover};color:${ctaText}}
 .gr-cta-card{background:#f8f9fa;border:2px solid #111;border-radius:4px;padding:24px 28px;margin:32px 0;display:flex;flex-direction:column;gap:14px}
 .gr-cta-card:has(.gr-cta-thumb-wrap){display:grid;grid-template-columns:1fr 220px;gap:24px;align-items:center}
 .gr-cta-card .gr-cta-body{display:flex;flex-direction:column;gap:14px;min-width:0}
 .gr-cta-card .gr-cta-eyebrow{font-size:11px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:#111;margin:0;padding-bottom:12px;border-bottom:2px solid #FFC200}
 .gr-cta-card .gr-cta-product-name{font-size:20px;font-weight:800;color:#111;margin:0;line-height:1.3;letter-spacing:-.3px}
 .gr-cta-card .gr-cta-btn{display:flex;align-items:center;justify-content:center;gap:10px;background:${ctaBg};color:${ctaText};font-size:15px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;padding:18px 24px;border-radius:3px;text-decoration:none;margin-top:4px;width:100%;box-sizing:border-box}
-.gr-cta-card .gr-cta-btn:hover{background:#111;color:#FFC200}
+.gr-cta-card .gr-cta-btn:hover{background:${ctaHover};color:${ctaText}}
 .gr-cta-card .gr-cta-thumb-wrap{line-height:0;border-radius:4px;overflow:hidden;border:2px solid #111}
 .gr-cta-card .gr-cta-thumb{width:100%;height:auto;aspect-ratio:16/9;object-fit:cover;display:block}
 .gr-cta-card .gr-cta-disclaimer{font-size:10px;line-height:1.4;color:#6b6b70;margin:6px 0 0;font-style:italic}

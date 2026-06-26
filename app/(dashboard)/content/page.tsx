@@ -2874,6 +2874,37 @@ export default function ContentPage() {
     ? orphanPosts.filter(p => (p.title || '').replace(/<[^>]+>/g, '').toLowerCase().includes(postQuery))
     : orphanPosts, [orphanPosts, postQuery])
 
+  // The Posts-tab "Recent" stream — every video-backed post + every orphan
+  // post, merged and sorted newest-first. Memoized so it doesn't rebuild and
+  // re-sort the whole catalogue on every render of the tab (it used to run
+  // inline in the JSX, which meant a fresh sort on every keystroke in the
+  // search box and every social-post-state toggle).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  type RecentStreamItem = { kind: 'video'; ts: number; video: any } | { kind: 'post'; ts: number; post: any }
+  const recentStream = useMemo<RecentStreamItem[]>(() => {
+    const videoTs = (v: Record<string, unknown>): number => {
+      const p = posts[v.id as string]
+      if (p?.publishedAt) { const t = new Date(p.publishedAt).getTime(); if (!isNaN(t)) return t }
+      const fb = (v.tiktok_posted_at as string) || (v.instagram_posted_at as string) || (v.published_at as string) || ''
+      const t = new Date(fb || 0).getTime(); return isNaN(t) ? 0 : t
+    }
+    const postTs = (d: string | null): number => { const t = new Date(d || 0).getTime(); return isNaN(t) ? 0 : t }
+    return [
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ...([...horizontalDone, ...verticalDone] as any[]).map((v): RecentStreamItem => ({ kind: 'video', ts: videoTs(v), video: v })),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ...(orphanPosts as any[]).map((p): RecentStreamItem => ({ kind: 'post', ts: postTs(p.date), post: p })),
+    ].sort((a, b) => b.ts - a.ts)
+  }, [horizontalDone, verticalDone, orphanPosts, posts])
+  const recentMatched = useMemo<RecentStreamItem[]>(() => postQuery
+    ? recentStream.filter(it => it.kind === 'video'
+        ? (((it.video.title as string) || '').toLowerCase().includes(postQuery)
+            || ((posts[it.video.id as string]?.title) || '').toLowerCase().includes(postQuery)
+            || ((it.video.channel_title as string) || '').toLowerCase().includes(postQuery))
+        : ((it.post.title || '').replace(/<[^>]+>/g, '').toLowerCase().includes(postQuery)))
+    : recentStream,
+    [recentStream, postQuery, posts])
+
   return (
     <>
       <PageHero
@@ -3210,31 +3241,11 @@ export default function ContentPage() {
                 </div>
               )
             }
-            // Sort by BLOG PUBLISH date, newest first. Video-backed posts use
-            // the post's publishedAt (falling back to social-push / video
-            // dates); standalone posts use their WordPress date.
-            const videoTs = (v: Record<string, unknown>): number => {
-              const p = posts[v.id as string]
-              if (p?.publishedAt) { const t = new Date(p.publishedAt).getTime(); if (!isNaN(t)) return t }
-              const fb = (v.tiktok_posted_at as string) || (v.instagram_posted_at as string) || (v.published_at as string) || ''
-              const t = new Date(fb || 0).getTime(); return isNaN(t) ? 0 : t
-            }
-            const postTs = (d: string | null): number => { const t = new Date(d || 0).getTime(); return isNaN(t) ? 0 : t }
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            type StreamItem = { kind: 'video'; ts: number; video: any } | { kind: 'post'; ts: number; post: any }
-            const stream: StreamItem[] = [
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              ...([...horizontalDone, ...verticalDone] as any[]).map((v): StreamItem => ({ kind: 'video', ts: videoTs(v), video: v })),
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              ...(orphanPosts as any[]).map((p): StreamItem => ({ kind: 'post', ts: postTs(p.date), post: p })),
-            ].sort((a, b) => b.ts - a.ts)
-            const matched = postQuery
-              ? stream.filter(it => it.kind === 'video'
-                  ? (((it.video.title as string) || '').toLowerCase().includes(postQuery)
-                      || ((posts[it.video.id as string]?.title) || '').toLowerCase().includes(postQuery)
-                      || ((it.video.channel_title as string) || '').toLowerCase().includes(postQuery))
-                  : ((it.post.title || '').replace(/<[^>]+>/g, '').toLowerCase().includes(postQuery)))
-              : stream
+            // Stream + search-match are memoized at component scope
+            // (recentStream / recentMatched) so the catalogue isn't re-sorted on
+            // every keystroke. Alias them here to keep the JSX below unchanged.
+            const stream = recentStream
+            const matched = recentMatched
             if (matched.length === 0) {
               return (
                 <div className="card p-6 max-w-md flex flex-col items-center text-center gap-2">

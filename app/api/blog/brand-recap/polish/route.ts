@@ -61,17 +61,21 @@ ${message.slice(0, 4000)}
     let out = resp.content.filter(b => b.type === 'text').map(b => (b as { text: string }).text).join('').trim()
     out = scrubBanned(out)
 
+    // Record the spend regardless of outcome — the Haiku tokens were burned
+    // even when we end up discarding the rewrite, so the spend ceiling must
+    // see them. (Previously this sat after the fail-open return and silently
+    // under-counted every dropped-link polish.)
+    try {
+      const u = resp.usage
+      recordUsage({ userId: user.id, feature: 'brand_recap_polish', model: 'claude-haiku-4-5-20251001', input: u.input_tokens, output: u.output_tokens })
+    } catch { /* telemetry best-effort */ }
+
     // Safety: if the model dropped any link, fall back to the original draft so
     // the user never loses a URL to a "polish".
     const keptAll = urls.every(u => out.includes(u))
     if (!keptAll || !out) {
       return NextResponse.json({ message, polished: false })
     }
-
-    try {
-      const u = resp.usage
-      recordUsage({ userId: user.id, feature: 'brand_recap_polish', model: 'claude-haiku-4-5-20251001', input: u.input_tokens, output: u.output_tokens })
-    } catch { /* telemetry best-effort */ }
 
     return NextResponse.json({ message: out, polished: true })
   } catch (err) {

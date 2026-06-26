@@ -70,8 +70,11 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
       try {
         const url = `/api/blog/brand-recap/${postId}${wpUrl ? `?wpUrl=${encodeURIComponent(wpUrl)}` : ''}`
         const res = await fetch(url)
-        const d = await res.json()
-        if (!res.ok) throw new Error(d.error || 'Could not load this post’s links')
+        // Guard against an HTML error page (502/timeout) parsing as JSON —
+        // otherwise the user sees a raw "Unexpected token <" instead of a
+        // clean message.
+        const d = await res.json().catch(() => ({} as Record<string, unknown>))
+        if (!res.ok) throw new Error((d as { error?: string }).error || 'Could not load this post’s links')
         if (cancelled) return
         setData(d as RecapData)
         setBrand((d.brandGuess as string) || '')
@@ -127,9 +130,9 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message, tone: data.settings.tone }),
       })
-      const d = await res.json()
-      if (!res.ok) throw new Error(d.error || 'Polish failed')
-      setMessage(d.message); setEdited(true)
+      const d = await res.json().catch(() => ({} as Record<string, unknown>))
+      if (!res.ok) throw new Error((d as { error?: string }).error || 'Polish failed')
+      setMessage((d as { message: string }).message); setEdited(true)
       toast.success(d.polished ? 'Polished ✨' : 'Kept your draft (couldn’t improve it safely)')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Polish failed')

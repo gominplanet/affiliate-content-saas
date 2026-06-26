@@ -10,11 +10,11 @@
  *
  * Also drop a one-liner in SCOUT_WHATS_NEW so the banner says what changed.
  */
-export const SCOUT_LATEST_VERSION = '1.10.3'
+export const SCOUT_LATEST_VERSION = '1.10.4'
 
 /** One-line "what's new", shown in the update banner. Keep it user-facing. */
 export const SCOUT_WHATS_NEW =
-  'Stable ID fix (the app reliably detects SCOUT again) + the new "Find it automatically" Amazon-video grab for brand recaps (works with the OINK extension). Re-download + reload once to apply.'
+  'Smarter "Find it automatically" — it now only attaches YOUR Amazon video for the product (never a stranger\'s video from Amazon\'s related-videos strip). Re-download + reload once to apply.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
