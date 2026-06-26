@@ -29,6 +29,7 @@ import WhatsNewCard from '@/components/dashboard/WhatsNewCard'
 import ReferralBanner from '@/components/dashboard/ReferralBanner'
 import WpUpdateBanner from '@/components/dashboard/WpUpdateBanner'
 import WpUpdatePill from '@/components/dashboard/WpUpdatePill'
+import ScoutUpdatePill from '@/components/dashboard/ScoutUpdatePill'
 import AmazonSitesReminder from '@/components/dashboard/AmazonSitesReminder'
 import ProTourBanner from '@/components/dashboard/ProTourBanner'
 import MetaLiveBanner from '@/components/dashboard/MetaLiveBanner'
@@ -235,9 +236,11 @@ export default async function DashboardPage() {
               {heroMetaParts.join(' · ')}
             </p>
           )}
-          {/* Site-version status + Tutorials shortcut, left-aligned under the meta line. */}
+          {/* Status pills, each a distinct bright colour: WordPress theme/plugin
+              (green), SCOUT extension (orange), Tutorials (purple). */}
           <div className="mt-4 flex items-center gap-3 flex-wrap">
             <WpUpdatePill />
+            <ScoutUpdatePill />
             <Link
               href="/tutorials"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-semibold transition-opacity hover:opacity-80"

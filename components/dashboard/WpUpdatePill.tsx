@@ -131,7 +131,7 @@ export default function WpUpdatePill() {
       className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold"
       style={{ background: 'rgba(52,199,89,0.12)', color: '#34c759', border: '1px solid rgba(52,199,89,0.30)' }}
     >
-      <CheckCircle size={13} /> Up to date
+      <CheckCircle size={13} /> Theme &amp; Plugin up to date
     </span>
   )
 }
