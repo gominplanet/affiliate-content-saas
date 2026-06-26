@@ -301,6 +301,8 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
   const [borderIndex, setBorderIndex] = useState<number | null>(null) // null = keep borders varied
   const [accentColor, setAccentColor] = useState<string>('#FFE034')   // title emphasis colour
   const [selectedFaceModelId, setSelectedFaceModelId] = useState<string | null>(null)
+  // 'auto' = vision-match from all ready models; 'no-human' = product-only; any other string = specific model id
+  const [scoutFaceSelection, setScoutFaceSelection] = useState<'auto' | 'no-human' | string>('auto')
   /** Which thumbnail mode card is active. Drives the 4-card picker UI.
    *  'selfie'       → upload a photo of yourself with the product
    *  'own-design'   → upload a finished thumbnail (raw, no AI)
@@ -337,8 +339,10 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
         .filter(m => m.status === 'ready')
         .map(m => ({ id: m.id, name: m.name, trigger_token: m.trigger_token }))
       setFaceModels(ready)
-      // Default to the first ready face model (most users have only one person).
       setSelectedFaceModelId(prev => prev ?? (ready.length ? ready[0].id : null))
+      // Single model → pre-select it in the picker (no auto-detect chip shown).
+      // Multiple models → keep 'auto' so vision-matching runs unless overridden.
+      setScoutFaceSelection(prev => prev !== 'auto' ? prev : ready.length === 1 ? ready[0].id : 'auto')
     } catch { setFaceModels([]) }
   }, [])
 
@@ -1021,14 +1025,22 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           // The thumbnail-style block drives every generation (border + accent, live).
           borderStyleIndex: borderIndex ?? undefined,
           accentColor,
-          // "Your Face" — when SCOUT captured frames, always use faceAuto so the
-          // server vision-matches the right model to the actual video frame (handles
-          // multi-model setups like Michelle vs Seb correctly). When no frames,
-          // explicit UI pick takes priority; otherwise auto-load ready model(s).
-          faceModelId: (!isProductOnly && !capturedFrames.length && effectiveFaceModelId && effectiveFaceModelId !== 'no-human') ? effectiveFaceModelId : undefined,
-          faceAuto: (!isProductOnly && (capturedFrames.length > 0 || !effectiveFaceModelId)) ? true : undefined,
-          // 'no-human' → product-only thumbnail, no face composition at all.
-          noHuman: isProductOnly || undefined,
+          // Face identity — SCOUT path uses the explicit picker (scoutFaceSelection);
+          // non-SCOUT falls back to selectedFaceModelId / auto-load.
+          faceModelId: (() => {
+            if (isProductOnly) return undefined
+            if (capturedFrames.length > 0) {
+              return (scoutFaceSelection !== 'auto' && scoutFaceSelection !== 'no-human') ? scoutFaceSelection : undefined
+            }
+            return (effectiveFaceModelId && effectiveFaceModelId !== 'no-human') ? effectiveFaceModelId : undefined
+          })(),
+          faceAuto: (() => {
+            if (isProductOnly) return undefined
+            if (capturedFrames.length > 0) return scoutFaceSelection === 'auto' ? true : undefined
+            return !effectiveFaceModelId ? true : undefined
+          })(),
+          // 'no-human' → product-only; also honoured when picker is set to No face.
+          noHuman: (isProductOnly || (capturedFrames.length > 0 && scoutFaceSelection === 'no-human')) || undefined,
           styleReferenceUrl: styleReferenceUrl || undefined,
           uploadedPhotoUrl: uploadedPhotoUrl || undefined,
           cleanupPrompt: cleanupPrompt.trim() || undefined,
@@ -1578,6 +1590,53 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                       <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Pick a method and generate your thumbnail</p>
                     </div>
                   </div>
+
+                  {/* Face picker — who's in this video? */}
+                  {extensionInstalled !== false && faceModels.length > 0 && (
+                    <div className="flex flex-col gap-2 px-1 pb-1">
+                      <p className="text-[11px] font-semibold text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide">Who&apos;s in this video?</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {faceModels.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => setScoutFaceSelection('auto')}
+                            className={`px-3 py-1 rounded-full text-[11px] font-semibold transition-all ${
+                              scoutFaceSelection === 'auto'
+                                ? 'bg-[#FF9500] text-white shadow-sm'
+                                : 'bg-gray-100 dark:bg-white/10 text-[#86868b] dark:text-[#8e8e93] hover:bg-gray-200 dark:hover:bg-white/20'
+                            }`}
+                          >
+                            Auto-detect
+                          </button>
+                        )}
+                        {faceModels.map(m => (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => setScoutFaceSelection(m.id)}
+                            className={`px-3 py-1 rounded-full text-[11px] font-semibold transition-all ${
+                              scoutFaceSelection === m.id
+                                ? 'bg-[#FF9500] text-white shadow-sm'
+                                : 'bg-gray-100 dark:bg-white/10 text-[#86868b] dark:text-[#8e8e93] hover:bg-gray-200 dark:hover:bg-white/20'
+                            }`}
+                          >
+                            {m.name}
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => setScoutFaceSelection('no-human')}
+                          className={`px-3 py-1 rounded-full text-[11px] font-semibold transition-all ${
+                            scoutFaceSelection === 'no-human'
+                              ? 'bg-[#3a3a3c] text-white shadow-sm'
+                              : 'bg-gray-100 dark:bg-white/10 text-[#86868b] dark:text-[#8e8e93] hover:bg-gray-200 dark:hover:bg-white/20'
+                          }`}
+                        >
+                          No face
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Primary CTA: Create my MVP Thumbnail */}
                   <div className="flex flex-col gap-2">
