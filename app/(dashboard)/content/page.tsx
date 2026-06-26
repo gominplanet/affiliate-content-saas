@@ -22,6 +22,7 @@ import { generateBlogRequest } from '@/lib/blog-generate-client'
 import { GenerateButton } from '@/components/content/GenerateButton'
 import { InstagramPublishModal } from '@/components/content/InstagramPublishModal'
 import ShareWithBrandModal from '@/components/content/ShareWithBrandModal'
+import BrandRecapSettingsModal from '@/components/content/BrandRecapSettingsModal'
 import { renderThumbnailOverlay, pickWeightedStyleIndex } from '@/lib/thumbnail-overlay'
 import { effectiveTier } from '@/lib/view-as'
 import { metaEnabled } from '@/lib/feature-flags'
@@ -1629,6 +1630,9 @@ export default function ContentPage() {
   const [catPreview, setCatPreview] = useState<{ title: string; category: string }[] | null>(null)
   const [catPreviewLoading, setCatPreviewLoading] = useState(false)
   const [catApplying, setCatApplying] = useState(false)
+  // Global "Brand message settings" — the recap template every per-post
+  // "Share with brand" modal pre-fills from.
+  const [brandSettingsOpen, setBrandSettingsOpen] = useState(false)
   // Affiliate-link repair — dryRun finds posts with a broken affiliate link
   // (e.g. a dead amazon.com/dp/UNDERWATER) and previews old→new before writing.
   const [affPreview, setAffPreview] = useState<{ postId: string; title: string; oldUrl: string; newUrl: string }[] | null>(null)
@@ -2915,6 +2919,14 @@ export default function ContentPage() {
             >
               {affPreviewLoading && affMode === 'regroup' ? 'Scanning links…' : 'Re-route Geniuslinks'}
             </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setBrandSettingsOpen(true)}
+              title="Customize the recap message the “Share with brand” button sends — tone, sign-off, and template"
+            >
+              <Handshake size={14} /> Brand message
+            </Button>
             {(activeTab === 'horizontal' || activeTab === 'vertical') && (
               <>
                 {/* Pro multi-channel: pull videos from a specific connected
@@ -3690,6 +3702,9 @@ export default function ContentPage() {
           onClose={() => { if (!pinPublishingFor) setPinPreview(null) }}
         />
       )}
+
+      {/* Brand message settings — the recap template "Share with brand" uses. */}
+      {brandSettingsOpen && <BrandRecapSettingsModal onClose={() => setBrandSettingsOpen(false)} />}
 
       {/* Recategorize preview modal — dryRun first, apply on confirm. */}
       {catPreview && (
