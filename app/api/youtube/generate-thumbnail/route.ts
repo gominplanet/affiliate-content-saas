@@ -1104,7 +1104,20 @@ export async function POST(request: Request) {
           // If a face model exists, its close-up portrait photos are the IDENTITY
           // anchor (Image 1). The SCOUT frame crop is appended as a CONTEXT ref so
           // the generator also sees the creator's pose/outfit from the real video.
-          const scoutFaceModel = faceModel ?? (autoFaceModels.length > 0 ? autoFaceModels[0] : null)
+          // Multiple models (e.g. Michelle + Seb): vision-match against the maxres
+          // thumbnail to pick the right person automatically, same as the NB path.
+          let scoutFaceModel = faceModel
+          if (!scoutFaceModel && autoFaceModels.length > 0) {
+            if (autoFaceModels.length === 1) {
+              scoutFaceModel = autoFaceModels[0]
+            } else if (youtubeVideoId) {
+              const matchUrl = `https://i.ytimg.com/vi/${youtubeVideoId}/maxresdefault.jpg`
+              scoutFaceModel = await matchFaceModelToFrame(matchUrl, autoFaceModels, supabase, { userId: user.id, tier })
+                ?? autoFaceModels[0]
+            } else {
+              scoutFaceModel = autoFaceModels[0]
+            }
+          }
           if (scoutFaceModel) {
             const starredRefs = await getStarredPhotoboothRefs(user.id, scoutFaceModel.id, { maxRefs: 2 })
             const photoUrls = (starredRefs.length > 0 ? starredRefs : scoutFaceModel.source_images).slice(0, 2)
