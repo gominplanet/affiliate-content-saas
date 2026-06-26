@@ -84,6 +84,38 @@ function verifyAsinMatchesVideo(
   }
 }
 
+/**
+ * Semantic backstop for verifyAsinMatchesVideo. The word-overlap check
+ * false-fires constantly on apparel + casual phrasing: a creator titles a video
+ * "Green sweater" while the Amazon listing is "Men's Golf Pullover Quarter-Zip
+ * Long Sleeve Sport Shirt" — zero shared words, but the SAME garment. Before we
+ * block on a low-overlap verdict, ask Haiku whether the video could plausibly be
+ * about the product. Returns true (plausible — don't block), false (clearly a
+ * different category — block), or null (model failed → fail OPEN, don't block).
+ * Cheap: ~5 output tokens, and only runs when the lexical check already failed.
+ */
+async function semanticAsinMatch(productTitle: string, videoTitle: string, videoDescription: string): Promise<boolean | null> {
+  try {
+    const anthropic = createAnthropicClient()
+    const msg = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 5,
+      system: 'You judge whether a YouTube video could plausibly be a review or feature of a given Amazon product. Creators use casual, short titles ("green sweater", "my new blender", "Mya\'s black pants") while Amazon titles are long and keyword-stuffed. A loose or casual name for the SAME kind of item is a MATCH — e.g. "green sweater" matches a green golf pullover / quarter-zip; "black pants" matches yoga leggings; "blender" matches a "Professional Countertop Smoothie Maker". Answer NO only when they are clearly DIFFERENT product categories (e.g. a phone case vs a hair mask). Reply with exactly one word: YES or NO.',
+      messages: [{
+        role: 'user',
+        content: `Amazon product: "${productTitle}"\nVideo title: "${videoTitle}"\nVideo notes: "${(videoDescription || '').slice(0, 200)}"\n\nCould this video plausibly be about that product?`,
+      }],
+    })
+    try { recordAnthropicUsage(msg, { userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'asin_match_check', model: 'claude-haiku-4-5-20251001' }) } catch { /* telemetry best-effort */ }
+    const text = msg.content.filter(b => b.type === 'text').map(b => (b as { text: string }).text).join('').trim().toUpperCase()
+    if (text.startsWith('YES')) return true
+    if (text.startsWith('NO')) return false
+    return null
+  } catch {
+    return null // model/network failed → don't block on a backstop we couldn't run
+  }
+}
+
 // maxAttempts kept LOW + backoff capped LOW on purpose: this route runs a
 // multi-agent swarm (~4 sequential Claude stages) inside a 120s function. The
 // old 8 attempts × up-to-15s backoff (~70s/call) could stack across stages and
@@ -613,17 +645,26 @@ export async function POST(request: Request) {
           videoDescription || '',
         )
         if (!verdict.match) {
-          return NextResponse.json({
-            error:
-              `That ASIN (${trimmedAsin}) points to "${product.title.slice(0, 80)}", which doesn't seem to match your video. ` +
-              `Distinctive words in the product: ${verdict.productWords.join(', ')}. ` +
-              `Distinctive words in your video: ${verdict.videoWords.join(', ')}. ` +
-              `Double-check the ASIN in your title — one wrong character can land you on a totally different product.`,
-            asinMismatch: true,
-            productTitle: product.title,
-            productWords: verdict.productWords,
-            videoWords: verdict.videoWords,
-          }, { status: 422 })
+          // Low word-overlap is NOT proof of a mismatch — a casual title
+          // ("Green sweater") shares zero words with a keyword-stuffed Amazon
+          // listing ("Men's Golf Pullover Quarter-Zip Sport Shirt") even when
+          // it's the SAME item. Before blocking, ask a cheap model whether the
+          // video could plausibly be about the product; only stop on a confident
+          // "different category". null (model unavailable) → trust the creator.
+          const plausible = await semanticAsinMatch(product.title, videoTitle, videoDescription || '')
+          if (plausible === false) {
+            return NextResponse.json({
+              error:
+                `That ASIN (${trimmedAsin}) points to "${product.title.slice(0, 80)}", which doesn't seem to match your video. ` +
+                `Distinctive words in the product: ${verdict.productWords.join(', ')}. ` +
+                `Distinctive words in your video: ${verdict.videoWords.join(', ')}. ` +
+                `Double-check the ASIN in your title — one wrong character can land you on a totally different product.`,
+              asinMismatch: true,
+              productTitle: product.title,
+              productWords: verdict.productWords,
+              videoWords: verdict.videoWords,
+            }, { status: 422 })
+          }
         }
       }
 
