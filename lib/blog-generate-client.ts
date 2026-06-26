@@ -55,12 +55,25 @@ export async function generateBlogRequest(body: Record<string, any>, signal?: Ab
 
   // 2. Async disabled (kill-switch) → transparent sync fallback (real Response).
   if (enq.status === 503) {
-    return fetch('/api/blog/generate', {
+    const syncRes = await fetch('/api/blog/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
       signal,
     })
+    // Guard: if the server crashed BEFORE the route ran (Vercel 500/504, a
+    // redirect to the HTML login page, etc.) the body is HTML, not JSON.
+    // Detect this early so the caller sees a clean "Server error (N)" message
+    // rather than a raw SyntaxError from `.json()`.
+    const ct = syncRes.headers.get('content-type') || ''
+    if (!ct.includes('application/json') && !ct.includes('text/plain')) {
+      return {
+        ok: false,
+        status: syncRes.status,
+        json: async () => ({ error: `Server error (${syncRes.status}) — check Vercel logs or try again.` }),
+      }
+    }
+    return syncRes
   }
 
   // 3. Enqueue rejected by a gate (cap / quota / rewrite). Surface as-is so the

@@ -370,7 +370,13 @@ export function GenerateButton({
       setStatus('done')
       onDone(data.wordpressUrl as string, data.title as string, data.postId as string)
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Unknown error')
+      let message = err instanceof Error ? err.message : 'Unknown error'
+      // Raw JSON parse error = server returned an HTML error page instead of JSON
+      // (Vercel crash, redirect to login, etc.). Convert to something actionable.
+      if (/Unexpected token.*<|is not valid JSON/i.test(message)) {
+        message = 'Server returned an unexpected response — it may have crashed. Check Vercel logs, or try again in a moment.'
+      }
+      setError(message)
       setStatus('error')
     }
   }
