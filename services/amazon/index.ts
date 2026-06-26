@@ -143,15 +143,22 @@ export async function fetchAmazonProduct(asin: string): Promise<AmazonProduct> {
 
   const UA_PRIMARY = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
   const UA_RETRY = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
+  const UA_THIRD = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0'
 
+  const looksBlocked = (h: string) => !/id="productTitle"|"hiRes"|landingImage/i.test(h)
+  // Quick sanity check on each body — the bot-challenge page contains none of
+  // these markers, so a tiny regex probe avoids paying the full parse cost.
   let html = await fetchOnce(UA_PRIMARY, null)
-  // Quick sanity check on the first body — if it's the bot-challenge
-  // page Amazon doesn't include "productTitle" or the gallery JSON at
-  // all, so do a tiny regex probe before paying the full parse cost.
-  if (!/id="productTitle"|"hiRes"|landingImage/i.test(html)) {
-    try {
-      html = await fetchOnce(UA_RETRY, 'https://www.google.com/')
-    } catch { /* keep first body */ }
+  if (looksBlocked(html)) {
+    try { html = await fetchOnce(UA_RETRY, 'https://www.google.com/') } catch { /* keep first body */ }
+  }
+  // Third attempt, spaced out + a different engine/referer — rescues
+  // RATE-LIMIT blocks (Amazon throttling rapid hits) that a back-to-back retry
+  // doesn't. A hard datacenter-IP ban still falls through to the caller's
+  // catch{} (and the empty-scrape guard), so this never makes things worse.
+  if (looksBlocked(html)) {
+    await new Promise(r => setTimeout(r, 750))
+    try { html = await fetchOnce(UA_THIRD, 'https://www.bing.com/') } catch { /* keep prior body */ }
   }
 
   // Title
