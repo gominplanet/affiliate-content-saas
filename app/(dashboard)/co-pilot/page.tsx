@@ -1571,72 +1571,25 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                     </div>
                   </div>
 
-                  {/* 4 mode cards — stacked, full-width */}
+                  {/* Primary CTA: Create my MVP Thumbnail */}
                   <div className="flex flex-col gap-2">
 
-                    {/* Card 1: Upload Selfie */}
-                    <button
-                      type="button"
-                      onClick={() => setThumbnailMode(m => m === 'selfie' ? null : 'selfie')}
-                      className={`flex items-center gap-4 w-full px-4 py-4 rounded-xl border-2 text-left transition-all ${thumbnailMode === 'selfie' ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-[#7C3AED]/50 bg-white dark:bg-[#1c1c1e]'}`}
-                    >
-                      <div className="w-10 h-10 rounded-xl bg-[#7C3AED]/10 flex items-center justify-center flex-shrink-0">
-                        <Camera size={18} className="text-[#7C3AED]" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Upload Selfie</p>
-                        <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-0.5">You + product → AI thumbnail</p>
-                      </div>
-                      <ChevronDown size={14} className={`flex-shrink-0 text-[#86868b] transition-transform ${thumbnailMode === 'selfie' ? 'rotate-180' : ''}`} />
-                    </button>
-
-                    {/* Card 2: Upload My Design */}
-                    <button
-                      type="button"
-                      onClick={() => setThumbnailMode(m => m === 'own-design' ? null : 'own-design')}
-                      className={`flex items-center gap-4 w-full px-4 py-4 rounded-xl border-2 text-left transition-all ${thumbnailMode === 'own-design' ? 'border-[#5856d6] bg-[#5856d6]/5' : 'border-gray-200 dark:border-white/10 hover:border-[#5856d6]/50 bg-white dark:bg-[#1c1c1e]'}`}
-                    >
-                      <div className="w-10 h-10 rounded-xl bg-[#5856d6]/10 flex items-center justify-center flex-shrink-0">
-                        <Image size={18} className="text-[#5856d6]" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Upload My Design</p>
-                        <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-0.5">Use your own finished thumbnail</p>
-                      </div>
-                      <ChevronDown size={14} className={`flex-shrink-0 text-[#86868b] transition-transform ${thumbnailMode === 'own-design' ? 'rotate-180' : ''}`} />
-                    </button>
-
-                    {/* Card 3: Product Only */}
-                    <button
-                      type="button"
-                      onClick={() => setThumbnailMode(m => m === 'product-only' ? null : 'product-only')}
-                      className={`flex items-center gap-4 w-full px-4 py-4 rounded-xl border-2 text-left transition-all ${thumbnailMode === 'product-only' ? 'border-[#34c759] bg-[#34c759]/5' : 'border-gray-200 dark:border-white/10 hover:border-[#34c759]/50 bg-white dark:bg-[#1c1c1e]'}`}
-                    >
-                      <div className="w-10 h-10 rounded-xl bg-[#34c759]/10 flex items-center justify-center flex-shrink-0">
-                        <Package size={18} className="text-[#34c759]" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Product Only</p>
-                        <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-0.5">No photo needed — product scene</p>
-                      </div>
-                      <ChevronDown size={14} className={`flex-shrink-0 text-[#86868b] transition-transform ${thumbnailMode === 'product-only' ? 'rotate-180' : ''}`} />
-                    </button>
-
-                    {/* Card 4: extension installed → generate; not installed → install CTA */}
                     {extensionInstalled === false ? (
-                      <div className="rounded-xl border-2 border-[#FF9500] overflow-hidden"
-                        style={{ background: 'linear-gradient(135deg, rgba(255,149,0,0.08) 0%, rgba(255,107,0,0.05) 100%)' }}>
-                        {/* Step badge */}
+                      /* Extension not installed — show install prompt as primary CTA */
+                      <div className="rounded-2xl border-2 border-[#FF9500] overflow-hidden shadow-md"
+                        style={{ background: 'linear-gradient(135deg, rgba(255,149,0,0.12) 0%, rgba(255,107,0,0.07) 100%)' }}>
                         <div className="flex items-center gap-3 px-4 pt-4 pb-3">
-                          <div className="w-10 h-10 rounded-xl bg-[#FF9500]/15 flex items-center justify-center flex-shrink-0">
-                            <Download size={18} className="text-[#FF9500]" />
+                          <div className="w-12 h-12 rounded-xl bg-[#FF9500]/20 flex items-center justify-center flex-shrink-0">
+                            <Download size={22} className="text-[#FF9500]" />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-bold text-[#FF9500]">Install the SCOUT Extension</p>
-                            <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-0.5">Required — private &amp; draft videos need it to capture your frames</p>
+                            <div className="flex items-center gap-2 mb-0.5">
+                              <p className="text-sm font-bold text-[#FF9500]">Install the SCOUT Extension</p>
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-[#FF9500] text-white uppercase tracking-wide flex-shrink-0">Recommended</span>
+                            </div>
+                            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Captures real frames from your video automatically</p>
                           </div>
                         </div>
-                        {/* Install steps */}
                         <div className="px-4 pb-3 space-y-1.5">
                           <p className="text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Two steps:</p>
                           <ol className="text-[11px] text-[#86868b] dark:text-[#8e8e93] space-y-1 list-decimal list-inside">
@@ -1663,42 +1616,101 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                         </div>
                       </div>
                     ) : (
+                      /* Extension installed — primary generate button */
                       <button
                         type="button"
                         onClick={() => {
-                          // textMode:'graphic' → gpt-image-1 uses the captured
-                          // video frame as the sole identity source (tight likeness).
-                          // skipFaceModel:true → the selected face model (e.g. "Seb")
-                          // is ignored even if auto-matched — only the frame is used.
                           void generateThumbnail({ skipFaceModel: true, textMode: 'graphic' })
                         }}
                         disabled={generatingThumbnail || extensionInstalled === null}
-                        className="flex items-center gap-4 w-full px-4 py-4 rounded-xl border-2 border-[#FF9500] text-left transition-all hover:bg-[#FF9500]/5 disabled:opacity-50"
-                        style={{ background: generatingThumbnail ? undefined : 'linear-gradient(135deg, rgba(255,149,0,0.08) 0%, rgba(255,107,0,0.05) 100%)' }}
+                        className="flex items-center gap-4 w-full px-5 py-5 rounded-2xl text-left transition-all disabled:opacity-50 shadow-md hover:shadow-lg hover:scale-[1.01] active:scale-[0.99]"
+                        style={{ background: generatingThumbnail ? 'linear-gradient(135deg, rgba(255,149,0,0.15) 0%, rgba(255,107,0,0.10) 100%)' : 'linear-gradient(135deg, #FF9500 0%, #FF6B00 100%)', border: '2px solid transparent' }}
                       >
-                        <div className="w-10 h-10 rounded-xl bg-[#FF9500]/15 flex items-center justify-center flex-shrink-0">
-                          {generatingThumbnail ? <Loader2 size={18} className="text-[#FF9500] animate-spin" /> : <Sparkles size={18} className="text-[#FF9500]" />}
+                        <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+                          {generatingThumbnail ? <Loader2 size={22} className="text-white animate-spin" /> : <Sparkles size={22} className="text-white" />}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-bold text-[#FF9500]">Create my MVP Thumbnail</p>
-                          <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-0.5">
+                          <div className="flex items-center gap-2 mb-0.5">
+                            <p className="text-base font-bold text-white">Create my MVP Thumbnail</p>
+                          </div>
+                          <p className="text-xs text-white/75">
                             {generatingThumbnail ? (thumbnailStatus || 'Starting…') : extensionInstalled === null ? 'Checking for extension…' : 'Captures your video frames automatically'}
                           </p>
                         </div>
-                        {extensionInstalled && (
-                          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-[#34c759]/15 text-[#34c759] flex-shrink-0">SCOUT ✓</span>
+                        {extensionInstalled && !generatingThumbnail && (
+                          <span className="text-[10px] font-bold px-2 py-1 rounded-lg bg-white/20 text-white flex-shrink-0">SCOUT ✓</span>
                         )}
                       </button>
                     )}
 
-                    {/* Thumbnail error — was silently swallowed before (error set but never rendered) */}
+                    {/* Thumbnail error */}
                     {thumbnailError && (
-                      <div className="flex items-start gap-2 rounded-lg bg-[#ff3b30]/10 border border-[#ff3b30]/30 px-3 py-2.5 mt-1">
+                      <div className="flex items-start gap-2 rounded-lg bg-[#ff3b30]/10 border border-[#ff3b30]/30 px-3 py-2.5">
                         <span className="text-[#ff3b30] text-sm flex-shrink-0 mt-0.5">⚠</span>
                         <p className="text-xs text-[#ff3b30] leading-relaxed flex-1 min-w-0 break-words">{thumbnailError}</p>
                         <button type="button" onClick={() => setThumbnailError(null)} className="text-[#ff3b30]/50 hover:text-[#ff3b30] flex-shrink-0 text-lg leading-none">×</button>
                       </div>
                     )}
+
+                  </div>
+
+                  {/* Divider — secondary options */}
+                  <div className="flex items-center gap-3 my-1">
+                    <div className="flex-1 h-px bg-gray-200 dark:bg-white/10" />
+                    <span className="text-[11px] text-[#86868b] dark:text-[#8e8e93] font-medium whitespace-nowrap">or choose a method</span>
+                    <div className="flex-1 h-px bg-gray-200 dark:bg-white/10" />
+                  </div>
+
+                  {/* Secondary options */}
+                  <div className="flex flex-col gap-2">
+
+                    {/* Upload Selfie */}
+                    <button
+                      type="button"
+                      onClick={() => setThumbnailMode(m => m === 'selfie' ? null : 'selfie')}
+                      className={`flex items-center gap-3 w-full px-3 py-3 rounded-xl border text-left transition-all ${thumbnailMode === 'selfie' ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-[#7C3AED]/50 bg-white dark:bg-[#1c1c1e]'}`}
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-[#7C3AED]/10 flex items-center justify-center flex-shrink-0">
+                        <Camera size={15} className="text-[#7C3AED]" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Upload Selfie</p>
+                        <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-0.5">You + product → AI thumbnail</p>
+                      </div>
+                      <ChevronDown size={13} className={`flex-shrink-0 text-[#86868b] transition-transform ${thumbnailMode === 'selfie' ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    {/* Upload My Design */}
+                    <button
+                      type="button"
+                      onClick={() => setThumbnailMode(m => m === 'own-design' ? null : 'own-design')}
+                      className={`flex items-center gap-3 w-full px-3 py-3 rounded-xl border text-left transition-all ${thumbnailMode === 'own-design' ? 'border-[#5856d6] bg-[#5856d6]/5' : 'border-gray-200 dark:border-white/10 hover:border-[#5856d6]/50 bg-white dark:bg-[#1c1c1e]'}`}
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-[#5856d6]/10 flex items-center justify-center flex-shrink-0">
+                        <Image size={15} className="text-[#5856d6]" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Upload My Design</p>
+                        <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-0.5">Use your own finished thumbnail</p>
+                      </div>
+                      <ChevronDown size={13} className={`flex-shrink-0 text-[#86868b] transition-transform ${thumbnailMode === 'own-design' ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    {/* Product Only */}
+                    <button
+                      type="button"
+                      onClick={() => setThumbnailMode(m => m === 'product-only' ? null : 'product-only')}
+                      className={`flex items-center gap-3 w-full px-3 py-3 rounded-xl border text-left transition-all ${thumbnailMode === 'product-only' ? 'border-[#34c759] bg-[#34c759]/5' : 'border-gray-200 dark:border-white/10 hover:border-[#34c759]/50 bg-white dark:bg-[#1c1c1e]'}`}
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-[#34c759]/10 flex items-center justify-center flex-shrink-0">
+                        <Package size={15} className="text-[#34c759]" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Product Only</p>
+                        <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-0.5">No photo needed — product scene</p>
+                      </div>
+                      <ChevronDown size={13} className={`flex-shrink-0 text-[#86868b] transition-transform ${thumbnailMode === 'product-only' ? 'rotate-180' : ''}`} />
+                    </button>
 
                   </div>
 
