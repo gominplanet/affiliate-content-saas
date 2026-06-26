@@ -119,7 +119,10 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
 
   function emailMessage() {
     const subject = data?.product.name ? `Our review of ${data.product.name} is live` : 'Our review is live'
-    window.open(`mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(message)}`, '_blank')
+    // mailto: is handled by the OS mail client, not a page navigation — so set
+    // location.href directly. window.open(mailto, '_blank') leaves an orphan
+    // blank tab behind in most browsers.
+    window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(message)}`
   }
 
   async function polish() {
