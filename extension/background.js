@@ -58,34 +58,32 @@ async function grabFramesInPage(fractions) {
     return !isAdShowing()
   }
 
-  // 2. Break pre-roll ads on monetized / published videos.
-  // During a pre-roll, video.currentTime controls the AD's timeline, not the
-  // main video — seeking doesn't help. Instead we click the main player's
-  // progress bar, which forces YouTube's player to exit the ad and seek into
-  // the actual content. We also hammer the skip button every loop iteration.
-  const tryBreakAd = () => {
-    // Click skip button (fastest path for skippable ads)
-    const skip = document.querySelector('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button')
-    if (skip) { try { skip.click() } catch (e) {} }
-    // Click ~5% into the main progress bar — exits the ad and seeks to content
-    const bar = document.querySelector('.ytp-progress-bar-container')
-    if (bar) {
-      try {
-        const r = bar.getBoundingClientRect()
-        const cx = r.left + r.width * 0.05
-        const cy = r.top + r.height / 2
-        bar.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: cx, clientY: cy }))
-        bar.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true, cancelable: true, clientX: cx, clientY: cy }))
-        bar.dispatchEvent(new MouseEvent('click',     { bubbles: true, cancelable: true, clientX: cx, clientY: cy }))
-      } catch (e) {}
-    }
+  // 2. Wait for any pre-roll ad on monetized / published videos.
+  //
+  // Race condition: YouTube's player starts the pre-roll 1-2 seconds AFTER the
+  // page is marked "complete" and the <video> element reports a duration. Our
+  // initial isAdShowing() call used to fire before the ad class was set, so we
+  // skipped straight to captures and got ad frames (or nulls).
+  //
+  // Fix: sleep 2.5s to let the player fully initialise and show the pre-roll if
+  // one is coming, THEN check. The progress-bar-click trick does NOT work —
+  // YouTube sets pointer-events:none on the bar during ads. The only reliable
+  // path for non-skippable ads is to wait them out (max 30s on YouTube).
+  await sleep(2500)
+
+  // Also broaden ad detection: some formats only expose .ytp-ad-module or the
+  // duration-remaining badge rather than the .ad-showing player class.
+  const isAdShowingFull = () => {
+    const p = document.querySelector('.html5-video-player')
+    if (p && (p.classList.contains('ad-showing') || p.classList.contains('ad-interrupting'))) return true
+    if (document.querySelector('.ytp-ad-module, .ytp-ad-duration-remaining, .ytp-ad-player-overlay')) return true
+    return false
   }
-  if (isAdShowing()) {
-    tryBreakAd()
-    await sleep(1000)
-    // If still showing after the click attempt, keep trying — non-skippable ads
-    // run up to 30s; skippable ones become skippable after ~5s.
-    if (isAdShowing()) await waitOutAds(45000)
+
+  if (isAdShowingFull()) {
+    // Skippable ads: click skip button the moment it appears (every 500ms loop)
+    // Non-skippable: just wait — 55s covers any 30s ad + buffer.
+    await waitOutAds(55000)
   }
 
   // 2b. Wait for the player to ramp to HD. A freshly-opened tab serves low-res
@@ -102,7 +100,7 @@ async function grabFramesInPage(fractions) {
   const ctx = canvas.getContext('2d')
 
   const captureNow = () => {
-    if (isAdShowing()) return null // never capture an ad frame
+    if (isAdShowingFull()) return null // never capture an ad frame
     const vw = video.videoWidth || 0
     const vh = video.videoHeight || 0
     if (vw < 854) return null // reject sub-480p (loading/garbage) frames
@@ -144,8 +142,8 @@ async function grabFramesInPage(fractions) {
     }
     // Seeking can trigger a mid-roll ad — wait it out, and if it won't clear,
     // skip this fraction entirely rather than capture the ad.
-    if (isAdShowing()) {
-      const cleared = await waitOutAds(8000)
+    if (isAdShowingFull()) {
+      const cleared = await waitOutAds(50000)
       if (!cleared) continue
       // After an ad, the player may reset to low-res — let it ramp back.
       const reDeadline = Date.now() + 4000
