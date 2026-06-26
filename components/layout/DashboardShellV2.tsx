@@ -42,6 +42,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import NotificationBell from './NotificationBell'
+import WpUpdateTopbarButton from './WpUpdateTopbarButton'
 import { HelpDeskButton } from '@/components/HelpDeskSidebar'
 
 // Wrapper to handle context safely
@@ -675,6 +676,11 @@ export default function DashboardShellV2({
                 is connected. */}
             {wpSiteUrl && (
               <>
+                {/* Global update alert — shows on EVERY page (not just the
+                    Dashboard hero where WpUpdatePill lives) whenever a theme/
+                    plugin update is available, so the user catches it from
+                    wherever they are. Renders nothing when the site is current. */}
+                <WpUpdateTopbarButton />
                 {/* Visit Blog — opens the LIVE WordPress site in a new
                     tab. Paired with WP Admin so both topbar shortcuts
                     are right next to each other. The old sidebar
