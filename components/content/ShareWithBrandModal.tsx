@@ -17,12 +17,14 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { toast } from 'sonner'
-import { X, Copy, Mail, ExternalLink, Loader2, Sparkles, Check, RotateCcw } from 'lucide-react'
+import { X, Copy, Mail, ExternalLink, Loader2, Sparkles, Check, RotateCcw, Video } from 'lucide-react'
 import { fillRecapMessage, type RecapLink, type BrandRecapSettings } from '@/lib/brand-recap'
+import { requestAmazonVideos } from '@/lib/extension-frame'
 
 interface RecapData {
   brandGuess: string
-  product: { name: string; url: string | null; isAmazon: boolean }
+  product: { name: string; url: string | null; isAmazon: boolean; asin?: string | null }
+  amazonVideoUrl?: string | null
   links: RecapLink[]
   settings: BrandRecapSettings
   message: string
@@ -42,6 +44,7 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
   const [edited, setEdited] = useState(false)
   const [polishing, setPolishing] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [findingVideo, setFindingVideo] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -118,8 +121,52 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
     }
   }
 
+  // Find the creator's Amazon Influencer video via the extension's Manage
+  // Content scan, matched to this post by ASIN, and add it to the recap.
+  async function findAmazonVideo() {
+    if (!data?.product.asin) return
+    const asin = data.product.asin.toUpperCase()
+    setFindingVideo(true)
+    try {
+      const res = await requestAmazonVideos()
+      if (!res.ok) {
+        toast.error(res.error === 'not-installed'
+          ? 'Install / open the MVP extension and sign in to Amazon, then try again.'
+          : 'Couldn’t read your Amazon videos — make sure you’re signed in to Amazon.')
+        return
+      }
+      const match = res.videos.find(v => (v.asin || '').toUpperCase() === asin)
+      if (!match) {
+        toast.error('No Amazon video found for this product yet. Upload it on Amazon first, or paste the link.')
+        return
+      }
+      // Persist + add to the recap.
+      await fetch(`/api/blog/brand-recap/${postId}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amazonVideoUrl: match.vdpUrl, wpUrl }),
+      }).catch(() => {})
+      setData(d => {
+        if (!d) return d
+        if (d.links.some(l => l.platform === 'amazon_video')) return d
+        const at = d.links.findIndex(l => l.platform === 'product')
+        const next = [...d.links]
+        next.splice(at >= 0 ? at + 1 : 0, 0, { platform: 'amazon_video', label: 'Amazon video review', url: match.vdpUrl })
+        return { ...d, amazonVideoUrl: match.vdpUrl, links: next }
+      })
+      setEnabled(s => ({ ...s, amazon_video: true }))
+      setEdited(false)
+      toast.success('Found your Amazon video — added to the recap.')
+    } catch {
+      toast.error('Couldn’t scan Amazon. Try again.')
+    } finally {
+      setFindingVideo(false)
+    }
+  }
+
   const productUrl = data?.product.url || null
   const productBtnLabel = data?.product.isAmazon ? 'Open on Amazon' : 'Open product page'
+  const hasAmazonVideo = !!data?.links.some(l => l.platform === 'amazon_video')
+  const canFindVideo = !!data?.product.asin && !hasAmazonVideo
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
@@ -180,6 +227,17 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
                     </label>
                   ))}
                 </div>
+              )}
+              {canFindVideo && (
+                <button
+                  onClick={findAmazonVideo}
+                  disabled={findingVideo}
+                  title="Read your Amazon Manage Content in your logged-in session and add your Amazon video for this product"
+                  className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#7C3AED] hover:underline disabled:opacity-50"
+                >
+                  {findingVideo ? <Loader2 size={12} className="animate-spin" /> : <Video size={12} />}
+                  {findingVideo ? 'Scanning Amazon…' : 'Find my Amazon video'}
+                </button>
               )}
             </div>
 

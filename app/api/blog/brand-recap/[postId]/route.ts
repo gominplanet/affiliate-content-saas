@@ -31,7 +31,7 @@ export const dynamic = 'force-dynamic'
  *  the listing ("AEOCKY 4200 ft² Air Purifier"), not the clickbait video title
  *  ("Can One Air Purifier…"). Bounded by a timeout; returns null on any miss
  *  (the brand field stays editable, so a miss is recoverable). */
-async function resolveProductIdentity(productUrl: string | null): Promise<{ name: string; brand: string } | null> {
+async function resolveProductIdentity(productUrl: string | null): Promise<{ name: string; brand: string; asin: string } | null> {
   if (!productUrl) return null
   const withTimeout = <T,>(p: Promise<T>, ms: number) =>
     Promise.race([p, new Promise<never>((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))])
@@ -43,8 +43,9 @@ async function resolveProductIdentity(productUrl: string | null): Promise<{ name
     }
     if (!asin) return null
     const p = await withTimeout(fetchAmazonProduct(asin), 7000)
-    if (!p?.title) return null
-    return { name: cleanProductName(p.title), brand: guessBrandName(p.title) }
+    // Even if the title scrape failed, returning the ASIN lets the modal match
+    // an Amazon video to this post.
+    return { name: p?.title ? cleanProductName(p.title) : '', brand: p?.title ? guessBrandName(p.title) : '', asin }
   } catch {
     return null
   }
@@ -92,7 +93,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ post
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: post } = await (supabase as any)
       .from('blog_posts')
-      .select('id, title, video_id, wordpress_url, tiktok_share_url, pinterest_pin_id, twitter_post_id, facebook_post_id, linkedin_post_id')
+      .select('id, title, video_id, wordpress_url, tiktok_share_url, pinterest_pin_id, twitter_post_id, facebook_post_id, linkedin_post_id, amazon_video_url')
       .eq('user_id', ownerId)
       .eq('id', id)
       .maybeSingle()
@@ -132,6 +133,15 @@ export async function GET(request: Request, { params }: { params: Promise<{ post
 
     const links: RecapLink[] = buildRecapLinks({ post, youtubeUrl, productUrl })
 
+    // The creator's Amazon Influencer video (found via the extension scan,
+    // matched by ASIN, stored on the post) — a REAL "live on Amazon" content
+    // link. Slot it right after the product so it leads the content list.
+    const amazonVideoUrl = (post.amazon_video_url as string | null) || null
+    if (amazonVideoUrl) {
+      const at = links.findIndex(l => l.platform === 'product')
+      links.splice(at >= 0 ? at + 1 : 0, 0, { platform: 'amazon_video', label: 'Amazon video review', url: amazonVideoUrl })
+    }
+
     // Brand + product NAME come from the real listing at the source link when
     // we can resolve it; the clickbait video title is only a last-resort
     // fallback. When there's a product URL but the fetch missed, leave the
@@ -144,8 +154,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ post
     const message = fillRecapMessage(settings.template, {
       brand: brandGuess,
       product: productName,
-      // Default message lists the creator's CONTENT only — not the brand's own
-      // product link (the modal keeps that as an opt-in + the product button).
+      // Default message lists the creator's CONTENT (incl. the Amazon VIDEO) —
+      // but NOT the brand's own product link (kept as an opt-in + the button).
       links: links.filter(l => l.platform !== 'product'),
       name: settings.senderName,
       site: settings.siteUrl,
@@ -153,7 +163,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ post
 
     return NextResponse.json({
       brandGuess,
-      product: { name: productName, url: productUrl, isAmazon: isAmazonUrl(productUrl) },
+      product: { name: productName, url: productUrl, isAmazon: isAmazonUrl(productUrl), asin: real?.asin || null },
+      amazonVideoUrl,
       links,
       settings,
       message,
@@ -161,6 +172,41 @@ export async function GET(request: Request, { params }: { params: Promise<{ post
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error('[brand-recap]', msg)
+    return NextResponse.json({ error: msg }, { status: 500 })
+  }
+}
+
+/** Save the Amazon video (vdp) URL matched to this post by the extension scan
+ *  (or pasted). Owner-scoped; accepts WP-id-or-UUID like GET. */
+export async function POST(request: Request, { params }: { params: Promise<{ postId: string }> }) {
+  try {
+    const supabase = await createServerClient()
+    const auth = await getAuthAndOwner(supabase)
+    if (auth.error) return auth.error
+    const { ownerId } = auth
+
+    const { postId: rawId } = await params
+    const body = await request.json().catch(() => ({})) as { amazonVideoUrl?: string | null; wpUrl?: string | null }
+    const id = await resolveBlogPostId(supabase, ownerId, rawId, body.wpUrl)
+    if (!id) return NextResponse.json({ error: 'Post not found' }, { status: 404 })
+
+    let url: string | null = (body.amazonVideoUrl || '').trim() || null
+    // Accept only a real Amazon video link (or null to clear).
+    if (url && !/^https:\/\/(www\.)?amazon\.[a-z.]+\/(vdp|gp\/video)/i.test(url)) {
+      return NextResponse.json({ error: 'That doesn’t look like an Amazon video link.' }, { status: 400 })
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (supabase as any)
+      .from('blog_posts')
+      .update({ amazon_video_url: url })
+      .eq('user_id', ownerId)
+      .eq('id', id)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ ok: true, amazonVideoUrl: url })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('[brand-recap:POST]', msg)
     return NextResponse.json({ error: msg }, { status: 500 })
   }
 }

@@ -93,6 +93,39 @@ export async function requestVideoFrame(youtubeVideoId: string, seekFraction = 0
   return frames[0] ?? null
 }
 
+/** One Amazon Influencer video harvested from the user's Manage Content page
+ *  (their logged-in session). `asin` is the product the video is attached to,
+ *  parsed from the vdp URL — lets MVP match a video to a post reliably. */
+export interface AmazonVideo {
+  vdpUrl: string
+  asin: string | null
+  title?: string
+}
+
+export type AmazonScanResult =
+  | { ok: true; videos: AmazonVideo[]; signedOut?: boolean }
+  | { ok: false; error: 'not-installed' | 'scan-failed' | 'timeout' | string }
+
+/**
+ * Ask the extension to read the user's Amazon Manage Content page and return
+ * every uploaded video + the product ASIN it's attached to. Best-effort:
+ * resolves, never throws. Used by the "Share with brand" modal to find the
+ * creator's real Amazon video link for a post (matched by ASIN).
+ */
+export async function requestAmazonVideos(): Promise<AmazonScanResult> {
+  if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
+  const resp = await sendToExtension<{ ok?: boolean; videos?: AmazonVideo[]; signedOut?: boolean; error?: string }>(
+    { type: 'MVP_AMZ_SCAN' },
+    120000,
+  )
+  if (!resp) return { ok: false, error: 'timeout' }
+  if (resp.ok && Array.isArray(resp.videos)) {
+    const videos = resp.videos.filter(v => v && typeof v.vdpUrl === 'string')
+    return { ok: true, videos, signedOut: resp.signedOut }
+  }
+  return { ok: false, error: resp.error || 'scan-failed' }
+}
+
 /** A raw Creator Connections campaign row as scraped by the extension. All
  *  filtering / ranking happens in the app — this is the unfiltered harvest. */
 export interface ScoutedCampaign {

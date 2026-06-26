@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SCOUT — MVP Affiliate",
-  "version": "1.9.0",
+  "version": "1.10.0",
   "description": "SCOUT scans Amazon Creator Connections, filters by keyword, EPC and budget, and pushes the winners into MVP. Also lets MVP's YouTube Co-Pilot grab a real frame from your video for grounded, viral thumbnails.",
   "homepage_url": "https://www.mvpaffiliate.io",
   "minimum_chrome_version": "114",
@@ -9,6 +9,8 @@
   "host_permissions": [
     "https://affiliate-program.amazon.com/*",
     "https://www.amazon.com/creatorconnections/*",
+    "https://www.amazon.com/manage-content*",
+    "https://www.amazon.com/shop/*",
     "https://www.mvpaffiliate.io/*",
     "https://*.youtube.com/*"
   ],

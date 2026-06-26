@@ -21,7 +21,7 @@
 //    Capturing real permalinks at post-time is a later upgrade.
 
 export type RecapPlatform =
-  | 'product' | 'blog' | 'youtube' | 'tiktok' | 'pinterest'
+  | 'product' | 'amazon_video' | 'blog' | 'youtube' | 'tiktok' | 'pinterest'
   | 'x' | 'facebook' | 'linkedin'
 
 export interface RecapLink {

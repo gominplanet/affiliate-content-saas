@@ -288,12 +288,97 @@ async function scanCreatorConnections(callerTabId) {
   }
 }
 
+// ── Amazon video discovery (Manage Content) ────────────────────────────────
+// For the "Share with brand" recap: a creator's Amazon Influencer videos live
+// on their Manage Content page (in their logged-in session — a server can't
+// reach it). We open/focus that page, scroll to load the full list, and
+// harvest every video's /vdp/ link + the product ASIN embedded in the URL
+// (...&product=B0XXXXXXXX). MVP matches that ASIN to the post and includes the
+// real Amazon video link in the recap. All in the user's own session.
+const AMZ_MANAGE_URL = 'https://www.amazon.com/manage-content'
+
+// Injected into the Manage Content page. Scrolls to load everything, then
+// harvests each video link + its product ASIN. Self-contained (serialized).
+async function harvestAmazonVideosInPage() {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  // Lazy-loaded list — scroll until the page height stops growing.
+  let last = -1
+  for (let i = 0; i < 50; i++) {
+    window.scrollTo(0, document.body.scrollHeight)
+    await sleep(500)
+    const h = document.body.scrollHeight
+    if (h === last) break
+    last = h
+  }
+  window.scrollTo(0, 0)
+
+  const out = []
+  const seen = new Set()
+  const asinFrom = (href) => {
+    try { const a = new URL(href, location.origin).searchParams.get('product'); if (a) return a.toUpperCase() } catch (e) {}
+    const m = href.match(/[?&]product=([A-Za-z0-9]{10})/) || href.match(/\/dp\/([A-Z0-9]{10})/)
+    return m ? m[1].toUpperCase() : null
+  }
+  // Primary signal: anchors pointing at a video detail page (/vdp/).
+  for (const a of document.querySelectorAll('a[href*="/vdp/"]')) {
+    const href = a.href
+    if (!href || seen.has(href)) continue
+    seen.add(href)
+    out.push({
+      vdpUrl: href,
+      asin: asinFrom(href),
+      title: (a.getAttribute('aria-label') || a.textContent || '').trim().slice(0, 140),
+    })
+  }
+  return { ok: true, videos: out, count: out.length, signedOut: /ap\/signin/.test(location.href) }
+}
+
+async function scanAmazonVideos(callerTabId) {
+  // Reuse an open Manage Content / storefront tab; else open Manage Content
+  // FOREGROUND (Amazon's content list is client-rendered + session-scoped, and
+  // background tabs throttle rendering — same trade-off as the CC scout).
+  const open = await chrome.tabs.query({
+    url: ['https://www.amazon.com/manage-content*', 'https://www.amazon.com/shop/*'],
+  })
+  let tab = open.find((t) => t.active) || open[0] || null
+  let opened = false
+  try {
+    if (!tab || tab.id == null) {
+      tab = await chrome.tabs.create({ url: AMZ_MANAGE_URL, active: true })
+      opened = true
+      await waitForTabLoad(tab.id, 25000)
+      await _sleep(3500)
+    } else {
+      try { await chrome.tabs.update(tab.id, { active: true }) } catch (e) {}
+      await _sleep(800)
+    }
+    const results = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: harvestAmazonVideosInPage,
+    })
+    return (results && results[0] && results[0].result) || { ok: false, error: 'no-result' }
+  } catch (e) {
+    return { ok: false, error: opened ? 'scan-failed' : 'content-script-unreachable' }
+  } finally {
+    if (callerTabId != null) { try { await chrome.tabs.update(callerTabId, { active: true }) } catch (e) {} }
+  }
+}
+
 // ── Messages from the MVP dashboard (externally_connectable) ────────────────
 chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   if (!msg || typeof msg.type !== 'string') return
   if (msg.type === 'MVP_PING') {
     sendResponse({ ok: true, version: chrome.runtime.getManifest().version })
     return // sync response
+  }
+  if (msg.type === 'MVP_AMZ_SCAN') {
+    // Open/focus Manage Content + scroll + harvest — allow up to 2 minutes.
+    const callerTabId = sender && sender.tab ? sender.tab.id : null
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 120000)
+    scanAmazonVideos(callerTabId)
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true // async response — keep the channel open
   }
   if (msg.type === 'MVP_CC_SCAN') {
     // Scraping the virtualized grid (open/focus + scroll + enrichment pass) can
