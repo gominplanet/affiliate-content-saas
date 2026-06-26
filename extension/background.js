@@ -175,8 +175,11 @@ async function captureYouTubeFrames({ youtubeVideoId, fractions, callerTabId }) 
     ? fractions.filter((n) => typeof n === 'number' && n > 0 && n < 1).slice(0, 8)
     : [0.5]
   let tabId = null
-  // &mute=1 silences the tab immediately; &vq=hd1080 nudges YouTube to HD.
-  const url = `https://www.youtube.com/watch?v=${youtubeVideoId}&mute=1&vq=hd1080`
+  // &autoplay=0 prevents YouTube starting playback before our script mutes
+  // the video element; &mute=1 is a belt-and-suspenders guard; &vq=hd1080
+  // nudges YouTube to load the HD stream. Our grabFramesInPage script sets
+  // video.muted = true and calls play() explicitly, so capture still works.
+  const url = `https://www.youtube.com/watch?v=${youtubeVideoId}&autoplay=0&mute=1&vq=hd1080`
   try {
     // Open in the BACKGROUND so the user's current tab keeps focus.
     // Draft/private videos have no pre-roll ads, so the old foreground
