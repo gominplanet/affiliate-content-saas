@@ -34,6 +34,9 @@ interface DraftVideo {
    *  via /api/youtube/apply or /api/youtube/update-metadata. null if we
    *  haven't shipped this one yet. Powers the "Pushed via Co-Pilot" tab. */
   metadataAppliedAt?: string | null
+  /** 0-based position in the uploads playlist (0 = newest upload). The reliable
+   *  newest-first sort key — draft publishedAt is a placeholder. */
+  uploadPosition?: number | null
 }
 
 // ── Tab classification (2026-06-08, simplified 2026-06-20) ─────────────────
@@ -90,6 +93,18 @@ function classifyVideo(v: Pick<DraftVideo, 'title' | 'description' | 'detectedAs
   // Everything else still unpublished — whether or not a product was detected —
   // is work to do. (Product presence shows as a per-row badge, not a tab.)
   return 'todo'
+}
+
+// Newest upload first. uploadPosition (0-based index in the uploads playlist,
+// 0 = newest) is the RELIABLE key — a never-published draft's publishedAt is a
+// YouTube placeholder, so sorting on it scrambles the list. Fall back to
+// publishedAt only when position is unknown (e.g. search.list results).
+function byNewestUpload(a: DraftVideo, b: DraftVideo): number {
+  const pa = a.uploadPosition, pb = b.uploadPosition
+  const aHas = typeof pa === 'number', bHas = typeof pb === 'number'
+  if (aHas && bHas) { if (pa !== pb) return (pa as number) - (pb as number) }
+  else if (aHas !== bHas) return aHas ? -1 : 1  // known positions sort ahead
+  return (b.publishedAt || '').localeCompare(a.publishedAt || '')
 }
 
 interface GeneratedMetadata {
@@ -2443,16 +2458,12 @@ export default function StudioPage() {
       'done': [],
     }
     for (const v of drafts) buckets[classifyVideo(v)].push(v)
-    // Newest drafts first — the YouTube scan/cache order isn't reliably
-    // recency-sorted, so sort each tab by publishedAt descending so the most
-    // recent uploads surface at the top instead of old ones.
-    const byNewest = (a: DraftVideo, b: DraftVideo) => (b.publishedAt || '').localeCompare(a.publishedAt || '')
-    for (const k of Object.keys(buckets) as VideoTab[]) buckets[k].sort(byNewest)
+    for (const k of Object.keys(buckets) as VideoTab[]) buckets[k].sort(byNewestUpload)
     return buckets
   }, [drafts])
   // Search results also newest-first.
   const visibleDrafts = activeQuery
-    ? [...drafts].sort((a, b) => (b.publishedAt || '').localeCompare(a.publishedAt || ''))
+    ? [...drafts].sort(byNewestUpload)
     : tabbed[activeTab]
 
   // On first load, if the default tab ('todo') is empty, jump to the

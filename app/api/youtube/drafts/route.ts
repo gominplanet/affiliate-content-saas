@@ -347,6 +347,9 @@ function buildDraftVideo(v: Record<string, unknown>) {
     publishedAt: (snippet?.publishedAt as string) ?? '',
     publishAt: (status?.publishAt as string | null) ?? null,
     detectedAsin: detectAsin((snippet?.title as string) ?? ''),
+    // search.list results carry no uploads-playlist position; null = fall back
+    // to publishedAt ordering (search is title-relevance, not recency, anyway).
+    uploadPosition: (typeof (snippet?.position) === 'number' ? (snippet.position as number) : null),
   }
 }
 

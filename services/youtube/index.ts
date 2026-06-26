@@ -181,6 +181,11 @@ export interface DraftVideo {
   // which the Co-Pilot treats as done work (out of the draft to-do tabs).
   publishAt: string | null
   detectedAsin: string | null
+  /** 0-based position in the channel's uploads playlist — 0 = most recently
+   *  uploaded. This is the RELIABLE newest-first sort key: a never-published
+   *  draft has a placeholder publishedAt, but its uploads-playlist position is
+   *  always correct. null when unknown (e.g. a search.list result). */
+  uploadPosition?: number | null
 }
 
 export class YouTubeOAuthService {
@@ -293,25 +298,41 @@ export class YouTubeOAuthService {
 
     // Get full video details including status
     const videoIds = items.map((i: any) => i.snippet.resourceId.videoId).join(',')
-    // The uploads-playlist item's publishedAt is the ADD-TO-UPLOADS time —
-    // reliably reverse-chronological and populated even for DRAFT videos, unlike
-    // the video's own snippet.publishedAt (YouTube returns a placeholder for
-    // never-published videos, which breaks newest-first sorting). Map it by id.
+    // The uploads playlist is returned newest-upload-first, and each item
+    // carries its 0-based `position` in that playlist. That position is the
+    // ONLY reliable newest-first key for drafts — a never-published video's own
+    // snippet.publishedAt is a placeholder, so sorting on it scrambles the list.
+    // Map both position and the item publishedAt (add-time) by video id.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const addedAt: Record<string, string> = {}
-    for (const it of items as any[]) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const position: Record<string, number> = {}
+    // Fallback ordinal in case the API ever omits `position`: the order items
+    // arrive in IS the upload order, so the array index works as a backstop.
+    items.forEach((it: any, idx: number) => {
       const vid = it?.snippet?.resourceId?.videoId
-      if (vid && it?.snippet?.publishedAt) addedAt[vid] = it.snippet.publishedAt as string
-    }
+      if (!vid) return
+      if (it?.snippet?.publishedAt) addedAt[vid] = it.snippet.publishedAt as string
+      position[vid] = typeof it?.snippet?.position === 'number' ? it.snippet.position : idx
+    })
     const videosData = await this.get<any>('/videos', {
       part: 'snippet,status',
       id: videoIds,
     })
 
+    // videos.list does NOT preserve the requested id order — build a lookup and
+    // emit in the PLAYLIST order (items), so the array itself is newest-first.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const videos = (videosData.items ?? []).map((v: any) => {
+    const detailById: Record<string, any> = {}
+    for (const v of (videosData.items ?? []) as any[]) detailById[v.id] = v
+
+    const videos: DraftVideo[] = []
+    for (const it of items as any[]) {
+      const vid = it?.snippet?.resourceId?.videoId
+      const v = vid ? detailById[vid] : null
+      if (!v) continue
       const asinMatch = v.snippet.title.match(/\b([A-Z0-9]{10})\b/)
-      return {
+      videos.push({
         youtubeVideoId: v.id,
         title: v.snippet.title,
         description: v.snippet.description ?? '',
@@ -322,8 +343,9 @@ export class YouTubeOAuthService {
         publishedAt: addedAt[v.id] ?? v.snippet.publishedAt,
         publishAt: v.status?.publishAt ?? null,
         detectedAsin: asinMatch ? asinMatch[1] : null,
-      }
-    })
+        uploadPosition: position[v.id] ?? null,
+      })
+    }
 
     return { videos, nextPageToken: playlistData.nextPageToken, uploadsPlaylistId }
   }
