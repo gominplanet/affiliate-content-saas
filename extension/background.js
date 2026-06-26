@@ -58,8 +58,23 @@ async function grabFramesInPage(fractions) {
     return !isAdShowing()
   }
 
-  // 2. Clear any pre-roll before we start.
-  await waitOutAds(15000)
+  // 2. Interrupt any pre-roll ad by seeking into the real video.
+  // On monetized published videos, YouTube plays a pre-roll before the content.
+  // Seeking the <video> element to a non-zero position forces the player to
+  // exit the ad and jump straight to the content — the same trick as clicking
+  // the progress bar. We also click any skip button that appears.
+  if (isAdShowing()) {
+    // Try skip first (fastest path)
+    const skipBtn = document.querySelector('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button')
+    if (skipBtn) { try { skipBtn.click() } catch (e) {} }
+    // Seek into the video to break the pre-roll
+    if (isFinite(video.duration) && video.duration > 10) {
+      try { video.currentTime = 5 } catch (e) {}
+    }
+    await sleep(800)
+  }
+  // Wait up to 25s for any remaining ad to clear (non-skippable ads can be 15-20s)
+  await waitOutAds(25000)
 
   // 2b. Wait for the player to ramp to HD. A freshly-opened tab serves low-res
   // first, and setPlaybackQuality is a no-op now, so just poll videoWidth.
