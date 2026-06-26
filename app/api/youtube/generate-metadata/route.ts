@@ -213,10 +213,19 @@ async function titleStrategistAgent(
   /** The user's most recent generated titles — used as voice anchors
    *  so the title cadence matches their channel over time. */
   priorTitles?: string[] | null,
+  /** Short product name extracted from the Amazon title — brand + model,
+   *  no marketing fluff. Passed explicitly so the SEO rule below can be
+   *  concrete ("use THIS exact name") rather than vague. */
+  seoProductName?: string | null,
 ): Promise<{ best: string; alternatives: string[] }> {
   const voiceAnchor = (priorTitles && priorTitles.length > 0)
     ? `\n\nUSER'S RECENT TITLES (match this cadence + hook style; do NOT copy):\n${priorTitles.map(t => `- "${t}"`).join('\n')}\n`
     : ''
+  const seoRule = isProduct && seoProductName
+    ? `SEO REQUIREMENT: At least 3 of the 5 titles MUST contain the exact product name "${seoProductName}" — people search YouTube for the brand + product name directly, so including it in most titles is non-negotiable for ranking. The product name can appear anywhere in the title but it must be spelled exactly as given. The remaining 1–2 titles may omit it if the hook is especially strong without it.`
+    : isProduct
+      ? '- Include the product name in at least 3 of the 5 titles for YouTube SEO — people search by product name and missing it hurts ranking.'
+      : '- Make the video topic unmissable in the title.'
   const raw = await runAgent(anthropic, {
     model: 'claude-sonnet-4-6',
     maxTokens: 700,
@@ -231,8 +240,10 @@ ${isProduct ? 'TOP BENEFITS' : 'KEY TAKEAWAYS'}: ${productAnalysis.topBenefits.j
 ${isProduct ? 'PAIN POINTS' : 'VIEWER QUESTIONS'}: ${productAnalysis.painPoints.join(' • ')}
 TONE: ${tone}
 
+${seoRule}
+
 CORE PRINCIPLES (do not violate):
-1. EACH title must be GROUNDED in a SPECIFIC benefit, pain point, or moment from the analysis above. Quote a real number, a real result, a real before/after — never generic "Honest Review" filler.
+1. EACH title must be GROUNDED in a SPECIFIC benefit, pain point, or moment from the analysis above. Quote a real number, a real result, a real before/after — never generic filler.
 2. EACH of the 5 alternatives must use a STRUCTURALLY DIFFERENT opening. If alt #1 starts with "I Tested…", #2 cannot start with "I Tried…" or "I Tested…". If #1 is a question, #2 must be a statement. The 5 titles together should read as 5 distinct creators wrote them.
 3. NO TEMPLATED HOOKS. The following openings are BANNED across all 5 outputs because they've been overused: "Worth It?", "Before You Buy", "Don't Buy Until", "Real Talk", "Watch This First", "Is It Worth It?", "I Tested … for 30 Days", "The Truth About…", "What Nobody Tells You", "Here's What Happened When".
 4. NEVER use the word "honest" anywhere.
@@ -247,13 +258,12 @@ ALLOWED ANGLES (mix across the 5 — never use the same angle twice):
 - Story snapshot: ("The Week I Switched to Cortisol Manager — and Stopped Waking at 3 AM")
 - Skeptic-to-believer arc: ("I Didn't Buy The Hype About Cortisol Manager. Then Week 3 Happened.")
 
-${isProduct ? '- Include the product name once where it lands naturally — never wedge it in if it ruins the flow.' : '- Make the video topic unmissable in the title.'}
 - Under 100 characters each
 - No ASIN, no hashtags, no emojis
 
 Return JSON:
 {
-  "best": "the single strongest title — the one most likely to drive clicks",
+  "best": "the single strongest title — the one most likely to drive clicks AND rank for the product name",
   "alternatives": ["4 OTHER strong titles, each STRUCTURALLY DIFFERENT from each other and from 'best'"]
 }${voiceAnchor}`,
   })
@@ -721,6 +731,26 @@ export async function POST(request: Request) {
     // ── SWARM PHASE 1: Product Analyst + SEO Researcher run in parallel ────────
     const anthropic = createAnthropicClient()
 
+    // Extract a clean "brand + product name" from the Amazon title for SEO
+    // anchoring in the title strategist. Amazon titles look like:
+    //   "Cortisol Manager by Integrative Therapeutics - Supports..."
+    //   "Ancient Nutrition Bone Broth Protein Powder, Chocolate..."
+    //   "Dyson V15 Detect Absolute Vacuum, Blue"
+    // We strip at the first comma, " - ", " | ", or " with " and cap at 60 chars
+    // to get the core "brand model" string without the marketing fluff.
+    const seoProductName: string | null = isProduct && product.title
+      ? (() => {
+          const raw = product.title
+          // Strip at first comma, pipe, " - ", or " with " (case-insensitive)
+          const cut = raw
+            .split(/\s*[,|]\s*/)[0]
+            .split(/\s+[-–]\s+/)[0]
+            .split(/\s+with\s+/i)[0]
+            .trim()
+          return cut.length >= 3 ? cut.slice(0, 60).trim() : null
+        })()
+      : null
+
     const [productAnalysis, seoData] = await Promise.all([
       productAnalystAgent(anthropic, productContext, videoTitle, niches, isProduct),
       seoResearcherAgent(anthropic, productContext, videoTitle, niches, [], isProduct),
@@ -729,7 +759,7 @@ export async function POST(request: Request) {
     // ── SWARM PHASE 2: Title + Content + Engagement run in parallel ───────────
     // (Title strategist gets product analysis context; content + engagement agents get title)
     const titleResult = await titleStrategistAgent(
-      anthropic, productContext, videoTitle, tone, productAnalysis, isProduct, priorTitles,
+      anthropic, productContext, videoTitle, tone, productAnalysis, isProduct, priorTitles, seoProductName,
     )
 
     // ── Internal title scoring (Phase 2 / Track A) ────────────────────────────
