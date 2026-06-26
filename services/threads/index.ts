@@ -3,7 +3,7 @@ const BASE = 'https://graph.threads.net/v1.0'
 export class ThreadsService {
   constructor(private accessToken: string, private userId: string) {}
 
-  async createPost(text: string, imageUrl?: string): Promise<{ id: string }> {
+  async createPost(text: string, imageUrl?: string): Promise<{ id: string; permalink?: string }> {
     const headers = {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${this.accessToken}`,
@@ -39,7 +39,22 @@ export class ThreadsService {
       const err = await publishRes.json()
       throw new Error(err.error?.message || `Threads publish error: ${publishRes.status}`)
     }
-    return publishRes.json() as Promise<{ id: string }>
+    const { id } = await publishRes.json() as { id: string }
+
+    // Best-effort: fetch the public permalink for this post so the brand-recap
+    // can link to it. Threads gives no public URL from the opaque media id
+    // alone, so we ask the Graph API for it. Never fails the publish — a missing
+    // permalink just means the recap omits the Threads link (prior behaviour).
+    let permalink: string | undefined
+    try {
+      const permRes = await fetch(`${BASE}/${id}?fields=permalink&access_token=${encodeURIComponent(this.accessToken)}`)
+      if (permRes.ok) {
+        const d = await permRes.json() as { permalink?: string }
+        if (d.permalink) permalink = d.permalink
+      }
+    } catch { /* permalink is a nice-to-have, not required */ }
+
+    return { id, permalink }
   }
 }
 

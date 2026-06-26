@@ -11,6 +11,7 @@ import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } from '@/lib/social-cap'
 import { metaEnabledForUser } from '@/lib/feature-flags'
 import { resolveBlogPostId } from '@/lib/resolve-post-id'
+import { recordSocialPermalink } from '@/lib/social-permalink'
 
 const DISCLAIMER = '#ad — As an Amazon Associate I earn from qualifying purchases.'
 
@@ -122,6 +123,9 @@ Write ONLY the post text, nothing else. Do not include a disclaimer or #ad tag.`
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await supabase.from('blog_posts').update({ threads_post_id: result.id }).eq('id', postId)
+    // Store the real public permalink (Threads has none derivable from the id),
+    // so the brand-recap can actually link to the Threads post. Best-effort.
+    if (result.permalink) await recordSocialPermalink(supabase, postId!, 'threads', result.permalink)
     await incrementSocialCount(supabase, postId!, 'threads')
 
     return NextResponse.json({

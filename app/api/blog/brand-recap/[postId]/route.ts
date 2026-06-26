@@ -93,7 +93,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ post
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: post } = await (supabase as any)
       .from('blog_posts')
-      .select('id, title, video_id, wordpress_url, tiktok_share_url, pinterest_pin_id, twitter_post_id, facebook_post_id, linkedin_post_id, amazon_video_url')
+      .select('id, title, video_id, wordpress_url, tiktok_share_url, pinterest_pin_id, twitter_post_id, facebook_post_id, linkedin_post_id, amazon_video_url, social_permalinks')
       .eq('user_id', ownerId)
       .eq('id', id)
       .maybeSingle()
@@ -131,7 +131,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ post
       siteUrl: saved?.siteUrl || (brand?.website_url as string) || '',
     }
 
-    const links: RecapLink[] = buildRecapLinks({ post, youtubeUrl, productUrl })
+    // Real per-platform permalinks captured at post-time (Threads, etc.) win
+    // over URLs reconstructed from opaque ids, and surface platforms that have
+    // no id-derivable public URL at all.
+    const permalinks = (post.social_permalinks && typeof post.social_permalinks === 'object')
+      ? post.social_permalinks as Record<string, string>
+      : null
+    const links: RecapLink[] = buildRecapLinks({ post, youtubeUrl, productUrl, permalinks })
 
     // The creator's Amazon Influencer video (found via the extension scan,
     // matched by ASIN, stored on the post) — a REAL "live on Amazon" content

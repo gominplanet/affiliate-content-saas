@@ -22,7 +22,7 @@
 
 export type RecapPlatform =
   | 'product' | 'amazon_video' | 'blog' | 'youtube' | 'tiktok' | 'pinterest'
-  | 'x' | 'facebook' | 'linkedin'
+  | 'x' | 'facebook' | 'linkedin' | 'threads' | 'instagram' | 'telegram'
 
 export interface RecapLink {
   platform: RecapPlatform
@@ -87,13 +87,21 @@ function linkedinUpdateUrl(id: string): string {
 /**
  * Build the ordered list of links that actually exist for a post. Product
  * first (the brand cares most), then the full review, then video + socials.
+ *
+ * `permalinks` (blog_posts.social_permalinks) holds the REAL public URL each
+ * platform handed back at post-time. When present for a platform it WINS over
+ * the URL reconstructed from an opaque id — and it's the only way to surface
+ * platforms with no id-derivable public URL (Threads, Instagram, Telegram),
+ * which are otherwise omitted rather than linked wrongly.
  */
 export function buildRecapLinks(opts: {
   post: PostLike
   youtubeUrl?: string | null
   productUrl?: string | null
+  permalinks?: Record<string, string> | null
 }): RecapLink[] {
   const { post, youtubeUrl, productUrl } = opts
+  const pl = opts.permalinks || {}
   const out: RecapLink[] = []
   // Product = the brand's OWN listing. Neutral label (not "Amazon") so the
   // message never implies the creator's content lives on Amazon — and the
@@ -101,11 +109,23 @@ export function buildRecapLinks(opts: {
   if (productUrl) out.push({ platform: 'product', label: 'Product page', url: productUrl })
   if (post.wordpress_url) out.push({ platform: 'blog', label: 'Full written review', url: post.wordpress_url })
   if (youtubeUrl) out.push({ platform: 'youtube', label: 'YouTube', url: youtubeUrl })
-  if (post.tiktok_share_url) out.push({ platform: 'tiktok', label: 'TikTok', url: post.tiktok_share_url })
-  if (post.pinterest_pin_id) out.push({ platform: 'pinterest', label: 'Pinterest', url: `https://www.pinterest.com/pin/${post.pinterest_pin_id}/` })
-  if (post.twitter_post_id) out.push({ platform: 'x', label: 'X', url: `https://x.com/i/web/status/${post.twitter_post_id}` })
-  if (post.facebook_post_id) out.push({ platform: 'facebook', label: 'Facebook', url: `https://www.facebook.com/${post.facebook_post_id}` })
-  if (post.linkedin_post_id) out.push({ platform: 'linkedin', label: 'LinkedIn', url: linkedinUpdateUrl(post.linkedin_post_id) })
+  // Socials: prefer the stored real permalink; else fall back to the
+  // id-derived URL for platforms where that reliably resolves.
+  const tiktok = pl.tiktok || post.tiktok_share_url
+  if (tiktok) out.push({ platform: 'tiktok', label: 'TikTok', url: tiktok })
+  const pinterest = pl.pinterest || (post.pinterest_pin_id ? `https://www.pinterest.com/pin/${post.pinterest_pin_id}/` : null)
+  if (pinterest) out.push({ platform: 'pinterest', label: 'Pinterest', url: pinterest })
+  const x = pl.x || (post.twitter_post_id ? `https://x.com/i/web/status/${post.twitter_post_id}` : null)
+  if (x) out.push({ platform: 'x', label: 'X', url: x })
+  const facebook = pl.facebook || (post.facebook_post_id ? `https://www.facebook.com/${post.facebook_post_id}` : null)
+  if (facebook) out.push({ platform: 'facebook', label: 'Facebook', url: facebook })
+  const linkedin = pl.linkedin || (post.linkedin_post_id ? linkedinUpdateUrl(post.linkedin_post_id) : null)
+  if (linkedin) out.push({ platform: 'linkedin', label: 'LinkedIn', url: linkedin })
+  // Platforms with NO reliable id-derived public URL — included only when we
+  // captured a real permalink at post-time.
+  if (pl.threads) out.push({ platform: 'threads', label: 'Threads', url: pl.threads })
+  if (pl.instagram) out.push({ platform: 'instagram', label: 'Instagram', url: pl.instagram })
+  if (pl.telegram) out.push({ platform: 'telegram', label: 'Telegram', url: pl.telegram })
   return out
 }
 
