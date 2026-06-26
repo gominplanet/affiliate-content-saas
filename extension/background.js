@@ -12,7 +12,7 @@
  * black frames, so a brief visible tab is the reliable trade-off.
  */
 
-const CAPTURE_TIMEOUT_MS = 50000
+const CAPTURE_TIMEOUT_MS = 120000
 
 // Self-contained capture routine injected into the YouTube tab. Captures a
 // frame at EACH fraction in one page visit. Must not reference anything outside
@@ -58,23 +58,35 @@ async function grabFramesInPage(fractions) {
     return !isAdShowing()
   }
 
-  // 2. Interrupt any pre-roll ad by seeking into the real video.
-  // On monetized published videos, YouTube plays a pre-roll before the content.
-  // Seeking the <video> element to a non-zero position forces the player to
-  // exit the ad and jump straight to the content — the same trick as clicking
-  // the progress bar. We also click any skip button that appears.
-  if (isAdShowing()) {
-    // Try skip first (fastest path)
-    const skipBtn = document.querySelector('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button')
-    if (skipBtn) { try { skipBtn.click() } catch (e) {} }
-    // Seek into the video to break the pre-roll
-    if (isFinite(video.duration) && video.duration > 10) {
-      try { video.currentTime = 5 } catch (e) {}
+  // 2. Break pre-roll ads on monetized / published videos.
+  // During a pre-roll, video.currentTime controls the AD's timeline, not the
+  // main video — seeking doesn't help. Instead we click the main player's
+  // progress bar, which forces YouTube's player to exit the ad and seek into
+  // the actual content. We also hammer the skip button every loop iteration.
+  const tryBreakAd = () => {
+    // Click skip button (fastest path for skippable ads)
+    const skip = document.querySelector('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button')
+    if (skip) { try { skip.click() } catch (e) {} }
+    // Click ~5% into the main progress bar — exits the ad and seeks to content
+    const bar = document.querySelector('.ytp-progress-bar-container')
+    if (bar) {
+      try {
+        const r = bar.getBoundingClientRect()
+        const cx = r.left + r.width * 0.05
+        const cy = r.top + r.height / 2
+        bar.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: cx, clientY: cy }))
+        bar.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true, cancelable: true, clientX: cx, clientY: cy }))
+        bar.dispatchEvent(new MouseEvent('click',     { bubbles: true, cancelable: true, clientX: cx, clientY: cy }))
+      } catch (e) {}
     }
-    await sleep(800)
   }
-  // Wait up to 25s for any remaining ad to clear (non-skippable ads can be 15-20s)
-  await waitOutAds(25000)
+  if (isAdShowing()) {
+    tryBreakAd()
+    await sleep(1000)
+    // If still showing after the click attempt, keep trying — non-skippable ads
+    // run up to 30s; skippable ones become skippable after ~5s.
+    if (isAdShowing()) await waitOutAds(45000)
+  }
 
   // 2b. Wait for the player to ramp to HD. A freshly-opened tab serves low-res
   // first, and setPlaybackQuality is a no-op now, so just poll videoWidth.

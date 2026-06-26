@@ -74,7 +74,7 @@ export async function requestVideoFrames(
 ): Promise<string[]> {
   const resp = await sendToExtension<{ ok?: boolean; frames?: string[]; dataUrl?: string; error?: string }>(
     { type: 'MVP_CAPTURE_FRAME', youtubeVideoId, fractions },
-    50000,
+    120000,
   )
   if (resp?.ok && Array.isArray(resp.frames)) {
     return resp.frames.filter((f) => typeof f === 'string' && f.startsWith('data:image/'))
