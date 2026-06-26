@@ -1021,10 +1021,12 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           // The thumbnail-style block drives every generation (border + accent, live).
           borderStyleIndex: borderIndex ?? undefined,
           accentColor,
-          // "Your Face" — explicit face model pick takes priority; when none is
-          // selected the route auto-loads the user's ready face model(s) via faceAuto.
-          faceModelId: (!isProductOnly && effectiveFaceModelId && effectiveFaceModelId !== 'no-human') ? effectiveFaceModelId : undefined,
-          faceAuto: (!isProductOnly && !effectiveFaceModelId) ? true : undefined,
+          // "Your Face" — when SCOUT captured frames, always use faceAuto so the
+          // server vision-matches the right model to the actual video frame (handles
+          // multi-model setups like Michelle vs Seb correctly). When no frames,
+          // explicit UI pick takes priority; otherwise auto-load ready model(s).
+          faceModelId: (!isProductOnly && !capturedFrames.length && effectiveFaceModelId && effectiveFaceModelId !== 'no-human') ? effectiveFaceModelId : undefined,
+          faceAuto: (!isProductOnly && (capturedFrames.length > 0 || !effectiveFaceModelId)) ? true : undefined,
           // 'no-human' → product-only thumbnail, no face composition at all.
           noHuman: isProductOnly || undefined,
           styleReferenceUrl: styleReferenceUrl || undefined,
