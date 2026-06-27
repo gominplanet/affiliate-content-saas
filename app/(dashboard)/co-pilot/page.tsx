@@ -1797,21 +1797,11 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                   {/* Secondary options */}
                   <div className="flex flex-col gap-2">
 
-                    {/* Upload Selfie */}
-                    <button
-                      type="button"
-                      onClick={() => setThumbnailMode(m => m === 'selfie' ? null : 'selfie')}
-                      className={`flex items-center gap-3 w-full px-3 py-3 rounded-xl border text-left transition-all ${thumbnailMode === 'selfie' ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-[#7C3AED]/50 bg-white dark:bg-[#1c1c1e]'}`}
-                    >
-                      <div className="w-8 h-8 rounded-lg bg-[#7C3AED]/10 flex items-center justify-center flex-shrink-0">
-                        <Camera size={15} className="text-[#7C3AED]" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Upload Selfie</p>
-                        <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-0.5">You + product → AI thumbnail</p>
-                      </div>
-                      <ChevronDown size={13} className={`flex-shrink-0 text-[#86868b] transition-transform ${thumbnailMode === 'selfie' ? 'rotate-180' : ''}`} />
-                    </button>
+                    {/* Upload Selfie — REMOVED 2026-06-27. The image-edit (Kontext)
+                        path could distort the creator's identity and invent a
+                        wrong product; the normal thumbnail flow is reliable, so we
+                        pulled the entry point. Backend PATH U in generate-thumbnail
+                        stays intact to revisit if a faithful edit model lands. */}
 
                     {/* Upload My Design */}
                     <button
@@ -1847,51 +1837,8 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
 
                   </div>
 
-                  {/* Inline expand: Upload Selfie */}
-                  {thumbnailMode === 'selfie' && (
-                    <div className="flex flex-col gap-3 p-4 rounded-xl bg-[#7C3AED]/5 border border-[#7C3AED]/20">
-                      <p className="text-[11px] font-semibold text-[#7C3AED]">Upload 1–3 photos of you with the product</p>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {uploadedPhotoUrl && (
-                          <div className="relative">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={uploadedPhotoUrl} alt="Selfie" className="w-16 h-10 object-cover rounded-lg border border-[#7C3AED]/30" />
-                            <button type="button" onClick={() => { setUploadedPhotoUrl(null); setCleanupPrompt('') }}
-                              className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-[#ff3b30] text-white flex items-center justify-center">
-                              <X size={8} />
-                            </button>
-                          </div>
-                        )}
-                        {!uploadedPhotoUrl && (
-                          <label className={`flex flex-col items-center justify-center gap-1 w-16 h-10 rounded-lg border-2 border-dashed cursor-pointer transition-all ${photoUploading ? 'opacity-60 cursor-wait border-[#7C3AED]/30' : 'border-[#7C3AED]/40 hover:border-[#7C3AED] hover:bg-[#7C3AED]/5'}`}>
-                            <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" disabled={generatingThumbnail || photoUploading}
-                              onChange={e => { const f = e.target.files?.[0]; if (f) handlePhotoUpload(f); e.target.value = '' }} />
-                            {photoUploading ? <Loader2 size={11} className="animate-spin text-[#7C3AED]" /> : <Plus size={11} className="text-[#7C3AED]" />}
-                          </label>
-                        )}
-                      </div>
-                      <input
-                        type="text"
-                        value={cleanupPrompt}
-                        onChange={e => setCleanupPrompt(e.target.value)}
-                        maxLength={400}
-                        placeholder="Scene hint: bright kitchen, excited expression…"
-                        disabled={generatingThumbnail}
-                        className="text-xs px-3 py-2 rounded-lg border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] placeholder:text-gray-400 focus:outline-none focus:border-[#7C3AED] transition"
-                      />
-                      <button
-                        onClick={() => {
-                          setSelectedFaceModelId(null)
-                          void generateThumbnail()
-                        }}
-                        disabled={generatingThumbnail || !uploadedPhotoUrl}
-                        className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 transition-all hover:opacity-90"
-                        style={{ background: 'linear-gradient(135deg, #7C3AED 0%, #5856d6 100%)' }}
-                      >
-                        {generatingThumbnail ? <><Loader2 size={13} className="animate-spin" /> Generating…</> : <><Sparkles size={13} /> Generate Thumbnail</>}
-                      </button>
-                    </div>
-                  )}
+                  {/* Inline expand: Upload Selfie — REMOVED 2026-06-27 (see the
+                      button comment above). */}
 
                   {/* Inline expand: Upload My Design */}
                   {thumbnailMode === 'own-design' && (
