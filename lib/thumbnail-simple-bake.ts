@@ -405,7 +405,8 @@ export async function bakeSimpleHeadline(
   // Result: long headlines auto-fit; short headlines stay big.
   const strokeWidth = Math.round(scaleBase * 0.018)
   const anchor = opts.anchor ?? 'upper-left'
-  const padX = Math.round(width * 0.062)
+  // More inset than the neon border (~0.028) so the headline never crowds it.
+  const padX = Math.round(width * 0.075)
   const startX = anchor === 'upper-left' ? padX : width - padX
   const svgAnchor: 'start' | 'end' = anchor === 'upper-left' ? 'start' : 'end'
   // The column the text MUST fit inside, matching the Satori template's 55%
@@ -437,7 +438,9 @@ export async function bakeSimpleHeadline(
     const ceilLine2 = Math.round(scaleBase * 0.095)
     const fontSizeLine1 = fitFontToWidth(font, copy.line1, ceilLine1, colMaxWidth, MIN_FONT_PX)
     const fontSizeLine2 = fitFontToWidth(font, copy.line2, ceilLine2, colMaxWidth, MIN_FONT_PX)
-    const baselineLine1 = Math.round(height * 0.22)
+    // Pushed down from 0.22 → 0.25 so a tall first line clears the top border
+    // (cap-height of the ceiling font reached close to the edge before).
+    const baselineLine1 = Math.round(height * 0.25)
     const baselineLine2 = baselineLine1 + Math.round(fontSizeLine2 * 1.05)
     decorationY = baselineLine2 + Math.round(scaleBase * 0.045)
     // Emphasis-word colour: the creator's saved brand accent, else default yellow.

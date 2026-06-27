@@ -2116,7 +2116,25 @@ Ultra-sharp, professional, photorealistic.`
         const falPhotoUrl = await fal.storage.upload(await photoRes.blob())
 
         const cleanup = (typeof cleanupPrompt === 'string' ? cleanupPrompt : '').trim().slice(0, 400)
-        const kontextInstruction = `Transform this user-submitted photo into a clean, professional, eye-catching YouTube thumbnail. KEEP the same person and the same product they are holding/showing — preserve their facial identity, likeness and the product's exact appearance, branding and details. Clean it up: remove clutter and distractions, fix harsh or dim lighting into bright flattering light, sharpen and colour-grade for a premium, high-contrast thumbnail look, and place them in a bright, clean, uncluttered setting with a softly blurred background. Keep the person clearly visible and well-lit. ${cleanup ? `ADDITIONAL DIRECTION: ${cleanup}. ` : ''}Do NOT add any other people. ${NO_BRAND_IMAGE_CLAUSE} Photorealistic, 16:9.`
+        // Background rotation — when the user gives no scene hint, vary the setting
+        // across generations so re-runs feel fresh; always softly blurred so focus
+        // stays on the person + product. The user's scene hint (if any) wins.
+        const UPLOAD_SCENES = [
+          'a bright, airy modern kitchen',
+          'a stylish outdoor patio with tasteful greenery',
+          'a clean, modern home office',
+          'a professional studio space with a smooth seamless backdrop',
+          'a warm, tastefully decorated living room',
+        ]
+        const scenePick = UPLOAD_SCENES[Math.floor(Math.random() * UPLOAD_SCENES.length)]
+        const bgDirection = cleanup || `Place them in ${scenePick}`
+        const kontextInstruction = `Transform this user-submitted photo into a clean, professional, eye-catching YouTube thumbnail.
+
+SUBJECT — LIGHT RETOUCH ONLY: keep the EXACT same person. Preserve their facial identity, bone structure, age, skin texture, hair and likeness precisely — they must look unmistakably like the same real individual. Do NOT make them look older or younger, do NOT slim, smooth, beautify or reshape their face or body. Just touch it up: brighten and even out the lighting on them, boost colour vibrancy, fix exposure, and clean up image issues (noise, softness, compression artifacts, distracting blemishes) — a polished version of the SAME photo. KEEP the product they are holding or showing exactly: same item, shape, colour, branding and details.
+
+BACKGROUND: ${bgDirection}, rendered with a soft, gentle blur (shallow depth of field) so all focus stays on the person and the product. Remove background clutter and distractions; keep it bright, clean and uncluttered.
+
+Bright, flattering, high-contrast premium thumbnail look. Do NOT add any other people. ${NO_BRAND_IMAGE_CLAUSE} Photorealistic, 16:9.`
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const kontextResult = await fal.subscribe('fal-ai/flux-pro/kontext' as any, {
