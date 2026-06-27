@@ -933,6 +933,18 @@ export async function POST(request: Request) {
       }
     }
 
+    // UPLOADED-PHOTO PRIORITY. When the user uploads a photo of THEMSELVES with
+    // the product ("Upload 1–3 photos of you with the product"), that photo IS
+    // the identity + scene — PATH U just cleans it up. It must NEVER be
+    // overridden by a saved face model (e.g. auto-matching to "Seb") or the
+    // video frame's person; that's exactly the "uploaded a selfie, got someone
+    // else entirely" bug. Drop any loaded/auto face model so every downstream
+    // branch defers to PATH U.
+    if (uploadedPhotoUrl) {
+      faceModel = null
+      autoFaceModels = []
+    }
+
     // Co-Pilot thumbnails are FREE enrichment of a content piece (pricing model
     // 2026-06-15): they no longer decrement the content-piece quota. Cost is
     // bounded by the monthly $-ceiling (spendGate, checked above) instead.
@@ -1048,7 +1060,7 @@ export async function POST(request: Request) {
         message: "This video is private — MVP can't pull frames from it without the browser extension. Install the SCOUT extension to capture your video frames, or add a Face Model under \"Your Face\" to generate a thumbnail.",
       }, { status: 409 })
     }
-    if (textMode === 'graphic' && (faceModel || hasVideoFrame)) {
+    if (textMode === 'graphic' && !uploadedPhotoUrl && (faceModel || hasVideoFrame)) {
       try {
         const openaiGfx = createOpenAIService()
         const claimsSheetGfx = await claimsSheetPromise
