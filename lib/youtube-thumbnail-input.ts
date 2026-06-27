@@ -21,6 +21,7 @@
 // saved within youtube".
 import 'server-only'
 import sharp from 'sharp'
+import { assertPublicHttpUrl, SsrfBlocked } from '@/lib/ssrf-guard'
 
 export interface ResolvedThumbnail {
   buffer: Buffer
@@ -78,6 +79,18 @@ export async function resolveThumbnailInput(input: string): Promise<ResolvedThum
 
   // ── Path 2: HTTPS URL ───────────────────────────────────────────
   if (/^https?:\/\//i.test(trimmed)) {
+    // SSRF guard: this URL ultimately originates from the request body
+    // (thumbnailDataUri), so an attacker could point it at an internal
+    // service or a cloud-metadata endpoint. Reject private/reserved
+    // hosts before we ever open the socket. We also re-check the final
+    // URL after redirects below, in case a public host 30x-redirects
+    // into private space.
+    try {
+      assertPublicHttpUrl(trimmed)
+    } catch (e) {
+      if (e instanceof SsrfBlocked) throw new Error(`Thumbnail URL rejected: ${e.message}`)
+      throw e
+    }
     const res = await fetch(trimmed, {
       // Identify ourselves so storage providers don't reject us as
       // a bot, and bound the request so a slow CDN can't stall the
@@ -85,6 +98,16 @@ export async function resolveThumbnailInput(input: string): Promise<ResolvedThum
       signal: AbortSignal.timeout(15_000),
       headers: { 'User-Agent': 'Mozilla/5.0 (MVP Affiliate)' },
     })
+    // A public host can still redirect into private space — re-validate
+    // where we actually landed.
+    if (res.url && res.url !== trimmed) {
+      try {
+        assertPublicHttpUrl(res.url)
+      } catch (e) {
+        if (e instanceof SsrfBlocked) throw new Error(`Thumbnail URL redirected to a blocked host.`)
+        throw e
+      }
+    }
     if (!res.ok) {
       throw new Error(`Thumbnail fetch failed (${res.status}) from ${trimmed.slice(0, 80)}`)
     }

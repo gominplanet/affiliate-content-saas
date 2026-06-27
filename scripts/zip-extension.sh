@@ -15,5 +15,19 @@ fi
 cd "$ROOT/extension"
 rm -f "$OUT"
 # -X drops extra file attributes; exclude OS/editor junk so the package is clean.
-zip -r -X "$OUT" . -x '*.DS_Store' '__MACOSX/*' '*/.*' >/dev/null
+# CRITICAL: never ship the signing material — key.pem is the PRIVATE key that
+# pins the extension ID, and .keyinfo.txt documents it. They live in extension/
+# (gitignored) only so the maintainer can re-pack a signed build; packaging them
+# into the PUBLIC download would hand anyone the key to impersonate the
+# extension. `*/.*` only catches subdir dotfiles, so top-level dotfiles
+# (.keyinfo.txt, .gitignore) must be excluded explicitly.
+zip -r -X "$OUT" . \
+  -x '*.DS_Store' '__MACOSX/*' '*/.*' \
+     'key.pem' '*.pem' '.keyinfo.txt' '.git*' >/dev/null
+# Belt-and-suspenders: fail loudly if any signing material slipped into the zip.
+if unzip -l "$OUT" | grep -Eiq '\.pem|keyinfo'; then
+  echo "[zip-extension] FATAL: signing material leaked into $OUT — aborting" >&2
+  rm -f "$OUT"
+  exit 1
+fi
 echo "[zip-extension] packaged extension → public/mvp-cc-scout.zip"

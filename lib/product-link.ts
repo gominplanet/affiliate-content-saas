@@ -10,6 +10,7 @@
 //     linked the product directly. Prefer the link that's actually there.
 
 import { extractAsin } from '@/services/amazon'
+import { assertPublicHttpUrl } from '@/lib/ssrf-guard'
 
 /** Pull a 10-char Amazon ASIN out of an Amazon product URL path. */
 export function asinFromAmazonUrl(url: string): string | null {
@@ -55,6 +56,16 @@ const RESOLVER_UA = 'MVPAffiliateResolverBot/1.0 (+https://www.mvpaffiliate.io/b
  *  on failure. Uses a bot UA so click-tracking redirectors don't count these
  *  internal resolution hits as real clicks. */
 export async function resolveFinalUrl(url: string): Promise<string> {
+  // SSRF guard: this URL comes from a video description / brand-recap product
+  // field — user-influenced. Refuse to open a socket to a private/reserved
+  // host or a non-http scheme. We keep the never-throw contract: a blocked
+  // URL is simply returned un-resolved (callers then fail to extract an ASIN
+  // and fall back to discovery), never fetched.
+  try {
+    assertPublicHttpUrl(url)
+  } catch {
+    return url
+  }
   try {
     const res = await fetch(url, { method: 'HEAD', redirect: 'follow', headers: { 'User-Agent': RESOLVER_UA }, signal: AbortSignal.timeout(5000) })
     return res.url || url
