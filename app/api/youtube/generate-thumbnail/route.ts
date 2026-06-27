@@ -2144,22 +2144,77 @@ Ultra-sharp, professional, photorealistic.`
           // background, not just the primary NB path (see applyMoodyGrade).
           const moodyUploadUrls = await Promise.all(urls.map(applyMoodyGrade))
           const rank = await rankVariants(moodyUploadUrls, overlayHookU, { userId: TELEMETRY.userId, tier: TELEMETRY.tier })
+
+          // BAKE THE TITLE ON (unless the user is in clean/overlay text mode).
+          // Same neon-border + bold line1/line2 + yellow-emphasis treatment MVP
+          // bakes on every other thumbnail — now applied to the cleaned-up
+          // uploaded photo. The person + product are already IN the image; we
+          // never composite a face here, so the identity stays exactly what the
+          // user uploaded. Falls back to the un-baked photo if a bake fails.
+          const wantBakedU = textMode !== 'clean'
+          let finalUrlsU = rank.urls
+          let bakedU = false
+          if (wantBakedU) {
+            try {
+              const claimsForU = await claimsSheetPromise
+              const splitLockedU = (h: string): ThumbCopy => {
+                const words = (h || '').trim().split(/\s+/)
+                const half = Math.ceil(words.length / 2)
+                return {
+                  angle: 'NEGATION',
+                  line1: words.slice(0, half).join(' ').toUpperCase().slice(0, 18),
+                  line2: (words.slice(half).join(' ').toUpperCase() || words.slice(0, half).join(' ').toUpperCase()).slice(0, 22),
+                  emphasisWord: '',
+                }
+              }
+              const copiesU: ThumbCopy[] = lockedHeadline
+                ? rank.urls.map(() => splitLockedU(lockedHeadline))
+                : await generateThumbCopies(videoTitle, rank.urls.length, productDescription, claimsForU)
+              const bakedArr = await Promise.all(rank.urls.map(async (u, i) => {
+                try {
+                  const r = await fetch(u, { signal: AbortSignal.timeout(15000) })
+                  if (!r.ok) return u
+                  const buf = Buffer.from(await r.arrayBuffer())
+                  const copy = copiesU[i] ?? copiesU[0]
+                  const res = await bakeSimpleHeadline(buf, copy, {
+                    borderStyleIndex: (typeof borderStyleIndex === 'number' && borderStyleIndex >= 0) ? borderStyleIndex : i,
+                    accentColor: accentColor || undefined,
+                    userId: String(TELEMETRY.userId ?? ''),
+                    tier: TELEMETRY.tier,
+                  })
+                  const hosted = await rehostToFal(`data:image/jpeg;base64,${res.png.toString('base64')}`)
+                  if (hosted) {
+                    recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'yt_thumb_simple_bake', model: 'simple-bake-resvg', images: 1 })
+                    return hosted
+                  }
+                  return u
+                } catch { return u }
+              }))
+              if (bakedArr.some((b, i) => b !== rank.urls[i])) { finalUrlsU = bakedArr; bakedU = true }
+            } catch (e) {
+              console.warn('[upload-path] headline bake failed, returning clean photo:', e instanceof Error ? e.message : String(e))
+            }
+          }
+
           return NextResponse.json({
             ok: true,
-            thumbnailUrl: rank.urls[0],
-            thumbnailUrls: rank.urls,
+            thumbnailUrl: finalUrlsU[0],
+            thumbnailUrls: finalUrlsU,
             thumbnailScores: rank.scores,
             thumbnailScore: rank.topScore,
             belowThreshold: rank.belowThreshold,
             overlayHook: overlayHookU,
             headlineLocked: !!lockedHeadline,
+            // baked:true → the headline is already IN the image; the client must
+            // NOT draw its own text overlay (would double the title).
+            baked: bakedU,
             prompt: kontextInstruction,
             styleBriefApplied: false,
             channelStyle: null,
-            modelUsed: 'kontext-upload',
+            modelUsed: bakedU ? 'kontext-upload+bake' : 'kontext-upload',
             headshotUsed: false,
             personCutoutUrl: null,
-            faceDebug: 'upload-path (no cut-out — photo already has the person)',
+            faceDebug: `upload-path (no cut-out — photo already has the person; title=${bakedU ? 'baked' : 'overlay'})`,
           })
         }
         // If Kontext returned nothing, fall through to the normal pipeline.
