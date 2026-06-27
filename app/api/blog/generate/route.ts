@@ -31,6 +31,7 @@ import { fetchStoryboardFrames } from '@/lib/youtube-storyboards'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 import { pickRelatedPosts, renderRelatedLinksBlock, insertRelatedLinks, type LinkCandidate } from '@/lib/internal-links'
 import { injectPriceStrip } from '@/lib/price-strip'
+import { enrichMultiProductLinks } from '@/lib/multi-product'
 import { injectInlineAffiliateLinks } from '@/lib/inline-affiliate'
 import { buildReviewSchemaGraph, parseRating, extractFaqFromHtml } from '@/lib/seo-schema'
 import { fal } from '@fal-ai/client'
@@ -1233,6 +1234,29 @@ async function handleGenerate(request: Request) {
       )
     }
   } catch { /* inline links are best-effort; never block generation */ }
+
+  // ── 6.3. Multi-product enrichment. Many videos review SEVERAL products (a
+  //         full routine, a haul, "my 5 favourites"). The steps above linked
+  //         only the hero product; this links EVERY OTHER product reviewed —
+  //         a contextual link on each one's first mention + a "Shop everything
+  //         in this video" recap box — so the creator earns on all of them, not
+  //         just one. No-op for single-product videos (nothing extra extracted).
+  //         Best-effort: any failure leaves the single-product post untouched.
+  try {
+    const mp = await enrichMultiProductLinks({
+      content,
+      transcript,
+      videoTitle: rawTitle,
+      primaryName: (generated as { productName?: string | null }).productName || null,
+      primaryUrl: productUrl || null,
+      amazonTag: wp?.amazon_associates_tag ?? null,
+      geniuslinkKey: wp?.geniuslink_api_key ?? null,
+      geniuslinkSecret: wp?.geniuslink_api_secret ?? null,
+      userId: user.id,
+      tier,
+    })
+    content = mp.content
+  } catch { /* multi-product enrichment is best-effort; never block generation */ }
 
   // Preserve the slug of any existing live WP post so rebuilds keep the same
   // URL (and the same Google indexing history). Only fall through to the
