@@ -13,7 +13,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
-import { Loader2, AlertTriangle, CheckCircle2, ExternalLink, RefreshCw, ChevronLeft, ShieldCheck } from 'lucide-react'
+import { Loader2, AlertTriangle, CheckCircle2, ExternalLink, RefreshCw, ChevronLeft, ShieldCheck, EyeOff, Info } from 'lucide-react'
 
 interface Mismatch {
   postId: string
@@ -23,6 +23,7 @@ interface Mismatch {
   wordpressPostId: number | null
   wordpressUrl: string
   preview: string
+  reason?: string
 }
 
 interface ScanState {
@@ -135,6 +136,43 @@ export default function TitleAuditPage() {
     }
   }
 
+  // Dismiss a flag the user is happy with — it won't surface on future scans
+  // (until the title changes). Optimistic: drop the row now, offer Undo.
+  async function ignoreOne(m: Mismatch) {
+    setScan(prev => ({ ...prev, mismatches: prev.mismatches.filter(x => x.postId !== m.postId) }))
+    try {
+      const res = await fetch('/api/tools/title-audit/ignore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ postId: m.postId, title: m.oldTitle }),
+      })
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}))
+        throw new Error(j.error || `Failed (${res.status})`)
+      }
+      toast.success("Got it — we won't flag this title again", {
+        action: { label: 'Undo', onClick: () => undoIgnore(m) },
+      })
+    } catch (e) {
+      // Restore the row if the dismissal didn't persist.
+      setScan(prev => ({ ...prev, mismatches: [m, ...prev.mismatches] }))
+      toast.error(e instanceof Error ? e.message : 'Could not ignore — try again')
+    }
+  }
+
+  async function undoIgnore(m: Mismatch) {
+    try {
+      await fetch('/api/tools/title-audit/ignore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ postId: m.postId, undo: true }),
+      })
+      setScan(prev => prev.mismatches.some(x => x.postId === m.postId) ? prev : { ...prev, mismatches: [m, ...prev.mismatches] })
+    } catch {
+      toast.error('Undo failed — re-run the scan to bring it back')
+    }
+  }
+
   const remaining = scan.mismatches.filter(m => !applied.has(m.postId)).length
 
   return (
@@ -231,6 +269,14 @@ export default function TitleAuditPage() {
                       <p className="text-[10px] uppercase tracking-wider text-[#86868b] dark:text-[#8e8e93]">Current title</p>
                       <p className="text-sm font-semibold text-[#ff3b30] line-through decoration-2 decoration-[#ff3b30]/50">{m.oldTitle}</p>
                     </div>
+                    {m.reason && (
+                      <div className="flex items-start gap-1.5 rounded-md bg-[#ff9500]/10 px-2.5 py-1.5">
+                        <Info size={13} className="text-[#ff9500] flex-shrink-0 mt-0.5" />
+                        <p className="text-[12px] text-[#3a3a3c] dark:text-[#d1d1d6] leading-snug">
+                          <span className="font-semibold">Why flagged:</span> {m.reason}
+                        </p>
+                      </div>
+                    )}
                     <div>
                       <p className="text-[10px] uppercase tracking-wider text-[#86868b] dark:text-[#8e8e93]">Suggested title (edit before applying if you want)</p>
                       <input
@@ -267,6 +313,16 @@ export default function TitleAuditPage() {
                         <span className="text-xs text-[#34c759] inline-flex items-center gap-1">
                           <CheckCircle2 size={11} /> Applied
                         </span>
+                      )}
+                      {!isApplied && (
+                        <button
+                          onClick={() => ignoreOne(m)}
+                          disabled={isApplying}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-md text-[#6e6e73] dark:text-[#ebebf0] hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-60 transition-colors"
+                          title="The current title is fine — don't flag it on future scans"
+                        >
+                          <EyeOff size={11} /> Ignore
+                        </button>
                       )}
                     </div>
                   </div>

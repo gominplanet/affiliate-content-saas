@@ -1971,6 +1971,45 @@ ${plain}`,
     }
   }
 
+  /** One-line, creator-facing explanation of WHY the Title Check flagged a post —
+   *  what product the body is actually about vs. what the title says. Only called
+   *  for confirmed mismatches (rare), so the extra Haiku call is negligible. Used
+   *  by /api/tools/title-audit/scan to render a "why" under each row. Returns ''
+   *  on any failure so the UI just omits the line. */
+  async explainTitleMismatch(
+    oldTitle: string,
+    newTitle: string,
+    bodyHtml: string,
+    ctx?: UsageCtx,
+  ): Promise<string> {
+    try {
+      const plain = (bodyHtml || '')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&amp;/g, '&')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 4000)
+      const message = await this.client.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 80,
+        system: 'You explain, in ONE short plain sentence, why a blog post title was flagged for not matching the product its body is about. Be specific and concrete. No preamble, no quotes.',
+        messages: [{
+          role: 'user',
+          content: `CURRENT TITLE: ${oldTitle}\nSUGGESTED TITLE: ${newTitle}\n\nBODY (plain text):\n${plain}\n\nIn ONE sentence (max ~22 words), tell the creator why the current title was flagged: name the product the body is actually about and contrast it with what the title says. If it's really the SAME product just described differently (not a true swap), say so plainly. No quotes, no preamble.`,
+        }],
+      }, { timeout: 12000 })
+      let out = message.content.filter(b => b.type === 'text').map(b => (b as Anthropic.TextBlock).text).join('').trim()
+      out = out.replace(/^["'\s]+|["'\s]+$/g, '').replace(/\s+/g, ' ').trim()
+      const u = usageFromAnthropic(message)
+      recordUsage({ userId: ctx?.userId, tier: ctx?.tier, feature: 'blog_title_mismatch_reason', model: 'claude-haiku-4-5-20251001', input: u.input, output: u.output })
+      if (!out || out.length > 240) return ''
+      return out
+    } catch {
+      return ''
+    }
+  }
+
   async factCheckTitle(
     title: string,
     transcript: string,

@@ -39,6 +39,7 @@ interface Mismatch {
   wordpressPostId: number | null
   wordpressUrl: string
   preview: string  // first 200 chars of body for context
+  reason: string   // one-line "why this was flagged" ('' if the explainer failed)
 }
 
 export async function POST(request: Request) {
@@ -84,6 +85,20 @@ export async function POST(request: Request) {
       .range(offset, offset + limit - 1)
     if (pErr) return NextResponse.json({ error: pErr.message }, { status: 500 })
 
+    // Dismissals (migration 143). A post the user has ignored is skipped while
+    // its CURRENT title still matches the title they dismissed — so we don't
+    // even spend a Haiku call on it. Edit the title later → ignore no longer
+    // matches → it gets re-judged. Keyed to the authenticated user.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: ignoreRows } = await (supabase as any)
+      .from('title_audit_ignores')
+      .select('post_id,ignored_title')
+      .eq('user_id', user.id)
+    const ignored = new Map<string, string>()
+    for (const r of (ignoreRows ?? []) as { post_id: string; ignored_title: string }[]) {
+      ignored.set(r.post_id, (r.ignored_title || '').trim())
+    }
+
     const claude = createClaudeService()
 
     // Parallelize the per-post Haiku checks. The previous serial loop
@@ -95,6 +110,8 @@ export async function POST(request: Request) {
     const results = await Promise.all(
       ((posts ?? []) as PostRow[]).map(async (p): Promise<Mismatch | null> => {
         if (!p.title || !p.content || p.content.length < 300) return null
+        // Dismissed AND the title hasn't changed since → skip without an LLM call.
+        if (ignored.get(p.id) === p.title.trim()) return null
         try {
           const newTitle = await claude.factCheckTitleVsBody(p.title, p.content, {
             userId: user.id,
@@ -110,6 +127,12 @@ export async function POST(request: Request) {
             .replace(/\s+/g, ' ')
             .trim()
             .slice(0, 240)
+          // One-line "why" — only runs for confirmed mismatches (rare), so the
+          // extra Haiku call is negligible. Empty string on failure; UI omits it.
+          const reason = await claude.explainTitleMismatch(p.title, cleaned, p.content, {
+            userId: user.id,
+            tier,
+          })
           return {
             postId: p.id,
             videoId: p.video_id,
@@ -118,6 +141,7 @@ export async function POST(request: Request) {
             wordpressPostId: p.wordpress_post_id,
             wordpressUrl: p.wordpress_url,
             preview,
+            reason,
           }
         } catch {
           // Skip rows where the check throws — non-fatal for the batch.
