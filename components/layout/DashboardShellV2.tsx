@@ -336,8 +336,12 @@ export default function DashboardShellV2({
       label: 'Grow',
       items: [
         { href: '/seo', icon: <TrendingUp size={15} />, label: 'SEO & Indexing' },
-        // Analytics + Title audit hidden 2026-06-12. Routes stay alive
-        // (/analytics, /tools/title-audit) — just unlinked for now.
+        // Title Check (title-vs-body accuracy) re-linked here under Grow
+        // 2026-06-27 at the user's request — it's an SEO-hygiene tool reached
+        // from the SEO page's "Fix title" CTA, now also always one click away.
+        { href: '/tools/title-audit', icon: <ShieldCheck size={15} />, label: 'Title Check' },
+        // Analytics still hidden 2026-06-12 — route stays alive (/analytics),
+        // just unlinked for now.
       ],
     },
     {
