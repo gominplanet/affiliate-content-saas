@@ -1277,7 +1277,15 @@ export async function POST(request: Request) {
 
             const b64 = await openaiGfx.generateWithReferences({ prompt, images: refs, size: '1536x1024', quality: 'medium' })
             recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'yt_thumb_graphic', model: gfxModel, images: 1 })
-            return rehostToFal(`data:image/png;base64,${b64}`)
+            // gpt-image has no native 16:9 size (1536×1024 = 3:2). Normalize to
+            // EXACT YouTube 1280×720, cropping from the bottom (position:'top')
+            // so the top headline is never clipped.
+            try {
+              const resized = await sharp(Buffer.from(b64, 'base64')).resize(1280, 720, { fit: 'cover', position: 'top' }).jpeg({ quality: 92 }).toBuffer()
+              return await rehostToFal(`data:image/jpeg;base64,${resized.toString('base64')}`)
+            } catch {
+              return rehostToFal(`data:image/png;base64,${b64}`)
+            }
           })
         )
 

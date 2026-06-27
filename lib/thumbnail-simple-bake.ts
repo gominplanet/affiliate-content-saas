@@ -350,12 +350,16 @@ export async function bakeSimpleHeadline(
   copy: ThumbCopyForBake,
   opts: BakeOptions = {},
 ): Promise<BakeResult> {
-  let width = opts.width ?? 1280
-  let height = opts.height ?? 720
+  // YouTube thumbnails must be EXACTLY 1280×720 (16:9). The AI models emit 16:9
+  // at assorted pixel sizes (e.g. 1344×768, 1536×864); normalize the base so
+  // every baked thumbnail is upload-ready AND the text constants below — tuned
+  // for a 1280-wide canvas — stay exact. cover-fit keeps the subject framed.
+  const width = opts.width ?? 1280
+  const height = opts.height ?? 720
+  let base = baseImage
   try {
-    const meta = await sharp(baseImage).metadata()
-    if (meta.width && meta.height) { width = meta.width; height = meta.height }
-  } catch { /* fall back to defaults */ }
+    base = await sharp(baseImage).resize(width, height, { fit: 'cover' }).png().toBuffer()
+  } catch { /* resize failed — composite still attempts on the original */ }
 
   const scaleBase = Math.max(360, Math.min(width, height * 16 / 9))
 
@@ -584,7 +588,7 @@ export async function bakeSimpleHeadline(
       compositeLayers.push({ input: textPng, top: 0, left: 0 })
     }
 
-    const final = await sharp(baseImage)
+    const final = await sharp(base)
       .composite(compositeLayers)
       .jpeg({ quality: 92 })
       .toBuffer()
@@ -594,10 +598,10 @@ export async function bakeSimpleHeadline(
     const message = err instanceof Error ? err.message : String(err)
     console.warn('[simple-bake] composite failed, returning bare base:', message)
     try {
-      const bare = await sharp(baseImage).jpeg({ quality: 92 }).toBuffer()
+      const bare = await sharp(base).jpeg({ quality: 92 }).toBuffer()
       return { png: bare, width, height, renderError: message }
     } catch {
-      return { png: baseImage, width, height, renderError: message }
+      return { png: base, width, height, renderError: message }
     }
   }
 }
