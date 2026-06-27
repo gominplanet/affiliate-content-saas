@@ -10,9 +10,10 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
-import { Loader2, AlertTriangle, CheckCircle2, ExternalLink, RefreshCw } from 'lucide-react'
+import { Loader2, AlertTriangle, CheckCircle2, ExternalLink, RefreshCw, ChevronLeft, ShieldCheck } from 'lucide-react'
 
 interface Mismatch {
   postId: string
@@ -139,9 +140,38 @@ export default function TitleAuditPage() {
   return (
     <div>
       <PageHero
-        title="Title / body audit"
-        subtitle="Scan every published post for title-vs-body product mismatches (the WagComb-class hallucination). One-click apply per row or bulk."
+        title="Title accuracy check"
+        subtitle="Find published posts whose title names the wrong product — then fix each title in one click, without touching the rest of the post."
       />
+
+      <Link
+        href="/seo"
+        className="inline-flex items-center gap-1 text-xs font-medium text-[#7C3AED] hover:underline mb-4"
+      >
+        <ChevronLeft size={13} /> Back to SEO &amp; Indexing
+      </Link>
+
+      {/* What this is + why it's here — written for the creator, not for us.
+          The old subtitle leaned on internal jargon ("WagComb-class
+          hallucination"); this explains the actual problem and reassures that
+          nothing changes until they click Apply. */}
+      <div className="mb-6 rounded-xl border border-[#7C3AED]/20 bg-[#7C3AED]/5 p-5">
+        <div className="flex items-start gap-3">
+          <ShieldCheck size={20} className="text-[#7C3AED] flex-shrink-0 mt-0.5" />
+          <div className="space-y-2 text-sm text-[#1d1d1f] dark:text-[#f5f5f7]">
+            <p className="font-semibold">What this checks — and why it&apos;s here</p>
+            <p className="text-[#3a3a3c] dark:text-[#d1d1d6] leading-relaxed">
+              Once in a while a post&apos;s <strong>title</strong> can name a product the article isn&apos;t actually about — for example, the title says one model while the review covers another. It&apos;s rare, and it mostly shows up on older posts published before MVP started fact-checking every title as it&apos;s written.
+            </p>
+            <p className="text-[#3a3a3c] dark:text-[#d1d1d6] leading-relaxed">
+              A wrong product in the title is the most damaging title problem to leave live: it misleads readers, kills your click-through from Google, and can get the page demoted in search. This keeps your titles honest — always matching what&apos;s actually on the page.
+            </p>
+            <p className="text-[#3a3a3c] dark:text-[#d1d1d6] leading-relaxed">
+              <strong>How it works:</strong> hit <em>Run scan</em> — MVP reads each post&apos;s title against its body and flags only genuine mismatches. For each one you get a corrected title you can edit first, then apply with one click; it updates WordPress and your library together. <strong>Nothing changes until you click Apply.</strong>
+            </p>
+          </div>
+        </div>
+      </div>
 
       <div className="mt-4 flex items-center gap-3 flex-wrap">
         <button
