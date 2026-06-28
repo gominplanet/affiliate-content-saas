@@ -93,3 +93,26 @@ export async function exchangeCodeForToken(code: string, redirectUri: string) {
   const { access_token: longLivedToken } = await llRes.json() as { access_token: string }
   return { access_token: longLivedToken, user_id }
 }
+
+/**
+ * Refresh a long-lived Threads token to extend it another ~60 days. The
+ * long-lived token refreshes ITSELF (no separate refresh token) via the
+ * th_refresh_token grant. Requirements: the token must be valid and at least
+ * 24h old; refreshing a brand-new (<24h) token errors — callers should treat
+ * that as a no-op and keep the current token. Returns the new token + its
+ * absolute expiry (ms epoch). Used by the daily token-refresh cron so creators
+ * never have to reconnect Threads.
+ */
+export async function refreshThreadsToken(currentToken: string): Promise<{ accessToken: string; expiresAt: number }> {
+  const res = await fetch(
+    `https://graph.threads.net/refresh_access_token?grant_type=th_refresh_token&access_token=${encodeURIComponent(currentToken)}`,
+  )
+  const data = await res.json().catch(() => ({})) as { access_token?: string; expires_in?: number; error?: { message?: string } }
+  if (!res.ok || !data.access_token) {
+    throw new Error(`Threads token refresh failed: ${data.error?.message || `HTTP ${res.status}`}`)
+  }
+  return {
+    accessToken: data.access_token,
+    expiresAt: Date.now() + (data.expires_in ?? 60 * 24 * 60 * 60) * 1000,
+  }
+}

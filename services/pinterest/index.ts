@@ -213,3 +213,36 @@ export async function exchangeCodeForToken(code: string, redirectUri: string) {
   }
   return res.json() as Promise<{ access_token: string; refresh_token: string; expires_in: number }>
 }
+
+/**
+ * Refresh a Pinterest access token using the stored refresh token. Pinterest
+ * access tokens are short-lived (~30 days) while the refresh token lasts ~1
+ * year, so the daily token-refresh cron calls this to keep the access token
+ * alive without the creator ever reconnecting. Pinterest's refresh token is
+ * NOT rotated on refresh (continuous refresh), so the caller keeps the same
+ * refresh_token unless one is returned. Returns the new access token + expiry.
+ */
+export async function refreshPinterestToken(refreshToken: string): Promise<{ access_token: string; refresh_token?: string; expires_in: number }> {
+  const appId = process.env.PINTEREST_APP_ID!
+  const appSecret = process.env.PINTEREST_APP_SECRET!
+  const credentials = Buffer.from(`${appId}:${appSecret}`).toString('base64')
+
+  const res = await fetch(`${BASE}/oauth/token`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Basic ${credentials}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+    }),
+  })
+  if (!res.ok) {
+    const raw = await res.text().catch(() => '')
+    let detail = raw
+    try { const j = JSON.parse(raw); detail = j.message || j.error_description || j.error || raw } catch { /* keep raw */ }
+    throw new Error(`Pinterest token refresh ${res.status}: ${String(detail).slice(0, 200)}`)
+  }
+  return res.json() as Promise<{ access_token: string; refresh_token?: string; expires_in: number }>
+}

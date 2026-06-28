@@ -318,29 +318,45 @@ async function publishOne(
     case 'twitter': {
       let accessToken = integration.twitter_access_token
       if (!accessToken) throw new Error('X not connected')
-      // Refresh if expired
+      let refreshToken = integration.twitter_refresh_token
+
+      // Persist a freshly-refreshed token pair (encrypted) so the next tick
+      // and any 401-retry reuse it. Returns the new access token.
+      const doRefresh = async (): Promise<string> => {
+        if (!refreshToken) throw new Error('X needs reconnecting — no refresh token on file.')
+        const refreshed = await refreshTwitterToken(refreshToken)
+        refreshToken = refreshed.refresh_token ?? refreshToken
+        await admin.from('integrations').update(encryptIntegrationWrite({
+          twitter_access_token: refreshed.access_token,
+          twitter_refresh_token: refreshToken,
+          twitter_token_expiry: Date.now() + refreshed.expires_in * 1000,
+        })).eq('user_id', row.user_id)
+        return refreshed.access_token
+      }
+
+      // Proactive refresh when we KNOW it's expired.
       const expiry = integration.twitter_token_expiry
-      if (expiry && Date.now() > expiry - 60_000 && integration.twitter_refresh_token) {
-        try {
-          const refreshed = await refreshTwitterToken(integration.twitter_refresh_token)
-          accessToken = refreshed.access_token
-          // Encrypt refreshed tokens on write (2026-06-02). The decrypt
-          // happens automatically on the next cron via
-          // decryptIntegrationRow() above.
-          await admin
-            .from('integrations')
-            .update(encryptIntegrationWrite({
-              twitter_access_token: refreshed.access_token,
-              twitter_refresh_token: refreshed.refresh_token ?? integration.twitter_refresh_token,
-              twitter_token_expiry: Date.now() + refreshed.expires_in * 1000,
-            }))
-            .eq('user_id', row.user_id)
-        } catch (e) {
-          throw new Error(`X token refresh failed: ${e instanceof Error ? e.message : String(e)}`)
+      if (expiry && Date.now() > expiry - 60_000 && refreshToken) {
+        try { accessToken = await doRefresh() }
+        catch (e) { throw new Error(`X token refresh failed: ${e instanceof Error ? e.message : String(e)}`) }
+      }
+
+      const finalText = `${row.body_text} ${url}`
+      let result
+      try {
+        result = await createTweet(accessToken!, finalText)
+      } catch (e) {
+        // Reactive refresh: a 401 means the access token is dead even though
+        // expiry looked fine (missing/stale expiry, or token revoked then
+        // re-issued). Refresh once and retry before giving up.
+        const msg = e instanceof Error ? e.message : String(e)
+        if (/\b401\b|unauthorized/i.test(msg) && refreshToken) {
+          accessToken = await doRefresh()
+          result = await createTweet(accessToken, finalText)
+        } else {
+          throw e
         }
       }
-      const finalText = `${row.body_text} ${url}`
-      const result = await createTweet(accessToken!, finalText)
       await admin.from('blog_posts').update({ twitter_post_id: result.id }).eq('id', row.blog_post_id)
       await recordSocialPermalink(admin, row.blog_post_id, 'x', socialPermalink.x(result.id))
       return { externalId: result.id }
