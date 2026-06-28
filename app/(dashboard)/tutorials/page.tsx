@@ -6,17 +6,38 @@ export const metadata: Metadata = { title: 'Tutorials' }
 const TUTORIALS = [
   {
     id: 'aBo0ruDuVuE',
-    title: 'Full Onboarding Walkthrough',
+    title: 'Step 1: Onboarding Walkthrough',
     description: 'A complete setup guide — from connecting WordPress and YouTube to generating your first blog post and pushing it everywhere.',
     category: 'Getting Started',
     accent: '#7C3AED',
   },
   {
     id: 'QTH5x8KYHnk',
-    title: 'Brand Identity Set Up',
+    title: 'Step 2: Brand Identity Set Up',
     description: 'Configure your brand profile, voice training, and author identity so every post sounds exactly like you.',
     category: 'Getting Started',
     accent: '#DB2777',
+  },
+  {
+    id: 'nHrSHlrN9pI',
+    title: 'Step 3: YouTube Co-Pilot',
+    description: 'Optimize your video titles, descriptions, tags, and thumbnails with the YouTube Co-Pilot so your videos get found and earn the click.',
+    category: 'Getting Started',
+    accent: '#2563EB',
+  },
+  {
+    id: '6YVGN_8EQh8',
+    title: 'Step 4: Blog Post Generator',
+    description: 'Turn any YouTube review into a full, SEO-optimized blog post on your WordPress site — automatically.',
+    category: 'Getting Started',
+    accent: '#059669',
+  },
+  {
+    id: 'QuH28nzKWFQ',
+    title: 'Step 5: Social Push',
+    description: 'Push every post out to all your connected social platforms at once with Social Push.',
+    category: 'Getting Started',
+    accent: '#EA580C',
   },
 ]
 
