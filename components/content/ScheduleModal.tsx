@@ -33,6 +33,7 @@ import { toast } from 'sonner'
 import { Calendar, Loader2, X } from 'lucide-react'
 import type { SchedulableSocial, ScheduleMode } from '@/lib/schedule-types'
 import { DEFAULT_SOCIAL_OFFSETS_MIN } from '@/lib/schedule-types'
+import { tierAllowsSocial, minTierForSocial, tierLabel, type Tier } from '@/lib/tier'
 
 /** Platforms surfaced in the modal. Order is intentional — cheapest,
  *  fastest, lowest-friction channels at the top. Pinterest / Instagram
@@ -55,8 +56,14 @@ export interface ScheduleModalProps {
   /** Video title for the modal header. */
   videoTitle: string
   /** Which channels the user has actually connected. Channels not in
-   *  this set render disabled with "Connect to use". */
+   *  this set render disabled with "Connect to use". This is CONNECTION
+   *  ONLY — tier gating is applied separately via userTier so we can show
+   *  "needs Studio/Pro + Upgrade" rather than mislabeling a connected-but-
+   *  tier-locked channel as "not connected". */
   connectedChannels: ReadonlySet<SchedulableSocial>
+  /** The user's tier — drives which connected channels are actually usable
+   *  and which show an upgrade nudge. */
+  userTier: Tier
   /** Multi-site (Pro): wordpress_sites.id the post should land on. */
   siteId?: string | null
   /** CASCADE-ONLY MODE — when set, the modal skips generation entirely
@@ -91,18 +98,20 @@ function defaultScheduleIso(): string {
 }
 
 export default function ScheduleModal({
-  videoId, videoTitle, connectedChannels, siteId, existingPostId, open, onClose, onScheduled,
+  videoId, videoTitle, connectedChannels, userTier, siteId, existingPostId, open, onClose, onScheduled,
 }: ScheduleModalProps) {
   const cascadeOnly = !!existingPostId
+  // A channel is USABLE only when it's connected AND the user's tier allows it.
+  const channelUsable = (k: SchedulableSocial) => connectedChannels.has(k) && tierAllowsSocial(userTier, k)
   const [scheduledFor, setScheduledFor] = useState<string>(() => defaultScheduleIso())
   const [draftFlip, setDraftFlip] = useState(false)
   // Default to all CONNECTED channels selected — every channel the user
   // already wired up gets the cascade. Channels they haven't connected
   // can't be toggled on. Recomputed when the connected set changes (e.g.
   // user closed + reopened the modal after connecting LinkedIn).
-  const [selectedChannels, setSelectedChannels] = useState<Set<SchedulableSocial>>(() => new Set(CHANNEL_OPTIONS.map(c => c.key).filter(k => connectedChannels.has(k))))
+  const [selectedChannels, setSelectedChannels] = useState<Set<SchedulableSocial>>(() => new Set(CHANNEL_OPTIONS.map(c => c.key).filter(k => channelUsable(k))))
   useEffect(() => {
-    if (open) setSelectedChannels(new Set(CHANNEL_OPTIONS.map(c => c.key).filter(k => connectedChannels.has(k))))
+    if (open) setSelectedChannels(new Set(CHANNEL_OPTIONS.map(c => c.key).filter(k => channelUsable(k))))
   }, [open, connectedChannels])
 
   // Show / hide the Advanced per-channel offset overrides. Defaults are
@@ -336,21 +345,32 @@ export default function ScheduleModal({
             <div className="grid grid-cols-2 gap-2">
               {CHANNEL_OPTIONS.map((opt) => {
                 const isConnected = connectedChannels.has(opt.key)
+                const allowedByTier = tierAllowsSocial(userTier, opt.key)
+                const usable = isConnected && allowedByTier
                 const isChecked = selectedChannels.has(opt.key)
+                // Connected but the plan doesn't include it → show which tier
+                // unlocks it + a one-click upgrade, instead of hiding it.
+                const tierLocked = isConnected && !allowedByTier
+                const need = tierLocked ? minTierForSocial(opt.key) : null
+                const needLabel = need ? tierLabel(need) : 'a paid plan'
                 return (
                   <label
                     key={opt.key}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-colors ${isConnected ? '' : 'opacity-50 cursor-not-allowed'}`}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors ${usable ? 'cursor-pointer' : 'opacity-60 cursor-not-allowed'}`}
                     style={{
-                      borderColor: isChecked ? '#7C3AED' : 'var(--border, rgba(255,255,255,0.08))',
-                      backgroundColor: isChecked ? 'rgba(124,58,237,0.10)' : 'transparent',
+                      borderColor: isChecked && usable ? '#7C3AED' : 'var(--border, rgba(255,255,255,0.08))',
+                      backgroundColor: isChecked && usable ? 'rgba(124,58,237,0.10)' : 'transparent',
                     }}
-                    title={isConnected ? '' : 'Connect this channel in Setup → Connect Socials to enable scheduling'}
+                    title={
+                      usable ? ''
+                        : tierLocked ? `${opt.label} scheduling is a ${needLabel} feature.`
+                          : 'Connect this channel in Setup → Connect Socials to enable scheduling'
+                    }
                   >
                     <input
                       type="checkbox"
-                      checked={isChecked && isConnected}
-                      disabled={!isConnected}
+                      checked={isChecked && usable}
+                      disabled={!usable}
                       onChange={(e) => {
                         setSelectedChannels((prev) => {
                           const next = new Set(prev)
@@ -362,9 +382,18 @@ export default function ScheduleModal({
                       className="w-3.5 h-3.5 rounded accent-[#7C3AED]"
                     />
                     <span className="text-sm">{opt.label}</span>
-                    {!isConnected && (
+                    {tierLocked ? (
+                      <a
+                        href="/pricing"
+                        onClick={(e) => e.stopPropagation()}
+                        className="ml-auto text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-[#7C3AED]/15 text-[#7C3AED] hover:bg-[#7C3AED]/25 whitespace-nowrap"
+                        title={`Upgrade to ${needLabel} to schedule ${opt.label}`}
+                      >
+                        {needLabel} · Upgrade →
+                      </a>
+                    ) : !isConnected ? (
                       <span className="ml-auto text-[10px] opacity-70">Connect to use</span>
-                    )}
+                    ) : null}
                   </label>
                 )
               })}

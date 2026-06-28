@@ -397,6 +397,23 @@ export function tierAllowsSocial(tier: Tier, social: Social): boolean {
   return TIERS[normalizeTier(tier)].socials.includes(social)
 }
 
+/** The LOWEST standard tier whose plan includes this social. Used to show
+ *  "needs Studio" / "needs Pro" + an upgrade nudge on a locked channel.
+ *  Admin is excluded (it allows everything but isn't an upgrade target).
+ *  Returns null if no standard tier includes it. */
+export function minTierForSocial(social: Social): Tier | null {
+  const order: Tier[] = ['trial', 'creator', 'studio', 'pro']
+  for (const t of order) {
+    if (TIERS[t].socials.includes(social)) return t
+  }
+  return null
+}
+
+/** Human-friendly label for a tier (e.g. 'Studio', 'Pro', 'Free Trial'). */
+export function tierLabel(tier: Tier): string {
+  return TIERS[normalizeTier(tier)].label
+}
+
 /** Newsletter subscriber cap for the given tier. null = unlimited (admin).
  *  Used by /api/newsletter/subscribe to reject new sign-ups past the cap
  *  with an upgrade nudge instead of silently dropping them.

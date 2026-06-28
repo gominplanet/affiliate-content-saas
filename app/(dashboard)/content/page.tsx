@@ -580,12 +580,12 @@ const VideoCard = memo(function VideoCardImpl({
     if (linkedInConnected) s.add('linkedin')
     if (blueskyConnected) s.add('bluesky')
     if (telegramConnected) s.add('telegram')
-    // Pinterest auto-publish is a Studio/Pro perk (same gate as the live
-    // "Pin to Pinterest" button), so only offer it in the scheduler when the
-    // user is both connected AND on a tier that allows it.
-    if (pinterestConnected && tierAllowsSocial(userTier, 'pinterest')) s.add('pinterest')
+    // Connection-only — the Schedule modal applies the tier gate itself so it
+    // can show "needs Studio/Pro · Upgrade" on a connected-but-locked channel
+    // (e.g. Pinterest) rather than mislabeling it "not connected".
+    if (pinterestConnected) s.add('pinterest')
     return s
-  }, [fbConnected, threadsConnected, twitterConnected, linkedInConnected, blueskyConnected, telegramConnected, pinterestConnected, userTier])
+  }, [fbConnected, threadsConnected, twitterConnected, linkedInConnected, blueskyConnected, telegramConnected, pinterestConnected])
 
   // ── Schedule pill state ────────────────────────────────────────────────
   // A post is "still scheduled" when scheduled_for exists AND is in the
@@ -1331,6 +1331,7 @@ const VideoCard = memo(function VideoCardImpl({
         videoId={id}
         videoTitle={title}
         connectedChannels={connectedChannels}
+        userTier={userTier}
         existingPostId={post?.postId ?? null}
         open={scheduleOpen}
         onClose={() => setScheduleOpen(false)}
@@ -3879,12 +3880,13 @@ export default function ContentPage() {
         if (linkedInConnected) connectedSet.add('linkedin')
         if (blueskyConnected) connectedSet.add('bluesky')
         if (telegramConnected) connectedSet.add('telegram')
-        // Pinterest = Studio/Pro perk (matches the live publish gate).
-        if (pinterestConnected && tierAllowsSocial(userTier, 'pinterest')) connectedSet.add('pinterest')
+        // Connection-only — the modal applies the tier gate + upgrade nudge.
+        if (pinterestConnected) connectedSet.add('pinterest')
         return (
           <BulkScheduleVideosModal
             videos={eligible}
             connectedChannels={connectedSet}
+            userTier={userTier}
             open={bulkScheduleVideosOpen}
             onClose={() => setBulkScheduleVideosOpen(false)}
             onDone={({ successCount, videoIds }) => {

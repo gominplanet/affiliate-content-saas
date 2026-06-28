@@ -22,6 +22,7 @@ import { toast } from 'sonner'
 import { Calendar, Loader2, X, CheckCircle2, AlertCircle } from 'lucide-react'
 import type { SchedulableSocial, ScheduleMode } from '@/lib/schedule-types'
 import { DEFAULT_SOCIAL_OFFSETS_MIN } from '@/lib/schedule-types'
+import { tierAllowsSocial, minTierForSocial, tierLabel, type Tier } from '@/lib/tier'
 
 interface VideoItem {
   id: string
@@ -61,7 +62,9 @@ interface RowStatus {
 
 export interface BulkScheduleVideosModalProps {
   videos: VideoItem[]
+  /** Connection-only set; tier gating is applied in-modal via userTier. */
   connectedChannels: ReadonlySet<SchedulableSocial>
+  userTier: Tier
   siteId?: string | null
   open: boolean
   onClose: () => void
@@ -82,19 +85,20 @@ function defaultStartIso(): string {
 }
 
 export default function BulkScheduleVideosModal({
-  videos, connectedChannels, siteId, open, onClose, onDone,
+  videos, connectedChannels, userTier, siteId, open, onClose, onDone,
 }: BulkScheduleVideosModalProps) {
   const [startIso, setStartIso] = useState<string>(() => defaultStartIso())
   const [cadence, setCadence] = useState<Cadence>('1-per-day')
   const [draftFlip, setDraftFlip] = useState(false)
-  const [selectedChannels, setSelectedChannels] = useState<Set<SchedulableSocial>>(() => new Set(CHANNEL_OPTIONS.map(c => c.key).filter(k => connectedChannels.has(k))))
+  const channelUsable = (k: SchedulableSocial) => connectedChannels.has(k) && tierAllowsSocial(userTier, k)
+  const [selectedChannels, setSelectedChannels] = useState<Set<SchedulableSocial>>(() => new Set(CHANNEL_OPTIONS.map(c => c.key).filter(k => channelUsable(k))))
 
   const [running, setRunning] = useState(false)
   const [rowStatuses, setRowStatuses] = useState<RowStatus[]>([])
 
   useEffect(() => {
     if (open) {
-      setSelectedChannels(new Set(CHANNEL_OPTIONS.map(c => c.key).filter(k => connectedChannels.has(k))))
+      setSelectedChannels(new Set(CHANNEL_OPTIONS.map(c => c.key).filter(k => channelUsable(k))))
       setRowStatuses([])
       setRunning(false)
     }
@@ -285,20 +289,30 @@ export default function BulkScheduleVideosModal({
             <div className="grid grid-cols-2 gap-2">
               {CHANNEL_OPTIONS.map((opt) => {
                 const isConnected = connectedChannels.has(opt.key)
+                const allowedByTier = tierAllowsSocial(userTier, opt.key)
+                const usable = isConnected && allowedByTier
                 const isChecked = selectedChannels.has(opt.key)
+                const tierLocked = isConnected && !allowedByTier
+                const need = tierLocked ? minTierForSocial(opt.key) : null
+                const needLabel = need ? tierLabel(need) : 'a paid plan'
                 return (
                   <label
                     key={opt.key}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-colors ${isConnected ? '' : 'opacity-50 cursor-not-allowed'} ${running ? 'opacity-60 cursor-not-allowed' : ''}`}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors ${usable && !running ? 'cursor-pointer' : 'opacity-60 cursor-not-allowed'}`}
                     style={{
-                      borderColor: isChecked ? '#7C3AED' : 'var(--border, rgba(255,255,255,0.08))',
-                      backgroundColor: isChecked ? 'rgba(124,58,237,0.10)' : 'transparent',
+                      borderColor: isChecked && usable ? '#7C3AED' : 'var(--border, rgba(255,255,255,0.08))',
+                      backgroundColor: isChecked && usable ? 'rgba(124,58,237,0.10)' : 'transparent',
                     }}
+                    title={
+                      usable ? ''
+                        : tierLocked ? `${opt.label} scheduling is a ${needLabel} feature.`
+                          : 'Connect this channel in Setup → Connect Socials to enable scheduling'
+                    }
                   >
                     <input
                       type="checkbox"
-                      checked={isChecked && isConnected}
-                      disabled={!isConnected || running}
+                      checked={isChecked && usable}
+                      disabled={!usable || running}
                       onChange={(e) => {
                         setSelectedChannels((prev) => {
                           const next = new Set(prev)
@@ -310,7 +324,18 @@ export default function BulkScheduleVideosModal({
                       className="w-3.5 h-3.5 rounded accent-[#7C3AED]"
                     />
                     <span className="text-sm">{opt.label}</span>
-                    {!isConnected && <span className="ml-auto text-[10px] opacity-70">Connect to use</span>}
+                    {tierLocked ? (
+                      <a
+                        href="/pricing"
+                        onClick={(e) => e.stopPropagation()}
+                        className="ml-auto text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-[#7C3AED]/15 text-[#7C3AED] hover:bg-[#7C3AED]/25 whitespace-nowrap"
+                        title={`Upgrade to ${needLabel} to schedule ${opt.label}`}
+                      >
+                        {needLabel} · Upgrade →
+                      </a>
+                    ) : !isConnected ? (
+                      <span className="ml-auto text-[10px] opacity-70">Connect to use</span>
+                    ) : null}
                   </label>
                 )
               })}
