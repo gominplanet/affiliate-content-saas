@@ -267,6 +267,10 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
    *  so they consciously decide whether to write their own headline or
    *  let MVP do it, before any AI work fires. */
   const [headlinePromptOpen, setHeadlinePromptOpen] = useState(false)
+  // Remembers which generate path opened the picker, so "Start generation"
+  // runs the right one: { textMode:'graphic' } = Create my MVP Thumbnail,
+  // { noHuman:true } = Product Only. Both paths bake the picked headline.
+  const [pendingThumbOpts, setPendingThumbOpts] = useState<{ textMode?: 'baked' | 'clean' | 'graphic'; noHuman?: boolean }>({})
   // Headline picker: index into pickerTitles, or 'custom' for write-your-own.
   // Defaults to 0 (the first AI-suggested option) so the modal feels "ready"
   // the moment titles load — Start can be clicked immediately.
@@ -990,7 +994,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           videoTitle: editTitle || video.title,
           videoDescription: video.description,
           asin: video.detectedAsin ?? undefined,
-          count: 5,
+          count: 4,
         }),
       })
       const data = await res.json().catch(() => ({})) as { ok?: boolean; titles?: string[]; error?: string }
@@ -1007,6 +1011,18 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
     } finally {
       setTitleOptionsLoading(false)
     }
+  }
+
+  // Open the "Pick a thumbnail headline" modal BEFORE any generation fires.
+  // Both manual entry points (Create my MVP Thumbnail + Product Only) route
+  // through here so the creator always chooses the headline that gets baked
+  // onto the thumbnail. `opts` is stashed and replayed on "Start generation".
+  function openHeadlinePicker(opts: { textMode?: 'baked' | 'clean' | 'graphic'; noHuman?: boolean }) {
+    setPendingThumbOpts(opts)
+    // Land on the first AI suggestion unless they already typed their own.
+    setHeadlinePromptChoice(customHeadline.trim() ? 'custom' : 0)
+    setHeadlinePromptOpen(true)
+    void loadTitleOptions()
   }
 
   async function generateThumbnail(opts?: { textMode?: 'baked' | 'clean' | 'graphic'; lockedHeadline?: string; noHuman?: boolean; skipFaceModel?: boolean }) {
@@ -1753,7 +1769,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                       <button
                         type="button"
                         onClick={() => {
-                          void generateThumbnail({ textMode: 'graphic' })
+                          openHeadlinePicker({ textMode: 'graphic' })
                         }}
                         disabled={generatingThumbnail || extensionInstalled === null}
                         className={`flex items-center gap-4 w-full px-5 py-5 rounded-2xl text-left transition-all shadow-md hover:shadow-lg hover:scale-[1.01] active:scale-[0.99] ${generatingThumbnail ? 'opacity-80 cursor-not-allowed' : ''}`}
@@ -1874,7 +1890,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                       <button
                         onClick={() => {
                           setSelectedFaceModelId('no-human')
-                          void generateThumbnail({ noHuman: true })
+                          openHeadlinePicker({ noHuman: true })
                         }}
                         disabled={generatingThumbnail}
                         className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 transition-all hover:opacity-90"
@@ -2255,7 +2271,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
               Pick a thumbnail headline
             </h3>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-              Five product-specific options written for THIS video — pick the one you like, or write your own. MVP then composes around your choice so the title sits where it should.
+              Four product-specific options written for THIS video — pick the one you like, or write your own (max 5 words). This is the title MVP bakes onto your thumbnail.
             </p>
 
             <div className="flex flex-col gap-2 mb-4 max-h-[60vh] overflow-y-auto pr-1">
@@ -2263,7 +2279,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
               {titleOptionsLoading && (
                 <div className="flex items-center gap-2 text-xs text-[#6e6e73] dark:text-[#ebebf0] p-3 rounded-lg border border-dashed border-gray-200 dark:border-white/10">
                   <Loader2 size={14} className="animate-spin" />
-                  <span>Reading the video and writing 5 title options…</span>
+                  <span>Reading the video and writing 4 title options…</span>
                 </div>
               )}
 
@@ -2315,13 +2331,18 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Write my own</p>
                   <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5 mb-2">
-                    Type the exact text. We&apos;ll overlay it crisply on the MVP-generated background.
+                    Type the exact text (max 5 words). This is what MVP bakes onto your thumbnail.
                   </p>
                   {headlinePromptChoice === 'custom' && (
                     <input
                       type="text"
                       value={customHeadline}
-                      onChange={(e) => setCustomHeadline(e.target.value)}
+                      onChange={(e) => {
+                        // Hard cap at 5 words — punchy thumbnails live on a few
+                        // big words; keep a trailing space so typing flows.
+                        const words = e.target.value.split(/\s+/).filter(Boolean)
+                        setCustomHeadline(words.length > 5 ? words.slice(0, 5).join(' ') : e.target.value)
+                      }}
                       placeholder="e.g. WORTH IT?"
                       maxLength={40}
                       autoFocus
@@ -2337,7 +2358,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                 onClick={() => loadTitleOptions()}
                 disabled={titleOptionsLoading}
                 className="inline-flex items-center gap-1 text-xs font-semibold text-[#86868b] hover:text-[#7C3AED] disabled:opacity-60 transition-colors"
-                title="Generate a fresh batch of 5 title options"
+                title="Generate a fresh batch of 4 title options"
               >
                 <RefreshCw size={11} className={titleOptionsLoading ? 'animate-spin' : ''} /> Regenerate
               </button>
@@ -2364,7 +2385,9 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                     }
                     if (pickedHeadline) setCustomHeadline(pickedHeadline)
                     setHeadlinePromptOpen(false)
-                    setTimeout(() => { generateThumbnail({ lockedHeadline: pickedHeadline || undefined }) }, 0)
+                    // Replay the path the user came from (MVP thumbnail or
+                    // Product Only) with their chosen headline baked in.
+                    setTimeout(() => { generateThumbnail({ ...pendingThumbOpts, lockedHeadline: pickedHeadline || undefined }) }, 0)
                   }}
                   disabled={
                     titleOptionsLoading ||
