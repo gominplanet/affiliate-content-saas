@@ -168,6 +168,47 @@ export function guessBrandName(productTitle?: string | null): string {
   return first.length >= 2 ? first : head.split(/\s+/).slice(0, 2).join(' ')
 }
 
+/** The literal separator Amazon Creator Connections users paste between
+ *  message blocks. CC's composer splits a message into up to a handful of
+ *  "message groups"; this marker tells the creator where each block starts. */
+export const CC_GROUP_BREAK = '---- Add to Message Group ----'
+
+/**
+ * Build the Creator Connections variant of the recap. CC's composer wants the
+ * message split into separate "message groups", so we emit a FIXED 4-group
+ * shape, each block preceded by CC_GROUP_BREAK (4 groups = the max we use):
+ *   1. Greeting + lead-in
+ *   2. The links
+ *   3. The relationship / "what's next" line
+ *   4. Sign-off (name + site)
+ *
+ * Unlike the free-form normal message (which honors the user's custom
+ * template), the CC version is structural by design so it always maps cleanly
+ * onto Amazon's group boxes. A group with no content (e.g. no links yet) is
+ * dropped so we never emit an empty group.
+ */
+export function buildCcRecapMessage(vars: {
+  brand: string
+  product: string
+  links: RecapLink[]
+  name: string
+  site: string
+}): string {
+  const greeting =
+    `Hi ${vars.brand || 'there'} team,\n\n` +
+    `Quick note to share that our review of ${vars.product || 'your product'} is now live — here's where you can see it:`
+  const linksBlock = vars.links.map(l => `• ${l.label}: ${l.url}`).join('\n')
+  const relationship =
+    `We genuinely enjoyed featuring it, and we're always on the lookout for new products and brands to work with. ` +
+    `If there's anything you'd like us to cover next, just say the word.`
+  const signoff = ['Thanks so much — have a great day!', vars.name, vars.site]
+    .filter(Boolean).join('\n')
+
+  const groups = [greeting, linksBlock, relationship, signoff].filter(g => g.trim())
+  // Each group led by the break marker, groups separated by a blank line.
+  return groups.map(g => `${CC_GROUP_BREAK}\n\n${g}`).join('\n\n').trim()
+}
+
 /** Fill the template. `replaceAll` avoided for TS-target safety. */
 export function fillRecapMessage(template: string, vars: {
   brand: string

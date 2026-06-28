@@ -18,7 +18,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { toast } from 'sonner'
 import { X, Copy, Mail, ExternalLink, Loader2, Sparkles, Check, RotateCcw, Video } from 'lucide-react'
-import { fillRecapMessage, type RecapLink, type BrandRecapSettings } from '@/lib/brand-recap'
+import { fillRecapMessage, buildCcRecapMessage, type RecapLink, type BrandRecapSettings } from '@/lib/brand-recap'
 import { requestAmazonVideoForAsin } from '@/lib/extension-frame'
 
 /** MVP's OINK affiliate link (same as the sidebar Recommended Tools row). */
@@ -47,6 +47,7 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
   const [edited, setEdited] = useState(false)
   const [polishing, setPolishing] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [copiedCc, setCopiedCc] = useState(false)
   const [findingVideo, setFindingVideo] = useState(false)
   const [showPaste, setShowPaste] = useState(false)
   const [pasteUrl, setPasteUrl] = useState('')
@@ -114,6 +115,26 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
       toast.success('Message copied — paste it anywhere')
     } catch {
       toast.error('Couldn’t copy — select the text and copy manually')
+    }
+  }
+
+  // Amazon Creator Connections variant — the same links/brand, but split into
+  // the "message group" blocks CC's composer expects. Built fresh from the
+  // structured pieces (not the free-text box) so it always maps onto CC's
+  // group boxes; honors the brand field + the link toggles.
+  async function copyCcMessage() {
+    if (!data) return
+    const active = data.links.filter(l => enabled[l.platform])
+    const ccText = buildCcRecapMessage({
+      brand, product: data.product.name, links: active,
+      name: data.settings.senderName, site: data.settings.siteUrl,
+    })
+    try {
+      await navigator.clipboard.writeText(ccText)
+      setCopiedCc(true); setTimeout(() => setCopiedCc(false), 1800)
+      toast.success('Creator Connections message copied — paste it into the CC composer')
+    } catch {
+      toast.error('Couldn’t copy — try the regular copy button')
     }
   }
 
@@ -342,6 +363,13 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
             <div className="flex items-center gap-2 flex-wrap">
               <button onClick={copyMessage} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-[#7C3AED] text-white hover:bg-[#6D28D9]">
                 {copied ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy message</>}
+              </button>
+              <button
+                onClick={copyCcMessage}
+                title="Copy the message formatted for Amazon Creator Connections (split into message groups)"
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border border-[#FFC200] bg-[#FFF7DB] text-[#1d1d1f] hover:bg-[#FFEFB0]"
+              >
+                {copiedCc ? <><Check size={13} /> Copied for CC</> : <><Copy size={13} /> Copy for Creator Connections</>}
               </button>
               <button onClick={emailMessage} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border border-[var(--border-2,#e5e5e7)] text-[#1d1d1f] dark:text-[#f5f5f7] hover:bg-[var(--surface-hover,#f5f5f7)]">
                 <Mail size={13} /> Email
