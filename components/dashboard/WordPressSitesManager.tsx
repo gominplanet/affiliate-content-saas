@@ -525,7 +525,7 @@ function AddSiteModal({
         // `card` class uses a translucent surface that lets the page
         // bleed through. Explicit white/dark fills here so the modal
         // reads as a true overlay, not glass.
-        className="card p-6 max-w-md w-full outline-none bg-white dark:bg-[#1c1c1e] shadow-2xl"
+        className="card p-6 max-w-md w-full outline-none bg-white dark:bg-[#1c1c1e] shadow-2xl max-h-[90vh] overflow-y-auto"
         onClick={e => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
