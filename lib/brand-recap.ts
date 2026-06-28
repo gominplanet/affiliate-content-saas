@@ -176,7 +176,8 @@ export const CC_GROUP_BREAK = '---- Add to Message Group ----'
 /**
  * Build the Creator Connections variant of the recap. CC's composer wants the
  * message split into separate "message groups", so we emit a FIXED 4-group
- * shape, each block preceded by CC_GROUP_BREAK (4 groups = the max we use):
+ * shape with CC_GROUP_BREAK placed BETWEEN groups (a separator, not a leading
+ * marker — no break before the first group; 4 groups → 3 separators):
  *   1. Greeting + lead-in
  *   2. The links
  *   3. The relationship / "what's next" line
@@ -205,8 +206,10 @@ export function buildCcRecapMessage(vars: {
     .filter(Boolean).join('\n')
 
   const groups = [greeting, linksBlock, relationship, signoff].filter(g => g.trim())
-  // Each group led by the break marker, groups separated by a blank line.
-  return groups.map(g => `${CC_GROUP_BREAK}\n\n${g}`).join('\n\n').trim()
+  // The marker is a SEPARATOR placed BETWEEN groups (it tells CC to start a new
+  // message block), so there's no leading marker before the first group. 4
+  // groups → 3 separators.
+  return groups.join(`\n\n${CC_GROUP_BREAK}\n\n`).trim()
 }
 
 /** Fill the template. `replaceAll` avoided for TS-target safety. */
