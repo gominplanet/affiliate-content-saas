@@ -739,6 +739,24 @@ export default function DashboardShellV2({
               </>
             )}
 
+            {/* Support tickets — always visible (not gated on a WP connection)
+                so a user can open a help ticket from any page. Goes to the
+                same /support page as the sidebar "Create a Help Ticket". */}
+            <Link
+              href="/support"
+              className="px-3 py-2 rounded-lg border text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors"
+              style={{
+                backgroundColor: 'var(--surface)',
+                borderColor: 'var(--border)',
+                color: 'var(--text-soft)',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--surface-hover)')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'var(--surface)')}
+              title="Open a support ticket"
+            >
+              <LifeBuoy size={12} /> Support
+            </Link>
+
             {/* Theme toggle */}
             <button
               onClick={() => setTheme(isDark ? 'light' : 'dark')}
