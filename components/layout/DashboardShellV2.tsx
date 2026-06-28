@@ -346,6 +346,9 @@ export default function DashboardShellV2({
         // 2026-06-27 at the user's request — it's an SEO-hygiene tool reached
         // from the SEO page's "Fix title" CTA, now also always one click away.
         { href: '/tools/title-audit', icon: <ShieldCheck size={15} />, label: 'Title Check' },
+        // Clean affiliate links — removes duplicate-tag leftovers from old
+        // plugins (Lasso). Free text fix, no rebuild. Added 2026-06-28.
+        { href: '/tools/clean-links', icon: <Wand2 size={15} />, label: 'Clean Links' },
         // Analytics still hidden 2026-06-12 — route stays alive (/analytics),
         // just unlinked for now.
       ],
