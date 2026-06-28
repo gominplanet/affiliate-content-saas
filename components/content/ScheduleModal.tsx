@@ -45,6 +45,7 @@ const CHANNEL_OPTIONS: Array<{ key: SchedulableSocial; label: string }> = [
   { key: 'threads', label: 'Threads' },
   { key: 'twitter', label: 'X / Twitter' },
   { key: 'bluesky', label: 'Bluesky' },
+  { key: 'pinterest', label: 'Pinterest' },
 ]
 
 export interface ScheduleModalProps {

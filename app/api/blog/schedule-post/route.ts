@@ -20,7 +20,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { tierAllowsSocial, normalizeTier, type Tier, type Social } from '@/lib/tier'
 import { resolveBlogPostId } from '@/lib/resolve-post-id'
 
-const SUPPORTED: Social[] = ['facebook', 'threads', 'twitter', 'linkedin', 'bluesky', 'telegram']
+const SUPPORTED: Social[] = ['facebook', 'threads', 'twitter', 'linkedin', 'bluesky', 'telegram', 'pinterest']
 
 export async function POST(request: Request) {
   try {

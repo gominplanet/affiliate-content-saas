@@ -35,6 +35,7 @@ const CHANNEL_OPTIONS: Array<{ key: SchedulableSocial; label: string }> = [
   { key: 'threads', label: 'Threads' },
   { key: 'twitter', label: 'X / Twitter' },
   { key: 'bluesky', label: 'Bluesky' },
+  { key: 'pinterest', label: 'Pinterest' },
 ]
 
 type Cadence = 'every-30min' | 'every-1hr' | 'every-3hr' | 'every-6hr' | '2-per-day' | '1-per-day' | 'every-2-days' | 'every-3-days' | 'every-7-days'

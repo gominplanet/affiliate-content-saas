@@ -54,7 +54,7 @@ import { tierAllowsSocial, normalizeTier, type Tier } from '@/lib/tier'
 import type { ScheduleMode, SocialScheduleEntry, SchedulableSocial } from '@/lib/schedule-types'
 import { DEFAULT_SOCIAL_OFFSETS_MIN } from '@/lib/schedule-types'
 
-const SUPPORTED_SOCIALS: SchedulableSocial[] = ['facebook', 'threads', 'twitter', 'linkedin', 'bluesky', 'telegram']
+const SUPPORTED_SOCIALS: SchedulableSocial[] = ['facebook', 'threads', 'twitter', 'linkedin', 'bluesky', 'telegram', 'pinterest']
 const SUPPORTED_MODES: ScheduleMode[] = ['wp-native', 'draft-flip']
 
 export async function POST(request: Request) {

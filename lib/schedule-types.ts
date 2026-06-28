@@ -41,6 +41,7 @@ export type SchedulableSocial =
   | 'linkedin'
   | 'bluesky'
   | 'telegram'
+  | 'pinterest'
 
 /** Default minute offsets between the blog publish and each social push.
  *  Picked so the link is reliably live (+5 min beats WP-cron jitter)
@@ -54,6 +55,9 @@ export const DEFAULT_SOCIAL_OFFSETS_MIN: Record<SchedulableSocial, number> = {
   linkedin: 5,
   bluesky: 5,
   telegram: 5,
+  // Pinterest pins the blog's image and links back to the post — give the
+  // blog a beat to be live first, same as the link socials.
+  pinterest: 5,
 }
 
 // (Newsletter offset removed 2026-06-06 — newsletter has its own scheduler

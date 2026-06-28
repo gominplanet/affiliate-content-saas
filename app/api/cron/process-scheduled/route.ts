@@ -36,6 +36,7 @@ import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { pingIndexNowForUrl } from '@/lib/seo-on-publish'
 import { publishTikTokForTarget, type TikTokScheduleOptions } from '@/lib/tiktok-publish'
 import { publishInstagramForTarget, type IgMode } from '@/lib/instagram-publish'
+import { publishPinForPost } from '@/lib/pin-publish'
 
 // Vercel cron functions run with a generous timeout but we still want
 // to cap the per-tick work — if the batch is huge we'll catch the
@@ -57,7 +58,7 @@ interface ScheduledRow {
    *  doesn't generate these rows — WP's own cron handles the flip). */
   kind: 'social' | 'blog_publish'
   /** Required when kind='social'; null when kind='blog_publish'. */
-  platform: 'facebook' | 'threads' | 'twitter' | 'linkedin' | 'bluesky' | 'telegram' | 'tiktok' | 'instagram' | null
+  platform: 'facebook' | 'threads' | 'twitter' | 'linkedin' | 'bluesky' | 'telegram' | 'tiktok' | 'instagram' | 'pinterest' | null
   body_text: string
   /** Optional chosen destination (multi-account). Null = use the user's
    *  default / legacy integrations credentials. */
@@ -68,6 +69,9 @@ interface BlogPostRow {
   id: string
   title: string | null
   wordpress_url: string | null
+  /** WordPress post id — used by the Pinterest pin to look up the post's
+   *  category and route the pin to the matching board. */
+  wordpress_post_id?: number | null
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   youtube_videos?: any
 }
@@ -266,7 +270,7 @@ async function publishOne(
   const [postRes, intRes] = await Promise.all([
     admin
       .from('blog_posts')
-      .select('id,title,wordpress_url,youtube_videos(thumbnail_url,youtube_video_id)')
+      .select('id,title,wordpress_url,wordpress_post_id,youtube_videos(thumbnail_url,youtube_video_id)')
       .eq('id', row.blog_post_id)
       .single(),
     admin
@@ -467,6 +471,31 @@ async function publishOne(
         .update({ telegram_message_id: String(result.messageId) })
         .eq('id', row.blog_post_id)
       return { externalId: String(result.messageId) }
+    }
+
+    // ─────────────────────────── PINTEREST ────────────────────────────────
+    case 'pinterest': {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if (!(integration as any).pinterest_access_token) throw new Error('Pinterest not connected')
+      // Pin the post's image (video thumbnail → og:image fallback) and link
+      // back to the blog. publishPinForPost resolves the board (category →
+      // fallback → "Reviews") and scrubs banned words. Same lib the live
+      // "Pin to Pinterest" button uses.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let pinImage: string | null = (post as any).youtube_videos?.thumbnail_url ?? null
+      if (!pinImage) pinImage = (await fetchOgImage(url)) || null
+      if (!pinImage) throw new Error('No image available for the Pinterest pin')
+      const { pinId } = await publishPinForPost({
+        p: post,
+        ig: integration,
+        site: null,
+        title: post.title ?? '',
+        description: row.body_text || post.title || '',
+        fallbackImageUrl: pinImage,
+      })
+      await admin.from('blog_posts').update({ pinterest_pin_id: pinId }).eq('id', row.blog_post_id)
+      await recordSocialPermalink(admin, row.blog_post_id, 'pinterest', socialPermalink.pinterest(pinId))
+      return { externalId: pinId }
     }
 
     default: {
