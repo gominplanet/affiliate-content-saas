@@ -24,6 +24,8 @@ export async function PATCH(req: Request, ctx: RouteCtx) {
   const body = await req.json().catch(() => ({})) as {
     label?: string
     makeDefault?: boolean
+    contentOnly?: boolean
+    ctaStyle?: 'button' | 'link'
   }
 
   // makeDefault wins over label change when both are sent — the user
@@ -31,6 +33,22 @@ export async function PATCH(req: Request, ctx: RouteCtx) {
   if (body.makeDefault === true) {
     const result = await setDefaultSite(supabase, ownerId, id)
     if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 })
+    return NextResponse.json({ ok: true })
+  }
+
+  // Content-only mode + CTA style — the "bring your own theme" settings. Either
+  // can be sent on its own; we build a partial update so a toggle of one
+  // doesn't clobber the other.
+  if (typeof body.contentOnly === 'boolean' || body.ctaStyle) {
+    const update: { content_only?: boolean; cta_style?: 'button' | 'link' } = {}
+    if (typeof body.contentOnly === 'boolean') update.content_only = body.contentOnly
+    if (body.ctaStyle === 'button' || body.ctaStyle === 'link') update.cta_style = body.ctaStyle
+    const { error } = await supabase
+      .from('wordpress_sites')
+      .update(update)
+      .eq('user_id', ownerId)
+      .eq('id', id)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json({ ok: true })
   }
 
@@ -48,7 +66,7 @@ export async function PATCH(req: Request, ctx: RouteCtx) {
     return NextResponse.json({ ok: true })
   }
 
-  return NextResponse.json({ error: 'Nothing to update (send `label` or `makeDefault`).' }, { status: 400 })
+  return NextResponse.json({ error: 'Nothing to update (send `label`, `makeDefault`, `contentOnly`, or `ctaStyle`).' }, { status: 400 })
 }
 
 export async function DELETE(_req: Request, ctx: RouteCtx) {

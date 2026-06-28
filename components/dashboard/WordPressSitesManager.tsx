@@ -22,7 +22,7 @@ import { useModalA11y } from '@/components/ui/useModalA11y'
 import { toast } from 'sonner'
 import {
   Plus, Loader2, Star, Pencil, Trash2, ExternalLink, Globe,
-  Check, X, AlertCircle,
+  Check, X, AlertCircle, Settings2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useConfirm } from '@/components/ui/useConfirm'
@@ -36,6 +36,8 @@ interface Site {
   appPassword: string  // not displayed; here for type completeness
   apiToken: string | null
   isDefault: boolean
+  contentOnly: boolean
+  ctaStyle: 'button' | 'link'
 }
 
 interface SitesPayload {
@@ -153,6 +155,7 @@ export default function WordPressSitesManager() {
             onStartRename={() => setRenamingId(site.id)}
             onCancelRename={() => setRenamingId(null)}
             onRenamed={async () => { setRenamingId(null); await load() }}
+            onReload={load}
             onSetDefault={async () => {
               const res = await fetch(`/api/wordpress/sites/${site.id}`, {
                 method: 'PATCH',
@@ -203,7 +206,7 @@ export default function WordPressSitesManager() {
 
 function SiteRow({
   site, isRenaming, onStartRename, onCancelRename, onRenamed,
-  onSetDefault, onDelete,
+  onSetDefault, onDelete, onReload,
 }: {
   site: Site
   isRenaming: boolean
@@ -212,9 +215,31 @@ function SiteRow({
   onRenamed: () => void
   onSetDefault: () => void
   onDelete: () => void
+  onReload: () => Promise<void> | void
 }) {
   const [label, setLabel] = useState(site.label)
   const [saving, setSaving] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
+  const [savingSettings, setSavingSettings] = useState(false)
+
+  // Persist a content-only / CTA-style change for this site. Optimistic-ish:
+  // we await the PATCH then reload so the toggle reflects the saved value.
+  async function patchSettings(patch: { contentOnly?: boolean; ctaStyle?: 'button' | 'link' }) {
+    setSavingSettings(true)
+    try {
+      const res = await fetch(`/api/wordpress/sites/${site.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      })
+      if (res.ok) {
+        await onReload()
+      } else {
+        const j = await res.json().catch(() => ({}))
+        toast.error(j.error || 'Could not save setting.')
+      }
+    } finally { setSavingSettings(false) }
+  }
 
   async function save() {
     const trimmed = label.trim()
@@ -237,7 +262,8 @@ function SiteRow({
   }
 
   return (
-    <li className="flex items-center gap-3 p-3 rounded-xl bg-[var(--surface)] border border-[var(--border-2)]">
+    <li className="flex flex-col gap-2 p-3 rounded-xl bg-[var(--surface)] border border-[var(--border-2)]">
+      <div className="flex items-center gap-3">
       <div className="w-8 h-8 rounded-lg bg-[#7C3AED]/10 flex items-center justify-center flex-shrink-0">
         <Globe size={14} className="text-[#7C3AED]" />
       </div>
@@ -295,6 +321,15 @@ function SiteRow({
               <Star size={12} />
             </Button>
           )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowSettings(v => !v)}
+            title="Site settings (theme & CTA)"
+            className={showSettings ? 'text-[#7C3AED]' : ''}
+          >
+            <Settings2 size={12} />
+          </Button>
           <Button variant="ghost" size="sm" onClick={onStartRename} title="Rename">
             <Pencil size={12} />
           </Button>
@@ -307,6 +342,83 @@ function SiteRow({
           >
             <Trash2 size={12} />
           </Button>
+        </div>
+      )}
+      </div>
+
+      {/* Per-site theme & CTA settings — the "bring your own theme" controls.
+          Collapsed by default to keep the row tidy; the gear toggles it. */}
+      {showSettings && !isRenaming && (
+        <div className="mt-1 ml-11 rounded-lg border border-[var(--border-2)] bg-[var(--surface-2)] p-3 flex flex-col gap-3">
+          {/* Content-only mode */}
+          <label className="flex items-start gap-2.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={site.contentOnly}
+              disabled={savingSettings}
+              onChange={e => patchSettings({ contentOnly: e.target.checked })}
+              className="mt-0.5 h-4 w-4 rounded accent-[#7C3AED] cursor-pointer"
+            />
+            <span className="min-w-0">
+              <span className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                Content-only mode (keep my own theme &amp; plugins)
+              </span>
+              <span className="block text-[11px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed mt-0.5">
+                MVP only writes &amp; publishes articles to this site. It won&rsquo;t install or
+                prompt for the MVP theme/plugin, and it hides MVP-only tools (Customize Blog,
+                Editor&rsquo;s Picks, theme updates) for this site. Your blog keeps looking exactly
+                as it does now.
+              </span>
+            </span>
+          </label>
+
+          {/* CTA style */}
+          <div>
+            <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">
+              In-article buy button style
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                disabled={savingSettings}
+                onClick={() => patchSettings({ ctaStyle: 'button' })}
+                className={`flex-1 rounded-lg border px-3 py-2 text-left transition ${
+                  site.ctaStyle === 'button'
+                    ? 'border-[#7C3AED] bg-[#7C3AED]/10'
+                    : 'border-[var(--border-2)] hover:border-[#7C3AED]/50'
+                }`}
+              >
+                <span className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                  Styled button
+                </span>
+                <span className="block text-[11px] text-[#86868b] mt-0.5">
+                  MVP&rsquo;s bold gradient price button
+                </span>
+              </button>
+              <button
+                type="button"
+                disabled={savingSettings}
+                onClick={() => patchSettings({ ctaStyle: 'link' })}
+                className={`flex-1 rounded-lg border px-3 py-2 text-left transition ${
+                  site.ctaStyle === 'link'
+                    ? 'border-[#7C3AED] bg-[#7C3AED]/10'
+                    : 'border-[var(--border-2)] hover:border-[#7C3AED]/50'
+                }`}
+              >
+                <span className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                  Plain themed link
+                </span>
+                <span className="block text-[11px] text-[#86868b] mt-0.5">
+                  A text link that matches your theme
+                </span>
+              </button>
+            </div>
+            {savingSettings && (
+              <p className="text-[11px] text-[#86868b] mt-1.5 inline-flex items-center gap-1">
+                <Loader2 size={10} className="animate-spin" /> Saving…
+              </p>
+            )}
+          </div>
         </div>
       )}
     </li>
@@ -336,6 +448,7 @@ function AddSiteModal({
   const [url, setUrl] = useState('')
   const [username, setUsername] = useState('')
   const [appPassword, setAppPassword] = useState('')
+  const [contentOnly, setContentOnly] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
   async function submit() {
@@ -358,12 +471,16 @@ function AddSiteModal({
             ? {
                 label: label.trim(),
                 token: token.trim(),
+                contentOnly,
+                ctaStyle: contentOnly ? 'link' : 'button',
               }
             : {
                 label: label.trim(),
                 url: url.trim(),
                 username: username.trim(),
                 appPassword: appPassword.trim(),
+                contentOnly,
+                ctaStyle: contentOnly ? 'link' : 'button',
               }
         ),
       })
@@ -604,6 +721,27 @@ function AddSiteModal({
               />
             </>
           )}
+
+          {/* Content-only mode — for creators who already have a theme/plugins
+              they like and only want MVP as an article generator. */}
+          <label className="flex items-start gap-2.5 mt-1 rounded-xl border border-[var(--border-2)] bg-[var(--surface-2)] p-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={contentOnly}
+              onChange={e => setContentOnly(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded accent-[#7C3AED] cursor-pointer"
+            />
+            <span className="min-w-0">
+              <span className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                Content-only — keep my existing theme &amp; plugins
+              </span>
+              <span className="block text-[11px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed mt-0.5">
+                MVP will only write &amp; publish articles to this site — it won&rsquo;t change your
+                design, install the MVP theme/plugin, or add MVP-only blog tools. Buy links render
+                as plain themed text links. You can change this later in the site&rsquo;s settings.
+              </span>
+            </span>
+          </label>
         </div>
 
         <div className="flex items-center justify-end gap-2 mt-5 pt-4 border-t border-[var(--border-2)]">

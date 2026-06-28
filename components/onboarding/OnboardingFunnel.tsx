@@ -406,10 +406,13 @@ function IntroVideoStep() {
 
 /* Step 1 — WordPress (inline, the hard gate) */
 function WordPressStep({ connected, onConnected }: { connected: boolean; onConnected: () => void }) {
-  const [mode, setMode] = useState<'choose' | 'have' | 'need'>('choose')
+  const [mode, setMode] = useState<'choose' | 'have' | 'need' | 'content'>('choose')
   const [siteUrl, setSiteUrl] = useState('')
   const [token, setToken] = useState('')
   const [busy, setBusy] = useState(false)
+  // Content-only ("bring your own theme") connect fields.
+  const [coUsername, setCoUsername] = useState('')
+  const [coAppPassword, setCoAppPassword] = useState('')
   // The no-plugin "quick connect" is a demoted fallback — collapsed by default
   // so the plugin path (the full customizable-blog experience) leads.
   const [showQuick, setShowQuick] = useState(false)
@@ -417,10 +420,22 @@ function WordPressStep({ connected, onConnected }: { connected: boolean; onConne
   // /api/wordpress/health) so the connected screen shows real green checks
   // instead of asking the user to self-assess. null = still checking.
   const [wpStatus, setWpStatus] = useState<{ pluginInstalled: boolean; themeActive: boolean } | null>(null)
+  // Whether the connected site is in content-only ("bring your own theme") mode.
+  // null = still loading. When true, we skip the entire theme-install nag.
+  const [contentOnlySite, setContentOnlySite] = useState<boolean | null>(null)
 
   useEffect(() => {
     if (!connected) return
     let cancelled = false
+    // Read the site mode once — content-only users never see the theme push.
+    ;(async () => {
+      try {
+        const res = await fetch('/api/wordpress/site-mode')
+        if (!res.ok || cancelled) return
+        const d = await res.json()
+        if (!cancelled) setContentOnlySite(d?.contentOnly === true)
+      } catch { if (!cancelled) setContentOnlySite(false) }
+    })()
     const check = async () => {
       try {
         const res = await fetch('/api/wordpress/health')
@@ -436,6 +451,27 @@ function WordPressStep({ connected, onConnected }: { connected: boolean; onConne
   }, [connected])
 
   if (connected) {
+    // Content-only sites are "done" the moment they connect — no theme/plugin
+    // to install, no look-and-feel consent. Show a clean confirmation instead
+    // of the theme-install push.
+    if (contentOnlySite === true) {
+      return (
+        <>
+          <StepHeading
+            title="Site connected — content-only"
+            blurb="MVP will write and publish articles to your blog. Your theme, plugins and design are untouched — nothing else to set up here."
+          />
+          <div className="inline-flex items-center gap-2 rounded-xl bg-[#34c759]/10 border border-[#34c759]/30 px-4 py-3 text-sm text-[#34c759] mb-2">
+            <Check size={16} /> Connected in content-only mode.
+          </div>
+          <p className="text-sm text-[#a1a1a6] mt-2">
+            Buy links in your posts will render as plain text links that match your theme. You can
+            switch to MVP’s styled buttons (or the full review-site treatment) anytime from
+            <span className="text-[#c7c7cc]"> Set up → WordPress</span>. Hit “Save &amp; next” below.
+          </p>
+        </>
+      )
+    }
     const checking = wpStatus === null
     const pluginOk = wpStatus?.pluginInstalled === true
     const themeOk = wpStatus?.themeActive === true
@@ -532,6 +568,29 @@ function WordPressStep({ connected, onConnected }: { connected: boolean; onConne
     toast('Finish the authorization in the new tab — this page updates automatically.')
   }
 
+  // Content-only connect: standard Application Password, no plugin, sets
+  // content_only=true so MVP only generates articles and leaves the theme alone.
+  async function connectContentOnly() {
+    const u = siteUrl.trim()
+    if (!u || !coUsername.trim() || !coAppPassword.trim()) {
+      toast.error('Fill in your site URL, username, and application password.')
+      return
+    }
+    setBusy(true)
+    try {
+      const res = await fetch('/api/wordpress/connect-content-only', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: u, username: coUsername.trim(), appPassword: coAppPassword.trim() }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { toast.error(data.error || 'Could not connect. Check your details and try again.'); return }
+      toast.success(`Connected ${data.siteUrl || 'your site'} — content-only mode. Your theme stays untouched.`)
+      onConnected()
+    } catch { toast.error('Something went wrong. Try again.') }
+    finally { setBusy(false) }
+  }
+
   // Convenience for non-technical users: take whatever they typed, normalise it
   // to a URL, and open <site>/wp-admin in a new tab — that's where the plugin
   // install steps happen. Pure navigation, nothing saved.
@@ -546,16 +605,86 @@ function WordPressStep({ connected, onConnected }: { connected: boolean; onConne
   if (mode === 'choose') {
     return (
       <>
-        <StepHeading title="Let’s connect your blog" blurb="MVP Affiliate publishes to your own WordPress site. It all starts here — pick the option that fits you." />
-        <div className="grid sm:grid-cols-2 gap-3">
-          <button onClick={() => setMode('have')} className="text-left rounded-xl border border-white/10 bg-white/[0.03] p-5 hover:border-[#7C3AED]/50 transition-colors">
-            <p className="font-semibold mb-1">I have a WordPress blog</p>
-            <p className="text-sm text-[#a1a1a6]">Connect your existing site in under a minute.</p>
+        <StepHeading title="Let’s connect your blog" blurb="MVP Affiliate publishes to your own WordPress site. Pick the option that fits you — you can change your mind later." />
+        <div className="grid gap-3">
+          <button onClick={() => setMode('have')} className="text-left rounded-xl border border-[#7C3AED]/40 bg-[#7C3AED]/[0.06] p-5 hover:border-[#7C3AED]/70 transition-colors">
+            <div className="flex items-center gap-2 mb-1">
+              <p className="font-semibold">I have a WordPress blog — give it the MVP treatment</p>
+              <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-[#7C3AED] text-white">Most popular</span>
+            </div>
+            <p className="text-sm text-[#a1a1a6]">
+              Install the MVP theme + plugin and get the full review-site experience: branded design,
+              styled buy buttons, Editor’s Picks, topic hubs, the AI Product Finder and Google-ready
+              schema. <span className="text-[#c7c7cc]">Note: the MVP theme changes how your blog looks.</span>
+            </p>
           </button>
+
+          <button onClick={() => { setMode('content') }} className="text-left rounded-xl border border-white/10 bg-white/[0.03] p-5 hover:border-[#7C3AED]/50 transition-colors">
+            <p className="font-semibold mb-1">I have a WordPress blog — keep my theme &amp; plugins</p>
+            <p className="text-sm text-[#a1a1a6]">
+              Content-only mode. MVP just writes &amp; publishes articles to your site — no theme or
+              plugin install, <span className="text-[#c7c7cc]">your blog looks exactly the same</span>.
+              Buy links match your theme. Perfect if you’ve already designed your site.
+            </p>
+          </button>
+
           <button onClick={() => setMode('need')} className="text-left rounded-xl border border-white/10 bg-white/[0.03] p-5 hover:border-[#7C3AED]/50 transition-colors">
-            <p className="font-semibold mb-1">I don’t have one yet</p>
-            <p className="text-sm text-[#a1a1a6]">Get a blog set up the right way in ~10 minutes.</p>
+            <p className="font-semibold mb-1">I’m new to WordPress — start fresh</p>
+            <p className="text-sm text-[#a1a1a6]">Get a blog set up the right way in ~10 minutes, then get the full MVP treatment.</p>
           </button>
+        </div>
+      </>
+    )
+  }
+
+  if (mode === 'content') {
+    return (
+      <>
+        <StepHeading
+          title="Connect your blog — content-only"
+          blurb="MVP will only write and publish articles to your site. We won’t install our theme or plugin, touch your design, or add any MVP-only blog features. Your blog keeps looking exactly as it does now."
+        />
+
+        <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
+          <p className="font-semibold text-sm mb-1">Connect with a WordPress Application Password</p>
+          <p className="text-sm text-[#a1a1a6] mb-4">
+            No plugin needed — this uses WordPress’s built-in Application Passwords. Takes about a minute.
+          </p>
+
+          <ol className="space-y-1.5 text-sm text-[#c7c7cc] mb-4 list-decimal pl-5 marker:text-[#7C3AED]">
+            <li>In WordPress admin, go to <span className="text-white">Users → Profile</span>.</li>
+            <li>Scroll to <span className="text-white">Application Passwords</span> (near the bottom).</li>
+            <li>Type a name like <span className="text-white">MVP Affiliate</span> → click <span className="text-white">Add New Application Password</span>.</li>
+            <li>Copy the 24-character password it shows once, and paste it below with your details.</li>
+          </ol>
+
+          <div className="flex flex-col gap-2">
+            <input
+              value={siteUrl} onChange={(e) => setSiteUrl(e.target.value)}
+              placeholder="https://yourblog.com"
+              className="rounded-lg bg-black/30 border border-white/10 px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]/60"
+            />
+            <input
+              value={coUsername} onChange={(e) => setCoUsername(e.target.value)}
+              placeholder="WordPress username"
+              className="rounded-lg bg-black/30 border border-white/10 px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]/60"
+            />
+            <input
+              value={coAppPassword} onChange={(e) => setCoAppPassword(e.target.value)}
+              placeholder="Application password (xxxx xxxx xxxx …)"
+              className="rounded-lg bg-black/30 border border-white/10 px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]/60"
+            />
+            <button onClick={connectContentOnly} disabled={busy} className="self-start rounded-lg px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 transition-opacity disabled:opacity-60 inline-flex items-center gap-1.5" style={{ background: ACCENT }}>
+              {busy && <Loader2 size={14} className="animate-spin" />} Connect (content-only)
+            </button>
+          </div>
+          <p className="text-xs text-[#6e6e73] mt-3">
+            Want the full review-site design instead? <button type="button" onClick={() => setMode('have')} className="text-[#7C3AED] hover:underline font-medium">Give your blog the MVP treatment →</button>
+          </p>
+        </div>
+
+        <div className="mt-5">
+          <button onClick={() => setMode('choose')} className="text-xs text-[#6e6e73] hover:text-white transition-colors">← back</button>
         </div>
       </>
     )

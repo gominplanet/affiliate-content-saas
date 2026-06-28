@@ -184,6 +184,9 @@ interface DashboardShellV2Props {
   showBuyingGuides: boolean
   showDeals: boolean
   showBurner: boolean
+  /** Content-only ("bring your own theme") user — hide MVP-theme-only nav
+   *  items like Customize Blog. Defaults false. */
+  contentOnly?: boolean
   children: React.ReactNode
 }
 
@@ -194,6 +197,7 @@ export default function DashboardShellV2({
   showBuyingGuides,
   showDeals,
   showBurner,
+  contentOnly = false,
   children,
 }: DashboardShellV2Props) {
   const pathname = usePathname() || ''
@@ -305,7 +309,9 @@ export default function DashboardShellV2({
         { href: '/connect-youtube', icon: <Youtube size={15} />, label: 'YouTube' },
         { href: '/brand', icon: <Palette size={15} />, label: 'Brand Profile' },
         { href: '/learn', icon: <Sparkles size={15} />, label: 'Voice Training' },
-        { href: '/customize', icon: <Brush size={15} />, label: 'Customize Blog' },
+        // Customize Blog drives the MVP theme's colors/layout/hero — useless
+        // for content-only ("bring your own theme") users, so hide it for them.
+        { href: '/customize', icon: <Brush size={15} />, label: 'Customize Blog', gate: !contentOnly },
         { href: '/photobooth', icon: <UserSquare size={15} />, label: 'Face Models' },
         { href: '/connect-socials', icon: <Share2 size={15} />, label: 'Connect Socials' },
       ],

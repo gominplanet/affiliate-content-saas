@@ -1216,6 +1216,9 @@ async function handleGenerate(request: Request) {
         affiliateUrl: productUrl,
         isAmazon: stripIsAmazon,
         productName: (generated as { productName?: string | null }).productName || null,
+        // Per-site CTA style: content-only "bring your own theme" sites can opt
+        // for a plain themed text link instead of MVP's gradient button.
+        ctaStyle: site.cta_style,
       })
     }
   } catch { /* price strip is best-effort; never block generation */ }

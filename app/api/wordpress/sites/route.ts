@@ -89,6 +89,10 @@ export async function POST(req: Request) {
      *  Password dance. Mutually exclusive with url+username+appPassword;
      *  if both are sent, the token wins. */
     token?: string
+    /** Onboarding path 2: create the site in content-only "bring your own
+     *  theme" mode, with the chosen CTA style. Default = full MVP treatment. */
+    contentOnly?: boolean
+    ctaStyle?: 'button' | 'link'
   }
 
   // Token path — decode and overlay onto the rest of the body so the
@@ -135,6 +139,8 @@ export async function POST(req: Request) {
     username: body.username,
     appPassword: body.appPassword,
     apiToken: body.apiToken || null,
+    contentOnly: body.contentOnly === true,
+    ctaStyle: body.ctaStyle === 'link' ? 'link' : 'button',
   })
   if (!result.ok) {
     // 402 for "upgrade required" so the UI can detect tier-gated errors

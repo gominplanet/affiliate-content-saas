@@ -26,6 +26,17 @@ export interface PriceStripOptions {
    * better for SEO/relevance. Falls back to the generic copy otherwise.
    */
   productName?: string | null
+  /**
+   * How the CTA renders:
+   *   'button' (default) — MVP's full-width gradient price-strip button. Best
+   *      when the post inherits the MVP theme (or any theme) and the creator
+   *      wants the loud, high-contrast click target.
+   *   'link' — a plain, themed text link with no inline background/colors, so
+   *      it adopts the creator's OWN theme link styling. Used by content-only
+   *      ("bring your own theme") sites that don't want MVP's button CSS
+   *      clashing with their design.
+   */
+  ctaStyle?: 'button' | 'link'
 }
 
 /**
@@ -54,6 +65,25 @@ export function renderPriceStrip(opts: PriceStripOptions): string {
   const disclaimer = opts.isAmazon
     ? 'Clicking takes you to Amazon. As an Amazon Associate we earn from qualifying purchases — pricing and availability subject to change.'
     : 'Clicking takes you to the seller\'s website. We may earn a small commission if you purchase, at no extra cost to you.'
+
+  // Plain themed-link variant for "bring your own theme" / content-only sites.
+  // No inline background or colors on the link itself — it inherits the
+  // creator's theme link styling. We keep ONE tiny structural style (centered
+  // block + larger font) so it still reads as a call-to-action, plus the
+  // small italic disclaimer. Wrapped in the same gr-price-strip class so
+  // injectPriceStrip's idempotency check still recognizes it on rebuild.
+  if (opts.ctaStyle === 'link') {
+    return [
+      '<!-- wp:html -->',
+      '<div class="gr-price-strip gr-price-strip--link" style="margin:8px 0 28px;text-align:center">',
+      `  <p style="font-size:18px;font-weight:700;line-height:1.4;margin:0 0 6px">`,
+      `    <a href="${escapeHtml(url)}" target="_blank" rel="noopener sponsored nofollow" class="gr-price-strip-link">${escapeHtml(buttonLabel)}</a>`,
+      '  </p>',
+      `  <p class="gr-price-strip-note" style="font-size:11px;line-height:1.4;color:#86868b;text-align:center;margin:0;font-style:italic">${escapeHtml(disclaimer)}</p>`,
+      '</div>',
+      '<!-- /wp:html -->',
+    ].join('\n')
+  }
 
   // Amazon orange gradient when Amazon; brand blue gradient otherwise.
   const gradient = opts.isAmazon

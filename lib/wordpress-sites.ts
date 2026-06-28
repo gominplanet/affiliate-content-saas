@@ -44,6 +44,12 @@ export interface WordPressSite {
   appPassword: string
   apiToken: string | null
   isDefault: boolean
+  /** Bring-your-own-theme: MVP only generates articles for this site and
+   *  suppresses MVP theme/plugin/curation surfaces. Default false. */
+  contentOnly: boolean
+  /** How the in-article affiliate CTA renders: a styled MVP button, or a
+   *  plain themed text link that inherits the creator's own theme. */
+  ctaStyle: 'button' | 'link'
 }
 
 /** Per-tier site cap. Reads from `lib/tier.ts` so future tier changes
@@ -80,7 +86,7 @@ export async function listSites(
 ): Promise<WordPressSite[]> {
   const { data, error } = await supabase
     .from('wordpress_sites')
-    .select('id, label, url, username, app_password, api_token, is_default, display_order')
+    .select('id, label, url, username, app_password, api_token, is_default, display_order, content_only, cta_style')
     .eq('user_id', userId)
     .order('is_default', { ascending: false })
     .order('display_order', { ascending: true })
@@ -103,7 +109,7 @@ export async function getDefaultSite(
   // 1. Prefer the new table — that's the post-migration source of truth.
   const { data } = await supabase
     .from('wordpress_sites')
-    .select('id, label, url, username, app_password, api_token, is_default, display_order')
+    .select('id, label, url, username, app_password, api_token, is_default, display_order, content_only, cta_style')
     .eq('user_id', userId)
     .eq('is_default', true)
     .maybeSingle()
@@ -114,7 +120,7 @@ export async function getDefaultSite(
   //    backfill marks one true, but a partial restore could).
   const { data: any1 } = await supabase
     .from('wordpress_sites')
-    .select('id, label, url, username, app_password, api_token, is_default, display_order')
+    .select('id, label, url, username, app_password, api_token, is_default, display_order, content_only, cta_style')
     .eq('user_id', userId)
     .order('created_at', { ascending: true })
     .limit(1)
@@ -126,7 +132,7 @@ export async function getDefaultSite(
   //    didn't pick them up. Remove this branch when Phase 3 completes.
   const { data: legacy } = await supabase
     .from('integrations')
-    .select('wordpress_url, wordpress_username, wordpress_app_password, wordpress_api_token')
+    .select('wordpress_url, wordpress_username, wordpress_app_password, wordpress_api_token, content_only, cta_style')
     .eq('user_id', userId)
     .maybeSingle()
   if (
@@ -136,6 +142,7 @@ export async function getDefaultSite(
   ) {
     // Same transparent decryption as rowToSite — handles legacy
     // plaintext + new encrypted rows uniformly.
+    const legacyRow = legacy as Record<string, unknown>
     return {
       id: 'legacy',
       label: 'Main',
@@ -144,6 +151,8 @@ export async function getDefaultSite(
       appPassword: maybeDecrypt(legacy.wordpress_app_password) ?? '',
       apiToken: maybeDecrypt(legacy.wordpress_api_token) ?? null,
       isDefault: true,
+      contentOnly: legacyRow.content_only === true,
+      ctaStyle: legacyRow.cta_style === 'link' ? 'link' : 'button',
     }
   }
   return null
@@ -180,6 +189,8 @@ export async function getWordPressCredentials(
   wordpress_api_token: string | null
   site_id: string
   site_label: string
+  content_only: boolean
+  cta_style: 'button' | 'link'
 } | null> {
   const site = siteId
     ? await getSite(supabase, userId, siteId)
@@ -192,6 +203,8 @@ export async function getWordPressCredentials(
     wordpress_api_token: site.apiToken,
     site_id: site.id,
     site_label: site.label,
+    content_only: site.contentOnly,
+    cta_style: site.ctaStyle,
   }
 }
 
@@ -209,7 +222,7 @@ export async function getSite(
   }
   const { data } = await supabase
     .from('wordpress_sites')
-    .select('id, label, url, username, app_password, api_token, is_default, display_order')
+    .select('id, label, url, username, app_password, api_token, is_default, display_order, content_only, cta_style')
     .eq('user_id', userId)
     .eq('id', siteId)
     .maybeSingle()
@@ -266,6 +279,11 @@ export async function addSite(
     /** Set to true to skip the live WP verification — useful for tests
      *  or callers that already ran probeUnverifiedCreds. Default false. */
     skipVerify?: boolean
+    /** Bring-your-own-theme: create the site in content-only mode straight
+     *  away (onboarding path 2). Default false (full MVP treatment). */
+    contentOnly?: boolean
+    /** In-article CTA style for this site. Default 'button'. */
+    ctaStyle?: 'button' | 'link'
   },
 ): Promise<{ ok: true; site: WordPressSite } | { ok: false; error: string; code?: string }> {
   const cap = await canAddSite(supabase, userId, tier)
@@ -313,8 +331,10 @@ export async function addSite(
       api_token: input.apiToken ?? null,
       is_default: isFirst,
       display_order: cap.current,
+      content_only: input.contentOnly ?? false,
+      cta_style: input.ctaStyle === 'link' ? 'link' : 'button',
     } as never)
-    .select('id, label, url, username, app_password, api_token, is_default, display_order')
+    .select('id, label, url, username, app_password, api_token, is_default, display_order, content_only, cta_style')
     .single()
   if (error || !data) return { ok: false, error: error?.message || 'Insert failed', code: 'db_error' }
   return { ok: true, site: rowToSite(data) }
@@ -382,6 +402,8 @@ interface WordPressSiteRow {
   api_token: string | null
   is_default: boolean
   display_order: number
+  content_only?: boolean | null
+  cta_style?: string | null
 }
 
 function rowToSite(r: WordPressSiteRow): WordPressSite {
@@ -398,5 +420,7 @@ function rowToSite(r: WordPressSiteRow): WordPressSite {
     appPassword: maybeDecrypt(r.app_password) ?? '',
     apiToken: maybeDecrypt(r.api_token) ?? null,
     isDefault: r.is_default,
+    contentOnly: r.content_only ?? false,
+    ctaStyle: r.cta_style === 'link' ? 'link' : 'button',
   }
 }

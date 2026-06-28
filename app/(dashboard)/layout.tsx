@@ -14,12 +14,17 @@ export default async function DashboardLayout({ children }: { children: React.Re
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: intRow } = await (supabase as any)
     .from('integrations')
-    .select('wordpress_url, tier, wp_post_count, wp_post_count_updated_at, onboarding_completed')
+    .select('wordpress_url, tier, wp_post_count, wp_post_count_updated_at, onboarding_completed, content_only')
     .eq('user_id', user.id)
     .maybeSingle()
 
   const wpSiteUrl = intRow?.wordpress_url || null
   const tier = (intRow?.tier as string | null) || 'trial'
+  // Content-only ("bring your own theme") user: hide MVP-theme-dependent
+  // surfaces like Customize Blog. Read from the legacy integrations mirror so
+  // single-site content-only onboarders are covered (migration 144). Multi-site
+  // users with a mix of modes keep the full nav.
+  const contentOnly = (intRow as { content_only?: boolean } | null)?.content_only === true
 
   // ── Onboarding funnel hard gate (epic Phase 2) ──────────────────────────────
   // A brand-new user has no connected WordPress site — nothing in the app works
@@ -101,6 +106,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         showBuyingGuides={showBuyingGuides}
         showDeals={showDeals}
         showBurner={showBurner}
+        contentOnly={contentOnly}
       >
         {/* Migration drift banner — admin-only sticky warning that
             recent feature-gating migrations haven't been applied on the

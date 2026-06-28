@@ -807,7 +807,9 @@ export type Database = {
           bluesky_did: string | null
           bluesky_handle: string | null
           cc_ingest_token: string | null
+          content_only: boolean
           created_at: string
+          cta_style: string
           facebook_page_access_token: string | null
           facebook_page_id: string | null
           facebook_page_name: string | null
@@ -885,7 +887,9 @@ export type Database = {
           bluesky_did?: string | null
           bluesky_handle?: string | null
           cc_ingest_token?: string | null
+          content_only?: boolean
           created_at?: string
+          cta_style?: string
           facebook_page_access_token?: string | null
           facebook_page_id?: string | null
           facebook_page_name?: string | null
@@ -963,7 +967,9 @@ export type Database = {
           bluesky_did?: string | null
           bluesky_handle?: string | null
           cc_ingest_token?: string | null
+          content_only?: boolean
           created_at?: string
+          cta_style?: string
           facebook_page_access_token?: string | null
           facebook_page_id?: string | null
           facebook_page_name?: string | null
@@ -1665,7 +1671,9 @@ export type Database = {
           api_token: string | null
           app_password: string
           blog_customizations: Json | null
+          content_only: boolean
           created_at: string
+          cta_style: string
           display_order: number
           id: string
           is_default: boolean
@@ -1679,7 +1687,9 @@ export type Database = {
           api_token?: string | null
           app_password: string
           blog_customizations?: Json | null
+          content_only?: boolean
           created_at?: string
+          cta_style?: string
           display_order?: number
           id?: string
           is_default?: boolean
@@ -1693,7 +1703,9 @@ export type Database = {
           api_token?: string | null
           app_password?: string
           blog_customizations?: Json | null
+          content_only?: boolean
           created_at?: string
+          cta_style?: string
           display_order?: number
           id?: string
           is_default?: boolean
