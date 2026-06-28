@@ -240,6 +240,27 @@ export default function DashboardShellV2({
   // already gates the campaign APIs, so a Pro user who sees the link can use it.
   const canUseLabs = tier === 'pro' || isAdmin
 
+  // Admin-only: count of OPEN support tickets (not yet answered/closed). Drives
+  // the red "Support" alert in the topbar so the founder catches new tickets
+  // from any page. Polls every 60s; only fetched for admins.
+  const [openTickets, setOpenTickets] = useState(0)
+  useEffect(() => {
+    if (!isAdmin) return
+    let cancelled = false
+    const load = async () => {
+      try {
+        const res = await fetch('/api/admin/support-tickets/open-count')
+        if (!res.ok || cancelled) return
+        const d = await res.json()
+        if (!cancelled) setOpenTickets(Number(d?.count) || 0)
+      } catch { /* transient — interval retries */ }
+    }
+    load()
+    const t = setInterval(load, 60_000)
+    return () => { cancelled = true; clearInterval(t) }
+  }, [isAdmin])
+  const ticketAlert = isAdmin && openTickets > 0
+
   // Admin "view as tier" dropdown state. Sourced from localStorage so the
   // sidebar reflects whichever tier the admin is currently previewing.
   const [viewAs, setViewAs] = useState<Tier>('admin')
@@ -739,22 +760,25 @@ export default function DashboardShellV2({
               </>
             )}
 
-            {/* Support tickets — always visible (not gated on a WP connection)
-                so a user can open a help ticket from any page. Goes to the
-                same /support page as the sidebar "Create a Help Ticket". */}
+            {/* Support tickets — always visible (not gated on a WP connection).
+                Regular users go to /support to open a ticket. ADMIN goes to the
+                ticket queue, and the button turns RED with a count whenever
+                there are OPEN tickets waiting (admin only). */}
             <Link
-              href="/support"
+              href={isAdmin ? '/admin/support-tickets' : '/support'}
               className="px-3 py-2 rounded-lg border text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors"
-              style={{
-                backgroundColor: 'var(--surface)',
-                borderColor: 'var(--border)',
-                color: 'var(--text-soft)',
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--surface-hover)')}
-              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'var(--surface)')}
-              title="Open a support ticket"
+              style={
+                ticketAlert
+                  ? { backgroundColor: '#ff3b30', borderColor: '#ff3b30', color: '#fff' }
+                  : { backgroundColor: 'var(--surface)', borderColor: 'var(--border)', color: 'var(--text-soft)' }
+              }
+              onMouseEnter={(e) => { if (!ticketAlert) e.currentTarget.style.backgroundColor = 'var(--surface-hover)' }}
+              onMouseLeave={(e) => { if (!ticketAlert) e.currentTarget.style.backgroundColor = 'var(--surface)' }}
+              title={ticketAlert
+                ? `${openTickets} open support ticket${openTickets === 1 ? '' : 's'} waiting`
+                : 'Open a support ticket'}
             >
-              <LifeBuoy size={12} /> Support
+              <LifeBuoy size={12} /> Support{ticketAlert ? ` (${openTickets})` : ''}
             </Link>
 
             {/* Theme toggle */}
