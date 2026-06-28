@@ -43,7 +43,7 @@ const TUTORIALS = [
 
 export default function TutorialsPage() {
   return (
-    <div className="max-w-5xl mx-auto px-6 sm:px-8 py-10">
+    <div className="max-w-7xl mx-auto px-6 sm:px-8 py-10">
       {/* Header */}
       <div className="mb-10">
         <div className="flex items-center gap-3 mb-2">
@@ -63,7 +63,7 @@ export default function TutorialsPage() {
       </div>
 
       {/* Video grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
         {TUTORIALS.map((t) => (
           <article
             key={t.id}
@@ -82,17 +82,17 @@ export default function TutorialsPage() {
             </div>
 
             {/* Meta */}
-            <div className="px-5 py-4 flex flex-col gap-1">
+            <div className="px-4 py-3 flex flex-col gap-1">
               <span
-                className="text-[10px] font-bold uppercase tracking-[0.12em]"
+                className="text-[9px] font-bold uppercase tracking-[0.12em]"
                 style={{ color: t.accent }}
               >
                 {t.category}
               </span>
-              <h2 className="text-[16px] font-semibold leading-snug" style={{ color: 'var(--text)' }}>
+              <h2 className="text-[14px] font-semibold leading-snug" style={{ color: 'var(--text)' }}>
                 {t.title}
               </h2>
-              <p className="text-[13px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
+              <p className="text-[12px] leading-relaxed line-clamp-3" style={{ color: 'var(--text-soft)' }}>
                 {t.description}
               </p>
             </div>
