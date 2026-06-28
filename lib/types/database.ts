@@ -1719,6 +1719,7 @@ export type Database = {
       }
       youtube_videos: {
         Row: {
+          blog_thumbnail_url: string | null
           channel_id: string
           channel_title: string
           created_at: string
@@ -1759,6 +1760,7 @@ export type Database = {
           youtube_video_id: string
         }
         Insert: {
+          blog_thumbnail_url?: string | null
           channel_id: string
           channel_title: string
           created_at?: string
@@ -1799,6 +1801,7 @@ export type Database = {
           youtube_video_id: string
         }
         Update: {
+          blog_thumbnail_url?: string | null
           channel_id?: string
           channel_title?: string
           created_at?: string

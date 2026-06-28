@@ -1426,15 +1426,25 @@ async function handleGenerate(request: Request) {
   // image they hand-picked, and the rebuild's value is the body rewrite, not
   // a thumbnail swap. (Fresh generates still get the YT thumb as featured.)
   const youtubeVideoId = (v as Record<string, unknown>).youtube_video_id as string
+  // Optional per-video custom blog hero the creator uploaded on the Library
+  // card. When present it overrides the YouTube thumbnail as the featured
+  // image. Either way the hero is set as featured_media ONLY — never inserted
+  // into the article body, because the post already embeds the YouTube video
+  // and a duplicate image at the top would be redundant.
+  const customBlogThumb = ((v as Record<string, unknown>).blog_thumbnail_url as string | null)?.trim() || null
   if (!existingWpPostId) {
     try {
-      const thumbUrl = `https://img.youtube.com/vi/${youtubeVideoId}/maxresdefault.jpg`
       let media
-      try {
-        media = await wpService.uploadImageFromUrl(thumbUrl, `${youtubeVideoId}.jpg`)
-      } catch {
-        const fallback = `https://img.youtube.com/vi/${youtubeVideoId}/hqdefault.jpg`
-        media = await wpService.uploadImageFromUrl(fallback, `${youtubeVideoId}.jpg`)
+      if (customBlogThumb) {
+        media = await wpService.uploadImageFromUrl(customBlogThumb, `${youtubeVideoId}-blogthumb.jpg`)
+      } else {
+        const thumbUrl = `https://img.youtube.com/vi/${youtubeVideoId}/maxresdefault.jpg`
+        try {
+          media = await wpService.uploadImageFromUrl(thumbUrl, `${youtubeVideoId}.jpg`)
+        } catch {
+          const fallback = `https://img.youtube.com/vi/${youtubeVideoId}/hqdefault.jpg`
+          media = await wpService.uploadImageFromUrl(fallback, `${youtubeVideoId}.jpg`)
+        }
       }
       // CRITICAL: preserve the WP status from createPost. When the post was
       // created as 'future' (wp-native scheduling) or 'draft' (draft-flip),

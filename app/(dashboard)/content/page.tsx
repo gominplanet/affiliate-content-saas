@@ -28,7 +28,7 @@ import { effectiveTier } from '@/lib/view-as'
 import { metaEnabled } from '@/lib/feature-flags'
 import {
   Youtube, Wand2, ExternalLink, CheckCircle, AlertCircle,
-  RefreshCw, Loader2, ChevronRight, Sparkles, X, Facebook, Pin, MessageCircle, Save, Upload, Search, Calendar, Handshake,
+  RefreshCw, Loader2, ChevronRight, Sparkles, X, Facebook, Pin, MessageCircle, Save, Upload, Search, Calendar, Handshake, ImagePlus,
 } from 'lucide-react'
 import type { PinPreviewData } from '@/components/PinterestPreviewModal'
 
@@ -262,8 +262,13 @@ function deriveProductUrl(video: Record<string, unknown>): string | null {
     if (m) return clean(m[0])
   }
 
+  // Fall back to the product_url the generate route persisted — but NOT if it
+  // is a tip jar / social / link-hub URL. Older posts could store a "Buy Me a
+  // Coffee" link here (the resolver used to pick the first description URL),
+  // which would otherwise send readers to a coffee donation page.
+  const NON_PRODUCT = /(youtu\.?be|youtube\.com|instagram\.com|tiktok\.com|facebook\.com|fb\.com|twitter\.com|x\.com|linktr\.ee|linkedin\.com|pinterest\.|threads\.net|bsky\.|t\.me|discord\.|patreon\.|paypal\.|buymeacoffee\.com|buymeacoff\.ee|ko-?fi\.com|gofundme\.com|cash\.app|venmo\.com|streamlabs\.com|streamelements\.com)/i
   const stored = (video.product_url as string | null)?.trim()
-  if (stored) return stored
+  if (stored && !NON_PRODUCT.test(stored)) return stored
 
   const asin =
     desc.toUpperCase().match(/\/(?:DP|GP\/PRODUCT)\/([A-Z0-9]{10})/)?.[1] ||
@@ -369,6 +374,122 @@ function ProductPhotoUpload({ videoId, initialUrl }: { videoId: string; initialU
       )}
       {err && <span className="text-[10px] text-[#ff3b30]">{err}</span>}
     </div>
+  )
+}
+
+/**
+ * Optional per-video blog hero (featured image) upload, shown next to
+ * "Generate post".
+ *
+ * Why this exists: by default MVP uses the YouTube video's thumbnail as the
+ * blog post's main hero/featured image. Some creators want a different,
+ * purpose-made thumbnail for the article page — this lets them upload one.
+ *
+ * Important: the hero is the post's featured image ONLY. It is never inserted
+ * into the article body, because the post already embeds the YouTube video at
+ * the top — repeating the same image inline would be a duplicate. Without an
+ * upload, the YT thumbnail plays that exact role (hero only, not in-body).
+ *
+ * Uploads to the product-images bucket (migration 051) at
+ * {user_id}/{videoId}-blogthumb.{ext} and persists the URL on
+ * youtube_videos.blog_thumbnail_url. blog/generate prefers it over the YT
+ * thumbnail when setting the WP featured_media.
+ */
+function BlogThumbUpload({ videoId, initialUrl }: { videoId: string; initialUrl: string | null }) {
+  const supabase = createBrowserClient()
+  const [url, setUrl] = useState<string | null>(initialUrl)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  async function handleFile(file: File) {
+    if (!file.type.startsWith('image/')) { setErr('Pick an image file'); return }
+    if (file.size > 10 * 1024 * 1024) { setErr('Max 10 MB'); return }
+    setBusy(true); setErr(null)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('Not signed in')
+      const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg'
+      const path = `${user.id}/${videoId}-blogthumb.${ext}`
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error: upErr } = await (supabase.storage as any).from('product-images').upload(path, file, {
+        cacheControl: '3600', upsert: true, contentType: file.type || 'image/jpeg',
+      })
+      if (upErr) throw new Error(upErr.message || 'Upload failed')
+      const { data: urlData } = supabase.storage.from('product-images').getPublicUrl(path)
+      const publicUrl = `${urlData.publicUrl}?v=${Date.now()}`
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error: updErr } = await supabase.from('youtube_videos').update({ blog_thumbnail_url: publicUrl } as any).eq('id', videoId)
+      if (updErr) throw new Error(updErr.message || 'Save failed')
+      setUrl(publicUrl)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Upload failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function remove() {
+    setBusy(true); setErr(null)
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await supabase.from('youtube_videos').update({ blog_thumbnail_url: null } as any).eq('id', videoId)
+      setUrl(null)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Remove failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp"
+        className="hidden"
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = '' }}
+      />
+      {url ? (
+        <span className="inline-flex items-center gap-1.5">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={url} alt="Blog thumbnail" className="w-7 h-7 rounded object-cover border border-gray-200 dark:border-white/10" />
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            disabled={busy}
+            title="Replace the custom thumbnail used as this post's main hero image"
+            className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-lg border border-gray-300 dark:border-white/15 text-[#1d1d1f] dark:text-white/80 hover:bg-gray-50 dark:hover:bg-white/5 whitespace-nowrap transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {busy ? <Loader2 size={12} className="animate-spin" /> : <ImagePlus size={12} />}
+            Replace blog thumbnail
+          </button>
+          <Button variant="ghost" size="sm" onClick={remove} disabled={busy} className="text-[11px] text-[#86868b] hover:text-[#ff3b30] hover:bg-transparent">
+            Remove
+          </Button>
+        </span>
+      ) : (
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          disabled={busy}
+          title="Optional. Upload a custom thumbnail for the blog post's main hero image. If you skip this, the YouTube video's thumbnail is used as the hero — and only the hero (it's never repeated inside the article, since the video is already embedded there)."
+          className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-lg border border-gray-300 dark:border-white/15 text-[#1d1d1f] dark:text-white/80 hover:bg-gray-50 dark:hover:bg-white/5 whitespace-nowrap transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {busy ? <Loader2 size={12} className="animate-spin" /> : <ImagePlus size={12} />}
+          Upload My Own Blog Thumbnail
+        </button>
+      )}
+      {/* Always-visible note so creators understand how the hero image is
+          chosen and why the YouTube thumbnail isn't duplicated in-article. */}
+      <span className="basis-full text-[11px]" style={{ color: 'var(--text-faint)' }}>
+        {url
+          ? 'Your uploaded image is this post’s main hero. The YouTube video stays embedded inside the article.'
+          : 'Optional — skip it and the YouTube video’s image becomes your blog post’s main hero image. It’s used as the hero only, never repeated inside the article (the video itself is already embedded there).'}
+      </span>
+      {err && <span className="basis-full text-[10px] text-[#ff3b30]">{err}</span>}
+    </>
   )
 }
 
@@ -965,6 +1086,15 @@ const VideoCard = memo(function VideoCardImpl({
           {video.is_vertical !== true && (
           <div className="flex items-center gap-x-4 gap-y-1.5 flex-wrap">
             <GenerateButton videoId={id} youtubeVideoId={(video.youtube_video_id as string) || undefined} existingPost={post} userTier={userTier} onDone={(url, t, pid) => onGenerated(id, url, t, pid)} />
+            {/* Optional custom blog hero (else the YT thumbnail is the hero).
+                Only meaningful before a post exists — the featured image is
+                set at generation time. */}
+            {!post && (
+              <BlogThumbUpload
+                videoId={id}
+                initialUrl={(video.blog_thumbnail_url as string | null) ?? null}
+              />
+            )}
             <CategoryPicker
               videoId={id}
               initial={(video.selected_category as string | null) ?? null}

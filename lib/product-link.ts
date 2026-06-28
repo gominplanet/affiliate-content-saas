@@ -21,12 +21,18 @@ export function asinFromAmazonUrl(url: string): string | null {
 /**
  * Find the product link a creator points buyers to in a video description.
  * geni.us / amzn.to are NOT skipped — the creator's product link may BE a
- * Geniuslink or an Amazon short link. We only skip socials, payments, link
- * hubs, and the creator's own site. Prefers a URL right after a buy/price
- * CTA, else the first non-excluded URL.
+ * Geniuslink or an Amazon short link. We only skip socials, payments, tip
+ * jars / donation pages, link hubs, and the creator's own site. Prefers a URL
+ * right after a buy/price CTA, else the first non-excluded URL.
+ *
+ * Tip jars matter: creators routinely put a "Buy Me a Coffee" / Ko-fi /
+ * PayPal donation link near the TOP of the description. Without skipping
+ * those, the resolver picked the tip jar as the "product" — so the post's
+ * affiliate link (and the dashboard "Visit Product" link) sent readers to a
+ * coffee donation page instead of the reviewed product.
  */
 export function firstProductUrl(description: string, ownSite?: string | null): string | null {
-  const skip = /(youtu\.?be|youtube\.com|instagram\.com|tiktok\.com|facebook\.com|fb\.com|twitter\.com|x\.com|linktr\.ee|linkedin\.com|pinterest\.|threads\.net|bsky\.|t\.me|discord\.|patreon\.|paypal\.|alexmediacreations)/i
+  const skip = /(youtu\.?be|youtube\.com|instagram\.com|tiktok\.com|facebook\.com|fb\.com|twitter\.com|x\.com|linktr\.ee|linkedin\.com|pinterest\.|threads\.net|bsky\.|t\.me|discord\.|patreon\.|paypal\.|buymeacoffee\.com|buymeacoff\.ee|ko-?fi\.com|gofundme\.com|cash\.app|venmo\.com|streamlabs\.com|streamelements\.com|alexmediacreations)/i
   const own = ownSite ? ownSite.replace(/^https?:\/\//, '').replace(/\/.*$/, '') : ''
   const candidate = (raw: string): string | null => {
     const clean = raw.replace(/[.,;:)\]>"']+$/, '')
