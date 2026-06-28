@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.55
+ * Version: 1.0.56
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -3527,16 +3527,25 @@ if (!function_exists('mvp_affiliate_render_reader_ux')) {
       }
     }
     if (!faqHeader) return;
+    // Non-FAQ blocks that may follow the last Q&A — the CTA card, hashtags,
+    // related reviews, author bio, newsletter, product finder. The accordion
+    // must STOP at these so the last answer doesn't swallow them into its
+    // collapsible panel (they belong AFTER the FAQ, as normal post content).
+    var FAQ_STOP = '.gr-cta-card, .gr-tags, .gr-related-reviews, .gr-author-bio-card, .gr-newsletter-cta, .gr-product-finder, .gr-price-strip';
+    function isFaqStop(el){
+      return !el || el.tagName === 'H2' || (el.matches && el.matches(FAQ_STOP));
+    }
     var node = faqHeader.nextElementSibling;
     while (node) {
-      // Stop at the next H2 (e.g. Related Reviews section).
-      if (node.tagName === 'H2') break;
+      // Stop at the next H2 (e.g. Related Reviews) or any post-chrome block.
+      if (node.tagName === 'H2' || (node.matches && node.matches(FAQ_STOP))) break;
       if (node.tagName === 'H3') {
-        // Collect this Q's answer = every sibling up to the next H3/H2.
+        // Collect this Q's answer = every sibling up to the next H3/H2 or the
+        // first post-chrome block (CTA card, tags, …).
         var q = node;
         var body = [];
         var next = q.nextElementSibling;
-        while (next && next.tagName !== 'H3' && next.tagName !== 'H2') {
+        while (next && next.tagName !== 'H3' && !isFaqStop(next)) {
           body.push(next);
           next = next.nextElementSibling;
         }
