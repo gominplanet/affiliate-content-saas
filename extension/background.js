@@ -379,6 +379,7 @@ async function harvestProductVideoInPage(asin) {
     return m ? m[1].toUpperCase() : null
   }
   const findVdp = () => {
+    const anchors = [...document.querySelectorAll('a[href*="/vdp/"]')]
     // 1. Strongest signal: the vdp link OINK injected lives inside its own
     //    container. That's the CREATOR'S OWN video for this product — exactly
     //    what we want, even on OINK builds that omit the product= param.
@@ -387,27 +388,50 @@ async function harvestProductVideoInPage(asin) {
       const inOink = oinkScope.querySelector('a[href*="/vdp/"]')
       if (inOink) return inOink.href
     }
-    // 2. Else, a vdp anchor whose product= matches THIS product's ASIN.
+    // 2. Amazon's NATIVE "Content Made" link — the creator's OWN video for this
+    //    product, shown to the signed-in creator WITHOUT OINK. This is the exact
+    //    link the manual-paste hint tells users to right-click → Copy, so
+    //    matching it makes auto-detect work even when OINK isn't installed.
+    //    Matched by its "Content Made" label (on the anchor or a close
+    //    ancestor) so we never grab a stranger's video from the public "Videos
+    //    for this product" carousel.
+    const isContentMade = (a) => {
+      let el = a, depth = 0
+      while (el && depth < 4) {
+        const label = ((el.getAttribute && el.getAttribute('aria-label')) || '') + ' ' +
+          (el === a ? (a.textContent || '') : '')
+        if (/content made/i.test(label)) return true
+        el = el.parentElement; depth++
+      }
+      return false
+    }
+    const labelled = anchors.find(isContentMade)
+    if (labelled) return labelled.href
+    // 3. Else, a vdp anchor whose product= matches THIS product's ASIN.
     //    We deliberately do NOT fall back to "any vdp on the page" — Amazon's
     //    native "Videos for this product" carousel surfaces OTHER creators'
     //    videos, and attaching one of those to the brand recap would tell the
     //    brand "here's our review" pointing at a stranger's content. Better to
     //    find nothing and let the user paste their link than to guess wrong.
     if (want) {
-      const anchors = [...document.querySelectorAll('a[href*="/vdp/"]')]
       for (const a of anchors) { if (asinOf(a.href) === want) return a.href }
     }
     return null
   }
-  const oinkPresent = () =>
-    !!document.querySelector('[class*="oink" i],[id*="oink" i],[data-oink]') ||
-    /content made/i.test(document.body ? document.body.innerText : '')
+  // Two DISTINCT page signals so the app can message accurately:
+  //  - oinkEl:     the OINK extension is genuinely installed (its element exists).
+  //  - contentMade: Amazon's native "Content Made" label is on the page — true
+  //    even WITHOUT OINK, so it must NOT be reported as "OINK is installed".
+  const oinkEl = () => !!document.querySelector('[class*="oink" i],[id*="oink" i],[data-oink]')
+  const contentMade = () => /content made/i.test(document.body ? document.body.innerText : '')
 
-  // OINK injects asynchronously (it calls Amazon's content API first) — poll up
-  // to ~14s, and keep going a beat after OINK appears so its link can paint.
-  let vdp = null, sawOink = false
+  // OINK / Amazon inject asynchronously (an Amazon content API call first) —
+  // poll up to ~14s, and keep going a beat after the signal appears so the link
+  // can paint.
+  let vdp = null, sawOink = false, sawContentMade = false
   for (let i = 0; i < 28; i++) {
-    if (!sawOink && oinkPresent()) sawOink = true
+    if (!sawOink) sawOink = oinkEl()
+    if (!sawContentMade) sawContentMade = contentMade()
     vdp = findVdp()
     if (vdp) break
     await sleep(500)
@@ -415,12 +439,14 @@ async function harvestProductVideoInPage(asin) {
   return {
     ok: true,
     video: vdp ? { vdpUrl: vdp, asin: asinOf(vdp) || want } : null,
-    oinkDetected: sawOink || oinkPresent(),
+    oinkDetected: sawOink,
+    contentMadeSeen: sawContentMade || contentMade(),
     signedOut: /\/ap\/signin/.test(location.href),
     diag: {
       url: location.href.slice(0, 140),
       vdpAnchors: document.querySelectorAll('a[href*="/vdp/"]').length,
       oink: sawOink,
+      contentMade: sawContentMade,
     },
   }
 }

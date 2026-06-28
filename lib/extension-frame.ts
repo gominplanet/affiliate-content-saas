@@ -145,6 +145,9 @@ export interface AmazonVideoForAsinResult {
   ok: boolean
   video?: AmazonVideo | null
   oinkDetected?: boolean
+  /** Amazon's native "Content Made" label was on the page (true even without
+   *  OINK). Lets the app say "video exists but link unreadable" vs "no video". */
+  contentMadeSeen?: boolean
   signedOut?: boolean
   error?: string
 }
@@ -157,13 +160,13 @@ export interface AmazonVideoForAsinResult {
 export async function requestAmazonVideoForAsin(asin: string): Promise<AmazonVideoForAsinResult> {
   if (!asin) return { ok: false, error: 'no-asin' }
   if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
-  const resp = await sendToExtension<{ ok?: boolean; video?: AmazonVideo | null; oinkDetected?: boolean; signedOut?: boolean; error?: string }>(
+  const resp = await sendToExtension<{ ok?: boolean; video?: AmazonVideo | null; oinkDetected?: boolean; contentMadeSeen?: boolean; signedOut?: boolean; error?: string }>(
     { type: 'MVP_AMZ_SCAN', asin },
     60000,
   )
   if (!resp) return { ok: false, error: 'timeout' }
   if (resp.ok) {
-    return { ok: true, video: resp.video ?? null, oinkDetected: !!resp.oinkDetected, signedOut: resp.signedOut }
+    return { ok: true, video: resp.video ?? null, oinkDetected: !!resp.oinkDetected, contentMadeSeen: !!resp.contentMadeSeen, signedOut: resp.signedOut }
   }
   return { ok: false, error: resp.error || 'scan-failed' }
 }

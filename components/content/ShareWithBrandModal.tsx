@@ -212,13 +212,20 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
         if (await saveAmazonVideo(res.video.vdpUrl)) toast.success('Found your Amazon video — added to the recap.')
         return
       }
-      // No video found on the product page.
-      if (res.oinkDetected) {
-        // OINK is there but had no "Content Made" link for this product.
-        setScanDiag('OINK is installed, but it didn’t show a video for this product. Upload it on Amazon first, or paste the link below.')
+      // No video matched on the product page — explain the most likely reason.
+      if (res.signedOut) {
+        // The background tab landed on Amazon's sign-in page, so the creator's
+        // own "Content Made" link is never shown.
+        setScanDiag('The Amazon tab opened on a sign-in screen. Sign in to Amazon in your browser, then try again — or paste the link below.')
+        setShowPaste(true)
+      } else if (res.contentMadeSeen) {
+        // Amazon's "Content Made" section was on the page but we couldn't read a
+        // usable video link — surface the manual copy path.
+        setScanDiag('Couldn’t read a video link for this product. If you’ve uploaded your Amazon video, right-click its “Content Made” link → Copy link and paste it below.')
         setShowPaste(true)
       } else {
-        // No OINK → recommend it (it surfaces the video link automatically).
+        // No creator-video signal at all → likely no video published yet for
+        // this product (OINK can also help surface the link automatically).
         setOinkMissing(true)
         setShowPaste(true)
       }
