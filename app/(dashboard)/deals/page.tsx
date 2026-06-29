@@ -50,6 +50,7 @@ import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { type Tier } from '@/lib/tier'
 import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
+import { DEALS_HUB_PAUSED } from '@/lib/deal-occasion'
 
 interface DealRow {
   id: string
@@ -484,6 +485,51 @@ export default function DealsHubPage() {
     } finally {
       setDeletingId(null)
     }
+  }
+
+  // Globally paused between Amazon sale events (DEALS_HUB_PAUSED in
+  // lib/deal-occasion.ts). Show users WHY it's off instead of the generator;
+  // admins keep full access so they can pre-stage a post ahead of a sale.
+  if (DEALS_HUB_PAUSED && tier !== 'admin') {
+    return (
+      <div className="max-w-2xl mx-auto px-6 py-16">
+        <div
+          className="rounded-2xl border p-8 text-center"
+          style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}
+        >
+          <span
+            className="inline-flex w-14 h-14 rounded-2xl items-center justify-center mb-4"
+            style={{ background: 'linear-gradient(135deg, #7C3AED 0%, #DB2777 100%)' }}
+          >
+            <BadgePercent size={26} className="text-white" />
+          </span>
+          <h1 className="text-[22px] font-semibold mb-2" style={{ color: 'var(--text)' }}>
+            Deals Hub is resting until the next sale
+          </h1>
+          <p className="text-[14px] leading-relaxed mb-3" style={{ color: 'var(--text-soft)' }}>
+            There&rsquo;s no Amazon deal event running right now — no Prime Day, Big Deal Days,
+            Black Friday, Cyber Monday, or seasonal sale. Deals Hub writes time-sensitive
+            &ldquo;limited-time deal&rdquo; posts, and publishing those when there isn&rsquo;t a real
+            sale on just dates your content and can read as misleading to shoppers, so we&rsquo;ve
+            paused it.
+          </p>
+          <p className="text-[14px] leading-relaxed mb-6" style={{ color: 'var(--text-soft)' }}>
+            <strong style={{ color: 'var(--text)' }}>It switches back on automatically the moment the next sale starts</strong> —
+            you&rsquo;ll see it light up right here with the event badge ready to go.
+          </p>
+          <div className="rounded-xl border border-dashed p-4 text-left" style={{ borderColor: 'var(--border)' }}>
+            <p className="text-[13px] font-semibold mb-1" style={{ color: 'var(--text)' }}>In the meantime</p>
+            <p className="text-[13px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
+              Keep publishing evergreen{' '}
+              <Link href="/content" className="underline" style={{ color: '#7C3AED' }}>reviews</Link>{' '}
+              and{' '}
+              <Link href="/comparison" className="underline" style={{ color: '#7C3AED' }}>comparisons</Link>.
+              Those rank year-round, so they&rsquo;ll already be live and earning when the next sale hits.
+            </p>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   // Tier gate — Trial + Creator see the upsell card instead of the form.

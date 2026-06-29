@@ -22,6 +22,7 @@
 
 import type { Metadata } from 'next'
 import { createServerClient } from '@/lib/supabase/server'
+import { DEALS_HUB_PAUSED } from '@/lib/deal-occasion'
 import SetupChecklist from '@/components/dashboard/SetupChecklist'
 import ChannelStats from '@/components/dashboard/ChannelStats'
 import NewsBanner from '@/components/dashboard/NewsBanner'
@@ -267,7 +268,11 @@ export default async function DashboardPage() {
             <BigAction href="/comparison" icon={<Scale size={17} />} title="Comparison post" desc="Rank multiple products head-to-head" accent="#F59E0B" />
             <BigAction href="/buying-guides" icon={<BookOpen size={17} />} title="Buying guide" desc="A multi-product guide post" accent="#10B981" />
             <BigAction href="/content?tab=posts" icon={<Send size={17} />} title="Push to socials" desc="Send blog posts to your social accounts" accent="#3B82F6" />
-            <BigAction href="/deals" icon={<BadgePercent size={17} />} title="Deals Hub post" desc="Blog from Amazon's daily deals" accent="#EC4899" />
+            {/* Deals Hub is hidden here while paused between Amazon sale events
+                (DEALS_HUB_PAUSED). Comes back automatically when a sale starts. */}
+            {!DEALS_HUB_PAUSED && (
+              <BigAction href="/deals" icon={<BadgePercent size={17} />} title="Deals Hub post" desc="Blog from Amazon's daily deals" accent="#EC4899" />
+            )}
             <BigAction href="/newsletter" icon={<Mail size={17} />} title="Newsletter" desc="Manage & send to subscribers" accent="#14B8A6" />
           </div>
         </section>

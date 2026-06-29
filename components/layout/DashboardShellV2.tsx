@@ -41,6 +41,7 @@ import {
   Share2, UserSquare, Lightbulb, LifeBuoy, Link2, FlaskConical, Store, Send, ShoppingBag,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { DEALS_HUB_PAUSED } from '@/lib/deal-occasion'
 import NotificationBell from './NotificationBell'
 import WpUpdateTopbarButton from './WpUpdateTopbarButton'
 import ScoutTopbarButton from './ScoutTopbarButton'
@@ -59,7 +60,9 @@ interface NavItemDef {
   href: string
   icon: React.ReactNode
   label: string
-  badge?: number
+  /** Small pill on the right: a count (e.g. unread) or a short status word
+   *  like "Paused". */
+  badge?: number | string
   /** Hide unless gate is true. Used for showBuyingGuides + showDeals
    *  + admin-only links. */
   gate?: boolean
@@ -350,7 +353,7 @@ export default function DashboardShellV2({
         // not a create action). YouTube has its own SET UP > "YouTube" entry.
         { href: '/comparison', icon: <Scale size={15} />, label: 'Comparisons' },
         { href: '/buying-guides', icon: <BookOpen size={15} />, label: 'Buying Guides', gate: showBuyingGuides },
-        { href: '/deals', icon: <BadgePercent size={15} />, label: 'Deals Hub', gate: showDeals },
+        { href: '/deals', icon: <BadgePercent size={15} />, label: 'Deals Hub', gate: showDeals, badge: DEALS_HUB_PAUSED ? 'Paused' : undefined },
         { href: '/script', icon: <PenLine size={15} />, label: 'Scriptwriter' },
         { href: '/newsletter', icon: <Mail size={15} />, label: 'Newsletter' },
         // Instagram Burner — re-surfaced 2026-06-22 after Meta publishing was
@@ -577,8 +580,22 @@ export default function DashboardShellV2({
             const palette = group.label ? SECTION_ACCENTS[group.label] : undefined
             const headerAccent = group.accent ?? (palette ? (isDark ? palette.dark : palette.light) : undefined)
             const headerIcon = group.icon ?? (group.label ? SECTION_ICONS[group.label] : undefined)
+            // Recommended Tools = revenue-converting partner links. Give it a
+            // tinted card so it visibly reads as "different" from the app's own
+            // nav — a faint teal wash matching its header accent, with a border.
+            const isRecommended = group.label === 'Recommended tools'
+            const cardStyle = isRecommended && !collapsed
+              ? {
+                  backgroundColor: isDark ? 'rgba(45,212,191,0.08)' : 'rgba(15,118,110,0.06)',
+                  borderColor: isDark ? 'rgba(45,212,191,0.22)' : 'rgba(15,118,110,0.18)',
+                }
+              : undefined
             return (
-              <div key={group.label}>
+              <div
+                key={group.label}
+                className={cn(isRecommended && !collapsed && 'rounded-xl border p-2')}
+                style={cardStyle}
+              >
                 {!collapsed && group.label && (
                   <p
                     className="px-2.5 mb-1.5 text-[11px] uppercase tracking-[0.14em] font-semibold flex items-center gap-1.5"

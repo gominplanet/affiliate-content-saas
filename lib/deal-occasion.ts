@@ -12,6 +12,20 @@
 // 'none' when no event is within a reasonable window so the article doesn't
 // invent fake hype (e.g. "this Prime Day deal" in March).
 
+/**
+ * Global pause switch for the Deals Hub.
+ *
+ * Deals Hub only makes sense while a real Amazon sale event is live (Prime Day,
+ * Big Deal Days, Black Friday, Cyber Monday, seasonal sales, etc.). Between
+ * events there's nothing to write a "limited-time deal" post about, so we pause
+ * the feature: the sidebar shows a "Paused" pill and the /deals page renders an
+ * explanation instead of the generator (admins keep access so they can
+ * pre-stage a post ahead of a sale).
+ *
+ * ⚠️  Flip to FALSE the moment the next Amazon sale starts to bring it back.
+ */
+export const DEALS_HUB_PAUSED = true
+
 export type DealOccasionSlug =
   | 'none'
   | 'lightning_deal'
