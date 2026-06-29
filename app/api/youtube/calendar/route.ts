@@ -5,37 +5,48 @@ import { getChannelOAuthToken } from '@/lib/youtube-channels'
 
 // ── GET /api/youtube/calendar ───────────────────────────────────────────────
 //
-// An ALWAYS-FRESH feed for the Co-Pilot planning calendar. Unlike
-// /api/youtube/drafts (15-min cache, paginated to-do view), this pulls straight
-// from YouTube on every call. That's deliberate: a video scheduled DIRECTLY in
-// YouTube Studio carries its schedule in `status.publishAt`, and we want the
-// dot to reflect it the moment it's set — no cache, no manual re-scan.
+// The data feed for the Co-Pilot planning calendar.
 //
-// IMPORTANT — we scan the FULL uploads playlist, not just the newest page.
-// Scheduling does NOT move a video up the uploads list (it's ordered by upload
-// date), so a creator who schedules videos out of their back-catalog has
-// scheduled dates attached to OLD uploads scattered deep in the list. A small
-// "recent uploads" window misses almost all of them — which is exactly the bug
-// that showed only a few of ~90 scheduled videos. So we walk every page until
-// the cursor is exhausted (capped at MAX_PAGES for safety). Each page is
-// ~2 quota units; a 1,500-video channel is ~30 pages (~60 units) — affordable,
-// and the client loads the calendar async so the scan never blocks the page.
+// SCAN THE WHOLE LIBRARY. Creators schedule videos up to ~3 months out, pulled
+// from a back-catalog of hundreds of unpublished uploads. Scheduling does NOT
+// move a video up the uploads playlist (it's ordered by upload date), so those
+// scheduled dates are attached to OLD uploads scattered all the way through the
+// list. Only a full walk of the uploads playlist surfaces them all — a "recent
+// uploads" window misses almost everything (the bug that showed ~5 of ~90).
+//
+// CACHE THE RESULT. A full walk of an 800+ video library is dozens of
+// sequential page fetches (slow + quota-heavy), so we cache the computed events
+// per (user, channel) in youtube_calendar_cache (migration 147) and serve from
+// it on subsequent loads. `?refresh=1` (the "Refresh from YouTube" button)
+// forces a fresh full scan and rewrites the cache. The cache write/read is
+// wrapped in try/catch so a pre-migration DB simply falls back to a live scan.
 //
 // Query params:
-//   ?channelId=<UC…|uuid>   scope to a specific connected channel (the
-//                           Co-Pilot channel picker). Omitted → default channel.
+//   ?channelId=<UC…|uuid>  scope to a connected channel; omitted → default chan
+//   ?refresh=1             bypass the cache and re-scan from YouTube
 //
-// Returns: { events: [{ youtubeVideoId, title, status, publishAt, publishedAt }], truncated }
+// Returns: { events: [{ youtubeVideoId, title, status, publishAt, publishedAt }], truncated, cached }
 //   - scheduled (purple dot): publishAt is set  → plot on publishAt
 //   - published (green dot):  status === 'public' → plot on publishedAt
 
-// Generous cap so even large catalogs are fully covered (40 × 50 = 2,000 videos).
-const MAX_PAGES = 40
+// Cover very large libraries: 60 × 50 = 3,000 videos.
+const MAX_PAGES = 60
 const PAGE_SIZE = 50
+// Serve the cached scan for this long before a fresh full walk is needed.
+const CACHE_TTL_MS = 30 * 60 * 1000
 
-// Big channels can need ~30+ sequential page fetches — give the scan room.
-export const maxDuration = 60
+// A cold full scan of a few thousand videos is many sequential fetches — give
+// it room (cache hits return in well under a second).
+export const maxDuration = 120
 export const dynamic = 'force-dynamic'
+
+type CalEvent = {
+  youtubeVideoId: string
+  title: string
+  status: string
+  publishAt: string | null
+  publishedAt: string
+}
 
 export async function GET(request: Request) {
   const supabase = await createServerClient()
@@ -45,6 +56,28 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
     const channelId = (searchParams.get('channelId') || '').trim() || null
+    const channelKey = channelId || ''
+    const forceRefresh = searchParams.get('refresh') === '1'
+
+    // ── Cache hit ────────────────────────────────────────────────────────────
+    if (!forceRefresh) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data } = await (supabase as any)
+          .from('youtube_calendar_cache')
+          .select('events,truncated,cached_at')
+          .eq('user_id', user.id)
+          .eq('channel_id', channelKey)
+          .maybeSingle()
+        if (data && (Date.now() - new Date(data.cached_at).getTime()) < CACHE_TTL_MS) {
+          return NextResponse.json({
+            events: Array.isArray(data.events) ? data.events : [],
+            truncated: !!data.truncated,
+            cached: true,
+          })
+        }
+      } catch { /* table not migrated yet → fall through to a live scan */ }
+    }
 
     // getChannelOAuthToken resolves + refreshes the token for the picked
     // channel, or the user's default channel when channelId is null.
@@ -54,13 +87,7 @@ export async function GET(request: Request) {
     }
 
     const yt = createYouTubeOAuthService(token)
-    const events: Array<{
-      youtubeVideoId: string
-      title: string
-      status: string
-      publishAt: string | null
-      publishedAt: string
-    }> = []
+    const events: CalEvent[] = []
 
     // Dedupe by video id: YouTube's playlistItems pagination can return the
     // SAME video on adjacent pages, and a wrapping cursor can re-serve the whole
@@ -98,7 +125,21 @@ export async function GET(request: Request) {
       if (page === MAX_PAGES - 1) truncated = true
     }
 
-    return NextResponse.json({ events, truncated })
+    // ── Cache write ────────────────────────────────────────────────────────────
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase as any)
+        .from('youtube_calendar_cache')
+        .upsert({
+          user_id: user.id,
+          channel_id: channelKey,
+          events,
+          truncated,
+          cached_at: new Date().toISOString(),
+        }, { onConflict: 'user_id,channel_id' })
+    } catch { /* table not migrated yet → skip caching */ }
+
+    return NextResponse.json({ events, truncated, cached: false })
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Calendar fetch failed' },

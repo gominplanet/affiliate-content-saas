@@ -180,7 +180,12 @@ function ContentCalendar({ channelId, refreshNonce }: { channelId: string | null
   useEffect(() => {
     let cancelled = false
     setLoading(true); setErr(null)
-    const qs = channelId ? `?channelId=${encodeURIComponent(channelId)}` : ''
+    const params = new URLSearchParams()
+    if (channelId) params.set('channelId', channelId)
+    // refreshNonce only advances when the user hits "Refresh from YouTube" —
+    // force a fresh full scan then; otherwise serve the cached library scan.
+    if (refreshNonce > 0) params.set('refresh', '1')
+    const qs = params.toString() ? `?${params.toString()}` : ''
     fetch(`/api/youtube/calendar${qs}`)
       .then(r => r.json())
       .then(d => {
@@ -263,7 +268,7 @@ function ContentCalendar({ channelId, refreshNonce }: { channelId: string | null
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center py-10 text-[#86868b] text-xs"><Loader2 size={14} className="animate-spin mr-2" /> Loading…</div>
+        <div className="flex items-center justify-center py-10 text-[#86868b] text-xs"><Loader2 size={14} className="animate-spin mr-2" /> Scanning your library…</div>
       ) : err ? (
         <div className="py-6 text-center text-xs text-[#86868b] dark:text-[#8e8e93]">{err}</div>
       ) : (
