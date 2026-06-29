@@ -2923,9 +2923,9 @@ export default function StudioPage() {
           {!activeQuery && drafts.length > 0 && (
             <div className="flex items-center gap-1 mb-3 border-b border-gray-200 dark:border-white/10">
               {([
-                { id: 'todo' as const, label: '📝 To do', sub: 'Unpublished drafts that still need metadata — with or without a product (the orange ASIN pill marks the ones with a detected product)' },
-                { id: 'shipped' as const, label: '🚀 Shipped', sub: 'Pushed to YouTube through Co-Pilot — re-generate thumbnail or metadata anytime' },
-                { id: 'done' as const, label: '✅ Published', sub: 'Already live on YouTube (published outside Co-Pilot)' },
+                { id: 'todo' as const, label: '📝 Needs metadata', sub: 'Drafts that still need their title, description, tags and thumbnail generated (the orange ASIN pill marks the ones with a detected product)' },
+                { id: 'shipped' as const, label: '🚀 Metadata sent', sub: 'MVP has pushed the title, description, tags and thumbnail back to YouTube — re-generate any of it anytime. (Not necessarily live yet — check each card\'s status.)' },
+                { id: 'done' as const, label: '✅ Live on YouTube', sub: 'Published and live on YouTube' },
               ]).map(t => {
                 const count = tabbed[t.id].length
                 const active = activeTab === t.id
