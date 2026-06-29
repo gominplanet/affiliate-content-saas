@@ -19,6 +19,11 @@ export interface CollabInput {
   freeSample: boolean
   productionFee: boolean
   productionFeeAmount?: string
+  /** Copyright fee = the brand buys FULL usage rights to the review video, so
+   *  they can repost + promote it on their own sites/channels, as much and as
+   *  long as they want. */
+  copyrightFee?: boolean
+  copyrightFeeAmount?: string
   livestreams?: boolean
   livestreamLink?: string
   shareAddress: boolean
@@ -103,6 +108,7 @@ Return a tight markdown brief under 250 words. No fluff.`,
   if (input.freeSample) asks.push('REQUEST: a free product sample in exchange for a genuine, in-depth review')
   if (input.bannerAds) asks.push(`OPTION WE OFFER (not required): a paid banner ad placement on our blog${input.bannerAdsAmount ? ` at ${input.bannerAdsAmount}` : ''} — available if they want extra visibility`)
   if (input.productionFee) asks.push(`OPTION WE OFFER (not required): a production fee${input.productionFeeAmount ? ` of ${input.productionFeeAmount}` : ''} if they'd like us to produce the review content`)
+  if (input.copyrightFee) asks.push(`OPTION WE OFFER (not required): full usage / copyright rights to the review video${input.copyrightFeeAmount ? ` for ${input.copyrightFeeAmount}` : ''} — the brand can repost and promote it on their own sites and channels, as much and as long as they want`)
 
   const exampleLinks = (input.exampleLinks || []).map(s => s.trim()).filter(Boolean).slice(0, 3)
   const profile = [

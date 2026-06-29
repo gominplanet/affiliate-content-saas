@@ -64,6 +64,8 @@ export default function CollaborationsPage() {
   const [freeSample, setFreeSample] = useState(true)
   const [productionFee, setProductionFee] = useState(false)
   const [productionFeeAmount, setProductionFeeAmount] = useState('')
+  const [copyrightFee, setCopyrightFee] = useState(false)
+  const [copyrightFeeAmount, setCopyrightFeeAmount] = useState('')
   const [livestreams, setLivestreams] = useState(false)
   const [livestreamLink, setLivestreamLink] = useState('')
   const [shareAddress, setShareAddress] = useState(false)
@@ -216,7 +218,7 @@ export default function CollaborationsPage() {
         body: JSON.stringify({
           brandName, productOrAsin, amazonStorefront, websiteUrl, youtubeUrl, portfolioUrl, mediaKitUrl,
           platforms: [...platforms],
-          bannerAds, bannerAdsAmount, freeSample, productionFee, productionFeeAmount, shareAddress,
+          bannerAds, bannerAdsAmount, freeSample, productionFee, productionFeeAmount, copyrightFee, copyrightFeeAmount, shareAddress,
           livestreams, livestreamLink,
           collabsDone, exampleLinks: exampleLinks.map(s => s.trim()).filter(Boolean), extraNotes,
           // Extra reach-out channels for the email's "Best ways to reach me"
@@ -433,6 +435,19 @@ export default function CollaborationsPage() {
             <div>
               <label className={lbl}>How much are you charging?</label>
               <input value={productionFeeAmount} onChange={e => setProductionFeeAmount(e.target.value)} placeholder="e.g. $350 per video" className="input-field text-sm w-full sm:w-64" />
+            </div>
+          )}
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7]">Charging a copyright fee (full usage rights)?</span>
+            <YesNo value={copyrightFee} onChange={setCopyrightFee} />
+          </div>
+          <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] -mt-1">
+            A copyright fee gives the brand full usage rights to your review video — they can repost and promote it on their own sites and channels, as much and as long as they want.
+          </p>
+          {copyrightFee && (
+            <div>
+              <label className={lbl}>How much are you charging?</label>
+              <input value={copyrightFeeAmount} onChange={e => setCopyrightFeeAmount(e.target.value)} placeholder="e.g. $750 for full usage rights" className="input-field text-sm w-full sm:w-64" />
             </div>
           )}
           <div className="flex items-center justify-between gap-3">

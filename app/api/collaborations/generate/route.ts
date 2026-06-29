@@ -116,6 +116,8 @@ export async function POST(request: Request) {
       freeSample: !!body.freeSample,
       productionFee: !!body.productionFee,
       productionFeeAmount: body.productionFeeAmount?.toString().trim() || '',
+      copyrightFee: !!body.copyrightFee,
+      copyrightFeeAmount: body.copyrightFeeAmount?.toString().trim() || '',
       shareAddress: !!body.shareAddress,
       livestreams: !!body.livestreams,
       livestreamLink: body.livestreamLink?.toString().trim() || '',
