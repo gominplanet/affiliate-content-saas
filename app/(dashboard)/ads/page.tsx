@@ -389,6 +389,13 @@ export default function AdsPage() {
             description="Earn ad revenue alongside your affiliate links. Paste your AdSense Publisher ID and MVP verifies your site, adds Google's official Auto-ads code to every page, and serves your ads.txt — no WordPress editing. Google then places ads automatically across your posts."
           >
             <div className="flex flex-col gap-2">
+              {/* Set expectations: the auto-injection only fires on the MVP
+                  stack (the MVP theme + plugin handle the <head> code + ads.txt).
+                  Custom/3rd-party themes have to add Google's snippet themselves. */}
+              <div className="rounded-lg border border-[#7C3AED]/25 bg-[#7C3AED]/[0.06] px-3 py-2.5 text-xs text-[var(--text-2)] leading-relaxed">
+                <b className="text-[var(--text)]">Requires the MVP theme + plugin.</b> Automatic AdSense injection — the
+                <code> &lt;head&gt;</code> code and <code>ads.txt</code> — is built into MVP&apos;s WordPress theme + plugin, so keep them on the latest version (your site shows an &ldquo;Update available&rdquo; when there is one). On a fully custom / third-party theme, paste Google&apos;s code into that theme yourself instead.
+              </div>
               <label className="text-sm font-medium text-[var(--text)]">AdSense Publisher ID</label>
               <input
                 type="text"
