@@ -39,6 +39,13 @@ const TUTORIALS = [
     category: 'Getting Started',
     accent: '#EA580C',
   },
+  {
+    id: 'cWHZh3LRlLg',
+    title: 'Step 6: Complete Walkthrough',
+    description: 'A full tour of MVP Affiliate with every extra feature explained — so you know exactly what the platform can do.',
+    category: 'Getting Started',
+    accent: '#0891B2',
+  },
 ]
 
 export default function TutorialsPage() {
