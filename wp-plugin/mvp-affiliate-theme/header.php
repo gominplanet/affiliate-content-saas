@@ -4,6 +4,7 @@
 // produce broken <script> output on every blog page.
 $mvp_gtm_id = '';
 $mvp_ga4_id = '';
+$mvp_adsense_id = '';
 if (function_exists('mvp_affiliate_data')) {
     $mvp_d = mvp_affiliate_data();
     $mvp_candidate = trim($mvp_d['analytics']['gtmId'] ?? '');
@@ -15,6 +16,14 @@ if (function_exists('mvp_affiliate_data')) {
     $mvp_ga4_candidate = trim($mvp_d['analytics']['ga4Id'] ?? '');
     if (preg_match('/^G-[A-Z0-9]{4,12}$/', $mvp_ga4_candidate)) {
         $mvp_ga4_id = $mvp_ga4_candidate;
+    }
+    // Google AdSense — validate the ca-pub publisher ID and, only if it's a
+    // clean match, build Google's OWN verification meta + Auto-ads loader. We
+    // never echo raw user markup; the script is constructed from the validated
+    // ID, so a bad paste can't inject arbitrary <script> on every page.
+    $mvp_ads_candidate = trim($mvp_d['adsenseClientId'] ?? '');
+    if (preg_match('/^ca-pub-\d{10,20}$/', $mvp_ads_candidate)) {
+        $mvp_adsense_id = $mvp_ads_candidate;
     }
 }
 ?>
@@ -43,6 +52,12 @@ if (function_exists('mvp_affiliate_data')) {
   gtag('config', '<?php echo esc_js($mvp_ga4_id); ?>');
   </script>
   <!-- End Google tag (gtag.js) -->
+  <?php endif; ?>
+  <?php if ($mvp_adsense_id): ?>
+  <!-- Google AdSense -->
+  <meta name="google-adsense-account" content="<?php echo esc_attr($mvp_adsense_id); ?>">
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=<?php echo esc_attr($mvp_adsense_id); ?>" crossorigin="anonymous"></script>
+  <!-- End Google AdSense -->
   <?php endif; ?>
   <?php wp_head(); ?>
 </head>

@@ -9,7 +9,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MVP_AFFILIATE_THEME_VERSION', '1.4.28');
+define('MVP_AFFILIATE_THEME_VERSION', '1.4.29');
 
 // ── Theme support ───────────────────────────────────────────────────────────
 add_action('after_setup_theme', function () {
@@ -183,6 +183,26 @@ add_action('wp_head', function () {
         }
     }
 }, 1);
+
+// ── Serve /ads.txt from the saved AdSense publisher ID ──────────────────────
+// AdSense wants an ads.txt at the domain root authorizing your publisher
+// account. We serve it dynamically from the dashboard-saved ca-pub ID so the
+// user never touches files. Only fires when WP actually handles /ads.txt —
+// a real ads.txt on disk is served by the web server first and left untouched.
+add_action('init', function () {
+    $path = isset($_SERVER['REQUEST_URI']) ? (string) wp_parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) : '';
+    if (strtolower(rtrim($path, '/')) !== '/ads.txt') return;
+    $id = '';
+    if (function_exists('mvp_affiliate_data')) {
+        $raw = trim(mvp_affiliate_data()['adsenseClientId'] ?? '');
+        if (preg_match('/^ca-pub-(\d{10,20})$/', $raw, $m)) $id = $m[1];
+    }
+    if ($id === '') return; // no AdSense configured → let WP handle the URL normally
+    header('Content-Type: text/plain; charset=utf-8');
+    // Google's standard AdSense ads.txt line (f08c… is Google's certification ID).
+    echo "google.com, pub-{$id}, DIRECT, f08c47fec0942fa0\n";
+    exit;
+});
 
 // ── Self-update: native "Update available" in wp-admin ──────────────────────
 // Polls https://www.mvpaffiliate.io/api/wp-version (cached 6h) and, if a
