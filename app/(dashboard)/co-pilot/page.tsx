@@ -130,12 +130,6 @@ interface ProductInfo {
   description?: string
 }
 
-const STATUS_ICON = {
-  private: <Lock size={11} className="text-[#ff9500]" />,
-  unlisted: <Eye size={11} className="text-[#7C3AED]" />,
-  public: <Globe size={11} className="text-[#34c759]" />,
-}
-
 /** Settings the Pro YouTube batch-apply panel pushes to YT in one shot.
  *  Note: paidPromotion + alteredContent intentionally NOT here — YouTube's
  *  Data API doesn't expose those fields. They're surfaced in the post-apply
@@ -313,6 +307,11 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
    *  prompt — e.g. "front view on the left, side angle on the right".
    *  Only meaningful with 2+ product photos; the UI shows the input then. */
   const [productCompositionNote, setProductCompositionNote] = useState('')
+  /** Free-text creator direction for the WHOLE thumbnail — "describe the
+   *  thumbnail you want". Steers the AI scene/mood/pose/expression/background
+   *  via the route's creatorDirectionClause. Optional; identity-lock + product
+   *  fidelity always win over it. Sent on every generate path. */
+  const [scenePrompt, setScenePrompt] = useState('')
   /** User's READY face models — pulled from /api/face-models on mount.
    *  When the user picks one, faceModelId gets passed to the generate
    *  request and the server routes through the LoRA-capable Flux endpoint. */
@@ -1123,6 +1122,8 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           // tells the model how to arrange them.
           customProductImageUrls: productImageUrls.length > 0 ? productImageUrls : undefined,
           productCompositionNote: productCompositionNote.trim() || undefined,
+          // Creator's free-text "describe your thumbnail" direction.
+          scenePrompt: scenePrompt.trim() || undefined,
           // graphic = gpt-image-1 (identity-grounded, ~20s with video frame or ~2min with Photobooth).
           // Use graphic whenever there's an identity source: face model OR a YouTube video to pull frames from.
           // Product-only / selfie → 'clean' (NB Pro, fast, no face composition).
@@ -1198,6 +1199,8 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           // Same semantics as the manual Generate call below.
           customProductImageUrls: productImageUrls.length > 0 ? productImageUrls : undefined,
           productCompositionNote: productCompositionNote.trim() || undefined,
+          // Creator's free-text "describe your thumbnail" direction.
+          scenePrompt: scenePrompt.trim() || undefined,
           // Composed scene + crisp canvas title by default (matches the manual
           // Generate button). 'Try AI-baked text' re-runs as 'baked'.
           textMode: 'clean',
@@ -1435,17 +1438,42 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
         )}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <span className="flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-white/10 text-[#6e6e73] dark:text-[#ebebf0]">
-              {STATUS_ICON[video.status]} {video.status}
-            </span>
+            {/* Visibility chip — spells out the YouTube state in words so creators
+                don't have to INFER it from "is there a date or not". All of these
+                come straight from YouTube's own status:
+                  public                 → "Public · live"            (already live)
+                  private + publishAt    → "Scheduled · <date>"       (YouTube auto-publishes then)
+                  private (no publishAt)  → "Private · not scheduled"  (will NOT go live on its own)
+                  unlisted               → "Unlisted"
+                Previously a plain-private and a scheduled video both just said
+                "private", and the only difference was a separate date chip —
+                which is exactly what confused people. */}
+            {video.status === 'public' ? (
+              <span className="flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-[#34c759]/10 text-[#34c759]">
+                <Globe size={9} /> Public · live
+              </span>
+            ) : video.publishAt ? (
+              <span
+                className="flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-[#5856d6]/10 text-[#5856d6]"
+                title={`YouTube will automatically make this public at ${new Date(video.publishAt).toLocaleString()}`}
+              >
+                <Calendar size={9} /> Scheduled · {new Date(video.publishAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+              </span>
+            ) : video.status === 'unlisted' ? (
+              <span className="flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-[#7C3AED]/10 text-[#7C3AED]">
+                <Eye size={9} /> Unlisted
+              </span>
+            ) : (
+              <span
+                className="flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-white/10 text-[#6e6e73] dark:text-[#ebebf0]"
+                title="Private with no scheduled publish date — it won't go live on its own. Set a publish date in YouTube Studio (or publish it) to make it live."
+              >
+                <Lock size={9} className="text-[#ff9500]" /> Private · not scheduled
+              </span>
+            )}
             {video.detectedAsin && (
               <span className="flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-[#ff9500]/10 text-[#ff9500]">
                 <Tag size={9} /> ASIN: {video.detectedAsin}
-              </span>
-            )}
-            {video.publishAt && (
-              <span className="flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-[#5856d6]/10 text-[#5856d6]">
-                <Calendar size={9} /> Goes live {new Date(video.publishAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
               </span>
             )}
           </div>
@@ -1682,8 +1710,8 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                       <ChevronDown size={12} className="ml-auto text-[#86868b] transition-transform group-open:rotate-180" />
                     </summary>
                     <ul className="mt-2 flex flex-col gap-1.5 text-[11px] leading-relaxed text-[#6e6e73] dark:text-[#ebebf0]">
-                      <li><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Train your face.</strong> A few clear, well-lit photos from different angles — MVP renders your real likeness and auto-checks every thumbnail for a match.</li>
-                      <li><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Upload a clean product photo.</strong> A plain shot on a simple background beats a busy Amazon lifestyle image — it&apos;s the biggest lever on how true-to-life the product looks.</li>
+                      <li><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Train your face (optional).</strong> A few clear, well-lit photos from different angles — MVP renders your real likeness and auto-checks every thumbnail for a match. No face model? Choose &ldquo;No face&rdquo; for a product-only scene.</li>
+                      <li><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Describe the thumbnail you want.</strong> Use the box below to set the scene, mood, your pose or background — e.g. &ldquo;shocked face, bright kitchen, big arrow at the stain.&rdquo; The product photo is pulled from your Amazon link automatically — you don&apos;t need to upload one.</li>
                       <li><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Pick your headline.</strong> Choose a suggestion or write your own (5 words max) — that exact text gets baked on.</li>
                       <li>Thumbnails are AI-generated, so glance at the variants and regenerate if one isn&apos;t quite right — it&apos;s normal to take a couple of tries.</li>
                     </ul>
@@ -1735,6 +1763,29 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                       </div>
                     </div>
                   )}
+
+                  {/* Describe your thumbnail — free-text creator direction folded
+                      into the AI prompt (route's creatorDirectionClause). Optional:
+                      SCOUT frames + the product photo are automatic, so this just
+                      steers the LOOK. Applies to both the MVP Thumbnail path and
+                      Product Only — both read scenePrompt from state. */}
+                  <div className="flex flex-col gap-1.5 px-1">
+                    <label htmlFor="scene-prompt" className="text-[11px] font-semibold text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide">
+                      Describe your thumbnail <span className="font-normal normal-case tracking-normal text-[#a1a1a6]">(optional)</span>
+                    </label>
+                    <textarea
+                      id="scene-prompt"
+                      value={scenePrompt}
+                      onChange={e => setScenePrompt(e.target.value.slice(0, 400))}
+                      disabled={generatingThumbnail}
+                      rows={3}
+                      placeholder="e.g. me holding the bottle with a shocked face, bright kitchen background, big arrow pointing at the stain"
+                      className="w-full text-xs px-3 py-2 rounded-lg border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] placeholder:text-[#a1a1a6] focus:outline-none focus:border-[#7C3AED] transition resize-none"
+                    />
+                    <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">
+                      Steers the scene, mood, your pose &amp; background. Your face and the real product stay accurate. Leave blank and MVP picks a high-CTR scene for you.
+                    </p>
+                  </div>
 
                   {/* Primary CTA: Create my MVP Thumbnail */}
                   <div className="flex flex-col gap-2">

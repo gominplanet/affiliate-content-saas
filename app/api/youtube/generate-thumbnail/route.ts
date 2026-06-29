@@ -733,6 +733,10 @@ export async function POST(request: Request) {
       // one thumbnail (comparison videos), or multiple angles of one product.
       customProductImageUrls,
       productCompositionNote,
+      // Free-text creator direction for the WHOLE thumbnail — scene, mood, the
+      // creator's pose/expression, background, props. Steers the composed-scene
+      // prompt; never overrides identity-lock or product fidelity.
+      scenePrompt,
       borderStyleIndex,
       accentColor,
       breakFrame = false,
@@ -814,6 +818,14 @@ export async function POST(request: Request) {
        *  right" or "Product A above, Product B below". Folded into the
        *  productRefClause so Nano Banana Pro respects it. */
       productCompositionNote?: string
+      /** Free-text creator direction for the entire thumbnail — e.g. "me
+       *  holding the bottle, shocked face, bright kitchen, big arrow at the
+       *  stain". Folded into the composed-scene prompt as a high-priority
+       *  clause that steers scene/mood/pose/expression/background, but is
+       *  explicitly subordinate to the identity-lock and product-fidelity
+       *  rules so it can't make the model render the wrong face or fake the
+       *  product. Trimmed + length-capped server-side. */
+      scenePrompt?: string
       /** Live brand-style controls from the Co-Pilot block, driving THIS generation.
        *  A fixed neon border index (0-9), or null/omitted = keep borders varied. */
       borderStyleIndex?: number | null
@@ -999,6 +1011,11 @@ export async function POST(request: Request) {
     // so a user can't shove an essay into the prompt.
     const compositionNote: string = typeof productCompositionNote === 'string'
       ? productCompositionNote.trim().slice(0, 400)
+      : ''
+    // Creator's free-text thumbnail direction — steers the composed scene
+    // (mood, pose, expression, background, props). Optional, trimmed + capped.
+    const sceneDirection: string = typeof scenePrompt === 'string'
+      ? scenePrompt.trim().slice(0, 400)
       : ''
 
     // Use the SINGLE SOURCE OF TRUTH for product-reference resolution so
@@ -1709,8 +1726,17 @@ The viewer must look at the rendered thumbnail and INSTANTLY recognise this as t
             const userStyleClause = userStyleBrief
               ? `★ MATCH THIS LOOK (the creator uploaded a style reference — follow its colour palette, lighting, contrast and overall energy): ${userStyleBrief}\n`
               : ''
+            // Creator's free-text direction for the whole thumbnail. HIGH
+            // priority for the SCENE (setting, mood, pose, expression, props)
+            // — it overrides the default environment/expression/action picked
+            // below — but it NEVER overrides the identity lock or product
+            // fidelity. Placed near the top so the model reads it while the
+            // composition is still open.
+            const creatorDirectionClause = sceneDirection
+              ? `★ CREATOR'S THUMBNAIL DIRECTION (this is exactly what the creator asked for — follow it for the scene, setting/background, mood, the ${noHuman ? 'composition' : "creator's pose and facial expression"}, and any props or action described): "${sceneDirection}". It OVERRIDES the default scene, expression and background suggestions written further below. It does NOT override the identity lock${noHuman ? '' : ' (the face must stay the exact person from the references)'} or the product-fidelity rules (the real product, its true look and its own branding). If the direction ever conflicts with those, keep the ${noHuman ? 'product' : 'identity and product'} faithful and apply the rest of the direction.\n`
+              : ''
             return `Create a vibrant, high-CTR YouTube thumbnail (16:9) in the polished style of top product-review channels — a DESIGNED composite, not a touched-up screengrab.
-${userStyleClause}${humanClauses}${productRefClause}
+${creatorDirectionClause}${userStyleClause}${humanClauses}${productRefClause}
 ${styleRefClause}
 ${compositionLine}
 ${headlineClause}
