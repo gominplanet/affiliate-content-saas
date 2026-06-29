@@ -255,6 +255,11 @@ function ContentCalendar({ channelId, refreshNonce }: { channelId: string | null
   }
 
   const selectedEvents = selected ? (byDate[selected] || []) : []
+  // Whole-scan totals (every month) — the decisive diagnostic: if this is far
+  // below the schedule count in YouTube Studio, the API isn't returning the
+  // publishAt for most scheduled videos (vs. them just being on other months).
+  const totalSched = events.filter(e => e.publishAt).length
+  const totalPub = events.filter(e => !e.publishAt && e.status === 'public').length
 
   return (
     <div className="card p-4">
@@ -320,7 +325,7 @@ function ContentCalendar({ channelId, refreshNonce }: { channelId: string | null
           <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-3">{mPub} published · {mSched} scheduled this month</p>
           {scanned !== null && (
             <p className="text-[10px] mt-1" style={{ color: truncated ? '#FF9500' : 'var(--text-faint, #a1a1a6)' }}>
-              Scanned {scanned.toLocaleString()} videos from your library{truncated ? ' — your catalog is larger, some older uploads weren’t reached.' : '.'}
+              Scanned {scanned.toLocaleString()} videos · found {totalSched.toLocaleString()} scheduled, {totalPub.toLocaleString()} published (all months){truncated ? ' — catalog larger, some older uploads weren’t reached.' : '.'}
             </p>
           )}
 
