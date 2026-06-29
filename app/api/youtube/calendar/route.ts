@@ -139,7 +139,7 @@ export async function GET(request: Request) {
         }, { onConflict: 'user_id,channel_id' })
     } catch { /* table not migrated yet → skip caching */ }
 
-    return NextResponse.json({ events, truncated, cached: false })
+    return NextResponse.json({ events, truncated, scanned: seen.size, cached: false })
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Calendar fetch failed' },

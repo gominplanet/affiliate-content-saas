@@ -172,6 +172,10 @@ function ContentCalendar({ channelId, refreshNonce }: { channelId: string | null
   const [events, setEvents] = useState<CalEvent[]>([])
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
+  // Diagnostics from the last FRESH scan (omitted on cache hits): how many
+  // videos the library walk covered, and whether it hit the page cap.
+  const [scanned, setScanned] = useState<number | null>(null)
+  const [truncated, setTruncated] = useState(false)
   const now = new Date()
   const [viewY, setViewY] = useState(now.getFullYear())
   const [viewM, setViewM] = useState(now.getMonth())
@@ -190,8 +194,12 @@ function ContentCalendar({ channelId, refreshNonce }: { channelId: string | null
       .then(r => r.json())
       .then(d => {
         if (cancelled) return
-        if (d?.error) setErr(typeof d.error === 'string' ? d.error : 'Could not load calendar')
-        else setEvents(Array.isArray(d?.events) ? d.events : [])
+        if (d?.error) { setErr(typeof d.error === 'string' ? d.error : 'Could not load calendar') }
+        else {
+          setEvents(Array.isArray(d?.events) ? d.events : [])
+          setScanned(typeof d?.scanned === 'number' ? d.scanned : null)
+          setTruncated(!!d?.truncated)
+        }
       })
       .catch(() => { if (!cancelled) setErr('Could not load calendar') })
       .finally(() => { if (!cancelled) setLoading(false) })
@@ -310,6 +318,11 @@ function ContentCalendar({ channelId, refreshNonce }: { channelId: string | null
           </div>
 
           <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-3">{mPub} published · {mSched} scheduled this month</p>
+          {scanned !== null && (
+            <p className="text-[10px] mt-1" style={{ color: truncated ? '#FF9500' : 'var(--text-faint, #a1a1a6)' }}>
+              Scanned {scanned.toLocaleString()} videos from your library{truncated ? ' — your catalog is larger, some older uploads weren’t reached.' : '.'}
+            </p>
+          )}
 
           {selected && (
             <div className="mt-2 pt-3 border-t border-gray-100 dark:border-white/10">
