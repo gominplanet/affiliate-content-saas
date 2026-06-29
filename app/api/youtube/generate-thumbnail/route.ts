@@ -1259,6 +1259,32 @@ export async function POST(request: Request) {
               : usingFaceModel
                 ? 'These are close-up portrait photos of the creator — use them for a strong face identity lock.'
                 : 'These are portrait-cropped regions from the creator\'s actual video — the face fills most of each reference image.'
+            if (sceneDirection) {
+              // The creator typed a scene in "Describe your thumbnail" — let it
+              // DRIVE the composition (setting, pose, expression, action, props)
+              // instead of the default rigid left-text / center-product /
+              // right-host layout. Identity lock, product fidelity and readable
+              // outlined text still hold and are NEVER overridden by the direction.
+              prompt = [
+                'Professional YouTube thumbnail, 1536×1024 px, 16:9 landscape. High energy, high contrast, photorealistic.',
+                '',
+                `★ CREATOR'S SCENE DIRECTION (highest priority — build the whole thumbnail around this): "${sceneDirection}".`,
+                "Match that direction for the SETTING / background, the creator's pose, expression and action, and any props described. The creator is the main subject of the scene.",
+                '',
+                `★ CREATOR IDENTITY (never compromise, even to fit the direction): ${identityInstruction} Reproduce this EXACT person's face with pixel-level accuracy — same facial structure, skin tone, hair colour and style, age, and distinctive features. A viewer who knows them must recognise them INSTANTLY.`,
+                '',
+                productRefNum
+                  ? `PRODUCT: feature ${productLabel} (from Image ${productRefNum}) clearly and recognisably in the scene exactly as the direction implies (held, beside them, in use…). Keep its true shape, colours and its own printed branding. Do NOT invent retail packaging or marketing text.`
+                  : `PRODUCT: feature ${productLabel} clearly and recognisably in the scene as the direction implies.`,
+                '',
+                'TEXT OVERLAY:',
+                `  Top line: "${line1}" — white bold capitals, thick black stroke outline only, NO background box.`,
+                `  Main line: "${line2}" — larger, bright yellow (#FFE034) bold capitals, thick black stroke outline — the dominant text. NO background box.`,
+                "  Place the two lines where they do NOT cover the creator's face or the product (e.g. across the top or down one side). Outlined text only — no panels or filled boxes — crisp and readable at small sizes. No other text anywhere in the image.",
+                '',
+                'STYLE: High-production YouTube creator thumbnail. Bold, punchy, cinematic depth of field (softly blurred background) so the creator and product stay sharp. No logos, no watermarks, no brand names rendered in the image itself.',
+              ].join('\n')
+            } else {
             prompt = [
               'Professional YouTube thumbnail, 1536×1024 px, 16:9 landscape. High energy, high contrast.',
               '',
@@ -1283,6 +1309,7 @@ export async function POST(request: Request) {
               'STYLE: High-production YouTube creator thumbnail. Bold and punchy. Background must be noticeably blurred (bokeh) so the host and product are the sharpest elements in the frame.',
               'No logos, no watermarks, no brand names rendered in the image itself.',
             ].join('\n')
+            }
             refs = [
               { data: photoBytes, filename: usingFaceModel && !scoutUsedFaceModel ? 'creator_portrait.png' : usingFaceModel ? 'creator_portrait_1.png' : 'creator_crop.png', mime: 'image/png' },
               ...extraPhotoBytes.map((b, i) => {

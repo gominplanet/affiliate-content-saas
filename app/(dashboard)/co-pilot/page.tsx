@@ -15,7 +15,7 @@ import type { Tier } from '@/lib/tier'
 import BrandStylePanel, { BORDER_NAMES } from '@/components/co-pilot/BrandStylePanel'
 import {
   Youtube, Wand2, CheckCircle, AlertCircle, Loader2, ExternalLink,
-  Copy, ChevronDown, ChevronUp, RefreshCw, Link2, Tag, Lock, Eye, Globe,
+  Copy, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, RefreshCw, Link2, Tag, Lock, Eye, Globe,
   Image, Download, Sparkles, Upload, X, Search, Calendar, Camera, Package, Plus,
 } from 'lucide-react'
 
@@ -41,57 +41,44 @@ interface DraftVideo {
 
 // ── Tab classification (2026-06-08, simplified 2026-06-20) ─────────────────
 // THREE workflow buckets the YouTube Co-Pilot surfaces:
-//   - todo:            any unpublished draft that still needs metadata, with
-//                      or without a detected product. (The old product /
-//                      no-product split was merged — both are processable, so
-//                      product presence is now a per-ROW badge, not a tab.)
-//   - shipped:         WE pushed metadata to YouTube via /api/youtube/apply
-//                      or update-metadata — authoritative "done" signal,
-//                      backed by the youtube_copilot_pushes table (mig 109)
-//   - done:            HEURISTIC — description contains a Geniuslink /
-//                      Amazon affiliate URL. Catches videos completed via
-//                      other tools or manual edits (not by Co-Pilot).
-// Per user spec 2026-06-08. Classification runs CLIENT-side off the existing
-// drafts payload so the user can tweak rules without redeploying the API.
-// 'todo' merges the old 'todo-product' / 'todo-no-product' split (2026-06-20):
-// now that the metadata generator identifies the product from the title +
-// transcript when there's no ASIN, both kinds of draft are equally
-// processable, so the product/no-product distinction lives as a per-ROW badge
-// (the orange "ASIN:" pill) instead of a top-level tab that implied
-// "no product = dead end".
+//   - todo  ("Needs metadata"):  a FRESH upload — just its filename title with
+//                      an empty description, nothing written yet. This is the
+//                      ONLY thing the to-do queue holds. (Per user 2026-06-29.)
+//   - shipped ("Metadata sent"): metadata is already in place — either WE
+//                      pushed it via /api/youtube/apply (metadataAppliedAt,
+//                      backed by youtube_copilot_pushes, mig 109) OR the video
+//                      already has a real written description. Not necessarily
+//                      live yet.
+//   - done  ("Live on YouTube"): the video is public.
+// Classification runs CLIENT-side off the existing drafts payload (which
+// includes the description), so the rule can change without redeploying the API.
 type VideoTab = 'todo' | 'shipped' | 'done'
 
-// ASIN format on Amazon: 10 alphanumerics, almost always starting with B0.
-// We allow the broader 10-alphanum pattern but anchor on word boundaries so
-// random letters in a title don't false-match.
-const ASIN_RE = /\b(B0[A-Z0-9]{8})\b/i
+// (kept for reference) ASIN format on Amazon: 10 alphanumerics, almost always
+// starting with B0. Product presence shows as the per-row orange "ASIN:" pill,
+// not as a classification input — a fresh draft is fresh whether or not it
+// names a product.
 function classifyVideo(v: Pick<DraftVideo, 'title' | 'description' | 'detectedAsin' | 'metadataAppliedAt' | 'status' | 'publishAt'>): VideoTab {
-  const title = v.title || ''
-
   // SHIPPED wins first: if we pushed metadata via Co-Pilot, that's the
   // authoritative signal — overrides everything, regardless of status.
   if (v.metadataAppliedAt) return 'shipped'
 
-  // PUBLISHED (and not pushed via Co-Pilot) → "Done elsewhere". The With product
-  // / No product tabs are STRICTLY unpublished drafts (per user 2026-06-10):
-  // private/unlisted videos the creator hasn't shipped yet — typically a raw
-  // product-name + ASIN title and no finished thumbnail. A live/public video
-  // never belongs in those tabs, even if it carries a product signal.
+  // PUBLISHED (and not pushed via Co-Pilot) → live on YouTube. A public video
+  // is done regardless of how its metadata got there.
   if (v.status === 'public') return 'done'
 
-  // RAW PRODUCT DRAFT wins next: an ASIN in the TITLE (incl. the filename-derived
-  // title of a fresh upload, e.g. "White turtle neck B07NSJ95HM") is the orange
-  // "Generate YouTube metadata" signal — exactly what "With product" is for. This
-  // BEATS the scheduled check below: the creator schedules raw drafts too, so a
-  // scheduled raw product draft is still work to do and stays in "With product".
-  // RAW PRODUCT DRAFT stays in the to-do queue even when scheduled: a raw
-  // ASIN-in-title upload is still work to finish, so it must NOT fall through to
-  // the 'shipped' (publishAt) check below. (Per user 2026-06-10.)
-  const hasAsin = !!v.detectedAsin || ASIN_RE.test(title)
-  if (hasAsin) return 'todo'
+  // "Needs metadata" should ONLY hold a FRESH upload — a video that is still
+  // just its filename title with NOTHING written underneath. The moment a video
+  // has a real description (whether MVP wrote it or the creator did), it has
+  // been worked on and is no longer "fresh", so it leaves the to-do queue.
+  // (Per user 2026-06-29: "needs metadata = a fresh video with only a title —
+  // the file's name — and nothing else".) A raw YouTube upload's description is
+  // empty; an MVP-generated description runs to hundreds of characters, so a
+  // short length threshold cleanly separates fresh from worked-on.
+  const hasRealDescription = (v.description || '').trim().length >= 40
+  if (hasRealDescription) return 'shipped'
 
-  // Everything else still unpublished — whether or not a product was detected —
-  // is work to do. (Product presence shows as a per-row badge, not a tab.)
+  // Empty/near-empty description → genuinely fresh, still needs metadata.
   return 'todo'
 }
 
@@ -171,6 +158,177 @@ function cachedGet<T>(url: string): Promise<T> {
   p.catch(() => { if (_coPilotGetCache.get(url)?.p === p) _coPilotGetCache.delete(url) })
   _coPilotGetCache.set(url, { at: now, p })
   return p as Promise<T>
+}
+
+// ── Content calendar ────────────────────────────────────────────────────────
+// Month grid that plots the channel's videos as dots: PURPLE = scheduled
+// (status.publishAt set — whether MVP or YouTube Studio set it), GREEN =
+// published (public + publishedAt). Data comes from /api/youtube/calendar,
+// which pulls FRESH from YouTube every call (no cache), so a schedule set
+// directly on YouTube shows up here too. Click a day → its videos list below;
+// clicking a video scrolls to its card (or opens it on YouTube if not loaded).
+function ContentCalendar({ channelId, refreshNonce }: { channelId: string | null; refreshNonce: number }) {
+  type CalEvent = { youtubeVideoId: string; title: string; status: string; publishAt: string | null; publishedAt: string }
+  const [events, setEvents] = useState<CalEvent[]>([])
+  const [loading, setLoading] = useState(true)
+  const [err, setErr] = useState<string | null>(null)
+  const now = new Date()
+  const [viewY, setViewY] = useState(now.getFullYear())
+  const [viewM, setViewM] = useState(now.getMonth())
+  const [selected, setSelected] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true); setErr(null)
+    const qs = channelId ? `?channelId=${encodeURIComponent(channelId)}` : ''
+    fetch(`/api/youtube/calendar${qs}`)
+      .then(r => r.json())
+      .then(d => {
+        if (cancelled) return
+        if (d?.error) setErr(typeof d.error === 'string' ? d.error : 'Could not load calendar')
+        else setEvents(Array.isArray(d?.events) ? d.events : [])
+      })
+      .catch(() => { if (!cancelled) setErr('Could not load calendar') })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [channelId, refreshNonce])
+
+  const PURPLE = '#7C3AED', GREEN = '#34C759'
+  const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+  const pad = (n: number) => String(n).padStart(2, '0')
+  // Bucket by LOCAL date so a dot lands on the day the creator sees it go live.
+  const localKey = (iso: string) => { const d = new Date(iso); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` }
+  const todayKey = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+
+  const byDate = useMemo(() => {
+    const m: Record<string, Array<{ id: string; title: string; kind: 'scheduled' | 'published' }>> = {}
+    for (const e of events) {
+      if (e.publishAt) {
+        const k = localKey(e.publishAt); (m[k] ||= []).push({ id: e.youtubeVideoId, title: e.title, kind: 'scheduled' })
+      } else if (e.status === 'public' && e.publishedAt) {
+        const k = localKey(e.publishedAt); (m[k] ||= []).push({ id: e.youtubeVideoId, title: e.title, kind: 'published' })
+      }
+    }
+    return m
+  // localKey is a pure helper; events is the only real dependency.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [events])
+
+  let mSched = 0, mPub = 0
+  Object.keys(byDate).forEach(k => {
+    const [y, mm] = k.split('-').map(Number)
+    if (y === viewY && mm - 1 === viewM) byDate[k].forEach(ev => ev.kind === 'scheduled' ? mSched++ : mPub++)
+  })
+
+  const first = new Date(viewY, viewM, 1).getDay()
+  const dim = new Date(viewY, viewM + 1, 0).getDate()
+  const cells = Math.ceil((first + dim) / 7) * 7
+
+  function shiftMonth(delta: number) {
+    let y = viewY, mo = viewM + delta
+    if (mo < 0) { mo = 11; y -= 1 }
+    if (mo > 11) { mo = 0; y += 1 }
+    setViewY(y); setViewM(mo)
+  }
+  function gotoVideo(id: string) {
+    const el = document.getElementById(`copilot-vid-${id}`)
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      el.classList.add('ring-2', 'ring-[#7C3AED]')
+      setTimeout(() => el.classList.remove('ring-2', 'ring-[#7C3AED]'), 1800)
+    } else {
+      window.open(`https://www.youtube.com/watch?v=${id}`, '_blank', 'noopener,noreferrer')
+    }
+  }
+
+  const selectedEvents = selected ? (byDate[selected] || []) : []
+
+  return (
+    <div className="card p-4">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <Calendar size={15} className="text-[#7C3AED] flex-shrink-0" />
+          <span className="text-sm font-bold text-[#1d1d1f] dark:text-[#f5f5f7] truncate">{MONTHS[viewM]} {viewY}</span>
+        </div>
+        <div className="flex items-center gap-1 flex-shrink-0">
+          <button type="button" onClick={() => shiftMonth(-1)} aria-label="Previous month" className="w-7 h-7 inline-flex items-center justify-center rounded-lg text-[#86868b] hover:bg-gray-100 dark:hover:bg-white/10"><ChevronLeft size={15} /></button>
+          <button type="button" onClick={() => { setViewY(now.getFullYear()); setViewM(now.getMonth()); setSelected(todayKey) }} className="px-2 h-7 text-[11px] font-semibold rounded-lg text-[#7C3AED] hover:bg-[#7C3AED]/10">Today</button>
+          <button type="button" onClick={() => shiftMonth(1)} aria-label="Next month" className="w-7 h-7 inline-flex items-center justify-center rounded-lg text-[#86868b] hover:bg-gray-100 dark:hover:bg-white/10"><ChevronRight size={15} /></button>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3 mb-3 text-[11px] text-[#86868b] dark:text-[#8e8e93]">
+        <span className="inline-flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ background: PURPLE }} />Scheduled</span>
+        <span className="inline-flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ background: GREEN }} />Published</span>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-10 text-[#86868b] text-xs"><Loader2 size={14} className="animate-spin mr-2" /> Loading…</div>
+      ) : err ? (
+        <div className="py-6 text-center text-xs text-[#86868b] dark:text-[#8e8e93]">{err}</div>
+      ) : (
+        <>
+          <div className="grid grid-cols-7 gap-1 mb-1">
+            {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
+              <div key={i} className="text-center text-[10px] text-[#86868b] dark:text-[#8e8e93]">{d}</div>
+            ))}
+          </div>
+          <div className="grid grid-cols-7 gap-1">
+            {Array.from({ length: cells }).map((_, i) => {
+              const day = i - first + 1
+              if (day < 1 || day > dim) return <div key={i} className="h-9" />
+              const k = `${viewY}-${pad(viewM + 1)}-${pad(day)}`
+              const evs = byDate[k] || []
+              const isToday = k === todayKey
+              const isSel = k === selected
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => setSelected(k)}
+                  className={`h-9 rounded-lg flex flex-col items-center justify-start pt-1 transition-colors ${
+                    isSel ? 'bg-[#7C3AED]/10 ring-1 ring-[#7C3AED]'
+                      : isToday ? 'ring-1 ring-[#86868b]/40'
+                        : 'hover:bg-gray-100 dark:hover:bg-white/10'
+                  }`}
+                >
+                  <span className={`text-[11px] leading-none text-[#1d1d1f] dark:text-[#f5f5f7] ${isToday || isSel ? 'font-bold' : ''}`}>{day}</span>
+                  <div className="flex gap-0.5 mt-1 items-center min-h-[5px]">
+                    {evs.slice(0, 3).map((ev, j) => (
+                      <span key={j} className="w-[5px] h-[5px] rounded-full" style={{ background: ev.kind === 'scheduled' ? PURPLE : GREEN }} />
+                    ))}
+                    {evs.length > 3 && <span className="text-[8px] text-[#86868b] leading-none">+{evs.length - 3}</span>}
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+
+          <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-3">{mPub} published · {mSched} scheduled this month</p>
+
+          {selected && (
+            <div className="mt-2 pt-3 border-t border-gray-100 dark:border-white/10">
+              <p className="text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">
+                {new Date(selected + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+              </p>
+              {selectedEvents.length === 0 ? (
+                <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Nothing scheduled or published.</p>
+              ) : (
+                <div className="flex flex-col gap-1">
+                  {selectedEvents.map((ev, j) => (
+                    <button key={j} type="button" onClick={() => gotoVideo(ev.id)} className="flex items-center gap-2 text-left py-1 hover:opacity-80">
+                      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: ev.kind === 'scheduled' ? PURPLE : GREEN }} />
+                      <span className="text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7] truncate flex-1 min-w-0">{ev.title}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
 }
 
 function VideoStudioCard({ video, userTier, playlists, onApplied }: {
@@ -1424,7 +1582,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
   const ytUrl = `https://www.youtube.com/watch?v=${video.youtubeVideoId}`
 
   return (
-    <div className="card overflow-hidden">
+    <div id={`copilot-vid-${video.youtubeVideoId}`} className="card overflow-hidden scroll-mt-24 transition-shadow">
       {/* Video header */}
       <div className="flex gap-4 p-5">
         {video.thumbnailUrl ? (
@@ -2517,6 +2675,9 @@ export default function StudioPage() {
   // has more than one channel connected.
   const [channels, setChannels] = useState<Array<{ channelId: string; channelTitle: string; isDefault: boolean }>>([])
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null)
+  // Bumped on every "Refresh from YouTube" so the planning calendar re-pulls
+  // fresh too (it fetches /api/youtube/calendar keyed off this nonce).
+  const [calRefreshNonce, setCalRefreshNonce] = useState(0)
 
   // Bucket the current drafts list into the 4 workflow tabs. Recomputes
   // whenever drafts change — cheap (just regex per video). Search bypasses
@@ -2745,6 +2906,7 @@ export default function StudioPage() {
 
   const refresh = useCallback(() => {
     setNextPageToken(undefined)
+    setCalRefreshNonce(n => n + 1)
     load({ query: activeQuery, includePublished, forceRefresh: true })
   }, [load, activeQuery, includePublished])
 
@@ -2796,20 +2958,69 @@ export default function StudioPage() {
         subtitle="Generate titles, descriptions, tags, hashtags and thumbnails for any video, then push it all back to YouTube in one click."
       />
 
-      {/* Prominent Refresh — pulls the newest uploads + drafts straight from
-          YouTube (forces a fresh scan, ignoring the 15-min cache). Mirrors the
-          Blog Post Generator's action row so it's easy to find. */}
+      {/* Top planning row — three columns: the month calendar (left, fresh from
+          YouTube so direct-on-YouTube schedules show too), the how-it-works
+          explainer (center), and the channel + Refresh controls (right). Only
+          when connected — needsAuth shows the connect banner below instead. */}
       {!needsAuth && (
-        <div className="flex justify-end -mt-2 mb-5">
-          <button
-            onClick={refresh}
-            disabled={loading}
-            title="Pull your newest uploaded and drafted videos straight from YouTube"
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border border-[#7C3AED]/30 text-[#7C3AED] bg-[#7C3AED]/5 hover:bg-[#7C3AED]/10 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
-          >
-            <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
-            {loading ? 'Refreshing from YouTube…' : 'Refresh from YouTube'}
-          </button>
+        <div className="grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)_220px] gap-4 items-start mb-5">
+          {/* Left — planning calendar */}
+          <ContentCalendar channelId={selectedChannelId} refreshNonce={calRefreshNonce} />
+
+          {/* Center — how Co-Pilot works */}
+          <div className="card p-4 flex items-start gap-3 border border-[#7C3AED]/20 bg-[#7C3AED]/5">
+            <div className="w-7 h-7 rounded-lg bg-[#7C3AED]/15 flex items-center justify-center flex-shrink-0">
+              <AlertCircle size={14} className="text-[#7C3AED]" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">Works with any video — pick yours and we generate the title, description, tags, hashtags and thumbnail.</p>
+              <ul className="space-y-1.5 text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
+                <li className="flex gap-2">
+                  <span className="text-[#7C3AED] font-semibold flex-shrink-0">Amazon review</span>
+                  <span>We identify the product from your title and what you say in the video, and add your affiliate link automatically.</span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="text-[#7C3AED] font-semibold flex-shrink-0">Other product</span>
+                  <span>Same thing — we still write the review and link out to wherever you sell it.</span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="text-[#7C3AED] font-semibold flex-shrink-0">Not a product</span>
+                  <span>You still get all the metadata around your topic (just no affiliate link).</span>
+                </li>
+              </ul>
+              <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed mt-2">
+                <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Optional:</strong> to guarantee we grab the exact product, drop its 10-character Amazon ASIN into the title or file name — e.g.{' '}
+                <span className="font-mono text-[#1d1d1f] dark:text-[#f5f5f7] bg-white dark:bg-[#1c1c1e] px-1.5 py-0.5 rounded border border-[#d2d2d7] dark:border-[#3a3a3c]">Vacuum - B08TT4YHG1</span>.
+              </p>
+            </div>
+          </div>
+
+          {/* Right — channel picker + Refresh */}
+          <div className="flex flex-col gap-3">
+            <button
+              onClick={refresh}
+              disabled={loading}
+              title="Pull your newest uploaded and drafted videos straight from YouTube"
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border border-[#7C3AED]/30 text-[#7C3AED] bg-[#7C3AED]/5 hover:bg-[#7C3AED]/10 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+            >
+              <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
+              {loading ? 'Refreshing…' : 'Refresh from YouTube'}
+            </button>
+            {channels.length > 1 && (
+              <div className="flex flex-col gap-1">
+                <span className="text-[11px] font-semibold text-[#6e6e73] dark:text-[#8e8e93]">📺 Channel</span>
+                <select
+                  value={selectedChannelId ?? (channels.find(c => c.isDefault)?.channelId ?? channels[0].channelId)}
+                  onChange={(e) => setSelectedChannelId(e.target.value)}
+                  className="text-sm px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] w-full"
+                >
+                  {channels.map(c => (
+                    <option key={c.channelId} value={c.channelId}>{c.channelTitle}{c.isDefault ? ' (default)' : ''}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -2852,60 +3063,12 @@ export default function StudioPage() {
         </div>
       )}
 
-      {/* How-it-works disclaimer — always visible once connected */}
-      {!needsAuth && (
-        <div className="card p-4 mb-5 flex items-start gap-3 border border-[#7C3AED]/20 bg-[#7C3AED]/5">
-          <div className="w-7 h-7 rounded-lg bg-[#7C3AED]/15 flex items-center justify-center flex-shrink-0">
-            <AlertCircle size={14} className="text-[#7C3AED]" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">Works with any video — pick yours and we generate the title, description, tags, hashtags and thumbnail.</p>
-            <ul className="space-y-1.5 text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
-              <li className="flex gap-2">
-                <span className="text-[#7C3AED] font-semibold flex-shrink-0">Amazon review</span>
-                <span>We identify the product from your title and what you say in the video, and add your affiliate link automatically.</span>
-              </li>
-              <li className="flex gap-2">
-                <span className="text-[#7C3AED] font-semibold flex-shrink-0">Other product</span>
-                <span>Same thing — we still write the review and link out to wherever you sell it.</span>
-              </li>
-              <li className="flex gap-2">
-                <span className="text-[#7C3AED] font-semibold flex-shrink-0">Not a product</span>
-                <span>You still get all the metadata around your topic (just no affiliate link).</span>
-              </li>
-            </ul>
-            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed mt-2">
-              <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Optional:</strong> to guarantee we grab the exact product, drop its 10-character Amazon ASIN into the title or file name — e.g.{' '}
-              <span className="font-mono text-[#1d1d1f] dark:text-[#f5f5f7] bg-white dark:bg-[#1c1c1e] px-1.5 py-0.5 rounded border border-[#d2d2d7] dark:border-[#3a3a3c]">Vacuum - B08TT4YHG1</span>.
-            </p>
-          </div>
-        </div>
-      )}
-
       {!needsAuth && !error && (
         <>
           {/* Search across the whole channel (any privacy status). Empty
               query falls back to the default ASIN-only listing of the
               uploads playlist. Debounced 350ms — search.list costs ~100x
               more YouTube quota than playlistItems, so we don't spam it. */}
-          {/* Channel picker — only when the creator runs more than one YouTube
-              channel. Selecting one re-loads the drafts scoped to that channel
-              (the default channel flag no longer silently controls Co-Pilot). */}
-          {channels.length > 1 && (
-            <div className="flex items-center gap-2 mb-3">
-              <span className="text-xs font-semibold text-[#6e6e73] dark:text-[#8e8e93]">📺 Channel</span>
-              <select
-                value={selectedChannelId ?? (channels.find(c => c.isDefault)?.channelId ?? channels[0].channelId)}
-                onChange={(e) => setSelectedChannelId(e.target.value)}
-                className="text-sm px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] max-w-[280px]"
-              >
-                {channels.map(c => (
-                  <option key={c.channelId} value={c.channelId}>{c.channelTitle}{c.isDefault ? ' (default)' : ''}</option>
-                ))}
-              </select>
-            </div>
-          )}
-
           <div className="relative mb-4">
             <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#86868b]" />
             <input
