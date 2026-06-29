@@ -280,6 +280,9 @@ export default function AdsPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [userId, setUserId] = useState('')
+  // BYO-theme ("content-only") sites: banner blocks need the MVP theme/layout
+  // so they're hidden, but AdSense works (the MVP plugin injects it).
+  const [contentOnly, setContentOnly] = useState(false)
 
   const load = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -288,9 +291,10 @@ export default function AdsPage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: row } = await supabase
       .from('integrations')
-      .select('blog_customizations')
+      .select('blog_customizations, content_only')
       .eq('user_id', user.id)
       .single()
+    setContentOnly((row as { content_only?: boolean } | null)?.content_only === true)
     const bc = (row?.blog_customizations ?? {}) as {
       sidebar?: unknown[]; incontent?: unknown[]; homepageAds?: unknown
       homepageAdsEnabled?: boolean; adsenseClientId?: string
@@ -389,12 +393,12 @@ export default function AdsPage() {
             description="Earn ad revenue alongside your affiliate links. Paste your AdSense Publisher ID and MVP verifies your site, adds Google's official Auto-ads code to every page, and serves your ads.txt — no WordPress editing. Google then places ads automatically across your posts."
           >
             <div className="flex flex-col gap-2">
-              {/* Set expectations: the auto-injection only fires on the MVP
-                  stack (the MVP theme + plugin handle the <head> code + ads.txt).
-                  Custom/3rd-party themes have to add Google's snippet themselves. */}
+              {/* Auto-injection works on the MVP theme OR the MVP plugin (so
+                  any MVP-connected site, including bring-your-own-theme ones).
+                  Only sites running NEITHER have to add Google's snippet. */}
               <div className="rounded-lg border border-[#7C3AED]/25 bg-[#7C3AED]/[0.06] px-3 py-2.5 text-xs text-[var(--text-2)] leading-relaxed">
-                <b className="text-[var(--text)]">Requires the MVP theme + plugin.</b> Automatic AdSense injection — the
-                <code> &lt;head&gt;</code> code and <code>ads.txt</code> — is built into MVP&apos;s WordPress theme + plugin, so keep them on the latest version (your site shows an &ldquo;Update available&rdquo; when there is one). On a fully custom / third-party theme, paste Google&apos;s code into that theme yourself instead.
+                <b className="text-[var(--text)]">Works on the MVP theme or plugin.</b> MVP injects the
+                <code> &lt;head&gt;</code> code and serves <code>ads.txt</code> for you — including on a bring-your-own-theme site (the MVP plugin handles it). Just keep your MVP theme/plugin on the latest version (your site shows an &ldquo;Update available&rdquo; when there is one). Only a site running neither would need to paste Google&apos;s code manually.
               </div>
               <label className="text-sm font-medium text-[var(--text)]">AdSense Publisher ID</label>
               <input
@@ -430,6 +434,10 @@ export default function AdsPage() {
             </div>
           </Section>
 
+          {/* Banner blocks need the MVP theme's layout (sidebar / homepage /
+              in-post regions), so they're hidden on BYO-theme (content-only)
+              sites. AdSense above still works there via the MVP plugin. */}
+          {!contentOnly && (<>
           {/* Sidebar banners */}
           <Section
             title="Sidebar Banners"
@@ -533,6 +541,7 @@ export default function AdsPage() {
               </button>
             </div>
           </Section>
+          </>)}
 
           <div className="flex justify-end pt-1"><SaveButton /></div>
         </div>

@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.56
+ * Version: 1.0.57
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -2221,6 +2221,38 @@ add_action('wp_head', function () {
         }
     }
 }, 1);
+
+// ─── 13c. Google AdSense (BYO-theme sites) ───────────────────────────────────
+// The MVP Affiliate THEME injects AdSense itself, so we skip when it's active
+// (avoids loading adsbygoogle.js twice → the exact double-script error). On a
+// 3rd-party / custom theme (Kadence, Astra, Elementor, etc.) the theme won't,
+// so the plugin does it here from the dashboard-saved ca-pub publisher ID:
+// the google-adsense-account verification meta + Google's official Auto-ads
+// loader. Built from a strictly-validated ID — never raw user markup.
+add_action('wp_head', function () {
+    if (mvp_affiliate_theme_active()) return;
+    $id = trim(mvp_affiliate_get_data()['adsenseClientId'] ?? '');
+    if (!preg_match('/^ca-pub-\d{10,20}$/', $id)) return;
+    echo "\n<!-- MVP Affiliate: Google AdSense -->\n";
+    echo '<meta name="google-adsense-account" content="' . esc_attr($id) . '">' . "\n";
+    echo '<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=' . esc_attr($id) . '" crossorigin="anonymous"></script>' . "\n";
+}, 1);
+
+// Serve /ads.txt from the saved publisher ID (BYO-theme sites — the theme
+// serves its own when active). Only fires when WP handles the request; a real
+// ads.txt file on disk is served by the web server first and left untouched.
+add_action('init', function () {
+    if (mvp_affiliate_theme_active()) return;
+    $path = isset($_SERVER['REQUEST_URI']) ? (string) wp_parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) : '';
+    if (strtolower(rtrim($path, '/')) !== '/ads.txt') return;
+    $id = '';
+    $raw = trim(mvp_affiliate_get_data()['adsenseClientId'] ?? '');
+    if (preg_match('/^ca-pub-(\d{10,20})$/', $raw, $m)) $id = $m[1];
+    if ($id === '') return; // no AdSense configured → let WP handle /ads.txt normally
+    header('Content-Type: text/plain; charset=utf-8');
+    echo "google.com, pub-{$id}, DIRECT, f08c47fec0942fa0\n";
+    exit;
+});
 
 // ─── 14. LiteSpeed REST cache fix (one-time, on activation) ───────────────────
 add_action('admin_init', function () {

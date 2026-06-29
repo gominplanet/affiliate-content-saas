@@ -338,10 +338,11 @@ export default function DashboardShellV2({
         { href: '/customize', icon: <Brush size={15} />, label: 'Customize Blog', gate: !contentOnly },
         { href: '/photobooth', icon: <UserSquare size={15} />, label: 'Face Models' },
         { href: '/connect-socials', icon: <Share2 size={15} />, label: 'Connect Socials' },
-        // Ads — one home for AdSense + affiliate banners (sidebar, homepage
-        // strip, in-content). Hidden for content-only / BYO-theme sites, which
-        // run their own theme (banners + AdSense inject via the MVP theme).
-        { href: '/ads', icon: <Megaphone size={15} />, label: 'Ads', gate: !contentOnly },
+        // Ads — one home for AdSense + affiliate banners. Shown to everyone:
+        // AdSense injection works on BYO-theme sites too (via the MVP plugin),
+        // and the /ads page itself hides the theme-only banner blocks for
+        // content-only sites.
+        { href: '/ads', icon: <Megaphone size={15} />, label: 'Ads' },
       ],
     },
     {
