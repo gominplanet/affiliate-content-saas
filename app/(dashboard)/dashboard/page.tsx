@@ -37,7 +37,7 @@ import MetaLiveBanner from '@/components/dashboard/MetaLiveBanner'
 import { DashboardLiveCards } from '@/components/dashboard/DashboardLiveCards'
 import {
   PlaySquare, ArrowRight, FileText, Layers, Gauge,
-  Facebook, ExternalLink, Sparkles, Image as ImageIcon,
+  Facebook, Sparkles, Image as ImageIcon,
   Scale, ArrowUpRight, BadgePercent, Eye, Clock,
   Youtube, Link2, BookOpen, Send, Mail,
 } from 'lucide-react'
@@ -262,6 +262,10 @@ export default async function DashboardPage() {
         <section>
           <p className="text-[11px] font-semibold uppercase tracking-[0.12em] mb-3" style={{ color: 'var(--text-faint)' }}>What do you want to do?</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {/* Community first — most valuable "next thing to do" for a creator:
+                support, what's-working tips, and member-only offers. Opens the
+                Facebook group in a new tab (external). */}
+            <BigAction href={FACEBOOK_GROUP_URL} external icon={<Facebook size={17} />} title="Join the community" desc="Support, tips & member-only offers (FB group)" accent="#1877F2" />
             <BigAction href="/co-pilot" icon={<Youtube size={17} />} title="YouTube metadata" desc="Description, tags & affiliate link" accent="#F43F5E" />
             <BigAction href="/content" icon={<PlaySquare size={17} />} title="Blog from a video" desc="Turn a YouTube video into a post" accent="#8B5CF6" />
             <BigAction href="/content?new=link" icon={<Link2 size={17} />} title="Blog from a link" desc="Paste any product or article URL" accent="#0EA5E9" />
@@ -382,29 +386,6 @@ export default async function DashboardPage() {
             </div>
           </section>
         )}
-
-        {/* Community link — Facebook group invite, restyled */}
-        <a
-          href={FACEBOOK_GROUP_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="rounded-2xl border p-4 flex items-center gap-3 transition-colors hover:scale-[1.005]"
-          style={{
-            backgroundColor: 'rgba(24, 119, 242, 0.06)',
-            borderColor: 'rgba(24, 119, 242, 0.25)',
-          }}
-        >
-          <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'rgba(24, 119, 242, 0.18)' }}>
-            <Facebook size={18} className="text-[#1877F2]" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-[14px] font-semibold" style={{ color: 'var(--text)' }}>Join the MVP Affiliate community</p>
-            <p className="text-[12px] mt-0.5" style={{ color: 'var(--text-soft)' }}>Get support, share what&apos;s working, and catch member-only offers in our Facebook group.</p>
-          </div>
-          <span className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-semibold text-white flex-shrink-0" style={{ background: '#1877F2' }}>
-            Join <ExternalLink size={11} />
-          </span>
-        </a>
 
         <SetupChecklist />
         <ChannelStats />
@@ -540,17 +521,17 @@ export default async function DashboardPage() {
 
 // ─── Sub-components (preview-shape, real-data wired) ──────────────────────
 
-function BigAction({ href, icon, title, desc, accent }: { href: string; icon: React.ReactNode; title: string; desc: string; accent: string }) {
+function BigAction({ href, icon, title, desc, accent, external }: { href: string; icon: React.ReactNode; title: string; desc: string; accent: string; external?: boolean }) {
   // accent drives a per-button colour. On hover the icon chip fills with the
   // solid accent (white glyph) and the border lights up to match — clear,
   // colourful contrast against the dark surface. `--accent`/`--accent-soft`
   // are set inline so the static Tailwind hover classes can reference them.
-  return (
-    <Link
-      href={href}
-      style={{ '--accent': accent, '--accent-soft': `${accent}1f`, backgroundColor: 'var(--surface)', boxShadow: 'var(--card-shadow)' } as React.CSSProperties}
-      className="group rounded-xl border border-[color:var(--border)] p-4 flex items-start gap-3 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg hover:border-[color:var(--accent)]"
-    >
+  // `external` swaps the Next <Link> for a plain anchor that opens in a new
+  // tab (used for the Facebook community link).
+  const className = "group rounded-xl border border-[color:var(--border)] p-4 flex items-start gap-3 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg hover:border-[color:var(--accent)]"
+  const style = { '--accent': accent, '--accent-soft': `${accent}1f`, backgroundColor: 'var(--surface)', boxShadow: 'var(--card-shadow)' } as React.CSSProperties
+  const inner = (
+    <>
       <span className="grid place-items-center w-9 h-9 rounded-lg flex-shrink-0 bg-[color:var(--accent-soft)] text-[color:var(--accent)] transition-colors duration-200 group-hover:bg-[color:var(--accent)] group-hover:text-white">
         {icon}
       </span>
@@ -561,6 +542,18 @@ function BigAction({ href, icon, title, desc, accent }: { href: string; icon: Re
         </span>
         <span className="block text-[11px] leading-snug mt-0.5" style={{ color: 'var(--text-faint)' }}>{desc}</span>
       </span>
+    </>
+  )
+  if (external) {
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer" style={style} className={className}>
+        {inner}
+      </a>
+    )
+  }
+  return (
+    <Link href={href} style={style} className={className}>
+      {inner}
     </Link>
   )
 }
