@@ -1673,6 +1673,22 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                     </div>
                   </div>
 
+                  {/* Best-results tips — collapsible so it sets expectations
+                      without cluttering the panel. Native <details>, no state. */}
+                  <details className="rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 px-3 py-2 group">
+                    <summary className="flex items-center gap-1.5 cursor-pointer list-none text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                      <Sparkles size={12} className="text-[#7C3AED]" />
+                      How to get the most accurate thumbnails
+                      <ChevronDown size={12} className="ml-auto text-[#86868b] transition-transform group-open:rotate-180" />
+                    </summary>
+                    <ul className="mt-2 flex flex-col gap-1.5 text-[11px] leading-relaxed text-[#6e6e73] dark:text-[#ebebf0]">
+                      <li><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Train your face.</strong> A few clear, well-lit photos from different angles — MVP renders your real likeness and auto-checks every thumbnail for a match.</li>
+                      <li><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Upload a clean product photo.</strong> A plain shot on a simple background beats a busy Amazon lifestyle image — it&apos;s the biggest lever on how true-to-life the product looks.</li>
+                      <li><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Pick your headline.</strong> Choose a suggestion or write your own (5 words max) — that exact text gets baked on.</li>
+                      <li>Thumbnails are AI-generated, so glance at the variants and regenerate if one isn&apos;t quite right — it&apos;s normal to take a couple of tries.</li>
+                    </ul>
+                  </details>
+
                   {/* Face picker — who's in this video? */}
                   {extensionInstalled !== false && faceModels.length > 0 && (
                     <div className="flex flex-col gap-2 px-1 pb-1">
