@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Download, ArrowUpCircle, CheckCircle, Loader2 } from 'lucide-react'
 import { getScoutStatus } from '@/lib/extension-frame'
 import { SCOUT_LATEST_VERSION, SCOUT_DOWNLOAD_URL, SCOUT_WHATS_NEW, isScoutOutdated } from '@/lib/scout-version'
@@ -10,7 +10,9 @@ import { SCOUT_LATEST_VERSION, SCOUT_DOWNLOAD_URL, SCOUT_WHATS_NEW, isScoutOutda
  * "Theme & Plugin" pill. SCOUT is a load-unpacked extension (no Web Store
  * auto-update), so we ping the installed copy and surface its state:
  *   - checking        → a brief "Checking SCOUT…" badge (the ping resolves fast)
- *   - not installed   → orange "Get SCOUT extension" download
+ *   - not installed   → orange "Get SCOUT extension" → opens a visible info card
+ *                       (what it is + 2-step install + download). Not hover-only,
+ *                       so first-timers (and mobile/touch) actually see why.
  *   - installed/behind → LOUD orange "Update SCOUT vX" download (unzip + reload)
  *   - installed/current → a bright orange "Scout Extension up to date" badge
  *
@@ -22,6 +24,8 @@ import { SCOUT_LATEST_VERSION, SCOUT_DOWNLOAD_URL, SCOUT_WHATS_NEW, isScoutOutda
  */
 export default function ScoutUpdatePill() {
   const [status, setStatus] = useState<{ installed: boolean; version: string | null } | null>(null)
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -30,6 +34,16 @@ export default function ScoutUpdatePill() {
       .catch(() => { if (!cancelled) setStatus({ installed: false, version: null }) })
     return () => { cancelled = true }
   }, [])
+
+  // Close the "what is SCOUT" card on outside-click or Escape.
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => { if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false) }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey) }
+  }, [open])
 
   // Still pinging the extension.
   if (!status) {
@@ -45,18 +59,48 @@ export default function ScoutUpdatePill() {
 
   const outdated = status.installed && isScoutOutdated(status.version)
 
-  // Not installed → download prompt.
+  // Not installed → button that opens a visible explainer + install + download.
   if (!status.installed) {
     return (
-      <a
-        href={SCOUT_DOWNLOAD_URL}
-        download
-        title="Download the SCOUT browser extension — grabs real video frames for thumbnails, reads Amazon product data when our server is blocked, and finds your Amazon videos for brand recaps."
-        className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold text-white transition-transform hover:-translate-y-0.5"
-        style={{ background: 'linear-gradient(135deg, #FF9F0A 0%, #FF6B00 100%)', boxShadow: '0 3px 12px rgba(255,107,0,0.35)' }}
-      >
-        <Download size={13} /> Get SCOUT extension
-      </a>
+      <div ref={wrapRef} className="relative inline-block">
+        <button
+          type="button"
+          onClick={() => setOpen(o => !o)}
+          aria-expanded={open}
+          className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold text-white transition-transform hover:-translate-y-0.5"
+          style={{ background: 'linear-gradient(135deg, #FF9F0A 0%, #FF6B00 100%)', boxShadow: '0 3px 12px rgba(255,107,0,0.35)' }}
+        >
+          <Download size={13} /> Get SCOUT extension
+        </button>
+
+        {open && (
+          <div
+            className="absolute left-0 top-full mt-2 z-40 w-[330px] max-w-[88vw] rounded-xl border p-4 text-left shadow-xl"
+            style={{ backgroundColor: 'var(--surface, #fff)', borderColor: 'var(--border, rgba(0,0,0,0.1))' }}
+            role="dialog"
+          >
+            <p className="text-[13px] font-semibold" style={{ color: 'var(--text, #1d1d1f)' }}>
+              What is SCOUT? <span className="font-normal" style={{ color: 'var(--text-faint, #86868b)' }}>Free Chrome extension</span>
+            </p>
+            <p className="text-[12px] leading-relaxed mt-1.5" style={{ color: 'var(--text-soft, #6e6e73)' }}>
+              SCOUT runs in your browser and makes a few things noticeably better — it captures real frames from your YouTube videos for sharper thumbnails, reads Amazon product details when our server is blocked, and finds your on-Amazon videos for brand recaps. It&apos;s optional, but recommended.
+            </p>
+            <p className="text-[12px] font-semibold mt-3" style={{ color: 'var(--text, #1d1d1f)' }}>Install in 2 steps:</p>
+            <ol className="list-decimal ml-4 mt-1 flex flex-col gap-1 text-[12px] leading-relaxed" style={{ color: 'var(--text-soft, #6e6e73)' }}>
+              <li>Download &amp; unzip the file below.</li>
+              <li>Open Chrome → <span className="font-mono">chrome://extensions</span> → turn on <b>Developer mode</b> (top-right) → <b>Load unpacked</b> → pick the unzipped folder.</li>
+            </ol>
+            <a
+              href={SCOUT_DOWNLOAD_URL}
+              download
+              className="mt-3 inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] font-semibold text-white transition-transform hover:-translate-y-0.5"
+              style={{ background: 'linear-gradient(135deg, #FF9F0A 0%, #FF6B00 100%)', boxShadow: '0 3px 12px rgba(255,107,0,0.35)' }}
+            >
+              <Download size={13} /> Download SCOUT
+            </a>
+          </div>
+        )}
+      </div>
     )
   }
 
