@@ -29,15 +29,22 @@ import { getChannelOAuthToken } from '@/lib/youtube-channels'
 //   - scheduled (purple dot): publishAt is set  → plot on publishAt
 //   - published (green dot):  status === 'public' → plot on publishedAt
 
-// Cover very large libraries: 60 × 50 = 3,000 videos.
-const MAX_PAGES = 60
+// Page DEEP. The uploads playlist yields well under 50 NEW videos per page on
+// large channels (dups + dropped items → ~28/page observed), so a small cap
+// stops short of the back-catalog where scheduled videos live. 160 pages covers
+// ~4,500 unique even at that yield. The dry-streak guard below stops early when
+// the playlist genuinely runs out (or cycles), so we don't waste the budget.
+const MAX_PAGES = 160
 const PAGE_SIZE = 50
+// Bail after this many CONSECUTIVE pages that add zero new unique videos — the
+// playlist is exhausted (or cycling) and more pages won't help.
+const MAX_DRY_PAGES = 4
 // Serve the cached scan for this long before a fresh full walk is needed.
 const CACHE_TTL_MS = 30 * 60 * 1000
 
-// A cold full scan of a few thousand videos is many sequential fetches — give
-// it room (cache hits return in well under a second).
-export const maxDuration = 120
+// A cold deep scan of thousands of videos is many sequential fetches — give it
+// the full Vercel-Pro budget (cache hits return in well under a second).
+export const maxDuration = 300
 export const dynamic = 'force-dynamic'
 
 type CalEvent = {
@@ -98,9 +105,11 @@ export async function GET(request: Request) {
     let cursor: string | undefined = undefined
     let playlistId: string | undefined = undefined
     let truncated = false
+    let dryStreak = 0
     for (let page = 0; page < MAX_PAGES; page++) {
       const { videos, nextPageToken, uploadsPlaylistId } = await yt.getDraftVideos(PAGE_SIZE, cursor, playlistId)
       playlistId = uploadsPlaylistId
+      const before = seen.size
       for (const v of videos) {
         if (!v.youtubeVideoId || seen.has(v.youtubeVideoId)) continue
         seen.add(v.youtubeVideoId)
@@ -112,11 +121,16 @@ export async function GET(request: Request) {
           publishedAt: v.publishedAt,
         })
       }
+      // This page added nothing new → the playlist is exhausted or cycling.
+      // Bail after a few consecutive dry pages so we don't burn the budget.
+      if (seen.size === before) {
+        if (++dryStreak >= MAX_DRY_PAGES) break
+      } else {
+        dryStreak = 0
+      }
       if (!nextPageToken) break
       // Stop if the cursor repeats — YouTube occasionally hands back a token that
-      // loops to an earlier page, which would re-scan the whole catalog and
-      // double every dot. (Dedupe above already neutralizes the symptom; this
-      // also saves the wasted fetches.)
+      // loops to an earlier page, which would re-scan the whole catalog.
       if (seenCursors.has(nextPageToken)) break
       seenCursors.add(nextPageToken)
       cursor = nextPageToken
