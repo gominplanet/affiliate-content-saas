@@ -172,14 +172,6 @@ function ContentCalendar({ channelId, refreshNonce }: { channelId: string | null
   const [events, setEvents] = useState<CalEvent[]>([])
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
-  // Diagnostics from the last FRESH scan (omitted on cache hits): how many
-  // videos the library walk covered, and whether it hit the page cap.
-  const [scanned, setScanned] = useState<number | null>(null)
-  const [truncated, setTruncated] = useState(false)
-  const [scanInfo, setScanInfo] = useState<{ pagesUsed?: number; stopReason?: string; searchAdded?: number } | null>(null)
-  // SCOUT Studio scrape result (only set when SCOUT is installed) — the complete
-  // scheduled list that the Data API can't reach on large channels.
-  const [scoutInfo, setScoutInfo] = useState<{ count?: number; error?: string; debug?: Record<string, unknown> } | null>(null)
   // SCOUT's scheduled videos kept in their OWN state and merged at render time
   // (below). Critical: the API fetch does setEvents(replace), so if we merged
   // SCOUT into events directly, a late-resolving API call would clobber it
@@ -203,33 +195,32 @@ function ContentCalendar({ channelId, refreshNonce }: { channelId: string | null
       .then(r => r.json())
       .then(d => {
         if (cancelled) return
-        if (d?.error) { setErr(typeof d.error === 'string' ? d.error : 'Could not load calendar') }
-        else {
-          setEvents(Array.isArray(d?.events) ? d.events : [])
-          setScanned(typeof d?.scanned === 'number' ? d.scanned : null)
-          setTruncated(!!d?.truncated)
-          setScanInfo(typeof d?.pagesUsed === 'number' ? { pagesUsed: d.pagesUsed, stopReason: d.stopReason, searchAdded: d.searchAdded } : null)
-        }
+        if (d?.error) setErr(typeof d.error === 'string' ? d.error : 'Could not load calendar')
+        else setEvents(Array.isArray(d?.events) ? d.events : [])
       })
       .catch(() => { if (!cancelled) setErr('Could not load calendar') })
       .finally(() => { if (!cancelled) setLoading(false) })
 
-    // ── SCOUT supplement ──────────────────────────────────────────────────
-    // On large channels the Data API misses most scheduled videos (playlist
-    // truncates, search caps). SCOUT can read Studio's own Content list, which
-    // knows them all. Quiet background scrape; merges in when it returns. Only
-    // surfaces a note when SCOUT is actually installed. SCOUT entries are
-    // authoritative for scheduling (overwrite any API event for the same id).
-    requestStudioSchedule().then(s => {
-      if (cancelled) return
-      if (s.error === 'not-installed') { setScoutVideos([]); return } // no SCOUT → stay silent
-      setScoutInfo({ count: s.ok ? s.videos.length : undefined, error: s.ok ? undefined : s.error, debug: s.debug })
-      setScoutVideos(
-        s.ok && s.videos.length
-          ? s.videos.map(v => ({ youtubeVideoId: v.videoId, title: v.title, status: 'private', publishAt: v.publishAt, publishedAt: '' }))
-          : [],
-      )
-    }).catch(() => { /* best effort */ })
+    // ── SCOUT supplement (Studio's complete scheduled list) ────────────────
+    // The Data API misses most scheduled videos on large channels; SCOUT reads
+    // Studio's own Content list, which knows them all. Cache the result in
+    // localStorage (per channel, 30-min TTL) so we DON'T open a background
+    // Studio tab on every visit — show the cached list instantly and only
+    // re-scrape when it's stale or the user hits "Refresh from YouTube".
+    const SCOUT_KEY = `mvp_scout_sched_${channelId || 'default'}`
+    const SCOUT_TTL = 30 * 60 * 1000
+    let cachedScout: { events?: CalEvent[]; cachedAt?: number } | null = null
+    try { const raw = localStorage.getItem(SCOUT_KEY); if (raw) cachedScout = JSON.parse(raw) } catch { /* ignore */ }
+    if (cachedScout && Array.isArray(cachedScout.events)) setScoutVideos(cachedScout.events)
+    const scoutFresh = !!cachedScout && Array.isArray(cachedScout.events) && (Date.now() - (cachedScout.cachedAt || 0)) < SCOUT_TTL
+    if (!scoutFresh || refreshNonce > 0) {
+      requestStudioSchedule().then(s => {
+        if (cancelled || !s.ok || !s.videos.length) return
+        const mapped: CalEvent[] = s.videos.map(v => ({ youtubeVideoId: v.videoId, title: v.title, status: 'private', publishAt: v.publishAt, publishedAt: '' }))
+        setScoutVideos(mapped)
+        try { localStorage.setItem(SCOUT_KEY, JSON.stringify({ events: mapped, cachedAt: Date.now() })) } catch { /* ignore */ }
+      }).catch(() => { /* best effort */ })
+    }
     return () => { cancelled = true }
   }, [channelId, refreshNonce])
 
@@ -292,11 +283,6 @@ function ContentCalendar({ channelId, refreshNonce }: { channelId: string | null
   }
 
   const selectedEvents = selected ? (byDate[selected] || []) : []
-  // Whole-scan totals (every month) — the decisive diagnostic: if this is far
-  // below the schedule count in YouTube Studio, the API isn't returning the
-  // publishAt for most scheduled videos (vs. them just being on other months).
-  const totalSched = mergedEvents.filter(e => e.publishAt).length
-  const totalPub = mergedEvents.filter(e => !e.publishAt && e.status === 'public').length
 
   return (
     <div className="card p-4">
@@ -360,28 +346,6 @@ function ContentCalendar({ channelId, refreshNonce }: { channelId: string | null
           </div>
 
           <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-3">{mPub} published · {mSched} scheduled this month</p>
-          {scanned !== null && (
-            <p className="text-[10px] mt-1" style={{ color: truncated ? '#FF9500' : 'var(--text-faint, #a1a1a6)' }}>
-              Scanned {scanned.toLocaleString()} videos · found {totalSched.toLocaleString()} scheduled, {totalPub.toLocaleString()} published (all months){truncated ? ' — catalog larger, some older uploads weren’t reached.' : '.'}
-              {scanInfo?.stopReason && <span> [{scanInfo.pagesUsed}p · {scanInfo.stopReason}{typeof scanInfo.searchAdded === 'number' ? ` · +${scanInfo.searchAdded} via search` : ''}]</span>}
-            </p>
-          )}
-          {scoutInfo && (
-            <>
-              <p className="text-[10px] mt-0.5" style={{ color: scoutInfo.error ? '#FF9500' : '#7C3AED' }}>
-                {scoutInfo.error
-                  ? `SCOUT Studio read failed: ${scoutInfo.error}`
-                  : `SCOUT read ${(scoutInfo.count ?? 0).toLocaleString()} scheduled from Studio (complete).`}
-              </p>
-              {/* Temporary diagnostic: shows Studio's actual response shape so we
-                  can read the scheduled-date field correctly. Removed once stable. */}
-              {scoutInfo.debug && (
-                <p className="text-[9px] mt-0.5 font-mono break-all" style={{ color: 'var(--text-faint, #a1a1a6)' }}>
-                  {JSON.stringify(scoutInfo.debug).slice(0, 1100)}
-                </p>
-              )}
-            </>
-          )}
 
           {selected && (
             <div className="mt-2 pt-3 border-t border-gray-100 dark:border-white/10">
