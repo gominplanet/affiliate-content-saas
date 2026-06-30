@@ -128,7 +128,9 @@ interface ProPublishSettings {
   // 'draft' = push metadata/thumbnail only, never touch the video's
   // published state (it stays an unpublished YouTube draft).
   privacyStatus: 'draft' | 'public' | 'unlisted' | 'private'
-  scheduleMode: 'now' | 'in1h' | 'in6h' | 'in24h'
+  scheduleMode: 'now' | 'in1h' | 'in6h' | 'in24h' | 'custom'
+  /** datetime-local value (local time, no zone) when scheduleMode === 'custom'. */
+  scheduleAt: string
 }
 
 const defaultProSettings: ProPublishSettings = {
@@ -137,6 +139,7 @@ const defaultProSettings: ProPublishSettings = {
   notifySubscribers: false,
   privacyStatus: 'draft',
   scheduleMode: 'now',
+  scheduleAt: '',
 }
 
 // Shared GET cache across ALL VideoStudioCard instances. Face models, saved
@@ -837,8 +840,11 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
       if (isPro) {
         // Draft mode: push metadata/thumbnail only — send NO status
         // fields so the video stays an unpublished YouTube draft.
-        const isDraft = proSettings.privacyStatus === 'draft'
-        const publishAt = isDraft ? null : computePublishAt(proSettings.scheduleMode)
+        // A schedule (publishAt) OVERRIDES draft — you can pick a date straight
+        // from the default draft state. YouTube requires private-until-publish,
+        // which the apply route enforces when publishAt is set.
+        const publishAt = computePublishAt(proSettings.scheduleMode, proSettings.scheduleAt)
+        const isDraft = proSettings.privacyStatus === 'draft' && !publishAt
         const res = await fetch('/api/youtube/apply', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -909,9 +915,17 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
     }
   }
 
-  /** Convert the schedule mode dropdown choice to an ISO 8601 publishAt or null. */
-  function computePublishAt(mode: ProPublishSettings['scheduleMode']): string | null {
+  /** Convert the schedule dropdown choice to an ISO 8601 publishAt, or null for
+   *  "publish now". 'custom' uses the datetime-local value; a missing/past
+   *  custom time returns null (the button is disabled in that case anyway). */
+  function computePublishAt(mode: ProPublishSettings['scheduleMode'], scheduleAt: string): string | null {
     if (mode === 'now') return null
+    if (mode === 'custom') {
+      if (!scheduleAt) return null
+      const t = new Date(scheduleAt) // datetime-local → local time
+      if (isNaN(t.getTime()) || t.getTime() <= Date.now()) return null
+      return t.toISOString()
+    }
     const offsets: Record<'in1h' | 'in6h' | 'in24h', number> = {
       in1h: 1 * 60 * 60 * 1000,
       in6h: 6 * 60 * 60 * 1000,
@@ -919,6 +933,16 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
     }
     return new Date(Date.now() + offsets[mode]).toISOString()
   }
+
+  /** Min value for the datetime-local picker (5 min out, local time). */
+  function localDatetimeMin(): string {
+    const d = new Date(Date.now() + 5 * 60 * 1000)
+    const p = (n: number) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
+  }
+  // True when the user chose a custom schedule but the date is empty/past — used
+  // to block the Apply button so we never silently fall back to draft/now.
+  const scheduleNeedsDate = proSettings.scheduleMode === 'custom' && !computePublishAt('custom', proSettings.scheduleAt)
 
   // ── Shared thumbnail result handler ─────────────────────────────────────────
   async function applyThumbnailResult(data: Record<string, unknown>) {
@@ -2401,20 +2425,35 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                       </select>
                     </label>
 
-                    {/* Schedule */}
+                    {/* Schedule — reachable straight from the default draft state.
+                        Picking anything other than "now" schedules the video
+                        (private until then); Visibility above is disabled while a
+                        schedule is set. */}
                     <label className="flex flex-col gap-1 text-xs">
                       <span className="text-[#6e6e73] dark:text-[#ebebf0] font-medium">Schedule</span>
                       <select
                         value={proSettings.scheduleMode}
                         onChange={e => setProSettings(s => ({ ...s, scheduleMode: e.target.value as ProPublishSettings['scheduleMode'] }))}
-                        className="px-2 py-1.5 rounded-lg border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] disabled:opacity-50"
-                        disabled={proSettings.privacyStatus === 'draft'}
+                        className="px-2 py-1.5 rounded-lg border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7]"
                       >
-                        <option value="now">Publish now</option>
+                        <option value="now">Don&apos;t schedule</option>
+                        <option value="custom">Pick a date &amp; time…</option>
                         <option value="in1h">In 1 hour</option>
                         <option value="in6h">In 6 hours</option>
                         <option value="in24h">In 24 hours</option>
                       </select>
+                      {proSettings.scheduleMode === 'custom' && (
+                        <input
+                          type="datetime-local"
+                          value={proSettings.scheduleAt}
+                          min={localDatetimeMin()}
+                          onChange={e => setProSettings(s => ({ ...s, scheduleAt: e.target.value }))}
+                          className="mt-1 px-2 py-1.5 rounded-lg border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7]"
+                        />
+                      )}
+                      {proSettings.scheduleMode !== 'now' && (
+                        <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">YouTube auto-publishes it then (public). It stays private until then.</span>
+                      )}
                     </label>
                   </div>
 
@@ -2446,16 +2485,26 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
               {/* Actions */}
               <div className="flex flex-col gap-2 pt-2">
                 <div className="flex items-center gap-3">
-                  <button
-                    onClick={applyToYouTube}
-                    disabled={applying || applied}
-                    className="flex items-center justify-center gap-2.5 flex-1 py-3.5 rounded-xl text-base font-bold text-white disabled:opacity-60 transition-all shadow-lg hover:opacity-90 active:scale-[0.98]"
-                    style={{ background: applied ? '#34c759' : 'linear-gradient(135deg, #ff0000 0%, #cc0000 100%)', boxShadow: applied ? undefined : '0 4px 14px rgba(255,0,0,0.35)' }}
-                  >
-                    {applying ? <><Loader2 size={16} className="animate-spin" /> {proSettings.privacyStatus === 'draft' ? 'Saving draft…' : 'Pushing to YouTube…'}</>
-                      : applied ? <><CheckCircle size={16} /> {proSettings.privacyStatus === 'draft' ? 'Saved to Draft' : 'Pushed to YouTube!'}</>
-                      : <><Youtube size={16} /> {proSettings.privacyStatus === 'draft' ? 'Save Draft to YouTube' : 'Push to YouTube'}</>}
-                  </button>
+                  {(() => {
+                    const scheduling = proSettings.scheduleMode !== 'now'
+                    const draft = proSettings.privacyStatus === 'draft' && !scheduling
+                    const verb = (busy: string, done: string, idle: string) =>
+                      scheduling ? (applying ? 'Scheduling…' : applied ? 'Scheduled on YouTube' : 'Schedule on YouTube')
+                        : draft ? (applying ? 'Saving draft…' : applied ? 'Saved to Draft' : 'Save Draft to YouTube')
+                          : (applying ? busy : applied ? done : idle)
+                    return (
+                      <button
+                        onClick={applyToYouTube}
+                        disabled={applying || applied || scheduleNeedsDate}
+                        title={scheduleNeedsDate ? 'Pick a future date & time first' : undefined}
+                        className="flex items-center justify-center gap-2.5 flex-1 py-3.5 rounded-xl text-base font-bold text-white disabled:opacity-60 transition-all shadow-lg hover:opacity-90 active:scale-[0.98]"
+                        style={{ background: applied ? '#34c759' : 'linear-gradient(135deg, #ff0000 0%, #cc0000 100%)', boxShadow: applied ? undefined : '0 4px 14px rgba(255,0,0,0.35)' }}
+                      >
+                        {applying ? <Loader2 size={16} className="animate-spin" /> : applied ? <CheckCircle size={16} /> : <Youtube size={16} />}
+                        {verb('Pushing to YouTube…', 'Pushed to YouTube!', 'Push to YouTube')}
+                      </button>
+                    )
+                  })()}
                   <button onClick={() => generate()} disabled={generating}
                     className="flex items-center gap-1 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#7C3AED] transition-colors flex-shrink-0">
                     <RefreshCw size={11} /> Regenerate
