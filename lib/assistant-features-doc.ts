@@ -364,6 +364,24 @@ Fine-tune the look of the user's WordPress blog beyond brand colors:
 Different from /brand: /brand is "who I am"; /customize is "how the
 blog presents itself".
 
+### Site Verification & Meta Tags (the canonical place to verify a blog)
+URL: /customize → "Site Verification & Meta Tags" section.
+
+THIS is the one place a user verifies their blog with ANY service that
+hands them a verification meta tag — Google Search Console, Bing
+Webmaster, Pinterest (Rich Pins), Facebook, and affiliate networks like
+Impact, PartnerBoost, etc. Whenever someone asks "how do I verify my
+site / get my blog verified / where do I paste this verification code",
+always send them here.
+
+How it works: the user copies the full meta tag line the service gives
+them (it looks like: meta name="…" content="…"), clicks "Add meta tag",
+pastes one full tag per box, and hits Save. MVP injects it into every
+page's head via the WordPress theme/plugin — no editing WordPress. Then
+they click Verify on the service. Only meta tags are allowed (scripts and
+styles are stripped). After saving, the tag stays on every page so
+verification keeps passing.
+
 ---
 
 ## PRICING & TIERS

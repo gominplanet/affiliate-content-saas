@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.57
+ * Version: 1.0.58
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -308,6 +308,19 @@ if (!function_exists('mvp_affiliate_sanitize_customizations')) {
 
         // Key-based dispatch — applies the right escape for the slot.
         $lower = strtolower($key_path);
+        // Site-verification <meta> tags (headMetaTags[]) — keep the bare tag.
+        // sanitize_text_field() strips ALL tags, which silently blanked every
+        // verification meta (Google/Pinterest/Impact/PartnerBoost…) on save, so
+        // the tag never reached the <head>. Harden with the SAME meta-only
+        // allowlist the head-injector uses (no scripts/styles/arbitrary HTML),
+        // so this is safe while actually preserving the tag.
+        if (preg_match('#/headMetaTags(/|$)#i', $key_path)) {
+            $allowed_meta = ['meta' => [
+                'name' => true, 'property' => true, 'http-equiv' => true,
+                'content' => true, 'value' => true, 'itemprop' => true, 'charset' => true,
+            ]];
+            return trim(wp_kses($val, $allowed_meta));
+        }
         if (preg_match('#/(html|content|body|blockHtml)$#i', $key_path)) {
             return wp_kses_post($val);
         }
