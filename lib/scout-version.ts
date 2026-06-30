@@ -10,7 +10,7 @@
  *
  * Also drop a one-liner in SCOUT_WHATS_NEW so the banner says what changed.
  */
-export const SCOUT_LATEST_VERSION = '1.11.5'
+export const SCOUT_LATEST_VERSION = '1.11.6'
 
 /** One-line "what's new", shown in the update banner. Keep it user-facing. */
 export const SCOUT_WHATS_NEW =

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArGsg8kJp5IJZBBqytlK8RUDEtfFqv26qU42EvCMsk1QTZjZjQQ2OsRhf6QfHyJGbiQ8yDjwmRTyKvmHbViaPCXiGorf+0yBpIviCqcOLCh28pNz/XDN+sCLTDt0LpC0nCiPtBdt3gqVoX+LnxSccZF5rcwKJwbxist2AmOHET8PbiHVSXPnWSG2cDjjzDwkwL6Hczi8nm1UK0eJTStGiZxIVHZBP4azu0aCmqTUysGJJOQkCOayi+uTvrO4vF1U0WY1AemM3mgqpHccYdiidI77BVgZ+URbghuZMjHIHCUeTquMy5IkIYYJvIB3NFBQ+Xp/YfB5FbLyxZSaMuRJVaQIDAQAB",
   "name": "SCOUT \u2014 MVP Affiliate",
-  "version": "1.11.5",
+  "version": "1.11.6",
   "description": "SCOUT scans Amazon Creator Connections, filters by keyword, EPC and budget, and pushes the winners into MVP. Also lets MVP's YouTube Co-Pilot grab a real frame from your video for grounded, viral thumbnails.",
   "homepage_url": "https://www.mvpaffiliate.io",
   "minimum_chrome_version": "114",

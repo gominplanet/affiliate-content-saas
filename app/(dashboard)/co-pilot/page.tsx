@@ -366,7 +366,7 @@ function ContentCalendar({ channelId, refreshNonce }: { channelId: string | null
                   can read the scheduled-date field correctly. Removed once stable. */}
               {scoutInfo.debug && (
                 <p className="text-[9px] mt-0.5 font-mono break-all" style={{ color: 'var(--text-faint, #a1a1a6)' }}>
-                  {JSON.stringify(scoutInfo.debug).slice(0, 600)}
+                  {JSON.stringify(scoutInfo.debug).slice(0, 1100)}
                 </p>
               )}
             </>

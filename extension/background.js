@@ -693,6 +693,9 @@ function harvestStudioScheduleInPage() {
       }
 
       const scheduled = []
+      const seenIds = {}
+      let itemsSeen = 0
+      let looksCount = 0
       let pageToken
       let pages = 0
       for (let i = 0; i < 60; i++) {
@@ -710,21 +713,21 @@ function harvestStudioScheduleInPage() {
         if (i === 0) {
           out.debug.responseKeys = Object.keys(data || {})
           out.debug.firstPageCount = items.length
-          out.debug.sampleKeys = items[0] ? Object.keys(items[0]) : []
-          // One full item so we can see exactly where the scheduled timestamp lives.
-          out.debug.sampleItem = items[0] ? JSON.stringify(items[0]).slice(0, 1800) : null
         }
+        itemsSeen += items.length
         for (const v of items) {
           const det = v.scheduledPublishingDetails || v.scheduledPublishingDetail || null
           const vis = v.visibility ? (v.visibility.effectiveStatus || v.visibility.userSetVisibility || '') : ''
           const looksScheduled = !!det || (typeof vis === 'string' && vis.indexOf('SCHEDULED') >= 0)
           if (!looksScheduled) continue
+          looksCount++
           // Capture the first real scheduled item so we can see its exact shape
           // if extraction still comes up empty.
-          if (!out.debug.sampleScheduled) out.debug.sampleScheduled = JSON.stringify(v).slice(0, 1500)
+          if (!out.debug.sampleScheduled) out.debug.sampleScheduled = JSON.stringify(v).slice(0, 1200)
           let secs = det ? findEpochSeconds(det, 0) : null
           if (!secs) { const n = Number(v.timePublishedSeconds); if (n > 1000000000 && n < 5000000000) secs = n }
-          if (secs) {
+          if (secs && v.videoId && !seenIds[v.videoId]) {
+            seenIds[v.videoId] = 1
             const title = typeof v.title === 'string'
               ? v.title
               : (v.title && (v.title.text || v.title.simpleText || (v.title.runs && v.title.runs.map((r) => r.text).join('')))) || ''
@@ -736,6 +739,8 @@ function harvestStudioScheduleInPage() {
         if (!pageToken) break
       }
       out.debug.pages = pages
+      out.debug.itemsSeen = itemsSeen
+      out.debug.looksScheduled = looksCount
       out.debug.scheduledFound = scheduled.length
       out.videos = scheduled
       // Only a clean run (no HTTP/parse error) counts as ok — otherwise a 400/401
