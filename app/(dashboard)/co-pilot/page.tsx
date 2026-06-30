@@ -180,6 +180,11 @@ function ContentCalendar({ channelId, refreshNonce }: { channelId: string | null
   // SCOUT Studio scrape result (only set when SCOUT is installed) — the complete
   // scheduled list that the Data API can't reach on large channels.
   const [scoutInfo, setScoutInfo] = useState<{ count?: number; error?: string; debug?: Record<string, unknown> } | null>(null)
+  // SCOUT's scheduled videos kept in their OWN state and merged at render time
+  // (below). Critical: the API fetch does setEvents(replace), so if we merged
+  // SCOUT into events directly, a late-resolving API call would clobber it
+  // (the race that emptied the calendar). Separate state can't be overwritten.
+  const [scoutVideos, setScoutVideos] = useState<CalEvent[]>([])
   const now = new Date()
   const [viewY, setViewY] = useState(now.getFullYear())
   const [viewM, setViewM] = useState(now.getMonth())
@@ -217,17 +222,13 @@ function ContentCalendar({ channelId, refreshNonce }: { channelId: string | null
     // authoritative for scheduling (overwrite any API event for the same id).
     requestStudioSchedule().then(s => {
       if (cancelled) return
-      if (s.error === 'not-installed') return // no SCOUT → stay silent
+      if (s.error === 'not-installed') { setScoutVideos([]); return } // no SCOUT → stay silent
       setScoutInfo({ count: s.ok ? s.videos.length : undefined, error: s.ok ? undefined : s.error, debug: s.debug })
-      if (s.ok && s.videos.length) {
-        setEvents(prev => {
-          const byId = new Map(prev.map(e => [e.youtubeVideoId, e]))
-          for (const v of s.videos) {
-            byId.set(v.videoId, { youtubeVideoId: v.videoId, title: v.title, status: 'private', publishAt: v.publishAt, publishedAt: '' })
-          }
-          return Array.from(byId.values())
-        })
-      }
+      setScoutVideos(
+        s.ok && s.videos.length
+          ? s.videos.map(v => ({ youtubeVideoId: v.videoId, title: v.title, status: 'private', publishAt: v.publishAt, publishedAt: '' }))
+          : [],
+      )
     }).catch(() => { /* best effort */ })
     return () => { cancelled = true }
   }, [channelId, refreshNonce])
@@ -239,9 +240,19 @@ function ContentCalendar({ channelId, refreshNonce }: { channelId: string | null
   const localKey = (iso: string) => { const d = new Date(iso); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` }
   const todayKey = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
 
+  // Merge API events with SCOUT's scheduled videos (SCOUT wins per id — it's
+  // the authoritative, complete scheduled source). Done at render time so
+  // neither async source can clobber the other.
+  const mergedEvents = useMemo(() => {
+    if (!scoutVideos.length) return events
+    const byId = new Map(events.map(e => [e.youtubeVideoId, e]))
+    for (const v of scoutVideos) byId.set(v.youtubeVideoId, v)
+    return Array.from(byId.values())
+  }, [events, scoutVideos])
+
   const byDate = useMemo(() => {
     const m: Record<string, Array<{ id: string; title: string; kind: 'scheduled' | 'published' }>> = {}
-    for (const e of events) {
+    for (const e of mergedEvents) {
       if (e.publishAt) {
         const k = localKey(e.publishAt); (m[k] ||= []).push({ id: e.youtubeVideoId, title: e.title, kind: 'scheduled' })
       } else if (e.status === 'public' && e.publishedAt) {
@@ -249,9 +260,9 @@ function ContentCalendar({ channelId, refreshNonce }: { channelId: string | null
       }
     }
     return m
-  // localKey is a pure helper; events is the only real dependency.
+  // localKey is a pure helper; mergedEvents is the only real dependency.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [events])
+  }, [mergedEvents])
 
   let mSched = 0, mPub = 0
   Object.keys(byDate).forEach(k => {
@@ -284,8 +295,8 @@ function ContentCalendar({ channelId, refreshNonce }: { channelId: string | null
   // Whole-scan totals (every month) — the decisive diagnostic: if this is far
   // below the schedule count in YouTube Studio, the API isn't returning the
   // publishAt for most scheduled videos (vs. them just being on other months).
-  const totalSched = events.filter(e => e.publishAt).length
-  const totalPub = events.filter(e => !e.publishAt && e.status === 'public').length
+  const totalSched = mergedEvents.filter(e => e.publishAt).length
+  const totalPub = mergedEvents.filter(e => !e.publishAt && e.status === 'public').length
 
   return (
     <div className="card p-4">
