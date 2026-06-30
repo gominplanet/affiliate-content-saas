@@ -227,7 +227,7 @@ function DemoVideoSection() {
   }, [open])
 
   return (
-    <section id="demo" className="px-6 lg:px-8 pb-24 -mt-8 relative">
+    <section id="demo" className="px-6 lg:px-8 pb-16 sm:pb-24 -mt-8 relative">
       <div className="max-w-5xl mx-auto">
         {/* Section eyebrow + heading */}
         <div className="text-center mb-8">
@@ -430,7 +430,7 @@ function DemoVideoSection() {
  */
 function RolesSection() {
   return (
-    <section id="roles" className="px-6 lg:px-8 pt-24 pb-28 relative">
+    <section id="roles" className="px-6 lg:px-8 pt-16 sm:pt-24 pb-16 sm:pb-28 relative">
       <div className="max-w-6xl mx-auto">
         {/* Section header — eyebrow + headline + sub. Centered, same
             rhythm as the hero but slightly tighter. */}
@@ -508,7 +508,7 @@ const BUSINESS_CARDS: Array<{ icon: React.ReactNode; title: string; body: string
 
 function BusinessLayerSection() {
   return (
-    <section id="business" className="px-6 lg:px-8 pt-24 pb-28 relative">
+    <section id="business" className="px-6 lg:px-8 pt-16 sm:pt-24 pb-16 sm:pb-28 relative">
       <div className="max-w-6xl mx-auto">
         <div className="text-center max-w-3xl mx-auto mb-14">
           <span
@@ -567,7 +567,7 @@ const AEO_POINTS: Array<{ icon: React.ReactNode; title: string; body: string }> 
 
 function DiscoverabilitySection() {
   return (
-    <section id="discoverability" className="px-6 lg:px-8 pt-24 pb-28 relative">
+    <section id="discoverability" className="px-6 lg:px-8 pt-16 sm:pt-24 pb-16 sm:pb-28 relative">
       <div className="max-w-6xl mx-auto">
         <div className="text-center max-w-3xl mx-auto mb-14">
           <span
@@ -714,7 +714,7 @@ const ASIN_OUTPUTS: { icon: React.ReactNode; title: string; body: string; tag: s
 
 function AsinSection() {
   return (
-    <section id="asin" className="px-6 lg:px-8 pt-12 pb-28 relative">
+    <section id="asin" className="px-6 lg:px-8 pt-12 pb-16 sm:pb-28 relative">
       <div className="max-w-6xl mx-auto">
         <div className="text-center max-w-3xl mx-auto mb-14">
           <span
@@ -766,7 +766,7 @@ function PartnerNetworksSection() {
     { icon: <ShoppingCart size={18} />, title: 'Amazon Associates', tag: 'Always on', body: 'Your standard Amazon tag works out of the box — no connection or extra setup needed.' },
   ]
   return (
-    <section id="networks" className="px-6 lg:px-8 pt-12 pb-28 relative">
+    <section id="networks" className="px-6 lg:px-8 pt-12 pb-16 sm:pb-28 relative">
       <div className="max-w-6xl mx-auto">
         <div className="text-center max-w-3xl mx-auto mb-14">
           <span
@@ -826,7 +826,7 @@ function PartnerNetworksSection() {
  */
 function WorkflowSection() {
   return (
-    <section id="how-it-works" className="px-6 lg:px-8 pt-12 pb-28 relative">
+    <section id="how-it-works" className="px-6 lg:px-8 pt-12 pb-16 sm:pb-28 relative">
       <div className="max-w-6xl mx-auto">
         <div className="text-center max-w-3xl mx-auto mb-16">
           <span
@@ -1009,7 +1009,7 @@ function StepCard({ index, step }: { index: number; step: Step }) {
  */
 function GroundedSection() {
   return (
-    <section id="grounded" className="px-6 lg:px-8 pt-12 pb-28 relative">
+    <section id="grounded" className="px-6 lg:px-8 pt-12 pb-16 sm:pb-28 relative">
       <div className="max-w-5xl mx-auto">
         <div className="text-center max-w-3xl mx-auto mb-14">
           <span
@@ -1221,7 +1221,7 @@ function ComparisonRow({ row, isLast }: { row: ComparisonRowData; isLast: boolea
  *  price reveal so the cards below feel like even more of a steal. */
 function BrandedSiteSection() {
   return (
-    <section className="px-6 lg:px-8 py-24 relative">
+    <section className="px-6 lg:px-8 py-16 sm:py-24 relative">
       <div className="max-w-6xl mx-auto">
         {/* Section header */}
         <div className="text-center mb-14 max-w-3xl mx-auto">
@@ -1451,7 +1451,7 @@ const SITE_COST_STACK: ReadonlyArray<readonly [string, string]> = [
  */
 function PricingSection() {
   return (
-    <section id="pricing" className="px-6 lg:px-8 pt-12 pb-28 relative">
+    <section id="pricing" className="px-6 lg:px-8 pt-12 pb-16 sm:pb-28 relative">
       <div className="max-w-6xl mx-auto">
         <div className="text-center max-w-3xl mx-auto mb-10">
           <span
@@ -1734,7 +1734,7 @@ function PricingCard({ tier }: { tier: PricingTier }) {
  */
 function ProofSection() {
   return (
-    <section id="proof" className="px-6 lg:px-8 pt-12 pb-28 relative">
+    <section id="proof" className="px-6 lg:px-8 pt-12 pb-16 sm:pb-28 relative">
       <div className="max-w-5xl mx-auto">
         <div className="text-center max-w-3xl mx-auto mb-12">
           <span
@@ -1836,7 +1836,7 @@ function StatCard({ stat }: { stat: Stat }) {
 function FAQSection() {
   const [openIdx, setOpenIdx] = useState<number | null>(0)
   return (
-    <section id="faq" className="px-6 lg:px-8 pt-12 pb-28 relative">
+    <section id="faq" className="px-6 lg:px-8 pt-12 pb-16 sm:pb-28 relative">
       <div className="max-w-3xl mx-auto">
         <div className="text-center mb-12">
           <span
@@ -1959,7 +1959,7 @@ function FinalCTASection() {
   return (
     <section
       id="get-started"
-      className="px-6 lg:px-8 pt-16 pb-24 relative overflow-hidden"
+      className="px-6 lg:px-8 pt-14 sm:pt-16 pb-16 sm:pb-24 relative overflow-hidden"
     >
       {/* Background: soft violet radial that fades out, matching the hub
           diagram's visual rhythm. Theme-aware via --bg + the overlay. */}
@@ -2064,7 +2064,7 @@ function FinalCTASection() {
 function Nav({ theme, onToggle }: { theme: 'dark' | 'light'; onToggle: () => void }) {
   return (
     <nav
-      className="sticky top-0 z-20 backdrop-blur-md px-8 py-4 flex items-center justify-between relative"
+      className="sticky top-0 z-20 backdrop-blur-md px-4 sm:px-8 py-4 flex items-center justify-between relative"
       style={{
         backgroundColor: theme === 'dark' ? 'rgba(14,14,17,0.7)' : 'rgba(250,250,248,0.7)',
         borderBottom: '1px solid var(--border)',
@@ -2095,7 +2095,7 @@ function Nav({ theme, onToggle }: { theme: 'dark' | 'light'; onToggle: () => voi
         ))}
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5 sm:gap-2">
         <button
           onClick={onToggle}
           className="p-2 rounded-lg transition-colors"
@@ -2106,16 +2106,18 @@ function Nav({ theme, onToggle }: { theme: 'dark' | 'light'; onToggle: () => voi
         </button>
         <a
           href="/login"
-          className="px-3 py-1.5 rounded-lg text-[13px] transition-colors"
+          className="px-2.5 sm:px-3 py-1.5 rounded-lg text-[13px] transition-colors"
           style={{ color: 'var(--text-soft)' }}
         >
           Sign in
         </a>
+        {/* Primary CTA — full label on sm+, trimmed to "Start free" on the
+            tightest phones so it never crowds the wordmark. */}
         <a
           href="/signup"
-          className="px-3.5 py-1.5 rounded-lg bg-[#7C3AED] hover:bg-[#6D28D9] text-[13px] font-medium text-white transition-colors"
+          className="px-3.5 py-1.5 rounded-lg bg-[#7C3AED] hover:bg-[#6D28D9] text-[13px] font-medium text-white transition-colors whitespace-nowrap"
         >
-          Start free trial
+          Start free<span className="hidden sm:inline"> trial</span>
         </a>
       </div>
     </nav>
@@ -2154,7 +2156,7 @@ function Hero() {
         }}
       />
 
-      <div className="relative max-w-7xl mx-auto px-8 pt-20 pb-28 grid lg:grid-cols-[1fr_760px] gap-12 items-center">
+      <div className="relative max-w-7xl mx-auto px-5 sm:px-8 pt-12 sm:pt-20 pb-16 sm:pb-28 grid lg:grid-cols-[1fr_760px] gap-8 lg:gap-12 items-center">
         {/* ── Left: copy + CTAs ────────────────────────────────────── */}
         <div>
           {/* Pill */}
@@ -2179,7 +2181,7 @@ function Hero() {
 
           {/* Main + Secondary headlines */}
           <h1
-            className="text-[52px] lg:text-[64px] font-semibold tracking-[-0.02em] leading-[1.02]"
+            className="text-[38px] sm:text-[52px] lg:text-[64px] font-semibold tracking-[-0.02em] leading-[1.05] sm:leading-[1.02]"
             style={{ color: 'var(--text)' }}
           >
             Your reviews, on a<br />
@@ -2261,7 +2263,7 @@ function Hero() {
  */
 function HubDiagram() {
   return (
-    <div className="relative w-full mx-auto" style={{ maxWidth: VIEW_W, height: VIEW_H }}>
+    <div className="relative w-full mx-auto aspect-[4/3] hidden md:block" style={{ maxWidth: VIEW_W }}>
       <svg
         viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
         className="absolute inset-0 w-full h-full pointer-events-none"
@@ -2313,8 +2315,10 @@ function HubDiagram() {
             key={i}
             className="absolute"
             style={{
-              left: x,
-              top: y,
+              // Percentage of the (now fluid, 4:3) box so the HTML nodes track
+              // the SVG lines at any width — fixed px coords broke on mobile.
+              left: `${(x / VIEW_W) * 100}%`,
+              top: `${(y / VIEW_H) * 100}%`,
               opacity: 0,
               animation: `mvp-spoke-in 0.4s ease-out ${fadeDelay}s forwards`,
             }}
@@ -2329,8 +2333,8 @@ function HubDiagram() {
       <div
         className="absolute"
         style={{
-          left: CX,
-          top: CY,
+          left: '50%',
+          top: '50%',
           opacity: 0,
           animation: 'mvp-center-in 0.5s ease-out forwards',
         }}
@@ -2457,7 +2461,7 @@ const PLATFORMS = [
  */
 function BeforeAfterSection() {
   return (
-    <section id="stack" className="px-6 lg:px-8 pt-12 pb-28 relative">
+    <section id="stack" className="px-6 lg:px-8 pt-12 pb-16 sm:pb-28 relative">
       <div className="max-w-6xl mx-auto">
         <div className="text-center max-w-3xl mx-auto mb-14">
           <span
@@ -2636,7 +2640,7 @@ const NEW_BENEFITS = [
 function Footer() {
   return (
     <footer
-      className="px-6 lg:px-8 pt-16 pb-10 mt-12 border-t"
+      className="px-6 lg:px-8 pt-16 pb-28 sm:pb-10 mt-12 border-t"
       style={{ borderColor: 'var(--border)' }}
     >
       <div className="max-w-6xl mx-auto">
