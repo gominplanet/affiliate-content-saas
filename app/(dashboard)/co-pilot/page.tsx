@@ -179,7 +179,7 @@ function ContentCalendar({ channelId, refreshNonce }: { channelId: string | null
   const [scanInfo, setScanInfo] = useState<{ pagesUsed?: number; stopReason?: string; searchAdded?: number } | null>(null)
   // SCOUT Studio scrape result (only set when SCOUT is installed) — the complete
   // scheduled list that the Data API can't reach on large channels.
-  const [scoutInfo, setScoutInfo] = useState<{ count?: number; error?: string } | null>(null)
+  const [scoutInfo, setScoutInfo] = useState<{ count?: number; error?: string; debug?: Record<string, unknown> } | null>(null)
   const now = new Date()
   const [viewY, setViewY] = useState(now.getFullYear())
   const [viewM, setViewM] = useState(now.getMonth())
@@ -218,7 +218,7 @@ function ContentCalendar({ channelId, refreshNonce }: { channelId: string | null
     requestStudioSchedule().then(s => {
       if (cancelled) return
       if (s.error === 'not-installed') return // no SCOUT → stay silent
-      setScoutInfo({ count: s.ok ? s.videos.length : undefined, error: s.ok ? undefined : s.error })
+      setScoutInfo({ count: s.ok ? s.videos.length : undefined, error: s.ok ? undefined : s.error, debug: s.debug })
       if (s.ok && s.videos.length) {
         setEvents(prev => {
           const byId = new Map(prev.map(e => [e.youtubeVideoId, e]))
@@ -356,11 +356,20 @@ function ContentCalendar({ channelId, refreshNonce }: { channelId: string | null
             </p>
           )}
           {scoutInfo && (
-            <p className="text-[10px] mt-0.5" style={{ color: scoutInfo.error ? '#FF9500' : '#7C3AED' }}>
-              {scoutInfo.error
-                ? `SCOUT Studio read failed: ${scoutInfo.error}`
-                : `SCOUT read ${(scoutInfo.count ?? 0).toLocaleString()} scheduled from Studio (complete).`}
-            </p>
+            <>
+              <p className="text-[10px] mt-0.5" style={{ color: scoutInfo.error ? '#FF9500' : '#7C3AED' }}>
+                {scoutInfo.error
+                  ? `SCOUT Studio read failed: ${scoutInfo.error}`
+                  : `SCOUT read ${(scoutInfo.count ?? 0).toLocaleString()} scheduled from Studio (complete).`}
+              </p>
+              {/* Temporary diagnostic: shows Studio's actual response shape so we
+                  can read the scheduled-date field correctly. Removed once stable. */}
+              {scoutInfo.debug && (
+                <p className="text-[9px] mt-0.5 font-mono break-all" style={{ color: 'var(--text-faint, #a1a1a6)' }}>
+                  {JSON.stringify(scoutInfo.debug).slice(0, 600)}
+                </p>
+              )}
+            </>
           )}
 
           {selected && (

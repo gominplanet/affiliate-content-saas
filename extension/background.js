@@ -686,7 +686,13 @@ function harvestStudioScheduleInPage() {
         if (!res.ok) { out.error = 'http-' + res.status; out.debug.httpBody = (await res.text()).slice(0, 400); break }
         const data = await res.json()
         const items = data.videos || data.items || []
-        if (i === 0) { out.debug.firstPageCount = items.length; out.debug.sampleKeys = items[0] ? Object.keys(items[0]) : [] }
+        if (i === 0) {
+          out.debug.responseKeys = Object.keys(data || {})
+          out.debug.firstPageCount = items.length
+          out.debug.sampleKeys = items[0] ? Object.keys(items[0]) : []
+          // One full item so we can see exactly where the scheduled timestamp lives.
+          out.debug.sampleItem = items[0] ? JSON.stringify(items[0]).slice(0, 1800) : null
+        }
         for (const v of items) {
           const det = v.scheduledPublishingDetails || v.scheduledPublishingDetail || null
           const secs = det && (det.startTimeSeconds || det.timeSeconds || det.publishTimeSeconds || det.startTime)
@@ -702,7 +708,9 @@ function harvestStudioScheduleInPage() {
       out.debug.pages = pages
       out.debug.scheduledFound = scheduled.length
       out.videos = scheduled
-      out.ok = true
+      // Only a clean run (no HTTP/parse error) counts as ok — otherwise a 400/401
+      // would masquerade as "0 scheduled".
+      out.ok = !out.error
       return out
     } catch (e) {
       out.error = (e && e.message) || 'exception'
