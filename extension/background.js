@@ -673,10 +673,29 @@ function harvestStudioScheduleInPage() {
         scheduledPublishingDetails: { all: true },
       }
 
+      // Find a plausible epoch-SECONDS value anywhere in an object (scheduled
+      // timestamp). Keys vary (startTimeSeconds / timeSeconds / …); match any
+      // time-ish key whose value is in the 2001–2128 range, recursing into
+      // nested messages. Excludes ms values (they'd be > 5e9).
+      const findEpochSeconds = (obj, depth) => {
+        if (!obj || typeof obj !== 'object' || depth > 4) return null
+        for (const k in obj) {
+          const val = obj[k]
+          if ((typeof val === 'string' || typeof val === 'number') && /(sec|time|stamp)/i.test(k)) {
+            const n = Number(val)
+            if (n > 1000000000 && n < 5000000000) return n
+          } else if (val && typeof val === 'object') {
+            const nested = findEpochSeconds(val, depth + 1)
+            if (nested) return nested
+          }
+        }
+        return null
+      }
+
       const scheduled = []
       let pageToken
       let pages = 0
-      for (let i = 0; i < 40; i++) {
+      for (let i = 0; i < 60; i++) {
         const body = { context, pageSize: 100, mask }
         if (pageToken) body.pageToken = pageToken
         const res = await fetch(`${origin}/youtubei/v1/creator/list_creator_videos?alt=json&key=${encodeURIComponent(apiKey)}`, {
@@ -697,12 +716,19 @@ function harvestStudioScheduleInPage() {
         }
         for (const v of items) {
           const det = v.scheduledPublishingDetails || v.scheduledPublishingDetail || null
-          const secs = det && (det.startTimeSeconds || det.timeSeconds || det.publishTimeSeconds || det.startTime)
+          const vis = v.visibility ? (v.visibility.effectiveStatus || v.visibility.userSetVisibility || '') : ''
+          const looksScheduled = !!det || (typeof vis === 'string' && vis.indexOf('SCHEDULED') >= 0)
+          if (!looksScheduled) continue
+          // Capture the first real scheduled item so we can see its exact shape
+          // if extraction still comes up empty.
+          if (!out.debug.sampleScheduled) out.debug.sampleScheduled = JSON.stringify(v).slice(0, 1500)
+          let secs = det ? findEpochSeconds(det, 0) : null
+          if (!secs) { const n = Number(v.timePublishedSeconds); if (n > 1000000000 && n < 5000000000) secs = n }
           if (secs) {
             const title = typeof v.title === 'string'
               ? v.title
               : (v.title && (v.title.text || v.title.simpleText || (v.title.runs && v.title.runs.map((r) => r.text).join('')))) || ''
-            scheduled.push({ videoId: v.videoId, title, publishAt: new Date(Number(secs) * 1000).toISOString() })
+            scheduled.push({ videoId: v.videoId, title, publishAt: new Date(secs * 1000).toISOString() })
           }
         }
         pages = i + 1
