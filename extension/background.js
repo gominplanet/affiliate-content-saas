@@ -720,7 +720,12 @@ async function scanStudioSchedule() {
     // Studio is an SPA — ytcfg is in the initial document but give the session
     // a moment to settle so cookies/auth are fully available.
     await _sleep(2500)
-    const results = await chrome.scripting.executeScript({ target: { tabId }, func: harvestStudioScheduleInPage })
+    // MAIN world is REQUIRED: ytcfg (INNERTUBE_API_KEY/CONTEXT) and the
+    // SAPISID cookie live on the PAGE's window, which the default isolated
+    // world can't see — that's the 'no-ytcfg' failure. MAIN runs in the page
+    // context so window.ytcfg, document.cookie + a same-origin youtubei fetch
+    // all work. (Chrome 111+; manifest requires 114.)
+    const results = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: harvestStudioScheduleInPage })
     return (results && results[0] && results[0].result) || { ok: false, error: 'no-result' }
   } catch (e) {
     return { ok: false, error: (e && e.message) || 'scan-failed' }
