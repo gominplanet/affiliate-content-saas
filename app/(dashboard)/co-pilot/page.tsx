@@ -176,7 +176,7 @@ function ContentCalendar({ channelId, refreshNonce }: { channelId: string | null
   // videos the library walk covered, and whether it hit the page cap.
   const [scanned, setScanned] = useState<number | null>(null)
   const [truncated, setTruncated] = useState(false)
-  const [scanInfo, setScanInfo] = useState<{ pagesUsed?: number; stopReason?: string } | null>(null)
+  const [scanInfo, setScanInfo] = useState<{ pagesUsed?: number; stopReason?: string; searchAdded?: number } | null>(null)
   const now = new Date()
   const [viewY, setViewY] = useState(now.getFullYear())
   const [viewM, setViewM] = useState(now.getMonth())
@@ -200,7 +200,7 @@ function ContentCalendar({ channelId, refreshNonce }: { channelId: string | null
           setEvents(Array.isArray(d?.events) ? d.events : [])
           setScanned(typeof d?.scanned === 'number' ? d.scanned : null)
           setTruncated(!!d?.truncated)
-          setScanInfo(typeof d?.pagesUsed === 'number' ? { pagesUsed: d.pagesUsed, stopReason: d.stopReason } : null)
+          setScanInfo(typeof d?.pagesUsed === 'number' ? { pagesUsed: d.pagesUsed, stopReason: d.stopReason, searchAdded: d.searchAdded } : null)
         }
       })
       .catch(() => { if (!cancelled) setErr('Could not load calendar') })
@@ -328,7 +328,7 @@ function ContentCalendar({ channelId, refreshNonce }: { channelId: string | null
           {scanned !== null && (
             <p className="text-[10px] mt-1" style={{ color: truncated ? '#FF9500' : 'var(--text-faint, #a1a1a6)' }}>
               Scanned {scanned.toLocaleString()} videos · found {totalSched.toLocaleString()} scheduled, {totalPub.toLocaleString()} published (all months){truncated ? ' — catalog larger, some older uploads weren’t reached.' : '.'}
-              {scanInfo?.stopReason && <span> [{scanInfo.pagesUsed}p · {scanInfo.stopReason}]</span>}
+              {scanInfo?.stopReason && <span> [{scanInfo.pagesUsed}p · {scanInfo.stopReason}{typeof scanInfo.searchAdded === 'number' ? ` · +${scanInfo.searchAdded} via search` : ''}]</span>}
             </p>
           )}
 

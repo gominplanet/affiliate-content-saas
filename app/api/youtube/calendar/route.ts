@@ -148,6 +148,30 @@ export async function GET(request: Request) {
       if (page === MAX_PAGES - 1) truncated = true
     }
 
+    // ── Second source: search.list (forMine) ─────────────────────────────────
+    // The uploads playlist truncates on large channels (it reports "exhausted"
+    // before the true count), dropping much of the scheduled back-catalog. A
+    // search.list?forMine pass enumerates the user's videos a different way and
+    // catches videos the playlist never served. Merge any NEW ones in. Best
+    // effort — if it throws (quota / no extra coverage) we keep the playlist
+    // results. `searchAdded` is surfaced for diagnosis.
+    let searchAdded = 0
+    try {
+      const viaSearch = await yt.listMyVideosViaSearch(10)
+      for (const v of viaSearch) {
+        if (!v.youtubeVideoId || seen.has(v.youtubeVideoId)) continue
+        seen.add(v.youtubeVideoId)
+        searchAdded++
+        events.push({
+          youtubeVideoId: v.youtubeVideoId,
+          title: v.title,
+          status: v.status,
+          publishAt: v.publishAt ?? null,
+          publishedAt: v.publishedAt,
+        })
+      }
+    } catch { /* keep playlist results if search fails */ }
+
     // ── Cache write ────────────────────────────────────────────────────────────
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -162,7 +186,7 @@ export async function GET(request: Request) {
         }, { onConflict: 'user_id,channel_id' })
     } catch { /* table not migrated yet → skip caching */ }
 
-    return NextResponse.json({ events, truncated, scanned: seen.size, pagesUsed, stopReason, cached: false })
+    return NextResponse.json({ events, truncated, scanned: seen.size, pagesUsed, stopReason, searchAdded, cached: false })
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Calendar fetch failed' },

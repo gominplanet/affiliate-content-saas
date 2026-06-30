@@ -260,6 +260,57 @@ export class YouTubeOAuthService {
     return { videos, nextPageToken: searchData.nextPageToken }
   }
 
+  // Enumerate the authenticated user's videos via search.list?forMine (no query).
+  // This is a SECOND source to the uploads playlist: on large channels the
+  // uploads playlist truncates ("exhausted" well before the true count), so we
+  // supplement with this. search.list pages up to ~500 results total (a hard
+  // YouTube limit), newest-first by date. Each page is 100 quota units + a
+  // videos.list (1 unit) for status/publishAt — callers should cache the result.
+  // Returns deduped DraftVideo[] (status + publishAt included).
+  async listMyVideosViaSearch(maxPages = 10): Promise<DraftVideo[]> {
+    const byId: Record<string, DraftVideo> = {}
+    let pageToken: string | undefined
+    for (let i = 0; i < maxPages; i++) {
+      const params: Record<string, string> = {
+        part: 'snippet',
+        forMine: 'true',
+        type: 'video',
+        order: 'date',
+        maxResults: '50',
+      }
+      if (pageToken) params.pageToken = pageToken
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data = await this.get<any>('/search', params)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const hits = (data.items ?? []) as any[]
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const ids = hits.map((h: any) => h.id?.videoId).filter(Boolean)
+      if (ids.length) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const vd = await this.get<any>('/videos', { part: 'snippet,status', id: ids.join(',') })
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        for (const v of (vd.items ?? []) as any[]) {
+          if (!v?.id || byId[v.id]) continue
+          const asinMatch = (v.snippet?.title ?? '').match(/\b([A-Z0-9]{10})\b/)
+          byId[v.id] = {
+            youtubeVideoId: v.id,
+            title: v.snippet?.title ?? '',
+            description: v.snippet?.description ?? '',
+            thumbnailUrl: v.snippet?.thumbnails?.high?.url ?? v.snippet?.thumbnails?.default?.url ?? '',
+            status: v.status?.privacyStatus ?? 'private',
+            publishedAt: v.snippet?.publishedAt,
+            publishAt: v.status?.publishAt ?? null,
+            detectedAsin: asinMatch ? asinMatch[1] : null,
+            uploadPosition: null,
+          }
+        }
+      }
+      pageToken = data.nextPageToken
+      if (!pageToken) break
+    }
+    return Object.values(byId)
+  }
+
   // Resolve the uploads playlist ID for the authenticated user.
   // Costs 1 quota unit — callers should cache the result.
   async getUploadsPlaylistId(): Promise<string> {
