@@ -2999,44 +2999,18 @@ export default function StudioPage() {
         subtitle="Generate titles, descriptions, tags, hashtags and thumbnails for any video, then push it all back to YouTube in one click."
       />
 
-      {/* Top planning row — three columns: the month calendar (left, fresh from
-          YouTube so direct-on-YouTube schedules show too), the how-it-works
-          explainer (center), and the channel + Refresh controls (right). Only
-          when connected — needsAuth shows the connect banner below instead. */}
+      {/* Top planning row — TWO columns: the month calendar takes 2/3 (left),
+          and the right 1/3 stacks the Refresh control over the how-it-works
+          explainer. Only when connected — needsAuth shows the connect banner
+          below instead. */}
       {!needsAuth && (
-        <div className="grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)_220px] gap-4 items-start mb-5">
-          {/* Left — planning calendar */}
-          <ContentCalendar channelId={selectedChannelId} refreshNonce={calRefreshNonce} />
-
-          {/* Center — how Co-Pilot works */}
-          <div className="card p-4 flex items-start gap-3 border border-[#7C3AED]/20 bg-[#7C3AED]/5">
-            <div className="w-7 h-7 rounded-lg bg-[#7C3AED]/15 flex items-center justify-center flex-shrink-0">
-              <AlertCircle size={14} className="text-[#7C3AED]" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">Works with any video — pick yours and we generate the title, description, tags, hashtags and thumbnail.</p>
-              <ul className="space-y-1.5 text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
-                <li className="flex gap-2">
-                  <span className="text-[#7C3AED] font-semibold flex-shrink-0">Amazon review</span>
-                  <span>We identify the product from your title and what you say in the video, and add your affiliate link automatically.</span>
-                </li>
-                <li className="flex gap-2">
-                  <span className="text-[#7C3AED] font-semibold flex-shrink-0">Other product</span>
-                  <span>Same thing — we still write the review and link out to wherever you sell it.</span>
-                </li>
-                <li className="flex gap-2">
-                  <span className="text-[#7C3AED] font-semibold flex-shrink-0">Not a product</span>
-                  <span>You still get all the metadata around your topic (just no affiliate link).</span>
-                </li>
-              </ul>
-              <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed mt-2">
-                <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Optional:</strong> to guarantee we grab the exact product, drop its 10-character Amazon ASIN into the title or file name — e.g.{' '}
-                <span className="font-mono text-[#1d1d1f] dark:text-[#f5f5f7] bg-white dark:bg-[#1c1c1e] px-1.5 py-0.5 rounded border border-[#d2d2d7] dark:border-[#3a3a3c]">Vacuum - B08TT4YHG1</span>.
-              </p>
-            </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start mb-5">
+          {/* Left 2/3 — planning calendar */}
+          <div className="lg:col-span-2">
+            <ContentCalendar channelId={selectedChannelId} refreshNonce={calRefreshNonce} />
           </div>
 
-          {/* Right — channel picker + Refresh */}
+          {/* Right 1/3 — Refresh + channel picker stacked over the explainer */}
           <div className="flex flex-col gap-3">
             <button
               onClick={refresh}
@@ -3061,6 +3035,33 @@ export default function StudioPage() {
                 </select>
               </div>
             )}
+            {/* How Co-Pilot works */}
+            <div className="card p-4 flex items-start gap-3 border border-[#7C3AED]/20 bg-[#7C3AED]/5">
+              <div className="w-7 h-7 rounded-lg bg-[#7C3AED]/15 flex items-center justify-center flex-shrink-0">
+                <AlertCircle size={14} className="text-[#7C3AED]" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">Works with any video — pick yours and we generate the title, description, tags, hashtags and thumbnail.</p>
+                <ul className="space-y-1.5 text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
+                  <li className="flex gap-2">
+                    <span className="text-[#7C3AED] font-semibold flex-shrink-0">Amazon review</span>
+                    <span>We identify the product from your title and what you say in the video, and add your affiliate link automatically.</span>
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="text-[#7C3AED] font-semibold flex-shrink-0">Other product</span>
+                    <span>Same thing — we still write the review and link out to wherever you sell it.</span>
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="text-[#7C3AED] font-semibold flex-shrink-0">Not a product</span>
+                    <span>You still get all the metadata around your topic (just no affiliate link).</span>
+                  </li>
+                </ul>
+                <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed mt-2">
+                  <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Optional:</strong> to guarantee we grab the exact product, drop its 10-character Amazon ASIN into the title or file name — e.g.{' '}
+                  <span className="font-mono text-[#1d1d1f] dark:text-[#f5f5f7] bg-white dark:bg-[#1c1c1e] px-1.5 py-0.5 rounded border border-[#d2d2d7] dark:border-[#3a3a3c]">Vacuum - B08TT4YHG1</span>.
+                </p>
+              </div>
+            </div>
           </div>
         </div>
       )}
