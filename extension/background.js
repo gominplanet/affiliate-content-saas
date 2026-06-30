@@ -658,24 +658,26 @@ function harvestStudioScheduleInPage() {
       }
       const auth = await authHeader()
 
-      // Mask = the fields we want back. Generous so we can read whichever name
-      // the scheduled timestamp actually lands under.
+      // Mask = the fields we want back. These are scalar/message fields, so the
+      // mask value must be `true` (an object on a scalar field 400s — that was
+      // the first error). `true` on the scheduledPublishingDetails message
+      // returns the whole message (which carries the scheduled timestamp).
       const mask = {
         videoId: true,
-        title: { all: true },
+        title: true,
         status: true,
-        visibility: { all: true },
+        visibility: true,
         timeCreatedSeconds: true,
         timePublishedSeconds: true,
         draftStatus: true,
-        scheduledPublishingDetails: { all: true },
+        scheduledPublishingDetails: true,
       }
 
       const scheduled = []
       let pageToken
       let pages = 0
       for (let i = 0; i < 40; i++) {
-        const body = { context, pageSize: 100, mask, order: 'VIDEO_ORDER_DISPLAY_TIME_DESCENDING' }
+        const body = { context, pageSize: 100, mask }
         if (pageToken) body.pageToken = pageToken
         const res = await fetch(`${origin}/youtubei/v1/creator/list_creator_videos?alt=json&key=${encodeURIComponent(apiKey)}`, {
           method: 'POST',
@@ -697,7 +699,9 @@ function harvestStudioScheduleInPage() {
           const det = v.scheduledPublishingDetails || v.scheduledPublishingDetail || null
           const secs = det && (det.startTimeSeconds || det.timeSeconds || det.publishTimeSeconds || det.startTime)
           if (secs) {
-            const title = (v.title && (v.title.text || v.title.simpleText || (v.title.runs && v.title.runs.map((r) => r.text).join('')))) || ''
+            const title = typeof v.title === 'string'
+              ? v.title
+              : (v.title && (v.title.text || v.title.simpleText || (v.title.runs && v.title.runs.map((r) => r.text).join('')))) || ''
             scheduled.push({ videoId: v.videoId, title, publishAt: new Date(Number(secs) * 1000).toISOString() })
           }
         }
