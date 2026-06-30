@@ -2184,8 +2184,8 @@ function Hero() {
             className="text-[38px] sm:text-[52px] lg:text-[64px] font-semibold tracking-[-0.02em] leading-[1.05] sm:leading-[1.02]"
             style={{ color: 'var(--text)' }}
           >
-            Your reviews, on a<br />
-            blog you actually own.
+            Your reviews, everywhere —<br />
+            not just on YouTube.
           </h1>
           <p
             className="mt-4 text-[20px] font-medium tracking-tight"
