@@ -8,7 +8,7 @@ import PageHero from '@/components/layout/PageHero'
 import { CapReachedBanner } from '@/components/CapReachedBanner'
 import { useConfirm } from '@/components/ui/useConfirm'
 import { pickWeightedStyleIndex, OVERLAY_STYLES, drawHeadline, type HeadlinePosition, type FaceBox } from '@/lib/thumbnail-overlay'
-import { isExtensionAvailable, requestVideoFrames, requestAmazonProduct } from '@/lib/extension-frame'
+import { isExtensionAvailable, requestVideoFrames, requestAmazonProduct, requestStudioSchedule } from '@/lib/extension-frame'
 import { SCOUT_DOWNLOAD_URL } from '@/lib/scout-version'
 import { effectiveTier } from '@/lib/view-as'
 import type { Tier } from '@/lib/tier'
@@ -177,6 +177,9 @@ function ContentCalendar({ channelId, refreshNonce }: { channelId: string | null
   const [scanned, setScanned] = useState<number | null>(null)
   const [truncated, setTruncated] = useState(false)
   const [scanInfo, setScanInfo] = useState<{ pagesUsed?: number; stopReason?: string; searchAdded?: number } | null>(null)
+  // SCOUT Studio scrape result (only set when SCOUT is installed) — the complete
+  // scheduled list that the Data API can't reach on large channels.
+  const [scoutInfo, setScoutInfo] = useState<{ count?: number; error?: string } | null>(null)
   const now = new Date()
   const [viewY, setViewY] = useState(now.getFullYear())
   const [viewM, setViewM] = useState(now.getMonth())
@@ -205,6 +208,27 @@ function ContentCalendar({ channelId, refreshNonce }: { channelId: string | null
       })
       .catch(() => { if (!cancelled) setErr('Could not load calendar') })
       .finally(() => { if (!cancelled) setLoading(false) })
+
+    // ── SCOUT supplement ──────────────────────────────────────────────────
+    // On large channels the Data API misses most scheduled videos (playlist
+    // truncates, search caps). SCOUT can read Studio's own Content list, which
+    // knows them all. Quiet background scrape; merges in when it returns. Only
+    // surfaces a note when SCOUT is actually installed. SCOUT entries are
+    // authoritative for scheduling (overwrite any API event for the same id).
+    requestStudioSchedule().then(s => {
+      if (cancelled) return
+      if (s.error === 'not-installed') return // no SCOUT → stay silent
+      setScoutInfo({ count: s.ok ? s.videos.length : undefined, error: s.ok ? undefined : s.error })
+      if (s.ok && s.videos.length) {
+        setEvents(prev => {
+          const byId = new Map(prev.map(e => [e.youtubeVideoId, e]))
+          for (const v of s.videos) {
+            byId.set(v.videoId, { youtubeVideoId: v.videoId, title: v.title, status: 'private', publishAt: v.publishAt, publishedAt: '' })
+          }
+          return Array.from(byId.values())
+        })
+      }
+    }).catch(() => { /* best effort */ })
     return () => { cancelled = true }
   }, [channelId, refreshNonce])
 
@@ -329,6 +353,13 @@ function ContentCalendar({ channelId, refreshNonce }: { channelId: string | null
             <p className="text-[10px] mt-1" style={{ color: truncated ? '#FF9500' : 'var(--text-faint, #a1a1a6)' }}>
               Scanned {scanned.toLocaleString()} videos · found {totalSched.toLocaleString()} scheduled, {totalPub.toLocaleString()} published (all months){truncated ? ' — catalog larger, some older uploads weren’t reached.' : '.'}
               {scanInfo?.stopReason && <span> [{scanInfo.pagesUsed}p · {scanInfo.stopReason}{typeof scanInfo.searchAdded === 'number' ? ` · +${scanInfo.searchAdded} via search` : ''}]</span>}
+            </p>
+          )}
+          {scoutInfo && (
+            <p className="text-[10px] mt-0.5" style={{ color: scoutInfo.error ? '#FF9500' : '#7C3AED' }}>
+              {scoutInfo.error
+                ? `SCOUT Studio read failed: ${scoutInfo.error}`
+                : `SCOUT read ${(scoutInfo.count ?? 0).toLocaleString()} scheduled from Studio (complete).`}
             </p>
           )}
 

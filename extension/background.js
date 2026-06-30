@@ -617,9 +617,129 @@ async function scanAmazonVideos(callerTabId) {
   }
 }
 
+// ── Studio schedule scrape (MVP_STUDIO_SCHEDULE) ────────────────────────────
+// The YouTube Data API can't enumerate a large channel's full library (the
+// uploads playlist truncates ~2,575 and search caps ~500), so it misses most
+// SCHEDULED videos on big channels. Studio itself knows them all — its Content
+// page calls an internal endpoint, /youtubei/v1/creator/list_creator_videos,
+// which returns every video with its scheduled-publish time. SCOUT opens a
+// background studio.youtube.com tab and calls that same endpoint from the
+// page (so the user's session cookies + ytcfg auth apply), paginating until
+// done, and returns just the scheduled ones: [{ videoId, title, publishAt }].
+//
+// This is an UNOFFICIAL endpoint — the request/response shape can change, so
+// the harvester returns a `debug` blob (config presence, HTTP status, sample
+// keys) to make the inevitable shape-tuning fast.
+const STUDIO_URL = 'https://studio.youtube.com/'
+
+function harvestStudioScheduleInPage() {
+  return (async () => {
+    const out = { ok: false, videos: [], debug: {} }
+    try {
+      const cfg = (window.ytcfg && (window.ytcfg.data_ || {})) || {}
+      const get = (k) => { try { return window.ytcfg && window.ytcfg.get ? window.ytcfg.get(k) : cfg[k] } catch (e) { return cfg[k] } }
+      const apiKey = get('INNERTUBE_API_KEY')
+      const context = get('INNERTUBE_CONTEXT')
+      const channelId = get('CHANNEL_ID') || (context && context.user && context.user.delegationContext && context.user.delegationContext.externalChannelId) || null
+      out.debug.hasApiKey = !!apiKey
+      out.debug.hasContext = !!context
+      out.debug.channelId = channelId
+      if (!apiKey || !context) { out.error = 'no-ytcfg'; return out }
+
+      const origin = 'https://studio.youtube.com'
+      const cookie = (name) => { const m = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]+)')); return m ? m[1] : '' }
+      const sapisid = cookie('SAPISID') || cookie('__Secure-3PAPISID') || cookie('__Secure-1PAPISID')
+      out.debug.hasSapisid = !!sapisid
+      const authHeader = async () => {
+        const ts = Math.floor(Date.now() / 1000)
+        const buf = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(`${ts} ${sapisid} ${origin}`))
+        const hex = Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('')
+        return `SAPISIDHASH ${ts}_${hex}`
+      }
+      const auth = await authHeader()
+
+      // Mask = the fields we want back. Generous so we can read whichever name
+      // the scheduled timestamp actually lands under.
+      const mask = {
+        videoId: true,
+        title: { all: true },
+        status: true,
+        visibility: { all: true },
+        timeCreatedSeconds: true,
+        timePublishedSeconds: true,
+        draftStatus: true,
+        scheduledPublishingDetails: { all: true },
+      }
+
+      const scheduled = []
+      let pageToken
+      let pages = 0
+      for (let i = 0; i < 40; i++) {
+        const body = { context, pageSize: 100, mask, order: 'VIDEO_ORDER_DISPLAY_TIME_DESCENDING' }
+        if (pageToken) body.pageToken = pageToken
+        const res = await fetch(`${origin}/youtubei/v1/creator/list_creator_videos?alt=json&key=${encodeURIComponent(apiKey)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': auth, 'X-Origin': origin },
+          credentials: 'include',
+          body: JSON.stringify(body),
+        })
+        if (!res.ok) { out.error = 'http-' + res.status; out.debug.httpBody = (await res.text()).slice(0, 400); break }
+        const data = await res.json()
+        const items = data.videos || data.items || []
+        if (i === 0) { out.debug.firstPageCount = items.length; out.debug.sampleKeys = items[0] ? Object.keys(items[0]) : [] }
+        for (const v of items) {
+          const det = v.scheduledPublishingDetails || v.scheduledPublishingDetail || null
+          const secs = det && (det.startTimeSeconds || det.timeSeconds || det.publishTimeSeconds || det.startTime)
+          if (secs) {
+            const title = (v.title && (v.title.text || v.title.simpleText || (v.title.runs && v.title.runs.map((r) => r.text).join('')))) || ''
+            scheduled.push({ videoId: v.videoId, title, publishAt: new Date(Number(secs) * 1000).toISOString() })
+          }
+        }
+        pages = i + 1
+        pageToken = data.nextPageToken
+        if (!pageToken) break
+      }
+      out.debug.pages = pages
+      out.debug.scheduledFound = scheduled.length
+      out.videos = scheduled
+      out.ok = true
+      return out
+    } catch (e) {
+      out.error = (e && e.message) || 'exception'
+      return out
+    }
+  })()
+}
+
+async function scanStudioSchedule() {
+  let tabId = null
+  try {
+    const tab = await chrome.tabs.create({ url: STUDIO_URL, active: false })
+    tabId = tab.id
+    await waitForTabLoad(tabId, 30000)
+    // Studio is an SPA — ytcfg is in the initial document but give the session
+    // a moment to settle so cookies/auth are fully available.
+    await _sleep(2500)
+    const results = await chrome.scripting.executeScript({ target: { tabId }, func: harvestStudioScheduleInPage })
+    return (results && results[0] && results[0].result) || { ok: false, error: 'no-result' }
+  } catch (e) {
+    return { ok: false, error: (e && e.message) || 'scan-failed' }
+  } finally {
+    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+  }
+}
+
 // ── Messages from the MVP dashboard (externally_connectable) ────────────────
 chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   if (!msg || typeof msg.type !== 'string') return
+  if (msg.type === 'MVP_STUDIO_SCHEDULE') {
+    // Scraping Studio + paginating the internal API can take a bit; allow 2 min.
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 120000)
+    scanStudioSchedule()
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true // async response — keep the channel open
+  }
   if (msg.type === 'MVP_PING') {
     sendResponse({ ok: true, version: chrome.runtime.getManifest().version })
     return // sync response

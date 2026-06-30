@@ -267,3 +267,38 @@ export async function scoutCreatorConnections(): Promise<ScoutResult> {
   const e = (resp.error || 'scan-failed') as ScoutError
   return { ok: false, error: e }
 }
+
+/** One scheduled video as SCOUT read it from YouTube Studio's Content list. */
+export interface StudioScheduledVideo {
+  videoId: string
+  title: string
+  publishAt: string // ISO
+}
+
+export interface StudioScheduleResult {
+  ok: boolean
+  videos: StudioScheduledVideo[]
+  error?: string
+  // Diagnostics from the Studio scrape (ytcfg presence, HTTP status, counts) —
+  // surfaced so we can tune the unofficial-endpoint shape without guessing.
+  debug?: Record<string, unknown>
+}
+
+/**
+ * Ask SCOUT to read the user's YouTube Studio Content list and return EVERY
+ * scheduled video with its publish date. This is the only complete source on
+ * large channels — the public Data API truncates the uploads playlist (~2,575)
+ * and caps search (~500), missing most scheduled videos. SCOUT opens a
+ * background Studio tab and calls Studio's own internal list endpoint with the
+ * user's session. Best-effort: resolves, never throws.
+ */
+export async function requestStudioSchedule(): Promise<StudioScheduleResult> {
+  if (!(await isExtensionAvailable())) return { ok: false, videos: [], error: 'not-installed' }
+  const resp = await sendToExtension<{ ok?: boolean; videos?: StudioScheduledVideo[]; error?: string; debug?: Record<string, unknown> }>(
+    { type: 'MVP_STUDIO_SCHEDULE' },
+    120000, // opening Studio + paginating the internal API can take a while
+  )
+  if (!resp) return { ok: false, videos: [], error: 'timeout' }
+  if (resp.ok && Array.isArray(resp.videos)) return { ok: true, videos: resp.videos, debug: resp.debug }
+  return { ok: false, videos: [], error: resp.error || 'scan-failed', debug: resp.debug }
+}
