@@ -191,12 +191,11 @@ export default function LandingPreview() {
 
 /** Intro video section — large centered video frame with a clickable
  *  play overlay. Click opens a fullscreen modal lightbox that plays the
- *  real 90-second founder introduction MP4 from /public/demo/mvp-90s.mp4
- *  (self-hosted, not YouTube — see commit history for the "why self-host"
- *  call). NOTE: section id stays "demo" and the directory stays /demo/
- *  to keep all the #demo anchor links + asset URLs stable; the user-
- *  facing copy is what we updated to "introduction" since this is a
- *  founder intro, not a product walkthrough.
+ *  founder's YouTube intro (id YT_DEMO_ID) via an embedded iframe. The
+ *  poster shows the real YouTube thumbnail; the embed only mounts on click
+ *  (no third-party iframe/cookies on scroll-by). Swapped from a self-hosted
+ *  /demo/mvp-90s.mp4 to YouTube 2026-06-30. NOTE: section id stays "demo"
+ *  to keep all #demo anchor links stable.
  *
  *  The play button has a gentle breathing pulse so it reads as "alive
  *  and clickable" from any distance on the page.
@@ -206,6 +205,10 @@ export default function LandingPreview() {
  *  open so the page doesn't jitter when the lightbox renders. */
 function DemoVideoSection() {
   const [open, setOpen] = useState(false)
+  // Sales-page intro = the founder's YouTube upload. Click-to-play: the poster
+  // shows the real YouTube thumbnail and the embed only mounts on click, so no
+  // third-party iframe/cookies load on scroll-by traffic.
+  const YT_DEMO_ID = 'E5EEfQcZQts'
 
   // ESC-to-close + body scroll lock. Both live in the same effect so
   // they enable + tear down together — a half-applied state (scroll
@@ -249,7 +252,7 @@ function DemoVideoSection() {
         <div
           role="button"
           tabIndex={0}
-          aria-label="Play 90-second introduction"
+          aria-label="Play the introduction video"
           className="relative rounded-2xl overflow-hidden cursor-pointer group transition-transform duration-200 hover:scale-[1.005] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7C3AED] focus-visible:ring-offset-2"
           style={{
             boxShadow: '0 24px 80px -16px rgba(124,58,237,0.35), 0 8px 24px rgba(0,0,0,0.15), 0 0 0 1px var(--border)',
@@ -295,7 +298,7 @@ function DemoVideoSection() {
                 icon, no layout shift. */}
             <div
               className="absolute inset-0 bg-cover bg-center"
-              style={{ backgroundImage: 'url(/demo/poster.jpg)' }}
+              style={{ backgroundImage: `url(https://i.ytimg.com/vi/${YT_DEMO_ID}/maxresdefault.jpg)` }}
               aria-hidden
             />
 
@@ -331,13 +334,13 @@ function DemoVideoSection() {
               </div>
             </div>
 
-            {/* Bottom-right: mock timestamp pill — adds credibility ("this
-                is a 1:30 video, not a sales pitch") at a glance. */}
+            {/* Bottom-right: source pill — signals "this is a video", no fake
+                duration (the YouTube upload length isn't hardcoded here). */}
             <div
-              className="absolute bottom-4 right-4 px-2 py-1 rounded text-[11px] font-medium tabular-nums text-white/85 backdrop-blur-sm"
+              className="absolute bottom-4 right-4 px-2 py-1 rounded text-[11px] font-medium text-white/85 backdrop-blur-sm"
               style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}
             >
-              0:00 · 1:30
+              Watch
             </div>
 
             {/* Bottom progress bar — empty for now, decorative. Implies
@@ -354,7 +357,7 @@ function DemoVideoSection() {
           className="text-center mt-6 text-[14px] max-w-xl mx-auto leading-relaxed"
           style={{ color: 'var(--text-subtle)' }}
         >
-          90 seconds. The story behind MVP, what it does, and what you get free when you start.
+          The story behind MVP — what it does, and what you get free when you start.
         </p>
       </div>
 
@@ -397,18 +400,16 @@ function DemoVideoSection() {
             >
               <XIcon size={20} strokeWidth={2.5} />
             </button>
-            <video
-              src="/demo/mvp-90s.mp4"
-              poster="/demo/poster.jpg"
-              controls
-              autoPlay
-              playsInline
-              preload="metadata"
-              className="w-full rounded-2xl shadow-2xl"
-              style={{ maxHeight: '85vh' }}
-            >
-              Your browser does not support the video tag. <a href="/demo/mvp-90s.mp4">Download the introduction</a> instead.
-            </video>
+            <div className="relative w-full aspect-video rounded-2xl overflow-hidden shadow-2xl bg-black">
+              <iframe
+                src={`https://www.youtube.com/embed/${YT_DEMO_ID}?autoplay=1&rel=0&modestbranding=1&playsinline=1`}
+                title="MVP Affiliate — introduction"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowFullScreen
+                className="absolute inset-0 w-full h-full"
+                style={{ border: 0 }}
+              />
+            </div>
           </div>
         </div>
       )}
@@ -2027,7 +2028,7 @@ function FinalCTASection() {
             }}
           >
             <Play size={14} />
-            Watch the 90-second intro
+            Watch the intro
           </a>
         </div>
 
@@ -2220,7 +2221,7 @@ function Hero() {
                 }}
               >
                 <Play size={13} fill="currentColor" />
-                Watch the 90-second intro
+                Watch the intro
               </a>
               {/* Tertiary CTA — the full public product tour (/tour). Kept as a
                   plain link so it doesn't compete with the two buttons above. */}
