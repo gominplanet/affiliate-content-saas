@@ -18,6 +18,16 @@
  * by ASIN — a single snapshot only holds the visible rows.
  */
 
+// Run-once guard. This file is auto-injected by the manifest AND re-injected by
+// background.js's scan-retry (executeScript files:['content.js']), so it can
+// load twice in the same page. The IIFE gives the top-level `const`s below
+// function scope — otherwise the 2nd load redeclares them and throws
+// "Identifier 'ASIN_RE' has already been declared". The flag makes the 2nd
+// injection a clean no-op (and avoids a duplicate message listener).
+;(function () {
+  if (window.__mvpCcScoutLoaded) return
+  window.__mvpCcScoutLoaded = true
+
 const ASIN_RE = /^B0[A-Z0-9]{8}$/
 const PRICE_RE = /\$\s?\d[\d.,]*/
 const RATING_RE = /^\d(?:\.\d)?\s*(?:out of|★|stars)/i
@@ -297,3 +307,4 @@ if (!window.__ccScoutListener) {
     }
   })
 }
+})()
