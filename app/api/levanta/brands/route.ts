@@ -27,8 +27,8 @@ export async function GET(request: NextRequest) {
     const { data: intRow } = await supabase
       .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
     const tier = (intRow?.tier as Tier) ?? 'trial'
-    if (tier !== 'pro' && tier !== 'admin') {
-      return NextResponse.json({ ok: false, error: 'MVP x Levanta is a Pro feature.' }, { status: 403 })
+    if (tier === 'trial') {
+      return NextResponse.json({ ok: false, error: 'MVP x Levanta requires a paid plan.' }, { status: 403 })
     }
 
     // Per-user key (External Integrations) with shared env fallback.

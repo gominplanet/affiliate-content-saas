@@ -79,20 +79,22 @@ export async function middleware(request: NextRequest) {
   }
 
   // ── Labs early-access gate ──────────────────────────────────────────────
-  // EPC Scout (/epc, /api/campaigns/*) and PartnerBoost (/walmart-pb,
-  // /api/walmart/*) are limited to invited users via a single shared password
-  // (env LABS_PASSWORD), on TOP of their tier gates. When the password is set, a
-  // LABS request needs the labs_unlocked cookie — pages redirect to /labs-unlock,
-  // APIs return 401 JSON. Service self-calls (the EPC worker) were already
-  // bypassed at the top; public ingest endpoints are exempt via isPublic. With
-  // LABS_PASSWORD UNSET this is a no-op, so the feature works as before until the
-  // password is configured in Vercel.
+  // EPC Scout (/epc, /api/campaigns/*) and LTK (/ltk, /api/ltk/*) are limited to
+  // invited users via a single shared password (env LABS_PASSWORD), on TOP of
+  // their tier gates. When the password is set, a LABS request needs the
+  // labs_unlocked cookie — pages redirect to /labs-unlock, APIs return 401 JSON.
+  // Service self-calls (the EPC worker) were already bypassed at the top; public
+  // ingest endpoints are exempt via isPublic. With LABS_PASSWORD UNSET this is a
+  // no-op. NOTE: Levanta + PartnerBoost (+ /external-integrations, /api/walmart,
+  // /api/levanta, /api/integrations/external) GRADUATED OUT of this gate on
+  // 2026-06-30 — they're now open to all paid tiers (gated only at the API by
+  // tier !== 'trial'), so they must NOT require the Labs password.
   if (session && !isPublic(pathname)) {
     const isLabsPage =
-      pathname === '/epc' || pathname === '/walmart-pb' || pathname === '/levanta' || pathname === '/ltk' || pathname === '/external-integrations' ||
-      pathname.startsWith('/epc/') || pathname.startsWith('/walmart-pb/') || pathname.startsWith('/levanta/') || pathname.startsWith('/ltk/') || pathname.startsWith('/external-integrations/')
+      pathname === '/epc' || pathname === '/ltk' ||
+      pathname.startsWith('/epc/') || pathname.startsWith('/ltk/')
     const isLabsApi =
-      pathname.startsWith('/api/campaigns') || pathname.startsWith('/api/walmart') || pathname.startsWith('/api/levanta') || pathname.startsWith('/api/ltk') || pathname.startsWith('/api/integrations/external')
+      pathname.startsWith('/api/campaigns') || pathname.startsWith('/api/ltk')
     if (isLabsPage || isLabsApi) {
       const expected = await expectedLabsToken()
       if (expected && request.cookies.get(LABS_COOKIE)?.value !== expected) {

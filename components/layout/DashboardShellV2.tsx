@@ -238,10 +238,13 @@ export default function DashboardShellV2({
   }, [collapsed])
 
   const isAdmin = tier === 'admin'
-  // Labs (EPC Scout) is Pro-only by request (2026-06-15). Admins always retain
-  // access. Mirrors tierAllowsCampaigns() in lib/tier.ts — pro || admin — which
-  // already gates the campaign APIs, so a Pro user who sees the link can use it.
+  // Labs (EPC Scout, LTK) is Pro-only by request (2026-06-15). Admins always
+  // retain access. Mirrors tierAllowsCampaigns() in lib/tier.ts — pro || admin.
   const canUseLabs = tier === 'pro' || isAdmin
+  // Paid = any non-trial plan (Creator, Studio, Pro, admin). Gates the partner
+  // integrations (MVP x Levanta / MVP x PartnerBoost) that graduated out of Labs
+  // to all paid tiers 2026-06-30 — their APIs now block only Trial.
+  const isPaid = tier !== 'trial'
 
   // Admin-only: count of OPEN support tickets (not yet answered/closed). Drives
   // the red "Support" alert in the topbar so the founder catches new tickets
@@ -385,6 +388,11 @@ export default function DashboardShellV2({
     {
       label: 'Collaborate',
       items: [
+        // Partner affiliate networks — graduated out of Labs to all paid tiers
+        // (2026-06-30). Each page has an inline "connect your API key" panel at
+        // the top. Above Brand Deals per request.
+        { href: '/levanta', icon: <ShoppingBag size={15} />, label: 'MVP x Levanta', gate: isPaid },
+        { href: '/walmart-pb', icon: <Store size={15} />, label: 'MVP x PartnerBoost', gate: isPaid },
         { href: '/collaborations', icon: <Handshake size={15} />, label: 'Brand Deals' },
         { href: '/agency', icon: <Users size={15} />, label: 'Virtual Assistant' },
       ],
@@ -419,14 +427,11 @@ export default function DashboardShellV2({
       label: 'Labs',
       items: [
         { href: '/epc', icon: <Radar size={15} />, label: 'MVP x EPC', gate: canUseLabs },
-        // Labs co-brand naming: "MVP x <partner>". Routes/services keep historical
-        // names (walmart-pb, levanta). Open to Pro (canUseLabs) once the user
-        // connects their own key in External Integrations; all behind the
-        // LABS_PASSWORD gate (middleware).
-        { href: '/walmart-pb', icon: <Store size={15} />, label: 'MVP x PartnerBoost', gate: canUseLabs },
-        { href: '/levanta', icon: <ShoppingBag size={15} />, label: 'MVP x Levanta', gate: canUseLabs },
+        // MVP x PartnerBoost + MVP x Levanta graduated out of Labs into
+        // Collaborate (all paid tiers) on 2026-06-30; their API-key connect moved
+        // inline onto each page (External Integrations page retired from nav).
+        // EPC + LTK stay here — still Pro-only + behind the LABS_PASSWORD gate.
         { href: '/ltk', icon: <Sparkles size={15} />, label: 'MVP x LTK', gate: canUseLabs },
-        { href: '/external-integrations', icon: <Plug size={15} />, label: 'External Integrations', gate: canUseLabs },
       ],
     },
     {

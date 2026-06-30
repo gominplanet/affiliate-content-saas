@@ -10,8 +10,9 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import PageHero from '@/components/layout/PageHero'
+import ExternalKeyConnect from '@/components/integrations/ExternalKeyConnect'
 import {
-  FlaskConical, ShoppingBag, RefreshCw, Loader2, ExternalLink,
+  ShoppingBag, RefreshCw, Loader2, ExternalLink,
   CheckCircle2, Clock, Lock, Sparkles,
 } from 'lucide-react'
 
@@ -111,7 +112,7 @@ export default function LevantaPage() {
       <div className="mb-3">
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold"
           style={{ background: 'rgba(34,211,238,0.14)', color: CYAN }}>
-          <FlaskConical size={11} /> MVP Labs · Pro
+          <ShoppingBag size={11} /> Affiliate network
         </span>
       </div>
 
@@ -120,6 +121,10 @@ export default function LevantaPage() {
         subtitle="Browse your Levanta brands and turn any Amazon product into a published review — with a real commissionable Levanta tracking link, written in your voice."
         accent="rgba(34,211,238,0.32)"
       />
+
+      {/* Connect your Levanta API key — inline panel, collapses once saved.
+          Refreshes the brand list on connect/disconnect. */}
+      <ExternalKeyConnect provider="levanta" onConnected={load} />
 
       {/* How to set up & use — full Levanta onboarding (collapsible, open by default). */}
       <details open className="rounded-xl border mb-5"
@@ -145,8 +150,8 @@ export default function LevantaPage() {
             </li>
             <li>
               <span className="font-medium" style={{ color: 'var(--text)' }}>Connect it to MVP.</span> Paste your Levanta
-              Creator API key on the <a href="/external-integrations" className="font-medium" style={{ color: CYAN }}>External Integrations</a>{' '}
-              page. It&rsquo;s stored encrypted, server-side — and unlocks MVP x Levanta for your account.
+              Creator API key in the <span className="font-medium" style={{ color: CYAN }}>Connect Levanta</span> panel at the
+              top of this page. It&rsquo;s stored encrypted, server-side.
             </li>
           </ol>
           <p className="font-semibold mb-1 mt-4" style={{ color: CYAN }}>Then, each time you want a post</p>
@@ -178,7 +183,7 @@ export default function LevantaPage() {
         <div className="rounded-xl border p-4 mb-4 flex items-start gap-3"
           style={{ background: 'rgba(239,68,68,0.08)', borderColor: 'rgba(239,68,68,0.35)' }}>
           <Lock size={16} className="flex-shrink-0 mt-0.5" style={{ color: '#ef4444' }} />
-          <p className="text-[13px]" style={{ color: 'var(--text)' }}>MVP x Levanta is a Pro feature.</p>
+          <p className="text-[13px]" style={{ color: 'var(--text)' }}>MVP x Levanta is available on any paid plan.</p>
         </div>
       )}
 
@@ -188,7 +193,7 @@ export default function LevantaPage() {
           <Lock size={16} className="flex-shrink-0 mt-0.5" style={{ color: '#f59e0b' }} />
           <div className="text-[13px]" style={{ color: 'var(--text)' }}>
             <p className="font-semibold mb-1">Levanta not connected</p>
-            Add your Levanta API key on the <a href="/external-integrations" className="font-medium underline" style={{ color: CYAN }}>External Integrations</a> page, then come back and refresh.
+            Add your Levanta API key in the <strong>Connect Levanta</strong> panel at the top of this page, then Refresh.
           </div>
         </div>
       )}

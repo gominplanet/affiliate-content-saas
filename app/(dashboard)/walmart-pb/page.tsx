@@ -14,7 +14,8 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import PageHero from '@/components/layout/PageHero'
-import { Loader2, RefreshCw, ExternalLink, Copy, FlaskConical, Lock, Store, CheckCircle2, Clock, ChevronDown, Wand2, Package } from 'lucide-react'
+import ExternalKeyConnect from '@/components/integrations/ExternalKeyConnect'
+import { Loader2, RefreshCw, ExternalLink, Copy, Lock, Store, CheckCircle2, Clock, ChevronDown, Wand2, Package } from 'lucide-react'
 import { toast } from 'sonner'
 
 const PB_DASHBOARD = 'https://app.partnerboost.com/'
@@ -163,11 +164,11 @@ export default function WalmartPBPage() {
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-      {/* Labs identity pill */}
+      {/* Affiliate-network identity pill */}
       <div className="mb-2">
         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide"
           style={{ background: 'rgba(34,211,238,0.14)', color: '#0E7490' }}>
-          <FlaskConical size={11} /> MVP Labs · Pro
+          <Store size={11} /> Affiliate network
         </span>
       </div>
 
@@ -176,6 +177,10 @@ export default function WalmartPBPage() {
         subtitle="Your live brands across every network you've joined — commission, your join status, and the deep-link base for each. Pick a network, browse a Joined brand's products, and turn any one into a post with a cloaked affiliate link."
         accent="rgba(34,211,238,0.32)"
       />
+
+      {/* Connect your PartnerBoost API token — inline panel, collapses once saved.
+          Refreshes the brand list on connect/disconnect. */}
+      <ExternalKeyConnect provider="partnerboost" onConnected={load} />
 
       {/* How to set up & use — full PartnerBoost onboarding. Collapsible (open
           by default) so first-timers get the whole flow, regulars can fold it. */}
@@ -205,8 +210,8 @@ export default function WalmartPBPage() {
             <li>
               <span className="font-medium" style={{ color: 'var(--text)' }}>Connect it to MVP.</span> In PartnerBoost go to{' '}
               <span className="font-medium">Tools → API</span>, copy your <span className="font-medium">All-Channels API token</span>,
-              and paste it on the <a href="/external-integrations" className="font-medium" style={{ color: '#0E7490' }}>External Integrations</a>{' '}
-              page. It&rsquo;s stored encrypted, server-side — and unlocks MVP x PartnerBoost for your account.
+              and paste it in the <span className="font-medium" style={{ color: '#0E7490' }}>Connect PartnerBoost</span> panel at the
+              top of this page. It&rsquo;s stored encrypted, server-side.
             </li>
           </ol>
 
@@ -246,7 +251,7 @@ export default function WalmartPBPage() {
           style={{ background: 'rgba(239,68,68,0.08)', borderColor: 'rgba(239,68,68,0.35)' }}>
           <Lock size={16} className="flex-shrink-0 mt-0.5" style={{ color: '#ef4444' }} />
           <p className="text-[13px]" style={{ color: 'var(--text)' }}>
-            MVP x PartnerBoost is a Pro feature.
+            MVP x PartnerBoost is available on any paid plan.
           </p>
         </div>
       )}
@@ -257,7 +262,7 @@ export default function WalmartPBPage() {
           <Lock size={16} className="flex-shrink-0 mt-0.5" style={{ color: '#f59e0b' }} />
           <div className="text-[13px]" style={{ color: 'var(--text)' }}>
             <p className="font-semibold mb-1">PartnerBoost not connected</p>
-            Add your PartnerBoost API token on the <a href="/external-integrations" className="font-medium underline" style={{ color: '#0E7490' }}>External Integrations</a> page, then come back and refresh.
+            Add your PartnerBoost API token in the <strong>Connect PartnerBoost</strong> panel at the top of this page, then Refresh.
           </div>
         </div>
       )}

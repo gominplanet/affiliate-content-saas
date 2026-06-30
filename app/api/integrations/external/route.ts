@@ -24,8 +24,8 @@ async function gate() {
   if (!user) return { error: NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 }) }
   const { data: intRow } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
   const tier = normalizeTier(intRow?.tier)
-  if (tier !== 'pro' && tier !== 'admin') {
-    return { error: NextResponse.json({ ok: false, error: 'External integrations are a Pro feature.' }, { status: 403 }) }
+  if (tier === 'trial') {
+    return { error: NextResponse.json({ ok: false, error: 'External integrations require a paid plan.' }, { status: 403 }) }
   }
   return { supabase, userId: user.id }
 }
