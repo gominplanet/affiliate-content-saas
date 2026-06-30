@@ -694,8 +694,11 @@ function harvestStudioScheduleInPage() {
 
       const scheduled = []
       const seenIds = {}
+      const allSeen = {}
       let itemsSeen = 0
+      let uniqueCount = 0
       let looksCount = 0
+      let dryStreak = 0
       let pageToken
       let pages = 0
       for (let i = 0; i < 60; i++) {
@@ -715,7 +718,11 @@ function harvestStudioScheduleInPage() {
           out.debug.firstPageCount = items.length
         }
         itemsSeen += items.length
+        let newThisPage = 0
         for (const v of items) {
+          // Dedup ALL videos by id — if Studio re-serves duplicates across pages
+          // (the uploads-playlist cycling pattern), process each video once.
+          if (v.videoId) { if (allSeen[v.videoId]) continue; allSeen[v.videoId] = 1; uniqueCount++; newThisPage++ }
           const det = v.scheduledPublishingDetails || v.scheduledPublishingDetail || null
           const vis = v.visibility ? (v.visibility.effectiveStatus || v.visibility.userSetVisibility || '') : ''
           const looksScheduled = !!det || (typeof vis === 'string' && vis.indexOf('SCHEDULED') >= 0)
@@ -735,11 +742,15 @@ function harvestStudioScheduleInPage() {
           }
         }
         pages = i + 1
+        // Stall guard: if pages stop adding any NEW unique video, Studio is
+        // re-serving the same set (cycling) — bail so we don't spin.
+        if (items.length > 0 && newThisPage === 0) { if (++dryStreak >= 3) { out.debug.stalled = true; break } } else { dryStreak = 0 }
         pageToken = data.nextPageToken
         if (!pageToken) break
       }
       out.debug.pages = pages
       out.debug.itemsSeen = itemsSeen
+      out.debug.uniqueVideos = uniqueCount
       out.debug.looksScheduled = looksCount
       out.debug.scheduledFound = scheduled.length
       out.videos = scheduled
