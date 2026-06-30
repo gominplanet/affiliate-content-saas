@@ -21,6 +21,12 @@ export const SCOUT_WHATS_NEW =
  *  "Get / Update SCOUT" button so there's ONE source of the URL. */
 export const SCOUT_DOWNLOAD_URL = '/mvp-cc-scout.zip'
 
+/** The Chrome Web Store UPLOAD build (`key` stripped, ≤132-char description) —
+ *  the zip you drop into the CWS Developer Dashboard. Distinct from
+ *  SCOUT_DOWNLOAD_URL, which is the load-unpacked build that keeps the `key`
+ *  for existing installs. See extension/CHROME-WEB-STORE.md. */
+export const SCOUT_STORE_UPLOAD_URL = '/mvp-cc-scout-store.zip'
+
 /** True when the installed version is older than SCOUT_LATEST_VERSION.
  *  Returns false for a missing/unknown version (that's "not installed",
  *  handled by the install instructions, not the update banner). */
