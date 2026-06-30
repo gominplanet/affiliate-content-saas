@@ -15,6 +15,22 @@
 
 export const SCOUT_EXTENSION_ID = process.env.NEXT_PUBLIC_SCOUT_EXTENSION_ID || ''
 
+/** The published Chrome Web Store extension ID (assigned by Google). SCOUT is
+ *  migrating from load-unpacked (the per-env NEXT_PUBLIC_SCOUT_EXTENSION_ID,
+ *  which is the baked-key id `inpklaogoifhgaimbnlgmijnnjkopnlc`) to the Web
+ *  Store, which mints its OWN id. We message BOTH so there's no flag-day: the
+ *  unpacked id keeps existing installs working, and this store id starts
+ *  working the moment Google approves — no env change required. Once everyone's
+ *  on the store build, the env id can be dropped. See extension/CHROME-WEB-STORE.md. */
+export const SCOUT_STORE_EXTENSION_ID = 'blpmlneliggaekangckpgknphpacapkg'
+
+/** Every id MVP will try, in order: env (unpacked) first so current users are
+ *  unaffected, then the Web Store build. Deduped, no empties — so SCOUT is
+ *  reachable from the store build even if NEXT_PUBLIC_SCOUT_EXTENSION_ID is unset. */
+const SCOUT_EXTENSION_IDS = Array.from(
+  new Set([SCOUT_EXTENSION_ID, SCOUT_STORE_EXTENSION_ID].filter(Boolean)),
+)
+
 // chrome.runtime is injected into mvpaffiliate.io pages only when the
 // extension declares us in externally_connectable. Narrow, any-cast access.
 function chromeRuntime(): { sendMessage?: (id: string, msg: unknown, cb: (resp: unknown) => void) => void } | null {
@@ -24,26 +40,44 @@ function chromeRuntime(): { sendMessage?: (id: string, msg: unknown, cb: (resp: 
   return c && c.runtime ? c.runtime : null
 }
 
-function sendToExtension<T>(message: unknown, timeoutMs: number): Promise<T | null> {
+// Send to ONE extension id. `reached` is false when that id isn't installed /
+// not connectable (chrome sets lastError almost immediately), so the caller can
+// fall through to the next id; `reached` true means it answered (value may
+// still be null). Reading lastError also "checks" it, suppressing Chrome's
+// noisy "Unchecked runtime.lastError" console warning for the not-installed id.
+function sendToOneId<T>(id: string, message: unknown, timeoutMs: number): Promise<{ reached: boolean; value: T | null }> {
   return new Promise((resolve) => {
     const rt = chromeRuntime()
-    if (!rt?.sendMessage || !SCOUT_EXTENSION_ID) { resolve(null); return }
+    if (!rt?.sendMessage) { resolve({ reached: false, value: null }); return }
     let settled = false
-    const done = (v: T | null) => { if (!settled) { settled = true; resolve(v) } }
-    const timer = setTimeout(() => done(null), timeoutMs)
+    const done = (reached: boolean, value: T | null) => { if (!settled) { settled = true; resolve({ reached, value }) } }
+    const timer = setTimeout(() => done(false, null), timeoutMs)
     try {
-      rt.sendMessage(SCOUT_EXTENSION_ID, message, (resp: unknown) => {
+      rt.sendMessage(id, message, (resp: unknown) => {
         clearTimeout(timer)
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const err = (window as any).chrome?.runtime?.lastError
-        if (err) { done(null); return }
-        done((resp as T) ?? null)
+        if (err) { done(false, null); return } // not installed / not connectable → try next id
+        done(true, (resp as T) ?? null)
       })
     } catch {
       clearTimeout(timer)
-      done(null)
+      done(false, null)
     }
   })
+}
+
+// Try each known id in turn; return the first one that actually answers. A
+// not-installed id fails fast (lastError), so the fall-through is cheap.
+function sendToExtension<T>(message: unknown, timeoutMs: number): Promise<T | null> {
+  return (async () => {
+    if (!chromeRuntime()?.sendMessage || SCOUT_EXTENSION_IDS.length === 0) return null
+    for (const id of SCOUT_EXTENSION_IDS) {
+      const { reached, value } = await sendToOneId<T>(id, message, timeoutMs)
+      if (reached) return value
+    }
+    return null
+  })()
 }
 
 /** True if the helper extension is installed and responds to a ping. */
