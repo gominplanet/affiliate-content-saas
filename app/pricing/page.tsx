@@ -65,6 +65,7 @@ const plans: PlanExt[] = [
     features: [
       '20 full reviews per month (blog + thumbnail + metadata bundle)',
       'Auto-post to Facebook, Threads, LinkedIn & Bluesky',
+      'Affiliate networks: connect Levanta + PartnerBoost for commissionable posts beyond your Amazon tag',
       'In-body AI product images (up to 3 per post)',
       'Your Face in AI thumbnails (1 face, 1 LoRA retrain / month)',
       'Photobooth headshots (10 / month)',
@@ -87,6 +88,7 @@ const plans: PlanExt[] = [
     features: [
       '45 full reviews per month (blog + thumbnail + metadata bundle)',
       'Adds Pinterest, Instagram & Telegram auto-post on top of Creator',
+      'Affiliate networks: connect Levanta + PartnerBoost for commissionable posts beyond your Amazon tag',
       'Deals Hub: 5 deal posts / month with countdown banners + Amazon CSV bulk import',
       'Refresh Images on any published post (re-renders the in-body shots)',
       'Topic hubs auto-aggregate your reviews into category pages (built-in WP plugin)',
@@ -111,6 +113,7 @@ const plans: PlanExt[] = [
     features: [
       '100 full reviews per month (blog + thumbnail + metadata bundle)',
       'Adds X (Twitter) auto-post on top of Studio',
+      'Affiliate networks: connect Levanta + PartnerBoost for commissionable posts beyond your Amazon tag',
       'Comparison posts: head-to-head ranked review with a named winner',
       'Buying Guides: "Best [topic] for 2026" round-ups (auto-curate or pick-your-own)',
       'Rebuild-from-video: re-write any legacy WordPress post from its source video',

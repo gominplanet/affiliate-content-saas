@@ -23,6 +23,7 @@ import {
   Youtube, ShieldCheck, Zap, Upload, X as XIcon, Check, Quote,
   Crown, Rocket, Plus, Minus,
   LayoutTemplate, BadgePercent, Pin,
+  ShoppingBag, Store, ShoppingCart,
 } from 'lucide-react'
 
 const DARK_VARS: React.CSSProperties = {
@@ -177,6 +178,7 @@ export default function LandingPreview() {
       <DiscoverabilitySection />
       <BrandedSiteSection />
       <BusinessLayerSection />
+      <PartnerNetworksSection />
       <PricingSection />
       <ProofSection />
       <FAQSection />
@@ -746,6 +748,58 @@ function AsinSection() {
         </div>
         <p className="text-center mt-10 text-[13px]" style={{ color: 'var(--text-faint)' }}>
           Drop a link — MVP does the research, ranking and writing.
+        </p>
+      </div>
+    </section>
+  )
+}
+
+/** Section — "Earn beyond the Amazon tag." Multi-network affiliate: MVP plugs
+ *  into Levanta + PartnerBoost (connect your own key) on top of the always-on
+ *  native Amazon tag. Mirrors AsinSection's layout. Included on all paid tiers. */
+function PartnerNetworksSection() {
+  const networks = [
+    { icon: <ShoppingBag size={18} />, title: 'MVP x Levanta', tag: 'Amazon creator network', body: 'Often higher payouts than the standard Associates rate — MVP mints a real commissionable tracking link for every product.' },
+    { icon: <Store size={18} />, title: 'MVP x PartnerBoost', tag: 'Walmart · Amazon · DTC', body: 'One login to brands across multiple retailers. Join a program, then publish a cloaked-link review in your voice.' },
+    { icon: <ShoppingCart size={18} />, title: 'Amazon Associates', tag: 'Always on', body: 'Your standard Amazon tag works out of the box — no connection or extra setup needed.' },
+  ]
+  return (
+    <section id="networks" className="px-6 lg:px-8 pt-12 pb-28 relative">
+      <div className="max-w-6xl mx-auto">
+        <div className="text-center max-w-3xl mx-auto mb-14">
+          <span
+            className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-medium uppercase tracking-[0.18em] mb-5"
+            style={{ backgroundColor: 'rgba(124,58,237,0.12)', color: '#9D6BFF', border: '1px solid rgba(124,58,237,0.25)' }}
+          >
+            <Sparkles size={10} />
+            Multi-network affiliate
+          </span>
+          <h2 className="text-[40px] sm:text-[52px] font-semibold tracking-tight leading-[1.05] mb-5" style={{ color: 'var(--text)' }}>
+            Earn beyond the{' '}
+            <span style={{ background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
+              Amazon tag.
+            </span>
+          </h2>
+          <p className="text-[16px] sm:text-[17px] leading-relaxed max-w-2xl mx-auto" style={{ color: 'var(--text-soft)' }}>
+            Connect your affiliate networks and MVP turns your partnered brands&apos; products into published reviews — with a real commissionable link, written in your voice. Included on every paid plan.
+          </p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          {networks.map((o) => (
+            <div key={o.title} className="rounded-2xl border p-6 flex flex-col" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}>
+              <span className="inline-flex items-center justify-center w-9 h-9 rounded-xl mb-3" style={{ backgroundColor: 'rgba(124,58,237,0.12)', color: '#9D6BFF' }}>
+                {o.icon}
+              </span>
+              <h3 className="text-[15px] font-semibold mb-1.5" style={{ color: 'var(--text)' }}>{o.title}</h3>
+              <p className="text-[13.5px] leading-relaxed flex-1" style={{ color: 'var(--text-soft)' }}>{o.body}</p>
+              <span className="mt-4 inline-flex self-start items-center px-2 py-0.5 rounded-full text-[10.5px] font-medium uppercase tracking-wide" style={{ backgroundColor: 'var(--surface-2)', color: 'var(--text-faint)', border: '1px solid var(--border)' }}>
+                {o.tag}
+              </span>
+            </div>
+          ))}
+        </div>
+        <p className="text-center mt-10 text-[13px]" style={{ color: 'var(--text-faint)' }}>
+          Bring your own affiliate accounts — connect a key once, then it&apos;s one click per product.
         </p>
       </div>
     </section>
