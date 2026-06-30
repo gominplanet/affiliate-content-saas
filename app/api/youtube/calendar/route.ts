@@ -34,11 +34,12 @@ import { getChannelOAuthToken } from '@/lib/youtube-channels'
 // stops short of the back-catalog where scheduled videos live. 160 pages covers
 // ~4,500 unique even at that yield. The dry-streak guard below stops early when
 // the playlist genuinely runs out (or cycles), so we don't waste the budget.
-const MAX_PAGES = 160
+const MAX_PAGES = 200
 const PAGE_SIZE = 50
-// Bail after this many CONSECUTIVE pages that add zero new unique videos — the
-// playlist is exhausted (or cycling) and more pages won't help.
-const MAX_DRY_PAGES = 4
+// Bail only after a LONG run of pages that add zero new unique videos. Kept
+// high (was 4) so a transient duplicate patch in YouTube's pagination doesn't
+// stop us short of the deep back-catalog where scheduled videos live.
+const MAX_DRY_PAGES = 30
 // Serve the cached scan for this long before a fresh full walk is needed.
 const CACHE_TTL_MS = 30 * 60 * 1000
 
@@ -106,7 +107,15 @@ export async function GET(request: Request) {
     let playlistId: string | undefined = undefined
     let truncated = false
     let dryStreak = 0
+    let pagesUsed = 0
+    // Why the scan stopped — surfaced for diagnosis:
+    //   'exhausted'    YouTube returned no next page (true end of the playlist)
+    //   'dry-streak'   too many consecutive pages added nothing new (cycling)
+    //   'cursor-loop'  the next-page token repeated
+    //   'page-cap'     hit MAX_PAGES with more still pending
+    let stopReason = 'page-cap'
     for (let page = 0; page < MAX_PAGES; page++) {
+      pagesUsed = page + 1
       const { videos, nextPageToken, uploadsPlaylistId } = await yt.getDraftVideos(PAGE_SIZE, cursor, playlistId)
       playlistId = uploadsPlaylistId
       const before = seen.size
@@ -122,16 +131,16 @@ export async function GET(request: Request) {
         })
       }
       // This page added nothing new → the playlist is exhausted or cycling.
-      // Bail after a few consecutive dry pages so we don't burn the budget.
+      // Bail after a long run of dry pages so we don't burn the budget.
       if (seen.size === before) {
-        if (++dryStreak >= MAX_DRY_PAGES) break
+        if (++dryStreak >= MAX_DRY_PAGES) { stopReason = 'dry-streak'; break }
       } else {
         dryStreak = 0
       }
-      if (!nextPageToken) break
+      if (!nextPageToken) { stopReason = 'exhausted'; break }
       // Stop if the cursor repeats — YouTube occasionally hands back a token that
       // loops to an earlier page, which would re-scan the whole catalog.
-      if (seenCursors.has(nextPageToken)) break
+      if (seenCursors.has(nextPageToken)) { stopReason = 'cursor-loop'; break }
       seenCursors.add(nextPageToken)
       cursor = nextPageToken
       // Hit the page cap with a cursor still pending → catalog larger than we
@@ -153,7 +162,7 @@ export async function GET(request: Request) {
         }, { onConflict: 'user_id,channel_id' })
     } catch { /* table not migrated yet → skip caching */ }
 
-    return NextResponse.json({ events, truncated, scanned: seen.size, cached: false })
+    return NextResponse.json({ events, truncated, scanned: seen.size, pagesUsed, stopReason, cached: false })
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Calendar fetch failed' },
