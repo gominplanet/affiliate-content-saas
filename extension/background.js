@@ -658,19 +658,19 @@ function harvestStudioScheduleInPage() {
       }
       const auth = await authHeader()
 
-      // Mask = the fields we want back. These are scalar/message fields, so the
-      // mask value must be `true` (an object on a scalar field 400s — that was
-      // the first error). `true` on the scheduledPublishingDetails message
-      // returns the whole message (which carries the scheduled timestamp).
+      // Mask format (learned from the 400s): SCALAR fields take `true`; MESSAGE
+      // fields (visibility, scheduledPublishingDetails) take a sub-mask object
+      // — `{ all: true }`. scheduledPublishingDetails is the one we actually
+      // need (it carries the scheduled timestamp).
       const mask = {
         videoId: true,
         title: true,
         status: true,
-        visibility: true,
         timeCreatedSeconds: true,
         timePublishedSeconds: true,
         draftStatus: true,
-        scheduledPublishingDetails: true,
+        visibility: { all: true },
+        scheduledPublishingDetails: { all: true },
       }
 
       const scheduled = []
