@@ -205,8 +205,9 @@ export default function LandingPreview() {
  *  open so the page doesn't jitter when the lightbox renders. */
 function DemoVideoSection() {
   const [open, setOpen] = useState(false)
-  // Sales-page intro = the founder's YouTube upload. Click-to-play: the poster
-  // shows the real YouTube thumbnail and the embed only mounts on click, so no
+  // Sales-page intro = the founder's YouTube upload. Click-to-play: a
+  // self-hosted poster (/demo/intro-poster.jpg — pixel-perfect + instant, no YT
+  // CDN dependency) and the YouTube embed only mounts on click, so no
   // third-party iframe/cookies load on scroll-by traffic.
   const YT_DEMO_ID = 'E5EEfQcZQts'
 
@@ -298,7 +299,7 @@ function DemoVideoSection() {
                 icon, no layout shift. */}
             <div
               className="absolute inset-0 bg-cover bg-center"
-              style={{ backgroundImage: `url(https://i.ytimg.com/vi/${YT_DEMO_ID}/maxresdefault.jpg)` }}
+              style={{ backgroundImage: 'url(/demo/intro-poster.jpg)' }}
               aria-hidden
             />
 
