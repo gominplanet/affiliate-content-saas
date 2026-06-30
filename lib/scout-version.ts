@@ -10,11 +10,11 @@
  *
  * Also drop a one-liner in SCOUT_WHATS_NEW so the banner says what changed.
  */
-export const SCOUT_LATEST_VERSION = '1.11.7'
+export const SCOUT_LATEST_VERSION = '1.11.8'
 
 /** One-line "what's new", shown in the update banner. Keep it user-facing. */
 export const SCOUT_WHATS_NEW =
-  'New: SCOUT reads your YouTube Studio schedule so the Co-Pilot planning calendar shows every scheduled video (the YouTube API misses most on large channels). Re-download + reload once to apply.'
+  'New: after you push a video, SCOUT can finish it in YouTube Studio for you (opt-in) — turn on monetization, submit the ad-suitability rating, and copy your last end screen. Re-download + reload once to apply.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar

@@ -788,6 +788,255 @@ async function scanStudioSchedule() {
   }
 }
 
+// ── Studio "finish" automation (MVP_STUDIO_FINISH) ──────────────────────────
+// After MVP pushes a video's metadata through the public Data API, a few
+// Studio-only fields remain that the API can't set: per-video Monetization, the
+// ad-suitability self-certification, and end screens. The user OPTS IN (an
+// explicit checkbox in Co-Pilot that spells out each action), then SCOUT opens
+// Studio in their own logged-in session and drives the real UI controls —
+// exactly the clicks they'd do by hand.
+//
+// We deliberately DRIVE THE DOM rather than POST to undocumented internal write
+// endpoints: a missing control safely no-ops, whereas a malformed write to a
+// guessed endpoint could corrupt a real video field. Studio is a Polymer SPA
+// (shadow DOM), so the in-page helpers pierce shadow roots, match controls by
+// visible/aria text, and return a `debug` map of the controls they saw — so the
+// inevitable selector tuning is fast (same philosophy as the schedule read).
+//
+// NOT touched here: the notify-subscribers bell. MVP already sends
+// notifySubscribers=false through the Data API, so it's off by construction.
+const STUDIO_VIDEO = (id, panel) => `https://studio.youtube.com/video/${id}/${panel}`
+
+// Shared, self-contained in-page toolkit. Injected functions can't reference
+// outer scope, so each one rebuilds these from this source via .toString()
+// concatenation is overkill — instead we just duplicate the tiny helpers inline
+// in each function below. (Kept identical on purpose.)
+
+function studioFinishMonetizeInPage() {
+  return (async () => {
+    const out = { step: 'monetization', ok: false, certOk: false, detail: '', debug: {} }
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+    const deepAll = () => {
+      const acc = []
+      const walk = (root) => {
+        let els
+        try { els = root.querySelectorAll('*') } catch (e) { return }
+        for (const el of els) { acc.push(el); if (el.shadowRoot) walk(el.shadowRoot) }
+      }
+      walk(document)
+      return acc
+    }
+    const visText = (el) => {
+      try {
+        const a = el.getAttribute && (el.getAttribute('aria-label') || el.getAttribute('title'))
+        return (a || el.textContent || '').replace(/\s+/g, ' ').trim()
+      } catch (e) { return '' }
+    }
+    const clickable = (el) => {
+      const t = (el.tagName || '').toLowerCase()
+      if (/^(button|a)$/.test(t)) return true
+      if (/button|paper-item|dropdown|listbox|radio|menu-item|option/.test(t)) return true
+      const r = el.getAttribute && el.getAttribute('role')
+      return r === 'button' || r === 'option' || r === 'menuitem' || r === 'radio'
+    }
+    const click = (el) => {
+      if (!el) return false
+      try { el.scrollIntoView({ block: 'center' }) } catch (e) {}
+      try { el.click() } catch (e) {}
+      try { ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach((t) => el.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, view: window }))) } catch (e) {}
+      return true
+    }
+    // Find the shortest-text clickable matching any regex (prefers the leaf
+    // control, not an enclosing wrapper that also contains the label).
+    const find = (res) => {
+      let best = null, bestLen = 1e9
+      for (const el of deepAll()) {
+        if (!clickable(el)) continue
+        const tx = visText(el)
+        if (!tx || tx.length > 60) continue
+        for (const re of res) { if (re.test(tx)) { if (tx.length < bestLen) { best = el; bestLen = tx.length }; break } }
+      }
+      return best
+    }
+    const waitFind = async (res, ms) => { const end = Date.now() + ms; while (Date.now() < end) { const v = find(res); if (v) return v; await sleep(300) } return null }
+    const sample = () => Array.from(new Set(deepAll().filter(clickable).map(visText).filter((t) => t && t.length < 45))).slice(0, 70)
+
+    try {
+      await sleep(2000) // let the monetization panel render
+      out.debug.url = location.href.slice(0, 160)
+      out.debug.controlsBefore = sample()
+
+      // Non-monetized / not-in-YPP channels have no On toggle and no ad-rating
+      // here — the page invites you to APPLY to the Partner Program instead.
+      // Detect that so we report "not monetized" (neutral) rather than a failure.
+      const bodyTxt = (document.body ? document.body.innerText : '').toLowerCase()
+      out.debug.notMonetizedSignal = /partner program|isn'?t eligible|not eligible|monetization (is )?(not|isn'?t) available|apply (now|to join)|join the youtube partner|once you'?re eligible/i.test(bodyTxt)
+
+      // 1) Open the Monetization on/off dropdown (currently reads "Off") and
+      //    choose the "On" option.
+      const trigger = find([/monetization (is )?off/i, /^off$/i, /turn on monetization/i, /watch page ads/i])
+      out.debug.triggerText = trigger ? visText(trigger) : null
+      if (!trigger) {
+        // No toggle. If the page is clearly a not-monetized invite, that's
+        // expected for this channel — neutral skip, not an error.
+        out.skipped = !!out.debug.notMonetizedSignal
+        out.detail = out.skipped
+          ? 'Channel isn’t monetized — nothing to turn on (end screen still applies)'
+          : 'Monetization toggle not found — see debug'
+        out.debug.controlsAfter = sample()
+        return out
+      }
+      click(trigger)
+      await sleep(1000)
+      const onOpt = find([/^on$/i, /monetization on/i, /turn on/i])
+      out.debug.onOptText = onOpt ? visText(onOpt) : null
+      if (onOpt) { click(onOpt); await sleep(1000) }
+
+      // 2) Ad-suitability self-certification. The questionnaire defaults to
+      //    "None" → "Safe for ads", so the action is to submit the rating.
+      const submitCert = await waitFind([/submit rating/i, /^submit$/i], 6000)
+      out.debug.submitCertText = submitCert ? visText(submitCert) : null
+      if (submitCert) { click(submitCert); out.certOk = true; await sleep(1000) }
+
+      // 3) Save the monetization change.
+      const save = await waitFind([/^save$/i, /^done$/i], 6000)
+      out.debug.saveText = save ? visText(save) : null
+      if (save) {
+        click(save); await sleep(1500); out.ok = true
+        out.detail = 'Monetization set; ' + (out.certOk ? 'rating submitted' : 'rating control not found')
+      } else {
+        out.detail = out.certOk ? 'Rating submitted; Save not found' : 'Controls not found — see debug'
+      }
+      out.debug.controlsAfter = sample()
+      return out
+    } catch (e) {
+      out.error = (e && e.message) || 'exception'
+      return out
+    }
+  })()
+}
+
+function studioFinishEndScreenInPage() {
+  return (async () => {
+    const out = { step: 'endscreen', ok: false, partial: false, detail: '', debug: {} }
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+    const deepAll = () => {
+      const acc = []
+      const walk = (root) => {
+        let els
+        try { els = root.querySelectorAll('*') } catch (e) { return }
+        for (const el of els) { acc.push(el); if (el.shadowRoot) walk(el.shadowRoot) }
+      }
+      walk(document)
+      return acc
+    }
+    const visText = (el) => {
+      try {
+        const a = el.getAttribute && (el.getAttribute('aria-label') || el.getAttribute('title'))
+        return (a || el.textContent || '').replace(/\s+/g, ' ').trim()
+      } catch (e) { return '' }
+    }
+    const clickable = (el) => {
+      const t = (el.tagName || '').toLowerCase()
+      if (/^(button|a)$/.test(t)) return true
+      if (/button|paper-item|dropdown|listbox|menu-item|option|card|template/.test(t)) return true
+      const r = el.getAttribute && el.getAttribute('role')
+      return r === 'button' || r === 'option' || r === 'menuitem'
+    }
+    const click = (el) => {
+      if (!el) return false
+      try { el.scrollIntoView({ block: 'center' }) } catch (e) {}
+      try { el.click() } catch (e) {}
+      try { ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach((t) => el.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, view: window }))) } catch (e) {}
+      return true
+    }
+    const find = (res) => {
+      let best = null, bestLen = 1e9
+      for (const el of deepAll()) {
+        if (!clickable(el)) continue
+        const tx = visText(el)
+        if (!tx || tx.length > 70) continue
+        for (const re of res) { if (re.test(tx)) { if (tx.length < bestLen) { best = el; bestLen = tx.length }; break } }
+      }
+      return best
+    }
+    const waitFind = async (res, ms) => { const end = Date.now() + ms; while (Date.now() < end) { const v = find(res); if (v) return v; await sleep(300) } return null }
+    const sample = () => Array.from(new Set(deepAll().filter(clickable).map(visText).filter((t) => t && t.length < 50))).slice(0, 70)
+
+    try {
+      await sleep(2200) // end-screen editor is heavy
+      out.debug.url = location.href.slice(0, 160)
+      out.debug.controlsBefore = sample()
+
+      // Prefer the "Import from video" / copy-from-previous template — that's
+      // the "same as last video" action.
+      const importBtn = await waitFind([/import from video/i, /copy from.*video/i, /apply template/i, /most recent upload/i, /from a recent video/i], 7000)
+      out.debug.importText = importBtn ? visText(importBtn) : null
+      if (!importBtn) { out.detail = 'Import-from-video control not found — see debug'; out.debug.controlsAfter = sample(); return out }
+
+      click(importBtn)
+      await sleep(1800)
+      // A picker may open listing recent videos; the top item is the most recent.
+      const pick = (() => {
+        const items = deepAll().filter((el) => {
+          const r = el.getAttribute && el.getAttribute('role')
+          const cls = (el.className || '').toString()
+          return r === 'option' || /video-row|video-list-item|endscreen-template|video-card/i.test(cls)
+        })
+        return items[0] || null
+      })()
+      if (pick) { click(pick); await sleep(1400) } else { out.partial = true }
+
+      const save = await waitFind([/^save$/i, /^done$/i, /^apply$/i], 6000)
+      out.debug.saveText = save ? visText(save) : null
+      if (save) {
+        click(save); await sleep(1500); out.ok = true
+        out.detail = out.partial ? 'Import opened — pick last video & save in Studio' : 'End screen copied from last video'
+      } else {
+        out.partial = true
+        out.detail = 'Import opened; finish & save in Studio'
+      }
+      out.debug.controlsAfter = sample()
+      return out
+    } catch (e) {
+      out.error = (e && e.message) || 'exception'
+      return out
+    }
+  })()
+}
+
+async function scanStudioFinish(videoId, opts, callerTabId) {
+  if (!videoId || !/^[a-zA-Z0-9_-]{6,20}$/.test(videoId)) return { ok: false, error: 'bad-video-id', steps: [] }
+  const want = opts || { monetize: true, selfCert: true, endScreen: true }
+  const steps = []
+  let tabId = null
+  try {
+    // FOREGROUND: Studio is a heavy SPA and DOM interaction is far more reliable
+    // in a focused tab (background tabs throttle timers/rendering). We restore
+    // the caller's tab in `finally` so MVP stays in front afterward.
+    const tab = await chrome.tabs.create({ url: STUDIO_VIDEO(videoId, 'monetization'), active: true })
+    tabId = tab.id
+    await waitForTabLoad(tabId, 30000)
+    if (want.monetize || want.selfCert) {
+      const r = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: studioFinishMonetizeInPage })
+      steps.push((r && r[0] && r[0].result) || { step: 'monetization', ok: false, error: 'no-result' })
+    }
+    if (want.endScreen) {
+      // Reuse the same tab — navigate to the end-screen editor.
+      await chrome.tabs.update(tabId, { url: STUDIO_VIDEO(videoId, 'endscreens') })
+      await waitForTabLoad(tabId, 30000)
+      const r = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: studioFinishEndScreenInPage })
+      steps.push((r && r[0] && r[0].result) || { step: 'endscreen', ok: false, error: 'no-result' })
+    }
+    return { ok: steps.some((s) => s && s.ok), steps }
+  } catch (e) {
+    return { ok: false, error: (e && e.message) || 'finish-failed', steps }
+  } finally {
+    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+    if (callerTabId != null) { try { await chrome.tabs.update(callerTabId, { active: true }) } catch (e) {} }
+  }
+}
+
 // ── Messages from the MVP dashboard (externally_connectable) ────────────────
 chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   if (!msg || typeof msg.type !== 'string') return

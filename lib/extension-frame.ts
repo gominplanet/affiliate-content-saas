@@ -302,3 +302,57 @@ export async function requestStudioSchedule(): Promise<StudioScheduleResult> {
   if (resp.ok && Array.isArray(resp.videos)) return { ok: true, videos: resp.videos, debug: resp.debug }
   return { ok: false, videos: [], error: resp.error || 'scan-failed', debug: resp.debug }
 }
+
+/** One step of the Studio "finish" pass (monetization / endscreen). `ok` means
+ *  SCOUT completed the step; `partial` means it got the user most of the way
+ *  (e.g. opened the end-screen import) but a manual click remains. `debug`
+ *  carries the controls it saw so unofficial-UI selectors are easy to tune. */
+export interface StudioFinishStep {
+  step: string
+  ok: boolean
+  certOk?: boolean
+  partial?: boolean
+  /** Step didn't apply to this channel (e.g. monetization on a non-monetized
+   *  channel) — render as a neutral note, not a failure. */
+  skipped?: boolean
+  detail?: string
+  error?: string
+  debug?: Record<string, unknown>
+}
+
+export interface StudioFinishResult {
+  ok: boolean
+  steps: StudioFinishStep[]
+  error?: string
+}
+
+/** Which Studio-only actions the user opted into. The notify bell is NOT here —
+ *  MVP already disables it via the Data API, so SCOUT never touches it. */
+export interface StudioFinishOpts {
+  monetize: boolean
+  selfCert: boolean
+  endScreen: boolean
+}
+
+/**
+ * Ask SCOUT to "finish" a video in YouTube Studio — the fields the public Data
+ * API can't set. The user must explicitly opt in (a checkbox in Co-Pilot that
+ * states each action). SCOUT opens Studio in the user's own logged-in session
+ * and drives the real UI controls: turn Monetization on, submit the
+ * ad-suitability self-certification, and copy the end screen from the last
+ * video. Best-effort and non-destructive — a missing control safely no-ops.
+ * Resolves, never throws.
+ */
+export async function requestStudioFinish(
+  videoId: string,
+  opts: StudioFinishOpts,
+): Promise<StudioFinishResult> {
+  if (!videoId) return { ok: false, steps: [], error: 'no-video-id' }
+  if (!(await isExtensionAvailable())) return { ok: false, steps: [], error: 'not-installed' }
+  const resp = await sendToExtension<{ ok?: boolean; steps?: StudioFinishStep[]; error?: string }>(
+    { type: 'MVP_STUDIO_FINISH', videoId, opts },
+    185000, // up to 3 page loads + UI settle time in Studio
+  )
+  if (!resp) return { ok: false, steps: [], error: 'timeout' }
+  return { ok: !!resp.ok, steps: Array.isArray(resp.steps) ? resp.steps : [], error: resp.error }
+}

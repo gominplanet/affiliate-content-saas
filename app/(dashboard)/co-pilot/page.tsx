@@ -8,7 +8,7 @@ import PageHero from '@/components/layout/PageHero'
 import { CapReachedBanner } from '@/components/CapReachedBanner'
 import { useConfirm } from '@/components/ui/useConfirm'
 import { pickWeightedStyleIndex, OVERLAY_STYLES, drawHeadline, type HeadlinePosition, type FaceBox } from '@/lib/thumbnail-overlay'
-import { isExtensionAvailable, requestVideoFrames, requestAmazonProduct, requestStudioSchedule } from '@/lib/extension-frame'
+import { isExtensionAvailable, requestVideoFrames, requestAmazonProduct, requestStudioSchedule, requestStudioFinish, type StudioFinishResult } from '@/lib/extension-frame'
 import { SCOUT_DOWNLOAD_URL } from '@/lib/scout-version'
 import { effectiveTier } from '@/lib/view-as'
 import type { Tier } from '@/lib/tier'
@@ -389,6 +389,16 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
   const [generating, setGenerating] = useState(false)
   const [applying, setApplying] = useState(false)
   const [finishCheckDone, setFinishCheckDone] = useState(false)
+  // Opt-in + run state for the SCOUT "Finish on YouTube" automation. Off by
+  // default — the user must tick the box that states what SCOUT does in Studio.
+  // Monetization is a separate sub-toggle because not every channel is
+  // monetized (no YPP = no toggle and no ad rating); end screen applies to all.
+  const [finishOptIn, setFinishOptIn] = useState(false)
+  const [finishDoMonetize, setFinishDoMonetize] = useState(true)
+  const [finishDoEndScreen, setFinishDoEndScreen] = useState(true)
+  const [finishRunning, setFinishRunning] = useState(false)
+  const [finishResult, setFinishResult] = useState<StudioFinishResult | null>(null)
+  const [finishError, setFinishError] = useState<string | null>(null)
   const [generated, setGenerated] = useState<GeneratedMetadata | null>(null)
   const [agentInsights, setAgentInsights] = useState<AgentInsights | null>(null)
   const [product, setProduct] = useState<ProductInfo | null>(null)
@@ -943,6 +953,41 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
   // True when the user chose a custom schedule but the date is empty/past — used
   // to block the Apply button so we never silently fall back to draft/now.
   const scheduleNeedsDate = proSettings.scheduleMode === 'custom' && !computePublishAt('custom', proSettings.scheduleAt)
+
+  /** Run the opt-in SCOUT "Finish on YouTube" pass: it opens YouTube Studio in
+   *  the user's own browser and drives the real controls to turn Monetization
+   *  on, submit the ad-suitability rating, and copy the end screen from the last
+   *  video. Gated behind the explicit opt-in checkbox. The notify bell is left
+   *  alone — MVP already disabled it via the Data API. */
+  async function runStudioFinish() {
+    if (!video.youtubeVideoId || !finishOptIn) return
+    if (!finishDoMonetize && !finishDoEndScreen) return
+    setFinishRunning(true)
+    setFinishError(null)
+    setFinishResult(null)
+    try {
+      const res = await requestStudioFinish(video.youtubeVideoId, {
+        // Self-cert is part of the monetization flow — they ride together.
+        monetize: finishDoMonetize,
+        selfCert: finishDoMonetize,
+        endScreen: finishDoEndScreen,
+      })
+      setFinishResult(res)
+      if (!res.ok && res.error) {
+        setFinishError(
+          res.error === 'not-installed'
+            ? 'SCOUT isn’t installed or didn’t respond. Install/reload SCOUT and try again.'
+            : res.error === 'timeout'
+              ? 'YouTube Studio took too long to respond. Try again.'
+              : `Couldn’t finish in Studio: ${res.error}`,
+        )
+      }
+    } catch (e) {
+      setFinishError(e instanceof Error ? e.message : 'Failed to run the Studio finish')
+    } finally {
+      setFinishRunning(false)
+    }
+  }
 
   // ── Shared thumbnail result handler ─────────────────────────────────────────
   async function applyThumbnailResult(data: Record<string, unknown>) {
@@ -2516,18 +2561,21 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                   </p>
                 )}
 
-                {/* Post-apply Studio checklist — covers fields YouTube's API
-                    doesn't accept (paid promotion, monetization, content
-                    rating). Three clicks in Studio and the video is fully
-                    set up. Dismissible so repeat applies don't nag. */}
+                {/* Post-apply Studio finish — fields YouTube's API can't set.
+                    When SCOUT is installed the user can OPT IN (explicit
+                    checkbox) and SCOUT drives Studio's real controls for them;
+                    otherwise it's the 3-click manual checklist. Dismissible so
+                    repeat applies don't nag. */}
                 {applied && !finishCheckDone && (
-                  <div className="rounded-xl border border-[#ff9500]/30 bg-[#ff9500]/5 px-4 py-3 flex flex-col gap-2.5">
+                  <div className="rounded-xl border border-[#ff9500]/30 bg-[#ff9500]/5 px-4 py-3 flex flex-col gap-3">
                     <div className="flex items-start gap-2">
                       <AlertCircle size={14} className="text-[#ff9500] mt-0.5 flex-shrink-0" />
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-0.5">Finish on YouTube (3 clicks)</p>
+                        <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-0.5">Finish on YouTube</p>
                         <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
-                          YouTube&apos;s API doesn&apos;t accept these fields — open YouTube and tick them once. Takes 10 seconds.
+                          {extensionInstalled === true
+                            ? 'A few settings YouTube’s API can’t touch. Let MVP finish them in Studio for you, or tick them by hand.'
+                            : 'YouTube’s API doesn’t accept these fields — open YouTube and tick them once. Takes 10 seconds.'}
                         </p>
                       </div>
                       <button
@@ -2539,29 +2587,109 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                       </button>
                     </div>
 
-                    <ul className="text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7] flex flex-col gap-1.5 pl-1">
-                      <li className="flex items-start gap-2">
-                        <span className="w-4 h-4 rounded-full border border-[#ff9500] flex items-center justify-center text-[10px] font-bold text-[#ff9500] flex-shrink-0 mt-px">1</span>
-                        <span><strong>Paid promotion</strong>: Details → tick <em>&quot;Yes, the video contains paid promotion&quot;</em>.</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="w-4 h-4 rounded-full border border-[#ff9500] flex items-center justify-center text-[10px] font-bold text-[#ff9500] flex-shrink-0 mt-px">2</span>
-                        <span><strong>Monetization</strong>: Monetization tab → toggle <em>On</em>.</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="w-4 h-4 rounded-full border border-[#ff9500] flex items-center justify-center text-[10px] font-bold text-[#ff9500] flex-shrink-0 mt-px">3</span>
-                        <span><strong>Content rating</strong>: pick <em>&quot;None of the above&quot;</em> for each row, then Submit.</span>
-                      </li>
-                    </ul>
+                    {/* SCOUT auto-finish — opt-in. Only shown when the extension
+                        is installed (it's the only thing that can drive Studio). */}
+                    {extensionInstalled === true && (
+                      <div className="rounded-lg border border-[#7C3AED]/30 bg-[#7C3AED]/5 px-3 py-2.5 flex flex-col gap-2.5">
+                        <label className="flex items-start gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={finishOptIn}
+                            disabled={finishRunning}
+                            onChange={e => setFinishOptIn(e.target.checked)}
+                            className="mt-0.5 flex-shrink-0"
+                          />
+                          <span className="text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7] leading-relaxed">
+                            <strong>I want MVP to finish this video in YouTube Studio for me.</strong> SCOUT will open YouTube Studio in your own logged-in browser and apply only the items I tick below, on this video only. Your subscriber <strong>bell stays off</strong>, and nothing else on your channel is changed.
+                          </span>
+                        </label>
 
-                    <a
-                      href={`https://studio.youtube.com/video/${video.youtubeVideoId}/edit`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 self-start px-3 py-1.5 rounded-lg text-[11px] font-semibold text-white bg-[#ff0000] hover:bg-[#cc0000] transition-colors"
-                    >
-                      <Youtube size={11} /> Open this video on YouTube <ExternalLink size={10} />
-                    </a>
+                        {/* Per-action scope. Monetization isn't available on
+                            non-monetized / non-YPP channels (no toggle, no ad
+                            rating), so it's a separate opt-out; end screen
+                            applies to everyone. */}
+                        <div className={`flex flex-col gap-1.5 pl-6 ${finishOptIn ? '' : 'opacity-50 pointer-events-none'}`}>
+                          <label className="flex items-start gap-2 cursor-pointer text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7]">
+                            <input type="checkbox" checked={finishDoMonetize} disabled={finishRunning} onChange={e => setFinishDoMonetize(e.target.checked)} className="mt-0.5 flex-shrink-0" />
+                            <span>Turn on <strong>Monetization</strong> + submit the <strong>ad-suitability rating</strong> <span className="text-[#86868b]">— uncheck if this channel isn&apos;t monetized</span></span>
+                          </label>
+                          <label className="flex items-start gap-2 cursor-pointer text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7]">
+                            <input type="checkbox" checked={finishDoEndScreen} disabled={finishRunning} onChange={e => setFinishDoEndScreen(e.target.checked)} className="mt-0.5 flex-shrink-0" />
+                            <span>Copy the <strong>end screen</strong> from your last video</span>
+                          </label>
+                        </div>
+
+                        <button
+                          onClick={runStudioFinish}
+                          disabled={!finishOptIn || finishRunning || (!finishDoMonetize && !finishDoEndScreen)}
+                          title={!finishOptIn ? 'Tick the box above to allow this' : (!finishDoMonetize && !finishDoEndScreen) ? 'Pick at least one action' : undefined}
+                          className="inline-flex items-center justify-center gap-1.5 self-start px-3 py-1.5 rounded-lg text-[11px] font-semibold text-white bg-[#7C3AED] hover:bg-[#6d28d9] disabled:opacity-50 transition-colors"
+                        >
+                          {finishRunning
+                            ? <><Loader2 size={11} className="animate-spin" /> Finishing in Studio…</>
+                            : <><Sparkles size={11} /> Auto-finish in YouTube Studio</>}
+                        </button>
+
+                        {finishResult && (
+                          <div className="flex flex-col gap-1 text-[11px] pt-0.5">
+                            {finishResult.steps.map((s, i) => (
+                              <div key={i} className="flex items-start gap-1.5">
+                                <span className={s.ok ? 'text-[#34c759]' : s.skipped ? 'text-[#86868b]' : s.partial ? 'text-[#ff9500]' : 'text-[#ff3b30]'}>
+                                  {s.ok ? '✓' : s.skipped ? 'ℹ' : s.partial ? '◐' : '✗'}
+                                </span>
+                                <span className="text-[#1d1d1f] dark:text-[#f5f5f7]">
+                                  <strong>{s.step === 'monetization' ? 'Monetization + ad rating' : s.step === 'endscreen' ? 'End screen' : s.step}</strong>
+                                  {s.detail ? ` — ${s.detail}` : ''}
+                                </span>
+                              </div>
+                            ))}
+                            <div className="flex items-start gap-1.5">
+                              <span className="text-[#34c759]">{'✓'}</span>
+                              <span className="text-[#1d1d1f] dark:text-[#f5f5f7]"><strong>Subscriber bell</strong> {'—'} already off (MVP set this when it pushed the video)</span>
+                            </div>
+                            <p className="text-[10px] text-[#86868b] mt-0.5 leading-relaxed">
+                              Anything not ticked above didn&apos;t complete — open the video below and finish it by hand. YouTube Studio changes its layout often; tell us what was left and we tune SCOUT to match.
+                            </p>
+                          </div>
+                        )}
+                        {finishError && (
+                          <p className="text-[11px] text-[#ff3b30] bg-[#ff3b30]/5 border border-[#ff3b30]/20 rounded-lg px-2.5 py-1.5 break-words">
+                            ❌ {finishError}
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Manual checklist — the always-available fallback. Paid
+                        promotion is manual either way (SCOUT doesn't touch it). */}
+                    <div className="flex flex-col gap-2">
+                      <p className="text-[10px] uppercase tracking-wide text-[#86868b] font-semibold">
+                        {extensionInstalled === true ? 'Or do it by hand' : 'Do it by hand (3 clicks)'}
+                      </p>
+                      <ul className="text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7] flex flex-col gap-1.5 pl-1">
+                        <li className="flex items-start gap-2">
+                          <span className="w-4 h-4 rounded-full border border-[#ff9500] flex items-center justify-center text-[10px] font-bold text-[#ff9500] flex-shrink-0 mt-px">1</span>
+                          <span><strong>Paid promotion</strong>: Details → tick <em>&quot;Yes, the video contains paid promotion&quot;</em>.</span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                          <span className="w-4 h-4 rounded-full border border-[#ff9500] flex items-center justify-center text-[10px] font-bold text-[#ff9500] flex-shrink-0 mt-px">2</span>
+                          <span><strong>Monetization</strong>: Monetization tab → toggle <em>On</em>.</span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                          <span className="w-4 h-4 rounded-full border border-[#ff9500] flex items-center justify-center text-[10px] font-bold text-[#ff9500] flex-shrink-0 mt-px">3</span>
+                          <span><strong>Content rating</strong>: pick <em>&quot;None of the above&quot;</em> for each row, then Submit.</span>
+                        </li>
+                      </ul>
+
+                      <a
+                        href={`https://studio.youtube.com/video/${video.youtubeVideoId}/edit`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 self-start px-3 py-1.5 rounded-lg text-[11px] font-semibold text-white bg-[#ff0000] hover:bg-[#cc0000] transition-colors"
+                      >
+                        <Youtube size={11} /> Open this video on YouTube <ExternalLink size={10} />
+                      </a>
+                    </div>
                   </div>
                 )}
               </div>
