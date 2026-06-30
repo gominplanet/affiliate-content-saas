@@ -1,7 +1,12 @@
 import type { Metadata } from 'next'
-import { BookOpen } from 'lucide-react'
+import { BookOpen, Youtube } from 'lucide-react'
 
 export const metadata: Metadata = { title: 'Tutorials' }
+
+// MVP Affiliate's YouTube channel — the "Subscribe" CTA at the top of the page.
+// `?sub_confirmation=1` makes YouTube pop the subscribe confirmation dialog on
+// arrival.
+const MVP_YOUTUBE_CHANNEL_URL = 'https://www.youtube.com/@MVPaffiliate?sub_confirmation=1'
 
 const TUTORIALS = [
   {
@@ -68,6 +73,35 @@ export default function TutorialsPage() {
           Step-by-step video guides to get the most out of MVP Affiliate.
         </p>
       </div>
+
+      {/* Subscribe CTA — the MVP YouTube channel has ongoing tips & tricks for
+          Amazon Influencers / Associates and affiliate marketing beyond these
+          onboarding videos, so we point people there and ask for the sub. */}
+      <a
+        href={MVP_YOUTUBE_CHANNEL_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="mb-8 flex flex-col sm:flex-row sm:items-center gap-4 rounded-2xl border p-5 transition-opacity hover:opacity-95"
+        style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}
+      >
+        <span className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: '#FF0000' }}>
+          <Youtube size={24} className="text-white" />
+        </span>
+        <div className="flex-1 min-w-0">
+          <p className="text-[15px] font-semibold" style={{ color: 'var(--text)' }}>
+            Subscribe to MVP Affiliate on YouTube
+          </p>
+          <p className="text-[13px] mt-0.5 leading-relaxed" style={{ color: 'var(--text-soft)' }}>
+            Fresh tips &amp; tricks for Amazon Influencers, Amazon Associates, and affiliate marketing in general — plus deep-dives on every MVP feature. New videos regularly.
+          </p>
+        </div>
+        <span
+          className="inline-flex items-center justify-center gap-2 self-start sm:self-center px-5 py-2.5 rounded-xl text-[13px] font-bold text-white flex-shrink-0 whitespace-nowrap"
+          style={{ background: '#FF0000' }}
+        >
+          <Youtube size={16} /> Subscribe
+        </span>
+      </a>
 
       {/* Video grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">

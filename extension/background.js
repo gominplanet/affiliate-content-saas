@@ -1005,26 +1005,150 @@ function studioFinishEndScreenInPage() {
   })()
 }
 
+// Details page (/edit): the disclosures + feed settings the Data API can't set.
+// Sets paid-promotion ON, AI-use = No (genuine footage — the user owns this in
+// the opt-in copy), Allow embedding ON, and FORCES "Publish to subscriptions
+// feed and notify subscribers" OFF (YouTube defaults it ON — the user
+// explicitly wants no bell on this persistent setting too). Then Saves.
+function studioFinishDetailsInPage() {
+  return (async () => {
+    const out = { step: 'details', ok: false, detail: '', actions: {}, debug: {} }
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+    const deepAll = () => {
+      const acc = []
+      const walk = (root) => {
+        let els
+        try { els = root.querySelectorAll('*') } catch (e) { return }
+        for (const el of els) { acc.push(el); if (el.shadowRoot) walk(el.shadowRoot) }
+      }
+      walk(document)
+      return acc
+    }
+    const visText = (el) => {
+      try {
+        const a = el.getAttribute && (el.getAttribute('aria-label') || el.getAttribute('title'))
+        return (a || el.textContent || '').replace(/\s+/g, ' ').trim()
+      } catch (e) { return '' }
+    }
+    const click = (el) => {
+      if (!el) return false
+      try { el.scrollIntoView({ block: 'center' }) } catch (e) {}
+      try { el.click() } catch (e) {}
+      try { ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach((t) => el.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, view: window }))) } catch (e) {}
+      return true
+    }
+    const isBtn = (el) => { const t = (el.tagName || '').toLowerCase(); return /button|ytcp-button/.test(t) || (el.getAttribute && el.getAttribute('role') === 'button') }
+    const isCtrl = (el) => {
+      const t = (el.tagName || '').toLowerCase()
+      const r = el.getAttribute && el.getAttribute('role')
+      return /checkbox|radio/.test(t) || r === 'checkbox' || r === 'radio'
+    }
+    const isChecked = (el) => {
+      if (!el) return false
+      const ac = el.getAttribute && el.getAttribute('aria-checked')
+      if (ac === 'true') return true
+      if (ac === 'false') return false
+      if (el.checked === true) return true
+      const cls = (el.className || '').toString()
+      if (/(^|[\s-])(checked|selected|active)([\s-]|$)/.test(cls)) return true
+      try { if (el.querySelector && el.querySelector('[aria-checked="true"]')) return true } catch (e) {}
+      return false
+    }
+    // Ancestor text up to N levels — used to scope a control to its section.
+    const ctx = (el, n) => { let s = '', e = el; for (let i = 0; i < n && e; i++) { s += ' ' + (e.textContent || ''); e = e.parentElement } return s.replace(/\s+/g, ' ').toLowerCase() }
+    const findCtrl = (labelRe, ownTextRe) => {
+      const ctrls = deepAll().filter(isCtrl)
+      if (ownTextRe) { for (const el of ctrls) { if (ownTextRe.test(visText(el)) && labelRe.test(ctx(el, 8))) return el } }
+      for (const el of ctrls) { if (labelRe.test(visText(el)) || labelRe.test(ctx(el, 5))) return el }
+      return null
+    }
+    const setCheckbox = (labelRe, desired, key) => {
+      const el = findCtrl(labelRe)
+      if (!el) { out.actions[key] = 'not-found'; return }
+      const cur = isChecked(el)
+      if (cur !== desired) { click(el); out.actions[key] = desired ? 'turned-on' : 'turned-off' }
+      else { out.actions[key] = desired ? 'already-on' : 'already-off' }
+    }
+    const snapshot = () => Array.from(new Set(deepAll().filter(isCtrl).map((el) => `${visText(el).slice(0, 40)}=${isChecked(el) ? 'on' : 'off'}`))).slice(0, 60)
+
+    try {
+      await sleep(2200)
+      out.debug.url = location.href.slice(0, 160)
+      // Embedding + subs-feed live under "Show more" — expand it first.
+      const showMore = deepAll().filter(isBtn).find((el) => /show more/i.test(visText(el)))
+      out.debug.showMore = !!showMore
+      if (showMore) { click(showMore); await sleep(1200) }
+      out.debug.controlsBefore = snapshot()
+
+      // 1) Paid promotion ON
+      setCheckbox(/paid promotion|product placement|sponsorship|endorsement/i, true, 'paidPromotion')
+      await sleep(300)
+      // 2) Allow embedding ON
+      setCheckbox(/allow embedding/i, true, 'embedding')
+      await sleep(300)
+      // 3) Publish to subscriptions feed & notify subscribers — OFF (critical)
+      setCheckbox(/publish to subscriptions feed|notify subscribers/i, false, 'notify')
+      await sleep(300)
+      // 4) AI use / altered content → "No"
+      const noRadio = findCtrl(/\bai\b|alter|synthetic|realistic-looking|didn'?t actually occur|generate or edit/i, /^no$/i)
+      if (noRadio) { if (!isChecked(noRadio)) click(noRadio); out.actions.aiUse = 'no' } else { out.actions.aiUse = 'not-found' }
+      await sleep(400)
+
+      // Save
+      let save = null, len = 1e9
+      for (const el of deepAll().filter(isBtn)) { const tx = visText(el); if (/^save$/i.test(tx) && tx.length < len) { save = el; len = tx.length } }
+      out.debug.saveText = save ? visText(save) : null
+      if (save) { click(save); await sleep(1500) }
+      out.debug.controlsAfter = snapshot()
+
+      // Count it done when the critical notify-off control was found + we saved.
+      const notifyHandled = out.actions.notify && out.actions.notify !== 'not-found'
+      out.ok = !!save && !!notifyHandled
+      out.detail = `paid:${out.actions.paidPromotion || '?'} · embed:${out.actions.embedding || '?'} · notify:${out.actions.notify || '?'} · AI-use:${out.actions.aiUse || '?'}`
+      if (!save) out.detail += ' · Save not found'
+      return out
+    } catch (e) {
+      out.error = (e && e.message) || 'exception'
+      return out
+    }
+  })()
+}
+
 async function scanStudioFinish(videoId, opts, callerTabId) {
   if (!videoId || !/^[a-zA-Z0-9_-]{6,20}$/.test(videoId)) return { ok: false, error: 'bad-video-id', steps: [] }
-  const want = opts || { monetize: true, selfCert: true, endScreen: true }
+  const want = opts || { details: true, monetize: true, selfCert: true, endScreen: true }
   const steps = []
   let tabId = null
+  // First panel we need to land on (open the tab there directly).
+  const startPanel = want.details ? 'edit' : (want.monetize || want.selfCert) ? 'monetization' : 'endscreens'
+  let current = startPanel
+  // Navigate the SAME tab between Studio panels, only reloading when the panel
+  // actually changes (re-assigning the same URL wouldn't fire 'complete').
+  const goto = async (panel) => {
+    if (current === panel) return
+    await chrome.tabs.update(tabId, { url: STUDIO_VIDEO(videoId, panel) })
+    await waitForTabLoad(tabId, 30000)
+    current = panel
+  }
   try {
     // FOREGROUND: Studio is a heavy SPA and DOM interaction is far more reliable
     // in a focused tab (background tabs throttle timers/rendering). We restore
     // the caller's tab in `finally` so MVP stays in front afterward.
-    const tab = await chrome.tabs.create({ url: STUDIO_VIDEO(videoId, 'monetization'), active: true })
+    const tab = await chrome.tabs.create({ url: STUDIO_VIDEO(videoId, startPanel), active: true })
     tabId = tab.id
     await waitForTabLoad(tabId, 30000)
+    if (want.details) {
+      await goto('edit')
+      const r = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: studioFinishDetailsInPage })
+      steps.push((r && r[0] && r[0].result) || { step: 'details', ok: false, error: 'no-result' })
+    }
     if (want.monetize || want.selfCert) {
+      await goto('monetization')
       const r = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: studioFinishMonetizeInPage })
       steps.push((r && r[0] && r[0].result) || { step: 'monetization', ok: false, error: 'no-result' })
     }
     if (want.endScreen) {
-      // Reuse the same tab — navigate to the end-screen editor.
-      await chrome.tabs.update(tabId, { url: STUDIO_VIDEO(videoId, 'endscreens') })
-      await waitForTabLoad(tabId, 30000)
+      await goto('endscreens')
       const r = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: studioFinishEndScreenInPage })
       steps.push((r && r[0] && r[0].result) || { step: 'endscreen', ok: false, error: 'no-result' })
     }

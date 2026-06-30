@@ -394,6 +394,10 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
   // Monetization is a separate sub-toggle because not every channel is
   // monetized (no YPP = no toggle and no ad rating); end screen applies to all.
   const [finishOptIn, setFinishOptIn] = useState(false)
+  // Details-page disclosures + feed settings (paid promotion on, AI-use No,
+  // embedding on, "publish to subs feed & notify" OFF) — applies to every
+  // channel, monetized or not.
+  const [finishDoDetails, setFinishDoDetails] = useState(true)
   const [finishDoMonetize, setFinishDoMonetize] = useState(true)
   const [finishDoEndScreen, setFinishDoEndScreen] = useState(true)
   const [finishRunning, setFinishRunning] = useState(false)
@@ -874,22 +878,14 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
         const data = await safeJson(res)
         if (!res.ok) throw new Error((data.error as string) || `HTTP ${res.status} — apply failed`)
         setApplied(true)
-        let hasWarning = false
         if (Array.isArray(data.warnings) && data.warnings.length > 0) {
           setApplyError(`Applied with warnings: ${(data.warnings as string[]).join(' · ')}`)
-          hasWarning = true
         }
-        // Clean success → auto-collapse the panel after a beat so the user
-        // sees the green "Applied to YouTube" / "Saved to draft" state, then
-        // the card returns to the list view for the next video. Skip the
-        // collapse when there's a warning — the user needs to see the detail.
-        if (!hasWarning) setTimeout(() => setExpanded(false), 1500)
-        // Refresh the parent's drafts list so this video moves into the
-        // "🚀 Pushed via Co-Pilot" tab automatically. Fire on success even
-        // when there's a warning — the push happened, the classification
-        // should update. Small delay matches the auto-collapse so the list
-        // re-renders right as the card returns to the row view.
-        if (onApplied) setTimeout(() => onApplied(video.youtubeVideoId), hasWarning ? 0 : 1600)
+        // Leave the panel EXPANDED so the post-apply "Finish on YouTube" card
+        // stays visible and usable. Auto-collapsing + reclassifying here was
+        // unmounting it ~1.5s after a clean apply — the card flashed and
+        // vanished. Now the card's own "Dismiss" (dismissFinish) is what
+        // collapses the panel and moves the video into "Metadata sent".
         return
       }
 
@@ -910,14 +906,9 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
       setApplied(true)
       if (data.thumbnailWarning) {
         setApplyError(`Metadata applied ✓ — thumbnail not uploaded: ${data.thumbnailWarning}`)
-        // Metadata still landed → still belongs in 🚀 Pushed.
-        if (onApplied) setTimeout(() => onApplied(video.youtubeVideoId), 0)
-      } else {
-        // Clean success → auto-collapse so the user can move on to the next
-        // video in the list. Same UX pattern as the Pro path above.
-        setTimeout(() => setExpanded(false), 1500)
-        if (onApplied) setTimeout(() => onApplied(video.youtubeVideoId), 1600)
       }
+      // Panel stays expanded; the post-apply "Finish on YouTube" card's
+      // "Dismiss" (dismissFinish) collapses it and moves the video on.
     } catch (err) {
       setApplyError(err instanceof Error ? err.message : 'Failed to apply to YouTube')
     } finally {
@@ -959,14 +950,26 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
    *  on, submit the ad-suitability rating, and copy the end screen from the last
    *  video. Gated behind the explicit opt-in checkbox. The notify bell is left
    *  alone — MVP already disabled it via the Data API. */
+  /** Done with the post-apply "Finish on YouTube" card — collapse the panel and
+   *  move the video into the "Metadata sent" tab. This is what used to fire on a
+   *  timer right after apply (which unmounted the card before the user could use
+   *  it); now it's an explicit action so the card persists until the user is
+   *  ready to move on. */
+  function dismissFinish() {
+    setFinishCheckDone(true)
+    setExpanded(false)
+    if (onApplied) onApplied(video.youtubeVideoId)
+  }
+
   async function runStudioFinish() {
     if (!video.youtubeVideoId || !finishOptIn) return
-    if (!finishDoMonetize && !finishDoEndScreen) return
+    if (!finishDoDetails && !finishDoMonetize && !finishDoEndScreen) return
     setFinishRunning(true)
     setFinishError(null)
     setFinishResult(null)
     try {
       const res = await requestStudioFinish(video.youtubeVideoId, {
+        details: finishDoDetails,
         // Self-cert is part of the monetization flow — they ride together.
         monetize: finishDoMonetize,
         selfCert: finishDoMonetize,
@@ -2579,9 +2582,9 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                         </p>
                       </div>
                       <button
-                        onClick={() => setFinishCheckDone(true)}
+                        onClick={dismissFinish}
                         className="text-[10px] text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] flex-shrink-0"
-                        title="Hide this reminder"
+                        title="Done — move this video to Metadata sent"
                       >
                         Dismiss
                       </button>
@@ -2606,9 +2609,13 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
 
                         {/* Per-action scope. Monetization isn't available on
                             non-monetized / non-YPP channels (no toggle, no ad
-                            rating), so it's a separate opt-out; end screen
-                            applies to everyone. */}
+                            rating), so it's a separate opt-out; details + end
+                            screen apply to everyone. */}
                         <div className={`flex flex-col gap-1.5 pl-6 ${finishOptIn ? '' : 'opacity-50 pointer-events-none'}`}>
+                          <label className="flex items-start gap-2 cursor-pointer text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7]">
+                            <input type="checkbox" checked={finishDoDetails} disabled={finishRunning} onChange={e => setFinishDoDetails(e.target.checked)} className="mt-0.5 flex-shrink-0" />
+                            <span>Set <strong>Details</strong>: tick <strong>paid promotion</strong>, force <strong>off</strong> &ldquo;publish to subs feed &amp; notify&rdquo;, turn <strong>on</strong> embedding, answer <strong>AI&nbsp;use&nbsp;→&nbsp;No</strong> <span className="text-[#86868b]">— uncheck if any video is AI-generated/altered</span></span>
+                          </label>
                           <label className="flex items-start gap-2 cursor-pointer text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7]">
                             <input type="checkbox" checked={finishDoMonetize} disabled={finishRunning} onChange={e => setFinishDoMonetize(e.target.checked)} className="mt-0.5 flex-shrink-0" />
                             <span>Turn on <strong>Monetization</strong> + submit the <strong>ad-suitability rating</strong> <span className="text-[#86868b]">— uncheck if this channel isn&apos;t monetized</span></span>
@@ -2621,8 +2628,8 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
 
                         <button
                           onClick={runStudioFinish}
-                          disabled={!finishOptIn || finishRunning || (!finishDoMonetize && !finishDoEndScreen)}
-                          title={!finishOptIn ? 'Tick the box above to allow this' : (!finishDoMonetize && !finishDoEndScreen) ? 'Pick at least one action' : undefined}
+                          disabled={!finishOptIn || finishRunning || (!finishDoDetails && !finishDoMonetize && !finishDoEndScreen)}
+                          title={!finishOptIn ? 'Tick the box above to allow this' : (!finishDoDetails && !finishDoMonetize && !finishDoEndScreen) ? 'Pick at least one action' : undefined}
                           className="inline-flex items-center justify-center gap-1.5 self-start px-3 py-1.5 rounded-lg text-[11px] font-semibold text-white bg-[#7C3AED] hover:bg-[#6d28d9] disabled:opacity-50 transition-colors"
                         >
                           {finishRunning
@@ -2638,7 +2645,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                                   {s.ok ? '✓' : s.skipped ? 'ℹ' : s.partial ? '◐' : '✗'}
                                 </span>
                                 <span className="text-[#1d1d1f] dark:text-[#f5f5f7]">
-                                  <strong>{s.step === 'monetization' ? 'Monetization + ad rating' : s.step === 'endscreen' ? 'End screen' : s.step}</strong>
+                                  <strong>{s.step === 'details' ? 'Details & disclosures' : s.step === 'monetization' ? 'Monetization + ad rating' : s.step === 'endscreen' ? 'End screen' : s.step}</strong>
                                   {s.detail ? ` — ${s.detail}` : ''}
                                 </span>
                               </div>

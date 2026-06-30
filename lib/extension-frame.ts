@@ -326,9 +326,11 @@ export interface StudioFinishResult {
   error?: string
 }
 
-/** Which Studio-only actions the user opted into. The notify bell is NOT here —
- *  MVP already disables it via the Data API, so SCOUT never touches it. */
+/** Which Studio-only actions the user opted into. */
 export interface StudioFinishOpts {
+  /** Details page: paid-promotion ✓, AI-use = No, embedding on, and force
+   *  "Publish to subscriptions feed & notify subscribers" OFF. */
+  details: boolean
   monetize: boolean
   selfCert: boolean
   endScreen: boolean
