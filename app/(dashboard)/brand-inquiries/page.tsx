@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { toast } from 'sonner'
 import { Handshake, Mail, Archive, Loader2, Inbox } from 'lucide-react'
+import BrandCtaSettings from '@/components/brand/BrandCtaSettings'
 
 interface Inquiry {
   id: string
@@ -62,10 +63,11 @@ export default function BrandInquiriesPage() {
           <Handshake size={22} className="text-[#7C3AED]" /> Brand Inquiries
         </h1>
         <p className="text-sm text-[var(--text-3)] mt-1">
-          Messages brands sent through the &quot;Work with brands&quot; banner on your blog. Turn the banner on in{' '}
-          <a href="/customize" className="text-[#7C3AED] underline">Customize Blog → Work with brands</a>.
+          Messages brands sent through the &quot;Work with brands&quot; banner on your blog. Set the banner up below.
         </p>
       </div>
+
+      <BrandCtaSettings />
 
       {loading ? (
         <div className="flex items-center gap-2 text-[var(--text-3)] text-sm">
