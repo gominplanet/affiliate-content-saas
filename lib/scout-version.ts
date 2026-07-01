@@ -10,11 +10,11 @@
  *
  * Also drop a one-liner in SCOUT_WHATS_NEW so the banner says what changed.
  */
-export const SCOUT_LATEST_VERSION = '1.11.10'
+export const SCOUT_LATEST_VERSION = '1.11.11'
 
 /** One-line "what's new", shown in the update banner. Keep it user-facing. */
 export const SCOUT_WHATS_NEW =
-  'Fix: clears a console error on the Amazon Creator Connections page (the scanner script could load twice). Re-download + reload once to apply.'
+  'New: loads your YouTube Co-Pilot video list straight from YouTube Studio — no daily API-quota cost. Re-download + reload once to apply.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar

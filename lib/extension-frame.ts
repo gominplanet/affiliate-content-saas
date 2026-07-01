@@ -337,6 +337,44 @@ export async function requestStudioSchedule(): Promise<StudioScheduleResult> {
   return { ok: false, videos: [], error: resp.error || 'scan-failed', debug: resp.debug }
 }
 
+/** One video as SCOUT read it from YouTube Studio's Content list — the whole
+ *  library, quota-free. status mirrors the app's privacyStatus (a scheduled
+ *  video is 'private' with publishAt set). Feeds the Co-Pilot draft list. */
+export interface StudioVideo {
+  videoId: string
+  title: string
+  status: 'public' | 'unlisted' | 'private'
+  publishedAt: string      // ISO, only meaningful for public
+  publishAt: string | null // ISO when scheduled
+  thumbnailUrl: string
+}
+
+export interface StudioVideosResult {
+  ok: boolean
+  videos: StudioVideo[]
+  error?: string
+  debug?: Record<string, unknown>
+}
+
+/**
+ * Ask SCOUT to read the user's ENTIRE YouTube Studio video library (drafts,
+ * private, scheduled, unlisted, public) via Studio's own internal endpoint —
+ * completely free of the YouTube Data API daily quota (it runs in the user's
+ * logged-in Studio session, not through our OAuth project). MVP uses this to
+ * populate the Co-Pilot draft list without spending quota, falling back to the
+ * Data API only when SCOUT isn't installed. Best-effort: resolves, never throws.
+ */
+export async function requestStudioVideos(): Promise<StudioVideosResult> {
+  if (!(await isExtensionAvailable())) return { ok: false, videos: [], error: 'not-installed' }
+  const resp = await sendToExtension<{ ok?: boolean; videos?: StudioVideo[]; error?: string; debug?: Record<string, unknown> }>(
+    { type: 'MVP_STUDIO_VIDEOS' },
+    120000, // opening Studio + paginating the internal API can take a while
+  )
+  if (!resp) return { ok: false, videos: [], error: 'timeout' }
+  if (resp.ok && Array.isArray(resp.videos)) return { ok: true, videos: resp.videos, debug: resp.debug }
+  return { ok: false, videos: [], error: resp.error || 'scan-failed', debug: resp.debug }
+}
+
 /** One step of the Studio "finish" pass (monetization / endscreen). `ok` means
  *  SCOUT completed the step; `partial` means it got the user most of the way
  *  (e.g. opened the end-screen import) but a manual click remains. `debug`

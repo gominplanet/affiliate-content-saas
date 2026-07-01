@@ -8,7 +8,7 @@ import PageHero from '@/components/layout/PageHero'
 import { CapReachedBanner } from '@/components/CapReachedBanner'
 import { useConfirm } from '@/components/ui/useConfirm'
 import { pickWeightedStyleIndex, OVERLAY_STYLES, drawHeadline, type HeadlinePosition, type FaceBox } from '@/lib/thumbnail-overlay'
-import { isExtensionAvailable, requestVideoFrames, requestAmazonProduct, requestStudioSchedule, requestStudioFinish, type StudioFinishResult } from '@/lib/extension-frame'
+import { isExtensionAvailable, requestVideoFrames, requestAmazonProduct, requestStudioSchedule, requestStudioVideos, requestStudioFinish, type StudioFinishResult } from '@/lib/extension-frame'
 import { SCOUT_DOWNLOAD_URL } from '@/lib/scout-version'
 import CopyChromeExtensions from '@/components/scout/CopyChromeExtensions'
 import { effectiveTier } from '@/lib/view-as'
@@ -3053,11 +3053,45 @@ export default function StudioPage() {
       }
     }
 
+    // ── SCOUT-first: fill the draft cache from YouTube Studio, quota-free ─────
+    // Before touching the Data API, if SCOUT is installed we read the user's
+    // WHOLE Studio library (0 Data API units — it runs in their Studio session)
+    // and write it into the same cache the GET below serves from. So the list
+    // renders without spending any YouTube quota. Gated to fresh (non-append,
+    // non-search, default-channel) loads and throttled via a localStorage
+    // timestamp so we don't re-open a background Studio tab on every visit. If
+    // SCOUT is missing / fails / returns nothing, we simply fall through to the
+    // Data API path unchanged (requestStudioVideos resolves fast when absent).
+    let scoutSynced = false
+    if (!pageToken && !append && !query && !selectedChannelId) {
+      try {
+        const SYNC_KEY = 'mvp_scout_videos_synced'
+        const last = Number(localStorage.getItem(SYNC_KEY) || 0)
+        const stale = Date.now() - last > 15 * 60 * 1000
+        if (opts?.forceRefresh || stale) {
+          const s = await requestStudioVideos()
+          if (s.ok && s.videos.length > 0) {
+            const sync = await fetch('/api/youtube/drafts/scout-sync', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ videos: s.videos }),
+            })
+            if (sync.ok) {
+              scoutSynced = true
+              try { localStorage.setItem(SYNC_KEY, String(Date.now())) } catch { /* ignore */ }
+            }
+          }
+        }
+      } catch { /* SCOUT unavailable / errored → fall back to the Data API GET */ }
+    }
+
     const params = new URLSearchParams()
     if (pageToken) params.set('pageToken', pageToken)
     if (query) params.set('q', query)
     if (wantPublished) params.set('includePublished', '1')
-    if (opts?.forceRefresh) params.set('refresh', '1')
+    // When SCOUT just refreshed the cache, DON'T force a Data API re-scan — serve
+    // the freshly-synced (quota-free) cache instead.
+    if (opts?.forceRefresh && !scoutSynced) params.set('refresh', '1')
     if (selectedChannelId) params.set('channelId', selectedChannelId)
     const url = params.toString() ? `/api/youtube/drafts?${params.toString()}` : '/api/youtube/drafts'
     const res = await fetch(url)

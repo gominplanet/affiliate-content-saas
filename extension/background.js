@@ -788,6 +788,171 @@ async function scanStudioSchedule() {
   }
 }
 
+// ── Studio FULL video list scrape (MVP_STUDIO_VIDEOS) ───────────────────────
+// The Data API can't enumerate a big channel's full library cheaply (the
+// uploads playlist walk is quota-heavy and truncates). Studio's own Content
+// page already lists EVERY video via the same internal endpoint the schedule
+// scrape uses — /youtubei/v1/creator/list_creator_videos — free of the Data
+// API quota (it runs in the user's Studio session). This harvester is the
+// schedule scrape generalized: don't filter to "scheduled", extract each
+// video's privacy status + published/scheduled time + thumbnail, and hand the
+// whole list back so MVP can serve the Co-Pilot draft list without spending a
+// single YouTube API unit. Returns { ok, videos:[{videoId,title,status,
+// publishedAt,publishAt,thumbnailUrl}], debug }.
+function harvestStudioVideosInPage() {
+  return (async () => {
+    const out = { ok: false, videos: [], debug: {} }
+    try {
+      const cfg = (window.ytcfg && (window.ytcfg.data_ || {})) || {}
+      const get = (k) => { try { return window.ytcfg && window.ytcfg.get ? window.ytcfg.get(k) : cfg[k] } catch (e) { return cfg[k] } }
+      const apiKey = get('INNERTUBE_API_KEY')
+      const context = get('INNERTUBE_CONTEXT')
+      out.debug.hasApiKey = !!apiKey
+      out.debug.hasContext = !!context
+      if (!apiKey || !context) { out.error = 'no-ytcfg'; return out }
+
+      const origin = 'https://studio.youtube.com'
+      const cookie = (name) => { const m = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]+)')); return m ? m[1] : '' }
+      const sapisid = cookie('SAPISID') || cookie('__Secure-3PAPISID') || cookie('__Secure-1PAPISID')
+      out.debug.hasSapisid = !!sapisid
+      const authHeader = async () => {
+        const ts = Math.floor(Date.now() / 1000)
+        const buf = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(`${ts} ${sapisid} ${origin}`))
+        const hex = Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('')
+        return `SAPISIDHASH ${ts}_${hex}`
+      }
+      const auth = await authHeader()
+
+      // Same mask shape as the schedule scrape (scalar → true; MESSAGE fields →
+      // { all: true }), plus thumbnailDetails for the list's poster.
+      const mask = {
+        videoId: true,
+        title: true,
+        status: true,
+        timeCreatedSeconds: true,
+        timePublishedSeconds: true,
+        draftStatus: true,
+        visibility: { all: true },
+        scheduledPublishingDetails: { all: true },
+        thumbnailDetails: { all: true },
+      }
+
+      const findEpochSeconds = (obj, depth) => {
+        if (!obj || typeof obj !== 'object' || depth > 4) return null
+        for (const k in obj) {
+          const val = obj[k]
+          if ((typeof val === 'string' || typeof val === 'number') && /(sec|time|stamp)/i.test(k)) {
+            const n = Number(val)
+            if (n > 1000000000 && n < 5000000000) return n
+          } else if (val && typeof val === 'object') {
+            const nested = findEpochSeconds(val, depth + 1)
+            if (nested) return nested
+          }
+        }
+        return null
+      }
+      const titleText = (t) => typeof t === 'string' ? t : (t && (t.text || t.simpleText || (t.runs && t.runs.map((r) => r.text).join('')))) || ''
+      const bestThumb = (td, videoId) => {
+        try {
+          const arr = (td && (td.thumbnails || td.thumbnail)) || []
+          if (Array.isArray(arr) && arr.length) {
+            const sorted = arr.slice().sort((a, b) => (Number(b.width) || 0) - (Number(a.width) || 0))
+            const u = sorted[0] && sorted[0].url
+            if (typeof u === 'string' && u) return u
+          }
+        } catch (e) {}
+        // Fallback: the standard i.ytimg URL works for most videos.
+        return `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`
+      }
+
+      const videos = []
+      const allSeen = {}
+      let itemsSeen = 0, uniqueCount = 0, dryStreak = 0, pages = 0
+      let pageToken
+      for (let i = 0; i < 80; i++) {
+        const body = { context, pageSize: 100, mask }
+        if (pageToken) body.pageToken = pageToken
+        const res = await fetch(`${origin}/youtubei/v1/creator/list_creator_videos?alt=json&key=${encodeURIComponent(apiKey)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': auth, 'X-Origin': origin },
+          credentials: 'include',
+          body: JSON.stringify(body),
+        })
+        if (!res.ok) { out.error = 'http-' + res.status; out.debug.httpBody = (await res.text()).slice(0, 400); break }
+        const data = await res.json()
+        const items = data.videos || data.items || []
+        if (i === 0) {
+          out.debug.responseKeys = Object.keys(data || {})
+          out.debug.firstPageCount = items.length
+          if (items[0]) out.debug.sampleVideo = JSON.stringify(items[0]).slice(0, 1500)
+        }
+        itemsSeen += items.length
+        let newThisPage = 0
+        for (const v of items) {
+          if (!v.videoId) continue
+          if (allSeen[v.videoId]) continue
+          allSeen[v.videoId] = 1; uniqueCount++; newThisPage++
+          const det = v.scheduledPublishingDetails || v.scheduledPublishingDetail || null
+          const vis = v.visibility ? (v.visibility.effectiveStatus || v.visibility.userSetVisibility || '') : ''
+          const visStr = String(vis || '').toUpperCase()
+          const scheduledSecs = det ? findEpochSeconds(det, 0) : null
+          const isScheduled = !!scheduledSecs || visStr.indexOf('SCHEDULED') >= 0
+          // Map Studio visibility → the app's privacyStatus. A scheduled video is
+          // private-until-publish, so status stays 'private' but publishAt is set.
+          let status = 'private'
+          if (!isScheduled) {
+            if (visStr.indexOf('PUBLIC') >= 0) status = 'public'
+            else if (visStr.indexOf('UNLISTED') >= 0) status = 'unlisted'
+            else status = 'private'
+          }
+          const pubSecs = Number(v.timePublishedSeconds)
+          const publishedAt = (status === 'public' && pubSecs > 1000000000 && pubSecs < 5000000000)
+            ? new Date(pubSecs * 1000).toISOString() : ''
+          const publishAt = scheduledSecs ? new Date(scheduledSecs * 1000).toISOString() : null
+          videos.push({
+            videoId: v.videoId,
+            title: titleText(v.title),
+            status,
+            publishedAt,
+            publishAt,
+            thumbnailUrl: bestThumb(v.thumbnailDetails, v.videoId),
+          })
+        }
+        pages = i + 1
+        // Stall guard: pages that add no new unique video mean Studio is cycling.
+        if (items.length > 0 && newThisPage === 0) { if (++dryStreak >= 3) { out.debug.stalled = true; break } } else { dryStreak = 0 }
+        pageToken = data.nextPageToken
+        if (!pageToken) break
+      }
+      out.debug.pages = pages
+      out.debug.itemsSeen = itemsSeen
+      out.debug.uniqueVideos = uniqueCount
+      out.videos = videos
+      out.ok = !out.error
+      return out
+    } catch (e) {
+      out.error = (e && e.message) || 'exception'
+      return out
+    }
+  })()
+}
+
+async function scanStudioVideos() {
+  let tabId = null
+  try {
+    const tab = await chrome.tabs.create({ url: STUDIO_URL, active: false })
+    tabId = tab.id
+    await waitForTabLoad(tabId, 30000)
+    await _sleep(2500)
+    const results = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: harvestStudioVideosInPage })
+    return (results && results[0] && results[0].result) || { ok: false, error: 'no-result' }
+  } catch (e) {
+    return { ok: false, error: (e && e.message) || 'scan-failed' }
+  } finally {
+    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+  }
+}
+
 // ── Studio "finish" automation (MVP_STUDIO_FINISH) ──────────────────────────
 // After MVP pushes a video's metadata through the public Data API, a few
 // Studio-only fields remain that the API can't set: per-video Monetization, the
@@ -1168,6 +1333,14 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     // Scraping Studio + paginating the internal API can take a bit; allow 2 min.
     const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 120000)
     scanStudioSchedule()
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true // async response — keep the channel open
+  }
+  if (msg.type === 'MVP_STUDIO_VIDEOS') {
+    // Full-library list scrape (quota-free) that feeds the Co-Pilot draft list.
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 120000)
+    scanStudioVideos()
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async response — keep the channel open
