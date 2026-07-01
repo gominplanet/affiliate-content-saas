@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.59
+ * Version: 1.0.60
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -3165,20 +3165,32 @@ if (!function_exists('mvp_affiliate_render_brand_cta')) {
 
         ob_start();
         ?>
+<style>
+  /* A proper labeled pill — the JS below docks it right next to the
+     "Ask {Brand}" product-finder button, following it whether that button
+     stays a floating icon (top-right) or gets injected into the theme header. */
+  .mvp-brandcta-pill{position:fixed;top:80px;right:16px;z-index:9998;display:inline-flex;align-items:center;gap:8px;padding:10px 18px;border-radius:999px;background:#111114;color:#fff;border:1px solid rgba(255,255,255,0.14);font:600 14px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;text-decoration:none;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,0.28);transition:transform .12s ease,box-shadow .12s ease;}
+  .mvp-brandcta-pill:hover{transform:translateY(-1px);box-shadow:0 8px 24px rgba(0,0,0,0.36);}
+  .mvp-brandcta-pill .mvp-brandcta-spark{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:999px;background:rgba(255,255,255,0.16);font-size:13px;}
+  /* Fixed fallback: dock just LEFT of the product-finder icon at right:16px. */
+  .mvp-brandcta-pill.is-beside{right:62px;top:80px;}
+  /* Header-injected: match the product-finder inline pill footprint. */
+  .mvp-brandcta-pill.is-inline{position:static;top:auto;right:auto;margin:0 4px;padding:7px 14px 7px 10px;font-size:12px;box-shadow:0 2px 6px rgba(0,0,0,0.20);vertical-align:middle;}
+  .mvp-brandcta-pill.is-inline:hover{transform:none;}
+  @media (max-width:600px){.mvp-brandcta-pill.is-inline{padding:7px;gap:0;}.mvp-brandcta-pill.is-inline .mvp-brandcta-label{display:none;}}
+</style>
 <div class="mvp-brandcta" id="mvp-brandcta-<?php echo esc_attr($uid); ?>" style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
   <?php if ($direct_link): ?>
   <!-- Direct-link mode: the pill is just an outbound link to the media kit. -->
-  <a class="mvp-brandcta-pill" href="<?php echo esc_url($media_kit); ?>" target="_blank" rel="nofollow noopener"
-     style="position:fixed;top:14px;right:14px;z-index:99990;display:inline-flex;align-items:center;gap:7px;padding:9px 15px;border-radius:999px;background:rgba(17,17,20,0.90);color:#fff;font-size:13px;font-weight:600;text-decoration:none;box-shadow:0 4px 16px rgba(0,0,0,0.22);backdrop-filter:saturate(140%) blur(6px);border:1px solid rgba(255,255,255,0.14);cursor:pointer;">
-    <span aria-hidden="true">✦</span><span>Are you a brand?</span>
+  <a class="mvp-brandcta-pill" id="mvp-brandcta-pill-<?php echo esc_attr($uid); ?>" href="<?php echo esc_url($media_kit); ?>" target="_blank" rel="nofollow noopener">
+    <span class="mvp-brandcta-spark" aria-hidden="true">✦</span><span class="mvp-brandcta-label">Are you a brand?</span>
   </a>
   <?php else: ?>
-  <button type="button" class="mvp-brandcta-pill" data-open
-     style="position:fixed;top:14px;right:14px;z-index:99990;display:inline-flex;align-items:center;gap:7px;padding:9px 15px;border-radius:999px;background:rgba(17,17,20,0.90);color:#fff;font-size:13px;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,0.22);backdrop-filter:saturate(140%) blur(6px);border:1px solid rgba(255,255,255,0.14);cursor:pointer;">
-    <span aria-hidden="true">✦</span><span>Are you a brand?</span>
+  <button type="button" class="mvp-brandcta-pill" id="mvp-brandcta-pill-<?php echo esc_attr($uid); ?>" data-open>
+    <span class="mvp-brandcta-spark" aria-hidden="true">✦</span><span class="mvp-brandcta-label">Are you a brand?</span>
   </button>
 
-  <div class="mvp-brandcta-overlay" role="dialog" aria-modal="true" aria-labelledby="mvp-brandcta-title-<?php echo esc_attr($uid); ?>"
+  <div class="mvp-brandcta-overlay" id="mvp-brandcta-overlay-<?php echo esc_attr($uid); ?>" role="dialog" aria-modal="true" aria-labelledby="mvp-brandcta-title-<?php echo esc_attr($uid); ?>"
        style="display:none;position:fixed;inset:0;z-index:99991;background:rgba(0,0,0,0.55);align-items:center;justify-content:center;padding:20px;">
     <div class="mvp-brandcta-card"
          style="width:100%;max-width:460px;max-height:90vh;overflow-y:auto;background:#ffffff;color:#1d1d1f;border-radius:18px;padding:26px;box-shadow:0 20px 60px rgba(0,0,0,0.35);position:relative;">
@@ -3225,25 +3237,45 @@ if (!function_exists('mvp_affiliate_render_brand_cta')) {
 <?php if (!$direct_link && $inbox && $site_key !== ''): ?>
 <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
 <?php endif; ?>
-<?php if (!$direct_link): ?>
 <script>
 (function(){
-  var root = document.getElementById(<?php echo wp_json_encode('mvp-brandcta-' . $uid); ?>);
-  if (!root) return;
-  var openBtn = root.querySelector('[data-open]');
-  var overlay = root.querySelector('.mvp-brandcta-overlay');
-  if (!openBtn || !overlay) return;
-  var closeEls = root.querySelectorAll('[data-close]');
+  // Look up by stable id (not via a wrapper) because the placement logic
+  // below moves the pill OUT of its wrapper and next to the product-finder
+  // button — a wrapper-scoped query would then find nothing.
+  var pill = document.getElementById(<?php echo wp_json_encode('mvp-brandcta-pill-' . $uid); ?>);
+  if (!pill) return;
+
+  // ── Placement: dock the pill right next to the "Ask {Brand}" button ──
+  // The product-finder button (#mvp-pf-fab) either floats top-right or gets
+  // injected into the theme header. We follow it: re-check for a few seconds
+  // (it can inject late, after the sticky header mounts) and sit right after
+  // it, matching header-pill vs floating-icon styling.
+  var ticks = 0;
+  function place(){
+    var pf = document.getElementById('mvp-pf-fab');
+    if (pf && pf.parentNode){
+      if (pill.previousElementSibling !== pf) pf.parentNode.insertBefore(pill, pf.nextSibling);
+      var inline = pf.classList.contains('mvp-pf-fab--inline');
+      pill.classList.toggle('is-inline', inline);
+      pill.classList.toggle('is-beside', !inline);
+    }
+  }
+  place();
+  var pt = setInterval(function(){ place(); if (++ticks >= 12) clearInterval(pt); }, 300);
+
+  // ── Modal (skipped in direct-link mode — no overlay is rendered) ──
+  var overlay = document.getElementById(<?php echo wp_json_encode('mvp-brandcta-overlay-' . $uid); ?>);
+  if (!overlay) return;
   function open(){ overlay.style.display = 'flex'; document.addEventListener('keydown', onKey); }
   function close(){ overlay.style.display = 'none'; document.removeEventListener('keydown', onKey); }
   function onKey(e){ if (e.key === 'Escape') close(); }
-  openBtn.addEventListener('click', open);
-  closeEls.forEach(function(el){ el.addEventListener('click', close); });
+  pill.addEventListener('click', open);
+  overlay.querySelectorAll('[data-close]').forEach(function(el){ el.addEventListener('click', close); });
   overlay.addEventListener('click', function(e){ if (e.target === overlay) close(); });
 
-  var form = root.querySelector('.mvp-brandcta-form');
-  if (!form) return;
-  var msg = root.querySelector('.mvp-brandcta-msg');
+  var form = overlay.querySelector('.mvp-brandcta-form');
+  if (!form) return; // inbox disabled: modal shows only the media-kit button.
+  var msg = overlay.querySelector('.mvp-brandcta-msg');
   var btn = form.querySelector('button[type="submit"]');
   var origLabel = btn.textContent;
   function val(sel){ var el = form.querySelector(sel); return el ? (el.value || '').trim() : ''; }
@@ -3302,7 +3334,6 @@ if (!function_exists('mvp_affiliate_render_brand_cta')) {
   });
 })();
 </script>
-<?php endif; ?>
         <?php
         echo ob_get_clean();
     }

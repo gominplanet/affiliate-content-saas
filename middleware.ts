@@ -26,6 +26,12 @@ const publicPaths = [
   // customer-blog visitors' browsers. CORS preflight (OPTIONS) must reach the
   // route handler too, which is why it's allowlisted here.
   '/api/blog/product-finder',
+  // "Work with brands" inbox — public POST hit by the WP blog's brand-contact
+  // form (cross-origin, no session). Enforces its OWN auth: HMAC + honeypot +
+  // hCaptcha. CORS preflight (OPTIONS) must reach the handler too. Note the
+  // isPublic() segment-boundary match below keeps this from also whitelisting
+  // the AUTHENTICATED inbox at /api/brand-inquiries (plural).
+  '/api/brand-inquiry',
   // Agency accept page — invitee may not yet have an account, but they need
   // to land on the page to sign in / sign up. Page-level auth check does the
   // rest.
@@ -44,7 +50,11 @@ function isPublicRoot(pathname: string) {
 }
 
 function isPublic(pathname: string) {
-  return publicPaths.some((p) => pathname.startsWith(p))
+  // Match on segment boundaries — an entry matches the exact path or a deeper
+  // sub-path (…/x), never a longer sibling that merely shares the prefix. This
+  // keeps '/api/brand-inquiry' (public form POST) from also whitelisting
+  // '/api/brand-inquiries' (the authenticated owner inbox).
+  return publicPaths.some((p) => pathname === p || pathname.startsWith(p + '/'))
 }
 
 export async function middleware(request: NextRequest) {
