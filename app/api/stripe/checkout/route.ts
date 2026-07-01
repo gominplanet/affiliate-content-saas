@@ -26,6 +26,55 @@ export async function POST(request: NextRequest) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL!
 
   const stripe = getStripe()
+
+  // ── Existing subscriber → change plan IN PLACE with proration ────────────
+  // Spinning up a fresh Checkout subscription for someone who already pays
+  // would leave them with TWO live subscriptions (double-billed) and throw
+  // away the money they've already paid this cycle. Instead, if they have a
+  // live subscription, swap its price and let Stripe prorate: the unused
+  // portion of the current plan is credited toward the new one, so they only
+  // pay the difference. The customer.subscription.updated webhook maps the new
+  // price → new tier; we also flip the tier here so access is instant.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: ig } = await (supabase as any)
+    .from('integrations')
+    .select('stripe_customer_id')
+    .eq('user_id', user.id)
+    .maybeSingle()
+  const customerId: string | null = ig?.stripe_customer_id ?? null
+
+  if (customerId) {
+    try {
+      const subs = await stripe.subscriptions.list({ customer: customerId, status: 'all', limit: 20 })
+      const live = subs.data.find(s => ['active', 'trialing', 'past_due', 'unpaid'].includes(s.status))
+      const item = live?.items.data[0]
+      if (live && item) {
+        // Already on this price → nothing to change or charge.
+        if (item.price?.id === priceId) {
+          return NextResponse.json({ updated: true, tier, alreadyOnPlan: true })
+        }
+        await stripe.subscriptions.update(live.id, {
+          items: [{ id: item.id, price: priceId }],
+          // Credit the unused portion of the current plan against the new one.
+          proration_behavior: 'create_prorations',
+          // Stamp so the webhook resolves user + tier directly.
+          metadata: { user_id: user.id, tier },
+        })
+        // Reflect the new tier immediately (webhook re-confirms it).
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (supabase as any).from('integrations').update({ tier }).eq('user_id', user.id)
+        return NextResponse.json({ updated: true, tier })
+      }
+      // customerId exists but no live subscription (cancelled/expired) → fall
+      // through to a fresh Checkout below.
+    } catch (err) {
+      // If the in-place swap fails for any reason, don't fall through to a new
+      // subscription (that would double-bill). Surface the error instead.
+      const msg = err instanceof Error ? err.message : 'Could not change your plan. Please try again or use Manage subscription.'
+      return NextResponse.json({ error: msg }, { status: 500 })
+    }
+  }
+
   const session = await stripe.checkout.sessions.create({
     mode: 'subscription',
     payment_method_types: ['card'],

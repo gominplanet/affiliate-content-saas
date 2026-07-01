@@ -134,9 +134,18 @@ export default function BillingPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tier: t }),
       })
-      const { url, error } = await res.json()
+      const { url, updated, alreadyOnPlan, error } = await res.json()
       if (error) { toast.error(error); return }
-      window.location.href = url
+      // Existing subscriber → plan was switched in place (prorated), no
+      // redirect. New subscriber → a Checkout URL to visit.
+      if (updated) {
+        const label = t.charAt(0).toUpperCase() + t.slice(1)
+        toast.success(alreadyOnPlan ? `You're already on ${label}.` : `Switched to ${label} — billing is prorated, so your unused time is credited.`)
+        setTimeout(() => window.location.reload(), 1400)
+        return
+      }
+      if (url) { window.location.href = url; return }
+      toast.error('Something went wrong. Please try again.')
     } catch { toast.error('Something went wrong. Please try again.') }
     finally { setCheckoutLoading(null) }
   }
