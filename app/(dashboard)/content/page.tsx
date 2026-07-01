@@ -484,9 +484,10 @@ function BlogThumbUpload({ videoId, initialUrl }: { videoId: string; initialUrl:
       {/* Always-visible note so creators understand how the hero image is
           chosen and why the YouTube thumbnail isn't duplicated in-article. */}
       <span className="basis-full text-[11px]" style={{ color: 'var(--text-faint)' }}>
+        <span className="font-semibold" style={{ color: 'var(--text-soft)' }}>Blog thumbnail — </span>
         {url
-          ? 'Your uploaded image is this post’s main hero. The YouTube video stays embedded inside the article.'
-          : 'Optional — skip it and the YouTube video’s image becomes your blog post’s main hero image. It’s used as the hero only, never repeated inside the article (the video itself is already embedded there).'}
+          ? 'your uploaded image is this post’s hero. The YouTube video stays embedded inside the article.'
+          : 'optional. If you don’t upload one, the YouTube video’s image is used as this post’s hero (hero only — never repeated inside the article, since the video is already embedded there).'}
       </span>
       {err && <span className="basis-full text-[10px] text-[#ff3b30]">{err}</span>}
     </>
