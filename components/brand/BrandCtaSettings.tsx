@@ -20,17 +20,20 @@ interface BrandCtaData {
   headline: string
   intro: string
   mediaKitUrl: string
+  mediaKitLabel: string
   inbox: boolean
   directLink: boolean
 }
 
 const DEFAULT_HEADLINE = 'Are you a brand that wants to get featured here?'
+const DEFAULT_MEDIA_KIT_LABEL = 'View my media kit'
 
 const emptyBrandCta: BrandCtaData = {
   enabled: false,
   headline: DEFAULT_HEADLINE,
   intro: '',
   mediaKitUrl: '',
+  mediaKitLabel: DEFAULT_MEDIA_KIT_LABEL,
   inbox: true,
   directLink: false,
 }
@@ -42,6 +45,7 @@ function normalize(bc: Partial<BrandCtaData> | undefined | null): BrandCtaData {
     headline: bc?.headline ?? DEFAULT_HEADLINE,
     intro: bc?.intro ?? '',
     mediaKitUrl: bc?.mediaKitUrl ?? '',
+    mediaKitLabel: bc?.mediaKitLabel ?? DEFAULT_MEDIA_KIT_LABEL,
     inbox: typeof bc?.inbox === 'boolean' ? bc.inbox : true,
     directLink: typeof bc?.directLink === 'boolean' ? bc.directLink : false,
   }
@@ -77,9 +81,17 @@ export default function BrandCtaSettings() {
   async function save() {
     setSaving(true)
     try {
+      // Auto-prepend https:// when they pasted a bare host ("www.example.com")
+      // so the button link actually works — and reflect it back in the field.
+      const url = bc.mediaKitUrl.trim()
+      const normalizedUrl = url && !/^https?:\/\//i.test(url) && !/^javascript:/i.test(url)
+        ? 'https://' + url.replace(/^\/+/, '')
+        : url
+      const bcToSave = { ...bc, mediaKitUrl: normalizedUrl }
+      if (normalizedUrl !== bc.mediaKitUrl) setBc(bcToSave)
       // Merge brandCta into the full loaded object (never send brandCta alone —
       // the endpoint replaces the whole blog_customizations).
-      const body = { ...(full ?? {}), brandCta: bc }
+      const body = { ...(full ?? {}), brandCta: bcToSave }
       const res = await fetch('/api/wordpress/customizations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -149,21 +161,29 @@ export default function BrandCtaSettings() {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">Media kit / press page URL <span className="text-[var(--text-3)] font-normal">(optional)</span></label>
+                <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">Link URL <span className="text-[var(--text-3)] font-normal">(optional)</span></label>
                 <input type="url" value={bc.mediaKitUrl} onChange={e => update({ mediaKitUrl: e.target.value })} maxLength={500} className="input-field w-full" placeholder="https://your-media-kit.com" />
-                <p className="text-[11px] text-[var(--text-3)] mt-1">A &quot;Visit my media kit&quot; button links here. Have a media kit in Brand Profile? Paste its link.</p>
+                <p className="text-[11px] text-[var(--text-3)] mt-1">Where the button sends brands — a media kit, portfolio, press page, booking form, anywhere. Paste any URL.</p>
               </div>
 
               {bc.mediaKitUrl.trim() !== '' && (
-                <div className="flex items-center justify-between p-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border-2)]">
+                <>
                   <div>
-                    <p className="text-sm font-medium text-[var(--text)]">Link straight to my media kit</p>
-                    <p className="text-xs text-[var(--text-3)]">Skip the pop-up — the banner opens your media-kit link directly.</p>
+                    <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">Button label</label>
+                    <input type="text" value={bc.mediaKitLabel} onChange={e => update({ mediaKitLabel: e.target.value })} maxLength={60} className="input-field w-full" placeholder={DEFAULT_MEDIA_KIT_LABEL} />
+                    <p className="text-[11px] text-[var(--text-3)] mt-1">The text on the button that opens your link — e.g. &quot;View my media kit&quot;, &quot;See my portfolio&quot;, &quot;Book a collab&quot;.</p>
                   </div>
-                  <button onClick={() => update({ directLink: !bc.directLink })} className="text-[var(--text-3)]" aria-label="Toggle direct media-kit link">
-                    {bc.directLink ? <ToggleRight size={28} className="text-[#7C3AED]" /> : <ToggleLeft size={28} />}
-                  </button>
-                </div>
+
+                  <div className="flex items-center justify-between p-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border-2)]">
+                    <div>
+                      <p className="text-sm font-medium text-[var(--text)]">Link straight to it</p>
+                      <p className="text-xs text-[var(--text-3)]">Skip the pop-up — the banner opens your link directly.</p>
+                    </div>
+                    <button onClick={() => update({ directLink: !bc.directLink })} className="text-[var(--text-3)]" aria-label="Toggle direct link">
+                      {bc.directLink ? <ToggleRight size={28} className="text-[#7C3AED]" /> : <ToggleLeft size={28} />}
+                    </button>
+                  </div>
+                </>
               )}
 
               <div className="flex items-center justify-between p-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border-2)]">

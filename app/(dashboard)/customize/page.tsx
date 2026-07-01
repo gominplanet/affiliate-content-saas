@@ -132,6 +132,7 @@ interface BrandCtaData {
   headline: string
   intro: string
   mediaKitUrl: string
+  mediaKitLabel: string
   inbox: boolean
   directLink: boolean
 }
@@ -161,6 +162,7 @@ const emptyBrandCta: BrandCtaData = {
   headline: 'Are you a brand that wants to get featured here?',
   intro: '',
   mediaKitUrl: '',
+  mediaKitLabel: 'View my media kit',
   inbox: true,
   directLink: false,
 }
@@ -333,12 +335,13 @@ export default function CustomizePage() {
           ga4Id: typeof bc.analytics?.ga4Id === 'string' ? bc.analytics.ga4Id : '',
         },
         brandCta: {
-          enabled:     typeof bc.brandCta?.enabled === 'boolean' ? bc.brandCta.enabled : false,
-          headline:    bc.brandCta?.headline ?? emptyBrandCta.headline,
-          intro:       bc.brandCta?.intro ?? '',
-          mediaKitUrl: bc.brandCta?.mediaKitUrl ?? '',
-          inbox:       typeof bc.brandCta?.inbox === 'boolean' ? bc.brandCta.inbox : true,
-          directLink:  typeof bc.brandCta?.directLink === 'boolean' ? bc.brandCta.directLink : false,
+          enabled:       typeof bc.brandCta?.enabled === 'boolean' ? bc.brandCta.enabled : false,
+          headline:      bc.brandCta?.headline ?? emptyBrandCta.headline,
+          intro:         bc.brandCta?.intro ?? '',
+          mediaKitUrl:   bc.brandCta?.mediaKitUrl ?? '',
+          mediaKitLabel: bc.brandCta?.mediaKitLabel ?? emptyBrandCta.mediaKitLabel,
+          inbox:         typeof bc.brandCta?.inbox === 'boolean' ? bc.brandCta.inbox : true,
+          directLink:    typeof bc.brandCta?.directLink === 'boolean' ? bc.brandCta.directLink : false,
         },
       })
     }

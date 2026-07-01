@@ -208,13 +208,22 @@ export async function POST(req: Request) {
         brandCta: (() => {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const bc = (customizations as any)?.brandCta
-          const rawUrl = String(bc?.mediaKitUrl || '').trim()
+          let rawUrl = String(bc?.mediaKitUrl || '').trim()
+          // Auto-prepend https:// when the creator pastes a bare host
+          // (e.g. "www.example.com") — otherwise the button silently drops.
+          if (rawUrl && !/^https?:\/\//i.test(rawUrl) && !/^\s*javascript:/i.test(rawUrl)) {
+            rawUrl = 'https://' + rawUrl.replace(/^\/+/, '')
+          }
           return {
             enabled: !!bc?.enabled,
             ownerId,
             headline: (String(bc?.headline || '').trim() || 'Are you a brand that wants to get featured here?').slice(0, 160),
             intro: String(bc?.intro || '').slice(0, 1000),
             mediaKitUrl: /^https?:\/\//i.test(rawUrl) ? rawUrl.slice(0, 500) : '',
+            // Custom label for the media-kit / link button (falls back to a
+            // sensible default). Lets creators write their own CTA — "See my
+            // portfolio", "Book a collab", etc.
+            mediaKitLabel: (String(bc?.mediaKitLabel || '').trim() || 'View my media kit').slice(0, 60),
             inbox: !!bc?.inbox,
             directLink: !!bc?.directLink,
             // Public hCaptcha site key so the plugin can render the widget on

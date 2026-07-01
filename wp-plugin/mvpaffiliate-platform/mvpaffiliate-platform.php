@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.60
+ * Version: 1.0.61
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -3135,7 +3135,14 @@ if (!function_exists('mvp_affiliate_render_brand_cta')) {
 
         $inbox     = !empty($bc['inbox']);
         $media_kit = isset($bc['mediaKitUrl']) ? trim((string) $bc['mediaKitUrl']) : '';
+        // Accept a bare host ("www.example.com") by prepending https://.
+        if ($media_kit !== '' && !preg_match('#^https?://#i', $media_kit) && !preg_match('#^\s*javascript:#i', $media_kit)) {
+            $media_kit = 'https://' . ltrim($media_kit, '/');
+        }
         if ($media_kit !== '' && !preg_match('#^https?://#i', $media_kit)) $media_kit = '';
+        $media_kit_label = (isset($bc['mediaKitLabel']) && trim((string) $bc['mediaKitLabel']) !== '')
+            ? trim((string) $bc['mediaKitLabel'])
+            : 'View my media kit';
         // "Link straight to media kit" only makes sense when a URL is set.
         $direct_link = !empty($bc['directLink']) && $media_kit !== '';
         // Nothing actionable configured → don't render a dead button.
@@ -3205,7 +3212,7 @@ if (!function_exists('mvp_affiliate_render_brand_cta')) {
 
       <?php if ($media_kit !== ''): ?>
       <a href="<?php echo esc_url($media_kit); ?>" target="_blank" rel="nofollow noopener"
-         style="display:block;text-align:center;padding:12px 16px;border-radius:11px;background:#0071e3;color:#fff;font-size:14px;font-weight:600;text-decoration:none;margin-bottom:<?php echo $inbox ? '18px' : '0'; ?>;">View my media kit →</a>
+         style="display:block;text-align:center;padding:12px 16px;border-radius:11px;background:#0071e3;color:#fff;font-size:14px;font-weight:600;text-decoration:none;margin-bottom:<?php echo $inbox ? '18px' : '0'; ?>;"><?php echo esc_html($media_kit_label); ?> →</a>
       <?php endif; ?>
 
       <?php if ($inbox): ?>
