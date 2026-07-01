@@ -18,7 +18,7 @@
 import { useState } from 'react'
 import dynamic from 'next/dynamic'
 import { toast } from 'sonner'
-import { Facebook, MessageCircle, Pin } from 'lucide-react'
+import { Facebook, MessageCircle, Pin, Handshake } from 'lucide-react'
 import { SocialPill } from '@/components/content/SocialPill'
 import { tierAllowsSocial } from '@/lib/tier'
 import type { Tier } from '@/lib/tier'
@@ -28,6 +28,36 @@ const SocialPreviewModal = dynamic(
   () => import('@/components/content/SocialPreviewModal').then(m => ({ default: m.SocialPreviewModal })),
   { ssr: false },
 )
+
+const ShareWithBrandModal = dynamic(
+  () => import('@/components/content/ShareWithBrandModal'),
+  { ssr: false },
+)
+
+/**
+ * "Share with brand" for a video-less ("from a link") post — e.g. a Levanta or
+ * Amazon-link post. The rich VideoCard has this button, but orphan posts render
+ * via OrphanPostShare (social pills only), which can return null when no socials
+ * are connected — so this is a SEPARATE, always-visible control keyed on the WP
+ * post id (same recap flow as the video-card version). Assembles every published
+ * link into a ready-to-send recap message.
+ */
+export function OrphanShareWithBrand({ postId, wpUrl }: { postId: string; wpUrl: string | null }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="mt-2">
+      <button
+        onClick={() => setOpen(true)}
+        title="Send the brand a recap of everywhere this content is live"
+        className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-lg whitespace-nowrap border transition-colors hover:bg-[rgba(124,58,237,0.10)]"
+        style={{ borderColor: 'var(--border-bright, rgba(0,0,0,0.12))', color: 'var(--text, #1d1d1f)' }}
+      >
+        <Handshake size={12} /> Share with brand
+      </button>
+      {open && <ShareWithBrandModal postId={postId} wpUrl={wpUrl} onClose={() => setOpen(false)} />}
+    </div>
+  )
+}
 
 type SchedulablePlatform = 'facebook' | 'threads' | 'twitter' | 'linkedin' | 'bluesky' | 'telegram'
 

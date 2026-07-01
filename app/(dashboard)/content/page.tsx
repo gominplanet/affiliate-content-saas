@@ -14,7 +14,7 @@ import { SOCIAL_CAP } from '@/lib/social-cap'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import type { SchedulableSocial } from '@/lib/schedule-types'
 import { SocialPill } from '@/components/content/SocialPill'
-import { OrphanPostShare } from '@/components/content/OrphanPostShare'
+import { OrphanPostShare, OrphanShareWithBrand } from '@/components/content/OrphanPostShare'
 import { ManualEdit } from '@/components/content/ManualEdit'
 import { RewriteFeedbackModal } from '@/components/content/RewriteFeedbackModal'
 import { errText } from '@/lib/err-text'
@@ -3541,6 +3541,10 @@ export default function ContentPage() {
                 fbAccounts={fbAccounts}
                 onPinPreview={setPinPreview}
               />
+              {/* Share with brand — video-less posts (Levanta / Amazon-link)
+                  get the same recap action as video-backed cards. Always shown
+                  (unlike the social pills, which hide when no socials connect). */}
+              <OrphanShareWithBrand postId={post.mvpId || String(post.id)} wpUrl={post.link} />
             </div>
                   )
                 })}
