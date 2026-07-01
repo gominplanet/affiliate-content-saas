@@ -39,6 +39,7 @@ import {
   UserCog, AlertTriangle, DollarSign, Newspaper, Plug, Wrench,
   Camera, MessageCircle, Activity, BarChart3, Wand2, ShieldCheck,
   Share2, UserSquare, Lightbulb, LifeBuoy, Link2, FlaskConical, Store, Send, ShoppingBag, Megaphone,
+  Inbox,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { DEALS_HUB_PAUSED } from '@/lib/deal-occasion'
@@ -394,6 +395,8 @@ export default function DashboardShellV2({
         { href: '/levanta', icon: <ShoppingBag size={15} />, label: 'MVP x Levanta', gate: isPaid },
         { href: '/walmart-pb', icon: <Store size={15} />, label: 'MVP x PartnerBoost', gate: isPaid },
         { href: '/collaborations', icon: <Handshake size={15} />, label: 'Brand Deals' },
+        // Inbound: brand messages from the blog's "Work with brands" banner.
+        { href: '/brand-inquiries', icon: <Inbox size={15} />, label: 'Brand Inquiries' },
         { href: '/agency', icon: <Users size={15} />, label: 'Virtual Assistant' },
       ],
     },

@@ -18,7 +18,7 @@ import { Bell, ExternalLink, AlertCircle, CheckCircle2 } from 'lucide-react'
 
 interface NotificationEvent {
   id: string
-  kind: 'social' | 'blog_publish' | 'support'
+  kind: 'social' | 'blog_publish' | 'support' | 'brand_inquiry'
   platform: string | null
   status: 'completed' | 'failed'
   blog_post_title: string | null
@@ -56,6 +56,7 @@ function timeAgo(iso: string): string {
 
 function platformLabel(kind: string, platform: string | null): string {
   if (kind === 'blog_publish') return 'Blog published'
+  if (kind === 'brand_inquiry') return 'New brand inquiry'
   if (!platform) return 'Social push'
   return platform.charAt(0).toUpperCase() + platform.slice(1)
 }
@@ -181,7 +182,9 @@ export default function NotificationBell() {
                         <p className="text-xs font-semibold">
                           {e.kind === 'support'
                             ? 'Support ticket answered'
-                            : `${platformLabel(e.kind, e.platform)} ${isFailed ? 'failed' : 'published'}`}
+                            : e.kind === 'brand_inquiry'
+                              ? 'New brand inquiry'
+                              : `${platformLabel(e.kind, e.platform)} ${isFailed ? 'failed' : 'published'}`}
                         </p>
                         <p className="text-[11px] truncate" style={{ color: 'var(--text-soft, rgba(255,255,255,0.7))' }}>
                           {e.blog_post_title || 'Untitled post'}

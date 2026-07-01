@@ -15,7 +15,7 @@ import { createServerClient } from '@/lib/supabase/server'
 
 export interface NotificationEvent {
   id: string
-  kind: 'social' | 'blog_publish' | 'support'
+  kind: 'social' | 'blog_publish' | 'support' | 'brand_inquiry'
   platform: string | null
   status: 'completed' | 'failed'
   blog_post_title: string | null
@@ -37,7 +37,7 @@ export async function GET() {
   // an `as any` cast because the generated types don't yet know migration 103's
   // `kind` column. The support_tickets read is best-effort (a pre-migration-126
   // DB must not break the bell), so its failure resolves to empty, not a throw.
-  const [scheduledRes, ticketsRes] = await Promise.all([
+  const [scheduledRes, ticketsRes, brandRes] = await Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any)
       .from('scheduled_posts')
@@ -56,6 +56,19 @@ export async function GET() {
       .eq('response_seen', false)
       .gte('responded_at', weekAgo)
       .order('responded_at', { ascending: false })
+      .limit(20)
+      .then((r: { data: unknown }) => r, () => ({ data: null })),
+    // Unread brand inquiries (from the blog "Work with brands" form). Best-effort
+    // — a pre-migration-148 DB resolves to empty, not a throw.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any)
+      .from('brand_inquiries')
+      .select('id,brand_name,contact_name,created_at')
+      .eq('owner_id', user.id)
+      .is('read_at', null)
+      .eq('archived', false)
+      .gte('created_at', weekAgo)
+      .order('created_at', { ascending: false })
       .limit(20)
       .then((r: { data: unknown }) => r, () => ({ data: null })),
   ])
@@ -90,6 +103,22 @@ export async function GET() {
       blog_post_url: '/support',
       scheduled_at: (t.responded_at as string) ?? new Date().toISOString(),
       updated_at: (t.responded_at as string) ?? new Date().toISOString(),
+      error_message: null,
+    })
+  }
+
+  // Unread brand inquiries from the blog "Work with brands" form.
+  const brandInq = (brandRes as { data: unknown }).data
+  for (const b of (brandInq ?? []) as Array<Record<string, unknown>>) {
+    events.push({
+      id: `brand_${b.id as string}`,
+      kind: 'brand_inquiry',
+      platform: null,
+      status: 'completed',
+      blog_post_title: (b.brand_name as string | null) || (b.contact_name as string | null) || 'New brand inquiry',
+      blog_post_url: '/brand-inquiries',
+      scheduled_at: (b.created_at as string) ?? new Date().toISOString(),
+      updated_at: (b.created_at as string) ?? new Date().toISOString(),
       error_message: null,
     })
   }

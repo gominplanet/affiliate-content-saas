@@ -122,6 +122,18 @@ interface BlogCustomizations {
    *            users who want multiple pixels / custom events.
    *  Both are strictly format-validated before injection. */
   analytics: { gtmId: string; ga4Id: string }
+  /** "Work with brands" — a discreet blog banner inviting brands to reach the
+   *  creator via a media-kit link and/or an in-app contact form (→ dashboard). */
+  brandCta: BrandCtaData
+}
+
+interface BrandCtaData {
+  enabled: boolean
+  headline: string
+  intro: string
+  mediaKitUrl: string
+  inbox: boolean
+  directLink: boolean
 }
 
 const emptyAbout: AboutData = { bio: '', logoUrl: '', headerBg: 'black' }
@@ -144,6 +156,14 @@ const emptyFooter: FooterData = {
   socials: { youtube: '', facebook: '', instagram: '', threads: '', pinterest: '', tiktok: '', twitter: '', contact: '' },
   links: [],
 }
+const emptyBrandCta: BrandCtaData = {
+  enabled: false,
+  headline: 'Are you a brand that wants to get featured here?',
+  intro: '',
+  mediaKitUrl: '',
+  inbox: true,
+  directLink: false,
+}
 const defaultPickOfDay: PickOfDayConfig = {
   enabled: true,
   label: 'Our Pick of the Day',
@@ -163,6 +183,7 @@ const defaultCustomizations: BlogCustomizations = {
   featuredPosts: ['', '', '', '', ''],
   headMetaTags: [],
   analytics: { gtmId: '', ga4Id: '' },
+  brandCta: emptyBrandCta,
 }
 
 
@@ -311,6 +332,14 @@ export default function CustomizePage() {
           gtmId: typeof bc.analytics?.gtmId === 'string' ? bc.analytics.gtmId : '',
           ga4Id: typeof bc.analytics?.ga4Id === 'string' ? bc.analytics.ga4Id : '',
         },
+        brandCta: {
+          enabled:     typeof bc.brandCta?.enabled === 'boolean' ? bc.brandCta.enabled : false,
+          headline:    bc.brandCta?.headline ?? emptyBrandCta.headline,
+          intro:       bc.brandCta?.intro ?? '',
+          mediaKitUrl: bc.brandCta?.mediaKitUrl ?? '',
+          inbox:       typeof bc.brandCta?.inbox === 'boolean' ? bc.brandCta.inbox : true,
+          directLink:  typeof bc.brandCta?.directLink === 'boolean' ? bc.brandCta.directLink : false,
+        },
       })
     }
     setLoading(false)
@@ -361,6 +390,9 @@ export default function CustomizePage() {
   }
   function updateNewsletterInline(patch: Partial<NewsletterInlineData>) {
     setData(d => ({ ...d, newsletterInline: { ...d.newsletterInline, ...patch } }))
+  }
+  function updateBrandCta(patch: Partial<BrandCtaData>) {
+    setData(d => ({ ...d, brandCta: { ...d.brandCta, ...patch } }))
   }
   function updateAbout(patch: Partial<AboutData>) {
     setData(d => ({ ...d, about: { ...d.about, ...patch } }))
@@ -653,6 +685,71 @@ export default function CustomizePage() {
                     className="input-field w-44"
                   />
                 </div>
+              </>
+            )}
+          </div>
+        </Section>
+
+        {/* Work with brands — inbound partnership banner on the blog */}
+        <Section
+          title="Work with brands"
+          description="Show a discreet banner on your blog inviting brands to work with you. When they click it they see your pitch and can reach you — via your media-kit link and/or a contact form that delivers straight to your MVP dashboard (no public email needed)."
+        >
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between p-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border-2)]">
+              <div>
+                <p className="text-sm font-medium text-[var(--text)]">Show the &quot;Work with me&quot; banner</p>
+                <p className="text-xs text-[var(--text-3)]">A small banner near the top of every blog page.</p>
+              </div>
+              <button onClick={() => updateBrandCta({ enabled: !data.brandCta.enabled })} className="text-[var(--text-3)]" aria-label="Toggle work-with-brands banner">
+                {data.brandCta.enabled ? <ToggleRight size={28} className="text-[#7C3AED]" /> : <ToggleLeft size={28} />}
+              </button>
+            </div>
+
+            {data.brandCta.enabled && (
+              <>
+                <div>
+                  <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">Banner text</label>
+                  <input type="text" value={data.brandCta.headline} onChange={e => updateBrandCta({ headline: e.target.value })} maxLength={160} className="input-field w-full" placeholder="Are you a brand that wants to get featured here?" />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">Your pitch to brands <span className="text-[var(--text-3)] font-normal">(shown in the pop-up)</span></label>
+                  <textarea value={data.brandCta.intro} onChange={e => updateBrandCta({ intro: e.target.value })} maxLength={1000} rows={3} className="input-field w-full resize-y" placeholder="A couple of lines on who you are, your audience, and what you offer brands (reviews, unboxings, dedicated videos…)." />
+                  <p className="text-[11px] text-[var(--text-3)] mt-1">Leave blank to skip the pop-up text.</p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">Media kit / press page URL <span className="text-[var(--text-3)] font-normal">(optional)</span></label>
+                  <input type="url" value={data.brandCta.mediaKitUrl} onChange={e => updateBrandCta({ mediaKitUrl: e.target.value })} maxLength={500} className="input-field w-full" placeholder="https://your-media-kit.com" />
+                  <p className="text-[11px] text-[var(--text-3)] mt-1">A &quot;Visit my media kit&quot; button links here. Have a media kit in Brand Profile? Paste its link.</p>
+                </div>
+
+                {data.brandCta.mediaKitUrl.trim() !== '' && (
+                  <div className="flex items-center justify-between p-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border-2)]">
+                    <div>
+                      <p className="text-sm font-medium text-[var(--text)]">Link straight to my media kit</p>
+                      <p className="text-xs text-[var(--text-3)]">Skip the pop-up — the banner opens your media-kit link directly.</p>
+                    </div>
+                    <button onClick={() => updateBrandCta({ directLink: !data.brandCta.directLink })} className="text-[var(--text-3)]" aria-label="Toggle direct media-kit link">
+                      {data.brandCta.directLink ? <ToggleRight size={28} className="text-[#7C3AED]" /> : <ToggleLeft size={28} />}
+                    </button>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between p-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border-2)]">
+                  <div>
+                    <p className="text-sm font-medium text-[var(--text)]">In-app contact form</p>
+                    <p className="text-xs text-[var(--text-3)]">Let brands message you directly — replies land in your MVP dashboard (Collaborate → Brand Inquiries). No email exposed.</p>
+                  </div>
+                  <button onClick={() => updateBrandCta({ inbox: !data.brandCta.inbox })} className="text-[var(--text-3)]" aria-label="Toggle in-app contact form">
+                    {data.brandCta.inbox ? <ToggleRight size={28} className="text-[#7C3AED]" /> : <ToggleLeft size={28} />}
+                  </button>
+                </div>
+
+                {!data.brandCta.inbox && data.brandCta.mediaKitUrl.trim() === '' && (
+                  <p className="text-[11px] text-[#ff9500]">Add a media-kit link or turn on the in-app form — otherwise the banner has nowhere to send brands.</p>
+                )}
               </>
             )}
           </div>

@@ -33,28 +33,67 @@ export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS_HEADERS })
 }
 
+/** Verify an hCaptcha token server-side. Returns true when it passes — or when
+ *  HCAPTCHA_SECRET isn't configured yet (fail-open with a warning, so the form
+ *  doesn't hard-break before the operator adds the secret). A present-but-invalid
+ *  token always fails. The plugin renders the widget with the public site key
+ *  (NEXT_PUBLIC_HCAPTCHA_SITE_KEY, the same key the auth forms use). */
+async function verifyHcaptcha(token: string): Promise<boolean> {
+  const secret = process.env.HCAPTCHA_SECRET
+  if (!secret) {
+    console.warn('[brand-inquiry] HCAPTCHA_SECRET not set — captcha not verified')
+    return true
+  }
+  if (!token) return false
+  try {
+    const res = await fetch('https://hcaptcha.com/siteverify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ secret, response: token }),
+    })
+    const d = (await res.json().catch(() => ({}))) as { success?: boolean }
+    return !!d.success
+  } catch {
+    return false
+  }
+}
+
 export async function POST(req: NextRequest) {
   let p: {
     creatorUserId?: string; name?: string; company?: string; email?: string
     message?: string; hp?: string; sourceUrl?: string; origin?: string; ts?: string; sig?: string
+    hcaptchaToken?: string
   }
   try { p = await req.json() } catch { return json({ ok: false, error: 'Bad request.' }, { status: 400 }) }
 
   // 1. Honeypot — bots fill it, humans don't. Silent success.
   if (p.hp && p.hp.trim() !== '') return json({ ok: true })
 
-  // 2. Validate the creator id + the message (the only required fields).
+  // 2. Validate required fields: creator id, the brand's NAME + EMAIL, and the
+  //    message. Name + email are required so the creator can always identify
+  //    and reply to who reached out.
   const creatorUserId = (p.creatorUserId || '').trim()
   if (!creatorUserId || !/^[0-9a-f-]{36}$/i.test(creatorUserId)) {
     return json({ ok: false, error: 'This form is misconfigured. Please contact the site owner.' }, { status: 400 })
+  }
+  const name = (p.name || '').trim()
+  if (name.length < 1 || name.length > 200) {
+    return json({ ok: false, error: 'Please add your name.' }, { status: 400 })
+  }
+  const email = normaliseEmail(p.email || '')
+  if (!email || !EMAIL_RE.test(email) || email.length > 320) {
+    return json({ ok: false, error: 'Please enter a valid email so they can reply.' }, { status: 400 })
   }
   const message = (p.message || '').trim()
   if (message.length < 2 || message.length > 4000) {
     return json({ ok: false, error: 'Please add a short message.' }, { status: 400 })
   }
-  const email = normaliseEmail(p.email || '')
-  if (email && (!EMAIL_RE.test(email) || email.length > 320)) {
-    return json({ ok: false, error: 'That email address looks off — double-check it.' }, { status: 400 })
+
+  // 3. Captcha — hCaptcha, verified server-side (enforced whenever
+  //    HCAPTCHA_SECRET is set; the plugin renders the widget with the site key).
+  const captchaOk = await verifyHcaptcha((p.hcaptchaToken || '').trim())
+  if (!captchaOk) {
+    return json({ ok: false, error: 'Please complete the captcha and try again.' }, { status: 400 })
   }
 
   const admin = createAdminClient()
@@ -104,8 +143,8 @@ export async function POST(req: NextRequest) {
   const { error } = await (admin as any).from('brand_inquiries').insert({
     owner_id: creatorUserId,
     brand_name: (p.company || '').trim().slice(0, 200) || null,
-    contact_name: (p.name || '').trim().slice(0, 200) || null,
-    contact_email: email || null,
+    contact_name: name.slice(0, 200),
+    contact_email: email,
     message: message.slice(0, 4000),
     source_url: (p.sourceUrl || '').slice(0, 1000) || null,
     ip_hash: ipHash,
