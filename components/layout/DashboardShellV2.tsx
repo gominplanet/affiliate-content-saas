@@ -500,6 +500,7 @@ export default function DashboardShellV2({
         // Admins still reach it via that route (the new gate allows trial+ paid;
         // admins are 'paid' in this taxonomy). No admin entry needed here. */
         { href: '/admin/costs', icon: <DollarSign size={15} />, label: 'AI Cost (admin)' },
+        { href: '/admin/subscriptions', icon: <CreditCard size={15} />, label: 'Duplicate Subs (admin)' },
         { href: '/admin/blog-quality', icon: <Activity size={15} />, label: 'Blog Quality' },
         { href: '/admin/template-performance', icon: <BarChart3 size={15} />, label: 'Template Performance' },
         { href: '/admin/designer-text', icon: <Wand2 size={15} />, label: 'Designer Text Playground' },
