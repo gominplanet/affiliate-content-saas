@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Download, ArrowUpCircle, CheckCircle, Loader2 } from 'lucide-react'
 import { getScoutStatus } from '@/lib/extension-frame'
 import { SCOUT_LATEST_VERSION, SCOUT_DOWNLOAD_URL, SCOUT_WHATS_NEW, isScoutOutdated } from '@/lib/scout-version'
@@ -27,6 +28,27 @@ export default function ScoutUpdatePill() {
   const [status, setStatus] = useState<{ installed: boolean; version: string | null } | null>(null)
   const [open, setOpen] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
+  // The explainer card is rendered in a PORTAL (document.body) so it isn't
+  // clipped by the dashboard hero's `overflow-hidden`. `pos` anchors the
+  // fixed-position card just below the button.
+  const popRef = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+
+  // Position the portaled card under the button; re-anchor on scroll/resize.
+  useEffect(() => {
+    if (!open) { setPos(null); return }
+    const compute = () => {
+      const r = wrapRef.current?.getBoundingClientRect()
+      if (!r) return
+      const W = 330
+      const left = Math.max(8, Math.min(r.left, window.innerWidth - W - 12))
+      setPos({ top: r.bottom + 8, left })
+    }
+    compute()
+    window.addEventListener('scroll', compute, true)
+    window.addEventListener('resize', compute)
+    return () => { window.removeEventListener('scroll', compute, true); window.removeEventListener('resize', compute) }
+  }, [open])
 
   useEffect(() => {
     let cancelled = false
@@ -39,7 +61,13 @@ export default function ScoutUpdatePill() {
   // Close the "what is SCOUT" card on outside-click or Escape.
   useEffect(() => {
     if (!open) return
-    const onDown = (e: MouseEvent) => { if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false) }
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node
+      // The card is portaled outside wrapRef, so exclude it too — else clicking
+      // inside the card (e.g. the copy chip) would close it immediately.
+      if (wrapRef.current?.contains(t) || popRef.current?.contains(t)) return
+      setOpen(false)
+    }
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
     document.addEventListener('mousedown', onDown)
     document.addEventListener('keydown', onKey)
@@ -74,10 +102,11 @@ export default function ScoutUpdatePill() {
           <Download size={13} /> Get SCOUT extension
         </button>
 
-        {open && (
+        {open && pos && typeof document !== 'undefined' && createPortal(
           <div
-            className="absolute left-0 top-full mt-2 z-40 w-[330px] max-w-[88vw] rounded-xl border p-4 text-left shadow-xl"
-            style={{ backgroundColor: 'var(--surface, #fff)', borderColor: 'var(--border, rgba(0,0,0,0.1))' }}
+            ref={popRef}
+            className="fixed z-[100] w-[330px] max-w-[88vw] rounded-xl border p-4 text-left shadow-xl"
+            style={{ top: pos.top, left: pos.left, backgroundColor: 'var(--surface, #fff)', borderColor: 'var(--border, rgba(0,0,0,0.1))' }}
             role="dialog"
           >
             <p className="text-[13px] font-semibold" style={{ color: 'var(--text, #1d1d1f)' }}>
@@ -99,7 +128,8 @@ export default function ScoutUpdatePill() {
             >
               <Download size={13} /> Download SCOUT
             </a>
-          </div>
+          </div>,
+          document.body,
         )}
       </div>
     )
