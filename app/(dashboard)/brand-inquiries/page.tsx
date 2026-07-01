@@ -63,13 +63,15 @@ export default function BrandInquiriesPage() {
           <Handshake size={22} className="text-[#7C3AED]" /> Brand Inquiries
         </h1>
         <p className="text-sm text-[var(--text-3)] mt-1">
-          Messages brands sent through the &quot;Work with brands&quot; banner on your blog. Set the banner up below.
+          Messages brands sent through the &quot;Work with brands&quot; banner on your blog. Set the banner up on the right.
         </p>
       </div>
 
-      <BrandCtaSettings />
-
-      {loading ? (
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 items-start">
+        {/* Left column — the message inbox */}
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold text-[var(--text)] mb-3">Messages</h2>
+          {loading ? (
         <div className="flex items-center gap-2 text-[var(--text-3)] text-sm">
           <Loader2 size={16} className="animate-spin" /> Loading…
         </div>
@@ -117,7 +119,14 @@ export default function BrandInquiriesPage() {
             </div>
           ))}
         </div>
-      )}
+          )}
+        </div>
+
+        {/* Right column — the editable "Work with brands" banner block */}
+        <div className="lg:sticky lg:top-4">
+          <BrandCtaSettings />
+        </div>
+      </div>
     </div>
   )
 }
