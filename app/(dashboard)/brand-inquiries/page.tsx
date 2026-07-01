@@ -57,7 +57,7 @@ export default function BrandInquiriesPage() {
   }
 
   return (
-    <div className="max-w-3xl">
+    <div className="max-w-5xl">
       <div className="mb-6">
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <Handshake size={22} className="text-[#7C3AED]" /> Brand Inquiries
