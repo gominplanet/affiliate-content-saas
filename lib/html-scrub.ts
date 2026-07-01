@@ -54,12 +54,35 @@ export function stripCodeFence(raw: string): string {
  * inside a <code>/<pre> block. The 'inside-tags' guard splits the
  * input on tag boundaries, scrubs only the TEXT chunks, and
  * re-stitches.
+ *
+ * CRITICAL: HTML comments (Gutenberg block delimiters like
+ * `<!-- wp:group {…} -->`) are pulled out and protected BEFORE anything
+ * else — their `--`/`-->` sequences are exactly the double-hyphen idiom
+ * this scrub rewrites to a comma. See the guard note inside.
  */
 export function scrubEmDashes(html: string): string {
   if (!html) return html
 
+  // ── GUARD HTML COMMENTS FIRST — critical for Gutenberg ──────────────────
+  // Gutenberg block delimiters are HTML comments: `<!-- wp:group {…} -->`.
+  // The `--`/`-->` in them IS the double-hyphen idiom the scrub rewrites to a
+  // comma. The tag-split below is not safe on its own: a `>` inside an
+  // attribute value or in review text (e.g. `alt="rated 4 > 3"`, "faster >
+  // the rest") closes `<[^>]+>` early and desyncs every following chunk,
+  // throwing later `<!-- … -->` delimiters into TEXT chunks that then get
+  // scrubbed — turning `<!-- wp:group -->` into `<!, wp:group, >` and breaking
+  // every block on the page. Pull comments out to an inert, DELIMITED token
+  // (no dashes / angle-brackets / commas, so the scrub skips it; the trailing
+  // `:]]` stops the index merging with a following digit like `<!-- … -->5`),
+  // then restore verbatim.
+  const comments: string[] = []
+  const guarded = html.replace(/<!--[\s\S]*?-->/g, (m) => {
+    comments.push(m)
+    return `[[MVPCMT:${comments.length - 1}:]]`
+  })
+
   // Split on tag boundaries — scrub only the text between tags.
-  const parts = html.split(/(<[^>]+>)/g)
+  const parts = guarded.split(/(<[^>]+>)/g)
   let insideCodeOrPre = 0
   for (let i = 0; i < parts.length; i++) {
     const p = parts[i]
@@ -72,7 +95,10 @@ export function scrubEmDashes(html: string): string {
     if (insideCodeOrPre > 0) continue
     parts[i] = scrubText(p)
   }
-  return parts.join('')
+  const scrubbed = parts.join('')
+
+  // Restore the untouched comments verbatim.
+  return scrubbed.replace(/\[\[MVPCMT:(\d+):\]\]/g, (_m, i) => comments[Number(i)] ?? '')
 }
 
 function scrubText(s: string): string {
