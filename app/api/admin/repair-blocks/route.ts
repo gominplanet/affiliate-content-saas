@@ -20,6 +20,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { createWordPressService } from '@/services/wordpress'
+import { tryWpProxy } from '@/lib/wp-proxy'
 import { repairCorruptedBlocks, countCorruptedMarkers } from '@/lib/repair-blocks'
 
 export async function POST(req: Request) {
@@ -74,12 +75,41 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Provide slugs[] or postIds[] to repair' }, { status: 400 })
   }
 
+  // Read RAW post content. Prefer the plugin's body-auth proxy — it dispatches
+  // the REST call server-side with admin context, so it's WAF-proof AND returns
+  // content.raw (the stored HTML with the literal `<!,` markers). The service
+  // reader falls back to an UNauthenticated view on hosts that strip auth
+  // headers, which returns RENDERED content (markers escaped as `&lt;!,`) — we
+  // must never repair + write that back, so we detect it and refuse.
+  const siteUrl = site.wordpress_url
+  const proxySecret = site.wordpress_api_token
+  async function readRawContent(postId: number): Promise<{ content: string; viaProxy: boolean } | null> {
+    const px = await tryWpProxy({
+      siteUrl,
+      proxySecret,
+      innerPath: `/wp/v2/posts/${postId}`,
+      method: 'GET',
+      query: { context: 'edit', _fields: 'content' },
+    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rawFromProxy = px?.ok ? (px.data as any)?.content?.raw : undefined
+    if (typeof rawFromProxy === 'string' && rawFromProxy) return { content: rawFromProxy, viaProxy: true }
+    const got = await wp.getPostContent(postId)
+    return got ? { content: got.content, viaProxy: false } : null
+  }
+
   let anyRepaired = false
   for (const postId of ids) {
     try {
-      const got = await wp.getPostContent(postId)
+      const got = await readRawContent(postId)
       if (!got) { results.push({ postId, before: 0, after: 0, changed: false, error: 'could not read post' }); continue }
       const before = countCorruptedMarkers(got.content)
+      // We only got RENDERED content (escaped markers) — raw is unavailable, so
+      // we can't safely repair this post here. Use Rebuild for it instead.
+      if (before === 0 && /&lt;!,/.test(got.content)) {
+        results.push({ postId, before: 0, after: 0, changed: false, error: 'raw content unavailable (only rendered) — repair blocked; use Rebuild for this post' })
+        continue
+      }
       if (before === 0) { results.push({ postId, before: 0, after: 0, changed: false }); continue }
       const repaired = repairCorruptedBlocks(got.content)
       const after = countCorruptedMarkers(repaired)
