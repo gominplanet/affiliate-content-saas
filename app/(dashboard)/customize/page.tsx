@@ -129,6 +129,7 @@ interface BlogCustomizations {
 
 interface BrandCtaData {
   enabled: boolean
+  pillLabel: string
   headline: string
   intro: string
   mediaKitUrl: string
@@ -159,6 +160,7 @@ const emptyFooter: FooterData = {
 }
 const emptyBrandCta: BrandCtaData = {
   enabled: false,
+  pillLabel: 'Work with us',
   headline: 'Are you a brand that wants to get featured here?',
   intro: '',
   mediaKitUrl: '',
@@ -336,6 +338,7 @@ export default function CustomizePage() {
         },
         brandCta: {
           enabled:       typeof bc.brandCta?.enabled === 'boolean' ? bc.brandCta.enabled : false,
+          pillLabel:     bc.brandCta?.pillLabel ?? emptyBrandCta.pillLabel,
           headline:      bc.brandCta?.headline ?? emptyBrandCta.headline,
           intro:         bc.brandCta?.intro ?? '',
           mediaKitUrl:   bc.brandCta?.mediaKitUrl ?? '',

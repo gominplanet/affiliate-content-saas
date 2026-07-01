@@ -217,6 +217,9 @@ export async function POST(req: Request) {
           return {
             enabled: !!bc?.enabled,
             ownerId,
+            // The small pill shown on the blog (editable; defaults to a warm
+            // invitation rather than a question).
+            pillLabel: (String(bc?.pillLabel || '').trim() || 'Work with us').slice(0, 40),
             headline: (String(bc?.headline || '').trim() || 'Are you a brand that wants to get featured here?').slice(0, 160),
             intro: String(bc?.intro || '').slice(0, 1000),
             mediaKitUrl: /^https?:\/\//i.test(rawUrl) ? rawUrl.slice(0, 500) : '',

@@ -17,6 +17,7 @@ import { ToggleRight, ToggleLeft, Loader2, Megaphone } from 'lucide-react'
 
 interface BrandCtaData {
   enabled: boolean
+  pillLabel: string
   headline: string
   intro: string
   mediaKitUrl: string
@@ -25,11 +26,13 @@ interface BrandCtaData {
   directLink: boolean
 }
 
+const DEFAULT_PILL_LABEL = 'Work with us'
 const DEFAULT_HEADLINE = 'Are you a brand that wants to get featured here?'
 const DEFAULT_MEDIA_KIT_LABEL = 'View my media kit'
 
 const emptyBrandCta: BrandCtaData = {
   enabled: false,
+  pillLabel: DEFAULT_PILL_LABEL,
   headline: DEFAULT_HEADLINE,
   intro: '',
   mediaKitUrl: '',
@@ -42,6 +45,7 @@ const emptyBrandCta: BrandCtaData = {
 function normalize(bc: Partial<BrandCtaData> | undefined | null): BrandCtaData {
   return {
     enabled: typeof bc?.enabled === 'boolean' ? bc.enabled : false,
+    pillLabel: bc?.pillLabel ?? DEFAULT_PILL_LABEL,
     headline: bc?.headline ?? DEFAULT_HEADLINE,
     intro: bc?.intro ?? '',
     mediaKitUrl: bc?.mediaKitUrl ?? '',
@@ -150,8 +154,15 @@ export default function BrandCtaSettings() {
           {bc.enabled && (
             <>
               <div>
-                <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">Banner text</label>
+                <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">Button on your blog</label>
+                <input type="text" value={bc.pillLabel} onChange={e => update({ pillLabel: e.target.value })} maxLength={40} className="input-field w-full" placeholder={DEFAULT_PILL_LABEL} />
+                <p className="text-[11px] text-[var(--text-3)] mt-1">The small pill visitors see on your blog — e.g. &quot;Work with us&quot;, &quot;For brands&quot;, &quot;Feature your brand&quot;.</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">Pop-up headline</label>
                 <input type="text" value={bc.headline} onChange={e => update({ headline: e.target.value })} maxLength={160} className="input-field w-full" placeholder={DEFAULT_HEADLINE} />
+                <p className="text-[11px] text-[var(--text-3)] mt-1">The bold line at the top of the pop-up after a brand clicks the button.</p>
               </div>
 
               <div>

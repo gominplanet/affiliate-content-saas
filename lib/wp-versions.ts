@@ -30,7 +30,7 @@ export const WP_VERSIONS = {
     downloadUrl: 'https://www.mvpaffiliate.io/mvp-affiliate-theme.zip',
   },
   plugin: {
-    version: '1.0.61',
+    version: '1.0.62',
     downloadUrl: 'https://www.mvpaffiliate.io/mvp-affiliate.zip',
   },
 } as const

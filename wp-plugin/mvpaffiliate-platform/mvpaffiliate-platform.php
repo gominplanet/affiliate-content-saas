@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.61
+ * Version: 1.0.62
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -3143,6 +3143,10 @@ if (!function_exists('mvp_affiliate_render_brand_cta')) {
         $media_kit_label = (isset($bc['mediaKitLabel']) && trim((string) $bc['mediaKitLabel']) !== '')
             ? trim((string) $bc['mediaKitLabel'])
             : 'View my media kit';
+        // The text on the small pill shown on the blog (editable by the creator).
+        $pill_label = (isset($bc['pillLabel']) && trim((string) $bc['pillLabel']) !== '')
+            ? trim((string) $bc['pillLabel'])
+            : 'Work with us';
         // "Link straight to media kit" only makes sense when a URL is set.
         $direct_link = !empty($bc['directLink']) && $media_kit !== '';
         // Nothing actionable configured → don't render a dead button.
@@ -3190,11 +3194,11 @@ if (!function_exists('mvp_affiliate_render_brand_cta')) {
   <?php if ($direct_link): ?>
   <!-- Direct-link mode: the pill is just an outbound link to the media kit. -->
   <a class="mvp-brandcta-pill" id="mvp-brandcta-pill-<?php echo esc_attr($uid); ?>" href="<?php echo esc_url($media_kit); ?>" target="_blank" rel="nofollow noopener">
-    <span class="mvp-brandcta-spark" aria-hidden="true">✦</span><span class="mvp-brandcta-label">Are you a brand?</span>
+    <span class="mvp-brandcta-spark" aria-hidden="true">✦</span><span class="mvp-brandcta-label"><?php echo esc_html($pill_label); ?></span>
   </a>
   <?php else: ?>
   <button type="button" class="mvp-brandcta-pill" id="mvp-brandcta-pill-<?php echo esc_attr($uid); ?>" data-open>
-    <span class="mvp-brandcta-spark" aria-hidden="true">✦</span><span class="mvp-brandcta-label">Are you a brand?</span>
+    <span class="mvp-brandcta-spark" aria-hidden="true">✦</span><span class="mvp-brandcta-label"><?php echo esc_html($pill_label); ?></span>
   </button>
 
   <div class="mvp-brandcta-overlay" id="mvp-brandcta-overlay-<?php echo esc_attr($uid); ?>" role="dialog" aria-modal="true" aria-labelledby="mvp-brandcta-title-<?php echo esc_attr($uid); ?>"
