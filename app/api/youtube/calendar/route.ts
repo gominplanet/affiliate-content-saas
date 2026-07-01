@@ -14,12 +14,15 @@ import { getChannelOAuthToken } from '@/lib/youtube-channels'
 // list. Only a full walk of the uploads playlist surfaces them all — a "recent
 // uploads" window misses almost everything (the bug that showed ~5 of ~90).
 //
-// CACHE THE RESULT. A full walk of an 800+ video library is dozens of
-// sequential page fetches (slow + quota-heavy), so we cache the computed events
-// per (user, channel) in youtube_calendar_cache (migration 147) and serve from
-// it on subsequent loads. `?refresh=1` (the "Refresh from YouTube" button)
-// forces a fresh full scan and rewrites the cache. The cache write/read is
-// wrapped in try/catch so a pre-migration DB simply falls back to a live scan.
+// CACHE THE RESULT, PERSISTENTLY. A full walk of an 800+ video library is dozens
+// of sequential page fetches (slow + quota-heavy), so we cache the computed
+// events per (user, channel) in youtube_calendar_cache (migration 147). The
+// cache no longer hard-expires: a normal open serves it outright (ZERO quota)
+// when fresh, or does a CHEAP incremental top-up of just the newest uploads when
+// stale — never a full re-walk. `?refresh=1` (the "Refresh from YouTube" button)
+// forces a full deep scan + search.list pass and rewrites the cache. All cache
+// reads/writes are wrapped in try/catch so a pre-migration DB falls back to a
+// live scan.
 //
 // Query params:
 //   ?channelId=<UC…|uuid>  scope to a connected channel; omitted → default chan
@@ -40,8 +43,14 @@ const PAGE_SIZE = 50
 // high (was 4) so a transient duplicate patch in YouTube's pagination doesn't
 // stop us short of the deep back-catalog where scheduled videos live.
 const MAX_DRY_PAGES = 30
-// Serve the cached scan for this long before a fresh full walk is needed.
-const CACHE_TTL_MS = 30 * 60 * 1000
+// Serve the cached library OUTRIGHT (zero YouTube quota) when it's younger than
+// this. Older-but-present → a cheap incremental top-up of just the newest pages,
+// NOT a full re-walk. The "Refresh from YouTube" button (?refresh=1) always does
+// a full deep scan. The cache itself never hard-expires.
+const FRESH_MS = 15 * 60 * 1000
+// Incremental top-up depth — new uploads land at the TOP of the uploads
+// playlist, so the newest few pages catch them for a handful of quota units.
+const TOPUP_PAGES = 3
 
 // A cold deep scan of thousands of videos is many sequential fetches — give it
 // the full Vercel-Pro budget (cache hits return in well under a second).
@@ -67,7 +76,14 @@ export async function GET(request: Request) {
     const channelKey = channelId || ''
     const forceRefresh = searchParams.get('refresh') === '1'
 
-    // ── Cache hit ────────────────────────────────────────────────────────────
+    // ── Read the cached library once ─────────────────────────────────────────
+    // Used three ways: (1) serve outright when fresh, (2) seed the incremental
+    // top-up, (3) fall back to it if a live call fails. The cache is PERSISTENT
+    // now (no hard expiry) — only `?refresh=1` forces a full re-walk.
+    let cachedEvents: CalEvent[] = []
+    let cachedTruncated = false
+    let haveCache = false
+    let cacheAgeMs = Number.POSITIVE_INFINITY
     if (!forceRefresh) {
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -77,24 +93,87 @@ export async function GET(request: Request) {
           .eq('user_id', user.id)
           .eq('channel_id', channelKey)
           .maybeSingle()
-        if (data && (Date.now() - new Date(data.cached_at).getTime()) < CACHE_TTL_MS) {
-          return NextResponse.json({
-            events: Array.isArray(data.events) ? data.events : [],
-            truncated: !!data.truncated,
-            cached: true,
-          })
+        if (data) {
+          haveCache = true
+          cachedEvents = Array.isArray(data.events) ? data.events : []
+          cachedTruncated = !!data.truncated
+          cacheAgeMs = Date.now() - new Date(data.cached_at).getTime()
         }
-      } catch { /* table not migrated yet → fall through to a live scan */ }
+      } catch { /* table not migrated yet → treat as no cache */ }
+    }
+
+    // Fresh enough → serve straight from cache. ZERO YouTube quota, recalls
+    // nothing from the API. This is the common path on a normal page open.
+    if (haveCache && cacheAgeMs < FRESH_MS) {
+      return NextResponse.json({ events: cachedEvents, truncated: cachedTruncated, cached: true })
     }
 
     // getChannelOAuthToken resolves + refreshes the token for the picked
     // channel, or the user's default channel when channelId is null.
     const token = await getChannelOAuthToken(supabase, user.id, channelId)
     if (!token) {
+      // No token but we have a cached library → still render it. Only error out
+      // when there's nothing cached to show.
+      if (haveCache) return NextResponse.json({ events: cachedEvents, truncated: cachedTruncated, cached: true })
       return NextResponse.json({ error: 'YouTube OAuth not connected', needsAuth: true }, { status: 401 })
     }
 
     const yt = createYouTubeOAuthService(token)
+
+    // ── Incremental top-up ───────────────────────────────────────────────────
+    // We have a cached library that's just gone stale (not a forced refresh).
+    // New uploads land at the TOP of the uploads playlist, so a shallow walk of
+    // the newest TOPUP_PAGES pages catches them for a handful of quota units —
+    // instead of re-walking the whole back-catalog (hundreds of units) on every
+    // open. Recent videos overwrite their cached copy (status/publishAt may have
+    // changed); the rest of the library is preserved untouched.
+    //
+    // What this deliberately does NOT do: a search.list pass (100 units) or a
+    // deep walk. So it won't catch an OLD back-catalog video newly scheduled
+    // *directly in YouTube Studio* — the SCOUT Studio scrape (client side) and
+    // the explicit "Refresh from YouTube" button (forceRefresh) cover that.
+    if (haveCache && !forceRefresh) {
+      try {
+        const byId = new Map<string, CalEvent>(cachedEvents.map(e => [e.youtubeVideoId, e]))
+        let cursor: string | undefined = undefined
+        let playlistId: string | undefined = undefined
+        for (let page = 0; page < TOPUP_PAGES; page++) {
+          const { videos, nextPageToken, uploadsPlaylistId } = await yt.getDraftVideos(PAGE_SIZE, cursor, playlistId)
+          playlistId = uploadsPlaylistId
+          for (const v of videos) {
+            if (!v.youtubeVideoId) continue
+            byId.set(v.youtubeVideoId, {
+              youtubeVideoId: v.youtubeVideoId,
+              title: v.title,
+              status: v.status,
+              publishAt: v.publishAt ?? null,
+              publishedAt: v.publishedAt,
+            })
+          }
+          if (!nextPageToken) break
+          cursor = nextPageToken
+        }
+        const merged = Array.from(byId.values())
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          await (supabase as any)
+            .from('youtube_calendar_cache')
+            .upsert({
+              user_id: user.id,
+              channel_id: channelKey,
+              events: merged,
+              truncated: cachedTruncated,
+              cached_at: new Date().toISOString(),
+            }, { onConflict: 'user_id,channel_id' })
+        } catch { /* cache write best-effort */ }
+        return NextResponse.json({ events: merged, truncated: cachedTruncated, cached: true, toppedUp: true })
+      } catch {
+        // Top-up failed (e.g. quota exhausted) → serve the cached library as-is.
+        return NextResponse.json({ events: cachedEvents, truncated: cachedTruncated, cached: true })
+      }
+    }
+
+    // ── Full deep scan (no cache yet, or forced refresh) ─────────────────────
     const events: CalEvent[] = []
 
     // Dedupe by video id: YouTube's playlistItems pagination can return the

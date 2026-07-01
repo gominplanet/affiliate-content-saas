@@ -10,6 +10,7 @@ import { useConfirm } from '@/components/ui/useConfirm'
 import { pickWeightedStyleIndex, OVERLAY_STYLES, drawHeadline, type HeadlinePosition, type FaceBox } from '@/lib/thumbnail-overlay'
 import { isExtensionAvailable, requestVideoFrames, requestAmazonProduct, requestStudioSchedule, requestStudioFinish, type StudioFinishResult } from '@/lib/extension-frame'
 import { SCOUT_DOWNLOAD_URL } from '@/lib/scout-version'
+import CopyChromeExtensions from '@/components/scout/CopyChromeExtensions'
 import { effectiveTier } from '@/lib/view-as'
 import type { Tier } from '@/lib/tier'
 import BrandStylePanel, { BORDER_NAMES } from '@/components/co-pilot/BrandStylePanel'
@@ -184,8 +185,27 @@ function ContentCalendar({ channelId, refreshNonce }: { channelId: string | null
   const [viewY, setViewY] = useState(now.getFullYear())
   const [viewM, setViewM] = useState(now.getMonth())
   const [selected, setSelected] = useState<string | null>(null)
+  // Opt-in gate: the calendar runs a (potentially deep) YouTube scan, so we do
+  // NOT load it until the user explicitly asks — that keeps the shared daily
+  // YouTube API quota for the people who actually use the calendar. The choice
+  // is remembered in localStorage, so once opted in it just appears (served from
+  // the persistent cache, which only tops up new uploads — see the calendar
+  // route). `hydrated` avoids flashing the opt-in prompt to users who already
+  // turned it on.
+  const CAL_ENABLED_KEY = 'mvp_copilot_calendar_enabled'
+  const [enabled, setEnabled] = useState(false)
+  const [hydrated, setHydrated] = useState(false)
+  useEffect(() => {
+    try { setEnabled(localStorage.getItem(CAL_ENABLED_KEY) === '1') } catch { /* ignore */ }
+    setHydrated(true)
+  }, [])
+  function enableCalendar() {
+    try { localStorage.setItem(CAL_ENABLED_KEY, '1') } catch { /* ignore */ }
+    setEnabled(true)
+  }
 
   useEffect(() => {
+    if (!enabled) return       // not opted in → make NO YouTube calls at all
     let cancelled = false
     setLoading(true); setErr(null)
     const params = new URLSearchParams()
@@ -225,7 +245,7 @@ function ContentCalendar({ channelId, refreshNonce }: { channelId: string | null
       }).catch(() => { /* best effort */ })
     }
     return () => { cancelled = true }
-  }, [channelId, refreshNonce])
+  }, [channelId, refreshNonce, enabled])
 
   const PURPLE = '#7C3AED', GREEN = '#34C759'
   const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
@@ -286,6 +306,34 @@ function ContentCalendar({ channelId, refreshNonce }: { channelId: string | null
   }
 
   const selectedEvents = selected ? (byDate[selected] || []) : []
+
+  // Opt-in gate (see CAL_ENABLED_KEY above). Until the user confirms, render the
+  // calendar's frame with a confirmation button INSTEAD of auto-scanning YouTube
+  // — so the layout stays intact but no quota is spent for people who skip it.
+  if (!hydrated) return <div className="card p-4 min-h-[280px]" aria-hidden />
+  if (!enabled) {
+    return (
+      <div className="card p-4">
+        <div className="flex flex-col items-center justify-center text-center gap-3 px-4 py-10 min-h-[260px]">
+          <div className="w-12 h-12 rounded-2xl bg-[#7C3AED]/10 flex items-center justify-center">
+            <Calendar size={22} className="text-[#7C3AED]" />
+          </div>
+          <h3 className="text-[15px] font-bold text-[#1d1d1f] dark:text-[#f5f5f7]">Your YouTube publishing schedule</h3>
+          <p className="text-xs text-[#6e6e73] dark:text-[#8e8e93] max-w-xs leading-relaxed">
+            See every scheduled and published video on a month calendar, pulled from YouTube. We only load it when you ask, so it never slows the page down.
+          </p>
+          <button
+            type="button"
+            onClick={enableCalendar}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white bg-[#7C3AED] hover:bg-[#6D28D9] transition-colors"
+          >
+            <Calendar size={15} /> Yes, show my YouTube schedule
+          </button>
+          <p className="text-[11px] text-[#a1a1a6] dark:text-[#6e6e73]">Loads once, then stays cached — only new uploads are fetched after.</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="card p-4">
@@ -877,9 +925,30 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
         })
         const data = await safeJson(res)
         if (!res.ok) throw new Error((data.error as string) || `HTTP ${res.status} — apply failed`)
+
+        const warns = Array.isArray(data.warnings) ? (data.warnings as string[]) : []
+        const quotaHit = data.quotaHit === true || warns.some(w => /quotaExceeded|exceeded your/i.test(w))
+        // statusOk === false means the videos.update STATUS call failed — so the
+        // video was NOT actually scheduled/updated on YouTube, even though the
+        // HTTP request returned 200 with a warnings list. Do NOT flip to the green
+        // "Scheduled on YouTube" state in that case; surface a clear, retryable
+        // error (and a friendly message when YouTube's daily quota is the cause,
+        // instead of dumping the raw 403 JSON the API returns).
+        if (data.statusOk === false) {
+          setApplyError(
+            quotaHit
+              ? `YouTube's daily API quota is used up right now, so nothing reached YouTube${publishAt ? ' — the video is NOT scheduled' : ''}. The quota resets around midnight Pacific; try again then.`
+              : `Couldn't apply to YouTube: ${warns.join(' · ') || 'unknown error'}`,
+          )
+          return
+        }
         setApplied(true)
-        if (Array.isArray(data.warnings) && data.warnings.length > 0) {
-          setApplyError(`Applied with warnings: ${(data.warnings as string[]).join(' · ')}`)
+        if (warns.length > 0) {
+          setApplyError(
+            quotaHit
+              ? `${publishAt ? 'Scheduled' : 'Applied'}, but some extras (thumbnail/playlist) hit YouTube's daily API quota and didn't apply. Re-run after it resets (around midnight Pacific).`
+              : `Applied with warnings: ${warns.join(' · ')}`,
+          )
         }
         // Leave the panel EXPANDED so the post-apply "Finish on YouTube" card
         // stays visible and usable. Auto-collapsing + reclassifying here was
@@ -2081,7 +2150,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                           <p className="text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Two steps:</p>
                           <ol className="text-[11px] text-[#86868b] dark:text-[#8e8e93] space-y-1 list-decimal list-inside">
                             <li>Download &amp; unzip the extension</li>
-                            <li>Chrome → <span className="font-mono">chrome://extensions</span> → Developer mode ON → Load unpacked → select the unzipped folder</li>
+                            <li>Chrome → <CopyChromeExtensions /> → Developer mode ON → Load unpacked → select the unzipped folder</li>
                           </ol>
                         </div>
                         <div className="px-4 pb-4 flex items-center gap-2">

@@ -193,7 +193,15 @@ export async function POST(request: NextRequest) {
       try { await bustYouTubeCache(supabase, user.id) } catch { /* non-fatal */ }
     }
 
-    return NextResponse.json({ ok: warnings.length === 0, warnings })
+    // statusOk reflects whether the videos.update STATUS call (the one that sets
+    // privacy / publishAt — i.e. what actually schedules or publishes the video)
+    // succeeded. The UI gates its "Scheduled / Applied" success state on this so
+    // it can't show green when every write 403'd on quota. quotaHit lets the UI
+    // render a friendly "quota's used up, try after it resets" message instead of
+    // the raw 403 JSON.
+    const statusOk = results[1].status === 'fulfilled'
+    const quotaHit = warnings.some((w) => /quotaExceeded|exceeded your/i.test(w))
+    return NextResponse.json({ ok: warnings.length === 0, warnings, statusOk, quotaHit })
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     return NextResponse.json({ error: msg }, { status: 500 })

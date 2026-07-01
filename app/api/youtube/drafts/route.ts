@@ -3,9 +3,15 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createYouTubeOAuthService } from '@/services/youtube'
 import { getChannelOAuthToken } from '@/lib/youtube-channels'
 
-// Cache TTL: 15 minutes.  Reads within this window return DB rows — zero
-// YouTube API units.  Explicit ?refresh=1 forces a re-scan regardless of age.
+// Cache freshness window: 15 minutes. Reads within this window return DB rows —
+// zero YouTube API units. OLDER-but-present → a cheap incremental top-up of just
+// the newest pages (a few units), NOT a full re-scan. Explicit ?refresh=1 always
+// forces the full to-do scan regardless of age.
 const CACHE_TTL_MS = 15 * 60 * 1000
+// Incremental top-up depth for a stale-but-present cache: new uploads land at the
+// TOP of the uploads list, so the newest couple of pages catch them for a handful
+// of quota units — instead of re-running the deeper to-do scan on every open.
+const TOPUP_PAGES = 2
 
 // ── Cache helpers ─────────────────────────────────────────────────────────────
 
@@ -249,27 +255,54 @@ export async function GET(request: Request) {
       })
     }
 
-    // ── Default load: serve from cache if fresh, scan if stale/forced ────────
+    // ── Default load: cache-first, with a cheap top-up when stale ────────────
+    // Fresh cache  → serve as-is (0 units). Stale-but-present → a shallow
+    // incremental top-up of just the newest pages (a few units) to pick up new
+    // uploads, merged over the cached list. No cache / forced refresh → the full
+    // to-do scan. A top-up that fails (e.g. quota) falls back to the cache.
     const cache = channelScoped ? null : await readCache(supabase, user.id)
     const cacheAge = cache ? Date.now() - new Date(cache.cached_at).getTime() : Infinity
-    const usedCache = cache && cacheAge < CACHE_TTL_MS && !forceRefresh
+    const haveCache = !!cache && Array.isArray(cache.videos) && cache.videos.length > 0
+    const cacheFresh = haveCache && cacheAge < CACHE_TTL_MS && !forceRefresh
 
     let allVideos: ReturnType<typeof buildDraftVideo>[]
     let nextCursor: string | undefined
+    let usedCache = false
 
-    if (usedCache) {
+    if (cacheFresh) {
       // Serve entirely from Supabase — 0 YouTube API units. Surface the stored
       // continuation cursor so "Load more" still works on a cached load when the
       // previous scan stopped early (full_scan=false). An exhausted scan stores
       // no cursor, so the button correctly stays hidden.
       allVideos = cache!.videos
       nextCursor = cache!.full_scan ? undefined : (cache!.next_cursor ?? undefined)
+      usedCache = true
+    } else if (haveCache && !forceRefresh && !channelScoped) {
+      // Stale-but-present → cheap incremental top-up of the newest pages, merged
+      // over the cached list (new uploads go on top). Preserve the existing
+      // deep-scan frontier (full_scan / next_cursor) so "Load more" still works.
+      // If the top-up fails (quota/transient), serve the cached list unchanged.
+      const yt = createYouTubeOAuthService(token)
+      try {
+        const top = await runTopUpScan(yt, cache!.uploads_playlist_id)
+        const seen = new Set(cache!.videos.map((v: ReturnType<typeof buildDraftVideo>) => v.youtubeVideoId))
+        const fresh = top.videos.filter(v => v.youtubeVideoId && !seen.has(v.youtubeVideoId))
+        allVideos = fresh.length ? [...fresh, ...cache!.videos] : cache!.videos
+        nextCursor = cache!.full_scan ? undefined : (cache!.next_cursor ?? undefined)
+        const playlistToPersist = top.uploadsPlaylistId || cache!.uploads_playlist_id
+        if (playlistToPersist) {
+          await writeCache(supabase, user.id, playlistToPersist, allVideos, cache!.full_scan, cache!.next_cursor ?? undefined)
+        }
+      } catch {
+        allVideos = cache!.videos
+        nextCursor = cache!.full_scan ? undefined : (cache!.next_cursor ?? undefined)
+      }
+      usedCache = true   // served from cache (+ a light top-up), not a full scan
     } else {
-      // Cache is stale / missing / forced: run the scan. If the scan fails
-      // (transient YouTube hiccup, a momentary channel-resolve miss, etc.) but
-      // we still have cached videos, serve those rather than blanking the page —
-      // the user keeps their list and a later refresh re-scans. Quota/auth
-      // errors with NO cache to fall back on still surface via the outer catch.
+      // No cache, or a forced refresh → run the full to-do scan. If the scan
+      // fails (transient YouTube hiccup, a momentary channel-resolve miss, etc.)
+      // but we still have cached videos, serve those rather than blanking the
+      // page. Quota/auth errors with NO cache still surface via the outer catch.
       const yt = createYouTubeOAuthService(token)
       try {
         const result = await runFullScanWithCursor(
@@ -447,6 +480,27 @@ async function runFullScanWithCursor(
   }
 
   return { videos: accumulated, nextCursor: cursor, uploadsPlaylistId }
+}
+
+// Shallow top-up: fetch just the newest TOPUP_PAGES pages of the uploads list to
+// catch new uploads for a few quota units, WITHOUT the deeper to-do scan. Used
+// only when the cache is present but stale — the cached list already holds the
+// deep back-catalog, so we just merge any brand-new uploads on top of it.
+async function runTopUpScan(
+  yt: ReturnType<typeof createYouTubeOAuthService>,
+  cachedPlaylistId?: string,
+): Promise<{ videos: ReturnType<typeof buildDraftVideo>[]; uploadsPlaylistId?: string }> {
+  const acc: ReturnType<typeof buildDraftVideo>[] = []
+  let cursor: string | undefined = undefined
+  let uploadsPlaylistId = cachedPlaylistId
+  for (let p = 0; p < TOPUP_PAGES; p++) {
+    const page = await yt.getDraftVideos(50, cursor, uploadsPlaylistId)
+    uploadsPlaylistId = page.uploadsPlaylistId
+    for (const v of page.videos) acc.push(v as ReturnType<typeof buildDraftVideo>)
+    if (!page.nextPageToken) break
+    cursor = page.nextPageToken
+  }
+  return { videos: acc, uploadsPlaylistId }
 }
 
 // Simplified scan for search-fallback and cursor-continuation paths.
