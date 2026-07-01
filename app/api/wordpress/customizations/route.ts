@@ -217,6 +217,10 @@ export async function POST(req: Request) {
             mediaKitUrl: /^https?:\/\//i.test(rawUrl) ? rawUrl.slice(0, 500) : '',
             inbox: !!bc?.inbox,
             directLink: !!bc?.directLink,
+            // Public hCaptcha site key so the plugin can render the widget on
+            // the contact form (the server verifies the token against the
+            // secret). Empty = no widget (endpoint fail-opens on missing secret).
+            hcaptchaSiteKey: process.env.NEXT_PUBLIC_HCAPTCHA_SITE_KEY || '',
           }
         })(),
       }

@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.58
+ * Version: 1.0.59
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -3105,6 +3105,206 @@ if (!function_exists('mvp_affiliate_render_newsletter_form')) {
 </script>
         <?php
         return ob_get_clean();
+    }
+}
+
+// ─── 19a. "Work with brands" CTA — discreet top-of-page button + modal ──────
+// When a creator enables brandCta in /customize, every page gets a small,
+// fixed "Are you a brand?" pill. Brands click it to either (a) jump straight
+// to the creator's media kit, or (b) open a modal with a short pitch + an
+// in-app contact form whose message lands in the creator's MVP dashboard
+// inbox — no public email exposed.
+//
+// Theme-independent: injected via wp_footer with inline CSS + vanilla JS,
+// positioned fixed so it works on Kadence / Astra / GeneratePress / anything.
+//
+// Security mirrors the newsletter form (section 19): HMAC-signed
+// (creatorUserId|origin|ts with the site's proxy_secret), a honeypot field,
+// and hCaptcha rendered with the public site key the dashboard passes down in
+// brandCta.hcaptchaSiteKey — the /api/brand-inquiry endpoint verifies the
+// token server-side and requires the brand's name + email so the creator can
+// always reply.
+add_action('wp_footer', 'mvp_affiliate_render_brand_cta');
+if (!function_exists('mvp_affiliate_render_brand_cta')) {
+    function mvp_affiliate_render_brand_cta() {
+        $bc = mvp_affiliate_get_data()['brandCta'] ?? [];
+        if (!is_array($bc) || empty($bc['enabled'])) return;
+
+        $owner_id = isset($bc['ownerId']) ? trim((string) $bc['ownerId']) : '';
+        if (!preg_match('/^[0-9a-f-]{36}$/i', $owner_id)) return;
+
+        $inbox     = !empty($bc['inbox']);
+        $media_kit = isset($bc['mediaKitUrl']) ? trim((string) $bc['mediaKitUrl']) : '';
+        if ($media_kit !== '' && !preg_match('#^https?://#i', $media_kit)) $media_kit = '';
+        // "Link straight to media kit" only makes sense when a URL is set.
+        $direct_link = !empty($bc['directLink']) && $media_kit !== '';
+        // Nothing actionable configured → don't render a dead button.
+        if (!$inbox && $media_kit === '') return;
+
+        $headline = (isset($bc['headline']) && trim((string) $bc['headline']) !== '')
+            ? (string) $bc['headline']
+            : 'Are you a brand that wants to get featured here?';
+        $intro    = isset($bc['intro']) ? (string) $bc['intro'] : '';
+        $site_key = isset($bc['hcaptchaSiteKey']) ? trim((string) $bc['hcaptchaSiteKey']) : '';
+
+        $api_base = apply_filters('mvp_affiliate_api_base', 'https://www.mvpaffiliate.io');
+        $uid = wp_generate_uuid4();
+
+        // HMAC — identical scheme to the newsletter form so the dashboard's
+        // shared verifier accepts it.
+        $hmac_secret = (string) get_option('affiliateos_proxy_secret', '');
+        $hmac_ts     = (string) time();
+        $origin      = '';
+        if (function_exists('home_url')) {
+            $parsed = parse_url(home_url());
+            if (!empty($parsed['host'])) $origin = strtolower($parsed['host']);
+        }
+        $hmac_sig = $hmac_secret
+            ? hash_hmac('sha256', $owner_id . '|' . $origin . '|' . $hmac_ts, $hmac_secret)
+            : '';
+
+        ob_start();
+        ?>
+<div class="mvp-brandcta" id="mvp-brandcta-<?php echo esc_attr($uid); ?>" style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <?php if ($direct_link): ?>
+  <!-- Direct-link mode: the pill is just an outbound link to the media kit. -->
+  <a class="mvp-brandcta-pill" href="<?php echo esc_url($media_kit); ?>" target="_blank" rel="nofollow noopener"
+     style="position:fixed;top:14px;right:14px;z-index:99990;display:inline-flex;align-items:center;gap:7px;padding:9px 15px;border-radius:999px;background:rgba(17,17,20,0.90);color:#fff;font-size:13px;font-weight:600;text-decoration:none;box-shadow:0 4px 16px rgba(0,0,0,0.22);backdrop-filter:saturate(140%) blur(6px);border:1px solid rgba(255,255,255,0.14);cursor:pointer;">
+    <span aria-hidden="true">✦</span><span>Are you a brand?</span>
+  </a>
+  <?php else: ?>
+  <button type="button" class="mvp-brandcta-pill" data-open
+     style="position:fixed;top:14px;right:14px;z-index:99990;display:inline-flex;align-items:center;gap:7px;padding:9px 15px;border-radius:999px;background:rgba(17,17,20,0.90);color:#fff;font-size:13px;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,0.22);backdrop-filter:saturate(140%) blur(6px);border:1px solid rgba(255,255,255,0.14);cursor:pointer;">
+    <span aria-hidden="true">✦</span><span>Are you a brand?</span>
+  </button>
+
+  <div class="mvp-brandcta-overlay" role="dialog" aria-modal="true" aria-labelledby="mvp-brandcta-title-<?php echo esc_attr($uid); ?>"
+       style="display:none;position:fixed;inset:0;z-index:99991;background:rgba(0,0,0,0.55);align-items:center;justify-content:center;padding:20px;">
+    <div class="mvp-brandcta-card"
+         style="width:100%;max-width:460px;max-height:90vh;overflow-y:auto;background:#ffffff;color:#1d1d1f;border-radius:18px;padding:26px;box-shadow:0 20px 60px rgba(0,0,0,0.35);position:relative;">
+      <button type="button" data-close aria-label="Close"
+              style="position:absolute;top:12px;right:12px;width:30px;height:30px;border:none;border-radius:8px;background:rgba(0,0,0,0.05);color:#6e6e73;font-size:18px;line-height:1;cursor:pointer;">×</button>
+      <h3 id="mvp-brandcta-title-<?php echo esc_attr($uid); ?>" style="margin:0 0 8px;font-size:19px;line-height:1.3;font-weight:700;padding-right:28px;"><?php echo esc_html($headline); ?></h3>
+      <?php if ($intro !== ''): ?>
+      <p style="margin:0 0 18px;font-size:14px;line-height:1.55;color:#3a3a3c;white-space:pre-line;"><?php echo esc_html($intro); ?></p>
+      <?php else: ?>
+      <p style="margin:0 0 18px;font-size:14px;line-height:1.55;color:#3a3a3c;">Tell me a bit about your brand and what you have in mind — I read every message.</p>
+      <?php endif; ?>
+
+      <?php if ($media_kit !== ''): ?>
+      <a href="<?php echo esc_url($media_kit); ?>" target="_blank" rel="nofollow noopener"
+         style="display:block;text-align:center;padding:12px 16px;border-radius:11px;background:#0071e3;color:#fff;font-size:14px;font-weight:600;text-decoration:none;margin-bottom:<?php echo $inbox ? '18px' : '0'; ?>;">View my media kit →</a>
+      <?php endif; ?>
+
+      <?php if ($inbox): ?>
+      <?php if ($media_kit !== ''): ?><div style="text-align:center;font-size:12px;color:#8e8e93;margin-bottom:14px;">or send a message</div><?php endif; ?>
+      <form class="mvp-brandcta-form" novalidate style="display:flex;flex-direction:column;gap:10px;">
+        <input type="text" name="name" required placeholder="Your name *" autocomplete="name"
+               style="padding:11px 12px;border:1px solid rgba(0,0,0,0.15);border-radius:10px;font-size:14px;color:#1d1d1f;background:#fff;outline:none;" />
+        <input type="email" name="email" required placeholder="Your email *" autocomplete="email"
+               style="padding:11px 12px;border:1px solid rgba(0,0,0,0.15);border-radius:10px;font-size:14px;color:#1d1d1f;background:#fff;outline:none;" />
+        <input type="text" name="company" placeholder="Brand / company (optional)" autocomplete="organization"
+               style="padding:11px 12px;border:1px solid rgba(0,0,0,0.15);border-radius:10px;font-size:14px;color:#1d1d1f;background:#fff;outline:none;" />
+        <textarea name="message" required rows="4" placeholder="What would you like to work on? *"
+                  style="padding:11px 12px;border:1px solid rgba(0,0,0,0.15);border-radius:10px;font-size:14px;color:#1d1d1f;background:#fff;outline:none;resize:vertical;"></textarea>
+        <!-- Honeypot: hidden; bots fill it, humans don't → server silently drops. -->
+        <input type="text" name="hp" tabindex="-1" autocomplete="off" aria-hidden="true"
+               style="position:absolute;left:-9999px;top:-9999px;height:0;width:0;opacity:0;" />
+        <?php if ($site_key !== ''): ?>
+        <div class="h-captcha" data-sitekey="<?php echo esc_attr($site_key); ?>" style="margin:2px 0;"></div>
+        <?php endif; ?>
+        <button type="submit"
+                style="padding:12px 18px;border:none;border-radius:11px;background:#1d1d1f;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">Send message</button>
+        <p class="mvp-brandcta-msg" role="status" aria-live="polite" style="margin:2px 0 0;font-size:12px;line-height:1.5;color:#6e6e73;min-height:1.4em;"></p>
+      </form>
+      <?php endif; ?>
+    </div>
+  </div>
+  <?php endif; ?>
+</div>
+<?php if (!$direct_link && $inbox && $site_key !== ''): ?>
+<script src="https://js.hcaptcha.com/1/api.js" async defer></script>
+<?php endif; ?>
+<?php if (!$direct_link): ?>
+<script>
+(function(){
+  var root = document.getElementById(<?php echo wp_json_encode('mvp-brandcta-' . $uid); ?>);
+  if (!root) return;
+  var openBtn = root.querySelector('[data-open]');
+  var overlay = root.querySelector('.mvp-brandcta-overlay');
+  if (!openBtn || !overlay) return;
+  var closeEls = root.querySelectorAll('[data-close]');
+  function open(){ overlay.style.display = 'flex'; document.addEventListener('keydown', onKey); }
+  function close(){ overlay.style.display = 'none'; document.removeEventListener('keydown', onKey); }
+  function onKey(e){ if (e.key === 'Escape') close(); }
+  openBtn.addEventListener('click', open);
+  closeEls.forEach(function(el){ el.addEventListener('click', close); });
+  overlay.addEventListener('click', function(e){ if (e.target === overlay) close(); });
+
+  var form = root.querySelector('.mvp-brandcta-form');
+  if (!form) return;
+  var msg = root.querySelector('.mvp-brandcta-msg');
+  var btn = form.querySelector('button[type="submit"]');
+  var origLabel = btn.textContent;
+  function val(sel){ var el = form.querySelector(sel); return el ? (el.value || '').trim() : ''; }
+  form.addEventListener('submit', function(e){
+    e.preventDefault();
+    msg.style.color = '#6e6e73'; msg.textContent = '';
+    // Read via querySelector, not form.name / form.submit — a control named
+    // "name" collides with HTMLFormElement.name and would read empty.
+    var name    = val('[name="name"]');
+    var email   = val('[name="email"]');
+    var company = val('[name="company"]');
+    var message = val('[name="message"]');
+    var hp      = val('[name="hp"]');
+    if (!name)    { msg.style.color = '#ff3b30'; msg.textContent = 'Please add your name.'; return; }
+    if (!email)   { msg.style.color = '#ff3b30'; msg.textContent = 'Please add your email so they can reply.'; return; }
+    if (!message) { msg.style.color = '#ff3b30'; msg.textContent = 'Please add a short message.'; return; }
+    // hCaptcha token (if the widget is present on the page).
+    var captchaEl = form.querySelector('textarea[name="h-captcha-response"]');
+    var captchaToken = captchaEl ? (captchaEl.value || '') : '';
+    btn.disabled = true; btn.textContent = 'Sending…';
+    fetch(<?php echo wp_json_encode($api_base . '/api/brand-inquiry'); ?>, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        creatorUserId: <?php echo wp_json_encode($owner_id); ?>,
+        name: name,
+        email: email,
+        company: company,
+        message: message,
+        hp: hp,
+        hcaptchaToken: captchaToken,
+        sourceUrl: window.location.href,
+        origin: <?php echo wp_json_encode($origin); ?>,
+        ts: <?php echo wp_json_encode($hmac_ts); ?>,
+        sig: <?php echo wp_json_encode($hmac_sig); ?>
+      })
+    }).then(function(r){ return r.json().then(function(d){ return { ok: r.ok, data: d }; }); })
+      .then(function(res){
+        btn.disabled = false; btn.textContent = origLabel;
+        if (!res.ok || !res.data || res.data.ok === false) {
+          msg.style.color = '#ff3b30';
+          msg.textContent = (res.data && res.data.error) ? res.data.error : 'Something went wrong. Please try again.';
+          if (window.hcaptcha) { try { window.hcaptcha.reset(); } catch(_){} }
+          return;
+        }
+        msg.style.color = '#34c759';
+        msg.textContent = 'Thanks — your message was sent. They’ll be in touch.';
+        form.reset();
+        if (window.hcaptcha) { try { window.hcaptcha.reset(); } catch(_){} }
+      })
+      .catch(function(){
+        btn.disabled = false; btn.textContent = origLabel;
+        msg.style.color = '#ff3b30';
+        msg.textContent = 'Network error. Please try again.';
+      });
+  });
+})();
+</script>
+<?php endif; ?>
+        <?php
+        echo ob_get_clean();
     }
 }
 
