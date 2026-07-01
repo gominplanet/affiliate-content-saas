@@ -201,6 +201,24 @@ export async function POST(req: Request) {
           // self-sabotage.
           subscriberCount: nlSubscriberCount,
         },
+        // "Work with brands" banner/modal the plugin renders on the blog. Like
+        // newsletter.userId, `ownerId` is public here so the form can POST to
+        // /api/brand-inquiry for this creator (HMAC-signed by the plugin).
+        // Sanitised + capped so a stale/oversized client value can't poison it.
+        brandCta: (() => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const bc = (customizations as any)?.brandCta
+          const rawUrl = String(bc?.mediaKitUrl || '').trim()
+          return {
+            enabled: !!bc?.enabled,
+            ownerId,
+            headline: (String(bc?.headline || '').trim() || 'Are you a brand that wants to get featured here?').slice(0, 160),
+            intro: String(bc?.intro || '').slice(0, 1000),
+            mediaKitUrl: /^https?:\/\//i.test(rawUrl) ? rawUrl.slice(0, 500) : '',
+            inbox: !!bc?.inbox,
+            directLink: !!bc?.directLink,
+          }
+        })(),
       }
 
       // Push to WordPress. Prefer the body-auth proxy (plugin v1.0.25+) so
