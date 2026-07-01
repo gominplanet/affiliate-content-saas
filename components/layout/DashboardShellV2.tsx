@@ -268,6 +268,28 @@ export default function DashboardShellV2({
   }, [isAdmin])
   const ticketAlert = isAdmin && openTickets > 0
 
+  // Unread brand inquiries — drives the count badge on the "Brand Inquiries"
+  // nav item so a creator sees at a glance how many new brand messages are
+  // waiting. Cheap head-count query (?count=1); polled every 60s AND refetched
+  // on navigation so the badge clears right after they open the inbox (which
+  // marks everything read). Runs for every user — the query is owner-scoped and
+  // returns 0 fast for anyone who hasn't enabled the feature.
+  const [unreadBrand, setUnreadBrand] = useState(0)
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      try {
+        const res = await fetch('/api/brand-inquiries?count=1')
+        if (!res.ok || cancelled) return
+        const d = await res.json()
+        if (!cancelled) setUnreadBrand(Number(d?.unread) || 0)
+      } catch { /* transient — interval retries */ }
+    }
+    load()
+    const t = setInterval(load, 60_000)
+    return () => { cancelled = true; clearInterval(t) }
+  }, [pathname])
+
   // Admin "view as tier" dropdown state. Sourced from localStorage so the
   // sidebar reflects whichever tier the admin is currently previewing.
   const [viewAs, setViewAs] = useState<Tier>('admin')
@@ -396,7 +418,7 @@ export default function DashboardShellV2({
         { href: '/walmart-pb', icon: <Store size={15} />, label: 'MVP x PartnerBoost', gate: isPaid },
         { href: '/collaborations', icon: <Handshake size={15} />, label: 'Brand Deals' },
         // Inbound: brand messages from the blog's "Work with brands" banner.
-        { href: '/brand-inquiries', icon: <Inbox size={15} />, label: 'Brand Inquiries' },
+        { href: '/brand-inquiries', icon: <Inbox size={15} />, label: 'Brand Inquiries', badge: unreadBrand > 0 ? unreadBrand : undefined },
         { href: '/agency', icon: <Users size={15} />, label: 'Virtual Assistant' },
       ],
     },
@@ -902,15 +924,27 @@ function NavItem({ item, active, collapsed }: { item: NavItemDef; active: boolea
         <ExternalLink size={11} className="opacity-60 flex-shrink-0" />
       )}
       {!collapsed && item.badge !== undefined && (
-        <span
-          className="text-[11px] tabular-nums px-1.5 py-0.5 rounded font-semibold"
-          style={{
-            backgroundColor: active ? 'rgba(124,58,237,0.22)' : 'var(--surface-bright)',
-            color: active ? 'var(--nav-active-text)' : 'var(--text-soft)',
-          }}
-        >
-          {item.badge}
-        </span>
+        // A numeric badge is an unread count (e.g. new brand inquiries) — render
+        // it as a prominent red notification pill so it actually catches the
+        // eye. Word badges (e.g. "Paused") stay subtle in the neutral style.
+        typeof item.badge === 'number' ? (
+          <span
+            className="text-[11px] tabular-nums min-w-[18px] h-[18px] px-1.5 rounded-full font-bold flex items-center justify-center text-white"
+            style={{ backgroundColor: '#ff3b30' }}
+          >
+            {item.badge > 99 ? '99+' : item.badge}
+          </span>
+        ) : (
+          <span
+            className="text-[11px] tabular-nums px-1.5 py-0.5 rounded font-semibold"
+            style={{
+              backgroundColor: active ? 'rgba(124,58,237,0.22)' : 'var(--surface-bright)',
+              color: active ? 'var(--nav-active-text)' : 'var(--text-soft)',
+            }}
+          >
+            {item.badge}
+          </span>
+        )
       )}
     </>
   )

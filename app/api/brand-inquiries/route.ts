@@ -10,11 +10,25 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 
-export async function GET() {
+export async function GET(req: Request) {
   const supabase = await createServerClient()
   const auth = await getAuthAndOwner(supabase)
   if (auth.error) return auth.error
   const { ownerId } = auth
+
+  // Lightweight count mode (?count=1) — used by the sidebar badge, which polls
+  // often and only needs the unread number, not the full message bodies. A
+  // head:true count query returns no rows.
+  if (new URL(req.url).searchParams.get('count') === '1') {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { count } = await (supabase as any)
+      .from('brand_inquiries')
+      .select('id', { count: 'exact', head: true })
+      .eq('owner_id', ownerId)
+      .is('read_at', null)
+      .eq('archived', false)
+    return NextResponse.json({ unread: count ?? 0 })
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
