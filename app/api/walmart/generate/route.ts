@@ -286,17 +286,22 @@ export async function POST(request: NextRequest) {
     }
 
     // ── Persist a blog_posts row so it shows in Library / social fan-out ─────
+    // slug is NOT NULL — omitting it made this INSERT fail SILENTLY (supabase-js
+    // returns {error}, doesn't throw), so no row existed and "Share with brand"
+    // / social actions 404'd with "Post not found". Include slug + content +
+    // excerpt (matching the comparison route) and surface any error.
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (supabase as any).from('blog_posts').insert({
-        user_id: user.id,
-        title,
+      const { error: bpErr } = await (supabase as any).from('blog_posts').insert({
+        user_id: user.id, title, slug, content, excerpt,
         status: status === 'draft' ? 'draft' : 'published',
         post_type: 'review',
         wordpress_url: wpPost.link,
         wordpress_post_id: wpPost.id,
+        published_at: status === 'draft' ? null : new Date().toISOString(),
       })
-    } catch { /* non-fatal — the post is already live on WordPress */ }
+      if (bpErr) console.error('[partnerboost] blog_posts insert failed:', bpErr.message)
+    } catch (e) { console.error('[partnerboost] blog_posts insert threw:', e instanceof Error ? e.message : String(e)) }
 
     const editUrl = `${wpCreds.wordpress_url.replace(/\/+$/, '')}/wp-admin/post.php?post=${wpPost.id}&action=edit`
     return NextResponse.json({

@@ -42,19 +42,49 @@ const ShareWithBrandModal = dynamic(
  * post id (same recap flow as the video-card version). Assembles every published
  * link into a ready-to-send recap message.
  */
-export function OrphanShareWithBrand({ postId, wpUrl }: { postId: string; wpUrl: string | null }) {
+const ORPHAN_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+export function OrphanShareWithBrand({ postId, wpUrl, title }: { postId: string; wpUrl: string | null; title?: string | null }) {
   const [open, setOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [resolvedId, setResolvedId] = useState(postId)
+
+  // Some older link posts (Levanta/PartnerBoost generated before the slug bug
+  // was fixed) have NO blog_posts row — their id here is the WordPress numeric
+  // id, so the recap 404s with "Post not found". When that's the case, hit the
+  // idempotent backfill first to resolve-or-create the row, then open the modal
+  // with the real blog_posts id. UUIDs already have a row → open directly.
+  async function openShare() {
+    if (ORPHAN_UUID_RE.test(postId)) { setResolvedId(postId); setOpen(true); return }
+    setBusy(true)
+    try {
+      const res = await fetch('/api/blog/link-orphan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ postId, wpUrl, title }),
+      })
+      const d = await res.json().catch(() => ({}))
+      setResolvedId(typeof d.id === 'string' ? d.id : postId)
+    } catch {
+      setResolvedId(postId)
+    } finally {
+      setBusy(false)
+      setOpen(true)
+    }
+  }
+
   return (
     <div className="mt-2">
       <button
-        onClick={() => setOpen(true)}
+        onClick={openShare}
+        disabled={busy}
         title="Send the brand a recap of everywhere this content is live"
-        className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-lg whitespace-nowrap border transition-colors hover:bg-[rgba(124,58,237,0.10)]"
+        className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-lg whitespace-nowrap border transition-colors hover:bg-[rgba(124,58,237,0.10)] disabled:opacity-60"
         style={{ borderColor: 'var(--border-bright, rgba(0,0,0,0.12))', color: 'var(--text, #1d1d1f)' }}
       >
-        <Handshake size={12} /> Share with brand
+        <Handshake size={12} /> {busy ? 'Preparing…' : 'Share with brand'}
       </button>
-      {open && <ShareWithBrandModal postId={postId} wpUrl={wpUrl} onClose={() => setOpen(false)} />}
+      {open && <ShareWithBrandModal postId={resolvedId} wpUrl={wpUrl} onClose={() => setOpen(false)} />}
     </div>
   )
 }

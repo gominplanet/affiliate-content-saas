@@ -3544,7 +3544,7 @@ export default function ContentPage() {
               {/* Share with brand — video-less posts (Levanta / Amazon-link)
                   get the same recap action as video-backed cards. Always shown
                   (unlike the social pills, which hide when no socials connect). */}
-              <OrphanShareWithBrand postId={post.mvpId || String(post.id)} wpUrl={post.link} />
+              <OrphanShareWithBrand postId={post.mvpId || String(post.id)} wpUrl={post.link} title={post.title} />
             </div>
                   )
                 })}
