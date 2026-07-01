@@ -17,6 +17,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { createWordPressService } from '@/services/wordpress'
 import { repairCorruptedBlocks, countCorruptedMarkers } from '@/lib/repair-blocks'
@@ -41,7 +42,11 @@ export async function POST(req: Request) {
   // Per-request results (function-local — never share across requests).
   const results: Array<{ postId: number; slug?: string; before: number; after: number; changed: boolean; error?: string }> = []
 
-  const site = await getWordPressCredentials(supabase, userId, body.siteId ?? null)
+  // Service-role client for the cross-user site lookup — the caller's session
+  // client is RLS-scoped to the ADMIN's own rows, so it can't see Lisa's site.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const admin = createAdminClient() as any
+  const site = await getWordPressCredentials(admin, userId, body.siteId ?? null)
   if (!site) return NextResponse.json({ error: 'No WordPress site found for that user' }, { status: 404 })
 
   const wp = createWordPressService(
