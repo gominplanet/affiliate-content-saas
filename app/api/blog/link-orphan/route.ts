@@ -16,6 +16,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { resolveBlogPostId } from '@/lib/resolve-post-id'
+import { decodeHtmlEntities } from '@/lib/decode-entities'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -62,14 +63,16 @@ export async function POST(request: Request) {
     }
 
     // Create a minimal row so social + brand-recap can resolve this post.
+    // Decode the WP-sourced title so &#038; / &#8217; don't get stored raw.
+    const cleanTitle = decodeHtmlEntities(title || '')
     const wpId = postId && /^\d+$/.test(postId) ? Number(postId) : null
-    const slug = slugFromUrl(wpUrl) || slugify(title || '')
+    const slug = slugFromUrl(wpUrl) || slugify(cleanTitle)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data, error } = await (supabase as any)
       .from('blog_posts')
       .insert({
         user_id: ownerId,
-        title: (title || 'Untitled').slice(0, 300),
+        title: (cleanTitle || 'Untitled').slice(0, 300),
         slug,
         status: 'published',
         post_type: 'review',

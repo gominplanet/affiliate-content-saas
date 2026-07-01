@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { getAuthAndOwner } from '@/lib/agency-auth'
+import { decodeHtmlEntities } from '@/lib/decode-entities'
 
 export const maxDuration = 120
 
@@ -130,7 +131,10 @@ export async function GET(req: Request) {
       }
       return {
         id: p.id,
-        title: p.title?.rendered ?? '',
+        // WP returns HTML-encoded titles (&#038; = &, &#8217; = ’). Decode so
+        // they render as real text everywhere (Library, recap, social captions)
+        // instead of showing raw entity codes.
+        title: decodeHtmlEntities(p.title?.rendered ?? ''),
         link: p.link,
         date: p.date,
         thumbnail: thumbMap[p.featured_media] ?? null,

@@ -21,6 +21,7 @@ import {
   type BrandRecapSettings, type RecapLink,
 } from '@/lib/brand-recap'
 import { resolveTrueDestination } from '@/lib/affiliate-resolve'
+import { decodeHtmlEntities } from '@/lib/decode-entities'
 import { asinFromAmazonUrl } from '@/lib/product-link'
 import { extractAsin, fetchAmazonProduct } from '@/services/amazon'
 
@@ -153,7 +154,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ post
     // fallback. When there's a product URL but the fetch missed, leave the
     // brand blank (the user types it) rather than guess "Can" off the title.
     const real = await resolveProductIdentity(productUrl)
-    const titleFallback = (video?.title as string) || (post.title as string) || ''
+    // Decode HTML entities — WP-sourced titles carry &#038; / &#8217; etc. that
+    // would otherwise show raw in the recap message.
+    const titleFallback = decodeHtmlEntities((video?.title as string) || (post.title as string) || '')
     const productName = real?.name || titleFallback
     const brandGuess = real?.brand ?? (productUrl ? '' : guessBrandName(titleFallback))
 
