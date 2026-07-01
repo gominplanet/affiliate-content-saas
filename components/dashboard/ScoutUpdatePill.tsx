@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Download, ArrowUpCircle, CheckCircle, Loader2 } from 'lucide-react'
 import { getScoutStatus } from '@/lib/extension-frame'
 import { SCOUT_LATEST_VERSION, SCOUT_DOWNLOAD_URL, SCOUT_WHATS_NEW, isScoutOutdated } from '@/lib/scout-version'
+import CopyChromeExtensions from '@/components/scout/CopyChromeExtensions'
 
 /**
  * SCOUT extension status pill for the dashboard hero — sits beside the
@@ -88,7 +89,7 @@ export default function ScoutUpdatePill() {
             <p className="text-[12px] font-semibold mt-3" style={{ color: 'var(--text, #1d1d1f)' }}>Install in 2 steps:</p>
             <ol className="list-decimal ml-4 mt-1 flex flex-col gap-1 text-[12px] leading-relaxed" style={{ color: 'var(--text-soft, #6e6e73)' }}>
               <li>Download &amp; unzip the file below.</li>
-              <li>Open Chrome → <span className="font-mono">chrome://extensions</span> → turn on <b>Developer mode</b> (top-right) → <b>Load unpacked</b> → pick the unzipped folder.</li>
+              <li>Open Chrome → <CopyChromeExtensions /> → turn on <b>Developer mode</b> (top-right) → <b>Load unpacked</b> → pick the unzipped folder.</li>
             </ol>
             <a
               href={SCOUT_DOWNLOAD_URL}

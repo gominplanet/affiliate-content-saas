@@ -26,6 +26,7 @@ import { Loader2, ExternalLink, CheckCircle2, Sparkles, Search, Puzzle, Download
 import { toast } from 'sonner'
 import { getScoutStatus } from '@/lib/extension-frame'
 import { SCOUT_LATEST_VERSION, SCOUT_WHATS_NEW, SCOUT_DOWNLOAD_URL, isScoutOutdated } from '@/lib/scout-version'
+import CopyChromeExtensions from '@/components/scout/CopyChromeExtensions'
 
 const CC_URL = 'https://www.amazon.com/creatorconnections/'
 
@@ -367,7 +368,7 @@ export default function EpcScoutPage() {
               <span className="font-normal" style={{ color: 'var(--text-faint)' }}>(you have v{scout.version})</span>
             </p>
             <p className="text-[12px] leading-relaxed mt-1" style={{ color: 'var(--text-soft)' }}>
-              {SCOUT_WHATS_NEW} Load-unpacked extensions don&rsquo;t auto-update — download the latest, unzip over your SCOUT folder, then open <code className="text-[11px]">chrome://extensions</code> and click the reload&nbsp;↻ on <span className="font-medium">MVP SCOUT</span>.
+              {SCOUT_WHATS_NEW} Load-unpacked extensions don&rsquo;t auto-update — download the latest, unzip over your SCOUT folder, then open <CopyChromeExtensions /> and click the reload&nbsp;↻ on <span className="font-medium">MVP SCOUT</span>.
             </p>
             <div className="flex items-center gap-3 mt-2 flex-wrap">
               <a href={SCOUT_DOWNLOAD_URL} download
@@ -446,7 +447,7 @@ export default function EpcScoutPage() {
             </div>
             <ol className="text-[12px] space-y-1.5 leading-relaxed list-decimal pl-5" style={{ color: 'var(--text-soft)' }}>
               <li><span className="font-medium">Download</span> + <span className="font-medium">unzip</span> (you’ll get an <code className="text-[11px]">mvp-cc-scout</code> folder).</li>
-              <li>Open <code className="text-[11px]">chrome://extensions</code>.</li>
+              <li>Open <CopyChromeExtensions />.</li>
               <li>Turn on <span className="font-medium">Developer mode</span> (top-right).</li>
               <li>Click <span className="font-medium">Load unpacked</span> → select the <code className="text-[11px]">mvp-cc-scout</code> folder.</li>
             </ol>
