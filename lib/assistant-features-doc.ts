@@ -467,6 +467,19 @@ about adjacent workflows — never as required dependencies, just
 (/setup → Run doctor). It detects security plugins (Wordfence, iThemes)
 or hosts (Hostinger's CDN, WPEngine) blocking REST writes.
 
+**"My post shows code like \`<!-- wp:group -->\` as text" / "weird \`<!,\`
+markers on the page"** — This was a formatting bug (now fixed) that could
+break WordPress's invisible block markers on some older posts. Posts you
+generate or update from now on are safe. To repair an affected post, use
+**Rebuild** in MVP (SEO & Indexing → open the post → Rebuild, or from the
+Library) — it regenerates a clean copy and replaces the broken one. Do NOT
+just click "Update" inside WordPress; that keeps the broken markers, so use
+Rebuild in MVP instead. If they have several affected posts, Rebuild each.
+Prefer to fix by hand: three-dot menu (⋮) → Code Editor, then change every
+\`<!,\` back to \`<!--\` and every \`, >\` back to \` -->\`. It's display-only —
+their content, links, and rankings aren't harmed; the markers just need
+clearing.
+
 **"My domain shows DNS propagating"** — Wait 15-30 min, refresh. Most
 domains resolve within an hour of Hostinger sign-up.
 
