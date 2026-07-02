@@ -74,6 +74,15 @@ function classifyVideo(v: Pick<DraftVideo, 'title' | 'description' | 'detectedAs
   // is done regardless of how its metadata got there.
   if (v.status === 'public') return 'done'
 
+  // SCHEDULED → the creator set a publish time, which they only do once the
+  // video is FINISHED (title, thumbnail, description all in place). A scheduled
+  // video is never "fresh", so it belongs in "Metadata sent", not "Needs
+  // metadata". This is also the reliable signal for SCOUT-synced videos, where
+  // the bulk sync gives us the title + status but not always the full
+  // description to detect via length below. (Per user 2026-07-02: "I know for a
+  // fact these are done" — a wall of scheduled videos sitting in "Needs metadata".)
+  if (v.publishAt) return 'shipped'
+
   // "Needs metadata" should ONLY hold a FRESH upload — a video that is still
   // just its filename title with NOTHING written underneath. The moment a video
   // has a real description (whether MVP wrote it or the creator did), it has
