@@ -33,6 +33,7 @@ import WpUpdatePill from '@/components/dashboard/WpUpdatePill'
 import ScoutUpdatePill from '@/components/dashboard/ScoutUpdatePill'
 import AmazonSitesReminder from '@/components/dashboard/AmazonSitesReminder'
 import ProTourBanner from '@/components/dashboard/ProTourBanner'
+import RecommendedToolsCard from '@/components/dashboard/RecommendedToolsCard'
 import MetaLiveBanner from '@/components/dashboard/MetaLiveBanner'
 import { DashboardLiveCards } from '@/components/dashboard/DashboardLiveCards'
 import {
@@ -219,7 +220,9 @@ export default async function DashboardPage() {
             `,
           }}
         />
-        <div className="relative px-6 sm:px-8 pt-10 pb-10">
+        <div className="relative px-6 sm:px-8 pt-10 pb-10 flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+          {/* Left column: date, greeting, meta, status pills. */}
+          <div className="min-w-0">
           <p
             className="text-[11px] uppercase tracking-[0.18em] font-semibold mb-3"
             style={{ color: 'var(--text-subtle)' }}
@@ -251,6 +254,14 @@ export default async function DashboardPage() {
               Tutorials
             </Link>
           </div>
+          </div>
+          {/* Right column: Pro capabilities tour — shown only to users who
+              aren't Pro yet (upsell). Dismissible via localStorage. */}
+          {(tier === 'trial' || tier === 'creator') && (
+            <div className="w-full lg:w-[380px] lg:flex-shrink-0">
+              <ProTourBanner compact />
+            </div>
+          )}
         </div>
       </section>
 
@@ -332,15 +343,16 @@ export default async function DashboardPage() {
                 desc="Push them to your socials for more reach and affiliate clicks."
               />
             </div>
+            {/* Recommended tools — revenue-converting partner links, mirrored
+                from the sidebar Recommended Tools group (user request: surface
+                them right under the opportunity stats). */}
+            <RecommendedToolsCard />
             <DashboardLiveCards />
           </section>
         )}
 
-        {/* Pro capabilities tour — TOP placement, full-bleed gradient.
-            Extracted to a client component so it can be dismissed
-            ("don't show again") via localStorage. Component decides
-            whether to render at all; we just slot it here. */}
-        <ProTourBanner />
+        {/* Pro capabilities tour now lives top-right of the greeting (compact,
+            non-Pro users only) — see the hero section above. */}
 
         {/* Meta (FB/IG/Threads) just went live — nudge paid users who haven't
             connected a Meta account yet. Dismissible (localStorage). */}

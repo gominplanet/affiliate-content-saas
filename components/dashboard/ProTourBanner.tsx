@@ -20,7 +20,7 @@ import { Compass, ArrowRight, X } from 'lucide-react'
 // expansion of /pro-tour worth re-surfacing the banner, increment from v1.
 const STORAGE_KEY = 'mvp.proTourBanner.dismissed.v1'
 
-export default function ProTourBanner() {
+export default function ProTourBanner({ compact = false }: { compact?: boolean }) {
   // null = "not yet read from storage" — guards against the SSR/CSR hydration
   // mismatch that would happen if we naively initialized to false and then
   // flipped to true on first effect (the server-rendered HTML would briefly
@@ -48,6 +48,43 @@ export default function ProTourBanner() {
   // Avoids the flicker described above.
   if (dismissed === null) return null
   if (dismissed) return null
+
+  // Compact variant — sits to the RIGHT of the dashboard greeting (a "pill"
+  // rather than a full-bleed hero). Same gradient + dismiss + link, denser.
+  if (compact) {
+    return (
+      <div
+        className="relative rounded-2xl border"
+        style={{
+          background: 'linear-gradient(135deg, #7C3AED 0%, #9D6BFF 55%, #C084FC 100%)',
+          borderColor: 'rgba(124, 58, 237, 0.45)',
+          boxShadow: '0 8px 32px -8px rgba(124, 58, 237, 0.55)',
+        }}
+      >
+        <button
+          type="button"
+          onClick={dismiss}
+          aria-label="Don't show this banner again"
+          title="Don't show this banner again"
+          className="absolute top-2 right-2 z-10 inline-flex items-center justify-center w-6 h-6 rounded-md text-white/85 hover:text-white bg-white/15 hover:bg-white/25 transition-colors"
+        >
+          <X size={12} aria-hidden="true" />
+        </button>
+        <Link href="/pro-tour" className="flex items-center gap-3 p-4 pr-9">
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(255,255,255,0.18)' }}>
+            <Compass size={18} className="text-white" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <span className="text-[9px] font-bold uppercase tracking-wider text-white/80">Capabilities tour</span>
+            <p className="text-[14px] font-bold text-white leading-tight">See everything Pro can do</p>
+            <span className="text-[12px] text-white/85 inline-flex items-center gap-1 mt-0.5">
+              Read the tour <ArrowRight size={12} />
+            </span>
+          </div>
+        </Link>
+      </div>
+    )
+  }
 
   return (
     <div
