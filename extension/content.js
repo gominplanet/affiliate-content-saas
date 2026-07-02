@@ -436,7 +436,12 @@ function buildGate() {
 // affiliate-program.amazon.com — so match both spellings AND feature-detect the
 // campaign grid (ASIN-labelled cells) so we don't depend on the exact URL shape.
 function isCCPage() {
-  if (/creator[-_ ]?connections/i.test(location.href)) return true
+  const u = location.href
+  // The live Creator Connections "Affiliate+" campaigns page is:
+  //   affiliate-program.amazon.com/p/connect/requests?...&type=affiliate-plus...
+  // (older paths used creatorconnections / creator-connections). Match those,
+  // and fall back to feature-detecting the campaign grid (ASIN-labelled cells).
+  if (/\/p\/connect\b/i.test(u) || /creator[-_ ]?connections/i.test(u)) return true
   try {
     return [...document.querySelectorAll('[aria-label]')]
       .some(e => ASIN_RE.test((e.getAttribute('aria-label') || '').trim().toUpperCase()))
