@@ -431,8 +431,20 @@ function buildGate() {
   setTimeout(() => { try { pw.focus() } catch (e) {} }, 60)
 }
 
+// Is this a Creator Connections campaigns page? The URL can be
+// "creatorconnections" OR "creator-connections", on www.amazon.com OR
+// affiliate-program.amazon.com — so match both spellings AND feature-detect the
+// campaign grid (ASIN-labelled cells) so we don't depend on the exact URL shape.
+function isCCPage() {
+  if (/creator[-_ ]?connections/i.test(location.href)) return true
+  try {
+    return [...document.querySelectorAll('[aria-label]')]
+      .some(e => ASIN_RE.test((e.getAttribute('aria-label') || '').trim().toUpperCase()))
+  } catch (e) { return false }
+}
+
 function mountSearchPanel() {
-  if (!/creatorconnections/i.test(location.href)) return
+  if (!isCCPage()) return
   if (document.getElementById(PANEL_ID) || !document.body) return
 
   const style = document.createElement('style')
@@ -540,7 +552,7 @@ function mountSearchPanel() {
 try { mountSearchPanel() } catch (e) {}
 setInterval(() => {
   try {
-    const onCC = /creatorconnections/i.test(location.href)
+    const onCC = isCCPage()
     const existing = document.getElementById(PANEL_ID)
     if (onCC && !existing) mountSearchPanel()
     else if (!onCC && existing) existing.remove()
