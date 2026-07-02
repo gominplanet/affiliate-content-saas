@@ -299,6 +299,12 @@ export default async function DashboardPage() {
             for brand-new users — the welcome card is their focus. */}
         {!isNewUser && (
           <>
+            {/* Recommended tools — green panel. Revenue-converting partner links,
+                mirrored from the sidebar Recommended Tools group. Placed ABOVE
+                "Your opportunities" per user request. */}
+            <div className="rounded-2xl p-5 sm:p-6" style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.18)' }}>
+              <RecommendedToolsCard />
+            </div>
             {/* To-dos & opportunities — orange panel. */}
             <section className="rounded-2xl p-5 sm:p-6" style={{ background: 'rgba(255, 149, 0, 0.08)', border: '1px solid rgba(255, 149, 0, 0.18)' }}>
             <p className="text-[11px] font-semibold uppercase tracking-[0.12em] mb-3" style={{ color: 'var(--text-faint)' }}>Your opportunities</p>
@@ -347,11 +353,6 @@ export default async function DashboardPage() {
               />
             </div>
             </section>
-            {/* Recommended tools — green panel. Revenue-converting partner links,
-                mirrored from the sidebar Recommended Tools group. */}
-            <div className="rounded-2xl p-5 sm:p-6" style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.18)' }}>
-              <RecommendedToolsCard />
-            </div>
             <DashboardLiveCards />
           </>
         )}
