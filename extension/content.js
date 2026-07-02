@@ -388,12 +388,17 @@ async function scoutRunSearch(f) {
   const q = (f.asin || f.keyword || '').trim()
   if (q) { try { await applyAmazonSearch(q) } catch (e) {} }
   let rows = await parseCampaigns()
+  const rawCount = rows.length
   if (f.asin) rows = rows.filter(r => r.asin === f.asin.trim().toUpperCase())
-  if (f.minCommission) rows = rows.filter(r => r.commissionPct != null && r.commissionPct >= f.minCommission)
-  if (f.minEpc) rows = rows.filter(r => r.epcValue != null && r.epcValue >= f.minEpc)
-  if (f.endsAfter) rows = rows.filter(r => r.endsAt && r.endsAt >= f.endsAfter)
-  if (f.endsBefore) rows = rows.filter(r => r.endsAt && r.endsAt <= f.endsBefore)
-  return rows
+  // Filters are LENIENT on missing fields: a card whose value we couldn't read
+  // (null) is KEPT, not dropped. Otherwise one un-extractable field (commission,
+  // still being calibrated) would zero out every result. A "no end date"
+  // campaign is open-ended, so it passes an "ends after" filter too.
+  if (f.minCommission) rows = rows.filter(r => r.commissionPct == null || r.commissionPct >= f.minCommission)
+  if (f.minEpc) rows = rows.filter(r => r.epcValue == null || r.epcValue >= f.minEpc)
+  if (f.endsAfter) rows = rows.filter(r => !r.endsAt || r.endsAt >= f.endsAfter)
+  if (f.endsBefore) rows = rows.filter(r => !r.endsAt || r.endsAt <= f.endsBefore)
+  return { rows, rawCount }
 }
 
 // Private-beta gate. The campaign-search panel is published to ALL store users
@@ -504,10 +509,15 @@ function mountSearchPanel() {
     q('.mvp-tog').textContent = el.classList.contains('mvp-min') ? '+' : '–'
   })
 
-  function render(rows) {
+  function render(rows, rawCount) {
     selected.clear()
-    if (!rows.length) { res.innerHTML = '<div class="mvp-note">No campaigns matched. Try a broader keyword, or Debug to check the selectors.</div>'; return }
-    res.innerHTML = `<div class="mvp-note" style="margin:0 0 6px">${rows.length} campaign${rows.length === 1 ? '' : 's'}</div>` + rows.map(r => `
+    if (!rows.length) {
+      res.innerHTML = rawCount > 0
+        ? `<div class="mvp-note">Scraped <b>${rawCount}</b> campaign${rawCount === 1 ? '' : 's'} from the page, but none passed your filters (commission / EPC / date). Clear the filter boxes and Search again to see them all.</div>`
+        : '<div class="mvp-note">No campaigns detected on the page. Try a broader keyword, or click Debug to check the grid selectors.</div>'
+      return
+    }
+    res.innerHTML = `<div class="mvp-note" style="margin:0 0 6px">${rows.length}${rawCount > rows.length ? ` of ${rawCount}` : ''} campaign${rows.length === 1 ? '' : 's'}</div>` + rows.map(r => `
       <div class="mvp-card" data-asin="${r.asin}">
         <input type="checkbox" class="mvp-sel" style="flex:0 0 auto;margin-top:2px">
         ${r.image ? `<img src="${r.image}">` : ''}
@@ -533,14 +543,15 @@ function mountSearchPanel() {
   q('.mvp-search').addEventListener('click', async () => {
     const btn = q('.mvp-search'); const prev = btn.textContent; btn.textContent = 'Searching…'; btn.disabled = true
     try {
-      render(await scoutRunSearch({
+      const { rows, rawCount } = await scoutRunSearch({
         keyword: q('.mvp-kw').value,
         asin: q('.mvp-asin').value,
         minCommission: parseFloat(q('.mvp-comm').value) || 0,
         minEpc: parseFloat(q('.mvp-epc').value) || 0,
         endsAfter: q('.mvp-after').value || '',
         endsBefore: q('.mvp-before').value || '',
-      }))
+      })
+      render(rows, rawCount)
     } catch (e) { res.innerHTML = `<div class="mvp-note">Search error: ${e?.message || e}</div>` }
     btn.textContent = prev; btn.disabled = false
   })
