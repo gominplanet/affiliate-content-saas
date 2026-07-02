@@ -45,7 +45,7 @@ interface DraftVideo {
 }
 
 // ── Tab classification (2026-06-08, simplified 2026-06-20) ─────────────────
-// THREE workflow buckets the YouTube Co-Pilot surfaces:
+// TWO workflow buckets the YouTube Co-Pilot surfaces:
 //   - todo  ("Needs metadata"):  a FRESH upload — just its filename title with
 //                      an empty description, nothing written yet. This is the
 //                      ONLY thing the to-do queue holds. (Per user 2026-06-29.)
@@ -54,10 +54,12 @@ interface DraftVideo {
 //                      backed by youtube_copilot_pushes, mig 109) OR the video
 //                      already has a real written description. Not necessarily
 //                      live yet.
-//   - done  ("Live on YouTube"): the video is public.
+// A public/live video folds into "shipped" too — it's done. (The separate
+// "Live on YouTube" tab was removed 2026-07-02: it sat empty because published
+// videos are excluded from the default load, so it only added noise.)
 // Classification runs CLIENT-side off the existing drafts payload (which
 // includes the description), so the rule can change without redeploying the API.
-type VideoTab = 'todo' | 'shipped' | 'done'
+type VideoTab = 'todo' | 'shipped'
 
 // (kept for reference) ASIN format on Amazon: 10 alphanumerics, almost always
 // starting with B0. Product presence shows as the per-row orange "ASIN:" pill,
@@ -70,9 +72,9 @@ function classifyVideo(v: Pick<DraftVideo, 'title' | 'description' | 'detectedAs
   // creator finishes the video in YouTube Studio directly (never clicks Apply).
   if (v.metadataAppliedAt || v.metadataGeneratedAt) return 'shipped'
 
-  // PUBLISHED (and not pushed via Co-Pilot) → live on YouTube. A public video
-  // is done regardless of how its metadata got there.
-  if (v.status === 'public') return 'done'
+  // PUBLISHED → the video is live; the work is done. Folds into "Metadata sent"
+  // (handled) — the separate "Live on YouTube" tab was removed.
+  if (v.status === 'public') return 'shipped'
 
   // SCHEDULED → the creator set a publish time, which they only do once the
   // video is FINISHED (title, thumbnail, description all in place). A scheduled
@@ -2999,7 +3001,6 @@ export default function StudioPage() {
     const buckets: Record<VideoTab, DraftVideo[]> = {
       'todo': [],
       'shipped': [],
-      'done': [],
     }
     for (const v of drafts) buckets[classifyVideo(v)].push(v)
     for (const k of Object.keys(buckets) as VideoTab[]) buckets[k].sort(byNewestUpload)
@@ -3024,7 +3025,7 @@ export default function StudioPage() {
     if (tabbed.todo.length === 0 && nextPageToken) return
     autoTabPicked.current = true
     if (tabbed[activeTab].length === 0) {
-      const order: VideoTab[] = ['todo', 'shipped', 'done']
+      const order: VideoTab[] = ['todo', 'shipped']
       const fullest = order.reduce((best, t) => (tabbed[t].length > tabbed[best].length ? t : best), order[0])
       if (tabbed[fullest].length > 0) setActiveTab(fullest)
     }
@@ -3435,8 +3436,7 @@ export default function StudioPage() {
             <div className="flex items-center gap-1 mb-3 border-b border-gray-200 dark:border-white/10">
               {([
                 { id: 'todo' as const, label: '📝 Needs metadata', sub: 'Drafts that still need their title, description, tags and thumbnail generated (the orange ASIN pill marks the ones with a detected product)' },
-                { id: 'shipped' as const, label: '🚀 Metadata sent', sub: 'MVP has pushed the title, description, tags and thumbnail back to YouTube — re-generate any of it anytime. (Not necessarily live yet — check each card\'s status.)' },
-                { id: 'done' as const, label: '✅ Live on YouTube', sub: 'Published and live on YouTube' },
+                { id: 'shipped' as const, label: '🚀 Metadata sent', sub: 'Handled — MVP generated or pushed the metadata, or the video is already scheduled/live. Re-generate any of it anytime.' },
               ]).map(t => {
                 const count = tabbed[t.id].length
                 const active = activeTab === t.id
@@ -3505,15 +3505,12 @@ export default function StudioPage() {
                 <>
                   <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">
                     {activeTab === 'todo' && 'No unpublished drafts waiting'}
-                    {activeTab === 'shipped' && 'Nothing pushed via Co-Pilot yet'}
-                    {activeTab === 'done' && 'No published videos here'}
+                    {activeTab === 'shipped' && 'Nothing handled in Co-Pilot yet'}
                   </p>
                   <p className="text-xs text-[#86868b] dark:text-[#8e8e93] max-w-md mx-auto">
                     {activeTab === 'shipped'
-                      ? <>Generate metadata on a video and click <strong>Apply to YouTube</strong> — once we successfully push it, the video lands here.</>
-                      : activeTab === 'done'
-                        ? <>Videos with an Amazon/Geniuslink in the description but no Co-Pilot push record land here — usually from another tool or manual edits.</>
-                        : <>Switch tabs above to see your other videos.</>}
+                      ? <>Generate metadata on a video (or schedule/publish it on YouTube) — handled videos land here.</>
+                      : <>Switch tabs above to see your other videos.</>}
                   </p>
                 </>
               ) : (
