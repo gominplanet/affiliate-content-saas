@@ -65,6 +65,9 @@ async function runServiceRouteJob(
       'x-mvp-service': secret,
       'x-mvp-service-user': job.user_id,
       'x-mvp-service-owner': job.owner_id,
+      // Job id so the route can checkpoint its generator output (migration 149)
+      // and, on a retry, reuse it instead of re-billing a fresh Opus generation.
+      'x-mvp-service-job': job.id,
     },
     body: JSON.stringify(job.input ?? {}),
     // Almost the worker's whole 300s budget; the route is tuned to finish

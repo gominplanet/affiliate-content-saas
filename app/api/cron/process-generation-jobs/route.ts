@@ -45,18 +45,28 @@ async function maybeAlertFailSpike(admin: ReturnType<typeof createAdminClient>):
   const now = Date.now()
   if (now - lastFailAlertAt < FAIL_ALERT_THROTTLE_MS) return
   const hourAgo = new Date(now - 60 * 60_000).toISOString()
+  // Pull the rows (not just a count) so we can tell a SYSTEMIC break (many
+  // users failing → expired key / outage / poison input) from a single user's
+  // retry storm (one slow WordPress host timing out its own posts over and over
+  // — noisy but not an outage). Only the former should page.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { count } = await (admin as any)
+  const { data } = await (admin as any)
     .from('generation_jobs')
-    .select('id', { count: 'exact', head: true })
+    .select('user_id')
     .eq('status', 'failed')
     .gte('finished_at', hourAgo)
-  const failed = count ?? 0
-  if (failed >= FAIL_ALERT_THRESHOLD) {
+    .limit(500)
+  const rows = (data ?? []) as Array<{ user_id: string | null }>
+  const failed = rows.length
+  const distinctUsers = new Set(rows.map(r => r.user_id || '?')).size
+  // Systemic = crosses the threshold AND spans MULTIPLE users. A spike
+  // concentrated on ONE account is that user's own problem (a broken/slow site),
+  // not a platform break — don't page for it.
+  if (failed >= FAIL_ALERT_THRESHOLD && distinctUsers >= 2) {
     lastFailAlertAt = now
     await alertOps(
-      `Generation failures spiking — ${failed} jobs failed in the last hour`,
-      `Threshold is ${FAIL_ALERT_THRESHOLD}. This usually means a systemic break (expired Anthropic key, model outage, WordPress/proxy down, or a bad input pattern) failing every queued job, not isolated user errors. Check recent generation_jobs.error values and the model/API keys.`,
+      `Generation failures spiking — ${failed} jobs across ${distinctUsers} users in the last hour`,
+      `Threshold is ${FAIL_ALERT_THRESHOLD} failures spanning ≥2 users. Multiple users failing at once usually means a systemic break (expired Anthropic key, model outage, WordPress/proxy down, or a bad input pattern). Check recent generation_jobs.error values and the model/API keys. (Single-user retry storms no longer page — those are isolated to one account's site/host.)`,
     )
   }
 }

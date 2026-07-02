@@ -24,6 +24,10 @@ export interface GenerationJob {
   input: Record<string, any>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   result: Record<string, any> | null
+  // Cached generator output persisted mid-run (BEFORE the WP publish) so a retry
+  // reuses it instead of re-billing a fresh Opus generation. See migration 149.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  checkpoint: Record<string, any> | null
   error: string | null
   attempts: number
   max_attempts: number
@@ -133,6 +137,48 @@ export async function setJobStage(
   stage: string,
 ): Promise<void> {
   await admin.from('generation_jobs').update({ stage }).eq('id', id).eq('status', 'running')
+}
+
+/**
+ * MONEY-SAFETY (migration 149). Persist the generator's output onto the job the
+ * instant it's produced — BEFORE the slow WordPress publish — so a retry after a
+ * publish timeout can reuse it instead of re-billing a fresh Opus generation.
+ * Best-effort: a failed write just means the retry pays again (today's
+ * behaviour), so it must never throw into the generation path. Service-role
+ * client only (the generate route in service mode).
+ */
+export async function saveJobCheckpoint(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  admin: any,
+  id: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  checkpoint: Record<string, any>,
+): Promise<void> {
+  try {
+    // Guard on status='running' so we only checkpoint the attempt we still own.
+    await admin.from('generation_jobs').update({ checkpoint }).eq('id', id).eq('status', 'running')
+  } catch { /* non-fatal: a missed checkpoint just means the retry re-generates */ }
+}
+
+/**
+ * Load a job's cached generator output, or null if none (fresh job / pre-149 DB
+ * / read error). When present, the generate route SKIPS the Opus call and reuses
+ * this. Best-effort — any failure returns null and the route generates normally.
+ */
+export async function loadJobCheckpoint(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  admin: any,
+  id: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): Promise<Record<string, any> | null> {
+  try {
+    const { data, error } = await admin.from('generation_jobs').select('checkpoint').eq('id', id).maybeSingle()
+    if (error || !data) return null
+    const cp = (data as { checkpoint?: Record<string, unknown> | null }).checkpoint
+    return cp && typeof cp === 'object' ? cp : null
+  } catch {
+    return null
+  }
 }
 
 /** Fetch a single job (RLS-scoped when called with a user client). */

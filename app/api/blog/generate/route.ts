@@ -8,6 +8,7 @@ import { getValidYouTubeToken, createYouTubeOAuthService } from '@/services/yout
 import { YoutubeTranscript } from 'youtube-transcript'
 import { checkUsageLimit, checkGenerationLimit, TIERS, nextTierFor, allowedBlogImages, normalizeTier, type Tier } from '@/lib/tier'
 import { spendGate } from '@/lib/ai-spend'
+import { saveJobCheckpoint, loadJobCheckpoint } from '@/lib/generation-jobs'
 import { scrubBanned } from '@/lib/scrub'
 import { scrubAiHtml } from '@/lib/html-scrub'
 import { scrubVoicePatterns } from '@/lib/blog-voice-scrub'
@@ -155,6 +156,9 @@ async function handleGenerate(request: Request) {
   let supabase: Awaited<ReturnType<typeof createServerClient>>
   let user: { id: string }
   let ownerId: string
+  // Set only on the async worker's service call — the generation_jobs row id we
+  // checkpoint the writer output onto (migration 149). null for interactive calls.
+  let serviceJobId: string | null = null
   if (isServiceCall) {
     const svcUser = request.headers.get('x-mvp-service-user') || ''
     if (!svcUser) return NextResponse.json({ error: 'Service call missing identity' }, { status: 400 })
@@ -162,6 +166,9 @@ async function handleGenerate(request: Request) {
     supabase = createAdminClient() as unknown as Awaited<ReturnType<typeof createServerClient>>
     user = { id: svcUser }
     ownerId = request.headers.get('x-mvp-service-owner') || svcUser
+    // Job id (migration 149) → checkpoint the Opus output before the WP publish
+    // so a retry after a publish timeout reuses it instead of re-billing.
+    serviceJobId = request.headers.get('x-mvp-service-job') || null
   } else {
     supabase = await createServerClient()
     const auth = await getAuthAndOwner(supabase)
@@ -952,6 +959,22 @@ async function handleGenerate(request: Request) {
   // ── 6. Generate blog post with Claude ─────────────────────────────────────
   const claude = createClaudeService()
   let generated
+  // MONEY-SAFETY (migration 149): on an async worker RETRY, reuse the Opus output
+  // this job already produced instead of paying for a fresh generation. The
+  // writer runs BEFORE the slow WP publish, so a publish-timeout retry used to
+  // re-bill a full Opus generation (up to max_attempts times). If a prior attempt
+  // checkpointed its output, load it and skip the writer entirely; only the cheap
+  // post-processing + the publish re-run — which also frees the whole worker
+  // budget for the publish so a slow-host post finally lands. serviceJobId is
+  // null for interactive calls, so this is a pure no-op outside the queue.
+  const checkpointGen = serviceJobId
+    ? await loadJobCheckpoint(createAdminClient(), serviceJobId)
+    : null
+  if (checkpointGen) {
+    console.log('[blog/generate] reusing checkpointed generation for job', serviceJobId, '(skipping Opus call)')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    generated = checkpointGen as any
+  } else {
   try {
     generated = await claude.generateBlogPost(
       {
@@ -1020,6 +1043,11 @@ async function handleGenerate(request: Request) {
       ? 'A network step in generation timed out or returned an error (usually Amazon scrape, Claude, or WordPress). This is almost always temporary — hit Retry. Raw: ' + rawMsg.slice(0, 120)
       : rawMsg
     return NextResponse.json({ error: msg }, { status: 500 })
+  }
+    // Fresh generation succeeded → checkpoint the writer output NOW, before the
+    // slow WP publish, so a publish-timeout retry reuses it instead of paying for
+    // a whole new Opus generation (migration 149). Best-effort; never blocks.
+    if (serviceJobId) await saveJobCheckpoint(createAdminClient(), serviceJobId, generated as unknown as Record<string, unknown>)
   }
 
   // ── 5.5. Hard-enforce the banned-word rule on every user-facing field.
