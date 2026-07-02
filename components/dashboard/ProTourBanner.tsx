@@ -17,8 +17,9 @@ import Link from 'next/link'
 import { Compass, ArrowRight, X } from 'lucide-react'
 
 // Bumping this version invalidates the dismissal — when we ship a major
-// expansion of /pro-tour worth re-surfacing the banner, increment from v1.
-const STORAGE_KEY = 'mvp.proTourBanner.dismissed.v1'
+// expansion of /pro-tour worth re-surfacing the banner, increment. v2:
+// relocated to the top-right of the greeting as a compact pill (2026-07-02).
+const STORAGE_KEY = 'mvp.proTourBanner.dismissed.v2'
 
 export default function ProTourBanner({ compact = false }: { compact?: boolean }) {
   // null = "not yet read from storage" — guards against the SSR/CSR hydration

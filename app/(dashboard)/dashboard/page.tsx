@@ -257,7 +257,7 @@ export default async function DashboardPage() {
           </div>
           {/* Right column: Pro capabilities tour — shown only to users who
               aren't Pro yet (upsell). Dismissible via localStorage. */}
-          {(tier === 'trial' || tier === 'creator') && (
+          {(tier === 'trial' || tier === 'creator' || tier === 'admin') && (
             <div className="w-full lg:w-[380px] lg:flex-shrink-0">
               <ProTourBanner compact />
             </div>
@@ -270,7 +270,7 @@ export default async function DashboardPage() {
             workflow — so a user (especially a first-timer fresh off the
             YouTube + social setup) knows exactly where to go for each task.
             Sit just under the hero so the page is "action-first". */}
-        <section>
+        <section className="rounded-2xl p-5 sm:p-6" style={{ background: 'rgba(59, 130, 246, 0.08)', border: '1px solid rgba(59, 130, 246, 0.18)' }}>
           <p className="text-[11px] font-semibold uppercase tracking-[0.12em] mb-3" style={{ color: 'var(--text-faint)' }}>What do you want to do?</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             {/* Community first — most valuable "next thing to do" for a creator:
@@ -298,7 +298,10 @@ export default async function DashboardPage() {
             live cards (SEO ranking + link clicks) that lazy-load. Hidden
             for brand-new users — the welcome card is their focus. */}
         {!isNewUser && (
-          <section className="flex flex-col gap-3">
+          <>
+            {/* To-dos & opportunities — orange panel. */}
+            <section className="rounded-2xl p-5 sm:p-6" style={{ background: 'rgba(255, 149, 0, 0.08)', border: '1px solid rgba(255, 149, 0, 0.18)' }}>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] mb-3" style={{ color: 'var(--text-faint)' }}>Your opportunities</p>
             {/* auto-fit grid so the row stays balanced whether 2, 3 or 4 cards
                 are present (the conditional cards come and go). */}
             <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))' }}>
@@ -343,12 +346,14 @@ export default async function DashboardPage() {
                 desc="Push them to your socials for more reach and affiliate clicks."
               />
             </div>
-            {/* Recommended tools — revenue-converting partner links, mirrored
-                from the sidebar Recommended Tools group (user request: surface
-                them right under the opportunity stats). */}
-            <RecommendedToolsCard />
+            </section>
+            {/* Recommended tools — green panel. Revenue-converting partner links,
+                mirrored from the sidebar Recommended Tools group. */}
+            <div className="rounded-2xl p-5 sm:p-6" style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.18)' }}>
+              <RecommendedToolsCard />
+            </div>
             <DashboardLiveCards />
-          </section>
+          </>
         )}
 
         {/* Pro capabilities tour now lives top-right of the greeting (compact,
