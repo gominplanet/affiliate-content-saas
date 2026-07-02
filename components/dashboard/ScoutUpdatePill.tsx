@@ -4,8 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Download, ArrowUpCircle, CheckCircle, Loader2 } from 'lucide-react'
 import { getScoutStatus } from '@/lib/extension-frame'
-import { SCOUT_LATEST_VERSION, SCOUT_DOWNLOAD_URL, SCOUT_WHATS_NEW, isScoutOutdated } from '@/lib/scout-version'
-import CopyChromeExtensions from '@/components/scout/CopyChromeExtensions'
+import { SCOUT_LATEST_VERSION, SCOUT_STORE_LISTING_URL, SCOUT_WHATS_NEW, isScoutOutdated } from '@/lib/scout-version'
 
 /**
  * SCOUT extension status pill for the dashboard hero — sits beside the
@@ -115,18 +114,17 @@ export default function ScoutUpdatePill() {
             <p className="text-[12px] leading-relaxed mt-1.5" style={{ color: 'var(--text-soft, #6e6e73)' }}>
               SCOUT runs in your browser and makes a few things noticeably better — it captures real frames from your YouTube videos for sharper thumbnails, reads Amazon product details when our server is blocked, and finds your on-Amazon videos for brand recaps. It&apos;s optional, but recommended.
             </p>
-            <p className="text-[12px] font-semibold mt-3" style={{ color: 'var(--text, #1d1d1f)' }}>Install in 2 steps:</p>
-            <ol className="list-decimal ml-4 mt-1 flex flex-col gap-1 text-[12px] leading-relaxed" style={{ color: 'var(--text-soft, #6e6e73)' }}>
-              <li>Download &amp; unzip the file below.</li>
-              <li>Open Chrome → <CopyChromeExtensions /> → turn on <b>Developer mode</b> (top-right) → <b>Load unpacked</b> → pick the unzipped folder.</li>
-            </ol>
+            <p className="text-[12px] leading-relaxed mt-3" style={{ color: 'var(--text-soft, #6e6e73)' }}>
+              One click from the Chrome Web Store — click <b>Add to Chrome</b>, and Chrome keeps it updated automatically.
+            </p>
             <a
-              href={SCOUT_DOWNLOAD_URL}
-              download
+              href={SCOUT_STORE_LISTING_URL}
+              target="_blank"
+              rel="noopener noreferrer"
               className="mt-3 inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] font-semibold text-white transition-transform hover:-translate-y-0.5"
               style={{ background: 'linear-gradient(135deg, #FF9F0A 0%, #FF6B00 100%)', boxShadow: '0 3px 12px rgba(255,107,0,0.35)' }}
             >
-              <Download size={13} /> Download SCOUT
+              <Download size={13} /> Add to Chrome
             </a>
           </div>,
           document.body,
@@ -135,13 +133,16 @@ export default function ScoutUpdatePill() {
     )
   }
 
-  // Installed but behind → loud update.
+  // Installed but behind → loud update. Store installs auto-update; this links
+  // to the listing so a sideloaded (old load-unpacked) copy can reinstall from
+  // the store and get auto-updates from then on.
   if (outdated) {
     return (
       <a
-        href={SCOUT_DOWNLOAD_URL}
-        download
-        title={`A newer SCOUT (v${SCOUT_LATEST_VERSION}) is ready. ${SCOUT_WHATS_NEW} Download, unzip over your SCOUT folder, then reload it at chrome://extensions.`}
+        href={SCOUT_STORE_LISTING_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={`A newer SCOUT (v${SCOUT_LATEST_VERSION}) is ready. ${SCOUT_WHATS_NEW} Open the Chrome Web Store listing to update (store installs update automatically).`}
         className="group inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-[13px] font-semibold text-white transition-transform hover:-translate-y-0.5"
         style={{ background: 'linear-gradient(135deg, #FF9F0A 0%, #FF6B00 100%)', boxShadow: '0 4px 16px rgba(255,107,0,0.38)' }}
       >

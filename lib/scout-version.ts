@@ -27,6 +27,12 @@ export const SCOUT_DOWNLOAD_URL = '/mvp-cc-scout.zip'
  *  for existing installs. See extension/CHROME-WEB-STORE.md. */
 export const SCOUT_STORE_UPLOAD_URL = '/mvp-cc-scout-store.zip'
 
+/** LIVE Chrome Web Store listing (approved 2026-07-02). One-click install +
+ *  Chrome auto-updates it — so store users never touch the download/reload
+ *  flow. This is the canonical "Get SCOUT" destination. */
+export const SCOUT_STORE_LISTING_URL =
+  'https://chromewebstore.google.com/detail/scout-%E2%80%94-mvp-affiliate/blpmlneliggaekangckpgknphpacapkg'
+
 /** True when the installed version is older than SCOUT_LATEST_VERSION.
  *  Returns false for a missing/unknown version (that's "not installed",
  *  handled by the install instructions, not the update banner). */
