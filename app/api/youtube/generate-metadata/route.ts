@@ -1020,6 +1020,25 @@ export async function POST(request: Request) {
       } catch (err) {
         console.warn('[generate-metadata] persist threw:', err instanceof Error ? err.message : String(err))
       }
+
+      // Co-Pilot handled this video → record a GENERATED marker (migration 150)
+      // so the drafts list moves it out of "Needs metadata" into "Metadata sent"
+      // the moment it's generated — even if the creator finishes it in YouTube
+      // Studio directly and never clicks Apply. Best-effort; keyed to the caller
+      // so the drafts enrich (which reads by the viewer's id) picks it up. This
+      // works for Co-Pilot users who never /api/youtube/sync (no youtube_videos
+      // row), which the youtube_videos write above no-ops on.
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (supabase as any)
+          .from('youtube_copilot_generated')
+          .upsert(
+            { user_id: user.id, youtube_video_id: youtubeVideoId, generated_at: new Date().toISOString() },
+            { onConflict: 'user_id,youtube_video_id' },
+          )
+      } catch (err) {
+        console.warn('[generate-metadata] generated-marker upsert failed (non-fatal):', err instanceof Error ? err.message : String(err))
+      }
     }
 
     return NextResponse.json({

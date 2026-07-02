@@ -35,6 +35,10 @@ interface DraftVideo {
    *  via /api/youtube/apply or /api/youtube/update-metadata. null if we
    *  haven't shipped this one yet. Powers the "Pushed via Co-Pilot" tab. */
   metadataAppliedAt?: string | null
+  // Set when metadata was GENERATED for this video in Co-Pilot (mig 150). Moves
+  // the video to "Metadata sent" even if the creator finishes it in YouTube
+  // Studio directly and never clicks Apply.
+  metadataGeneratedAt?: string | null
   /** 0-based position in the uploads playlist (0 = newest upload). The reliable
    *  newest-first sort key — draft publishedAt is a placeholder. */
   uploadPosition?: number | null
@@ -59,10 +63,12 @@ type VideoTab = 'todo' | 'shipped' | 'done'
 // starting with B0. Product presence shows as the per-row orange "ASIN:" pill,
 // not as a classification input — a fresh draft is fresh whether or not it
 // names a product.
-function classifyVideo(v: Pick<DraftVideo, 'title' | 'description' | 'detectedAsin' | 'metadataAppliedAt' | 'status' | 'publishAt'>): VideoTab {
-  // SHIPPED wins first: if we pushed metadata via Co-Pilot, that's the
-  // authoritative signal — overrides everything, regardless of status.
-  if (v.metadataAppliedAt) return 'shipped'
+function classifyVideo(v: Pick<DraftVideo, 'title' | 'description' | 'detectedAsin' | 'metadataAppliedAt' | 'metadataGeneratedAt' | 'status' | 'publishAt'>): VideoTab {
+  // SHIPPED wins first: if we GENERATED metadata for this video in Co-Pilot (or
+  // pushed it via Apply), that's the authoritative "you've handled it" signal —
+  // overrides everything, regardless of status. Generation counts even if the
+  // creator finishes the video in YouTube Studio directly (never clicks Apply).
+  if (v.metadataAppliedAt || v.metadataGeneratedAt) return 'shipped'
 
   // PUBLISHED (and not pushed via Co-Pilot) → live on YouTube. A public video
   // is done regardless of how its metadata got there.
@@ -867,6 +873,10 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
       const productDescription = data.productDescription as string
 
       setGenerated(generatedMeta)
+      // The server recorded a generate marker (mig 150), so this video will
+      // reclassify to "Metadata sent" on the next drafts load — intentionally NOT
+      // moved mid-edit here (the card would jump tabs while you're still working
+      // with the freshly-generated metadata).
       setAgentInsights((data.agentInsights ?? null) as AgentInsights | null)
       setProduct({ ...productData, bullets: productBullets, description: productDescription })
       setAffiliateUrl(data.affiliateUrl as string)

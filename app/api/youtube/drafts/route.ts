@@ -525,23 +525,38 @@ async function enrichWithPushState(
 ) {
   const videoIds = drafts.map(d => d.youtubeVideoId).filter(Boolean)
   const appliedMap: Record<string, string> = {}
+  const generatedMap: Record<string, string> = {}
   if (videoIds.length > 0) {
     try {
-      const { data: applied } = await (supabase as any)
-        .from('youtube_copilot_pushes')
-        .select('youtube_video_id,pushed_at')
-        .eq('user_id', userId)
-        .in('youtube_video_id', videoIds)
-      if (Array.isArray(applied)) {
-        for (const row of applied) {
-          if (row.youtube_video_id && row.pushed_at) {
-            appliedMap[row.youtube_video_id as string] = row.pushed_at as string
-          }
-        }
+      // Two Co-Pilot signals decide the "Metadata sent" bucket:
+      //   pushes     = metadata APPLIED to YouTube via MVP (mig 109)
+      //   generated  = metadata GENERATED in Co-Pilot (mig 150) — catches the
+      //                creator who finishes in YouTube Studio directly.
+      const [pushesRes, genRes] = await Promise.all([
+        (supabase as any)
+          .from('youtube_copilot_pushes')
+          .select('youtube_video_id,pushed_at')
+          .eq('user_id', userId)
+          .in('youtube_video_id', videoIds),
+        (supabase as any)
+          .from('youtube_copilot_generated')
+          .select('youtube_video_id,generated_at')
+          .eq('user_id', userId)
+          .in('youtube_video_id', videoIds),
+      ])
+      for (const row of (Array.isArray(pushesRes.data) ? pushesRes.data : [])) {
+        if (row.youtube_video_id && row.pushed_at) appliedMap[row.youtube_video_id as string] = row.pushed_at as string
+      }
+      for (const row of (Array.isArray(genRes.data) ? genRes.data : [])) {
+        if (row.youtube_video_id && row.generated_at) generatedMap[row.youtube_video_id as string] = row.generated_at as string
       }
     } catch (err) {
-      console.warn('[yt-drafts] push-state lookup failed (non-fatal):', err instanceof Error ? err.message : String(err))
+      console.warn('[yt-drafts] push/generated-state lookup failed (non-fatal):', err instanceof Error ? err.message : String(err))
     }
   }
-  return drafts.map(d => ({ ...d, metadataAppliedAt: appliedMap[d.youtubeVideoId] ?? null }))
+  return drafts.map(d => ({
+    ...d,
+    metadataAppliedAt: appliedMap[d.youtubeVideoId] ?? null,
+    metadataGeneratedAt: generatedMap[d.youtubeVideoId] ?? null,
+  }))
 }
