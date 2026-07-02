@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo, memo, Suspense } from 'react'
 import { toast } from 'sonner'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { createBrowserClient } from '@/lib/supabase/client'
 import PageHero from '@/components/layout/PageHero'
@@ -1714,6 +1715,17 @@ function saveDismissed(set: Set<string>) {
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
+/** Suspense-safe deep-link watcher. useSearchParams needs a Suspense boundary on
+ *  this page (the rest of the app wraps it the same way), so isolate it here and
+ *  render it inside <Suspense>. Fires onParams on mount AND on every soft nav —
+ *  so a "Social Push" click while already on /content re-applies the ?tab.
+ *  Renders nothing. */
+function TabQueryWatcher({ onParams }: { onParams: (params: URLSearchParams) => void }) {
+  const searchParams = useSearchParams()
+  useEffect(() => { onParams(new URLSearchParams(searchParams.toString())) }, [searchParams, onParams])
+  return null
+}
+
 export default function ContentPage() {
   const supabase = createBrowserClient()
   const { confirm, ConfirmHost } = useConfirm()
@@ -1779,19 +1791,15 @@ export default function ContentPage() {
   const [affApplying, setAffApplying] = useState(false)
   const [activeTab, setActiveTab] = useState<'horizontal' | 'vertical' | 'posts' | 'scheduled'>('horizontal')
 
-  // Deep-link: /content?tab=posts (the sidebar "Social Push" link) opens the
-  // "Published Posts & Social Push" tab directly. Read once on mount (after
-  // hydration, to avoid an SSR mismatch); then keep ?tab in sync with the
-  // active tab so the sidebar active-state + shareable links stay accurate.
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
+  // Deep-link: /content?tab=posts (sidebar "Social Push") opens the Blog-to-Social
+  // tab; ?new=link opens the from-link modal. Applied by <TabQueryWatcher> below —
+  // it lives in a Suspense boundary (useSearchParams needs one on this page) and
+  // fires on mount AND on every soft navigation, so clicking Social Push while
+  // ALREADY on /content switches the tab (App Router soft-nav doesn't remount).
+  const applyDeepLink = useCallback((params: URLSearchParams) => {
     const t = params.get('tab')
-    // Shorts → Social moved to the Shop Burner (it never made a blog). Send any
-    // old ?tab=vertical deep-link straight there.
     if (t === 'vertical') { window.location.replace('/instagram-burner'); return }
     if (t === 'posts' || t === 'scheduled' || t === 'horizontal') setActiveTab(t)
-    // Deep-link: /content?new=link (dashboard "Blog from a link" button) opens
-    // the New-post-from-a-link modal straight away.
     if (params.get('new') === 'link') setFromLinkOpen(true)
   }, [])
   useEffect(() => {
@@ -3167,12 +3175,15 @@ export default function ContentPage() {
         />
       )}
 
+      {/* Deep-link watcher (Suspense-isolated useSearchParams) — keeps the tab in
+          sync with ?tab even on a soft navigation like the sidebar Social Push. */}
+      <Suspense fallback={null}><TabQueryWatcher onParams={applyDeepLink} /></Suspense>
       {/* Tab bar — split Videos into Horizontal (16:9 long-form, blog source)
           and Vertical (9:16 Shorts, Instagram source) since the workflows differ */}
       <div className="flex items-center gap-1 border-b border-gray-200 dark:border-white/10 mb-4 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
         {([
           { key: 'horizontal' as const, label: 'Video to Blog' },
-          { key: 'posts' as const, label: `Published${postsLoaded ? ` (${allBlogPosts.length})` : ''}` },
+          { key: 'posts' as const, label: `Blog to Social${postsLoaded ? ` (${allBlogPosts.length})` : ''}` },
           { key: 'scheduled' as const, label: `Scheduled${scheduledItems ? ` (${scheduledItems.filter(s => s.status === 'pending').length})` : ''}` },
         ]).map(({ key, label }) => (
           <button
