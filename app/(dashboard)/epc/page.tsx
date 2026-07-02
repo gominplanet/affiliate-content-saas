@@ -24,8 +24,8 @@ import { useState, useMemo, useEffect, useCallback } from 'react'
 import PageHero from '@/components/layout/PageHero'
 import { Loader2, ExternalLink, CheckCircle2, Sparkles, Search, Puzzle, Download, Copy, RefreshCw, KeyRound, Trash2, Lock, FlaskConical } from 'lucide-react'
 import { toast } from 'sonner'
-import { getScoutStatus } from '@/lib/extension-frame'
-import { SCOUT_LATEST_VERSION, SCOUT_WHATS_NEW, SCOUT_STORE_LISTING_URL, isScoutOutdated } from '@/lib/scout-version'
+import { getScoutInstallKind } from '@/lib/extension-frame'
+import { SCOUT_STORE_LISTING_URL } from '@/lib/scout-version'
 
 const CC_URL = 'https://www.amazon.com/creatorconnections/'
 
@@ -126,11 +126,12 @@ export default function EpcScoutPage() {
   const [removing, setRemoving] = useState<Record<string, boolean>>({})
   // "Clear queue" state (bulk-delete the scouted backlog).
   const [clearing, setClearing] = useState(false)
-  // Installed SCOUT version (via MVP_PING) → drives the "update available"
-  // banner. null = not yet checked; { installed:false } = not detected.
-  const [scout, setScout] = useState<{ installed: boolean; version: string | null } | null>(null)
+  // Which SCOUT is installed (via MVP_PING) → drives the "move to the Web Store"
+  // nudge for legacy sideloaders. null = not yet checked; store installs
+  // auto-update so they get no banner at all.
+  const [scout, setScout] = useState<{ kind: 'store' | 'sideload' | 'none'; version: string | null } | null>(null)
 
-  useEffect(() => { getScoutStatus().then(setScout).catch(() => setScout({ installed: false, version: null })) }, [])
+  useEffect(() => { getScoutInstallKind().then(setScout).catch(() => setScout({ kind: 'none', version: null })) }, [])
 
   const loadList = useCallback(async () => {
     try {
@@ -356,24 +357,24 @@ export default function EpcScoutPage() {
         subtitle="Turn the Amazon Creator Connections campaigns you're offered into ready-to-publish blog posts — scan with SCOUT, keep the high-EPC winners, publish."
       />
 
-      {/* ── SCOUT update announcement — only when an installed copy is behind ── */}
-      {scout?.installed && isScoutOutdated(scout.version) && (
+      {/* ── Move-to-store nudge — only for the old manually-loaded (sideloaded)
+             build, which Chrome can't auto-update. Store installs get nothing. ── */}
+      {scout?.kind === 'sideload' && (
         <div className="rounded-xl border p-4 mb-4 flex items-start gap-3"
           style={{ background: 'rgba(124,58,237,0.10)', borderColor: 'rgba(124,58,237,0.45)' }}>
           <RefreshCw size={16} className="flex-shrink-0 mt-0.5" style={{ color: '#7C3AED' }} />
           <div className="min-w-0">
             <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>
-              SCOUT update available — v{SCOUT_LATEST_VERSION}{' '}
-              <span className="font-normal" style={{ color: 'var(--text-faint)' }}>(you have v{scout.version})</span>
+              Move SCOUT to the Chrome Web Store
             </p>
             <p className="text-[12px] leading-relaxed mt-1" style={{ color: 'var(--text-soft)' }}>
-              {SCOUT_WHATS_NEW} SCOUT is on the Chrome Web Store now — if you installed from the store it updates automatically. On an older manually-loaded copy? Reinstall from the store below and Chrome will keep it updated for you from now on.
+              You&apos;re on an older manually-loaded copy of SCOUT that Chrome can&apos;t keep updated. Reinstall from the Chrome Web Store once and Chrome will handle every future update for you automatically — then you can remove the old load-unpacked copy.
             </p>
             <div className="flex items-center gap-3 mt-2 flex-wrap">
               <a href={SCOUT_STORE_LISTING_URL} target="_blank" rel="noopener noreferrer"
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold text-white"
                 style={{ background: '#7C3AED' }}>
-                <Download size={13} /> Update on the Chrome Web Store
+                <Download size={13} /> Reinstall from the Chrome Web Store
               </a>
             </div>
           </div>

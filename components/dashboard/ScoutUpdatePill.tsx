@@ -4,24 +4,29 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Download, ArrowUpCircle, CheckCircle, Loader2 } from 'lucide-react'
 import { getScoutInstallKind } from '@/lib/extension-frame'
-import { SCOUT_LATEST_VERSION, SCOUT_STORE_LISTING_URL, SCOUT_WHATS_NEW, isScoutOutdated } from '@/lib/scout-version'
+import { SCOUT_STORE_LISTING_URL } from '@/lib/scout-version'
 
 /**
  * SCOUT extension status pill for the dashboard hero — sits beside the
- * "Theme & Plugin" pill. SCOUT is a load-unpacked extension (no Web Store
- * auto-update), so we ping the installed copy and surface its state:
- *   - checking        → a brief "Checking SCOUT…" badge (the ping resolves fast)
- *   - not installed   → orange "Get SCOUT extension" → opens a visible info card
- *                       (what it is + 2-step install + download). Not hover-only,
- *                       so first-timers (and mobile/touch) actually see why.
- *   - installed/behind → LOUD orange "Update SCOUT vX" download (unzip + reload)
- *   - installed/current → a bright orange "Scout Extension up to date" badge
+ * "Theme & Plugin" pill. SCOUT now lives on the Chrome Web Store, so Chrome
+ * keeps it updated automatically — we never nag users to "update" a store
+ * install (there's nothing for them to click; clicking just reopens the store).
+ * We only surface the two things Chrome CAN'T do for the user:
+ *   - checking     → a brief "Checking SCOUT…" badge (the ping resolves fast)
+ *   - not installed → orange "Get SCOUT extension" → opens a visible info card
+ *                     (what it is + one-click store install). Not hover-only, so
+ *                     first-timers (and mobile/touch) actually see why.
+ *   - sideloaded   → orange "Move SCOUT to the Web Store" — the old manually
+ *                     loaded build never auto-updates; reinstalling from the
+ *                     store hands updates back to Chrome for good.
+ *   - store install → a calm "Scout Extension up to date" badge (Chrome handles
+ *                     any version bumps in the background).
  *
  * Bright SCOUT-orange throughout so it reads as a distinct pill next to the
  * green "Theme & Plugin" pill and the purple "Tutorials" pill.
  *
- * Note: the ping needs NEXT_PUBLIC_SCOUT_EXTENSION_ID set (same dependency as
- * the top-bar SCOUT button). Without it the pill reads "not installed".
+ * Note: the ping needs the extension to declare mvpaffiliate.io in
+ * externally_connectable. Without a reachable copy the pill reads "not installed".
  */
 export default function ScoutUpdatePill() {
   const [status, setStatus] = useState<{ kind: 'store' | 'sideload' | 'none'; version: string | null } | null>(null)
@@ -84,8 +89,6 @@ export default function ScoutUpdatePill() {
       </span>
     )
   }
-
-  const outdated = status.kind === 'store' && isScoutOutdated(status.version)
 
   // Old sideloaded (load-unpacked) build → nudge to the auto-updating store
   // version so Chrome keeps SCOUT fresh from here on.
@@ -150,29 +153,8 @@ export default function ScoutUpdatePill() {
     )
   }
 
-  // Installed but behind → loud update. Store installs auto-update; this links
-  // to the listing so a sideloaded (old load-unpacked) copy can reinstall from
-  // the store and get auto-updates from then on.
-  if (outdated) {
-    return (
-      <a
-        href={SCOUT_STORE_LISTING_URL}
-        target="_blank"
-        rel="noopener noreferrer"
-        title={`A newer SCOUT (v${SCOUT_LATEST_VERSION}) is ready. ${SCOUT_WHATS_NEW} Open the Chrome Web Store listing to update (store installs update automatically).`}
-        className="group inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-[13px] font-semibold text-white transition-transform hover:-translate-y-0.5"
-        style={{ background: 'linear-gradient(135deg, #FF9F0A 0%, #FF6B00 100%)', boxShadow: '0 4px 16px rgba(255,107,0,0.38)' }}
-      >
-        <span className="relative flex h-2.5 w-2.5">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-70"></span>
-          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-white"></span>
-        </span>
-        <ArrowUpCircle size={15} /> Update SCOUT to v{SCOUT_LATEST_VERSION}
-      </a>
-    )
-  }
-
-  // Installed + current → bright SCOUT-orange "up to date" badge.
+  // Store install → Chrome keeps it updated automatically, so there's nothing to
+  // nag about. Show a calm "up to date" badge.
   return (
     <span
       className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold"
