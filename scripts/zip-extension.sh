@@ -21,9 +21,11 @@ rm -f "$OUT"
 # into the PUBLIC download would hand anyone the key to impersonate the
 # extension. `*/.*` only catches subdir dotfiles, so top-level dotfiles
 # (.keyinfo.txt, .gitignore) must be excluded explicitly.
+# icons/source-*.png are the high-res icon SOURCES kept in-repo for re-exporting
+# the packaged 16/48/128 — never ship the multi-MB originals inside the package.
 zip -r -X "$OUT" . \
   -x '*.DS_Store' '__MACOSX/*' '*/.*' \
-     'key.pem' '*.pem' '.keyinfo.txt' '.git*' >/dev/null
+     'key.pem' '*.pem' '.keyinfo.txt' '.git*' 'icons/source-*.png' >/dev/null
 # Belt-and-suspenders: fail loudly if any signing material slipped into the zip.
 if unzip -l "$OUT" | grep -Eiq '\.pem|keyinfo'; then
   echo "[zip-extension] FATAL: signing material leaked into $OUT — aborting" >&2

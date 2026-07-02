@@ -1,20 +1,19 @@
 /**
- * SOURCE OF TRUTH for the SCOUT extension version the app expects.
+ * SOURCE OF TRUTH for the SCOUT extension version the app ships.
  *
  * ⚠️  BUMP THIS on every SCOUT change — in lockstep with
- *     extension/manifest.json's "version". The /epc page pings the installed
- *     extension (MVP_PING → { version }) and, when it's older than this,
- *     shows an "Update available" banner telling the user to reload the
- *     unpacked extension (SCOUT isn't in the Web Store, so Chrome never
- *     auto-updates it). Forget to bump this and the banner never fires.
- *
- * Also drop a one-liner in SCOUT_WHATS_NEW so the banner says what changed.
+ *     extension/manifest.json's "version". SCOUT now lives on the Chrome Web
+ *     Store, so a version bump is what makes Chrome pull the new build (icons
+ *     included) on its next background auto-update. The app no longer nags
+ *     store installs to "update" — isScoutOutdated survives only as a
+ *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.11.11'
+export const SCOUT_LATEST_VERSION = '1.11.12'
 
-/** One-line "what's new", shown in the update banner. Keep it user-facing. */
+/** One-line "what's new". No longer shown in a nag (store installs auto-update);
+ *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'New: loads your YouTube Co-Pilot video list straight from YouTube Studio — no daily API-quota cost. Re-download + reload once to apply.'
+  'Refreshed the SCOUT icon to the new black mark. Chrome auto-updates the Web Store build in the background — nothing to do.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar

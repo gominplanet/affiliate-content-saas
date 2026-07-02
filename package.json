@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "npm run build:extension && npm run test:thumbnails && next build",
-    "build:extension": "bash scripts/zip-extension.sh",
+    "build:extension": "bash scripts/zip-extension.sh && bash scripts/zip-extension-store.sh",
     "start": "next start",
     "lint": "next lint",
     "type-check": "tsc --noEmit",
