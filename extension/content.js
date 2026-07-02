@@ -396,6 +396,41 @@ async function scoutRunSearch(f) {
   return rows
 }
 
+// Private-beta gate. The campaign-search panel is published to ALL store users
+// (it ships in the extension), so gate it behind an access code until it's ready
+// for everyone. NOTE: this is a soft feature-flag, not real security — the code
+// lives in the extension source, so it only keeps casual users out, not anyone
+// determined. Unlock persists in the page's localStorage (amazon.com origin).
+const SCOUT_PW = 'walter'
+const SCOUT_UNLOCK_KEY = 'mvp_scout_search_unlocked_v1'
+function scoutUnlocked() { try { return localStorage.getItem(SCOUT_UNLOCK_KEY) === '1' } catch (e) { return false } }
+function scoutSetUnlocked() { try { localStorage.setItem(SCOUT_UNLOCK_KEY, '1') } catch (e) {} }
+
+// The locked state: a tiny panel asking for the access code. On the right code it
+// removes itself and re-mounts the full search panel.
+function buildGate() {
+  const el = document.createElement('div')
+  el.id = PANEL_ID
+  el.innerHTML = `
+    <div class="mvp-hd"><b>🔒 MVP SCOUT — Campaign Search</b></div>
+    <div class="mvp-body">
+      <label>Access code</label>
+      <input class="mvp-pw" type="password" autocomplete="off" placeholder="Enter code" style="margin-bottom:8px">
+      <button class="mvp-btn mvp-unlock" style="width:100%">Unlock</button>
+      <div class="mvp-note">SCOUT campaign search is in private beta.</div>
+    </div>`
+  document.body.appendChild(el)
+  const pw = el.querySelector('.mvp-pw')
+  const attempt = () => {
+    if ((pw.value || '').trim().toLowerCase() === SCOUT_PW) {
+      scoutSetUnlocked(); el.remove(); try { mountSearchPanel() } catch (e) {}
+    } else { pw.style.borderColor = '#dc2626'; pw.value = ''; pw.placeholder = 'Wrong code — try again' }
+  }
+  el.querySelector('.mvp-unlock').addEventListener('click', attempt)
+  pw.addEventListener('keydown', (e) => { if (e.key === 'Enter') attempt() })
+  setTimeout(() => { try { pw.focus() } catch (e) {} }, 60)
+}
+
 function mountSearchPanel() {
   if (!/creatorconnections/i.test(location.href)) return
   if (document.getElementById(PANEL_ID) || !document.body) return
@@ -424,6 +459,9 @@ function mountSearchPanel() {
     #${PANEL_ID}.mvp-min .mvp-body{display:none}
   `
   document.head.appendChild(style)
+
+  // Private beta: show the access-code gate until unlocked.
+  if (!scoutUnlocked()) { buildGate(); return }
 
   const el = document.createElement('div')
   el.id = PANEL_ID
