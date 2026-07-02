@@ -803,6 +803,9 @@ function PartnerNetworksSection() {
         <p className="text-center mt-10 text-[13px]" style={{ color: 'var(--text-faint)' }}>
           Bring your own affiliate accounts — connect a key once, then it&apos;s one click per product.
         </p>
+        <p className="text-center mt-3 text-[13px]" style={{ color: 'var(--text-faint)' }}>
+          Plus <a href="https://chromewebstore.google.com/detail/scout-%E2%80%94-mvp-affiliate/blpmlneliggaekangckpgknphpacapkg" target="_blank" rel="noopener noreferrer" className="font-medium underline decoration-dotted underline-offset-2" style={{ color: '#9D6BFF' }}>SCOUT</a>, our free Chrome extension — now on the Chrome Web Store — pulls Amazon Creator Connections campaigns and real YouTube frames straight into MVP.
+        </p>
       </div>
     </section>
   )

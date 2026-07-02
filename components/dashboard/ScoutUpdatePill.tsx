@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Download, ArrowUpCircle, CheckCircle, Loader2 } from 'lucide-react'
-import { getScoutStatus } from '@/lib/extension-frame'
+import { getScoutInstallKind } from '@/lib/extension-frame'
 import { SCOUT_LATEST_VERSION, SCOUT_STORE_LISTING_URL, SCOUT_WHATS_NEW, isScoutOutdated } from '@/lib/scout-version'
 
 /**
@@ -24,7 +24,7 @@ import { SCOUT_LATEST_VERSION, SCOUT_STORE_LISTING_URL, SCOUT_WHATS_NEW, isScout
  * the top-bar SCOUT button). Without it the pill reads "not installed".
  */
 export default function ScoutUpdatePill() {
-  const [status, setStatus] = useState<{ installed: boolean; version: string | null } | null>(null)
+  const [status, setStatus] = useState<{ kind: 'store' | 'sideload' | 'none'; version: string | null } | null>(null)
   const [open, setOpen] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
   // The explainer card is rendered in a PORTAL (document.body) so it isn't
@@ -51,9 +51,9 @@ export default function ScoutUpdatePill() {
 
   useEffect(() => {
     let cancelled = false
-    getScoutStatus()
+    getScoutInstallKind()
       .then(s => { if (!cancelled) setStatus(s) })
-      .catch(() => { if (!cancelled) setStatus({ installed: false, version: null }) })
+      .catch(() => { if (!cancelled) setStatus({ kind: 'none', version: null }) })
     return () => { cancelled = true }
   }, [])
 
@@ -85,10 +85,27 @@ export default function ScoutUpdatePill() {
     )
   }
 
-  const outdated = status.installed && isScoutOutdated(status.version)
+  const outdated = status.kind === 'store' && isScoutOutdated(status.version)
 
-  // Not installed → button that opens a visible explainer + install + download.
-  if (!status.installed) {
+  // Old sideloaded (load-unpacked) build → nudge to the auto-updating store
+  // version so Chrome keeps SCOUT fresh from here on.
+  if (status.kind === 'sideload') {
+    return (
+      <a
+        href={SCOUT_STORE_LISTING_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        title="You're on the older manually-installed SCOUT. Reinstall from the Chrome Web Store so Chrome keeps it updated automatically (you can remove the old load-unpacked copy after)."
+        className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-[13px] font-semibold text-white transition-transform hover:-translate-y-0.5"
+        style={{ background: 'linear-gradient(135deg, #FF9F0A 0%, #FF6B00 100%)', boxShadow: '0 4px 16px rgba(255,107,0,0.38)' }}
+      >
+        <ArrowUpCircle size={15} /> Move SCOUT to the Web Store
+      </a>
+    )
+  }
+
+  // Not installed → button that opens a visible explainer + one-click store install.
+  if (status.kind === 'none') {
     return (
       <div ref={wrapRef} className="relative inline-block">
         <button

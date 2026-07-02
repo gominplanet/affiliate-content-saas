@@ -94,6 +94,29 @@ export async function getScoutStatus(): Promise<{ installed: boolean; version: s
   return { installed: !!resp?.ok, version: (resp && typeof resp.version === 'string') ? resp.version : null }
 }
 
+/** The OLD load-unpacked (sideloaded) extension id — the baked-key build users
+ *  installed before SCOUT hit the Web Store. Distinct from the store id. */
+export const KNOWN_SIDELOAD_EXTENSION_ID = 'inpklaogoifhgaimbnlgmijnnjkopnlc'
+
+/** Which SCOUT is installed: the auto-updating Web Store build, the old
+ *  manually-loaded (sideloaded) build, or none. Powers the one-time "move to
+ *  the Web Store" nudge so legacy sideloaders get Chrome's auto-updates. We
+ *  ping the STORE id first (the destination); only if that's absent do we check
+ *  the sideload id — so a user who already has the store build reads as 'store'
+ *  even if the old copy is still lying around. */
+export async function getScoutInstallKind(): Promise<{ kind: 'store' | 'sideload' | 'none'; version: string | null }> {
+  if (!chromeRuntime()?.sendMessage) return { kind: 'none', version: null }
+  const store = await sendToOneId<{ ok?: boolean; version?: string }>(SCOUT_STORE_EXTENSION_ID, { type: 'MVP_PING' }, 1500)
+  if (store.reached && store.value?.ok) {
+    return { kind: 'store', version: typeof store.value.version === 'string' ? store.value.version : null }
+  }
+  const side = await sendToOneId<{ ok?: boolean; version?: string }>(KNOWN_SIDELOAD_EXTENSION_ID, { type: 'MVP_PING' }, 1500)
+  if (side.reached && side.value?.ok) {
+    return { kind: 'sideload', version: typeof side.value.version === 'string' ? side.value.version : null }
+  }
+  return { kind: 'none', version: null }
+}
+
 /**
  * Ask the extension to grab SEVERAL real frames from the user's video (one per
  * fraction of the runtime). Returns an array of JPEG data URLs, or [] on any
