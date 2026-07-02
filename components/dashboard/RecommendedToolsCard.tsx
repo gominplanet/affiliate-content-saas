@@ -13,11 +13,11 @@ import { ExternalLink } from 'lucide-react'
 // Geniuslink second (link wrapping), then programs in revenue-rank order —
 // matching the sidebar group.
 const TOOLS: Array<{ href: string; label: string; desc: string; highlight?: string }> = [
-  { href: 'https://geni.us/2y5sBo', label: 'Oink', desc: 'Free media kit builder', highlight: '#E0218A' },
-  { href: 'https://geni.us/Y70p9R', label: 'Geniuslink', desc: 'Affiliate link management' },
-  { href: 'https://geni.us/GCad5Q', label: 'Levanta', desc: 'Amazon brand deals' },
-  { href: 'https://geni.us/Z0q3hY', label: 'PartnerBoost', desc: 'Brand affiliate network' },
-  { href: 'https://geni.us/khuHTe', label: 'Archer Affiliate', desc: 'Affiliate network' },
+  { href: 'https://geni.us/2y5sBo', label: 'Oink', desc: 'Manage Amazon Creator Connections, earnings & storefronts', highlight: '#E0218A' },
+  { href: 'https://geni.us/Y70p9R', label: 'Geniuslink', desc: 'Auto-localize Amazon links + route mobile shoppers to the app' },
+  { href: 'https://geni.us/GCad5Q', label: 'Levanta', desc: 'Exclusive brand deals on Amazon, Shopify & Walmart' },
+  { href: 'https://geni.us/Z0q3hY', label: 'PartnerBoost', desc: 'Top brands across retail, travel, D2C & subscriptions' },
+  { href: 'https://geni.us/khuHTe', label: 'Archer Affiliate', desc: 'Partner with Amazon sellers — up to 60% commissions' },
 ]
 
 export default function RecommendedToolsCard() {
