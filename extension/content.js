@@ -437,7 +437,7 @@ function mountSearchPanel() {
 
   const style = document.createElement('style')
   style.textContent = `
-    #${PANEL_ID}{position:fixed;right:16px;bottom:16px;z-index:2147483000;width:360px;max-width:92vw;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#fff;border:1px solid #e5e7eb;border-radius:14px;box-shadow:0 12px 40px -8px rgba(0,0,0,.28);overflow:hidden}
+    #${PANEL_ID}{position:fixed;right:16px;top:50%;transform:translateY(-50%);z-index:2147483000;width:360px;max-width:92vw;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#fff;border:1px solid #e5e7eb;border-radius:14px;box-shadow:0 12px 40px -8px rgba(0,0,0,.28);overflow:hidden}
     #${PANEL_ID} *{box-sizing:border-box}
     #${PANEL_ID} .mvp-hd{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;background:linear-gradient(135deg,#7C3AED,#9D6BFF);color:#fff;cursor:pointer}
     #${PANEL_ID} .mvp-hd b{font-size:13px;font-weight:700}
