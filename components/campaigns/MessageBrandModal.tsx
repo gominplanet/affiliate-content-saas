@@ -26,6 +26,7 @@ export interface MessageBrandCampaign {
 
 interface Options {
   offerContent: boolean
+  includeAsin: boolean
   requestSample: boolean
   shareAddress: boolean
   includeMediaKit: boolean
@@ -37,6 +38,7 @@ interface Options {
 
 const DEFAULT_OPTIONS: Options = {
   offerContent: true,
+  includeAsin: true,
   requestSample: true,
   shareAddress: false,
   includeMediaKit: true,
@@ -53,6 +55,7 @@ const MARK = '---- Add to Message Group ----'
 
 const CHECKS: { key: keyof Options; label: string }[] = [
   { key: 'offerContent', label: 'Offer to create authentic content' },
+  { key: 'includeAsin', label: 'Share the product ASIN' },
   { key: 'requestSample', label: 'Request a free sample' },
   { key: 'shareAddress', label: 'Share my shipping / forwarding address' },
   { key: 'includeMediaKit', label: 'Include my media kit link' },

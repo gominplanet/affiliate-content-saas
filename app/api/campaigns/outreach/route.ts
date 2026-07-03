@@ -41,6 +41,7 @@ function bearer(request: Request): string {
 
 interface OutreachOptions {
   offerContent?: boolean
+  includeAsin?: boolean
   requestSample?: boolean
   shareAddress?: boolean
   address?: string
@@ -153,6 +154,9 @@ export async function POST(request: Request) {
     const o = (body.options || {}) as OutreachOptions
     const asks: string[] = []
     if (o.offerContent !== false) asks.push('Offer to create authentic, honest content that drives their Creator Connections sales.')
+    // Name the exact ASIN so the brand knows precisely which product (OINK's
+    // "We noticed this product: {ASIN}" line). Default ON; only skip if unticked.
+    if (o.includeAsin !== false && asin) asks.push(`Name the exact product and quote its Amazon ASIN (${asin}) so the brand knows precisely which product you're referring to.`)
     if (o.requestSample) asks.push('Politely request a free product sample to review firsthand.')
     // Sample shipping: prefer the per-message address, else the saved profile's.
     // When we have a real ship name/address, put them in their OWN message
