@@ -151,6 +151,7 @@ Rules:
 - Make ONE clear offer: authentic content that drives their Creator Connections sales.
 - Include the creator's media-kit or link-hub URL if provided (one link is enough).
 - End with a warm one-line sign-off using the creator's name if known.
+- STRUCTURE with line breaks so it's easy to read in a chat: a warm greeting line, then a blank line, then 1–2 short body sentences, then a blank line, then the one-line sign-off. Amazon's message box keeps line breaks — use real newlines (\n), not one long paragraph.
 - Plain text only. No markdown, no bullet lists, no emojis unless natural.
 ${BANNED_RULE}
 Output ONLY the message text — nothing else.`

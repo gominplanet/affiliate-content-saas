@@ -1624,9 +1624,15 @@ function sendBrandMessageInPage(message) {
   }
   const setInput = (input, v) => {
     if (input.kind === 'ta') {
+      // A textarea keeps \n newlines natively — set the value verbatim.
       const d = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')
       if (d && d.set) d.set.call(input.el, v); else input.el.value = v
-    } else { input.el.textContent = v }
+    } else {
+      // contenteditable collapses \n — render line breaks as <br> so paragraph
+      // breaks survive (escape first; the draft is our own plain text).
+      const esc = v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      input.el.innerHTML = esc.replace(/\n/g, '<br>')
+    }
     input.el.dispatchEvent(new Event('input', { bubbles: true }))
     input.el.dispatchEvent(new Event('change', { bubbles: true }))
     try { input.el.focus() } catch (e) {}
