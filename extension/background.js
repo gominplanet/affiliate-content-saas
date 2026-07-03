@@ -1856,37 +1856,31 @@ async function sendBrandMessageInPage(message) {
   }
   steps.opened = true
 
-  // Fill each segment; queue all but the last via "Add to Message Group".
+  // Send the group as SEPARATE messages: fill a segment → click Send → it posts
+  // → the box clears → fill the next → Send again. ONE Send per marker, NOT a
+  // queue (this is how OINK / ViralVue do it). readInput isn't relied on here —
+  // we just fill, wait for Send to enable, click it, and move on.
+  void readInput
   const segments = splitSegments(message)
-  let grouped = 0
-  let groupSeen = false
-  if (segments.length > 1) {
-    for (let i = 0; i < segments.length; i++) {
-      const inp = findInput() || input
-      setInput(inp, segments[i]); steps.filled = true
-      await sleep(550)
-      if (i < segments.length - 1) {
-        const g = findAddToGroup()
-        if (g) { groupSeen = true; realClick(g); grouped++; await sleep(850) }
-        else { const inp2 = findInput() || inp; setInput(inp2, segments.slice(i).join('\n\n')); await sleep(500); break }
-      }
-    }
-  } else {
-    setInput(input, message); steps.filled = true; await sleep(600)
-  }
-
-  // Verify the last segment is in the box, then Send.
-  const lastSeg = segments.length > 1 ? segments[segments.length - 1] : message
-  const want = norm(lastSeg).slice(0, 40)
-  for (let s = 0; s < 30; s++) {
+  let sent = 0
+  for (let i = 0; i < segments.length; i++) {
     const inp = findInput() || input
-    if (!norm(readInput(inp)).includes(want)) { setInput(inp, lastSeg); await sleep(300); continue }
-    const send = findSend(inp.el.closest('[role="dialog"],form,section,div') || document)
-    if (send) { realClick(send); steps.sent = true; await sleep(800); return { ok: true, steps, groups: grouped + 1, groupSeen } }
-    await sleep(300)
+    setInput(inp, segments[i]); steps.filled = true
+    await sleep(650)                                 // let React register the text + enable Send
+    let send = null
+    for (let t = 0; t < 12 && !send; t++) {
+      send = findSend(inp.el.closest('[role="dialog"],form,section,div') || document)
+      if (!send) await sleep(250)
+    }
+    if (!send) break                                 // Send never enabled — stop (segment is placed)
+    realClick(send); sent++; steps.sent = true
+    await sleep(1400)                                // wait for the message to post + the box to clear
   }
-  return { ok: false, steps, reason: 'send-button-not-found', groups: grouped + 1, groupSeen,
-    diag: { sendButtons: [...document.querySelectorAll('button,[role="button"]')].filter((b) => /send/i.test(textOf(b))).length } }
+  if (sent === 0) {
+    return { ok: false, steps, reason: 'send-button-not-found', groups: 0,
+      diag: { sendButtons: [...document.querySelectorAll('button,[role="button"]')].filter((b) => /send/i.test(textOf(b))).length } }
+  }
+  return { ok: true, steps, groups: sent }
 }
 
 // Open the campaign FOREGROUND (React campaign pages don't render reliably in a

@@ -735,45 +735,27 @@ async function scoutDraftMessage() {
   const d = await fetchOutreachDraft(ctx, token)
   if (!d.ok) return { ok: false, reason: d.error || 'draft failed' }
   if (!d.message) return { ok: false, reason: 'draft came back empty' }
-  // Amazon's chat splits ONE outreach into a GROUP of separate messages via its
-  // "Add to Message Group" control (the ---- Add to Message Group ---- markers in
-  // the draft mark each split). KEY FIX: that control only renders AFTER the box
-  // has text, so checking for it up-front always failed → everything went out as
-  // one blob. Now: fill a segment → look for Add-to-Group → click → repeat; the
-  // last segment stays in the box and goes out with Send. If Amazon ever doesn't
-  // offer grouping, collapse the remaining segments into one message.
+  // Amazon sends a message GROUP as SEPARATE messages: type a segment → click
+  // Send → it posts → the box clears → type the next → Send again. ONE Send per
+  // "---- Add to Message Group ----" break, NOT a queue (this is how OINK /
+  // ViralVue do it). We loop the segments doing exactly that.
   const clickEl = (el) => { ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(t => { try { el.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, view: window })) } catch (e) {} }) }
-  const findAddToGroup = () => [...document.querySelectorAll('button,a,[role="button"],span,div')].find(e => {
-    const t = ((e.innerText || e.textContent || '') + ' ' + (e.getAttribute('aria-label') || '') + ' ' + (e.getAttribute('title') || '')).replace(/\s+/g, ' ').trim()
-    return /add to (message )?group/i.test(t) && t.length < 42
-  })
+  const findSend = () => [...document.querySelectorAll('button,[role="button"]')].find(b => /^\s*send\s*$/i.test(textOf(b)) && !b.disabled)
   const segments = splitMessageSegments(d.message)
-  let grouped = 0
-  let groupSeen = false
-  if (segments.length > 1) {
-    for (let i = 0; i < segments.length; i++) {
-      const box = findMessageTextarea(); if (!box) break
-      setReactTextareaValue(box, segments[i])
-      await sleep(550)
-      if (i < segments.length - 1) {
-        const g = findAddToGroup()
-        if (g) { groupSeen = true; clickEl(g); grouped++; await sleep(850) }
-        else {
-          const box2 = findMessageTextarea() || box
-          setReactTextareaValue(box2, segments.slice(i).join('\n\n'))
-          await sleep(500)
-          break
-        }
-      }
-    }
-  } else {
-    setReactTextareaValue(ta, d.message)
-    await sleep(800)
+  let sent = 0
+  for (let i = 0; i < segments.length; i++) {
+    const box = findMessageTextarea(); if (!box) break
+    setReactTextareaValue(box, segments[i])
+    await sleep(600)                                  // let React register the text + enable Send
+    let btn = null
+    for (let t = 0; t < 12 && !btn; t++) { btn = findSend(); if (!btn) await sleep(250) }
+    if (!btn) break                                   // Send never enabled — leave this segment placed
+    clickEl(btn)
+    sent++
+    await sleep(1300)                                 // wait for the message to post + the box to clear
   }
-  const groups = grouped + 1
-  const sendBtn = [...document.querySelectorAll('button,[role="button"]')].find(b => /^\s*send\s*$/i.test(textOf(b)) && !b.disabled)
-  if (sendBtn) { clickEl(sendBtn); return { ok: true, chars: d.message.length, sent: true, groups, groupSeen } }
-  return { ok: true, chars: d.message.length, sent: false, groups, groupSeen, reason: 'placed (no Send button — click it yourself)' }
+  if (sent === 0) return { ok: true, chars: d.message.length, sent: false, groups: 0, reason: 'placed — Send button not found, hit Send yourself' }
+  return { ok: true, chars: d.message.length, sent: true, groups: sent }
 }
 
 async function scoutRunSearch(f, onProgress) {
@@ -1020,16 +1002,11 @@ function mountSearchPanel() {
     const btn = q('.mvp-draft'); const prev = btn.textContent; btn.textContent = 'Drafting…'; btn.disabled = true
     try {
       const r = await scoutDraftMessage()
-      // When the pitch had multiple segments but Amazon's "Add to Message Group"
-      // control was never found, it went out as one message — flag that so the
-      // selector can be tuned (Debug near the open box dumps the candidates).
-      const groupNote = (r.groups > 1)
-        ? ` as ${r.groups} messages`
-        : (r.groupSeen === false ? ' as one message (couldn\'t find Amazon\'s "Add to Message Group" button — click Debug near the open box and share the console output)' : '')
+      const groupNote = r.groups > 1 ? ` as ${r.groups} separate messages` : ''
       res.innerHTML = r.ok
         ? (r.sent
             ? `<div class="mvp-note">✅ Sent to the brand${groupNote}. Check the chat above.</div>`
-            : `<div class="mvp-note">✍️ Draft placed in the brand's message box (${r.chars} chars)${groupNote} — ${String(r.reason || 'review it and hit Amazon\'s Send').replace(/</g, '&lt;')}.</div>`)
+            : `<div class="mvp-note">✍️ Draft placed in the brand's message box (${r.chars} chars) — ${String(r.reason || 'review it and hit Amazon\'s Send').replace(/</g, '&lt;')}.</div>`)
         : `<div class="mvp-note">Couldn't draft: ${String(r.reason).replace(/</g, '&lt;')}.</div>`
     } catch (e) { res.innerHTML = `<div class="mvp-note">Draft error: ${String(e?.message || e).replace(/</g, '&lt;')}</div>` }
     btn.textContent = prev; btn.disabled = false
