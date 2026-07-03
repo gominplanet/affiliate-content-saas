@@ -310,8 +310,10 @@ async function resolveCampaignAsin(detailsUrl) {
   }
 }
 
-// Read a product's Amazon page for the two import-gate signals: monthly sales
-// ("X bought in past month") and whether the top image carousel has a video.
+// Read a product's Amazon page for the import signals: monthly sales
+// ("X bought in past month") and WHERE the product has a carousel video —
+// 'top' (the main image gallery, the high-value placement), 'bottom' (a lower
+// "Videos for this product" / related-videos shoppable carousel), or 'none'.
 function readDpSignalsInPage() {
   const bodyText = document.body ? (document.body.innerText || '') : ''
   // "1K+ bought in past month" / "500+ bought in past month" / "50 bought…"
@@ -324,19 +326,38 @@ function readDpSignalsInPage() {
     else if (unit === 'm') n *= 1000000
     if (!isNaN(n)) sales = Math.round(n)
   }
-  // Carousel video: Amazon marks video thumbnails in the left image block
-  // (#altImages) various ways across layouts — try the common ones.
-  const scope = document.querySelector('#altImages') || document.querySelector('#imageBlock') || document.querySelector('#main-image-container') || document
-  let hasVideo = false
+
+  // Amazon marks video thumbnails/players many ways across layouts.
+  const VIDEO_SEL = 'li.videoBlockIngress, .videoThumbnail, .videoThumbnailContainer, ' +
+    '[data-video-url], video, button[aria-label*="video" i], [aria-label*="Play video" i], ' +
+    '.vjs-tech, #vse-player, .vse-video-container'
+  let topVideo = false
+  let bottomVideo = false
   try {
-    if (scope.querySelector(
-      'li.videoBlockIngress, .videoThumbnail, .videoThumbnailContainer, [data-video-url], video, ' +
-      'button[aria-label*="video" i], [aria-label*="Play video" i], .vjs-tech, #vse-player'
-    )) hasVideo = true
-    // "N videos" count label near the thumbnails.
-    if (!hasVideo && /\b\d+\s+videos?\b/i.test((document.querySelector('#altImages')?.textContent) || '')) hasVideo = true
+    // TOP — the main image gallery (#altImages / #imageBlock). A video here shows
+    // in the hero media carousel: the most valuable placement for a creator.
+    const top = document.querySelector('#altImages') || document.querySelector('#imageBlock') || document.querySelector('#main-image-container')
+    if (top && (top.querySelector(VIDEO_SEL) || /\b\d+\s+videos?\b/i.test(top.textContent || ''))) topVideo = true
+
+    // BOTTOM — Amazon's lower "Videos for this product" / related-videos widgets.
+    const BOTTOM_SCOPES = [
+      '#vse-related-videos_feature_div', '#va-related-videos-widget_feature_div',
+      '#videoblock_feature_div', '#vseVideosPerProduct', '#videos_feature_div',
+      '[id*="relatedVideo" i]', '[id*="videosPerProduct" i]', '[data-cel-widget*="video" i]',
+    ]
+    for (const s of BOTTOM_SCOPES) {
+      let el = null
+      try { el = document.querySelector(s) } catch (e) { continue }
+      if (el && (el.querySelector(VIDEO_SEL) || /videos? for this|related videos?/i.test(el.textContent || ''))) { bottomVideo = true; break }
+    }
+    // Heading-text fallback for the bottom section when the widget id is unknown.
+    if (!bottomVideo && /videos for this product/i.test(bodyText)) bottomVideo = true
   } catch (e) {}
-  return { sales, hasVideo }
+
+  // Top wins when both exist (report the strongest placement). hasVideo kept for
+  // back-compat with callers that only need the boolean.
+  const carouselPos = topVideo ? 'top' : (bottomVideo ? 'bottom' : 'none')
+  return { sales, hasVideo: carouselPos !== 'none', carouselPos }
 }
 
 // Deep import check for one campaign: resolve its ASIN (from the details page),
@@ -360,14 +381,14 @@ async function resolveProductDeep(detailsUrl) {
     await chrome.tabs.update(tabId, { url: `https://www.amazon.com/dp/${asin}` })
     await waitForTabLoad(tabId, 20000)
     await _sleep(1200)
-    let out = { sales: null, hasVideo: false }
+    let out = { sales: null, hasVideo: false, carouselPos: 'none' }
     for (let i = 0; i < 8; i++) {
       const r = await chrome.scripting.executeScript({ target: { tabId }, func: readDpSignalsInPage })
       const v = r && r[0] && r[0].result
       if (v) { out = v; if (v.hasVideo || v.sales != null) break }
       await _sleep(600)
     }
-    return { ok: true, asin, sales: out.sales, hasVideo: out.hasVideo }
+    return { ok: true, asin, sales: out.sales, hasVideo: out.hasVideo, carouselPos: out.carouselPos || 'none' }
   } catch (e) {
     return { ok: false, error: e && e.message ? e.message : 'deep-exception' }
   } finally {

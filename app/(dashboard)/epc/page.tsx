@@ -43,6 +43,10 @@ interface CampaignRow {
   // Deep-import signals (SCOUT read these off the product's Amazon page).
   monthly_sales: number | null
   has_carousel_video: boolean | null
+  // Carousel-video placement: 'top' (hero image gallery), 'bottom' (lower
+  // "Videos for this product" section) or 'none'. null on rows imported before
+  // this signal existed / via quick Accept (no deep check).
+  carousel_video_pos: 'top' | 'bottom' | 'none' | null
   // Where SCOUT can re-open this campaign to message the brand.
   details_url: string | null
   ends_at: string | null
@@ -602,10 +606,17 @@ export default function EpcScoutPage() {
                         {c.asin} <ExternalLink size={9} />
                       </a>
                     </div>
-                    {(c.monthly_sales != null || c.has_carousel_video) && (
+                    {(c.monthly_sales != null || c.carousel_video_pos != null || c.has_carousel_video != null) && (
                       <div className="flex items-center gap-2 mt-0.5 text-[10px]" style={{ color: 'var(--text-faint)' }}>
                         {c.monthly_sales != null && <span title="Bought in past month (SCOUT deep check)">📈 {fmtSales(c.monthly_sales)}/mo</span>}
-                        {c.has_carousel_video && <span title="Product page has a carousel video">🎬 video</span>}
+                        {(() => {
+                          // Prefer the precise position; fall back to the legacy boolean.
+                          const pos = c.carousel_video_pos ?? (c.has_carousel_video === true ? 'top' : c.has_carousel_video === false ? 'none' : null)
+                          if (pos === 'top') return <span className="text-[#34c759] font-semibold" title="Video in the TOP hero image carousel — the high-value placement">🎬 top video</span>
+                          if (pos === 'bottom') return <span className="text-[#FF9500] font-semibold" title="Video only in the lower “Videos for this product” carousel">🎬 bottom video</span>
+                          if (pos === 'none') return <span title="No carousel video on the product page">🚫 no video</span>
+                          return null
+                        })()}
                       </div>
                     )}
                     {(isFail || isStuck) && err && (

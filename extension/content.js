@@ -467,6 +467,9 @@ async function pushCampaignToMvp(camp, asin, token, extra) {
           endsAt: camp.endsAt || null,
           monthlySales: extra && typeof extra.monthlySales === 'number' ? extra.monthlySales : null,
           hasCarouselVideo: extra && typeof extra.hasVideo === 'boolean' ? extra.hasVideo : null,
+          // Where the carousel video sits: 'top' (hero gallery), 'bottom'
+          // (related-videos section) or 'none'. Shown per-row in MVP /epc.
+          carouselVideoPos: extra && typeof extra.carouselPos === 'string' ? extra.carouselPos : null,
           detailsUrl: camp.detailsUrl || null,
         }],
       }),
@@ -849,7 +852,7 @@ function mountSearchPanel() {
       <div class="mvp-res"></div>
       <div class="mvp-row" style="margin-top:8px"><button class="mvp-btn sec mvp-accsel" style="flex:1" title="Deep-check selected (sales + carousel video) and import the qualifiers into MVP">Import selected</button><button class="mvp-btn sec mvp-submit" style="flex:1">Submit accepted</button></div>
       <div class="mvp-token-row"><div><label>MVP ingest token</label><input class="mvp-token" placeholder="CC_..."></div><button class="mvp-btn sec mvp-token-save" style="flex:0 0 auto;align-self:flex-end">Save</button></div>
-      <div class="mvp-note">Tick campaigns → <b>Import selected</b>: SCOUT deep-checks each (monthly sales + carousel video), keeps only products with a carousel video and 100+ sales/mo, accepts them on Amazon and adds them to your MVP /epc list to Generate + Message. <b>Accept</b> imports one now (no deep check). <b>✍️ Draft</b> writes AND sends a brand message on a campaign's details page (opens the chat, drops in your pitch, hits Send).</div>
+      <div class="mvp-note">Tick campaigns → <b>Import selected</b>: SCOUT deep-checks each (reads monthly sales + carousel-video position: top / bottom / none), accepts them on Amazon and adds ALL your picks to your MVP /epc list — with those signals shown per row — to Generate + Message. <b>Accept</b> imports one now (no deep check). <b>✍️ Draft</b> writes AND sends a brand message on a campaign's details page (opens the chat, drops in your pitch, hits Send).</div>
     </div>`
   // Prefer sitting IN the page flow, right above Amazon's toolbar row (where
   // ViralVue et al. inject). Fall back to a floating middle-right panel if we
@@ -942,24 +945,22 @@ function mountSearchPanel() {
     btn.disabled = true
     let imported = 0
     const dropped = []
-    // Each selected campaign is DEEP-CHECKED: SCOUT opens its product page for
-    // the sales figure + carousel video. Hard rules: no carousel video → drop;
-    // no visible sales OR under 100/mo → drop. Qualifiers are accepted on Amazon
-    // and imported into MVP.
+    // Each selected campaign is DEEP-CHECKED: SCOUT opens its product page to
+    // READ its monthly sales + carousel-video position (top/bottom/none). You've
+    // already curated these on Amazon, so we import ALL of them — the signals are
+    // recorded and shown per-row in MVP so YOU decide. We only skip a pick when
+    // it genuinely can't be imported (no details link / unreadable ASIN).
     for (let i = 0; i < keys.length; i++) {
       const camp = rowsByKey.get(keys[i])
       const label = camp ? (camp.campaignName || camp.brand || camp.key) : keys[i]
       btn.textContent = `Checking ${i + 1}/${keys.length}…`
-      res.innerHTML = `<div class="mvp-note">Deep-checking ${i + 1}/${keys.length}: ${String(label).slice(0, 42).replace(/</g, '&lt;')}… <br>(opening its Amazon page for monthly sales + carousel video)</div>`
+      res.innerHTML = `<div class="mvp-note">Deep-checking ${i + 1}/${keys.length}: ${String(label).slice(0, 42).replace(/</g, '&lt;')}… <br>(opening its Amazon page for monthly sales + carousel-video position)</div>`
       if (!camp || !camp.detailsUrl) { dropped.push(`${label}: no details link`); continue }
       let deep = null
       try { deep = await chrome.runtime.sendMessage({ type: 'SCOUT_DEEP_CHECK', detailsUrl: camp.detailsUrl }) } catch (e) {}
       if (!deep || !deep.ok || !deep.asin) { dropped.push(`${label}: couldn't read ASIN`); continue }
-      if (!deep.hasVideo) { dropped.push(`${label}: no carousel video`); continue }
-      if (deep.sales == null) { dropped.push(`${label}: no sales figure shown`); continue }
-      if (deep.sales < 100) { dropped.push(`${label}: ${deep.sales}/mo (under 100)`); continue }
       scoutAccept(camp.key)
-      const push = await pushCampaignToMvp(camp, deep.asin, token, { monthlySales: deep.sales, hasVideo: deep.hasVideo })
+      const push = await pushCampaignToMvp(camp, deep.asin, token, { monthlySales: deep.sales, hasVideo: deep.hasVideo, carouselPos: deep.carouselPos })
       if (push.ok) imported++; else dropped.push(`${label}: push failed (${push.error || '?'})`)
     }
     btn.textContent = 'Import selected'; btn.disabled = false
