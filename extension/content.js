@@ -495,24 +495,26 @@ function mountSearchPanel() {
 
   const style = document.createElement('style')
   style.textContent = `
-    #${PANEL_ID}{position:fixed;right:16px;top:50%;transform:translateY(-50%);z-index:2147483000;width:360px;max-width:92vw;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#fff;border:1px solid #e5e7eb;border-radius:14px;box-shadow:0 12px 40px -8px rgba(0,0,0,.28);overflow:hidden}
-    #${PANEL_ID} *{box-sizing:border-box}
-    #${PANEL_ID} .mvp-hd{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;background:linear-gradient(135deg,#7C3AED,#9D6BFF);color:#fff;cursor:pointer}
-    #${PANEL_ID} .mvp-hd b{font-size:13px;font-weight:700}
-    #${PANEL_ID} .mvp-body{padding:12px;max-height:70vh;overflow:auto}
-    #${PANEL_ID} .mvp-row{display:flex;gap:8px;margin-bottom:8px}
-    #${PANEL_ID} .mvp-row>div{flex:1;min-width:0}
-    #${PANEL_ID} input{width:100%;padding:7px 9px;border:1px solid #d1d5db;border-radius:8px;font-size:12px}
+    #${PANEL_ID}{position:fixed !important;right:16px !important;top:50% !important;transform:translateY(-50%) !important;z-index:2147483000 !important;width:340px !important;max-width:calc(100vw - 24px) !important;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif !important;font-size:12px !important;line-height:1.4 !important;background:#fff !important;color:#111 !important;border:1px solid #e5e7eb !important;border-radius:14px !important;box-shadow:0 12px 40px -8px rgba(0,0,0,.28) !important;overflow:hidden !important;box-sizing:border-box !important}
+    #${PANEL_ID} *{box-sizing:border-box !important;max-width:100% !important}
+    #${PANEL_ID} .mvp-hd{display:flex !important;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;background:linear-gradient(135deg,#7C3AED,#9D6BFF);color:#fff;cursor:pointer}
+    #${PANEL_ID} .mvp-hd b{font-size:13px;font-weight:700;color:#fff}
+    #${PANEL_ID} .mvp-body{padding:12px;max-height:70vh;overflow-y:auto;overflow-x:hidden}
+    #${PANEL_ID} .mvp-row{display:flex !important;gap:8px;margin-bottom:8px}
+    #${PANEL_ID} .mvp-row>div{flex:1 1 0 !important;min-width:0 !important}
+    #${PANEL_ID} input{width:100% !important;padding:7px 9px;border:1px solid #d1d5db;border-radius:8px;font-size:12px;background:#fff;color:#111}
     #${PANEL_ID} label{display:block;font-size:10px;font-weight:600;color:#6b7280;margin:0 0 3px 2px;text-transform:uppercase;letter-spacing:.04em}
-    #${PANEL_ID} .mvp-btn{padding:8px 10px;border:0;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;color:#fff;background:#7C3AED}
+    #${PANEL_ID} .mvp-btn{padding:8px 10px;border:0;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;color:#fff;background:#7C3AED;white-space:nowrap}
     #${PANEL_ID} .mvp-btn.sec{background:#fff;color:#7C3AED;border:1px solid #d6c6fb}
     #${PANEL_ID} .mvp-btn.dbg{background:#f3f4f6;color:#374151;border:1px solid #e5e7eb}
     #${PANEL_ID} .mvp-res{margin-top:10px;border-top:1px solid #eee;padding-top:8px}
-    #${PANEL_ID} .mvp-card{display:flex;gap:8px;align-items:flex-start;padding:8px;border:1px solid #eee;border-radius:10px;margin-bottom:6px}
-    #${PANEL_ID} .mvp-card img{width:40px;height:40px;object-fit:cover;border-radius:6px;flex-shrink:0;background:#f3f4f6}
-    #${PANEL_ID} .mvp-card .t{font-size:12px;font-weight:600;color:#111;line-height:1.25}
-    #${PANEL_ID} .mvp-card .m{font-size:11px;color:#6b7280;margin-top:2px}
-    #${PANEL_ID} .mvp-acc{font-size:11px;font-weight:700;color:#7C3AED;background:none;border:1px solid #d6c6fb;border-radius:6px;padding:3px 7px;cursor:pointer;flex-shrink:0}
+    #${PANEL_ID} .mvp-card{display:flex !important;gap:8px;align-items:flex-start;padding:8px;border:1px solid #eee;border-radius:10px;margin-bottom:6px}
+    #${PANEL_ID} .mvp-sel{flex:0 0 auto !important;width:14px !important;height:14px !important;margin:2px 0 0 !important}
+    #${PANEL_ID} .mvp-card img{width:40px !important;height:40px !important;object-fit:cover;border-radius:6px;flex:0 0 40px !important;background:#f3f4f6}
+    #${PANEL_ID} .mvp-cardbody{flex:1 1 auto !important;min-width:0 !important;overflow:hidden}
+    #${PANEL_ID} .mvp-card .t{font-size:12px;font-weight:600;color:#111;line-height:1.25;overflow-wrap:anywhere;word-break:break-word;white-space:normal !important}
+    #${PANEL_ID} .mvp-card .m{font-size:11px;color:#6b7280;margin-top:2px;overflow-wrap:anywhere;white-space:normal !important}
+    #${PANEL_ID} .mvp-acc{font-size:11px;font-weight:700;color:#7C3AED;background:none;border:1px solid #d6c6fb;border-radius:6px;padding:3px 7px;cursor:pointer;flex:0 0 auto !important;white-space:nowrap}
     #${PANEL_ID} .mvp-note{font-size:11px;color:#6b7280;margin-top:6px;line-height:1.4}
     #${PANEL_ID}.mvp-min .mvp-body{display:none}
   `
@@ -555,9 +557,9 @@ function mountSearchPanel() {
     }
     res.innerHTML = `<div class="mvp-note" style="margin:0 0 6px">${rows.length}${rawCount > rows.length ? ` of ${rawCount}` : ''} campaign${rows.length === 1 ? '' : 's'}</div>` + rows.map(r => `
       <div class="mvp-card" data-key="${String(r.key || '').replace(/"/g, '&quot;')}">
-        <input type="checkbox" class="mvp-sel" style="flex:0 0 auto;margin-top:2px">
+        <input type="checkbox" class="mvp-sel">
         ${r.image ? `<img src="${r.image}">` : ''}
-        <div style="flex:1;min-width:0">
+        <div class="mvp-cardbody">
           <div class="t">${String(r.campaignName || r.brand || 'Campaign').replace(/</g, '&lt;')}</div>
           <div class="m">${fmtMeta(r) || (r.brand || '')}</div>
         </div>
