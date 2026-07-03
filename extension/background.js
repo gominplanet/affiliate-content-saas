@@ -1523,5 +1523,62 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async response — keep the channel open
   }
+  if (msg.type === 'MVP_MESSAGE_BRAND') {
+    // MVP asks us to open a campaign's Amazon page (the user's session), open
+    // its "Message Brand" box and DROP IN a draft. We never click Send — the
+    // user reviews the FOREGROUND tab and sends it themselves.
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 60000)
+    openAndPlaceBrandMessage(msg.detailsUrl, msg.message || '')
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true // async response — keep the channel open
+  }
 }
 )
+
+// Runs IN the Amazon campaign page: open the Message Brand box (if needed) and
+// place `message` in the textarea. Returns once the text is in — never sends.
+function placeBrandMessageInPage(message) {
+  const textOf = (el) => (el && (el.innerText || el.textContent) || '').replace(/\s+/g, ' ').trim()
+  const findTextarea = () => [...document.querySelectorAll('textarea')].find((t) => /message/i.test(t.getAttribute('placeholder') || '')) || document.querySelector('textarea')
+  const setVal = (el, v) => {
+    const d = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')
+    if (d && d.set) d.set.call(el, v); else el.value = v
+    el.dispatchEvent(new Event('input', { bubbles: true }))
+    el.dispatchEvent(new Event('change', { bubbles: true }))
+    el.focus()
+  }
+  if (!findTextarea()) {
+    const mb = [...document.querySelectorAll('button,a,[role="button"]')].find((e) => /message brand|message the brand|^\s*message\s*$/i.test(textOf(e)))
+    if (mb) mb.click()
+  }
+  return new Promise((resolve) => {
+    let tries = 0
+    const iv = setInterval(() => {
+      tries++
+      const t = findTextarea()
+      if (t) { clearInterval(iv); setVal(t, message); resolve({ ok: true }) }
+      else if (tries > 22) { clearInterval(iv); resolve({ ok: false, reason: 'no-message-box' }) }
+    }, 400)
+  })
+}
+
+async function openAndPlaceBrandMessage(detailsUrl, message) {
+  if (!detailsUrl) return { ok: false, error: 'no-url' }
+  try {
+    // Foreground so the user sees the message box and can review + Send.
+    const tab = await chrome.tabs.create({ url: detailsUrl, active: true })
+    await waitForTabLoad(tab.id, 25000)
+    await _sleep(1500)
+    let r = null
+    for (let i = 0; i < 3; i++) {
+      const res = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: placeBrandMessageInPage, args: [message] })
+      r = res && res[0] && res[0].result
+      if (r && r.ok) break
+      await _sleep(1200)
+    }
+    return r || { ok: false, reason: 'place-failed' }
+  } catch (e) {
+    return { ok: false, error: e && e.message ? e.message : 'exception' }
+  }
+}

@@ -14,6 +14,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { createServerClient } from '@/lib/supabase/server'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { scrubBanned, BANNED_RULE } from '@/lib/scrub'
 import { recordUsage, usageFromAnthropic } from '@/lib/ai-usage'
@@ -48,20 +49,31 @@ interface OutreachBody {
 
 export async function POST(request: Request) {
   try {
-    const token = bearer(request)
-    if (!token) return NextResponse.json({ error: 'Missing ingest token' }, { status: 401, headers: CORS })
-
+    // Dual auth: the SCOUT extension calls with a Bearer ingest token (no
+    // cookie); the MVP dashboard's /epc list calls with its session cookie.
     const admin = createAdminClient()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: intRow } = await admin
-      .from('integrations')
-      .select('user_id,tier')
-      .eq('cc_ingest_token', token)
-      .single()
-    if (!intRow?.user_id) return NextResponse.json({ error: 'Invalid ingest token' }, { status: 401, headers: CORS })
-
-    const userId = intRow.user_id as string
-    const tier = normalizeTier((intRow as { tier?: string }).tier) as Tier
+    let userId: string | null = null
+    let tier: Tier = 'trial'
+    const token = bearer(request)
+    if (token) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: intRow } = await admin
+        .from('integrations')
+        .select('user_id,tier')
+        .eq('cc_ingest_token', token)
+        .single()
+      if (!intRow?.user_id) return NextResponse.json({ error: 'Invalid ingest token' }, { status: 401, headers: CORS })
+      userId = intRow.user_id as string
+      tier = normalizeTier((intRow as { tier?: string }).tier) as Tier
+    } else {
+      const supabase = await createServerClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return NextResponse.json({ error: 'Not signed in' }, { status: 401, headers: CORS })
+      userId = user.id
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: intRow } = await admin.from('integrations').select('tier').eq('user_id', user.id).single()
+      tier = normalizeTier((intRow as { tier?: string } | null)?.tier) as Tier
+    }
     if (!tierAllowsCampaigns(tier)) {
       return NextResponse.json({ error: 'Brand messaging is a Pro feature.' }, { status: 403, headers: CORS })
     }

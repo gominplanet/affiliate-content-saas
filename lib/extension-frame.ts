@@ -80,6 +80,25 @@ function sendToExtension<T>(message: unknown, timeoutMs: number): Promise<T | nu
   })()
 }
 
+export interface MessageBrandResult { ok: boolean; error?: string; reason?: string }
+
+/**
+ * Ask SCOUT to open a campaign's Amazon page (the user's logged-in session),
+ * open its "Message Brand" box and drop in a drafted message — leaving it for
+ * the user to review and Send. Human-in-the-loop: SCOUT never clicks Send.
+ * Best-effort: resolves, never throws.
+ */
+export async function requestMessageBrand(detailsUrl: string, message: string): Promise<MessageBrandResult> {
+  if (!detailsUrl) return { ok: false, error: 'no-url' }
+  if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
+  const resp = await sendToExtension<{ ok?: boolean; error?: string; reason?: string }>(
+    { type: 'MVP_MESSAGE_BRAND', detailsUrl, message },
+    60000,
+  )
+  if (!resp) return { ok: false, error: 'timeout' }
+  return { ok: !!resp.ok, error: resp.error, reason: resp.reason }
+}
+
 /** True if the helper extension is installed and responds to a ping. */
 export async function isExtensionAvailable(): Promise<boolean> {
   const resp = await sendToExtension<{ ok?: boolean }>({ type: 'MVP_PING' }, 1500)

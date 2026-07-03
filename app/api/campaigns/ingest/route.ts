@@ -78,6 +78,9 @@ interface IncomingCampaign {
   // Deep-import signals read from the product's Amazon page.
   monthlySales?: number
   hasCarouselVideo?: boolean
+  // The campaign's Creator Connections page, so MVP can later re-open it to
+  // message the brand.
+  detailsUrl?: string
 }
 
 export async function POST(request: Request) {
@@ -135,6 +138,7 @@ export async function POST(request: Request) {
           commission_pct: program === 'affiliate_plus' ? commissionPct : null,
           monthly_sales: typeof c.monthlySales === 'number' && isFinite(c.monthlySales) ? Math.round(c.monthlySales) : null,
           has_carousel_video: typeof c.hasCarouselVideo === 'boolean' ? c.hasCarouselVideo : null,
+          details_url: (c.detailsUrl && /^https:\/\/(www\.amazon\.com|affiliate-program\.amazon\.com)\//i.test(c.detailsUrl.trim())) ? c.detailsUrl.trim() : null,
           ends_at: c.endsAt?.toString().trim() || null,
         }
       })

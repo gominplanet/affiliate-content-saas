@@ -467,6 +467,7 @@ async function pushCampaignToMvp(camp, asin, token, extra) {
           endsAt: camp.endsAt || null,
           monthlySales: extra && typeof extra.monthlySales === 'number' ? extra.monthlySales : null,
           hasCarouselVideo: extra && typeof extra.hasVideo === 'boolean' ? extra.hasVideo : null,
+          detailsUrl: camp.detailsUrl || null,
         }],
       }),
     })
