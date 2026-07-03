@@ -555,6 +555,43 @@ function dumpCardDebug() {
   return { cardFound: !!cont, cardCount: conts.length, cardsWithAsin, asins, details, submitFound, parsed }
 }
 
+// ── Brand-messaging probe (calibration for "message brands from MVP") ────────
+// Every Affiliate+/EPC campaign has a "Message Brand" chat. We can draft the
+// outreach in MVP and place it in that box for the user to review + Send. First
+// we need the modal's selectors — this probe opens it and dumps them.
+function findMessageButton() {
+  return [...document.querySelectorAll('button,a,[role="button"]')]
+    .find(e => /message brand|message the brand|^\s*message\s*$/i.test(textOf(e)))
+}
+async function probeMessageModal() {
+  const btn = findMessageButton()
+  if (!btn) return { ok: false, reason: 'no-message-button (open a campaign\'s details first)' }
+  btn.click()
+  await sleep(1600)
+  // The message box: a textarea (placeholder "Enter a message"), plus a Send button.
+  const textarea = [...document.querySelectorAll('textarea')].find(t => /message/i.test(t.getAttribute('placeholder') || '')) || document.querySelector('textarea')
+  const scope = (textarea && (textarea.closest('[role="dialog"]') || textarea.closest('section'))) || document
+  const sendBtn = [...scope.querySelectorAll('button,[role="button"]')].find(e => /^\s*send\s*$/i.test(textOf(e)))
+  const ta = textarea ? {
+    placeholder: textarea.getAttribute('placeholder'),
+    testid: textarea.getAttribute('data-testid'),
+    name: textarea.getAttribute('name'),
+    id: textarea.id || null,
+    maxlength: textarea.getAttribute('maxlength'),
+  } : null
+  const send = sendBtn ? {
+    text: textOf(sendBtn).slice(0, 24),
+    testid: sendBtn.getAttribute('data-testid'),
+    disabled: !!sendBtn.disabled,
+  } : null
+  const container = (textarea && (textarea.closest('[role="dialog"]') || textarea.closest('[data-testid]'))) || null
+  console.log('%c[MVP SCOUT] message probe — textarea:', 'color:#7C3AED;font-weight:bold', ta)
+  console.log('%c[MVP SCOUT] message probe — send btn:', 'color:#7C3AED;font-weight:bold', send)
+  console.log('%c[MVP SCOUT] message container testids:', 'color:#7C3AED', container ? [...container.querySelectorAll('[data-testid]')].map(e => e.getAttribute('data-testid')).slice(0, 80) : '(none)')
+  console.log('%c[MVP SCOUT] message container HTML:', 'color:#7C3AED', (container || (textarea && textarea.parentElement))?.outerHTML?.slice(0, 8000) || '(no container)')
+  return { ok: true, textarea: ta, send, modalFound: !!container }
+}
+
 async function scoutRunSearch(f) {
   // Keyword OR ASIN both drive Amazon's own search box (it searches by ASIN too),
   // so we scan the FULL catalogue's matches, then read + filter the cards.
@@ -704,7 +741,7 @@ function mountSearchPanel() {
       <div class="mvp-row"><div><label>Keyword or brand</label><input class="mvp-kw" placeholder="e.g. knee brace"></div></div>
       <div class="mvp-row"><div><label>ASIN</label><input class="mvp-asin" placeholder="B0XXXXXXXX"></div><div><label>Min commission %</label><input class="mvp-comm" type="number" min="0" max="100" placeholder="20"></div></div>
       <div class="mvp-row"><div><label>Campaigns last at least (days)</label><input class="mvp-lastdays" type="number" min="0" step="1" placeholder="e.g. 100"></div></div>
-      <div class="mvp-row"><button class="mvp-btn mvp-search" style="flex:2">Search</button><button class="mvp-btn dbg mvp-debug" style="flex:1">Debug</button></div>
+      <div class="mvp-row"><button class="mvp-btn mvp-search" style="flex:2">Search</button><button class="mvp-btn dbg mvp-debug" style="flex:1">Debug</button><button class="mvp-btn dbg mvp-msgprobe" style="flex:1" title="Calibrate the brand-message modal">Msg?</button></div>
       <div class="mvp-res"></div>
       <div class="mvp-row" style="margin-top:8px"><button class="mvp-btn sec mvp-accsel" style="flex:1">Accept selected</button><button class="mvp-btn sec mvp-submit" style="flex:1">Submit accepted</button></div>
       <div class="mvp-token-row"><div><label>MVP ingest token</label><input class="mvp-token" placeholder="CC_..."></div><button class="mvp-btn sec mvp-token-save" style="flex:0 0 auto;align-self:flex-end">Save</button></div>
@@ -780,6 +817,16 @@ function mountSearchPanel() {
     const first = d.parsed ? String(d.parsed.campaignName || d.parsed.brand || d.parsed.key) : 'none — run a Search or scroll the campaign list into view'
     const dc = d.details ? (d.details.testid || d.details.text || d.details.tag) : 'n/a'
     res.innerHTML = `<div class="mvp-note">Dumped to the console (⌥⌘J). cards=<b>${d.cardCount}</b>, with ASIN in card=<b>${d.cardsWithAsin}</b>.<br>First card: ${String(first).replace(/</g, '&lt;')}.<br>Details link: ${String(dc).replace(/</g, '&lt;')}.</div>`
+  })
+  q('.mvp-msgprobe').addEventListener('click', async () => {
+    const btn = q('.mvp-msgprobe'); const prev = btn.textContent; btn.textContent = '…'; btn.disabled = true
+    try {
+      const p = await probeMessageModal()
+      res.innerHTML = p.ok
+        ? `<div class="mvp-note">Opened the brand-message box. textarea=<b>${p.textarea ? 'found' : 'MISSING'}</b>, Send button=<b>${p.send ? 'found' : 'MISSING'}</b>, dialog=${p.modalFound}.<br>Full selectors dumped to the console (⌥⌘J) — paste it and I'll wire brand messaging.</div>`
+        : `<div class="mvp-note">Couldn't open the message box (${String(p.reason).replace(/</g, '&lt;')}). Open a campaign's <b>details</b> page (the one with a "Message Brand" button), then click Msg? again.</div>`
+    } catch (e) { res.innerHTML = `<div class="mvp-note">Msg probe error: ${String(e?.message || e).replace(/</g, '&lt;')}</div>` }
+    btn.textContent = prev; btn.disabled = false
   })
   q('.mvp-accsel').addEventListener('click', async () => {
     const btn = q('.mvp-accsel'); const keys = [...selected]
