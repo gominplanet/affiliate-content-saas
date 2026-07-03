@@ -78,6 +78,7 @@ export default function MessageBrandModal({ campaign, onClose }: { campaign: Mes
   const [segments, setSegments] = useState<string[]>([''])
   const [drafting, setDrafting] = useState(false)
   const [sending, setSending] = useState(false)
+  const [sendProgress, setSendProgress] = useState(0) // 0-100, estimated send gauge
 
   // Restore saved preferences (options + forwarding address) once on open.
   useEffect(() => {
@@ -135,11 +136,21 @@ export default function MessageBrandModal({ campaign, onClose }: { campaign: Mes
     if (toSend.length === 0) { toast.error('Nothing to send — draft a message first.'); return }
     if (opts.shareAddress && address.trim()) { try { localStorage.setItem(ADDR_KEY, address.trim()) } catch { /* ignore */ } }
     setSending(true)
+    setSendProgress(3)
+    // Estimated gauge: SCOUT opens the campaign (~5s) + ~3s per message. We can't
+    // stream real per-message progress through one chrome message, so advance the
+    // bar over the expected duration and snap to 100% when it actually finishes.
+    const expectedMs = 5000 + toSend.length * 3000
+    const startedAt = Date.now()
+    const iv = setInterval(() => {
+      setSendProgress(Math.min(94, ((Date.now() - startedAt) / expectedMs) * 100))
+    }, 150)
     try {
-      toast.message(`Sending ${toSend.length} message${toSend.length === 1 ? '' : 's'} to the brand…`, { description: 'SCOUT is delivering them one after another in the background.' })
       // Rejoin with the marker; SCOUT splits again and sends one Send per box.
       const joined = toSend.join(`\n\n${MARK}\n\n`)
       const r = await requestSendBrand(campaign.detailsUrl, joined)
+      clearInterval(iv)
+      setSendProgress(100)
       if (r.ok) {
         toast.success(`Sent to the brand ✓${r.groups && r.groups > 1 ? ` (${r.groups} messages)` : ''}`)
         onClose()
@@ -153,7 +164,9 @@ export default function MessageBrandModal({ campaign, onClose }: { campaign: Mes
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Send failed')
     } finally {
+      clearInterval(iv)
       setSending(false)
+      setTimeout(() => setSendProgress(0), 700)
     }
   }, [segments, opts.shareAddress, address, campaign.detailsUrl, onClose])
 
@@ -250,6 +263,18 @@ export default function MessageBrandModal({ campaign, onClose }: { campaign: Mes
             </div>
           )}
         </div>
+
+        {sending && (
+          <div className="px-5 pt-3">
+            <div className="flex items-center justify-between text-[11px] mb-1" style={{ color: 'var(--text-soft)' }}>
+              <span>Sending message {Math.min(cleanSegments.length || 1, Math.max(1, Math.ceil((sendProgress / 100) * (cleanSegments.length || 1))))} of {cleanSegments.length || 1}…</span>
+              <span className="tabular-nums">{Math.round(sendProgress)}%</span>
+            </div>
+            <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--surface-2)' }}>
+              <div className="h-full transition-all duration-150 ease-linear" style={{ width: `${sendProgress}%`, background: 'linear-gradient(45deg, #7C3AED 0%, #bc1888 100%)' }} />
+            </div>
+          </div>
+        )}
 
         <div className="p-5 pt-3 flex items-center gap-2 border-t" style={{ borderColor: 'var(--border)' }}>
           <button onClick={onClose} className="px-4 py-2 rounded-lg text-[13px] font-semibold" style={{ color: 'var(--text-soft)' }}>Cancel</button>

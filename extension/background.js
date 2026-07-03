@@ -1852,6 +1852,19 @@ async function sendBrandMessageInPage(message) {
       aria: (b.getAttribute('aria-label') || '').slice(0, 30),
       disabled: b.disabled === true || b.getAttribute('aria-disabled') === 'true',
     }))
+  // After Send, Amazon may pop a "sharing personal info" confirmation — click its
+  // acknowledge button (OK / Continue / Send / I understand), scoped to the
+  // top-most dialog so we never re-hit the main composer Send.
+  const findConfirmOk = () => {
+    const dialogs = [...document.querySelectorAll('[role="dialog"],[role="alertdialog"],[aria-modal="true"]')]
+    const root = dialogs[dialogs.length - 1]
+    if (!root) return null
+    return [...root.querySelectorAll('button,[role="button"]')].find((b) => {
+      if (b.disabled === true || b.getAttribute('aria-disabled') === 'true') return false
+      const t = attrText(b)
+      return /^(ok|okay|continue|confirm|i understand|understood|got it|proceed|send( message| anyway)?|agree|accept|acknowledge)$/i.test(t)
+    }) || null
+  }
   // Split on the ---- Add to Message Group ---- markers (fallback: blank lines).
   const splitSegments = (msg) => {
     const s = String(msg || '').trim()
@@ -1893,7 +1906,10 @@ async function sendBrandMessageInPage(message) {
     }
     if (!send) break                                 // Send never enabled — stop (segment is placed)
     realClick(send); sent++; steps.sent = true
-    await sleep(1400)                                // wait for the message to post + the box to clear
+    // Amazon may pop a "sharing personal info" confirmation — click OK/Continue.
+    await sleep(400)
+    for (let k = 0; k < 10; k++) { const ok = findConfirmOk(); if (ok) { realClick(ok); await sleep(500); break } await sleep(200) }
+    await sleep(1200)                                // wait for the message to post + the box to clear
   }
   if (sent === 0) {
     return { ok: false, steps, reason: 'send-button-not-found', groups: 0,

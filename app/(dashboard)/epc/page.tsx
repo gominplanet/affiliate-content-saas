@@ -35,6 +35,8 @@ interface CampaignRow {
   asin: string
   product_title: string | null
   campaign_name: string | null
+  // The real brand name (campaign-card-brand-name) for greeting the brand.
+  brand_name: string | null
   epc: string | null
   // Which Creator Connections program: 'epc' = pay-per-click (dollar `epc`);
   // 'affiliate_plus' = commission per sale (`commission_pct`, a percent).
@@ -342,6 +344,7 @@ export default function EpcScoutPage() {
       asin: c.asin,
       commissionPct: c.commission_pct,
       detailsUrl: c.details_url,
+      brandLabel: c.brand_name || undefined,
     })
   }, [])
 

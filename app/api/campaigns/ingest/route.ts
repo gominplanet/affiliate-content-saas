@@ -69,6 +69,8 @@ export async function GET(request: Request) {
 interface IncomingCampaign {
   asin?: string
   campaignName?: string
+  // The real brand name (kept separate from the product-ish campaignName).
+  brandName?: string
   epc?: string
   endsAt?: string
   // Which Creator Connections program this campaign belongs to. EPC = pay per
@@ -134,6 +136,7 @@ export async function POST(request: Request) {
         return {
           asin,
           campaign_name: c.campaignName?.toString().trim() || null,
+          brand_name: c.brandName?.toString().trim() || null,
           // Keep the two payment models in their own fields: dollar EPC stays in
           // `epc`, the Affiliate+ rate in `commission_pct` (never conflated).
           epc: program === 'epc' ? (c.epc?.toString().trim() || null) : null,

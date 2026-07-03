@@ -509,6 +509,10 @@ async function pushCampaignToMvp(camp, asin, token, extra) {
         campaigns: [{
           asin,
           campaignName: camp.campaignName || camp.brand || null,
+          // The REAL brand name (campaign-card-brand-name) — kept separate from
+          // the product-ish campaignName so brand messages greet the brand, not
+          // the product.
+          brandName: camp.brand || null,
           // Affiliate+ = extra commission per SALE (a percent), NOT dollar EPC.
           // Send it in its own field so the app never treats 10% as $10.
           program: 'affiliate_plus',
@@ -684,6 +688,23 @@ function findSendButton(scope) {
   return ok[0] || null
 }
 
+// After Send, Amazon may pop a confirmation (e.g. "If you choose to share
+// personal information such as your address / email / phone…"). Click its
+// acknowledge button (OK / Continue / Send / I understand) — scoped to the
+// top-most dialog so we never re-hit the main composer Send.
+function findConfirmOk() {
+  const dialogs = [...document.querySelectorAll('[role="dialog"],[role="alertdialog"],[aria-modal="true"]')]
+    .filter(d => d.offsetParent !== null || (d.getBoundingClientRect && d.getBoundingClientRect().width > 0))
+  const root = dialogs[dialogs.length - 1] || null
+  if (!root) return null
+  const btns = [...root.querySelectorAll('button,[role="button"]')]
+  return btns.find(b => {
+    if (b.disabled === true || b.getAttribute('aria-disabled') === 'true') return false
+    const t = ((b.innerText || b.textContent || '') + ' ' + (b.getAttribute('aria-label') || '')).replace(/\s+/g, ' ').trim()
+    return /^(ok|okay|continue|confirm|i understand|understood|got it|proceed|send( message| anyway)?|agree|accept|acknowledge)$/i.test(t)
+  }) || null
+}
+
 // Every send-ish button (text/aria), with disabled state — for the failure diag.
 function sendCandidatesDump() {
   return [...document.querySelectorAll('button,[role="button"],input[type="submit"]')]
@@ -785,7 +806,10 @@ async function scoutDraftMessage() {
     if (!btn) break
     clickEl(btn)
     sent++
-    await sleep(1400)                                 // let the message post + the box clear
+    // Amazon may pop a "sharing personal info" confirmation — click OK/Continue.
+    await sleep(400)
+    for (let k = 0; k < 10; k++) { const ok = findConfirmOk(); if (ok) { clickEl(ok); await sleep(500); break } await sleep(200) }
+    await sleep(1200)                                 // let the message post + the box clear
   }
   if (sent === 0) {
     const cands = sendCandidatesDump()

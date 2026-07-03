@@ -91,7 +91,13 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json().catch(() => ({})) as OutreachBody
-    const brand = (body.brand || '').toString().trim()
+    const brandRaw = (body.brand || '').toString().trim()
+    // Guard against greeting the PRODUCT as the brand. A product-title-looking
+    // value (long, or full of specs / model numbers) is NOT a brand — drop it so
+    // the greeting stays neutral ("Hi there,") instead of "Hey <product> team".
+    const looksLikeProduct = (s: string) =>
+      s.length > 40 || /\d{3,}/.test(s) || /\b(up to|for (home|large|small|the)|pack of|\d+\s?(ft|sq ?ft|oz|ml|l|w|watt|inch|"|cm|mm|pcs|count|pack))\b/i.test(s)
+    const brand = brandRaw && !looksLikeProduct(brandRaw) ? brandRaw : ''
     const product = (body.product || '').toString().trim()
     const asin = (body.asin || '').toString().trim().toUpperCase()
     const brief = (body.brief || '').toString().trim().slice(0, 3000)
@@ -184,7 +190,7 @@ NO REPEATED INFO — this is the most important rule. Each fact belongs to EXACT
 
 Produce up to 5 messages in THIS exact order (skip a message AND its marker if you genuinely have nothing real for it):
 
-Message 1 — WHO WE ARE: greeting ("Hi <Brand> team," or the given greeting style) + who we are + our credibility, ONLY from the creator facts. NO product, NO ASIN, NO links, NO address here.
+Message 1 — WHO WE ARE: greeting + who we are + our credibility, ONLY from the creator facts. Use "Hi <Brand> team," / the given greeting style ONLY when a brand name is provided (replace any {brand} placeholder with it). If NO brand name is given, greet NEUTRALLY ("Hi there," / "Hey there,") — NEVER greet with the product name. NO product, NO ASIN, NO links, NO address here.
 ---- Add to Message Group ----
 Message 2 — THE PRODUCT + OFFER: name the specific product and quote its ASIN ONCE, and say clearly what we'll create for them (authentic video/content that drives their Creator Connections sales; mention the commission if given). NO credibility, NO links, NO address here.
 ---- Add to Message Group ----
