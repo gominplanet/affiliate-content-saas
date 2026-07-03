@@ -369,7 +369,12 @@ function extractNewCard(cont) {
   const accBtn = cont.querySelector('button[data-testid$="-campaign-card-accept-btn"]')
   let campaignId = null
   if (accBtn) { const m = (accBtn.getAttribute('data-testid') || '').match(/^(.*)-campaign-card-accept-btn$/); if (m) campaignId = m[1] }
-  return { key: campaignId || campaignName, campaignId, campaignName, brand, commissionPct, budget, startsAt, endsAt, image }
+  // The card's "View details" link → the campaign's own page, where its real
+  // ASIN lives (the redesign hides it on the card). We resolve it lazily, only
+  // for campaigns the user actually accepts, via a background tab.
+  const detailsEl = cont.querySelector('[data-testid$="campaign-card-view-details-link"], [data-testid*="view-details"], [data-testid*="view_details"]')
+  const detailsUrl = detailsEl ? (detailsEl.href || detailsEl.getAttribute('href') || null) : null
+  return { key: campaignId || campaignName, campaignId, campaignName, brand, commissionPct, budget, startsAt, endsAt, image, detailsUrl }
 }
 // Scroll the virtualized grid top→bottom, harvesting every campaign card.
 async function parseCampaignCards() {
@@ -408,6 +413,80 @@ function scoutSubmitAccepted() {
   const btn = [...document.querySelectorAll('button,a,[role="button"]')].find(b => /submit accepted campaigns/i.test(textOf(b)))
   if (btn) { btn.click(); return true }
   return false
+}
+
+// ── Push accepted campaigns into MVP (ASIN-grounded) ────────────────────────
+const MVP_ORIGIN = 'https://www.mvpaffiliate.io'
+
+// The MVP ingest token (integrations.cc_ingest_token) is shared with the SCOUT
+// popup via chrome.storage.local 'ccToken'. It's how the ingest endpoint knows
+// which MVP account to write to (the extension has no MVP cookie on amazon.com).
+function getIngestToken() {
+  return new Promise((resolve) => {
+    try { chrome.storage.local.get(['ccToken'], (o) => resolve(((o && o.ccToken) || '').trim() || null)) }
+    catch (e) { resolve(null) }
+  })
+}
+
+// Ask the background worker to open the campaign's details page in a background
+// tab and read its ASIN. Returns the first ASIN or null.
+async function resolveCampaignAsin(detailsUrl) {
+  if (!detailsUrl) return null
+  try {
+    const r = await chrome.runtime.sendMessage({ type: 'SCOUT_RESOLVE_ASIN', detailsUrl })
+    return (r && r.ok && r.asins && r.asins[0]) || null
+  } catch (e) { return null }
+}
+
+// POST one accepted campaign into the MVP Creator Campaigns inbox. The row lands
+// as `pending`, ready for one-click "Generate post". Maps to the existing ingest
+// shape: commission % goes into the free-text `epc` field.
+async function pushCampaignToMvp(camp, asin, token) {
+  try {
+    const res = await fetch(`${MVP_ORIGIN}/api/campaigns/ingest`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({
+        campaigns: [{
+          asin,
+          campaignName: camp.campaignName || camp.brand || null,
+          epc: camp.commissionPct != null ? camp.commissionPct + '% commission' : null,
+          endsAt: camp.endsAt || null,
+        }],
+      }),
+    })
+    return res.ok
+  } catch (e) { return false }
+}
+
+// Accept a campaign on Amazon AND push it (with its resolved ASIN) into MVP.
+// Drives the given Accept button through visible stages so the user sees
+// progress. Returns { accepted, pushed }.
+async function acceptAndPush(camp, btn) {
+  const set = (t, color) => { if (btn) { btn.textContent = t; if (color) btn.style.color = color } }
+  if (!camp) { set('Retry', '#dc2626'); return { accepted: false, pushed: false } }
+  if (btn) btn.disabled = true
+  const acc = scoutAccept(camp.key)
+  if (!acc.ok) { set('Retry', '#dc2626'); if (btn) btn.disabled = false; return { accepted: false, pushed: false } }
+  set('✓ Accepted', '#059669')
+  const token = await getIngestToken()
+  if (!token) { set('✓ · connect MVP', '#b45309'); showTokenRow(); if (btn) btn.disabled = false; return { accepted: true, pushed: false } }
+  set('Finding ASIN…', '#6b7280')
+  const asin = await resolveCampaignAsin(camp.detailsUrl)
+  if (!asin) { set('✓ · no ASIN', '#b45309'); if (btn) btn.disabled = false; return { accepted: true, pushed: false } }
+  set('Sending…', '#6b7280')
+  const ok = await pushCampaignToMvp(camp, asin, token)
+  set(ok ? '✓ In MVP' : '✓ · push failed', ok ? '#059669' : '#b45309')
+  if (btn) btn.disabled = false
+  return { accepted: true, pushed: ok }
+}
+
+// Reveal the "MVP ingest token" input in the panel (only surfaced when a push
+// needs a token that isn't set yet).
+function showTokenRow() {
+  const p = document.getElementById(PANEL_ID)
+  const r = p && p.querySelector('.mvp-token-row')
+  if (r) r.style.display = 'flex'
 }
 
 // Harvest every Amazon ASIN reachable from a single card's own DOM, trying the
@@ -598,13 +677,15 @@ function mountSearchPanel() {
       <div class="mvp-row"><button class="mvp-btn mvp-search" style="flex:2">Search</button><button class="mvp-btn dbg mvp-debug" style="flex:1">Debug</button></div>
       <div class="mvp-res"></div>
       <div class="mvp-row" style="margin-top:8px"><button class="mvp-btn sec mvp-accsel" style="flex:1">Accept selected</button><button class="mvp-btn sec mvp-submit" style="flex:1">Submit accepted</button></div>
-      <div class="mvp-note">Search runs against Amazon's full catalogue, then filters by commission % and end date. Accept a campaign per-card or select several and Accept selected, then Submit accepted.</div>
+      <div class="mvp-row mvp-token-row" style="display:none;margin-top:4px"><div style="flex:2"><label>MVP ingest token</label><input class="mvp-token" placeholder="CC_..."></div><button class="mvp-btn sec mvp-token-save" style="flex:1;align-self:flex-end">Save</button></div>
+      <div class="mvp-note"><b>Accept</b> accepts on Amazon AND sends the campaign to your MVP Creator Campaigns inbox with its real ASIN (ready to Generate post). Then <b>Submit accepted</b> finalises the batch on Amazon.</div>
     </div>`
   document.body.appendChild(el)
 
   const q = (s) => el.querySelector(s)
   const res = q('.mvp-res')
   const selected = new Set()
+  let rowsByKey = new Map()  // key → full campaign object, for accept/push
 
   q('.mvp-hd').addEventListener('click', () => {
     el.classList.toggle('mvp-min')
@@ -613,6 +694,7 @@ function mountSearchPanel() {
 
   function render(rows, rawCount) {
     selected.clear()
+    rowsByKey = new Map(rows.map(r => [String(r.key), r]))
     if (!rows.length) {
       res.innerHTML = rawCount > 0
         ? `<div class="mvp-note">Scraped <b>${rawCount}</b> campaign${rawCount === 1 ? '' : 's'} from the page, but none passed your filters (commission / date). Clear the filter boxes and Search again to see them all.</div>`
@@ -635,10 +717,7 @@ function mountSearchPanel() {
     }))
     res.querySelectorAll('.mvp-acc').forEach(b => b.addEventListener('click', (e) => {
       const key = e.target.closest('.mvp-card').dataset.key
-      const r = scoutAccept(key)
-      e.target.textContent = r.ok ? '✓ Accepted' : 'Retry'
-      e.target.style.color = r.ok ? '#059669' : '#dc2626'
-      if (!r.ok) console.warn('[MVP SCOUT] accept failed', key, r)
+      acceptAndPush(rowsByKey.get(key), e.target)
     }))
   }
 
@@ -677,8 +756,27 @@ function mountSearchPanel() {
     }
     btn.textContent = prev; btn.disabled = false
   })
-  q('.mvp-accsel').addEventListener('click', () => { let ok = 0; selected.forEach(a => { if (scoutAccept(a).ok) ok++ }); q('.mvp-accsel').textContent = `Accepted ${ok}/${selected.size}` })
+  q('.mvp-accsel').addEventListener('click', async () => {
+    const btn = q('.mvp-accsel'); const keys = [...selected]
+    if (!keys.length) { btn.textContent = 'Select some first'; setTimeout(() => { btn.textContent = 'Accept selected' }, 1500); return }
+    btn.disabled = true
+    let done = 0, pushed = 0
+    for (const key of keys) {
+      btn.textContent = `Sending ${done + 1}/${keys.length}…`
+      const sel = (window.CSS && CSS.escape) ? CSS.escape(key) : key
+      const accBtn = res.querySelector(`.mvp-card[data-key="${sel}"] .mvp-acc`)
+      const r = await acceptAndPush(rowsByKey.get(key), accBtn)
+      done++; if (r && r.pushed) pushed++
+    }
+    btn.textContent = `Done — ${pushed}/${keys.length} in MVP`
+    btn.disabled = false
+  })
   q('.mvp-submit').addEventListener('click', () => { q('.mvp-submit').textContent = scoutSubmitAccepted() ? '✓ Submitted' : 'Not found' })
+  const tokenSave = q('.mvp-token-save')
+  if (tokenSave) tokenSave.addEventListener('click', () => {
+    const t = ((q('.mvp-token').value) || '').trim()
+    if (t) { try { chrome.storage.local.set({ ccToken: t }) } catch (e) {} q('.mvp-token-row').style.display = 'none'; tokenSave.textContent = '✓ Saved' }
+  })
 }
 
 // Mount now + keep it in sync with SPA navigation (CC is a React app). Cheap

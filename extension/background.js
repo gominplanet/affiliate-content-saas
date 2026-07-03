@@ -258,6 +258,55 @@ async function scanTab(tabId) {
   }
 }
 
+// ── SCOUT campaign → ASIN resolver ─────────────────────────────────────────
+// Amazon's 2026-07 Creator Connections redesign hides the ASIN on the card; it
+// only appears on the campaign's own "View details" page (a full navigation).
+// To ground a pushed campaign on its REAL ASIN without disturbing the user's
+// search list, we open that details URL in a BACKGROUND tab, read the ASIN off
+// the rendered page, and close the tab. Same background-tab pattern as the
+// YouTube frame capture above.
+function harvestAsinsInPage() {
+  const set = new Set()
+  const push = (v) => { const m = String(v || '').toUpperCase().match(/\bB0[A-Z0-9]{8}\b/g); if (m) m.forEach((x) => set.add(x)) }
+  document.querySelectorAll('[data-asin]').forEach((e) => push(e.getAttribute('data-asin')))
+  document.querySelectorAll('a[href]').forEach((a) => { const m = (a.getAttribute('href') || '').match(/\/(?:dp|product|gp\/product)\/([A-Z0-9]{10})/i); if (m) push(m[1]) })
+  push(document.body ? document.body.innerHTML : '')
+  return Array.from(set)
+}
+
+async function resolveCampaignAsin(detailsUrl) {
+  if (!detailsUrl) return { ok: false, error: 'no-url' }
+  let tabId = null
+  try {
+    const tab = await chrome.tabs.create({ url: detailsUrl, active: false })
+    tabId = tab.id
+    await waitForTabLoad(tabId, 20000)
+    // The product renders async (React) — poll a few times before giving up.
+    let asins = []
+    for (let i = 0; i < 12; i++) {
+      const results = await chrome.scripting.executeScript({ target: { tabId }, func: harvestAsinsInPage })
+      asins = (results && results[0] && results[0].result) || []
+      if (asins.length) break
+      await _sleep(500)
+    }
+    return { ok: true, asins }
+  } catch (e) {
+    return { ok: false, error: e && e.message ? e.message : 'resolve-exception' }
+  } finally {
+    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+  }
+}
+
+// Internal messages from the on-page SCOUT panel (content.js). Kept separate
+// from the onMessageExternal handler (which serves the MVP web app).
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg && msg.type === 'SCOUT_RESOLVE_ASIN') {
+    resolveCampaignAsin(msg.detailsUrl).then(sendResponse)
+    return true // async response
+  }
+  return false
+})
+
 async function scanCreatorConnections(callerTabId) {
   const open = await chrome.tabs.query({
     url: [
