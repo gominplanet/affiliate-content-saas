@@ -80,7 +80,7 @@ function sendToExtension<T>(message: unknown, timeoutMs: number): Promise<T | nu
   })()
 }
 
-export interface MessageBrandResult { ok: boolean; error?: string; reason?: string; steps?: Record<string, boolean>; diag?: Record<string, unknown> }
+export interface MessageBrandResult { ok: boolean; error?: string; reason?: string; steps?: Record<string, boolean>; diag?: Record<string, unknown>; groups?: number }
 
 /**
  * Compose-and-send from the MVP modal: the user reviewed the exact message and
@@ -93,12 +93,12 @@ export async function requestSendBrand(detailsUrl: string, message: string): Pro
   if (!detailsUrl) return { ok: false, error: 'no-url' }
   if (!message.trim()) return { ok: false, error: 'no-message' }
   if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
-  const resp = await sendToExtension<{ ok?: boolean; error?: string; reason?: string; steps?: Record<string, boolean>; diag?: Record<string, unknown> }>(
+  const resp = await sendToExtension<{ ok?: boolean; error?: string; reason?: string; steps?: Record<string, boolean>; diag?: Record<string, unknown>; groups?: number }>(
     { type: 'MVP_SEND_BRAND', detailsUrl, message },
-    75000,
+    120000, // sends N messages one-by-one with ~1.4s between each
   )
   if (!resp) return { ok: false, error: 'timeout' }
-  return { ok: !!resp.ok, error: resp.error, reason: resp.reason, steps: resp.steps, diag: resp.diag }
+  return { ok: !!resp.ok, error: resp.error, reason: resp.reason, steps: resp.steps, diag: resp.diag, groups: resp.groups }
 }
 
 /**
