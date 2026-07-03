@@ -24,45 +24,40 @@ export interface MessageBrandCampaign {
   brandLabel?: string
 }
 
+// Only toggles that each visibly change a message. (The greeting + credibility +
+// base content offer come from your saved Outreach Profile and are always there.)
 interface Options {
-  offerContent: boolean
-  includeAsin: boolean
-  requestSample: boolean
-  shareAddress: boolean
-  includeMediaKit: boolean
-  includePortfolio: boolean
-  mentionPastCollabs: boolean
-  offerBannerAds: boolean
-  offerLivestream: boolean
+  includeAsin: boolean       // → Message 2 (the product)
+  includeLinks: boolean      // → Message 3 (our work)
+  requestSample: boolean     // → Message 4 (the ask)
+  shareAddress: boolean      // → Message 4 (shipping details)
+  offerLivestream: boolean   // → Message 2 (extra offer)
+  offerBannerAds: boolean    // → Message 2 (extra offer)
 }
 
 const DEFAULT_OPTIONS: Options = {
-  offerContent: true,
   includeAsin: true,
+  includeLinks: true,
   requestSample: true,
   shareAddress: false,
-  includeMediaKit: true,
-  includePortfolio: true,
-  mentionPastCollabs: false,
-  offerBannerAds: false,
   offerLivestream: false,
+  offerBannerAds: false,
 }
 
-const OPTS_KEY = 'mvp.messageBrand.opts.v1'
+// v2 key — the option shape changed, so don't restore the old v1 blob.
+const OPTS_KEY = 'mvp.messageBrand.opts.v2'
 const ADDR_KEY = 'mvp.messageBrand.address.v1'
 // The marker Amazon message groups split on (each segment = its own message).
 const MARK = '---- Add to Message Group ----'
 
-const CHECKS: { key: keyof Options; label: string }[] = [
-  { key: 'offerContent', label: 'Offer to create authentic content' },
-  { key: 'includeAsin', label: 'Share the product ASIN' },
-  { key: 'requestSample', label: 'Request a free sample' },
-  { key: 'shareAddress', label: 'Share my shipping / forwarding address' },
-  { key: 'includeMediaKit', label: 'Include my media kit link' },
-  { key: 'includePortfolio', label: 'Include my portfolio / YouTube' },
-  { key: 'mentionPastCollabs', label: 'Mention past brand collaborations' },
-  { key: 'offerBannerAds', label: 'Offer bonus banner-ad placement' },
-  { key: 'offerLivestream', label: 'Offer a livestream feature' },
+// Grouped by the message each one drives, so it's clear what ticking it does.
+const CHECKS: { key: keyof Options; label: string; msg: string }[] = [
+  { key: 'includeAsin', label: 'Name the exact product & ASIN', msg: 'Msg 2' },
+  { key: 'offerLivestream', label: 'Also offer a livestream', msg: 'Msg 2' },
+  { key: 'offerBannerAds', label: 'Also offer banner-ad placement', msg: 'Msg 2' },
+  { key: 'includeLinks', label: 'Include my portfolio & links', msg: 'Msg 3' },
+  { key: 'requestSample', label: 'Request a free sample', msg: 'Msg 4' },
+  { key: 'shareAddress', label: 'Share my shipping address', msg: 'Msg 4' },
 ]
 
 // Split a drafted message into its separate group-messages. Primary: the
@@ -176,12 +171,13 @@ export default function MessageBrandModal({ campaign, onClose }: { campaign: Mes
         </div>
 
         <div className="px-5 overflow-y-auto">
-          <p className="text-[11px] font-semibold uppercase tracking-wide mb-2" style={{ color: 'var(--text-faint)' }}>Include in the message</p>
+          <p className="text-[11px] font-semibold uppercase tracking-wide mb-2" style={{ color: 'var(--text-faint)' }}>Add to the message</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5">
             {CHECKS.map(c => (
               <label key={c.key} className="flex items-center gap-2 text-[13px] cursor-pointer" style={{ color: 'var(--text)' }}>
-                <input type="checkbox" checked={opts[c.key]} onChange={() => toggle(c.key)} className="accent-[#7C3AED] w-4 h-4" />
-                {c.label}
+                <input type="checkbox" checked={opts[c.key]} onChange={() => toggle(c.key)} className="accent-[#7C3AED] w-4 h-4 flex-shrink-0" />
+                <span className="min-w-0">{c.label}</span>
+                <span className="ml-auto text-[9px] font-bold uppercase tracking-wide px-1 py-[1px] rounded flex-shrink-0" style={{ background: 'rgba(124,58,237,0.10)', color: '#9D6BFF' }}>{c.msg}</span>
               </label>
             ))}
           </div>

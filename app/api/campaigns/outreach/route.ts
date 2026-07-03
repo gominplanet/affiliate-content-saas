@@ -40,14 +40,11 @@ function bearer(request: Request): string {
 }
 
 interface OutreachOptions {
-  offerContent?: boolean
   includeAsin?: boolean
+  includeLinks?: boolean
   requestSample?: boolean
   shareAddress?: boolean
   address?: string
-  includeMediaKit?: boolean
-  includePortfolio?: boolean
-  mentionPastCollabs?: boolean
   offerBannerAds?: boolean
   offerLivestream?: boolean
 }
@@ -153,26 +150,27 @@ export async function POST(request: Request) {
     // weave in (their proven levers for getting brand replies).
     const o = (body.options || {}) as OutreachOptions
     const asks: string[] = []
-    if (o.offerContent !== false) asks.push('Offer to create authentic, honest content that drives their Creator Connections sales.')
-    // Name the exact ASIN so the brand knows precisely which product (OINK's
-    // "We noticed this product: {ASIN}" line). Default ON; only skip if unticked.
-    if (o.includeAsin !== false && asin) asks.push(`Name the exact product and quote its Amazon ASIN (${asin}) so the brand knows precisely which product you're referring to.`)
-    if (o.requestSample) asks.push('Politely request a free product sample to review firsthand.')
-    // Sample shipping: prefer the per-message address, else the saved profile's.
-    // When we have a real ship name/address, put them in their OWN message
-    // (labelled NAME / ADDRESS) so the brand can copy them exactly (OINK style).
+    // Msg 2 — the base offer is always present (this IS an outreach); the ASIN +
+    // any extra offers ride the SAME product message.
+    asks.push('Offer authentic video/content that drives their Creator Connections sales.')
+    if (o.includeAsin !== false && asin) asks.push(`In the PRODUCT message, name the product and quote its ASIN (${asin}) once.`)
+    if (o.offerLivestream) asks.push('In the offer, also mention we can feature the product in a livestream.')
+    if (o.offerBannerAds) asks.push('In the offer, also mention bonus homepage / banner-ad placement on our site.')
+    // Msg 3 — the "see our work" links message (toggle it off to skip it).
+    if (o.includeLinks === false) asks.push('Do NOT include the "see our work" / links message (skip that message entirely).')
+    else asks.push('Include the "see our work" message with my portfolio / YouTube / blog / media-kit / storefront links.')
+    // Msg 4 — sample request + exact NAME/ADDRESS on their own lines. Prefer the
+    // per-message address, else the saved profile's. Skip the whole message when
+    // neither a sample nor an address is wanted.
     const shipAddr = (o.address || '').trim() || opShipAddress
     const wantSample = o.requestSample || o.shareAddress
+    if (o.requestSample) asks.push('Politely request a free product sample to review firsthand.')
     if (wantSample && shipAddr) {
-      asks.push(`Say to send the sample to the EXACT name + address below, and put them on their OWN line(s): ${opShipName ? `NAME: ${opShipName}. ` : ''}ADDRESS: ${shipAddr}.${opPhone ? ` TELEPHONE: ${opPhone}.` : ''}`)
+      asks.push(`In the SHIPPING message, give the EXACT name + address (+ phone) on their OWN lines: ${opShipName ? `NAME: ${opShipName}. ` : ''}ADDRESS: ${shipAddr}.${opPhone ? ` TELEPHONE: ${opPhone}.` : ''}`)
     } else if (o.shareAddress) {
       asks.push('Say you are happy to share a shipping address for a sample.')
     }
-    if (o.includeMediaKit && mediaKit) asks.push(`Include the media kit link: ${mediaKit}`)
-    if (o.includePortfolio && (linkHub || youtube)) asks.push(`Include a portfolio link so they can see past work: ${[youtube, linkHub].filter(Boolean)[0]}`)
-    if (o.mentionPastCollabs) asks.push('Briefly mention we have partnered with other brands successfully (do NOT invent specifics).')
-    if (o.offerBannerAds) asks.push('Offer bonus homepage / banner-ad placement on our site.')
-    if (o.offerLivestream) asks.push('Offer to feature the product in a livestream.')
+    if (!wantSample) asks.push('Do NOT include a sample-request / shipping message (skip that message entirely).')
     const extraNotes = (body.extraNotes || '').toString().trim().slice(0, 500)
     if (extraNotes) asks.push(`Also weave in: ${extraNotes}`)
 
