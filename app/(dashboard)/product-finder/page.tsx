@@ -27,6 +27,29 @@ export default function ProductFinderPage() {
   const [genning, setGenning] = useState<Record<string, 'busy' | 'done'>>({})
   const [genUrl, setGenUrl] = useState<Record<string, string>>({})
   const [msgProduct, setMsgProduct] = useState<MessageBrandCampaign | null>(null)
+  const [msgChecking, setMsgChecking] = useState<string | null>(null) // asin being checked
+
+  // Open the Message modal for a found product. First check whether this ASIN is
+  // already an imported Creator Connections campaign — if so, open in AUTO-SEND
+  // mode (SCOUT delivers it on Amazon); otherwise compose+copy.
+  const openMessage = useCallback(async (p: FinderProduct) => {
+    setMsgChecking(p.asin)
+    let detailsUrl = ''
+    let brandLabel = ''
+    let commissionPct: number | null = null
+    try {
+      const res = await fetch(`/api/campaigns/find-by-asin?asin=${encodeURIComponent(p.asin)}`)
+      const d = await res.json().catch(() => ({}))
+      if (d.found && d.detailsUrl) {
+        detailsUrl = d.detailsUrl
+        brandLabel = d.brandName || ''
+        commissionPct = typeof d.commissionPct === 'number' ? d.commissionPct : null
+        toast.message('Found your Creator Connections campaign', { description: 'You can auto-send this message on Amazon.' })
+      }
+    } catch { /* fall back to compose+copy */ }
+    setMsgChecking(null)
+    setMsgProduct({ product: p.title, asin: p.asin, commissionPct, detailsUrl, brandLabel })
+  }, [])
 
   const search = useCallback(async () => {
     if (!keyword.trim()) { toast.error('Enter a keyword to search.'); return }
@@ -162,11 +185,11 @@ export default function ProductFinderPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  <button onClick={() => setMsgProduct({ product: p.title, asin: p.asin, commissionPct: null, detailsUrl: '', brandLabel: '' })}
-                    title="Compose a brand-outreach pitch for this product (copy + send)"
-                    className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-[12px] font-semibold border"
+                  <button onClick={() => openMessage(p)} disabled={msgChecking === p.asin}
+                    title="Compose a brand-outreach pitch — auto-sends if this product is one of your Creator Connections campaigns, else copy it"
+                    className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-[12px] font-semibold border disabled:opacity-60"
                     style={{ color: '#7C3AED', borderColor: '#d6c6fb' }}>
-                    <MessageSquare size={12} /> Message
+                    {msgChecking === p.asin ? <Loader2 size={12} className="animate-spin" /> : <MessageSquare size={12} />} Message
                   </button>
                   {genUrl[p.asin]
                     ? <a href={genUrl[p.asin]} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[12px] font-semibold text-[#34c759] hover:underline">View post <ExternalLink size={12} /></a>
