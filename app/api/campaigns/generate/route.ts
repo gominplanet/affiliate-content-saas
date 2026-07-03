@@ -43,6 +43,38 @@ function slugify(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 60)
 }
 
+// Escape for safe use inside HTML attributes / text nodes.
+function escHtml(s: string): string {
+  return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
+// Drop ONE in-body product figure — the real product photo (exact likeness),
+// clickable to the affiliate link — right after the post's first paragraph. The
+// hero/featured image is a text-free editorial scene; this makes the article
+// also SHOW the actual product. Idempotent: no-ops if one's already present.
+function insertProductFigure(content: string, imageUrl: string, affiliateUrl: string, productTitle: string): string {
+  if (!content || !imageUrl) return content
+  if (content.includes('mvp-product-shot')) return content
+  const shortName = (productTitle || 'this product').split(/[,|–-]/)[0].trim().slice(0, 60)
+  const alt = escHtml(productTitle || shortName)
+  const cap = escHtml(shortName)
+  const open = affiliateUrl ? `<a href="${affiliateUrl}" target="_blank" rel="nofollow sponsored noopener">` : ''
+  const close = affiliateUrl ? '</a>' : ''
+  const figure = `\n<!-- wp:image {"linkDestination":"custom","className":"mvp-product-shot","sizeSlug":"large","align":"center"} -->\n<figure class="wp-block-image aligncenter size-large mvp-product-shot">${open}<img src="${imageUrl}" alt="${alt}" style="max-width:520px;height:auto"/>${close}<figcaption class="wp-element-caption">${cap} on Amazon</figcaption></figure>\n<!-- /wp:image -->\n`
+  // Place under the intro (after the first paragraph block), not above the fold.
+  const pBlock = content.indexOf('<!-- /wp:paragraph -->')
+  if (pBlock !== -1) {
+    const at = pBlock + '<!-- /wp:paragraph -->'.length
+    return content.slice(0, at) + '\n' + figure + content.slice(at)
+  }
+  const pClose = content.indexOf('</p>')
+  if (pClose !== -1) {
+    const at = pClose + '</p>'.length
+    return content.slice(0, at) + '\n' + figure + content.slice(at)
+  }
+  return figure + content
+}
+
 // EMERGENCY KILL-SWITCH (2026-06-14): campaign generation was burning runaway
 // Anthropic spend during EPC Scout testing. Hard-disabled at the server so no
 // client batch, retry, or worker can fire an Opus campaign write. Flip to true
@@ -510,6 +542,24 @@ export async function POST(request: Request) {
         heroUrl = media.source_url || null
         heroKind = 'product'
       } catch { /* non-fatal — post is live without a featured image */ }
+    }
+
+    // In-body product image — the REAL product photo (exact likeness), so the
+    // article SHOWS the actual item, not just the editorial hero at the top.
+    // When the hero already fell back to the product photo we reuse that media
+    // (no second upload); otherwise upload the clean product shot for the body.
+    // Done before the CTA rebuild so it rides the single content PATCH below.
+    let bodyImageUrl: string | null = null
+    if (heroKind === 'product' && heroUrl) {
+      bodyImageUrl = heroUrl
+    } else if (cleanProductImage) {
+      try {
+        const media = await wpService.uploadImageFromUrl(cleanProductImage, `${asin}-product.jpg`)
+        bodyImageUrl = media.source_url || null
+      } catch { /* non-fatal — publish without the in-body product image */ }
+    }
+    if (bodyImageUrl) {
+      generated.content = insertProductFigure(generated.content, bodyImageUrl, affiliateUrl, product?.title || generated.title)
     }
 
     // Fix the "Get it now" CTA card image: point the thumb at the hero/product
