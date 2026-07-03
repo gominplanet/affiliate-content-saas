@@ -845,26 +845,31 @@ async function scanGenericProduct(url, callerTabId) {
   if (!scrapeHostAllowed(url)) return { ok: false, error: 'store-not-supported' }
   let tabId = null
   try {
-    // FOREGROUND — big-box stores (Walmart/Target/Wayfair) are React-hydrated, and
-    // background tabs throttle that JS so the JSON-LD/price never renders. Open
-    // active, read, then hand focus back to the MVP tab so the flash is brief.
-    const tab = await chrome.tabs.create({ url, active: true })
+    // BACKGROUND tab (active:false) — never steals the user's view; it loads
+    // quietly in the tab strip and closes. Store pages ship their product data
+    // as JSON-LD in the SERVER HTML, and JS still EXECUTES in hidden tabs (Chrome
+    // throttles painting/rAF, not script or DOM parsing), so the DOM we read is
+    // complete without a visible tab. Generous settle + extra retries cover any
+    // client-injected JSON-LD that lands late under background timer throttling.
+    const tab = await chrome.tabs.create({ url, active: false })
     tabId = tab.id
     await waitForTabLoad(tabId, 30000)
-    await _sleep(2800)
+    await _sleep(3000)
     let out = null
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 4; i++) {
       const results = await chrome.scripting.executeScript({ target: { tabId }, func: harvestGenericProductInPage })
       out = (results && results[0] && results[0].result) || null
       if (out && out.ok) break
-      await _sleep(1400)
+      await _sleep(1800)
     }
     return out || { ok: false, error: 'no-result' }
   } catch (e) {
     return { ok: false, error: (e && e.message) ? String(e.message).slice(0, 120) : 'scan-failed' }
   } finally {
+    // We never stole focus, so there's nothing to restore — just close our tab.
+    // (Re-activating the caller here could itself yank the user if they switched
+    // tabs while the scrape ran.) callerTabId is kept for signature parity.
     if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
-    if (callerTabId != null) { try { await chrome.tabs.update(callerTabId, { active: true }) } catch (e) {} }
   }
 }
 
