@@ -70,7 +70,7 @@ function splitSegments(msg: string): string[] {
   return out.length ? out : ['']
 }
 
-export default function MessageBrandModal({ campaign, onClose }: { campaign: MessageBrandCampaign; onClose: () => void }) {
+export default function MessageBrandModal({ campaign, onClose, onSent }: { campaign: MessageBrandCampaign; onClose: () => void; onSent?: () => void }) {
   const [opts, setOpts] = useState<Options>(DEFAULT_OPTIONS)
   const [address, setAddress] = useState('')
   const [extraNotes, setExtraNotes] = useState('')
@@ -153,6 +153,14 @@ export default function MessageBrandModal({ campaign, onClose }: { campaign: Mes
       setSendProgress(100)
       if (r.ok) {
         toast.success(`Sent to the brand ✓${r.groups && r.groups > 1 ? ` (${r.groups} messages)` : ''}`)
+        // Record the outreach so /epc shows a "messaged" badge (best-effort).
+        try {
+          await fetch('/api/campaigns/mark-messaged', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ asin: campaign.asin }),
+          })
+        } catch { /* the message already went out — non-fatal */ }
+        onSent?.()
         onClose()
       } else if (r.error === 'not-installed') toast.error('Install/enable SCOUT to message brands.')
       else {
@@ -168,7 +176,7 @@ export default function MessageBrandModal({ campaign, onClose }: { campaign: Mes
       setSending(false)
       setTimeout(() => setSendProgress(0), 700)
     }
-  }, [segments, opts.shareAddress, address, campaign.detailsUrl, onClose])
+  }, [segments, opts.shareAddress, address, campaign.detailsUrl, campaign.asin, onClose, onSent])
 
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.55)' }} onClick={onClose}>

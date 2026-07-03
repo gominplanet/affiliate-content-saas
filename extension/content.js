@@ -688,21 +688,29 @@ function findSendButton(scope) {
   return ok[0] || null
 }
 
-// After Send, Amazon may pop a confirmation (e.g. "If you choose to share
-// personal information such as your address / email / phone…"). Click its
-// acknowledge button (OK / Continue / Send / I understand) — scoped to the
-// top-most dialog so we never re-hit the main composer Send.
+// After Send, Amazon pops "Potential Personal Information was detected …" with a
+// CONTINUE button. It's a PLAIN modal (not role="dialog"), so we find it by its
+// TEXT, then click Continue/OK. No visibility check — a background tab has no
+// layout (offsetParent/getBoundingClientRect are 0), which is exactly what made
+// the send stall on this dialog before.
 function findConfirmOk() {
-  const dialogs = [...document.querySelectorAll('[role="dialog"],[role="alertdialog"],[aria-modal="true"]')]
-    .filter(d => d.offsetParent !== null || (d.getBoundingClientRect && d.getBoundingClientRect().width > 0))
-  const root = dialogs[dialogs.length - 1] || null
-  if (!root) return null
-  const btns = [...root.querySelectorAll('button,[role="button"]')]
-  return btns.find(b => {
-    if (b.disabled === true || b.getAttribute('aria-disabled') === 'true') return false
-    const t = ((b.innerText || b.textContent || '') + ' ' + (b.getAttribute('aria-label') || '')).replace(/\s+/g, ' ').trim()
-    return /^(ok|okay|continue|confirm|i understand|understood|got it|proceed|send( message| anyway)?|agree|accept|acknowledge)$/i.test(t)
-  }) || null
+  const isConfirm = (t) => /^(continue|ok|okay|i understand|understood|got it|proceed|agree|accept|acknowledge|confirm|send( message| anyway)?)$/i.test(t)
+  const scopes = [...document.querySelectorAll('[role="dialog"],[role="alertdialog"],[aria-modal="true"]')]
+  const pi = [...document.querySelectorAll('div,section,form')].find(e => {
+    const tx = e.textContent || ''
+    return /personal information (was )?detected|share personal information/i.test(tx) && tx.length < 900
+  })
+  if (pi) scopes.push(pi)
+  const roots = scopes.length ? scopes : [document.body || document]
+  for (let i = roots.length - 1; i >= 0; i--) {
+    const btn = [...roots[i].querySelectorAll('button,[role="button"],input[type="submit"],a')].find(b => {
+      if (b.disabled === true || b.getAttribute('aria-disabled') === 'true') return false
+      const t = ((b.innerText || b.textContent || b.value || '') + ' ' + (b.getAttribute('aria-label') || '')).replace(/\s+/g, ' ').trim()
+      return isConfirm(t)
+    })
+    if (btn) return btn
+  }
+  return null
 }
 
 // Every send-ish button (text/aria), with disabled state — for the failure diag.
@@ -806,10 +814,11 @@ async function scoutDraftMessage() {
     if (!btn) break
     clickEl(btn)
     sent++
-    // Amazon may pop a "sharing personal info" confirmation — click OK/Continue.
-    await sleep(400)
-    for (let k = 0; k < 10; k++) { const ok = findConfirmOk(); if (ok) { clickEl(ok); await sleep(500); break } await sleep(200) }
-    await sleep(1200)                                 // let the message post + the box clear
+    // Amazon pops "Personal Information detected" (with a Continue button) on
+    // messages with an address/email/phone — click it, then wait for it to close.
+    await sleep(500)
+    for (let k = 0; k < 16; k++) { const ok = findConfirmOk(); if (ok) { clickEl(ok); await sleep(700); break } await sleep(300) }
+    await sleep(1300)                                 // let the message post + the box clear
   }
   if (sent === 0) {
     const cands = sendCandidatesDump()

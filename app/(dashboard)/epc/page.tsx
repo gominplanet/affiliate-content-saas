@@ -57,6 +57,8 @@ interface CampaignRow {
   wordpress_url: string | null
   product_price: string | number | null
   error_message: string | null
+  // When SCOUT sent the brand-outreach for this campaign (the "messaged" record).
+  messaged_at: string | null
   created_at: string
 }
 
@@ -609,9 +611,10 @@ export default function EpcScoutPage() {
                         {c.asin} <ExternalLink size={9} />
                       </a>
                     </div>
-                    {(c.monthly_sales != null || c.carousel_video_pos != null || c.has_carousel_video != null) && (
+                    {(c.monthly_sales != null || c.carousel_video_pos != null || c.has_carousel_video != null || c.messaged_at) && (
                       <div className="flex items-center gap-2 mt-0.5 text-[10px]" style={{ color: 'var(--text-faint)' }}>
                         {c.monthly_sales != null && <span title="Bought in past month (SCOUT deep check)">📈 {fmtSales(c.monthly_sales)}/mo</span>}
+                        {c.messaged_at && <span className="text-[#34c759] font-semibold" title={`Brand messaged ${new Date(c.messaged_at).toLocaleString()}`}>✉️ messaged</span>}
                         {(() => {
                           // Prefer the precise position; fall back to the legacy boolean.
                           const pos = c.carousel_video_pos ?? (c.has_carousel_video === true ? 'top' : c.has_carousel_video === false ? 'none' : null)
@@ -686,7 +689,7 @@ export default function EpcScoutPage() {
           </div>
         </>
       )}
-      {msgModal && <MessageBrandModal campaign={msgModal} onClose={() => setMsgModal(null)} />}
+      {msgModal && <MessageBrandModal campaign={msgModal} onClose={() => setMsgModal(null)} onSent={loadList} />}
     </>
   )
 }
