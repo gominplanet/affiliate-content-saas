@@ -71,6 +71,10 @@ interface IncomingCampaign {
   campaignName?: string
   epc?: string
   endsAt?: string
+  // Which Creator Connections program this campaign belongs to. EPC = pay per
+  // click (dollar `epc`); affiliate_plus = extra commission per sale (percent).
+  program?: 'epc' | 'affiliate_plus'
+  commissionPct?: number
 }
 
 export async function POST(request: Request) {
@@ -114,10 +118,18 @@ export async function POST(request: Request) {
     const clean = incoming
       .map(c => {
         const asin = String(c.asin ?? '').toUpperCase().trim()
+        const program = c.program === 'affiliate_plus' ? 'affiliate_plus' : 'epc'
+        const commissionPct = typeof c.commissionPct === 'number' && isFinite(c.commissionPct)
+          ? c.commissionPct
+          : null
         return {
           asin,
           campaign_name: c.campaignName?.toString().trim() || null,
-          epc: c.epc?.toString().trim() || null,
+          // Keep the two payment models in their own fields: dollar EPC stays in
+          // `epc`, the Affiliate+ rate in `commission_pct` (never conflated).
+          epc: program === 'epc' ? (c.epc?.toString().trim() || null) : null,
+          program,
+          commission_pct: program === 'affiliate_plus' ? commissionPct : null,
           ends_at: c.endsAt?.toString().trim() || null,
         }
       })
@@ -151,10 +163,10 @@ export async function POST(request: Request) {
 
     let inserted = 0
     if (toInsert.length > 0) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { error, count } = await admin
         .from('campaigns')
-        .insert(toInsert, { count: 'exact' })
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .insert(toInsert as any, { count: 'exact' })
       if (error) {
         return NextResponse.json({ error: error.message }, { status: 500, headers: CORS })
       }

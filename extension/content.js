@@ -460,7 +460,10 @@ async function pushCampaignToMvp(camp, asin, token) {
         campaigns: [{
           asin,
           campaignName: camp.campaignName || camp.brand || null,
-          epc: camp.commissionPct != null ? camp.commissionPct + '% commission' : null,
+          // Affiliate+ = extra commission per SALE (a percent), NOT dollar EPC.
+          // Send it in its own field so the app never treats 10% as $10.
+          program: 'affiliate_plus',
+          commissionPct: camp.commissionPct != null ? camp.commissionPct : null,
           endsAt: camp.endsAt || null,
         }],
       }),

@@ -35,6 +35,10 @@ interface CampaignRow {
   product_title: string | null
   campaign_name: string | null
   epc: string | null
+  // Which Creator Connections program: 'epc' = pay-per-click (dollar `epc`);
+  // 'affiliate_plus' = commission per sale (`commission_pct`, a percent).
+  program: 'epc' | 'affiliate_plus' | null
+  commission_pct: number | null
   ends_at: string | null
   status: string
   blog_post_id: string | null
@@ -113,6 +117,7 @@ export default function EpcScoutPage() {
 
   // Filters (over the pushed queue)
   const [minEpc, setMinEpc] = useState(0.2)
+  const [minCommission, setMinCommission] = useState(0)
   const [endsWithin, setEndsWithin] = useState('')
   const [keyword, setKeyword] = useState('')
   const [onlyPending, setOnlyPending] = useState(true)
@@ -169,19 +174,29 @@ export default function EpcScoutPage() {
     const terms = keyword.toLowerCase().split(/[,\n]/).map(s => s.trim()).filter(Boolean)
     const within = parseFloat(endsWithin)
     return campaigns
-      .map(c => ({ ...c, epcValue: parseDollar(c.epc) }))
+      .map(c => {
+        const isPlus = c.program === 'affiliate_plus'
+        const epcValue = parseDollar(c.epc)
+        // Each row ranks by its OWN headline metric: $ EPC (pay-per-click) or
+        // % commission (pay-per-sale). They're different units but both "bigger
+        // is better", so a single numeric sort keeps the richest offers on top.
+        const rankValue = isPlus ? (c.commission_pct ?? -1) : (epcValue ?? -1)
+        return { ...c, epcValue, isPlus, rankValue }
+      })
       .filter(c => {
         // "Not published yet" = anything without a live post — pending AND
         // failed AND stuck (so money-spent failures stay visible + retryable).
         if (onlyPending && isLiveRow(c)) return false
         // Failed/stuck rows already COST money — always surface them for retry,
-        // never hide behind the EPC / end-date browse filters (the row's stored
-        // EPC may be null). Keyword still applies so search stays useful.
+        // never hide behind the browse filters. Keyword still applies.
         const needsAttention = !isLiveRow(c) && !PENDING_STATUSES.has(c.status)
         if (!needsAttention) {
-          if (minEpc > 0) {
-            if (c.epcValue == null) return false
-            if (c.epcValue < minEpc) return false
+          // Program-aware: EPC ($) gates only EPC rows, commission (%) gates only
+          // Affiliate+ rows — neither program hides the other.
+          if (c.isPlus) {
+            if (minCommission > 0 && (c.commission_pct == null || c.commission_pct < minCommission)) return false
+          } else {
+            if (minEpc > 0 && (c.epcValue == null || c.epcValue < minEpc)) return false
           }
           if (!isNaN(within) && daysLeft(c.ends_at) > within) return false
         }
@@ -191,8 +206,8 @@ export default function EpcScoutPage() {
         }
         return true
       })
-      .sort((a, b) => (b.epcValue ?? -1) - (a.epcValue ?? -1))
-  }, [campaigns, minEpc, endsWithin, keyword, onlyPending])
+      .sort((a, b) => b.rankValue - a.rankValue)
+  }, [campaigns, minEpc, minCommission, endsWithin, keyword, onlyPending])
 
   const selectableShown = filtered.filter(c => !isLiveRow(c))
   const allShownSelected = selectableShown.length > 0 && selectableShown.every(c => selected.has(c.asin))
@@ -486,6 +501,11 @@ export default function EpcScoutPage() {
                   onChange={e => setMinEpc(parseFloat(e.target.value) || 0)}
                   className="w-24 px-2 py-1.5 rounded-lg border text-sm bg-transparent" style={{ borderColor: 'var(--border)' }} />
               </Field>
+              <Field label="Min commission (%)">
+                <input type="number" step="1" min="0" max="100" value={minCommission}
+                  onChange={e => setMinCommission(parseFloat(e.target.value) || 0)}
+                  className="w-24 px-2 py-1.5 rounded-lg border text-sm bg-transparent" style={{ borderColor: 'var(--border)' }} />
+              </Field>
               <Field label="Ends within (days)">
                 <input type="number" min="1" value={endsWithin} onChange={e => setEndsWithin(e.target.value)} placeholder="any"
                   className="w-24 px-2 py-1.5 rounded-lg border text-sm bg-transparent" style={{ borderColor: 'var(--border)' }} />
@@ -521,7 +541,7 @@ export default function EpcScoutPage() {
           {/* Table */}
           <div className="card divide-y divide-gray-100 dark:divide-white/10">
             <div className="px-3 py-2 grid grid-cols-[28px_1fr_64px_60px_140px] gap-2 text-[10px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-faint)' }}>
-              <span /><span>Product</span><span className="text-right">EPC</span><span className="text-right">Ends</span><span className="text-center">Generate</span>
+              <span /><span>Product</span><span className="text-right" title="EPC $ per click, or Affiliate+ % per sale">Rate</span><span className="text-right">Ends</span><span className="text-center">Generate</span>
             </div>
             {filtered.map(c => {
               const dl = daysLeft(c.ends_at)
@@ -533,24 +553,37 @@ export default function EpcScoutPage() {
               // row from an aborted run — stuck, money spent, no post. Retryable.
               const isStuck = !live && !isPending && !isFail
               const err = genErr[c.asin] || c.error_message || (isStuck ? 'Stopped before it finished — no post was published.' : '')
+              const isPlus = c.program === 'affiliate_plus'
+              // Metric shown in the row: Affiliate+ → commission %, EPC → $/click.
+              // Legacy rows that stored "10% commission" in `epc` still read as %.
+              const legacyPct = c.epc && /%/.test(c.epc) ? parseFloat(c.epc.match(/(\d+(?:\.\d+)?)/)?.[1] || '') : null
+              const commissionPct = c.commission_pct != null ? c.commission_pct : legacyPct
+              const epcDollars = !isPlus && legacyPct == null ? parseDollar(c.epc) : null
+              const metricLabel = isPlus
+                ? (commissionPct != null ? `${commissionPct}%` : '—')
+                : (epcDollars != null ? `$${epcDollars.toFixed(2)}` : (commissionPct != null ? `${commissionPct}%` : '—'))
               return (
                 <div key={c.id} className={`px-3 py-2.5 grid grid-cols-[28px_1fr_64px_60px_140px] gap-2 items-center ${live ? 'opacity-80' : ''}`}>
                   <input type="checkbox" disabled={live} checked={selected.has(c.asin)} onChange={() => toggle(c.asin)} className="accent-[#7C3AED] w-4 h-4" />
                   <div className="min-w-0">
                     <p className="text-[13px] font-medium truncate" style={{ color: 'var(--text)' }}>{c.campaign_name || c.product_title || c.asin}</p>
-                    <a href={`https://www.amazon.com/dp/${c.asin}`} target="_blank" rel="noopener noreferrer"
-                      className="text-[11px] inline-flex items-center gap-0.5 text-[#7C3AED] hover:underline">
-                      {c.asin} <ExternalLink size={9} />
-                    </a>
+                    <div className="flex items-center gap-1.5">
+                      <span className={`text-[9px] font-bold uppercase tracking-wide px-1.5 py-[1px] rounded flex-shrink-0 ${isPlus ? 'bg-[#7C3AED]/15 text-[#7C3AED]' : 'bg-[#0a84ff]/15 text-[#0a84ff]'}`}
+                        title={isPlus ? 'Affiliate+ — extra commission on each sale' : 'EPC — paid per click'}>
+                        {isPlus ? 'Affiliate+' : 'EPC'}
+                      </span>
+                      <a href={`https://www.amazon.com/dp/${c.asin}`} target="_blank" rel="noopener noreferrer"
+                        className="text-[11px] inline-flex items-center gap-0.5 text-[#7C3AED] hover:underline">
+                        {c.asin} <ExternalLink size={9} />
+                      </a>
+                    </div>
                     {(isFail || isStuck) && err && (
                       <p className="text-[11px] text-[#ff3b30] mt-0.5 truncate" title={err}>⚠ {err}</p>
                     )}
                   </div>
-                  <span className="text-right text-[13px] font-semibold tabular-nums" style={{ color: (c.epc && /%/.test(c.epc)) || parseDollar(c.epc) != null ? '#34c759' : 'var(--text-faint)' }}>
-                    {/* Affiliate+ campaigns are commission-% (not dollar EPC) — show the % honestly. */}
-                    {c.epc && /%/.test(c.epc)
-                      ? `${c.epc.match(/(\d+(?:\.\d+)?)\s*%/)?.[1] ?? ''}%`
-                      : parseDollar(c.epc) != null ? `$${parseDollar(c.epc)!.toFixed(2)}` : '—'}
+                  <span className="text-right text-[13px] font-semibold tabular-nums" style={{ color: metricLabel !== '—' ? '#34c759' : 'var(--text-faint)' }}
+                    title={isPlus ? 'Commission per sale' : 'Earnings per click'}>
+                    {metricLabel}
                   </span>
                   <span className="text-right text-[12px] tabular-nums" style={{ color: dl <= 7 ? '#FF9500' : 'var(--text-faint)' }}>
                     {dl === Infinity ? 'open' : `${dl}d`}
