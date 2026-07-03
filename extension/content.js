@@ -655,7 +655,9 @@ async function fetchOutreachDraft(ctx, token) {
 }
 
 // Open the brand message box (if needed), draft a pitch from the campaign brief,
-// and PLACE it in the box. Never sends — the creator reviews + clicks Send.
+// PLACE it in the box, and click Amazon's Send. The box is open on the page the
+// creator is actively viewing (in their own session), so the send is reliable
+// here — unlike a freshly-loaded background tab.
 async function scoutDraftMessage() {
   const token = await getIngestToken()
   if (!token) { showTokenRow(); return { ok: false, reason: 'connect MVP first (paste your token below, then retry)' } }
@@ -668,7 +670,17 @@ async function scoutDraftMessage() {
   if (!d.ok) return { ok: false, reason: d.error || 'draft failed' }
   if (!d.message) return { ok: false, reason: 'draft came back empty' }
   setReactTextareaValue(ta, d.message)
-  return { ok: true, chars: d.message.length }
+  // Give React a beat to enable the Send button, verify our text is in, then send.
+  await sleep(900)
+  const want = d.message.replace(/\s+/g, ' ').trim().slice(0, 40)
+  const inBox = (ta.value || '').replace(/\s+/g, ' ').trim().includes(want)
+  if (!inBox) return { ok: true, chars: d.message.length, sent: false, reason: 'placed (couldn\'t confirm text — review + Send)' }
+  const sendBtn = [...document.querySelectorAll('button,[role="button"]')].find(b => /^\s*send\s*$/i.test(textOf(b)) && !b.disabled)
+  if (sendBtn) {
+    ;['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(t => { try { sendBtn.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, view: window })) } catch (e) {} })
+    return { ok: true, chars: d.message.length, sent: true }
+  }
+  return { ok: true, chars: d.message.length, sent: false, reason: 'placed (no Send button — click it yourself)' }
 }
 
 async function scoutRunSearch(f) {
@@ -824,7 +836,7 @@ function mountSearchPanel() {
       <div class="mvp-res"></div>
       <div class="mvp-row" style="margin-top:8px"><button class="mvp-btn sec mvp-accsel" style="flex:1" title="Deep-check selected (sales + carousel video) and import the qualifiers into MVP">Import selected</button><button class="mvp-btn sec mvp-submit" style="flex:1">Submit accepted</button></div>
       <div class="mvp-token-row"><div><label>MVP ingest token</label><input class="mvp-token" placeholder="CC_..."></div><button class="mvp-btn sec mvp-token-save" style="flex:0 0 auto;align-self:flex-end">Save</button></div>
-      <div class="mvp-note">Tick campaigns → <b>Import selected</b>: SCOUT deep-checks each (monthly sales + carousel video), keeps only products with a carousel video and 100+ sales/mo, accepts them on Amazon and adds them to your MVP /epc list to Generate + Message. <b>Accept</b> imports one now (no deep check). <b>✍️ Draft</b> writes a brand message on a campaign's details page.</div>
+      <div class="mvp-note">Tick campaigns → <b>Import selected</b>: SCOUT deep-checks each (monthly sales + carousel video), keeps only products with a carousel video and 100+ sales/mo, accepts them on Amazon and adds them to your MVP /epc list to Generate + Message. <b>Accept</b> imports one now (no deep check). <b>✍️ Draft</b> writes AND sends a brand message on a campaign's details page (opens the chat, drops in your pitch, hits Send).</div>
     </div>`
   // Prefer sitting IN the page flow, right above Amazon's toolbar row (where
   // ViralVue et al. inject). Fall back to a floating middle-right panel if we
@@ -902,7 +914,9 @@ function mountSearchPanel() {
     try {
       const r = await scoutDraftMessage()
       res.innerHTML = r.ok
-        ? `<div class="mvp-note">✍️ Draft placed in the brand's message box (${r.chars} chars). <b>Read it, tweak anything, then hit Amazon's Send.</b> SCOUT never sends for you.</div>`
+        ? (r.sent
+            ? `<div class="mvp-note">✅ Sent to the brand (${r.chars} chars). Check the chat above.</div>`
+            : `<div class="mvp-note">✍️ Draft placed in the brand's message box (${r.chars} chars) — ${String(r.reason || 'review it and hit Amazon\'s Send').replace(/</g, '&lt;')}.</div>`)
         : `<div class="mvp-note">Couldn't draft: ${String(r.reason).replace(/</g, '&lt;')}.</div>`
     } catch (e) { res.innerHTML = `<div class="mvp-note">Draft error: ${String(e?.message || e).replace(/</g, '&lt;')}</div>` }
     btn.textContent = prev; btn.disabled = false

@@ -147,11 +147,23 @@ export async function POST(request: Request) {
 Rules:
 - Hard limit: 900 characters. Shorter is better.
 - First person, genuine, specific to THIS brand and product. Reference the actual product/campaign so it never reads as a template.
-- Open warmly, establish quick credibility from the creator facts (only what's given — never invent follower counts, sales, or claims).
-- Make ONE clear offer: authentic content that drives their Creator Connections sales.
-- Include the creator's media-kit or link-hub URL if provided (one link is enough).
-- End with a warm one-line sign-off using the creator's name if known.
-- STRUCTURE with line breaks so it's easy to read in a chat: a warm greeting line, then a blank line, then 1–2 short body sentences, then a blank line, then the one-line sign-off. Amazon's message box keeps line breaks — use real newlines (\n), not one long paragraph.
+- Establish quick credibility from the creator facts (only what's given — never invent follower counts, sales, or claims).
+- Never invent claims beyond the facts given.
+
+FORMAT — this is critical. Amazon's message box keeps line breaks, so write it as SHORT paragraphs separated by a BLANK LINE (a real \\n\\n between each), NOT one block:
+
+Hi <Brand> team,
+<blank line>
+<1–2 sentences: warm intro + who I am + one clear offer of authentic content that drives their Creator Connections sales>
+<blank line>
+<the specific asks below, e.g. a sample request — 1–2 sentences>
+<blank line>
+<one line with my portfolio / media-kit link, if given>
+<blank line>
+Thanks,
+<creator name if known>
+
+Always start with the "Hi <Brand> team," greeting on its own line. Use real newlines (\\n) between blocks — never run it together.
 - Plain text only. No markdown, no bullet lists, no emojis unless natural.
 ${BANNED_RULE}
 Output ONLY the message text — nothing else.`
