@@ -851,6 +851,70 @@ function dateNDaysFromToday(n) {
   return `${d.getFullYear()}-${mm}-${dd}`
 }
 
+// ── Store-ID switcher ───────────────────────────────────────────────────────
+// Creator Connections is blocked on an ONSITE store-id (the "onamz…" prefix);
+// the eligible one is the OFFSITE store (same tag WITHOUT the onamz prefix, e.g.
+// onamzgomin0e-20 → gomin0e-20). SCOUT reads the current store and, if it's an
+// onsite one, flips the StoreID dropdown to the offsite store so CC unlocks.
+function looksLikeStoreId(s) { return /[a-z0-9]+-\d{2}\b/i.test(s || '') }
+function readCurrentStoreId() {
+  try {
+    const m = (document.body ? document.body.innerText : '').match(/store\s?id:\s*([a-z0-9]+-\d{2})/i)
+    return m ? m[1] : null
+  } catch (e) { return null }
+}
+function hasOnsiteStoreError() {
+  try { return /onsite store[- ]?id/i.test(document.body ? document.body.innerText : '') } catch (e) { return false }
+}
+function storeNeedsSwitch() {
+  const cur = readCurrentStoreId()
+  return hasOnsiteStoreError() || (!!cur && /^onamz/i.test(cur))
+}
+function findStoreSwitcher() {
+  // Native <select> of store ids.
+  for (const s of document.querySelectorAll('select')) {
+    const opts = [...s.options].map(o => (o.value || o.textContent || '').trim())
+    if (opts.some(o => looksLikeStoreId(o))) return { kind: 'select', el: s }
+  }
+  // Custom dropdown: a control that shows "StoreID:".
+  const ctrl = [...document.querySelectorAll('button,[role="button"],[aria-haspopup],a,span,div')]
+    .find(e => /store\s?id:/i.test(e.innerText || e.textContent || '') && (e.innerText || e.textContent || '').replace(/\s+/g, ' ').trim().length < 60)
+  return ctrl ? { kind: 'custom', el: ctrl } : null
+}
+async function switchToOffsiteStore() {
+  const clickEl = (el) => { ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(t => { try { el.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, view: window })) } catch (e) {} }) }
+  const sw = findStoreSwitcher()
+  if (!sw) return { ok: false, reason: 'store switcher not found (click Debug near the StoreID dropdown, share the console)' }
+  if (sw.kind === 'select') {
+    const target = [...sw.el.options].find(o => { const v = (o.value || o.textContent || ''); return looksLikeStoreId(v) && !/onamz/i.test(v) })
+    if (!target) return { ok: false, reason: 'no offsite (non-onamz) store in the dropdown' }
+    if ((sw.el.value || '') === (target.value || '')) return { ok: true, already: true, store: (target.value || target.textContent || '').trim() }
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')
+    if (setter && setter.set) setter.set.call(sw.el, target.value); else sw.el.value = target.value
+    sw.el.dispatchEvent(new Event('input', { bubbles: true }))
+    sw.el.dispatchEvent(new Event('change', { bubbles: true }))
+    return { ok: true, store: (target.value || target.textContent || '').trim() }
+  }
+  // Custom dropdown: open it, then click the non-onamz store item.
+  clickEl(sw.el)
+  await sleep(700)
+  const items = [...document.querySelectorAll('[role="option"],[role="menuitem"],li,button,a,div')]
+    .filter(e => { const t = (e.innerText || e.textContent || '').replace(/\s+/g, ' ').trim(); return looksLikeStoreId(t) && t.length < 60 })
+  const target = items.find(e => !/onamz/i.test(e.innerText || e.textContent || ''))
+  if (!target) return { ok: false, reason: 'opened the dropdown but found no offsite store option' }
+  clickEl(target)
+  await sleep(500)
+  return { ok: true, store: (target.innerText || target.textContent || '').replace(/\s+/g, ' ').trim() }
+}
+function storeDebugDump() {
+  const sw = findStoreSwitcher()
+  const selects = [...document.querySelectorAll('select')].map(s => ({ value: s.value, opts: [...s.options].map(o => (o.value || o.textContent || '').trim()).slice(0, 12) }))
+  const info = { current: readCurrentStoreId(), onsiteError: hasOnsiteStoreError(), switcher: sw ? sw.kind : null, selects }
+  console.log('%c[MVP SCOUT] store switcher:', 'color:#7C3AED;font-weight:bold', info)
+  console.log('%c[MVP SCOUT] switcher outerHTML:', 'color:#7C3AED', sw ? (sw.el.outerHTML || '').slice(0, 5000) : '(none)')
+  return info
+}
+
 // Private-beta gate. The campaign-search panel is published to ALL store users
 // (it ships in the extension), so gate it behind an access code until it's ready
 // for everyone. NOTE: this is a soft feature-flag, not real security — the code
@@ -1055,9 +1119,10 @@ function mountSearchPanel() {
     // Passive card dump only — never navigates the user's tab. (ASIN resolution
     // for the real push happens in a hidden background tab via the worker.)
     const d = dumpCardDebug()
+    const st = storeDebugDump()
     const first = d.parsed ? String(d.parsed.campaignName || d.parsed.brand || d.parsed.key) : 'none — run a Search or scroll the campaign list into view'
     const dc = d.details ? (d.details.testid || d.details.text || d.details.tag) : 'n/a'
-    res.innerHTML = `<div class="mvp-note">Dumped to the console (⌥⌘J). cards=<b>${d.cardCount}</b>, with ASIN in card=<b>${d.cardsWithAsin}</b>.<br>First card: ${String(first).replace(/</g, '&lt;')}.<br>Details link: ${String(dc).replace(/</g, '&lt;')}.</div>`
+    res.innerHTML = `<div class="mvp-note">Dumped to the console (⌥⌘J). cards=<b>${d.cardCount}</b>, with ASIN in card=<b>${d.cardsWithAsin}</b>.<br>First card: ${String(first).replace(/</g, '&lt;')}.<br>Details link: ${String(dc).replace(/</g, '&lt;')}.<br>Store: <b>${String(st.current || '?').replace(/</g, '&lt;')}</b>${st.onsiteError ? ' (onsite error)' : ''} · switcher=${st.switcher || 'none'}.</div>`
   })
   q('.mvp-draft').addEventListener('click', async () => {
     const btn = q('.mvp-draft'); const prev = btn.textContent; btn.textContent = 'Drafting…'; btn.disabled = true
@@ -1110,6 +1175,29 @@ function mountSearchPanel() {
     const t = ((q('.mvp-token').value) || '').trim()
     if (t) { try { chrome.storage.local.set({ ccToken: t }) } catch (e) {} q('.mvp-token-row').classList.remove('show'); tokenSave.textContent = '✓ Saved' }
   })
+
+  // Store-ID guard — CC is blocked on an onsite (onamz…) store. When we detect
+  // the wrong store (banner error OR an onamz-prefixed StoreID), show a one-click
+  // switch to the offsite store so the user doesn't have to hunt the dropdown.
+  function paintStoreWarning() {
+    if (!storeNeedsSwitch()) return
+    const cur = readCurrentStoreId() || 'onsite store'
+    res.innerHTML = `<div class="mvp-note" style="border:1px solid #fca5a5;background:#fef2f2;color:#991b1b;border-radius:8px;padding:8px">⚠️ You're on an <b>onsite</b> Store ID (${String(cur).replace(/</g, '&lt;')}). Creator Connections needs your <b>offsite</b> store.<button class="mvp-btn mvp-fixstore" style="width:100%;margin-top:6px">Switch to offsite store</button></div>`
+    const fx = q('.mvp-fixstore')
+    if (fx) fx.addEventListener('click', async () => {
+      fx.textContent = 'Switching…'; fx.disabled = true
+      let r
+      try { r = await switchToOffsiteStore() } catch (e) { r = { ok: false, reason: (e && e.message) || 'error' } }
+      if (r.ok) {
+        res.innerHTML = `<div class="mvp-note">✅ Switched to <b>${String(r.store || 'offsite store').replace(/</g, '&lt;')}</b>${r.already ? ' (already selected).' : ' — the page reloads with Creator Connections access.'}</div>`
+      } else {
+        fx.textContent = 'Switch to offsite store'; fx.disabled = false
+        res.innerHTML = `<div class="mvp-note" style="border:1px solid #fca5a5;background:#fef2f2;color:#991b1b;border-radius:8px;padding:8px">Couldn't switch: ${String(r.reason || 'unknown').replace(/</g, '&lt;')}<br><button class="mvp-btn mvp-fixstore" style="width:100%;margin-top:6px">Try again</button></div>`
+        const again = q('.mvp-fixstore'); if (again) again.addEventListener('click', () => paintStoreWarning())
+      }
+    })
+  }
+  try { paintStoreWarning() } catch (e) {}
 }
 
 // Mount now + keep it in sync with SPA navigation (CC is a React app). Cheap
