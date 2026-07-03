@@ -440,6 +440,63 @@ async function scanCreatorConnections(callerTabId) {
   }
 }
 
+// ── Live "is this a Creator Connections campaign?" finder ───────────────────
+// The Product Finder surfaces raw Amazon products. For each one MVP first checks
+// its OWN imported campaigns (instant, /api/campaigns/find-by-asin). When there's
+// no local hit, this does the live version: search Amazon's CC catalogue by the
+// product's brand/keyword and resolve each result card's real ASIN until one
+// matches the target — then the caller can auto-send a brand message.
+//
+// Runs the CC page in a BACKGROUND tab (the user asked, repeatedly, never to be
+// moved off MVP). Search + first-batch card reads work headless — React mounts
+// the cards into the DOM regardless of paint throttling — and ASIN resolution
+// already opens its own background tabs. If we opened the tab we close it after.
+async function findCampaignOnTab(tabId, query, asin) {
+  const ask = () => chrome.tabs.sendMessage(tabId, { type: 'CC_FIND', query, asin, maxResolve: 15, maxCards: 120 })
+  try {
+    return await ask()
+  } catch (e) {
+    // Content script not injected yet — inject once and retry.
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] })
+    return await ask()
+  }
+}
+
+async function ccFindCampaign(query, asin) {
+  const want = String(asin || '').toUpperCase()
+  if (!/^[A-Z0-9]{10}$/.test(want)) return { ok: false, error: 'no-asin' }
+  const open = await chrome.tabs.query({
+    url: [
+      'https://www.amazon.com/creatorconnections/*',
+      'https://affiliate-program.amazon.com/*',
+    ],
+  })
+  let tab = open[0] || null
+  let opened = false
+  try {
+    if (!tab || tab.id == null) {
+      tab = await chrome.tabs.create({ url: CC_OPPORTUNITIES_URL, active: false })
+      opened = true
+      await waitForTabLoad(tab.id, 25000)
+      await _sleep(3500) // let the SPA + grid mount before searching
+    }
+    // Creator Connections is blocked on an onsite ("onamz…") store id — flip to
+    // the offsite store in this tab so the campaign grid unlocks.
+    try {
+      const sres = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: ensureOffsiteStoreInPage })
+      const sw = sres && sres[0] && sres[0].result
+      if (sw && sw.switched) { await _sleep(1500); await waitForTabLoad(tab.id, 25000); await _sleep(2500) }
+    } catch (e) {}
+    const res = await findCampaignOnTab(tab.id, query, want)
+    return res || { ok: false, error: 'no-result' }
+  } catch (e) {
+    return { ok: false, error: opened ? 'cc-find-failed' : 'content-script-unreachable' }
+  } finally {
+    // Only close tabs WE opened — never a CC tab the user had open themselves.
+    if (opened && tab && tab.id != null) { try { await chrome.tabs.remove(tab.id) } catch (e) {} }
+  }
+}
+
 // ── Amazon video discovery (Manage Content) ────────────────────────────────
 // For the "Share with brand" recap: a creator's Amazon Influencer videos live
 // on their Manage Content page (in their logged-in session — a server can't
@@ -1812,6 +1869,16 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     const callerTabId = sender && sender.tab ? sender.tab.id : null
     const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 70000)
     scanGenericProduct(msg.url, callerTabId)
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true // async response — keep the channel open
+  }
+  if (msg.type === 'MVP_CC_FIND') {
+    // Live "is this product a Creator Connections campaign?" lookup: CC search by
+    // brand/keyword + resolve each result's ASIN until the target matches. A
+    // search plus up to ~15 background ASIN resolves — allow up to 3 minutes.
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 180000)
+    ccFindCampaign(msg.query || '', msg.asin || '')
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async response — keep the channel open

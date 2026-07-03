@@ -13,7 +13,7 @@ import { useState, useCallback } from 'react'
 import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
 import { Loader2, Search, Sparkles, ExternalLink, PackageSearch, MessageSquare } from 'lucide-react'
-import { requestProductSearch, type FinderProduct } from '@/lib/extension-frame'
+import { requestProductSearch, requestFindCampaign, type FinderProduct } from '@/lib/extension-frame'
 import MessageBrandModal, { type MessageBrandCampaign } from '@/components/campaigns/MessageBrandModal'
 
 export default function ProductFinderPage() {
@@ -204,7 +204,17 @@ export default function ProductFinderPage() {
         </div>
       )}
 
-      {msgProduct && <MessageBrandModal campaign={msgProduct} onClose={() => setMsgProduct(null)} />}
+      {msgProduct && (
+        <MessageBrandModal
+          campaign={msgProduct}
+          onClose={() => setMsgProduct(null)}
+          // Live "is this a Creator Connections campaign?" lookup — only reached
+          // from the modal when this product wasn't already an imported campaign.
+          // We drive SCOUT's CC search by the ASIN (Amazon's CC search accepts an
+          // ASIN) and confirm the resolved card matches.
+          onFindCampaign={() => requestFindCampaign(msgProduct.asin, msgProduct.asin)}
+        />
+      )}
     </>
   )
 }

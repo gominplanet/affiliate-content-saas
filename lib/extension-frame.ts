@@ -394,6 +394,52 @@ export async function requestProductSearch(
   return { ok: false, error: resp.error || 'search-failed', products: resp.products ?? [] }
 }
 
+export interface FindCampaignResult {
+  ok: boolean
+  found?: boolean
+  detailsUrl?: string | null
+  campaignName?: string | null
+  brand?: string | null
+  commissionPct?: number | null
+  endsAt?: string | null
+  scanned?: number    // how many result cards we resolved before giving up
+  total?: number      // how many campaigns Amazon's search returned
+  error?: string
+}
+
+/**
+ * Live "is this product a Creator Connections campaign?" lookup. Given the
+ * product's brand/keyword and its ASIN, SCOUT drives Amazon's CC search in a
+ * background tab and resolves each result card's real ASIN (hidden on the card)
+ * until one matches — returning the campaign's details URL so the caller can
+ * auto-send a brand message. Used by the Product Finder's Message flow when the
+ * user has NOT already imported this campaign. Slow (a search + up to ~15
+ * background ASIN resolves), so a long timeout. Best-effort: resolves, never
+ * throws.
+ */
+export async function requestFindCampaign(query: string, asin: string): Promise<FindCampaignResult> {
+  if (!/^[A-Za-z0-9]{10}$/.test(asin || '')) return { ok: false, error: 'no-asin' }
+  if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
+  const resp = await sendToExtension<{
+    ok?: boolean; found?: boolean; detailsUrl?: string | null; campaignName?: string | null
+    brand?: string | null; commissionPct?: number | null; endsAt?: string | null
+    scanned?: number; total?: number; error?: string
+  }>({ type: 'MVP_CC_FIND', query: query || '', asin }, 185000)
+  if (!resp) return { ok: false, error: 'timeout' }
+  if (resp.ok) {
+    return {
+      ok: true, found: !!resp.found,
+      detailsUrl: resp.detailsUrl ?? null,
+      campaignName: resp.campaignName ?? null,
+      brand: resp.brand ?? null,
+      commissionPct: resp.commissionPct ?? null,
+      endsAt: resp.endsAt ?? null,
+      scanned: resp.scanned, total: resp.total,
+    }
+  }
+  return { ok: false, error: resp.error || 'find-failed' }
+}
+
 /** A raw Creator Connections campaign row as scraped by the extension. All
  *  filtering / ranking happens in the app — this is the unfiltered harvest. */
 export interface ScoutedCampaign {

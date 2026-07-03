@@ -13,8 +13,8 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { toast } from 'sonner'
-import { X, Loader2, Sparkles, Send, MessageSquare, Plus, Trash2, Copy } from 'lucide-react'
-import { requestSendBrand } from '@/lib/extension-frame'
+import { X, Loader2, Sparkles, Send, MessageSquare, Plus, Trash2, Copy, Radar } from 'lucide-react'
+import { requestSendBrand, type FindCampaignResult } from '@/lib/extension-frame'
 
 export interface MessageBrandCampaign {
   product: string
@@ -70,7 +70,16 @@ function splitSegments(msg: string): string[] {
   return out.length ? out : ['']
 }
 
-export default function MessageBrandModal({ campaign, onClose, onSent }: { campaign: MessageBrandCampaign; onClose: () => void; onSent?: () => void }) {
+export default function MessageBrandModal({ campaign, onClose, onSent, onFindCampaign }: {
+  campaign: MessageBrandCampaign
+  onClose: () => void
+  onSent?: () => void
+  // Optional live "is this a Creator Connections campaign?" lookup. When the modal
+  // opens WITHOUT a campaign details URL (e.g. from the Product Finder) this powers
+  // the "Search Creator Connections" button — on a hit, the modal flips from
+  // compose+copy to auto-send. Returns the SCOUT find result.
+  onFindCampaign?: () => Promise<FindCampaignResult>
+}) {
   const [opts, setOpts] = useState<Options>(DEFAULT_OPTIONS)
   const [address, setAddress] = useState('')
   const [extraNotes, setExtraNotes] = useState('')
@@ -79,6 +88,15 @@ export default function MessageBrandModal({ campaign, onClose, onSent }: { campa
   const [drafting, setDrafting] = useState(false)
   const [sending, setSending] = useState(false)
   const [sendProgress, setSendProgress] = useState(0) // 0-100, estimated send gauge
+  // Live-find state: a campaign discovered on Amazon after opening. Overrides the
+  // (absent) campaign.detailsUrl so canSend flips true and Send targets it.
+  const [finding, setFinding] = useState(false)
+  const [liveDetailsUrl, setLiveDetailsUrl] = useState('')
+  const [liveBrand, setLiveBrand] = useState('')
+  const [findMiss, setFindMiss] = useState<string | null>(null)
+
+  const effectiveDetailsUrl = campaign.detailsUrl || liveDetailsUrl
+  const effectiveBrand = liveBrand || campaign.brandLabel || ''
 
   // Restore saved preferences (options + forwarding address) once on open.
   useEffect(() => {
@@ -100,7 +118,7 @@ export default function MessageBrandModal({ campaign, onClose, onSent }: { campa
           product: campaign.product,
           asin: campaign.asin,
           commissionPct: campaign.commissionPct,
-          brand: campaign.brandLabel || '',
+          brand: effectiveBrand,
           options: { ...opts, address: opts.shareAddress ? address : '' },
           extraNotes,
         }),
@@ -113,7 +131,7 @@ export default function MessageBrandModal({ campaign, onClose, onSent }: { campa
     } finally {
       setDrafting(false)
     }
-  }, [campaign, opts, address, extraNotes])
+  }, [campaign, opts, address, extraNotes, effectiveBrand])
 
   // Draft once on open.
   useEffect(() => { draft() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [])
@@ -132,8 +150,45 @@ export default function MessageBrandModal({ campaign, onClose, onSent }: { campa
   const nothingToSend = cleanSegments.length === 0
   // SCOUT can only auto-send through a Creator Connections campaign chat. When
   // there's no campaign details URL (e.g. opened from the Product Finder), we
-  // switch to compose+copy: the user pastes the pitch wherever they reach the brand.
-  const canSend = !!campaign.detailsUrl
+  // switch to compose+copy — unless the live "Search Creator Connections" lookup
+  // finds one, which fills liveDetailsUrl and flips this back to Send.
+  const canSend = !!effectiveDetailsUrl
+
+  // Live CC lookup: ask SCOUT whether this product is a running campaign. On a hit
+  // we adopt its details URL (→ auto-send) and, if it surfaced the real brand,
+  // re-draft so the greeting names the brand.
+  const runFind = useCallback(async () => {
+    if (!onFindCampaign) return
+    setFinding(true); setFindMiss(null)
+    try {
+      const r = await onFindCampaign()
+      if (r.ok && r.found && r.detailsUrl) {
+        setLiveDetailsUrl(r.detailsUrl)
+        const brand = (r.brand || '').trim()
+        if (brand && brand.toLowerCase() !== effectiveBrand.toLowerCase()) { setLiveBrand(brand) }
+        toast.success(`Found a Creator Connections campaign${brand ? ` from ${brand}` : ''} — you can auto-send now.`)
+      } else if (r.ok) {
+        setFindMiss(`No live campaign matched${typeof r.scanned === 'number' ? ` (checked ${r.scanned})` : ''}. You can still copy the pitch.`)
+      } else if (r.error === 'not-installed') {
+        toast.error('Install / enable SCOUT to search Creator Connections.')
+      } else if (r.error === 'timeout') {
+        setFindMiss('The Creator Connections search timed out. You can still copy the pitch, or try again.')
+      } else {
+        setFindMiss(`Couldn't search Creator Connections (${r.error}). You can still copy the pitch.`)
+      }
+    } catch (e) {
+      setFindMiss(e instanceof Error ? e.message : 'Search failed.')
+    } finally {
+      setFinding(false)
+    }
+  }, [onFindCampaign, effectiveBrand])
+
+  // When a live find surfaced a different brand, refresh the draft so the greeting
+  // uses it. Runs only after liveBrand changes (not on first mount).
+  useEffect(() => {
+    if (liveBrand) draft()
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [liveBrand])
 
   const copyAll = useCallback(async () => {
     const toSend = segments.map(s => s.trim()).filter(Boolean)
@@ -162,7 +217,7 @@ export default function MessageBrandModal({ campaign, onClose, onSent }: { campa
     try {
       // Rejoin with the marker; SCOUT splits again and sends one Send per box.
       const joined = toSend.join(`\n\n${MARK}\n\n`)
-      const r = await requestSendBrand(campaign.detailsUrl, joined)
+      const r = await requestSendBrand(effectiveDetailsUrl, joined)
       clearInterval(iv)
       setSendProgress(100)
       if (r.ok) {
@@ -190,7 +245,7 @@ export default function MessageBrandModal({ campaign, onClose, onSent }: { campa
       setSending(false)
       setTimeout(() => setSendProgress(0), 700)
     }
-  }, [segments, opts.shareAddress, address, campaign.detailsUrl, campaign.asin, onClose, onSent])
+  }, [segments, opts.shareAddress, address, effectiveDetailsUrl, campaign.asin, onClose, onSent])
 
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.55)' }} onClick={onClose}>
@@ -295,6 +350,33 @@ export default function MessageBrandModal({ campaign, onClose, onSent }: { campa
             <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--surface-2)' }}>
               <div className="h-full transition-all duration-150 ease-linear" style={{ width: `${sendProgress}%`, background: 'linear-gradient(45deg, #7C3AED 0%, #bc1888 100%)' }} />
             </div>
+          </div>
+        )}
+
+        {/* Live "is this a Creator Connections campaign?" lookup — only when we
+            weren't opened with a campaign chat and the caller provided the hook. */}
+        {!campaign.detailsUrl && onFindCampaign && (
+          <div className="px-5 pt-3">
+            {liveDetailsUrl ? (
+              <div className="flex items-center gap-2 text-[12px] rounded-lg px-3 py-2" style={{ background: 'rgba(52,199,89,0.10)', color: '#248a3d' }}>
+                <Radar size={14} /> Creator Connections campaign found{liveBrand ? ` · ${liveBrand}` : ''} — this will auto-send on Amazon.
+              </div>
+            ) : (
+              <>
+                <button onClick={runFind} disabled={finding || sending}
+                  className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-[12px] font-semibold border disabled:opacity-60"
+                  style={{ color: '#7C3AED', borderColor: '#d6c6fb', background: 'rgba(124,58,237,0.05)' }}>
+                  {finding ? <Loader2 size={13} className="animate-spin" /> : <Radar size={13} />}
+                  {finding ? 'Searching Creator Connections…' : 'Search Creator Connections — can I auto-send this?'}
+                </button>
+                {finding && (
+                  <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-faint)' }}>
+                    SCOUT is checking Amazon in the background (search + ID match). This can take a minute — you won&apos;t leave this page.
+                  </p>
+                )}
+                {findMiss && <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-soft)' }}>{findMiss}</p>}
+              </>
+            )}
           </div>
         )}
 

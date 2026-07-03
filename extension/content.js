@@ -319,6 +319,43 @@ if (!window.__ccScoutListener) {
       })().catch(e => sendResponse({ error: e?.message || 'parse failed', campaigns: [], diag: collectDiag() }))
       return true // async response
     }
+    // CC_FIND — "is THIS product a live Creator Connections campaign?" Given a
+    // search query (brand/product keyword) + the target ASIN, drive Amazon's CC
+    // search, then resolve each result card's real ASIN (hidden on the card, only
+    // on its details page) until we hit the match. Short-circuits on the first
+    // hit and caps how many cards we resolve so a miss stays fast. Powers the
+    // Product Finder's "Find on Creator Connections → auto-send" path.
+    if (msg?.type === 'CC_FIND') {
+      ;(async () => {
+        try {
+          const want = String(msg.asin || '').toUpperCase()
+          if (!/^[A-Z0-9]{10}$/.test(want)) { sendResponse({ ok: false, error: 'no-asin' }); return }
+          const { rows, total } = await scoutRunSearch({ keyword: msg.query || '', maxCards: msg.maxCards || 120 })
+          const cands = rows.filter((r) => r.detailsUrl)
+          const cap = Math.min(cands.length, msg.maxResolve || 15)
+          for (let i = 0; i < cap; i++) {
+            const r = cands[i]
+            let asin = null
+            try { asin = await resolveCampaignAsin(r.detailsUrl) } catch (e) {}
+            if (asin && asin.toUpperCase() === want) {
+              sendResponse({
+                ok: true, found: true,
+                detailsUrl: r.detailsUrl,
+                campaignName: r.campaignName || null,
+                brand: r.brand || null,
+                commissionPct: r.commissionPct != null ? r.commissionPct : null,
+                endsAt: r.endsAt || null,
+              })
+              return
+            }
+          }
+          sendResponse({ ok: true, found: false, scanned: cap, total: total != null ? total : rows.length })
+        } catch (e) {
+          sendResponse({ ok: false, error: (e && e.message) || 'cc-find-failed' })
+        }
+      })()
+      return true // async response
+    }
   })
 }
 
