@@ -1918,19 +1918,77 @@ async function sendBrandMessageInPage(message) {
   return { ok: true, steps, groups: sent }
 }
 
-// Open the campaign FOREGROUND (React campaign pages don't render reliably in a
-// throttled background tab — same reason the CC scanner opens foreground), fill
-// + submit the message, close the tab, and hand focus straight back to MVP so
-// the user barely sees it.
+// Runs IN a campaign tab: if the session is on an ONSITE store-id (the "onamz…"
+// prefix), Creator Connections is blocked — flip the StoreID switcher to the
+// OFFSITE store (same tag without onamz) so CC unlocks. Returns { switched } —
+// a switch reloads the page, so the caller re-opens the details URL after.
+function ensureOffsiteStoreInPage() {
+  const norm = (s) => (s || '').replace(/\s+/g, ' ').trim()
+  const bodyText = document.body ? (document.body.innerText || '') : ''
+  const onsiteError = /onsite store[- ]?id/i.test(bodyText)
+  const curM = bodyText.match(/store\s?id:\s*([a-z0-9]+-\d{2})/i)
+  const cur = curM ? curM[1] : null
+  const needs = onsiteError || (!!cur && /^onamz/i.test(cur))
+  if (!needs) return { onsite: false, switched: false, store: cur }
+  const looksLikeStoreId = (s) => /[a-z0-9]+-\d{2}\b/i.test(s || '')
+  const clickEl = (el) => { ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach((t) => { try { el.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, view: window })) } catch (e) {} }) }
+  // Native <select> switcher.
+  for (const s of document.querySelectorAll('select')) {
+    const opts = [...s.options]
+    if (!opts.some((o) => looksLikeStoreId(o.value || o.textContent))) continue
+    const target = opts.find((o) => { const v = (o.value || o.textContent || ''); return looksLikeStoreId(v) && !/onamz/i.test(v) })
+    if (target) {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')
+      if (setter && setter.set) setter.set.call(s, target.value); else s.value = target.value
+      s.dispatchEvent(new Event('input', { bubbles: true }))
+      s.dispatchEvent(new Event('change', { bubbles: true }))
+      return { onsite: true, switched: true, store: norm(target.value || target.textContent) }
+    }
+  }
+  // Custom dropdown: open it, wait for the menu, click the non-onamz store.
+  const ctrl = [...document.querySelectorAll('button,[role="button"],[aria-haspopup],a,span,div')]
+    .find((e) => /store\s?id:/i.test(e.innerText || e.textContent || '') && norm(e.innerText || e.textContent).length < 60)
+  if (ctrl) {
+    clickEl(ctrl)
+    return new Promise((resolve) => setTimeout(() => {
+      const items = [...document.querySelectorAll('[role="option"],[role="menuitem"],li,button,a,div')]
+        .filter((e) => { const t = norm(e.innerText || e.textContent); return looksLikeStoreId(t) && t.length < 60 })
+      const target = items.find((e) => !/onamz/i.test(e.innerText || e.textContent || ''))
+      if (target) { clickEl(target); resolve({ onsite: true, switched: true, store: norm(target.innerText || target.textContent) }) }
+      else resolve({ onsite: true, switched: false, store: cur, reason: 'no-offsite-option' })
+    }, 800))
+  }
+  return { onsite: true, switched: false, store: cur, reason: 'no-switcher' }
+}
+
+// Send the brand message entirely in a HIDDEN BACKGROUND tab — the user stays on
+// the MVP page and never gets moved to Amazon. React executes in background tabs
+// (only paint is throttled) and every step reads/writes the DOM, so no visible
+// layout is needed. If the campaign page is blocked by an onsite store-id, we
+// auto-switch to the offsite store (still in the background) and re-open it.
 async function sendBrandMessage(detailsUrl, message, callerTabId) {
   if (!detailsUrl) return { ok: false, error: 'no-url' }
   if (!message || !message.trim()) return { ok: false, error: 'no-message' }
   let tabId = null
   try {
-    const tab = await chrome.tabs.create({ url: detailsUrl, active: true })
+    const tab = await chrome.tabs.create({ url: detailsUrl, active: false })
     tabId = tab.id
     await waitForTabLoad(tabId, 25000)
-    await _sleep(3000)
+    await _sleep(2500)
+    // Auto-fix the store-id if CC is blocked (all in this background tab).
+    try {
+      const sres = await chrome.scripting.executeScript({ target: { tabId }, func: ensureOffsiteStoreInPage })
+      const sw = sres && sres[0] && sres[0].result
+      if (sw && sw.switched) {
+        await _sleep(1500)
+        try { await waitForTabLoad(tabId, 25000) } catch (e) {}
+        // The store switch may bounce us to the Associates home — re-open the
+        // campaign details page, now on the eligible offsite store.
+        await chrome.tabs.update(tabId, { url: detailsUrl })
+        await waitForTabLoad(tabId, 25000)
+        await _sleep(2500)
+      }
+    } catch (e) { /* non-fatal — try the send anyway */ }
     let r = null
     for (let i = 0; i < 2; i++) {
       const res = await chrome.scripting.executeScript({ target: { tabId }, func: sendBrandMessageInPage, args: [message] })
@@ -1942,7 +2000,8 @@ async function sendBrandMessage(detailsUrl, message, callerTabId) {
   } catch (e) {
     return { ok: false, error: e && e.message ? e.message : 'exception' }
   } finally {
+    // Opened in the background — nothing to restore, and re-activating the caller
+    // could itself flicker the user's tab. Just close our hidden tab.
     if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
-    if (callerTabId != null) { try { await chrome.tabs.update(callerTabId, { active: true }) } catch (e) {} }
   }
 }

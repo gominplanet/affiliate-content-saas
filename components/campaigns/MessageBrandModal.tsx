@@ -285,7 +285,7 @@ export default function MessageBrandModal({ campaign, onClose }: { campaign: Mes
           </button>
         </div>
         <p className="px-5 pb-4 -mt-1 text-[11px]" style={{ color: 'var(--text-faint)' }}>
-          SCOUT briefly opens the campaign in your Amazon session and sends these {cleanSegments.length > 1 ? `${cleanSegments.length} messages one after another` : 'message'}, then returns you here. Review them above first; they go out as written.
+          SCOUT sends {cleanSegments.length > 1 ? `these ${cleanSegments.length} messages one after another` : 'this message'} from your Amazon session — in the background, without leaving this page (it even fixes your Store ID if needed). Review {cleanSegments.length > 1 ? 'them' : 'it'} above first; {cleanSegments.length > 1 ? 'they go' : 'it goes'} out as written.
         </p>
       </div>
     </div>

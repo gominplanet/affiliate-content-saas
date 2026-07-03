@@ -1177,27 +1177,25 @@ function mountSearchPanel() {
   })
 
   // Store-ID guard — CC is blocked on an onsite (onamz…) store. When we detect
-  // the wrong store (banner error OR an onamz-prefixed StoreID), show a one-click
-  // switch to the offsite store so the user doesn't have to hunt the dropdown.
-  function paintStoreWarning() {
-    if (!storeNeedsSwitch()) return
+  // the wrong store (banner error OR an onamz-prefixed StoreID), AUTO-switch to
+  // the offsite store — no click. Guarded to one attempt per page load (a switch
+  // reloads the page, so we never loop) via a window flag that survives panel
+  // re-mounts but resets on the fresh injection after reload.
+  async function autoFixStore() {
+    if (!storeNeedsSwitch() || window.__mvpStoreAutoFixed) return
+    window.__mvpStoreAutoFixed = true
     const cur = readCurrentStoreId() || 'onsite store'
-    res.innerHTML = `<div class="mvp-note" style="border:1px solid #fca5a5;background:#fef2f2;color:#991b1b;border-radius:8px;padding:8px">⚠️ You're on an <b>onsite</b> Store ID (${String(cur).replace(/</g, '&lt;')}). Creator Connections needs your <b>offsite</b> store.<button class="mvp-btn mvp-fixstore" style="width:100%;margin-top:6px">Switch to offsite store</button></div>`
-    const fx = q('.mvp-fixstore')
-    if (fx) fx.addEventListener('click', async () => {
-      fx.textContent = 'Switching…'; fx.disabled = true
-      let r
-      try { r = await switchToOffsiteStore() } catch (e) { r = { ok: false, reason: (e && e.message) || 'error' } }
-      if (r.ok) {
-        res.innerHTML = `<div class="mvp-note">✅ Switched to <b>${String(r.store || 'offsite store').replace(/</g, '&lt;')}</b>${r.already ? ' (already selected).' : ' — the page reloads with Creator Connections access.'}</div>`
-      } else {
-        fx.textContent = 'Switch to offsite store'; fx.disabled = false
-        res.innerHTML = `<div class="mvp-note" style="border:1px solid #fca5a5;background:#fef2f2;color:#991b1b;border-radius:8px;padding:8px">Couldn't switch: ${String(r.reason || 'unknown').replace(/</g, '&lt;')}<br><button class="mvp-btn mvp-fixstore" style="width:100%;margin-top:6px">Try again</button></div>`
-        const again = q('.mvp-fixstore'); if (again) again.addEventListener('click', () => paintStoreWarning())
-      }
-    })
+    res.innerHTML = `<div class="mvp-note">Wrong Store ID (${String(cur).replace(/</g, '&lt;')}) for Creator Connections — switching to your offsite store…</div>`
+    let r
+    try { r = await switchToOffsiteStore() } catch (e) { r = { ok: false, reason: (e && e.message) || 'error' } }
+    if (r.ok) {
+      res.innerHTML = `<div class="mvp-note">✅ Switched to <b>${String(r.store || 'offsite store').replace(/</g, '&lt;')}</b>${r.already ? ' (already selected).' : ' — reloading with Creator Connections access…'}</div>`
+    } else {
+      res.innerHTML = `<div class="mvp-note" style="border:1px solid #fca5a5;background:#fef2f2;color:#991b1b;border-radius:8px;padding:8px">Couldn't auto-switch the Store ID (${String(r.reason || 'unknown').replace(/</g, '&lt;')}). Pick your offsite store (no "onamz" prefix) from the StoreID dropdown, or <button class="mvp-btn mvp-fixstore" style="width:100%;margin-top:6px">Retry auto-switch</button></div>`
+      const fx = q('.mvp-fixstore'); if (fx) fx.addEventListener('click', () => { window.__mvpStoreAutoFixed = false; autoFixStore() })
+    }
   }
-  try { paintStoreWarning() } catch (e) {}
+  try { autoFixStore() } catch (e) {}
 }
 
 // Mount now + keep it in sync with SPA navigation (CC is a React app). Cheap
