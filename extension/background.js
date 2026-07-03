@@ -1789,9 +1789,11 @@ async function openAndPlaceBrandMessage(detailsUrl, message) {
 // click, contenteditable fallback, long polling), fill the message, VERIFY the
 // full text is in, then click Send. Returns { ok, steps, reason } so failures
 // are diagnosable. Only submits when our exact text is present — never a partial.
-function sendBrandMessageInPage(message) {
+async function sendBrandMessageInPage(message) {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const norm = (s) => (s || '').replace(/\s+/g, ' ').trim()
   const textOf = (el) => norm(el && (el.innerText || el.textContent))
+  const attrText = (el) => norm((el.innerText || el.textContent || '') + ' ' + (el.getAttribute('aria-label') || '') + ' ' + (el.getAttribute('title') || ''))
   const findMsgBtn = () => {
     const c = [...document.querySelectorAll('button,a,[role="button"]')]
     return c.find((e) => /message brand|message the brand/i.test(textOf(e)))
@@ -1826,41 +1828,65 @@ function sendBrandMessageInPage(message) {
   }
   const readInput = (input) => input.kind === 'ta' ? input.el.value : textOf(input.el)
   const findSend = (scope) => [...(scope || document).querySelectorAll('button,[role="button"]')].find((b) => /^\s*send\s*$/i.test(textOf(b)) && !b.disabled)
-  const want = norm(message).slice(0, 40)
-  const url0 = location.href
-
-  const steps = { opened: false, filled: false, sent: false }
-  return new Promise((resolve) => {
-    let tries = 0
-    const openIv = setInterval(() => {
-      tries++
-      const input = findInput()
-      if (!input) {
-        const b = findMsgBtn(); if (b) { realClick(b); steps.opened = true }
-        if (tries >= 60) {
-          clearInterval(openIv)
-          resolve({
-            ok: false, steps,
-            reason: steps.opened ? 'box-never-opened' : 'no-message-button',
-            diag: { clickedMsgBtn: steps.opened, navigated: location.href !== url0, url: location.href.slice(0, 120), textareas: document.querySelectorAll('textarea').length, ce: document.querySelectorAll('[contenteditable="true"]').length },
-          })
-        }
-        return
-      }
-      clearInterval(openIv)
-      steps.opened = true
-      setInput(input, message)
-      steps.filled = true
-      let s = 0
-      const sendIv = setInterval(() => {
-        s++
-        if (!norm(readInput(input)).includes(want)) { setInput(input, message); if (s > 25) { clearInterval(sendIv); resolve({ ok: false, steps, reason: 'value-not-set' }) } return }
-        const send = findSend(input.el.closest('[role="dialog"],form,section,div') || document)
-        if (send) { realClick(send); steps.sent = true; clearInterval(sendIv); setTimeout(() => resolve({ ok: true, steps }), 800); return }
-        if (s > 30) { clearInterval(sendIv); resolve({ ok: false, steps, reason: 'send-button-not-found', diag: { sendButtons: [...document.querySelectorAll('button,[role="button"]')].filter(b => /send/i.test(textOf(b))).length } }) }
-      }, 300)
-    }, 350)
+  // "Add to Message Group" only renders AFTER the box has text — search broadly
+  // (button/a/role/span/div) by text/aria/title, avoiding a big parent container.
+  const findAddToGroup = () => [...document.querySelectorAll('button,a,[role="button"],span,div')].find((e) => {
+    const t = attrText(e); return /add to (message )?group/i.test(t) && t.length < 42
   })
+  // Split on the ---- Add to Message Group ---- markers (fallback: blank lines).
+  const splitSegments = (msg) => {
+    const s = String(msg || '').trim()
+    const hasMarker = /-{2,}\s*add to message group\s*-{2,}/i.test(s)
+    const parts = hasMarker ? s.split(/\s*-{2,}\s*add to message group\s*-{2,}\s*/i) : s.split(/\n\s*\n+/)
+    return parts.map((x) => x.trim()).filter(Boolean)
+  }
+  const url0 = location.href
+  const steps = { opened: false, filled: false, sent: false }
+
+  // Open the message box (poll: React may render the box a beat after the click).
+  let input = findInput()
+  for (let t = 0; t < 60 && !input; t++) {
+    const b = findMsgBtn(); if (b) { realClick(b); steps.opened = true }
+    await sleep(350)
+    input = findInput()
+  }
+  if (!input) {
+    return { ok: false, steps, reason: steps.opened ? 'box-never-opened' : 'no-message-button',
+      diag: { clickedMsgBtn: steps.opened, navigated: location.href !== url0, url: location.href.slice(0, 120), textareas: document.querySelectorAll('textarea').length, ce: document.querySelectorAll('[contenteditable="true"]').length } }
+  }
+  steps.opened = true
+
+  // Fill each segment; queue all but the last via "Add to Message Group".
+  const segments = splitSegments(message)
+  let grouped = 0
+  let groupSeen = false
+  if (segments.length > 1) {
+    for (let i = 0; i < segments.length; i++) {
+      const inp = findInput() || input
+      setInput(inp, segments[i]); steps.filled = true
+      await sleep(550)
+      if (i < segments.length - 1) {
+        const g = findAddToGroup()
+        if (g) { groupSeen = true; realClick(g); grouped++; await sleep(850) }
+        else { const inp2 = findInput() || inp; setInput(inp2, segments.slice(i).join('\n\n')); await sleep(500); break }
+      }
+    }
+  } else {
+    setInput(input, message); steps.filled = true; await sleep(600)
+  }
+
+  // Verify the last segment is in the box, then Send.
+  const lastSeg = segments.length > 1 ? segments[segments.length - 1] : message
+  const want = norm(lastSeg).slice(0, 40)
+  for (let s = 0; s < 30; s++) {
+    const inp = findInput() || input
+    if (!norm(readInput(inp)).includes(want)) { setInput(inp, lastSeg); await sleep(300); continue }
+    const send = findSend(inp.el.closest('[role="dialog"],form,section,div') || document)
+    if (send) { realClick(send); steps.sent = true; await sleep(800); return { ok: true, steps, groups: grouped + 1, groupSeen } }
+    await sleep(300)
+  }
+  return { ok: false, steps, reason: 'send-button-not-found', groups: grouped + 1, groupSeen,
+    diag: { sendButtons: [...document.querySelectorAll('button,[role="button"]')].filter((b) => /send/i.test(textOf(b))).length } }
 }
 
 // Open the campaign FOREGROUND (React campaign pages don't render reliably in a

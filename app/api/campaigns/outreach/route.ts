@@ -142,38 +142,33 @@ export async function POST(request: Request) {
     const extraNotes = (body.extraNotes || '').toString().trim().slice(0, 500)
     if (extraNotes) asks.push(`Also weave in: ${extraNotes}`)
 
-    const system = `You draft short, warm, professional direct messages a creator sends to a brand inside Amazon Creator Connections' own "Message Brand" chat. This is a CHAT MESSAGE, not an email: no subject line, no "Dear", no signature block — just the message.
+    const system = `You draft a warm, professional brand-outreach a creator sends inside Amazon Creator Connections' "Message Brand" chat. Not an email: no subject line, no "Dear", no signature block.
+
+CRITICAL — Amazon's chat sends a MESSAGE GROUP: several short messages in a row, NOT one block. Separate each message with a line containing EXACTLY:
+---- Add to Message Group ----
+Put that marker line ONLY between messages, never inside one. Produce 3–4 messages in this order (adapt to the facts; drop a message if you have nothing real for it):
+
+Message 1 — "Hi <Brand> team," + who I am + quick credibility (ONLY from the creator facts given) + one clear offer of authentic content that drives their Creator Connections sales. Add my portfolio / media-kit / site link if given.
+---- Add to Message Group ----
+Message 2 — the specific ask: request a sample if that's selected; if a shipping address is given, say to send samples to the exact name + address shown below.
+---- Add to Message Group ----
+Message 3 — ONLY if a shipping name/address is given: the NAME and ADDRESS on their own, clearly labelled (e.g. "NAME: …" / "ADDRESS: …"), so the brand can copy them.
+---- Add to Message Group ----
+Message 4 — a warm one-line close + my name / email if given.
 
 Rules:
-- Hard limit: 900 characters. Shorter is better.
-- First person, genuine, specific to THIS brand and product. Reference the actual product/campaign so it never reads as a template.
-- Establish quick credibility from the creator facts (only what's given — never invent follower counts, sales, or claims).
-- Never invent claims beyond the facts given.
-
-FORMAT — this is critical. Amazon's message box keeps line breaks, so write it as SHORT paragraphs separated by a BLANK LINE (a real \\n\\n between each), NOT one block:
-
-Hi <Brand> team,
-<blank line>
-<1–2 sentences: warm intro + who I am + one clear offer of authentic content that drives their Creator Connections sales>
-<blank line>
-<the specific asks below, e.g. a sample request — 1–2 sentences>
-<blank line>
-<one line with my portfolio / media-kit link, if given>
-<blank line>
-Thanks,
-<creator name if known>
-
-Always start with the "Hi <Brand> team," greeting on its own line. Use real newlines (\\n) between blocks — never run it together.
-- Plain text only. No markdown, no bullet lists, no emojis unless natural.
+- Each message ≤ 900 characters, plain text, first person, specific to THIS brand + product (reference the real product so it never reads as a template).
+- NEVER invent credibility, follower counts, sales, or any claim beyond the facts given.
+- No markdown, no bullet lists, no emojis unless natural.
 ${BANNED_RULE}
-Output ONLY the message text — nothing else.`
+Output ONLY the message text (with the marker lines) — nothing else.`
 
     const userMsg = `Write the message.\n\n--- CREATOR (who is sending) ---\n${facts.join('\n') || '(minimal profile — keep credibility generic and honest)'}\n\n--- CAMPAIGN (who they're messaging) ---\n${campaign.join('\n')}\n\n--- INCLUDE THESE (weave in naturally, stay under 900 chars) ---\n${asks.length ? asks.map(a => `- ${a}`).join('\n') : '- A simple, warm offer to collaborate.'}`
 
     const client = createAnthropicClient()
     const msg = await client.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 600,
+      max_tokens: 1100, // a few short messages + the group markers
       system,
       messages: [{ role: 'user', content: userMsg }],
     })
@@ -187,12 +182,24 @@ Output ONLY the message text — nothing else.`
       .join('')
       .trim()
     text = scrubBanned(text)
-    // Enforce Amazon's 1000-char cap with headroom, breaking on a word boundary.
-    if (text.length > 950) {
-      text = text.slice(0, 950)
-      const lastSpace = text.lastIndexOf(' ')
-      if (lastSpace > 600) text = text.slice(0, lastSpace)
+    // The draft is a MESSAGE GROUP separated by "---- Add to Message Group ----".
+    // Amazon caps EACH message at 1000 chars, so enforce the cap PER SEGMENT
+    // (word-boundary), not on the whole thing — a whole-text chop would truncate
+    // mid-group and drop the address/close. Then rejoin with the marker.
+    const MARK = '---- Add to Message Group ----'
+    const capSeg = (seg: string): string => {
+      const s = seg.trim()
+      if (s.length <= 950) return s
+      let cut = s.slice(0, 950)
+      const lastSpace = cut.lastIndexOf(' ')
+      if (lastSpace > 500) cut = cut.slice(0, lastSpace)
+      return cut
     }
+    text = text
+      .split(/\s*-{2,}\s*add to message group\s*-{2,}\s*/i)
+      .map(capSeg)
+      .filter(Boolean)
+      .join(`\n\n${MARK}\n\n`)
     if (!text) return NextResponse.json({ error: 'Draft came back empty — try again' }, { status: 502, headers: CORS })
 
     return NextResponse.json({ ok: true, message: text }, { headers: CORS })
