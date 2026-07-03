@@ -24,7 +24,7 @@ import { createWordPressService } from '@/services/wordpress'
 import { resolveFinalUrl } from '@/lib/product-link'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
-import { researchProductFromUrl, fetchProductImageFromPage } from '@/services/research'
+import { researchProductFromUrl, researchProductByWebSearch, fetchProductImageFromPage } from '@/services/research'
 import { checkUsageLimit, checkGenerationLimit, normalizeTier } from '@/lib/tier'
 import { scrubBanned, BANNED_RULE } from '@/lib/scrub'
 import { learnProfileToPrompt } from '@/lib/learn'
@@ -220,6 +220,21 @@ export async function POST(req: Request) {
       if (typeof r === 'string') research = r
     }
   } catch { /* research is best-effort */ }
+
+  // If the direct page fetch came back thin or empty — which is exactly what
+  // happens on Walmart, Target and most stores that block server-side scraping —
+  // research the product BY NAME with live web search instead (specs, reviews,
+  // comparisons from the open web). We have a real name from the URL slug, so
+  // this is where the actual grounding comes from for non-Amazon links.
+  const hasName = !!(productName && productName !== 'this product')
+  if (research.trim().length < 200 && hasName) {
+    try {
+      const r = await researchProductByWebSearch(productName, finalUrl || link || '', ctx)
+      if (typeof r === 'string' && !/NO_PRODUCT_INFO/i.test(r) && r.trim().length > research.trim().length) {
+        research = r
+      }
+    } catch { /* best-effort */ }
+  }
 
   if (!pDescription && !research && bullets.length === 0 && !providedName && !derivedName) {
     return NextResponse.json({ error: 'Couldn’t find enough about that product. Add the product name or a clearer link and try again.' }, { status: 422 })
