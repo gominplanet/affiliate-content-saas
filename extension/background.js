@@ -1537,8 +1537,9 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     // Compose-and-send from the MVP modal: the user already reviewed the exact
     // text and clicked Send, so we open the campaign in a BACKGROUND tab, fill
     // the message and submit it — all inside the user's session, no visible tab.
+    const callerTabId = sender && sender.tab ? sender.tab.id : null
     const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 75000)
-    sendBrandMessage(msg.detailsUrl, msg.message || '')
+    sendBrandMessage(msg.detailsUrl, msg.message || '', callerTabId)
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async response — keep the channel open
@@ -1603,18 +1604,19 @@ async function openAndPlaceBrandMessage(detailsUrl, message) {
 function sendBrandMessageInPage(message) {
   const norm = (s) => (s || '').replace(/\s+/g, ' ').trim()
   const textOf = (el) => norm(el && (el.innerText || el.textContent))
-  const vis = (el) => { if (!el) return false; try { const r = el.getBoundingClientRect(); return r.width > 4 && r.height > 4 } catch (e) { return true } }
   const findMsgBtn = () => {
     const c = [...document.querySelectorAll('button,a,[role="button"]')]
     return c.find((e) => /message brand|message the brand/i.test(textOf(e)))
       || c.find((e) => /message/i.test(textOf(e)) && /brand/i.test(textOf(e)))
-      || c.find((e) => /^\s*message\s*$/i.test(textOf(e)) && vis(e))
   }
+  // NO visibility check — a just-loaded / background tab may not lay out
+  // (getBoundingClientRect is 0×0), yet the box's textarea exists in the DOM
+  // once React opens it. Require the message placeholder so we never fill an
+  // unrelated textarea.
   const findInput = () => {
-    const ta = [...document.querySelectorAll('textarea')].find((t) => vis(t) && /message/i.test(t.getAttribute('placeholder') || ''))
-      || [...document.querySelectorAll('textarea')].find(vis)
+    const ta = [...document.querySelectorAll('textarea')].find((t) => /message/i.test(t.getAttribute('placeholder') || ''))
     if (ta) return { el: ta, kind: 'ta' }
-    const ce = [...document.querySelectorAll('[contenteditable="true"]')].find(vis)
+    const ce = [...document.querySelectorAll('[contenteditable="true"]')].find((c) => /message/i.test((c.getAttribute('aria-label') || '') + ' ' + (c.getAttribute('data-placeholder') || '')))
     if (ce) return { el: ce, kind: 'ce' }
     return null
   }
@@ -1624,12 +1626,9 @@ function sendBrandMessageInPage(message) {
   }
   const setInput = (input, v) => {
     if (input.kind === 'ta') {
-      // A textarea keeps \n newlines natively — set the value verbatim.
       const d = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')
       if (d && d.set) d.set.call(input.el, v); else input.el.value = v
     } else {
-      // contenteditable collapses \n — render line breaks as <br> so paragraph
-      // breaks survive (escape first; the draft is our own plain text).
       const esc = v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       input.el.innerHTML = esc.replace(/\n/g, '<br>')
     }
@@ -1638,8 +1637,9 @@ function sendBrandMessageInPage(message) {
     try { input.el.focus() } catch (e) {}
   }
   const readInput = (input) => input.kind === 'ta' ? input.el.value : textOf(input.el)
-  const findSend = (scope) => [...(scope || document).querySelectorAll('button,[role="button"]')].find((b) => /^\s*send\s*$/i.test(textOf(b)) && vis(b) && !b.disabled)
+  const findSend = (scope) => [...(scope || document).querySelectorAll('button,[role="button"]')].find((b) => /^\s*send\s*$/i.test(textOf(b)) && !b.disabled)
   const want = norm(message).slice(0, 40)
+  const url0 = location.href
 
   const steps = { opened: false, filled: false, sent: false }
   return new Promise((resolve) => {
@@ -1649,7 +1649,14 @@ function sendBrandMessageInPage(message) {
       const input = findInput()
       if (!input) {
         const b = findMsgBtn(); if (b) { realClick(b); steps.opened = true }
-        if (tries >= 60) { clearInterval(openIv); resolve({ ok: false, steps, reason: steps.opened ? 'box-never-opened' : 'no-message-button' }) }
+        if (tries >= 60) {
+          clearInterval(openIv)
+          resolve({
+            ok: false, steps,
+            reason: steps.opened ? 'box-never-opened' : 'no-message-button',
+            diag: { clickedMsgBtn: steps.opened, navigated: location.href !== url0, url: location.href.slice(0, 120), textareas: document.querySelectorAll('textarea').length, ce: document.querySelectorAll('[contenteditable="true"]').length },
+          })
+        }
         return
       }
       clearInterval(openIv)
@@ -1661,24 +1668,26 @@ function sendBrandMessageInPage(message) {
         s++
         if (!norm(readInput(input)).includes(want)) { setInput(input, message); if (s > 25) { clearInterval(sendIv); resolve({ ok: false, steps, reason: 'value-not-set' }) } return }
         const send = findSend(input.el.closest('[role="dialog"],form,section,div') || document)
-        if (send) { realClick(send); steps.sent = true; clearInterval(sendIv); setTimeout(() => resolve({ ok: true, steps }), 700); return }
-        if (s > 30) { clearInterval(sendIv); resolve({ ok: false, steps, reason: 'send-button-not-found' }) }
+        if (send) { realClick(send); steps.sent = true; clearInterval(sendIv); setTimeout(() => resolve({ ok: true, steps }), 800); return }
+        if (s > 30) { clearInterval(sendIv); resolve({ ok: false, steps, reason: 'send-button-not-found', diag: { sendButtons: [...document.querySelectorAll('button,[role="button"]')].filter(b => /send/i.test(textOf(b))).length } }) }
       }, 300)
     }, 350)
   })
 }
 
-// Open the campaign in a BACKGROUND tab, fill + submit the message, close the
-// tab. Everything stays inside MVP — the user never sees an Amazon tab.
-async function sendBrandMessage(detailsUrl, message) {
+// Open the campaign FOREGROUND (React campaign pages don't render reliably in a
+// throttled background tab — same reason the CC scanner opens foreground), fill
+// + submit the message, close the tab, and hand focus straight back to MVP so
+// the user barely sees it.
+async function sendBrandMessage(detailsUrl, message, callerTabId) {
   if (!detailsUrl) return { ok: false, error: 'no-url' }
   if (!message || !message.trim()) return { ok: false, error: 'no-message' }
   let tabId = null
   try {
-    const tab = await chrome.tabs.create({ url: detailsUrl, active: false })
+    const tab = await chrome.tabs.create({ url: detailsUrl, active: true })
     tabId = tab.id
     await waitForTabLoad(tabId, 25000)
-    await _sleep(3500) // background tabs are throttled — give the SPA extra time
+    await _sleep(3000)
     let r = null
     for (let i = 0; i < 2; i++) {
       const res = await chrome.scripting.executeScript({ target: { tabId }, func: sendBrandMessageInPage, args: [message] })
@@ -1691,5 +1700,6 @@ async function sendBrandMessage(detailsUrl, message) {
     return { ok: false, error: e && e.message ? e.message : 'exception' }
   } finally {
     if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+    if (callerTabId != null) { try { await chrome.tabs.update(callerTabId, { active: true }) } catch (e) {} }
   }
 }

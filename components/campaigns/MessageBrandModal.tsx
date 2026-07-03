@@ -120,7 +120,12 @@ export default function MessageBrandModal({ campaign, onClose }: { campaign: Mes
       const r = await requestSendBrand(campaign.detailsUrl, message.trim())
       if (r.ok) { toast.success('Sent to the brand ✓'); onClose() }
       else if (r.error === 'not-installed') toast.error('Install/enable SCOUT to message brands.')
-      else toast.error(`Couldn't send: ${r.reason || r.error || 'unknown'}`)
+      else {
+        // eslint-disable-next-line no-console
+        console.warn('[MVP] send-brand failed:', r)
+        const d = r.diag ? ` (${Object.entries(r.diag).map(([k, v]) => `${k}=${v}`).join(', ')})` : ''
+        toast.error(`Couldn't send: ${r.reason || r.error || 'unknown'}${d}`, { duration: 12000 })
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Send failed')
     } finally {
@@ -198,7 +203,7 @@ export default function MessageBrandModal({ campaign, onClose }: { campaign: Mes
           </button>
         </div>
         <p className="px-5 pb-4 -mt-1 text-[11px]" style={{ color: 'var(--text-faint)' }}>
-          Send delivers this exact message to the brand from your Amazon session, in the background. Review it above first — it goes out as written.
+          Send delivers this exact message from your Amazon session — SCOUT briefly opens the campaign, sends it, and returns you here. Review it above first; it goes out as written.
         </p>
       </div>
     </div>
