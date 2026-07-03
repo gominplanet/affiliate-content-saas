@@ -546,8 +546,11 @@ export default function EpcScoutPage() {
                       <p className="text-[11px] text-[#ff3b30] mt-0.5 truncate" title={err}>⚠ {err}</p>
                     )}
                   </div>
-                  <span className="text-right text-[13px] font-semibold tabular-nums" style={{ color: parseDollar(c.epc) != null ? '#34c759' : 'var(--text-faint)' }}>
-                    {parseDollar(c.epc) != null ? `$${parseDollar(c.epc)!.toFixed(2)}` : '—'}
+                  <span className="text-right text-[13px] font-semibold tabular-nums" style={{ color: (c.epc && /%/.test(c.epc)) || parseDollar(c.epc) != null ? '#34c759' : 'var(--text-faint)' }}>
+                    {/* Affiliate+ campaigns are commission-% (not dollar EPC) — show the % honestly. */}
+                    {c.epc && /%/.test(c.epc)
+                      ? `${c.epc.match(/(\d+(?:\.\d+)?)\s*%/)?.[1] ?? ''}%`
+                      : parseDollar(c.epc) != null ? `$${parseDollar(c.epc)!.toFixed(2)}` : '—'}
                   </span>
                   <span className="text-right text-[12px] tabular-nums" style={{ color: dl <= 7 ? '#FF9500' : 'var(--text-faint)' }}>
                     {dl === Infinity ? 'open' : `${dl}d`}

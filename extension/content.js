@@ -356,7 +356,17 @@ function parseUSDate(s) {
 function extractNewCard(cont) {
   const txt = (sel) => { const e = cont.querySelector(sel); return e ? (e.textContent || '').replace(/\s+/g, ' ').trim() : null }
   const brand = txt('[data-testid="campaign-card-brand-name"]')
-  const campaignName = txt('[data-testid="campaign-card-campaign-name"]') || brand
+  // The name cell often prefixes/embeds the commission ("35% Commission | <product>"),
+  // and on some cards it's ONLY the commission. Strip the commission token so we
+  // keep a clean product title; if nothing's left, fall back to the brand.
+  let campaignName = txt('[data-testid="campaign-card-campaign-name"]')
+  if (campaignName) {
+    campaignName = campaignName
+      .replace(/\b\d+(?:\.\d+)?%\s*commission\b/ig, '')
+      .replace(/^[\s|·:–—-]+|[\s|·:–—-]+$/g, '')
+      .trim()
+  }
+  if (!campaignName) campaignName = brand || null
   let commissionPct = null
   const cr = txt('[data-testid="campaign-card-campaign-commission-rate"]')
   if (cr) { const m = cr.match(/(\d+(?:\.\d+)?)/); if (m) commissionPct = parseFloat(m[1]) }

@@ -267,10 +267,23 @@ async function scanTab(tabId) {
 // YouTube frame capture above.
 function harvestAsinsInPage() {
   const set = new Set()
-  const push = (v) => { const m = String(v || '').toUpperCase().match(/\bB0[A-Z0-9]{8}\b/g); if (m) m.forEach((x) => set.add(x)) }
+  // Reject placeholders/junk: our own SCOUT panel's ASIN input is literally
+  // "B0XXXXXXXX", and gets serialized into the page HTML. Real ASINs never
+  // contain a run of X's or 6+ identical chars.
+  const isJunk = (a) => /X{4,}/.test(a) || /(.)\1{5,}/.test(a)
+  const push = (v) => {
+    const m = String(v || '').toUpperCase().match(/\bB0[A-Z0-9]{8}\b/g)
+    if (m) m.forEach((x) => { if (!isJunk(x)) set.add(x) })
+  }
   document.querySelectorAll('[data-asin]').forEach((e) => push(e.getAttribute('data-asin')))
   document.querySelectorAll('a[href]').forEach((a) => { const m = (a.getAttribute('href') || '').match(/\/(?:dp|product|gp\/product)\/([A-Z0-9]{10})/i); if (m) push(m[1]) })
-  push(document.body ? document.body.innerHTML : '')
+  // Scan the page HTML but EXCLUDE the SCOUT panel (its placeholder is B0XXXXXXXX).
+  let html = ''
+  try {
+    const b = document.body ? document.body.cloneNode(true) : null
+    if (b) { const p = b.querySelector('#mvp-scout-cc-panel'); if (p) p.remove(); html = b.innerHTML }
+  } catch (e) { html = document.body ? document.body.innerHTML : '' }
+  push(html)
   return Array.from(set)
 }
 
