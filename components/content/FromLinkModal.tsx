@@ -12,6 +12,14 @@ import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { toast } from 'sonner'
 import { X, Loader2, Link2, ExternalLink, Sparkles } from 'lucide-react'
+import { requestScrapeUrl } from '@/lib/extension-frame'
+
+// Amazon links already have a dedicated server path (ASIN scrape + SCOUT /dp
+// fallback), so we only route NON-Amazon store links through the SCOUT reader.
+function isAmazonLink(u: string): boolean {
+  const s = u.trim()
+  return /(^|\.)amazon\.[a-z.]+/i.test(s) || /amzn\.(to|com)/i.test(s) || /geni\.us/i.test(s) || /^[A-Z0-9]{10}$/i.test(s)
+}
 
 export function FromLinkModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
   const [link, setLink] = useState('')
@@ -19,6 +27,7 @@ export function FromLinkModal({ onClose, onDone }: { onClose: () => void; onDone
   const [angle, setAngle] = useState('')
   const [category, setCategory] = useState('')
   const [busy, setBusy] = useState(false)
+  const [phase, setPhase] = useState<'idle' | 'scout' | 'write'>('idle')
   const [done, setDone] = useState<{ url: string; title: string } | null>(null)
 
   useEffect(() => {
@@ -32,14 +41,34 @@ export function FromLinkModal({ onClose, onDone }: { onClose: () => void; onDone
   async function generate() {
     if (!link.trim() && !name.trim()) { toast.error('Paste a product link or ASIN — or at least the product name.'); return }
     setBusy(true)
+    setPhase('write')
     try {
+      const raw = link.trim()
+      // Non-Amazon store link → have SCOUT read the page in the user's own
+      // browser first (Walmart/Target/etc. block MVP's server scrape). The
+      // scraped title/specs/image ground the post; best-effort, so if SCOUT
+      // isn't installed or the store isn't supported we just skip it and the
+      // endpoint falls back to URL-slug name + web-search research.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let scraped: any = null
+      if (raw && /^https?:\/\//i.test(raw) && !isAmazonLink(raw)) {
+        setPhase('scout')
+        try {
+          const r = await requestScrapeUrl(raw)
+          if (r.ok && r.product && r.product.title) {
+            scraped = r.product
+            toast.message('Read the product page ✓', { description: r.product.title.slice(0, 60) })
+          }
+        } catch { /* ignore — fall back to web research */ }
+        setPhase('write')
+      }
       const res = await fetch('/api/blog/from-link', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ link: link.trim(), productName: name.trim(), angle: angle.trim(), category: category.trim() }),
+        body: JSON.stringify({ link: raw, productName: name.trim(), angle: angle.trim(), category: category.trim(), scraped }),
       })
       const d = await res.json().catch(() => ({}))
-      if (!res.ok) { toast.error(d.error || 'Generation failed. Try again.'); setBusy(false); return }
+      if (!res.ok) { toast.error(d.error || 'Generation failed. Try again.'); setBusy(false); setPhase('idle'); return }
       toast.success('Post generated and published.')
       setDone({ url: d.url, title: d.title })
       onDone()
@@ -47,6 +76,7 @@ export function FromLinkModal({ onClose, onDone }: { onClose: () => void; onDone
       toast.error('Something went wrong. Try again.')
     } finally {
       setBusy(false)
+      setPhase('idle')
     }
   }
 
@@ -113,7 +143,11 @@ export function FromLinkModal({ onClose, onDone }: { onClose: () => void; onDone
               disabled={busy}
               className="w-full inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold text-white bg-[#7C3AED] hover:bg-[#6d28d9] disabled:opacity-60 transition-colors"
             >
-              {busy ? <><Loader2 size={15} className="animate-spin" /> Researching &amp; writing… (~1–2 min)</> : <><Sparkles size={15} /> Generate &amp; publish</>}
+              {busy
+                ? (phase === 'scout'
+                    ? <><Loader2 size={15} className="animate-spin" /> Reading the product page with SCOUT…</>
+                    : <><Loader2 size={15} className="animate-spin" /> Researching &amp; writing… (~1–2 min)</>)
+                : <><Sparkles size={15} /> Generate &amp; publish</>}
             </button>
           </div>
         )}

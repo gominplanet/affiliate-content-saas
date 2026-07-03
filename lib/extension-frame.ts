@@ -307,6 +307,51 @@ export async function requestAmazonProduct(asin: string): Promise<AmazonProductR
   return { ok: false, error: resp.error || 'scan-failed' }
 }
 
+/** Product details SCOUT scraped off a NON-Amazon store page (Walmart, Target,
+ *  Best Buy, …). Read from JSON-LD / Open Graph in the user's own browser, so
+ *  it works where MVP's server scrape is IP-blocked. `sourceUrl` echoes the page
+ *  actually read (after any redirect). */
+export interface ScrapedProduct {
+  title: string
+  description: string
+  bullets: string[]
+  brand: string | null
+  price: string | null
+  rating: string | null
+  imageUrl: string | null
+  images: string[]
+  sourceUrl?: string
+}
+
+export interface ScrapeUrlResult {
+  ok: boolean
+  product?: ScrapedProduct | null
+  /** Structured reasons the UI maps to guidance: 'not-installed' (SCOUT absent),
+   *  'store-not-supported' (host outside SCOUT's allowed retailer list),
+   *  'no-result' (page read but no product data), 'timeout'. */
+  error?: string
+  diag?: Record<string, unknown>
+}
+
+/**
+ * Ask SCOUT to open ANY supported store URL (Walmart, Target, etc.) in the
+ * user's own browser and read its product data — the workaround for stores that
+ * block MVP's datacenter-IP server scrape. Best-effort: resolves, never throws;
+ * returns { ok:false, error:'not-installed' } when SCOUT isn't present so the
+ * caller can fall back to URL-slug name + web-search research.
+ */
+export async function requestScrapeUrl(url: string): Promise<ScrapeUrlResult> {
+  if (!url) return { ok: false, error: 'no-url' }
+  if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
+  const resp = await sendToExtension<{ ok?: boolean; product?: ScrapedProduct | null; error?: string; diag?: Record<string, unknown> }>(
+    { type: 'MVP_SCRAPE_URL', url },
+    70000,
+  )
+  if (!resp) return { ok: false, error: 'timeout' }
+  if (resp.ok) return { ok: true, product: resp.product ?? null, diag: resp.diag }
+  return { ok: false, error: resp.error || 'scan-failed', diag: resp.diag }
+}
+
 /** A raw Creator Connections campaign row as scraped by the extension. All
  *  filtering / ranking happens in the app — this is the unfiltered harvest. */
 export interface ScoutedCampaign {

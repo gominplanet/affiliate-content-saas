@@ -106,7 +106,12 @@ export async function POST(req: Request) {
   if ('error' in auth) return auth.error
   const { user, ownerId } = auth
 
-  let body: { link?: string; productName?: string; angle?: string; category?: string; includeImages?: boolean; siteId?: string }
+  let body: {
+    link?: string; productName?: string; angle?: string; category?: string; includeImages?: boolean; siteId?: string
+    // Product data SCOUT scraped off a non-Amazon store page in the user's own
+    // browser (Walmart/Target/etc. block our server scrape). Best-effort grounding.
+    scraped?: { title?: string; description?: string; bullets?: string[]; brand?: string | null; price?: string | null; rating?: string | null; imageUrl?: string | null; images?: string[]; sourceUrl?: string }
+  }
   try { body = await req.json() } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }) }
 
   const link = (body.link || '').trim()
@@ -203,6 +208,23 @@ export async function POST(req: Request) {
       } catch { /* keep the user's own link */ }
     }
   }
+  // SCOUT read the store page in the user's own browser — the real grounding for
+  // stores that block our server scrape. Fill gaps only: a user-typed name and
+  // Amazon catalog data still win. This gives us a real title, description,
+  // feature bullets and product photo where the server had nothing.
+  const scraped = (body.scraped && typeof body.scraped === 'object') ? body.scraped : null
+  if (scraped) {
+    const st = typeof scraped.title === 'string' ? scraped.title.trim() : ''
+    if (st && !providedName && productName === providedName) productName = st
+    if (!pDescription && typeof scraped.description === 'string') pDescription = scraped.description.trim().slice(0, 1600)
+    if (bullets.length === 0 && Array.isArray(scraped.bullets)) {
+      bullets = scraped.bullets.filter((b): b is string => typeof b === 'string' && b.trim().length > 0).slice(0, 10)
+    }
+    if (!productImageUrl && typeof scraped.imageUrl === 'string' && /^https?:\/\//.test(scraped.imageUrl)) {
+      productImageUrl = scraped.imageUrl
+    }
+  }
+
   // If Amazon didn't resolve it and the user didn't type a name, read the name
   // from the store URL's slug — the key to making Walmart/Target/etc. links work
   // (those block server scraping, but the URL still carries the product name).

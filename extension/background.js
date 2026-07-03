@@ -717,6 +717,157 @@ async function scanAmazonProductForAsin(asin, callerTabId) {
   }
 }
 
+// ── Generic non-Amazon product scrape (MVP_SCRAPE_URL) ──────────────────────
+// MVP's "Post from a link" flow can't scrape most stores server-side — Walmart,
+// Target, etc. block datacenter IPs. SCOUT reads the page from the user's own
+// browser (residential IP, their session) instead. This is a GENERIC reader:
+// it leans on structured data every major store already ships — JSON-LD Product
+// schema first (name/description/price/image/brand/rating), then Open Graph +
+// microdata + visible-DOM fallbacks — so one function covers Walmart, Target,
+// Best Buy, Etsy, eBay, and the rest without per-store selectors.
+function harvestGenericProductInPage() {
+  const clean = (s) => (s || '').replace(/\s+/g, ' ').trim()
+  const abs = (u) => { try { return new URL(u, location.href).href } catch (e) { return '' } }
+  const meta = (sel) => { try { const e = document.querySelector(sel); return e ? clean(e.getAttribute('content')) : '' } catch (e) { return '' } }
+
+  let title = '', description = '', price = '', brand = '', rating = ''
+  const images = []
+  const bullets = []
+
+  // 1) JSON-LD Product schema — the cleanest cross-store source.
+  let ld = null
+  try {
+    const scripts = document.querySelectorAll('script[type="application/ld+json"]')
+    for (const s of scripts) {
+      let data
+      try { data = JSON.parse(s.textContent) } catch (e) { continue }
+      const nodes = []
+      const push = (d) => {
+        if (!d || typeof d !== 'object') return
+        if (Array.isArray(d)) { d.forEach(push); return }
+        nodes.push(d)
+        if (Array.isArray(d['@graph'])) d['@graph'].forEach(push)
+      }
+      push(data)
+      for (const node of nodes) {
+        const t = node && node['@type']
+        const isProduct = t === 'Product' || (Array.isArray(t) && t.includes('Product'))
+        if (isProduct) { ld = node; break }
+      }
+      if (ld) break
+    }
+  } catch (e) {}
+
+  if (ld) {
+    title = clean(typeof ld.name === 'string' ? ld.name : '')
+    if (typeof ld.description === 'string') description = clean(ld.description)
+    const b = ld.brand
+    brand = clean(typeof b === 'string' ? b : (b && (b.name || b['@name'])) || '')
+    const img = ld.image
+    const pushImg = (u) => { if (typeof u === 'string') { const a = abs(u); if (a) images.push(a) } else if (u && u.url) { const a = abs(u.url); if (a) images.push(a) } }
+    if (Array.isArray(img)) img.forEach(pushImg); else pushImg(img)
+    let offers = ld.offers
+    if (Array.isArray(offers)) offers = offers[0]
+    if (offers && typeof offers === 'object') {
+      const p = offers.price != null ? offers.price : (offers.lowPrice != null ? offers.lowPrice : (offers.priceSpecification && offers.priceSpecification.price))
+      if (p != null && String(p).trim()) {
+        price = String(p).trim()
+        const cur = offers.priceCurrency || (offers.priceSpecification && offers.priceSpecification.priceCurrency)
+        if (cur === 'USD' && !/^\$/.test(price)) price = '$' + price
+      }
+    }
+    const ar = ld.aggregateRating
+    if (ar && (ar.ratingValue != null)) rating = String(ar.ratingValue).trim()
+  }
+
+  // 2) Open Graph / meta fallbacks for anything JSON-LD didn't cover.
+  if (!title) title = meta('meta[property="og:title"]') || clean((document.querySelector('h1') || {}).textContent) || clean(document.title)
+  if (!description) description = meta('meta[property="og:description"]') || meta('meta[name="description"]')
+  if (!images.length) { const og = meta('meta[property="og:image"]') || meta('meta[name="twitter:image"]'); if (og) { const a = abs(og); if (a) images.push(a) } }
+  if (!brand) brand = meta('meta[property="og:brand"]') || meta('meta[property="product:brand"]')
+  if (!price) price = meta('meta[property="product:price:amount"]') || meta('meta[property="og:price:amount"]')
+
+  // 3) Bullets — short list items in the main content (spec/feature lists).
+  try {
+    const lists = document.querySelectorAll('main ul li, [id*="feature" i] li, [class*="feature" i] li, [class*="highlight" i] li, [class*="about" i] li')
+    for (const li of lists) {
+      const t = clean(li.textContent)
+      if (t && t.length > 8 && t.length < 220 && !/^(sign in|add to|see more|view|shop|home\b)/i.test(t)) bullets.push(t)
+      if (bullets.length >= 12) break
+    }
+  } catch (e) {}
+
+  // 4) Price regex fallback — first $NN(.NN) in the visible body, near the top.
+  if (!price) {
+    try {
+      const bt = (document.body ? document.body.innerText : '').slice(0, 6000)
+      const m = bt.match(/\$\s?\d{1,4}(?:[.,]\d{2})?/)
+      if (m) price = m[0].replace(/\s/g, '')
+    } catch (e) {}
+  }
+  if (price && /^\d/.test(price)) price = '$' + price
+
+  const uniqImages = Array.from(new Set(images)).filter((u) => /^https?:\/\//.test(u)).slice(0, 6)
+  const ok = !!(title && title.length > 3)
+  return {
+    ok: ok,
+    product: ok ? {
+      title: title.slice(0, 200),
+      description: (description || '').slice(0, 1600),
+      bullets: bullets.slice(0, 12),
+      brand: brand || null,
+      price: price || null,
+      rating: rating || null,
+      imageUrl: uniqImages[0] || null,
+      images: uniqImages,
+      sourceUrl: location.href,
+    } : null,
+    diag: { url: location.href.slice(0, 140), hadLd: !!ld, titleLen: (title || '').length, bullets: bullets.length },
+  }
+}
+
+// Retailers SCOUT is allowed to open + read (must mirror manifest host_permissions).
+const SCRAPE_HOSTS = [
+  'walmart.com', 'target.com', 'bestbuy.com', 'homedepot.com', 'lowes.com',
+  'wayfair.com', 'etsy.com', 'ebay.com', 'chewy.com', 'costco.com',
+  'macys.com', 'kohls.com', 'newegg.com', 'ulta.com', 'sephora.com', 'nike.com',
+]
+
+function scrapeHostAllowed(url) {
+  try {
+    const h = new URL(url).hostname.replace(/^www\./, '')
+    return SCRAPE_HOSTS.some((d) => h === d || h.endsWith('.' + d))
+  } catch (e) { return false }
+}
+
+async function scanGenericProduct(url, callerTabId) {
+  if (!/^https?:\/\//i.test(url || '')) return { ok: false, error: 'bad-url' }
+  if (!scrapeHostAllowed(url)) return { ok: false, error: 'store-not-supported' }
+  let tabId = null
+  try {
+    // FOREGROUND — big-box stores (Walmart/Target/Wayfair) are React-hydrated, and
+    // background tabs throttle that JS so the JSON-LD/price never renders. Open
+    // active, read, then hand focus back to the MVP tab so the flash is brief.
+    const tab = await chrome.tabs.create({ url, active: true })
+    tabId = tab.id
+    await waitForTabLoad(tabId, 30000)
+    await _sleep(2800)
+    let out = null
+    for (let i = 0; i < 3; i++) {
+      const results = await chrome.scripting.executeScript({ target: { tabId }, func: harvestGenericProductInPage })
+      out = (results && results[0] && results[0].result) || null
+      if (out && out.ok) break
+      await _sleep(1400)
+    }
+    return out || { ok: false, error: 'no-result' }
+  } catch (e) {
+    return { ok: false, error: (e && e.message) ? String(e.message).slice(0, 120) : 'scan-failed' }
+  } finally {
+    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+    if (callerTabId != null) { try { await chrome.tabs.update(callerTabId, { active: true }) } catch (e) {} }
+  }
+}
+
 async function scanAmazonVideos(callerTabId) {
   // Reuse an open Manage Content / storefront tab; else open Manage Content
   // FOREGROUND (Amazon's content list is client-rendered + session-scoped, and
@@ -1540,6 +1691,17 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     const callerTabId = sender && sender.tab ? sender.tab.id : null
     const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 75000)
     sendBrandMessage(msg.detailsUrl, msg.message || '', callerTabId)
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true // async response — keep the channel open
+  }
+  if (msg.type === 'MVP_SCRAPE_URL') {
+    // "Post from a link" for non-Amazon stores. MVP's server can't scrape
+    // Walmart/Target/etc. (datacenter IPs are blocked), so SCOUT opens the page
+    // in the user's own browser and reads its structured product data.
+    const callerTabId = sender && sender.tab ? sender.tab.id : null
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 70000)
+    scanGenericProduct(msg.url, callerTabId)
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async response — keep the channel open
