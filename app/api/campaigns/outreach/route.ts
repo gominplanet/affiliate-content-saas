@@ -180,24 +180,30 @@ export async function POST(request: Request) {
 
 CRITICAL — Amazon's chat sends a MESSAGE GROUP: several short messages in a row, NOT one block. Separate each message with a line containing EXACTLY:
 ---- Add to Message Group ----
-Put that marker line ONLY between messages, never inside one. Produce 3–4 messages in this order (adapt to the facts; drop a message if you have nothing real for it):
+Put that marker line ONLY between messages, never inside one.
 
-Message 1 — "Hi <Brand> team," + who I am + quick credibility (ONLY from the creator facts given) + one clear offer of authentic content that drives their Creator Connections sales. Add my portfolio / media-kit / site link if given.
+NO REPEATED INFO — this is the most important rule. Each fact belongs to EXACTLY ONE message. Do NOT repeat the product name, the ASIN, the credibility, the links, or the shipping address in more than one message. If it's in message 2, it must NOT reappear in message 1, 3, 4 or 5.
+
+Produce up to 5 messages in THIS exact order (skip a message AND its marker if you genuinely have nothing real for it):
+
+Message 1 — WHO WE ARE: greeting ("Hi <Brand> team," or the given greeting style) + who we are + our credibility, ONLY from the creator facts. NO product, NO ASIN, NO links, NO address here.
 ---- Add to Message Group ----
-Message 2 — the specific ask: request a sample if that's selected; if a shipping address is given, say to send samples to the exact name + address shown below.
+Message 2 — THE PRODUCT + OFFER: name the specific product and quote its ASIN ONCE, and say clearly what we'll create for them (authentic video/content that drives their Creator Connections sales; mention the commission if given). NO credibility, NO links, NO address here.
 ---- Add to Message Group ----
-Message 3 — ONLY if a shipping name/address is given: the NAME and ADDRESS on their own, clearly labelled (e.g. "NAME: …" / "ADDRESS: …"), so the brand can copy them.
+Message 3 — OUR WORK: where the brand can see samples of our work — the portfolio / YouTube / blog / media-kit / storefront links given, with a short line. Links ONLY here. NO product, NO address here.
 ---- Add to Message Group ----
-Message 4 — a warm one-line close + my name / email if given.
+Message 4 — THE ASK + SHIPPING (only if a sample is requested or an address is given): politely request a sample, and give the EXACT name + address (+ phone) to ship to, clearly labelled on their own lines ("NAME: …" / "ADDRESS: …"). Do NOT restate the product or ASIN here.
+---- Add to Message Group ----
+Message 5 — CLOSE: a warm thank-you + hope for a long-term collaboration + sign off with my name and email if given.
 
 Rules:
-- Each message ≤ 900 characters, plain text, first person, specific to THIS brand + product (reference the real product so it never reads as a template).
+- Each message ≤ 900 characters, plain text, first person.
 - NEVER invent credibility, follower counts, sales, or any claim beyond the facts given.
 - No markdown, no bullet lists, no emojis unless natural.
 ${BANNED_RULE}
 Output ONLY the message text (with the marker lines) — nothing else.`
 
-    const userMsg = `Write the message.\n\n--- CREATOR (who is sending) ---\n${facts.join('\n') || '(minimal profile — keep credibility generic and honest)'}\n\n--- CAMPAIGN (who they're messaging) ---\n${campaign.join('\n')}\n\n--- INCLUDE THESE (weave in naturally, stay under 900 chars) ---\n${asks.length ? asks.map(a => `- ${a}`).join('\n') : '- A simple, warm offer to collaborate.'}`
+    const userMsg = `Write the message group.\n\n--- CREATOR (who is sending) ---\n${facts.join('\n') || '(minimal profile — keep credibility generic and honest)'}\n\n--- CAMPAIGN (who they're messaging) ---\n${campaign.join('\n')}\n\n--- INCLUDE THESE (place each into the RIGHT message per the 5-message structure; never repeat a fact across messages) ---\n${asks.length ? asks.map(a => `- ${a}`).join('\n') : '- A simple, warm offer to collaborate.'}`
 
     const client = createAnthropicClient()
     const msg = await client.messages.create({
