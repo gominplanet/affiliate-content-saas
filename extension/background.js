@@ -1533,6 +1533,16 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async response — keep the channel open
   }
+  if (msg.type === 'MVP_SEND_BRAND') {
+    // Compose-and-send from the MVP modal: the user already reviewed the exact
+    // text and clicked Send, so we open the campaign in a BACKGROUND tab, fill
+    // the message and submit it — all inside the user's session, no visible tab.
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 75000)
+    sendBrandMessage(msg.detailsUrl, msg.message || '')
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true // async response — keep the channel open
+  }
 }
 )
 
@@ -1583,5 +1593,97 @@ async function openAndPlaceBrandMessage(detailsUrl, message) {
     return r || { ok: false, reason: 'place-failed' }
   } catch (e) {
     return { ok: false, error: e && e.message ? e.message : 'exception' }
+  }
+}
+
+// Runs IN the campaign page: open the Message Brand box (robustly — synthetic
+// click, contenteditable fallback, long polling), fill the message, VERIFY the
+// full text is in, then click Send. Returns { ok, steps, reason } so failures
+// are diagnosable. Only submits when our exact text is present — never a partial.
+function sendBrandMessageInPage(message) {
+  const norm = (s) => (s || '').replace(/\s+/g, ' ').trim()
+  const textOf = (el) => norm(el && (el.innerText || el.textContent))
+  const vis = (el) => { if (!el) return false; try { const r = el.getBoundingClientRect(); return r.width > 4 && r.height > 4 } catch (e) { return true } }
+  const findMsgBtn = () => {
+    const c = [...document.querySelectorAll('button,a,[role="button"]')]
+    return c.find((e) => /message brand|message the brand/i.test(textOf(e)))
+      || c.find((e) => /message/i.test(textOf(e)) && /brand/i.test(textOf(e)))
+      || c.find((e) => /^\s*message\s*$/i.test(textOf(e)) && vis(e))
+  }
+  const findInput = () => {
+    const ta = [...document.querySelectorAll('textarea')].find((t) => vis(t) && /message/i.test(t.getAttribute('placeholder') || ''))
+      || [...document.querySelectorAll('textarea')].find(vis)
+    if (ta) return { el: ta, kind: 'ta' }
+    const ce = [...document.querySelectorAll('[contenteditable="true"]')].find(vis)
+    if (ce) return { el: ce, kind: 'ce' }
+    return null
+  }
+  const realClick = (el) => {
+    try { ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach((t) => el.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, view: window }))) }
+    catch (e) { try { el.click() } catch (e2) {} }
+  }
+  const setInput = (input, v) => {
+    if (input.kind === 'ta') {
+      const d = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')
+      if (d && d.set) d.set.call(input.el, v); else input.el.value = v
+    } else { input.el.textContent = v }
+    input.el.dispatchEvent(new Event('input', { bubbles: true }))
+    input.el.dispatchEvent(new Event('change', { bubbles: true }))
+    try { input.el.focus() } catch (e) {}
+  }
+  const readInput = (input) => input.kind === 'ta' ? input.el.value : textOf(input.el)
+  const findSend = (scope) => [...(scope || document).querySelectorAll('button,[role="button"]')].find((b) => /^\s*send\s*$/i.test(textOf(b)) && vis(b) && !b.disabled)
+  const want = norm(message).slice(0, 40)
+
+  const steps = { opened: false, filled: false, sent: false }
+  return new Promise((resolve) => {
+    let tries = 0
+    const openIv = setInterval(() => {
+      tries++
+      const input = findInput()
+      if (!input) {
+        const b = findMsgBtn(); if (b) { realClick(b); steps.opened = true }
+        if (tries >= 60) { clearInterval(openIv); resolve({ ok: false, steps, reason: steps.opened ? 'box-never-opened' : 'no-message-button' }) }
+        return
+      }
+      clearInterval(openIv)
+      steps.opened = true
+      setInput(input, message)
+      steps.filled = true
+      let s = 0
+      const sendIv = setInterval(() => {
+        s++
+        if (!norm(readInput(input)).includes(want)) { setInput(input, message); if (s > 25) { clearInterval(sendIv); resolve({ ok: false, steps, reason: 'value-not-set' }) } return }
+        const send = findSend(input.el.closest('[role="dialog"],form,section,div') || document)
+        if (send) { realClick(send); steps.sent = true; clearInterval(sendIv); setTimeout(() => resolve({ ok: true, steps }), 700); return }
+        if (s > 30) { clearInterval(sendIv); resolve({ ok: false, steps, reason: 'send-button-not-found' }) }
+      }, 300)
+    }, 350)
+  })
+}
+
+// Open the campaign in a BACKGROUND tab, fill + submit the message, close the
+// tab. Everything stays inside MVP — the user never sees an Amazon tab.
+async function sendBrandMessage(detailsUrl, message) {
+  if (!detailsUrl) return { ok: false, error: 'no-url' }
+  if (!message || !message.trim()) return { ok: false, error: 'no-message' }
+  let tabId = null
+  try {
+    const tab = await chrome.tabs.create({ url: detailsUrl, active: false })
+    tabId = tab.id
+    await waitForTabLoad(tabId, 25000)
+    await _sleep(3500) // background tabs are throttled — give the SPA extra time
+    let r = null
+    for (let i = 0; i < 2; i++) {
+      const res = await chrome.scripting.executeScript({ target: { tabId }, func: sendBrandMessageInPage, args: [message] })
+      r = res && res[0] && res[0].result
+      if (r && r.ok) break
+      await _sleep(1500)
+    }
+    return r || { ok: false, reason: 'send-failed' }
+  } catch (e) {
+    return { ok: false, error: e && e.message ? e.message : 'exception' }
+  } finally {
+    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
   }
 }

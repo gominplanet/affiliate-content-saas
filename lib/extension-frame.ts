@@ -80,7 +80,26 @@ function sendToExtension<T>(message: unknown, timeoutMs: number): Promise<T | nu
   })()
 }
 
-export interface MessageBrandResult { ok: boolean; error?: string; reason?: string }
+export interface MessageBrandResult { ok: boolean; error?: string; reason?: string; steps?: Record<string, boolean> }
+
+/**
+ * Compose-and-send from the MVP modal: the user reviewed the exact message and
+ * clicked Send, so SCOUT opens the campaign in a BACKGROUND tab, fills the
+ * Message Brand box and SUBMITS it — entirely inside the user's Amazon session,
+ * no visible tab. Only sends when the full text is verified in the box.
+ * Best-effort: resolves, never throws.
+ */
+export async function requestSendBrand(detailsUrl: string, message: string): Promise<MessageBrandResult> {
+  if (!detailsUrl) return { ok: false, error: 'no-url' }
+  if (!message.trim()) return { ok: false, error: 'no-message' }
+  if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
+  const resp = await sendToExtension<{ ok?: boolean; error?: string; reason?: string; steps?: Record<string, boolean> }>(
+    { type: 'MVP_SEND_BRAND', detailsUrl, message },
+    75000,
+  )
+  if (!resp) return { ok: false, error: 'timeout' }
+  return { ok: !!resp.ok, error: resp.error, reason: resp.reason, steps: resp.steps }
+}
 
 /**
  * Ask SCOUT to open a campaign's Amazon page (the user's logged-in session),

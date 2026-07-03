@@ -13,7 +13,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { toast } from 'sonner'
 import { X, Loader2, Sparkles, Send, MessageSquare } from 'lucide-react'
-import { requestMessageBrand } from '@/lib/extension-frame'
+import { requestSendBrand } from '@/lib/extension-frame'
 
 export interface MessageBrandCampaign {
   product: string
@@ -116,11 +116,11 @@ export default function MessageBrandModal({ campaign, onClose }: { campaign: Mes
     if (opts.shareAddress && address.trim()) { try { localStorage.setItem(ADDR_KEY, address.trim()) } catch { /* ignore */ } }
     setSending(true)
     try {
-      toast.message('Opening the brand chat on Amazon…', { description: 'Review the draft SCOUT places, then hit Send.' })
-      const r = await requestMessageBrand(campaign.detailsUrl, message.trim())
-      if (r.ok) { toast.success('Draft placed in the brand chat — review it and hit Send on Amazon.'); onClose() }
+      toast.message('Sending to the brand…', { description: 'SCOUT is delivering it in the background.' })
+      const r = await requestSendBrand(campaign.detailsUrl, message.trim())
+      if (r.ok) { toast.success('Sent to the brand ✓'); onClose() }
       else if (r.error === 'not-installed') toast.error('Install/enable SCOUT to message brands.')
-      else toast.error(`Couldn't open the chat: ${r.reason || r.error || 'unknown'}`)
+      else toast.error(`Couldn't send: ${r.reason || r.error || 'unknown'}`)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Send failed')
     } finally {
@@ -198,7 +198,7 @@ export default function MessageBrandModal({ campaign, onClose }: { campaign: Mes
           </button>
         </div>
         <p className="px-5 pb-4 -mt-1 text-[11px]" style={{ color: 'var(--text-faint)' }}>
-          SCOUT opens the brand chat on Amazon and drops this in — you review and hit Send. It never sends on its own.
+          Send delivers this exact message to the brand from your Amazon session, in the background. Review it above first — it goes out as written.
         </p>
       </div>
     </div>
