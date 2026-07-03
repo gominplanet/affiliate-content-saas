@@ -453,6 +453,39 @@ function dumpCardDebug() {
   return { cardFound: !!cont, cardCount: conts.length, cardsWithAsin, asins, details, submitFound, parsed }
 }
 
+// Collect every ASIN currently anywhere in the document — used to diff the page
+// before vs. after opening a campaign's details panel.
+function harvestDocAsins() {
+  const set = new Set()
+  const push = (v) => { const m = String(v || '').toUpperCase().match(/\bB0[A-Z0-9]{8}\b/g); if (m) m.forEach(x => set.add(x)) }
+  document.querySelectorAll('[data-asin]').forEach(e => push(e.getAttribute('data-asin')))
+  document.querySelectorAll('a[href]').forEach(a => { const m = (a.getAttribute('href') || '').match(/\/(?:dp|product|gp\/product)\/([A-Z0-9]{10})/i); if (m) push(m[1]) })
+  push(document.body ? document.body.innerHTML : '')
+  return [...set]
+}
+
+// Open the first campaign's "View details" and dump what ASINs / markup appear —
+// the calibration probe for the ASIN drill-down. Best-effort; logs to console.
+async function probeCampaignDetails() {
+  const cont = document.querySelector('[data-testid="campaign-card-container"]')
+  if (!cont) return { ok: false, reason: 'no-card' }
+  const link = cont.querySelector('[data-testid$="campaign-card-view-details-link"], [data-testid*="view-details"], [data-testid*="view_details"]')
+    || [...cont.querySelectorAll('a,button,[role="button"]')].find(e => /view details|see details/i.test(textOf(e)))
+  if (!link) return { ok: false, reason: 'no-details-link' }
+  const urlBefore = location.href
+  const before = new Set(harvestDocAsins())
+  link.click()
+  await sleep(1500)
+  const navigated = location.href !== urlBefore
+  const after = harvestDocAsins()
+  const newAsins = after.filter(a => !before.has(a))
+  const dialog = document.querySelector('[role="dialog"],[data-testid*="details-modal"],[data-testid*="details-drawer"],[data-testid*="campaign-details"],[data-testid*="detail-panel"]')
+  console.log('%c[MVP SCOUT] details probe — navigated:', 'color:#7C3AED;font-weight:bold', navigated, '| newAsins:', newAsins, '| allAsinsNow:', after)
+  console.log('%c[MVP SCOUT] details container testids:', 'color:#7C3AED', dialog ? [...dialog.querySelectorAll('[data-testid]')].map(e => e.getAttribute('data-testid')).slice(0, 80) : '(no dialog element)')
+  console.log('%c[MVP SCOUT] details HTML:', 'color:#7C3AED', dialog?.outerHTML?.slice(0, 8000) || (navigated ? '(navigated to details route: ' + location.href + ')' : '(no dialog found — check the page)'))
+  return { ok: true, navigated, newAsins, dialogFound: !!dialog }
+}
+
 async function scoutRunSearch(f) {
   // Keyword OR ASIN both drive Amazon's own search box (it searches by ASIN too),
   // so we scan the FULL catalogue's matches, then read + filter the cards.
@@ -623,11 +656,26 @@ function mountSearchPanel() {
     } catch (e) { res.innerHTML = `<div class="mvp-note">Search error: ${e?.message || e}</div>` }
     btn.textContent = prev; btn.disabled = false
   })
-  q('.mvp-debug').addEventListener('click', () => {
-    const d = dumpCardDebug()
-    const asins = (d.asins || []).join(', ') || 'none'
-    const dc = d.details ? (d.details.testid || d.details.text || d.details.tag) : 'none found'
-    res.innerHTML = `<div class="mvp-note">Dumped to the console (⌥⌘J). cards=<b>${d.cardCount}</b>, with ASIN in card=<b>${d.cardsWithAsin}</b>.<br>First card ASINs: <b>${String(asins).replace(/</g, '&lt;')}</b>.<br>Details control: ${String(dc).replace(/</g, '&lt;')}.<br>Paste the console output to me and I'll wire the ASIN push to MVP.</div>`
+  q('.mvp-debug').addEventListener('click', async () => {
+    const btn = q('.mvp-debug'); const prev = btn.textContent; btn.textContent = 'Probing…'; btn.disabled = true
+    try {
+      const d = dumpCardDebug()
+      let extra = ''
+      // If the card face carries no ASIN, open its "View details" and report what
+      // ASINs / markup surface — this is what tells me how to build the drill-down.
+      if (d.cardFound && (d.asins || []).length === 0 && d.details) {
+        const p = await probeCampaignDetails()
+        extra = p.ok
+          ? `<br>Opened <b>View details</b> → new ASINs: <b>${((p.newAsins || []).join(', ')) || 'none'}</b>${p.navigated ? ' (opened a details page)' : p.dialogFound ? ' (in a panel)' : ''}.`
+          : `<br>Could not open details (${p.reason}).`
+      }
+      const asins = (d.asins || []).join(', ') || 'none'
+      const dc = d.details ? (d.details.testid || d.details.text || d.details.tag) : 'none found'
+      res.innerHTML = `<div class="mvp-note">Dumped to the console (⌥⌘J). cards=<b>${d.cardCount}</b>, with ASIN in card=<b>${d.cardsWithAsin}</b>.<br>First card ASINs: <b>${String(asins).replace(/</g, '&lt;')}</b>.<br>Details control: ${String(dc).replace(/</g, '&lt;')}.${extra}<br>Paste the console output to me and I'll wire the ASIN push to MVP.</div>`
+    } catch (e) {
+      res.innerHTML = `<div class="mvp-note">Debug error: ${String(e?.message || e).replace(/</g, '&lt;')}</div>`
+    }
+    btn.textContent = prev; btn.disabled = false
   })
   q('.mvp-accsel').addEventListener('click', () => { let ok = 0; selected.forEach(a => { if (scoutAccept(a).ok) ok++ }); q('.mvp-accsel').textContent = `Accepted ${ok}/${selected.size}` })
   q('.mvp-submit').addEventListener('click', () => { q('.mvp-submit').textContent = scoutSubmitAccepted() ? '✓ Submitted' : 'Not found' })
