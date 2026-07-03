@@ -1815,6 +1815,7 @@ async function sendBrandMessageInPage(message) {
     catch (e) { try { el.click() } catch (e2) {} }
   }
   const setInput = (input, v) => {
+    try { input.el.focus() } catch (e) {}
     if (input.kind === 'ta') {
       const d = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')
       if (d && d.set) d.set.call(input.el, v); else input.el.value = v
@@ -1822,17 +1823,35 @@ async function sendBrandMessageInPage(message) {
       const esc = v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       input.el.innerHTML = esc.replace(/\n/g, '<br>')
     }
-    input.el.dispatchEvent(new Event('input', { bubbles: true }))
+    // FULL event burst so React's onChange fires + the Send button un-disables
+    // (a bare 'input' event left Send disabled → "send-button-not-found").
+    try { input.el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: v })) }
+    catch (e) { input.el.dispatchEvent(new Event('input', { bubbles: true })) }
     input.el.dispatchEvent(new Event('change', { bubbles: true }))
-    try { input.el.focus() } catch (e) {}
+    input.el.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'a' }))
+    input.el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'a' }))
   }
   const readInput = (input) => input.kind === 'ta' ? input.el.value : textOf(input.el)
-  const findSend = (scope) => [...(scope || document).querySelectorAll('button,[role="button"]')].find((b) => /^\s*send\s*$/i.test(textOf(b)) && !b.disabled)
-  // "Add to Message Group" only renders AFTER the box has text — search broadly
-  // (button/a/role/span/div) by text/aria/title, avoiding a big parent container.
-  const findAddToGroup = () => [...document.querySelectorAll('button,a,[role="button"],span,div')].find((e) => {
-    const t = attrText(e); return /add to (message )?group/i.test(t) && t.length < 42
-  })
+  // Amazon's Send button — matched TOLERANTLY: enabled (checks disabled prop AND
+  // aria-disabled), label "send" as a word (covers "Send", "Send message"), by
+  // text/aria/title, shortest label first. Also accepts input[type=submit].
+  const findSend = (scope) => {
+    const cands = [...(scope || document).querySelectorAll('button,[role="button"],input[type="submit"]')]
+    const ok = cands.filter((b) => {
+      if (b.disabled === true || b.getAttribute('aria-disabled') === 'true') return false
+      const t = attrText(b); return /(^|\s)send(\b|$)/i.test(t) && t.length <= 24
+    })
+    ok.sort((a, z) => ((a.textContent || '').trim().length) - ((z.textContent || '').trim().length))
+    return ok[0] || null
+  }
+  const sendCandidatesDump = () => [...document.querySelectorAll('button,[role="button"],input[type="submit"]')]
+    .filter((b) => /send/i.test((b.innerText || b.textContent || b.value || '') + ' ' + (b.getAttribute('aria-label') || '')))
+    .slice(0, 8)
+    .map((b) => ({
+      text: ((b.innerText || b.textContent || b.value || '')).replace(/\s+/g, ' ').trim().slice(0, 30),
+      aria: (b.getAttribute('aria-label') || '').slice(0, 30),
+      disabled: b.disabled === true || b.getAttribute('aria-disabled') === 'true',
+    }))
   // Split on the ---- Add to Message Group ---- markers (fallback: blank lines).
   const splitSegments = (msg) => {
     const s = String(msg || '').trim()
@@ -1868,8 +1887,8 @@ async function sendBrandMessageInPage(message) {
     setInput(inp, segments[i]); steps.filled = true
     await sleep(650)                                 // let React register the text + enable Send
     let send = null
-    for (let t = 0; t < 12 && !send; t++) {
-      send = findSend(inp.el.closest('[role="dialog"],form,section,div') || document)
+    for (let t = 0; t < 20 && !send; t++) {          // wait up to ~5s for Send to enable
+      send = findSend(inp.el.closest('[role="dialog"],form,section,div') || document) || findSend(document)
       if (!send) await sleep(250)
     }
     if (!send) break                                 // Send never enabled — stop (segment is placed)
@@ -1878,7 +1897,7 @@ async function sendBrandMessageInPage(message) {
   }
   if (sent === 0) {
     return { ok: false, steps, reason: 'send-button-not-found', groups: 0,
-      diag: { sendButtons: [...document.querySelectorAll('button,[role="button"]')].filter((b) => /send/i.test(textOf(b))).length } }
+      diag: { filled: steps.filled, sendCandidates: sendCandidatesDump() } }
   }
   return { ok: true, steps, groups: sent }
 }

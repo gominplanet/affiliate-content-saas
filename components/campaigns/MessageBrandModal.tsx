@@ -150,10 +150,10 @@ export default function MessageBrandModal({ campaign, onClose }: { campaign: Mes
         onClose()
       } else if (r.error === 'not-installed') toast.error('Install/enable SCOUT to message brands.')
       else {
+        // Full diag (incl. the Send-button candidates SCOUT saw) → console.
         // eslint-disable-next-line no-console
-        console.warn('[MVP] send-brand failed:', r)
-        const d = r.diag ? ` (${Object.entries(r.diag).map(([k, v]) => `${k}=${v}`).join(', ')})` : ''
-        toast.error(`Couldn't send: ${r.reason || r.error || 'unknown'}${d}`, { duration: 12000 })
+        console.warn('[MVP] send-brand failed — full diagnostic:', r)
+        toast.error(`Couldn't send: ${r.reason || r.error || 'unknown'} — open the browser console (⌥⌘J) for details.`, { duration: 12000 })
       }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Send failed')

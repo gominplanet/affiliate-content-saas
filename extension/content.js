@@ -653,14 +653,47 @@ function findMessageTextarea() {
 }
 
 // React controls the message textarea, so a plain `.value =` is ignored. Use the
-// native value setter + input/change events (same trick as applyAmazonSearch).
+// native value setter + a FULL event burst so React's onChange fires and the
+// Send button un-disables — a bare 'input' event wasn't always enough (Send
+// stayed disabled → "send-button-not-found").
 function setReactTextareaValue(el, value) {
+  try { el.focus() } catch (e) {}
   const proto = window.HTMLTextAreaElement && window.HTMLTextAreaElement.prototype
   const desc = proto && Object.getOwnPropertyDescriptor(proto, 'value')
   if (desc && desc.set) desc.set.call(el, value); else el.value = value
-  el.dispatchEvent(new Event('input', { bubbles: true }))
+  try { el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: value })) }
+  catch (e) { el.dispatchEvent(new Event('input', { bubbles: true })) }
   el.dispatchEvent(new Event('change', { bubbles: true }))
-  el.focus()
+  el.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'a' }))
+  el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'a' }))
+}
+
+// Amazon's message Send button — matched TOLERANTLY: enabled (checks both the
+// `disabled` prop and aria-disabled), label is "send" as a word (covers "Send",
+// "Send message", "Send now"), by text/aria/title, shortest label first (closest
+// to a bare "Send"). Also accepts input[type=submit].
+function findSendButton(scope) {
+  const root = scope || document
+  const cands = [...root.querySelectorAll('button,[role="button"],input[type="submit"]')]
+  const ok = cands.filter(b => {
+    if (b.disabled === true || b.getAttribute('aria-disabled') === 'true') return false
+    const t = ((b.innerText || b.textContent || b.value || '') + ' ' + (b.getAttribute('aria-label') || '') + ' ' + (b.getAttribute('title') || '')).replace(/\s+/g, ' ').trim()
+    return /(^|\s)send(\b|$)/i.test(t) && t.length <= 24
+  })
+  ok.sort((a, z) => ((a.textContent || '').trim().length) - ((z.textContent || '').trim().length))
+  return ok[0] || null
+}
+
+// Every send-ish button (text/aria), with disabled state — for the failure diag.
+function sendCandidatesDump() {
+  return [...document.querySelectorAll('button,[role="button"],input[type="submit"]')]
+    .filter(b => /send/i.test((b.innerText || b.textContent || b.value || '') + ' ' + (b.getAttribute('aria-label') || '')))
+    .slice(0, 8)
+    .map(b => ({
+      text: ((b.innerText || b.textContent || b.value || '')).replace(/\s+/g, ' ').trim().slice(0, 30),
+      aria: (b.getAttribute('aria-label') || '').slice(0, 30),
+      disabled: b.disabled === true || b.getAttribute('aria-disabled') === 'true',
+    }))
 }
 
 // Read the campaign context from the details page so MVP can personalise the
@@ -740,21 +773,25 @@ async function scoutDraftMessage() {
   // "---- Add to Message Group ----" break, NOT a queue (this is how OINK /
   // ViralVue do it). We loop the segments doing exactly that.
   const clickEl = (el) => { ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(t => { try { el.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, view: window })) } catch (e) {} }) }
-  const findSend = () => [...document.querySelectorAll('button,[role="button"]')].find(b => /^\s*send\s*$/i.test(textOf(b)) && !b.disabled)
   const segments = splitMessageSegments(d.message)
   let sent = 0
   for (let i = 0; i < segments.length; i++) {
     const box = findMessageTextarea(); if (!box) break
     setReactTextareaValue(box, segments[i])
-    await sleep(600)                                  // let React register the text + enable Send
+    await sleep(650)
+    // Wait up to ~5s for Amazon to enable the Send button after the fill.
     let btn = null
-    for (let t = 0; t < 12 && !btn; t++) { btn = findSend(); if (!btn) await sleep(250) }
-    if (!btn) break                                   // Send never enabled — leave this segment placed
+    for (let t = 0; t < 20 && !btn; t++) { btn = findSendButton(); if (!btn) await sleep(250) }
+    if (!btn) break
     clickEl(btn)
     sent++
-    await sleep(1300)                                 // wait for the message to post + the box to clear
+    await sleep(1400)                                 // let the message post + the box clear
   }
-  if (sent === 0) return { ok: true, chars: d.message.length, sent: false, groups: 0, reason: 'placed — Send button not found, hit Send yourself' }
+  if (sent === 0) {
+    const cands = sendCandidatesDump()
+    console.warn('[MVP SCOUT] send failed — no enabled Send button. Candidates:', cands)
+    return { ok: true, chars: d.message.length, sent: false, groups: 0, reason: `placed — no enabled Send button (${cands.length} send-ish; see console)`, sendCandidates: cands }
+  }
   return { ok: true, chars: d.message.length, sent: true, groups: sent }
 }
 
