@@ -447,10 +447,13 @@ async function scanCreatorConnections(callerTabId) {
 // product's brand/keyword and resolve each result card's real ASIN until one
 // matches the target — then the caller can auto-send a brand message.
 //
-// Runs the CC page in a BACKGROUND tab (the user asked, repeatedly, never to be
-// moved off MVP). Search + first-batch card reads work headless — React mounts
-// the cards into the DOM regardless of paint throttling — and ASIN resolution
-// already opens its own background tabs. If we opened the tab we close it after.
+// First attempt runs the CC page in a BACKGROUND tab (the user asked, repeatedly,
+// never to be moved off MVP). ASIN resolution already opens its own background
+// tabs. BUT Amazon's virtualized CC grid often refuses to render in a hidden tab
+// (paint throttling → the card list never mounts → "checked 0"). So when the
+// background pass returns zero candidates, ccFindCampaign escalates to a brief
+// FOREGROUND pass and hands focus straight back — the only reliable way to read
+// the grid, matching the existing Campaign Search scan.
 async function findCampaignOnTab(tabId, query, asin) {
   const ask = () => chrome.tabs.sendMessage(tabId, { type: 'CC_FIND', query, asin, maxResolve: 15, maxCards: 120 })
   try {
@@ -462,7 +465,13 @@ async function findCampaignOnTab(tabId, query, asin) {
   }
 }
 
-async function ccFindCampaign(query, asin) {
+// True when a find result means "the grid never gave us anything to check" (as
+// opposed to "checked N cards, none matched") — the signal to retry foreground.
+function ccFoundNothingToCheck(res) {
+  return !!(res && res.ok && !res.found && !res.scanned)
+}
+
+async function ccFindCampaign(query, asin, callerTabId) {
   const want = String(asin || '').toUpperCase()
   if (!/^[A-Z0-9]{10}$/.test(want)) return { ok: false, error: 'no-asin' }
   const open = await chrome.tabs.query({
@@ -487,7 +496,23 @@ async function ccFindCampaign(query, asin) {
       const sw = sres && sres[0] && sres[0].result
       if (sw && sw.switched) { await _sleep(1500); await waitForTabLoad(tab.id, 25000); await _sleep(2500) }
     } catch (e) {}
-    const res = await findCampaignOnTab(tab.id, query, want)
+
+    let res = await findCampaignOnTab(tab.id, query, want)
+
+    // Background yielded no cards to check → the hidden grid didn't render.
+    // Escalate to a short foreground pass, then hand focus back to MVP.
+    if (ccFoundNothingToCheck(res)) {
+      try {
+        await chrome.tabs.update(tab.id, { active: true })
+        await _sleep(2800) // let the now-visible grid paint + settle
+        const fg = await findCampaignOnTab(tab.id, query, want)
+        if (fg) { res = fg; res.foreground = true }
+      } catch (e) { /* keep the background result */ }
+      finally {
+        // Return the user to where they were — never leave them on the CC tab.
+        if (callerTabId != null) { try { await chrome.tabs.update(callerTabId, { active: true }) } catch (e) {} }
+      }
+    }
     return res || { ok: false, error: 'no-result' }
   } catch (e) {
     return { ok: false, error: opened ? 'cc-find-failed' : 'content-script-unreachable' }
@@ -1877,8 +1902,9 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     // Live "is this product a Creator Connections campaign?" lookup: CC search by
     // brand/keyword + resolve each result's ASIN until the target matches. A
     // search plus up to ~15 background ASIN resolves — allow up to 3 minutes.
+    const callerTabId = sender && sender.tab ? sender.tab.id : null
     const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 180000)
-    ccFindCampaign(msg.query || '', msg.asin || '')
+    ccFindCampaign(msg.query || '', msg.asin || '', callerTabId)
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async response — keep the channel open

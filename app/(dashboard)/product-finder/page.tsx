@@ -12,7 +12,7 @@
 import { useState, useCallback } from 'react'
 import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
-import { Loader2, Search, Sparkles, ExternalLink, PackageSearch, MessageSquare } from 'lucide-react'
+import { Loader2, Search, Sparkles, ExternalLink, PackageSearch, MessageSquare, Radar } from 'lucide-react'
 import { requestProductSearch, requestFindCampaign, type FinderProduct } from '@/lib/extension-frame'
 import MessageBrandModal, { type MessageBrandCampaign } from '@/components/campaigns/MessageBrandModal'
 
@@ -28,11 +28,28 @@ export default function ProductFinderPage() {
   const [genUrl, setGenUrl] = useState<Record<string, string>>({})
   const [msgProduct, setMsgProduct] = useState<MessageBrandCampaign | null>(null)
   const [msgChecking, setMsgChecking] = useState<string | null>(null) // asin being checked
+  // Campaign status per ASIN, surfaced on the rows BEFORE Message is opened.
+  // `imported` = one of the user's own Creator Connections campaigns (instant DB
+  // check). `live` = the result of an on-demand SCOUT CC search for that product.
+  type Imported = { detailsUrl: string; brandName: string | null; commissionPct: number | null }
+  type Live = { found: boolean; detailsUrl?: string | null; brand?: string | null; commissionPct?: number | null }
+  const [imported, setImported] = useState<Record<string, Imported>>({})
+  const [live, setLive] = useState<Record<string, Live>>({})
+  const [ccChecking, setCcChecking] = useState<string | null>(null) // asin being live-checked
 
   // Open the Message modal for a found product. First check whether this ASIN is
   // already an imported Creator Connections campaign — if so, open in AUTO-SEND
   // mode (SCOUT delivers it on Amazon); otherwise compose+copy.
   const openMessage = useCallback(async (p: FinderProduct) => {
+    // Reuse what the row already knows so the modal opens in the right mode with
+    // no wait: an imported campaign, or a live check that already found one.
+    const imp = imported[p.asin]
+    if (imp) { setMsgProduct({ product: p.title, asin: p.asin, commissionPct: imp.commissionPct, detailsUrl: imp.detailsUrl, brandLabel: imp.brandName || '' }); return }
+    const lv = live[p.asin]
+    if (lv?.found && lv.detailsUrl) { setMsgProduct({ product: p.title, asin: p.asin, commissionPct: lv.commissionPct ?? null, detailsUrl: lv.detailsUrl, brandLabel: lv.brand || '' }); return }
+    // Not known yet — do the single instant imported check (covers the race where
+    // the batch check hasn't landed), else open in compose+copy with the in-modal
+    // live search still available.
     setMsgChecking(p.asin)
     let detailsUrl = ''
     let brandLabel = ''
@@ -44,16 +61,51 @@ export default function ProductFinderPage() {
         detailsUrl = d.detailsUrl
         brandLabel = d.brandName || ''
         commissionPct = typeof d.commissionPct === 'number' ? d.commissionPct : null
-        toast.message('Found your Creator Connections campaign', { description: 'You can auto-send this message on Amazon.' })
       }
     } catch { /* fall back to compose+copy */ }
     setMsgChecking(null)
     setMsgProduct({ product: p.title, asin: p.asin, commissionPct, detailsUrl, brandLabel })
+  }, [imported, live])
+
+  // Batch-check which result ASINs are already the user's imported campaigns, so
+  // each row can show its status before Message is opened. Best-effort.
+  const checkImported = useCallback(async (products: FinderProduct[]) => {
+    const asins = products.map(p => p.asin).filter(Boolean)
+    if (asins.length === 0) return
+    try {
+      const res = await fetch('/api/campaigns/find-by-asins', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ asins }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (d?.map && typeof d.map === 'object') setImported(d.map as Record<string, Imported>)
+    } catch { /* rows just won't show the imported badge */ }
+  }, [])
+
+  // On-demand live "is this a Creator Connections campaign?" check for ONE row —
+  // the same background SCOUT search the modal runs, but surfaced on the row so
+  // the user can probe before hitting Message. Slow (~1 min), so opt-in per row.
+  const checkCC = useCallback(async (p: FinderProduct) => {
+    setCcChecking(p.asin)
+    try {
+      const r = await requestFindCampaign(p.asin, p.asin)
+      if (r.ok) {
+        setLive(s => ({ ...s, [p.asin]: { found: !!r.found, detailsUrl: r.detailsUrl, brand: r.brand, commissionPct: r.commissionPct } }))
+        if (r.found) toast.success(`It's a campaign${r.brand ? ` from ${r.brand}` : ''} — you can auto-send.`)
+        else toast.message('Not a Creator Connections campaign', { description: 'You can still copy a pitch to reach the brand.' })
+      } else if (r.error === 'not-installed') toast.error('Install / enable SCOUT to check Creator Connections.')
+      else if (r.error === 'timeout') toast.error('The Creator Connections check timed out — try again.')
+      else toast.error(`Couldn't check: ${r.error}`)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Check failed')
+    } finally {
+      setCcChecking(null)
+    }
   }, [])
 
   const search = useCallback(async () => {
     if (!keyword.trim()) { toast.error('Enter a keyword to search.'); return }
-    setSearching(true); setResults(null); setMeta(null)
+    setSearching(true); setResults(null); setMeta(null); setImported({}); setLive({})
     try {
       const r = await requestProductSearch(keyword.trim(), {
         minSales: parseInt(minSales, 10) || 0,
@@ -72,6 +124,7 @@ export default function ProductFinderPage() {
       setMeta({ scanned: r.scanned, totalFound: r.totalFound })
       const n = (r.products ?? []).length
       toast.success(n ? `${n} product${n === 1 ? '' : 's'} passed your rules.` : 'No products passed your rules — loosen them and try again.')
+      if (n) checkImported(r.products ?? [])
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Search failed')
     } finally {
@@ -108,6 +161,38 @@ export default function ProductFinderPage() {
     return <span className="text-[11px]" style={{ color: 'var(--text-faint)' }} title="No carousel video">🚫 none</span>
   }
   const fmtSales = (n: number | null) => n == null ? '—' : (n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(n))
+
+  // The campaign status shown on each row, BEFORE Message is opened:
+  //  • imported / live-found → a green "Campaign · auto-send" chip
+  //  • live-checked miss     → a faint "Not a campaign" note
+  //  • unknown               → a "Check CC" button (runs the live SCOUT search)
+  const renderCampaign = (p: FinderProduct) => {
+    const imp = imported[p.asin]
+    const lv = live[p.asin]
+    const isCampaign = !!imp || !!lv?.found
+    if (isCampaign) {
+      const brand = imp?.brandName || lv?.brand || ''
+      return (
+        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#248a3d]"
+          title={`Creator Connections campaign${brand ? ` · ${brand}` : ''} — Message will auto-send on Amazon`}>
+          🎯 Campaign{imp ? '' : ' (live)'} · auto-send
+        </span>
+      )
+    }
+    if (ccChecking === p.asin) {
+      return <span className="inline-flex items-center gap-1 text-[11px]" style={{ color: 'var(--text-faint)' }}><Loader2 size={10} className="animate-spin" /> Checking CC…</span>
+    }
+    if (lv && !lv.found) {
+      return <span className="text-[11px]" style={{ color: 'var(--text-faint)' }} title="No live Creator Connections campaign matched">— not a campaign</span>
+    }
+    return (
+      <button onClick={() => checkCC(p)} disabled={!!ccChecking}
+        title="Ask SCOUT (background) whether this product is a Creator Connections campaign you can auto-send to"
+        className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#7C3AED] hover:underline disabled:opacity-50">
+        <Radar size={11} /> Check CC
+      </button>
+    )
+  }
 
   const inputCls = 'w-full rounded-lg px-3 py-2 text-sm outline-none'
   const inputStyle = { backgroundColor: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text)' } as React.CSSProperties
@@ -148,7 +233,7 @@ export default function ProductFinderPage() {
           Only products that already have a carousel video
         </label>
         <p className="text-[11px] mt-2" style={{ color: 'var(--text-faint)' }}>
-          SCOUT opens each result's Amazon page in the background to read live monthly sales + video placement, so a scan of {maxResults || '15'} takes ~1–2 min. Data is read at that moment — not a cached database.
+          SCOUT opens each result's Amazon page in the background to read live monthly sales + video placement, so a scan of {maxResults || '15'} takes ~1–2 min. Data is read at that moment — not a cached database. Rows that are already <span className="font-semibold text-[#248a3d]">🎯 your campaigns</span> are flagged instantly; use <span className="font-semibold text-[#7C3AED]">Check CC</span> on any other row to have SCOUT confirm if it's a Creator Connections campaign you can auto-send to.
         </p>
       </div>
 
@@ -182,6 +267,8 @@ export default function ProductFinderPage() {
                     <span title="Bought in past month">📈 {fmtSales(p.monthlySales)}/mo</span>
                     {videoBadge(p.carouselPos ?? 'none')}
                     {p.rating && <span>★ {p.rating}</span>}
+                    <span aria-hidden style={{ color: 'var(--border)' }}>·</span>
+                    {renderCampaign(p)}
                   </div>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
