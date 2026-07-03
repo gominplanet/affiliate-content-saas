@@ -42,6 +42,28 @@ export const maxDuration = 300
 const slugify = (s: string) =>
   s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80)
 
+// Derive a product name from a store URL's slug when we have nothing else — most
+// stores put the product name right in the path (Walmart /ip/<slug>/<id>, Amazon
+// /<slug>/dp/<asin>, Shopify /products/<slug>, Target /p/<slug>/-/A-<id>, …). This
+// is what lets a Walmart/Target/etc. link work even though those sites block
+// server-side scraping: we get the real product name, then web-research grounds it.
+function nameFromUrl(url: string): string {
+  try {
+    const u = new URL(url)
+    const GENERIC = new Set(['ip', 'dp', 'p', 'gp', 'product', 'products', 'item', 'itm', 'pd', 'shop', 'buy', 'a', 'dp-monetized'])
+    const seg = u.pathname.split('/').filter(Boolean)
+      // Skip generic path words and pure ID segments (numbers, A-1234, B0XXXX…).
+      .filter(s => !GENERIC.has(s.toLowerCase()) && !/^[A-Z0-9]{8,}$/i.test(s) && !/^\d+$/.test(s))
+      // The product slug is the one with the most words.
+      .sort((a, b) => b.split(/[-_]/).length - a.split(/[-_]/).length)[0] || ''
+    let name = decodeURIComponent(seg).replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim()
+    // Drop trailing size/pack noise that bloats the name (e.g. "16 9floz 1 69floz").
+    name = name.replace(/\b\d+(\.\d+)?\s?(fl ?oz|oz|ml|l|ct|count|pack|pk|g|kg|lb|lbs|in|inch|cm)\b/gi, '').replace(/\s+/g, ' ').trim()
+    if (name.split(' ').length < 2 || name.length < 4) return ''
+    return name.slice(0, 120)
+  } catch { return '' }
+}
+
 const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 // Guarantee the affiliate link is hyperlinked inline at least `min` times in
@@ -181,7 +203,13 @@ export async function POST(req: Request) {
       } catch { /* keep the user's own link */ }
     }
   }
-  if (!productName) productName = providedName || 'this product'
+  // If Amazon didn't resolve it and the user didn't type a name, read the name
+  // from the store URL's slug — the key to making Walmart/Target/etc. links work
+  // (those block server scraping, but the URL still carries the product name).
+  const derivedName = (!providedName && productName === providedName)
+    ? nameFromUrl(finalUrl || link || '')
+    : ''
+  if (!productName) productName = providedName || derivedName || 'this product'
 
   // ── 2. Research grounding (web + owner sentiment) — replaces the transcript ──
   let research = ''
@@ -193,7 +221,7 @@ export async function POST(req: Request) {
     }
   } catch { /* research is best-effort */ }
 
-  if (!pDescription && !research && bullets.length === 0 && !providedName) {
+  if (!pDescription && !research && bullets.length === 0 && !providedName && !derivedName) {
     return NextResponse.json({ error: 'Couldn’t find enough about that product. Add the product name or a clearer link and try again.' }, { status: 422 })
   }
 
