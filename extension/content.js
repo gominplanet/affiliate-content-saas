@@ -451,7 +451,7 @@ async function resolveCampaignAsin(detailsUrl) {
 // POST one accepted campaign into the MVP Creator Campaigns inbox. The row lands
 // as `pending`, ready for one-click "Generate post". Maps to the existing ingest
 // shape: commission % goes into the free-text `epc` field.
-async function pushCampaignToMvp(camp, asin, token) {
+async function pushCampaignToMvp(camp, asin, token, extra) {
   try {
     const res = await fetch(`${MVP_ORIGIN}/api/campaigns/ingest`, {
       method: 'POST',
@@ -465,6 +465,8 @@ async function pushCampaignToMvp(camp, asin, token) {
           program: 'affiliate_plus',
           commissionPct: camp.commissionPct != null ? camp.commissionPct : null,
           endsAt: camp.endsAt || null,
+          monthlySales: extra && typeof extra.monthlySales === 'number' ? extra.monthlySales : null,
+          hasCarouselVideo: extra && typeof extra.hasVideo === 'boolean' ? extra.hasVideo : null,
         }],
       }),
     })
@@ -819,9 +821,9 @@ function mountSearchPanel() {
       <div class="mvp-row"><div><label>Campaigns last at least (days)</label><input class="mvp-lastdays" type="number" min="0" step="1" placeholder="e.g. 100"></div></div>
       <div class="mvp-row"><button class="mvp-btn mvp-search" style="flex:2">Search</button><button class="mvp-btn dbg mvp-debug" style="flex:1">Debug</button><button class="mvp-btn dbg mvp-draft" style="flex:1" title="On a campaign details page: draft a brand-outreach message from the brief">✍️ Draft</button></div>
       <div class="mvp-res"></div>
-      <div class="mvp-row" style="margin-top:8px"><button class="mvp-btn sec mvp-accsel" style="flex:1">Accept selected</button><button class="mvp-btn sec mvp-submit" style="flex:1">Submit accepted</button></div>
+      <div class="mvp-row" style="margin-top:8px"><button class="mvp-btn sec mvp-accsel" style="flex:1" title="Deep-check selected (sales + carousel video) and import the qualifiers into MVP">Import selected</button><button class="mvp-btn sec mvp-submit" style="flex:1">Submit accepted</button></div>
       <div class="mvp-token-row"><div><label>MVP ingest token</label><input class="mvp-token" placeholder="CC_..."></div><button class="mvp-btn sec mvp-token-save" style="flex:0 0 auto;align-self:flex-end">Save</button></div>
-      <div class="mvp-note"><b>Accept</b> accepts on Amazon AND sends the campaign to your MVP Creator Campaigns inbox with its real ASIN (ready to Generate post). Then <b>Submit accepted</b> finalises the batch on Amazon.</div>
+      <div class="mvp-note">Tick campaigns → <b>Import selected</b>: SCOUT deep-checks each (monthly sales + carousel video), keeps only products with a carousel video and 100+ sales/mo, accepts them on Amazon and adds them to your MVP /epc list to Generate + Message. <b>Accept</b> imports one now (no deep check). <b>✍️ Draft</b> writes a brand message on a campaign's details page.</div>
     </div>`
   // Prefer sitting IN the page flow, right above Amazon's toolbar row (where
   // ViralVue et al. inject). Fall back to a floating middle-right panel if we
@@ -906,18 +908,37 @@ function mountSearchPanel() {
   })
   q('.mvp-accsel').addEventListener('click', async () => {
     const btn = q('.mvp-accsel'); const keys = [...selected]
-    if (!keys.length) { btn.textContent = 'Select some first'; setTimeout(() => { btn.textContent = 'Accept selected' }, 1500); return }
+    if (!keys.length) { btn.textContent = 'Select some first'; setTimeout(() => { btn.textContent = 'Import selected' }, 1600); return }
+    const token = await getIngestToken()
+    if (!token) { showTokenRow(); res.innerHTML = '<div class="mvp-note">Connect MVP first — paste your ingest token below, then Import selected again.</div>'; return }
     btn.disabled = true
-    let done = 0, pushed = 0
-    for (const key of keys) {
-      btn.textContent = `Sending ${done + 1}/${keys.length}…`
-      const sel = (window.CSS && CSS.escape) ? CSS.escape(key) : key
-      const accBtn = res.querySelector(`.mvp-card[data-key="${sel}"] .mvp-acc`)
-      const r = await acceptAndPush(rowsByKey.get(key), accBtn)
-      done++; if (r && r.pushed) pushed++
+    let imported = 0
+    const dropped = []
+    // Each selected campaign is DEEP-CHECKED: SCOUT opens its product page for
+    // the sales figure + carousel video. Hard rules: no carousel video → drop;
+    // no visible sales OR under 100/mo → drop. Qualifiers are accepted on Amazon
+    // and imported into MVP.
+    for (let i = 0; i < keys.length; i++) {
+      const camp = rowsByKey.get(keys[i])
+      const label = camp ? (camp.campaignName || camp.brand || camp.key) : keys[i]
+      btn.textContent = `Checking ${i + 1}/${keys.length}…`
+      res.innerHTML = `<div class="mvp-note">Deep-checking ${i + 1}/${keys.length}: ${String(label).slice(0, 42).replace(/</g, '&lt;')}… <br>(opening its Amazon page for monthly sales + carousel video)</div>`
+      if (!camp || !camp.detailsUrl) { dropped.push(`${label}: no details link`); continue }
+      let deep = null
+      try { deep = await chrome.runtime.sendMessage({ type: 'SCOUT_DEEP_CHECK', detailsUrl: camp.detailsUrl }) } catch (e) {}
+      if (!deep || !deep.ok || !deep.asin) { dropped.push(`${label}: couldn't read ASIN`); continue }
+      if (!deep.hasVideo) { dropped.push(`${label}: no carousel video`); continue }
+      if (deep.sales == null) { dropped.push(`${label}: no sales figure shown`); continue }
+      if (deep.sales < 100) { dropped.push(`${label}: ${deep.sales}/mo (under 100)`); continue }
+      scoutAccept(camp.key)
+      const push = await pushCampaignToMvp(camp, deep.asin, token, { monthlySales: deep.sales, hasVideo: deep.hasVideo })
+      if (push.ok) imported++; else dropped.push(`${label}: push failed (${push.error || '?'})`)
     }
-    btn.textContent = `Done — ${pushed}/${keys.length} in MVP`
-    btn.disabled = false
+    btn.textContent = 'Import selected'; btn.disabled = false
+    const dropHtml = dropped.length
+      ? `<br>Skipped ${dropped.length}:<br>• ${dropped.slice(0, 8).map(s => String(s).replace(/</g, '&lt;')).join('<br>• ')}${dropped.length > 8 ? '<br>• …' : ''}`
+      : ''
+    res.innerHTML = `<div class="mvp-note"><b>Imported ${imported}</b> to MVP (accepted on Amazon + in your /epc list, ready to Generate + Message).${dropHtml}</div>`
   })
   q('.mvp-submit').addEventListener('click', () => { q('.mvp-submit').textContent = scoutSubmitAccepted() ? '✓ Submitted' : 'Not found' })
   const tokenSave = q('.mvp-token-save')

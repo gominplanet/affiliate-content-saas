@@ -310,11 +310,80 @@ async function resolveCampaignAsin(detailsUrl) {
   }
 }
 
+// Read a product's Amazon page for the two import-gate signals: monthly sales
+// ("X bought in past month") and whether the top image carousel has a video.
+function readDpSignalsInPage() {
+  const bodyText = document.body ? (document.body.innerText || '') : ''
+  // "1K+ bought in past month" / "500+ bought in past month" / "50 bought…"
+  let sales = null
+  const m = bodyText.match(/([\d][\d.,]*)\s*([kmKM])?\+?\s*bought in past month/i)
+  if (m) {
+    let n = parseFloat(m[1].replace(/,/g, ''))
+    const unit = (m[2] || '').toLowerCase()
+    if (unit === 'k') n *= 1000
+    else if (unit === 'm') n *= 1000000
+    if (!isNaN(n)) sales = Math.round(n)
+  }
+  // Carousel video: Amazon marks video thumbnails in the left image block
+  // (#altImages) various ways across layouts — try the common ones.
+  const scope = document.querySelector('#altImages') || document.querySelector('#imageBlock') || document.querySelector('#main-image-container') || document
+  let hasVideo = false
+  try {
+    if (scope.querySelector(
+      'li.videoBlockIngress, .videoThumbnail, .videoThumbnailContainer, [data-video-url], video, ' +
+      'button[aria-label*="video" i], [aria-label*="Play video" i], .vjs-tech, #vse-player'
+    )) hasVideo = true
+    // "N videos" count label near the thumbnails.
+    if (!hasVideo && /\b\d+\s+videos?\b/i.test((document.querySelector('#altImages')?.textContent) || '')) hasVideo = true
+  } catch (e) {}
+  return { sales, hasVideo }
+}
+
+// Deep import check for one campaign: resolve its ASIN (from the details page),
+// then reuse the SAME tab to open the /dp page and read sales + carousel video.
+async function resolveProductDeep(detailsUrl) {
+  if (!detailsUrl) return { ok: false, error: 'no-url' }
+  let tabId = null
+  try {
+    const tab = await chrome.tabs.create({ url: detailsUrl, active: false })
+    tabId = tab.id
+    await waitForTabLoad(tabId, 20000)
+    let asin = null
+    for (let i = 0; i < 12; i++) {
+      const r = await chrome.scripting.executeScript({ target: { tabId }, func: harvestAsinsInPage })
+      const a = (r && r[0] && r[0].result) || []
+      if (a.length) { asin = a[0]; break }
+      await _sleep(500)
+    }
+    if (!asin) return { ok: true, asin: null, sales: null, hasVideo: false }
+    // Navigate the same tab to the product page and read the signals.
+    await chrome.tabs.update(tabId, { url: `https://www.amazon.com/dp/${asin}` })
+    await waitForTabLoad(tabId, 20000)
+    await _sleep(1200)
+    let out = { sales: null, hasVideo: false }
+    for (let i = 0; i < 8; i++) {
+      const r = await chrome.scripting.executeScript({ target: { tabId }, func: readDpSignalsInPage })
+      const v = r && r[0] && r[0].result
+      if (v) { out = v; if (v.hasVideo || v.sales != null) break }
+      await _sleep(600)
+    }
+    return { ok: true, asin, sales: out.sales, hasVideo: out.hasVideo }
+  } catch (e) {
+    return { ok: false, error: e && e.message ? e.message : 'deep-exception' }
+  } finally {
+    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+  }
+}
+
 // Internal messages from the on-page SCOUT panel (content.js). Kept separate
 // from the onMessageExternal handler (which serves the MVP web app).
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg && msg.type === 'SCOUT_RESOLVE_ASIN') {
     resolveCampaignAsin(msg.detailsUrl).then(sendResponse)
+    return true // async response
+  }
+  if (msg && msg.type === 'SCOUT_DEEP_CHECK') {
+    resolveProductDeep(msg.detailsUrl).then(sendResponse)
     return true // async response
   }
   return false

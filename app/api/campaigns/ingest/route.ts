@@ -75,6 +75,9 @@ interface IncomingCampaign {
   // click (dollar `epc`); affiliate_plus = extra commission per sale (percent).
   program?: 'epc' | 'affiliate_plus'
   commissionPct?: number
+  // Deep-import signals read from the product's Amazon page.
+  monthlySales?: number
+  hasCarouselVideo?: boolean
 }
 
 export async function POST(request: Request) {
@@ -130,6 +133,8 @@ export async function POST(request: Request) {
           epc: program === 'epc' ? (c.epc?.toString().trim() || null) : null,
           program,
           commission_pct: program === 'affiliate_plus' ? commissionPct : null,
+          monthly_sales: typeof c.monthlySales === 'number' && isFinite(c.monthlySales) ? Math.round(c.monthlySales) : null,
+          has_carousel_video: typeof c.hasCarouselVideo === 'boolean' ? c.hasCarouselVideo : null,
           ends_at: c.endsAt?.toString().trim() || null,
         }
       })

@@ -39,6 +39,9 @@ interface CampaignRow {
   // 'affiliate_plus' = commission per sale (`commission_pct`, a percent).
   program: 'epc' | 'affiliate_plus' | null
   commission_pct: number | null
+  // Deep-import signals (SCOUT read these off the product's Amazon page).
+  monthly_sales: number | null
+  has_carousel_video: boolean | null
   ends_at: string | null
   status: string
   blog_post_id: string | null
@@ -46,6 +49,13 @@ interface CampaignRow {
   product_price: string | number | null
   error_message: string | null
   created_at: string
+}
+
+// 1200 → "1.2K", 2_000_000 → "2M"
+function fmtSales(n: number): string {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M'
+  if (n >= 1_000) return (n / 1_000).toFixed(1).replace(/\.0$/, '') + 'K'
+  return String(n)
 }
 
 // "$24.99" / "Up to $0.38" → 24.99 / 0.38
@@ -577,6 +587,12 @@ export default function EpcScoutPage() {
                         {c.asin} <ExternalLink size={9} />
                       </a>
                     </div>
+                    {(c.monthly_sales != null || c.has_carousel_video) && (
+                      <div className="flex items-center gap-2 mt-0.5 text-[10px]" style={{ color: 'var(--text-faint)' }}>
+                        {c.monthly_sales != null && <span title="Bought in past month (SCOUT deep check)">📈 {fmtSales(c.monthly_sales)}/mo</span>}
+                        {c.has_carousel_video && <span title="Product page has a carousel video">🎬 video</span>}
+                      </div>
+                    )}
                     {(isFail || isStuck) && err && (
                       <p className="text-[11px] text-[#ff3b30] mt-0.5 truncate" title={err}>⚠ {err}</p>
                     )}
