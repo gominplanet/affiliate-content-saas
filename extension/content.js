@@ -486,7 +486,7 @@ async function acceptAndPush(camp, btn) {
 function showTokenRow() {
   const p = document.getElementById(PANEL_ID)
   const r = p && p.querySelector('.mvp-token-row')
-  if (r) r.style.display = 'flex'
+  if (r) r.classList.add('show')
 }
 
 // Harvest every Amazon ASIN reachable from a single card's own DOM, trying the
@@ -530,39 +530,6 @@ function dumpCardDebug() {
   console.log('%c[MVP SCOUT] first card data-testids:', 'color:#7C3AED', testids)
   console.log('%c[MVP SCOUT] first card outerHTML:', 'color:#7C3AED', cont?.outerHTML?.slice(0, 8000) || '(no card found)')
   return { cardFound: !!cont, cardCount: conts.length, cardsWithAsin, asins, details, submitFound, parsed }
-}
-
-// Collect every ASIN currently anywhere in the document — used to diff the page
-// before vs. after opening a campaign's details panel.
-function harvestDocAsins() {
-  const set = new Set()
-  const push = (v) => { const m = String(v || '').toUpperCase().match(/\bB0[A-Z0-9]{8}\b/g); if (m) m.forEach(x => set.add(x)) }
-  document.querySelectorAll('[data-asin]').forEach(e => push(e.getAttribute('data-asin')))
-  document.querySelectorAll('a[href]').forEach(a => { const m = (a.getAttribute('href') || '').match(/\/(?:dp|product|gp\/product)\/([A-Z0-9]{10})/i); if (m) push(m[1]) })
-  push(document.body ? document.body.innerHTML : '')
-  return [...set]
-}
-
-// Open the first campaign's "View details" and dump what ASINs / markup appear —
-// the calibration probe for the ASIN drill-down. Best-effort; logs to console.
-async function probeCampaignDetails() {
-  const cont = document.querySelector('[data-testid="campaign-card-container"]')
-  if (!cont) return { ok: false, reason: 'no-card' }
-  const link = cont.querySelector('[data-testid$="campaign-card-view-details-link"], [data-testid*="view-details"], [data-testid*="view_details"]')
-    || [...cont.querySelectorAll('a,button,[role="button"]')].find(e => /view details|see details/i.test(textOf(e)))
-  if (!link) return { ok: false, reason: 'no-details-link' }
-  const urlBefore = location.href
-  const before = new Set(harvestDocAsins())
-  link.click()
-  await sleep(1500)
-  const navigated = location.href !== urlBefore
-  const after = harvestDocAsins()
-  const newAsins = after.filter(a => !before.has(a))
-  const dialog = document.querySelector('[role="dialog"],[data-testid*="details-modal"],[data-testid*="details-drawer"],[data-testid*="campaign-details"],[data-testid*="detail-panel"]')
-  console.log('%c[MVP SCOUT] details probe — navigated:', 'color:#7C3AED;font-weight:bold', navigated, '| newAsins:', newAsins, '| allAsinsNow:', after)
-  console.log('%c[MVP SCOUT] details container testids:', 'color:#7C3AED', dialog ? [...dialog.querySelectorAll('[data-testid]')].map(e => e.getAttribute('data-testid')).slice(0, 80) : '(no dialog element)')
-  console.log('%c[MVP SCOUT] details HTML:', 'color:#7C3AED', dialog?.outerHTML?.slice(0, 8000) || (navigated ? '(navigated to details route: ' + location.href + ')' : '(no dialog found — check the page)'))
-  return { ok: true, navigated, newAsins, dialogFound: !!dialog }
 }
 
 async function scoutRunSearch(f) {
@@ -659,6 +626,9 @@ function mountSearchPanel() {
     #${PANEL_ID} .mvp-card .m{font-size:11px;color:#6b7280;margin-top:2px;overflow-wrap:anywhere;white-space:normal !important}
     #${PANEL_ID} .mvp-acc{font-size:11px;font-weight:700;color:#7C3AED;background:none;border:1px solid #d6c6fb;border-radius:6px;padding:3px 7px;cursor:pointer;flex:0 0 auto !important;white-space:nowrap}
     #${PANEL_ID} .mvp-note{font-size:11px;color:#6b7280;margin-top:6px;line-height:1.4}
+    #${PANEL_ID} .mvp-token-row{display:none !important;gap:8px;margin:4px 0 8px}
+    #${PANEL_ID} .mvp-token-row.show{display:flex !important}
+    #${PANEL_ID} .mvp-token-row>div{flex:1 1 0 !important;min-width:0 !important}
     #${PANEL_ID}.mvp-min .mvp-body{display:none}
   `
   document.head.appendChild(style)
@@ -677,7 +647,7 @@ function mountSearchPanel() {
       <div class="mvp-row"><button class="mvp-btn mvp-search" style="flex:2">Search</button><button class="mvp-btn dbg mvp-debug" style="flex:1">Debug</button></div>
       <div class="mvp-res"></div>
       <div class="mvp-row" style="margin-top:8px"><button class="mvp-btn sec mvp-accsel" style="flex:1">Accept selected</button><button class="mvp-btn sec mvp-submit" style="flex:1">Submit accepted</button></div>
-      <div class="mvp-row mvp-token-row" style="display:none;margin-top:4px"><div style="flex:2"><label>MVP ingest token</label><input class="mvp-token" placeholder="CC_..."></div><button class="mvp-btn sec mvp-token-save" style="flex:1;align-self:flex-end">Save</button></div>
+      <div class="mvp-token-row"><div><label>MVP ingest token</label><input class="mvp-token" placeholder="CC_..."></div><button class="mvp-btn sec mvp-token-save" style="flex:0 0 auto;align-self:flex-end">Save</button></div>
       <div class="mvp-note"><b>Accept</b> accepts on Amazon AND sends the campaign to your MVP Creator Campaigns inbox with its real ASIN (ready to Generate post). Then <b>Submit accepted</b> finalises the batch on Amazon.</div>
     </div>`
   document.body.appendChild(el)
@@ -735,26 +705,13 @@ function mountSearchPanel() {
     } catch (e) { res.innerHTML = `<div class="mvp-note">Search error: ${e?.message || e}</div>` }
     btn.textContent = prev; btn.disabled = false
   })
-  q('.mvp-debug').addEventListener('click', async () => {
-    const btn = q('.mvp-debug'); const prev = btn.textContent; btn.textContent = 'Probing…'; btn.disabled = true
-    try {
-      const d = dumpCardDebug()
-      let extra = ''
-      // If the card face carries no ASIN, open its "View details" and report what
-      // ASINs / markup surface — this is what tells me how to build the drill-down.
-      if (d.cardFound && (d.asins || []).length === 0 && d.details) {
-        const p = await probeCampaignDetails()
-        extra = p.ok
-          ? `<br>Opened <b>View details</b> → new ASINs: <b>${((p.newAsins || []).join(', ')) || 'none'}</b>${p.navigated ? ' (opened a details page)' : p.dialogFound ? ' (in a panel)' : ''}.`
-          : `<br>Could not open details (${p.reason}).`
-      }
-      const asins = (d.asins || []).join(', ') || 'none'
-      const dc = d.details ? (d.details.testid || d.details.text || d.details.tag) : 'none found'
-      res.innerHTML = `<div class="mvp-note">Dumped to the console (⌥⌘J). cards=<b>${d.cardCount}</b>, with ASIN in card=<b>${d.cardsWithAsin}</b>.<br>First card ASINs: <b>${String(asins).replace(/</g, '&lt;')}</b>.<br>Details control: ${String(dc).replace(/</g, '&lt;')}.${extra}<br>Paste the console output to me and I'll wire the ASIN push to MVP.</div>`
-    } catch (e) {
-      res.innerHTML = `<div class="mvp-note">Debug error: ${String(e?.message || e).replace(/</g, '&lt;')}</div>`
-    }
-    btn.textContent = prev; btn.disabled = false
+  q('.mvp-debug').addEventListener('click', () => {
+    // Passive card dump only — never navigates the user's tab. (ASIN resolution
+    // for the real push happens in a hidden background tab via the worker.)
+    const d = dumpCardDebug()
+    const first = d.parsed ? String(d.parsed.campaignName || d.parsed.brand || d.parsed.key) : 'none — run a Search or scroll the campaign list into view'
+    const dc = d.details ? (d.details.testid || d.details.text || d.details.tag) : 'n/a'
+    res.innerHTML = `<div class="mvp-note">Dumped to the console (⌥⌘J). cards=<b>${d.cardCount}</b>, with ASIN in card=<b>${d.cardsWithAsin}</b>.<br>First card: ${String(first).replace(/</g, '&lt;')}.<br>Details link: ${String(dc).replace(/</g, '&lt;')}.</div>`
   })
   q('.mvp-accsel').addEventListener('click', async () => {
     const btn = q('.mvp-accsel'); const keys = [...selected]
@@ -775,7 +732,7 @@ function mountSearchPanel() {
   const tokenSave = q('.mvp-token-save')
   if (tokenSave) tokenSave.addEventListener('click', () => {
     const t = ((q('.mvp-token').value) || '').trim()
-    if (t) { try { chrome.storage.local.set({ ccToken: t }) } catch (e) {} q('.mvp-token-row').style.display = 'none'; tokenSave.textContent = '✓ Saved' }
+    if (t) { try { chrome.storage.local.set({ ccToken: t }) } catch (e) {} q('.mvp-token-row').classList.remove('show'); tokenSave.textContent = '✓ Saved' }
   })
 }
 
