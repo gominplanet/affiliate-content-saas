@@ -39,12 +39,26 @@ function bearer(request: Request): string {
     : (request.headers.get('x-cc-token') || '').trim()
 }
 
+interface OutreachOptions {
+  offerContent?: boolean
+  requestSample?: boolean
+  shareAddress?: boolean
+  address?: string
+  includeMediaKit?: boolean
+  includePortfolio?: boolean
+  mentionPastCollabs?: boolean
+  offerBannerAds?: boolean
+  offerLivestream?: boolean
+}
+
 interface OutreachBody {
   brand?: string
   product?: string
   asin?: string
   commissionPct?: number
   brief?: string
+  options?: OutreachOptions
+  extraNotes?: string
 }
 
 export async function POST(request: Request) {
@@ -112,6 +126,22 @@ export async function POST(request: Request) {
     if (commissionPct != null) campaign.push(`Commission offered: ${commissionPct}%`)
     if (brief) campaign.push(`Campaign brief:\n${brief}`)
 
+    // What the creator ticked in the compose modal — the specific asks/offers to
+    // weave in (their proven levers for getting brand replies).
+    const o = (body.options || {}) as OutreachOptions
+    const asks: string[] = []
+    if (o.offerContent !== false) asks.push('Offer to create authentic, honest content that drives their Creator Connections sales.')
+    if (o.requestSample) asks.push('Politely request a free product sample to review firsthand.')
+    if (o.shareAddress && (o.address || '').trim()) asks.push(`If a sample is offered, give this shipping/forwarding address: ${(o.address || '').trim()}`)
+    else if (o.shareAddress) asks.push('Say you are happy to share a shipping address for a sample.')
+    if (o.includeMediaKit && mediaKit) asks.push(`Include the media kit link: ${mediaKit}`)
+    if (o.includePortfolio && (linkHub || youtube)) asks.push(`Include a portfolio link so they can see past work: ${[youtube, linkHub].filter(Boolean)[0]}`)
+    if (o.mentionPastCollabs) asks.push('Briefly mention we have partnered with other brands successfully (do NOT invent specifics).')
+    if (o.offerBannerAds) asks.push('Offer bonus homepage / banner-ad placement on our site.')
+    if (o.offerLivestream) asks.push('Offer to feature the product in a livestream.')
+    const extraNotes = (body.extraNotes || '').toString().trim().slice(0, 500)
+    if (extraNotes) asks.push(`Also weave in: ${extraNotes}`)
+
     const system = `You draft short, warm, professional direct messages a creator sends to a brand inside Amazon Creator Connections' own "Message Brand" chat. This is a CHAT MESSAGE, not an email: no subject line, no "Dear", no signature block — just the message.
 
 Rules:
@@ -125,7 +155,7 @@ Rules:
 ${BANNED_RULE}
 Output ONLY the message text — nothing else.`
 
-    const userMsg = `Write the message.\n\n--- CREATOR (who is sending) ---\n${facts.join('\n') || '(minimal profile — keep credibility generic and honest)'}\n\n--- CAMPAIGN (who they're messaging) ---\n${campaign.join('\n')}`
+    const userMsg = `Write the message.\n\n--- CREATOR (who is sending) ---\n${facts.join('\n') || '(minimal profile — keep credibility generic and honest)'}\n\n--- CAMPAIGN (who they're messaging) ---\n${campaign.join('\n')}\n\n--- INCLUDE THESE (weave in naturally, stay under 900 chars) ---\n${asks.length ? asks.map(a => `- ${a}`).join('\n') : '- A simple, warm offer to collaborate.'}`
 
     const client = createAnthropicClient()
     const msg = await client.messages.create({

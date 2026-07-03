@@ -24,7 +24,8 @@ import { useState, useMemo, useEffect, useCallback } from 'react'
 import PageHero from '@/components/layout/PageHero'
 import { Loader2, ExternalLink, CheckCircle2, Sparkles, Search, Puzzle, Download, Copy, RefreshCw, KeyRound, Trash2, Lock, FlaskConical, MessageSquare } from 'lucide-react'
 import { toast } from 'sonner'
-import { getScoutInstallKind, requestMessageBrand } from '@/lib/extension-frame'
+import { getScoutInstallKind } from '@/lib/extension-frame'
+import MessageBrandModal, { type MessageBrandCampaign } from '@/components/campaigns/MessageBrandModal'
 import { SCOUT_STORE_LISTING_URL } from '@/lib/scout-version'
 
 const CC_URL = 'https://www.amazon.com/creatorconnections/'
@@ -137,7 +138,7 @@ export default function EpcScoutPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [gen, setGen] = useState<Record<string, 'running' | 'done' | 'error'>>({})
   const [genErr, setGenErr] = useState<Record<string, string>>({})
-  const [messaging, setMessaging] = useState<Record<string, boolean>>({})
+  const [msgModal, setMsgModal] = useState<MessageBrandCampaign | null>(null)
   // Per-row "Fix image" state for already-published rows (repairs the CTA hero).
   const [fixing, setFixing] = useState<Record<string, boolean>>({})
   // Per-row "Remove" state (delete a campaign row + its WP post if any).
@@ -329,34 +330,15 @@ export default function EpcScoutPage() {
     }
   }, [loadList])
 
-  // Draft a brand-outreach message (our voice, from the campaign) and hand it to
-  // SCOUT, which opens the campaign's Amazon page and drops it in the Message
-  // Brand box for the user to review + Send. Never sends on its own.
-  const messageBrand = useCallback(async (c: CampaignRow) => {
+  // Open the compose-and-send modal for a campaign row (details_url required).
+  const openMessage = useCallback((c: CampaignRow) => {
     if (!c.details_url) { toast.error('No Amazon link stored for this campaign — re-import it via SCOUT.'); return }
-    setMessaging(m => ({ ...m, [c.asin]: true }))
-    try {
-      const draftRes = await fetch('/api/campaigns/outreach', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          product: c.campaign_name || c.product_title || '',
-          asin: c.asin,
-          commissionPct: c.commission_pct,
-        }),
-      })
-      const draft = await draftRes.json().catch(() => ({}))
-      if (!draftRes.ok || !draft.message) throw new Error(draft.error || 'Could not draft the message')
-      toast.message('Opening the brand chat on Amazon…', { description: 'Review the draft SCOUT places, then hit Send.' })
-      const r = await requestMessageBrand(c.details_url, draft.message)
-      if (r.ok) toast.success('Draft placed in the brand chat — review it and hit Send on Amazon.')
-      else if (r.error === 'not-installed') toast.error('Install/enable SCOUT to message brands.')
-      else toast.error(`Couldn't open the chat: ${r.reason || r.error || 'unknown'}`)
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Message failed')
-    } finally {
-      setMessaging(m => { const n = { ...m }; delete n[c.asin]; return n })
-    }
+    setMsgModal({
+      product: c.campaign_name || c.product_title || '',
+      asin: c.asin,
+      commissionPct: c.commission_pct,
+      detailsUrl: c.details_url,
+    })
   }, [])
 
   // Clear the scouted backlog — the un-actioned rows piling up after repeated
@@ -664,11 +646,11 @@ export default function EpcScoutPage() {
                           <Sparkles size={12} /> {(isFail || isStuck) ? 'Retry' : 'Generate'}
                         </button>
                         {c.details_url && (
-                          <button onClick={() => messageBrand(c)} disabled={!!messaging[c.asin]}
-                            title="Draft a pitch and place it in the brand's Amazon message box (you review + Send)"
-                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[12px] font-semibold border disabled:opacity-50"
+                          <button onClick={() => openMessage(c)}
+                            title="Compose a pitch and send it to the brand"
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[12px] font-semibold border"
                             style={{ color: '#7C3AED', borderColor: '#d6c6fb' }}>
-                            {messaging[c.asin] ? <Loader2 size={12} className="animate-spin" /> : <MessageSquare size={12} />} Message
+                            <MessageSquare size={12} /> Message
                           </button>
                         )}
                         <button onClick={() => removeRow(c)} disabled={!!removing[c.asin]}
@@ -690,6 +672,7 @@ export default function EpcScoutPage() {
           </div>
         </>
       )}
+      {msgModal && <MessageBrandModal campaign={msgModal} onClose={() => setMsgModal(null)} />}
     </>
   )
 }
