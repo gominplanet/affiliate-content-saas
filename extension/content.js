@@ -410,16 +410,47 @@ function scoutSubmitAccepted() {
   return false
 }
 
-// Dump a campaign card's parsed fields + raw DOM, for future recalibration.
+// Harvest every Amazon ASIN reachable from a single card's own DOM, trying the
+// cheap in-card sources first (data-asin attrs, /dp/ links, image URLs) and
+// finally a regex over the card's raw HTML. Returns [] if the card carries no
+// ASIN — the signal that we must open its "View details" to get one.
+function harvestCardAsins(cont) {
+  const set = new Set()
+  const push = (v) => { const m = String(v || '').toUpperCase().match(/\bB0[A-Z0-9]{8}\b/g); if (m) m.forEach(x => set.add(x)) }
+  cont.querySelectorAll('[data-asin]').forEach(e => push(e.getAttribute('data-asin')))
+  cont.querySelectorAll('a[href]').forEach(a => { const m = (a.getAttribute('href') || '').match(/\/(?:dp|product|gp\/product)\/([A-Z0-9]{10})/i); if (m) push(m[1]) })
+  cont.querySelectorAll('img[src],img[alt]').forEach(img => { push(img.getAttribute('src')); push(img.getAttribute('alt')) })
+  push(cont.outerHTML)  // last resort: any B0-ASIN anywhere in the card markup
+  return [...set]
+}
+
+// Locate the control that expands a campaign's product/ASIN details, if any.
+function findDetailsControl(cont) {
+  const cands = [...cont.querySelectorAll('button,a,[role="button"],[data-testid]')]
+  const hit = cands.find(e =>
+    /view details|see details|\bdetails\b|view product|see product/i.test(textOf(e)) ||
+    /details|products?\b/i.test((e.getAttribute && e.getAttribute('data-testid')) || ''))
+  return hit ? { text: textOf(hit).slice(0, 40), testid: (hit.getAttribute && hit.getAttribute('data-testid')) || null, tag: hit.tagName } : null
+}
+
+// Dump a campaign card's parsed fields, its discoverable ASINs, the details
+// control (if any) and raw DOM — the calibration probe for ASIN grounding.
 function dumpCardDebug() {
-  const conts = document.querySelectorAll('[data-testid="campaign-card-container"]')
+  const conts = [...document.querySelectorAll('[data-testid="campaign-card-container"]')]
   const cont = conts[0] || null
   const parsed = cont ? extractNewCard(cont) : null
+  const asins = cont ? harvestCardAsins(cont) : []
+  const cardsWithAsin = conts.filter(c => harvestCardAsins(c).length > 0).length
+  const details = cont ? findDetailsControl(cont) : null
+  const testids = cont ? [...cont.querySelectorAll('[data-testid]')].map(e => e.getAttribute('data-testid')).slice(0, 60) : []
   const submitFound = [...document.querySelectorAll('button,a,[role="button"]')].some(b => /submit accepted campaigns/i.test(textOf(b)))
-  console.log('%c[MVP SCOUT] cards on page:', 'color:#7C3AED;font-weight:bold', conts.length)
-  console.log('%c[MVP SCOUT] parsed first card:', 'color:#7C3AED;font-weight:bold', parsed)
-  console.log('%c[MVP SCOUT] first card outerHTML:', 'color:#7C3AED', cont?.outerHTML?.slice(0, 4000) || '(no card found)')
-  return { cardFound: !!cont, cardCount: conts.length, submitFound, parsed }
+  console.log('%c[MVP SCOUT] cards:', 'color:#7C3AED;font-weight:bold', conts.length, '| with ASIN in own HTML:', cardsWithAsin)
+  console.log('%c[MVP SCOUT] first card parsed:', 'color:#7C3AED;font-weight:bold', parsed)
+  console.log('%c[MVP SCOUT] first card ASINs:', 'color:#7C3AED;font-weight:bold', asins)
+  console.log('%c[MVP SCOUT] details control:', 'color:#7C3AED;font-weight:bold', details)
+  console.log('%c[MVP SCOUT] first card data-testids:', 'color:#7C3AED', testids)
+  console.log('%c[MVP SCOUT] first card outerHTML:', 'color:#7C3AED', cont?.outerHTML?.slice(0, 8000) || '(no card found)')
+  return { cardFound: !!cont, cardCount: conts.length, cardsWithAsin, asins, details, submitFound, parsed }
 }
 
 async function scoutRunSearch(f) {
@@ -594,8 +625,9 @@ function mountSearchPanel() {
   })
   q('.mvp-debug').addEventListener('click', () => {
     const d = dumpCardDebug()
-    const first = d.parsed ? (d.parsed.campaignName || d.parsed.brand || d.parsed.key) : 'not parsed'
-    res.innerHTML = `<div class="mvp-note">Dumped to the console (⌥⌘J). cards=<b>${d.cardCount}</b>, submitBtn=${d.submitFound}. First card: ${String(first).replace(/</g, '&lt;')}.</div>`
+    const asins = (d.asins || []).join(', ') || 'none'
+    const dc = d.details ? (d.details.testid || d.details.text || d.details.tag) : 'none found'
+    res.innerHTML = `<div class="mvp-note">Dumped to the console (⌥⌘J). cards=<b>${d.cardCount}</b>, with ASIN in card=<b>${d.cardsWithAsin}</b>.<br>First card ASINs: <b>${String(asins).replace(/</g, '&lt;')}</b>.<br>Details control: ${String(dc).replace(/</g, '&lt;')}.<br>Paste the console output to me and I'll wire the ASIN push to MVP.</div>`
   })
   q('.mvp-accsel').addEventListener('click', () => { let ok = 0; selected.forEach(a => { if (scoutAccept(a).ok) ok++ }); q('.mvp-accsel').textContent = `Accepted ${ok}/${selected.size}` })
   q('.mvp-submit').addEventListener('click', () => { q('.mvp-submit').textContent = scoutSubmitAccepted() ? '✓ Submitted' : 'Not found' })
