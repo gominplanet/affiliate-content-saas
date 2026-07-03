@@ -13,7 +13,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { toast } from 'sonner'
-import { X, Loader2, Sparkles, Send, MessageSquare, Plus, Trash2 } from 'lucide-react'
+import { X, Loader2, Sparkles, Send, MessageSquare, Plus, Trash2, Copy } from 'lucide-react'
 import { requestSendBrand } from '@/lib/extension-frame'
 
 export interface MessageBrandCampaign {
@@ -130,6 +130,20 @@ export default function MessageBrandModal({ campaign, onClose, onSent }: { campa
 
   const cleanSegments = segments.map(s => s.trim()).filter(Boolean)
   const nothingToSend = cleanSegments.length === 0
+  // SCOUT can only auto-send through a Creator Connections campaign chat. When
+  // there's no campaign details URL (e.g. opened from the Product Finder), we
+  // switch to compose+copy: the user pastes the pitch wherever they reach the brand.
+  const canSend = !!campaign.detailsUrl
+
+  const copyAll = useCallback(async () => {
+    const toSend = segments.map(s => s.trim()).filter(Boolean)
+    if (toSend.length === 0) { toast.error('Nothing to copy — draft a message first.'); return }
+    try {
+      await navigator.clipboard.writeText(toSend.join('\n\n'))
+      toast.success(`Copied ${toSend.length} message${toSend.length === 1 ? '' : 's'} — paste them to the brand.`)
+      onClose()
+    } catch { toast.error('Copy failed — select the text above and copy manually.') }
+  }, [segments, onClose])
 
   const send = useCallback(async () => {
     const toSend = segments.map(s => s.trim()).filter(Boolean)
@@ -286,14 +300,18 @@ export default function MessageBrandModal({ campaign, onClose, onSent }: { campa
 
         <div className="p-5 pt-3 flex items-center gap-2 border-t" style={{ borderColor: 'var(--border)' }}>
           <button onClick={onClose} className="px-4 py-2 rounded-lg text-[13px] font-semibold" style={{ color: 'var(--text-soft)' }}>Cancel</button>
-          <button onClick={send} disabled={sending || drafting || nothingToSend}
+          <button onClick={canSend ? send : copyAll} disabled={sending || drafting || nothingToSend}
             className="ml-auto inline-flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold text-white disabled:opacity-50"
             style={{ background: 'linear-gradient(45deg, #7C3AED 0%, #bc1888 100%)' }}>
-            {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Send {cleanSegments.length > 1 ? `${cleanSegments.length} messages` : 'message'}
+            {canSend
+              ? <>{sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Send {cleanSegments.length > 1 ? `${cleanSegments.length} messages` : 'message'}</>
+              : <><Copy size={14} /> Copy {cleanSegments.length > 1 ? `${cleanSegments.length} messages` : 'message'}</>}
           </button>
         </div>
         <p className="px-5 pb-4 -mt-1 text-[11px]" style={{ color: 'var(--text-faint)' }}>
-          SCOUT sends {cleanSegments.length > 1 ? `these ${cleanSegments.length} messages one after another` : 'this message'} from your Amazon session — in the background, without leaving this page (it even fixes your Store ID if needed). Review {cleanSegments.length > 1 ? 'them' : 'it'} above first; {cleanSegments.length > 1 ? 'they go' : 'it goes'} out as written.
+          {canSend
+            ? <>SCOUT sends {cleanSegments.length > 1 ? `these ${cleanSegments.length} messages one after another` : 'this message'} from your Amazon session — in the background, without leaving this page (it even fixes your Store ID if needed). Review {cleanSegments.length > 1 ? 'them' : 'it'} above first; {cleanSegments.length > 1 ? 'they go' : 'it goes'} out as written.</>
+            : <>This product isn&apos;t a Creator Connections campaign, so Amazon has no brand chat to auto-send through. Copy the pitch and send it wherever you reach the brand (email, their site, or their CC campaign if they run one).</>}
         </p>
       </div>
     </div>

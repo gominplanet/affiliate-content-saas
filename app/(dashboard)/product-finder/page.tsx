@@ -12,8 +12,9 @@
 import { useState, useCallback } from 'react'
 import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
-import { Loader2, Search, Sparkles, ExternalLink, PackageSearch } from 'lucide-react'
+import { Loader2, Search, Sparkles, ExternalLink, PackageSearch, MessageSquare } from 'lucide-react'
 import { requestProductSearch, type FinderProduct } from '@/lib/extension-frame'
+import MessageBrandModal, { type MessageBrandCampaign } from '@/components/campaigns/MessageBrandModal'
 
 export default function ProductFinderPage() {
   const [keyword, setKeyword] = useState('')
@@ -25,6 +26,7 @@ export default function ProductFinderPage() {
   const [meta, setMeta] = useState<{ scanned?: number; totalFound?: number } | null>(null)
   const [genning, setGenning] = useState<Record<string, 'busy' | 'done'>>({})
   const [genUrl, setGenUrl] = useState<Record<string, string>>({})
+  const [msgProduct, setMsgProduct] = useState<MessageBrandCampaign | null>(null)
 
   const search = useCallback(async () => {
     if (!keyword.trim()) { toast.error('Enter a keyword to search.'); return }
@@ -159,17 +161,27 @@ export default function ProductFinderPage() {
                     {p.rating && <span>★ {p.rating}</span>}
                   </div>
                 </div>
-                {genUrl[p.asin]
-                  ? <a href={genUrl[p.asin]} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[12px] font-semibold text-[#34c759] hover:underline flex-shrink-0">View post <ExternalLink size={12} /></a>
-                  : <button onClick={() => generate(p)} disabled={genning[p.asin] === 'busy'}
-                      className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-semibold text-white bg-[#7C3AED] hover:bg-[#6d28d9] disabled:opacity-60 flex-shrink-0">
-                      {genning[p.asin] === 'busy' ? <><Loader2 size={13} className="animate-spin" /> Writing…</> : <><Sparkles size={13} /> Generate post</>}
-                    </button>}
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <button onClick={() => setMsgProduct({ product: p.title, asin: p.asin, commissionPct: null, detailsUrl: '', brandLabel: '' })}
+                    title="Compose a brand-outreach pitch for this product (copy + send)"
+                    className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-[12px] font-semibold border"
+                    style={{ color: '#7C3AED', borderColor: '#d6c6fb' }}>
+                    <MessageSquare size={12} /> Message
+                  </button>
+                  {genUrl[p.asin]
+                    ? <a href={genUrl[p.asin]} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[12px] font-semibold text-[#34c759] hover:underline">View post <ExternalLink size={12} /></a>
+                    : <button onClick={() => generate(p)} disabled={genning[p.asin] === 'busy'}
+                        className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-semibold text-white bg-[#7C3AED] hover:bg-[#6d28d9] disabled:opacity-60">
+                        {genning[p.asin] === 'busy' ? <><Loader2 size={13} className="animate-spin" /> Writing…</> : <><Sparkles size={13} /> Generate post</>}
+                      </button>}
+                </div>
               </div>
             ))}
           </div>
         </div>
       )}
+
+      {msgProduct && <MessageBrandModal campaign={msgProduct} onClose={() => setMsgProduct(null)} />}
     </>
   )
 }
