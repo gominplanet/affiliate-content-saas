@@ -157,7 +157,7 @@ export default function MessageBrandModal({ campaign, onClose, onSent }: { campa
         try {
           await fetch('/api/campaigns/mark-messaged', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ asin: campaign.asin }),
+            body: JSON.stringify({ asin: campaign.asin, message: toSend.join('\n\n') }),
           })
         } catch { /* the message already went out — non-fatal */ }
         onSent?.()

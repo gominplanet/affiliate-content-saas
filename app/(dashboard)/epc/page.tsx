@@ -59,6 +59,8 @@ interface CampaignRow {
   error_message: string | null
   // When SCOUT sent the brand-outreach for this campaign (the "messaged" record).
   messaged_at: string | null
+  // The message that was sent (for the Messaged history view).
+  last_message: string | null
   created_at: string
 }
 
@@ -142,6 +144,9 @@ export default function EpcScoutPage() {
   const [endsWithin, setEndsWithin] = useState('')
   const [keyword, setKeyword] = useState('')
   const [onlyPending, setOnlyPending] = useState(true)
+  // 'queue' = the browse/generate list; 'messaged' = brand-outreach history.
+  const [view, setView] = useState<'queue' | 'messaged'>('queue')
+  const [openMsg, setOpenMsg] = useState<string | null>(null) // expanded message row (by id)
 
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [gen, setGen] = useState<Record<string, 'running' | 'done' | 'error'>>({})
@@ -195,6 +200,21 @@ export default function EpcScoutPage() {
   const filtered = useMemo(() => {
     const terms = keyword.toLowerCase().split(/[,\n]/).map(s => s.trim()).filter(Boolean)
     const within = parseFloat(endsWithin)
+    // Messaged history — only campaigns we've reached out to, newest first.
+    // Keyword still filters; the browse gates (EPC/commission/ends) don't apply.
+    if (view === 'messaged') {
+      return campaigns
+        .filter(c => {
+          if (!c.messaged_at) return false
+          if (terms.length) {
+            const hay = `${c.campaign_name || ''} ${c.product_title || ''} ${c.brand_name || ''} ${c.asin}`.toLowerCase()
+            if (!terms.some(t => hay.includes(t))) return false
+          }
+          return true
+        })
+        .map(c => ({ ...c, epcValue: parseDollar(c.epc), isPlus: c.program === 'affiliate_plus', rankValue: 0 }))
+        .sort((a, b) => (b.messaged_at || '').localeCompare(a.messaged_at || ''))
+    }
     return campaigns
       .map(c => {
         const isPlus = c.program === 'affiliate_plus'
@@ -229,7 +249,9 @@ export default function EpcScoutPage() {
         return true
       })
       .sort((a, b) => b.rankValue - a.rankValue)
-  }, [campaigns, minEpc, minCommission, endsWithin, keyword, onlyPending])
+  }, [campaigns, minEpc, minCommission, endsWithin, keyword, onlyPending, view])
+
+  const messagedCount = useMemo(() => campaigns.filter(c => c.messaged_at).length, [campaigns])
 
   const selectableShown = filtered.filter(c => !isLiveRow(c))
   const allShownSelected = selectableShown.length > 0 && selectableShown.every(c => selected.has(c.asin))
@@ -527,7 +549,35 @@ export default function EpcScoutPage() {
         </div>
       ) : (
         <>
-          {/* Filters */}
+          {/* View switcher — browse queue vs brand-outreach history */}
+          <div className="flex items-center gap-2 mb-3">
+            {([['queue', 'Campaign queue'], ['messaged', `✉️ Messaged${messagedCount ? ` (${messagedCount})` : ''}`]] as const).map(([v, label]) => (
+              <button key={v} onClick={() => setView(v)}
+                className="px-3 py-1.5 rounded-lg text-[13px] font-semibold transition-colors"
+                style={view === v ? { background: '#7C3AED', color: '#fff' } : { color: 'var(--text-soft)', border: '1px solid var(--border)' }}>
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {/* Messaged view: compact keyword search only */}
+          {view === 'messaged' && (
+            <div className="card p-4 mb-4 flex flex-wrap items-end gap-4">
+              <Field label="Search messaged brands">
+                <div className="relative">
+                  <Search size={13} className="absolute left-2 top-1/2 -translate-y-1/2 text-[#86868b]" />
+                  <input type="text" value={keyword} onChange={e => setKeyword(e.target.value)} placeholder="brand, product, ASIN…"
+                    className="w-56 pl-7 pr-2 py-1.5 rounded-lg border text-sm bg-transparent" style={{ borderColor: 'var(--border)' }} />
+                </div>
+              </Field>
+              <span className="ml-auto text-[12px] pb-1.5" style={{ color: 'var(--text-faint)' }}>
+                {filtered.length} brand{filtered.length === 1 ? '' : 's'} messaged
+              </span>
+            </div>
+          )}
+
+          {/* Filters (queue view only) */}
+          {view === 'queue' && (
           <div className="card p-4 mb-4">
             <div className="flex flex-wrap items-end gap-4">
               <Field label="Min EPC ($)">
@@ -558,8 +608,10 @@ export default function EpcScoutPage() {
               <span className="ml-auto text-[12px] pb-1.5" style={{ color: 'var(--text-faint)' }}>{filtered.length} match</span>
             </div>
           </div>
+          )}
 
-          {/* Action bar */}
+          {/* Action bar (queue view only) */}
+          {view === 'queue' && (
           <div className="flex items-center gap-3 mb-3">
             <button onClick={toggleAll} className="text-[12px] font-semibold text-[#7C3AED] hover:underline">
               {allShownSelected ? 'Deselect all' : 'Select all shown'}
@@ -571,6 +623,13 @@ export default function EpcScoutPage() {
               {anyRunning ? <><Loader2 size={15} className="animate-spin" /> Generating…</> : <><Sparkles size={15} /> Generate {selectedCount || ''} selected</>}
             </button>
           </div>
+          )}
+
+          {view === 'messaged' && filtered.length === 0 && (
+            <div className="card p-6 text-center text-sm" style={{ color: 'var(--text-faint)' }}>
+              No brands messaged yet. On a campaign, hit <span className="font-medium">Message</span> to send your outreach — it'll show up here.
+            </div>
+          )}
 
           {/* Table */}
           <div className="card divide-y divide-gray-100 dark:divide-white/10">
@@ -627,6 +686,17 @@ export default function EpcScoutPage() {
                     )}
                     {(isFail || isStuck) && err && (
                       <p className="text-[11px] text-[#ff3b30] mt-0.5 truncate" title={err}>⚠ {err}</p>
+                    )}
+                    {view === 'messaged' && c.last_message && (
+                      <div className="mt-1">
+                        <button onClick={() => setOpenMsg(openMsg === c.id ? null : c.id)}
+                          className="text-[11px] font-semibold text-[#7C3AED] hover:underline">
+                          {openMsg === c.id ? 'Hide message ▴' : 'View message sent ▾'}
+                        </button>
+                        {openMsg === c.id && (
+                          <pre className="mt-1 text-[11px] whitespace-pre-wrap rounded-lg p-2 max-h-56 overflow-y-auto" style={{ background: 'var(--surface-2)', color: 'var(--text)', fontFamily: 'inherit', border: '1px solid var(--border)' }}>{c.last_message}</pre>
+                        )}
+                      </div>
                     )}
                   </div>
                   <span className="text-right text-[13px] font-semibold tabular-nums" style={{ color: metricLabel !== '—' ? '#34c759' : 'var(--text-faint)' }}
