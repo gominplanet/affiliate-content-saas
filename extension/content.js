@@ -612,6 +612,27 @@ function isCCPage() {
   } catch (e) { return false }
 }
 
+// The Amazon campaigns toolbar row (Filters / New Opportunities / Accepted /
+// Submitted content links). We inject MVP SCOUT just ABOVE it — the in-flow spot
+// other creator tools (e.g. ViralVue) use — rather than a floating panel. Returns
+// the toolbar container to insert before, or null (→ floating fallback).
+function findToolbarAnchor() {
+  try {
+    const tab = [...document.querySelectorAll('button,a,[role="tab"],[role="button"]')]
+      .find(e => /^\s*(new opportunities|submitted content links|accepted)\s*$/i.test(textOf(e)))
+    if (!tab) return null
+    // Walk up to the tightest ancestor that wraps the whole tab row (contains
+    // both the "Submitted content links" and "…Opportunities" tabs).
+    let el = tab
+    for (let i = 0; i < 8 && el && el.parentElement; i++) {
+      el = el.parentElement
+      const t = el.textContent || ''
+      if (/submitted content links/i.test(t) && /opportunit/i.test(t)) return el
+    }
+    return tab.parentElement
+  } catch (e) { return null }
+}
+
 function mountSearchPanel() {
   if (!isCCPage()) return
   if (document.getElementById(PANEL_ID) || !document.body) return
@@ -620,6 +641,8 @@ function mountSearchPanel() {
   style.textContent = `
     #${PANEL_ID}{position:fixed !important;right:16px !important;top:50% !important;transform:translateY(-50%) !important;z-index:2147483000 !important;width:340px !important;max-width:calc(100vw - 24px) !important;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif !important;font-size:12px !important;line-height:1.4 !important;background:#fff !important;color:#111 !important;border:1px solid #e5e7eb !important;border-radius:14px !important;box-shadow:0 12px 40px -8px rgba(0,0,0,.28) !important;overflow:hidden !important;box-sizing:border-box !important}
     #${PANEL_ID} *{box-sizing:border-box !important;max-width:100% !important}
+    /* Inline mode: sit in the page flow above Amazon's toolbar (like ViralVue) */
+    #${PANEL_ID}.mvp-inline{position:static !important;right:auto !important;top:auto !important;left:auto !important;transform:none !important;width:100% !important;max-width:100% !important;margin:0 0 14px !important;box-shadow:0 2px 14px -4px rgba(124,58,237,.30) !important}
     #${PANEL_ID} .mvp-hd{display:flex !important;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;background:linear-gradient(135deg,#7C3AED,#9D6BFF);color:#fff;cursor:pointer}
     #${PANEL_ID} .mvp-hd b{font-size:13px;font-weight:700;color:#fff}
     #${PANEL_ID} .mvp-body{padding:12px;max-height:70vh;overflow-y:auto;overflow-x:hidden}
@@ -663,7 +686,16 @@ function mountSearchPanel() {
       <div class="mvp-token-row"><div><label>MVP ingest token</label><input class="mvp-token" placeholder="CC_..."></div><button class="mvp-btn sec mvp-token-save" style="flex:0 0 auto;align-self:flex-end">Save</button></div>
       <div class="mvp-note"><b>Accept</b> accepts on Amazon AND sends the campaign to your MVP Creator Campaigns inbox with its real ASIN (ready to Generate post). Then <b>Submit accepted</b> finalises the batch on Amazon.</div>
     </div>`
-  document.body.appendChild(el)
+  // Prefer sitting IN the page flow, right above Amazon's toolbar row (where
+  // ViralVue et al. inject). Fall back to a floating middle-right panel if we
+  // can't find the toolbar (e.g. layout changed).
+  const anchor = findToolbarAnchor()
+  if (anchor && anchor.parentElement) {
+    el.classList.add('mvp-inline')
+    anchor.parentElement.insertBefore(el, anchor)
+  } else {
+    document.body.appendChild(el)
+  }
 
   const q = (s) => el.querySelector(s)
   const res = q('.mvp-res')
