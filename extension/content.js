@@ -468,8 +468,17 @@ async function pushCampaignToMvp(camp, asin, token) {
         }],
       }),
     })
-    return res.ok
-  } catch (e) { return false }
+    if (res.ok) return { ok: true }
+    // Surface the real reason (e.g. a missing-column error before migration 151)
+    // instead of an opaque "push failed".
+    let error = `HTTP ${res.status}`
+    try { const j = await res.json(); if (j && j.error) error = j.error } catch (e) {}
+    console.warn('[MVP SCOUT] push failed:', error)
+    return { ok: false, error }
+  } catch (e) {
+    console.warn('[MVP SCOUT] push error:', e)
+    return { ok: false, error: (e && e.message) || 'network error' }
+  }
 }
 
 // Accept a campaign on Amazon AND push it (with its resolved ASIN) into MVP.
@@ -488,10 +497,11 @@ async function acceptAndPush(camp, btn) {
   const asin = await resolveCampaignAsin(camp.detailsUrl)
   if (!asin) { set('✓ · no ASIN', '#b45309'); if (btn) btn.disabled = false; return { accepted: true, pushed: false } }
   set('Sending…', '#6b7280')
-  const ok = await pushCampaignToMvp(camp, asin, token)
-  set(ok ? '✓ In MVP' : '✓ · push failed', ok ? '#059669' : '#b45309')
+  const push = await pushCampaignToMvp(camp, asin, token)
+  set(push.ok ? '✓ In MVP' : '✓ · push failed', push.ok ? '#059669' : '#b45309')
+  if (btn) btn.title = push.ok ? '' : ('Push failed: ' + (push.error || 'unknown') + ' (hover shows why; see console)')
   if (btn) btn.disabled = false
-  return { accepted: true, pushed: ok }
+  return { accepted: true, pushed: push.ok }
 }
 
 // Reveal the "MVP ingest token" input in the panel (only surfaced when a push
