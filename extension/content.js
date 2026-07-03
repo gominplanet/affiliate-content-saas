@@ -592,6 +592,82 @@ async function probeMessageModal() {
   return { ok: true, textarea: ta, send, modalFound: !!container }
 }
 
+// ── Draft & place a brand-outreach message ──────────────────────────────────
+function findMessageTextarea() {
+  return [...document.querySelectorAll('textarea')].find(t => /message/i.test(t.getAttribute('placeholder') || '')) || document.querySelector('textarea')
+}
+
+// React controls the message textarea, so a plain `.value =` is ignored. Use the
+// native value setter + input/change events (same trick as applyAmazonSearch).
+function setReactTextareaValue(el, value) {
+  const proto = window.HTMLTextAreaElement && window.HTMLTextAreaElement.prototype
+  const desc = proto && Object.getOwnPropertyDescriptor(proto, 'value')
+  if (desc && desc.set) desc.set.call(el, value); else el.value = value
+  el.dispatchEvent(new Event('input', { bubbles: true }))
+  el.dispatchEvent(new Event('change', { bubbles: true }))
+  el.focus()
+}
+
+// Read the campaign context from the details page so MVP can personalise the
+// pitch. Best-effort; the brief carries the brand name even if we can't isolate it.
+function readCampaignDetailsContext() {
+  const main = document.querySelector('main') || document.body
+  const heads = [...main.querySelectorAll('h1,h2,h3')].map(h => textOf(h)).filter(Boolean)
+  const product = heads.find(t => !/^(campaign details|campaign brief|messages|profile|affiliate\+|all new opportunities|sponsored products)/i.test(t)) || ''
+  let brief = ''
+  const briefHead = [...main.querySelectorAll('h1,h2,h3,h4,strong,b')].find(e => /^\s*campaign brief\s*$/i.test(textOf(e)))
+  if (briefHead) {
+    let node = briefHead.closest('h1,h2,h3,h4') || briefHead
+    let acc = '', sib = node.nextElementSibling
+    for (let i = 0; i < 14 && sib && acc.length < 3000; i++) { acc += ' ' + textOf(sib); sib = sib.nextElementSibling }
+    brief = (acc.trim() || textOf(briefHead.parentElement || briefHead)).slice(0, 3000)
+  }
+  const pageText = (main.innerText || '').slice(0, 6000)
+  const asinM = (product + ' ' + brief + ' ' + pageText).toUpperCase().match(/\bB0[A-Z0-9]{8}\b/)
+  const asin = asinM ? asinM[0] : ''
+  const commM = pageText.match(/commission\s*rate[\s\S]{0,24}?(\d{1,2}(?:\.\d+)?)\s*%/i) || pageText.match(/(\d{1,2}(?:\.\d+)?)\s*%\s*commission/i)
+  const commissionPct = commM ? parseFloat(commM[1]) : null
+  let brand = ''
+  const withHdr = [...main.querySelectorAll('h1,h2,h3,h4,span')].map(e => textOf(e)).find(t => /^messages with .+/i.test(t.trim()))
+  if (withHdr) brand = withHdr.replace(/^messages with /i, '').trim()
+  return { brand, product, asin, commissionPct, brief }
+}
+
+async function fetchOutreachDraft(ctx, token) {
+  try {
+    const res = await fetch(`${MVP_ORIGIN}/api/campaigns/outreach`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ brand: ctx.brand, product: ctx.product, asin: ctx.asin, commissionPct: ctx.commissionPct, brief: ctx.brief }),
+    })
+    if (!res.ok) {
+      let error = `HTTP ${res.status}`
+      try { const j = await res.json(); if (j && j.error) error = j.error } catch (e) {}
+      console.warn('[MVP SCOUT] draft failed:', error)
+      return { ok: false, error }
+    }
+    const j = await res.json()
+    return { ok: true, message: (j && j.message) || '' }
+  } catch (e) { return { ok: false, error: (e && e.message) || 'network error' } }
+}
+
+// Open the brand message box (if needed), draft a pitch from the campaign brief,
+// and PLACE it in the box. Never sends — the creator reviews + clicks Send.
+async function scoutDraftMessage() {
+  const token = await getIngestToken()
+  if (!token) { showTokenRow(); return { ok: false, reason: 'connect MVP first (paste your token below, then retry)' } }
+  let ta = findMessageTextarea()
+  if (!ta) { const mb = findMessageButton(); if (mb) { mb.click(); await sleep(1600); ta = findMessageTextarea() } }
+  if (!ta) return { ok: false, reason: "open a campaign's details page (no Message Brand box found)" }
+  const ctx = readCampaignDetailsContext()
+  if (!ctx.product && !ctx.brand) return { ok: false, reason: "couldn't read the campaign details" }
+  const d = await fetchOutreachDraft(ctx, token)
+  if (!d.ok) return { ok: false, reason: d.error || 'draft failed' }
+  if (!d.message) return { ok: false, reason: 'draft came back empty' }
+  setReactTextareaValue(ta, d.message)
+  return { ok: true, chars: d.message.length }
+}
+
 async function scoutRunSearch(f) {
   // Keyword OR ASIN both drive Amazon's own search box (it searches by ASIN too),
   // so we scan the FULL catalogue's matches, then read + filter the cards.
@@ -741,7 +817,7 @@ function mountSearchPanel() {
       <div class="mvp-row"><div><label>Keyword or brand</label><input class="mvp-kw" placeholder="e.g. knee brace"></div></div>
       <div class="mvp-row"><div><label>ASIN</label><input class="mvp-asin" placeholder="B0XXXXXXXX"></div><div><label>Min commission %</label><input class="mvp-comm" type="number" min="0" max="100" placeholder="20"></div></div>
       <div class="mvp-row"><div><label>Campaigns last at least (days)</label><input class="mvp-lastdays" type="number" min="0" step="1" placeholder="e.g. 100"></div></div>
-      <div class="mvp-row"><button class="mvp-btn mvp-search" style="flex:2">Search</button><button class="mvp-btn dbg mvp-debug" style="flex:1">Debug</button><button class="mvp-btn dbg mvp-msgprobe" style="flex:1" title="Calibrate the brand-message modal">Msg?</button></div>
+      <div class="mvp-row"><button class="mvp-btn mvp-search" style="flex:2">Search</button><button class="mvp-btn dbg mvp-debug" style="flex:1">Debug</button><button class="mvp-btn dbg mvp-draft" style="flex:1" title="On a campaign details page: draft a brand-outreach message from the brief">✍️ Draft</button></div>
       <div class="mvp-res"></div>
       <div class="mvp-row" style="margin-top:8px"><button class="mvp-btn sec mvp-accsel" style="flex:1">Accept selected</button><button class="mvp-btn sec mvp-submit" style="flex:1">Submit accepted</button></div>
       <div class="mvp-token-row"><div><label>MVP ingest token</label><input class="mvp-token" placeholder="CC_..."></div><button class="mvp-btn sec mvp-token-save" style="flex:0 0 auto;align-self:flex-end">Save</button></div>
@@ -818,14 +894,14 @@ function mountSearchPanel() {
     const dc = d.details ? (d.details.testid || d.details.text || d.details.tag) : 'n/a'
     res.innerHTML = `<div class="mvp-note">Dumped to the console (⌥⌘J). cards=<b>${d.cardCount}</b>, with ASIN in card=<b>${d.cardsWithAsin}</b>.<br>First card: ${String(first).replace(/</g, '&lt;')}.<br>Details link: ${String(dc).replace(/</g, '&lt;')}.</div>`
   })
-  q('.mvp-msgprobe').addEventListener('click', async () => {
-    const btn = q('.mvp-msgprobe'); const prev = btn.textContent; btn.textContent = '…'; btn.disabled = true
+  q('.mvp-draft').addEventListener('click', async () => {
+    const btn = q('.mvp-draft'); const prev = btn.textContent; btn.textContent = 'Drafting…'; btn.disabled = true
     try {
-      const p = await probeMessageModal()
-      res.innerHTML = p.ok
-        ? `<div class="mvp-note">Opened the brand-message box. textarea=<b>${p.textarea ? 'found' : 'MISSING'}</b>, Send button=<b>${p.send ? 'found' : 'MISSING'}</b>, dialog=${p.modalFound}.<br>Full selectors dumped to the console (⌥⌘J) — paste it and I'll wire brand messaging.</div>`
-        : `<div class="mvp-note">Couldn't open the message box (${String(p.reason).replace(/</g, '&lt;')}). Open a campaign's <b>details</b> page (the one with a "Message Brand" button), then click Msg? again.</div>`
-    } catch (e) { res.innerHTML = `<div class="mvp-note">Msg probe error: ${String(e?.message || e).replace(/</g, '&lt;')}</div>` }
+      const r = await scoutDraftMessage()
+      res.innerHTML = r.ok
+        ? `<div class="mvp-note">✍️ Draft placed in the brand's message box (${r.chars} chars). <b>Read it, tweak anything, then hit Amazon's Send.</b> SCOUT never sends for you.</div>`
+        : `<div class="mvp-note">Couldn't draft: ${String(r.reason).replace(/</g, '&lt;')}.</div>`
+    } catch (e) { res.innerHTML = `<div class="mvp-note">Draft error: ${String(e?.message || e).replace(/</g, '&lt;')}</div>` }
     btn.textContent = prev; btn.disabled = false
   })
   q('.mvp-accsel').addEventListener('click', async () => {
