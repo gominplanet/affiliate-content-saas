@@ -335,31 +335,72 @@ const PANEL_ID = 'mvp-scout-cc-panel'
 
 function fmtMeta(r) {
   const bits = []
-  if (r.commissionPct != null) bits.push(r.commissionPct + '% comm')
-  if (r.epc) bits.push('EPC ' + r.epc)
-  if (r.endsAt) bits.push('ends ' + r.endsAt)
-  else if (r.daysRemaining != null) bits.push(r.daysRemaining + 'd left')
-  if (r.budget) bits.push('budget ' + r.budget)
+  if (r.commissionPct != null) bits.push(r.commissionPct + '% commission')
+  if (r.startsAt || r.endsAt) bits.push((r.startsAt || '?') + ' → ' + (r.endsAt || '?'))
+  if (r.budget) bits.push(r.budget + ' budget')
   return bits.join(' · ')
 }
 
-function cardForAsin(asin) {
-  const cell = [...document.querySelectorAll('[aria-label]')]
-    .find(e => (e.getAttribute('aria-label') || '').trim().toUpperCase() === asin)
-  if (!cell) return null
-  return cell.closest('[class*="card" i], [class*="Cell" i], [class*="tile" i]') || cell
+// ── New CC card model (Amazon's 2026-07 /p/connect redesign) ────────────────
+// Cards no longer carry an ASIN aria-label. Each card is a
+// [data-testid="campaign-card-container"] whose fields live in data-testids, and
+// the campaign id is embedded in the Accept button's data-testid:
+//   amzn1.campaign.<ID>-campaign-card-accept-btn
+function parseUSDate(s) {
+  if (!s) return null
+  const m = String(s).trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/)
+  if (!m) return null
+  const y = m[3].length === 2 ? '20' + m[3] : m[3]
+  return `${y}-${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}`  // YYYY-MM-DD (sortable)
+}
+function extractNewCard(cont) {
+  const txt = (sel) => { const e = cont.querySelector(sel); return e ? (e.textContent || '').replace(/\s+/g, ' ').trim() : null }
+  const brand = txt('[data-testid="campaign-card-brand-name"]')
+  const campaignName = txt('[data-testid="campaign-card-campaign-name"]') || brand
+  let commissionPct = null
+  const cr = txt('[data-testid="campaign-card-campaign-commission-rate"]')
+  if (cr) { const m = cr.match(/(\d+(?:\.\d+)?)/); if (m) commissionPct = parseFloat(m[1]) }
+  const budget = txt('[data-testid="campaign-card-campaign-budget"]')
+  let startsAt = null, endsAt = null
+  const dr = txt('[data-testid="campaign-card-campaign-date-range"]')  // "7/3/26 - 8/2/26"
+  if (dr) { const p = dr.split(/\s*[-–—]\s*/); startsAt = parseUSDate(p[0]); endsAt = parseUSDate(p[1]) }
+  const imgEl = cont.querySelector('[data-testid="campaign-card-campaign-image"]')
+  const image = imgEl ? imgEl.src : null
+  const accBtn = cont.querySelector('button[data-testid$="-campaign-card-accept-btn"]')
+  let campaignId = null
+  if (accBtn) { const m = (accBtn.getAttribute('data-testid') || '').match(/^(.*)-campaign-card-accept-btn$/); if (m) campaignId = m[1] }
+  return { key: campaignId || campaignName, campaignId, campaignName, brand, commissionPct, budget, startsAt, endsAt, image }
+}
+// Scroll the virtualized grid top→bottom, harvesting every campaign card.
+async function parseCampaignCards() {
+  const grid = findGrid()
+  if (!grid) return []
+  const byKey = new Map()
+  const harvest = () => {
+    for (const cont of document.querySelectorAll('[data-testid="campaign-card-container"]')) {
+      const c = extractNewCard(cont)
+      if (c.key && !byKey.has(c.key)) byKey.set(c.key, c)
+    }
+  }
+  const step = Math.max(300, grid.clientHeight - 80)
+  let pos = 0, lastTop = -1, stalls = 0
+  grid.scrollTop = 0; await sleep(120); harvest()
+  for (let i = 0; i < 400; i++) {
+    pos += step; grid.scrollTop = pos; await sleep(140); harvest()
+    const top = grid.scrollTop
+    if (top === lastTop) { if (++stalls >= 2) break } else { stalls = 0; lastTop = top }
+    if (top + grid.clientHeight >= grid.scrollHeight - 2) { await sleep(140); harvest(); break }
+  }
+  grid.scrollTop = 0
+  return [...byKey.values()]
 }
 
-// Click a campaign's Track/accept control. Best-guess — a Track checkbox first
-// (matches the visible "Track" boxes), else an Accept/Track button.
-function scoutAccept(asin) {
-  const card = cardForAsin(asin)
-  if (!card) return { ok: false, reason: 'card-not-found' }
-  const cb = card.querySelector('input[type="checkbox"]')
-  if (cb) { if (!cb.checked) cb.click(); return { ok: true, tracked: true } }
-  const btn = [...card.querySelectorAll('button,a,[role="button"]')].find(b => /^\s*(accept|track)\b/i.test(textOf(b)))
-  if (btn) { btn.click(); return { ok: true, clicked: textOf(btn).slice(0, 40) } }
-  return { ok: false, reason: 'no-accept-control' }
+// Click a campaign's Accept button, matched by its campaign id.
+function scoutAccept(key) {
+  if (!key) return { ok: false, reason: 'no-key' }
+  const btn = document.querySelector(`button[data-testid="${key}-campaign-card-accept-btn"]`)
+  if (btn) { btn.click(); return { ok: true } }
+  return { ok: false, reason: 'accept-btn-not-found' }
 }
 
 // Click Amazon's own "Submit accepted campaigns" button to finalise the batch.
@@ -369,33 +410,28 @@ function scoutSubmitAccepted() {
   return false
 }
 
-// Dump the live DOM of a campaign card + the accept/filter controls so we can
-// finalise the best-guess selectors above.
+// Dump a campaign card's parsed fields + raw DOM, for future recalibration.
 function dumpCardDebug() {
-  const cell = [...document.querySelectorAll('[aria-label]')].find(e => ASIN_RE.test((e.getAttribute('aria-label') || '').trim().toUpperCase()))
-  const card = cell ? (cell.closest('[class*="card" i], [class*="Cell" i], [class*="tile" i]') || cell) : null
-  const submit = [...document.querySelectorAll('button,a')].find(b => /submit accepted/i.test(textOf(b)))
-  const filters = [...document.querySelectorAll('button,a')].find(b => /^\s*filters\s*$/i.test(textOf(b)))
-  console.log('%c[MVP SCOUT] === CARD outerHTML ===', 'color:#7C3AED;font-weight:bold')
-  console.log(card?.outerHTML?.slice(0, 6000) || '(no card found)')
-  console.log('%c[MVP SCOUT] card text:', 'color:#7C3AED', card ? textOf(card) : null)
-  console.log('%c[MVP SCOUT] submit-accepted btn:', 'color:#7C3AED', submit?.outerHTML?.slice(0, 400) || '(none)')
-  console.log('%c[MVP SCOUT] filters btn:', 'color:#7C3AED', filters?.outerHTML?.slice(0, 400) || '(none)')
-  return { cardFound: !!card, submitFound: !!submit, filtersFound: !!filters }
+  const conts = document.querySelectorAll('[data-testid="campaign-card-container"]')
+  const cont = conts[0] || null
+  const parsed = cont ? extractNewCard(cont) : null
+  const submitFound = [...document.querySelectorAll('button,a,[role="button"]')].some(b => /submit accepted campaigns/i.test(textOf(b)))
+  console.log('%c[MVP SCOUT] cards on page:', 'color:#7C3AED;font-weight:bold', conts.length)
+  console.log('%c[MVP SCOUT] parsed first card:', 'color:#7C3AED;font-weight:bold', parsed)
+  console.log('%c[MVP SCOUT] first card outerHTML:', 'color:#7C3AED', cont?.outerHTML?.slice(0, 4000) || '(no card found)')
+  return { cardFound: !!cont, cardCount: conts.length, submitFound, parsed }
 }
 
 async function scoutRunSearch(f) {
-  const q = (f.asin || f.keyword || '').trim()
-  if (q) { try { await applyAmazonSearch(q) } catch (e) {} }
-  let rows = await parseCampaigns()
+  // Keyword OR ASIN both drive Amazon's own search box (it searches by ASIN too),
+  // so we scan the FULL catalogue's matches, then read + filter the cards.
+  const query = (f.asin || f.keyword || '').trim()
+  if (query) { try { await applyAmazonSearch(query) } catch (e) {} }
+  let rows = await parseCampaignCards()
   const rawCount = rows.length
-  if (f.asin) rows = rows.filter(r => r.asin === f.asin.trim().toUpperCase())
-  // Filters are LENIENT on missing fields: a card whose value we couldn't read
-  // (null) is KEPT, not dropped. Otherwise one un-extractable field (commission,
-  // still being calibrated) would zero out every result. A "no end date"
-  // campaign is open-ended, so it passes an "ends after" filter too.
+  // Filters are LENIENT on missing fields (a card whose value we couldn't read is
+  // kept, not dropped). "Ends after" also keeps open-ended campaigns.
   if (f.minCommission) rows = rows.filter(r => r.commissionPct == null || r.commissionPct >= f.minCommission)
-  if (f.minEpc) rows = rows.filter(r => r.epcValue == null || r.epcValue >= f.minEpc)
   if (f.endsAfter) rows = rows.filter(r => !r.endsAt || r.endsAt >= f.endsAfter)
   if (f.endsBefore) rows = rows.filter(r => !r.endsAt || r.endsAt <= f.endsBefore)
   return { rows, rawCount }
@@ -492,11 +528,11 @@ function mountSearchPanel() {
     <div class="mvp-body">
       <div class="mvp-row"><div><label>Keyword or brand</label><input class="mvp-kw" placeholder="e.g. knee brace"></div></div>
       <div class="mvp-row"><div><label>ASIN</label><input class="mvp-asin" placeholder="B0XXXXXXXX"></div><div><label>Min commission %</label><input class="mvp-comm" type="number" min="0" max="100" placeholder="20"></div></div>
-      <div class="mvp-row"><div><label>Min EPC $</label><input class="mvp-epc" type="number" min="0" step="0.01" placeholder="0.30"></div><div><label>Ends after</label><input class="mvp-after" type="date"></div><div><label>Ends before</label><input class="mvp-before" type="date"></div></div>
+      <div class="mvp-row"><div><label>Ends after</label><input class="mvp-after" type="date"></div><div><label>Ends before</label><input class="mvp-before" type="date"></div></div>
       <div class="mvp-row"><button class="mvp-btn mvp-search" style="flex:2">Search</button><button class="mvp-btn dbg mvp-debug" style="flex:1">Debug</button></div>
       <div class="mvp-res"></div>
       <div class="mvp-row" style="margin-top:8px"><button class="mvp-btn sec mvp-accsel" style="flex:1">Accept selected</button><button class="mvp-btn sec mvp-submit" style="flex:1">Submit accepted</button></div>
-      <div class="mvp-note">Commission % + Accept are being calibrated. On a campaign page, click <b>Debug</b> and share the console (⌥⌘J) output so I can finalise the selectors.</div>
+      <div class="mvp-note">Search runs against Amazon's full catalogue, then filters by commission % and end date. Accept a campaign per-card or select several and Accept selected, then Submit accepted.</div>
     </div>`
   document.body.appendChild(el)
 
@@ -513,30 +549,30 @@ function mountSearchPanel() {
     selected.clear()
     if (!rows.length) {
       res.innerHTML = rawCount > 0
-        ? `<div class="mvp-note">Scraped <b>${rawCount}</b> campaign${rawCount === 1 ? '' : 's'} from the page, but none passed your filters (commission / EPC / date). Clear the filter boxes and Search again to see them all.</div>`
+        ? `<div class="mvp-note">Scraped <b>${rawCount}</b> campaign${rawCount === 1 ? '' : 's'} from the page, but none passed your filters (commission / date). Clear the filter boxes and Search again to see them all.</div>`
         : '<div class="mvp-note">No campaigns detected on the page. Try a broader keyword, or click Debug to check the grid selectors.</div>'
       return
     }
     res.innerHTML = `<div class="mvp-note" style="margin:0 0 6px">${rows.length}${rawCount > rows.length ? ` of ${rawCount}` : ''} campaign${rows.length === 1 ? '' : 's'}</div>` + rows.map(r => `
-      <div class="mvp-card" data-asin="${r.asin}">
+      <div class="mvp-card" data-key="${String(r.key || '').replace(/"/g, '&quot;')}">
         <input type="checkbox" class="mvp-sel" style="flex:0 0 auto;margin-top:2px">
         ${r.image ? `<img src="${r.image}">` : ''}
         <div style="flex:1;min-width:0">
-          <div class="t">${(r.campaignName || r.brand || r.asin).replace(/</g, '&lt;')}</div>
-          <div class="m">${fmtMeta(r) || r.asin}</div>
+          <div class="t">${String(r.campaignName || r.brand || 'Campaign').replace(/</g, '&lt;')}</div>
+          <div class="m">${fmtMeta(r) || (r.brand || '')}</div>
         </div>
         <button class="mvp-acc">Accept</button>
       </div>`).join('')
     res.querySelectorAll('.mvp-sel').forEach(cb => cb.addEventListener('change', (e) => {
-      const asin = e.target.closest('.mvp-card').dataset.asin
-      if (e.target.checked) selected.add(asin); else selected.delete(asin)
+      const key = e.target.closest('.mvp-card').dataset.key
+      if (e.target.checked) selected.add(key); else selected.delete(key)
     }))
     res.querySelectorAll('.mvp-acc').forEach(b => b.addEventListener('click', (e) => {
-      const asin = e.target.closest('.mvp-card').dataset.asin
-      const r = scoutAccept(asin)
-      e.target.textContent = r.ok ? '✓ Tracked' : 'Retry'
+      const key = e.target.closest('.mvp-card').dataset.key
+      const r = scoutAccept(key)
+      e.target.textContent = r.ok ? '✓ Accepted' : 'Retry'
       e.target.style.color = r.ok ? '#059669' : '#dc2626'
-      if (!r.ok) console.warn('[MVP SCOUT] accept failed', asin, r)
+      if (!r.ok) console.warn('[MVP SCOUT] accept failed', key, r)
     }))
   }
 
@@ -547,7 +583,6 @@ function mountSearchPanel() {
         keyword: q('.mvp-kw').value,
         asin: q('.mvp-asin').value,
         minCommission: parseFloat(q('.mvp-comm').value) || 0,
-        minEpc: parseFloat(q('.mvp-epc').value) || 0,
         endsAfter: q('.mvp-after').value || '',
         endsBefore: q('.mvp-before').value || '',
       })
@@ -557,7 +592,8 @@ function mountSearchPanel() {
   })
   q('.mvp-debug').addEventListener('click', () => {
     const d = dumpCardDebug()
-    res.innerHTML = `<div class="mvp-note">Dumped to the console (⌥⌘J). cardFound=${d.cardFound}, submitFound=${d.submitFound}, filtersFound=${d.filtersFound}. Paste it to me and I'll finalise commission % + Accept.</div>`
+    const first = d.parsed ? (d.parsed.campaignName || d.parsed.brand || d.parsed.key) : 'not parsed'
+    res.innerHTML = `<div class="mvp-note">Dumped to the console (⌥⌘J). cards=<b>${d.cardCount}</b>, submitBtn=${d.submitFound}. First card: ${String(first).replace(/</g, '&lt;')}.</div>`
   })
   q('.mvp-accsel').addEventListener('click', () => { let ok = 0; selected.forEach(a => { if (scoutAccept(a).ok) ok++ }); q('.mvp-accsel').textContent = `Accepted ${ok}/${selected.size}` })
   q('.mvp-submit').addEventListener('click', () => { q('.mvp-submit').textContent = scoutSubmitAccepted() ? '✓ Submitted' : 'Not found' })
