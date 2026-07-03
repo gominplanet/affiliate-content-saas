@@ -386,28 +386,77 @@ function extractNewCard(cont) {
   const detailsUrl = detailsEl ? (detailsEl.href || detailsEl.getAttribute('href') || null) : null
   return { key: campaignId || campaignName, campaignId, campaignName, brand, commissionPct, budget, startsAt, endsAt, image, detailsUrl }
 }
-// Scroll the virtualized grid top→bottom, harvesting every campaign card.
-async function parseCampaignCards() {
-  const grid = findGrid()
-  if (!grid) return []
+// Amazon's Creator Connections list is INFINITE-SCROLL: it renders ~60 cards,
+// then lazy-loads the next batch only when you scroll near the bottom. The old
+// reader scrolled once to the first bottom and stopped → always ~60. This one
+// keeps hitting the bottom and WAITING for the next batch to append, harvesting
+// as it goes, and stops only when the loaded count plateaus (real end of the
+// results) or it reaches `maxCards`. `onProgress(n)` fires as the tally grows.
+//
+// It drives the WINDOW/document scroll (what actually triggers Amazon's fetch —
+// confirmed by the user) plus any inner virtualized grid, and harvests
+// document-wide so a card is captured wherever it mounts.
+async function parseCampaignCards(opts) {
+  const maxCards = (opts && opts.maxCards) || 600
+  const onProgress = (opts && opts.onProgress) || function () {}
   const byKey = new Map()
+  let reported = 0
   const harvest = () => {
     for (const cont of document.querySelectorAll('[data-testid="campaign-card-container"]')) {
       const c = extractNewCard(cont)
       if (c.key && !byKey.has(c.key)) byKey.set(c.key, c)
     }
+    if (byKey.size !== reported) { reported = byKey.size; try { onProgress(byKey.size) } catch (e) {} }
   }
-  const step = Math.max(300, grid.clientHeight - 80)
-  let pos = 0, lastTop = -1, stalls = 0
-  grid.scrollTop = 0; await sleep(120); harvest()
-  for (let i = 0; i < 400; i++) {
-    pos += step; grid.scrollTop = pos; await sleep(140); harvest()
-    const top = grid.scrollTop
-    if (top === lastTop) { if (++stalls >= 2) break } else { stalls = 0; lastTop = top }
-    if (top + grid.clientHeight >= grid.scrollHeight - 2) { await sleep(140); harvest(); break }
+  const grid = findGrid() // optional secondary (inner) scroller
+  const scroller = document.scrollingElement || document.documentElement
+  const reachOf = () => {
+    let r = scroller ? (scroller.scrollHeight || 0) : (document.documentElement.scrollHeight || 0)
+    if (grid) r = Math.max(r, grid.scrollHeight || 0)
+    return r
   }
-  grid.scrollTop = 0
+  const setScroll = (y) => {
+    try { window.scrollTo(0, y) } catch (e) {}
+    if (scroller) { try { scroller.scrollTop = y } catch (e) {} }
+    if (grid) { try { grid.scrollTop = y } catch (e) {} }
+  }
+  const vh = window.innerHeight || (scroller ? scroller.clientHeight : 800)
+  const step = Math.max(400, vh - 100)
+  let pos = 0
+  let stalls = 0
+  setScroll(0); await sleep(150); harvest()
+  for (let i = 0; i < 4000 && byKey.size < maxCards; i++) {
+    const reach = reachOf()
+    if (pos + vh < reach - 4) {
+      // More already-loaded content below — step into it and harvest.
+      pos += step
+      setScroll(pos)
+      await sleep(120)
+      harvest()
+      stalls = 0
+    } else {
+      // At the current bottom — nudge Amazon to lazy-load the next batch, wait,
+      // then check whether the list actually grew.
+      setScroll(reach)
+      try { window.dispatchEvent(new Event('scroll', { bubbles: true })) } catch (e) {}
+      if (grid) { try { grid.dispatchEvent(new Event('scroll', { bubbles: true })) } catch (e) {} }
+      await sleep(700)
+      harvest()
+      if (reachOf() > reach + 4) stalls = 0          // grew → keep going
+      else if (++stalls >= 3) break                  // 3 waits, nothing new → end of results
+    }
+  }
+  setScroll(0)
   return [...byKey.values()]
+}
+
+// Amazon's "Campaigns (6,619)" header — the TOTAL matches for the current
+// search, so the panel can say "loaded N of ~X" and flag when the scan capped.
+function readAmazonTotal() {
+  try {
+    const m = (document.body ? document.body.innerText : '').match(/Campaigns\s*\(([\d,]+)\)/i)
+    return m ? parseInt(m[1].replace(/,/g, ''), 10) : null
+  } catch (e) { return null }
 }
 
 // Click a campaign's Accept button, matched by its campaign id.
@@ -699,13 +748,16 @@ async function scoutDraftMessage() {
   return { ok: true, chars: d.message.length, sent: false, groups: canGroup ? chunks.length : 1, reason: 'placed (no Send button — click it yourself)' }
 }
 
-async function scoutRunSearch(f) {
+async function scoutRunSearch(f, onProgress) {
   // Keyword OR ASIN both drive Amazon's own search box (it searches by ASIN too),
   // so we scan the FULL catalogue's matches, then read + filter the cards.
   const query = (f.asin || f.keyword || '').trim()
   if (query) { try { await applyAmazonSearch(query) } catch (e) {} }
-  let rows = await parseCampaignCards()
+  const maxCards = (f.maxCards && f.maxCards > 0) ? f.maxCards : 600
+  let rows = await parseCampaignCards({ maxCards, onProgress })
   const rawCount = rows.length
+  const total = readAmazonTotal()
+  const capped = rawCount >= maxCards && (total == null || total > rawCount)
   // Filters are LENIENT on missing fields (a card whose value we couldn't read is
   // kept, not dropped). An open-ended campaign (no end date) lasts indefinitely,
   // so it always satisfies a "lasts at least N days" minimum.
@@ -716,7 +768,7 @@ async function scoutRunSearch(f) {
     const cutoff = dateNDaysFromToday(f.lastDays)
     rows = rows.filter(r => !r.endsAt || r.endsAt >= cutoff)
   }
-  return { rows, rawCount }
+  return { rows, rawCount, total, capped }
 }
 
 // today + n days, as a sortable "YYYY-MM-DD" string (local time).
@@ -875,16 +927,20 @@ function mountSearchPanel() {
     q('.mvp-tog').textContent = el.classList.contains('mvp-min') ? '+' : '–'
   })
 
-  function render(rows, rawCount) {
+  function render(rows, rawCount, meta) {
     selected.clear()
     rowsByKey = new Map(rows.map(r => [String(r.key), r]))
+    const total = meta && meta.total
+    const capped = meta && meta.capped
+    // "loaded N of Amazon's X total" + a note when the scan hit its cap.
+    const scanNote = `loaded <b>${rawCount}</b>${total && total > rawCount ? ` of ~${total.toLocaleString()}` : ''}${capped ? ' · scan cap reached (Search again to keep going, or narrow the keyword)' : ''}`
     if (!rows.length) {
       res.innerHTML = rawCount > 0
-        ? `<div class="mvp-note">Scraped <b>${rawCount}</b> campaign${rawCount === 1 ? '' : 's'} from the page, but none passed your filters (commission / date). Clear the filter boxes and Search again to see them all.</div>`
+        ? `<div class="mvp-note">Scraped <b>${rawCount}</b> campaign${rawCount === 1 ? '' : 's'} (${scanNote}), but none passed your filters (commission / date). Clear the filter boxes and Search again to see them all.</div>`
         : '<div class="mvp-note">No campaigns detected on the page. Try a broader keyword, or click Debug to check the grid selectors.</div>'
       return
     }
-    res.innerHTML = `<div class="mvp-note" style="margin:0 0 6px">${rows.length}${rawCount > rows.length ? ` of ${rawCount}` : ''} campaign${rows.length === 1 ? '' : 's'}</div>` + rows.map(r => `
+    res.innerHTML = `<div class="mvp-note" style="margin:0 0 6px">${rows.length}${rawCount > rows.length ? ` of ${rawCount}` : ''} campaign${rows.length === 1 ? '' : 's'} pass your filters · ${scanNote}</div>` + rows.map(r => `
       <div class="mvp-card" data-key="${String(r.key || '').replace(/"/g, '&quot;')}">
         <input type="checkbox" class="mvp-sel">
         ${r.image ? `<img src="${r.image}">` : ''}
@@ -906,14 +962,21 @@ function mountSearchPanel() {
 
   q('.mvp-search').addEventListener('click', async () => {
     const btn = q('.mvp-search'); const prev = btn.textContent; btn.textContent = 'Searching…'; btn.disabled = true
+    res.innerHTML = '<div class="mvp-note">Loading campaigns — scrolling Amazon\'s list to load more…</div>'
     try {
-      const { rows, rawCount } = await scoutRunSearch({
+      // Amazon lazy-loads as we scroll, so this can take a moment on a big result
+      // set — show the running tally so it never looks stuck.
+      const onProgress = (n) => {
+        btn.textContent = `Loading ${n}…`
+        res.innerHTML = `<div class="mvp-note">Loading campaigns from Amazon… <b>${n}</b> loaded so far (scrolling to pull more).</div>`
+      }
+      const { rows, rawCount, total, capped } = await scoutRunSearch({
         keyword: q('.mvp-kw').value,
         asin: q('.mvp-asin').value,
         minCommission: parseFloat(q('.mvp-comm').value) || 0,
         lastDays: parseInt(q('.mvp-lastdays').value, 10) || 0,
-      })
-      render(rows, rawCount)
+      }, onProgress)
+      render(rows, rawCount, { total, capped })
     } catch (e) { res.innerHTML = `<div class="mvp-note">Search error: ${e?.message || e}</div>` }
     btn.textContent = prev; btn.disabled = false
   })
