@@ -39,7 +39,7 @@ import {
   UserCog, AlertTriangle, DollarSign, Newspaper, Plug, Wrench,
   Camera, MessageCircle, Activity, BarChart3, Wand2, ShieldCheck,
   Share2, UserSquare, Lightbulb, LifeBuoy, Link2, FlaskConical, Store, Send, ShoppingBag, Megaphone,
-  Inbox,
+  Inbox, PackageSearch,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { DEALS_HUB_PAUSED } from '@/lib/deal-occasion'
@@ -452,6 +452,10 @@ export default function DashboardShellV2({
       label: 'Labs',
       items: [
         { href: '/epc', icon: <Radar size={15} />, label: 'MVP x EPC', gate: canUseLabs },
+        // SCOUT-powered Amazon Product Finder — keyword + rules → live-scraped
+        // results into MVP. In Labs while the Amazon-search selectors get live
+        // calibration; graduate to Create once verified.
+        { href: '/product-finder', icon: <PackageSearch size={15} />, label: 'Product Finder', gate: canUseLabs },
         // MVP x PartnerBoost + MVP x Levanta graduated out of Labs into
         // Collaborate (all paid tiers) on 2026-06-30; their API-key connect moved
         // inline onto each page (External Integrations page retired from nav).

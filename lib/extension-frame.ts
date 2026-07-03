@@ -352,6 +352,48 @@ export async function requestScrapeUrl(url: string): Promise<ScrapeUrlResult> {
   return { ok: false, error: resp.error || 'scan-failed', diag: resp.diag }
 }
 
+/** One product SCOUT found + deep-checked from an Amazon search (Product Finder). */
+export interface FinderProduct {
+  asin: string
+  title: string
+  price: string | null
+  image: string | null
+  rating: string | null
+  monthlySales: number | null
+  carouselPos: 'top' | 'bottom' | 'none' | null
+  hasVideo?: boolean
+}
+
+export interface ProductSearchResult {
+  ok: boolean
+  products?: FinderProduct[]
+  scanned?: number    // how many products were deep-checked
+  totalFound?: number // how many appeared in Amazon's search
+  error?: string
+}
+
+/**
+ * Product Finder: ask SCOUT to run an Amazon keyword search in the user's own
+ * browser, deep-check each result (monthly sales + carousel-video position), and
+ * return the ones that pass the rules — the live, in-MVP alternative to a
+ * third-party product database. Slow (a /dp visit per product), so a long
+ * timeout. Best-effort: resolves, never throws.
+ */
+export async function requestProductSearch(
+  query: string,
+  rules: { minSales?: number; mustVideo?: boolean; maxResults?: number },
+): Promise<ProductSearchResult> {
+  if (!query.trim()) return { ok: false, error: 'no-query' }
+  if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
+  const resp = await sendToExtension<{ ok?: boolean; products?: FinderProduct[]; scanned?: number; totalFound?: number; error?: string }>(
+    { type: 'MVP_PRODUCT_SEARCH', query, opts: rules },
+    240000,
+  )
+  if (!resp) return { ok: false, error: 'timeout' }
+  if (resp.ok) return { ok: true, products: resp.products ?? [], scanned: resp.scanned, totalFound: resp.totalFound }
+  return { ok: false, error: resp.error || 'search-failed', products: resp.products ?? [] }
+}
+
 /** A raw Creator Connections campaign row as scraped by the extension. All
  *  filtering / ranking happens in the app — this is the unfiltered harvest. */
 export interface ScoutedCampaign {

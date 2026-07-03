@@ -894,6 +894,90 @@ async function scanGenericProduct(url, callerTabId) {
   }
 }
 
+// ── Product Finder (MVP_PRODUCT_SEARCH) ─────────────────────────────────────
+// Keyword + rules → live Amazon results scraped in the user's own browser, each
+// deep-checked for monthly sales + carousel-video position, filtered by the
+// rules, returned to MVP to Generate content on. The "ViralVue but live + in
+// MVP" flow; reuses readDpSignalsInPage (same signals as the CC deep-check).
+function harvestAmazonSearchInPage() {
+  const clean = (s) => (s || '').replace(/\s+/g, ' ').trim()
+  const out = []
+  const seen = new Set()
+  const cards = document.querySelectorAll('div[data-component-type="s-search-result"][data-asin], div.s-result-item[data-asin]')
+  for (const el of cards) {
+    const asin = (el.getAttribute('data-asin') || '').trim()
+    if (!/^[A-Z0-9]{10}$/.test(asin) || seen.has(asin)) continue
+    const titleEl = el.querySelector('h2 a span, h2 span, [data-cy="title-recipe"] span, .a-size-medium.a-color-base')
+    const title = clean(titleEl ? titleEl.textContent : '')
+    if (!title) continue
+    const priceEl = el.querySelector('.a-price .a-offscreen')
+    const price = priceEl ? clean(priceEl.textContent).split(/\s/)[0] : null
+    const img = el.querySelector('img.s-image')
+    const image = img ? (img.getAttribute('src') || null) : null
+    let rating = null
+    const rEl = el.querySelector('[aria-label*="out of 5 stars" i], i.a-icon-star-small, .a-icon-alt')
+    const rTxt = rEl ? (rEl.getAttribute('aria-label') || rEl.textContent) : ''
+    const rm = (rTxt || '').match(/(\d(?:\.\d)?)\s*out of 5/i)
+    if (rm) rating = rm[1]
+    const sponsored = /sponsored/i.test(clean(el.textContent).slice(0, 40))
+    seen.add(asin)
+    out.push({ asin, title: title.slice(0, 180), price, image, rating, sponsored })
+  }
+  return { ok: out.length > 0, products: out, url: location.href.slice(0, 140) }
+}
+
+async function productFinderSearch(query, opts) {
+  opts = opts || {}
+  const maxDeep = Math.min(20, Math.max(1, opts.maxResults || 15))
+  const minSales = typeof opts.minSales === 'number' ? opts.minSales : 0
+  const mustVideo = !!opts.mustVideo
+  const q = String(query || '').trim()
+  if (!q) return { ok: false, error: 'no-query' }
+  let tabId = null
+  try {
+    const tab = await chrome.tabs.create({ url: `https://www.amazon.com/s?k=${encodeURIComponent(q)}`, active: false })
+    tabId = tab.id
+    await waitForTabLoad(tabId, 25000)
+    await _sleep(1600)
+    let list = null
+    for (let i = 0; i < 4; i++) {
+      const r = await chrome.scripting.executeScript({ target: { tabId }, func: harvestAmazonSearchInPage })
+      list = (r && r[0] && r[0].result) || null
+      if (list && list.ok) break
+      await _sleep(1300)
+    }
+    if (!list || !list.products || !list.products.length) return { ok: false, error: 'no-results', products: [] }
+    // Prefer organic results; deep-check up to maxDeep of them.
+    const candidates = list.products.filter((p) => !p.sponsored).concat(list.products.filter((p) => p.sponsored)).slice(0, maxDeep)
+    const results = []
+    for (const p of candidates) {
+      let sig = { sales: null, hasVideo: false, carouselPos: 'none' }
+      try {
+        await chrome.tabs.update(tabId, { url: `https://www.amazon.com/dp/${p.asin}` })
+        await waitForTabLoad(tabId, 20000)
+        await _sleep(900)
+        for (let i = 0; i < 6; i++) {
+          const r = await chrome.scripting.executeScript({ target: { tabId }, func: readDpSignalsInPage })
+          const v = r && r[0] && r[0].result
+          if (v) { sig = v; if (v.hasVideo || v.sales != null) break }
+          await _sleep(600)
+        }
+      } catch (e) { /* keep the search-page basics; signals stay null */ }
+      results.push({ asin: p.asin, title: p.title, price: p.price, image: p.image, rating: p.rating, monthlySales: sig.sales, carouselPos: sig.carouselPos || 'none', hasVideo: !!sig.hasVideo })
+    }
+    const filtered = results.filter((r) => {
+      if (mustVideo && !r.hasVideo) return false
+      if (minSales > 0 && (r.monthlySales == null || r.monthlySales < minSales)) return false
+      return true
+    })
+    return { ok: true, products: filtered, scanned: results.length, totalFound: list.products.length }
+  } catch (e) {
+    return { ok: false, error: (e && e.message) ? String(e.message).slice(0, 120) : 'exception' }
+  } finally {
+    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+  }
+}
+
 async function scanAmazonVideos(callerTabId) {
   // Reuse an open Manage Content / storefront tab; else open Manage Content
   // FOREGROUND (Amazon's content list is client-rendered + session-scoped, and
@@ -1728,6 +1812,16 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     const callerTabId = sender && sender.tab ? sender.tab.id : null
     const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 70000)
     scanGenericProduct(msg.url, callerTabId)
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true // async response — keep the channel open
+  }
+  if (msg.type === 'MVP_PRODUCT_SEARCH') {
+    // Product Finder: keyword + rules → live Amazon results, each deep-checked
+    // (monthly sales + carousel-video position) and filtered, in a hidden tab.
+    // Long-running (a /dp visit per product), so allow up to ~4 minutes.
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 240000)
+    productFinderSearch(msg.query, msg.opts || {})
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async response — keep the channel open
