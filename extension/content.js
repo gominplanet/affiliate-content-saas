@@ -553,11 +553,25 @@ async function scoutRunSearch(f) {
   let rows = await parseCampaignCards()
   const rawCount = rows.length
   // Filters are LENIENT on missing fields (a card whose value we couldn't read is
-  // kept, not dropped). "Ends after" also keeps open-ended campaigns.
+  // kept, not dropped). An open-ended campaign (no end date) lasts indefinitely,
+  // so it always satisfies a "lasts at least N days" minimum.
   if (f.minCommission) rows = rows.filter(r => r.commissionPct == null || r.commissionPct >= f.minCommission)
-  if (f.endsAfter) rows = rows.filter(r => !r.endsAt || r.endsAt >= f.endsAfter)
-  if (f.endsBefore) rows = rows.filter(r => !r.endsAt || r.endsAt <= f.endsBefore)
+  if (f.lastDays > 0) {
+    // Keep only campaigns still running at least N days FROM TODAY: their end
+    // date must be on/after (today + N days).
+    const cutoff = dateNDaysFromToday(f.lastDays)
+    rows = rows.filter(r => !r.endsAt || r.endsAt >= cutoff)
+  }
   return { rows, rawCount }
+}
+
+// today + n days, as a sortable "YYYY-MM-DD" string (local time).
+function dateNDaysFromToday(n) {
+  const d = new Date()
+  d.setDate(d.getDate() + n)
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  return `${d.getFullYear()}-${mm}-${dd}`
 }
 
 // Private-beta gate. The campaign-search panel is published to ALL store users
@@ -679,7 +693,7 @@ function mountSearchPanel() {
     <div class="mvp-body">
       <div class="mvp-row"><div><label>Keyword or brand</label><input class="mvp-kw" placeholder="e.g. knee brace"></div></div>
       <div class="mvp-row"><div><label>ASIN</label><input class="mvp-asin" placeholder="B0XXXXXXXX"></div><div><label>Min commission %</label><input class="mvp-comm" type="number" min="0" max="100" placeholder="20"></div></div>
-      <div class="mvp-row"><div><label>Ends after</label><input class="mvp-after" type="date"></div><div><label>Ends before</label><input class="mvp-before" type="date"></div></div>
+      <div class="mvp-row"><div><label>Campaigns last at least (days)</label><input class="mvp-lastdays" type="number" min="0" step="1" placeholder="e.g. 100"></div></div>
       <div class="mvp-row"><button class="mvp-btn mvp-search" style="flex:2">Search</button><button class="mvp-btn dbg mvp-debug" style="flex:1">Debug</button></div>
       <div class="mvp-res"></div>
       <div class="mvp-row" style="margin-top:8px"><button class="mvp-btn sec mvp-accsel" style="flex:1">Accept selected</button><button class="mvp-btn sec mvp-submit" style="flex:1">Submit accepted</button></div>
@@ -743,8 +757,7 @@ function mountSearchPanel() {
         keyword: q('.mvp-kw').value,
         asin: q('.mvp-asin').value,
         minCommission: parseFloat(q('.mvp-comm').value) || 0,
-        endsAfter: q('.mvp-after').value || '',
-        endsBefore: q('.mvp-before').value || '',
+        lastDays: parseInt(q('.mvp-lastdays').value, 10) || 0,
       })
       render(rows, rawCount)
     } catch (e) { res.innerHTML = `<div class="mvp-note">Search error: ${e?.message || e}</div>` }
