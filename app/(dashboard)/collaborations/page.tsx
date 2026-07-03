@@ -6,6 +6,7 @@ import PageHero from '@/components/layout/PageHero'
 import { CapReachedBanner } from '@/components/CapReachedBanner'
 import { useConfirm } from '@/components/ui/useConfirm'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
+import OutreachProfileCard from '@/components/collaborations/OutreachProfileCard'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { type Tier } from '@/lib/tier'
 import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
@@ -285,6 +286,13 @@ export default function CollaborationsPage() {
         subtitle="Fill this out and we'll research the brand and write a pitch email that sells your work, ready to copy and send."
       />
 
+      {/* Saved Outreach Profile — fills every Creator Connections "Message Brand"
+          draft (SCOUT ✍️ Draft + the /epc Message modal) so the message replays
+          the creator's greeting/credibility/offer/links/sample-address without
+          hand-editing. Collapsed by default so it doesn't crowd the pitch form. */}
+      <div className="max-w-3xl mb-5">
+        <OutreachProfileCard />
+      </div>
 
       {/* Recommended Tools — outside-of-MVP resources that help with the
           brand-outreach workflow. Surfaced here because /collaborations is

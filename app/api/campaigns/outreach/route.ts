@@ -112,12 +112,34 @@ export async function POST(request: Request) {
     const youtube = s('youtube_url') || s('youtube_channel')
     const niche = s('niche') || (Array.isArray(bp['niches']) ? (bp['niches'] as unknown[]).map(String).slice(0, 3).join(', ') : '')
 
+    // Saved Outreach Profile (migration 155) — the creator's reusable template
+    // pieces. These are USER-PROVIDED real facts (they typed them), so the draft
+    // may use them verbatim; they are NOT "invented". They take priority over the
+    // generic brand fields and drive the OINK-style multi-message structure.
+    const op = (bp['outreach_profile'] && typeof bp['outreach_profile'] === 'object') ? (bp['outreach_profile'] as Record<string, unknown>) : {}
+    const ops = (k: string) => { const v = op[k]; return typeof v === 'string' && v.trim() ? v.trim() : '' }
+    const opCategories = Array.isArray(op['categories']) ? (op['categories'] as unknown[]).map(String).map(x => x.trim()).filter(Boolean) : []
+    const opStorefront = ops('storefrontUrl')
+    const opShipName = ops('shipName')
+    const opShipAddress = ops('shipAddress')
+    const opPhone = ops('phone')
+    const opEmail = ops('email')
+    const opSignoff = ops('signoff')
+
     const facts: string[] = []
-    if (creatorName) facts.push(`Creator/brand name: ${creatorName}`)
-    if (niche) facts.push(`Niche: ${niche}`)
+    if (ops('greetingStyle')) facts.push(`Preferred greeting style (open with this): ${ops('greetingStyle')}`)
+    if (ops('intro')) facts.push(`Who I am / credibility (TRUE — use it): ${ops('intro')}`)
+    else if (creatorName) facts.push(`Creator/brand name: ${creatorName}`)
+    if (ops('offer')) facts.push(`What I offer brands: ${ops('offer')}`)
+    if (opCategories.length) facts.push(`Content categories I cover: ${opCategories.join(', ')}`)
+    else if (niche) facts.push(`Niche: ${niche}`)
     if (mediaKit) facts.push(`Media kit: ${mediaKit}`)
-    if (linkHub) facts.push(`Link hub / site: ${linkHub}`)
-    if (youtube) facts.push(`YouTube: ${youtube}`)
+    if (ops('linktree') || linkHub) facts.push(`Portfolio / work samples: ${ops('linktree') || linkHub}`)
+    if (ops('youtube') || youtube) facts.push(`YouTube: ${ops('youtube') || youtube}`)
+    if (ops('blog')) facts.push(`Blog: ${ops('blog')}`)
+    if (opStorefront) facts.push(`My Amazon storefront: ${opStorefront}`)
+    if (opEmail) facts.push(`My email: ${opEmail}`)
+    if (opSignoff) facts.push(`Sign off as: ${opSignoff}`)
 
     const campaign: string[] = []
     if (brand) campaign.push(`Brand: ${brand}`)
@@ -132,8 +154,16 @@ export async function POST(request: Request) {
     const asks: string[] = []
     if (o.offerContent !== false) asks.push('Offer to create authentic, honest content that drives their Creator Connections sales.')
     if (o.requestSample) asks.push('Politely request a free product sample to review firsthand.')
-    if (o.shareAddress && (o.address || '').trim()) asks.push(`If a sample is offered, give this shipping/forwarding address: ${(o.address || '').trim()}`)
-    else if (o.shareAddress) asks.push('Say you are happy to share a shipping address for a sample.')
+    // Sample shipping: prefer the per-message address, else the saved profile's.
+    // When we have a real ship name/address, put them in their OWN message
+    // (labelled NAME / ADDRESS) so the brand can copy them exactly (OINK style).
+    const shipAddr = (o.address || '').trim() || opShipAddress
+    const wantSample = o.requestSample || o.shareAddress
+    if (wantSample && shipAddr) {
+      asks.push(`Say to send the sample to the EXACT name + address below, and put them on their OWN line(s): ${opShipName ? `NAME: ${opShipName}. ` : ''}ADDRESS: ${shipAddr}.${opPhone ? ` TELEPHONE: ${opPhone}.` : ''}`)
+    } else if (o.shareAddress) {
+      asks.push('Say you are happy to share a shipping address for a sample.')
+    }
     if (o.includeMediaKit && mediaKit) asks.push(`Include the media kit link: ${mediaKit}`)
     if (o.includePortfolio && (linkHub || youtube)) asks.push(`Include a portfolio link so they can see past work: ${[youtube, linkHub].filter(Boolean)[0]}`)
     if (o.mentionPastCollabs) asks.push('Briefly mention we have partnered with other brands successfully (do NOT invent specifics).')

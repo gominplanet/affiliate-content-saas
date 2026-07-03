@@ -11,6 +11,26 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 
+// Load the saved Outreach Profile (migration 155) so the /collaborations card
+// and the brand-message modal pre-fill instead of the user retyping.
+export async function GET() {
+  try {
+    const supabase = await createServerClient()
+    const auth = await getAuthAndOwner(supabase)
+    if (auth.error) return auth.error
+    const { ownerId } = auth
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data } = await (supabase as any)
+      .from('brand_profiles')
+      .select('outreach_profile')
+      .eq('user_id', ownerId)
+      .maybeSingle()
+    return NextResponse.json({ ok: true, outreachProfile: data?.outreach_profile ?? null })
+  } catch (err) {
+    return NextResponse.json({ error: String(err) }, { status: 500 })
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const supabase = await createServerClient()
@@ -31,9 +51,39 @@ export async function POST(request: Request) {
       whatsapp?: unknown
       wechat?: unknown
       lark?: unknown
+      // Saved Outreach Profile (migration 155) — the reusable brand-message
+      // template fields. Passed as a whole object; stored as jsonb.
+      outreachProfile?: unknown
     }
 
     const str = (v: unknown) => (typeof v === 'string' ? v : '')
+
+    // Normalize the Outreach Profile into a clean, size-bounded jsonb object so
+    // a malformed/huge payload can't be stored. All fields optional.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let outreachProfile: Record<string, unknown> | undefined
+    if (body.outreachProfile && typeof body.outreachProfile === 'object') {
+      const p = body.outreachProfile as Record<string, unknown>
+      const s = (k: string, max = 1200) => str(p[k]).trim().slice(0, max)
+      const cats = Array.isArray(p.categories)
+        ? p.categories.filter((x): x is string => typeof x === 'string').map(x => x.trim()).filter(Boolean).slice(0, 20)
+        : []
+      outreachProfile = {
+        greetingStyle: s('greetingStyle', 400),
+        intro: s('intro', 800),
+        offer: s('offer', 800),
+        categories: cats,
+        youtube: s('youtube', 300),
+        blog: s('blog', 300),
+        linktree: s('linktree', 300),
+        storefrontUrl: s('storefrontUrl', 300),
+        shipName: s('shipName', 200),
+        shipAddress: s('shipAddress', 400),
+        phone: s('phone', 60),
+        email: s('email', 200),
+        signoff: s('signoff', 200),
+      }
+    }
     // The portfolio/link-hub is shared with Brand Profile (linktree_url).
     // Only overwrite it when a non-empty value is provided here, so
     // saving the collab form with a blank field can't wipe a Linktree
@@ -72,6 +122,7 @@ export async function POST(request: Request) {
         ...(str(body.whatsapp).trim() ? { contact_whatsapp: str(body.whatsapp).trim() } : {}),
         ...(str(body.wechat).trim()   ? { contact_wechat:   str(body.wechat).trim()   } : {}),
         ...(str(body.lark).trim()     ? { contact_lark:     str(body.lark).trim()     } : {}),
+        ...(outreachProfile ? { outreach_profile: outreachProfile } : {}),
       })
       .eq('user_id', ownerId)
 
