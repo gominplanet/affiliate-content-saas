@@ -19,9 +19,14 @@ export async function GET(req: Request) {
   // /onboarding instead of dumping them on /setup mid-flow.
   const rawReturn = new URL(req.url).searchParams.get('returnTo') || ''
   const returnTo = /^\/(?!\/)/.test(rawReturn) ? rawReturn : ''
-  // When connecting an ADDITIONAL channel (Pro multi-channel), force Google's
-  // account chooser so the user can pick a different account / brand channel
-  // rather than silently re-authing the one they're already signed into.
+  // We ALWAYS force Google's account chooser (below). This is the fix for the
+  // multi-channel footgun: when a Google login owns several YouTube channels
+  // (a personal channel + Brand Account channels), `prompt=consent` alone
+  // silently re-auths whichever channel is that account's DEFAULT — so a creator
+  // meaning to (re)connect "Channel A" would get "Channel B" instead, and
+  // Co-Pilot would then read Channel B's videos. select_account surfaces the
+  // channel picker on every connect so they choose the right one. `addChannel`
+  // no longer changes the prompt, but we keep reading it for the state payload.
   const addChannel = new URL(req.url).searchParams.get('addChannel') === '1'
 
   // Encode user ID (+ optional return path) in state so the callback can
@@ -43,9 +48,10 @@ export async function GET(req: Request) {
     ...(youtubeUploadEnabled() ? ['https://www.googleapis.com/auth/youtube.upload'] : []),
   ].join(' '))
   url.searchParams.set('access_type', 'offline')
-  // 'consent' forces a refresh token; 'select_account' (added when connecting an
-  // additional channel) shows the account chooser so they can pick another one.
-  url.searchParams.set('prompt', addChannel ? 'select_account consent' : 'consent')
+  // 'consent' forces a refresh token; 'select_account' shows the account/channel
+  // chooser so a creator with multiple YouTube channels picks the right one
+  // instead of silently getting their Google account's default channel.
+  url.searchParams.set('prompt', 'select_account consent')
   url.searchParams.set('state', state)
 
   return NextResponse.redirect(url.toString())

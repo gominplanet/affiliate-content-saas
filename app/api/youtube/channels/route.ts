@@ -16,6 +16,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { listYouTubeChannels, setDefaultChannel, maxChannelsForTier } from '@/lib/youtube-channels'
+import { bustYouTubeCache } from '@/app/api/youtube/drafts/route'
 import { normalizeTier } from '@/lib/tier'
 
 export const runtime = 'nodejs'
@@ -70,6 +71,9 @@ export async function POST(request: Request) {
     if (!body.channelRowId) return NextResponse.json({ error: 'channelRowId required' }, { status: 400 })
     const res = await setDefaultChannel(supabase, ownerId, body.channelRowId)
     if (!res.ok) return NextResponse.json({ error: res.error }, { status: 500 })
+    // The video cache is keyed by user, not channel — clear it so Co-Pilot
+    // reloads from the newly-selected default instead of the old channel's videos.
+    try { await bustYouTubeCache(supabase, ownerId) } catch { /* non-fatal */ }
     return NextResponse.json({ ok: true })
   }
 
@@ -103,6 +107,9 @@ export async function POST(request: Request) {
       const next = channels.find(c => c.id !== body.channelRowId)
       if (next) await setDefaultChannel(supabase, ownerId, next.id)
     }
+    // The video cache is per-user (not per-channel), so the removed channel's
+    // videos would linger in Co-Pilot until the next full refresh — clear it now.
+    try { await bustYouTubeCache(supabase, ownerId) } catch { /* non-fatal */ }
     return NextResponse.json({ ok: true })
   }
 
