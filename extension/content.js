@@ -1025,7 +1025,7 @@ function buildGate() {
       <button class="mvp-btn mvp-unlock" style="width:100%">Unlock</button>
       <div class="mvp-note">SCOUT campaign search is in private beta.</div>
     </div>`
-  document.body.appendChild(el)
+  redock(el)
   const pw = el.querySelector('.mvp-pw')
   const attempt = () => {
     if ((pw.value || '').trim().toLowerCase() === SCOUT_PW) {
@@ -1073,6 +1073,52 @@ function findToolbarAnchor() {
     }
     return tab.parentElement
   } catch (e) { return null }
+}
+
+// The ViralVue extension injects its own bar into the CC page (its logo +
+// "Accept Sponsored Products Campaigns" / "Open Product Vue" buttons). The user
+// wants SCOUT docked right ABOVE it. Find the block that wraps ONLY ViralVue's
+// bar (contains "ViralVue" but not the CC tabs below it) and return it so we can
+// insert SCOUT before it.
+function findViralVueAnchor() {
+  try {
+    const marker = [...document.querySelectorAll('button,a,[role="button"],img,span,div')]
+      .find(e => /open product vue|accept sponsored products campaigns/i.test(textOf(e) || (e.getAttribute && e.getAttribute('alt')) || ''))
+    if (!marker) return null
+    // Walk up while the container is still "just the ViralVue bar"; stop once the
+    // next parent would pull in the CC tabs — `best` is then the bar's wrapper.
+    let el = marker, best = null
+    for (let i = 0; i < 10 && el && el.parentElement; i++) {
+      el = el.parentElement
+      const t = el.textContent || ''
+      if (!/viralvue|product vue/i.test(t)) continue
+      if (/new opportunities|submitted content links/i.test(t)) break
+      best = el
+    }
+    return best
+  } catch (e) { return null }
+}
+
+// Dock the panel in the page flow: prefer sitting just ABOVE ViralVue's bar,
+// else above Amazon's CC toolbar row. Falls back to a floating panel only until
+// one of those anchors renders (CC is a React app — they can mount late). Safe to
+// call repeatedly: it no-ops when the panel is already parked above the anchor.
+function redock(el) {
+  if (!el) return
+  try {
+    const anchor = findViralVueAnchor() || findToolbarAnchor()
+    if (anchor && anchor.parentElement && anchor !== el && !el.contains(anchor)) {
+      if (el.nextElementSibling === anchor && el.classList.contains('mvp-inline')) return // already docked
+      el.classList.add('mvp-inline')
+      anchor.parentElement.insertBefore(el, anchor)
+    } else if (!el.isConnected) {
+      // No anchor yet — park it floating (middle-right) until one appears.
+      el.classList.remove('mvp-inline')
+      document.body.appendChild(el)
+    }
+  } catch (e) {
+    if (!el.isConnected && document.body) document.body.appendChild(el)
+  }
 }
 
 function mountSearchPanel() {
@@ -1128,16 +1174,10 @@ function mountSearchPanel() {
       <div class="mvp-token-row"><div><label>MVP ingest token</label><input class="mvp-token" placeholder="CC_..."></div><button class="mvp-btn sec mvp-token-save" style="flex:0 0 auto;align-self:flex-end">Save</button></div>
       <div class="mvp-note">Tick campaigns → <b>Import selected</b>: SCOUT deep-checks each (reads monthly sales + carousel-video position: top / bottom / none), accepts them on Amazon and adds ALL your picks to your MVP /epc list — with those signals shown per row — to Generate + Message. <b>Accept</b> imports one now (no deep check). <b>✍️ Draft</b> writes AND sends a brand message on a campaign's details page (opens the chat, drops in your pitch, hits Send).</div>
     </div>`
-  // Prefer sitting IN the page flow, right above Amazon's toolbar row (where
-  // ViralVue et al. inject). Fall back to a floating middle-right panel if we
-  // can't find the toolbar (e.g. layout changed).
-  const anchor = findToolbarAnchor()
-  if (anchor && anchor.parentElement) {
-    el.classList.add('mvp-inline')
-    anchor.parentElement.insertBefore(el, anchor)
-  } else {
-    document.body.appendChild(el)
-  }
+  // Dock it in the page flow, right ABOVE ViralVue's bar (or the CC toolbar).
+  // Falls back to floating only until one of those anchors renders; the 2s poll
+  // below keeps calling redock so it snaps into place once ViralVue mounts.
+  redock(el)
 
   const q = (s) => el.querySelector(s)
   const res = q('.mvp-res')
@@ -1294,6 +1334,9 @@ setInterval(() => {
     const existing = document.getElementById(PANEL_ID)
     if (onCC && !existing) mountSearchPanel()
     else if (!onCC && existing) existing.remove()
+    // Already mounted — keep it docked above ViralVue as the React page (and
+    // ViralVue's own bar) render / re-render.
+    else if (onCC && existing) redock(existing)
   } catch (e) {}
 }, 2000)
 })()
