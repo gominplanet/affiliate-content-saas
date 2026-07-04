@@ -10,25 +10,47 @@ export async function GET() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const CAMPAIGN_COLS = 'id,asin,cc_campaign_id,product_title,campaign_name,brand_name,epc,program,commission_pct,monthly_sales,has_carousel_video,carousel_video_pos,details_url,ends_at,status,error_message,wordpress_url,blog_post_id,category,hero_kind,product_price,messaged_at,last_message,created_at'
+  // Columns the queue never works without. Everything else is optional and may be
+  // missing on an account whose DB is a migration behind the deploy.
+  const CORE_COLS = ['id', 'asin', 'status', 'created_at']
+  const OPTIONAL_COLS = [
+    'cc_campaign_id', 'product_title', 'campaign_name', 'brand_name', 'epc',
+    'program', 'commission_pct', 'monthly_sales', 'has_carousel_video',
+    'carousel_video_pos', 'details_url', 'ends_at', 'error_message',
+    'wordpress_url', 'blog_post_id', 'category', 'hero_kind', 'product_price',
+    'messaged_at', 'last_message', 'accepted_at', // migrations 157/158/159
+  ]
 
-  // Fetch campaigns, resilient to migration lag: try WITH accepted_at (migration
-  // 159), and if that column doesn't exist yet, retry WITHOUT it — otherwise the
-  // whole queue would come back empty on any account whose DB is a migration
-  // behind the deploy.
+  // Fetch campaigns, resilient to ANY migration lag: if the select errors because
+  // a column doesn't exist yet (e.g. last_message before mig 158), drop just that
+  // column and retry — never let one un-run migration blank the whole queue.
   const fetchCampaigns = async () => {
+    let cols = [...CORE_COLS, ...OPTIONAL_COLS]
+    // At most one retry per optional column, plus a safety margin.
+    for (let attempt = 0; attempt <= OPTIONAL_COLS.length; attempt++) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const res = await (supabase as any)
+        .from('campaigns')
+        .select(cols.join(','))
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(500)
+      if (!res.error) return res
+      const m = (res.error.message || '').match(/column\s+"?(?:[\w]+\.)*(\w+)"?\s+does not exist/i)
+      if (!m) return res // not a missing-column error — surface it
+      const missing = m[1]
+      const next = cols.filter(c => c !== missing)
+      if (next.length === cols.length || next.length <= CORE_COLS.length) return res // couldn't drop it → give up
+      cols = next
+    }
+    // Last resort: core columns only.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const base = (cols: string) => (supabase as any)
+    return (supabase as any)
       .from('campaigns')
-      .select(cols)
+      .select(CORE_COLS.join(','))
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(500)
-    let res = await base(`${CAMPAIGN_COLS},accepted_at`)
-    if (res.error && /accepted_at|column .* does not exist/i.test(res.error.message || '')) {
-      res = await base(CAMPAIGN_COLS)
-    }
-    return res
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
