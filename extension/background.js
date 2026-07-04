@@ -581,6 +581,79 @@ async function ccMatchCampaigns(keyword, asins, callerTabId) {
   }
 }
 
+// ── Accept a campaign on Amazon, from MVP ───────────────────────────────────
+// The /epc "Accept on Amazon" button: open the campaign's details page in the
+// user's own session and click its Accept button — so accepting is a deliberate
+// choice made in MVP, never a side effect of importing. Background-first (the
+// user asked never to be moved off MVP); foreground fallback only if the details
+// page's React didn't render the button headless.
+function acceptCampaignInPage() {
+  const norm = (el) => ((el && (el.innerText || el.textContent)) || '').replace(/\s+/g, ' ').trim()
+  const controls = () => [...document.querySelectorAll('button,a,[role="button"],input[type="submit"]')]
+  // Exact accept labels first; then a loose match that EXCLUDES "Accept all"
+  // (which would accept every campaign) and "Accepted"/"Accept Sponsored…".
+  const exact = (t) => /^(accept|accept campaign|accept this campaign|accept affiliate\+? campaign|accept offer|accept & continue)$/i.test(t)
+  const loose = (t) => /\baccept\b/i.test(t) && !/accept all|accepted|accept sponsored/i.test(t)
+  const bodyTxt = document.body ? (document.body.innerText || '') : ''
+  let btn = controls().find((e) => exact(norm(e)))
+  if (!btn) btn = controls().find((e) => loose(norm(e)))
+  if (!btn) {
+    // No accept control — if the page already reads as accepted, call it done.
+    if (/\baccepted\b/i.test(bodyTxt) && !/accept\b/i.test(bodyTxt)) return { ok: true, accepted: true, already: true }
+    return { ok: false, reason: 'accept-button-not-found', sample: controls().map((e) => norm(e)).filter(Boolean).slice(0, 14) }
+  }
+  const label = norm(btn)
+  try { btn.scrollIntoView({ block: 'center' }) } catch (e) {}
+  btn.click()
+  return { ok: true, accepted: true, clicked: label }
+}
+
+async function acceptCampaignByUrl(detailsUrl, callerTabId) {
+  if (!detailsUrl) return { ok: false, error: 'no-url' }
+  let tabId = null
+  let opened = false
+  const tryAccept = async () => {
+    for (let i = 0; i < 6; i++) {
+      const res = await chrome.scripting.executeScript({ target: { tabId }, func: acceptCampaignInPage })
+      const r = res && res[0] && res[0].result
+      if (r && r.ok) return r
+      await _sleep(700)
+    }
+    return null
+  }
+  try {
+    const tab = await chrome.tabs.create({ url: detailsUrl, active: false })
+    tabId = tab.id; opened = true
+    await waitForTabLoad(tabId, 25000)
+    await _sleep(2500)
+    // Creator Connections is blocked on an onsite store id — flip if needed.
+    try {
+      const sres = await chrome.scripting.executeScript({ target: { tabId }, func: ensureOffsiteStoreInPage })
+      const sw = sres && sres[0] && sres[0].result
+      if (sw && sw.switched) { await _sleep(1500); await waitForTabLoad(tabId, 25000); await _sleep(2000) }
+    } catch (e) {}
+
+    let r = await tryAccept()
+    // Button never rendered headless → bring the tab forward once, retry, return.
+    if (!r) {
+      try {
+        await chrome.tabs.update(tabId, { active: true })
+        await _sleep(2500)
+        r = await tryAccept()
+      } catch (e) { /* keep null */ }
+      finally {
+        if (callerTabId != null) { try { await chrome.tabs.update(callerTabId, { active: true }) } catch (e) {} }
+      }
+    }
+    if (r && r.ok) await _sleep(1500) // let the click commit before we close
+    return r || { ok: false, error: 'accept-button-not-found' }
+  } catch (e) {
+    return { ok: false, error: (e && e.message) ? e.message : 'accept-exception' }
+  } finally {
+    if (opened && tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+  }
+}
+
 // ── Amazon video discovery (Manage Content) ────────────────────────────────
 // For the "Share with brand" recap: a creator's Amazon Influencer videos live
 // on their Manage Content page (in their logged-in session — a server can't
@@ -1991,6 +2064,16 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     const callerTabId = sender && sender.tab ? sender.tab.id : null
     const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 300000)
     ccMatchCampaigns(msg.keyword || '', msg.asins || [], callerTabId)
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true // async response — keep the channel open
+  }
+  if (msg.type === 'MVP_CC_ACCEPT') {
+    // /epc "Accept on Amazon": open the campaign's details page + click Accept,
+    // background-first with a foreground fallback. Allow up to 90s.
+    const callerTabId = sender && sender.tab ? sender.tab.id : null
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 90000)
+    acceptCampaignByUrl(msg.detailsUrl, callerTabId)
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async response — keep the channel open

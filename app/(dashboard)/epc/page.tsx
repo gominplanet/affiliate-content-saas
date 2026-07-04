@@ -24,7 +24,7 @@ import { useState, useMemo, useEffect, useCallback } from 'react'
 import PageHero from '@/components/layout/PageHero'
 import { Loader2, ExternalLink, CheckCircle2, Sparkles, Search, Puzzle, Download, Copy, RefreshCw, KeyRound, Trash2, Lock, FlaskConical, MessageSquare } from 'lucide-react'
 import { toast } from 'sonner'
-import { getScoutInstallKind } from '@/lib/extension-frame'
+import { getScoutInstallKind, requestAcceptCampaign } from '@/lib/extension-frame'
 import MessageBrandModal, { type MessageBrandCampaign } from '@/components/campaigns/MessageBrandModal'
 import { SCOUT_STORE_LISTING_URL } from '@/lib/scout-version'
 
@@ -61,6 +61,8 @@ interface CampaignRow {
   messaged_at: string | null
   // The message that was sent (for the Messaged history view).
   last_message: string | null
+  // When the user accepted this campaign on Amazon from here (via SCOUT).
+  accepted_at: string | null
   created_at: string
 }
 
@@ -156,6 +158,8 @@ export default function EpcScoutPage() {
   const [fixing, setFixing] = useState<Record<string, boolean>>({})
   // Per-row "Remove" state (delete a campaign row + its WP post if any).
   const [removing, setRemoving] = useState<Record<string, boolean>>({})
+  // Per-row "Accept on Amazon" state (SCOUT clicks Accept on the details page).
+  const [accepting, setAccepting] = useState<Record<string, boolean>>({})
   // "Clear queue" state (bulk-delete the scouted backlog).
   const [clearing, setClearing] = useState(false)
   // Which SCOUT is installed (via MVP_PING) → drives the "move to the Web Store"
@@ -370,6 +374,41 @@ export default function EpcScoutPage() {
       detailsUrl: c.details_url,
       brandLabel: c.brand_name || undefined,
     })
+  }, [])
+
+  // Accept this campaign on Amazon — SCOUT opens its details page in the user's
+  // session and clicks Accept (background-first, brief foreground fallback), then
+  // we record accepted_at so the row shows "✓ Accepted". Accepting is a
+  // deliberate choice here; importing never accepts.
+  const acceptOnAmazon = useCallback(async (c: CampaignRow) => {
+    if (!c.details_url) { toast.error('No Amazon link stored for this campaign — re-import it via SCOUT.'); return }
+    setAccepting(a => ({ ...a, [c.asin]: true }))
+    try {
+      const r = await requestAcceptCampaign(c.details_url)
+      if (r.ok) {
+        toast.success(r.already ? 'Already accepted on Amazon ✓' : 'Accepted on Amazon ✓')
+        // Optimistic: flag the row accepted immediately, then persist.
+        setCampaigns(cs => cs.map(x => x.id === c.id ? { ...x, accepted_at: new Date().toISOString() } : x))
+        try {
+          await fetch('/api/campaigns/mark-accepted', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ asin: c.asin }),
+          })
+        } catch { /* the accept already happened on Amazon — non-fatal */ }
+      } else if (r.error === 'not-installed') {
+        toast.error('Install / enable SCOUT to accept campaigns.')
+      } else if (r.error === 'timeout') {
+        toast.error('Accepting timed out — try again, or accept it on Amazon directly.')
+      } else {
+        // eslint-disable-next-line no-console
+        console.warn('[MVP] accept-campaign failed:', r)
+        toast.error(`Couldn't accept: ${r.reason || r.error || 'unknown'} — you can accept it on Amazon directly.`, { duration: 10000 })
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Accept failed')
+    } finally {
+      setAccepting(a => { const n = { ...a }; delete n[c.asin]; return n })
+    }
   }, [])
 
   // Clear the scouted backlog — the un-actioned rows piling up after repeated
@@ -670,9 +709,10 @@ export default function EpcScoutPage() {
                         {c.asin} <ExternalLink size={9} />
                       </a>
                     </div>
-                    {(c.monthly_sales != null || c.carousel_video_pos != null || c.has_carousel_video != null || c.messaged_at) && (
+                    {(c.monthly_sales != null || c.carousel_video_pos != null || c.has_carousel_video != null || c.messaged_at || c.accepted_at) && (
                       <div className="flex items-center gap-2 mt-0.5 text-[10px]" style={{ color: 'var(--text-faint)' }}>
                         {c.monthly_sales != null && <span title="Bought in past month (SCOUT deep check)">📈 {fmtSales(c.monthly_sales)}/mo</span>}
+                        {c.accepted_at && <span className="text-[#34c759] font-semibold" title={`Accepted on Amazon ${new Date(c.accepted_at).toLocaleString()}`}>✓ accepted</span>}
                         {c.messaged_at && <span className="text-[#34c759] font-semibold" title={`Brand messaged ${new Date(c.messaged_at).toLocaleString()}`}>✉️ messaged</span>}
                         {(() => {
                           // Prefer the precise position; fall back to the legacy boolean.
@@ -732,6 +772,20 @@ export default function EpcScoutPage() {
                           style={{ background: (isFail || isStuck) ? '#ff3b30' : 'linear-gradient(45deg, #7C3AED 0%, #bc1888 100%)' }}>
                           <Sparkles size={12} /> {(isFail || isStuck) ? 'Retry' : 'Generate'}
                         </button>
+                        {c.details_url && (
+                          c.accepted_at ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-1 text-[12px] font-semibold text-[#34c759]" title={`Accepted on Amazon ${new Date(c.accepted_at).toLocaleString()}`}>
+                              <CheckCircle2 size={12} /> Accepted
+                            </span>
+                          ) : (
+                            <button onClick={() => acceptOnAmazon(c)} disabled={!!accepting[c.asin]}
+                              title="Accept this campaign on Amazon — SCOUT clicks Accept on its details page, in the background"
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[12px] font-semibold text-white disabled:opacity-60"
+                              style={{ background: '#34c759' }}>
+                              {accepting[c.asin] ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />} Accept
+                            </button>
+                          )
+                        )}
                         {c.details_url && (
                           <button onClick={() => openMessage(c)}
                             title="Compose a pitch and send it to the brand"

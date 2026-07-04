@@ -101,6 +101,26 @@ export async function requestSendBrand(detailsUrl: string, message: string): Pro
   return { ok: !!resp.ok, error: resp.error, reason: resp.reason, steps: resp.steps, diag: resp.diag, groups: resp.groups }
 }
 
+export interface AcceptCampaignResult { ok: boolean; accepted?: boolean; already?: boolean; error?: string; reason?: string }
+
+/**
+ * "Accept on Amazon" from the /epc list: SCOUT opens the campaign's details page
+ * in the user's session and clicks its Accept button — background-first, with a
+ * brief foreground fallback if the page's React didn't render headless. Accepting
+ * is a deliberate choice made in MVP (importing never accepts). Best-effort:
+ * resolves, never throws.
+ */
+export async function requestAcceptCampaign(detailsUrl: string): Promise<AcceptCampaignResult> {
+  if (!detailsUrl) return { ok: false, error: 'no-url' }
+  if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
+  const resp = await sendToExtension<{ ok?: boolean; accepted?: boolean; already?: boolean; error?: string; reason?: string }>(
+    { type: 'MVP_CC_ACCEPT', detailsUrl },
+    95000,
+  )
+  if (!resp) return { ok: false, error: 'timeout' }
+  return { ok: !!resp.ok, accepted: resp.accepted, already: resp.already, error: resp.error, reason: resp.reason }
+}
+
 /**
  * Ask SCOUT to open a campaign's Amazon page (the user's logged-in session),
  * open its "Message Brand" box and drop in a drafted message — leaving it for
