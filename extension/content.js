@@ -1440,24 +1440,44 @@ function mountSearchPanel() {
     // On the Sponsored Products tab, dump what the sponsored reader sees so the
     // ASIN/price/EPC selectors can be tightened from a real page.
     if (detectCcTab() === 'sponsored') {
+      const cleanT = (s) => (s || '').replace(/\s+/g, ' ').trim()
       const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null)
-      let asinNodes = 0, node, firstNode = null, firstCont = null
+      const hits = []
+      let node
       while ((node = walker.nextNode())) {
         const v = node.nodeValue || ''
-        if (v.length < 80 && /\bB0[A-Z0-9]{8}\b/.test(v)) {
-          asinNodes++
-          if (!firstNode) firstNode = node
-          if (!firstCont) { let c = node.parentElement, found = null; for (let i = 0; i < 14 && c && c.parentElement; i++) { const t = c.textContent || ''; if (t.indexOf('$') !== -1 && /\d/.test(t) && t.length < 1600) { found = c; break } c = c.parentElement } firstCont = found }
+        if (v.length < 80 && /\bB0[A-Z0-9]{8}\b/.test(v)) hits.push(node)
+      }
+      // Run the REAL parser path over every ASIN node — walk up to the card, extract,
+      // dedupe by ASIN — so this reports exactly what a Scan would harvest (not just
+      // the first node, which may be a stray example/tooltip).
+      const parsed = new Map()
+      const fails = []
+      for (const tn of hits) {
+        let cont = tn.parentElement, card = null
+        for (let i = 0; i < 14 && cont && cont.parentElement; i++) {
+          const t = cont.textContent || ''
+          if (t.indexOf('$') !== -1 && /\d/.test(t) && t.length < 1600) { card = cont; break }
+          cont = cont.parentElement
+        }
+        if (!card) { if (fails.length < 3) fails.push({ why: 'no $-container', asinNode: cleanT(tn.nodeValue).slice(0, 40) }); continue }
+        const c = extractSponsoredCard(card)
+        if (c && c.asin) { if (!parsed.has(c.asin)) parsed.set(c.asin, c) }
+        else if (fails.length < 3) {
+          const all = cleanT(card.textContent)
+          fails.push({
+            why: 'extract null',
+            asinRe: /\bASIN:?\s*(B0[A-Z0-9]{8})/i.test(all) || /(B0[A-Z0-9]{8})/.test(all),
+            len: all.length, tag: card.tagName, cls: (card.className || '').toString().slice(0, 50),
+            text: all.slice(0, 260),
+          })
         }
       }
-      // Log the first ASIN node's ancestor chain (tag + size + text) so the exact
-      // card structure is visible even when the container heuristic misses.
-      const chain = []
-      if (firstNode) { let c = firstNode.parentElement; for (let i = 0; i < 12 && c; i++) { const t = (c.textContent || '').replace(/\s+/g, ' ').trim(); chain.push({ lvl: i, tag: c.tagName, cls: (c.className || '').toString().slice(0, 60), len: t.length, hasDollar: t.indexOf('$') !== -1, text: t.slice(0, 160) }); c = c.parentElement } }
-      const sample = firstCont ? extractSponsoredCard(firstCont) : null
+      const list = [...parsed.values()]
       // eslint-disable-next-line no-console
-      console.log('[MVP SCOUT] sponsored debug — ASIN nodes:', asinNodes, '· first container:', firstCont, '· parsed:', sample, '· ancestor chain:', chain)
-      res.innerHTML = `<div class="mvp-note">Sponsored tab. ASIN nodes: <b>${asinNodes}</b>. First parsed: <b>${sample ? String(sample.campaignName || sample.asin).replace(/</g, '&lt;') : 'none'}</b>${sample ? ` — $${sample.price ?? '?'} · EPC $${sample.epc ?? '?'} · ★${sample.rating ?? '?'}` : ''}. Ancestor chain + container logged to console (⌥⌘J) — paste it if still none.</div>`
+      console.log('[MVP SCOUT] sponsored debug — ASIN nodes:', hits.length, '· unique parsed:', list.length, '· sample:', list.slice(0, 3), '· failures:', fails)
+      const sample = list[0]
+      res.innerHTML = `<div class="mvp-note">Sponsored tab. ASIN nodes: <b>${hits.length}</b> → parsed <b>${list.length}</b> cards.${sample ? ` First: <b>${String(sample.campaignName || sample.asin).replace(/</g, '&lt;')}</b> — $${sample.price ?? '?'} · EPC $${sample.epc ?? '?'} · ★${sample.rating ?? '?'}` : ''}${list.length === 0 && fails.length ? ` <b>Why 0:</b> ${String(fails[0].why)}${fails[0].text ? ` · asinRe=${fails[0].asinRe} · «${String(fails[0].text).replace(/</g, '&lt;').slice(0, 160)}»` : ''}` : ''} <br>Full sample + failures logged to console (⌥⌘J).</div>`
       return
     }
     const d = dumpCardDebug()
