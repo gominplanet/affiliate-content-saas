@@ -416,9 +416,10 @@ const PANEL_ID = 'mvp-scout-cc-panel'
 function fmtMeta(r) {
   const bits = []
   // Sponsored Products rows carry product price / EPC / rating on the card.
-  if (typeof r.price === 'number') bits.push('$' + r.price.toFixed(2))
   if (typeof r.epc === 'number') bits.push('EPC $' + r.epc.toFixed(2))
+  if (typeof r.price === 'number') bits.push('$' + r.price.toFixed(2))
   if (r.rating) bits.push('★ ' + r.rating + (r.reviews ? ` (${r.reviews.toLocaleString()})` : ''))
+  if (r.budgetScore) bits.push('budget ' + r.budgetScore)
   if (r.asin) bits.push(r.asin)
   if (r.commissionPct != null) bits.push(r.commissionPct + '% commission')
   if (r.startsAt || r.endsAt) bits.push((r.startsAt || '?') + ' → ' + (r.endsAt || '?'))
@@ -945,22 +946,35 @@ function extractSponsoredCard(cont) {
   const rm = all.match(/\b([0-5](?:\.\d)?)\s*(?:out of 5|stars)/i)
   if (rm) rating = rm[1]
   const rc = all.match(/\(([\d,]{2,})\)/); if (rc) reviews = parseInt(rc[1].replace(/,/g, ''), 10)
+  // Budget availability score (Low / Medium / High).
+  let budgetScore = null
+  const bm = all.match(/budget availability score:?\s*(low|medium|high)/i)
+  if (bm) budgetScore = bm[1].toLowerCase()
   const img = cont.querySelector('img[src]')
   const image = img ? (img.getAttribute('src') || null) : null
-  const titleEl = cont.querySelector('a[href*="/dp/"], h2, h3, [class*="title" i]')
-  const campaignName = titleEl ? (clean(titleEl.textContent) || null) : null
+  // Title: the longest LEAF text line that isn't a metadata line (price / ASIN /
+  // EPC / budget / rating). The product name is the strongest such line.
+  let campaignName = null, best = ''
+  cont.querySelectorAll('a,span,div,p,h1,h2,h3,h4').forEach((e) => {
+    if (e.children.length) return
+    const t = clean(e.textContent)
+    if (t.length >= 12 && t.length <= 200 && t.length > best.length &&
+        !/\$|\bASIN\b|estimated epc|budget availability|out of 5|^\(?\d[\d,]*\)?$|^\s*accept\s*$/i.test(t)) best = t
+  })
+  if (best) campaignName = best
   const dpEl = cont.querySelector('a[href*="/dp/"]')
   const detailsUrl = dpEl ? (dpEl.href || `https://www.amazon.com/dp/${asin}`) : `https://www.amazon.com/dp/${asin}`
   return {
     key: asin, campaignId: null, asin, campaignName: campaignName || asin, brand: null,
     commissionPct: null, budget: null, startsAt: null, endsAt: null,
-    image, detailsUrl, price, epc, rating, reviews, sponsored: true,
+    image, detailsUrl, price, epc, rating, reviews, budgetScore, sponsored: true,
   }
 }
 
 // Scrape the sponsored product cards, scrolling to lazy-load more. Self-contained
-// (doesn't touch the Affiliate+ campaign-card walker). Anchors on each product's
-// "Accept" button → walks up to the card container that carries its ASIN.
+// (doesn't touch the Affiliate+ campaign-card walker). Anchors on the "ASIN: B0…"
+// text every card shows (robust — the Accept CTA is an Amazon a-button <input>
+// with no text) and walks up to the card container.
 async function parseSponsoredCards(opts) {
   const maxCards = (opts && opts.maxCards) || 300
   const onProgress = (opts && opts.onProgress) || function () {}
@@ -968,14 +982,20 @@ async function parseSponsoredCards(opts) {
   const byKey = new Map()
   let reported = 0
   const harvest = () => {
-    const btns = [...document.querySelectorAll('button,[role="button"]')]
-      .filter(b => /^\s*accept\s*$/i.test((b.innerText || b.textContent || '')))
-    for (const b of btns) {
-      let cont = b
-      for (let i = 0; i < 8 && cont.parentElement; i++) {
+    // Find every "ASIN: B0XXXXXXXX" text node, walk up to the tightest ancestor
+    // that reads like a whole product card (has a $ price + EPC/Accept), extract.
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null)
+    const hits = []
+    let n
+    while ((n = walker.nextNode())) { if (/\bASIN:?\s*B0[A-Z0-9]{8}\b/i.test(n.nodeValue || '')) hits.push(n) }
+    for (const tn of hits) {
+      let cont = tn.parentElement
+      for (let i = 0; i < 12 && cont && cont.parentElement; i++) {
+        const t = cont.textContent || ''
+        if (/\$\s?\d/.test(t) && /estimated epc|accept|budget availability/i.test(t)) break
         cont = cont.parentElement
-        if (/\bASIN:?\s*B0[A-Z0-9]{8}/i.test(cont.textContent || '')) break
       }
+      if (!cont) continue
       const c = extractSponsoredCard(cont)
       if (c && c.asin && !byKey.has(c.asin)) byKey.set(c.asin, c)
     }
@@ -1260,6 +1280,7 @@ function mountSearchPanel() {
     <div class="mvp-body">
       <div class="mvp-row"><div style="flex:3"><label>Keyword or brand</label><input class="mvp-kw" placeholder="e.g. knee brace"></div><div style="flex:1"><label>Min commission %</label><input class="mvp-comm" type="number" min="0" max="100" placeholder="20"></div><div style="flex:1"><label>Lasts ≥ (days)</label><input class="mvp-lastdays" type="number" min="0" step="1" placeholder="100"></div></div>
       <div class="mvp-row"><button class="mvp-btn mvp-search" style="flex:2">Search</button><button class="mvp-btn dbg mvp-debug" style="flex:1">Debug</button><button class="mvp-btn dbg mvp-draft" style="flex:1" title="On a campaign details page: draft a brand-outreach message from the brief">✍️ Draft</button></div>
+      <div class="mvp-row" style="align-items:center;gap:6px"><span style="font-size:9px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;flex:0 0 auto">Units sold / mo</span><select class="mvp-units" title="Only import products whose monthly units-sold falls in this band — SCOUT reads it during the import deep-check (units aren't on the card)" style="flex:1;padding:5px 8px;border:1px solid #d1d5db;border-radius:7px;font-size:11px;background:#fff;color:#111"><option value="">Any</option><option value="200-500">200 – 500</option><option value="500-1500">500 – 1,500</option><option value="1500-">Over 1,500</option></select></div>
       <div class="mvp-res"></div>
       <div class="mvp-row" style="margin-top:8px"><button class="mvp-btn sec mvp-accsel" style="flex:1" title="Deep-check selected (sales + carousel video) and import them into MVP — does not accept on Amazon">Import selected into MVP</button></div>
       <div class="mvp-token-row"><div><label>MVP ingest token</label><input class="mvp-token" placeholder="CC_..."></div><button class="mvp-btn sec mvp-token-save" style="flex:0 0 auto;align-self:flex-end">Save</button></div>
@@ -1306,7 +1327,9 @@ function mountSearchPanel() {
   // New result set → reset selection + sort, cache, draw.
   function render(rows, rawCount, meta) {
     selected.clear()
-    lastRows = rows; lastRawCount = rawCount; lastMeta = meta || {}; lastTab = (meta && meta.tab) || 'affiliate'; sortMode = ''
+    lastRows = rows; lastRawCount = rawCount; lastMeta = meta || {}; lastTab = (meta && meta.tab) || 'affiliate'
+    // Sponsored Products default to Estimated EPC high→low (the value metric).
+    sortMode = lastTab === 'sponsored' ? 'epc-desc' : ''
     draw()
   }
 
@@ -1328,7 +1351,7 @@ function mountSearchPanel() {
     // card; Affiliate+ campaigns carry commission/date.
     const opt = (v, label) => `<option value="${v}"${sortMode === v ? ' selected' : ''}>${label}</option>`
     const sortOpts = lastTab === 'sponsored'
-      ? opt('', 'Sort: Amazon') + opt('price-asc', 'Price: low → high') + opt('price-desc', 'Price: high → low') + opt('epc-desc', 'Est. EPC: high → low') + opt('rating-desc', 'Rating: high → low')
+      ? opt('epc-desc', 'Est. EPC: high → low') + opt('price-asc', 'Price: low → high') + opt('price-desc', 'Price: high → low') + opt('rating-desc', 'Rating: high → low') + opt('', 'Amazon order')
       : opt('', 'Sort: Amazon') + opt('comm-desc', 'Commission: high → low') + opt('comm-asc', 'Commission: low → high') + opt('ends-asc', 'Ending soonest')
     const bar = `<div class="mvp-note" style="margin:0 0 5px">${lastRows.length}${lastRawCount > lastRows.length ? ` of ${lastRawCount}` : ''} ${noun}${lastRows.length === 1 ? '' : 's'} · ${scanNote}</div>` +
       `<div class="mvp-row" style="align-items:center;gap:6px;margin:0 0 6px">` +
@@ -1383,6 +1406,23 @@ function mountSearchPanel() {
   q('.mvp-debug').addEventListener('click', () => {
     // Passive card dump only — never navigates the user's tab. (ASIN resolution
     // for the real push happens in a hidden background tab via the worker.)
+    // On the Sponsored Products tab, dump what the sponsored reader sees so the
+    // ASIN/price/EPC selectors can be tightened from a real page.
+    if (detectCcTab() === 'sponsored') {
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null)
+      let asinNodes = 0, node, firstCont = null
+      while ((node = walker.nextNode())) {
+        if (/\bASIN:?\s*B0[A-Z0-9]{8}\b/i.test(node.nodeValue || '')) {
+          asinNodes++
+          if (!firstCont) { let c = node.parentElement; for (let i = 0; i < 12 && c && c.parentElement; i++) { const t = c.textContent || ''; if (/\$\s?\d/.test(t) && /estimated epc|accept|budget availability/i.test(t)) break; c = c.parentElement } firstCont = c }
+        }
+      }
+      const sample = firstCont ? extractSponsoredCard(firstCont) : null
+      // eslint-disable-next-line no-console
+      console.log('[MVP SCOUT] sponsored debug — ASIN text nodes:', asinNodes, '· first card container:', firstCont, '· parsed:', sample)
+      res.innerHTML = `<div class="mvp-note">Sponsored tab. ASIN text nodes on page: <b>${asinNodes}</b>. First parsed: <b>${sample ? String(sample.campaignName || sample.asin).replace(/</g, '&lt;') : 'none'}</b>${sample ? ` — $${sample.price ?? '?'} · EPC $${sample.epc ?? '?'} · ★${sample.rating ?? '?'}` : ''}. Full dump in console (⌥⌘J).</div>`
+      return
+    }
     const d = dumpCardDebug()
     const st = storeDebugDump()
     const first = d.parsed ? String(d.parsed.campaignName || d.parsed.brand || d.parsed.key) : 'none — run a Search or scroll the campaign list into view'
@@ -1410,37 +1450,47 @@ function mountSearchPanel() {
     btn.disabled = true
     let imported = 0
     const dropped = []
-    // Each selected campaign is DEEP-CHECKED: SCOUT opens its product page to
-    // READ its monthly sales + carousel-video position (top/bottom/none). You've
-    // already curated these on Amazon, so we import ALL of them — the signals are
-    // recorded and shown per-row in MVP so YOU decide. We only skip a pick when
-    // it genuinely can't be imported (no details link / unreadable ASIN).
+    // Optional "Units sold / mo" band. Monthly units are NOT on the card, so when
+    // a band is set SCOUT deep-checks each ticked product (opens its /dp, reads
+    // "X bought in past month") and imports only those in the band. Without a band,
+    // sponsored rows import instantly (ASIN + price already on the card, no /dp).
+    const unitsVal = (q('.mvp-units') && q('.mvp-units').value) || ''
+    let uMin = 0, uMax = Infinity
+    if (unitsVal) { const p = unitsVal.split('-'); uMin = parseInt(p[0], 10) || 0; uMax = p[1] ? (parseInt(p[1], 10) || Infinity) : Infinity }
+    const wantSales = !!unitsVal
     for (let i = 0; i < keys.length; i++) {
       const camp = rowsByKey.get(keys[i])
       const label = camp ? (camp.campaignName || camp.brand || camp.key) : keys[i]
       if (!camp) { dropped.push(`${keys[i]}: missing`); continue }
-      // Sponsored Products rows already carry ASIN + price from the card → push
-      // them straight in, NO /dp deep check (that's what triggers Amazon blocks).
-      if (camp.asin) {
+      // Fast path: sponsored card already has ASIN + price, and no sales gate → push
+      // straight in, NO /dp visit (that's what triggers Amazon blocks).
+      if (camp.asin && !wantSales) {
         btn.textContent = `Importing ${i + 1}/${keys.length}…`
         res.innerHTML = `<div class="mvp-note">Importing ${i + 1}/${keys.length}: ${String(label).slice(0, 46).replace(/</g, '&lt;')}…</div>`
         const push = await pushCampaignToMvp(camp, camp.asin, token, typeof camp.price === 'number' ? { price: camp.price } : undefined)
         if (push.ok) imported++; else dropped.push(`${label}: push failed (${push.error || '?'})`)
         continue
       }
+      // Deep-check path (Affiliate+ always; sponsored only when a sales band is set).
       btn.textContent = `Checking ${i + 1}/${keys.length}…`
-      res.innerHTML = `<div class="mvp-note">Deep-checking ${i + 1}/${keys.length}: ${String(label).slice(0, 42).replace(/</g, '&lt;')}… <br>(opening its Amazon page for price + monthly sales + carousel-video position)</div>`
-      if (!camp.detailsUrl) { dropped.push(`${label}: no details link`); continue }
+      res.innerHTML = `<div class="mvp-note">Deep-checking ${i + 1}/${keys.length}: ${String(label).slice(0, 42).replace(/</g, '&lt;')}… <br>(opening its Amazon page for price${wantSales ? ' + monthly units sold' : ''} + carousel video)</div>`
+      const durl = camp.detailsUrl || (camp.asin ? `https://www.amazon.com/dp/${camp.asin}` : null)
+      if (!durl) { dropped.push(`${label}: no product link`); continue }
       let deep = null
-      try { deep = await chrome.runtime.sendMessage({ type: 'SCOUT_DEEP_CHECK', detailsUrl: camp.detailsUrl }) } catch (e) {}
-      if (!deep || !deep.ok || !deep.asin) { dropped.push(`${label}: couldn't read ASIN`); continue }
-      // NOTE: we do NOT accept the campaign on Amazon here — importing only brings
-      // it into MVP as a candidate. Accepting stays a deliberate choice you make
-      // in MVP (nothing on Amazon is committed by a SCOUT import).
-      const push = await pushCampaignToMvp(camp, deep.asin, token, { monthlySales: deep.sales, hasVideo: deep.hasVideo, carouselPos: deep.carouselPos, price: deep.price })
+      try { deep = await chrome.runtime.sendMessage({ type: 'SCOUT_DEEP_CHECK', detailsUrl: durl }) } catch (e) {}
+      const asin = (deep && deep.asin) || camp.asin
+      if (!asin) { dropped.push(`${label}: couldn't read ASIN`); continue }
+      const sales = deep && typeof deep.sales === 'number' ? deep.sales : null
+      if (wantSales) {
+        if (sales == null) { dropped.push(`${label}: units unknown`); continue }
+        if (sales < uMin || (uMax !== Infinity && sales > uMax)) { dropped.push(`${label}: ${sales}/mo outside band`); continue }
+      }
+      const price = (deep && typeof deep.price === 'number') ? deep.price : (typeof camp.price === 'number' ? camp.price : null)
+      // NOTE: importing never accepts on Amazon — accepting stays your choice in MVP.
+      const push = await pushCampaignToMvp(camp, asin, token, { monthlySales: sales, hasVideo: deep && deep.hasVideo, carouselPos: deep && deep.carouselPos, price })
       if (push.ok) imported++; else dropped.push(`${label}: push failed (${push.error || '?'})`)
     }
-    btn.textContent = 'Import selected'; btn.disabled = false
+    btn.textContent = 'Import selected into MVP'; btn.disabled = false
     const dropHtml = dropped.length
       ? `<br>Skipped ${dropped.length}:<br>• ${dropped.slice(0, 8).map(s => String(s).replace(/</g, '&lt;')).join('<br>• ')}${dropped.length > 8 ? '<br>• …' : ''}`
       : ''
