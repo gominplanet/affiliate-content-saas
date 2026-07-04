@@ -14,6 +14,33 @@
 
 const CAPTURE_TIMEOUT_MS = 120000
 
+// Where SCOUT pushes imported campaigns. Doing the ingest POST from the service
+// worker (not the content script) means it's NOT subject to amazon.com's page
+// CSP `connect-src` — a content-script fetch to a third-party origin can be
+// silently blocked by a strict host CSP, which looks like "nothing pushed".
+const MVP_ORIGIN = 'https://www.mvpaffiliate.io'
+
+// POST campaigns into the MVP ingest endpoint from the background context.
+// Returns { ok, error, status, inserted, skipped }. `reached:true` means we got
+// an HTTP response back (so the caller should trust this result and NOT retry
+// via its own fetch); a thrown/network failure returns reached:false.
+async function pushCampaignsToMvp(token, campaigns) {
+  if (!token) return { reached: false, ok: false, error: 'no token' }
+  try {
+    const res = await fetch(`${MVP_ORIGIN}/api/campaigns/ingest`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ campaigns }),
+    })
+    let body = null
+    try { body = await res.json() } catch (e) {}
+    if (res.ok) return { reached: true, ok: true, inserted: body && body.inserted, skipped: body && body.skipped }
+    return { reached: true, ok: false, status: res.status, error: (body && body.error) || `HTTP ${res.status}` }
+  } catch (e) {
+    return { reached: false, ok: false, error: (e && e.message) || 'network error' }
+  }
+}
+
 // Phase 1: injected while the YouTube tab is still FOREGROUND.
 // Waits for any pre-roll ad to fully complete before returning.
 // Chrome pauses ads in background tabs, so we MUST do this before switching
@@ -424,6 +451,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
   if (msg && msg.type === 'SCOUT_DEEP_CHECK') {
     resolveProductDeep(msg.detailsUrl).then(sendResponse)
+    return true // async response
+  }
+  if (msg && msg.type === 'SCOUT_PUSH_CAMPAIGN') {
+    pushCampaignsToMvp(msg.token, msg.campaigns).then(sendResponse)
     return true // async response
   }
   return false

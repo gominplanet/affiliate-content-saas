@@ -572,45 +572,60 @@ async function resolveCampaignAsin(detailsUrl) {
 // as `pending`, ready for one-click "Generate post". Maps to the existing ingest
 // shape: commission % goes into the free-text `epc` field.
 async function pushCampaignToMvp(camp, asin, token, extra) {
+  // Sponsored Products = Amazon pays per CLICK (a dollar Estimated EPC on the
+  // card) → program 'epc', carry the EPC value. Affiliate+ = extra commission
+  // per SALE (a percent) → program 'affiliate_plus', carry commissionPct. Never
+  // conflate the two (10% must never be read as $10).
+  const sponsored = !!camp.sponsored
+  const priceVal = (extra && typeof extra.price === 'number') ? extra.price
+    : (typeof camp.price === 'number' ? camp.price : null)
+  const payload = {
+    asin,
+    campaignName: camp.campaignName || camp.brand || null,
+    // The REAL brand name — kept separate from the product-ish campaignName so
+    // brand messages greet the brand, not the product.
+    brandName: camp.brand || null,
+    program: sponsored ? 'epc' : 'affiliate_plus',
+    epc: sponsored && camp.epc != null ? String(camp.epc) : null,
+    commissionPct: (!sponsored && camp.commissionPct != null) ? camp.commissionPct : null,
+    endsAt: camp.endsAt || null,
+    monthlySales: extra && typeof extra.monthlySales === 'number' ? extra.monthlySales : null,
+    hasCarouselVideo: extra && typeof extra.hasVideo === 'boolean' ? extra.hasVideo : null,
+    // Where the carousel video sits: 'top' (hero gallery), 'bottom'
+    // (related-videos section) or 'none'. Shown per-row in MVP /epc.
+    carouselVideoPos: extra && typeof extra.carouselPos === 'string' ? extra.carouselPos : null,
+    // Product (Buy Box) price — on the Sponsored card directly, or read off the
+    // /dp during a deep check. Powers the price sort on /epc.
+    price: priceVal,
+    detailsUrl: camp.detailsUrl || null,
+  }
+  // Push via the background service worker FIRST: a content-script fetch from
+  // amazon.com to mvpaffiliate.io is subject to Amazon's page CSP `connect-src`
+  // and can be silently blocked (looks like "nothing pushed"). The worker isn't.
+  try {
+    const r = await chrome.runtime.sendMessage({ type: 'SCOUT_PUSH_CAMPAIGN', token, campaigns: [payload] })
+    if (r && r.reached) {
+      if (r.ok) return { ok: true }
+      console.warn('[MVP SCOUT] push failed (bg):', r.error)
+      return { ok: false, error: r.error }
+    }
+    // reached:false → worker couldn't complete the request; fall through to a
+    // direct fetch (covers a cold/asleep worker or an old build with no handler).
+  } catch (e) { /* no handler / worker asleep → direct fetch below */ }
   try {
     const res = await fetch(`${MVP_ORIGIN}/api/campaigns/ingest`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-      body: JSON.stringify({
-        campaigns: [{
-          asin,
-          campaignName: camp.campaignName || camp.brand || null,
-          // The REAL brand name (campaign-card-brand-name) — kept separate from
-          // the product-ish campaignName so brand messages greet the brand, not
-          // the product.
-          brandName: camp.brand || null,
-          // Affiliate+ = extra commission per SALE (a percent), NOT dollar EPC.
-          // Send it in its own field so the app never treats 10% as $10.
-          program: 'affiliate_plus',
-          commissionPct: camp.commissionPct != null ? camp.commissionPct : null,
-          endsAt: camp.endsAt || null,
-          monthlySales: extra && typeof extra.monthlySales === 'number' ? extra.monthlySales : null,
-          hasCarouselVideo: extra && typeof extra.hasVideo === 'boolean' ? extra.hasVideo : null,
-          // Where the carousel video sits: 'top' (hero gallery), 'bottom'
-          // (related-videos section) or 'none'. Shown per-row in MVP /epc.
-          carouselVideoPos: extra && typeof extra.carouselPos === 'string' ? extra.carouselPos : null,
-          // Product (Buy Box) price read off the /dp during the deep check —
-          // powers the price sort on /epc. camp cards have no price.
-          price: extra && typeof extra.price === 'number' ? extra.price : null,
-          detailsUrl: camp.detailsUrl || null,
-        }],
-      }),
+      body: JSON.stringify({ campaigns: [payload] }),
     })
     if (res.ok) return { ok: true }
-    // Surface the real reason (e.g. a missing-column error before migration 151)
-    // instead of an opaque "push failed".
     let error = `HTTP ${res.status}`
     try { const j = await res.json(); if (j && j.error) error = j.error } catch (e) {}
     console.warn('[MVP SCOUT] push failed:', error)
     return { ok: false, error }
   } catch (e) {
     console.warn('[MVP SCOUT] push error:', e)
-    return { ok: false, error: (e && e.message) || 'network error' }
+    return { ok: false, error: (e && e.message) || 'network error (page CSP may be blocking amazon.com→mvp; reload SCOUT)' }
   }
 }
 
