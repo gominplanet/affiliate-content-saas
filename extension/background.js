@@ -361,7 +361,22 @@ function readDpSignalsInPage() {
   // Top wins when both exist (report the strongest placement). hasVideo kept for
   // back-compat with callers that only need the boolean.
   const carouselPos = topVideo ? 'top' : (bottomVideo ? 'bottom' : 'none')
-  return { sales, hasVideo: carouselPos !== 'none', carouselPos }
+
+  // Product price — the Buy Box price on the /dp page. This is the sortable
+  // "product price" (the campaign card has no price). Prefer the core price
+  // block; fall back to the first sensible "$X.XX" in the buy-box area.
+  let price = null
+  try {
+    const priceEl = document.querySelector(
+      '#corePrice_feature_div .a-offscreen, #corePriceDisplay_desktop_feature_div .a-offscreen, ' +
+      '#price_inside_buybox, #priceblock_ourprice, #priceblock_dealprice, .a-price .a-offscreen'
+    )
+    const raw = priceEl ? (priceEl.textContent || '') : ''
+    const pm = raw.match(/\$\s?([\d,]+(?:\.\d{1,2})?)/)
+    if (pm) { const n = parseFloat(pm[1].replace(/,/g, '')); if (!isNaN(n) && n > 0) price = n }
+  } catch (e) {}
+
+  return { sales, hasVideo: carouselPos !== 'none', carouselPos, price }
 }
 
 // Deep import check for one campaign: resolve its ASIN (from the details page),
@@ -380,19 +395,19 @@ async function resolveProductDeep(detailsUrl) {
       if (a.length) { asin = a[0]; break }
       await _sleep(500)
     }
-    if (!asin) return { ok: true, asin: null, sales: null, hasVideo: false }
+    if (!asin) return { ok: true, asin: null, sales: null, hasVideo: false, price: null }
     // Navigate the same tab to the product page and read the signals.
     await chrome.tabs.update(tabId, { url: `https://www.amazon.com/dp/${asin}` })
     await waitForTabLoad(tabId, 20000)
     await _sleep(1200)
-    let out = { sales: null, hasVideo: false, carouselPos: 'none' }
+    let out = { sales: null, hasVideo: false, carouselPos: 'none', price: null }
     for (let i = 0; i < 8; i++) {
       const r = await chrome.scripting.executeScript({ target: { tabId }, func: readDpSignalsInPage })
       const v = r && r[0] && r[0].result
-      if (v) { out = v; if (v.hasVideo || v.sales != null) break }
+      if (v) { out = v; if (v.hasVideo || v.sales != null || v.price != null) break }
       await _sleep(600)
     }
-    return { ok: true, asin, sales: out.sales, hasVideo: out.hasVideo, carouselPos: out.carouselPos || 'none' }
+    return { ok: true, asin, sales: out.sales, hasVideo: out.hasVideo, carouselPos: out.carouselPos || 'none', price: out.price != null ? out.price : null }
   } catch (e) {
     return { ok: false, error: e && e.message ? e.message : 'deep-exception' }
   } finally {

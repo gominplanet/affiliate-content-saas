@@ -588,6 +588,9 @@ async function pushCampaignToMvp(camp, asin, token, extra) {
           // Where the carousel video sits: 'top' (hero gallery), 'bottom'
           // (related-videos section) or 'none'. Shown per-row in MVP /epc.
           carouselVideoPos: extra && typeof extra.carouselPos === 'string' ? extra.carouselPos : null,
+          // Product (Buy Box) price read off the /dp during the deep check —
+          // powers the price sort on /epc. camp cards have no price.
+          price: extra && typeof extra.price === 'number' ? extra.price : null,
           detailsUrl: camp.detailsUrl || null,
         }],
       }),
@@ -1153,7 +1156,7 @@ function mountSearchPanel() {
       <div class="mvp-res"></div>
       <div class="mvp-row" style="margin-top:8px"><button class="mvp-btn sec mvp-accsel" style="flex:1" title="Deep-check selected (sales + carousel video) and import them into MVP — does not accept on Amazon">Import selected into MVP</button></div>
       <div class="mvp-token-row"><div><label>MVP ingest token</label><input class="mvp-token" placeholder="CC_..."></div><button class="mvp-btn sec mvp-token-save" style="flex:0 0 auto;align-self:flex-end">Save</button></div>
-      <div class="mvp-note">Tick campaigns → <b>Import selected into MVP</b>: SCOUT deep-checks each (reads monthly sales + carousel-video position: top / bottom / none) and adds ALL your picks to your MVP /epc list — signals shown per row — to Generate + Message. <b>It does not accept anything on Amazon</b> — accepting stays your choice in MVP. <b>Import</b> (per row) imports just that one (no deep check). <b>✍️ Draft</b> writes AND sends a brand message on a campaign's details page (opens the chat, drops in your pitch, hits Send).</div>
+      <div class="mvp-note">Tick campaigns → <b>Import selected into MVP</b>: SCOUT deep-checks each (reads product price + monthly sales + carousel-video position: top / bottom / none) and adds ALL your picks to your MVP /epc list — where you can sort by price — signals shown per row — to Generate + Message. <b>It does not accept anything on Amazon</b> — accepting stays your choice in MVP. <b>Import</b> (per row) imports just that one (no deep check). <b>✍️ Draft</b> writes AND sends a brand message on a campaign's details page (opens the chat, drops in your pitch, hits Send).</div>
     </div>`
   // Dock it in the page flow, right ABOVE the CC toolbar row (Filters / tabs).
   // Stays HIDDEN (never floating) until the toolbar renders; a fast retry embeds
@@ -1277,7 +1280,7 @@ function mountSearchPanel() {
       // NOTE: we do NOT accept the campaign on Amazon here — importing only brings
       // it into MVP as a candidate. Accepting stays a deliberate choice you make
       // in MVP (nothing on Amazon is committed by a SCOUT import).
-      const push = await pushCampaignToMvp(camp, deep.asin, token, { monthlySales: deep.sales, hasVideo: deep.hasVideo, carouselPos: deep.carouselPos })
+      const push = await pushCampaignToMvp(camp, deep.asin, token, { monthlySales: deep.sales, hasVideo: deep.hasVideo, carouselPos: deep.carouselPos, price: deep.price })
       if (push.ok) imported++; else dropped.push(`${label}: push failed (${push.error || '?'})`)
     }
     btn.textContent = 'Import selected'; btn.disabled = false

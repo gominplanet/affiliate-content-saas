@@ -83,6 +83,9 @@ interface IncomingCampaign {
   // Where the carousel video sits on the product page: 'top' (hero gallery),
   // 'bottom' (related-videos section) or 'none'.
   carouselVideoPos?: 'top' | 'bottom' | 'none'
+  // Product (Buy Box) price read off the /dp during the deep check — powers the
+  // price sort on /epc (the campaign card carries no price).
+  price?: number
   // The campaign's Creator Connections page, so MVP can later re-open it to
   // message the brand.
   detailsUrl?: string
@@ -147,6 +150,7 @@ export async function POST(request: Request) {
             ? c.hasCarouselVideo
             : (c.carouselVideoPos ? c.carouselVideoPos !== 'none' : null),
           carousel_video_pos: (c.carouselVideoPos === 'top' || c.carouselVideoPos === 'bottom' || c.carouselVideoPos === 'none') ? c.carouselVideoPos : null,
+          product_price: typeof c.price === 'number' && isFinite(c.price) && c.price > 0 ? c.price : null,
           details_url: (c.detailsUrl && /^https:\/\/(www\.amazon\.com|affiliate-program\.amazon\.com)\//i.test(c.detailsUrl.trim())) ? c.detailsUrl.trim() : null,
           ends_at: c.endsAt?.toString().trim() || null,
         }

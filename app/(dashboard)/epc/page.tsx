@@ -146,6 +146,9 @@ export default function EpcScoutPage() {
   const [endsWithin, setEndsWithin] = useState('')
   const [keyword, setKeyword] = useState('')
   const [onlyPending, setOnlyPending] = useState(true)
+  // Sort order for the queue. Price uses product_price (captured on Import's deep
+  // check). 'default' = the earnings rank (commission / EPC).
+  const [sortBy, setSortBy] = useState<'default' | 'price-asc' | 'price-desc' | 'sales-desc'>('default')
   // 'queue' = the browse/generate list; 'messaged' = brand-outreach history.
   const [view, setView] = useState<'queue' | 'messaged'>('queue')
   const [openMsg, setOpenMsg] = useState<string | null>(null) // expanded message row (by id)
@@ -252,8 +255,15 @@ export default function EpcScoutPage() {
         }
         return true
       })
-      .sort((a, b) => b.rankValue - a.rankValue)
-  }, [campaigns, minEpc, minCommission, endsWithin, keyword, onlyPending, view])
+      .sort((a, b) => {
+        // Product price (Buy Box $ captured on Import's deep check). Rows without a
+        // price sink to the bottom of a price sort. Default = the earnings rank.
+        if (sortBy === 'price-asc')  return (parseDollar(a.product_price) ?? Number.POSITIVE_INFINITY) - (parseDollar(b.product_price) ?? Number.POSITIVE_INFINITY)
+        if (sortBy === 'price-desc') return (parseDollar(b.product_price) ?? -1) - (parseDollar(a.product_price) ?? -1)
+        if (sortBy === 'sales-desc') return (b.monthly_sales ?? -1) - (a.monthly_sales ?? -1)
+        return b.rankValue - a.rankValue
+      })
+  }, [campaigns, minEpc, minCommission, endsWithin, keyword, onlyPending, view, sortBy])
 
   const messagedCount = useMemo(() => campaigns.filter(c => c.messaged_at).length, [campaigns])
 
@@ -644,6 +654,15 @@ export default function EpcScoutPage() {
                 <input type="checkbox" checked={onlyPending} onChange={e => setOnlyPending(e.target.checked)} className="accent-[#7C3AED] w-4 h-4" />
                 Not published yet
               </label>
+              <Field label="Sort by">
+                <select value={sortBy} onChange={e => setSortBy(e.target.value as typeof sortBy)}
+                  className="px-2 py-1.5 rounded-lg border text-sm bg-transparent" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
+                  <option value="default">Best earnings</option>
+                  <option value="price-asc">Product price: low → high</option>
+                  <option value="price-desc">Product price: high → low</option>
+                  <option value="sales-desc">Most monthly sales</option>
+                </select>
+              </Field>
               <span className="ml-auto text-[12px] pb-1.5" style={{ color: 'var(--text-faint)' }}>{filtered.length} match</span>
             </div>
           </div>
@@ -709,8 +728,9 @@ export default function EpcScoutPage() {
                         {c.asin} <ExternalLink size={9} />
                       </a>
                     </div>
-                    {(c.monthly_sales != null || c.carousel_video_pos != null || c.has_carousel_video != null || c.messaged_at || c.accepted_at) && (
+                    {(c.monthly_sales != null || c.product_price != null || c.carousel_video_pos != null || c.has_carousel_video != null || c.messaged_at || c.accepted_at) && (
                       <div className="flex items-center gap-2 mt-0.5 text-[10px]" style={{ color: 'var(--text-faint)' }}>
+                        {(() => { const p = parseDollar(c.product_price); return p != null ? <span title="Product price (SCOUT deep check)">💲{p.toFixed(2)}</span> : null })()}
                         {c.monthly_sales != null && <span title="Bought in past month (SCOUT deep check)">📈 {fmtSales(c.monthly_sales)}/mo</span>}
                         {c.accepted_at && <span className="text-[#34c759] font-semibold" title={`Accepted on Amazon ${new Date(c.accepted_at).toLocaleString()}`}>✓ accepted</span>}
                         {c.messaged_at && <span className="text-[#34c759] font-semibold" title={`Brand messaged ${new Date(c.messaged_at).toLocaleString()}`}>✉️ messaged</span>}
