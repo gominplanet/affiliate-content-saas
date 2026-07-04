@@ -990,14 +990,17 @@ async function parseSponsoredCards(opts) {
     let n
     while ((n = walker.nextNode())) { const v = n.nodeValue || ''; if (v.length < 80 && /\bB0[A-Z0-9]{8}\b/.test(v)) hits.push(n) }
     for (const tn of hits) {
-      let cont = tn.parentElement
-      for (let i = 0; i < 12 && cont && cont.parentElement; i++) {
+      // Walk up to the TIGHTEST ancestor that reads like a single product card:
+      // it has a $ price (so it wraps the ASIN + price together) but isn't so big
+      // it's swallowed the whole grid.
+      let cont = tn.parentElement, card = null
+      for (let i = 0; i < 14 && cont && cont.parentElement; i++) {
         const t = cont.textContent || ''
-        if (/\$\s?\d/.test(t) && /estimated epc|accept|budget availability/i.test(t)) break
+        if (/\$\s?\d/.test(t) && t.length < 1600) { card = cont; break }
         cont = cont.parentElement
       }
-      if (!cont) continue
-      const c = extractSponsoredCard(cont)
+      if (!card) continue
+      const c = extractSponsoredCard(card)
       if (c && c.asin && !byKey.has(c.asin)) byKey.set(c.asin, c)
     }
     if (byKey.size !== reported) { reported = byKey.size; try { onProgress(byKey.size) } catch (e) {} }
@@ -1440,7 +1443,7 @@ function mountSearchPanel() {
         const v = node.nodeValue || ''
         if (v.length < 80 && /\bB0[A-Z0-9]{8}\b/.test(v)) {
           asinNodes++
-          if (!firstCont) { let c = node.parentElement; for (let i = 0; i < 12 && c && c.parentElement; i++) { const t = c.textContent || ''; if (/\$\s?\d/.test(t) && /estimated epc|accept|budget availability/i.test(t)) break; c = c.parentElement } firstCont = c }
+          if (!firstCont) { let c = node.parentElement, found = null; for (let i = 0; i < 14 && c && c.parentElement; i++) { const t = c.textContent || ''; if (/\$\s?\d/.test(t) && t.length < 1600) { found = c; break } c = c.parentElement } firstCont = found }
         }
       }
       const sample = firstCont ? extractSponsoredCard(firstCont) : null
