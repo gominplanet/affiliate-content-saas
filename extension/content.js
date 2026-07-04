@@ -931,15 +931,15 @@ function extractSponsoredCard(cont) {
   // isn't the strikethrough List Price or the Estimated-EPC figure.
   let price = null
   const priceEl = cont.querySelector('.a-price:not(.a-text-price) .a-offscreen') || cont.querySelector('.a-price .a-offscreen')
-  let pm = (priceEl ? clean(priceEl.textContent) : '').match(/\$\s?([\d,]+(?:\.\d{1,2})?)/)
+  let pm = (priceEl ? clean(priceEl.textContent) : '').match(/\$\s*([\d,]+(?:\.\d{1,2})?)/)
   if (!pm) {
-    const stripped = all.replace(/list price:?\s*\$[\d,.]+/ig, '').replace(/estimated epc[^$]*\$[\d,.]+/ig, '')
-    pm = stripped.match(/\$\s?([\d,]+(?:\.\d{1,2})?)/)
+    const stripped = all.replace(/list price:?\s*\$\s*[\d,.]+/ig, '').replace(/estimated epc[^$]*\$\s*[\d,.]+/ig, '')
+    pm = stripped.match(/\$\s*([\d,]+(?:\.\d{1,2})?)/)
   }
   if (pm) { const n = parseFloat(pm[1].replace(/,/g, '')); if (!isNaN(n) && n > 0) price = n }
   // Estimated EPC ("Estimated EPC: Up to $2.47").
   let epc = null
-  const em = all.match(/estimated epc[^$]*\$\s?([\d,]+(?:\.\d{1,2})?)/i)
+  const em = all.match(/estimated epc[^$]*\$\s*([\d,]+(?:\.\d{1,2})?)/i)
   if (em) { const n = parseFloat(em[1].replace(/,/g, '')); if (!isNaN(n)) epc = n }
   // Rating + review count.
   let rating = null, reviews = null
@@ -996,7 +996,10 @@ async function parseSponsoredCards(opts) {
       let cont = tn.parentElement, card = null
       for (let i = 0; i < 14 && cont && cont.parentElement; i++) {
         const t = cont.textContent || ''
-        if (/\$\s?\d/.test(t) && t.length < 1600) { card = cont; break }
+        // Card = tightest ancestor that has a $ AND a digit (price lives here) and
+        // isn't the whole grid. $ and number are often in separate elements, so we
+        // DON'T require them adjacent.
+        if (t.indexOf('$') !== -1 && /\d/.test(t) && t.length < 1600) { card = cont; break }
         cont = cont.parentElement
       }
       if (!card) continue
@@ -1438,18 +1441,23 @@ function mountSearchPanel() {
     // ASIN/price/EPC selectors can be tightened from a real page.
     if (detectCcTab() === 'sponsored') {
       const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null)
-      let asinNodes = 0, node, firstCont = null
+      let asinNodes = 0, node, firstNode = null, firstCont = null
       while ((node = walker.nextNode())) {
         const v = node.nodeValue || ''
         if (v.length < 80 && /\bB0[A-Z0-9]{8}\b/.test(v)) {
           asinNodes++
-          if (!firstCont) { let c = node.parentElement, found = null; for (let i = 0; i < 14 && c && c.parentElement; i++) { const t = c.textContent || ''; if (/\$\s?\d/.test(t) && t.length < 1600) { found = c; break } c = c.parentElement } firstCont = found }
+          if (!firstNode) firstNode = node
+          if (!firstCont) { let c = node.parentElement, found = null; for (let i = 0; i < 14 && c && c.parentElement; i++) { const t = c.textContent || ''; if (t.indexOf('$') !== -1 && /\d/.test(t) && t.length < 1600) { found = c; break } c = c.parentElement } firstCont = found }
         }
       }
+      // Log the first ASIN node's ancestor chain (tag + size + text) so the exact
+      // card structure is visible even when the container heuristic misses.
+      const chain = []
+      if (firstNode) { let c = firstNode.parentElement; for (let i = 0; i < 12 && c; i++) { const t = (c.textContent || '').replace(/\s+/g, ' ').trim(); chain.push({ lvl: i, tag: c.tagName, cls: (c.className || '').toString().slice(0, 60), len: t.length, hasDollar: t.indexOf('$') !== -1, text: t.slice(0, 160) }); c = c.parentElement } }
       const sample = firstCont ? extractSponsoredCard(firstCont) : null
       // eslint-disable-next-line no-console
-      console.log('[MVP SCOUT] sponsored debug — ASIN text nodes:', asinNodes, '· first card container:', firstCont, '· parsed:', sample)
-      res.innerHTML = `<div class="mvp-note">Sponsored tab. ASIN text nodes on page: <b>${asinNodes}</b>. First parsed: <b>${sample ? String(sample.campaignName || sample.asin).replace(/</g, '&lt;') : 'none'}</b>${sample ? ` — $${sample.price ?? '?'} · EPC $${sample.epc ?? '?'} · ★${sample.rating ?? '?'}` : ''}. Full dump in console (⌥⌘J).</div>`
+      console.log('[MVP SCOUT] sponsored debug — ASIN nodes:', asinNodes, '· first container:', firstCont, '· parsed:', sample, '· ancestor chain:', chain)
+      res.innerHTML = `<div class="mvp-note">Sponsored tab. ASIN nodes: <b>${asinNodes}</b>. First parsed: <b>${sample ? String(sample.campaignName || sample.asin).replace(/</g, '&lt;') : 'none'}</b>${sample ? ` — $${sample.price ?? '?'} · EPC $${sample.epc ?? '?'} · ★${sample.rating ?? '?'}` : ''}. Ancestor chain + container logged to console (⌥⌘J) — paste it if still none.</div>`
       return
     }
     const d = dumpCardDebug()
