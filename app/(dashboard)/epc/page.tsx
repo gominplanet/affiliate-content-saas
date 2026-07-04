@@ -151,6 +151,9 @@ export default function EpcScoutPage() {
   const [sortBy, setSortBy] = useState<'default' | 'price-asc' | 'price-desc' | 'sales-desc'>('default')
   // 'queue' = the browse/generate list; 'messaged' = brand-outreach history.
   const [view, setView] = useState<'queue' | 'messaged'>('queue')
+  // Within the queue, the two pay models get their own tab (a % commission and a
+  // $ EPC don't belong on one list). 'affiliate' = Affiliate+, 'epc' = EPC.
+  const [programTab, setProgramTab] = useState<'affiliate' | 'epc'>('affiliate')
   const [openMsg, setOpenMsg] = useState<string | null>(null) // expanded message row (by id)
 
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -267,7 +270,14 @@ export default function EpcScoutPage() {
 
   const messagedCount = useMemo(() => campaigns.filter(c => c.messaged_at).length, [campaigns])
 
-  const selectableShown = filtered.filter(c => !isLiveRow(c))
+  // Split by program so the two pay models live on separate tabs — a % commission
+  // (Affiliate+) never ranks against a $ EPC. Each list keeps `filtered`'s own
+  // within-program sort. The messaged view is a flat outreach history (no tabs).
+  const plusRows = useMemo(() => filtered.filter(c => c.isPlus), [filtered])
+  const epcRows = useMemo(() => filtered.filter(c => !c.isPlus), [filtered])
+  const shown = view === 'messaged' ? filtered : (programTab === 'epc' ? epcRows : plusRows)
+
+  const selectableShown = shown.filter(c => !isLiveRow(c))
   const allShownSelected = selectableShown.length > 0 && selectableShown.every(c => selected.has(c.asin))
   function toggleAll() {
     setSelected(prev => {
@@ -284,21 +294,13 @@ export default function EpcScoutPage() {
   const anyRunning = Object.values(gen).some(s => s === 'running')
   const selectedCount = selectableShown.filter(c => selected.has(c.asin)).length
 
-  // Split the queue into two program groups so a % commission never ranks against
-  // a $ EPC on one scale — each group ranks by its OWN metric (the `filtered` sort
-  // already ordered rows within their program via rankValue). Group headers are
-  // interleaved as marker objects the row map renders as section dividers. The
-  // messaged view is a flat outreach history, so it isn't grouped.
-  type GroupHeader = { __header: string; __count: number }
-  const groupedList = useMemo<((typeof filtered)[number] | GroupHeader)[]>(() => {
-    if (view === 'messaged') return filtered
-    const plus = filtered.filter(c => c.isPlus)
-    const epc = filtered.filter(c => !c.isPlus)
-    const out: ((typeof filtered)[number] | GroupHeader)[] = []
-    if (plus.length) { out.push({ __header: 'Affiliate+ · extra commission per sale', __count: plus.length }, ...plus) }
-    if (epc.length) { out.push({ __header: 'EPC · paid per click', __count: epc.length }, ...epc) }
-    return out
-  }, [filtered, view])
+  // Land on whichever program tab actually has campaigns, so a user with only EPC
+  // rows doesn't open to an empty Affiliate+ tab (and vice versa).
+  useEffect(() => {
+    if (view !== 'queue') return
+    if (programTab === 'affiliate' && plusRows.length === 0 && epcRows.length > 0) setProgramTab('epc')
+    else if (programTab === 'epc' && epcRows.length === 0 && plusRows.length > 0) setProgramTab('affiliate')
+  }, [view, programTab, plusRows.length, epcRows.length])
 
   // Generate posts for a set of campaign rows, sequentially. Passes campaignId
   // so the route REUSES the pushed pending row (no duplicate insert), and keeps
@@ -625,6 +627,24 @@ export default function EpcScoutPage() {
             ))}
           </div>
 
+          {/* Program tabs — Affiliate+ (%/sale) and EPC ($/click) are separate lists */}
+          {view === 'queue' && (
+            <div className="flex items-center gap-2 mb-4 border-b" style={{ borderColor: 'var(--border)' }}>
+              {([['affiliate', 'Affiliate+', plusRows.length, '#7C3AED'], ['epc', 'EPC', epcRows.length, '#0a84ff']] as const).map(([p, label, count, color]) => (
+                <button key={p} onClick={() => setProgramTab(p)}
+                  className="px-3 py-2 text-[13px] font-semibold transition-colors -mb-px border-b-2"
+                  style={programTab === p
+                    ? { color, borderColor: color }
+                    : { color: 'var(--text-faint)', borderColor: 'transparent' }}>
+                  {label} <span className="ml-1 text-[11px] font-medium" style={{ opacity: 0.7 }}>{count}</span>
+                </button>
+              ))}
+              <span className="ml-2 text-[11px]" style={{ color: 'var(--text-faint)' }}>
+                {programTab === 'affiliate' ? 'extra commission per sale' : 'paid per click'}
+              </span>
+            </div>
+          )}
+
           {/* Messaged view: compact keyword search only */}
           {view === 'messaged' && (
             <div className="card p-4 mb-4 flex flex-wrap items-end gap-4">
@@ -679,7 +699,7 @@ export default function EpcScoutPage() {
                   <option value="sales-desc">Most monthly sales</option>
                 </select>
               </Field>
-              <span className="ml-auto text-[12px] pb-1.5" style={{ color: 'var(--text-faint)' }}>{filtered.length} match</span>
+              <span className="ml-auto text-[12px] pb-1.5" style={{ color: 'var(--text-faint)' }}>{shown.length} in this tab</span>
             </div>
           </div>
           )}
@@ -710,20 +730,7 @@ export default function EpcScoutPage() {
             <div className="px-3 py-2 grid grid-cols-[28px_1fr_64px_60px_140px] gap-2 text-[10px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-faint)' }}>
               <span /><span>Product</span><span className="text-right" title="EPC $ per click, or Affiliate+ % per sale">Rate</span><span className="text-right">Ends</span><span className="text-center">Generate</span>
             </div>
-            {groupedList.map(c => {
-              // Section divider between the two program groups.
-              if ('__header' in c) {
-                return (
-                  <div key={`hdr-${c.__header}`} className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide flex items-center gap-2" style={{ color: 'var(--text-soft)', background: 'var(--surface-2)' }}>
-                    {c.__header.startsWith('Affiliate+')
-                      ? <span className="px-1.5 py-[1px] rounded bg-[#7C3AED]/15 text-[#7C3AED]">Affiliate+</span>
-                      : <span className="px-1.5 py-[1px] rounded bg-[#0a84ff]/15 text-[#0a84ff]">EPC</span>}
-                    <span style={{ color: 'var(--text-faint)', fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}>
-                      {c.__header.replace(/^(Affiliate\+|EPC)\s·\s/, '')} · {c.__count}
-                    </span>
-                  </div>
-                )
-              }
+            {shown.map(c => {
               const dl = daysLeft(c.ends_at)
               const g = gen[c.asin]
               const live = isLiveRow(c)
@@ -854,9 +861,13 @@ export default function EpcScoutPage() {
                 </div>
               )
             })}
-            {filtered.length === 0 && (
+            {shown.length === 0 && (
               <div className="p-6 text-center text-sm" style={{ color: 'var(--text-faint)' }}>
-                No campaigns match these filters. Loosen them — e.g. lower Min EPC or untick “Not published yet”.
+                {view === 'queue' && programTab === 'epc'
+                  ? 'No EPC campaigns yet. Import products from the Sponsored Products for Creators tab in SCOUT.'
+                  : view === 'queue' && programTab === 'affiliate'
+                    ? 'No Affiliate+ campaigns match these filters. Loosen them, or check the EPC tab.'
+                    : 'No campaigns match these filters. Loosen them — e.g. lower Min EPC or untick “Not published yet”.'}
               </div>
             )}
           </div>
