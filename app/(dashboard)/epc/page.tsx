@@ -284,6 +284,22 @@ export default function EpcScoutPage() {
   const anyRunning = Object.values(gen).some(s => s === 'running')
   const selectedCount = selectableShown.filter(c => selected.has(c.asin)).length
 
+  // Split the queue into two program groups so a % commission never ranks against
+  // a $ EPC on one scale — each group ranks by its OWN metric (the `filtered` sort
+  // already ordered rows within their program via rankValue). Group headers are
+  // interleaved as marker objects the row map renders as section dividers. The
+  // messaged view is a flat outreach history, so it isn't grouped.
+  type GroupHeader = { __header: string; __count: number }
+  const groupedList = useMemo<((typeof filtered)[number] | GroupHeader)[]>(() => {
+    if (view === 'messaged') return filtered
+    const plus = filtered.filter(c => c.isPlus)
+    const epc = filtered.filter(c => !c.isPlus)
+    const out: ((typeof filtered)[number] | GroupHeader)[] = []
+    if (plus.length) { out.push({ __header: 'Affiliate+ · extra commission per sale', __count: plus.length }, ...plus) }
+    if (epc.length) { out.push({ __header: 'EPC · paid per click', __count: epc.length }, ...epc) }
+    return out
+  }, [filtered, view])
+
   // Generate posts for a set of campaign rows, sequentially. Passes campaignId
   // so the route REUSES the pushed pending row (no duplicate insert), and keeps
   // the real failure reason per-row so a "failed" is actually diagnosable.
@@ -694,7 +710,20 @@ export default function EpcScoutPage() {
             <div className="px-3 py-2 grid grid-cols-[28px_1fr_64px_60px_140px] gap-2 text-[10px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-faint)' }}>
               <span /><span>Product</span><span className="text-right" title="EPC $ per click, or Affiliate+ % per sale">Rate</span><span className="text-right">Ends</span><span className="text-center">Generate</span>
             </div>
-            {filtered.map(c => {
+            {groupedList.map(c => {
+              // Section divider between the two program groups.
+              if ('__header' in c) {
+                return (
+                  <div key={`hdr-${c.__header}`} className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide flex items-center gap-2" style={{ color: 'var(--text-soft)', background: 'var(--surface-2)' }}>
+                    {c.__header.startsWith('Affiliate+')
+                      ? <span className="px-1.5 py-[1px] rounded bg-[#7C3AED]/15 text-[#7C3AED]">Affiliate+</span>
+                      : <span className="px-1.5 py-[1px] rounded bg-[#0a84ff]/15 text-[#0a84ff]">EPC</span>}
+                    <span style={{ color: 'var(--text-faint)', fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}>
+                      {c.__header.replace(/^(Affiliate\+|EPC)\s·\s/, '')} · {c.__count}
+                    </span>
+                  </div>
+                )
+              }
               const dl = daysLeft(c.ends_at)
               const g = gen[c.asin]
               const live = isLiveRow(c)
