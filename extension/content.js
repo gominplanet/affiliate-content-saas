@@ -1107,7 +1107,7 @@ function mountSearchPanel() {
     #${PANEL_ID}{position:fixed !important;right:16px !important;top:50% !important;transform:translateY(-50%) !important;z-index:2147483000 !important;width:340px !important;max-width:calc(100vw - 24px) !important;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif !important;font-size:12px !important;line-height:1.4 !important;background:#fff !important;color:#111 !important;border:1px solid #e5e7eb !important;border-radius:14px !important;box-shadow:0 12px 40px -8px rgba(0,0,0,.28) !important;overflow:hidden !important;box-sizing:border-box !important}
     #${PANEL_ID} *{box-sizing:border-box !important;max-width:100% !important}
     /* Inline mode: sit in the page flow above Amazon's toolbar (like ViralVue) */
-    #${PANEL_ID}.mvp-inline{position:static !important;right:auto !important;top:auto !important;left:auto !important;transform:none !important;width:100% !important;max-width:420px !important;margin:0 0 10px !important;border-radius:10px !important;box-shadow:0 2px 12px -4px rgba(124,58,237,.28) !important}
+    #${PANEL_ID}.mvp-inline{position:static !important;right:auto !important;top:auto !important;left:auto !important;transform:none !important;width:100% !important;max-width:100% !important;margin:0 0 10px !important;border-radius:10px !important;box-shadow:0 2px 12px -4px rgba(124,58,237,.28) !important}
     #${PANEL_ID} .mvp-hd{display:flex !important;align-items:center;justify-content:space-between;gap:8px;padding:6px 10px;background:linear-gradient(135deg,#7C3AED,#9D6BFF);color:#fff;cursor:pointer}
     #${PANEL_ID} .mvp-hd b{font-size:11.5px;font-weight:700;color:#fff}
     #${PANEL_ID} .mvp-body{padding:9px 10px;max-height:60vh;overflow-y:auto;overflow-x:hidden}
@@ -1142,9 +1142,7 @@ function mountSearchPanel() {
   el.innerHTML = `
     <div class="mvp-hd"><b>🔍 MVP SCOUT — Campaign Search</b><span class="mvp-tog">–</span></div>
     <div class="mvp-body">
-      <div class="mvp-row"><div><label>Keyword or brand</label><input class="mvp-kw" placeholder="e.g. knee brace"></div></div>
-      <div class="mvp-row"><div><label>ASIN</label><input class="mvp-asin" placeholder="B0XXXXXXXX"></div><div><label>Min commission %</label><input class="mvp-comm" type="number" min="0" max="100" placeholder="20"></div></div>
-      <div class="mvp-row"><div><label>Campaigns last at least (days)</label><input class="mvp-lastdays" type="number" min="0" step="1" placeholder="e.g. 100"></div></div>
+      <div class="mvp-row"><div style="flex:3"><label>Keyword or brand</label><input class="mvp-kw" placeholder="e.g. knee brace"></div><div style="flex:1"><label>Min commission %</label><input class="mvp-comm" type="number" min="0" max="100" placeholder="20"></div><div style="flex:1"><label>Lasts ≥ (days)</label><input class="mvp-lastdays" type="number" min="0" step="1" placeholder="100"></div></div>
       <div class="mvp-row"><button class="mvp-btn mvp-search" style="flex:2">Search</button><button class="mvp-btn dbg mvp-debug" style="flex:1">Debug</button><button class="mvp-btn dbg mvp-draft" style="flex:1" title="On a campaign details page: draft a brand-outreach message from the brief">✍️ Draft</button></div>
       <div class="mvp-res"></div>
       <div class="mvp-row" style="margin-top:8px"><button class="mvp-btn sec mvp-accsel" style="flex:1" title="Deep-check selected (sales + carousel video) and import the qualifiers into MVP">Import selected</button><button class="mvp-btn sec mvp-submit" style="flex:1">Submit accepted</button></div>
@@ -1211,7 +1209,6 @@ function mountSearchPanel() {
       }
       const { rows, rawCount, total, capped } = await scoutRunSearch({
         keyword: q('.mvp-kw').value,
-        asin: q('.mvp-asin').value,
         minCommission: parseFloat(q('.mvp-comm').value) || 0,
         lastDays: parseInt(q('.mvp-lastdays').value, 10) || 0,
       }, onProgress)
