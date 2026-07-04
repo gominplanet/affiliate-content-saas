@@ -727,8 +727,8 @@ export default function EpcScoutPage() {
 
           {/* Table */}
           <div className="card divide-y divide-gray-100 dark:divide-white/10">
-            <div className="px-3 py-2 grid grid-cols-[28px_1fr_64px_60px_140px] gap-2 text-[10px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-faint)' }}>
-              <span /><span>Product</span><span className="text-right" title="EPC $ per click, or Affiliate+ % per sale">Rate</span><span className="text-right">Ends</span><span className="text-center">Generate</span>
+            <div className="px-3 py-2 grid grid-cols-[24px_1fr_56px_48px_auto] gap-2 text-[10px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-faint)' }}>
+              <span /><span>Product</span><span className="text-right" title="EPC $ per click, or Affiliate+ % per sale">Rate</span><span className="text-right">Ends</span><span className="text-right">Generate</span>
             </div>
             {shown.map(c => {
               const dl = daysLeft(c.ends_at)
@@ -750,7 +750,7 @@ export default function EpcScoutPage() {
                 ? (commissionPct != null ? `${commissionPct}%` : '—')
                 : (epcDollars != null ? `$${epcDollars.toFixed(2)}` : (commissionPct != null ? `${commissionPct}%` : '—'))
               return (
-                <div key={c.id} className={`px-3 py-2.5 grid grid-cols-[28px_1fr_64px_60px_140px] gap-2 items-center ${live ? 'opacity-80' : ''}`}>
+                <div key={c.id} className={`px-3 py-2.5 grid grid-cols-[24px_1fr_56px_48px_auto] gap-2 items-center ${live ? 'opacity-80' : ''}`}>
                   <input type="checkbox" disabled={live} checked={selected.has(c.asin)} onChange={() => toggle(c.asin)} className="accent-[#7C3AED] w-4 h-4" />
                   <div className="min-w-0">
                     <p className="text-[13px] font-medium truncate" style={{ color: 'var(--text)' }}>{c.campaign_name || c.product_title || c.asin}</p>
@@ -802,7 +802,7 @@ export default function EpcScoutPage() {
                   <span className="text-right text-[12px] tabular-nums" style={{ color: dl <= 7 ? '#FF9500' : 'var(--text-faint)' }}>
                     {dl === Infinity ? 'open' : `${dl}d`}
                   </span>
-                  <div className="flex justify-center">
+                  <div className="flex justify-end">
                     {g === 'running' ? (
                       <span className="inline-flex items-center gap-1 text-[11px] text-[#7C3AED]"><Loader2 size={13} className="animate-spin" /> writing…</span>
                     ) : live ? (
