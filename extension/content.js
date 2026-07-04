@@ -1077,25 +1077,29 @@ function findToolbarAnchor() {
 }
 
 // Dock the panel in the page flow, right ABOVE Amazon's CC toolbar row (the
-// Filters / New Opportunities / Accepted / Submitted content links row). Falls
-// back to a floating panel only until that toolbar renders (CC is a React app —
-// it can mount late). Safe to call repeatedly: it no-ops when the panel is
-// already parked above the anchor.
+// Filters / New Opportunities / Accepted / Submitted content links row).
+// NEVER shows a floating panel: until the toolbar renders (CC is a React app, it
+// can mount late), the panel sits in the DOM but HIDDEN — so it only ever appears
+// already-embedded, no floating flash. Safe to call repeatedly.
 function redock(el) {
   if (!el) return
   try {
     const anchor = findToolbarAnchor()
     if (anchor && anchor.parentElement && anchor !== el && !el.contains(anchor)) {
-      if (el.nextElementSibling === anchor && el.classList.contains('mvp-inline')) return // already docked
+      // Dock inline + reveal. No-op if already parked right above the anchor.
+      if (el.nextElementSibling === anchor && el.classList.contains('mvp-inline') && !el.classList.contains('mvp-hidden')) return
       el.classList.add('mvp-inline')
+      el.classList.remove('mvp-hidden')
       anchor.parentElement.insertBefore(el, anchor)
     } else if (!el.isConnected) {
-      // Toolbar not rendered yet — park it floating (middle-right) until it is.
+      // Toolbar not ready yet — park it in the DOM but HIDDEN (no floating flash);
+      // it reveals inline once an anchor appears and redock runs again.
       el.classList.remove('mvp-inline')
+      el.classList.add('mvp-hidden')
       document.body.appendChild(el)
     }
   } catch (e) {
-    if (!el.isConnected && document.body) document.body.appendChild(el)
+    if (!el.isConnected && document.body) { el.classList.add('mvp-hidden'); document.body.appendChild(el) }
   }
 }
 
@@ -1132,6 +1136,7 @@ function mountSearchPanel() {
     #${PANEL_ID} .mvp-token-row.show{display:flex !important}
     #${PANEL_ID} .mvp-token-row>div{flex:1 1 0 !important;min-width:0 !important}
     #${PANEL_ID}.mvp-min .mvp-body{display:none}
+    #${PANEL_ID}.mvp-hidden{display:none !important}
   `
   document.head.appendChild(style)
 
@@ -1151,9 +1156,17 @@ function mountSearchPanel() {
       <div class="mvp-note">Tick campaigns → <b>Import selected into MVP</b>: SCOUT deep-checks each (reads monthly sales + carousel-video position: top / bottom / none) and adds ALL your picks to your MVP /epc list — signals shown per row — to Generate + Message. <b>It does not accept anything on Amazon</b> — accepting stays your choice in MVP. <b>Import</b> (per row) imports just that one (no deep check). <b>✍️ Draft</b> writes AND sends a brand message on a campaign's details page (opens the chat, drops in your pitch, hits Send).</div>
     </div>`
   // Dock it in the page flow, right ABOVE the CC toolbar row (Filters / tabs).
-  // Falls back to floating only until that toolbar renders; the 2s poll below
-  // keeps calling redock so it snaps into place once the React grid mounts.
+  // Stays HIDDEN (never floating) until the toolbar renders; a fast retry embeds
+  // it the moment the anchor appears, so it shows up already-docked — no flash.
   redock(el)
+  if (!el.classList.contains('mvp-inline')) {
+    let tries = 0
+    const iv = setInterval(() => {
+      tries++
+      redock(el)
+      if (el.classList.contains('mvp-inline') || tries > 80) clearInterval(iv) // ~20s cap
+    }, 250)
+  }
 
   const q = (s) => el.querySelector(s)
   const res = q('.mvp-res')
