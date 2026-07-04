@@ -457,8 +457,31 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     pushCampaignsToMvp(msg.token, msg.campaigns).then(sendResponse)
     return true // async response
   }
+  if (msg && msg.type === 'SCOUT_VALIDATE_TOKEN') {
+    validateMvpToken(msg.token).then(sendResponse)
+    return true // async response
+  }
   return false
 })
+
+// Validate an ingest token against MVP and report the account's queued count.
+// `queued` is the decisive diagnostic for "pushed but not showing": it counts
+// the campaigns on WHICHEVER account this token maps to, so a mismatch with what
+// the user sees on /epc means the token belongs to a different MVP account.
+async function validateMvpToken(token) {
+  if (!token) return { ok: false, error: 'no token' }
+  try {
+    const res = await fetch(`${MVP_ORIGIN}/api/campaigns/ingest`, {
+      headers: { 'Authorization': 'Bearer ' + token },
+    })
+    let body = null
+    try { body = await res.json() } catch (e) {}
+    if (res.ok && body && body.ok) return { ok: true, pro: !!body.pro, queued: body.queued }
+    return { ok: false, error: (body && body.error) || `HTTP ${res.status}` }
+  } catch (e) {
+    return { ok: false, error: (e && e.message) || 'network error' }
+  }
+}
 
 async function scanCreatorConnections(callerTabId) {
   const open = await chrome.tabs.query({

@@ -1331,6 +1331,7 @@ function mountSearchPanel() {
       <div class="mvp-row mvp-only-spon" style="align-items:center;gap:6px"><span style="font-size:9px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;flex:0 0 auto">Units sold / mo</span><select class="mvp-units" title="Only import products whose monthly units-sold falls in this band — SCOUT reads it during the import deep-check (units aren't on the card)" style="flex:1;padding:5px 8px;border:1px solid #d1d5db;border-radius:7px;font-size:11px;background:#fff;color:#111"><option value="">Any</option><option value="200-500">200 – 500</option><option value="500-1500">500 – 1,500</option><option value="1500-">Over 1,500</option></select></div>
       <div class="mvp-res"></div>
       <div class="mvp-row" style="margin-top:8px"><button class="mvp-btn sec mvp-accsel" style="flex:1" title="Import the ticked picks into MVP — does not accept on Amazon">Import selected into MVP</button></div>
+      <div class="mvp-conn" style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:6px 0 2px;font-size:10px;color:#6b7280"><span class="mvp-conn-status">Checking MVP connection…</span><a class="mvp-conn-change" href="#" style="color:#7c3aed;font-weight:600;text-decoration:none;flex:0 0 auto">Change token</a></div>
       <div class="mvp-token-row"><div><label>MVP ingest token</label><input class="mvp-token" placeholder="CC_..."></div><button class="mvp-btn sec mvp-token-save" style="flex:0 0 auto;align-self:flex-end">Save</button></div>
       <div class="mvp-note mvp-only-aff">Tick campaigns → <b>Import selected into MVP</b>: SCOUT deep-checks each (reads product price + monthly sales + carousel-video position) and adds ALL your picks to your MVP /epc list — sort by price there — to Generate + Message. <b>It does not accept anything on Amazon</b> — accepting stays your choice in MVP. <b>Import</b> (per row) imports just that one. <b>✍️ Draft</b> writes AND sends a brand message on a campaign's details page.</div>
       <div class="mvp-note mvp-only-spon">These are <b>products</b> (ASIN, price, Est. EPC on the card). Sort by <b>EPC</b> (higher = better) or price. Tick → <b>Import selected into MVP</b> (instant — no page opens). Set a <b>Units sold / mo</b> band to only import products in that sales range (SCOUT then opens each ticked product to read its monthly units). <b>It does not accept anything on Amazon.</b></div>
@@ -1574,11 +1575,43 @@ function mountSearchPanel() {
       : ''
     res.innerHTML = `<div class="mvp-note"><b>Imported ${imported}</b> to your MVP /epc list, ready to Generate + Message (not accepted on Amazon — accept from MVP when you're ready).${dropHtml}</div>`
   })
+  // ── MVP connection status ──────────────────────────────────────────────────
+  // Validates the stored token against MVP and shows which account it maps to +
+  // that account's queued count. This is the fix for "✓ In MVP but /epc empty":
+  // if the token maps to a DIFFERENT account (a stale token from earlier), the
+  // push lands there — the queued number here won't match what /epc shows, making
+  // the mismatch obvious so the user can paste the token from THEIR /epc page.
+  async function refreshConnStatus() {
+    const el = q('.mvp-conn-status'); if (!el) return
+    const token = await getIngestToken()
+    if (!token) { el.innerHTML = '⚠️ <b>Not connected</b> — paste your MVP ingest token'; el.style.color = '#b45309'; q('.mvp-token-row').classList.add('show'); return }
+    el.textContent = 'Checking MVP connection…'; el.style.color = '#6b7280'
+    let r = null
+    try { r = await chrome.runtime.sendMessage({ type: 'SCOUT_VALIDATE_TOKEN', token }) } catch (e) {}
+    const tail = '…' + token.slice(-4)
+    if (r && r.ok) {
+      el.innerHTML = `✓ <b>Connected</b> to MVP (token ${tail}) · this account has <b>${r.queued ?? '?'}</b> campaign${r.queued === 1 ? '' : 's'}${r.pro ? '' : ' · <span style="color:#b45309">not Pro — import is Pro-only</span>'}`
+      el.style.color = r.pro ? '#059669' : '#b45309'
+    } else if (r && r.error) {
+      el.innerHTML = `⚠️ Token ${tail} <b>invalid</b> (${String(r.error).replace(/</g, '&lt;')}) — paste the token from your /epc page`
+      el.style.color = '#b45309'
+    } else {
+      el.innerHTML = `Token ${tail} saved — couldn't reach MVP to verify (reload SCOUT if pushes fail)`
+      el.style.color = '#6b7280'
+    }
+  }
+  const connChange = q('.mvp-conn-change')
+  if (connChange) connChange.addEventListener('click', (e) => {
+    e.preventDefault()
+    const row = q('.mvp-token-row'); row.classList.toggle('show')
+    if (row.classList.contains('show')) { const inp = q('.mvp-token'); if (inp) inp.focus() }
+  })
   const tokenSave = q('.mvp-token-save')
   if (tokenSave) tokenSave.addEventListener('click', () => {
     const t = ((q('.mvp-token').value) || '').trim()
-    if (t) { try { chrome.storage.local.set({ ccToken: t }) } catch (e) {} q('.mvp-token-row').classList.remove('show'); tokenSave.textContent = '✓ Saved' }
+    if (t) { try { chrome.storage.local.set({ ccToken: t }) } catch (e) {} q('.mvp-token-row').classList.remove('show'); tokenSave.textContent = '✓ Saved'; refreshConnStatus() }
   })
+  refreshConnStatus()
 
   // Store-ID guard — CC is blocked on an onsite (onamz…) store. When we detect
   // the wrong store (banner error OR an onamz-prefixed StoreID), AUTO-switch to
