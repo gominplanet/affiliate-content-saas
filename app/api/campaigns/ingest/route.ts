@@ -166,22 +166,54 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'No valid ASINs in payload' }, { status: 400, headers: CORS })
     }
 
-    // Skip ASINs that already have a live (non-failed) campaign row.
+    // Look up existing rows for these ASINs. Normally an ASIN that already has a
+    // live (non-failed) row is skipped. EXCEPTION: a Sponsored (EPC) re-import can
+    // HEAL a still-pending row that a pre-fix import mis-tagged as Affiliate+ with
+    // no rate — overwrite it in place with the correct program + EPC/price instead
+    // of silently dedup-skipping (so the user doesn't have to delete + re-import).
+    interface ExRow { id: string; asin: string; status: string; program: string | null; commission_pct: number | null; blog_post_id: string | null }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: existing } = await admin
       .from('campaigns')
-      .select('asin,status')
+      .select('id,asin,status,program,commission_pct,blog_post_id')
       .eq('user_id', userId)
       .in('asin', clean.map(c => c.asin))
-    const blocked = new Set<string>(
-      ((existing ?? []) as { asin: string; status: string }[])
-        .filter(r => r.status !== 'failed')
-        .map(r => r.asin),
-    )
+    const exByAsin = new Map<string, ExRow>()
+    for (const r of ((existing ?? []) as unknown as ExRow[])) {
+      if (r.status !== 'failed' && !exByAsin.has(r.asin)) exByAsin.set(r.asin, r)
+    }
 
-    const toInsert = clean
-      .filter(c => !blocked.has(c.asin))
-      .map(c => ({ ...c, user_id: userId, status: 'pending' as const }))
+    // An incoming EPC import heals a PENDING, rate-less Affiliate+ row (the exact
+    // signature of a pre-v1.11.47 Sponsored import) — never touches a row that's
+    // been acted on (accepted/generated/published) or a real Affiliate+ campaign.
+    const canHeal = (ex: ExRow, c: typeof clean[number]) =>
+      c.program === 'epc' &&
+      ex.program === 'affiliate_plus' &&
+      ex.commission_pct == null &&
+      ex.status === 'pending' &&
+      !ex.blog_post_id
+
+    const toInsert: Array<typeof clean[number] & { user_id: string; status: 'pending' }> = []
+    const toHeal: Array<{ id: string; patch: Record<string, unknown> }> = []
+    for (const c of clean) {
+      const ex = exByAsin.get(c.asin)
+      if (!ex) { toInsert.push({ ...c, user_id: userId, status: 'pending' as const }); continue }
+      if (canHeal(ex, c)) {
+        // Flip program → epc + clear commission; only set the other fields when the
+        // import actually carries a value, so we never clobber good data with null.
+        const patch: Record<string, unknown> = { program: 'epc', commission_pct: null }
+        if (c.epc != null) patch.epc = c.epc
+        if (c.product_price != null) patch.product_price = c.product_price
+        if (c.monthly_sales != null) patch.monthly_sales = c.monthly_sales
+        if (c.has_carousel_video != null) patch.has_carousel_video = c.has_carousel_video
+        if (c.carousel_video_pos != null) patch.carousel_video_pos = c.carousel_video_pos
+        if (c.campaign_name) patch.campaign_name = c.campaign_name
+        if (c.brand_name) patch.brand_name = c.brand_name
+        if (c.details_url) patch.details_url = c.details_url
+        toHeal.push({ id: ex.id, patch })
+      }
+      // else: already present and not healable → skip
+    }
 
     let inserted = 0
     if (toInsert.length > 0) {
@@ -195,8 +227,15 @@ export async function POST(request: Request) {
       inserted = count ?? toInsert.length
     }
 
+    let healed = 0
+    for (const u of toHeal) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await admin.from('campaigns').update(u.patch as any).eq('id', u.id).eq('user_id', userId)
+      if (!error) healed++
+    }
+
     return NextResponse.json(
-      { ok: true, inserted, skipped: clean.length - toInsert.length, received: incoming.length },
+      { ok: true, inserted, healed, skipped: clean.length - toInsert.length - healed, received: incoming.length },
       { headers: CORS },
     )
   } catch (err: unknown) {
