@@ -1027,6 +1027,9 @@ async function scoutRunSearch(f, onProgress) {
   if (tab === 'sponsored') {
     let rows = await parseSponsoredCards({ maxCards: Math.min(maxCards, 300), onProgress })
     const rawCount = rows.length
+    // Value metric on this tab is Estimated EPC (higher = better). Keep rows whose
+    // EPC we couldn't read (lenient), like the campaign filters.
+    if (f.minEpc) rows = rows.filter(r => r.epc == null || r.epc >= f.minEpc)
     return { rows, rawCount, total: rawCount, capped: rawCount >= 300, tab }
   }
   let rows = await parseCampaignCards({ maxCards, onProgress })
@@ -1233,6 +1236,19 @@ function redock(el) {
   }
 }
 
+// Reconfigure the panel for the active Amazon tab: Affiliate+ (campaigns —
+// commission/date filters, Draft) vs Sponsored Products (products — EPC/price/
+// units filters). CSS (.mvp-only-aff / .mvp-only-spon) does the show/hide; this
+// just flips the root class + the header title. Cheap + safe to call repeatedly.
+function applyTabUi() {
+  const p = document.getElementById(PANEL_ID)
+  if (!p) return
+  const spon = detectCcTab() === 'sponsored'
+  if (p.classList.contains('mvp-sponsored') !== spon) p.classList.toggle('mvp-sponsored', spon)
+  const b = p.querySelector('.mvp-hd b')
+  if (b) { const t = spon ? '🛒 MVP SCOUT — Product Search' : '🔍 MVP SCOUT — Campaign Search'; if (b.textContent !== t) b.textContent = t }
+}
+
 function mountSearchPanel() {
   if (!isCCPage()) return
   if (document.getElementById(PANEL_ID) || !document.body) return
@@ -1267,6 +1283,9 @@ function mountSearchPanel() {
     #${PANEL_ID} .mvp-token-row>div{flex:1 1 0 !important;min-width:0 !important}
     #${PANEL_ID}.mvp-min .mvp-body{display:none}
     #${PANEL_ID}.mvp-hidden{display:none !important}
+    /* Tab-aware controls: .mvp-only-aff shows on Affiliate+, .mvp-only-spon on Sponsored Products. */
+    #${PANEL_ID}.mvp-sponsored .mvp-only-aff{display:none !important}
+    #${PANEL_ID}:not(.mvp-sponsored) .mvp-only-spon{display:none !important}
   `
   document.head.appendChild(style)
 
@@ -1278,18 +1297,20 @@ function mountSearchPanel() {
   el.innerHTML = `
     <div class="mvp-hd"><b>🔍 MVP SCOUT — Campaign Search</b><span class="mvp-tog">–</span></div>
     <div class="mvp-body">
-      <div class="mvp-row"><div style="flex:3"><label>Keyword or brand</label><input class="mvp-kw" placeholder="e.g. knee brace"></div><div style="flex:1"><label>Min commission %</label><input class="mvp-comm" type="number" min="0" max="100" placeholder="20"></div><div style="flex:1"><label>Lasts ≥ (days)</label><input class="mvp-lastdays" type="number" min="0" step="1" placeholder="100"></div></div>
-      <div class="mvp-row"><button class="mvp-btn mvp-search" style="flex:2">Search</button><button class="mvp-btn dbg mvp-debug" style="flex:1">Debug</button><button class="mvp-btn dbg mvp-draft" style="flex:1" title="On a campaign details page: draft a brand-outreach message from the brief">✍️ Draft</button></div>
-      <div class="mvp-row" style="align-items:center;gap:6px"><span style="font-size:9px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;flex:0 0 auto">Units sold / mo</span><select class="mvp-units" title="Only import products whose monthly units-sold falls in this band — SCOUT reads it during the import deep-check (units aren't on the card)" style="flex:1;padding:5px 8px;border:1px solid #d1d5db;border-radius:7px;font-size:11px;background:#fff;color:#111"><option value="">Any</option><option value="200-500">200 – 500</option><option value="500-1500">500 – 1,500</option><option value="1500-">Over 1,500</option></select></div>
+      <div class="mvp-row"><div style="flex:3"><label>Keyword or brand</label><input class="mvp-kw" placeholder="e.g. knee brace"></div><div style="flex:1" class="mvp-only-aff"><label>Min commission %</label><input class="mvp-comm" type="number" min="0" max="100" placeholder="20"></div><div style="flex:1" class="mvp-only-aff"><label>Lasts ≥ (days)</label><input class="mvp-lastdays" type="number" min="0" step="1" placeholder="100"></div><div style="flex:1" class="mvp-only-spon"><label>Min Est. EPC $</label><input class="mvp-minepc" type="number" min="0" step="0.05" placeholder="0.50"></div></div>
+      <div class="mvp-row"><button class="mvp-btn mvp-search" style="flex:2">Search</button><button class="mvp-btn dbg mvp-debug" style="flex:1">Debug</button><button class="mvp-btn dbg mvp-draft mvp-only-aff" style="flex:1" title="On a campaign details page: draft a brand-outreach message from the brief">✍️ Draft</button></div>
+      <div class="mvp-row mvp-only-spon" style="align-items:center;gap:6px"><span style="font-size:9px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;flex:0 0 auto">Units sold / mo</span><select class="mvp-units" title="Only import products whose monthly units-sold falls in this band — SCOUT reads it during the import deep-check (units aren't on the card)" style="flex:1;padding:5px 8px;border:1px solid #d1d5db;border-radius:7px;font-size:11px;background:#fff;color:#111"><option value="">Any</option><option value="200-500">200 – 500</option><option value="500-1500">500 – 1,500</option><option value="1500-">Over 1,500</option></select></div>
       <div class="mvp-res"></div>
-      <div class="mvp-row" style="margin-top:8px"><button class="mvp-btn sec mvp-accsel" style="flex:1" title="Deep-check selected (sales + carousel video) and import them into MVP — does not accept on Amazon">Import selected into MVP</button></div>
+      <div class="mvp-row" style="margin-top:8px"><button class="mvp-btn sec mvp-accsel" style="flex:1" title="Import the ticked picks into MVP — does not accept on Amazon">Import selected into MVP</button></div>
       <div class="mvp-token-row"><div><label>MVP ingest token</label><input class="mvp-token" placeholder="CC_..."></div><button class="mvp-btn sec mvp-token-save" style="flex:0 0 auto;align-self:flex-end">Save</button></div>
-      <div class="mvp-note">Tick campaigns → <b>Import selected into MVP</b>: SCOUT deep-checks each (reads product price + monthly sales + carousel-video position: top / bottom / none) and adds ALL your picks to your MVP /epc list — where you can sort by price — signals shown per row — to Generate + Message. <b>It does not accept anything on Amazon</b> — accepting stays your choice in MVP. <b>Import</b> (per row) imports just that one (no deep check). <b>✍️ Draft</b> writes AND sends a brand message on a campaign's details page (opens the chat, drops in your pitch, hits Send).</div>
+      <div class="mvp-note mvp-only-aff">Tick campaigns → <b>Import selected into MVP</b>: SCOUT deep-checks each (reads product price + monthly sales + carousel-video position) and adds ALL your picks to your MVP /epc list — sort by price there — to Generate + Message. <b>It does not accept anything on Amazon</b> — accepting stays your choice in MVP. <b>Import</b> (per row) imports just that one. <b>✍️ Draft</b> writes AND sends a brand message on a campaign's details page.</div>
+      <div class="mvp-note mvp-only-spon">These are <b>products</b> (ASIN, price, Est. EPC on the card). Sort by <b>EPC</b> (higher = better) or price. Tick → <b>Import selected into MVP</b> (instant — no page opens). Set a <b>Units sold / mo</b> band to only import products in that sales range (SCOUT then opens each ticked product to read its monthly units). <b>It does not accept anything on Amazon.</b></div>
     </div>`
   // Dock it in the page flow, right ABOVE the CC toolbar row (Filters / tabs).
   // Stays HIDDEN (never floating) until the toolbar renders; a fast retry embeds
   // it the moment the anchor appears, so it shows up already-docked — no flash.
   redock(el)
+  applyTabUi()
   if (!el.classList.contains('mvp-inline')) {
     let tries = 0
     const iv = setInterval(() => {
@@ -1394,10 +1415,12 @@ function mountSearchPanel() {
         btn.textContent = `Loading ${n}…`
         res.innerHTML = `<div class="mvp-note">Loading campaigns from Amazon… <b>${n}</b> loaded so far (scrolling to pull more).</div>`
       }
+      const epcEl = q('.mvp-minepc')
       const { rows, rawCount, total, capped, tab } = await scoutRunSearch({
         keyword: q('.mvp-kw').value,
         minCommission: parseFloat(q('.mvp-comm').value) || 0,
         lastDays: parseInt(q('.mvp-lastdays').value, 10) || 0,
+        minEpc: epcEl ? (parseFloat(epcEl.value) || 0) : 0,
       }, onProgress)
       render(rows, rawCount, { total, capped, tab })
     } catch (e) { res.innerHTML = `<div class="mvp-note">Search error: ${e?.message || e}</div>` }
@@ -1533,9 +1556,9 @@ setInterval(() => {
     const existing = document.getElementById(PANEL_ID)
     if (onCC && !existing) mountSearchPanel()
     else if (!onCC && existing) existing.remove()
-    // Already mounted — keep it docked above the toolbar as the React page
-    // renders / re-renders.
-    else if (onCC && existing) redock(existing)
+    // Already mounted — keep it docked above the toolbar + tab-configured as the
+    // React page (and the user's tab switches) render / re-render.
+    else if (onCC && existing) { redock(existing); applyTabUi() }
   } catch (e) {}
 }, 2000)
 })()
