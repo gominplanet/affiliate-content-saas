@@ -10,15 +10,30 @@ export async function GET() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [{ data, error }, { data: intg }, { data: brand }] = await Promise.all([
+  const CAMPAIGN_COLS = 'id,asin,cc_campaign_id,product_title,campaign_name,brand_name,epc,program,commission_pct,monthly_sales,has_carousel_video,carousel_video_pos,details_url,ends_at,status,error_message,wordpress_url,blog_post_id,category,hero_kind,product_price,messaged_at,last_message,created_at'
+
+  // Fetch campaigns, resilient to migration lag: try WITH accepted_at (migration
+  // 159), and if that column doesn't exist yet, retry WITHOUT it — otherwise the
+  // whole queue would come back empty on any account whose DB is a migration
+  // behind the deploy.
+  const fetchCampaigns = async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    supabase
+    const base = (cols: string) => (supabase as any)
       .from('campaigns')
-      .select('id,asin,cc_campaign_id,product_title,campaign_name,brand_name,epc,program,commission_pct,monthly_sales,has_carousel_video,carousel_video_pos,details_url,ends_at,status,error_message,wordpress_url,blog_post_id,category,hero_kind,product_price,messaged_at,last_message,accepted_at,created_at')
+      .select(cols)
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
-      .limit(500),
+      .limit(500)
+    let res = await base(`${CAMPAIGN_COLS},accepted_at`)
+    if (res.error && /accepted_at|column .* does not exist/i.test(res.error.message || '')) {
+      res = await base(CAMPAIGN_COLS)
+    }
+    return res
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [{ data, error }, { data: intg }, { data: brand }] = await Promise.all([
+    fetchCampaigns(),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     supabase
       .from('integrations')
