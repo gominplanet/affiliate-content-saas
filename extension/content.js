@@ -1060,11 +1060,25 @@ function isCCPage() {
 // the toolbar container to insert before, or null (→ floating fallback).
 function findToolbarAnchor() {
   try {
+    // Preferred: dock right ABOVE the "Filters" button's row. Climb from the
+    // Filters button until the parent ALSO contains the campaign tabs — that
+    // parent is the shared toolbar column, so `el` is the Filters-row block and
+    // inserting SCOUT before it lands it just above Filters.
+    const filters = [...document.querySelectorAll('button,[role="button"],a')]
+      .find(e => /^\s*filters\s*$/i.test(textOf(e)))
+    if (filters) {
+      let el = filters
+      for (let i = 0; i < 6 && el.parentElement; i++) {
+        const p = el.parentElement
+        if (/new opportunities|submitted content links|campaigns\s*\(/i.test(p.textContent || '')) return el
+        el = p
+      }
+      return filters.parentElement || filters
+    }
+    // Fallback: the campaign-tabs row (Filters button not found).
     const tab = [...document.querySelectorAll('button,a,[role="tab"],[role="button"]')]
       .find(e => /^\s*(new opportunities|submitted content links|accepted)\s*$/i.test(textOf(e)))
     if (!tab) return null
-    // Walk up to the tightest ancestor that wraps the whole tab row (contains
-    // both the "Submitted content links" and "…Opportunities" tabs).
     let el = tab
     for (let i = 0; i < 8 && el && el.parentElement; i++) {
       el = el.parentElement
