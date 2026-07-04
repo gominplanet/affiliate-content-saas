@@ -522,6 +522,65 @@ async function ccFindCampaign(query, asin, callerTabId) {
   }
 }
 
+// ── Batch "which of these products are CC campaigns?" (Check all CC) ─────────
+// One CC search by keyword, resolve the result cards' ASINs once, match against
+// the whole target set. Same background-first-then-foreground grid strategy as
+// ccFindCampaign. Returns { matches: [{asin, detailsUrl, brand, commissionPct}] }.
+async function matchCampaignsOnTab(tabId, keyword, asins) {
+  const ask = () => chrome.tabs.sendMessage(tabId, { type: 'CC_MATCH', keyword, asins, maxResolve: 40, maxCards: 200 })
+  try {
+    return await ask()
+  } catch (e) {
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] })
+    return await ask()
+  }
+}
+
+async function ccMatchCampaigns(keyword, asins, callerTabId) {
+  const want = Array.from(new Set((asins || []).map((a) => String(a || '').toUpperCase()).filter((a) => /^[A-Z0-9]{10}$/.test(a))))
+  if (!want.length) return { ok: true, matches: [], scanned: 0 }
+  const open = await chrome.tabs.query({
+    url: [
+      'https://www.amazon.com/creatorconnections/*',
+      'https://affiliate-program.amazon.com/*',
+    ],
+  })
+  let tab = open[0] || null
+  let opened = false
+  try {
+    if (!tab || tab.id == null) {
+      tab = await chrome.tabs.create({ url: CC_OPPORTUNITIES_URL, active: false })
+      opened = true
+      await waitForTabLoad(tab.id, 25000)
+      await _sleep(3500)
+    }
+    try {
+      const sres = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: ensureOffsiteStoreInPage })
+      const sw = sres && sres[0] && sres[0].result
+      if (sw && sw.switched) { await _sleep(1500); await waitForTabLoad(tab.id, 25000); await _sleep(2500) }
+    } catch (e) {}
+
+    let res = await matchCampaignsOnTab(tab.id, keyword, want)
+    // No cards resolved → the hidden grid didn't render; retry foreground once.
+    if (res && res.ok && !res.scanned) {
+      try {
+        await chrome.tabs.update(tab.id, { active: true })
+        await _sleep(2800)
+        const fg = await matchCampaignsOnTab(tab.id, keyword, want)
+        if (fg) { res = fg; res.foreground = true }
+      } catch (e) { /* keep the background result */ }
+      finally {
+        if (callerTabId != null) { try { await chrome.tabs.update(callerTabId, { active: true }) } catch (e) {} }
+      }
+    }
+    return res || { ok: false, error: 'no-result' }
+  } catch (e) {
+    return { ok: false, error: opened ? 'cc-match-failed' : 'content-script-unreachable' }
+  } finally {
+    if (opened && tab && tab.id != null) { try { await chrome.tabs.remove(tab.id) } catch (e) {} }
+  }
+}
+
 // ── Amazon video discovery (Manage Content) ────────────────────────────────
 // For the "Share with brand" recap: a creator's Amazon Influencer videos live
 // on their Manage Content page (in their logged-in session — a server can't
@@ -1010,27 +1069,43 @@ function harvestAmazonSearchInPage() {
 
 async function productFinderSearch(query, opts) {
   opts = opts || {}
-  const maxDeep = Math.min(20, Math.max(1, opts.maxResults || 15))
+  const maxDeep = Math.min(50, Math.max(1, opts.maxResults || 15))
   const minSales = typeof opts.minSales === 'number' ? opts.minSales : 0
   const mustVideo = !!opts.mustVideo
   const q = String(query || '').trim()
   if (!q) return { ok: false, error: 'no-query' }
+  // The candidate POOL to consider: at least the top ~100 results (cheap — just
+  // reading search-page HTML), never fewer than the deep-check budget. One
+  // Amazon search page is only ~60 items, so we paginate (&page=N) until the pool
+  // fills or the results run out. Deep-checking (a /dp visit each) still happens
+  // for only the first `maxDeep` of the pool — that's the slow, capped part.
+  const poolTarget = Math.max(100, maxDeep)
+  const pageUrl = (n) => `https://www.amazon.com/s?k=${encodeURIComponent(q)}${n > 1 ? `&page=${n}` : ''}`
   let tabId = null
   try {
-    const tab = await chrome.tabs.create({ url: `https://www.amazon.com/s?k=${encodeURIComponent(q)}`, active: false })
+    const tab = await chrome.tabs.create({ url: pageUrl(1), active: false })
     tabId = tab.id
-    await waitForTabLoad(tabId, 25000)
-    await _sleep(1600)
-    let list = null
-    for (let i = 0; i < 4; i++) {
-      const r = await chrome.scripting.executeScript({ target: { tabId }, func: harvestAmazonSearchInPage })
-      list = (r && r[0] && r[0].result) || null
-      if (list && list.ok) break
-      await _sleep(1300)
+    const pooled = []
+    const seen = new Set()
+    for (let page = 1; page <= 6 && pooled.length < poolTarget; page++) {
+      if (page > 1) { try { await chrome.tabs.update(tabId, { url: pageUrl(page) }) } catch (e) { break } }
+      await waitForTabLoad(tabId, 25000)
+      await _sleep(page === 1 ? 1600 : 1200)
+      let list = null
+      for (let i = 0; i < 4; i++) {
+        const r = await chrome.scripting.executeScript({ target: { tabId }, func: harvestAmazonSearchInPage })
+        list = (r && r[0] && r[0].result) || null
+        if (list && list.ok) break
+        await _sleep(1300)
+      }
+      if (!list || !list.products || !list.products.length) break
+      let added = 0
+      for (const p of list.products) { if (!seen.has(p.asin)) { seen.add(p.asin); pooled.push(p); added++ } }
+      if (added === 0) break // no new results on this page → end of pagination
     }
-    if (!list || !list.products || !list.products.length) return { ok: false, error: 'no-results', products: [] }
+    if (!pooled.length) return { ok: false, error: 'no-results', products: [] }
     // Prefer organic results; deep-check up to maxDeep of them.
-    const candidates = list.products.filter((p) => !p.sponsored).concat(list.products.filter((p) => p.sponsored)).slice(0, maxDeep)
+    const candidates = pooled.filter((p) => !p.sponsored).concat(pooled.filter((p) => p.sponsored)).slice(0, maxDeep)
     const results = []
     for (const p of candidates) {
       let sig = { sales: null, hasVideo: false, carouselPos: 'none' }
@@ -1052,7 +1127,7 @@ async function productFinderSearch(query, opts) {
       if (minSales > 0 && (r.monthlySales == null || r.monthlySales < minSales)) return false
       return true
     })
-    return { ok: true, products: filtered, scanned: results.length, totalFound: list.products.length }
+    return { ok: true, products: filtered, scanned: results.length, totalFound: pooled.length }
   } catch (e) {
     return { ok: false, error: (e && e.message) ? String(e.message).slice(0, 120) : 'exception' }
   } finally {
@@ -1909,11 +1984,23 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async response — keep the channel open
   }
+  if (msg.type === 'MVP_CC_MATCH') {
+    // "Check all CC": one CC search by keyword, resolve result-card ASINs once,
+    // match against the whole target set. Up to ~40 background ASIN resolves +
+    // a possible foreground grid pass — allow up to 5 minutes.
+    const callerTabId = sender && sender.tab ? sender.tab.id : null
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 300000)
+    ccMatchCampaigns(msg.keyword || '', msg.asins || [], callerTabId)
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true // async response — keep the channel open
+  }
   if (msg.type === 'MVP_PRODUCT_SEARCH') {
     // Product Finder: keyword + rules → live Amazon results, each deep-checked
     // (monthly sales + carousel-video position) and filtered, in a hidden tab.
-    // Long-running (a /dp visit per product), so allow up to ~4 minutes.
-    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 240000)
+    // Paginates the search to a ~100 pool + deep-checks up to 50 (a /dp visit
+    // each), so allow up to ~7 minutes.
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 420000)
     productFinderSearch(msg.query, msg.opts || {})
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })

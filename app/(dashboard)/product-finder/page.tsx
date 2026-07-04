@@ -13,7 +13,7 @@ import { useState, useCallback } from 'react'
 import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
 import { Loader2, Search, Sparkles, ExternalLink, PackageSearch, MessageSquare, Radar } from 'lucide-react'
-import { requestProductSearch, requestFindCampaign, type FinderProduct } from '@/lib/extension-frame'
+import { requestProductSearch, requestFindCampaign, requestCcMatch, type FinderProduct, type CampaignMatch } from '@/lib/extension-frame'
 import MessageBrandModal, { type MessageBrandCampaign } from '@/components/campaigns/MessageBrandModal'
 
 export default function ProductFinderPage() {
@@ -36,6 +36,7 @@ export default function ProductFinderPage() {
   const [imported, setImported] = useState<Record<string, Imported>>({})
   const [live, setLive] = useState<Record<string, Live>>({})
   const [ccChecking, setCcChecking] = useState<string | null>(null) // asin being live-checked
+  const [ccAllRunning, setCcAllRunning] = useState(false)          // "Check all CC" in progress
 
   // Open the Message modal for a found product. First check whether this ASIN is
   // already an imported Creator Connections campaign — if so, open in AUTO-SEND
@@ -84,11 +85,12 @@ export default function ProductFinderPage() {
 
   // On-demand live "is this a Creator Connections campaign?" check for ONE row —
   // the same background SCOUT search the modal runs, but surfaced on the row so
-  // the user can probe before hitting Message. Slow (~1 min), so opt-in per row.
+  // the user can probe before hitting Message. Searches CC by the KEYWORD (the CC
+  // grid returns cards for a keyword, not a bare ASIN) and confirms the match.
   const checkCC = useCallback(async (p: FinderProduct) => {
     setCcChecking(p.asin)
     try {
-      const r = await requestFindCampaign(p.asin, p.asin)
+      const r = await requestFindCampaign(keyword.trim() || p.asin, p.asin)
       if (r.ok) {
         setLive(s => ({ ...s, [p.asin]: { found: !!r.found, detailsUrl: r.detailsUrl, brand: r.brand, commissionPct: r.commissionPct } }))
         if (r.found) toast.success(`It's a campaign${r.brand ? ` from ${r.brand}` : ''} — you can auto-send.`)
@@ -101,7 +103,44 @@ export default function ProductFinderPage() {
     } finally {
       setCcChecking(null)
     }
-  }, [])
+  }, [keyword])
+
+  // "Check all CC" — ONE Creator Connections search for the keyword, matched
+  // against every not-yet-known result ASIN at once (far cheaper than one search
+  // per row). Fills the `live` map for all of them.
+  const checkAllCC = useCallback(async () => {
+    if (!results || results.length === 0) return
+    const todo = results.filter(p => !imported[p.asin] && !live[p.asin]).map(p => p.asin)
+    if (todo.length === 0) { toast.message('Every row already has a campaign status.'); return }
+    setCcAllRunning(true)
+    try {
+      const r = await requestCcMatch(keyword.trim(), todo)
+      if (!r.ok) {
+        if (r.error === 'not-installed') toast.error('Install / enable SCOUT to check Creator Connections.')
+        else if (r.error === 'timeout') toast.error('The Creator Connections scan timed out — try Check CC per row instead.')
+        else toast.error(`Couldn't scan Creator Connections: ${r.error}`)
+        return
+      }
+      const byAsin: Record<string, CampaignMatch> = {}
+      for (const m of (r.matches ?? [])) byAsin[m.asin.toUpperCase()] = m
+      setLive(s => {
+        const next = { ...s }
+        for (const asin of todo) {
+          const m = byAsin[asin.toUpperCase()]
+          next[asin] = m
+            ? { found: true, detailsUrl: m.detailsUrl, brand: m.brand, commissionPct: m.commissionPct }
+            : { found: false }
+        }
+        return next
+      })
+      const n = (r.matches ?? []).length
+      toast.success(n ? `${n} of ${todo.length} are Creator Connections campaigns you can auto-send to.` : `None of the ${todo.length} checked are campaigns.`)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Scan failed')
+    } finally {
+      setCcAllRunning(false)
+    }
+  }, [results, imported, live, keyword])
 
   const search = useCallback(async () => {
     if (!keyword.trim()) { toast.error('Enter a keyword to search.'); return }
@@ -110,7 +149,7 @@ export default function ProductFinderPage() {
       const r = await requestProductSearch(keyword.trim(), {
         minSales: parseInt(minSales, 10) || 0,
         mustVideo,
-        maxResults: Math.min(20, Math.max(1, parseInt(maxResults, 10) || 15)),
+        maxResults: Math.min(50, Math.max(1, parseInt(maxResults, 10) || 15)),
       })
       if (!r.ok) {
         if (r.error === 'not-installed') toast.error('Install / enable SCOUT to use the Product Finder.')
@@ -200,7 +239,7 @@ export default function ProductFinderPage() {
   return (
     <>
       <PageHero
-        title="Product Finder"
+        title="AMZ Product Finder"
         subtitle="Search Amazon by keyword + rules — SCOUT reads live sales and carousel-video data in your own browser, then you turn any winner into a post."
       />
 
@@ -220,8 +259,8 @@ export default function ProductFinderPage() {
             <input type="number" min="0" value={minSales} onChange={e => setMinSales(e.target.value)} className={inputCls} style={inputStyle} />
           </div>
           <div>
-            <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-2)' }}>Scan up to</label>
-            <input type="number" min="1" max="20" value={maxResults} onChange={e => setMaxResults(e.target.value)} className={inputCls} style={inputStyle} />
+            <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-2)' }}>Deep-check</label>
+            <input type="number" min="1" max="50" value={maxResults} onChange={e => setMaxResults(e.target.value)} className={inputCls} style={inputStyle} />
           </div>
           <button onClick={search} disabled={searching}
             className="inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white bg-[#7C3AED] hover:bg-[#6d28d9] disabled:opacity-60 transition-colors h-[38px]">
@@ -233,7 +272,7 @@ export default function ProductFinderPage() {
           Only products that already have a carousel video
         </label>
         <p className="text-[11px] mt-2" style={{ color: 'var(--text-faint)' }}>
-          SCOUT opens each result's Amazon page in the background to read live monthly sales + video placement, so a scan of {maxResults || '15'} takes ~1–2 min. Data is read at that moment — not a cached database. Rows that are already <span className="font-semibold text-[#248a3d]">🎯 your campaigns</span> are flagged instantly; use <span className="font-semibold text-[#7C3AED]">Check CC</span> on any other row to have SCOUT confirm if it's a Creator Connections campaign you can auto-send to.
+          SCOUT scans the top ~100 Amazon results for your keyword, then deep-checks the first {maxResults || '15'} of them — opening each product's Amazon page in the background to read live monthly sales + video placement (~1–2 min for 15, longer for more). Data is read at that moment — not a cached database. Rows that are already <span className="font-semibold text-[#248a3d]">🎯 your campaigns</span> are flagged instantly; use <span className="font-semibold text-[#7C3AED]">Check CC</span> (or <span className="font-semibold text-[#7C3AED]">Check all CC</span>) to have SCOUT confirm which are Creator Connections campaigns you can auto-send to.
         </p>
       </div>
 
@@ -252,7 +291,23 @@ export default function ProductFinderPage() {
 
       {!searching && results && results.length > 0 && (
         <div className="max-w-4xl">
-          {meta && <p className="text-[12px] mb-2" style={{ color: 'var(--text-faint)' }}>{results.length} passed · deep-checked {meta.scanned} of {meta.totalFound} Amazon results</p>}
+          <div className="flex items-center justify-between gap-3 mb-2">
+            {meta
+              ? <p className="text-[12px]" style={{ color: 'var(--text-faint)' }}>{results.length} passed · deep-checked {meta.scanned} of {meta.totalFound} scanned</p>
+              : <span />}
+            {(() => {
+              const uncheckable = results.filter(p => !imported[p.asin] && !live[p.asin]).length
+              return (
+                <button onClick={checkAllCC} disabled={ccAllRunning || uncheckable === 0}
+                  title="One Creator Connections search for your keyword, matched against every row at once — flags which products you can auto-send to"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold border disabled:opacity-50 flex-shrink-0"
+                  style={{ color: '#7C3AED', borderColor: '#d6c6fb', background: 'rgba(124,58,237,0.05)' }}>
+                  {ccAllRunning ? <Loader2 size={13} className="animate-spin" /> : <Radar size={13} />}
+                  {ccAllRunning ? 'Scanning Creator Connections…' : `Check all CC${uncheckable ? ` (${uncheckable})` : ''}`}
+                </button>
+              )
+            })()}
+          </div>
           <div className="card divide-y divide-gray-100 dark:divide-white/10">
             {results.map(p => (
               <div key={p.asin} className="flex items-center gap-3 p-3">
@@ -297,9 +352,9 @@ export default function ProductFinderPage() {
           onClose={() => setMsgProduct(null)}
           // Live "is this a Creator Connections campaign?" lookup — only reached
           // from the modal when this product wasn't already an imported campaign.
-          // We drive SCOUT's CC search by the ASIN (Amazon's CC search accepts an
-          // ASIN) and confirm the resolved card matches.
-          onFindCampaign={() => requestFindCampaign(msgProduct.asin, msgProduct.asin)}
+          // Search CC by the KEYWORD (the grid returns cards for a keyword, not a
+          // bare ASIN), then confirm the resolved card matches this ASIN.
+          onFindCampaign={() => requestFindCampaign(keyword.trim() || msgProduct.asin, msgProduct.asin)}
         />
       )}
     </>

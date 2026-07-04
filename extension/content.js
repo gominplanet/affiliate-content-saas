@@ -356,6 +356,47 @@ if (!window.__ccScoutListener) {
       })()
       return true // async response
     }
+    // CC_MATCH — "which of THESE products are Creator Connections campaigns?"
+    // Powers the Product Finder's "Check all CC" button: run ONE CC search for the
+    // keyword, resolve each result card's ASIN once, and match against the whole
+    // set of target ASINs — far cheaper than one CC search per product. Stops
+    // early once every target is found; caps how many cards it resolves.
+    if (msg?.type === 'CC_MATCH') {
+      ;(async () => {
+        try {
+          const want = new Set((msg.asins || []).map((a) => String(a || '').toUpperCase()).filter((a) => /^[A-Z0-9]{10}$/.test(a)))
+          if (!want.size) { sendResponse({ ok: true, matches: [], scanned: 0, total: 0 }); return }
+          const { rows, total } = await scoutRunSearch({ keyword: msg.keyword || '', maxCards: msg.maxCards || 200 })
+          const cands = rows.filter((r) => r.detailsUrl)
+          const cap = Math.min(cands.length, msg.maxResolve || 40)
+          const matches = []
+          const foundAsins = new Set()
+          let scanned = 0
+          for (let i = 0; i < cap && foundAsins.size < want.size; i++) {
+            const r = cands[i]
+            let asin = null
+            try { asin = await resolveCampaignAsin(r.detailsUrl) } catch (e) {}
+            scanned++
+            if (!asin) continue
+            const A = asin.toUpperCase()
+            if (want.has(A) && !foundAsins.has(A)) {
+              foundAsins.add(A)
+              matches.push({
+                asin: A,
+                detailsUrl: r.detailsUrl,
+                campaignName: r.campaignName || null,
+                brand: r.brand || null,
+                commissionPct: r.commissionPct != null ? r.commissionPct : null,
+              })
+            }
+          }
+          sendResponse({ ok: true, matches, scanned, total: total != null ? total : rows.length })
+        } catch (e) {
+          sendResponse({ ok: false, error: (e && e.message) || 'cc-match-failed' })
+        }
+      })()
+      return true // async response
+    }
   })
 }
 

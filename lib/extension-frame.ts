@@ -387,7 +387,7 @@ export async function requestProductSearch(
   if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
   const resp = await sendToExtension<{ ok?: boolean; products?: FinderProduct[]; scanned?: number; totalFound?: number; error?: string }>(
     { type: 'MVP_PRODUCT_SEARCH', query, opts: rules },
-    240000,
+    430000,
   )
   if (!resp) return { ok: false, error: 'timeout' }
   if (resp.ok) return { ok: true, products: resp.products ?? [], scanned: resp.scanned, totalFound: resp.totalFound }
@@ -438,6 +438,43 @@ export async function requestFindCampaign(query: string, asin: string): Promise<
     }
   }
   return { ok: false, error: resp.error || 'find-failed' }
+}
+
+export interface CampaignMatch {
+  asin: string
+  detailsUrl: string | null
+  campaignName: string | null
+  brand: string | null
+  commissionPct: number | null
+}
+export interface CcMatchResult {
+  ok: boolean
+  matches?: CampaignMatch[]
+  scanned?: number
+  total?: number
+  error?: string
+}
+
+/**
+ * "Check all CC" — batch version of requestFindCampaign. Given the Product
+ * Finder's keyword and a list of result ASINs, SCOUT runs ONE Creator
+ * Connections search for the keyword, resolves each result card's ASIN once, and
+ * returns which target ASINs are campaigns (with their details URLs). Far cheaper
+ * than one CC search per product. Slow (a search + up to ~40 background ASIN
+ * resolves, plus a possible foreground grid pass), so a long timeout.
+ * Best-effort: resolves, never throws.
+ */
+export async function requestCcMatch(keyword: string, asins: string[]): Promise<CcMatchResult> {
+  const clean = Array.from(new Set((asins || []).map((a) => String(a || '').trim().toUpperCase()).filter((a) => /^[A-Z0-9]{10}$/.test(a))))
+  if (clean.length === 0) return { ok: true, matches: [] }
+  if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
+  const resp = await sendToExtension<{ ok?: boolean; matches?: CampaignMatch[]; scanned?: number; total?: number; error?: string }>(
+    { type: 'MVP_CC_MATCH', keyword: keyword || '', asins: clean },
+    310000,
+  )
+  if (!resp) return { ok: false, error: 'timeout' }
+  if (resp.ok) return { ok: true, matches: resp.matches ?? [], scanned: resp.scanned, total: resp.total }
+  return { ok: false, error: resp.error || 'match-failed' }
 }
 
 /** A raw Creator Connections campaign row as scraped by the extension. All
