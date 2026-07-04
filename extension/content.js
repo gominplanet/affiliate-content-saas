@@ -415,6 +415,11 @@ const PANEL_ID = 'mvp-scout-cc-panel'
 
 function fmtMeta(r) {
   const bits = []
+  // Sponsored Products rows carry product price / EPC / rating on the card.
+  if (typeof r.price === 'number') bits.push('$' + r.price.toFixed(2))
+  if (typeof r.epc === 'number') bits.push('EPC $' + r.epc.toFixed(2))
+  if (r.rating) bits.push('★ ' + r.rating + (r.reviews ? ` (${r.reviews.toLocaleString()})` : ''))
+  if (r.asin) bits.push(r.asin)
   if (r.commissionPct != null) bits.push(r.commissionPct + '% commission')
   if (r.startsAt || r.endsAt) bits.push((r.startsAt || '?') + ' → ' + (r.endsAt || '?'))
   if (r.budget) bits.push(r.budget + ' budget')
@@ -620,11 +625,13 @@ async function importOne(camp, btn) {
   if (btn) btn.disabled = true
   const token = await getIngestToken()
   if (!token) { set('· connect MVP', '#b45309'); showTokenRow(); if (btn) btn.disabled = false; return { pushed: false } }
-  set('Finding ASIN…', '#6b7280')
-  const asin = await resolveCampaignAsin(camp.detailsUrl)
+  // Sponsored Products cards already carry the ASIN (+ price) — push instantly, no
+  // /dp resolve. Affiliate+ cards hide the ASIN → resolve it from the details page.
+  let asin = camp.asin || null
+  if (!asin) { set('Finding ASIN…', '#6b7280'); asin = await resolveCampaignAsin(camp.detailsUrl) }
   if (!asin) { set('· no ASIN', '#b45309'); if (btn) btn.disabled = false; return { pushed: false } }
   set('Sending…', '#6b7280')
-  const push = await pushCampaignToMvp(camp, asin, token)
+  const push = await pushCampaignToMvp(camp, asin, token, typeof camp.price === 'number' ? { price: camp.price } : undefined)
   set(push.ok ? '✓ In MVP' : '· push failed', push.ok ? '#059669' : '#b45309')
   if (btn) btn.title = push.ok ? '' : ('Push failed: ' + (push.error || 'unknown') + ' (hover shows why; see console)')
   if (btn) btn.disabled = false
@@ -896,12 +903,112 @@ async function scoutDraftMessage() {
   return { ok: true, chars: d.message.length, sent: true, groups: sent }
 }
 
+// ── "Sponsored Products for Creators" tab — a DIFFERENT card model ──────────
+// Unlike Affiliate+ campaign cards (commission %/budget/dates, ASIN hidden), the
+// Sponsored Products cards show the PRODUCT itself: ASIN, price, Estimated EPC and
+// rating are ON the card. So SCOUT can read price + ASIN at scrape time (no /dp
+// visits, no Amazon block) — which is what lets us SORT BY PRICE before importing
+// and import instantly. Selectors are text/attribute-based (robust to Amazon's
+// class churn); if a scan comes back empty on this tab, click Debug and share the
+// console so the anchors can be tightened.
+function detectCcTab() {
+  try {
+    const t = (document.body ? document.body.innerText : '') || ''
+    // The Sponsored tab's cards carry "Estimated EPC" + a visible "ASIN: B0…".
+    if (/estimated epc/i.test(t) && /\bASIN:?\s*B0[A-Z0-9]{8}/i.test(t)) return 'sponsored'
+    return 'affiliate'
+  } catch (e) { return 'affiliate' }
+}
+
+function extractSponsoredCard(cont) {
+  const clean = (s) => (s || '').replace(/\s+/g, ' ').trim()
+  const all = clean(cont.textContent)
+  const am = all.match(/\bASIN:?\s*(B0[A-Z0-9]{8})/i) || all.match(/\b(B0[A-Z0-9]{8})\b/)
+  const asin = am ? am[1].toUpperCase() : null
+  if (!asin) return null
+  // Current price — prefer the buy-box price node; else the first "$X.XX" that
+  // isn't the strikethrough List Price or the Estimated-EPC figure.
+  let price = null
+  const priceEl = cont.querySelector('.a-price:not(.a-text-price) .a-offscreen') || cont.querySelector('.a-price .a-offscreen')
+  let pm = (priceEl ? clean(priceEl.textContent) : '').match(/\$\s?([\d,]+(?:\.\d{1,2})?)/)
+  if (!pm) {
+    const stripped = all.replace(/list price:?\s*\$[\d,.]+/ig, '').replace(/estimated epc[^$]*\$[\d,.]+/ig, '')
+    pm = stripped.match(/\$\s?([\d,]+(?:\.\d{1,2})?)/)
+  }
+  if (pm) { const n = parseFloat(pm[1].replace(/,/g, '')); if (!isNaN(n) && n > 0) price = n }
+  // Estimated EPC ("Estimated EPC: Up to $2.47").
+  let epc = null
+  const em = all.match(/estimated epc[^$]*\$\s?([\d,]+(?:\.\d{1,2})?)/i)
+  if (em) { const n = parseFloat(em[1].replace(/,/g, '')); if (!isNaN(n)) epc = n }
+  // Rating + review count.
+  let rating = null, reviews = null
+  const rm = all.match(/\b([0-5](?:\.\d)?)\s*(?:out of 5|stars)/i)
+  if (rm) rating = rm[1]
+  const rc = all.match(/\(([\d,]{2,})\)/); if (rc) reviews = parseInt(rc[1].replace(/,/g, ''), 10)
+  const img = cont.querySelector('img[src]')
+  const image = img ? (img.getAttribute('src') || null) : null
+  const titleEl = cont.querySelector('a[href*="/dp/"], h2, h3, [class*="title" i]')
+  const campaignName = titleEl ? (clean(titleEl.textContent) || null) : null
+  const dpEl = cont.querySelector('a[href*="/dp/"]')
+  const detailsUrl = dpEl ? (dpEl.href || `https://www.amazon.com/dp/${asin}`) : `https://www.amazon.com/dp/${asin}`
+  return {
+    key: asin, campaignId: null, asin, campaignName: campaignName || asin, brand: null,
+    commissionPct: null, budget: null, startsAt: null, endsAt: null,
+    image, detailsUrl, price, epc, rating, reviews, sponsored: true,
+  }
+}
+
+// Scrape the sponsored product cards, scrolling to lazy-load more. Self-contained
+// (doesn't touch the Affiliate+ campaign-card walker). Anchors on each product's
+// "Accept" button → walks up to the card container that carries its ASIN.
+async function parseSponsoredCards(opts) {
+  const maxCards = (opts && opts.maxCards) || 300
+  const onProgress = (opts && opts.onProgress) || function () {}
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  const byKey = new Map()
+  let reported = 0
+  const harvest = () => {
+    const btns = [...document.querySelectorAll('button,[role="button"]')]
+      .filter(b => /^\s*accept\s*$/i.test((b.innerText || b.textContent || '')))
+    for (const b of btns) {
+      let cont = b
+      for (let i = 0; i < 8 && cont.parentElement; i++) {
+        cont = cont.parentElement
+        if (/\bASIN:?\s*B0[A-Z0-9]{8}/i.test(cont.textContent || '')) break
+      }
+      const c = extractSponsoredCard(cont)
+      if (c && c.asin && !byKey.has(c.asin)) byKey.set(c.asin, c)
+    }
+    if (byKey.size !== reported) { reported = byKey.size; try { onProgress(byKey.size) } catch (e) {} }
+  }
+  const scroller = document.scrollingElement || document.documentElement
+  harvest()
+  let last = -1, stalls = 0
+  for (let i = 0; i < 400 && byKey.size < maxCards; i++) {
+    window.scrollTo(0, scroller.scrollHeight)
+    await sleep(650)
+    harvest()
+    const h = scroller.scrollHeight
+    if (h > last) { last = h; stalls = 0 } else if (++stalls >= 3) break
+  }
+  window.scrollTo(0, 0)
+  return [...byKey.values()]
+}
+
 async function scoutRunSearch(f, onProgress) {
   // Keyword OR ASIN both drive Amazon's own search box (it searches by ASIN too),
   // so we scan the FULL catalogue's matches, then read + filter the cards.
   const query = (f.asin || f.keyword || '').trim()
   if (query) { try { await applyAmazonSearch(query) } catch (e) {} }
   const maxCards = (f.maxCards && f.maxCards > 0) ? f.maxCards : 600
+  const tab = detectCcTab()
+  // Sponsored Products tab: product cards carry ASIN + price on the card, so we
+  // read those directly (and skip the commission/date filters, which don't apply).
+  if (tab === 'sponsored') {
+    let rows = await parseSponsoredCards({ maxCards: Math.min(maxCards, 300), onProgress })
+    const rawCount = rows.length
+    return { rows, rawCount, total: rawCount, capped: rawCount >= 300, tab }
+  }
   let rows = await parseCampaignCards({ maxCards, onProgress })
   const rawCount = rows.length
   const total = readAmazonTotal()
@@ -916,7 +1023,7 @@ async function scoutRunSearch(f, onProgress) {
     const cutoff = dateNDaysFromToday(f.lastDays)
     rows = rows.filter(r => !r.endsAt || r.endsAt >= cutoff)
   }
-  return { rows, rawCount, total, capped }
+  return { rows, rawCount, total, capped, tab }
 }
 
 // today + n days, as a sortable "YYYY-MM-DD" string (local time).
@@ -1175,35 +1282,72 @@ function mountSearchPanel() {
   const res = q('.mvp-res')
   const selected = new Set()
   let rowsByKey = new Map()  // key → full campaign object, for accept/push
+  // Cached result set + current sort, so Sort / Select-all re-render without re-scanning.
+  let lastRows = [], lastRawCount = 0, lastMeta = null, lastTab = 'affiliate', sortMode = ''
 
   q('.mvp-hd').addEventListener('click', () => {
     el.classList.toggle('mvp-min')
     q('.mvp-tog').textContent = el.classList.contains('mvp-min') ? '+' : '–'
   })
 
+  function sortRows(rows) {
+    const arr = rows.slice()
+    const num = (v, d) => (typeof v === 'number' ? v : d)
+    if (sortMode === 'price-asc') arr.sort((a, b) => num(a.price, Infinity) - num(b.price, Infinity))
+    else if (sortMode === 'price-desc') arr.sort((a, b) => num(b.price, -1) - num(a.price, -1))
+    else if (sortMode === 'epc-desc') arr.sort((a, b) => num(b.epc, -1) - num(a.epc, -1))
+    else if (sortMode === 'rating-desc') arr.sort((a, b) => (parseFloat(b.rating) || -1) - (parseFloat(a.rating) || -1))
+    else if (sortMode === 'comm-desc') arr.sort((a, b) => num(b.commissionPct, -1) - num(a.commissionPct, -1))
+    else if (sortMode === 'comm-asc') arr.sort((a, b) => num(a.commissionPct, Infinity) - num(b.commissionPct, Infinity))
+    else if (sortMode === 'ends-asc') arr.sort((a, b) => String(a.endsAt || '9999-99-99').localeCompare(String(b.endsAt || '9999-99-99')))
+    return arr
+  }
+
+  // New result set → reset selection + sort, cache, draw.
   function render(rows, rawCount, meta) {
     selected.clear()
-    rowsByKey = new Map(rows.map(r => [String(r.key), r]))
-    const total = meta && meta.total
-    const capped = meta && meta.capped
-    // "loaded N of Amazon's X total" + a note when the scan hit its cap.
-    const scanNote = `loaded <b>${rawCount}</b>${total && total > rawCount ? ` of ~${total.toLocaleString()}` : ''}${capped ? ' · scan cap reached (Search again to keep going, or narrow the keyword)' : ''}`
-    if (!rows.length) {
-      res.innerHTML = rawCount > 0
-        ? `<div class="mvp-note">Scraped <b>${rawCount}</b> campaign${rawCount === 1 ? '' : 's'} (${scanNote}), but none passed your filters (commission / date). Clear the filter boxes and Search again to see them all.</div>`
-        : '<div class="mvp-note">No campaigns detected on the page. Try a broader keyword, or click Debug to check the grid selectors.</div>'
+    lastRows = rows; lastRawCount = rawCount; lastMeta = meta || {}; lastTab = (meta && meta.tab) || 'affiliate'; sortMode = ''
+    draw()
+  }
+
+  // (Re)paint the results from the cache — applies the current sort, keeps ticks.
+  function draw() {
+    rowsByKey = new Map(lastRows.map(r => [String(r.key), r]))
+    const total = lastMeta && lastMeta.total
+    const capped = lastMeta && lastMeta.capped
+    const noun = lastTab === 'sponsored' ? 'product' : 'campaign'
+    const scanNote = `loaded <b>${lastRawCount}</b>${total && total > lastRawCount ? ` of ~${total.toLocaleString()}` : ''}${capped ? ' · scan cap reached (Search again to keep going, or narrow the keyword)' : ''}`
+    if (!lastRows.length) {
+      res.innerHTML = lastRawCount > 0
+        ? `<div class="mvp-note">Scraped <b>${lastRawCount}</b> ${noun}${lastRawCount === 1 ? '' : 's'} (${scanNote}), but none passed your filters. Clear the filter boxes and Search again.</div>`
+        : `<div class="mvp-note">No ${noun}s detected on the page. Try a broader keyword, or click Debug to check the selectors.</div>`
       return
     }
-    res.innerHTML = `<div class="mvp-note" style="margin:0 0 6px">${rows.length}${rawCount > rows.length ? ` of ${rawCount}` : ''} campaign${rows.length === 1 ? '' : 's'} pass your filters · ${scanNote}</div>` + rows.map(r => `
-      <div class="mvp-card" data-key="${String(r.key || '').replace(/"/g, '&quot;')}">
-        <input type="checkbox" class="mvp-sel">
+    const sorted = sortRows(lastRows)
+    // Sort options differ by tab: Sponsored Products carry price/EPC/rating on the
+    // card; Affiliate+ campaigns carry commission/date.
+    const opt = (v, label) => `<option value="${v}"${sortMode === v ? ' selected' : ''}>${label}</option>`
+    const sortOpts = lastTab === 'sponsored'
+      ? opt('', 'Sort: Amazon') + opt('price-asc', 'Price: low → high') + opt('price-desc', 'Price: high → low') + opt('epc-desc', 'Est. EPC: high → low') + opt('rating-desc', 'Rating: high → low')
+      : opt('', 'Sort: Amazon') + opt('comm-desc', 'Commission: high → low') + opt('comm-asc', 'Commission: low → high') + opt('ends-asc', 'Ending soonest')
+    const bar = `<div class="mvp-note" style="margin:0 0 5px">${lastRows.length}${lastRawCount > lastRows.length ? ` of ${lastRawCount}` : ''} ${noun}${lastRows.length === 1 ? '' : 's'} · ${scanNote}</div>` +
+      `<div class="mvp-row" style="align-items:center;gap:6px;margin:0 0 6px">` +
+        `<button class="mvp-btn sec mvp-selall" style="flex:0 0 auto;padding:4px 8px;font-size:10.5px">Select all</button>` +
+        `<button class="mvp-btn dbg mvp-selnone" style="flex:0 0 auto;padding:4px 8px;font-size:10.5px">Clear</button>` +
+        `<select class="mvp-sort" style="flex:1;margin-left:auto;padding:5px 8px;border:1px solid #d1d5db;border-radius:7px;font-size:11px;background:#fff;color:#111">${sortOpts}</select>` +
+      `</div>`
+    res.innerHTML = bar + sorted.map(r => {
+      const key = String(r.key || '')
+      return `<div class="mvp-card" data-key="${key.replace(/"/g, '&quot;')}">
+        <input type="checkbox" class="mvp-sel"${selected.has(key) ? ' checked' : ''}>
         ${r.image ? `<img src="${r.image}">` : ''}
         <div class="mvp-cardbody">
-          <div class="t">${String(r.campaignName || r.brand || 'Campaign').replace(/</g, '&lt;')}</div>
+          <div class="t">${String(r.campaignName || r.brand || 'Product').replace(/</g, '&lt;')}</div>
           <div class="m">${fmtMeta(r) || (r.brand || '')}</div>
         </div>
         <button class="mvp-acc" title="Import just this one into MVP (does not accept it on Amazon)">Import</button>
-      </div>`).join('')
+      </div>`
+    }).join('')
     res.querySelectorAll('.mvp-sel').forEach(cb => cb.addEventListener('change', (e) => {
       const key = e.target.closest('.mvp-card').dataset.key
       if (e.target.checked) selected.add(key); else selected.delete(key)
@@ -1212,6 +1356,9 @@ function mountSearchPanel() {
       const key = e.target.closest('.mvp-card').dataset.key
       importOne(rowsByKey.get(key), e.target)
     }))
+    const selall = res.querySelector('.mvp-selall'); if (selall) selall.addEventListener('click', () => { lastRows.forEach(r => selected.add(String(r.key))); draw() })
+    const selnone = res.querySelector('.mvp-selnone'); if (selnone) selnone.addEventListener('click', () => { selected.clear(); draw() })
+    const sortSel = res.querySelector('.mvp-sort'); if (sortSel) sortSel.addEventListener('change', (e) => { sortMode = e.target.value; draw() })
   }
 
   q('.mvp-search').addEventListener('click', async () => {
@@ -1224,12 +1371,12 @@ function mountSearchPanel() {
         btn.textContent = `Loading ${n}…`
         res.innerHTML = `<div class="mvp-note">Loading campaigns from Amazon… <b>${n}</b> loaded so far (scrolling to pull more).</div>`
       }
-      const { rows, rawCount, total, capped } = await scoutRunSearch({
+      const { rows, rawCount, total, capped, tab } = await scoutRunSearch({
         keyword: q('.mvp-kw').value,
         minCommission: parseFloat(q('.mvp-comm').value) || 0,
         lastDays: parseInt(q('.mvp-lastdays').value, 10) || 0,
       }, onProgress)
-      render(rows, rawCount, { total, capped })
+      render(rows, rawCount, { total, capped, tab })
     } catch (e) { res.innerHTML = `<div class="mvp-note">Search error: ${e?.message || e}</div>` }
     btn.textContent = prev; btn.disabled = false
   })
@@ -1271,9 +1418,19 @@ function mountSearchPanel() {
     for (let i = 0; i < keys.length; i++) {
       const camp = rowsByKey.get(keys[i])
       const label = camp ? (camp.campaignName || camp.brand || camp.key) : keys[i]
+      if (!camp) { dropped.push(`${keys[i]}: missing`); continue }
+      // Sponsored Products rows already carry ASIN + price from the card → push
+      // them straight in, NO /dp deep check (that's what triggers Amazon blocks).
+      if (camp.asin) {
+        btn.textContent = `Importing ${i + 1}/${keys.length}…`
+        res.innerHTML = `<div class="mvp-note">Importing ${i + 1}/${keys.length}: ${String(label).slice(0, 46).replace(/</g, '&lt;')}…</div>`
+        const push = await pushCampaignToMvp(camp, camp.asin, token, typeof camp.price === 'number' ? { price: camp.price } : undefined)
+        if (push.ok) imported++; else dropped.push(`${label}: push failed (${push.error || '?'})`)
+        continue
+      }
       btn.textContent = `Checking ${i + 1}/${keys.length}…`
-      res.innerHTML = `<div class="mvp-note">Deep-checking ${i + 1}/${keys.length}: ${String(label).slice(0, 42).replace(/</g, '&lt;')}… <br>(opening its Amazon page for monthly sales + carousel-video position)</div>`
-      if (!camp || !camp.detailsUrl) { dropped.push(`${label}: no details link`); continue }
+      res.innerHTML = `<div class="mvp-note">Deep-checking ${i + 1}/${keys.length}: ${String(label).slice(0, 42).replace(/</g, '&lt;')}… <br>(opening its Amazon page for price + monthly sales + carousel-video position)</div>`
+      if (!camp.detailsUrl) { dropped.push(`${label}: no details link`); continue }
       let deep = null
       try { deep = await chrome.runtime.sendMessage({ type: 'SCOUT_DEEP_CHECK', detailsUrl: camp.detailsUrl }) } catch (e) {}
       if (!deep || !deep.ok || !deep.asin) { dropped.push(`${label}: couldn't read ASIN`); continue }
