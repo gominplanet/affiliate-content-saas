@@ -1107,18 +1107,18 @@ function mountSearchPanel() {
     #${PANEL_ID}{position:fixed !important;right:16px !important;top:50% !important;transform:translateY(-50%) !important;z-index:2147483000 !important;width:340px !important;max-width:calc(100vw - 24px) !important;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif !important;font-size:12px !important;line-height:1.4 !important;background:#fff !important;color:#111 !important;border:1px solid #e5e7eb !important;border-radius:14px !important;box-shadow:0 12px 40px -8px rgba(0,0,0,.28) !important;overflow:hidden !important;box-sizing:border-box !important}
     #${PANEL_ID} *{box-sizing:border-box !important;max-width:100% !important}
     /* Inline mode: sit in the page flow above Amazon's toolbar (like ViralVue) */
-    #${PANEL_ID}.mvp-inline{position:static !important;right:auto !important;top:auto !important;left:auto !important;transform:none !important;width:100% !important;max-width:100% !important;margin:0 0 14px !important;box-shadow:0 2px 14px -4px rgba(124,58,237,.30) !important}
-    #${PANEL_ID} .mvp-hd{display:flex !important;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;background:linear-gradient(135deg,#7C3AED,#9D6BFF);color:#fff;cursor:pointer}
-    #${PANEL_ID} .mvp-hd b{font-size:13px;font-weight:700;color:#fff}
-    #${PANEL_ID} .mvp-body{padding:12px;max-height:70vh;overflow-y:auto;overflow-x:hidden}
-    #${PANEL_ID} .mvp-row{display:flex !important;gap:8px;margin-bottom:8px}
+    #${PANEL_ID}.mvp-inline{position:static !important;right:auto !important;top:auto !important;left:auto !important;transform:none !important;width:100% !important;max-width:420px !important;margin:0 0 10px !important;border-radius:10px !important;box-shadow:0 2px 12px -4px rgba(124,58,237,.28) !important}
+    #${PANEL_ID} .mvp-hd{display:flex !important;align-items:center;justify-content:space-between;gap:8px;padding:6px 10px;background:linear-gradient(135deg,#7C3AED,#9D6BFF);color:#fff;cursor:pointer}
+    #${PANEL_ID} .mvp-hd b{font-size:11.5px;font-weight:700;color:#fff}
+    #${PANEL_ID} .mvp-body{padding:9px 10px;max-height:60vh;overflow-y:auto;overflow-x:hidden}
+    #${PANEL_ID} .mvp-row{display:flex !important;gap:6px;margin-bottom:6px}
     #${PANEL_ID} .mvp-row>div{flex:1 1 0 !important;min-width:0 !important}
-    #${PANEL_ID} input{width:100% !important;padding:7px 9px;border:1px solid #d1d5db;border-radius:8px;font-size:12px;background:#fff;color:#111}
-    #${PANEL_ID} label{display:block;font-size:10px;font-weight:600;color:#6b7280;margin:0 0 3px 2px;text-transform:uppercase;letter-spacing:.04em}
-    #${PANEL_ID} .mvp-btn{padding:8px 10px;border:0;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;color:#fff;background:#7C3AED;white-space:nowrap}
+    #${PANEL_ID} input{width:100% !important;padding:5px 8px;border:1px solid #d1d5db;border-radius:7px;font-size:11.5px;background:#fff;color:#111}
+    #${PANEL_ID} label{display:block;font-size:9px;font-weight:600;color:#6b7280;margin:0 0 2px 2px;text-transform:uppercase;letter-spacing:.04em}
+    #${PANEL_ID} .mvp-btn{padding:6px 9px;border:0;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;color:#fff;background:#7C3AED;white-space:nowrap}
     #${PANEL_ID} .mvp-btn.sec{background:#fff;color:#7C3AED;border:1px solid #d6c6fb}
     #${PANEL_ID} .mvp-btn.dbg{background:#f3f4f6;color:#374151;border:1px solid #e5e7eb}
-    #${PANEL_ID} .mvp-res{margin-top:10px;border-top:1px solid #eee;padding-top:8px}
+    #${PANEL_ID} .mvp-res{margin-top:8px;border-top:1px solid #eee;padding-top:7px}
     #${PANEL_ID} .mvp-card{display:flex !important;gap:8px;align-items:flex-start;padding:8px;border:1px solid #eee;border-radius:10px;margin-bottom:6px}
     #${PANEL_ID} .mvp-sel{flex:0 0 auto !important;width:14px !important;height:14px !important;margin:2px 0 0 !important}
     #${PANEL_ID} .mvp-card img{width:40px !important;height:40px !important;object-fit:cover;border-radius:6px;flex:0 0 40px !important;background:#f3f4f6}
@@ -1126,7 +1126,7 @@ function mountSearchPanel() {
     #${PANEL_ID} .mvp-card .t{font-size:12px;font-weight:600;color:#111;line-height:1.25;overflow-wrap:anywhere;word-break:break-word;white-space:normal !important}
     #${PANEL_ID} .mvp-card .m{font-size:11px;color:#6b7280;margin-top:2px;overflow-wrap:anywhere;white-space:normal !important}
     #${PANEL_ID} .mvp-acc{font-size:11px;font-weight:700;color:#7C3AED;background:none;border:1px solid #d6c6fb;border-radius:6px;padding:3px 7px;cursor:pointer;flex:0 0 auto !important;white-space:nowrap}
-    #${PANEL_ID} .mvp-note{font-size:11px;color:#6b7280;margin-top:6px;line-height:1.4}
+    #${PANEL_ID} .mvp-note{font-size:10px;color:#6b7280;margin-top:5px;line-height:1.35}
     #${PANEL_ID} .mvp-token-row{display:none !important;gap:8px;margin:4px 0 8px}
     #${PANEL_ID} .mvp-token-row.show{display:flex !important}
     #${PANEL_ID} .mvp-token-row>div{flex:1 1 0 !important;min-width:0 !important}
