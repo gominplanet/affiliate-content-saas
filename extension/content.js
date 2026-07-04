@@ -335,6 +335,7 @@ if (!window.__ccScoutListener) {
           const cap = Math.min(cands.length, msg.maxResolve || 15)
           for (let i = 0; i < cap; i++) {
             const r = cands[i]
+            if (i > 0) await new Promise((res) => setTimeout(res, 600 + Math.floor(Math.random() * 500))) // pace Amazon hits
             let asin = null
             try { asin = await resolveCampaignAsin(r.detailsUrl) } catch (e) {}
             if (asin && asin.toUpperCase() === want) {
@@ -374,6 +375,7 @@ if (!window.__ccScoutListener) {
           let scanned = 0
           for (let i = 0; i < cap && foundAsins.size < want.size; i++) {
             const r = cands[i]
+            if (i > 0) await new Promise((res) => setTimeout(res, 600 + Math.floor(Math.random() * 500))) // pace Amazon hits
             let asin = null
             try { asin = await resolveCampaignAsin(r.detailsUrl) } catch (e) {}
             scanned++

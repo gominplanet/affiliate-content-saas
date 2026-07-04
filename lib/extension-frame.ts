@@ -389,6 +389,7 @@ export interface ProductSearchResult {
   products?: FinderProduct[]
   scanned?: number    // how many products were deep-checked
   totalFound?: number // how many appeared in Amazon's search
+  blocked?: boolean   // Amazon rate-limited us mid-scan — results are partial
   error?: string
 }
 
@@ -405,13 +406,13 @@ export async function requestProductSearch(
 ): Promise<ProductSearchResult> {
   if (!query.trim()) return { ok: false, error: 'no-query' }
   if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
-  const resp = await sendToExtension<{ ok?: boolean; products?: FinderProduct[]; scanned?: number; totalFound?: number; error?: string }>(
+  const resp = await sendToExtension<{ ok?: boolean; products?: FinderProduct[]; scanned?: number; totalFound?: number; blocked?: boolean; error?: string }>(
     { type: 'MVP_PRODUCT_SEARCH', query, opts: rules },
     430000,
   )
   if (!resp) return { ok: false, error: 'timeout' }
-  if (resp.ok) return { ok: true, products: resp.products ?? [], scanned: resp.scanned, totalFound: resp.totalFound }
-  return { ok: false, error: resp.error || 'search-failed', products: resp.products ?? [] }
+  if (resp.ok) return { ok: true, products: resp.products ?? [], scanned: resp.scanned, totalFound: resp.totalFound, blocked: resp.blocked }
+  return { ok: false, error: resp.error || 'search-failed', products: resp.products ?? [], blocked: resp.blocked }
 }
 
 export interface FindCampaignResult {

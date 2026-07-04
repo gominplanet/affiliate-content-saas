@@ -316,6 +316,10 @@ async function resolveCampaignAsin(detailsUrl) {
 // "Videos for this product" / related-videos shoppable carousel), or 'none'.
 function readDpSignalsInPage() {
   const bodyText = document.body ? (document.body.innerText || '') : ''
+  // Amazon rate-limit / bot-check / maintenance interstitial — the signal to STOP
+  // hammering. Detected off the page text so callers can abort the batch.
+  const blocked = /website temporarily unavailable|we just need to make sure you'?re not a robot|enter the characters you see below|api-services-support@amazon|to discuss automated access|type the characters you see in this image|robot check/i.test(bodyText)
+  if (blocked) return { sales: null, hasVideo: false, carouselPos: 'none', blocked: true }
   // "1K+ bought in past month" / "500+ bought in past month" / "50 bought…"
   let sales = null
   const m = bodyText.match(/([\d][\d.,]*)\s*([kmKM])?\+?\s*bought in past month/i)
@@ -455,7 +459,7 @@ async function scanCreatorConnections(callerTabId) {
 // FOREGROUND pass and hands focus straight back — the only reliable way to read
 // the grid, matching the existing Campaign Search scan.
 async function findCampaignOnTab(tabId, query, asin) {
-  const ask = () => chrome.tabs.sendMessage(tabId, { type: 'CC_FIND', query, asin, maxResolve: 15, maxCards: 120 })
+  const ask = () => chrome.tabs.sendMessage(tabId, { type: 'CC_FIND', query, asin, maxResolve: 12, maxCards: 120 })
   try {
     return await ask()
   } catch (e) {
@@ -527,7 +531,7 @@ async function ccFindCampaign(query, asin, callerTabId) {
 // the whole target set. Same background-first-then-foreground grid strategy as
 // ccFindCampaign. Returns { matches: [{asin, detailsUrl, brand, commissionPct}] }.
 async function matchCampaignsOnTab(tabId, keyword, asins) {
-  const ask = () => chrome.tabs.sendMessage(tabId, { type: 'CC_MATCH', keyword, asins, maxResolve: 40, maxCards: 200 })
+  const ask = () => chrome.tabs.sendMessage(tabId, { type: 'CC_MATCH', keyword, asins, maxResolve: 25, maxCards: 200 })
   try {
     return await ask()
   } catch (e) {
@@ -1115,6 +1119,11 @@ async function scanGenericProduct(url, callerTabId) {
 // MVP" flow; reuses readDpSignalsInPage (same signals as the CC deep-check).
 function harvestAmazonSearchInPage() {
   const clean = (s) => (s || '').replace(/\s+/g, ' ').trim()
+  // Rate-limit / bot-check interstitial → stop the scan.
+  const bodyText = document.body ? (document.body.innerText || '') : ''
+  if (/website temporarily unavailable|we just need to make sure you'?re not a robot|enter the characters you see below|api-services-support@amazon|to discuss automated access|type the characters you see in this image|robot check/i.test(bodyText)) {
+    return { ok: false, blocked: true, products: [], url: location.href.slice(0, 140) }
+  }
   const out = []
   const seen = new Set()
   const cards = document.querySelectorAll('div[data-component-type="s-search-result"][data-asin], div.s-result-item[data-asin]')
@@ -1142,7 +1151,7 @@ function harvestAmazonSearchInPage() {
 
 async function productFinderSearch(query, opts) {
   opts = opts || {}
-  const maxDeep = Math.min(50, Math.max(1, opts.maxResults || 15))
+  const maxDeep = Math.min(25, Math.max(1, opts.maxResults || 15))
   const minSales = typeof opts.minSales === 'number' ? opts.minSales : 0
   const mustVideo = !!opts.mustVideo
   const q = String(query || '').trim()
@@ -1154,7 +1163,11 @@ async function productFinderSearch(query, opts) {
   // for only the first `maxDeep` of the pool — that's the slow, capped part.
   const poolTarget = Math.max(100, maxDeep)
   const pageUrl = (n) => `https://www.amazon.com/s?k=${encodeURIComponent(q)}${n > 1 ? `&page=${n}` : ''}`
+  // Space out Amazon page hits so a scan doesn't look like a bot burst (which
+  // trips "Website Temporarily Unavailable" / robot checks). ~1.2–2.1s + jitter.
+  const pace = () => _sleep(1200 + Math.floor(Math.random() * 900))
   let tabId = null
+  let blocked = false
   try {
     const tab = await chrome.tabs.create({ url: pageUrl(1), active: false })
     tabId = tab.id
@@ -1168,15 +1181,17 @@ async function productFinderSearch(query, opts) {
       for (let i = 0; i < 4; i++) {
         const r = await chrome.scripting.executeScript({ target: { tabId }, func: harvestAmazonSearchInPage })
         list = (r && r[0] && r[0].result) || null
-        if (list && list.ok) break
+        if (list && (list.ok || list.blocked)) break
         await _sleep(1300)
       }
+      if (list && list.blocked) { blocked = true; break } // Amazon throttled — stop
       if (!list || !list.products || !list.products.length) break
       let added = 0
       for (const p of list.products) { if (!seen.has(p.asin)) { seen.add(p.asin); pooled.push(p); added++ } }
       if (added === 0) break // no new results on this page → end of pagination
+      if (page < 6 && pooled.length < poolTarget) await pace() // breathe between pages
     }
-    if (!pooled.length) return { ok: false, error: 'no-results', products: [] }
+    if (!pooled.length) return blocked ? { ok: false, error: 'amazon-blocked', products: [] } : { ok: false, error: 'no-results', products: [] }
     // Prefer organic results; deep-check up to maxDeep of them.
     const candidates = pooled.filter((p) => !p.sponsored).concat(pooled.filter((p) => p.sponsored)).slice(0, maxDeep)
     const results = []
@@ -1189,18 +1204,21 @@ async function productFinderSearch(query, opts) {
         for (let i = 0; i < 6; i++) {
           const r = await chrome.scripting.executeScript({ target: { tabId }, func: readDpSignalsInPage })
           const v = r && r[0] && r[0].result
-          if (v) { sig = v; if (v.hasVideo || v.sales != null) break }
+          if (v) { sig = v; if (v.blocked || v.hasVideo || v.sales != null) break }
           await _sleep(600)
         }
       } catch (e) { /* keep the search-page basics; signals stay null */ }
+      // Amazon started rate-limiting mid-scan → stop now, return what we have.
+      if (sig && sig.blocked) { blocked = true; break }
       results.push({ asin: p.asin, title: p.title, price: p.price, image: p.image, rating: p.rating, monthlySales: sig.sales, carouselPos: sig.carouselPos || 'none', hasVideo: !!sig.hasVideo })
+      await pace() // breathe between /dp hits
     }
     const filtered = results.filter((r) => {
       if (mustVideo && !r.hasVideo) return false
       if (minSales > 0 && (r.monthlySales == null || r.monthlySales < minSales)) return false
       return true
     })
-    return { ok: true, products: filtered, scanned: results.length, totalFound: pooled.length }
+    return { ok: true, products: filtered, scanned: results.length, totalFound: pooled.length, blocked }
   } catch (e) {
     return { ok: false, error: (e && e.message) ? String(e.message).slice(0, 120) : 'exception' }
   } finally {

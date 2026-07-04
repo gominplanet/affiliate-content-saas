@@ -149,10 +149,11 @@ export default function ProductFinderPage() {
       const r = await requestProductSearch(keyword.trim(), {
         minSales: parseInt(minSales, 10) || 0,
         mustVideo,
-        maxResults: Math.min(50, Math.max(1, parseInt(maxResults, 10) || 15)),
+        maxResults: Math.min(25, Math.max(1, parseInt(maxResults, 10) || 15)),
       })
       if (!r.ok) {
         if (r.error === 'not-installed') toast.error('Install / enable SCOUT to use the Product Finder.')
+        else if (r.error === 'amazon-blocked') toast.warning('Amazon is rate-limiting right now — wait a few minutes before scanning again (and scan fewer at a time).', { duration: 11000 })
         else if (r.error === 'no-results') { setResults([]); toast.message('No products found — try a different keyword.') }
         else if (r.error === 'timeout') toast.error('The scan timed out — try fewer results or a narrower keyword.')
         else toast.error(`Search failed: ${r.error}`)
@@ -162,7 +163,11 @@ export default function ProductFinderPage() {
       setResults(r.products ?? [])
       setMeta({ scanned: r.scanned, totalFound: r.totalFound })
       const n = (r.products ?? []).length
-      toast.success(n ? `${n} product${n === 1 ? '' : 's'} passed your rules.` : 'No products passed your rules — loosen them and try again.')
+      if (r.blocked) {
+        toast.warning('Amazon started rate-limiting — SCOUT stopped early to avoid a block. Wait a few minutes and scan fewer at a time.', { duration: 11000 })
+      } else {
+        toast.success(n ? `${n} product${n === 1 ? '' : 's'} passed your rules.` : 'No products passed your rules — loosen them and try again.')
+      }
       if (n) checkImported(r.products ?? [])
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Search failed')
@@ -260,7 +265,7 @@ export default function ProductFinderPage() {
           </div>
           <div>
             <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-2)' }}>Deep-check</label>
-            <input type="number" min="1" max="50" value={maxResults} onChange={e => setMaxResults(e.target.value)} className={inputCls} style={inputStyle} />
+            <input type="number" min="1" max="25" value={maxResults} onChange={e => setMaxResults(e.target.value)} className={inputCls} style={inputStyle} />
           </div>
           <button onClick={search} disabled={searching}
             className="inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white bg-[#7C3AED] hover:bg-[#6d28d9] disabled:opacity-60 transition-colors h-[38px]">
