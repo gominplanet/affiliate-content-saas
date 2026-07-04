@@ -915,8 +915,9 @@ async function scoutDraftMessage() {
 function detectCcTab() {
   try {
     const t = (document.body ? document.body.innerText : '') || ''
-    // The Sponsored tab's cards carry "Estimated EPC" + a visible "ASIN: B0…".
-    if (/estimated epc/i.test(t) && /\bASIN:?\s*B0[A-Z0-9]{8}/i.test(t)) return 'sponsored'
+    // The Sponsored tab's cards carry "Estimated EPC" + a visible "ASIN: B0…"
+    // (the price can glue to the label — "$104.00ASIN:" — so no leading \b).
+    if (/estimated epc/i.test(t) && /ASIN:?\s*B0[A-Z0-9]{8}/i.test(t)) return 'sponsored'
     return 'affiliate'
   } catch (e) { return 'affiliate' }
 }
@@ -924,7 +925,10 @@ function detectCcTab() {
 function extractSponsoredCard(cont) {
   const clean = (s) => (s || '').replace(/\s+/g, ' ').trim()
   const all = clean(cont.textContent)
-  const am = all.match(/\bASIN:?\s*(B0[A-Z0-9]{8})/i) || all.match(/\b(B0[A-Z0-9]{8})\b/)
+  // Amazon jams cells together with no whitespace, e.g. "$104.00ASIN: B00KFE0A2OEstimated" —
+  // so we can't require a word boundary before "ASIN" (glued to the price) or after the
+  // code (glued to "Estimated"). Match the ASIN label loosely, else a bare B0 code.
+  const am = all.match(/ASIN:?\s*(B0[A-Z0-9]{8})/i) || all.match(/(B0[A-Z0-9]{8})/)
   const asin = am ? am[1].toUpperCase() : null
   if (!asin) return null
   // Current price — prefer the buy-box price node; else the first "$X.XX" that
@@ -941,9 +945,11 @@ function extractSponsoredCard(cont) {
   let epc = null
   const em = all.match(/estimated epc[^$]*\$\s*([\d,]+(?:\.\d{1,2})?)/i)
   if (em) { const n = parseFloat(em[1].replace(/,/g, '')); if (!isNaN(n)) epc = n }
-  // Rating + review count.
+  // Rating + review count. On the CC card the stars show as "4.4 (31,940)" with no
+  // "out of 5" text and often glued to the title ("Foam,White4.4 (31,940)"), so also
+  // accept a X.X immediately before a (review-count) parenthesis.
   let rating = null, reviews = null
-  const rm = all.match(/\b([0-5](?:\.\d)?)\s*(?:out of 5|stars)/i)
+  const rm = all.match(/\b([0-5](?:\.\d)?)\s*(?:out of 5|stars)/i) || all.match(/([0-5]\.\d)\s*\(\s*[\d,]{2,}\s*\)/)
   if (rm) rating = rm[1]
   const rc = all.match(/\(([\d,]{2,})\)/); if (rc) reviews = parseInt(rc[1].replace(/,/g, ''), 10)
   // Budget availability score (Low / Medium / High).
