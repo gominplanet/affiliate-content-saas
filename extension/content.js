@@ -537,22 +537,7 @@ function readAmazonTotal() {
   } catch (e) { return null }
 }
 
-// Click a campaign's Accept button, matched by its campaign id.
-function scoutAccept(key) {
-  if (!key) return { ok: false, reason: 'no-key' }
-  const btn = document.querySelector(`button[data-testid="${key}-campaign-card-accept-btn"]`)
-  if (btn) { btn.click(); return { ok: true } }
-  return { ok: false, reason: 'accept-btn-not-found' }
-}
-
-// Click Amazon's own "Submit accepted campaigns" button to finalise the batch.
-function scoutSubmitAccepted() {
-  const btn = [...document.querySelectorAll('button,a,[role="button"]')].find(b => /submit accepted campaigns/i.test(textOf(b)))
-  if (btn) { btn.click(); return true }
-  return false
-}
-
-// ── Push accepted campaigns into MVP (ASIN-grounded) ────────────────────────
+// ── Push campaigns into MVP (ASIN-grounded) ─────────────────────────────────
 const MVP_ORIGIN = 'https://www.mvpaffiliate.io'
 
 // The MVP ingest token (integrations.cc_ingest_token) is shared with the SCOUT
@@ -621,24 +606,24 @@ async function pushCampaignToMvp(camp, asin, token, extra) {
 // Accept a campaign on Amazon AND push it (with its resolved ASIN) into MVP.
 // Drives the given Accept button through visible stages so the user sees
 // progress. Returns { accepted, pushed }.
-async function acceptAndPush(camp, btn) {
+// Import ONE campaign into MVP (resolve its ASIN + push). Deliberately does NOT
+// accept it on Amazon — a SCOUT import never commits you to a campaign; accepting
+// is a choice you make in MVP.
+async function importOne(camp, btn) {
   const set = (t, color) => { if (btn) { btn.textContent = t; if (color) btn.style.color = color } }
-  if (!camp) { set('Retry', '#dc2626'); return { accepted: false, pushed: false } }
+  if (!camp) { set('Retry', '#dc2626'); return { pushed: false } }
   if (btn) btn.disabled = true
-  const acc = scoutAccept(camp.key)
-  if (!acc.ok) { set('Retry', '#dc2626'); if (btn) btn.disabled = false; return { accepted: false, pushed: false } }
-  set('✓ Accepted', '#059669')
   const token = await getIngestToken()
-  if (!token) { set('✓ · connect MVP', '#b45309'); showTokenRow(); if (btn) btn.disabled = false; return { accepted: true, pushed: false } }
+  if (!token) { set('· connect MVP', '#b45309'); showTokenRow(); if (btn) btn.disabled = false; return { pushed: false } }
   set('Finding ASIN…', '#6b7280')
   const asin = await resolveCampaignAsin(camp.detailsUrl)
-  if (!asin) { set('✓ · no ASIN', '#b45309'); if (btn) btn.disabled = false; return { accepted: true, pushed: false } }
+  if (!asin) { set('· no ASIN', '#b45309'); if (btn) btn.disabled = false; return { pushed: false } }
   set('Sending…', '#6b7280')
   const push = await pushCampaignToMvp(camp, asin, token)
-  set(push.ok ? '✓ In MVP' : '✓ · push failed', push.ok ? '#059669' : '#b45309')
+  set(push.ok ? '✓ In MVP' : '· push failed', push.ok ? '#059669' : '#b45309')
   if (btn) btn.title = push.ok ? '' : ('Push failed: ' + (push.error || 'unknown') + ' (hover shows why; see console)')
   if (btn) btn.disabled = false
-  return { accepted: true, pushed: push.ok }
+  return { pushed: push.ok }
 }
 
 // Reveal the "MVP ingest token" input in the panel (only surfaced when a push
@@ -1159,9 +1144,9 @@ function mountSearchPanel() {
       <div class="mvp-row"><div style="flex:3"><label>Keyword or brand</label><input class="mvp-kw" placeholder="e.g. knee brace"></div><div style="flex:1"><label>Min commission %</label><input class="mvp-comm" type="number" min="0" max="100" placeholder="20"></div><div style="flex:1"><label>Lasts ≥ (days)</label><input class="mvp-lastdays" type="number" min="0" step="1" placeholder="100"></div></div>
       <div class="mvp-row"><button class="mvp-btn mvp-search" style="flex:2">Search</button><button class="mvp-btn dbg mvp-debug" style="flex:1">Debug</button><button class="mvp-btn dbg mvp-draft" style="flex:1" title="On a campaign details page: draft a brand-outreach message from the brief">✍️ Draft</button></div>
       <div class="mvp-res"></div>
-      <div class="mvp-row" style="margin-top:8px"><button class="mvp-btn sec mvp-accsel" style="flex:1" title="Deep-check selected (sales + carousel video) and import the qualifiers into MVP">Import selected</button><button class="mvp-btn sec mvp-submit" style="flex:1">Submit accepted</button></div>
+      <div class="mvp-row" style="margin-top:8px"><button class="mvp-btn sec mvp-accsel" style="flex:1" title="Deep-check selected (sales + carousel video) and import them into MVP — does not accept on Amazon">Import selected into MVP</button></div>
       <div class="mvp-token-row"><div><label>MVP ingest token</label><input class="mvp-token" placeholder="CC_..."></div><button class="mvp-btn sec mvp-token-save" style="flex:0 0 auto;align-self:flex-end">Save</button></div>
-      <div class="mvp-note">Tick campaigns → <b>Import selected</b>: SCOUT deep-checks each (reads monthly sales + carousel-video position: top / bottom / none), accepts them on Amazon and adds ALL your picks to your MVP /epc list — with those signals shown per row — to Generate + Message. <b>Accept</b> imports one now (no deep check). <b>✍️ Draft</b> writes AND sends a brand message on a campaign's details page (opens the chat, drops in your pitch, hits Send).</div>
+      <div class="mvp-note">Tick campaigns → <b>Import selected into MVP</b>: SCOUT deep-checks each (reads monthly sales + carousel-video position: top / bottom / none) and adds ALL your picks to your MVP /epc list — signals shown per row — to Generate + Message. <b>It does not accept anything on Amazon</b> — accepting stays your choice in MVP. <b>Import</b> (per row) imports just that one (no deep check). <b>✍️ Draft</b> writes AND sends a brand message on a campaign's details page (opens the chat, drops in your pitch, hits Send).</div>
     </div>`
   // Dock it in the page flow, right ABOVE the CC toolbar row (Filters / tabs).
   // Falls back to floating only until that toolbar renders; the 2s poll below
@@ -1199,7 +1184,7 @@ function mountSearchPanel() {
           <div class="t">${String(r.campaignName || r.brand || 'Campaign').replace(/</g, '&lt;')}</div>
           <div class="m">${fmtMeta(r) || (r.brand || '')}</div>
         </div>
-        <button class="mvp-acc">Accept</button>
+        <button class="mvp-acc" title="Import just this one into MVP (does not accept it on Amazon)">Import</button>
       </div>`).join('')
     res.querySelectorAll('.mvp-sel').forEach(cb => cb.addEventListener('change', (e) => {
       const key = e.target.closest('.mvp-card').dataset.key
@@ -1207,7 +1192,7 @@ function mountSearchPanel() {
     }))
     res.querySelectorAll('.mvp-acc').forEach(b => b.addEventListener('click', (e) => {
       const key = e.target.closest('.mvp-card').dataset.key
-      acceptAndPush(rowsByKey.get(key), e.target)
+      importOne(rowsByKey.get(key), e.target)
     }))
   }
 
@@ -1274,7 +1259,9 @@ function mountSearchPanel() {
       let deep = null
       try { deep = await chrome.runtime.sendMessage({ type: 'SCOUT_DEEP_CHECK', detailsUrl: camp.detailsUrl }) } catch (e) {}
       if (!deep || !deep.ok || !deep.asin) { dropped.push(`${label}: couldn't read ASIN`); continue }
-      scoutAccept(camp.key)
+      // NOTE: we do NOT accept the campaign on Amazon here — importing only brings
+      // it into MVP as a candidate. Accepting stays a deliberate choice you make
+      // in MVP (nothing on Amazon is committed by a SCOUT import).
       const push = await pushCampaignToMvp(camp, deep.asin, token, { monthlySales: deep.sales, hasVideo: deep.hasVideo, carouselPos: deep.carouselPos })
       if (push.ok) imported++; else dropped.push(`${label}: push failed (${push.error || '?'})`)
     }
@@ -1282,9 +1269,8 @@ function mountSearchPanel() {
     const dropHtml = dropped.length
       ? `<br>Skipped ${dropped.length}:<br>• ${dropped.slice(0, 8).map(s => String(s).replace(/</g, '&lt;')).join('<br>• ')}${dropped.length > 8 ? '<br>• …' : ''}`
       : ''
-    res.innerHTML = `<div class="mvp-note"><b>Imported ${imported}</b> to MVP (accepted on Amazon + in your /epc list, ready to Generate + Message).${dropHtml}</div>`
+    res.innerHTML = `<div class="mvp-note"><b>Imported ${imported}</b> to your MVP /epc list, ready to Generate + Message (not accepted on Amazon — accept from MVP when you're ready).${dropHtml}</div>`
   })
-  q('.mvp-submit').addEventListener('click', () => { q('.mvp-submit').textContent = scoutSubmitAccepted() ? '✓ Submitted' : 'Not found' })
   const tokenSave = q('.mvp-token-save')
   if (tokenSave) tokenSave.addEventListener('click', () => {
     const t = ((q('.mvp-token').value) || '').trim()
