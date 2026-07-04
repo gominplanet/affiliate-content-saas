@@ -982,12 +982,13 @@ async function parseSponsoredCards(opts) {
   const byKey = new Map()
   let reported = 0
   const harvest = () => {
-    // Find every "ASIN: B0XXXXXXXX" text node, walk up to the tightest ancestor
-    // that reads like a whole product card (has a $ price + EPC/Accept), extract.
+    // Amazon splits the "ASIN:" label and the code into separate elements, so a
+    // single text node rarely has both. Find any SHORT text node holding a bare
+    // "B0XXXXXXXX" (the ASIN cell), walk up to the product-card container, extract.
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null)
     const hits = []
     let n
-    while ((n = walker.nextNode())) { if (/\bASIN:?\s*B0[A-Z0-9]{8}\b/i.test(n.nodeValue || '')) hits.push(n) }
+    while ((n = walker.nextNode())) { const v = n.nodeValue || ''; if (v.length < 80 && /\bB0[A-Z0-9]{8}\b/.test(v)) hits.push(n) }
     for (const tn of hits) {
       let cont = tn.parentElement
       for (let i = 0; i < 12 && cont && cont.parentElement; i++) {
@@ -1002,6 +1003,7 @@ async function parseSponsoredCards(opts) {
     if (byKey.size !== reported) { reported = byKey.size; try { onProgress(byKey.size) } catch (e) {} }
   }
   const scroller = document.scrollingElement || document.documentElement
+  await sleep(1000) // let the product grid render after the search before harvesting
   harvest()
   let last = -1, stalls = 0
   for (let i = 0; i < 400 && byKey.size < maxCards; i++) {
@@ -1435,7 +1437,8 @@ function mountSearchPanel() {
       const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null)
       let asinNodes = 0, node, firstCont = null
       while ((node = walker.nextNode())) {
-        if (/\bASIN:?\s*B0[A-Z0-9]{8}\b/i.test(node.nodeValue || '')) {
+        const v = node.nodeValue || ''
+        if (v.length < 80 && /\bB0[A-Z0-9]{8}\b/.test(v)) {
           asinNodes++
           if (!firstCont) { let c = node.parentElement; for (let i = 0; i < 12 && c && c.parentElement; i++) { const t = c.textContent || ''; if (/\$\s?\d/.test(t) && /estimated epc|accept|budget availability/i.test(t)) break; c = c.parentElement } firstCont = c }
         }
