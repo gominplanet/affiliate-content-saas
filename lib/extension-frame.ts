@@ -148,17 +148,34 @@ export async function requestMessageBrand(detailsUrl: string, message: string): 
   return { ok: !!resp.ok, error: resp.error, reason: resp.reason }
 }
 
+/** Ping SCOUT, tolerant of a cold MV3 service worker.
+ *
+ *  Chrome unloads an extension's service worker after ~30s idle. A single short
+ *  ping can miss the wake-up window and wrongly report SCOUT "not installed"
+ *  while it's right there (the "Get SCOUT" / "Install / enable SCOUT" false
+ *  negative). We give the worker a generous budget and retry once so a sleeping
+ *  worker gets time to boot and answer. This adds latency ONLY when SCOUT is
+ *  present-but-asleep: a genuinely-absent extension makes chrome.sendMessage set
+ *  lastError almost immediately, so sendToExtension returns fast and the retry
+ *  loop still bails in a few ms. */
+async function pingScout(): Promise<{ ok?: boolean; version?: string } | null> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const resp = await sendToExtension<{ ok?: boolean; version?: string }>({ type: 'MVP_PING' }, 4000)
+    if (resp?.ok) return resp
+  }
+  return null
+}
+
 /** True if the helper extension is installed and responds to a ping. */
 export async function isExtensionAvailable(): Promise<boolean> {
-  const resp = await sendToExtension<{ ok?: boolean }>({ type: 'MVP_PING' }, 1500)
-  return !!resp?.ok
+  return !!(await pingScout())?.ok
 }
 
 /** Installed state + version (the ping returns the manifest version). Lets the
  *  EPC page show an "update SCOUT" banner when it's behind SCOUT_LATEST_VERSION.
  *  version is null when the extension isn't installed / didn't respond. */
 export async function getScoutStatus(): Promise<{ installed: boolean; version: string | null }> {
-  const resp = await sendToExtension<{ ok?: boolean; version?: string }>({ type: 'MVP_PING' }, 1500)
+  const resp = await pingScout()
   return { installed: !!resp?.ok, version: (resp && typeof resp.version === 'string') ? resp.version : null }
 }
 
