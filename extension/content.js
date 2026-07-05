@@ -1670,10 +1670,30 @@ try {
   })
 } catch (e) { try { mountSearchPanel() } catch (e2) {} } // no storage API → default on
 
+// Learn the creator's own Creator Connections id from any CC page they visit and
+// hand it to the background worker to cache. That's what lets "Check CC" deep-link
+// to the working campaign grid even when the user has NO CC tab open — without it,
+// SCOUT could only scan a CC tab that happened to already be open, and opening its
+// own tab landed on Amazon's dead legacy shell. Sends once per distinct id.
+let _ccIdSent = null
+function captureCreatorId() {
+  try {
+    const m = location.href.match(/creatorId=(amzn1\.creator\.[a-z0-9-]+)/i)
+    const id = m && m[1]
+    if (id && id !== _ccIdSent) {
+      _ccIdSent = id
+      const p = chrome.runtime.sendMessage({ type: 'CC_CREATOR_ID', creatorId: id })
+      if (p && p.catch) p.catch(() => {})
+    }
+  } catch (e) {}
+}
+try { captureCreatorId() } catch (e) {}
+
 // Keep it in sync with SPA navigation (CC is a React app). Cheap poll: mount when
 // on a CC page and missing; remove when we navigate away or SCOUT is switched off.
 setInterval(() => {
   try {
+    captureCreatorId() // cheap + self-guarded; the id can appear after SPA nav
     const existing = document.getElementById(PANEL_ID)
     if (!SCOUT_ENABLED) { if (existing) existing.remove(); return }
     const onCC = isCCPage()

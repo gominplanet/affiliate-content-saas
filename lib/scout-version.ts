@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.11.51'
+export const SCOUT_LATEST_VERSION = '1.11.52'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Stops the moment Amazon rate-limits (no more tab-hammering during a big campaign check), the ✍️ Draft button now works on stricter Amazon pages, and the commission reader no longer mistakes a discount badge for the commission rate. Chrome auto-updates the Web Store build in the background — nothing to do.'
+  'Check CC now works even when you don\'t already have your Creator Connections tab open — SCOUT opens the real campaign grid (Amazon\'s new /p/connect page, not the dead legacy URL) and remembers your creator id so it can deep-link straight to it. Chrome auto-updates the Web Store build in the background — nothing to do.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar

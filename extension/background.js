@@ -270,7 +270,25 @@ async function captureYouTubeFrames({ youtubeVideoId, fractions, callerTabId }) 
 // content script in their own logged-in session, hand the RAW campaigns back,
 // and return focus to the MVP tab. We never open more than one CC tab — repeat
 // scouts reuse it. All filtering / ranking / selection happens in the app.
-const CC_OPPORTUNITIES_URL = 'https://www.amazon.com/creatorconnections/'
+// The REAL Creator Connections app (Amazon's 2026 redesign) lives here — NOT the
+// legacy https://www.amazon.com/creatorconnections/ URL, which is a dead shell
+// that renders no campaign grid. Opening that shell was why "Check CC" only
+// worked when the user ALREADY had their own CC tab open: with no tab, SCOUT
+// navigated to the shell and scanned nothing. The real app is per-creator — the
+// grid only mounts on a URL carrying the caller's creatorId. We LEARN that id
+// from any CC page the user visits (content.js → CC_CREATOR_ID), cache it, and
+// deep-link straight to the working grid even when no CC tab is open.
+const CC_BASE = 'https://affiliate-program.amazon.com/p/connect/requests'
+let _ccCreatorId = null
+try { chrome.storage.local.get(['ccCreatorId'], (o) => { if (o && o.ccCreatorId) _ccCreatorId = o.ccCreatorId }) } catch (e) {}
+
+function ccOpportunitiesUrl() {
+  const q = _ccCreatorId ? `creatorId=${encodeURIComponent(_ccCreatorId)}&` : ''
+  // status=opportunity + type=affiliate-plus = the "New Opportunities / Affiliate+"
+  // grid SCOUT scans. With no known creatorId the app resolves it from the
+  // logged-in session on load; we cache it as soon as the page reports it back.
+  return `${CC_BASE}?${q}status=opportunity&type=affiliate-plus`
+}
 
 const _sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -513,6 +531,16 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     validateMvpToken(msg.token).then(sendResponse)
     return true // async response
   }
+  // A CC page reported the creator's own id — cache it so ccOpportunitiesUrl()
+  // can deep-link to the working grid later, even with no CC tab open.
+  if (msg && msg.type === 'CC_CREATOR_ID' && msg.creatorId) {
+    if (msg.creatorId !== _ccCreatorId) {
+      _ccCreatorId = msg.creatorId
+      try { chrome.storage.local.set({ ccCreatorId: msg.creatorId }) } catch (e) {}
+    }
+    sendResponse({ ok: true })
+    return false
+  }
   return false
 })
 
@@ -548,7 +576,7 @@ async function scanCreatorConnections(callerTabId) {
     if (!tab || tab.id == null) {
       // None open — open the opportunities view ourselves, FOREGROUND so the
       // React/virtualized grid renders reliably (background tabs throttle).
-      tab = await chrome.tabs.create({ url: CC_OPPORTUNITIES_URL, active: true })
+      tab = await chrome.tabs.create({ url: ccOpportunitiesUrl(), active: true })
       opened = true
       await waitForTabLoad(tab.id, 25000)
       await _sleep(3500) // let the SPA + grid paint before scrolling/harvesting
@@ -609,7 +637,7 @@ async function ccFindCampaign(query, asin, callerTabId) {
   let opened = false
   try {
     if (!tab || tab.id == null) {
-      tab = await chrome.tabs.create({ url: CC_OPPORTUNITIES_URL, active: false })
+      tab = await chrome.tabs.create({ url: ccOpportunitiesUrl(), active: false })
       opened = true
       await waitForTabLoad(tab.id, 25000)
       await _sleep(3500) // let the SPA + grid mount before searching
@@ -674,7 +702,7 @@ async function ccMatchCampaigns(keyword, asins, callerTabId) {
   let opened = false
   try {
     if (!tab || tab.id == null) {
-      tab = await chrome.tabs.create({ url: CC_OPPORTUNITIES_URL, active: false })
+      tab = await chrome.tabs.create({ url: ccOpportunitiesUrl(), active: false })
       opened = true
       await waitForTabLoad(tab.id, 25000)
       await _sleep(3500)
