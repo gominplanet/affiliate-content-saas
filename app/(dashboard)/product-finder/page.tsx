@@ -9,7 +9,7 @@
  * Data is LIVE (read at that moment), not a cached third-party database.
  */
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
 import { Loader2, Search, Sparkles, ExternalLink, PackageSearch, MessageSquare, Radar } from 'lucide-react'
@@ -48,10 +48,45 @@ function priceInBucket(price: string | null | undefined, b: { min: number | null
   return true
 }
 
+const SORT_OPTIONS: { value: string; label: string }[] = [
+  { value: 'relevance',   label: 'Relevance' },
+  { value: 'sales_desc',  label: 'Sales: high → low' },
+  { value: 'rating_desc', label: 'Rating: high → low' },
+  { value: 'price_asc',   label: 'Price: low → high' },
+  { value: 'price_desc',  label: 'Price: high → low' },
+]
+
+// Sort a copy of the results. Unknown values (null price/rating/sales) always
+// sink to the bottom regardless of direction, so a product SCOUT couldn't read
+// never jumps to the top of a "high → low" sort. 'relevance' keeps Amazon order.
+function sortProducts(list: FinderProduct[], sortBy: string): FinderProduct[] {
+  if (sortBy === 'relevance') return list
+  const finite = (v: number | null | undefined) => (typeof v === 'number' && isFinite(v) ? v : null)
+  const by = (get: (p: FinderProduct) => number | null, dir: 'asc' | 'desc') => (a: FinderProduct, b: FinderProduct) => {
+    const av = get(a), bv = get(b)
+    if (av == null && bv == null) return 0
+    if (av == null) return 1
+    if (bv == null) return -1
+    return dir === 'asc' ? av - bv : bv - av
+  }
+  const price  = (p: FinderProduct) => parsePrice(p.price)
+  const rating = (p: FinderProduct) => finite(parseFloat(p.rating ?? ''))
+  const sales  = (p: FinderProduct) => finite(p.monthlySales)
+  const copy = [...list]
+  switch (sortBy) {
+    case 'sales_desc':  return copy.sort(by(sales, 'desc'))
+    case 'rating_desc': return copy.sort(by(rating, 'desc'))
+    case 'price_asc':   return copy.sort(by(price, 'asc'))
+    case 'price_desc':  return copy.sort(by(price, 'desc'))
+    default:            return list
+  }
+}
+
 export default function ProductFinderPage() {
   const [keyword, setKeyword] = useState('')
   const [minSales, setMinSales] = useState('100')
   const [priceRange, setPriceRange] = useState('any')
+  const [sortBy, setSortBy] = useState('relevance')
   const [mustVideo, setMustVideo] = useState(false)
   const [maxResults, setMaxResults] = useState('15')
   const [searching, setSearching] = useState(false)
@@ -70,6 +105,9 @@ export default function ProductFinderPage() {
   const [live, setLive] = useState<Record<string, Live>>({})
   const [ccChecking, setCcChecking] = useState<string | null>(null) // asin being live-checked
   const [ccAllRunning, setCcAllRunning] = useState(false)          // "Check all CC" in progress
+
+  // Results in the chosen sort order (relevance = Amazon's original scan order).
+  const sortedResults = useMemo(() => (results ? sortProducts(results, sortBy) : []), [results, sortBy])
 
   // Open the Message modal for a found product. First check whether this ASIN is
   // already an imported Creator Connections campaign — if so, open in AUTO-SEND
@@ -349,21 +387,31 @@ export default function ProductFinderPage() {
             {meta
               ? <p className="text-[12px]" style={{ color: 'var(--text-faint)' }}>{results.length} passed · deep-checked {meta.scanned} of {meta.totalFound} scanned</p>
               : <span />}
-            {(() => {
-              const uncheckable = results.filter(p => !imported[p.asin] && !live[p.asin]).length
-              return (
-                <button onClick={checkAllCC} disabled={ccAllRunning || uncheckable === 0}
-                  title="One Creator Connections search for your keyword, matched against every row at once — flags which products you can auto-send to"
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold border disabled:opacity-50 flex-shrink-0"
-                  style={{ color: '#7C3AED', borderColor: '#d6c6fb', background: 'rgba(124,58,237,0.05)' }}>
-                  {ccAllRunning ? <Loader2 size={13} className="animate-spin" /> : <Radar size={13} />}
-                  {ccAllRunning ? 'Scanning Creator Connections…' : `Check all CC${uncheckable ? ` (${uncheckable})` : ''}`}
-                </button>
-              )
-            })()}
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <label className="inline-flex items-center gap-1.5 text-[12px]" style={{ color: 'var(--text-faint)' }}>
+                Sort
+                <select value={sortBy} onChange={e => setSortBy(e.target.value)}
+                  className="rounded-lg text-[12px] px-2 py-1.5 outline-none"
+                  style={{ backgroundColor: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text)' }}>
+                  {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </label>
+              {(() => {
+                const uncheckable = results.filter(p => !imported[p.asin] && !live[p.asin]).length
+                return (
+                  <button onClick={checkAllCC} disabled={ccAllRunning || uncheckable === 0}
+                    title="One Creator Connections search for your keyword, matched against every row at once — flags which products you can auto-send to"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold border disabled:opacity-50 flex-shrink-0"
+                    style={{ color: '#7C3AED', borderColor: '#d6c6fb', background: 'rgba(124,58,237,0.05)' }}>
+                    {ccAllRunning ? <Loader2 size={13} className="animate-spin" /> : <Radar size={13} />}
+                    {ccAllRunning ? 'Scanning Creator Connections…' : `Check all CC${uncheckable ? ` (${uncheckable})` : ''}`}
+                  </button>
+                )
+              })()}
+            </div>
           </div>
           <div className="card divide-y divide-gray-100 dark:divide-white/10">
-            {results.map(p => (
+            {sortedResults.map(p => (
               <div key={p.asin} className="flex items-center gap-3 p-3">
                 {p.image
                   ? <img src={p.image} alt="" className="w-12 h-12 rounded object-contain flex-shrink-0" style={{ background: '#fff' }} />
