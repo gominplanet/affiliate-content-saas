@@ -15,8 +15,9 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getAuthAndOwner } from '@/lib/agency-auth'
-import { listYouTubeChannels, setDefaultChannel, maxChannelsForTier } from '@/lib/youtube-channels'
+import { listYouTubeChannels, setDefaultChannel, maxChannelsForTier, canAddChannel } from '@/lib/youtube-channels'
 import { bustYouTubeCache } from '@/app/api/youtube/drafts/route'
+import { resolveYouTubeChannel } from '@/services/youtube'
 import { normalizeTier } from '@/lib/tier'
 
 export const runtime = 'nodejs'
@@ -58,7 +59,7 @@ export async function POST(request: Request) {
   if ('error' in auth) return auth.error
   const { ownerId } = auth
 
-  let body: { action?: string; channelRowId?: string | null; siteId?: string }
+  let body: { action?: string; channelRowId?: string | null; siteId?: string; channelUrl?: string }
   try { body = await request.json() } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }) }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -75,6 +76,40 @@ export async function POST(request: Request) {
     // reloads from the newly-selected default instead of the old channel's videos.
     try { await bustYouTubeCache(supabase, ownerId) } catch { /* non-fatal */ }
     return NextResponse.json({ ok: true })
+  }
+
+  // Connect a channel by its public URL — no OAuth. Resolves the URL to a
+  // channel ID and stores a read-only row (no tokens). Co-Pilot then lists that
+  // channel's PUBLIC uploads by ID. This is the reliable path for creators whose
+  // channel is a Brand Account that Google's OAuth chooser won't let them pick.
+  if (body.action === 'addPublic') {
+    const url = (body.channelUrl || '').toString().trim()
+    if (!url) return NextResponse.json({ error: 'Paste your channel URL (e.g. youtube.com/@yourchannel).' }, { status: 400 })
+    const gate = await canAddChannel(supabase, ownerId, tier)
+    if (!gate.allowed) {
+      return NextResponse.json({ error: `You're at your channel limit (${gate.cap}). Remove one first${gate.cap <= 1 ? ', or upgrade to Pro for more' : ''}.`, proRequired: gate.cap <= 1 }, { status: 403 })
+    }
+    const apiKey = process.env.YOUTUBE_API_KEY
+    if (!apiKey) return NextResponse.json({ error: 'YouTube lookup not configured' }, { status: 500 })
+    const resolved = await resolveYouTubeChannel(apiKey, url)
+    if (!resolved) {
+      return NextResponse.json({ error: "Couldn't find a channel at that URL. Paste the channel's YouTube page link, e.g. youtube.com/@yourchannel." }, { status: 404 })
+    }
+    const existing = await listYouTubeChannels(supabase, ownerId)
+    if (existing.some(c => c.channelId === resolved.channelId)) {
+      return NextResponse.json({ error: `"${resolved.title}" is already connected.` }, { status: 409 })
+    }
+    // First real row → make it the default so Co-Pilot reads it straight away.
+    const isFirst = existing.filter(c => c.id !== 'legacy').length === 0
+    const { error } = await sb.from('youtube_channels').insert({
+      user_id: ownerId,
+      channel_id: resolved.channelId,
+      channel_title: resolved.title,
+      is_default: isFirst,
+    })
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    try { await bustYouTubeCache(supabase, ownerId) } catch { /* non-fatal */ }
+    return NextResponse.json({ ok: true, channel: { channelId: resolved.channelId, channelTitle: resolved.title } })
   }
 
   if (body.action === 'setSiteChannel') {

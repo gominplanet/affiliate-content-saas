@@ -12,7 +12,7 @@
  */
 
 import { useEffect, useState, useCallback } from 'react'
-import { Loader2, Plus, Star, Trash2, Youtube } from 'lucide-react'
+import { Loader2, Plus, Star, Trash2, Youtube, Link2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface Channel { id: string; channelId: string; channelTitle: string; isDefault: boolean; hasOAuth: boolean }
@@ -25,6 +25,7 @@ export function YouTubeChannelsManager() {
   const [isPro, setIsPro] = useState(false)
   const [cap, setCap] = useState(1)
   const [busy, setBusy] = useState<string | null>(null)
+  const [channelUrl, setChannelUrl] = useState('')
 
   const load = useCallback(async () => {
     try {
@@ -56,10 +57,47 @@ export function YouTubeChannelsManager() {
     finally { setBusy(null) }
   }
 
-  // Nothing to manage until at least one channel is connected (the main connect
-  // card above handles the zero-state).
+  async function connectByUrl() {
+    const url = channelUrl.trim()
+    if (!url) return
+    const ok = await post({ action: 'addPublic', channelUrl: url }, 'addUrl')
+    if (ok) { setChannelUrl(''); toast.success('Channel connected — open Co-Pilot to see its videos.') }
+  }
+
+  // Connect a channel by pasting its URL — the reliable path for a Brand Account
+  // channel that Google's sign-in won't let you pick. Reads its published videos.
+  const urlConnect = () => (
+    <div>
+      <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Connect a channel by its link</p>
+      <p className="text-[11px] text-[#6e6e73] dark:text-[#8e8e93] mb-2">
+        Paste your channel&rsquo;s YouTube URL. Best when your channel is a <b>Brand Account</b> the Google sign-in won&rsquo;t let you pick. We read its published videos — no sign-in needed.
+      </p>
+      <div className="flex items-center gap-2">
+        <input
+          type="text"
+          value={channelUrl}
+          onChange={(e) => setChannelUrl(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') connectByUrl() }}
+          placeholder="youtube.com/@yourchannel"
+          className="flex-1 min-w-0 text-sm px-2.5 py-1.5 rounded-lg bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] focus:border-[#7C3AED] focus:outline-none"
+        />
+        <button
+          onClick={connectByUrl}
+          disabled={busy === 'addUrl' || !channelUrl.trim()}
+          className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-white bg-[#7C3AED] hover:bg-[#6d28d9] disabled:opacity-50 transition-colors shrink-0"
+        >
+          {busy === 'addUrl' ? <Loader2 size={13} className="animate-spin" /> : <><Link2 size={13} /> Connect</>}
+        </button>
+      </div>
+    </div>
+  )
+
   if (loading) return null
-  if (channels.length === 0) return null
+
+  // Zero channels: show just the connect-by-URL option (the OAuth card is above).
+  if (channels.length === 0) {
+    return <div className="card p-6 mt-4">{urlConnect()}</div>
+  }
 
   const canAddMore = channels.length < cap
 
@@ -146,6 +184,11 @@ export function YouTubeChannelsManager() {
           </div>
         </div>
       )}
+
+      {/* Connect by channel URL — also available alongside the OAuth channels */}
+      <div className="mt-5 pt-4 border-t border-gray-200 dark:border-white/10">
+        {urlConnect()}
+      </div>
 
       {!isPro && (
         <a href="/pricing" className="inline-block mt-4 text-xs font-semibold text-[#7C3AED] hover:underline">

@@ -167,6 +167,75 @@ export function createYouTubeService(apiKey: string) {
   return new YouTubeService(apiKey)
 }
 
+/**
+ * Resolve a pasted YouTube channel reference to its channel ID + title, using
+ * the public API key (no OAuth). Accepts a full URL or a bare value:
+ *   - .../channel/UC…  or a bare UC… id   → channels.list?id=
+ *   - .../@handle       or a bare @handle → channels.list?forHandle=
+ *   - .../user/NAME                        → channels.list?forUsername=
+ *   - .../c/NAME  or a plain search term   → search.list (first channel hit)
+ *
+ * This is how a creator whose channel is a Brand Account (which YouTube OAuth
+ * often can't select) connects it: we read that channel's PUBLIC uploads by ID.
+ * Returns null when nothing resolves.
+ */
+export async function resolveYouTubeChannel(
+  apiKey: string,
+  input: string,
+): Promise<{ channelId: string; title: string } | null> {
+  const raw = (input || '').trim()
+  if (!raw) return null
+
+  const channelsGet = async (params: Record<string, string>) => {
+    try {
+      const url = new URL(`${BASE}/channels`)
+      url.searchParams.set('key', apiKey)
+      url.searchParams.set('part', 'snippet')
+      Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v))
+      const res = await fetch(url.toString())
+      if (!res.ok) return null
+      const data = await res.json() as any
+      const item = data.items?.[0]
+      return item ? { channelId: item.id as string, title: (item.snippet?.title as string) || (item.id as string) } : null
+    } catch { return null }
+  }
+
+  // 1. A UC… channel id anywhere in the string (covers /channel/UC… and bare id).
+  const uc = raw.match(/UC[0-9A-Za-z_-]{22}/)
+  if (uc) { const r = await channelsGet({ id: uc[0] }); if (r) return r }
+
+  // 2. A @handle (in a URL or bare).
+  const handle = raw.match(/@([0-9A-Za-z._-]+)/)
+  if (handle) { const r = await channelsGet({ forHandle: '@' + handle[1] }); if (r) return r }
+
+  // 3. A legacy /user/NAME vanity URL.
+  const user = raw.match(/\/user\/([0-9A-Za-z._-]+)/)
+  if (user) { const r = await channelsGet({ forUsername: user[1] }); if (r) return r }
+
+  // 4. /c/NAME custom URL, or a plain (non-URL) search term → search.list.
+  const cName = raw.match(/\/c\/([0-9A-Za-z._-]+)/)
+  const term = cName ? cName[1] : (/^https?:\/\//i.test(raw) ? '' : raw)
+  if (term) {
+    try {
+      const url = new URL(`${BASE}/search`)
+      url.searchParams.set('key', apiKey)
+      url.searchParams.set('part', 'snippet')
+      url.searchParams.set('type', 'channel')
+      url.searchParams.set('maxResults', '1')
+      url.searchParams.set('q', term)
+      const res = await fetch(url.toString())
+      if (res.ok) {
+        const data = await res.json() as any
+        const item = data.items?.[0]
+        const id = item?.id?.channelId
+        if (id) return { channelId: id as string, title: (item.snippet?.title as string) || id }
+      }
+    } catch { /* fall through */ }
+  }
+
+  return null
+}
+
 // ── OAuth-based YouTube service (read private videos + update metadata) ────────
 
 export interface DraftVideo {

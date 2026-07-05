@@ -137,10 +137,11 @@ export default function ConnectYouTubePage() {
           )}
         </div>
 
-        {/* Multi-channel manager (Pro) — connect more channels, set a default,
-            and choose which channel each blog pulls from. Renders only once at
-            least one channel is connected. */}
-        {!loading && connected && <YouTubeChannelsManager />}
+        {/* Channel manager — set a default, per-site mapping, remove, and connect
+            a channel by its URL (the reliable path for Brand Accounts OAuth can't
+            pick). Rendered regardless of OAuth state so the URL-connect option is
+            always reachable; it self-hides while loading. */}
+        {!loading && <YouTubeChannelsManager />}
 
         <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-3">
           Need to connect Instagram, TikTok, Pinterest, X and the rest? Those live on{' '}

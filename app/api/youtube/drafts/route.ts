@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { createYouTubeOAuthService } from '@/services/youtube'
-import { getChannelOAuthToken } from '@/lib/youtube-channels'
+import { createYouTubeOAuthService, createYouTubeService } from '@/services/youtube'
+import { getChannelOAuthToken, getChannel } from '@/lib/youtube-channels'
 
 // Cache freshness window: 15 minutes. Reads within this window return DB rows —
 // zero YouTube API units. OLDER-but-present → a cheap incremental top-up of just
@@ -132,6 +132,49 @@ export async function GET(request: Request) {
     // resolve the user's DEFAULT channel (youtube_channels, falling back to the
     // legacy integrations token). getChannelOAuthToken refreshes + persists.
     const channelId = (searchParams.get('channelId') || '').trim() || null
+
+    // ── Public (connected-by-URL) channel ────────────────────────────────────
+    // A channel added via its URL has a channel_id but NO OAuth token — the fix
+    // for creators whose channel is a Brand Account that OAuth can't select. We
+    // list its PUBLIC uploads by channel ID with the API key (no OAuth identity,
+    // so it always reads the RIGHT channel). Published videos only — there are no
+    // private drafts to see without OAuth, which is fine for published→blog.
+    // Resolve the target channel (channelId=null → the user's default) so a
+    // public default channel takes the public path even without an explicit pick.
+    const picked = await getChannel(supabase, user.id, channelId)
+    if (picked && !picked.hasOAuth && picked.channelId) {
+      const apiKey = process.env.YOUTUBE_API_KEY
+      if (!apiKey) return NextResponse.json({ error: 'YouTube lookup not configured' }, { status: 500 })
+      try {
+        const svc = createYouTubeService(apiKey)
+        const { videos, nextPageToken } = await svc.getChannelVideos(picked.channelId, 50, pageToken || undefined)
+        const lower = q.toLowerCase()
+        const mapped = videos
+          .map((v, i) => ({
+            youtubeVideoId: v.youtubeVideoId,
+            title: v.title,
+            description: v.description,
+            thumbnailUrl: v.thumbnailUrl,
+            status: 'public' as const,
+            publishedAt: v.publishedAt,
+            publishAt: null,
+            detectedAsin: detectAsin(v.title),
+            uploadPosition: i,
+          }))
+          // A public channel is all published videos, so the includePublished
+          // toggle doesn't apply — we always return them. Search filters by text.
+          .filter(v => !q || v.title.toLowerCase().includes(lower) || v.description.toLowerCase().includes(lower))
+        return NextResponse.json({
+          drafts: await enrichWithPushState(supabase, user.id, mapped),
+          nextPageToken,
+          publicChannel: true,
+          channelTitle: picked.channelTitle,
+        })
+      } catch (e) {
+        return NextResponse.json({ error: e instanceof Error ? e.message : 'Failed to load channel videos' }, { status: 502 })
+      }
+    }
+
     // When a specific channel is picked we BYPASS the per-user cache entirely
     // (it's keyed by user, not channel) so one channel's videos never bleed
     // into another's. The default view keeps caching as before.
