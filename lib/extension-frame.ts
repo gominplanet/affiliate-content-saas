@@ -24,11 +24,21 @@ export const SCOUT_EXTENSION_ID = process.env.NEXT_PUBLIC_SCOUT_EXTENSION_ID || 
  *  on the store build, the env id can be dropped. See extension/CHROME-WEB-STORE.md. */
 export const SCOUT_STORE_EXTENSION_ID = 'blpmlneliggaekangckpgknphpacapkg'
 
-/** Every id MVP will try, in order: env (unpacked) first so current users are
- *  unaffected, then the Web Store build. Deduped, no empties — so SCOUT is
- *  reachable from the store build even if NEXT_PUBLIC_SCOUT_EXTENSION_ID is unset. */
+/** The load-unpacked (sideloaded) build's id — the baked-key build. Kept as a
+ *  reachable fallback so a user can TEST a newer sideloaded SCOUT (e.g. a build
+ *  that's newer than the Web Store copy, before Google approves it): with the
+ *  store build disabled, feature messages fall through to this id. Also revives
+ *  any pre-store unpacked installs that never had NEXT_PUBLIC_SCOUT_EXTENSION_ID
+ *  set. Declared here (before SCOUT_EXTENSION_IDS) and re-exported below. */
+export const KNOWN_SIDELOAD_EXTENSION_ID = 'inpklaogoifhgaimbnlgmijnnjkopnlc'
+
+/** Every id MVP will try, in order: env (explicit override) first, then the
+ *  Web Store build (canonical, auto-updating), then the sideload build as a
+ *  fallback. sendToExtension returns the FIRST id that answers — so the store
+ *  build wins for normal users, and a sideloaded test build is only reached when
+ *  the store one isn't installed/enabled. Deduped, no empties. */
 const SCOUT_EXTENSION_IDS = Array.from(
-  new Set([SCOUT_EXTENSION_ID, SCOUT_STORE_EXTENSION_ID].filter(Boolean)),
+  new Set([SCOUT_EXTENSION_ID, SCOUT_STORE_EXTENSION_ID, KNOWN_SIDELOAD_EXTENSION_ID].filter(Boolean)),
 )
 
 // chrome.runtime is injected into mvpaffiliate.io pages only when the
@@ -151,10 +161,6 @@ export async function getScoutStatus(): Promise<{ installed: boolean; version: s
   const resp = await sendToExtension<{ ok?: boolean; version?: string }>({ type: 'MVP_PING' }, 1500)
   return { installed: !!resp?.ok, version: (resp && typeof resp.version === 'string') ? resp.version : null }
 }
-
-/** The OLD load-unpacked (sideloaded) extension id — the baked-key build users
- *  installed before SCOUT hit the Web Store. Distinct from the store id. */
-export const KNOWN_SIDELOAD_EXTENSION_ID = 'inpklaogoifhgaimbnlgmijnnjkopnlc'
 
 /** Which SCOUT is installed: the auto-updating Web Store build, the old
  *  manually-loaded (sideloaded) build, or none. Powers the one-time "move to
