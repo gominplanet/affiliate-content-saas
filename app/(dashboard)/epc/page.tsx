@@ -491,8 +491,8 @@ export default function EpcScoutPage() {
         </span>
       </div>
       <PageHero
-        title="MVP x EPC"
-        subtitle="Turn the Amazon Creator Connections campaigns you're offered into ready-to-publish blog posts — scan with SCOUT, keep the high-EPC winners, publish."
+        title="AMZ+ & EPC"
+        subtitle="Turn the Amazon Creator Connections campaigns you're offered — Affiliate+ (extra commission per sale) and EPC (paid per click) — into ready-to-publish blog posts. Scan with SCOUT, keep the winners, publish."
       />
 
       {/* ── Move-to-store nudge — only for the old manually-loaded (sideloaded)
@@ -524,9 +524,9 @@ export default function EpcScoutPage() {
         style={{ background: 'rgba(245,158,11,0.10)', borderColor: 'rgba(245,158,11,0.40)' }}>
         <Lock size={16} className="flex-shrink-0 mt-0.5" style={{ color: '#f59e0b' }} />
         <div>
-          <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>Who this is for — you need Amazon Creator Connections (with EPC)</p>
+          <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>Who this is for — you need Amazon Creator Connections</p>
           <p className="text-[12px] leading-relaxed mt-1" style={{ color: 'var(--text-soft)' }}>
-            EPC Scout only does something if your Amazon Associates account has <strong>Creator Connections</strong> with the <strong>Sponsored Products for Creators</strong> program — the campaigns that show an <span className="font-medium">&ldquo;Estimated EPC: Up to&nbsp;$X&rdquo;</span>. That&rsquo;s an Amazon invite/eligibility, not a switch you flip here, and most creators don&rsquo;t have it yet. <strong>No &ldquo;Creator Connections&rdquo; tab in your <a href={CC_URL} target="_blank" rel="noopener noreferrer" className="underline">Amazon Associates</a> account = nothing for SCOUT to scan</strong>, and this tool won&rsquo;t do anything for you. If that&rsquo;s you, use Reviews, Comparisons or Buying Guides instead.
+            This only does something if your Amazon Associates account has <strong>Creator Connections</strong>. It scans both program types: <strong>Affiliate+</strong> (extra commission per sale — a <span className="font-medium">&ldquo;12%&rdquo;</span>-style bonus) and <strong>Sponsored Products for Creators</strong> / EPC (paid per click — the <span className="font-medium">&ldquo;Estimated EPC: Up to&nbsp;$X&rdquo;</span> campaigns). That&rsquo;s an Amazon invite/eligibility, not a switch you flip here, and most creators don&rsquo;t have it yet. <strong>No &ldquo;Creator Connections&rdquo; tab in your <a href={CC_URL} target="_blank" rel="noopener noreferrer" className="underline">Amazon Associates</a> account = nothing for SCOUT to scan</strong>, and this tool won&rsquo;t do anything for you. If that&rsquo;s you, use Reviews, Comparisons or Buying Guides instead.
           </p>
         </div>
       </div>
@@ -537,13 +537,13 @@ export default function EpcScoutPage() {
           <Sparkles size={14} className="text-[#7C3AED]" /> What it does &amp; how to run it
         </p>
         <p className="text-[12px] leading-relaxed mb-3" style={{ color: 'var(--text-soft)' }}>
-          Amazon pays you per click on the Creator Connections campaigns you accept. EPC Scout finds those campaigns, lets you keep the highest-earning ones, and writes + publishes a blog post for each — so your blog covers exactly what Amazon is already paying you to promote.
+          Amazon Creator Connections pays you extra on campaigns you accept — either a bigger <strong>commission per sale</strong> (Affiliate+) or a flat rate <strong>per click</strong> (EPC). SCOUT finds those campaigns, lets you keep the highest-earning ones (sorted per program on their own tab), and writes + publishes a blog post for each — so your blog covers exactly what Amazon is already paying you to promote.
         </p>
         <ol className="text-[12px] leading-relaxed list-decimal pl-5 mb-4 space-y-1" style={{ color: 'var(--text-soft)' }}>
           <li><button onClick={() => setShowInstall(s => !s)} className="text-[#7C3AED] font-medium hover:underline">Install the SCOUT extension</button> (it’s not in the Chrome Web Store).</li>
           <li>Copy your ingest token below, paste it into SCOUT, and hit <span className="font-medium">Connect</span> (the token then collapses out of the way).</li>
-          <li>On an Amazon <a href={CC_URL} target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] font-medium hover:underline inline-flex items-center gap-0.5">Creator Connections <ExternalLink size={10} /></a> opportunities page, set your keyword / EPC / budget filters, hit <span className="font-medium">Scan this page</span>, pick the winners, and <span className="font-medium">Push to MVP</span>.</li>
-          <li>Your campaigns land in the queue below — filter, pick, generate.</li>
+          <li>On an Amazon <a href={CC_URL} target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] font-medium hover:underline inline-flex items-center gap-0.5">Creator Connections <ExternalLink size={10} /></a> page, the SCOUT panel appears above the filters. Search, sort by commission (Affiliate+) or Estimated EPC, tick the winners, and hit <span className="font-medium">Import selected into MVP</span>.</li>
+          <li>Your campaigns land in the queue below, split into <span className="font-medium">Affiliate+</span> and <span className="font-medium">EPC</span> tabs — filter, pick, Generate.</li>
         </ol>
 
         {/* Token */}

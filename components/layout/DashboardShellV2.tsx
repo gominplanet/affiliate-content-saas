@@ -451,7 +451,7 @@ export default function DashboardShellV2({
       // add them as items here (set each item's gate as it opens up).
       label: 'Labs',
       items: [
-        { href: '/epc', icon: <Radar size={15} />, label: 'MVP x EPC', gate: canUseLabs },
+        { href: '/epc', icon: <Radar size={15} />, label: 'AMZ+ & EPC', gate: canUseLabs },
         // SCOUT-powered Amazon Product Finder — keyword + rules → live-scraped
         // results into MVP. In Labs while the Amazon-search selectors get live
         // calibration; graduate to Create once verified.
