@@ -48,9 +48,35 @@ function renderToggle(on) {
     : 'Off — the panel won’t appear on Amazon.'
 }
 
+// ── Optional retail hosts (Walmart, Target, …) ────────────────────────────
+// These are OPTIONAL host permissions so SCOUT's default footprint is Amazon-only
+// and Chrome never disables it on update. The grant needs a user gesture, so it
+// happens right here in the popup (the background can't prompt).
+const RETAIL_ORIGINS = [
+  'https://*.walmart.com/*', 'https://*.target.com/*', 'https://*.bestbuy.com/*',
+  'https://*.homedepot.com/*', 'https://*.lowes.com/*', 'https://*.wayfair.com/*',
+  'https://*.etsy.com/*', 'https://*.ebay.com/*', 'https://*.chewy.com/*',
+  'https://*.costco.com/*', 'https://*.macys.com/*', 'https://*.kohls.com/*',
+  'https://*.newegg.com/*', 'https://*.ulta.com/*', 'https://*.sephora.com/*',
+  'https://*.nike.com/*',
+]
+function renderRetail(on) {
+  $('retail').checked = on
+  $('retailSub').textContent = on
+    ? 'On — Walmart, Target & other stores.'
+    : 'Off — Amazon only.'
+}
+async function refreshRetail() {
+  try {
+    const on = await chrome.permissions.contains({ origins: RETAIL_ORIGINS })
+    renderRetail(!!on)
+  } catch { renderRetail(false) }
+}
+
 // ── boot ────────────────────────────────────────────────────────────────
 chrome.storage.local.get(['ccToken', 'scoutEnabled'], async ({ ccToken, scoutEnabled }) => {
   renderToggle(scoutEnabled !== false) // default ON
+  refreshRetail()
   if (ccToken) {
     $('token').value = ccToken
     const v = await validateToken(ccToken)
@@ -65,6 +91,19 @@ $('enabled').addEventListener('change', () => {
   chrome.storage.local.set({ scoutEnabled: on })
   renderToggle(on)
   // content.js reacts to the storage change (shows/hides the panel live).
+})
+
+$('retail').addEventListener('change', async () => {
+  // request() and remove() must run in this click's user gesture.
+  if ($('retail').checked) {
+    let ok = false
+    try { ok = await chrome.permissions.request({ origins: RETAIL_ORIGINS }) } catch { ok = false }
+    if (!ok) { renderRetail(false); return }
+    renderRetail(true)
+  } else {
+    try { await chrome.permissions.remove({ origins: RETAIL_ORIGINS }) } catch { /* ignore */ }
+    renderRetail(false)
+  }
 })
 
 $('connect').addEventListener('click', async () => {

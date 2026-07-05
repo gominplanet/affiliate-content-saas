@@ -348,7 +348,9 @@ export interface ScrapeUrlResult {
   product?: ScrapedProduct | null
   /** Structured reasons the UI maps to guidance: 'not-installed' (SCOUT absent),
    *  'store-not-supported' (host outside SCOUT's allowed retailer list),
-   *  'no-result' (page read but no product data), 'timeout'. */
+   *  'permission-needed' (the retail hosts are optional — the user must flip
+   *  "Read non-Amazon products" on in the SCOUT popup), 'no-result' (page read
+   *  but no product data), 'timeout'. */
   error?: string
   diag?: Record<string, unknown>
 }

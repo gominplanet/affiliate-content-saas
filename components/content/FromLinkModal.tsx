@@ -58,6 +58,11 @@ export function FromLinkModal({ onClose, onDone }: { onClose: () => void; onDone
           if (r.ok && r.product && r.product.title) {
             scraped = r.product
             toast.message('Read the product page ✓', { description: r.product.title.slice(0, 60) })
+          } else if (r.error === 'permission-needed') {
+            toast.message('Tip: turn on “Read non-Amazon products” in the SCOUT popup', {
+              description: 'It lets SCOUT read this store’s page for a sharper post. Generating from the link for now.',
+              duration: 8000,
+            })
           }
         } catch { /* ignore — fall back to web research */ }
         setPhase('write')

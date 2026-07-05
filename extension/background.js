@@ -1148,9 +1148,28 @@ function scrapeHostAllowed(url) {
   } catch (e) { return false }
 }
 
+// The retail hosts are OPTIONAL permissions (the user grants them once from the
+// SCOUT popup) so the extension isn't disabled on update and the default
+// footprint is Amazon-only. Map a URL to its optional origin pattern.
+function retailOriginForUrl(url) {
+  try {
+    const h = new URL(url).hostname.replace(/^www\./, '')
+    const d = SCRAPE_HOSTS.find((d) => h === d || h.endsWith('.' + d))
+    return d ? `https://*.${d}/*` : null
+  } catch (e) { return null }
+}
+
 async function scanGenericProduct(url, callerTabId) {
   if (!/^https?:\/\//i.test(url || '')) return { ok: false, error: 'bad-url' }
   if (!scrapeHostAllowed(url)) return { ok: false, error: 'store-not-supported' }
+  // Without the (optional) retail-host grant we can't run our reader on the page,
+  // and the service worker can't prompt (no user gesture) — so tell MVP to point
+  // the user at the "Read non-Amazon product pages" switch in the SCOUT popup.
+  const origin = retailOriginForUrl(url)
+  if (origin) {
+    const granted = await chrome.permissions.contains({ origins: [origin] }).catch(() => false)
+    if (!granted) return { ok: false, error: 'permission-needed', needsPermission: true, host: (() => { try { return new URL(url).hostname.replace(/^www\./, '') } catch (e) { return '' } })() }
+  }
   let tabId = null
   try {
     // BACKGROUND tab (active:false) — never steals the user's view; it loads
