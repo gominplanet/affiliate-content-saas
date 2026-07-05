@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.62
+ * Version: 1.0.63
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -863,7 +863,7 @@ add_filter('the_content', function ($content) {
   <h2 style="margin:0 0 16px;font-size:13px;font-weight:800;color:#86868b;text-transform:uppercase;letter-spacing:1px">More reviews you'll want to read</h2>
   <div class="gr-rr-scroll" style="display:grid;grid-auto-flow:column;grid-auto-columns:minmax(220px,1fr);gap:16px;overflow-x:auto;scroll-snap-type:x mandatory;padding:4px 0 12px;scrollbar-width:thin">
     <?php foreach ($related as $p):
-        $img = get_the_post_thumbnail_url($p->ID, 'medium');
+        $img = get_the_post_thumbnail_url($p->ID, 'mvp-card-large'); // card size, not 300px `medium` (blur)
         $url = get_permalink($p->ID);
         $title = get_the_title($p->ID); ?>
       <a class="gr-rr-card" href="<?php echo esc_url($url); ?>" style="scroll-snap-align:start;display:flex;flex-direction:column;border:1px solid #e5e5e7;border-radius:10px;overflow:hidden;text-decoration:none;color:#1d1d1f;background:#fff;transition:transform .15s,box-shadow .15s">
@@ -918,7 +918,13 @@ add_action('wp_footer', function () {
         $cards[] = [
             'title'    => get_the_title($p->ID),
             'url'      => get_permalink($p->ID),
-            'image'    => get_the_post_thumbnail_url($p->ID, 'medium') ?: '',
+            // Use the 1200×675 card crop, not WP's ~300px `medium` — each
+            // strip card renders up to ~580px wide (≈1160px on retina), so
+            // `medium` was upscaled ~2× and looked blurry. `mvp-card-large`
+            // is the MVP theme's 16:9 hero size; on any other theme this size
+            // isn't registered so WP gracefully returns the full image — sharp
+            // either way.
+            'image'    => get_the_post_thumbnail_url($p->ID, 'mvp-card-large') ?: '',
             'modified' => get_the_modified_date('M j', $p->ID),
         ];
     }
@@ -1204,7 +1210,7 @@ add_action('wp_footer', function () {
                 $best = $guide_q->posts[0];
                 $guide_url   = get_permalink($best->ID);
                 $guide_title = get_the_title($best->ID);
-                $guide_img   = get_the_post_thumbnail_url($best->ID, 'medium') ?: '';
+                $guide_img   = get_the_post_thumbnail_url($best->ID, 'mvp-card-large') ?: ''; // card size, not 300px `medium` (blur)
             }
             wp_reset_postdata();
         }
@@ -1388,7 +1394,7 @@ add_action('kadence_after_main_content', function () {
         <?php while ($random->have_posts()): $random->the_post(); ?>
         <a href="<?php the_permalink(); ?>" style="text-decoration:none;color:inherit;display:flex;flex-direction:column;border-radius:10px;overflow:hidden;border:1px solid #e5e5ea;">
           <?php if (has_post_thumbnail()): ?>
-          <div style="aspect-ratio:16/9;overflow:hidden;"><?php the_post_thumbnail('medium', ['style' => 'width:100%;height:100%;object-fit:cover;display:block;']); ?></div>
+          <div style="aspect-ratio:16/9;overflow:hidden;"><?php the_post_thumbnail('mvp-card-large', ['style' => 'width:100%;height:100%;object-fit:cover;display:block;']); ?></div>
           <?php endif; ?>
           <div style="padding:12px 14px 14px;">
             <p style="font-size:0.85rem;font-weight:600;margin:0;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;"><?php the_title(); ?></p>
