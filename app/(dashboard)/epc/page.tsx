@@ -21,7 +21,7 @@
 
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import PageHero from '@/components/layout/PageHero'
-import { Loader2, ExternalLink, CheckCircle2, Sparkles, Search, Puzzle, Download, Copy, RefreshCw, KeyRound, Trash2, Lock, FlaskConical, MessageSquare } from 'lucide-react'
+import { Loader2, ExternalLink, CheckCircle2, Sparkles, Search, Download, Copy, RefreshCw, KeyRound, Trash2, ChevronDown, FlaskConical, MessageSquare } from 'lucide-react'
 import { toast } from 'sonner'
 import { getScoutInstallKind, requestAcceptCampaign } from '@/lib/extension-frame'
 import MessageBrandModal, { type MessageBrandCampaign } from '@/components/campaigns/MessageBrandModal'
@@ -137,7 +137,9 @@ export default function EpcScoutPage() {
   const [token, setToken] = useState<string | null>(null)
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([])
   const [loading, setLoading] = useState(true)
-  const [showInstall, setShowInstall] = useState(false)
+  // The setup/how-it-works panel is collapsed by default so the queue is right
+  // there; it auto-opens only for users who haven't connected SCOUT yet.
+  const [setupOpen, setSetupOpen] = useState(false)
 
   // Filters (over the pushed queue)
   const [minEpc, setMinEpc] = useState(0.2)
@@ -204,6 +206,20 @@ export default function EpcScoutPage() {
       const d = await res.json()
       if (res.ok) { setToken(d.token); toast.success('New token minted — re-paste it into the extension.') }
     } catch { toast.error('Could not regenerate token') }
+  }, [])
+
+  // Setup panel: honor a saved preference; otherwise open it only for users who
+  // haven't connected a token yet (they need the setup — everyone else jumps
+  // straight to the queue).
+  useEffect(() => {
+    if (loading) return
+    let stored: string | null = null
+    try { stored = localStorage.getItem('epc_setup_open') } catch { /* ignore */ }
+    if (stored != null) setSetupOpen(stored === '1')
+    else if (!token) setSetupOpen(true)
+  }, [loading, token])
+  const toggleSetup = useCallback(() => {
+    setSetupOpen(o => { const n = !o; try { localStorage.setItem('epc_setup_open', n ? '1' : '0') } catch { /* ignore */ } return n })
   }, [])
 
   const filtered = useMemo(() => {
@@ -491,7 +507,7 @@ export default function EpcScoutPage() {
       </div>
       <PageHero
         title="AMZ+ & EPC"
-        subtitle="Turn the Amazon Creator Connections campaigns you're offered — Affiliate+ (extra commission per sale) and EPC (paid per click) — into ready-to-publish blog posts. Scan with SCOUT, keep the winners, publish."
+        subtitle="Turn the Amazon Creator Connections campaigns you're offered — Affiliate+ and EPC — into ready-to-publish blog posts."
       />
 
       {/* ── Move-to-store nudge — only for the old manually-loaded (sideloaded)
@@ -518,74 +534,57 @@ export default function EpcScoutPage() {
         </div>
       )}
 
-      {/* ── Eligibility gate: set expectations BEFORE the shiny tool ───────── */}
-      <div className="rounded-xl border p-4 mb-4 flex items-start gap-3"
-        style={{ background: 'rgba(245,158,11,0.10)', borderColor: 'rgba(245,158,11,0.40)' }}>
-        <Lock size={16} className="flex-shrink-0 mt-0.5" style={{ color: '#f59e0b' }} />
-        <div>
-          <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>Who this is for — you need Amazon Creator Connections</p>
-          <p className="text-[12px] leading-relaxed mt-1" style={{ color: 'var(--text-soft)' }}>
-            This only does something if your Amazon Associates account has <strong>Creator Connections</strong>. It scans both program types: <strong>Affiliate+</strong> (extra commission per sale — a <span className="font-medium">&ldquo;12%&rdquo;</span>-style bonus) and <strong>Sponsored Products for Creators</strong> / EPC (paid per click — the <span className="font-medium">&ldquo;Estimated EPC: Up to&nbsp;$X&rdquo;</span> campaigns). That&rsquo;s an Amazon invite/eligibility, not a switch you flip here, and most creators don&rsquo;t have it yet. <strong>No &ldquo;Creator Connections&rdquo; tab in your <a href={CC_URL} target="_blank" rel="noopener noreferrer" className="underline">Amazon Associates</a> account = nothing for SCOUT to scan</strong>, and this tool won&rsquo;t do anything for you. If that&rsquo;s you, use Reviews, Comparisons or Buying Guides instead.
-          </p>
-        </div>
-      </div>
+      {/* ── Collapsible setup / how-it-works — collapsed by default so the queue
+             is right there; auto-opens for users who haven't connected SCOUT. ── */}
+      <div className="card mb-5 overflow-hidden">
+        <button onClick={toggleSetup} aria-expanded={setupOpen}
+          className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-black/[0.02] dark:hover:bg-white/[0.03] transition-colors">
+          <span className="grid place-items-center w-7 h-7 rounded-lg flex-shrink-0" style={{ background: 'rgba(124,58,237,0.12)' }}>
+            <Sparkles size={14} className="text-[#7C3AED]" />
+          </span>
+          <div className="flex-1 min-w-0">
+            <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>How it works &amp; connect SCOUT</p>
+            <p className="text-[11px] truncate" style={{ color: 'var(--text-faint)' }}>Needs Amazon Creator Connections · scans Affiliate+ &amp; EPC into your queue</p>
+          </div>
+          <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0"
+            style={token ? { background: 'rgba(52,199,89,0.14)', color: '#1f8a3a' } : { background: 'rgba(245,158,11,0.16)', color: '#b26a00' }}>
+            {token ? <><CheckCircle2 size={11} /> Connected</> : <><KeyRound size={11} /> Connect</>}
+          </span>
+          <ChevronDown size={16} className="flex-shrink-0 transition-transform" style={{ color: 'var(--text-faint)', transform: setupOpen ? 'rotate(180deg)' : 'none' }} />
+        </button>
 
-      {/* ── What it does + how to run it ───────────────────────────────────── */}
-      <div className="card p-5 mb-5">
-        <p className="text-sm font-semibold mb-1 inline-flex items-center gap-2" style={{ color: 'var(--text)' }}>
-          <Sparkles size={14} className="text-[#7C3AED]" /> What it does &amp; how to run it
-        </p>
-        <p className="text-[12px] leading-relaxed mb-3" style={{ color: 'var(--text-soft)' }}>
-          Amazon Creator Connections pays you extra on campaigns you accept — either a bigger <strong>commission per sale</strong> (Affiliate+) or a flat rate <strong>per click</strong> (EPC). SCOUT finds those campaigns, lets you keep the highest-earning ones (sorted per program on their own tab), and writes + publishes a blog post for each — so your blog covers exactly what Amazon is already paying you to promote.
-        </p>
-        <ol className="text-[12px] leading-relaxed list-decimal pl-5 mb-4 space-y-1" style={{ color: 'var(--text-soft)' }}>
-          <li><button onClick={() => setShowInstall(s => !s)} className="text-[#7C3AED] font-medium hover:underline">Install the SCOUT extension</button> (one click from the Chrome Web Store).</li>
-          <li>Copy your ingest token below, paste it into SCOUT, and hit <span className="font-medium">Connect</span> (the token then collapses out of the way).</li>
-          <li>On an Amazon <a href={CC_URL} target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] font-medium hover:underline inline-flex items-center gap-0.5">Creator Connections <ExternalLink size={10} /></a> page, the SCOUT panel appears above the filters. Search, sort by commission (Affiliate+) or Estimated EPC, tick the winners, and hit <span className="font-medium">Import selected into MVP</span>.</li>
-          <li>Your campaigns land in the queue below, split into <span className="font-medium">Affiliate+</span> and <span className="font-medium">EPC</span> tabs — filter, pick, Generate.</li>
-        </ol>
-
-        {/* Token */}
-        <label className="block text-[10px] uppercase tracking-wide font-semibold mb-1" style={{ color: 'var(--text-faint)' }}>
-          <KeyRound size={11} className="inline mr-1" /> Your ingest token
-        </label>
-        <div className="flex items-center gap-2 flex-wrap">
-          <code className="px-3 py-2 rounded-lg border text-[12px] font-mono break-all flex-1 min-w-[240px]" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
-            {token ?? (loading ? 'loading…' : '—')}
-          </code>
-          <button onClick={copyToken} disabled={!token}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-semibold text-white disabled:opacity-50"
-            style={{ background: 'linear-gradient(45deg, #7C3AED 0%, #bc1888 100%)' }}>
-            <Copy size={13} /> Copy
-          </button>
-          <button onClick={regenToken}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-semibold border"
-            style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }} title="Mint a new token (invalidates the old one)">
-            <RefreshCw size={12} /> Regenerate
-          </button>
-        </div>
-        <p className="text-[11px] mt-2" style={{ color: 'var(--text-faint)' }}>
-          This token lets the extension push into <span className="font-medium">your</span> account. Keep it private; regenerate if it leaks.
-        </p>
-
-        {/* Install instructions (collapsible) */}
-        {showInstall && (
-          <div className="mt-4 rounded-xl border p-4" style={{ borderColor: 'var(--border)' }}>
-            <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
-              <p className="text-[13px] font-semibold inline-flex items-center gap-2" style={{ color: 'var(--text)' }}>
-                <Puzzle size={14} className="text-[#7C3AED]" /> Install the Scout extension
-              </p>
-              <a href={SCOUT_STORE_LISTING_URL} target="_blank" rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold text-white"
-                style={{ background: 'linear-gradient(45deg, #7C3AED 0%, #bc1888 100%)' }}>
-                <Download size={13} /> Add to Chrome
-              </a>
-            </div>
-            <ol className="text-[12px] space-y-1.5 leading-relaxed list-decimal pl-5" style={{ color: 'var(--text-soft)' }}>
-              <li>Click <span className="font-medium">Add to Chrome</span> above — it opens the SCOUT listing in the Chrome Web Store.</li>
-              <li>Hit <span className="font-medium">Add to Chrome</span> on the store page, then <span className="font-medium">Add extension</span> to confirm.</li>
-              <li>Come back here — SCOUT is ready. Chrome keeps it updated automatically.</li>
+        {setupOpen && (
+          <div className="px-4 pb-4 border-t" style={{ borderColor: 'var(--border)' }}>
+            <p className="text-[12px] leading-relaxed mt-3 mb-3" style={{ color: 'var(--text-soft)' }}>
+              Only works if your <a href={CC_URL} target="_blank" rel="noopener noreferrer" className="underline">Amazon Associates</a> account has <strong>Creator Connections</strong> (an Amazon invite — most creators don&rsquo;t have it yet). It scans both programs: <strong>Affiliate+</strong> (extra commission per sale) and <strong>Sponsored Products / EPC</strong> (paid per click). No Creator Connections tab = nothing to scan — use Reviews, Comparisons or Buying Guides instead.
+            </p>
+            <ol className="text-[12px] leading-relaxed list-decimal pl-5 mb-4 space-y-1" style={{ color: 'var(--text-soft)' }}>
+              <li><a href={SCOUT_STORE_LISTING_URL} target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] font-medium hover:underline inline-flex items-center gap-0.5">Install SCOUT <Download size={10} /></a> — one click from the Chrome Web Store.</li>
+              <li>Copy your token below → paste into SCOUT → <span className="font-medium">Connect</span>.</li>
+              <li>On a <a href={CC_URL} target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] font-medium hover:underline inline-flex items-center gap-0.5">Creator Connections <ExternalLink size={10} /></a> page the SCOUT panel sits above the filters — search, sort by commission or EPC, tick the winners, <span className="font-medium">Import selected into MVP</span>.</li>
+              <li>They land in the queue below (Affiliate+ / EPC tabs) — pick and Generate.</li>
             </ol>
+            <label className="block text-[10px] uppercase tracking-wide font-semibold mb-1" style={{ color: 'var(--text-faint)' }}>
+              <KeyRound size={11} className="inline mr-1" /> Your ingest token
+            </label>
+            <div className="flex items-center gap-2 flex-wrap">
+              <code className="px-3 py-2 rounded-lg border text-[12px] font-mono break-all flex-1 min-w-[240px]" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
+                {token ?? (loading ? 'loading…' : '—')}
+              </code>
+              <button onClick={copyToken} disabled={!token}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-semibold text-white disabled:opacity-50"
+                style={{ background: 'linear-gradient(45deg, #7C3AED 0%, #bc1888 100%)' }}>
+                <Copy size={13} /> Copy
+              </button>
+              <button onClick={regenToken}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-semibold border"
+                style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }} title="Mint a new token (invalidates the old one)">
+                <RefreshCw size={12} /> Regenerate
+              </button>
+            </div>
+            <p className="text-[11px] mt-2" style={{ color: 'var(--text-faint)' }}>
+              This token lets the extension push into <span className="font-medium">your</span> account. Keep it private; regenerate if it leaks.
+            </p>
           </div>
         )}
       </div>
