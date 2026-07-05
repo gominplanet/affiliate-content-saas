@@ -9,7 +9,7 @@
  * Data is LIVE (read at that moment), not a cached third-party database.
  */
 
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo, useEffect } from 'react'
 import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
 import { Loader2, Search, Sparkles, ExternalLink, PackageSearch, MessageSquare, Radar } from 'lucide-react'
@@ -47,6 +47,8 @@ function priceInBucket(price: string | null | undefined, b: { min: number | null
   if (b.max != null && n >= b.max) return false
   return true
 }
+
+const RECENT_KEY = 'mvp_pf_recent_searches'  // localStorage: last 10 keywords
 
 const SORT_OPTIONS: { value: string; label: string }[] = [
   { value: 'relevance',   label: 'Relevance' },
@@ -87,6 +89,7 @@ export default function ProductFinderPage() {
   const [minSales, setMinSales] = useState('100')
   const [priceRange, setPriceRange] = useState('any')
   const [sortBy, setSortBy] = useState('relevance')
+  const [recent, setRecent] = useState<string[]>([])
   const [mustVideo, setMustVideo] = useState(false)
   const [maxResults, setMaxResults] = useState('15')
   const [searching, setSearching] = useState(false)
@@ -108,6 +111,29 @@ export default function ProductFinderPage() {
 
   // Results in the chosen sort order (relevance = Amazon's original scan order).
   const sortedResults = useMemo(() => (results ? sortProducts(results, sortBy) : []), [results, sortBy])
+
+  // ── Recent searches (last 10) — persisted per-browser in localStorage.
+  //    Loaded on mount (client-only, so no SSR/hydration mismatch).
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(RECENT_KEY)
+      const arr = raw ? JSON.parse(raw) : []
+      if (Array.isArray(arr)) setRecent(arr.filter((x): x is string => typeof x === 'string').slice(0, 10))
+    } catch { /* ignore corrupt/absent storage */ }
+  }, [])
+  const pushRecent = useCallback((term: string) => {
+    const t = term.trim()
+    if (!t) return
+    setRecent(prev => {
+      const next = [t, ...prev.filter(x => x.toLowerCase() !== t.toLowerCase())].slice(0, 10)
+      try { localStorage.setItem(RECENT_KEY, JSON.stringify(next)) } catch { /* ignore */ }
+      return next
+    })
+  }, [])
+  const clearRecent = useCallback(() => {
+    setRecent([])
+    try { localStorage.removeItem(RECENT_KEY) } catch { /* ignore */ }
+  }, [])
 
   // Open the Message modal for a found product. First check whether this ASIN is
   // already an imported Creator Connections campaign — if so, open in AUTO-SEND
@@ -213,12 +239,14 @@ export default function ProductFinderPage() {
     }
   }, [results, imported, live, keyword])
 
-  const search = useCallback(async () => {
-    if (!keyword.trim()) { toast.error('Enter a keyword to search.'); return }
+  const search = useCallback(async (term?: string) => {
+    const kw = (term ?? keyword).trim()
+    if (!kw) { toast.error('Enter a keyword to search.'); return }
+    pushRecent(kw)
     setSearching(true); setResults(null); setMeta(null); setImported({}); setLive({})
     try {
       const bucket = PRICE_BUCKETS[priceRange] ?? PRICE_BUCKETS.any
-      const r = await requestProductSearch(keyword.trim(), {
+      const r = await requestProductSearch(kw, {
         minSales: parseInt(minSales, 10) || 0,
         mustVideo,
         maxResults: Math.min(25, Math.max(1, parseInt(maxResults, 10) || 15)),
@@ -255,7 +283,7 @@ export default function ProductFinderPage() {
     } finally {
       setSearching(false)
     }
-  }, [keyword, minSales, priceRange, mustVideo, maxResults])
+  }, [keyword, minSales, priceRange, mustVideo, maxResults, pushRecent])
 
   const generate = useCallback(async (p: FinderProduct) => {
     setGenning(s => ({ ...s, [p.asin]: 'busy' }))
@@ -354,7 +382,7 @@ export default function ProductFinderPage() {
             <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-2)' }}>Deep-check</label>
             <input type="number" min="1" max="25" value={maxResults} onChange={e => setMaxResults(e.target.value)} className={inputCls} style={inputStyle} />
           </div>
-          <button onClick={search} disabled={searching}
+          <button onClick={() => search()} disabled={searching}
             className="inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white bg-[#7C3AED] hover:bg-[#6d28d9] disabled:opacity-60 transition-colors h-[38px]">
             {searching ? <Loader2 size={15} className="animate-spin" /> : <Search size={15} />} Search
           </button>
@@ -367,6 +395,21 @@ export default function ProductFinderPage() {
           SCOUT scans the top ~100 Amazon results for your keyword, then deep-checks the first {maxResults || '15'} of them — opening each product's Amazon page in the background to read live monthly sales + video placement (~1–2 min for 15, longer for more). Data is read at that moment — not a cached database. Rows that are already <span className="font-semibold text-[#248a3d]">🎯 your campaigns</span> are flagged instantly; use <span className="font-semibold text-[#7C3AED]">Check CC</span> (or <span className="font-semibold text-[#7C3AED]">Check all CC</span>) to have SCOUT confirm which are Creator Connections campaigns you can auto-send to.
         </p>
       </div>
+
+      {recent.length > 0 && (
+        <div className="max-w-4xl mb-4 flex items-center gap-2 flex-wrap">
+          <span className="text-[11px] font-medium" style={{ color: 'var(--text-faint)' }}>Recent:</span>
+          {recent.map(term => (
+            <button key={term} onClick={() => { setKeyword(term); search(term) }} disabled={searching}
+              title={`Search “${term}” again`}
+              className="inline-flex items-center rounded-full px-3 py-1 text-[12px] border disabled:opacity-50 hover:border-[#7C3AED] transition-colors"
+              style={{ backgroundColor: 'var(--surface-2)', borderColor: 'var(--border)', color: 'var(--text)' }}>
+              {term}
+            </button>
+          ))}
+          <button onClick={clearRecent} className="text-[11px] hover:underline ml-1" style={{ color: 'var(--text-faint)' }}>Clear</button>
+        </div>
+      )}
 
       {searching && (
         <div className="card p-6 max-w-4xl flex items-center gap-3 text-sm" style={{ color: 'var(--text-2)' }}>
