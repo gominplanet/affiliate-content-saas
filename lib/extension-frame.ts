@@ -41,6 +41,39 @@ const SCOUT_EXTENSION_IDS = Array.from(
   new Set([SCOUT_EXTENSION_ID, SCOUT_STORE_EXTENSION_ID, KNOWN_SIDELOAD_EXTENSION_ID].filter(Boolean)),
 )
 
+// ── Auto-discovered SCOUT id ────────────────────────────────────────────────
+// SCOUT's bridge content script (mvp-bridge.js, v1.11.53+) runs on this page and
+// postMessages its own chrome.runtime.id. We capture it so the app can reach
+// WHATEVER build is installed — Web Store, keyed sideload, or an unpacked dev
+// build with a RANDOM id the app couldn't know in advance. This kills the
+// "SCOUT is installed but the app says not-installed" id-mismatch class.
+//
+// Safety: additive only (the hardcoded ids are always kept) + strict id-shape
+// validation, so a page script can't spoof us into dropping a real id — at worst
+// it makes us also try a dead id, which just no-ops.
+let discoveredScoutId: string | null = null
+const SCOUT_ID_RE = /^[a-p]{32}$/ // Chrome extension ids are 32 chars, a–p
+if (typeof window !== 'undefined') {
+  window.addEventListener('message', (ev: MessageEvent) => {
+    if (ev.source !== window) return
+    const d = ev.data
+    if (d && d.source === 'MVP_SCOUT' && d.type === 'SCOUT_HELLO' && typeof d.extensionId === 'string' && SCOUT_ID_RE.test(d.extensionId)) {
+      discoveredScoutId = d.extensionId
+    }
+  })
+  // Prompt an announcement in case the bridge shouted before this listener
+  // attached (it also announces proactively for a few seconds after load).
+  try { window.postMessage({ source: 'MVP_APP', type: 'SCOUT_WHO' }, window.location.origin) } catch { /* ignore */ }
+}
+
+/** Ids to try, discovered-first (it's the build actually installed), then the
+ *  hardcoded env/store/sideload ids. Deduped. */
+function effectiveScoutIds(): string[] {
+  return discoveredScoutId
+    ? Array.from(new Set([discoveredScoutId, ...SCOUT_EXTENSION_IDS]))
+    : SCOUT_EXTENSION_IDS
+}
+
 // chrome.runtime is injected into mvpaffiliate.io pages only when the
 // extension declares us in externally_connectable. Narrow, any-cast access.
 function chromeRuntime(): { sendMessage?: (id: string, msg: unknown, cb: (resp: unknown) => void) => void } | null {
@@ -81,8 +114,9 @@ function sendToOneId<T>(id: string, message: unknown, timeoutMs: number): Promis
 // not-installed id fails fast (lastError), so the fall-through is cheap.
 function sendToExtension<T>(message: unknown, timeoutMs: number): Promise<T | null> {
   return (async () => {
-    if (!chromeRuntime()?.sendMessage || SCOUT_EXTENSION_IDS.length === 0) return null
-    for (const id of SCOUT_EXTENSION_IDS) {
+    const ids = effectiveScoutIds()
+    if (!chromeRuntime()?.sendMessage || ids.length === 0) return null
+    for (const id of ids) {
       const { reached, value } = await sendToOneId<T>(id, message, timeoutMs)
       if (reached) return value
     }
