@@ -68,9 +68,9 @@ export function YouTubeChannelsManager() {
   // channel that Google's sign-in won't let you pick. Reads its published videos.
   const urlConnect = () => (
     <div>
-      <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Connect a channel by its link</p>
+      <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Can&rsquo;t pick your channel at sign-in? Connect it by link</p>
       <p className="text-[11px] text-[#6e6e73] dark:text-[#8e8e93] mb-2">
-        Paste your channel&rsquo;s YouTube URL. Best when your channel is a <b>Brand Account</b> the Google sign-in won&rsquo;t let you pick. We read its published videos — no sign-in needed.
+        Use this <b>only</b> if the Google sign-in above can&rsquo;t select your channel (e.g. a <b>Brand Account</b>). It reads your <b>published videos only</b> — enough to turn them into blog posts, but for the <b>full</b> Co-Pilot (private drafts + one-click title, description &amp; thumbnail push back to YouTube) you need the Google sign-in.
       </p>
       <div className="flex items-center gap-2">
         <input
