@@ -3328,20 +3328,40 @@ export default function StudioPage() {
               <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
               {loading ? 'Refreshing…' : 'Refresh from YouTube'}
             </button>
-            {channels.length > 1 && (
-              <div className="flex flex-col gap-1">
-                <span className="text-[11px] font-semibold text-[#6e6e73] dark:text-[#8e8e93]">📺 Channel</span>
-                <select
-                  value={selectedChannelId ?? (channels.find(c => c.isDefault)?.channelId ?? channels[0].channelId)}
-                  onChange={(e) => setSelectedChannelId(e.target.value)}
-                  className="text-sm px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] w-full"
-                >
-                  {channels.map(c => (
-                    <option key={c.channelId} value={c.channelId}>{c.channelTitle}{c.isDefault ? ' (default)' : ''}</option>
-                  ))}
-                </select>
-              </div>
-            )}
+            {channels.length > 0 && (() => {
+              // Always show WHICH channel Co-Pilot is reading — the #1 support
+              // confusion is videos from the wrong channel when a Google login
+              // owns several. With >1 channel it's a switcher; with exactly one
+              // it's a read-only label so the user can still see (and fix) it.
+              const activeId = selectedChannelId ?? (channels.find(c => c.isDefault)?.channelId ?? channels[0].channelId)
+              const active = channels.find(c => c.channelId === activeId) ?? channels[0]
+              return (
+                <div className="flex flex-col gap-1">
+                  <span className="text-[11px] font-semibold text-[#6e6e73] dark:text-[#8e8e93]">📺 Showing videos from</span>
+                  {channels.length > 1 ? (
+                    <select
+                      value={activeId}
+                      onChange={(e) => setSelectedChannelId(e.target.value)}
+                      className="text-sm px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] w-full"
+                    >
+                      {channels.map(c => (
+                        <option key={c.channelId} value={c.channelId}>{c.channelTitle}{c.isDefault ? ' (default)' : ''}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span
+                      className="text-sm px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] truncate"
+                      title={active?.channelTitle || undefined}
+                    >
+                      {active?.channelTitle || 'Connected channel'}
+                    </span>
+                  )}
+                  <a href="/connect-youtube" className="text-[11px] text-[#7C3AED] hover:underline">
+                    {channels.length > 1 ? 'Manage channels' : 'Wrong channel? Switch or reconnect →'}
+                  </a>
+                </div>
+              )
+            })()}
             {/* How Co-Pilot works */}
             <div className="card p-4 flex items-start gap-3 border border-[#7C3AED]/20 bg-[#7C3AED]/5">
               <div className="w-7 h-7 rounded-lg bg-[#7C3AED]/15 flex items-center justify-center flex-shrink-0">
