@@ -480,6 +480,33 @@ export default function EpcScoutPage() {
     }
   }, [campaigns, loadList])
 
+  // Delete just the ticked rows (vs "Clear queue" which drops every un-actioned
+  // row). Selected rows are always non-live — the checkbox is disabled on
+  // published rows — so there's no WordPress post to clean up.
+  const [deletingSel, setDeletingSel] = useState(false)
+  const deleteSelected = useCallback(async () => {
+    const picks = filtered.filter(c => selected.has(c.asin) && !isLiveRow(c))
+    if (!picks.length) return
+    if (!window.confirm(`Delete ${picks.length} selected campaign${picks.length === 1 ? '' : 's'} from the queue?`)) return
+    setDeletingSel(true)
+    try {
+      const results = await Promise.allSettled(picks.map(c =>
+        fetch('/api/campaigns/delete', {
+          method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ campaignId: c.id }),
+        }).then(r => { if (!r.ok) throw new Error() }),
+      ))
+      const ok = results.filter(r => r.status === 'fulfilled').length
+      const failed = picks.length - ok
+      if (ok) toast.success(`Deleted ${ok}${failed ? ` · ${failed} couldn't be removed` : ''}.`)
+      else toast.error('Couldn\'t delete the selected rows.')
+      setSelected(new Set())
+      loadList()
+    } finally {
+      setDeletingSel(false)
+    }
+  }, [filtered, selected, loadList])
+
   // Hard cap on a single bulk run — each generation is a full ~$0.50 AI job, so
   // "Select all → Generate" must NOT fire dozens at once (that caused a runaway
   // spend). Cap the batch and confirm the cost first.
@@ -709,11 +736,21 @@ export default function EpcScoutPage() {
               {allShownSelected ? 'Deselect all' : 'Select all shown'}
             </button>
             <span className="text-[12px]" style={{ color: 'var(--text-faint)' }}>{selectedCount} selected</span>
-            <button onClick={generateSelected} disabled={selectedCount === 0 || anyRunning}
-              className="ml-auto inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
-              style={{ backgroundColor: '#34c759' }}>
-              {anyRunning ? <><Loader2 size={15} className="animate-spin" /> Generating…</> : <><Sparkles size={15} /> Generate {selectedCount || ''} selected</>}
-            </button>
+            <div className="ml-auto flex items-center gap-2">
+              {selectedCount > 0 && (
+                <button onClick={deleteSelected} disabled={deletingSel}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold border disabled:opacity-50"
+                  style={{ borderColor: 'rgba(192,0,26,0.35)', color: '#c0001a' }}
+                  title="Delete the ticked campaigns from the queue">
+                  {deletingSel ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />} Delete {selectedCount}
+                </button>
+              )}
+              <button onClick={generateSelected} disabled={selectedCount === 0 || anyRunning}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
+                style={{ backgroundColor: '#34c759' }}>
+                {anyRunning ? <><Loader2 size={15} className="animate-spin" /> Generating…</> : <><Sparkles size={15} /> Generate {selectedCount || ''} selected</>}
+              </button>
+            </div>
           </div>
           )}
 
