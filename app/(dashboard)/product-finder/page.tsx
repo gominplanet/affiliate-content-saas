@@ -16,9 +16,42 @@ import { Loader2, Search, Sparkles, ExternalLink, PackageSearch, MessageSquare, 
 import { requestProductSearch, requestFindCampaign, requestCcMatch, type FinderProduct, type CampaignMatch } from '@/lib/extension-frame'
 import MessageBrandModal, { type MessageBrandCampaign } from '@/components/campaigns/MessageBrandModal'
 
+// Price-range buckets. Half-open ranges [min, max) so boundaries never overlap
+// or gap (a $75 product lands in "$75 – $125", not both). Amazon prices arrive
+// from SCOUT as strings ($1,234.56) — parsePrice() normalizes them.
+const PRICE_BUCKETS: Record<string, { label: string; min: number | null; max: number | null }> = {
+  any:      { label: 'Any price',   min: null, max: null },
+  u50:      { label: 'Under $50',   min: null, max: 50 },
+  b50_75:   { label: '$50 – $75',   min: 50,   max: 75 },
+  b75_125:  { label: '$75 – $125',  min: 75,   max: 125 },
+  b125_175: { label: '$125 – $175', min: 125,  max: 175 },
+  b175_250: { label: '$175 – $250', min: 175,  max: 250 },
+  b250_500: { label: '$250 – $500', min: 250,  max: 500 },
+  o500:     { label: 'Over $500',   min: 500,  max: null },
+}
+const PRICE_BUCKET_ORDER = ['any', 'u50', 'b50_75', 'b75_125', 'b125_175', 'b175_250', 'b250_500', 'o500'] as const
+
+function parsePrice(price: string | null | undefined): number | null {
+  if (typeof price !== 'string') return null
+  const n = parseFloat(price.replace(/[^0-9.]/g, ''))
+  return isFinite(n) ? n : null
+}
+
+// In-bucket = price in [min, max). An unreadable price is excluded once a real
+// range is chosen (we can't confirm it fits); "Any price" keeps everything.
+function priceInBucket(price: string | null | undefined, b: { min: number | null; max: number | null }): boolean {
+  if (b.min == null && b.max == null) return true
+  const n = parsePrice(price)
+  if (n == null) return false
+  if (b.min != null && n < b.min) return false
+  if (b.max != null && n >= b.max) return false
+  return true
+}
+
 export default function ProductFinderPage() {
   const [keyword, setKeyword] = useState('')
   const [minSales, setMinSales] = useState('100')
+  const [priceRange, setPriceRange] = useState('any')
   const [mustVideo, setMustVideo] = useState(false)
   const [maxResults, setMaxResults] = useState('15')
   const [searching, setSearching] = useState(false)
@@ -146,35 +179,45 @@ export default function ProductFinderPage() {
     if (!keyword.trim()) { toast.error('Enter a keyword to search.'); return }
     setSearching(true); setResults(null); setMeta(null); setImported({}); setLive({})
     try {
+      const bucket = PRICE_BUCKETS[priceRange] ?? PRICE_BUCKETS.any
       const r = await requestProductSearch(keyword.trim(), {
         minSales: parseInt(minSales, 10) || 0,
         mustVideo,
         maxResults: Math.min(25, Math.max(1, parseInt(maxResults, 10) || 15)),
+        // Forward-compat: newer SCOUT builds pre-filter the scan pool by price so
+        // the deep-check budget targets in-range products. Older builds ignore
+        // these; we still filter client-side below off the price each row carries.
+        ...(bucket.min != null ? { priceMin: bucket.min } : {}),
+        ...(bucket.max != null ? { priceMax: bucket.max } : {}),
       })
+      // Keep only rows inside the chosen price bucket (no-op for "Any price").
+      const applyPrice = (ps?: FinderProduct[]) => (ps ?? []).filter(p => priceInBucket(p.price, bucket))
       if (!r.ok) {
         if (r.error === 'not-installed') toast.error('Install / enable SCOUT to use the Product Finder.')
         else if (r.error === 'amazon-blocked') toast.warning('Amazon is rate-limiting right now — wait a few minutes before scanning again (and scan fewer at a time).', { duration: 11000 })
         else if (r.error === 'no-results') { setResults([]); toast.message('No products found — try a different keyword.') }
         else if (r.error === 'timeout') toast.error('The scan timed out — try fewer results or a narrower keyword.')
         else toast.error(`Search failed: ${r.error}`)
-        setResults(r.products ?? [])
+        setResults(applyPrice(r.products))
         return
       }
-      setResults(r.products ?? [])
+      const products = applyPrice(r.products)
+      setResults(products)
       setMeta({ scanned: r.scanned, totalFound: r.totalFound })
-      const n = (r.products ?? []).length
+      const n = products.length
       if (r.blocked) {
         toast.warning('Amazon started rate-limiting — SCOUT stopped early to avoid a block. Wait a few minutes and scan fewer at a time.', { duration: 11000 })
       } else {
-        toast.success(n ? `${n} product${n === 1 ? '' : 's'} passed your rules.` : 'No products passed your rules — loosen them and try again.')
+        const priced = bucket.min != null || bucket.max != null ? ` in ${bucket.label}` : ''
+        toast.success(n ? `${n} product${n === 1 ? '' : 's'} passed your rules${priced}.` : `No products passed your rules${priced} — loosen them and try again.`)
       }
-      if (n) checkImported(r.products ?? [])
+      if (n) checkImported(products)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Search failed')
     } finally {
       setSearching(false)
     }
-  }, [keyword, minSales, mustVideo, maxResults])
+  }, [keyword, minSales, priceRange, mustVideo, maxResults])
 
   const generate = useCallback(async (p: FinderProduct) => {
     setGenning(s => ({ ...s, [p.asin]: 'busy' }))
@@ -249,7 +292,7 @@ export default function ProductFinderPage() {
       />
 
       <div className="card p-4 mb-5 max-w-4xl">
-        <div className="grid grid-cols-1 sm:grid-cols-[1fr_140px_150px_120px] gap-3 items-end">
+        <div className="grid grid-cols-1 sm:grid-cols-[1fr_120px_150px_120px_auto] gap-3 items-end">
           <div>
             <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-2)' }}>Keyword</label>
             <div className="relative">
@@ -262,6 +305,12 @@ export default function ProductFinderPage() {
           <div>
             <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-2)' }}>Min sales / mo</label>
             <input type="number" min="0" value={minSales} onChange={e => setMinSales(e.target.value)} className={inputCls} style={inputStyle} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-2)' }}>Price range</label>
+            <select value={priceRange} onChange={e => setPriceRange(e.target.value)} className={inputCls} style={inputStyle}>
+              {PRICE_BUCKET_ORDER.map(k => <option key={k} value={k}>{PRICE_BUCKETS[k].label}</option>)}
+            </select>
           </div>
           <div>
             <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-2)' }}>Deep-check</label>

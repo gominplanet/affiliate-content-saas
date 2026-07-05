@@ -404,7 +404,7 @@ export interface ProductSearchResult {
  */
 export async function requestProductSearch(
   query: string,
-  rules: { minSales?: number; mustVideo?: boolean; maxResults?: number },
+  rules: { minSales?: number; mustVideo?: boolean; maxResults?: number; priceMin?: number; priceMax?: number },
 ): Promise<ProductSearchResult> {
   if (!query.trim()) return { ok: false, error: 'no-query' }
   if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
