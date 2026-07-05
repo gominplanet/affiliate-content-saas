@@ -49,6 +49,8 @@ function priceInBucket(price: string | null | undefined, b: { min: number | null
 }
 
 const RECENT_KEY = 'mvp_pf_recent_searches'  // localStorage: last 10 keywords
+const RESULTS_KEY = 'mvp_pf_results_cache'   // localStorage: saved results per keyword (survives page reload)
+const MAX_CACHED = 10                         // keep saved results for the last 10 searches
 
 const SORT_OPTIONS: { value: string; label: string }[] = [
   { value: 'relevance',   label: 'Relevance' },
@@ -109,32 +111,70 @@ export default function ProductFinderPage() {
   const [ccChecking, setCcChecking] = useState<string | null>(null) // asin being live-checked
   const [ccAllRunning, setCcAllRunning] = useState(false)          // "Check all CC" in progress
 
-  // Per-session cache of completed searches, keyed by lowercased keyword. Clicking
-  // a Recent pill RESTORES the saved results instantly instead of re-scanning
-  // Amazon (slow + rate-limited). A fresh scan only happens via the Search button,
-  // or a pill whose results aren't cached yet (e.g. after a page reload — the cache
-  // is in-memory only, matching the "data is read live, not stored" model).
-  type CacheEntry = { products: FinderProduct[]; meta: { scanned?: number; totalFound?: number } | null; imported: Record<string, Imported>; live: Record<string, Live> }
+  // Cache of completed searches, keyed by lowercased keyword. Clicking a Recent
+  // pill RESTORES the saved results instantly instead of re-scanning Amazon (slow +
+  // rate-limited). Persisted to localStorage (see persistCache) so it survives a
+  // page reload too — a fresh scan only happens via the Search button, or a pill
+  // whose results were never saved. Results carry a timestamp so we can still nudge
+  // the user to re-scan for fresh data.
+  type CacheEntry = { products: FinderProduct[]; meta: { scanned?: number; totalFound?: number } | null; imported: Record<string, Imported>; live: Record<string, Live>; savedAt?: number }
   const searchCache = useRef<Map<string, CacheEntry>>(new Map())
   const lastTermRef = useRef<string | null>(null) // keyword whose results are currently on screen (null while scanning)
+
+  // Serialize the cache Map to localStorage, keeping only the most-recent
+  // MAX_CACHED entries. Best-effort: on a quota error, drop the oldest half and
+  // retry once, then give up (in-memory cache still works for this session).
+  const persistCache = useCallback(() => {
+    const map = searchCache.current
+    while (map.size > MAX_CACHED) {
+      const oldest = map.keys().next().value
+      if (oldest === undefined) break
+      map.delete(oldest)
+    }
+    try {
+      localStorage.setItem(RESULTS_KEY, JSON.stringify(Object.fromEntries(map)))
+    } catch {
+      try {
+        const keys = [...map.keys()]
+        for (const k of keys.slice(0, Math.ceil(keys.length / 2))) map.delete(k)
+        localStorage.setItem(RESULTS_KEY, JSON.stringify(Object.fromEntries(map)))
+      } catch { /* give up — session cache still works */ }
+    }
+  }, [])
 
   // Results in the chosen sort order (relevance = Amazon's original scan order).
   const sortedResults = useMemo(() => (results ? sortProducts(results, sortBy) : []), [results, sortBy])
 
   // Keep the on-screen keyword's cache entry in sync with everything the user
   // builds up AFTER the scan — imported/live campaign statuses from Check CC etc.
-  // — so a later pill click restores the full enriched view, not just the raw scan.
-  // Skips while scanning (lastTermRef null) so an in-flight search never clobbers a
-  // previous term's cache with the reset-to-empty state.
+  // — so a later pill click restores the full enriched view, not just the raw scan,
+  // and persist it. Re-inserting the key (delete→set) makes it the most-recent for
+  // eviction. Skips while scanning (lastTermRef null) so an in-flight search never
+  // clobbers a previous term's cache with the reset-to-empty state.
   useEffect(() => {
     const t = lastTermRef.current
     if (!t || results == null) return
-    searchCache.current.set(t.toLowerCase(), { products: results, meta, imported, live })
-  }, [results, meta, imported, live])
+    const key = t.toLowerCase()
+    const map = searchCache.current
+    map.delete(key)
+    map.set(key, { products: results, meta, imported, live, savedAt: Date.now() })
+    persistCache()
+  }, [results, meta, imported, live, persistCache])
 
-  // ── Recent searches (last 10) — persisted per-browser in localStorage.
-  //    Loaded on mount (client-only, so no SSR/hydration mismatch).
+  // ── Recent searches (last 10) + their saved results — persisted per-browser in
+  //    localStorage. Loaded on mount (client-only, so no SSR/hydration mismatch).
+  //    Hydrating the results cache here (before setRecent triggers the re-render)
+  //    means the pills render with the right "saved / re-scan" tooltip immediately.
   useEffect(() => {
+    try {
+      const rawCache = localStorage.getItem(RESULTS_KEY)
+      const obj = rawCache ? JSON.parse(rawCache) : null
+      if (obj && typeof obj === 'object') {
+        for (const [k, v] of Object.entries(obj)) {
+          if (v && Array.isArray((v as CacheEntry)?.products)) searchCache.current.set(k, v as CacheEntry)
+        }
+      }
+    } catch { /* ignore corrupt/absent cache */ }
     try {
       const raw = localStorage.getItem(RECENT_KEY)
       const arr = raw ? JSON.parse(raw) : []
@@ -152,7 +192,8 @@ export default function ProductFinderPage() {
   }, [])
   const clearRecent = useCallback(() => {
     setRecent([])
-    try { localStorage.removeItem(RECENT_KEY) } catch { /* ignore */ }
+    searchCache.current.clear()
+    try { localStorage.removeItem(RECENT_KEY); localStorage.removeItem(RESULTS_KEY) } catch { /* ignore */ }
   }, [])
 
   // Open the Message modal for a found product. First check whether this ASIN is
@@ -312,9 +353,10 @@ export default function ProductFinderPage() {
     }
   }, [keyword, minSales, priceRange, mustVideo, maxResults, pushRecent])
 
-  // Restore a previously-completed search from the in-session cache. Returns false
-  // if there's no cached entry (the pill handler then falls back to a live scan).
-  // This is what makes a Recent pill INSTANT — no re-scan, no Amazon hit.
+  // Restore a previously-completed search from the cache (in-memory, hydrated from
+  // localStorage on mount). Returns false if there's no saved entry — the pill
+  // handler then falls back to a live scan. This is what makes a Recent pill
+  // INSTANT — no re-scan, no Amazon hit — even after a page reload.
   const restoreFromCache = useCallback((term: string): boolean => {
     const hit = searchCache.current.get(term.trim().toLowerCase())
     if (!hit) return false
@@ -325,7 +367,13 @@ export default function ProductFinderPage() {
     setLive(hit.live)
     setSearching(false)
     lastTermRef.current = term.trim() // keep syncing if the user runs Check CC on the restored view
-    toast.message(`Showing your saved results for “${term.trim()}”.`, { description: 'Hit Search to re-scan Amazon for fresh data.' })
+    // Age hint so the user knows whether the saved data is worth re-scanning.
+    let age = ''
+    if (typeof hit.savedAt === 'number') {
+      const mins = Math.round((Date.now() - hit.savedAt) / 60000)
+      age = mins < 1 ? ' (saved just now)' : mins < 60 ? ` (saved ${mins}m ago)` : ` (saved ${Math.round(mins / 60)}h ago)`
+    }
+    toast.message(`Showing your saved results for “${term.trim()}”${age}.`, { description: 'Hit Search to re-scan Amazon for fresh data.' })
     return true
   }, [])
 
