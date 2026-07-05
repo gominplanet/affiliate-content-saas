@@ -1635,13 +1635,30 @@ function mountSearchPanel() {
   try { autoFixStore() } catch (e) {}
 }
 
-// Mount now + keep it in sync with SPA navigation (CC is a React app). Cheap
-// poll: mount when on a CC page and missing; remove when we navigate away.
-try { mountSearchPanel() } catch (e) {}
+// Master on/off — the popup's toggle writes chrome.storage.local.scoutEnabled.
+// Default ON. When off, the inline panel never mounts (and any open one is
+// removed); flipping it in the popup shows/hides the panel live via onChanged.
+let SCOUT_ENABLED = true
+function applyScoutEnabled(on) {
+  SCOUT_ENABLED = on
+  const existing = document.getElementById(PANEL_ID)
+  if (!on) { if (existing) existing.remove(); return }
+  if (isCCPage() && !document.getElementById(PANEL_ID)) { try { mountSearchPanel() } catch (e) {} }
+}
+try {
+  chrome.storage.local.get(['scoutEnabled'], ({ scoutEnabled }) => applyScoutEnabled(scoutEnabled !== false))
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.scoutEnabled) applyScoutEnabled(changes.scoutEnabled.newValue !== false)
+  })
+} catch (e) { try { mountSearchPanel() } catch (e2) {} } // no storage API → default on
+
+// Keep it in sync with SPA navigation (CC is a React app). Cheap poll: mount when
+// on a CC page and missing; remove when we navigate away or SCOUT is switched off.
 setInterval(() => {
   try {
-    const onCC = isCCPage()
     const existing = document.getElementById(PANEL_ID)
+    if (!SCOUT_ENABLED) { if (existing) existing.remove(); return }
+    const onCC = isCCPage()
     if (onCC && !existing) mountSearchPanel()
     else if (!onCC && existing) existing.remove()
     // Already mounted — keep it docked above the toolbar + tab-configured as the
