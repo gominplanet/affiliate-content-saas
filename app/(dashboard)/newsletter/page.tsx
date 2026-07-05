@@ -266,6 +266,15 @@ export default function NewsletterPage() {
       const d = await r.json()
       if (!r.ok) throw new Error(d.error || 'Save failed')
       setSettings(d.settings)
+      // The setting saved to your account — but if the push to the live blog
+      // didn't land (WP offline, expired App Password, or a host WAF blocking
+      // REST writes) the on-page signup form won't reflect the change yet. Say
+      // so, rather than letting the UI imply the site is already in sync.
+      if (d.wpSync && d.wpSync.pushed === false) {
+        setError('Saved — but we couldn’t update your blog yet (couldn’t reach WordPress). The on-page signup form may lag until your site syncs. Check your WordPress connection under Set Up, then toggle again.')
+      } else {
+        setError(null)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed')
     } finally {

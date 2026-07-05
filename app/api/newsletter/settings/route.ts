@@ -122,12 +122,19 @@ export async function PUT(req: Request) {
     .single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  // Push fresh status to WordPress so the auto-embedded form on the home
-  // page + every blog-post sidebar reflects the toggle immediately. Fully
-  // best-effort — if WP is offline or unreachable, the dashboard save
-  // still succeeds; the next Customize Blog save (or a manual re-toggle)
-  // re-pushes.
-  void pushNewsletterToWp(supabase, user.id)
+  // Push fresh status to WordPress so the auto-embedded form on the home page +
+  // every blog-post sidebar reflects the toggle immediately. AWAIT it — this was
+  // fire-and-forget (`void`), but in serverless the function is frozen/killed the
+  // instant the response returns, so the push routinely never completed and the
+  // signup form kept showing after the creator turned the newsletter OFF. Still
+  // non-fatal (the DB save above already succeeded); we return the sync result so
+  // the UI can warn instead of falsely claiming "hidden everywhere".
+  let wpSync: Awaited<ReturnType<typeof pushNewsletterToWp>>
+  try {
+    wpSync = await pushNewsletterToWp(supabase, user.id)
+  } catch (e) {
+    wpSync = { pushed: false, reason: e instanceof Error ? e.message : 'sync-error' }
+  }
 
-  return NextResponse.json({ ok: true, settings: data })
+  return NextResponse.json({ ok: true, settings: data, wpSync })
 }
