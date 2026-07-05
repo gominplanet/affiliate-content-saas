@@ -9,7 +9,7 @@
  * Data is LIVE (read at that moment), not a cached third-party database.
  */
 
-import { useState, useCallback, useMemo, useEffect } from 'react'
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
 import { Loader2, Search, Sparkles, ExternalLink, PackageSearch, MessageSquare, Radar } from 'lucide-react'
@@ -109,8 +109,28 @@ export default function ProductFinderPage() {
   const [ccChecking, setCcChecking] = useState<string | null>(null) // asin being live-checked
   const [ccAllRunning, setCcAllRunning] = useState(false)          // "Check all CC" in progress
 
+  // Per-session cache of completed searches, keyed by lowercased keyword. Clicking
+  // a Recent pill RESTORES the saved results instantly instead of re-scanning
+  // Amazon (slow + rate-limited). A fresh scan only happens via the Search button,
+  // or a pill whose results aren't cached yet (e.g. after a page reload — the cache
+  // is in-memory only, matching the "data is read live, not stored" model).
+  type CacheEntry = { products: FinderProduct[]; meta: { scanned?: number; totalFound?: number } | null; imported: Record<string, Imported>; live: Record<string, Live> }
+  const searchCache = useRef<Map<string, CacheEntry>>(new Map())
+  const lastTermRef = useRef<string | null>(null) // keyword whose results are currently on screen (null while scanning)
+
   // Results in the chosen sort order (relevance = Amazon's original scan order).
   const sortedResults = useMemo(() => (results ? sortProducts(results, sortBy) : []), [results, sortBy])
+
+  // Keep the on-screen keyword's cache entry in sync with everything the user
+  // builds up AFTER the scan — imported/live campaign statuses from Check CC etc.
+  // — so a later pill click restores the full enriched view, not just the raw scan.
+  // Skips while scanning (lastTermRef null) so an in-flight search never clobbers a
+  // previous term's cache with the reset-to-empty state.
+  useEffect(() => {
+    const t = lastTermRef.current
+    if (!t || results == null) return
+    searchCache.current.set(t.toLowerCase(), { products: results, meta, imported, live })
+  }, [results, meta, imported, live])
 
   // ── Recent searches (last 10) — persisted per-browser in localStorage.
   //    Loaded on mount (client-only, so no SSR/hydration mismatch).
@@ -243,6 +263,9 @@ export default function ProductFinderPage() {
     const kw = (term ?? keyword).trim()
     if (!kw) { toast.error('Enter a keyword to search.'); return }
     pushRecent(kw)
+    // Null the term ref for the duration of the scan so the sync effect doesn't
+    // write the reset-to-empty state over any previously-cached term.
+    lastTermRef.current = null
     setSearching(true); setResults(null); setMeta(null); setImported({}); setLive({})
     try {
       const bucket = PRICE_BUCKETS[priceRange] ?? PRICE_BUCKETS.any
@@ -270,6 +293,10 @@ export default function ProductFinderPage() {
       const products = applyPrice(r.products)
       setResults(products)
       setMeta({ scanned: r.scanned, totalFound: r.totalFound })
+      // Mark this term as the one on screen so the sync effect caches it (and any
+      // Check-CC enrichment that follows). Only set on a genuine success — errors
+      // above return early, so a failed scan is never cached.
+      lastTermRef.current = kw
       const n = products.length
       if (r.blocked) {
         toast.warning('Amazon started rate-limiting — SCOUT stopped early to avoid a block. Wait a few minutes and scan fewer at a time.', { duration: 11000 })
@@ -284,6 +311,23 @@ export default function ProductFinderPage() {
       setSearching(false)
     }
   }, [keyword, minSales, priceRange, mustVideo, maxResults, pushRecent])
+
+  // Restore a previously-completed search from the in-session cache. Returns false
+  // if there's no cached entry (the pill handler then falls back to a live scan).
+  // This is what makes a Recent pill INSTANT — no re-scan, no Amazon hit.
+  const restoreFromCache = useCallback((term: string): boolean => {
+    const hit = searchCache.current.get(term.trim().toLowerCase())
+    if (!hit) return false
+    setKeyword(term)
+    setResults(hit.products)
+    setMeta(hit.meta)
+    setImported(hit.imported)
+    setLive(hit.live)
+    setSearching(false)
+    lastTermRef.current = term.trim() // keep syncing if the user runs Check CC on the restored view
+    toast.message(`Showing your saved results for “${term.trim()}”.`, { description: 'Hit Search to re-scan Amazon for fresh data.' })
+    return true
+  }, [])
 
   const generate = useCallback(async (p: FinderProduct) => {
     setGenning(s => ({ ...s, [p.asin]: 'busy' }))
@@ -399,14 +443,17 @@ export default function ProductFinderPage() {
       {recent.length > 0 && (
         <div className="max-w-4xl mb-4 flex items-center gap-2 flex-wrap">
           <span className="text-[11px] font-medium" style={{ color: 'var(--text-faint)' }}>Recent:</span>
-          {recent.map(term => (
-            <button key={term} onClick={() => { setKeyword(term); search(term) }} disabled={searching}
-              title={`Search “${term}” again`}
-              className="inline-flex items-center rounded-full px-3 py-1 text-[12px] border disabled:opacity-50 hover:border-[#7C3AED] transition-colors"
-              style={{ backgroundColor: 'var(--surface-2)', borderColor: 'var(--border)', color: 'var(--text)' }}>
-              {term}
-            </button>
-          ))}
+          {recent.map(term => {
+            const cached = searchCache.current.has(term.toLowerCase())
+            return (
+              <button key={term} onClick={() => { if (!restoreFromCache(term)) { setKeyword(term); search(term) } }} disabled={searching}
+                title={cached ? `Show your saved results for “${term}” (no re-scan)` : `Search “${term}”`}
+                className="inline-flex items-center rounded-full px-3 py-1 text-[12px] border disabled:opacity-50 hover:border-[#7C3AED] transition-colors"
+                style={{ backgroundColor: 'var(--surface-2)', borderColor: 'var(--border)', color: 'var(--text)' }}>
+                {term}
+              </button>
+            )
+          })}
           <button onClick={clearRecent} className="text-[11px] hover:underline ml-1" style={{ color: 'var(--text-faint)' }}>Clear</button>
         </div>
       )}
