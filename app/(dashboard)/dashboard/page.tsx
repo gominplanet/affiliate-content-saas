@@ -75,11 +75,20 @@ export default async function DashboardPage() {
     periodEnd: (intAny?.subscription_period_end as string | null) ?? null,
   })
   const onBillingCycle = !!intAny?.subscription_period_start
+  // Second (and final) query wave. Only the period-scoped counts depend on
+  // periodStartISO (derived from wave 1's integration row); the opportunity
+  // counts and recentVideos need only user.id. They used to run as two more
+  // serial waves after this one — merged here so they all hit the DB together
+  // (this is the most-visited SSR page; each saved round-trip is first-paint time).
   const [
     { count: postsThisPeriod },
     { count: collabsThisPeriod },
     { count: thumbnailsThisPeriod },
     { count: metadataGensThisPeriod },
+    { count: postedVideoCount },
+    { count: missingImagesCount },
+    { count: scheduledCount },
+    { data: recentVideos },
   ] = await Promise.all([
     sb.from('blog_posts').select('id', { count: 'estimated', head: true }).eq('user_id', user!.id).gte('published_at', periodStartISO),
     sb.from('collaborations').select('id', { count: 'estimated', head: true }).eq('user_id', user!.id).gte('created_at', periodStartISO),
@@ -91,6 +100,18 @@ export default async function DashboardPage() {
       .eq('user_id', user!.id)
       .eq('feature', 'yt_meta_title_strategist')
       .gte('created_at', periodStartISO),
+    // Videos that already became a post (video-backed blog_posts).
+    sb.from('blog_posts').select('id', { count: 'estimated', head: true }).eq('user_id', user!.id).not('video_id', 'is', null),
+    // Published posts with no in-article images yet — a quick quality win.
+    sb.from('blog_posts').select('id', { count: 'estimated', head: true }).eq('user_id', user!.id).eq('status', 'published').or('body_images_count.is.null,body_images_count.eq.0'),
+    // Posts queued to auto-publish (pending = active queue, future = dated).
+    sb.from('scheduled_posts').select('id', { count: 'estimated', head: true }).eq('user_id', user!.id).in('status', ['pending', 'future']),
+    // Recent catalog for the hero strip.
+    sb.from('youtube_videos')
+      .select('id, title, published_at, thumbnail_url, youtube_video_id, is_vertical')
+      .eq('user_id', user!.id)
+      .order('published_at', { ascending: false })
+      .limit(6),
   ])
   const postsUsed = plan.lifetimeMax !== null ? (postCount ?? 0) : (postsThisPeriod ?? 0)
   const postsLimit = plan.lifetimeMax !== null ? plan.lifetimeMax : plan.postsPerMonth
@@ -115,23 +136,10 @@ export default async function DashboardPage() {
   const publishedCount = postCount ?? 0
   const isNewUser = publishedCount === 0
 
-  // ── Opportunities & to-dos (cheap Supabase counts only) ──────────────────
-  // The dashboard should answer "what should I do next to earn more", not just
-  // "what have I done". These three are fast count() queries; the slower
-  // signals (SEO ranking, link clicks) load lazily client-side below.
-  const [
-    { count: postedVideoCount },
-    { count: missingImagesCount },
-    { count: scheduledCount },
-  ] = await Promise.all([
-    // Videos that already became a post (video-backed blog_posts).
-    sb.from('blog_posts').select('id', { count: 'estimated', head: true }).eq('user_id', user!.id).not('video_id', 'is', null),
-    // Published posts with no in-article images yet — a quick quality win.
-    sb.from('blog_posts').select('id', { count: 'estimated', head: true }).eq('user_id', user!.id).eq('status', 'published').or('body_images_count.is.null,body_images_count.eq.0'),
-    // Posts queued to auto-publish (pending = in the active queue, future =
-    // dated for later). Both are "upcoming" from the user's point of view.
-    sb.from('scheduled_posts').select('id', { count: 'estimated', head: true }).eq('user_id', user!.id).in('status', ['pending', 'future']),
-  ])
+  // ── Opportunities & to-dos ───────────────────────────────────────────────
+  // The opportunity counts (postedVideoCount / missingImagesCount /
+  // scheduledCount) are fetched in the merged wave above; the slower signals
+  // (SEO ranking, link clicks) load lazily client-side below.
   // Untapped catalog: synced videos not yet turned into a post. The single
   // biggest lever — a backlog of free content sitting idle.
   const catalogGap = Math.max(0, videoCount - (postedVideoCount ?? 0))
@@ -171,12 +179,7 @@ export default async function DashboardPage() {
     .map(c => c.name)
   const showMetaNudge = metaNudgePlatforms.length > 0
 
-  const { data: recentVideos } = await sb
-    .from('youtube_videos')
-    .select('id, title, published_at, thumbnail_url, youtube_video_id, is_vertical')
-    .eq('user_id', user!.id)
-    .order('published_at', { ascending: false })
-    .limit(6)
+  // recentVideos is fetched in the merged wave above.
 
   // ── Hero values ────────────────────────────────────────────────────────
   // Pulled from brand_profiles.author_name → brand_profiles.name → user

@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
   // the synthetic-post path) rather than erroring.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [{ data: post }, { data: integration }] = await Promise.all([
-    supabase.from('blog_posts').select('id,title,wordpress_url,wordpress_post_id,wordpress_site_id,social_publish_counts').eq('id', postId).maybeSingle(),
+    supabase.from('blog_posts').select('id,title,wordpress_url,wordpress_post_id,wordpress_site_id,social_publish_counts').eq('id', postId).eq('user_id', user.id).maybeSingle(),
     supabase.from('integrations').select('pinterest_access_token,pinterest_board_id,pinterest_fallback_board').eq('user_id', user.id).single(),
   ])
   // No MVP record → pin straight from the WordPress post. `hasRow` gates the
@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
     // blog_posts row (a synthetic WP-only post has no id to write to).
     if (hasRow) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await supabase.from('blog_posts').update({ pinterest_pin_id: pinId }).eq('id', postId)
+      await supabase.from('blog_posts').update({ pinterest_pin_id: pinId }).eq('id', postId).eq('user_id', user.id)
       // Record the canonical pin URL so the brand-recap links straight to it.
       await recordSocialPermalink(supabase, postId, 'pinterest', socialPermalink.pinterest(pinId))
       await incrementSocialCount(supabase, postId, 'pinterest')

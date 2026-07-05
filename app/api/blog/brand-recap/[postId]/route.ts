@@ -91,13 +91,21 @@ export async function GET(request: Request, { params }: { params: Promise<{ post
     const id = await resolveBlogPostId(supabase, ownerId, rawId, wpUrl)
     if (!id) return NextResponse.json({ error: 'Post not found' }, { status: 404 })
 
+    // Two of these columns are migration-gated: `amazon_video_url` (mig 141)
+    // and `social_permalinks` (mig 142). On an account a migration behind, a
+    // single-shot select ERRORS → post is null → we'd 404 a post that exists,
+    // killing the whole Share-with-brand feature with a misleading message.
+    // Drop the optional columns and retry on a "column does not exist" error
+    // (same resilience pattern as app/api/campaigns/list/route.ts).
+    const CORE_COLS = 'id, title, video_id, wordpress_url, tiktok_share_url, pinterest_pin_id, twitter_post_id, facebook_post_id, linkedin_post_id'
+    const OPT_COLS = ['amazon_video_url', 'social_permalinks']
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: post } = await (supabase as any)
-      .from('blog_posts')
-      .select('id, title, video_id, wordpress_url, tiktok_share_url, pinterest_pin_id, twitter_post_id, facebook_post_id, linkedin_post_id, amazon_video_url, social_permalinks')
-      .eq('user_id', ownerId)
-      .eq('id', id)
-      .maybeSingle()
+    const loadPost = async (cols: string) => (supabase as any)
+      .from('blog_posts').select(cols).eq('user_id', ownerId).eq('id', id).maybeSingle()
+    let { data: post, error: postErr } = await loadPost(`${CORE_COLS}, ${OPT_COLS.join(', ')}`)
+    if (postErr && /column .* does not exist/i.test(postErr.message || '')) {
+      ;({ data: post } = await loadPost(CORE_COLS))
+    }
     if (!post) return NextResponse.json({ error: 'Post not found' }, { status: 404 })
 
     // Linked video (if any) → YouTube link + product-link derivation source.

@@ -16,6 +16,7 @@ import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { PinterestService } from '@/services/pinterest'
 import { scrubBanned } from '@/lib/scrub'
 import { recordUsage } from '@/lib/ai-usage'
+import { assertPublicHttpUrl } from '@/lib/ssrf-guard'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -31,6 +32,10 @@ export async function POST(request: Request) {
   try { body = await request.json() } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }) }
   const videoUrl = (body.videoUrl || '').trim()
   if (!/^https:\/\//i.test(videoUrl)) return NextResponse.json({ error: 'A video URL is required.' }, { status: 400 })
+  // SSRF guard: the render bytes get fetched server-side below. Legit renders
+  // live on our storage / Cloudinary (public hosts) — reject private/reserved/
+  // metadata hosts a body could smuggle in.
+  try { assertPublicHttpUrl(videoUrl) } catch { return NextResponse.json({ error: 'That video URL host isn’t allowed.' }, { status: 400 }) }
   // Cover image: use the one passed (e.g. a post's featured image), else derive
   // a first-frame JPG from the video when it's a Cloudinary asset (burner output
   // always is). Pinterest requires a cover for video pins.

@@ -121,24 +121,34 @@ export async function POST(request: NextRequest) {
 
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object as unknown as {
+      id: string
       metadata: { user_id: string; tier: Tier }
       customer: string
       subscription: string
-      // Stripe sets these when line items resolve; we use the price
-      // id from here as the SOURCE OF TRUTH for the tier (rather than
+      // The price id is the SOURCE OF TRUTH for the tier (rather than
       // trusting metadata.tier, which is attacker-influenceable if
       // anyone ever creates a session via the API with a mismatched
-      // price + metadata.tier pair). Discovered in the 2026-06-02
-      // audit — was a P1 trust-the-client bug.
+      // price + metadata.tier pair). Discovered in the 2026-06-02 audit.
       line_items?: { data?: { price?: { id?: string } }[] }
       customer_email?: string | null
       customer_details?: { email?: string | null }
     }
-    // Derive tier from the actual priceId — never trust metadata.tier
-    // for paid status. Fall back to metadata.tier only if Stripe
-    // somehow doesn't expand line_items (shouldn't happen in webhook
-    // payloads, but defensive).
-    const priceId = session.line_items?.data?.[0]?.price?.id
+    // Derive tier from the ACTUAL priceId — never trust metadata.tier for paid
+    // status. IMPORTANT: Stripe does NOT expand `line_items` on the webhook
+    // event object (only on a `retrieve({expand})` / `listLineItems` call), so
+    // the guard was previously dead — priceId was always undefined and tier
+    // fell through to metadata.tier every time. Fetch the line item explicitly
+    // so the source-of-truth check actually runs; fall back to metadata.tier
+    // only if the fetch fails or the price isn't in our env map.
+    let priceId = session.line_items?.data?.[0]?.price?.id
+    if (!priceId) {
+      try {
+        const li = await stripe.checkout.sessions.listLineItems(session.id, { limit: 1 })
+        priceId = li.data?.[0]?.price?.id
+      } catch (e) {
+        console.warn('[stripe-webhook] listLineItems failed; falling back to metadata.tier', e)
+      }
+    }
     const tier: Tier = (priceId && PRICE_TO_TIER[priceId]) || session.metadata?.tier
     // Runtime guard (TS types tier as Tier, but a Payment-Link session can have
     // empty metadata AND an unmapped price → undefined at runtime). Never write a

@@ -96,9 +96,12 @@ function extractCard(asin, el) {
   // earnings-per-click). Best-guess; tune from the "Debug" dump on the live page.
   // e.g. "Up to 20% commission" / "20% Commission".
   let commissionPct = null
+  // ONLY accept a % that's anchored to the word "commission". A bare "any % on
+  // the card" last-resort used to grab discount/promo chips ("Save 25%", "20%
+  // off") and mislabel them as commission — corrupting the /epc Min-commission
+  // filter and sort. Better to return null than a wrong number.
   const cM = full.match(/(?:up to\s*)?(\d{1,2}(?:\.\d)?)\s*%\s*commission/i)
     || full.match(/commission[:\s]*(?:up to\s*)?(\d{1,2}(?:\.\d)?)\s*%/i)
-    || full.match(/\b(\d{1,2}(?:\.\d)?)\s*%/)   // last-resort: any % on the card
   if (cM) { const v = parseFloat(cM[1]); if (!isNaN(v)) commissionPct = v }
 
   // Days remaining — "30+ Days Remaining" / "12 Days Remaining".
@@ -182,8 +185,9 @@ async function parseCampaigns() {
       }
     }
     // Stream live progress to the popup so it can show a running count while
-    // the grid scrolls (best-effort — the popup may be closed).
-    try { chrome.runtime.sendMessage({ type: 'CC_SCAN_PROGRESS', found: byAsin.size }) } catch (e) {}
+    // the grid scrolls (best-effort — the popup may be closed). Swallow the
+    // async rejection too (no receiver → "Unchecked runtime.lastError" spam).
+    try { const p = chrome.runtime.sendMessage({ type: 'CC_SCAN_PROGRESS', found: byAsin.size }); if (p && p.catch) p.catch(() => {}) } catch (e) {}
   }
 
   // Scroll the virtualized grid in viewport-sized steps, harvesting at
@@ -842,11 +846,25 @@ function readCampaignDetailsContext() {
 }
 
 async function fetchOutreachDraft(ctx, token) {
+  const payload = { brand: ctx.brand, product: ctx.product, asin: ctx.asin, commissionPct: ctx.commissionPct, brief: ctx.brief }
+  // Draft via the background worker FIRST: a content-script fetch from amazon.com
+  // to mvpaffiliate.io is subject to Amazon's page CSP `connect-src` and can be
+  // silently blocked (the ✍️ Draft button would just fail). The worker isn't.
+  try {
+    const r = await chrome.runtime.sendMessage({ type: 'SCOUT_OUTREACH', token, ctx: payload })
+    if (r && r.reached) {
+      if (r.ok) return { ok: true, message: r.message || '' }
+      console.warn('[MVP SCOUT] draft failed (bg):', r.error)
+      return { ok: false, error: r.error }
+    }
+    // reached:false → worker couldn't complete (cold/asleep worker, or an old
+    // build with no SCOUT_OUTREACH handler); fall through to a direct fetch.
+  } catch (e) { /* no handler / worker asleep → direct fetch below */ }
   try {
     const res = await fetch(`${MVP_ORIGIN}/api/campaigns/outreach`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-      body: JSON.stringify({ brand: ctx.brand, product: ctx.product, asin: ctx.asin, commissionPct: ctx.commissionPct, brief: ctx.brief }),
+      body: JSON.stringify(payload),
     })
     if (!res.ok) {
       let error = `HTTP ${res.status}`
@@ -856,7 +874,7 @@ async function fetchOutreachDraft(ctx, token) {
     }
     const j = await res.json()
     return { ok: true, message: (j && j.message) || '' }
-  } catch (e) { return { ok: false, error: (e && e.message) || 'network error' } }
+  } catch (e) { return { ok: false, error: (e && e.message) || 'network error (page CSP may be blocking amazon.com→mvp; reload SCOUT)' } }
 }
 
 // Split an outreach draft into Amazon "message group" segments. PRIMARY: the

@@ -41,6 +41,27 @@ async function pushCampaignsToMvp(token, campaigns) {
   }
 }
 
+// Draft an outreach message via MVP, from the WORKER (not the content script):
+// a content-script fetch amazon.com→mvpaffiliate.io is subject to Amazon's page
+// CSP `connect-src` and can be silently blocked. Same worker-first pattern as
+// pushCampaignsToMvp — `reached:false` tells the caller to try a direct fetch.
+async function fetchOutreachFromMvp(token, ctx) {
+  if (!token) return { reached: false, ok: false, error: 'no token' }
+  try {
+    const res = await fetch(`${MVP_ORIGIN}/api/campaigns/outreach`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify(ctx || {}),
+    })
+    let body = null
+    try { body = await res.json() } catch (e) {}
+    if (res.ok) return { reached: true, ok: true, message: (body && body.message) || '' }
+    return { reached: true, ok: false, status: res.status, error: (body && body.error) || `HTTP ${res.status}` }
+  } catch (e) {
+    return { reached: false, ok: false, error: (e && e.message) || 'network error' }
+  }
+}
+
 // Phase 1: injected while the YouTube tab is still FOREGROUND.
 // Waits for any pre-roll ad to fully complete before returning.
 // Chrome pauses ads in background tabs, so we MUST do this before switching
@@ -285,6 +306,16 @@ async function scanTab(tabId) {
   }
 }
 
+// Shared Amazon throttle state. When any ASIN/dp read hits the "Temporarily
+// Unavailable" / robot-check interstitial we stamp a short cooldown so every
+// subsequent resolve short-circuits WITHOUT opening another Amazon tab. This
+// honors the SCOUT throttle contract (stop hammering the instant Amazon pushes
+// back) even for the ASIN-harvest loops, which previously had no STOP signal.
+// The service worker stays alive across a single CC batch (active messaging),
+// so this cooldown reliably covers the risky rapid-fire window.
+let _amazonBlockedUntil = 0
+const AMAZON_BLOCK_COOLDOWN_MS = 90000
+
 // ── SCOUT campaign → ASIN resolver ─────────────────────────────────────────
 // Amazon's 2026-07 Creator Connections redesign hides the ASIN on the card; it
 // only appears on the campaign's own "View details" page (a full navigation).
@@ -293,6 +324,15 @@ async function scanTab(tabId) {
 // the rendered page, and close the tab. Same background-tab pattern as the
 // YouTube frame capture above.
 function harvestAsinsInPage() {
+  // STOP-on-throttle: if Amazon is serving the "Temporarily Unavailable" /
+  // robot-check interstitial, bail immediately with a blocked sentinel so the
+  // caller can set a cooldown and stop opening more tabs. Same detection the
+  // /dp reader uses (readDpSignalsInPage) — kept inline because this function
+  // is injected into the page via executeScript and can't close over outer refs.
+  const _bodyText = document.body ? (document.body.innerText || '') : ''
+  if (/website temporarily unavailable|we just need to make sure you'?re not a robot|enter the characters you see below|api-services-support@amazon|to discuss automated access|type the characters you see in this image|robot check/i.test(_bodyText)) {
+    return { asins: [], blocked: true }
+  }
   const set = new Set()
   // Reject placeholders/junk: our own SCOUT panel's ASIN input is literally
   // "B0XXXXXXXX", and gets serialized into the page HTML. Real ASINs never
@@ -316,6 +356,8 @@ function harvestAsinsInPage() {
 
 async function resolveCampaignAsin(detailsUrl) {
   if (!detailsUrl) return { ok: false, error: 'no-url' }
+  // Amazon just blocked us — don't open another tab until the cooldown lapses.
+  if (Date.now() < _amazonBlockedUntil) return { ok: false, blocked: true, asins: [] }
   let tabId = null
   try {
     const tab = await chrome.tabs.create({ url: detailsUrl, active: false })
@@ -325,7 +367,10 @@ async function resolveCampaignAsin(detailsUrl) {
     let asins = []
     for (let i = 0; i < 12; i++) {
       const results = await chrome.scripting.executeScript({ target: { tabId }, func: harvestAsinsInPage })
-      asins = (results && results[0] && results[0].result) || []
+      const r = (results && results[0] && results[0].result) || { asins: [], blocked: false }
+      // Interstitial → set the cooldown and bail so callers stop the batch.
+      if (r.blocked) { _amazonBlockedUntil = Date.now() + AMAZON_BLOCK_COOLDOWN_MS; return { ok: false, blocked: true, asins: [] } }
+      asins = r.asins || []
       if (asins.length) break
       await _sleep(500)
     }
@@ -410,6 +455,8 @@ function readDpSignalsInPage() {
 // then reuse the SAME tab to open the /dp page and read sales + carousel video.
 async function resolveProductDeep(detailsUrl) {
   if (!detailsUrl) return { ok: false, error: 'no-url' }
+  // Respect the shared Amazon cooldown — don't open a tab while blocked.
+  if (Date.now() < _amazonBlockedUntil) return { ok: false, blocked: true, asin: null, sales: null, hasVideo: false, price: null }
   let tabId = null
   try {
     const tab = await chrome.tabs.create({ url: detailsUrl, active: false })
@@ -418,8 +465,9 @@ async function resolveProductDeep(detailsUrl) {
     let asin = null
     for (let i = 0; i < 12; i++) {
       const r = await chrome.scripting.executeScript({ target: { tabId }, func: harvestAsinsInPage })
-      const a = (r && r[0] && r[0].result) || []
-      if (a.length) { asin = a[0]; break }
+      const a = (r && r[0] && r[0].result) || { asins: [], blocked: false }
+      if (a.blocked) { _amazonBlockedUntil = Date.now() + AMAZON_BLOCK_COOLDOWN_MS; return { ok: false, blocked: true, asin: null, sales: null, hasVideo: false, price: null } }
+      if (a.asins && a.asins.length) { asin = a.asins[0]; break }
       await _sleep(500)
     }
     if (!asin) return { ok: true, asin: null, sales: null, hasVideo: false, price: null }
@@ -455,6 +503,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
   if (msg && msg.type === 'SCOUT_PUSH_CAMPAIGN') {
     pushCampaignsToMvp(msg.token, msg.campaigns).then(sendResponse)
+    return true // async response
+  }
+  if (msg && msg.type === 'SCOUT_OUTREACH') {
+    fetchOutreachFromMvp(msg.token, msg.ctx).then(sendResponse)
     return true // async response
   }
   if (msg && msg.type === 'SCOUT_VALIDATE_TOKEN') {
@@ -2187,8 +2239,9 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'MVP_PRODUCT_SEARCH') {
     // Product Finder: keyword + rules → live Amazon results, each deep-checked
     // (monthly sales + carousel-video position) and filtered, in a hidden tab.
-    // Paginates the search to a ~100 pool + deep-checks up to 50 (a /dp visit
-    // each), so allow up to ~7 minutes.
+    // Paginates the search to a ~100 pool + deep-checks up to `maxDeep` (hard-
+    // capped at 25 per the Amazon-throttle rule — a /dp visit each), so allow
+    // a generous ceiling; the timeout is a safety net, not the expected runtime.
     const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 420000)
     productFinderSearch(msg.query, msg.opts || {})
       .then((res) => { clearTimeout(timeout); sendResponse(res) })

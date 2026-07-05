@@ -646,7 +646,7 @@ function CategoryPicker({
 // to every card. A card now only re-renders when ITS OWN props change.
 // Big snappiness win on the 20-card paginated Posts tab. 2026-06-07.
 const VideoCard = memo(function VideoCardImpl({
-  video, post, wpSiteUrl, fbConnected, pinterestConnected, threadsConnected, linkedInConnected, twitterConnected, blueskyConnected, telegramConnected, instagramConnected, tiktokConnected, fbAccounts, igAccounts, userTier, brandNiches, customCategories, brandDisclaimer, brandFacebookGroups, failedSchedulePlatforms, onCustomCategoryAdded,
+  video, post, wpSiteUrl, fbConnected, pinterestConnected, threadsConnected, linkedInConnected, twitterConnected, blueskyConnected, telegramConnected, instagramConnected, tiktokConnected, fbAccounts, igAccounts, userTier, brandNiches, customCategories, brandDisclaimer, brandFacebookGroups, blogImagePref, failedSchedulePlatforms, onCustomCategoryAdded,
   onGenerated, onDismiss, onDelete, onPinPreview,
 }: {
   video: Record<string, unknown>
@@ -672,6 +672,9 @@ const VideoCard = memo(function VideoCardImpl({
   customCategories: string[]
   brandDisclaimer: string
   brandFacebookGroups: Array<{ name: string; url: string }>
+  /** Saved Brand Profile "Images per article" pref — seeds the per-post
+   *  "Include photos" checkbox in GenerateButton. null = Default/auto. */
+  blogImagePref: number | null
   onCustomCategoryAdded: (next: string[]) => void
   onGenerated: (videoId: string, url: string, title: string, postId: string) => void
   onDismiss: () => void
@@ -1087,7 +1090,7 @@ const VideoCard = memo(function VideoCardImpl({
                 don't apply when there's no blog post in this flow. */}
           {video.is_vertical !== true && (
           <div className="flex items-center gap-x-4 gap-y-1.5 flex-wrap">
-            <GenerateButton videoId={id} youtubeVideoId={(video.youtube_video_id as string) || undefined} existingPost={post} userTier={userTier} onDone={(url, t, pid) => onGenerated(id, url, t, pid)} />
+            <GenerateButton videoId={id} youtubeVideoId={(video.youtube_video_id as string) || undefined} existingPost={post} userTier={userTier} blogImagePref={blogImagePref} onDone={(url, t, pid) => onGenerated(id, url, t, pid)} />
             {/* Optional custom blog hero (else the YT thumbnail is the hero).
                 Only meaningful before a post exists — the featured image is
                 set at generation time. */}
@@ -1757,6 +1760,10 @@ export default function ContentPage() {
   const [customCategories, setCustomCategories] = useState<string[]>([])
   const [brandDisclaimer, setBrandDisclaimer] = useState('')
   const [brandFacebookGroups, setBrandFacebookGroups] = useState<Array<{ name: string; url: string }>>([])
+  // Brand Profile "Images per article" pref (blog_profiles.blog_image_count):
+  // null = Default/auto, 0 = text-only, 1..N = explicit. Seeds each video's
+  // "Include photos" checkbox so an explicit ≥1 actually produces images.
+  const [blogImagePref, setBlogImagePref] = useState<number | null>(null)
   const [checks, setChecks] = useState<ReadinessCheck | null>(null)
   const [syncing, setSyncing] = useState(false)
   // Pro multi-channel: connected channels for the "sync a specific channel"
@@ -1825,7 +1832,9 @@ export default function ContentPage() {
     setSeoScoresLoaded(true)
     ;(async () => {
       try {
-        const res = await fetch('/api/seo/overview')
+        // summaryOnly=1 → cheap slug→score read (no GSC/sitemap/WP/upsert).
+        // The badge only needs the score; the full SEO hub call is 120s.
+        const res = await fetch('/api/seo/overview?summaryOnly=1')
         const d = await res.json()
         if (!Array.isArray(d?.posts)) return
         const map: Record<string, number> = {}
@@ -1995,7 +2004,7 @@ export default function ContentPage() {
 
     const [vids, { data: brand }, { data: integration }, { data: blogPosts }, liveResp, { data: seoCache }] = await Promise.all([
       fetchAllVideos(),
-      sb.from('brand_profiles').select('name,author_name,niches,tone,custom_categories,affiliate_disclaimer,facebook_groups').eq('user_id', user.id).single(),
+      sb.from('brand_profiles').select('name,author_name,niches,tone,custom_categories,affiliate_disclaimer,facebook_groups,blog_image_count').eq('user_id', user.id).single(),
       sb.from('integrations').select('wordpress_url,wordpress_username,wordpress_app_password,setup_status,facebook_page_id,pinterest_access_token,pinterest_board_id,threads_access_token,linkedin_access_token,linkedin_person_id,twitter_access_token,twitter_handle,bluesky_handle,bluesky_app_password,telegram_channel_id,instagram_access_token,instagram_user_id,tiktok_access_token,tiktok_open_id,tier').eq('user_id', user.id).single(),
       // `scheduled_for` + `schedule_mode` were added in migration 104.
       // Cast to any because the supabase-generated types haven't been
@@ -2060,6 +2069,7 @@ export default function ContentPage() {
     setCustomCategories(((b?.custom_categories as string[] | null) ?? []))
     setBrandDisclaimer((b?.affiliate_disclaimer as string | null) ?? '')
     setBrandFacebookGroups(Array.isArray(b?.facebook_groups) ? (b!.facebook_groups as Array<{ name: string; url: string }>) : [])
+    setBlogImagePref(typeof b?.blog_image_count === 'number' ? (b.blog_image_count as number) : null)
     setVideos(vids)
 
     // Reconcile against the LIVE site: a post deleted/trashed in WordPress still
@@ -3431,6 +3441,7 @@ export default function ContentPage() {
                     customCategories={customCategories}
                     brandDisclaimer={brandDisclaimer}
                     brandFacebookGroups={brandFacebookGroups}
+                    blogImagePref={blogImagePref}
                     failedSchedulePlatforms={posts[video.id as string]?.postId ? failedSchedules[posts[video.id as string]!.postId!] : undefined}
                     onCustomCategoryAdded={setCustomCategories}
                     onGenerated={(vid, url, title, postId) => setPosts((prev) => ({ ...prev, [vid]: { url, title, postId } }))}
@@ -3839,6 +3850,7 @@ export default function ContentPage() {
                     customCategories={customCategories}
                     brandDisclaimer={brandDisclaimer}
                     brandFacebookGroups={brandFacebookGroups}
+                    blogImagePref={blogImagePref}
                     failedSchedulePlatforms={posts[video.id as string]?.postId ? failedSchedules[posts[video.id as string]!.postId!] : undefined}
                     onCustomCategoryAdded={setCustomCategories}
                     onGenerated={(vid, url, title, postId) => setPosts((prev) => ({ ...prev, [vid]: { url, title, postId } }))}

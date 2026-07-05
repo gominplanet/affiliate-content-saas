@@ -274,7 +274,7 @@ export function InstagramDirectModal({
                 </div>
                 {productResolved && (
                   <p className="text-[10px] text-[#34c759] mt-1">
-                    ✓ Using product: <strong>{productResolved.title.slice(0, 80)}{productResolved.title.length > 80 ? '…' : ''}</strong>
+                    ✓ Using product: <strong>{(productResolved.title ?? productResolved.asin ?? '').slice(0, 80)}{(productResolved.title?.length ?? 0) > 80 ? '…' : ''}</strong>
                     {productResolved.asin && <span className="text-[#86868b]"> · {productResolved.asin}</span>}
                   </p>
                 )}

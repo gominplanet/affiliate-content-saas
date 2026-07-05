@@ -76,15 +76,18 @@ export default function TitleAuditPage() {
         scanned += j.scannedCount
         if (j.totalCount != null) totalCount = j.totalCount
         offset = j.nextOffset
-        setScan({
+        // Functional updater: reading `scan.startedAt` from the render-time
+        // closure was stale (usually null on the first scan), clobbering the
+        // fresh Date.now() set when the scan began. `prev` is always current.
+        setScan((prev) => ({
+          ...prev,
           scanning: true,
           scannedCount: scanned,
           totalCount,
           nextOffset: offset,
           hasMore: j.hasMore,
           mismatches: allMismatches,
-          startedAt: scan.startedAt,
-        })
+        }))
         if (!j.hasMore) break
       }
       setScan(prev => ({ ...prev, scanning: false }))

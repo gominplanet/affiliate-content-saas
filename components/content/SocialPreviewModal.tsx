@@ -365,8 +365,11 @@ export function SocialPreviewModal({
 
               {/* Facebook Page picker — pick which connected Page to publish to,
                   right here. Falls back to a static label for a single Page or
-                  for platforms that don't pass a page list. */}
-              {hasPagePicker && !scheduleEnabled ? (
+                  for platforms that don't pass a page list. Kept visible when
+                  scheduling too: the scheduled payload also carries
+                  socialAccountId, so hiding it silently sent scheduled posts to
+                  the default Page on multi-Page accounts. */}
+              {hasPagePicker ? (
                 <div className="mb-2 flex items-center gap-2 rounded-lg bg-[#1877f2]/8 border border-[#1877f2]/20 px-3 py-2">
                   <CheckCircle size={12} className="text-[#1877f2] flex-shrink-0" />
                   <span className="text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7] flex-shrink-0">Publish to Page:</span>

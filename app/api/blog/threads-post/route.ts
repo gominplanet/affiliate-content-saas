@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [{ data: post }, { data: integration }] = await Promise.all([
-      supabase.from('blog_posts').select('*, youtube_videos(thumbnail_url)').eq('id', postId).single(),
+      supabase.from('blog_posts').select('*, youtube_videos(thumbnail_url)').eq('id', postId).eq('user_id', user.id).single(),
       supabase.from('integrations').select('*').eq('user_id', user.id).single(),
     ])
 
@@ -122,7 +122,7 @@ Write ONLY the post text, nothing else. Do not include a disclaimer or #ad tag.`
     const result = await threads.createPost(fullText, imageUrl ?? undefined)
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await supabase.from('blog_posts').update({ threads_post_id: result.id }).eq('id', postId)
+    await supabase.from('blog_posts').update({ threads_post_id: result.id }).eq('id', postId).eq('user_id', user.id)
     // Store the real public permalink (Threads has none derivable from the id),
     // so the brand-recap can actually link to the Threads post. Best-effort.
     if (result.permalink) await recordSocialPermalink(supabase, postId!, 'threads', result.permalink)

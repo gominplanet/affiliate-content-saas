@@ -337,6 +337,10 @@ export default function NewsletterComposePage() {
 
   async function confirmSend() {
     if (!draft) return
+    // Guard against a double-submit (Enter key + button click, or a fast
+    // double-click): setSending is async, so without this a second call slips
+    // through before `sending` flips → the whole newsletter goes out TWICE.
+    if (sending) return
     setConfirmOpen(false)
     setSending(true)
     setSendError(null)

@@ -28,18 +28,19 @@ export async function GET() {
   if ('error' in auth) return auth.error
   const { ownerId } = auth
 
-  const channels = await listYouTubeChannels(supabase, ownerId)
-
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
-  const { data: intRow } = await sb.from('integrations').select('tier').eq('user_id', ownerId).maybeSingle()
+  // These three reads only depend on ownerId — run them together instead of
+  // waterfalling (this route loads on the content page + every co-pilot visit).
+  const [channels, { data: intRow }, { data: sites }] = await Promise.all([
+    listYouTubeChannels(supabase, ownerId),
+    sb.from('integrations').select('tier').eq('user_id', ownerId).maybeSingle(),
+    sb.from('wordpress_sites')
+      .select('id, label, default_youtube_channel_id')
+      .eq('user_id', ownerId)
+      .order('display_order', { ascending: true }),
+  ])
   const tier = normalizeTier((intRow as { tier?: string } | null)?.tier)
-
-  const { data: sites } = await sb
-    .from('wordpress_sites')
-    .select('id, label, default_youtube_channel_id')
-    .eq('user_id', ownerId)
-    .order('display_order', { ascending: true })
 
   return NextResponse.json({
     channels,
