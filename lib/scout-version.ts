@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.11.12'
+export const SCOUT_LATEST_VERSION = '1.11.49'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Refreshed the SCOUT icon to the new black mark. Chrome auto-updates the Web Store build in the background — nothing to do.'
+  'Reads the Sponsored Products for Creators tab (ASIN, price and Estimated EPC straight off the card), a cleaner popup with an on/off switch, and a sturdier campaign import. Chrome auto-updates the Web Store build in the background — nothing to do.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
