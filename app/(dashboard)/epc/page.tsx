@@ -27,7 +27,11 @@ import { getScoutInstallKind, requestAcceptCampaign } from '@/lib/extension-fram
 import MessageBrandModal, { type MessageBrandCampaign } from '@/components/campaigns/MessageBrandModal'
 import { SCOUT_STORE_LISTING_URL } from '@/lib/scout-version'
 
-const CC_URL = 'https://www.amazon.com/creatorconnections/'
+// The REAL Creator Connections app (Amazon's 2026 redesign). The legacy
+// www.amazon.com/creatorconnections/ URL is a dead shell that renders nothing;
+// this deep-link opens the actual campaign grid (the app resolves the creator's
+// id from their logged-in session).
+const CC_URL = 'https://affiliate-program.amazon.com/p/connect/requests?status=opportunity&type=affiliate-plus'
 
 interface CampaignRow {
   id: string
