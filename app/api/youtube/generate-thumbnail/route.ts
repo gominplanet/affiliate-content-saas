@@ -1074,7 +1074,7 @@ export async function POST(request: Request) {
         ok: false,
         needsExtension: true,
         error: 'No identity source available',
-        message: "This video is private — MVP can't pull frames from it without the browser extension. Install the SCOUT extension to capture your video frames, or add a Face Model under \"Your Face\" to generate a thumbnail.",
+        message: "This video is private — MVP can't pull frames from it without the browser extension. Install the SCOUT extension from the Chrome Web Store to capture your video frames, or add a Face Model under \"Your Face\" to generate a thumbnail.",
       }, { status: 409 })
     }
     if (textMode === 'graphic' && !uploadedPhotoUrl && (faceModel || hasVideoFrame)) {

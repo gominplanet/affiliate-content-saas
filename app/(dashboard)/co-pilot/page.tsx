@@ -9,8 +9,7 @@ import { CapReachedBanner } from '@/components/CapReachedBanner'
 import { useConfirm } from '@/components/ui/useConfirm'
 import { pickWeightedStyleIndex, OVERLAY_STYLES, drawHeadline, type HeadlinePosition, type FaceBox } from '@/lib/thumbnail-overlay'
 import { isExtensionAvailable, requestVideoFrames, requestAmazonProduct, requestStudioSchedule, requestStudioVideos, requestStudioFinish, type StudioFinishResult } from '@/lib/extension-frame'
-import { SCOUT_DOWNLOAD_URL } from '@/lib/scout-version'
-import CopyChromeExtensions from '@/components/scout/CopyChromeExtensions'
+import { SCOUT_STORE_LISTING_URL } from '@/lib/scout-version'
 import { effectiveTier } from '@/lib/view-as'
 import type { Tier } from '@/lib/tier'
 import BrandStylePanel, { BORDER_NAMES } from '@/components/co-pilot/BrandStylePanel'
@@ -1505,7 +1504,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
       }
       // needsExtension (409): private/inaccessible video with no face identity source.
       if (!res.ok && data.needsExtension) {
-        throw new Error("This video is private. Install the SCOUT extension (chrome://extensions → Load unpacked → extension/ folder) to capture frames, or select a Face Model under \"Your Face\".")
+        throw new Error("This video is private. Install the SCOUT extension from the Chrome Web Store to capture frames, or select a Face Model under \"Your Face\".")
       }
       // needsFaceModel (409): the user hasn't set up a Face Model and asked for
       // a thumbnail WITH a face — surface the full guidance, not a generic error.
@@ -2168,20 +2167,17 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                           </div>
                         </div>
                         <div className="px-4 pb-3 space-y-1.5">
-                          <p className="text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Two steps:</p>
-                          <ol className="text-[11px] text-[#86868b] dark:text-[#8e8e93] space-y-1 list-decimal list-inside">
-                            <li>Download &amp; unzip the extension</li>
-                            <li>Chrome → <CopyChromeExtensions /> → Developer mode ON → Load unpacked → select the unzipped folder</li>
-                          </ol>
+                          <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">One click from the Chrome Web Store — Chrome installs it and keeps it updated automatically.</p>
                         </div>
                         <div className="px-4 pb-4 flex items-center gap-2">
                           <a
-                            href={SCOUT_DOWNLOAD_URL}
-                            download
+                            href={SCOUT_STORE_LISTING_URL}
+                            target="_blank"
+                            rel="noopener noreferrer"
                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#FF9500] text-white text-xs font-semibold hover:bg-[#e6860a] transition-colors"
                           >
                             <Download size={12} />
-                            Download extension
+                            Add to Chrome
                           </a>
                           <button
                             type="button"

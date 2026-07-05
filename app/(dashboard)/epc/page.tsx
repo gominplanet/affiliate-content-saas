@@ -4,13 +4,12 @@
  * EPC Scout — token-based cockpit for Amazon Creator Connections.
  *
  * Flow (Option A — works for every user, no fixed-extension-ID dependency):
- *   1. Install the Scout extension (download + Load-unpacked, it's not in the
- *      Web Store).
+ *   1. Install SCOUT from the Chrome Web Store (auto-updating).
  *   2. Copy your ingest token from here.
- *   3. On a Creator Connections page, open the extension popup, paste the
- *      token, and "Scan & push" — it scrapes the page and pushes the campaigns
- *      into your queue via the token (no MVP login needed on Amazon's side).
- *   4. Back here: filter the queue by EPC / keyword / end date, pick winners,
+ *   3. On a Creator Connections page, the inline SCOUT panel searches campaigns;
+ *      pick the winners and Import selected into MVP (pushes via the token, no
+ *      MVP login needed on Amazon's side).
+ *   4. Back here: filter the queue by EPC / commission / end date, pick winners,
  *      and generate posts.
  *
  * The extension only scrapes + pushes; all review/filtering/generation lives
@@ -540,7 +539,7 @@ export default function EpcScoutPage() {
           Amazon Creator Connections pays you extra on campaigns you accept — either a bigger <strong>commission per sale</strong> (Affiliate+) or a flat rate <strong>per click</strong> (EPC). SCOUT finds those campaigns, lets you keep the highest-earning ones (sorted per program on their own tab), and writes + publishes a blog post for each — so your blog covers exactly what Amazon is already paying you to promote.
         </p>
         <ol className="text-[12px] leading-relaxed list-decimal pl-5 mb-4 space-y-1" style={{ color: 'var(--text-soft)' }}>
-          <li><button onClick={() => setShowInstall(s => !s)} className="text-[#7C3AED] font-medium hover:underline">Install the SCOUT extension</button> (it’s not in the Chrome Web Store).</li>
+          <li><button onClick={() => setShowInstall(s => !s)} className="text-[#7C3AED] font-medium hover:underline">Install the SCOUT extension</button> (one click from the Chrome Web Store).</li>
           <li>Copy your ingest token below, paste it into SCOUT, and hit <span className="font-medium">Connect</span> (the token then collapses out of the way).</li>
           <li>On an Amazon <a href={CC_URL} target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] font-medium hover:underline inline-flex items-center gap-0.5">Creator Connections <ExternalLink size={10} /></a> page, the SCOUT panel appears above the filters. Search, sort by commission (Affiliate+) or Estimated EPC, tick the winners, and hit <span className="font-medium">Import selected into MVP</span>.</li>
           <li>Your campaigns land in the queue below, split into <span className="font-medium">Affiliate+</span> and <span className="font-medium">EPC</span> tabs — filter, pick, Generate.</li>
