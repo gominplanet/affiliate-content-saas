@@ -187,6 +187,11 @@ export async function getGenerationJob(
   supabase: any,
   id: string,
 ): Promise<GenerationJob | null> {
-  const { data } = await supabase.from('generation_jobs').select('*').eq('id', id).maybeSingle()
+  // Narrow select: the two poll routes (blog + campaigns) that call this hit it
+  // every ~3s for up to 10 min during a generation and read ONLY these fields.
+  // `select('*')` also shipped the `checkpoint` JSONB (the full mid-run article
+  // body, mig 149) + `input` on every tick — tens–hundreds of KB per poll.
+  // Callers that actually need the checkpoint use loadJobCheckpoint() above.
+  const { data } = await supabase.from('generation_jobs').select('id,status,stage,result,error').eq('id', id).maybeSingle()
   return (data as GenerationJob) ?? null
 }

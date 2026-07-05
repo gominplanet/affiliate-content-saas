@@ -1,9 +1,17 @@
 'use client'
 
 import { createContext, useContext, useState, useEffect, useRef, useCallback, ReactNode } from 'react'
+import dynamic from 'next/dynamic'
 import { toast } from 'sonner'
 import { Loader2, Send, X, MessageCircle } from 'lucide-react'
-import { MessageMarkdown } from '@/components/assistant/MessageMarkdown'
+// Lazy-load the markdown renderer: react-markdown + remark-gfm (~80KB gzipped)
+// were shipping in EVERY dashboard route's first-paint bundle because this
+// panel is mounted in the dashboard layout. Split them into a chunk that loads
+// only when a message actually renders (i.e. after the user opens the panel).
+const MessageMarkdown = dynamic(
+  () => import('@/components/assistant/MessageMarkdown').then((m) => m.MessageMarkdown),
+  { ssr: false },
+)
 
 interface Msg { role: 'user' | 'assistant'; content: string }
 

@@ -2,6 +2,7 @@
 import { createAnthropicClient } from '@/lib/anthropic'
 import type { AmazonProduct } from '@/services/amazon'
 import { recordUsage, usageFromAnthropic } from '@/lib/ai-usage'
+import { assertPublicHttpUrl } from '@/lib/ssrf-guard'
 
 /**
  * Web-research agent for the campaign content engine.
@@ -131,6 +132,10 @@ export async function researchProductFromUrl(
   ctx?: { userId?: string | null; tier?: string | null },
 ): Promise<string> {
   try {
+    // SSRF guard: `url` is user-influenced (from-link body / video description).
+    // Refuse private/reserved/metadata hosts + non-http schemes; keep the
+    // never-throw contract (blocked → '' → caller falls back to transcript).
+    try { assertPublicHttpUrl(url) } catch { return '' }
     const res = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
       redirect: 'follow',
@@ -281,6 +286,7 @@ function isJunkImageUrl(url: string): boolean {
  */
 export async function fetchProductImageFromPage(url: string): Promise<string | null> {
   try {
+    try { assertPublicHttpUrl(url) } catch { return null }  // SSRF guard (user-influenced url)
     const res = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
       redirect: 'follow',
@@ -339,6 +345,7 @@ export async function fetchProductImageFromPage(url: string): Promise<string | n
  */
 export async function fetchProductGalleryFromPage(url: string): Promise<string[]> {
   try {
+    try { assertPublicHttpUrl(url) } catch { return [] }  // SSRF guard (user-influenced url)
     const res = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
       redirect: 'follow',

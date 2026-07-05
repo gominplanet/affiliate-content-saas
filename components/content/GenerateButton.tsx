@@ -64,7 +64,7 @@ const GEN_STEPS = [
 const GENERATE_ABORT_MS = 660_000
 
 export function GenerateButton({
-  videoId, existingPost, userTier, onDone,
+  videoId, existingPost, userTier, blogImagePref, onDone,
 }: {
   videoId: string
   /** YouTube native id — historically used for extension-side frame
@@ -74,6 +74,13 @@ export function GenerateButton({
   existingPost?: { url: string; title: string; postId?: string; wpPostId?: number; indexed?: boolean | null; coverage?: string | null; bodyImagesCount?: number | null } | null
   /** Drives whether the Rewrite button shows at all (Pro/Admin only). */
   userTier: Tier
+  /** The user's saved Brand Profile → "Images per article" preference
+   *  (`brand_profiles.blog_image_count`): null = Default/auto, 0 = text-only,
+   *  1..N = explicit count. When they picked an explicit ≥1 they've already
+   *  opted into images (and the cost), so we pre-tick "Include photos" below
+   *  instead of silently ignoring their choice. Null/0 keep the checkbox off
+   *  (opt-in default preserved for everyone who hasn't asked). */
+  blogImagePref?: number | null
   onDone: (url: string, title: string, postId: string) => void
 }) {
   const [status, setStatus] = useState<GenStatus>(existingPost ? 'done' : 'idle')
@@ -124,13 +131,21 @@ export function GenerateButton({
   // firing the regeneration so the second draft is actually different.
   const [rewriteOpen, setRewriteOpen] = useState(false)
   const [rewriteFeedback, setRewriteFeedback] = useState('')
-  // Per-generation choice: drop real video frames into the post body, or
-  // ship a text-only post. Defaults ON (richer posts), user can opt out
-  // before hitting Generate. Rewrites keep the same preference.
-  // Off by default — when the box is ticked we attempt to add 2–3 in-article
-  // photos (storyboard-frame retouches or Amazon-product re-stages). Ticked
-  // = user explicitly opts in to the longer generation + the extra AI cost.
-  const [includeImages, setIncludeImages] = useState(false)
+  // Per-generation choice: drop in-article photos into the post body, or
+  // ship a text-only post. When the box is ticked we attempt to add 2–3
+  // in-article photos (storyboard-frame retouches or Amazon-product re-stages)
+  // — the extra AI cost is why it's opt-in.
+  //
+  // Seed from the user's saved Brand Profile → "Images per article" pref
+  // (`blogImagePref`): if they explicitly picked ≥1 they've already opted in,
+  // so pre-tick the box (fixes the "I set images to 1 per post but posts ship
+  // with none" report — the pref only set the COUNT, never flipped this gate,
+  // so nothing was generated). Null (Default/auto) and 0 (text-only) keep it
+  // off, preserving the opt-in default for anyone who hasn't asked. The user
+  // can still tick/untick per post.
+  const [includeImages, setIncludeImages] = useState(
+    typeof blogImagePref === 'number' && blogImagePref >= 1,
+  )
   // Optional: bring-your-own in-article images (up to 3). When present, these
   // are placed throughout the post INSTEAD of AI-generated photos.
   const [userImages, setUserImages] = useState<string[]>([])
@@ -496,7 +511,11 @@ export function GenerateButton({
         </button>
         <label
           className="flex items-center gap-1.5 text-[11px] text-[#6e6e73] dark:text-[#ebebf0] cursor-pointer select-none"
-          title="Add photos to the post body. Uncheck for a text-only post."
+          title={
+            typeof blogImagePref === 'number' && blogImagePref >= 1
+              ? `Pre-ticked from your Brand Profile → "Images per article" (${blogImagePref}). Add photos to the post body, or uncheck for a text-only post.`
+              : 'Add photos to the post body. Uncheck for a text-only post. Tip: set a default in Brand Profile → "Images per article".'
+          }
         >
           <input
             type="checkbox"

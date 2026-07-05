@@ -42,7 +42,10 @@ interface SiteContext {
   sitemapFound: boolean
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  // `?summaryOnly=1` → cheap slug→score list only (no GSC / sitemap / WP /
+  // upsert). The Library "Posts" tab uses this for its score badges.
+  const summaryOnly = new URL(request.url).searchParams.get('summaryOnly') === '1'
   const supabase = await createServerClient()
   // 2026-06-09 Phase 2 (VA): all resource reads (integrations, blog_posts,
   // post_seo, GSC token, WP credentials) go through ownerId so VAs see the
@@ -78,6 +81,31 @@ export async function GET() {
     .limit(POSTS_OVERVIEW_CAP)
   type Post = { id: string; title: string; slug: string; content: string; seo_keyword: string | null; post_type: string | null; wordpress_post_id: number | null; wordpress_site_id: string | null; published_at: string | null }
   const posts = (postsRaw as Post[] | null) ?? []
+
+  // ── Lightweight path (Library Posts-tab badges) ──────────────────────────
+  // Only needs slug→score. The score is content-derived (scorePostSeo is
+  // network-free) or already cached in post_seo, so skip EVERYTHING expensive
+  // below: WP sitemap + live-id reconciliation, the GSC token + Search
+  // Analytics + URL-Inspection fan-out, and the post_seo upsert. Turns a ~120s
+  // externally-throttled, DB-writing route into two cheap reads.
+  if (summaryOnly) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: scoreRows } = await (supabase as any)
+      .from('post_seo').select('post_id,score').eq('user_id', ownerId)
+    const scoreCache = new Map<string, number>(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (scoreRows ?? [])
+        .filter((r: any) => typeof r?.score === 'number')
+        .map((r: any) => [r.post_id as string, r.score as number]),
+    )
+    const summary = posts.map((p) => ({
+      slug: p.slug,
+      score: scoreCache.get(p.id) ?? scorePostSeo({
+        title: p.title || '', contentHtml: p.content || '', siteHost: '', postType: p.post_type || 'review', seoKeyword: p.seo_keyword,
+      }).score,
+    }))
+    return NextResponse.json({ summaryOnly: true, posts: summary })
+  }
 
   // ── Multi-site setup: resolve every site referenced by these posts, once.
   // Build siteCache keyed by wordpress_sites.id (or LEGACY_BUCKET for nulls).

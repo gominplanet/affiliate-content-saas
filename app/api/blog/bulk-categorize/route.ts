@@ -210,23 +210,38 @@ ${titlesList}`,
     const categoryCache: Record<string, number> = {}
     let fixed = 0
     const errors: string[] = []
+    const toUpdate = assignments.filter((a) => a.post)
 
-    for (const { post, category } of assignments) {
-      if (!post) continue
+    // 1) Pre-create every UNIQUE category first, sequentially. There are only a
+    //    handful, and doing it up-front avoids a createCategory race (two posts
+    //    with the same new category each creating a duplicate) once we go
+    //    concurrent below.
+    for (const category of [...new Set(toUpdate.map((a) => a.category))]) {
+      if (category in categoryCache) continue
       try {
-        if (!(category in categoryCache)) {
-          categoryCache[category] = await wpService.createCategory(category)
-        }
-        const catId = categoryCache[category]
-        // Replace ALL categories with just the niche category. We don't
-        // want to keep the legacy "Blog" assignment alongside the real
-        // niche — that would defeat the homepage's category-section
-        // logic which is based on category counts.
-        await wpService.updatePost(post.id, { categories: [catId] } as never)
-        fixed++
+        categoryCache[category] = await wpService.createCategory(category)
       } catch (err) {
-        errors.push(`Post ${post.id}: ${err instanceof Error ? err.message : String(err)}`)
+        errors.push(`Category "${category}": ${err instanceof Error ? err.message : String(err)}`)
       }
+    }
+
+    // 2) Update posts with a SMALL bounded concurrency — a 50-post bulk was 50
+    //    serial WP round-trips (15-40s). Cap stays low (4): the Hostinger WAF /
+    //    rate limits punish bursts, so never go unbounded-parallel here.
+    //    Replaces ALL categories with just the niche category (keeping the
+    //    legacy "Blog" tag would skew the homepage's category-count sections).
+    const CONCURRENCY = 4
+    for (let i = 0; i < toUpdate.length; i += CONCURRENCY) {
+      await Promise.all(toUpdate.slice(i, i + CONCURRENCY).map(async ({ post, category }) => {
+        const catId = categoryCache[category]
+        if (catId == null) { errors.push(`Post ${post!.id}: category "${category}" unavailable`); return }
+        try {
+          await wpService.updatePost(post!.id, { categories: [catId] } as never)
+          fixed++
+        } catch (err) {
+          errors.push(`Post ${post!.id}: ${err instanceof Error ? err.message : String(err)}`)
+        }
+      }))
     }
 
     // We had posts to fix but none succeeded — that's a failure, not
