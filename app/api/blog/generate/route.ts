@@ -1372,7 +1372,16 @@ async function handleGenerate(request: Request) {
       const items = rawTags.split(',').map(t => t.trim()).filter(Boolean).slice(0, 5)
       if (items.length) {
         const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-        const line = items.map(esc).join(', ')
+        // Rendered as rounded PILLS (like the theme's tag chips at the bottom of
+        // a post) instead of a bare comma line, which read like debug output.
+        // Inline styles so it looks right on ANY theme, incl. BYO. Deliberately
+        // plain <span>s — NOT links, NOT WP post tags: tag archives are the thin
+        // pages we just noindexed (tag-sprawl fix), and hashtags carry no SEO on
+        // a blog. The tag TEXT stays verbatim in the HTML, which is what the
+        // brand deal requires.
+        const pill = (t: string) =>
+          `<span style="display:inline-block;padding:4px 12px;margin:0 6px 6px 0;border-radius:999px;background:#f2f2f4;color:#4b4b50;font-size:0.8em;font-weight:600;line-height:1.4">${esc(t)}</span>`
+        const line = items.map(pill).join('')
         content = `<!-- wp:paragraph {"className":"mvp-brand-tags"} -->\n<p class="mvp-brand-tags">${line}</p>\n<!-- /wp:paragraph -->\n\n${content}`
       }
     }
