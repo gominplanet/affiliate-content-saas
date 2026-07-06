@@ -446,8 +446,15 @@ if (!window.__ccScoutListener) {
       ;(async () => {
         try {
           const rules = msg.rules || {}
-          // Always scan the actionable tab (a stale Active/Completed view would
-          // return campaigns the user can't accept).
+          // The CC page has TWO tab rows: PROGRAM ("Affiliate+ campaigns" |
+          // "Sponsored Products for Creators") and STATUS (New Opportunities |
+          // Accepted | Submitted). A REUSED tab can be parked on the Sponsored
+          // program — a different grid with commission-less product cards —
+          // which made the scan search the wrong program entirely (live bug
+          // 2026-07-06: "foot" hit the Sponsored search → zero rows). Click the
+          // Affiliate+ PROGRAM tab first (harmless no-op when already active),
+          // THEN the actionable STATUS tab.
+          try { await clickCcTab(/affiliate\+\s*campaigns/i) } catch (e) {}
           try { await clickCcTab(/^(new opportunities|opportunities)$/i) } catch (e) {}
           // On-card pass, gated by commission % + days-left (both readable on
           // the card, both lenient on unreadable — the deep check is the real
@@ -458,10 +465,15 @@ if (!window.__ccScoutListener) {
           const focus = String(msg.keyword || '').trim().slice(0, 80)
           let rows = []
           let rawCount = 0
+          let gridTab = null
           try {
             const r = await scoutRunSearch({ keyword: focus, minCommission: rules.minCommissionPct || 0, lastDays: rules.minDaysLeft || 0, maxCards: 600 })
-            rows = r.rows || []; rawCount = r.rawCount || rows.length
+            rows = r.rows || []; rawCount = r.rawCount || rows.length; gridTab = r.tab || null
           } catch (e) {}
+          // Still on the Sponsored grid after the program-tab click → these are
+          // commission-less product cards, NOT Affiliate+ campaigns. Refuse
+          // rather than scan the wrong program; the app tells the user how to fix.
+          if (gridTab === 'sponsored') { sendResponse({ ok: false, error: 'sponsored-tab' }); return }
           if (!rows.length) { sendResponse({ ok: true, matches: [], stats: { scannedOnCard: rawCount, passedOnCard: 0, deepChecked: 0 } }); return }
           // Name/brand avoid-list (breadcrumbs re-check after the deep-check —
           // campaign names lie, categories don't).

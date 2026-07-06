@@ -45,7 +45,9 @@ export default function SmartScanPanel({
             ? 'SCOUT isn’t connected — install it (see "How it works" above), then scan again.'
             : res.error === 'timeout'
               ? 'The scan ran long and timed out — try again; a shorter opportunities list scans faster.'
-              : `Scan failed (${res.error || 'unknown'}). Open your Creator Connections tab once, then retry.`,
+              : res.error === 'sponsored-tab'
+                ? 'Your Creator Connections tab is on "Sponsored Products for Creators". Switch it to the "Affiliate+ campaigns" tab (or close it and let SCOUT open its own), then scan again.'
+                : `Scan failed (${res.error || 'unknown'}). Open your Creator Connections tab once, then retry.`,
         )
         return
       }
