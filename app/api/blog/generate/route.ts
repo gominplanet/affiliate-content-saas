@@ -1317,7 +1317,10 @@ async function handleGenerate(request: Request) {
 
   let tagIds: number[] = []
   try {
-    tagIds = await wpService.resolveTagIds(generated.tags.slice(0, 10))
+    // Cap at 6 tags (was 10): fewer thin auto-generated tag archives for Google
+    // to crawl. Tags are noindexed by the plugin (v1.0.64+) anyway; keeping the
+    // count modest also trims crawl waste at the source.
+    tagIds = await wpService.resolveTagIds(generated.tags.slice(0, 6))
   } catch (err) {
   }
 
@@ -1374,6 +1377,26 @@ async function handleGenerate(request: Request) {
       }
     }
   } catch { /* non-fatal — publish without the tags line */ }
+
+  // ── 7.95. Duplicate prevention (adopt-by-slug) ───────────────────────────
+  // The same-video lookup above catches re-generating one video. It MISSES the
+  // other duplicate paths: a different video reviewing the SAME product (same
+  // title → same slug), or a lost blog_posts row while the WP post still lives.
+  // Both otherwise publish a colliding "-2" that cannibalises the original in
+  // search. So when we're about to create fresh, first check WP for a published
+  // post already owning our slug — and if one exists, ADOPT it (update in place)
+  // instead of making a duplicate. WordPress itself only ever lets one post own
+  // a slug, so this matches its own model. createPost's 5-minute self-heal only
+  // covers same-call retries; this covers the days-apart case.
+  if (!existingWpPostId) {
+    try {
+      const owner = await wpService.findPublishedPostBySlug(slug)
+      if (owner?.id) {
+        existingWpPostId = owner.id
+        console.log(`[blog-generate] slug "${slug}" is already live (WP post ${owner.id}) — updating it in place instead of publishing a duplicate`)
+      }
+    } catch { /* lookup failed — fall through to a normal create */ }
+  }
 
   // ── 8. Publish text post to WordPress ────────────────────────────────────
   // For posts that already exist on WP (legacy posts attached via

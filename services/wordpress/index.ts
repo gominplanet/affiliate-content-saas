@@ -707,6 +707,17 @@ export class WordPressService {
     }
   }
 
+  /** Public: a PUBLISHED post with this EXACT slug (id + link), or null. Lets the
+   *  generate route ADOPT + update the post a product already has instead of
+   *  publishing a colliding "-N" duplicate that cannibalises it in search. */
+  async findPublishedPostBySlug(slug: string): Promise<{ id: number; link: string } | null> {
+    const p = await this.findPostBySlug(slug)
+    if (p && typeof p.id === 'number' && (!p.status || p.status === 'publish')) {
+      return { id: p.id, link: (p as { link?: string }).link || '' }
+    }
+    return null
+  }
+
   async updatePost(id: number, post: Partial<WPPost>): Promise<WPPostResponse> {
     return this.request<WPPostResponse>(`/posts/${id}`, {
       method: 'PATCH',
