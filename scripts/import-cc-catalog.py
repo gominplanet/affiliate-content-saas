@@ -16,7 +16,10 @@
 import csv, json, os, re, sys, time, urllib.request
 from datetime import date, datetime, timezone
 
-MIN_COMMISSION = 15.0
+# Import the FULL catalog (all commission levels) — completeness + future-proofing;
+# the ≥15% rulebook gate lives at QUERY time (catalog-search), not here. Set >0
+# only if you ever want to shrink the stored set.
+MIN_COMMISSION = 0.0
 BATCH = 500
 
 # Repo root = the script's parent dir's parent (scripts/ → repo). Makes env +
