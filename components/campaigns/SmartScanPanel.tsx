@@ -21,7 +21,8 @@ import { useState } from 'react'
 import { Sparkles, Loader2, ExternalLink, MessageCircle, ShoppingCart, Play, Star } from 'lucide-react'
 import { requestCcSmartScan, requestCcVerify, requestProductSearch, type FinderProduct, type CatalogCandidate } from '@/lib/extension-frame'
 import {
-  CC_SMART_RULES, ONSITE_RULES, AMZ_MARKETPLACES, type AmzMarketplace,
+  ONSITE_RULES, AMZ_MARKETPLACES, type AmzMarketplace,
+  campaignRules, type CampaignRuleMode,
   passesGates, scoreMatch, type ScoredMatch,
 } from '@/lib/cc-smart-rules'
 import type { MessageBrandCampaign } from '@/components/campaigns/MessageBrandModal'
@@ -39,6 +40,8 @@ export default function SmartScanPanel({
   onMessageBrand: (c: MessageBrandCampaign) => void
 }) {
   const [mode, setMode] = useState<'campaigns' | 'onsite'>('campaigns')
+  // Focus (MVP Profitability Rules — recommended) vs Wide (looser net).
+  const [ruleMode, setRuleMode] = useState<CampaignRuleMode>('focus')
   const [focus, setFocus] = useState('')
   const [count, setCount] = useState<(typeof COUNTS)[number]>(10)
   const [market, setMarket] = useState<AmzMarketplace>('us')
@@ -77,17 +80,18 @@ export default function SmartScanPanel({
   // pass the on-catalog gates, then SCOUT verifies that shortlist by ASIN.
   // Falls back to the live grid scan if the catalog is empty/unavailable.
   async function runCampaigns() {
+    const RULES = campaignRules(ruleMode) // MVP Focus vs Wide
     const covered = new Set(coveredAsins.map(a => a.toUpperCase()))
     let usedCatalog = false
     try {
-      const r = await fetch(`/api/campaigns/catalog-search?q=${encodeURIComponent(focus)}&limit=60`)
+      const r = await fetch(`/api/campaigns/catalog-search?q=${encodeURIComponent(focus)}&limit=60&mode=${ruleMode}`)
       const data = await r.json().catch(() => ({}))
       if (data?.ok && Array.isArray(data.candidates) && data.candidates.length) {
         usedCatalog = true
         setProgress(`${data.candidates.length} candidate campaigns from the catalog — SCOUT is live-verifying the best…`)
         const fresh = (data.candidates as CatalogCandidate[]).filter(c => !(c.asin && covered.has(c.asin.toUpperCase())))
         setSkippedCovered(data.candidates.length - fresh.length)
-        const ver = await requestCcVerify(fresh.slice(0, 40), { ...CC_SMART_RULES, wantPassers: 15 })
+        const ver = await requestCcVerify(fresh.slice(0, 40), { ...RULES, wantPassers: 15 })
         setProgress(null)
         if (!ver.ok) {
           setError(ver.error === 'not-installed'
@@ -96,8 +100,8 @@ export default function SmartScanPanel({
           return
         }
         const scored = (ver.results ?? [])
-          .filter(m => passesGates(m, CC_SMART_RULES))
-          .map(m => scoreMatch(m, CC_SMART_RULES))
+          .filter(m => passesGates(m, RULES))
+          .map(m => scoreMatch(m, RULES))
           .sort((a, b) => b.score - a.score)
         setMatches(scored)
         const dl = dropLine(ver.drops)
@@ -110,7 +114,7 @@ export default function SmartScanPanel({
     // Fallback: live SCOUT grid scan (catalog not loaded yet).
     if (usedCatalog) return
     setProgress(null)
-    const res = await requestCcSmartScan(CC_SMART_RULES, focus)
+    const res = await requestCcSmartScan(RULES, focus)
     if (!res.ok) {
       setError(
         res.error === 'not-installed'
@@ -127,8 +131,8 @@ export default function SmartScanPanel({
     const fresh = raw.filter(m => !(m.asin && covered.has(m.asin.toUpperCase())))
     setSkippedCovered(raw.length - fresh.length)
     const scored = fresh
-      .filter(m => passesGates(m, CC_SMART_RULES))
-      .map(m => scoreMatch(m, CC_SMART_RULES))
+      .filter(m => passesGates(m, RULES))
+      .map(m => scoreMatch(m, RULES))
       .sort((a, b) => b.score - a.score)
     setMatches(scored)
     const s = res.stats
@@ -241,6 +245,14 @@ export default function SmartScanPanel({
             <Chip on={mode === 'campaigns'} label="Campaigns ON" onClick={() => { setMode('campaigns'); resetRun() }} />
             <Chip on={mode === 'onsite'} label="Campaigns OFF" onClick={() => { setMode('onsite'); resetRun() }} />
           </div>
+          {/* Focus vs Wide — how strict MVP's picks are (Campaigns ON only). */}
+          {mode === 'campaigns' && (
+            <div className="inline-flex items-center gap-1 p-1 rounded-xl" style={{ background: 'rgba(124,58,237,0.06)' }}
+              title="MVP Focus: the tightest picks, following MVP's Profitability Rules — best results. Wide: casts a broader net (more campaigns, less focused). Both are solid; Focus is stronger.">
+              <Chip on={ruleMode === 'focus'} label="MVP Focus" onClick={() => { setRuleMode('focus'); resetRun() }} />
+              <Chip on={ruleMode === 'wide'} label="Wide" onClick={() => { setRuleMode('wide'); resetRun() }} />
+            </div>
+          )}
           <input
             value={focus}
             onChange={e => setFocus(e.target.value)}

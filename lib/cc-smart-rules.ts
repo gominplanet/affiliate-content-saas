@@ -70,6 +70,33 @@ export const CC_SMART_RULES: CcSmartRules = {
 }
 
 /**
+ * WIDE preset — the "less focused" mode of the MVP Finder's Campaigns ON. Same
+ * hard NO categories (supplements/food/pharmacy/clothing stay banned — those are
+ * never good picks), but every numeric gate is loosened so more campaigns clear:
+ * lower commission floor, shorter runway, wider price band, lower demand + rating
+ * bars, and no carousel requirement. Still returns real, viable campaigns — just
+ * a broader net than MVP Focus (which follows the full Profitability Rules).
+ * The UI NEVER names these thresholds; it only labels the two modes.
+ */
+export const CC_SMART_RULES_WIDE: CcSmartRules = {
+  ...CC_SMART_RULES,
+  minCommissionPct: 10,
+  minDaysLeft: 45,
+  minPrice: 20,
+  maxPrice: 500,
+  minMonthlySales: 75,
+  minRating: 3.5,
+  hardFloorPrice: 15,
+  requireCarousel: false,
+}
+
+/** The two Campaigns-ON presets, keyed by the UI toggle. */
+export type CampaignRuleMode = 'focus' | 'wide'
+export function campaignRules(mode: CampaignRuleMode): CcSmartRules {
+  return mode === 'wide' ? CC_SMART_RULES_WIDE : CC_SMART_RULES
+}
+
+/**
  * ONSITE rulebook — the "Campaigns OFF" mode of the AMZ Product Finder: SCOUT
  * searches Amazon directly (no Creator Connections) for products worth the
  * buy-to-review investment. Every result is MVP-APPROVED against these gates:

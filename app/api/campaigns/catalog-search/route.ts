@@ -12,13 +12,9 @@
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { CC_SMART_RULES } from '@/lib/cc-smart-rules'
+import { campaignRules, type CampaignRuleMode } from '@/lib/cc-smart-rules'
 
 export const dynamic = 'force-dynamic'
-
-// Reuse the rulebook's avoid substrings (name/brand check; SCOUT re-checks the
-// breadcrumb after the deep-check).
-const AVOID = CC_SMART_RULES.avoidPatterns.map(p => p.toLowerCase())
 
 export async function GET(request: Request) {
   const supabase = await createServerClient()
@@ -30,10 +26,14 @@ export async function GET(request: Request) {
   // How many candidates to hand SCOUT to verify — a healthy multiple of the
   // final target, since the deep-check will filter more out.
   const limit = Math.min(120, Math.max(10, parseInt(url.searchParams.get('limit') || '60', 10)))
+  // Rule mode: 'focus' (MVP Profitability Rules, default) or 'wide' (looser).
+  const mode: CampaignRuleMode = url.searchParams.get('mode') === 'wide' ? 'wide' : 'focus'
+  const RULES = campaignRules(mode)
+  // Avoid substrings (name/brand check; SCOUT re-checks breadcrumb post-deep-check).
+  const AVOID = RULES.avoidPatterns.map(p => p.toLowerCase())
 
-  const today = new Date().toISOString().slice(0, 10)
   // Latest campaign end date we'll accept as "enough runway": today + minDaysLeft.
-  const runwayCutoff = new Date(Date.now() + CC_SMART_RULES.minDaysLeft * 86400000)
+  const runwayCutoff = new Date(Date.now() + RULES.minDaysLeft * 86400000)
     .toISOString().slice(0, 10)
 
   // Keyword search runs against the STORED, GIN-indexed `search_vec` column
@@ -45,8 +45,8 @@ export async function GET(request: Request) {
   let query = (supabase as any)
     .from('cc_campaign_catalog')
     .select('campaign_id, campaign_name, brand_name, asins, commission_pct, ends_at, available_slot, total_slot')
-    .gte('commission_pct', CC_SMART_RULES.minCommissionPct)  // ≥ rulebook floor
-    .gte('ends_at', runwayCutoff)                            // still running ≥ minDaysLeft
+    .gte('commission_pct', RULES.minCommissionPct)  // ≥ active-mode floor
+    .gte('ends_at', runwayCutoff)                    // still running ≥ minDaysLeft
     .order('commission_pct', { ascending: false })
     .limit(limit * 3) // over-fetch: the avoid-list + no-ASIN filters thin this below `limit`
   if (q) query = query.textSearch('search_vec', q, { type: 'websearch' })
