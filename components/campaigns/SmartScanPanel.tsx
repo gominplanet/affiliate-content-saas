@@ -2,22 +2,33 @@
 
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// MVP Smart Scan — the opinionated alternative to generic CC filter tools:
-// one click, no criteria form. SCOUT sweeps the whole Affiliate+ grid and MVP
-// applies its PROVEN rulebook (lib/cc-smart-rules.ts) + skips products you've
-// already got in your queue, then ranks what's left with a score and the WHY.
+// AMZ Product Finder — ONE search, two plays, both MVP-approved:
 //
-// Every match offers both plays:
-//   💌 Message brand  — the collab / free-product route (existing outreach modal)
-//   🛒 Buy to review  — MVP's preferred route: invest in the product, make the
-//      review, earn it back through the campaign. The break-even line makes the
-//      decision concrete ("$89 in → $22/sale → 5 sales to break even").
+//   CAMPAIGNS ON  → Affiliate+ (Creator Connections): SCOUT sweeps the
+//                   opportunities grid and MVP's proprietary campaign criteria
+//                   keep only what's worth your time (score + buy-to-review math).
+//   CAMPAIGNS OFF → ONSITE: SCOUT searches Amazon directly (US/CA/UK/AU) for
+//                   products worth the buy-to-review investment — vetted against
+//                   MVP's onsite criteria (price floor, demand, reviews, rating,
+//                   open video carousel). Slower: every result is live-verified
+//                   on its product page, in waves, until your chosen count
+//                   (10/20/50) is reached or the pool runs dry.
+//
+// The thresholds are PROPRIETARY — the UI names the vetted dimensions, never
+// the numbers (lib/cc-smart-rules.ts is the single source of truth).
 
 import { useState } from 'react'
-import { Sparkles, Loader2, ExternalLink, MessageCircle, ShoppingCart, Play } from 'lucide-react'
-import { requestCcSmartScan } from '@/lib/extension-frame'
-import { CC_SMART_RULES, passesGates, scoreMatch, type ScoredMatch } from '@/lib/cc-smart-rules'
+import { Sparkles, Loader2, ExternalLink, MessageCircle, ShoppingCart, Play, Star } from 'lucide-react'
+import { requestCcSmartScan, requestProductSearch, type FinderProduct } from '@/lib/extension-frame'
+import {
+  CC_SMART_RULES, ONSITE_RULES, AMZ_MARKETPLACES, type AmzMarketplace,
+  passesGates, scoreMatch, type ScoredMatch,
+} from '@/lib/cc-smart-rules'
 import type { MessageBrandCampaign } from '@/components/campaigns/MessageBrandModal'
+
+const COUNTS = [10, 20, 50] as const
+const MAX_WAVES = 6
+const PER_WAVE = 12 // deep-check passers requested per SCOUT call (throttle-safe)
 
 export default function SmartScanPanel({
   coveredAsins,
@@ -27,91 +38,204 @@ export default function SmartScanPanel({
   coveredAsins: string[]
   onMessageBrand: (c: MessageBrandCampaign) => void
 }) {
+  const [mode, setMode] = useState<'campaigns' | 'onsite'>('campaigns')
+  const [focus, setFocus] = useState('')
+  const [count, setCount] = useState<(typeof COUNTS)[number]>(10)
+  const [market, setMarket] = useState<AmzMarketplace>('us')
   const [running, setRunning] = useState(false)
-  const [matches, setMatches] = useState<ScoredMatch[] | null>(null)
-  const [skippedCovered, setSkippedCovered] = useState(0)
+  const [progress, setProgress] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  // Optional focus — narrows WHERE the deep-check budget goes, never the rules.
-  const [focus, setFocus] = useState('')
+  // Campaign-mode results
+  const [matches, setMatches] = useState<ScoredMatch[] | null>(null)
+  const [skippedCovered, setSkippedCovered] = useState(0)
+  // Onsite-mode results
+  const [products, setProducts] = useState<FinderProduct[] | null>(null)
+
+  const marketHost = AMZ_MARKETPLACES.find(m => m.id === market)?.host || 'www.amazon.com'
+
+  function resetRun() {
+    setError(null); setNote(null); setProgress(null)
+    setMatches(null); setProducts(null); setSkippedCovered(0)
+  }
+
+  // ── CAMPAIGNS ON — Affiliate+ Smart Scan (existing flow) ─────────────────
+  async function runCampaigns() {
+    const res = await requestCcSmartScan(CC_SMART_RULES, focus)
+    if (!res.ok) {
+      setError(
+        res.error === 'not-installed'
+          ? 'SCOUT isn’t connected — install it (see "How it works" above), then scan again.'
+          : res.error === 'timeout'
+            ? 'The scan ran long and timed out — try again; a shorter opportunities list scans faster.'
+            : res.error === 'sponsored-tab'
+              ? 'Your Creator Connections tab is on "Sponsored Products for Creators". Switch it to the "Affiliate+ campaigns" tab (or close it and let SCOUT open its own), then scan again.'
+              : `Scan failed (${res.error || 'unknown'}). Open your Creator Connections tab once, then retry.`,
+      )
+      return
+    }
+    const covered = new Set(coveredAsins.map(a => a.toUpperCase()))
+    const raw = res.matches ?? []
+    const fresh = raw.filter(m => !(m.asin && covered.has(m.asin.toUpperCase())))
+    setSkippedCovered(raw.length - fresh.length)
+    const scored = fresh
+      .filter(m => passesGates(m, CC_SMART_RULES))
+      .map(m => scoreMatch(m, CC_SMART_RULES))
+      .sort((a, b) => b.score - a.score)
+    setMatches(scored)
+    const s = res.stats
+    const d = s?.drops
+    const dropBits: string[] = []
+    if (d) {
+      if (d.sales) dropBits.push(`sales volume ×${d.sales}`)
+      if (d.carousel) dropBits.push(`no product-page video ×${d.carousel}`)
+      if (d.price) dropBits.push(`price ×${d.price}`)
+      if (d.rating) dropBits.push(`rating ×${d.rating}`)
+      if (d.category) dropBits.push(`excluded category ×${d.category}`)
+      if (d.unreadable) dropBits.push(`couldn't read the page ×${d.unreadable}`)
+    }
+    const dropLine = dropBits.length ? ` Dropped on: ${dropBits.join(' · ')}.` : ''
+    if (s?.blocked) setNote(`Amazon asked for a pause partway through — these results are partial. Wait ~15 minutes before scanning again.${dropLine}`)
+    else if (s?.truncated) setNote(`Checked the top ${s.deepChecked} of ${s.passedOnCard} on-card candidates (Amazon-safe pacing). Scan again later to go deeper.${dropLine}`)
+    else if (dropBits.length) setNote(`Deep-checked ${s?.deepChecked ?? 0} candidates.${dropLine}`)
+  }
+
+  // ── CAMPAIGNS OFF — onsite Amazon search, verified in waves ──────────────
+  async function runOnsite() {
+    if (!focus.trim()) { setError('Enter a keyword — the onsite search needs one (e.g. "massage gun").'); return }
+    const covered = new Set(coveredAsins.map(a => a.toUpperCase()))
+    const verified: FinderProduct[] = []
+    const exclude: string[] = []
+    const totalDrops = { card: 0, sales: 0, carousel: 0, rating: 0, unreadable: 0 }
+    let blocked = false
+    let dry = false
+    for (let wave = 1; wave <= MAX_WAVES && verified.length < count; wave++) {
+      setProgress(`Verified ${verified.length}/${count} — live-checking products on Amazon (wave ${wave})…`)
+      const res = await requestProductSearch(focus, {
+        priceMin: ONSITE_RULES.minPrice,
+        minRating: ONSITE_RULES.minRating,
+        minReviews: ONSITE_RULES.minReviews,
+        minSales: ONSITE_RULES.minMonthlySales,
+        mustVideo: ONSITE_RULES.requireCarousel,
+        maxResults: Math.min(PER_WAVE, count - verified.length),
+        marketplace: market,
+        excludeAsins: exclude,
+      })
+      if (!res.ok) {
+        if (res.error === 'not-installed') { setError('SCOUT isn’t connected — install it (see "How it works" above), then search again.'); return }
+        if (res.error === 'intl-permission-needed') { setError('That marketplace needs a one-time permission: open the SCOUT extension popup and switch on "International Amazon (CA · UK · AU)", then search again.'); return }
+        if (res.error === 'amazon-blocked') { blocked = true; break }
+        if (res.error === 'no-results') { dry = wave === 1; break }
+        if (wave === 1) { setError(`Search failed (${res.error || 'unknown'}). Try again.`); return }
+        break // later-wave hiccup — keep what we have
+      }
+      for (const p of res.products ?? []) {
+        if (p.asin && covered.has(p.asin.toUpperCase())) continue
+        if (!verified.some(v => v.asin === p.asin)) verified.push(p)
+      }
+      for (const a of res.checkedAsins ?? []) if (!exclude.includes(a)) exclude.push(a)
+      const d = res.drops
+      if (d) { totalDrops.card += d.card; totalDrops.sales += d.sales; totalDrops.carousel += d.carousel; totalDrops.rating += d.rating; totalDrops.unreadable += d.unreadable }
+      if (res.blocked) { blocked = true; break }
+      if (res.poolExhausted) { dry = true; break }
+      if (verified.length < count) await new Promise(r => setTimeout(r, 3000)) // breathe between waves
+    }
+    setProgress(null)
+    setProducts(verified.slice(0, count))
+    const bits: string[] = []
+    if (totalDrops.sales) bits.push(`sales volume ×${totalDrops.sales}`)
+    if (totalDrops.carousel) bits.push(`no product video ×${totalDrops.carousel}`)
+    if (totalDrops.card) bits.push(`price / rating / reviews ×${totalDrops.card}`)
+    if (totalDrops.rating) bits.push(`rating ×${totalDrops.rating}`)
+    if (totalDrops.unreadable) bits.push(`couldn't read the page ×${totalDrops.unreadable}`)
+    const dropLine = bits.length ? ` Dropped on: ${bits.join(' · ')}.` : ''
+    if (blocked) setNote(`Amazon asked for a pause — results are partial. Wait ~15 minutes before searching again.${dropLine}`)
+    else if (verified.length < count && dry) setNote(`The search pool ran dry at ${verified.length} MVP-approved product${verified.length !== 1 ? 's' : ''} for this keyword.${dropLine}`)
+    else if (dropLine) setNote(`Every result below is live-verified.${dropLine}`)
+  }
 
   async function run() {
-    setRunning(true); setError(null); setNote(null); setMatches(null); setSkippedCovered(0)
+    setRunning(true); resetRun()
     try {
-      const res = await requestCcSmartScan(CC_SMART_RULES, focus)
-      if (!res.ok) {
-        setError(
-          res.error === 'not-installed'
-            ? 'SCOUT isn’t connected — install it (see "How it works" above), then scan again.'
-            : res.error === 'timeout'
-              ? 'The scan ran long and timed out — try again; a shorter opportunities list scans faster.'
-              : res.error === 'sponsored-tab'
-                ? 'Your Creator Connections tab is on "Sponsored Products for Creators". Switch it to the "Affiliate+ campaigns" tab (or close it and let SCOUT open its own), then scan again.'
-                : `Scan failed (${res.error || 'unknown'}). Open your Creator Connections tab once, then retry.`,
-        )
-        return
-      }
-      const covered = new Set(coveredAsins.map(a => a.toUpperCase()))
-      const raw = res.matches ?? []
-      const fresh = raw.filter(m => !(m.asin && covered.has(m.asin.toUpperCase())))
-      setSkippedCovered(raw.length - fresh.length)
-      const scored = fresh
-        .filter(m => passesGates(m, CC_SMART_RULES)) // defense in depth vs stale extension
-        .map(m => scoreMatch(m, CC_SMART_RULES))
-        .sort((a, b) => b.score - a.score)
-      setMatches(scored)
-      const s = res.stats
-      // Drop breakdown — dimension labels only, never the thresholds. Doubles
-      // as the extraction-health signal: a pile-up on "couldn't read the page"
-      // means selectors need tuning, not that the market is empty.
-      const d = s?.drops
-      const dropBits: string[] = []
-      if (d) {
-        if (d.sales) dropBits.push(`sales volume ×${d.sales}`)
-        if (d.carousel) dropBits.push(`no product-page video ×${d.carousel}`)
-        if (d.price) dropBits.push(`price ×${d.price}`)
-        if (d.rating) dropBits.push(`rating ×${d.rating}`)
-        if (d.category) dropBits.push(`excluded category ×${d.category}`)
-        if (d.unreadable) dropBits.push(`couldn't read the page ×${d.unreadable}`)
-      }
-      const dropLine = dropBits.length ? ` Dropped on: ${dropBits.join(' · ')}.` : ''
-      if (s?.blocked) setNote(`Amazon asked for a pause partway through — these results are partial. Wait ~15 minutes before scanning again.${dropLine}`)
-      else if (s?.truncated) setNote(`Checked the top ${s.deepChecked} of ${s.passedOnCard} on-card candidates (Amazon-safe pacing). Scan again later to go deeper.${dropLine}`)
-      else if (dropBits.length) setNote(`Deep-checked ${s?.deepChecked ?? 0} candidates.${dropLine}`)
+      if (mode === 'campaigns') await runCampaigns()
+      else await runOnsite()
     } catch {
-      setError('Scan failed unexpectedly — reload the page and try again.')
+      setError('Search failed unexpectedly — reload the page and try again.')
+      setProgress(null)
     } finally {
       setRunning(false)
     }
   }
 
+  const Chip = ({ on, label, onClick }: { on: boolean; label: string; onClick: () => void }) => (
+    <button
+      onClick={onClick}
+      disabled={running}
+      className="px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors disabled:opacity-60"
+      style={on ? { background: '#7C3AED', color: '#fff' } : { background: 'rgba(124,58,237,0.08)', color: '#7C3AED' }}
+    >
+      {label}
+    </button>
+  )
+
   return (
     <div className="card mb-5 overflow-hidden">
-      <div className="px-4 py-3 flex items-start gap-3 flex-wrap">
-        <span className="grid place-items-center w-7 h-7 rounded-lg flex-shrink-0 mt-0.5" style={{ background: 'rgba(124,58,237,0.12)' }}>
-          <Sparkles size={14} className="text-[#7C3AED]" />
-        </span>
-        <div className="flex-1 min-w-[240px]">
-          <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>
-            Smart Scan <span className="font-normal" style={{ color: 'var(--text-faint)' }}>· powered by MVP&apos;s proprietary campaign criteria</span>
-          </p>
-          <p className="text-[12px] leading-relaxed mt-0.5" style={{ color: 'var(--text-soft)' }}>
-            One click. SCOUT sweeps your whole Affiliate+ opportunities list and MVP keeps only the campaigns worth
-            your time — vetted for real commission, runway, demand, product quality and review visibility — then ranks
-            them and shows the buy-to-review math. Products already in your queue are skipped.
-          </p>
+      <div className="px-4 py-3">
+        <div className="flex items-start gap-3 flex-wrap">
+          <span className="grid place-items-center w-7 h-7 rounded-lg flex-shrink-0 mt-0.5" style={{ background: 'rgba(124,58,237,0.12)' }}>
+            <Sparkles size={14} className="text-[#7C3AED]" />
+          </span>
+          <div className="flex-1 min-w-[240px]">
+            <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>
+              MVP Finder <span className="font-normal" style={{ color: 'var(--text-faint)' }}>· powered by MVP&apos;s proprietary criteria</span>
+            </p>
+            <p className="text-[12px] leading-relaxed mt-0.5" style={{ color: 'var(--text-soft)' }}>
+              {mode === 'campaigns'
+                ? <>SCOUT sweeps your Affiliate+ opportunities and MVP keeps only the campaigns worth your time — vetted for real commission, runway, demand, product quality and review visibility — ranked with the buy-to-review math. Products already in your queue are skipped.</>
+                : <>SCOUT searches Amazon directly and live-verifies each product on its page — price, demand, reviews, rating and an open video carousel. Slower by design, but every result is <b>MVP-approved</b>: a product you can confidently invest in, review, and earn from onsite.</>}
+            </p>
+          </div>
         </div>
-        <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+        {/* Controls */}
+        <div className="flex items-center gap-2 flex-wrap mt-3">
+          {/* Campaigns toggle */}
+          <div className="inline-flex items-center gap-1 p-1 rounded-xl" style={{ background: 'rgba(124,58,237,0.06)' }}>
+            <Chip on={mode === 'campaigns'} label="Campaigns ON" onClick={() => { setMode('campaigns'); resetRun() }} />
+            <Chip on={mode === 'onsite'} label="Campaigns OFF" onClick={() => { setMode('onsite'); resetRun() }} />
+          </div>
           <input
             value={focus}
             onChange={e => setFocus(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && !running) run() }}
-            placeholder="Focus (optional) — e.g. massage gun"
-            title="Optional: a keyword or brand to focus the scan. SCOUT searches the full Creator Connections catalog for it, so the rulebook's deep-checks concentrate on that niche. Leave empty to sweep everything."
+            placeholder={mode === 'campaigns' ? 'Focus (optional) — e.g. massage gun' : 'Keyword — e.g. massage gun'}
             disabled={running}
-            className="text-[12px] px-3 py-2 rounded-lg bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 focus:border-[#7C3AED] focus:outline-none w-[210px] disabled:opacity-60"
+            className="text-[12px] px-3 py-2 rounded-lg bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 focus:border-[#7C3AED] focus:outline-none w-[200px] disabled:opacity-60"
             style={{ color: 'var(--text)' }}
           />
+          {mode === 'onsite' && (
+            <>
+              <select
+                value={count}
+                onChange={e => setCount(Number(e.target.value) as (typeof COUNTS)[number])}
+                disabled={running}
+                title="How many MVP-approved products to deliver"
+                className="text-[12px] px-2 py-2 rounded-lg bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 focus:outline-none disabled:opacity-60"
+                style={{ color: 'var(--text)' }}
+              >
+                {COUNTS.map(c => <option key={c} value={c}>{c} results</option>)}
+              </select>
+              <select
+                value={market}
+                onChange={e => setMarket(e.target.value as AmzMarketplace)}
+                disabled={running}
+                title="Which Amazon marketplace to search (CA/UK/AU need a one-time permission in the SCOUT popup)"
+                className="text-[12px] px-2 py-2 rounded-lg bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 focus:outline-none disabled:opacity-60"
+                style={{ color: 'var(--text)' }}
+              >
+                {AMZ_MARKETPLACES.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+              </select>
+            </>
+          )}
           <button
             onClick={run}
             disabled={running}
@@ -119,20 +243,22 @@ export default function SmartScanPanel({
             style={{ background: '#7C3AED' }}
           >
             {running ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
-            {running ? 'Scanning… (a few minutes)' : 'Smart Scan'}
+            {running ? (mode === 'onsite' ? 'Verifying…' : 'Scanning… (a few minutes)') : (mode === 'onsite' ? 'Find products' : 'Smart Scan')}
           </button>
         </div>
       </div>
 
       {running && (
         <div className="px-4 pb-3 text-[12px]" style={{ color: 'var(--text-faint)' }}>
-          Sweeping the grid, then deep-checking the best candidates one by one (price · monthly units · rating · video carousel) —
-          paced so Amazon stays happy. Please don&apos;t browse Amazon while this runs.
+          {progress || (mode === 'campaigns'
+            ? 'Sweeping the grid, then deep-checking the best candidates one by one — paced so Amazon stays happy. Please don’t browse Amazon while this runs.'
+            : `Searching ${marketHost}, then live-verifying each candidate on its product page — paced so Amazon stays happy. Bigger result counts take longer. Please don’t browse Amazon while this runs.`)}
         </div>
       )}
       {error && <div className="px-4 pb-3 text-[12px] text-[#ff3b30]">{error}</div>}
       {note && !error && <div className="px-4 pb-3 text-[12px]" style={{ color: 'var(--text-faint)' }}>{note}</div>}
 
+      {/* ── Campaign results ── */}
       {matches && !error && (
         <div className="border-t border-gray-100 dark:border-white/10">
           <div className="px-4 py-2 text-[12px]" style={{ color: 'var(--text-faint)' }}>
@@ -198,6 +324,46 @@ export default function SmartScanPanel({
                         <ExternalLink size={11} /> Open campaign
                       </a>
                     )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Onsite results ── */}
+      {products && !error && (
+        <div className="border-t border-gray-100 dark:border-white/10">
+          <div className="px-4 py-2 text-[12px]" style={{ color: 'var(--text-faint)' }}>
+            {products.length === 0
+              ? 'No products cleared MVP’s bar for this keyword — that’s the vetting doing its job. Try a broader or different keyword.'
+              : <><b style={{ color: 'var(--text)' }}>{products.length}</b> MVP-approved product{products.length !== 1 ? 's' : ''} — each one live-verified on {marketHost}. Confident buy-to-review picks.</>}
+          </div>
+          <div className="divide-y divide-gray-100 dark:divide-white/10">
+            {products.map((p) => (
+              <div key={p.asin} className="px-4 py-3 flex gap-3 items-start">
+                {p.image
+                  ? <img src={p.image} alt="" className="w-12 h-12 rounded-lg object-contain flex-shrink-0 bg-white" />
+                  : <div className="w-12 h-12 rounded-lg flex-shrink-0" style={{ background: 'rgba(124,58,237,0.08)' }} />}
+                <div className="flex-1 min-w-0">
+                  <p className="text-[13px] font-semibold leading-snug line-clamp-2" style={{ color: 'var(--text)' }}>{p.title}</p>
+                  <p className="text-[11px] mt-1" style={{ color: 'var(--text-soft)' }}>
+                    {p.price || ''}
+                    {p.rating ? <> · <Star size={9} className="inline -mt-0.5" style={{ color: '#ff9500' }} /> {p.rating}{p.reviews != null ? ` (${p.reviews.toLocaleString()})` : ''}</> : null}
+                    {p.monthlySales != null ? <> · {p.monthlySales.toLocaleString()}+ sold/mo</> : null}
+                    {p.hasVideo ? <> · 🎬 video carousel{p.carouselPos === 'top' ? ' (hero)' : ''}</> : null}
+                  </p>
+                  <div className="flex items-center gap-2 mt-2 flex-wrap">
+                    <a
+                      href={`https://${marketHost}/dp/${p.asin}`}
+                      target="_blank" rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold text-white"
+                      style={{ background: '#34c759' }}
+                    >
+                      <ShoppingCart size={11} /> Buy to review
+                    </a>
+                    <span className="text-[10px]" style={{ color: 'var(--text-faint)' }}>{p.asin}</span>
                   </div>
                 </div>
               </div>

@@ -69,6 +69,34 @@ export const CC_SMART_RULES: CcSmartRules = {
   ],
 }
 
+/**
+ * ONSITE rulebook — the "Campaigns OFF" mode of the AMZ Product Finder: SCOUT
+ * searches Amazon directly (no Creator Connections) for products worth the
+ * buy-to-review investment. Every result is MVP-APPROVED against these gates:
+ */
+export interface OnsiteRules {
+  minPrice: number
+  minRating: number
+  minReviews: number
+  minMonthlySales: number
+  requireCarousel: boolean
+}
+export const ONSITE_RULES: OnsiteRules = {
+  minPrice: 25,          // never below $25
+  minRating: 3.8,
+  minReviews: 50,
+  minMonthlySales: 200,
+  requireCarousel: true, // at least 1 video in the carousel
+}
+
+export type AmzMarketplace = 'us' | 'ca' | 'uk' | 'au'
+export const AMZ_MARKETPLACES: { id: AmzMarketplace; label: string; host: string }[] = [
+  { id: 'us', label: 'Amazon US', host: 'www.amazon.com' },
+  { id: 'ca', label: 'Amazon Canada', host: 'www.amazon.ca' },
+  { id: 'uk', label: 'Amazon UK', host: 'www.amazon.co.uk' },
+  { id: 'au', label: 'Amazon Australia', host: 'www.amazon.com.au' },
+]
+
 /** One scanned + deep-checked campaign coming back from SCOUT. */
 export interface SmartScanMatch {
   asin: string | null

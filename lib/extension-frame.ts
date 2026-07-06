@@ -438,9 +438,11 @@ export interface FinderProduct {
   price: string | null
   image: string | null
   rating: string | null
+  reviews?: number | null
   monthlySales: number | null
   carouselPos: 'top' | 'bottom' | 'none' | null
   hasVideo?: boolean
+  marketplace?: string
 }
 
 export interface ProductSearchResult {
@@ -449,6 +451,15 @@ export interface ProductSearchResult {
   scanned?: number    // how many products were deep-checked
   totalFound?: number // how many appeared in Amazon's search
   blocked?: boolean   // Amazon rate-limited us mid-scan — results are partial
+  /** Why deep-checked candidates dropped (card = failed price/rating/reviews
+   *  before any deep check). */
+  drops?: { card: number; sales: number; carousel: number; rating: number; unreadable: number }
+  /** ASINs deep-checked this call (pass or fail) — pass back as excludeAsins
+   *  on the next wave so it digs deeper into the pool. */
+  checkedAsins?: string[]
+  /** True when every gated candidate in the search pool has been checked —
+   *  further waves won't find more. */
+  poolExhausted?: boolean
   error?: string
 }
 
@@ -461,16 +472,23 @@ export interface ProductSearchResult {
  */
 export async function requestProductSearch(
   query: string,
-  rules: { minSales?: number; mustVideo?: boolean; maxResults?: number; priceMin?: number; priceMax?: number },
+  rules: {
+    minSales?: number; mustVideo?: boolean; maxResults?: number; priceMin?: number; priceMax?: number
+    minRating?: number; minReviews?: number
+    /** us (default) | ca | uk | au — non-US needs the popup's International toggle. */
+    marketplace?: string
+    /** ASINs already deep-checked in earlier waves — skipped so this wave digs deeper. */
+    excludeAsins?: string[]
+  },
 ): Promise<ProductSearchResult> {
   if (!query.trim()) return { ok: false, error: 'no-query' }
   if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
-  const resp = await sendToExtension<{ ok?: boolean; products?: FinderProduct[]; scanned?: number; totalFound?: number; blocked?: boolean; error?: string }>(
+  const resp = await sendToExtension<ProductSearchResult>(
     { type: 'MVP_PRODUCT_SEARCH', query, opts: rules },
     430000,
   )
   if (!resp) return { ok: false, error: 'timeout' }
-  if (resp.ok) return { ok: true, products: resp.products ?? [], scanned: resp.scanned, totalFound: resp.totalFound, blocked: resp.blocked }
+  if (resp.ok) return { ok: true, products: resp.products ?? [], scanned: resp.scanned, totalFound: resp.totalFound, blocked: resp.blocked, drops: resp.drops, checkedAsins: resp.checkedAsins, poolExhausted: resp.poolExhausted }
   return { ok: false, error: resp.error || 'search-failed', products: resp.products ?? [], blocked: resp.blocked }
 }
 

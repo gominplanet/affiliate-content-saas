@@ -457,11 +457,10 @@ export default function DashboardShellV2({
       // add them as items here (set each item's gate as it opens up).
       label: 'Labs',
       items: [
-        { href: '/epc', icon: <Radar size={15} />, label: 'AMZ+ & EPC', gate: canUseLabs },
-        // SCOUT-powered Amazon Product Finder — keyword + rules → live-scraped
-        // results into MVP. In Labs while the Amazon-search selectors get live
-        // calibration; graduate to Create once verified.
-        { href: '/product-finder', icon: <PackageSearch size={15} />, label: 'AMZ Product Finder', gate: canUseLabs },
+        // ONE page for both hunts (2026-07-06 consolidation): Campaigns ON =
+        // Affiliate+ Smart Scan; Campaigns OFF = onsite product search. The old
+        // /product-finder page redirects here.
+        { href: '/epc', icon: <PackageSearch size={15} />, label: 'AMZ Product Finder', gate: canUseLabs },
         // MVP x PartnerBoost + MVP x Levanta graduated out of Labs into
         // Collaborate (all paid tiers) on 2026-06-30; their API-key connect moved
         // inline onto each page (External Integrations page retired from nav).

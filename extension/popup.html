@@ -85,15 +85,22 @@
 
   <div id="status"></div>
 
-  <!-- Advanced: optional non-Amazon product reading (Walmart, Target, …).
-       Chrome requires this grant to happen via a click inside extension UI,
-       so this small row is the only place it can live. -->
+  <!-- Advanced: optional permissions. Chrome requires these grants to happen
+       via a click inside extension UI, so these small rows are the only place
+       they can live. -->
   <div class="adv">
     <div class="tl">
       <div class="tt">Read non-Amazon products</div>
       <div class="ts" id="retailSub">Off — Amazon only.</div>
     </div>
     <label class="switch"><input type="checkbox" id="retail" /><span class="slider"></span></label>
+  </div>
+  <div class="adv" style="margin-top:8px">
+    <div class="tl">
+      <div class="tt">International Amazon (CA · UK · AU)</div>
+      <div class="ts" id="intlSub">Off — amazon.com only.</div>
+    </div>
+    <label class="switch"><input type="checkbox" id="intl" /><span class="slider"></span></label>
   </div>
 
   <p class="join">Not an MVP member yet? SCOUT works with an MVP Affiliate account —

@@ -538,8 +538,8 @@ export default function EpcScoutPage() {
         </span>
       </div>
       <PageHero
-        title="AMZ+ & EPC"
-        subtitle="Turn the Amazon Creator Connections campaigns you're offered — Affiliate+ and EPC — into ready-to-publish blog posts."
+        title="AMZ Product Finder"
+        subtitle="A proven way to accelerate your Amazon commissions — Onsite + Affiliate+ (Creator Connections). One search, MVP-approved results: campaigns worth accepting, and products worth buying to review."
       />
 
       {/* ── Move-to-store nudge — only for the old manually-loaded (sideloaded)

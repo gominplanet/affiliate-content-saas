@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.11.64'
+export const SCOUT_LATEST_VERSION = '1.11.65'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'SCOUT is now invisible on Amazon — the on-page panel is retired; every scan and check runs quietly in the background, driven from inside MVP (Smart Scan, Product Finder, Check CC). The extension popup is the only surface: connect your MVP token there. Non-members get a join link to mvpaffiliate.io. Chrome auto-updates the Web Store build.'
+  'The AMZ Product Finder is now ONE page inside MVP: Campaigns ON finds Affiliate+ campaigns worth your time; Campaigns OFF searches Amazon directly (US, Canada, UK or Australia) and live-verifies every product against MVP\'s approved-product criteria — pick 10, 20 or 50 results. International marketplaces need a one-time toggle in this popup.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar

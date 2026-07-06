@@ -1389,32 +1389,70 @@ function harvestAmazonSearchInPage() {
     const rTxt = rEl ? (rEl.getAttribute('aria-label') || rEl.textContent) : ''
     const rm = (rTxt || '').match(/(\d(?:\.\d)?)\s*out of 5/i)
     if (rm) rating = rm[1]
+    // Review COUNT — the "(1,234)" link next to the stars. Several layouts:
+    // an aria-label ending in "ratings", or the underlined count span.
+    let reviews = null
+    try {
+      const cEl = el.querySelector('a[aria-label$="ratings" i], a[aria-label$="rating" i], [data-cy="reviews-block"] .s-underline-text, span.a-size-base.s-underline-text')
+      const cTxt = cEl ? (cEl.getAttribute('aria-label') || cEl.textContent || '') : ''
+      const cm = cTxt.replace(/,/g, '').match(/([\d.]+)\s*([kK])?/)
+      if (cm) { let n = parseFloat(cm[1]); if (cm[2]) n *= 1000; if (!isNaN(n)) reviews = Math.round(n) }
+    } catch (e) {}
     const sponsored = /sponsored/i.test(clean(el.textContent).slice(0, 40))
     seen.add(asin)
-    out.push({ asin, title: title.slice(0, 180), price, image, rating, sponsored })
+    out.push({ asin, title: title.slice(0, 180), price, image, rating, reviews, sponsored })
   }
   return { ok: out.length > 0, products: out, url: location.href.slice(0, 140) }
 }
 
+// Marketplace hosts for the onsite finder. Non-US hosts are OPTIONAL
+// permissions (granted via the popup's "International Amazon" toggle) so the
+// default footprint stays US-only and Chrome never disables on update.
+const AMZ_MARKETS = {
+  us: 'www.amazon.com',
+  ca: 'www.amazon.ca',
+  uk: 'www.amazon.co.uk',
+  au: 'www.amazon.com.au',
+}
+const INTL_AMZ_ORIGINS = ['https://*.amazon.ca/*', 'https://*.amazon.co.uk/*', 'https://*.amazon.com.au/*']
+
 async function productFinderSearch(query, opts) {
   opts = opts || {}
-  const maxDeep = Math.min(25, Math.max(1, opts.maxResults || 15))
+  // How many VERIFIED PASSERS the caller wants from this call (the app runs
+  // multiple waves for bigger targets, excluding already-checked ASINs).
+  const wantPassers = Math.min(15, Math.max(1, opts.maxResults || 10))
+  const deepBudget = Math.min(25, wantPassers * 2 + 5) // stop even if passers are scarce
   const minSales = typeof opts.minSales === 'number' ? opts.minSales : 0
   const mustVideo = !!opts.mustVideo
+  const minRating = typeof opts.minRating === 'number' ? opts.minRating : 0
+  const minReviews = typeof opts.minReviews === 'number' ? opts.minReviews : 0
+  const minPrice = typeof opts.priceMin === 'number' ? opts.priceMin : 0
+  const maxPrice = typeof opts.priceMax === 'number' ? opts.priceMax : 0
+  const exclude = new Set((opts.excludeAsins || []).map((a) => String(a || '').toUpperCase()))
   const q = String(query || '').trim()
   if (!q) return { ok: false, error: 'no-query' }
-  // The candidate POOL to consider: at least the top ~100 results (cheap — just
-  // reading search-page HTML), never fewer than the deep-check budget. One
-  // Amazon search page is only ~60 items, so we paginate (&page=N) until the pool
-  // fills or the results run out. Deep-checking (a /dp visit each) still happens
-  // for only the first `maxDeep` of the pool — that's the slow, capped part.
-  const poolTarget = Math.max(100, maxDeep)
-  const pageUrl = (n) => `https://www.amazon.com/s?k=${encodeURIComponent(q)}${n > 1 ? `&page=${n}` : ''}`
+  // Marketplace: non-US needs the optional intl permission (popup grants it).
+  const market = AMZ_MARKETS[opts.marketplace] ? opts.marketplace : 'us'
+  const host = AMZ_MARKETS[market]
+  if (market !== 'us') {
+    let granted = false
+    try { granted = await chrome.permissions.contains({ origins: INTL_AMZ_ORIGINS }) } catch (e) {}
+    if (!granted) return { ok: false, error: 'intl-permission-needed' }
+  }
+  const parsePrice = (s) => { const m = String(s || '').replace(/,/g, '').match(/([\d.]+)/); const n = m ? parseFloat(m[1]) : NaN; return isNaN(n) ? null : n }
+  // The candidate POOL: top ~120 results (cheap — search-page HTML only),
+  // paginated. Deep-checks (a /dp visit each) only run on candidates that
+  // already pass every CARD-READABLE gate (price / rating / reviews) — the
+  // budget goes exclusively to plausible winners.
+  const poolTarget = 120
+  const pageUrl = (n) => `https://${host}/s?k=${encodeURIComponent(q)}${n > 1 ? `&page=${n}` : ''}`
   // Space out Amazon page hits so a scan doesn't look like a bot burst (which
   // trips "Website Temporarily Unavailable" / robot checks). ~1.2–2.1s + jitter.
   const pace = () => _sleep(1200 + Math.floor(Math.random() * 900))
   let tabId = null
   let blocked = false
+  const drops = { card: 0, sales: 0, carousel: 0, rating: 0, unreadable: 0 }
+  const checkedAsins = [] // deep-checked this call (pass or fail) — app excludes next wave
   try {
     const tab = await chrome.tabs.create({ url: pageUrl(1), active: false })
     tabId = tab.id
@@ -1439,13 +1477,26 @@ async function productFinderSearch(query, opts) {
       if (page < 6 && pooled.length < poolTarget) await pace() // breathe between pages
     }
     if (!pooled.length) return blocked ? { ok: false, error: 'amazon-blocked', products: [] } : { ok: false, error: 'no-results', products: [] }
-    // Prefer organic results; deep-check up to maxDeep of them.
-    const candidates = pooled.filter((p) => !p.sponsored).concat(pooled.filter((p) => p.sponsored)).slice(0, maxDeep)
+    // Card-readable gates FIRST (free), then organic before sponsored. Excluded
+    // ASINs (already deep-checked in an earlier wave) are skipped entirely.
+    const candidates = []
+    for (const p of pooled.filter((x) => !x.sponsored).concat(pooled.filter((x) => x.sponsored))) {
+      if (exclude.has(p.asin)) continue
+      const priceN = parsePrice(p.price)
+      const ratingN = p.rating != null ? parseFloat(p.rating) : null
+      if (minPrice && (priceN == null || priceN < minPrice)) { drops.card++; continue }
+      if (maxPrice && priceN != null && priceN > maxPrice) { drops.card++; continue }
+      if (minRating && ratingN != null && ratingN < minRating) { drops.card++; continue }
+      if (minReviews && (p.reviews == null || p.reviews < minReviews)) { drops.card++; continue }
+      candidates.push({ ...p, priceN, ratingN })
+    }
     const results = []
+    let deepChecked = 0
     for (const p of candidates) {
+      if (results.length >= wantPassers || deepChecked >= deepBudget) break
       let sig = { sales: null, hasVideo: false, carouselPos: 'none' }
       try {
-        await chrome.tabs.update(tabId, { url: `https://www.amazon.com/dp/${p.asin}` })
+        await chrome.tabs.update(tabId, { url: `https://${host}/dp/${p.asin}` })
         await waitForTabLoad(tabId, 20000)
         await _sleep(900)
         for (let i = 0; i < 6; i++) {
@@ -1457,15 +1508,24 @@ async function productFinderSearch(query, opts) {
       } catch (e) { /* keep the search-page basics; signals stay null */ }
       // Amazon started rate-limiting mid-scan → stop now, return what we have.
       if (sig && sig.blocked) { blocked = true; break }
-      results.push({ asin: p.asin, title: p.title, price: p.price, image: p.image, rating: p.rating, monthlySales: sig.sales, carouselPos: sig.carouselPos || 'none', hasVideo: !!sig.hasVideo })
+      deepChecked++
+      checkedAsins.push(p.asin)
+      // Deep gates — only passers make the results list.
+      if (minSales > 0 && (sig.sales == null || sig.sales < minSales)) { drops.sales++; await pace(); continue }
+      if (mustVideo && !sig.hasVideo) { drops.carousel++; await pace(); continue }
+      // The /dp rating is authoritative when the card's was unreadable.
+      const dpRating = typeof sig.rating === 'number' ? sig.rating : p.ratingN
+      if (minRating && dpRating != null && dpRating < minRating) { drops.rating++; await pace(); continue }
+      results.push({
+        asin: p.asin, title: p.title, price: p.price, image: p.image,
+        rating: p.rating != null ? p.rating : (typeof sig.rating === 'number' ? String(sig.rating) : null),
+        reviews: p.reviews != null ? p.reviews : null,
+        monthlySales: sig.sales, carouselPos: sig.carouselPos || 'none', hasVideo: !!sig.hasVideo,
+        marketplace: market,
+      })
       await pace() // breathe between /dp hits
     }
-    const filtered = results.filter((r) => {
-      if (mustVideo && !r.hasVideo) return false
-      if (minSales > 0 && (r.monthlySales == null || r.monthlySales < minSales)) return false
-      return true
-    })
-    return { ok: true, products: filtered, scanned: results.length, totalFound: pooled.length, blocked }
+    return { ok: true, products: results, scanned: deepChecked, totalFound: pooled.length, blocked, drops, checkedAsins, poolExhausted: deepChecked >= candidates.length }
   } catch (e) {
     return { ok: false, error: (e && e.message) ? String(e.message).slice(0, 120) : 'exception' }
   } finally {

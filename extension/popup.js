@@ -68,9 +68,27 @@ async function refreshRetail() {
   } catch { renderRetail(false) }
 }
 
+// ── Optional international Amazon marketplaces (CA / UK / AU) ─────────────
+// Powers the AMZ Product Finder's marketplace picker. Optional for the same
+// reason as the retail hosts: keeps the default footprint amazon.com-only.
+const INTL_ORIGINS = ['https://*.amazon.ca/*', 'https://*.amazon.co.uk/*', 'https://*.amazon.com.au/*']
+function renderIntl(on) {
+  $('intl').checked = on
+  $('intlSub').textContent = on
+    ? 'On — amazon.ca, .co.uk & .com.au.'
+    : 'Off — amazon.com only.'
+}
+async function refreshIntl() {
+  try {
+    const on = await chrome.permissions.contains({ origins: INTL_ORIGINS })
+    renderIntl(!!on)
+  } catch { renderIntl(false) }
+}
+
 // ── boot ────────────────────────────────────────────────────────────────
 chrome.storage.local.get(['ccToken'], async ({ ccToken }) => {
   refreshRetail()
+  refreshIntl()
   if (ccToken) {
     $('token').value = ccToken
     const v = await validateToken(ccToken)
@@ -90,6 +108,19 @@ $('retail').addEventListener('change', async () => {
   } else {
     try { await chrome.permissions.remove({ origins: RETAIL_ORIGINS }) } catch { /* ignore */ }
     renderRetail(false)
+  }
+})
+
+$('intl').addEventListener('change', async () => {
+  // request() and remove() must run in this click's user gesture.
+  if ($('intl').checked) {
+    let ok = false
+    try { ok = await chrome.permissions.request({ origins: INTL_ORIGINS }) } catch { ok = false }
+    if (!ok) { renderIntl(false); return }
+    renderIntl(true)
+  } else {
+    try { await chrome.permissions.remove({ origins: INTL_ORIGINS }) } catch { /* ignore */ }
+    renderIntl(false)
   }
 })
 
