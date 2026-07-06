@@ -466,7 +466,24 @@ function readDpSignalsInPage() {
     if (pm) { const n = parseFloat(pm[1].replace(/,/g, '')); if (!isNaN(n) && n > 0) price = n }
   } catch (e) {}
 
-  return { sales, hasVideo: carouselPos !== 'none', carouselPos, price }
+  // Star rating — "4.3 out of 5 stars" (title attr or visible text near the top).
+  let rating = null
+  try {
+    const rEl = document.querySelector('#acrPopover, [data-hook="rating-out-of-text"], i[class*="a-icon-star"] .a-icon-alt')
+    const rTxt = rEl ? ((rEl.getAttribute && rEl.getAttribute('title')) || rEl.textContent || '') : ''
+    const rm = (rTxt || bodyText.slice(0, 4000)).match(/([\d.]+)\s*out of 5/i)
+    if (rm) { const n = parseFloat(rm[1]); if (!isNaN(n) && n > 0 && n <= 5) rating = n }
+  } catch (e) {}
+
+  // Breadcrumb / category trail — the reliable input for category avoid-rules
+  // ("never supplements / food / pharmacy / clothing"), since campaign names lie.
+  let crumbs = null
+  try {
+    const bc = document.querySelector('#wayfinding-breadcrumbs_feature_div, #wayfinding-breadcrumbs_container')
+    if (bc) crumbs = (bc.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 300) || null
+  } catch (e) {}
+
+  return { sales, hasVideo: carouselPos !== 'none', carouselPos, price, rating, crumbs }
 }
 
 // Deep import check for one campaign: resolve its ASIN (from the details page),
@@ -500,7 +517,7 @@ async function resolveProductDeep(detailsUrl) {
       if (v) { out = v; if (v.hasVideo || v.sales != null || v.price != null) break }
       await _sleep(600)
     }
-    return { ok: true, asin, sales: out.sales, hasVideo: out.hasVideo, carouselPos: out.carouselPos || 'none', price: out.price != null ? out.price : null }
+    return { ok: true, asin, sales: out.sales, hasVideo: out.hasVideo, carouselPos: out.carouselPos || 'none', price: out.price != null ? out.price : null, rating: out.rating != null ? out.rating : null, crumbs: out.crumbs || null }
   } catch (e) {
     return { ok: false, error: e && e.message ? e.message : 'deep-exception' }
   } finally {
@@ -671,6 +688,68 @@ async function ccFindCampaign(query, asin, callerTabId) {
     return { ok: false, error: opened ? 'cc-find-failed' : 'content-script-unreachable' }
   } finally {
     // Only close tabs WE opened — never a CC tab the user had open themselves.
+    if (opened && tab && tab.id != null) { try { await chrome.tabs.remove(tab.id) } catch (e) {} }
+  }
+}
+
+// ── MVP Smart Scan (CC_SMART) ────────────────────────────────────────────────
+// Full-grid Affiliate+ sweep gated by the MVP rulebook the app sends (single
+// source of truth in the app's lib/cc-smart-rules.ts). The content script does
+// the scan + paced deep-checks; this orchestrator owns the tab: reuse an open
+// CC tab or open one hidden, unlock the offsite store, escalate to a short
+// foreground pass when the virtualized grid won't render hidden, and never
+// close a tab the user had open themselves. Mirrors ccFindCampaign's strategy.
+async function smartScanOnTab(tabId, rules) {
+  const ask = () => chrome.tabs.sendMessage(tabId, { type: 'CC_SMART', rules })
+  try {
+    return await ask()
+  } catch (e) {
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] })
+    return await ask()
+  }
+}
+
+async function ccSmartScan(rules, callerTabId) {
+  const open = await chrome.tabs.query({
+    url: [
+      'https://www.amazon.com/creatorconnections/*',
+      'https://affiliate-program.amazon.com/*',
+    ],
+  })
+  let tab = open[0] || null
+  let opened = false
+  try {
+    if (!tab || tab.id == null) {
+      tab = await chrome.tabs.create({ url: ccOpportunitiesUrl(), active: false })
+      opened = true
+      await waitForTabLoad(tab.id, 25000)
+      await _sleep(3500) // let the SPA + grid mount
+    }
+    // CC is blocked on an onsite ("onamz…") store id — flip to offsite first.
+    try {
+      const sres = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: ensureOffsiteStoreInPage })
+      const sw = sres && sres[0] && sres[0].result
+      if (sw && sw.switched) { await _sleep(1500); await waitForTabLoad(tab.id, 25000); await _sleep(2500) }
+    } catch (e) {}
+
+    let res = await smartScanOnTab(tab.id, rules)
+
+    // Hidden grid never rendered → brief foreground pass, then give focus back.
+    if (!res || !res.ok || (res.stats && res.stats.scannedOnCard === 0)) {
+      try {
+        await chrome.tabs.update(tab.id, { active: true })
+        await _sleep(2800)
+        const fg = await smartScanOnTab(tab.id, rules)
+        if (fg && fg.ok) { res = fg; res.foreground = true }
+      } catch (e) { /* keep the background result */ }
+      finally {
+        if (callerTabId != null) { try { await chrome.tabs.update(callerTabId, { active: true }) } catch (e) {} }
+      }
+    }
+    return res || { ok: false, error: 'no-result' }
+  } catch (e) {
+    return { ok: false, error: opened ? 'smart-scan-failed' : 'content-script-unreachable' }
+  } finally {
     if (opened && tab && tab.id != null) { try { await chrome.tabs.remove(tab.id) } catch (e) {} }
   }
 }
@@ -2239,6 +2318,17 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     const callerTabId = sender && sender.tab ? sender.tab.id : null
     const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 180000)
     ccFindCampaign(msg.query || '', msg.asin || '', callerTabId)
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true // async response — keep the channel open
+  }
+  if (msg.type === 'MVP_CC_SMART') {
+    // MVP Smart Scan: full-grid sweep + up to ~25 paced deep-checks. The content
+    // loop self-limits to 270s of deep-checking; scan + tab setup adds ~60-90s,
+    // so allow 7 minutes end-to-end.
+    const callerTabId = sender && sender.tab ? sender.tab.id : null
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 420000)
+    ccSmartScan(msg.rules || {}, callerTabId)
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async response — keep the channel open

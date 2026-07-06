@@ -25,6 +25,7 @@ import { Loader2, ExternalLink, CheckCircle2, Sparkles, Search, Download, Copy, 
 import { toast } from 'sonner'
 import { getScoutInstallKind, requestAcceptCampaign } from '@/lib/extension-frame'
 import MessageBrandModal, { type MessageBrandCampaign } from '@/components/campaigns/MessageBrandModal'
+import SmartScanPanel from '@/components/campaigns/SmartScanPanel'
 import { SCOUT_STORE_LISTING_URL } from '@/lib/scout-version'
 
 // The REAL Creator Connections app (Amazon's 2026 redesign). The legacy
@@ -619,6 +620,12 @@ export default function EpcScoutPage() {
           </div>
         )}
       </div>
+
+      {/* ── Smart Scan — MVP's opinionated one-click campaign finder ──────── */}
+      <SmartScanPanel
+        coveredAsins={campaigns.map(c => c.asin)}
+        onMessageBrand={(c) => setMsgModal(c)}
+      />
 
       {/* ── Queue: filter + generate ─────────────────────────────────────── */}
       <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">

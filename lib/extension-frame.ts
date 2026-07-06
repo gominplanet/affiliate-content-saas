@@ -562,6 +562,30 @@ export async function requestCcMatch(keyword: string, asins: string[]): Promise<
   return { ok: false, error: resp.error || 'match-failed' }
 }
 
+/**
+ * MVP Smart Scan — SCOUT sweeps the whole Affiliate+ opportunities grid and
+ * applies the MVP rulebook (lib/cc-smart-rules.ts, sent along so the extension
+ * never carries its own copy of the numbers), deep-checking the best candidates
+ * for price / monthly units / rating / video-carousel placement. Returns raw
+ * matches; the app re-gates + scores them. Slow by design (paced deep-checks),
+ * so a very long timeout. Best-effort: resolves, never throws.
+ */
+export interface CcSmartScanResult {
+  ok: boolean
+  matches?: import('./cc-smart-rules').SmartScanMatch[]
+  stats?: import('./cc-smart-rules').SmartScanStats & { truncated?: boolean }
+  foreground?: boolean
+  error?: string
+}
+export async function requestCcSmartScan(
+  rules: import('./cc-smart-rules').CcSmartRules,
+): Promise<CcSmartScanResult> {
+  if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
+  const resp = await sendToExtension<CcSmartScanResult>({ type: 'MVP_CC_SMART', rules }, 430000)
+  if (!resp) return { ok: false, error: 'timeout' }
+  return resp
+}
+
 /** A raw Creator Connections campaign row as scraped by the extension. All
  *  filtering / ranking happens in the app — this is the unfiltered harvest. */
 export interface ScoutedCampaign {

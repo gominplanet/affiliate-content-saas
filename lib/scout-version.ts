@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.11.58'
+export const SCOUT_LATEST_VERSION = '1.11.59'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'The SCOUT top-bar now reserves its own space (like Oink) so it stacks below the banner and above Amazon\'s nav instead of covering it. Tidier bar: added a Min price filter next to Min Est. EPC, removed the Debug button, and shortened the help text. Chrome auto-updates the Web Store build in the background.'
+  'New: MVP Smart Scan — one click on the AMZ+ & EPC page sweeps your whole Creator Connections opportunities list and returns only campaigns that pass MVP\'s proven rules (commission, runway, price band, monthly sales, rating, video carousel), ranked with the buy-to-review math. Chrome auto-updates the Web Store build in the background.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar

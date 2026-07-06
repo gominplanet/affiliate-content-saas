@@ -437,6 +437,100 @@ if (!window.__ccScoutListener) {
       })()
       return true // async response
     }
+    // CC_SMART — MVP Smart Scan: sweep the WHOLE Affiliate+ opportunities grid,
+    // gate on the MVP rulebook (sent from the app — single source of truth in
+    // lib/cc-smart-rules.ts), deep-check the best on-card candidates (price,
+    // monthly units, rating, video-carousel placement, breadcrumbs), and return
+    // only campaigns that pass EVERY gate. Powers the /epc "Smart Scan" panel.
+    if (msg?.type === 'CC_SMART') {
+      ;(async () => {
+        try {
+          const rules = msg.rules || {}
+          // Always scan the actionable tab (a stale Active/Completed view would
+          // return campaigns the user can't accept).
+          try { await clickCcTab(/^(new opportunities|opportunities)$/i) } catch (e) {}
+          // On-card pass: full grid scroll, gated by commission % + days-left
+          // (both readable on the card, both lenient on unreadable — the deep
+          // check is the real filter).
+          let rows = []
+          let rawCount = 0
+          try {
+            const r = await scoutRunSearch({ keyword: '', minCommission: rules.minCommissionPct || 0, lastDays: rules.minDaysLeft || 0, maxCards: 600 })
+            rows = r.rows || []; rawCount = r.rawCount || rows.length
+          } catch (e) {}
+          if (!rows.length) { sendResponse({ ok: true, matches: [], stats: { scannedOnCard: rawCount, passedOnCard: 0, deepChecked: 0 } }); return }
+          // Name/brand avoid-list (breadcrumbs re-check after the deep-check —
+          // campaign names lie, categories don't).
+          const avoid = (rules.avoidPatterns || []).map((s) => String(s).toLowerCase())
+          const hitAvoid = (hay) => { const h = String(hay || '').toLowerCase(); return avoid.some((p) => h.includes(p)) }
+          const candidates = rows
+            .filter((r) => !hitAvoid(`${r.campaignName || ''} ${r.brand || ''}`))
+            .sort((a, b) => (b.commissionPct || 0) - (a.commissionPct || 0)) // spend the deep-check budget on the best cards
+          const passedOnCard = candidates.length
+          const cap = Math.min(candidates.length, rules.deepCheckCap || 25)
+          const matches = []
+          let deepChecked = 0
+          let blocked = false
+          const startedAt = Date.now()
+          for (let i = 0; i < cap; i++) {
+            // Stay inside the app's message timeout — return what we have.
+            if (Date.now() - startedAt > 270000) break
+            const c = candidates[i]
+            if (!c.detailsUrl) continue
+            if (i > 0) await new Promise((res) => setTimeout(res, 2500 + Math.floor(Math.random() * 2000))) // pace Amazon
+            let deep = null
+            try { deep = await chrome.runtime.sendMessage({ type: 'SCOUT_DEEP_CHECK', detailsUrl: c.detailsUrl }) } catch (e) {}
+            deepChecked++
+            if (deep && deep.blocked) { blocked = true; break } // Amazon interstitial — STOP the batch
+            if (!deep || !deep.ok) continue
+            const price = typeof deep.price === 'number' ? deep.price : null
+            const sales = typeof deep.sales === 'number' ? deep.sales : null
+            const rating = typeof deep.rating === 'number' ? deep.rating : null
+            const crumbs = deep.crumbs || null
+            const carouselPos = deep.carouselPos || 'none'
+            // ── Hard gates (the rulebook) ──
+            const floor = Math.max(rules.minPrice || 0, rules.hardFloorPrice || 0)
+            if (price == null || price < floor) continue
+            if (rules.maxPrice && price > rules.maxPrice) continue
+            // No "bought in past month" badge on the page ≈ Amazon shows it from
+            // ~50/mo up — missing means low volume, so a hard minimum FAILS it.
+            if (rules.minMonthlySales && (sales == null || sales < rules.minMonthlySales)) continue
+            // Rating is on virtually every /dp; lenient only when unreadable.
+            if (rules.minRating && rating != null && rating < rules.minRating) continue
+            if (rules.requireCarousel && carouselPos === 'none') continue
+            if (crumbs && hitAvoid(crumbs)) continue
+            const endsAt = c.endsAt || null
+            let daysLeftN = null
+            try { if (endsAt) daysLeftN = Math.max(0, Math.ceil((new Date(endsAt).getTime() - Date.now()) / 86400000)) } catch (e) {}
+            matches.push({
+              asin: (deep.asin || c.asin || null),
+              campaignName: c.campaignName || null,
+              brand: c.brand || null,
+              detailsUrl: c.detailsUrl || null,
+              campaignId: c.campaignId || null,
+              image: c.image || null,
+              commissionPct: c.commissionPct != null ? c.commissionPct : null,
+              endsAt,
+              daysLeft: daysLeftN,
+              price,
+              monthlySales: sales,
+              rating,
+              carouselPos,
+              hasVideo: carouselPos !== 'none',
+              crumbs,
+            })
+          }
+          sendResponse({
+            ok: true,
+            matches,
+            stats: { scannedOnCard: rawCount, passedOnCard, deepChecked, blocked, truncated: deepChecked < Math.min(passedOnCard, cap) },
+          })
+        } catch (e) {
+          sendResponse({ ok: false, error: (e && e.message) || 'smart-scan-failed' })
+        }
+      })()
+      return true // async response
+    }
   })
 }
 
