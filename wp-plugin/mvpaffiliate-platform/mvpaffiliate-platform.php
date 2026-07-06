@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.63
+ * Version: 1.0.64
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -43,6 +43,48 @@ add_filter('allowed_redirect_hosts', function ($hosts) {
     $hosts[] = 'mvpaffiliate.io';
     $hosts[] = 'www.mvpaffiliate.io';
     return $hosts;
+});
+
+// ─── SEO: keep thin, auto-generated archives OUT of Google's index ───────────
+// MVP assigns up to ~10 tags per review, so a catalogue of ~1,000 posts spawns
+// hundreds of hyper-specific tag archives (usually one post each). Indexed, they
+// are thin, duplicate the real reviews, waste crawl budget, and drag the whole
+// site's quality signal — which is exactly what Search Console shows as a wall
+// of "Discovered / Crawled – currently not indexed" plus thin tag URLs ranking
+// in place of the actual review posts.
+//
+// Fix: noindex (but FOLLOW, so link equity still flows to the posts) every
+// tag / author / date / search / paginated archive, and drop tags from the
+// sitemap so Google stops discovering them. Real content — posts, pages, the
+// home page, and the BROAD category hubs — stays fully indexable. Skips entirely
+// when a dedicated SEO plugin (Yoast / Rank Math / AIOSEO / SEOPress) is active,
+// so we never fight a plugin the user configured on purpose.
+function mvp_affiliate_seo_plugin_active() {
+    return defined('WPSEO_VERSION')          // Yoast
+        || defined('RANK_MATH_VERSION')      // Rank Math
+        || defined('AIOSEO_VERSION')         // All in One SEO
+        || defined('SEOPRESS_VERSION');      // SEOPress
+}
+
+add_filter('wp_robots', function ($robots) {
+    if (mvp_affiliate_seo_plugin_active()) return $robots;
+    $thin = is_tag() || is_author() || is_date() || is_search()
+        || (is_archive() && is_paged()) || (is_home() && is_paged());
+    if ($thin) {
+        $robots['noindex'] = true;
+        $robots['follow']  = true;
+        unset($robots['index']);
+    }
+    return $robots;
+}, 20);
+
+// Drop the post_tag taxonomy from WordPress core's sitemap so Google stops
+// discovering hundreds of thin tag URLs it will only refuse to index. Categories
+// (broad, genuinely useful hubs) stay in the sitemap.
+add_filter('wp_sitemaps_taxonomies', function ($taxonomies) {
+    if (mvp_affiliate_seo_plugin_active()) return $taxonomies;
+    unset($taxonomies['post_tag']);
+    return $taxonomies;
 });
 
 // ─── 1. Authorization header fix (zero-touch — no .htaccess needed) ──────────
