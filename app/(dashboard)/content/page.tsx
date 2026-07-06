@@ -632,27 +632,27 @@ function CategoryPicker({
 
 /**
  * Per-video brand tags/keywords input, shown next to the Category dropdown.
- * Creators enter up to 5 comma-separated tags/keywords a brand asked them to
- * include; on blur we persist to youtube_videos.brand_tags and the next generate
- * inserts them VERBATIM at the very top of the article. Empty clears them.
+ * Chip-style: type a tag and press Enter (or comma) — it becomes a visible,
+ * removable chip and saves instantly to youtube_videos.brand_tags. Up to 5;
+ * the next generate inserts them VERBATIM at the very top of the article.
+ * (Stored as the same comma-joined string as before, so the API + generate
+ * pipeline are untouched.)
  */
 function BrandTagsInput({ videoId, initial }: { videoId: string; initial: string | null }) {
-  const [value, setValue] = useState<string>(initial ?? '')
+  const MAX_TAGS = 5
+  const [tags, setTags] = useState<string[]>(() =>
+    (initial ?? '').split(',').map(t => t.trim()).filter(Boolean).slice(0, MAX_TAGS)
+  )
+  const [draft, setDraft] = useState('')
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
-  const count = value.split(',').map(t => t.trim()).filter(Boolean).length
 
-  async function save() {
-    // Cap at 5 comma-separated items on save so the stored value honors the limit.
-    const items = value.split(',').map(t => t.trim()).filter(Boolean).slice(0, 5)
-    const normalized = items.join(', ')
-    if (normalized !== value) setValue(normalized)
-    if ((normalized || null) === (initial || null) && status === 'idle') return // nothing changed
+  async function persist(next: string[]) {
     setStatus('saving'); setErrorMsg(null)
     try {
       const res = await fetch('/api/blog/update-tags', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoId, tags: normalized || null }),
+        body: JSON.stringify({ videoId, tags: next.join(', ') || null }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || 'Save failed')
@@ -662,18 +662,76 @@ function BrandTagsInput({ videoId, initial }: { videoId: string; initial: string
     }
   }
 
+  function commitDraft() {
+    // Pasting "a, b, c" adds each piece; dupes (case-insensitive) are skipped.
+    const pieces = draft.split(',').map(t => t.trim()).filter(Boolean)
+    setDraft('')
+    if (!pieces.length) return
+    const next = [...tags]
+    for (const p of pieces) {
+      if (next.length >= MAX_TAGS) break
+      if (!next.some(t => t.toLowerCase() === p.toLowerCase())) next.push(p)
+    }
+    if (next.length !== tags.length) { setTags(next); void persist(next) }
+  }
+
+  function removeTag(i: number) {
+    const next = tags.filter((_, idx) => idx !== i)
+    setTags(next); void persist(next)
+  }
+
   return (
-    <div className="inline-flex items-center gap-1.5">
-      <input
-        value={value}
-        onChange={e => setValue(e.target.value)}
-        onBlur={save}
-        onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-        placeholder="Brand tags / keywords (optional)"
-        title="Up to 5 comma-separated tags or keywords a brand asked you to include. Inserted verbatim at the very top of the post."
-        className="text-xs px-2 py-1.5 rounded-lg bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-gray-300 dark:hover:border-white/20 focus:border-[#7C3AED] focus:outline-none w-[200px] max-w-[240px]"
-      />
-      {count > 5 && <span className="text-[10px] text-[#ff9500]" title="Only the first 5 are used">{count}/5</span>}
+    <div className="inline-flex items-center gap-1.5 flex-wrap">
+      {tags.map((t, i) => (
+        <span
+          key={`${t}-${i}`}
+          className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full text-[11px] font-medium bg-[rgba(124,58,237,0.12)] text-[#7C3AED] border border-[rgba(124,58,237,0.3)] max-w-[160px]"
+        >
+          <span className="truncate">{t}</span>
+          <button
+            onClick={() => removeTag(i)}
+            title={`Remove "${t}"`}
+            className="rounded-full p-0.5 hover:bg-[rgba(124,58,237,0.2)] transition-colors flex-shrink-0"
+          >
+            <X size={9} />
+          </button>
+        </span>
+      ))}
+      {tags.length < MAX_TAGS && (
+        <input
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); commitDraft() }
+            // Backspace on an empty box removes the last chip — standard tag-input feel.
+            else if (e.key === 'Backspace' && !draft && tags.length) removeTag(tags.length - 1)
+          }}
+          onBlur={commitDraft}
+          placeholder={tags.length ? 'Add another + Enter' : 'Brand tags / keywords (optional)'}
+          className="text-xs px-2 py-1.5 rounded-lg bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-gray-300 dark:hover:border-white/20 focus:border-[#7C3AED] focus:outline-none w-[170px]"
+        />
+      )}
+      {tags.length > 0 && (
+        <span className={`text-[10px] ${tags.length >= MAX_TAGS ? 'text-[#ff9500]' : 'text-[#86868b] dark:text-[#8e8e93]'}`}>
+          {tags.length}/{MAX_TAGS}
+        </span>
+      )}
+      {/* "?" explainer — hover (or tap) for the full how-it-works. */}
+      <span className="relative group inline-flex">
+        <span
+          tabIndex={0}
+          className="w-4 h-4 rounded-full border border-gray-300 dark:border-white/20 text-[#86868b] dark:text-[#8e8e93] text-[10px] font-semibold inline-flex items-center justify-center cursor-help select-none hover:border-[#7C3AED] hover:text-[#7C3AED] transition-colors"
+        >
+          ?
+        </span>
+        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 p-3 rounded-xl text-[11px] leading-relaxed bg-[#1c1c1e] text-[#f5f5f7] border border-white/10 shadow-2xl opacity-0 pointer-events-none group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity z-30">
+          <b>Brand tags &amp; keywords</b> — if a brand asked you to tag them or include specific
+          hashtags/phrases, add up to {MAX_TAGS} here (e.g. <i>#kingpavonini</i>).
+          Type one and press <b>Enter</b> — it saves instantly and shows as a chip; click a
+          chip&apos;s × to remove it. When you Generate (or Rebuild) this post, they&apos;re inserted
+          <b> word-for-word at the very top of the article</b>.
+        </span>
+      </span>
       {status === 'saving' && <Loader2 size={11} className="animate-spin text-[#86868b]" />}
       {status === 'saved' && <CheckCircle size={11} className="text-[#34c759]" />}
       {status === 'error' && errorMsg && <span className="text-[10px] text-[#ff3b30] max-w-[140px] truncate" title={errorMsg}>⚠ {errorMsg}</span>}
@@ -1010,14 +1068,31 @@ const VideoCard = memo(function VideoCardImpl({
 
   return (
     <div className="card p-4 flex gap-4 items-start">
-      {thumb && (
-        <div className="w-28 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100" style={{ height: '72px' }}>
-          {/* loading="lazy" — only fetch the YouTube thumbnail when this
-              card actually scrolls into view. Cuts initial bandwidth on
-              the Posts tab from ~20 thumbs/page to ~4-5 (the ones above
-              the fold). decoding="async" lets the browser skip the main
-              thread for image decoding. 2026-06-07 perf pass. */}
-          <img src={thumb} alt={title} className="w-full h-full object-cover" loading="lazy" decoding="async" />
+      {(thumb || (!post && video.is_vertical !== true)) && (
+        <div className="w-28 flex-shrink-0 flex flex-col items-center gap-1.5">
+          {thumb && (
+            <div className="w-full rounded-lg overflow-hidden bg-gray-100" style={{ height: '72px' }}>
+              {/* loading="lazy" — only fetch the YouTube thumbnail when this
+                  card actually scrolls into view. Cuts initial bandwidth on
+                  the Posts tab from ~20 thumbs/page to ~4-5 (the ones above
+                  the fold). decoding="async" lets the browser skip the main
+                  thread for image decoding. 2026-06-07 perf pass. */}
+              <img src={thumb} alt={title} className="w-full h-full object-cover" loading="lazy" decoding="async" />
+            </div>
+          )}
+          {/* Ignore — hides this video from the TODO list. Lives right under
+              the thumbnail (red) so it reads as "skip this video", not as part
+              of the tags/category row it used to sit in. Only meaningful before
+              a post exists (after that, Delete on the manage row covers it). */}
+          {!post && video.is_vertical !== true && (
+            <button
+              onClick={onDismiss}
+              title="Hide this video from the list — MVP won't suggest a post for it"
+              className="inline-flex items-center gap-1 text-xs font-medium text-[#ff3b30] hover:text-[#d70015] transition-colors"
+            >
+              <X size={11} /> Ignore
+            </button>
+          )}
         </div>
       )}
       <div className="flex-1 min-w-0">
@@ -1160,7 +1235,9 @@ const VideoCard = memo(function VideoCardImpl({
               hasPublishedPost={!!post}
             />
             <BrandTagsInput videoId={id} initial={(video.brand_tags as string | null) ?? null} />
-            {post ? (
+            {/* Ignore moved under the card's thumbnail (2026-07-06) — it was
+                easy to misread as part of the tags/category row here. */}
+            {post && (
               <>
                 <ManualEdit postId={post.postId} />
                 <button onClick={handleDelete} disabled={deleting} className="inline-flex items-center gap-1 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] transition-colors disabled:opacity-60">
@@ -1168,10 +1245,6 @@ const VideoCard = memo(function VideoCardImpl({
                   {deleting ? 'Deleting…' : 'Delete'}
                 </button>
               </>
-            ) : (
-              <button onClick={onDismiss} className="inline-flex items-center gap-1 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] transition-colors">
-                <X size={11} /> Ignore
-              </button>
             )}
           </div>
           )}
