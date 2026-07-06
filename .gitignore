@@ -34,3 +34,6 @@ next-env.d.ts
 
 # Extension signing key (archival; never commit)
 extension-signing/
+
+# Local Creator Connections catalog exports (hundreds of MB — never commit)
+/campaign/
