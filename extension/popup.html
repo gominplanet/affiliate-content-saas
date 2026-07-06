@@ -5,28 +5,14 @@
 <style>
   :root { color-scheme: light; }
   * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-  body { width: 340px; margin: 0; padding: 16px; color: #1d1d1f; background: #fff; }
+  body { width: 340px; margin: 0; padding: 18px; color: #1d1d1f; background: #fff; }
 
-  .head { display: flex; align-items: center; gap: 10px; margin: 0 0 14px; }
+  .head { display: flex; align-items: center; gap: 10px; margin: 0 0 16px; }
   .head img { width: 34px; height: 34px; border-radius: 9px; flex: none; }
   .head .title { display: flex; flex-direction: column; line-height: 1.05; }
   .head h1 { font-size: 17px; font-weight: 800; letter-spacing: -0.02em; margin: 0;
        background: linear-gradient(90deg,#7C3AED,#2563eb); -webkit-background-clip: text; background-clip: text; color: transparent; }
   .head .by { font-size: 9px; font-weight: 700; color: #c7c7cc; letter-spacing: .05em; text-transform: uppercase; margin-top: 3px; }
-
-  /* On/off toggle */
-  .toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 12px;
-                padding: 11px 13px; border: 1px solid #ececec; border-radius: 12px; margin-bottom: 10px; }
-  .toggle-row .tl { min-width: 0; }
-  .toggle-row .tt { font-size: 13px; font-weight: 700; color: #1d1d1f; }
-  .toggle-row .ts { font-size: 11px; color: #86868b; margin-top: 2px; }
-  .switch { position: relative; width: 44px; height: 26px; flex: none; }
-  .switch input { opacity: 0; width: 0; height: 0; }
-  .slider { position: absolute; inset: 0; background: #d2d2d7; border-radius: 26px; transition: .2s; cursor: pointer; }
-  .slider::before { content: ""; position: absolute; width: 20px; height: 20px; left: 3px; top: 3px;
-                    background: #fff; border-radius: 50%; transition: .2s; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
-  .switch input:checked + .slider { background: #7C3AED; }
-  .switch input:checked + .slider::before { transform: translateX(18px); }
 
   /* Connection */
   .conn { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 10px;
@@ -39,12 +25,12 @@
   .conn button.link { color: #15803d; }
 
   label { display: block; font-size: 11px; font-weight: 600; color: #6e6e73; margin: 0 0 4px; }
-  input { width: 100%; font-size: 12px; padding: 8px 10px; border: 1px solid #d2d2d7; border-radius: 9px; }
+  input { width: 100%; font-size: 12px; padding: 9px 10px; border: 1px solid #d2d2d7; border-radius: 9px; }
   input.mono { font-family: ui-monospace, Menlo, monospace; }
   input:focus { outline: none; border-color: #7C3AED; box-shadow: 0 0 0 3px rgba(124,58,237,.12); }
   .row { display: flex; gap: 8px; align-items: center; }
   .grow { flex: 1; }
-  button.primary { font-size: 12px; font-weight: 700; padding: 9px 14px; border-radius: 9px; border: 0; cursor: pointer; background: #7C3AED; color: #fff; }
+  button.primary { font-size: 12px; font-weight: 700; padding: 10px 16px; border-radius: 9px; border: 0; cursor: pointer; background: #7C3AED; color: #fff; }
   button.primary:hover { background: #6d28d9; }
   .hint { font-size: 10px; color: #a1a1a6; margin: 6px 0 0; }
 
@@ -53,32 +39,31 @@
   #status.ok { color: #1f8a3a; margin-top: 10px; }
   #status.work { color: #6e6e73; margin-top: 10px; }
 
-  .foot { font-size: 11px; color: #86868b; margin-top: 13px; line-height: 1.5; }
-  .foot b { color: #1d1d1f; }
+  /* Non-member enrollment link */
+  .join { margin-top: 16px; padding-top: 14px; border-top: 1px solid #f2f2f4; font-size: 11.5px; color: #86868b; line-height: 1.5; }
+  .join a { color: #7C3AED; font-weight: 700; text-decoration: none; }
+  .join a:hover { text-decoration: underline; }
+
+  /* Advanced: optional non-Amazon read permission. Lives here because Chrome
+     only grants optional host permissions from a click inside extension UI. */
+  .adv { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px;
+         padding: 9px 11px; border: 1px solid #f2f2f4; border-radius: 10px; }
+  .adv .tl { min-width: 0; }
+  .adv .tt { font-size: 11.5px; font-weight: 700; color: #6e6e73; }
+  .adv .ts { font-size: 10px; color: #a1a1a6; margin-top: 1px; }
+  .switch { position: relative; width: 38px; height: 22px; flex: none; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider { position: absolute; inset: 0; background: #d2d2d7; border-radius: 22px; transition: .2s; cursor: pointer; }
+  .slider::before { content: ""; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px;
+                    background: #fff; border-radius: 50%; transition: .2s; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
+  .switch input:checked + .slider { background: #7C3AED; }
+  .switch input:checked + .slider::before { transform: translateX(16px); }
 </style>
 </head>
 <body>
   <div class="head">
     <img src="icons/icon48.png" alt="SCOUT" />
     <div class="title"><h1>SCOUT</h1><span class="by">for MVP Affiliate</span></div>
-  </div>
-
-  <!-- On / off -->
-  <div class="toggle-row">
-    <div class="tl">
-      <div class="tt">SCOUT</div>
-      <div class="ts" id="toggleSub">On — panel shows on Creator Connections.</div>
-    </div>
-    <label class="switch"><input type="checkbox" id="enabled" /><span class="slider"></span></label>
-  </div>
-
-  <!-- Optional: read non-Amazon product pages (Walmart, Target, …) -->
-  <div class="toggle-row">
-    <div class="tl">
-      <div class="tt">Read non-Amazon products</div>
-      <div class="ts" id="retailSub">Off — Amazon only.</div>
-    </div>
-    <label class="switch"><input type="checkbox" id="retail" /><span class="slider"></span></label>
   </div>
 
   <!-- Connection: green pill when connected, token input otherwise -->
@@ -100,7 +85,19 @@
 
   <div id="status"></div>
 
-  <p class="foot">Open an Amazon <b>Creator Connections</b> page — SCOUT&rsquo;s search panel appears right above the filters. Pick the winners there and Import into MVP.</p>
+  <!-- Advanced: optional non-Amazon product reading (Walmart, Target, …).
+       Chrome requires this grant to happen via a click inside extension UI,
+       so this small row is the only place it can live. -->
+  <div class="adv">
+    <div class="tl">
+      <div class="tt">Read non-Amazon products</div>
+      <div class="ts" id="retailSub">Off — Amazon only.</div>
+    </div>
+    <label class="switch"><input type="checkbox" id="retail" /><span class="slider"></span></label>
+  </div>
+
+  <p class="join">Not an MVP member yet? SCOUT works with an MVP Affiliate account —
+    <a href="https://www.mvpaffiliate.io" target="_blank" rel="noopener">join at mvpaffiliate.io</a>.</p>
 
   <script src="popup.js"></script>
 </body>

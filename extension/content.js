@@ -1894,22 +1894,13 @@ function mountSearchPanel() {
   try { autoFixStore() } catch (e) {}
 }
 
-// Master on/off — the popup's toggle writes chrome.storage.local.scoutEnabled.
-// Default ON. When off, the inline panel never mounts (and any open one is
-// removed); flipping it in the popup shows/hides the panel live via onChanged.
-let SCOUT_ENABLED = true
-function applyScoutEnabled(on) {
-  SCOUT_ENABLED = on
-  const existing = document.getElementById(PANEL_ID)
-  if (!on) { if (existing) removePanel(existing); return }
-  if (isCCPage() && !document.getElementById(PANEL_ID)) { try { mountSearchPanel() } catch (e) {} }
-}
-try {
-  chrome.storage.local.get(['scoutEnabled'], ({ scoutEnabled }) => applyScoutEnabled(scoutEnabled !== false))
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && changes.scoutEnabled) applyScoutEnabled(changes.scoutEnabled.newValue !== false)
-  })
-} catch (e) { try { mountSearchPanel() } catch (e2) {} } // no storage API → default on
+// SCOUT is INVISIBLE on Amazon (2026-07-06): the on-page Campaign Search panel
+// is RETIRED. Every scan / deep-check / import is driven headlessly from the
+// MVP app (Smart Scan on /epc, Product Finder, Check CC) via the background
+// message handlers above — nothing renders on Amazon's pages anymore. The
+// popup (token + connect) is the extension's only UI. mountSearchPanel & co
+// below are dormant; kept for now in case an on-page surface returns.
+try { const stale = document.getElementById(PANEL_ID); if (stale) removePanel(stale) } catch (e) {}
 
 // Learn the creator's own Creator Connections id from any CC page they visit and
 // hand it to the background worker to cache. That's what lets "Check CC" deep-link
@@ -1930,19 +1921,13 @@ function captureCreatorId() {
 }
 try { captureCreatorId() } catch (e) {}
 
-// Keep it in sync with SPA navigation (CC is a React app). Cheap poll: mount when
-// on a CC page and missing; remove when we navigate away or SCOUT is switched off.
+// Keep the creator id fresh across SPA navigation (CC is a React app), and
+// sweep away any panel a stale pre-invisible build might have left behind.
 setInterval(() => {
   try {
     captureCreatorId() // cheap + self-guarded; the id can appear after SPA nav
     const existing = document.getElementById(PANEL_ID)
-    if (!SCOUT_ENABLED) { if (existing) removePanel(existing); return }
-    const onCC = isCCPage()
-    if (onCC && !existing) mountSearchPanel()
-    else if (!onCC && existing) removePanel(existing)
-    // Already mounted — keep it docked above the toolbar + tab-configured as the
-    // React page (and the user's tab switches) render / re-render.
-    else if (onCC && existing) { redock(existing); applyTabUi() }
+    if (existing) removePanel(existing)
   } catch (e) {}
 }, 2000)
 })()

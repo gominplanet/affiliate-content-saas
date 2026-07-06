@@ -1,6 +1,9 @@
-/* SCOUT — MVP Affiliate popup: on/off toggle + MVP connection status.
- * The campaign search + import all lives in the inline panel on the Amazon
- * Creator Connections page now, so this popup is just the control switch. */
+/* SCOUT — MVP Affiliate popup.
+ * SCOUT is INVISIBLE on Amazon (2026-07-06): the on-page panel is retired and
+ * every scan/verify is driven headlessly from the MVP app. This popup is the
+ * ONLY surface: connect your MVP ingest token (+ the optional non-Amazon read
+ * permission, which Chrome requires to be granted from a click in extension
+ * UI), and an enrollment link for non-members. */
 
 const APP_URL = 'https://www.mvpaffiliate.io'
 const $ = (id) => document.getElementById(id)
@@ -40,17 +43,9 @@ function showTokenEdit() {
   $('token').focus()
 }
 
-// ── On / off ────────────────────────────────────────────────────────────
-function renderToggle(on) {
-  $('enabled').checked = on
-  $('toggleSub').textContent = on
-    ? 'On — panel shows on Creator Connections.'
-    : 'Off — the panel won’t appear on Amazon.'
-}
-
 // ── Optional retail hosts (Walmart, Target, …) ────────────────────────────
-// These are OPTIONAL host permissions so SCOUT's default footprint is Amazon-only
-// and Chrome never disables it on update. The grant needs a user gesture, so it
+// OPTIONAL host permissions so SCOUT's default footprint is Amazon-only and
+// Chrome never disables it on update. The grant needs a user gesture, so it
 // happens right here in the popup (the background can't prompt).
 const RETAIL_ORIGINS = [
   'https://*.walmart.com/*', 'https://*.target.com/*', 'https://*.bestbuy.com/*',
@@ -74,8 +69,7 @@ async function refreshRetail() {
 }
 
 // ── boot ────────────────────────────────────────────────────────────────
-chrome.storage.local.get(['ccToken', 'scoutEnabled'], async ({ ccToken, scoutEnabled }) => {
-  renderToggle(scoutEnabled !== false) // default ON
+chrome.storage.local.get(['ccToken'], async ({ ccToken }) => {
   refreshRetail()
   if (ccToken) {
     $('token').value = ccToken
@@ -84,13 +78,6 @@ chrome.storage.local.get(['ccToken', 'scoutEnabled'], async ({ ccToken, scoutEna
   } else {
     showTokenEdit()
   }
-})
-
-$('enabled').addEventListener('change', () => {
-  const on = $('enabled').checked
-  chrome.storage.local.set({ scoutEnabled: on })
-  renderToggle(on)
-  // content.js reacts to the storage change (shows/hides the panel live).
 })
 
 $('retail').addEventListener('change', async () => {
