@@ -46,9 +46,9 @@ export async function GET(request: Request) {
     .limit(limit * 3) // over-fetch: the avoid-list + no-ASIN filters thin this below `limit`
 
   if (q) {
-    // Full-text over name+brand (the cc_catalog_fts_idx GIN index). websearch
-    // syntax so multi-word keywords behave ("massage gun" → both terms).
-    query = query.textSearch('campaign_name', q, { type: 'websearch', config: 'english' })
+    // Full-text over the STORED name+brand tsvector (migration 162, GIN-indexed).
+    // websearch syntax so multi-word keywords behave ("massage gun" → both terms).
+    query = query.textSearch('search_vec', q, { type: 'websearch' })
   }
 
   const { data, error } = await query
