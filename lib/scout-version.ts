@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.11.55'
+export const SCOUT_LATEST_VERSION = '1.11.56'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Check CC now sweeps all your Creator Connections tabs by ASIN — New Opportunities, then Active and Completed — so it tells you live whether a product is a fresh opportunity you can auto-send to OR one you\'ve already accepted, with the campaign id pulled into MVP. Chrome auto-updates the Web Store build in the background.'
+  'The SCOUT panel on Creator Connections is now draggable — grab its purple header and move it anywhere, or click the header to collapse it, so it never blocks Amazon\'s Message Brand box. Your spot + collapsed state are remembered. Chrome auto-updates the Web Store build in the background.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
