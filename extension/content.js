@@ -1295,10 +1295,34 @@ function findToolbarAnchor() {
 // NEVER shows a floating panel: until the toolbar renders (CC is a React app, it
 // can mount late), the panel sits in the DOM but HIDDEN — so it only ever appears
 // already-embedded, no floating flash. Safe to call repeatedly.
+// The bottom Y of whatever fixed/sticky bar sits at the very top of the page
+// (Oink / ViralVue's banner, or Amazon's own sticky nav) so the SCOUT top-bar can
+// pin itself right below it. Ignores the SCOUT panel. 0 when nothing's up there.
+function topStickyBottom(selfEl) {
+  try {
+    let bottom = 0
+    const pts = document.elementsFromPoint(Math.floor((window.innerWidth || 1200) / 2), 4)
+    for (const node of pts) {
+      let n = node
+      for (let i = 0; i < 6 && n && n !== document.body; i++) {
+        if (n === selfEl || n.id === PANEL_ID) break
+        const cs = getComputedStyle(n)
+        if (cs.position === 'fixed' || cs.position === 'sticky') {
+          const r = n.getBoundingClientRect()
+          if (r.top <= 6 && r.bottom > bottom && r.bottom < (window.innerHeight || 800) * 0.5) bottom = r.bottom
+          break
+        }
+        n = n.parentElement
+      }
+    }
+    return Math.round(bottom)
+  } catch (e) { return 0 }
+}
+
 function redock(el) {
   if (!el) return
-  // The user dragged the panel to their own spot — respect it, never re-dock.
-  if (el.classList.contains('mvp-floated')) return
+  // Top-bar mode owns its own placement — never dock it into the page flow.
+  if (el.classList.contains('mvp-topbar')) return
   try {
     const anchor = findToolbarAnchor()
     if (anchor && anchor.parentElement && anchor !== el && !el.contains(anchor)) {
@@ -1342,9 +1366,11 @@ function mountSearchPanel() {
     #${PANEL_ID} *{box-sizing:border-box !important;max-width:100% !important}
     /* Inline mode: sit in the page flow above Amazon's toolbar (like ViralVue) */
     #${PANEL_ID}.mvp-inline{position:static !important;right:auto !important;top:auto !important;left:auto !important;transform:none !important;width:100% !important;max-width:100% !important;margin:0 0 10px !important;border-radius:10px !important;box-shadow:0 2px 12px -4px rgba(124,58,237,.28) !important}
-    /* Floated mode: the user dragged the panel — pinned at their own left/top */
-    #${PANEL_ID}.mvp-floated{position:fixed !important;right:auto !important;top:auto !important;transform:none !important;width:340px !important}
-    #${PANEL_ID} .mvp-hd{display:flex !important;align-items:center;justify-content:space-between;gap:8px;padding:6px 10px;background:linear-gradient(135deg,#7C3AED,#9D6BFF);color:#fff;cursor:move;user-select:none}
+    /* Top-bar mode: a FULL-WIDTH bar pinned to the top, just under the Oink /
+       ViralVue sticky banner (top offset set live via --mvp-top). Like Oink. */
+    #${PANEL_ID}.mvp-topbar{position:fixed !important;left:0 !important;right:0 !important;top:var(--mvp-top,0px) !important;transform:none !important;width:100vw !important;max-width:100vw !important;border-radius:0 !important;box-shadow:0 3px 10px -3px rgba(0,0,0,.25) !important}
+    #${PANEL_ID}.mvp-topbar .mvp-body{max-height:52vh}
+    #${PANEL_ID} .mvp-hd{display:flex !important;align-items:center;justify-content:space-between;gap:8px;padding:6px 10px;background:linear-gradient(135deg,#7C3AED,#9D6BFF);color:#fff;cursor:pointer;user-select:none}
     #${PANEL_ID} .mvp-hd b{font-size:11.5px;font-weight:700;color:#fff}
     #${PANEL_ID} .mvp-body{padding:9px 10px;max-height:60vh;overflow-y:auto;overflow-x:hidden}
     #${PANEL_ID} .mvp-row{display:flex !important;gap:6px;margin-bottom:6px}
@@ -1392,98 +1418,32 @@ function mountSearchPanel() {
       <div class="mvp-note mvp-only-aff">Tick campaigns → <b>Import selected into MVP</b>: SCOUT deep-checks each (reads product price + monthly sales + carousel-video position) and adds ALL your picks to your MVP /epc list — sort by price there — to Generate + Message. <b>It does not accept anything on Amazon</b> — accepting stays your choice in MVP. <b>Import</b> (per row) imports just that one. <b>✍️ Draft</b> writes AND sends a brand message on a campaign's details page.</div>
       <div class="mvp-note mvp-only-spon">These are <b>products</b> (ASIN, price, Est. EPC on the card). Sort by <b>EPC</b> (higher = better) or price. Tick → <b>Import selected into MVP</b> (instant — no page opens). Set a <b>Units sold / mo</b> band to only import products in that sales range (SCOUT then opens each ticked product to read its monthly units). <b>It does not accept anything on Amazon.</b></div>
     </div>`
-  // Restore the user's saved panel state. If they dragged it to a floating spot,
-  // pin it there and NEVER dock — so the panel can't trap them over Amazon's
-  // Message Brand box again. Also restore the collapsed state.
-  const PANEL_POS_KEY = 'mvp_scout_panel_pos'
-  const PANEL_MIN_KEY = 'mvp_scout_panel_min'
-  let userFloated = false
-  try {
-    const raw = localStorage.getItem(PANEL_POS_KEY)
-    if (raw) {
-      const p = JSON.parse(raw)
-      if (p && typeof p.left === 'number' && typeof p.top === 'number') {
-        el.classList.add('mvp-floated')
-        el.style.left = Math.max(4, Math.min(p.left, (window.innerWidth || 1200) - 344)) + 'px'
-        el.style.top = Math.max(4, Math.min(p.top, (window.innerHeight || 800) - 44)) + 'px'
-        userFloated = true
-      }
-    }
-    if (localStorage.getItem(PANEL_MIN_KEY) === '1') el.classList.add('mvp-min')
-  } catch (e) {}
-
-  if (userFloated) {
-    el.classList.remove('mvp-hidden')
-    if (document.body && !el.isConnected) document.body.appendChild(el)
-  } else {
-    // Dock it in the page flow, right ABOVE the CC toolbar row (Filters / tabs).
-    // Stays HIDDEN (never floating) until the toolbar renders; a fast retry embeds
-    // it the moment the anchor appears, so it shows up already-docked — no flash.
-    redock(el)
-    if (!el.classList.contains('mvp-inline')) {
-      let tries = 0
-      const iv = setInterval(() => {
-        tries++
-        redock(el)
-        if (el.classList.contains('mvp-inline') || tries > 80) clearInterval(iv) // ~20s cap
-      }, 250)
-    }
-  }
-  applyTabUi()
-
   const q = (s) => el.querySelector(s)
+
+  // Dock as a FULL-WIDTH bar pinned to the top of the page, right under the Oink /
+  // ViralVue sticky banner — measured live so it always sits just below whatever's
+  // fixed up there (falls back to the very top). Replaces the old floating/inline
+  // panel, which got stuck at the bottom and wouldn't reopen.
+  el.classList.add('mvp-topbar')
+  el.classList.remove('mvp-hidden')
+  if (document.body && !el.isConnected) document.body.appendChild(el)
+  const positionTopbar = () => { try { el.style.setProperty('--mvp-top', topStickyBottom(el) + 'px') } catch (e) {} }
+  positionTopbar()
+  window.addEventListener('scroll', positionTopbar, { passive: true })
+  window.addEventListener('resize', positionTopbar)
+  // Oink mounts late / changes height as you scroll; keep re-measuring cheaply.
+  setInterval(positionTopbar, 1500)
+  applyTabUi()
   const res = q('.mvp-res')
   const selected = new Set()
   let rowsByKey = new Map()  // key → full campaign object, for accept/push
   // Cached result set + current sort, so Sort / Select-all re-render without re-scanning.
   let lastRows = [], lastRawCount = 0, lastMeta = null, lastTab = 'affiliate', sortMode = ''
 
-  // Drag the header to move the panel anywhere; a plain click still toggles
-  // collapse. Both the position and collapsed state persist, so the panel never
-  // traps you over Amazon's Message Brand box again.
-  const hd = q('.mvp-hd')
-  q('.mvp-tog').textContent = el.classList.contains('mvp-min') ? '+' : '–'
-  const savePanelState = () => {
-    try {
-      if (el.classList.contains('mvp-floated')) {
-        const r = el.getBoundingClientRect()
-        localStorage.setItem(PANEL_POS_KEY, JSON.stringify({ left: Math.round(r.left), top: Math.round(r.top) }))
-      }
-      localStorage.setItem(PANEL_MIN_KEY, el.classList.contains('mvp-min') ? '1' : '0')
-    } catch (e) {}
-  }
-  let dragStartX = 0, dragStartY = 0, originLeft = 0, originTop = 0, dragging = false, moved = false
-  hd.addEventListener('mousedown', (e) => {
-    if (e.button !== 0) return
-    dragging = true; moved = false
-    const r = el.getBoundingClientRect()
-    dragStartX = e.clientX; dragStartY = e.clientY; originLeft = r.left; originTop = r.top
-    e.preventDefault() // no text selection while dragging
-  })
-  window.addEventListener('mousemove', (e) => {
-    if (!dragging) return
-    const dx = e.clientX - dragStartX, dy = e.clientY - dragStartY
-    if (!moved && Math.abs(dx) + Math.abs(dy) < 4) return // ignore micro-jitters → still a click
-    moved = true
-    // First real movement → pull out of the page flow into floating mode.
-    el.classList.remove('mvp-inline')
-    el.classList.add('mvp-floated')
-    if (document.body && !el.isConnected) document.body.appendChild(el)
-    const w = el.offsetWidth || 340
-    const nx = Math.max(4, Math.min(originLeft + dx, (window.innerWidth || 1200) - w - 4))
-    const ny = Math.max(4, Math.min(originTop + dy, (window.innerHeight || 800) - 40))
-    el.style.left = nx + 'px'
-    el.style.top = ny + 'px'
-  })
-  window.addEventListener('mouseup', () => {
-    if (dragging && moved) savePanelState()
-    dragging = false
-  })
-  hd.addEventListener('click', () => {
-    if (moved) { moved = false; return } // that was a drag, not a click
+  // Click the header to collapse / expand the top-bar.
+  q('.mvp-hd').addEventListener('click', () => {
     el.classList.toggle('mvp-min')
     q('.mvp-tog').textContent = el.classList.contains('mvp-min') ? '+' : '–'
-    savePanelState()
   })
 
   function sortRows(rows) {
