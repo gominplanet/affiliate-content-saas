@@ -630,6 +630,57 @@ function CategoryPicker({
   )
 }
 
+/**
+ * Per-video brand tags/keywords input, shown next to the Category dropdown.
+ * Creators enter up to 5 comma-separated tags/keywords a brand asked them to
+ * include; on blur we persist to youtube_videos.brand_tags and the next generate
+ * inserts them VERBATIM at the very top of the article. Empty clears them.
+ */
+function BrandTagsInput({ videoId, initial }: { videoId: string; initial: string | null }) {
+  const [value, setValue] = useState<string>(initial ?? '')
+  const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const count = value.split(',').map(t => t.trim()).filter(Boolean).length
+
+  async function save() {
+    // Cap at 5 comma-separated items on save so the stored value honors the limit.
+    const items = value.split(',').map(t => t.trim()).filter(Boolean).slice(0, 5)
+    const normalized = items.join(', ')
+    if (normalized !== value) setValue(normalized)
+    if ((normalized || null) === (initial || null) && status === 'idle') return // nothing changed
+    setStatus('saving'); setErrorMsg(null)
+    try {
+      const res = await fetch('/api/blog/update-tags', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoId, tags: normalized || null }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Save failed')
+      setStatus('saved'); setTimeout(() => setStatus('idle'), 2000)
+    } catch (err) {
+      setStatus('error'); setErrorMsg(err instanceof Error ? err.message : 'Save failed')
+    }
+  }
+
+  return (
+    <div className="inline-flex items-center gap-1.5">
+      <input
+        value={value}
+        onChange={e => setValue(e.target.value)}
+        onBlur={save}
+        onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+        placeholder="Brand tags / keywords (optional)"
+        title="Up to 5 comma-separated tags or keywords a brand asked you to include. Inserted verbatim at the very top of the post."
+        className="text-xs px-2 py-1.5 rounded-lg bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-gray-300 dark:hover:border-white/20 focus:border-[#7C3AED] focus:outline-none w-[200px] max-w-[240px]"
+      />
+      {count > 5 && <span className="text-[10px] text-[#ff9500]" title="Only the first 5 are used">{count}/5</span>}
+      {status === 'saving' && <Loader2 size={11} className="animate-spin text-[#86868b]" />}
+      {status === 'saved' && <CheckCircle size={11} className="text-[#34c759]" />}
+      {status === 'error' && errorMsg && <span className="text-[10px] text-[#ff3b30] max-w-[140px] truncate" title={errorMsg}>⚠ {errorMsg}</span>}
+    </div>
+  )
+}
+
 // ── GenerateButton + GenStatus + GEN_STEPS moved to components/content/GenerateButton.tsx (2026-06-07).
 
 // ── Manual word editor ────────────────────────────────────────────────────────
@@ -1108,6 +1159,7 @@ const VideoCard = memo(function VideoCardImpl({
               onCustomCategoryAdded={onCustomCategoryAdded}
               hasPublishedPost={!!post}
             />
+            <BrandTagsInput videoId={id} initial={(video.brand_tags as string | null) ?? null} />
             {post ? (
               <>
                 <ManualEdit postId={post.postId} />
@@ -2002,7 +2054,7 @@ export default function ContentPage() {
       return all
     }
 
-    const [vids, { data: brand }, { data: integration }, { data: blogPosts }, liveResp, { data: seoCache }] = await Promise.all([
+    const [vids, { data: brand }, { data: integration }, { data: blogPosts }, liveResp, { data: seoCache }, brandTagRows] = await Promise.all([
       fetchAllVideos(),
       sb.from('brand_profiles').select('name,author_name,niches,tone,custom_categories,affiliate_disclaimer,facebook_groups,blog_image_count').eq('user_id', user.id).single(),
       sb.from('integrations').select('wordpress_url,wordpress_username,wordpress_app_password,setup_status,facebook_page_id,pinterest_access_token,pinterest_board_id,threads_access_token,linkedin_access_token,linkedin_person_id,twitter_access_token,twitter_handle,bluesky_handle,bluesky_app_password,telegram_channel_id,instagram_access_token,instagram_user_id,tiktok_access_token,tiktok_open_id,tier').eq('user_id', user.id).single(),
@@ -2020,7 +2072,20 @@ export default function ContentPage() {
       // Lets us show a ✓ / ⏳ / ✗ badge on the Content page so users don't have
       // to leave to know whether Google has indexed each post.
       sb.from('post_seo').select('post_id,indexed_state,coverage_state').eq('user_id', user.id),
+      // Per-video brand tags (migration 160), loaded SEPARATELY from the main
+      // youtube_videos COLS select on purpose: that select has no column-drop
+      // fallback, so a pre-migration DB (column absent) would empty the whole
+      // Library. This self-catches — on any error the tags just start blank.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (async () => { try { const { data } = await (sb.from('youtube_videos') as any).select('id,brand_tags').eq('user_id', user.id); return (data as Record<string, unknown>[]) || [] } catch { return [] } })(),
     ])
+
+    // Merge brand_tags into the video rows by id (best-effort; absent → null).
+    {
+      const tagMap = new Map<string, string | null>()
+      for (const r of (brandTagRows as Record<string, unknown>[]) || []) tagMap.set(r.id as string, (r.brand_tags as string | null) ?? null)
+      for (const v of vids as Record<string, unknown>[]) (v as Record<string, unknown>).brand_tags = tagMap.get(v.id as string) ?? null
+    }
 
     const b = brand as Record<string, unknown> | null
     const i = integration as Record<string, unknown> | null

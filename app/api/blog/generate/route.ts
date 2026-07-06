@@ -1355,6 +1355,26 @@ async function handleGenerate(request: Request) {
     } catch { /* non-fatal */ }
   }
 
+  // ── 7.9. Brand tags/keywords — inserted VERBATIM at the very top ─────────
+  // Creators can enter up to 5 tags/keywords a brand asked them to include (the
+  // input next to the category dropdown on the Content page → youtube_videos
+  // .brand_tags). We prepend them EXACTLY as typed at the very top of the
+  // article — a deterministic string prepend, no LLM in the loop, so nothing
+  // rewords them. Done AFTER all the scrub/critique/self-check passes so those
+  // can't strip them, and before publish so every path (WP + the DB copy) ships
+  // with them.
+  try {
+    const rawTags = ((video as Record<string, unknown>).brand_tags as string | null)?.trim() || ''
+    if (rawTags) {
+      const items = rawTags.split(',').map(t => t.trim()).filter(Boolean).slice(0, 5)
+      if (items.length) {
+        const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        const line = items.map(esc).join(', ')
+        content = `<!-- wp:paragraph {"className":"mvp-brand-tags"} -->\n<p class="mvp-brand-tags">${line}</p>\n<!-- /wp:paragraph -->\n\n${content}`
+      }
+    }
+  } catch { /* non-fatal — publish without the tags line */ }
+
   // ── 8. Publish text post to WordPress ────────────────────────────────────
   // For posts that already exist on WP (legacy posts attached via
   // /api/blog/attach-video, or any prior generate run on the same video) we
