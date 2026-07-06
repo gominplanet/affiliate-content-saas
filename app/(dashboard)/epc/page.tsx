@@ -19,9 +19,9 @@
  * even most Pro users won't have Amazon Creator Connections / EPC access.
  */
 
-import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import PageHero from '@/components/layout/PageHero'
-import { Loader2, ExternalLink, CheckCircle2, Sparkles, Search, Download, Copy, RefreshCw, KeyRound, Trash2, ChevronDown, FlaskConical, MessageSquare } from 'lucide-react'
+import { Loader2, ExternalLink, CheckCircle2, Sparkles, Search, Download, Copy, RefreshCw, KeyRound, Trash2, ChevronDown, ChevronRight, FlaskConical, MessageSquare } from 'lucide-react'
 import { toast } from 'sonner'
 import { getScoutInstallKind, requestAcceptCampaign } from '@/lib/extension-frame'
 import MessageBrandModal, { type MessageBrandCampaign } from '@/components/campaigns/MessageBrandModal'
@@ -146,6 +146,7 @@ export default function EpcScoutPage() {
   // there; it auto-opens only for users who haven't connected SCOUT yet.
   const [setupOpen, setSetupOpen] = useState(false)
   const [storeOpen, setStoreOpen] = useState(false)
+  const finderRef = useRef<HTMLDivElement>(null) // step-3 pill scrolls here
 
   // Filters (over the pushed queue)
   const [minEpc, setMinEpc] = useState(0.2)
@@ -543,35 +544,56 @@ export default function EpcScoutPage() {
         subtitle="A proven way to accelerate your Amazon commissions — Onsite + Affiliate+ (Creator Connections). One search, MVP-approved results: campaigns worth accepting, and products worth buying to review."
       />
 
-      {/* ── Top pill row — compact chips that expand their panel on click. Keeps
-             the finder + queue right under the title instead of two big cards. ── */}
-      <div className="flex items-center gap-2 flex-wrap mb-4">
+      {/* ── Numbered setup steps — Connect → Update → Search. Steps 1 & 2 are
+             expand-on-click pills; step 3 points at the MVP Finder below. Each
+             carries a numbered badge (✓ green once that step is satisfied). ── */}
+      <div className="flex items-center gap-1.5 flex-wrap mb-4">
+        {/* Step 1 — Connect SCOUT */}
         <button onClick={toggleSetup} aria-expanded={setupOpen}
-          className="inline-flex items-center gap-2 pl-2.5 pr-3 py-2 rounded-full border text-[12px] font-semibold transition-colors"
+          className="inline-flex items-center gap-2 pl-1.5 pr-3 py-1.5 rounded-full border text-[12px] font-semibold transition-colors"
           style={setupOpen
             ? { borderColor: 'rgba(124,58,237,0.5)', background: 'rgba(124,58,237,0.08)', color: 'var(--text)' }
             : { borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
-          <Sparkles size={13} className="text-[#7C3AED]" />
-          How it works
-          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full"
-            style={token ? { background: 'rgba(52,199,89,0.14)', color: '#1f8a3a' } : { background: 'rgba(245,158,11,0.16)', color: '#b26a00' }}>
-            {token ? <><CheckCircle2 size={9} /> Connected</> : <><KeyRound size={9} /> Connect</>}
+          <span className="grid place-items-center w-5 h-5 rounded-full text-[11px] font-bold text-white flex-shrink-0"
+            style={{ background: token ? '#34c759' : '#7C3AED' }}>
+            {token ? <CheckCircle2 size={12} /> : '1'}
           </span>
+          Connect
           <ChevronDown size={13} style={{ color: 'var(--text-faint)', transform: setupOpen ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
         </button>
 
-        {/* Only for the old manually-loaded (sideloaded) build Chrome can't auto-update. */}
-        {scout?.kind === 'sideload' && (
+        <ChevronRight size={13} style={{ color: 'var(--text-faint)' }} />
+
+        {/* Step 2 — Update SCOUT. Sideload = actionable amber; store = auto (green, done). */}
+        {scout?.kind === 'sideload' ? (
           <button onClick={() => setStoreOpen(o => !o)} aria-expanded={storeOpen}
-            className="inline-flex items-center gap-2 pl-2.5 pr-3 py-2 rounded-full border text-[12px] font-semibold transition-colors"
+            className="inline-flex items-center gap-2 pl-1.5 pr-3 py-1.5 rounded-full border text-[12px] font-semibold transition-colors"
             style={storeOpen
               ? { borderColor: 'rgba(124,58,237,0.5)', background: 'rgba(124,58,237,0.08)', color: 'var(--text)' }
               : { borderColor: 'rgba(245,158,11,0.45)', background: 'rgba(245,158,11,0.08)', color: '#b26a00' }}>
-            <RefreshCw size={13} />
+            <span className="grid place-items-center w-5 h-5 rounded-full text-[11px] font-bold text-white flex-shrink-0" style={{ background: '#f59e0b' }}>2</span>
             Update SCOUT
             <ChevronDown size={13} style={{ transform: storeOpen ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
           </button>
+        ) : (
+          <span className="inline-flex items-center gap-2 pl-1.5 pr-3 py-1.5 rounded-full border text-[12px] font-semibold"
+            style={{ borderColor: 'rgba(52,199,89,0.4)', background: 'rgba(52,199,89,0.06)', color: '#1f8a3a' }}
+            title="You're on the Web Store build — Chrome keeps SCOUT updated automatically.">
+            <span className="grid place-items-center w-5 h-5 rounded-full text-white flex-shrink-0" style={{ background: '#34c759' }}><CheckCircle2 size={12} /></span>
+            SCOUT auto-updates
+          </span>
         )}
+
+        <ChevronRight size={13} style={{ color: 'var(--text-faint)' }} />
+
+        {/* Step 3 — Search. Scrolls to the MVP Finder card below. */}
+        <button
+          onClick={() => finderRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+          className="inline-flex items-center gap-2 pl-1.5 pr-3 py-1.5 rounded-full border text-[12px] font-semibold transition-colors"
+          style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
+          <span className="grid place-items-center w-5 h-5 rounded-full text-[11px] font-bold text-white flex-shrink-0" style={{ background: '#7C3AED' }}>3</span>
+          Search the MVP Finder
+        </button>
       </div>
 
       {/* Update-SCOUT panel — reinstall from the Web Store for auto-updates. */}
@@ -635,11 +657,17 @@ export default function EpcScoutPage() {
         </div>
       )}
 
-      {/* ── Smart Scan — MVP's opinionated one-click campaign finder ──────── */}
-      <SmartScanPanel
-        coveredAsins={campaigns.map(c => c.asin)}
-        onMessageBrand={(c) => setMsgModal(c)}
-      />
+      {/* ── Step 3 · Search — MVP's opinionated one-click finder ──────────── */}
+      <div ref={finderRef} className="scroll-mt-24">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="grid place-items-center w-5 h-5 rounded-full text-[11px] font-bold text-white flex-shrink-0" style={{ background: '#7C3AED' }}>3</span>
+          <p className="text-[12px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-faint)' }}>Search the MVP Finder</p>
+        </div>
+        <SmartScanPanel
+          coveredAsins={campaigns.map(c => c.asin)}
+          onMessageBrand={(c) => setMsgModal(c)}
+        />
+      </div>
 
       {/* ── Queue: filter + generate ─────────────────────────────────────── */}
       <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
