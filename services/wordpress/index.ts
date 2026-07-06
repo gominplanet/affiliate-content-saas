@@ -500,7 +500,14 @@ export class WordPressService {
           id: p.id,
           slug: (p.slug || '').toLowerCase(),
           link: p.link || '',
-          title: (p.title?.rendered || '').replace(/<[^>]+>/g, '').trim(),
+          // Strip tags + decode HTML entities so "4&#215;4" reads "4×4".
+          title: (p.title?.rendered || '')
+            .replace(/<[^>]+>/g, '')
+            .replace(/&#(\d+);/g, (_m, n) => { try { return String.fromCodePoint(parseInt(n, 10)) } catch { return _m } })
+            .replace(/&#x([0-9a-f]+);/gi, (_m, h) => { try { return String.fromCodePoint(parseInt(h, 16)) } catch { return _m } })
+            .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+            .replace(/&#0?39;|&apos;/g, "'").replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')
+            .trim(),
           date: p.date || null,
         })
       }
