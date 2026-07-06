@@ -449,13 +449,17 @@ if (!window.__ccScoutListener) {
           // Always scan the actionable tab (a stale Active/Completed view would
           // return campaigns the user can't accept).
           try { await clickCcTab(/^(new opportunities|opportunities)$/i) } catch (e) {}
-          // On-card pass: full grid scroll, gated by commission % + days-left
-          // (both readable on the card, both lenient on unreadable — the deep
-          // check is the real filter).
+          // On-card pass, gated by commission % + days-left (both readable on
+          // the card, both lenient on unreadable — the deep check is the real
+          // filter). An OPTIONAL focus keyword drives Amazon's own CC search
+          // box first (applyAmazonSearch inside scoutRunSearch), so the sweep
+          // covers the FULL catalog matching it — and the deep-check budget
+          // concentrates on that niche instead of spreading across everything.
+          const focus = String(msg.keyword || '').trim().slice(0, 80)
           let rows = []
           let rawCount = 0
           try {
-            const r = await scoutRunSearch({ keyword: '', minCommission: rules.minCommissionPct || 0, lastDays: rules.minDaysLeft || 0, maxCards: 600 })
+            const r = await scoutRunSearch({ keyword: focus, minCommission: rules.minCommissionPct || 0, lastDays: rules.minDaysLeft || 0, maxCards: 600 })
             rows = r.rows || []; rawCount = r.rawCount || rows.length
           } catch (e) {}
           if (!rows.length) { sendResponse({ ok: true, matches: [], stats: { scannedOnCard: rawCount, passedOnCard: 0, deepChecked: 0 } }); return }

@@ -37,11 +37,13 @@ export default function SmartScanPanel({
   const [skippedCovered, setSkippedCovered] = useState(0)
   const [note, setNote] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // Optional focus — narrows WHERE the deep-check budget goes, never the rules.
+  const [focus, setFocus] = useState('')
 
   async function run() {
     setRunning(true); setError(null); setNote(null); setMatches(null); setSkippedCovered(0)
     try {
-      const res = await requestCcSmartScan(CC_SMART_RULES)
+      const res = await requestCcSmartScan(CC_SMART_RULES, focus)
       if (!res.ok) {
         setError(
           res.error === 'not-installed'
@@ -92,15 +94,27 @@ export default function SmartScanPanel({
             ))}
           </div>
         </div>
-        <button
-          onClick={run}
-          disabled={running}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold text-white flex-shrink-0 disabled:opacity-70"
-          style={{ background: '#7C3AED' }}
-        >
-          {running ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
-          {running ? 'Scanning… (a few minutes)' : 'Smart Scan'}
-        </button>
+        <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+          <input
+            value={focus}
+            onChange={e => setFocus(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && !running) run() }}
+            placeholder="Focus (optional) — e.g. massage gun"
+            title="Optional: a keyword or brand to focus the scan. SCOUT searches the full Creator Connections catalog for it, so the rulebook's deep-checks concentrate on that niche. Leave empty to sweep everything."
+            disabled={running}
+            className="text-[12px] px-3 py-2 rounded-lg bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 focus:border-[#7C3AED] focus:outline-none w-[210px] disabled:opacity-60"
+            style={{ color: 'var(--text)' }}
+          />
+          <button
+            onClick={run}
+            disabled={running}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold text-white disabled:opacity-70"
+            style={{ background: '#7C3AED' }}
+          >
+            {running ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+            {running ? 'Scanning… (a few minutes)' : 'Smart Scan'}
+          </button>
+        </div>
       </div>
 
       {running && (

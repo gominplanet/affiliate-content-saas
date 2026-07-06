@@ -699,8 +699,8 @@ async function ccFindCampaign(query, asin, callerTabId) {
 // CC tab or open one hidden, unlock the offsite store, escalate to a short
 // foreground pass when the virtualized grid won't render hidden, and never
 // close a tab the user had open themselves. Mirrors ccFindCampaign's strategy.
-async function smartScanOnTab(tabId, rules) {
-  const ask = () => chrome.tabs.sendMessage(tabId, { type: 'CC_SMART', rules })
+async function smartScanOnTab(tabId, rules, keyword) {
+  const ask = () => chrome.tabs.sendMessage(tabId, { type: 'CC_SMART', rules, keyword: keyword || '' })
   try {
     return await ask()
   } catch (e) {
@@ -709,7 +709,7 @@ async function smartScanOnTab(tabId, rules) {
   }
 }
 
-async function ccSmartScan(rules, callerTabId) {
+async function ccSmartScan(rules, keyword, callerTabId) {
   const open = await chrome.tabs.query({
     url: [
       'https://www.amazon.com/creatorconnections/*',
@@ -732,14 +732,14 @@ async function ccSmartScan(rules, callerTabId) {
       if (sw && sw.switched) { await _sleep(1500); await waitForTabLoad(tab.id, 25000); await _sleep(2500) }
     } catch (e) {}
 
-    let res = await smartScanOnTab(tab.id, rules)
+    let res = await smartScanOnTab(tab.id, rules, keyword)
 
     // Hidden grid never rendered → brief foreground pass, then give focus back.
     if (!res || !res.ok || (res.stats && res.stats.scannedOnCard === 0)) {
       try {
         await chrome.tabs.update(tab.id, { active: true })
         await _sleep(2800)
-        const fg = await smartScanOnTab(tab.id, rules)
+        const fg = await smartScanOnTab(tab.id, rules, keyword)
         if (fg && fg.ok) { res = fg; res.foreground = true }
       } catch (e) { /* keep the background result */ }
       finally {
@@ -2328,7 +2328,7 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     // so allow 7 minutes end-to-end.
     const callerTabId = sender && sender.tab ? sender.tab.id : null
     const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 420000)
-    ccSmartScan(msg.rules || {}, callerTabId)
+    ccSmartScan(msg.rules || {}, msg.keyword || '', callerTabId)
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async response — keep the channel open

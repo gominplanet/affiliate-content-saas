@@ -579,9 +579,16 @@ export interface CcSmartScanResult {
 }
 export async function requestCcSmartScan(
   rules: import('./cc-smart-rules').CcSmartRules,
+  /** Optional focus keyword — drives Amazon's own CC search first so the sweep
+   *  covers the FULL catalog matching it and the deep-check budget concentrates
+   *  on that niche. Empty = whole opportunities grid. */
+  keyword?: string,
 ): Promise<CcSmartScanResult> {
   if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
-  const resp = await sendToExtension<CcSmartScanResult>({ type: 'MVP_CC_SMART', rules }, 430000)
+  const resp = await sendToExtension<CcSmartScanResult>(
+    { type: 'MVP_CC_SMART', rules, keyword: (keyword || '').trim().slice(0, 80) },
+    430000,
+  )
   if (!resp) return { ok: false, error: 'timeout' }
   return resp
 }
