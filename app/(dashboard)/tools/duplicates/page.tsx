@@ -135,7 +135,7 @@ export default function DuplicatesPage() {
           )}
           {ran && !scanning && (
             <span className="text-[12px]" style={{ color: 'var(--text-faint)' }}>
-              {groups.length} group{groups.length === 1 ? '' : 's'} · {extraCount} extra · {scanned} {source === 'wordpress' ? 'live WordPress posts' : 'MVP posts'} scanned
+              {groups.length} group{groups.length === 1 ? '' : 's'} · {groups.reduce((n, g) => n + (g.posts.length - 1), 0)} extra · {scanned} {source === 'wordpress' ? 'live WordPress posts' : 'MVP posts'} scanned
             </span>
           )}
         </div>
