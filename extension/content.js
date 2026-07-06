@@ -1108,8 +1108,9 @@ async function scoutRunSearch(f, onProgress) {
   if (tab === 'sponsored') {
     let rows = await parseSponsoredCards({ maxCards: Math.min(maxCards, 300), onProgress })
     const rawCount = rows.length
-    // Value metric on this tab is Estimated EPC (higher = better). Keep rows whose
-    // EPC we couldn't read (lenient), like the campaign filters.
+    // Value metric on this tab is Estimated EPC (higher = better). Filters are LENIENT:
+    // a card whose price/EPC we couldn't read is kept, like the campaign filters.
+    if (f.minPrice) rows = rows.filter(r => r.price == null || r.price >= f.minPrice)
     if (f.minEpc) rows = rows.filter(r => r.epc == null || r.epc >= f.minEpc)
     return { rows, rawCount, total: rawCount, capped: rawCount >= 300, tab }
   }
@@ -1319,6 +1320,44 @@ function topStickyBottom(selfEl) {
   } catch (e) { return 0 }
 }
 
+// The top-bar is position:fixed, so on its own it OVERLAYS the first row of the
+// page (Amazon's My Storefront / Creator Connections nav sat right under Oink and
+// got covered). Reserve its height with an in-flow spacer at the top of <body> —
+// exactly how Oink makes room for its own banner — so SCOUT stacks BELOW Oink and
+// ABOVE the nav. A spacer (vs. overriding body padding) never fights Oink's own
+// reservation and survives its late mount. Height tracks the bar (shrinks when
+// collapsed). Kept as body.firstChild even across React re-renders.
+function ensureTopSpacer(el) {
+  try {
+    const body = document.body
+    if (!body || !el || !el.isConnected || el.classList.contains('mvp-hidden')) { removeTopSpacer(); return }
+    let sp = document.getElementById('mvp-scout-spacer')
+    if (!sp) {
+      sp = document.createElement('div')
+      sp.id = 'mvp-scout-spacer'
+      sp.setAttribute('aria-hidden', 'true')
+      sp.style.cssText = 'width:100%;flex:0 0 auto;pointer-events:none'
+      body.insertBefore(sp, body.firstChild)
+    } else if (body.firstChild !== sp) {
+      body.insertBefore(sp, body.firstChild)
+    }
+    sp.style.height = (el.offsetHeight || 0) + 'px'
+  } catch (e) {}
+}
+function removeTopSpacer() {
+  try { const sp = document.getElementById('mvp-scout-spacer'); if (sp) sp.remove() } catch (e) {}
+}
+
+// Remove the panel AND its side-effects: stop its timers/observer (they close over
+// the old element — leaving them running would fight a freshly-mounted panel's
+// reservation) and drop the spacer so the page reclaims the space.
+function removePanel(el) {
+  try { if (el && el._mvpTimer) clearInterval(el._mvpTimer) } catch (e) {}
+  try { if (el && el._mvpRO) el._mvpRO.disconnect() } catch (e) {}
+  try { if (el) el.remove() } catch (e) {}
+  removeTopSpacer()
+}
+
 function redock(el) {
   if (!el) return
   // Top-bar mode owns its own placement — never dock it into the page flow.
@@ -1369,7 +1408,7 @@ function mountSearchPanel() {
     /* Top-bar mode: a FULL-WIDTH bar pinned to the top, just under the Oink /
        ViralVue sticky banner (top offset set live via --mvp-top). Like Oink. */
     #${PANEL_ID}.mvp-topbar{position:fixed !important;left:0 !important;right:0 !important;top:var(--mvp-top,0px) !important;transform:none !important;width:100vw !important;max-width:100vw !important;border-radius:0 !important;box-shadow:0 3px 10px -3px rgba(0,0,0,.25) !important}
-    #${PANEL_ID}.mvp-topbar .mvp-body{max-height:52vh}
+    #${PANEL_ID}.mvp-topbar .mvp-body{max-height:44vh}
     #${PANEL_ID} .mvp-hd{display:flex !important;align-items:center;justify-content:space-between;gap:8px;padding:6px 10px;background:linear-gradient(135deg,#7C3AED,#9D6BFF);color:#fff;cursor:pointer;user-select:none}
     #${PANEL_ID} .mvp-hd b{font-size:11.5px;font-weight:700;color:#fff}
     #${PANEL_ID} .mvp-body{padding:9px 10px;max-height:60vh;overflow-y:auto;overflow-x:hidden}
@@ -1408,15 +1447,15 @@ function mountSearchPanel() {
   el.innerHTML = `
     <div class="mvp-hd"><b>🔍 MVP SCOUT — Campaign Search</b><span class="mvp-tog">–</span></div>
     <div class="mvp-body">
-      <div class="mvp-row"><div style="flex:3"><label>Keyword or brand</label><input class="mvp-kw" placeholder="e.g. knee brace"></div><div style="flex:1" class="mvp-only-aff"><label>Min commission %</label><input class="mvp-comm" type="number" min="0" max="100" placeholder="20"></div><div style="flex:1" class="mvp-only-aff"><label>Lasts ≥ (days)</label><input class="mvp-lastdays" type="number" min="0" step="1" placeholder="100"></div><div style="flex:1" class="mvp-only-spon"><label>Min Est. EPC $</label><input class="mvp-minepc" type="number" min="0" step="0.05" placeholder="0.50"></div></div>
-      <div class="mvp-row"><button class="mvp-btn mvp-search" style="flex:2">Search</button><button class="mvp-btn dbg mvp-debug" style="flex:1">Debug</button><button class="mvp-btn dbg mvp-draft mvp-only-aff" style="flex:1" title="On a campaign details page: draft a brand-outreach message from the brief">✍️ Draft</button></div>
+      <div class="mvp-row"><div style="flex:3"><label>Keyword or brand</label><input class="mvp-kw" placeholder="e.g. knee brace"></div><div style="flex:1" class="mvp-only-aff"><label>Min commission %</label><input class="mvp-comm" type="number" min="0" max="100" placeholder="20"></div><div style="flex:1" class="mvp-only-aff"><label>Lasts ≥ (days)</label><input class="mvp-lastdays" type="number" min="0" step="1" placeholder="100"></div><div style="flex:1" class="mvp-only-spon"><label>Min price $</label><input class="mvp-minprice" type="number" min="0" step="1" placeholder="10"></div><div style="flex:1" class="mvp-only-spon"><label>Min Est. EPC $</label><input class="mvp-minepc" type="number" min="0" step="0.05" placeholder="0.50"></div></div>
+      <div class="mvp-row"><button class="mvp-btn mvp-search" style="flex:3">Search</button><button class="mvp-btn dbg mvp-draft mvp-only-aff" style="flex:1" title="On a campaign details page: draft a brand-outreach message from the brief">✍️ Draft</button></div>
       <div class="mvp-row mvp-only-spon" style="align-items:center;gap:6px"><span style="font-size:9px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;flex:0 0 auto">Units sold / mo</span><select class="mvp-units" title="Only import products whose monthly units-sold falls in this band — SCOUT reads it during the import deep-check (units aren't on the card)" style="flex:1;padding:5px 8px;border:1px solid #d1d5db;border-radius:7px;font-size:11px;background:#fff;color:#111"><option value="">Any</option><option value="200-500">200 – 500</option><option value="500-1500">500 – 1,500</option><option value="1500-">Over 1,500</option></select></div>
       <div class="mvp-res"></div>
       <div class="mvp-row" style="margin-top:8px"><button class="mvp-btn sec mvp-accsel" style="flex:1" title="Import the ticked picks into MVP — does not accept on Amazon">Import selected into MVP</button></div>
       <div class="mvp-conn" style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:6px 0 2px;font-size:10px;color:#6b7280"><span class="mvp-conn-status">Checking MVP connection…</span><a class="mvp-conn-change" href="#" style="color:#7c3aed;font-weight:600;text-decoration:none;flex:0 0 auto">Change token</a></div>
       <div class="mvp-token-row"><div><label>MVP ingest token</label><input class="mvp-token" placeholder="CC_..."></div><button class="mvp-btn sec mvp-token-save" style="flex:0 0 auto;align-self:flex-end">Save</button></div>
-      <div class="mvp-note mvp-only-aff">Tick campaigns → <b>Import selected into MVP</b>: SCOUT deep-checks each (reads product price + monthly sales + carousel-video position) and adds ALL your picks to your MVP /epc list — sort by price there — to Generate + Message. <b>It does not accept anything on Amazon</b> — accepting stays your choice in MVP. <b>Import</b> (per row) imports just that one. <b>✍️ Draft</b> writes AND sends a brand message on a campaign's details page.</div>
-      <div class="mvp-note mvp-only-spon">These are <b>products</b> (ASIN, price, Est. EPC on the card). Sort by <b>EPC</b> (higher = better) or price. Tick → <b>Import selected into MVP</b> (instant — no page opens). Set a <b>Units sold / mo</b> band to only import products in that sales range (SCOUT then opens each ticked product to read its monthly units). <b>It does not accept anything on Amazon.</b></div>
+      <div class="mvp-note mvp-only-aff">Tick campaigns → <b>Import selected into MVP</b> (deep-checks price · monthly sales · video slot, adds to your /epc list — never accepts on Amazon). <b>✍️ Draft</b> writes a brand message on a campaign's page.</div>
+      <div class="mvp-note mvp-only-spon"><b>Products</b> (ASIN · price · Est. EPC on the card). Filter by min price / EPC, sort by EPC or price, tick → <b>Import selected into MVP</b> (instant). Set a <b>Units sold / mo</b> band to import only that sales range. Never accepts on Amazon.</div>
     </div>`
   const q = (s) => el.querySelector(s)
 
@@ -1427,12 +1466,17 @@ function mountSearchPanel() {
   el.classList.add('mvp-topbar')
   el.classList.remove('mvp-hidden')
   if (document.body && !el.isConnected) document.body.appendChild(el)
-  const positionTopbar = () => { try { el.style.setProperty('--mvp-top', topStickyBottom(el) + 'px') } catch (e) {} }
+  // Pin under Oink AND reserve the bar's height (spacer) so it stacks below Oink and
+  // above the page's nav row instead of overlaying it. Both re-run live: Oink mounts
+  // late, and the bar's own height changes on collapse / when results render.
+  const positionTopbar = () => { try { el.style.setProperty('--mvp-top', topStickyBottom(el) + 'px'); ensureTopSpacer(el) } catch (e) {} }
   positionTopbar()
   window.addEventListener('scroll', positionTopbar, { passive: true })
   window.addEventListener('resize', positionTopbar)
+  // Height changes (collapse, results) → resync the spacer + offset immediately.
+  try { el._mvpRO = new ResizeObserver(() => positionTopbar()); el._mvpRO.observe(el) } catch (e) {}
   // Oink mounts late / changes height as you scroll; keep re-measuring cheaply.
-  setInterval(positionTopbar, 1500)
+  el._mvpTimer = setInterval(positionTopbar, 1500)
   applyTabUi()
   const res = q('.mvp-res')
   const selected = new Set()
@@ -1440,10 +1484,12 @@ function mountSearchPanel() {
   // Cached result set + current sort, so Sort / Select-all re-render without re-scanning.
   let lastRows = [], lastRawCount = 0, lastMeta = null, lastTab = 'affiliate', sortMode = ''
 
-  // Click the header to collapse / expand the top-bar.
+  // Click the header to collapse / expand the top-bar; re-reserve space (a collapsed
+  // bar is shorter, so the page reclaims the difference).
   q('.mvp-hd').addEventListener('click', () => {
     el.classList.toggle('mvp-min')
     q('.mvp-tog').textContent = el.classList.contains('mvp-min') ? '+' : '–'
+    positionTopbar()
   })
 
   function sortRows(rows) {
@@ -1530,17 +1576,22 @@ function mountSearchPanel() {
         res.innerHTML = `<div class="mvp-note">Loading campaigns from Amazon… <b>${n}</b> loaded so far (scrolling to pull more).</div>`
       }
       const epcEl = q('.mvp-minepc')
+      const priceEl = q('.mvp-minprice')
       const { rows, rawCount, total, capped, tab } = await scoutRunSearch({
         keyword: q('.mvp-kw').value,
         minCommission: parseFloat(q('.mvp-comm').value) || 0,
         lastDays: parseInt(q('.mvp-lastdays').value, 10) || 0,
         minEpc: epcEl ? (parseFloat(epcEl.value) || 0) : 0,
+        minPrice: priceEl ? (parseFloat(priceEl.value) || 0) : 0,
       }, onProgress)
       render(rows, rawCount, { total, capped, tab })
     } catch (e) { res.innerHTML = `<div class="mvp-note">Search error: ${e?.message || e}</div>` }
     btn.textContent = prev; btn.disabled = false
   })
-  q('.mvp-debug').addEventListener('click', () => {
+  // Debug is no longer a user-facing button (it cluttered the bar). It stays reachable
+  // for support: DOUBLE-CLICK the "MVP SCOUT" title to dump card/selector diagnostics.
+  q('.mvp-hd b').addEventListener('dblclick', (e) => {
+    e.stopPropagation() // don't also toggle collapse
     // Passive card dump only — never navigates the user's tab. (ASIN resolution
     // for the real push happens in a hidden background tab via the worker.)
     // On the Sponsored Products tab, dump what the sponsored reader sees so the
@@ -1726,7 +1777,7 @@ let SCOUT_ENABLED = true
 function applyScoutEnabled(on) {
   SCOUT_ENABLED = on
   const existing = document.getElementById(PANEL_ID)
-  if (!on) { if (existing) existing.remove(); return }
+  if (!on) { if (existing) removePanel(existing); return }
   if (isCCPage() && !document.getElementById(PANEL_ID)) { try { mountSearchPanel() } catch (e) {} }
 }
 try {
@@ -1761,10 +1812,10 @@ setInterval(() => {
   try {
     captureCreatorId() // cheap + self-guarded; the id can appear after SPA nav
     const existing = document.getElementById(PANEL_ID)
-    if (!SCOUT_ENABLED) { if (existing) existing.remove(); return }
+    if (!SCOUT_ENABLED) { if (existing) removePanel(existing); return }
     const onCC = isCCPage()
     if (onCC && !existing) mountSearchPanel()
-    else if (!onCC && existing) existing.remove()
+    else if (!onCC && existing) removePanel(existing)
     // Already mounted — keep it docked above the toolbar + tab-configured as the
     // React page (and the user's tab switches) render / re-render.
     else if (onCC && existing) { redock(existing); applyTabUi() }
