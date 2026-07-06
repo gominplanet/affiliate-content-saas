@@ -19,11 +19,6 @@ import { requestCcSmartScan } from '@/lib/extension-frame'
 import { CC_SMART_RULES, passesGates, scoreMatch, type ScoredMatch } from '@/lib/cc-smart-rules'
 import type { MessageBrandCampaign } from '@/components/campaigns/MessageBrandModal'
 
-const RULE_CHIPS = [
-  '≥15% commission', '≥100 days left', '$45–$300', '≥200 sold/mo', '★3.8+',
-  'video carousel required', 'no supplements · food · pharmacy · clothing',
-]
-
 export default function SmartScanPanel({
   coveredAsins,
   onMessageBrand,
@@ -81,18 +76,13 @@ export default function SmartScanPanel({
         </span>
         <div className="flex-1 min-w-[240px]">
           <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>
-            Smart Scan <span className="font-normal" style={{ color: 'var(--text-faint)' }}>· MVP&apos;s proven rules — not a filter form</span>
+            Smart Scan <span className="font-normal" style={{ color: 'var(--text-faint)' }}>· powered by MVP&apos;s proprietary campaign criteria</span>
           </p>
           <p className="text-[12px] leading-relaxed mt-0.5" style={{ color: 'var(--text-soft)' }}>
-            One click. SCOUT sweeps your whole Affiliate+ opportunities list and MVP keeps only campaigns that pass
-            every rule below — then ranks them and shows the buy-to-review math. Products already in your queue are skipped.
+            One click. SCOUT sweeps your whole Affiliate+ opportunities list and MVP keeps only the campaigns worth
+            your time — vetted for real commission, runway, demand, product quality and review visibility — then ranks
+            them and shows the buy-to-review math. Products already in your queue are skipped.
           </p>
-          <div className="flex flex-wrap gap-1.5 mt-2">
-            {RULE_CHIPS.map(c => (
-              <span key={c} className="px-2 py-0.5 rounded-full text-[10px] font-semibold"
-                style={{ background: 'rgba(124,58,237,0.10)', color: '#7C3AED' }}>{c}</span>
-            ))}
-          </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
           <input
@@ -130,7 +120,7 @@ export default function SmartScanPanel({
         <div className="border-t border-gray-100 dark:border-white/10">
           <div className="px-4 py-2 text-[12px]" style={{ color: 'var(--text-faint)' }}>
             {matches.length === 0
-              ? 'No campaigns passed every rule this pass — that’s the rulebook doing its job. Try again when new opportunities land.'
+              ? 'Nothing cleared MVP’s bar this pass — that’s the vetting doing its job. Try again when new opportunities land.'
               : <>Found <b style={{ color: 'var(--text)' }}>{matches.length}</b> campaign{matches.length !== 1 ? 's' : ''} worth your time{skippedCovered > 0 ? ` · ${skippedCovered} already in your queue skipped` : ''}.</>}
           </div>
           <div className="divide-y divide-gray-100 dark:divide-white/10">
