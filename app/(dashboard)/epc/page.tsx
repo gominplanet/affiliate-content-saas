@@ -145,6 +145,7 @@ export default function EpcScoutPage() {
   // The setup/how-it-works panel is collapsed by default so the queue is right
   // there; it auto-opens only for users who haven't connected SCOUT yet.
   const [setupOpen, setSetupOpen] = useState(false)
+  const [storeOpen, setStoreOpen] = useState(false)
 
   // Filters (over the pushed queue)
   const [minEpc, setMinEpc] = useState(0.2)
@@ -542,11 +543,41 @@ export default function EpcScoutPage() {
         subtitle="A proven way to accelerate your Amazon commissions — Onsite + Affiliate+ (Creator Connections). One search, MVP-approved results: campaigns worth accepting, and products worth buying to review."
       />
 
-      {/* ── Move-to-store nudge — only for the old manually-loaded (sideloaded)
-             build, which Chrome can't auto-update. Store installs get nothing. ── */}
-      {scout?.kind === 'sideload' && (
+      {/* ── Top pill row — compact chips that expand their panel on click. Keeps
+             the finder + queue right under the title instead of two big cards. ── */}
+      <div className="flex items-center gap-2 flex-wrap mb-4">
+        <button onClick={toggleSetup} aria-expanded={setupOpen}
+          className="inline-flex items-center gap-2 pl-2.5 pr-3 py-2 rounded-full border text-[12px] font-semibold transition-colors"
+          style={setupOpen
+            ? { borderColor: 'rgba(124,58,237,0.5)', background: 'rgba(124,58,237,0.08)', color: 'var(--text)' }
+            : { borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
+          <Sparkles size={13} className="text-[#7C3AED]" />
+          How it works
+          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+            style={token ? { background: 'rgba(52,199,89,0.14)', color: '#1f8a3a' } : { background: 'rgba(245,158,11,0.16)', color: '#b26a00' }}>
+            {token ? <><CheckCircle2 size={9} /> Connected</> : <><KeyRound size={9} /> Connect</>}
+          </span>
+          <ChevronDown size={13} style={{ color: 'var(--text-faint)', transform: setupOpen ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
+        </button>
+
+        {/* Only for the old manually-loaded (sideloaded) build Chrome can't auto-update. */}
+        {scout?.kind === 'sideload' && (
+          <button onClick={() => setStoreOpen(o => !o)} aria-expanded={storeOpen}
+            className="inline-flex items-center gap-2 pl-2.5 pr-3 py-2 rounded-full border text-[12px] font-semibold transition-colors"
+            style={storeOpen
+              ? { borderColor: 'rgba(124,58,237,0.5)', background: 'rgba(124,58,237,0.08)', color: 'var(--text)' }
+              : { borderColor: 'rgba(245,158,11,0.45)', background: 'rgba(245,158,11,0.08)', color: '#b26a00' }}>
+            <RefreshCw size={13} />
+            Update SCOUT
+            <ChevronDown size={13} style={{ transform: storeOpen ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
+          </button>
+        )}
+      </div>
+
+      {/* Update-SCOUT panel — reinstall from the Web Store for auto-updates. */}
+      {storeOpen && scout?.kind === 'sideload' && (
         <div className="rounded-xl border p-4 mb-4 flex items-start gap-3"
-          style={{ background: 'rgba(124,58,237,0.10)', borderColor: 'rgba(124,58,237,0.45)' }}>
+          style={{ background: 'rgba(124,58,237,0.06)', borderColor: 'rgba(124,58,237,0.35)' }}>
           <RefreshCw size={16} className="flex-shrink-0 mt-0.5" style={{ color: '#7C3AED' }} />
           <div className="min-w-0">
             <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>
@@ -566,28 +597,11 @@ export default function EpcScoutPage() {
         </div>
       )}
 
-      {/* ── Collapsible setup / how-it-works — collapsed by default so the queue
-             is right there; auto-opens for users who haven't connected SCOUT. ── */}
-      <div className="card mb-5 overflow-hidden">
-        <button onClick={toggleSetup} aria-expanded={setupOpen}
-          className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-black/[0.02] dark:hover:bg-white/[0.03] transition-colors">
-          <span className="grid place-items-center w-7 h-7 rounded-lg flex-shrink-0" style={{ background: 'rgba(124,58,237,0.12)' }}>
-            <Sparkles size={14} className="text-[#7C3AED]" />
-          </span>
-          <div className="flex-1 min-w-0">
-            <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>How it works &amp; connect SCOUT</p>
-            <p className="text-[11px] truncate" style={{ color: 'var(--text-faint)' }}>Needs Amazon Creator Connections · scans Affiliate+ &amp; EPC into your queue</p>
-          </div>
-          <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0"
-            style={token ? { background: 'rgba(52,199,89,0.14)', color: '#1f8a3a' } : { background: 'rgba(245,158,11,0.16)', color: '#b26a00' }}>
-            {token ? <><CheckCircle2 size={11} /> Connected</> : <><KeyRound size={11} /> Connect</>}
-          </span>
-          <ChevronDown size={16} className="flex-shrink-0 transition-transform" style={{ color: 'var(--text-faint)', transform: setupOpen ? 'rotate(180deg)' : 'none' }} />
-        </button>
-
-        {setupOpen && (
-          <div className="px-4 pb-4 border-t" style={{ borderColor: 'var(--border)' }}>
-            <p className="text-[12px] leading-relaxed mt-3 mb-3" style={{ color: 'var(--text-soft)' }}>
+      {/* How-it-works / connect panel — expands from the pill above. */}
+      {setupOpen && (
+        <div className="card mb-5 overflow-hidden">
+          <div className="px-4 pb-4 pt-4">
+            <p className="text-[12px] leading-relaxed mb-3" style={{ color: 'var(--text-soft)' }}>
               Only works if your <a href={CC_URL} target="_blank" rel="noopener noreferrer" className="underline">Amazon Associates</a> account has <strong>Creator Connections</strong> (an Amazon invite — most creators don&rsquo;t have it yet). It scans both programs: <strong>Affiliate+</strong> (extra commission per sale) and <strong>Sponsored Products / EPC</strong> (paid per click). No Creator Connections tab = nothing to scan — use Reviews, Comparisons or Buying Guides instead.
             </p>
             <ol className="text-[12px] leading-relaxed list-decimal pl-5 mb-4 space-y-1" style={{ color: 'var(--text-soft)' }}>
@@ -618,8 +632,8 @@ export default function EpcScoutPage() {
               This token lets the extension push into <span className="font-medium">your</span> account. Keep it private; regenerate if it leaks.
             </p>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* ── Smart Scan — MVP's opinionated one-click campaign finder ──────── */}
       <SmartScanPanel

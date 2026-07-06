@@ -36,6 +36,11 @@ export async function GET(request: Request) {
   const runwayCutoff = new Date(Date.now() + CC_SMART_RULES.minDaysLeft * 86400000)
     .toISOString().slice(0, 10)
 
+  // Keyword search runs against the STORED, GIN-indexed `search_vec` column
+  // (migration 162 — name+brand). This is REQUIRED: a plain campaign_name FTS
+  // has no matching index, so it seq-scans to_tsvector over ~240k rows and hits
+  // the statement timeout. If search_vec is absent (mig 162 not run) the query
+  // errors and we cleanly signal the panel to use the live SCOUT scan instead.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let query = (supabase as any)
     .from('cc_campaign_catalog')
@@ -44,17 +49,12 @@ export async function GET(request: Request) {
     .gte('ends_at', runwayCutoff)                            // still running ≥ minDaysLeft
     .order('commission_pct', { ascending: false })
     .limit(limit * 3) // over-fetch: the avoid-list + no-ASIN filters thin this below `limit`
-
-  if (q) {
-    // Full-text over the STORED name+brand tsvector (migration 162, GIN-indexed).
-    // websearch syntax so multi-word keywords behave ("massage gun" → both terms).
-    query = query.textSearch('search_vec', q, { type: 'websearch' })
-  }
+  if (q) query = query.textSearch('search_vec', q, { type: 'websearch' })
 
   const { data, error } = await query
   if (error) {
-    // Table missing (migration 161 not run) or FTS hiccup → tell the panel to
-    // fall back to the live SCOUT scan rather than showing an error.
+    // Table/column missing (mig 161/162 not run) or another hiccup → tell the
+    // panel to fall back to the live SCOUT scan rather than show an error.
     return NextResponse.json({ ok: false, error: 'catalog-unavailable', detail: error.message }, { status: 200 })
   }
 
