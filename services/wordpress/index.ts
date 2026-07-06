@@ -485,6 +485,48 @@ export class WordPressService {
     return ids.size ? ids : null
   }
 
+  /** Like getPublishedPostIds() but returns brief metadata (slug/link/title/date)
+   *  for EVERY live post — used by the duplicate-post detector, which must read
+   *  from WordPress (the source of truth for what Google sees) rather than only
+   *  the ~200 posts MVP tracks in blog_posts. Same browser-UA + parallel-page
+   *  path. Returns [] if the first page can't be read. */
+  async getPublishedPostsBrief(): Promise<Array<{ id: number; slug: string; link: string; title: string; date: string | null }>> {
+    type WpPost = { id?: number; slug?: string; link?: string; title?: { rendered?: string }; date?: string }
+    const out: Array<{ id: number; slug: string; link: string; title: string; date: string | null }> = []
+    const push = (arr: WpPost[]) => {
+      for (const p of arr) {
+        if (typeof p.id !== 'number') continue
+        out.push({
+          id: p.id,
+          slug: (p.slug || '').toLowerCase(),
+          link: p.link || '',
+          title: (p.title?.rendered || '').replace(/<[^>]+>/g, '').trim(),
+          date: p.date || null,
+        })
+      }
+    }
+    const FIELDS = '/posts?per_page=100&status=publish&_fields=id,slug,link,title,date'
+    let firstPageData: WpPost[]
+    let totalPages = 1
+    try {
+      const { data, totalPages: tp } = await this.requestWithHeaders<WpPost[]>(`${FIELDS}&page=1`)
+      firstPageData = data
+      totalPages = Math.min(tp || 1, 30) // cap at 30 pages (~3000 posts)
+    } catch {
+      return out
+    }
+    push(firstPageData)
+    if (totalPages <= 1 || firstPageData.length < 100) return out
+    const pageRange = Array.from({ length: totalPages - 1 }, (_, i) => i + 2)
+    const results = await Promise.allSettled(
+      pageRange.map(page => this.request<WpPost[]>(`${FIELDS}&page=${page}`)),
+    )
+    for (const r of results) {
+      if (r.status === 'fulfilled' && Array.isArray(r.value)) push(r.value)
+    }
+    return out
+  }
+
   /** Variant of request() that also returns selected response headers
    *  — currently just X-WP-TotalPages, used by getPublishedPostIds().
    *  Keeps the typical request() signature unchanged. */

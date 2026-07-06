@@ -43,6 +43,7 @@ export default function DuplicatesPage() {
   const [groups, setGroups] = useState<DupGroup[]>([])
   const [scanned, setScanned] = useState(0)
   const [extraCount, setExtraCount] = useState(0)
+  const [source, setSource] = useState<'wordpress' | 'database'>('wordpress')
 
   async function runScan() {
     setScanning(true)
@@ -53,6 +54,7 @@ export default function DuplicatesPage() {
       setGroups((data.groups as DupGroup[]) ?? [])
       setScanned(data.scanned ?? 0)
       setExtraCount(data.extraCount ?? 0)
+      setSource((data.source as 'wordpress' | 'database') ?? 'database')
       setRan(true)
       const n = data.groupCount ?? 0
       toast.success(n ? `Found ${n} duplicate group${n === 1 ? '' : 's'} (${data.extraCount} extra post${data.extraCount === 1 ? '' : 's'}).` : 'No duplicates found — nice and clean.')
@@ -82,7 +84,7 @@ export default function DuplicatesPage() {
           </button>
           {ran && !scanning && (
             <span className="text-[12px]" style={{ color: 'var(--text-faint)' }}>
-              {groups.length} group{groups.length === 1 ? '' : 's'} · {extraCount} extra · {scanned} posts scanned
+              {groups.length} group{groups.length === 1 ? '' : 's'} · {extraCount} extra · {scanned} {source === 'wordpress' ? 'live WordPress posts' : 'MVP posts'} scanned
             </span>
           )}
         </div>
