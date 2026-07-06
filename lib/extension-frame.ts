@@ -595,6 +595,43 @@ export interface CcSmartScanResult {
   foreground?: boolean
   error?: string
 }
+/** One catalog campaign the app hands SCOUT to verify by ASIN. */
+export interface CatalogCandidate {
+  campaignId: string | null
+  campaignName: string | null
+  brand: string | null
+  asin: string
+  detailsUrl?: string | null
+  commissionPct: number | null
+  endsAt: string | null
+  daysLeft: number | null
+}
+export interface CcVerifyResult {
+  ok: boolean
+  results?: import('./cc-smart-rules').SmartScanMatch[]
+  deepChecked?: number
+  blocked?: boolean
+  drops?: { unreadable: number; price: number; sales: number; rating: number; carousel: number; category: number }
+  error?: string
+}
+/**
+ * Catalog-first "Campaigns ON": the app pre-filters the shared CC catalog
+ * (commission / runway / avoid-list — instant SQL) and hands SCOUT this
+ * shortlist to live-verify by ASIN (price / units / rating / carousel) straight
+ * on each /dp — no Creator Connections grid. Returns the passers with live
+ * signals so the app can score + rank. Best-effort: resolves, never throws.
+ */
+export async function requestCcVerify(
+  candidates: CatalogCandidate[],
+  rules: import('./cc-smart-rules').CcSmartRules & { wantPassers?: number },
+): Promise<CcVerifyResult> {
+  if (!candidates.length) return { ok: true, results: [] }
+  if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
+  const resp = await sendToExtension<CcVerifyResult>({ type: 'MVP_CC_VERIFY', candidates, rules }, 430000)
+  if (!resp) return { ok: false, error: 'timeout' }
+  return resp
+}
+
 export async function requestCcSmartScan(
   rules: import('./cc-smart-rules').CcSmartRules,
   /** Optional focus keyword — drives Amazon's own CC search first so the sweep

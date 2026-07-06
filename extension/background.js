@@ -1533,6 +1533,82 @@ async function productFinderSearch(query, opts) {
   }
 }
 
+// ── Verify catalog campaigns by ASIN (MVP_CC_VERIFY) ─────────────────────────
+// The fast half of "Campaigns ON": the app pre-filters the shared CC catalog
+// (commission / runway / avoid-list, instant SQL) and hands SCOUT a shortlist
+// of {campaignId, asin, …} candidates. SCOUT goes STRAIGHT to each product's
+// /dp (no Creator Connections grid, no ASIN resolution — ~3× faster per check)
+// and applies the live gates: price band, monthly units, rating, carousel.
+// Returns the passers, each enriched with the live signals, so the app can
+// score + rank them. Paced + interstitial-aware like every SCOUT Amazon loop.
+async function verifyCatalogAsins(candidates, rules) {
+  rules = rules || {}
+  const list = (Array.isArray(candidates) ? candidates : [])
+    .filter(c => c && /^[A-Z0-9]{10}$/.test(String(c.asin || '').toUpperCase()))
+  if (!list.length) return { ok: true, results: [], deepChecked: 0 }
+  const wantPassers = Math.min(15, Math.max(1, rules.wantPassers || 15))
+  const deepBudget = Math.min(25, Math.max(wantPassers, list.length))
+  const floor = Math.max(rules.minPrice || 0, rules.hardFloorPrice || 0)
+  const pace = () => _sleep(2500 + Math.floor(Math.random() * 2000))
+  let tabId = null, blocked = false, deepChecked = 0
+  const drops = { unreadable: 0, price: 0, sales: 0, rating: 0, carousel: 0, category: 0 }
+  const results = []
+  try {
+    const tab = await chrome.tabs.create({ url: 'about:blank', active: false })
+    tabId = tab.id
+    for (const c of list) {
+      if (results.length >= wantPassers || deepChecked >= deepBudget) break
+      const asin = String(c.asin).toUpperCase()
+      let sig = { sales: null, hasVideo: false, carouselPos: 'none', price: null, rating: null, crumbs: null }
+      try {
+        await chrome.tabs.update(tabId, { url: `https://www.amazon.com/dp/${asin}` })
+        await waitForTabLoad(tabId, 20000)
+        await _sleep(900)
+        for (let i = 0; i < 6; i++) {
+          const r = await chrome.scripting.executeScript({ target: { tabId }, func: readDpSignalsInPage })
+          const v = r && r[0] && r[0].result
+          if (v) { sig = v; if (v.blocked || v.hasVideo || v.sales != null || v.price != null) break }
+          await _sleep(600)
+        }
+      } catch (e) { /* signals stay null → dropped as unreadable below */ }
+      if (sig && sig.blocked) { blocked = true; break }
+      deepChecked++
+      const price = typeof sig.price === 'number' ? sig.price : null
+      const sales = typeof sig.sales === 'number' ? sig.sales : null
+      const rating = typeof sig.rating === 'number' ? sig.rating : null
+      const carouselPos = sig.carouselPos || 'none'
+      if (price == null) { drops.unreadable++; await pace(); continue }
+      if (price < floor || (rules.maxPrice && price > rules.maxPrice)) { drops.price++; await pace(); continue }
+      if (rules.minMonthlySales && (sales == null || sales < rules.minMonthlySales)) { drops.sales++; await pace(); continue }
+      if (rules.minRating && rating != null && rating < rules.minRating) { drops.rating++; await pace(); continue }
+      if (rules.requireCarousel && carouselPos === 'none') { drops.carousel++; await pace(); continue }
+      // Breadcrumb avoid-list (campaign names lie; categories don't).
+      if (sig.crumbs && Array.isArray(rules.avoidPatterns)) {
+        const hay = String(sig.crumbs).toLowerCase()
+        if (rules.avoidPatterns.some(p => hay.includes(String(p).toLowerCase()))) { drops.category++; await pace(); continue }
+      }
+      results.push({
+        campaignId: c.campaignId || null,
+        campaignName: c.campaignName || null,
+        brand: c.brand || null,
+        asin,
+        detailsUrl: c.detailsUrl || null,
+        commissionPct: typeof c.commissionPct === 'number' ? c.commissionPct : null,
+        endsAt: c.endsAt || null,
+        daysLeft: typeof c.daysLeft === 'number' ? c.daysLeft : null,
+        price, monthlySales: sales, rating, carouselPos, hasVideo: carouselPos !== 'none',
+        crumbs: sig.crumbs || null,
+      })
+      await pace()
+    }
+    return { ok: true, results, deepChecked, blocked, drops }
+  } catch (e) {
+    return { ok: false, error: (e && e.message) ? String(e.message).slice(0, 120) : 'exception', results, deepChecked, drops }
+  } finally {
+    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+  }
+}
+
 async function scanAmazonVideos(callerTabId) {
   // Reuse an open Manage Content / storefront tab; else open Manage Content
   // FOREGROUND (Amazon's content list is client-rendered + session-scoped, and
@@ -2389,6 +2465,16 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     const callerTabId = sender && sender.tab ? sender.tab.id : null
     const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 420000)
     ccSmartScan(msg.rules || {}, msg.keyword || '', callerTabId)
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true // async response — keep the channel open
+  }
+  if (msg.type === 'MVP_CC_VERIFY') {
+    // Catalog-first "Campaigns ON": verify a shortlist of {campaignId, asin, …}
+    // (pre-filtered by the app from the shared CC catalog) straight on each /dp.
+    // Up to 25 paced deep-checks — allow 7 minutes end-to-end.
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 420000)
+    verifyCatalogAsins(msg.candidates || [], msg.rules || {})
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async response — keep the channel open

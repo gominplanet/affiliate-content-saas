@@ -19,7 +19,7 @@
 
 import { useState } from 'react'
 import { Sparkles, Loader2, ExternalLink, MessageCircle, ShoppingCart, Play, Star } from 'lucide-react'
-import { requestCcSmartScan, requestProductSearch, type FinderProduct } from '@/lib/extension-frame'
+import { requestCcSmartScan, requestCcVerify, requestProductSearch, type FinderProduct, type CatalogCandidate } from '@/lib/extension-frame'
 import {
   CC_SMART_RULES, ONSITE_RULES, AMZ_MARKETPLACES, type AmzMarketplace,
   passesGates, scoreMatch, type ScoredMatch,
@@ -59,8 +59,57 @@ export default function SmartScanPanel({
     setMatches(null); setProducts(null); setSkippedCovered(0)
   }
 
-  // ── CAMPAIGNS ON — Affiliate+ Smart Scan (existing flow) ─────────────────
+  // Turn a drops object into a human line — dimensions only, no thresholds.
+  function dropLine(d?: { unreadable: number; price: number; sales: number; rating: number; carousel: number; category: number }): string {
+    if (!d) return ''
+    const bits: string[] = []
+    if (d.sales) bits.push(`sales volume ×${d.sales}`)
+    if (d.carousel) bits.push(`no product-page video ×${d.carousel}`)
+    if (d.price) bits.push(`price ×${d.price}`)
+    if (d.rating) bits.push(`rating ×${d.rating}`)
+    if (d.category) bits.push(`excluded category ×${d.category}`)
+    if (d.unreadable) bits.push(`couldn't read the page ×${d.unreadable}`)
+    return bits.length ? ` Dropped on: ${bits.join(' · ')}.` : ''
+  }
+
+  // ── CAMPAIGNS ON — CATALOG-FIRST, live-scan fallback ─────────────────────
+  // Query the shared CC catalog (instant SQL, no Amazon) for candidates that
+  // pass the on-catalog gates, then SCOUT verifies that shortlist by ASIN.
+  // Falls back to the live grid scan if the catalog is empty/unavailable.
   async function runCampaigns() {
+    const covered = new Set(coveredAsins.map(a => a.toUpperCase()))
+    let usedCatalog = false
+    try {
+      const r = await fetch(`/api/campaigns/catalog-search?q=${encodeURIComponent(focus)}&limit=60`)
+      const data = await r.json().catch(() => ({}))
+      if (data?.ok && Array.isArray(data.candidates) && data.candidates.length) {
+        usedCatalog = true
+        setProgress(`${data.candidates.length} candidate campaigns from the catalog — SCOUT is live-verifying the best…`)
+        const fresh = (data.candidates as CatalogCandidate[]).filter(c => !(c.asin && covered.has(c.asin.toUpperCase())))
+        setSkippedCovered(data.candidates.length - fresh.length)
+        const ver = await requestCcVerify(fresh.slice(0, 40), { ...CC_SMART_RULES, wantPassers: 15 })
+        setProgress(null)
+        if (!ver.ok) {
+          setError(ver.error === 'not-installed'
+            ? 'SCOUT isn’t connected — install it (see "How it works" above), then scan again.'
+            : `Verification failed (${ver.error || 'unknown'}). Try again.`)
+          return
+        }
+        const scored = (ver.results ?? [])
+          .filter(m => passesGates(m, CC_SMART_RULES))
+          .map(m => scoreMatch(m, CC_SMART_RULES))
+          .sort((a, b) => b.score - a.score)
+        setMatches(scored)
+        const dl = dropLine(ver.drops)
+        if (ver.blocked) setNote(`Amazon asked for a pause partway through — results are partial. Wait ~15 minutes.${dl}`)
+        else if (dl) setNote(`Verified ${ver.deepChecked ?? 0} of the catalog's top candidates.${dl}`)
+        return
+      }
+    } catch { /* fall through to the live scan */ }
+
+    // Fallback: live SCOUT grid scan (catalog not loaded yet).
+    if (usedCatalog) return
+    setProgress(null)
     const res = await requestCcSmartScan(CC_SMART_RULES, focus)
     if (!res.ok) {
       setError(
@@ -74,7 +123,6 @@ export default function SmartScanPanel({
       )
       return
     }
-    const covered = new Set(coveredAsins.map(a => a.toUpperCase()))
     const raw = res.matches ?? []
     const fresh = raw.filter(m => !(m.asin && covered.has(m.asin.toUpperCase())))
     setSkippedCovered(raw.length - fresh.length)
@@ -84,20 +132,10 @@ export default function SmartScanPanel({
       .sort((a, b) => b.score - a.score)
     setMatches(scored)
     const s = res.stats
-    const d = s?.drops
-    const dropBits: string[] = []
-    if (d) {
-      if (d.sales) dropBits.push(`sales volume ×${d.sales}`)
-      if (d.carousel) dropBits.push(`no product-page video ×${d.carousel}`)
-      if (d.price) dropBits.push(`price ×${d.price}`)
-      if (d.rating) dropBits.push(`rating ×${d.rating}`)
-      if (d.category) dropBits.push(`excluded category ×${d.category}`)
-      if (d.unreadable) dropBits.push(`couldn't read the page ×${d.unreadable}`)
-    }
-    const dropLine = dropBits.length ? ` Dropped on: ${dropBits.join(' · ')}.` : ''
-    if (s?.blocked) setNote(`Amazon asked for a pause partway through — these results are partial. Wait ~15 minutes before scanning again.${dropLine}`)
-    else if (s?.truncated) setNote(`Checked the top ${s.deepChecked} of ${s.passedOnCard} on-card candidates (Amazon-safe pacing). Scan again later to go deeper.${dropLine}`)
-    else if (dropBits.length) setNote(`Deep-checked ${s?.deepChecked ?? 0} candidates.${dropLine}`)
+    const dl = dropLine(s?.drops)
+    if (s?.blocked) setNote(`Amazon asked for a pause partway through — these results are partial. Wait ~15 minutes before scanning again.${dl}`)
+    else if (s?.truncated) setNote(`Checked the top ${s.deepChecked} of ${s.passedOnCard} on-card candidates (Amazon-safe pacing). Scan again later to go deeper.${dl}`)
+    else if (dl) setNote(`Deep-checked ${s?.deepChecked ?? 0} candidates.${dl}`)
   }
 
   // ── CAMPAIGNS OFF — onsite Amazon search, verified in waves ──────────────

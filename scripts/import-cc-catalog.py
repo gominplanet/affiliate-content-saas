@@ -19,8 +19,13 @@ from datetime import date, datetime, timezone
 MIN_COMMISSION = 15.0
 BATCH = 500
 
-def env(path='.env.local'):
+# Repo root = the script's parent dir's parent (scripts/ → repo). Makes env +
+# CSV paths work no matter the cwd (background runs start in $HOME).
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+def env(name):
     vals = {}
+    path = os.path.join(REPO, name)
     if os.path.exists(path):
         for line in open(path):
             line = line.strip()
@@ -29,7 +34,7 @@ def env(path='.env.local'):
             vals[k.strip()] = v.strip().strip('"').strip("'")
     return vals
 
-E = {**env('.env.local'), **env('.env.vercel')}  # .env.vercel (vercel env pull --environment=production) wins
+E = {**env('.env.vercel'), **env('.env.local')}  # .env.local wins (has the service key we just added)
 URL = E.get('NEXT_PUBLIC_SUPABASE_URL') or os.environ.get('NEXT_PUBLIC_SUPABASE_URL')
 KEY = E.get('SUPABASE_SERVICE_ROLE_KEY') or os.environ.get('SUPABASE_SERVICE_ROLE_KEY')
 if not URL or not KEY:
@@ -116,4 +121,6 @@ def main(path):
     print('Done.')
 
 if __name__ == '__main__':
-    main(sys.argv[1] if len(sys.argv) > 1 else 'campaign/affiliate_campaigns_full.csv')
+    arg = sys.argv[1] if len(sys.argv) > 1 else 'campaign/affiliate_campaigns_full.csv'
+    path = arg if os.path.isabs(arg) else os.path.join(REPO, arg)
+    main(path)
