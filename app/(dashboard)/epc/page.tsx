@@ -148,15 +148,18 @@ export default function EpcScoutPage() {
   const [storeOpen, setStoreOpen] = useState(false)
   const finderRef = useRef<HTMLDivElement>(null) // step-3 pill scrolls here
 
-  // Filters (over the pushed queue)
-  const [minEpc, setMinEpc] = useState(0.2)
-  const [minCommission, setMinCommission] = useState(0)
-  const [endsWithin, setEndsWithin] = useState('')
+  // Queue filters — the filter/sort bar was removed 2026-07-06 (discovery moved
+  // to the MVP Finder). These stay at PERMISSIVE defaults so `filtered` shows
+  // every queued campaign, best-earnings first. `keyword` still powers the
+  // Messaged-view search; `onlyPending` is the one surviving toggle. The rest
+  // are effectively constants now, kept so the filter logic below is untouched.
+  const [minEpc] = useState(0)
+  const [minCommission] = useState(0)
+  const [endsWithin] = useState('')
   const [keyword, setKeyword] = useState('')
   const [onlyPending, setOnlyPending] = useState(true)
-  // Sort order for the queue. Price uses product_price (captured on Import's deep
-  // check). 'default' = the earnings rank (commission / EPC).
-  const [sortBy, setSortBy] = useState<'default' | 'price-asc' | 'price-desc' | 'sales-desc'>('default')
+  // Earnings rank (commission / EPC). Price-sort options went with the bar.
+  const [sortBy] = useState<'default' | 'price-asc' | 'price-desc' | 'sales-desc'>('default')
   // 'queue' = the browse/generate list; 'messaged' = brand-outreach history.
   const [view, setView] = useState<'queue' | 'messaged'>('queue')
   // Within the queue, the two pay models get their own tab (a % commission and a
@@ -739,47 +742,18 @@ export default function EpcScoutPage() {
             </div>
           )}
 
-          {/* Filters (queue view only) */}
-          {view === 'queue' && (
-          <div className="card p-4 mb-4">
-            <div className="flex flex-wrap items-end gap-4">
-              <Field label="Min EPC ($)">
-                <input type="number" step="0.05" min="0" value={minEpc}
-                  onChange={e => setMinEpc(parseFloat(e.target.value) || 0)}
-                  className="w-24 px-2 py-1.5 rounded-lg border text-sm bg-transparent" style={{ borderColor: 'var(--border)' }} />
-              </Field>
-              <Field label="Min commission (%)">
-                <input type="number" step="1" min="0" max="100" value={minCommission}
-                  onChange={e => setMinCommission(parseFloat(e.target.value) || 0)}
-                  className="w-24 px-2 py-1.5 rounded-lg border text-sm bg-transparent" style={{ borderColor: 'var(--border)' }} />
-              </Field>
-              <Field label="Ends within (days)">
-                <input type="number" min="1" value={endsWithin} onChange={e => setEndsWithin(e.target.value)} placeholder="any"
-                  className="w-24 px-2 py-1.5 rounded-lg border text-sm bg-transparent" style={{ borderColor: 'var(--border)' }} />
-              </Field>
-              <Field label="Keyword">
-                <div className="relative">
-                  <Search size={13} className="absolute left-2 top-1/2 -translate-y-1/2 text-[#86868b]" />
-                  <input type="text" value={keyword} onChange={e => setKeyword(e.target.value)} placeholder="cooler, kitchen…"
-                    className="w-44 pl-7 pr-2 py-1.5 rounded-lg border text-sm bg-transparent" style={{ borderColor: 'var(--border)' }} />
-                </div>
-              </Field>
-              <label className="flex items-center gap-2 text-[12px] font-medium pb-1.5 cursor-pointer" style={{ color: 'var(--text-soft)' }}>
-                <input type="checkbox" checked={onlyPending} onChange={e => setOnlyPending(e.target.checked)} className="accent-[#7C3AED] w-4 h-4" />
-                Not published yet
-              </label>
-              <Field label="Sort by">
-                <select value={sortBy} onChange={e => setSortBy(e.target.value as typeof sortBy)}
-                  className="px-2 py-1.5 rounded-lg border text-sm bg-transparent" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
-                  <option value="default">Best earnings</option>
-                  <option value="price-asc">Product price: low → high</option>
-                  <option value="price-desc">Product price: high → low</option>
-                  <option value="sales-desc">Most monthly sales</option>
-                </select>
-              </Field>
-              <span className="ml-auto text-[12px] pb-1.5" style={{ color: 'var(--text-faint)' }}>{shown.length} in this tab</span>
-            </div>
-          </div>
+          {/* Filter/sort bar removed 2026-07-06 — discovery + ranking now live in
+              the MVP Finder above; the queue is just the workspace for campaigns
+              you've committed to. The filter STATE stays at permissive defaults
+              (minEpc 0, onlyPending true) so `filtered` shows every not-yet-
+              published campaign, best-earnings first. The tab labels carry the
+              counts. Only the not-yet-published default remains, surfaced as a
+              tiny toggle so nothing is silently hidden. */}
+          {view === 'queue' && (campaigns.some(isLiveRow)) && (
+            <label className="flex items-center gap-2 text-[12px] font-medium mb-3 cursor-pointer w-fit" style={{ color: 'var(--text-soft)' }}>
+              <input type="checkbox" checked={onlyPending} onChange={e => setOnlyPending(e.target.checked)} className="accent-[#7C3AED] w-4 h-4" />
+              Hide campaigns you&apos;ve already published
+            </label>
           )}
 
           {/* Action bar (queue view only) */}
@@ -952,10 +926,12 @@ export default function EpcScoutPage() {
             {shown.length === 0 && (
               <div className="p-6 text-center text-sm" style={{ color: 'var(--text-faint)' }}>
                 {view === 'queue' && programTab === 'epc'
-                  ? 'No EPC campaigns yet. Import products from the Sponsored Products for Creators tab in SCOUT.'
+                  ? 'No EPC campaigns here yet. Find some in the MVP Finder above.'
                   : view === 'queue' && programTab === 'affiliate'
-                    ? 'No Affiliate+ campaigns match these filters. Loosen them, or check the EPC tab.'
-                    : 'No campaigns match these filters. Loosen them — e.g. lower Min EPC or untick “Not published yet”.'}
+                    ? 'No Affiliate+ campaigns here yet — check the EPC tab, or find more in the MVP Finder above.'
+                    : onlyPending
+                      ? 'Nothing left to publish here. Untick “Hide campaigns you’ve already published” to see the rest.'
+                      : 'No campaigns in your queue yet. Use the MVP Finder above to find some.'}
               </div>
             )}
           </div>
