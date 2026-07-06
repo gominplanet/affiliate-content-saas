@@ -475,6 +475,10 @@ if (!window.__ccScoutListener) {
           const matches = []
           let deepChecked = 0
           let blocked = false
+          // Why each deep-checked candidate dropped — the tuning signal that
+          // separates "rules being strict" (drops spread across sales/carousel/
+          // price) from "extraction bug" (everything piling into unreadable).
+          const drops = { unreadable: 0, price: 0, sales: 0, rating: 0, carousel: 0, category: 0 }
           const startedAt = Date.now()
           for (let i = 0; i < cap; i++) {
             // Stay inside the app's message timeout — return what we have.
@@ -486,7 +490,7 @@ if (!window.__ccScoutListener) {
             try { deep = await chrome.runtime.sendMessage({ type: 'SCOUT_DEEP_CHECK', detailsUrl: c.detailsUrl }) } catch (e) {}
             deepChecked++
             if (deep && deep.blocked) { blocked = true; break } // Amazon interstitial — STOP the batch
-            if (!deep || !deep.ok) continue
+            if (!deep || !deep.ok) { drops.unreadable++; continue }
             const price = typeof deep.price === 'number' ? deep.price : null
             const sales = typeof deep.sales === 'number' ? deep.sales : null
             const rating = typeof deep.rating === 'number' ? deep.rating : null
@@ -494,15 +498,15 @@ if (!window.__ccScoutListener) {
             const carouselPos = deep.carouselPos || 'none'
             // ── Hard gates (the rulebook) ──
             const floor = Math.max(rules.minPrice || 0, rules.hardFloorPrice || 0)
-            if (price == null || price < floor) continue
-            if (rules.maxPrice && price > rules.maxPrice) continue
+            if (price == null) { drops.unreadable++; continue }
+            if (price < floor || (rules.maxPrice && price > rules.maxPrice)) { drops.price++; continue }
             // No "bought in past month" badge on the page ≈ Amazon shows it from
             // ~50/mo up — missing means low volume, so a hard minimum FAILS it.
-            if (rules.minMonthlySales && (sales == null || sales < rules.minMonthlySales)) continue
+            if (rules.minMonthlySales && (sales == null || sales < rules.minMonthlySales)) { drops.sales++; continue }
             // Rating is on virtually every /dp; lenient only when unreadable.
-            if (rules.minRating && rating != null && rating < rules.minRating) continue
-            if (rules.requireCarousel && carouselPos === 'none') continue
-            if (crumbs && hitAvoid(crumbs)) continue
+            if (rules.minRating && rating != null && rating < rules.minRating) { drops.rating++; continue }
+            if (rules.requireCarousel && carouselPos === 'none') { drops.carousel++; continue }
+            if (crumbs && hitAvoid(crumbs)) { drops.category++; continue }
             const endsAt = c.endsAt || null
             let daysLeftN = null
             try { if (endsAt) daysLeftN = Math.max(0, Math.ceil((new Date(endsAt).getTime() - Date.now()) / 86400000)) } catch (e) {}
@@ -527,7 +531,7 @@ if (!window.__ccScoutListener) {
           sendResponse({
             ok: true,
             matches,
-            stats: { scannedOnCard: rawCount, passedOnCard, deepChecked, blocked, truncated: deepChecked < Math.min(passedOnCard, cap) },
+            stats: { scannedOnCard: rawCount, passedOnCard, deepChecked, blocked, truncated: deepChecked < Math.min(passedOnCard, cap), drops },
           })
         } catch (e) {
           sendResponse({ ok: false, error: (e && e.message) || 'smart-scan-failed' })

@@ -59,8 +59,23 @@ export default function SmartScanPanel({
         .sort((a, b) => b.score - a.score)
       setMatches(scored)
       const s = res.stats
-      if (s?.blocked) setNote('Amazon asked for a pause partway through — these results are partial. Wait ~15 minutes before scanning again.')
-      else if (s?.truncated) setNote(`Checked the top ${s.deepChecked} of ${s.passedOnCard} on-card candidates (Amazon-safe pacing). Scan again later to go deeper.`)
+      // Drop breakdown — dimension labels only, never the thresholds. Doubles
+      // as the extraction-health signal: a pile-up on "couldn't read the page"
+      // means selectors need tuning, not that the market is empty.
+      const d = s?.drops
+      const dropBits: string[] = []
+      if (d) {
+        if (d.sales) dropBits.push(`sales volume ×${d.sales}`)
+        if (d.carousel) dropBits.push(`no product-page video ×${d.carousel}`)
+        if (d.price) dropBits.push(`price ×${d.price}`)
+        if (d.rating) dropBits.push(`rating ×${d.rating}`)
+        if (d.category) dropBits.push(`excluded category ×${d.category}`)
+        if (d.unreadable) dropBits.push(`couldn't read the page ×${d.unreadable}`)
+      }
+      const dropLine = dropBits.length ? ` Dropped on: ${dropBits.join(' · ')}.` : ''
+      if (s?.blocked) setNote(`Amazon asked for a pause partway through — these results are partial. Wait ~15 minutes before scanning again.${dropLine}`)
+      else if (s?.truncated) setNote(`Checked the top ${s.deepChecked} of ${s.passedOnCard} on-card candidates (Amazon-safe pacing). Scan again later to go deeper.${dropLine}`)
+      else if (dropBits.length) setNote(`Deep-checked ${s?.deepChecked ?? 0} candidates.${dropLine}`)
     } catch {
       setError('Scan failed unexpectedly — reload the page and try again.')
     } finally {

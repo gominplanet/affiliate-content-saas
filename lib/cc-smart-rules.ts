@@ -95,6 +95,10 @@ export interface SmartScanStats {
   passedOnCard: number
   deepChecked: number
   blocked?: boolean // Amazon interstitial hit — scan stopped early
+  /** Why deep-checked candidates dropped — distinguishes strict-rules outcomes
+   *  (spread across sales/carousel/price) from extraction bugs (everything
+   *  piling into `unreadable`). Labels stay GENERIC in the UI (no thresholds). */
+  drops?: { unreadable: number; price: number; sales: number; rating: number; carousel: number; category: number }
 }
 
 export interface ScoredMatch extends SmartScanMatch {
