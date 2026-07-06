@@ -105,7 +105,7 @@ export default function ProductFinderPage() {
   // `imported` = one of the user's own Creator Connections campaigns (instant DB
   // check). `live` = the result of an on-demand SCOUT CC search for that product.
   type Imported = { detailsUrl: string; brandName: string | null; commissionPct: number | null }
-  type Live = { found: boolean; campaignId?: string | null; detailsUrl?: string | null; brand?: string | null; commissionPct?: number | null }
+  type Live = { found: boolean; status?: 'opportunity' | 'active' | 'completed' | null; campaignId?: string | null; detailsUrl?: string | null; brand?: string | null; commissionPct?: number | null }
   const [imported, setImported] = useState<Record<string, Imported>>({})
   const [live, setLive] = useState<Record<string, Live>>({})
   const [ccChecking, setCcChecking] = useState<string | null>(null) // asin being live-checked
@@ -250,8 +250,11 @@ export default function ProductFinderPage() {
     try {
       const r = await requestFindCampaign(keyword.trim() || p.asin, p.asin)
       if (r.ok) {
-        setLive(s => ({ ...s, [p.asin]: { found: !!r.found, campaignId: r.campaignId ?? null, detailsUrl: r.detailsUrl, brand: r.brand, commissionPct: r.commissionPct } }))
-        if (r.found) toast.success(`It's a campaign${r.brand ? ` from ${r.brand}` : ''}${r.campaignId ? ` (${r.campaignId})` : ''} — you can auto-send.`)
+        setLive(s => ({ ...s, [p.asin]: { found: !!r.found, status: r.status ?? null, campaignId: r.campaignId ?? null, detailsUrl: r.detailsUrl, brand: r.brand, commissionPct: r.commissionPct } }))
+        if (r.found) {
+          const where = r.status === 'active' ? ' — you already accepted this one' : r.status === 'completed' ? ' — this campaign has ended' : ' — you can auto-send'
+          toast.success(`It's a campaign${r.brand ? ` from ${r.brand}` : ''}${r.campaignId ? ` (${r.campaignId})` : ''}${where}.`)
+        }
         else toast.message('Not a Creator Connections campaign', { description: 'You can still copy a pitch to reach the brand.' })
       } else if (r.error === 'not-installed') toast.error('Install / enable SCOUT to check Creator Connections.')
       else if (r.error === 'timeout') toast.error('The Creator Connections check timed out — try again.')
@@ -419,13 +422,22 @@ export default function ProductFinderPage() {
       const brand = imp?.brandName || lv?.brand || ''
       const campaignId = lv?.campaignId || null
       const shortId = campaignId ? campaignId.replace(/^amzn1\.campaign\./, '') : ''
+      // The live CC tab a match came from drives the chip: Active = you already
+      // accepted it; Completed = it has ended; New Opportunities (or an imported
+      // campaign) = actionable, Message auto-sends.
+      const st = lv?.status
+      const style = st === 'active'
+        ? { color: '#1d4ed8', label: 'Already accepted', hint: 'You have accepted this Creator Connections campaign' }
+        : st === 'completed'
+        ? { color: 'var(--text-faint)', label: 'Campaign ended', hint: 'This Creator Connections campaign has ended' }
+        : { color: '#248a3d', label: `Campaign${imp ? '' : ' (live)'} · auto-send`, hint: 'Creator Connections campaign — Message will auto-send on Amazon' }
       return (
-        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#248a3d]"
-          title={`Creator Connections campaign${brand ? ` · ${brand}` : ''}${campaignId ? ` · ${campaignId}` : ''} — Message will auto-send on Amazon`}>
-          🎯 Campaign{imp ? '' : ' (live)'} · auto-send
+        <span className="inline-flex items-center gap-1 text-[11px] font-semibold" style={{ color: style.color }}
+          title={`${style.hint}${brand ? ` · ${brand}` : ''}${campaignId ? ` · ${campaignId}` : ''}`}>
+          🎯 {style.label}
           {shortId && (
             <span className="ml-0.5 font-mono font-normal text-[10px] px-1 py-px rounded"
-              style={{ background: 'rgba(36,138,61,0.10)', color: '#248a3d' }}
+              style={{ background: 'rgba(0,0,0,0.06)', color: style.color }}
               title={`Campaign id: ${campaignId}`}>
               #{shortId.length > 12 ? shortId.slice(0, 12) + '…' : shortId}
             </span>

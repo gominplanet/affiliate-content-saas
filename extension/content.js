@@ -307,6 +307,23 @@ function collectDiag() {
   }
 }
 
+// Click a Creator Connections status tab (New Opportunities / Active / Completed)
+// by its visible label, then wait for the grid to re-render. Best-effort: returns
+// false when no matching tab exists (the caller just skips that tab), so if
+// Amazon renames a tab this degrades to "current tab only" instead of breaking.
+// Powers Check CC's sweep beyond New Opportunities — so an already-ACCEPTED
+// campaign (Active tab) is detected live, not only from MVP's imported list.
+async function clickCcTab(re) {
+  try {
+    const el = [...document.querySelectorAll('button,a,[role="tab"],[role="button"]')]
+      .find((e) => re.test((textOf(e) || '').trim()))
+    if (!el) return false
+    el.click()
+    await sleep(1800) // let the tab's grid mount before we search it
+    return true
+  } catch (e) { return false }
+}
+
 if (!window.__ccScoutListener) {
   window.__ccScoutListener = true
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -334,29 +351,43 @@ if (!window.__ccScoutListener) {
         try {
           const want = String(msg.asin || '').toUpperCase()
           if (!/^[A-Z0-9]{10}$/.test(want)) { sendResponse({ ok: false, error: 'no-asin' }); return }
-          const { rows, total } = await scoutRunSearch({ asin: want, maxCards: msg.maxCards || 40 })
-          // Any card returned by an ASIN-exact search = a campaign for this product.
-          // Prefer a card that exposes a campaign id; else take the first.
-          const hit = rows.find((r) => r.campaignId) || rows[0] || null
-          if (hit) {
+          // Sweep tabs in priority order: New Opportunities (actionable — you can
+          // accept + auto-send) FIRST, then Active (already accepted) and Completed
+          // so we can say "you already have this one" live. re=null means "the tab
+          // that's already loaded" (Opportunities) — no click. A missing tab is
+          // skipped, so this never regresses below Opportunities-only.
+          const tabs = [{ re: null, status: 'opportunity' }]
+          if (msg.sweep !== false) tabs.push({ re: /^(active|accepted)$/i, status: 'active' }, { re: /^completed$/i, status: 'completed' })
+          let rendered = false
+          let found = null
+          for (let t = 0; t < tabs.length && !found; t++) {
+            const tab = tabs[t]
+            if (tab.re) { const ok = await clickCcTab(tab.re); if (!ok) continue }
+            let rows = [], total = null
+            try { const r = await scoutRunSearch({ asin: want, maxCards: msg.maxCards || 40 }); rows = r.rows || []; total = r.total } catch (e) {}
+            if (total != null || rows.length > 0) rendered = true
+            const hit = rows.find((r) => r.campaignId) || rows[0] || null
+            if (hit) found = { hit, status: tab.status }
+          }
+          // Never leave a user's own CC tab parked on Active/Completed — restore it.
+          if (msg.sweep !== false) { try { await clickCcTab(/^(new opportunities|opportunities)$/i) } catch (e) {} }
+          if (found) {
+            const h = found.hit
             sendResponse({
-              ok: true, found: true,
-              asin: want,
-              campaignId: hit.campaignId || null,
-              detailsUrl: hit.detailsUrl || null,
-              campaignName: hit.campaignName || null,
-              brand: hit.brand || null,
-              commissionPct: hit.commissionPct != null ? hit.commissionPct : null,
-              endsAt: hit.endsAt || null,
+              ok: true, found: true, asin: want, status: found.status,
+              campaignId: h.campaignId || null,
+              detailsUrl: h.detailsUrl || null,
+              campaignName: h.campaignName || null,
+              brand: h.brand || null,
+              commissionPct: h.commissionPct != null ? h.commissionPct : null,
+              endsAt: h.endsAt || null,
             })
             return
           }
-          // No card. `scanned` tells the background worker whether this is a REAL
-          // miss (the grid rendered a result count, even 0 → scanned≥1, trust it)
-          // or a non-render (total null AND no rows → scanned 0 → it retries in a
-          // foreground pass). Prevents a false "no campaign" from a throttled tab.
-          const rendered = total != null || rows.length > 0
-          sendResponse({ ok: true, found: false, scanned: rendered ? Math.max(1, rows.length) : 0 })
+          // No card in any tab. `scanned` distinguishes a REAL miss (a grid rendered
+          // → scanned≥1, trust it) from a non-render (nothing rendered → scanned 0 →
+          // background retries in a foreground pass).
+          sendResponse({ ok: true, found: false, scanned: rendered ? 1 : 0 })
         } catch (e) {
           sendResponse({ ok: false, error: (e && e.message) || 'cc-find-failed' })
         }

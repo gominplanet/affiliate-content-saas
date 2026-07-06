@@ -477,6 +477,7 @@ export async function requestProductSearch(
 export interface FindCampaignResult {
   ok: boolean
   found?: boolean
+  status?: 'opportunity' | 'active' | 'completed' | null // which CC tab it was found in
   campaignId?: string | null   // the CC campaign id (amzn1.campaign.…) read off the card
   detailsUrl?: string | null
   campaignName?: string | null
@@ -501,14 +502,16 @@ export async function requestFindCampaign(query: string, asin: string): Promise<
   if (!/^[A-Za-z0-9]{10}$/.test(asin || '')) return { ok: false, error: 'no-asin' }
   if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
   const resp = await sendToExtension<{
-    ok?: boolean; found?: boolean; campaignId?: string | null; detailsUrl?: string | null; campaignName?: string | null
+    ok?: boolean; found?: boolean; status?: 'opportunity' | 'active' | 'completed' | null
+    campaignId?: string | null; detailsUrl?: string | null; campaignName?: string | null
     brand?: string | null; commissionPct?: number | null; endsAt?: string | null
     scanned?: number; total?: number; error?: string
-  }>({ type: 'MVP_CC_FIND', query: query || '', asin }, 185000)
+  }>({ type: 'MVP_CC_FIND', query: query || '', asin }, 240000)
   if (!resp) return { ok: false, error: 'timeout' }
   if (resp.ok) {
     return {
       ok: true, found: !!resp.found,
+      status: resp.status ?? null,
       campaignId: resp.campaignId ?? null,
       detailsUrl: resp.detailsUrl ?? null,
       campaignName: resp.campaignName ?? null,
