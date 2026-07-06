@@ -26,6 +26,8 @@ export async function GET(request: Request) {
   // How many candidates to hand SCOUT to verify — a healthy multiple of the
   // final target, since the deep-check will filter more out.
   const limit = Math.min(120, Math.max(10, parseInt(url.searchParams.get('limit') || '60', 10)))
+  // Pagination — each re-scan advances so users get FRESH campaigns, not repeats.
+  const offset = Math.max(0, Math.min(20000, parseInt(url.searchParams.get('offset') || '0', 10)))
   // Rule mode: 'focus' (MVP Profitability Rules, default) or 'wide' (looser).
   const mode: CampaignRuleMode = url.searchParams.get('mode') === 'wide' ? 'wide' : 'focus'
   const RULES = campaignRules(mode)
@@ -48,7 +50,9 @@ export async function GET(request: Request) {
     .gte('commission_pct', RULES.minCommissionPct)  // ≥ active-mode floor
     .gte('ends_at', runwayCutoff)                    // still running ≥ minDaysLeft
     .order('commission_pct', { ascending: false })
-    .limit(limit * 3) // over-fetch: the avoid-list + no-ASIN filters thin this below `limit`
+    .order('campaign_id', { ascending: true })       // stable tiebreak so pages don't overlap
+    // over-fetch a window (avoid-list + no-ASIN thin it below `limit`); paginate it.
+    .range(offset, offset + limit * 3 - 1)
   if (q) query = query.textSearch('search_vec', q, { type: 'websearch' })
 
   const { data, error } = await query
@@ -90,5 +94,12 @@ export async function GET(request: Request) {
       }
     })
 
-  return NextResponse.json({ ok: true, query: q, candidates, matched: rows.length })
+  // A full DB window came back ⇒ there are almost certainly more pages. The
+  // panel advances `offset` by the window size on the next scan to dig deeper.
+  const windowSize = limit * 3
+  const hasMore = rows.length >= windowSize
+  return NextResponse.json({
+    ok: true, query: q, candidates, matched: rows.length,
+    offset, nextOffset: offset + windowSize, hasMore,
+  })
 }

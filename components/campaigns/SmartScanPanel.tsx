@@ -52,10 +52,18 @@ export default function SmartScanPanel({
   // Campaign-mode results
   const [matches, setMatches] = useState<ScoredMatch[] | null>(null)
   const [skippedCovered, setSkippedCovered] = useState(0)
+  // Catalog pagination — advances each Campaigns-ON scan so re-scanning digs
+  // DEEPER (fresh campaigns) instead of returning the same top batch. Reset to
+  // 0 whenever the search changes (keyword / rule mode / campaigns toggle).
+  const [scanOffset, setScanOffset] = useState(0)
+  const [hasMore, setHasMore] = useState(false)
   // Onsite-mode results
   const [products, setProducts] = useState<FinderProduct[] | null>(null)
 
   const marketHost = AMZ_MARKETPLACES.find(m => m.id === market)?.host || 'www.amazon.com'
+
+  // Any change to what we're searching restarts pagination from the top.
+  function restartSearch() { setScanOffset(0); setHasMore(false); resetRun() }
 
   function resetRun() {
     setError(null); setNote(null); setProgress(null)
@@ -82,15 +90,22 @@ export default function SmartScanPanel({
   async function runCampaigns() {
     const RULES = campaignRules(ruleMode) // MVP Focus vs Wide
     const covered = new Set(coveredAsins.map(a => a.toUpperCase()))
+    // Also skip anything already shown in an earlier page this session, so a
+    // re-scan never re-surfaces the same campaign even if pages overlap.
+    const alreadyShown = new Set((matches ?? []).map(m => (m.asin || '').toUpperCase()).filter(Boolean))
+    const paging = scanOffset > 0
     let usedCatalog = false
     try {
-      const r = await fetch(`/api/campaigns/catalog-search?q=${encodeURIComponent(focus)}&limit=60&mode=${ruleMode}`)
+      const r = await fetch(`/api/campaigns/catalog-search?q=${encodeURIComponent(focus)}&limit=60&mode=${ruleMode}&offset=${scanOffset}`)
       const data = await r.json().catch(() => ({}))
       if (data?.ok && Array.isArray(data.candidates) && data.candidates.length) {
         usedCatalog = true
-        setProgress(`${data.candidates.length} candidate campaigns from the catalog — SCOUT is live-verifying the best…`)
-        const fresh = (data.candidates as CatalogCandidate[]).filter(c => !(c.asin && covered.has(c.asin.toUpperCase())))
-        setSkippedCovered(data.candidates.length - fresh.length)
+        setProgress(`${data.candidates.length} more candidate campaigns from the catalog — SCOUT is live-verifying the best…`)
+        const fresh = (data.candidates as CatalogCandidate[]).filter(c => {
+          const a = (c.asin || '').toUpperCase()
+          return a && !covered.has(a) && !alreadyShown.has(a)
+        })
+        setSkippedCovered(prev => prev + (data.candidates.length - fresh.length))
         const ver = await requestCcVerify(fresh.slice(0, 40), { ...RULES, wantPassers: 15 })
         setProgress(null)
         if (!ver.ok) {
@@ -102,13 +117,25 @@ export default function SmartScanPanel({
         const scored = (ver.results ?? [])
           .filter(m => passesGates(m, RULES))
           .map(m => scoreMatch(m, RULES))
-          .sort((a, b) => b.score - a.score)
-        setMatches(scored)
+        // Accumulate across pages (dedup by asin), keep best-scored first.
+        setMatches(prev => {
+          const merged = paging ? [...(prev ?? []), ...scored] : scored
+          const seen = new Set<string>()
+          return merged
+            .filter(m => { const k = (m.asin || m.campaignName || '').toUpperCase(); if (seen.has(k)) return false; seen.add(k); return true })
+            .sort((a, b) => b.score - a.score)
+        })
+        // Advance so the NEXT scan digs deeper; remember if more remain.
+        setScanOffset(typeof data.nextOffset === 'number' ? data.nextOffset : scanOffset + 180)
+        setHasMore(!!data.hasMore)
         const dl = dropLine(ver.drops)
+        const more = data.hasMore ? ' Scan again for the next batch — it digs deeper each time.' : ' That’s the full catalog for this search.'
         if (ver.blocked) setNote(`Amazon asked for a pause partway through — results are partial. Wait ~15 minutes.${dl}`)
-        else if (dl) setNote(`Verified ${ver.deepChecked ?? 0} of the catalog's top candidates.${dl}`)
+        else setNote(`Verified ${ver.deepChecked ?? 0} candidates.${dl}${more}`)
         return
       }
+      // Catalog returned nothing new — either exhausted (paging) or unavailable.
+      if (paging && data?.ok) { setHasMore(false); setNote('That’s every MVP-approved campaign in the catalog for this search.'); return }
     } catch { /* fall through to the live scan */ }
 
     // Fallback: live SCOUT grid scan (catalog not loaded yet).
@@ -197,7 +224,11 @@ export default function SmartScanPanel({
   }
 
   async function run() {
-    setRunning(true); resetRun()
+    setRunning(true)
+    // Paging a Campaigns-ON search (offset>0) KEEPS the accumulated matches and
+    // appends; every other case starts clean.
+    setError(null); setProgress(null)
+    if (!(mode === 'campaigns' && scanOffset > 0)) { setNote(null); setMatches(null); setProducts(null); setSkippedCovered(0) }
     try {
       if (mode === 'campaigns') await runCampaigns()
       else await runOnsite()
@@ -242,20 +273,20 @@ export default function SmartScanPanel({
         <div className="flex items-center gap-2 flex-wrap mt-3">
           {/* Campaigns toggle */}
           <div className="inline-flex items-center gap-1 p-1 rounded-xl" style={{ background: 'rgba(124,58,237,0.06)' }}>
-            <Chip on={mode === 'campaigns'} label="Campaigns ON" onClick={() => { setMode('campaigns'); resetRun() }} />
-            <Chip on={mode === 'onsite'} label="Campaigns OFF" onClick={() => { setMode('onsite'); resetRun() }} />
+            <Chip on={mode === 'campaigns'} label="Campaigns ON" onClick={() => { setMode('campaigns'); restartSearch() }} />
+            <Chip on={mode === 'onsite'} label="Campaigns OFF" onClick={() => { setMode('onsite'); restartSearch() }} />
           </div>
           {/* Focus vs Wide — how strict MVP's picks are (Campaigns ON only). */}
           {mode === 'campaigns' && (
             <div className="inline-flex items-center gap-1 p-1 rounded-xl" style={{ background: 'rgba(124,58,237,0.06)' }}
               title="MVP Focus: the tightest picks, following MVP's Profitability Rules — best results. Wide: casts a broader net (more campaigns, less focused). Both are solid; Focus is stronger.">
-              <Chip on={ruleMode === 'focus'} label="MVP Focus" onClick={() => { setRuleMode('focus'); resetRun() }} />
-              <Chip on={ruleMode === 'wide'} label="Wide" onClick={() => { setRuleMode('wide'); resetRun() }} />
+              <Chip on={ruleMode === 'focus'} label="MVP Focus" onClick={() => { setRuleMode('focus'); restartSearch() }} />
+              <Chip on={ruleMode === 'wide'} label="Wide" onClick={() => { setRuleMode('wide'); restartSearch() }} />
             </div>
           )}
           <input
             value={focus}
-            onChange={e => setFocus(e.target.value)}
+            onChange={e => { setFocus(e.target.value); setScanOffset(0); setHasMore(false) }}
             onKeyDown={e => { if (e.key === 'Enter' && !running) run() }}
             placeholder={mode === 'campaigns' ? 'Focus (optional) — e.g. massage gun' : 'Keyword — e.g. massage gun'}
             disabled={running}
@@ -293,7 +324,10 @@ export default function SmartScanPanel({
             style={{ background: '#7C3AED' }}
           >
             {running ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
-            {running ? (mode === 'onsite' ? 'Verifying…' : 'Scanning… (a few minutes)') : (mode === 'onsite' ? 'Find products' : 'Smart Scan')}
+            {running
+              ? (mode === 'onsite' ? 'Verifying…' : 'Scanning… (a few minutes)')
+              : (mode === 'onsite' ? 'Find products'
+                  : (mode === 'campaigns' && matches && matches.length > 0 && hasMore ? 'Scan again — more' : 'Smart Scan'))}
           </button>
         </div>
       </div>
