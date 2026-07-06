@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.64
+ * Version: 1.0.65
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -85,6 +85,108 @@ add_filter('wp_sitemaps_taxonomies', function ($taxonomies) {
     if (mvp_affiliate_seo_plugin_active()) return $taxonomies;
     unset($taxonomies['post_tag']);
     return $taxonomies;
+});
+
+// ─── 301 redirects (duplicate-merge + 404→301 tools) ─────────────────────────
+// The dashboard's "Duplicate posts" tool merges a duplicate review into the
+// keeper: it stores a 301 from the extra's path → the keeper URL here, then
+// trashes the extra. This handler serves those 301s so the trashed URL never
+// 404s. Also the backbone for the upcoming 404→301 tool. Stored as an array of
+// ['from' => '/path/', 'to' => '<url>'] in the mvp_redirects option (capped).
+function mvp_affiliate_norm_path($p) {
+    $p = (string) $p;
+    $parsed = wp_parse_url($p);          // accepts a full URL or a bare path
+    if (!empty($parsed['path'])) $p = $parsed['path'];
+    $p = '/' . trim($p, '/');            // single leading slash
+    if ($p !== '/') $p .= '/';           // + trailing slash → stable matching
+    return strtolower($p);
+}
+
+// Serve a stored 301 only when nothing else matched (a 404), so a live post or
+// page always keeps priority and a redirect can never shadow real content.
+add_action('template_redirect', function () {
+    if (!is_404()) return;
+    $map = get_option('mvp_redirects', []);
+    if (!is_array($map) || empty($map)) return;
+    $req = mvp_affiliate_norm_path($_SERVER['REQUEST_URI'] ?? '');
+    foreach ($map as $r) {
+        if (!is_array($r) || empty($r['from']) || empty($r['to'])) continue;
+        if (mvp_affiliate_norm_path($r['from']) === $req) {
+            wp_redirect(esc_url_raw($r['to']), 301);
+            exit;
+        }
+    }
+}, 1);
+
+// Merge stored redirects (dedupe by `from`, cap at 2000). Shared by both tools.
+function mvp_affiliate_add_redirects($pairs) {
+    $map = get_option('mvp_redirects', []);
+    if (!is_array($map)) $map = [];
+    $byFrom = [];
+    foreach ($map as $r) { if (is_array($r) && !empty($r['from'])) $byFrom[mvp_affiliate_norm_path($r['from'])] = $r; }
+    foreach ((array) $pairs as $p) {
+        if (empty($p['from']) || empty($p['to'])) continue;
+        $from = mvp_affiliate_norm_path($p['from']);
+        // Never redirect a path to itself (would loop).
+        if (mvp_affiliate_norm_path($p['to']) === $from) continue;
+        $byFrom[$from] = ['from' => $from, 'to' => esc_url_raw($p['to'])];
+    }
+    $out = array_values($byFrom);
+    if (count($out) > 2000) $out = array_slice($out, -2000);
+    update_option('mvp_redirects', $out, false);
+    return count($out);
+}
+
+// Auth for the merge/redirect endpoints: a logged-in admin (Basic app-password)
+// OR the body proxy_secret (survives hosts that strip Authorization on POST —
+// same reasoning as the /proxy endpoint). Returns true when either passes.
+function mvp_affiliate_write_authed($req) {
+    if (current_user_can('manage_options')) return true;
+    $token  = (string) $req->get_param('token');
+    $secret = (string) get_option('affiliateos_proxy_secret', '');
+    return ($secret !== '' && $token !== '' && hash_equals($secret, $token));
+}
+
+add_action('rest_api_init', function () {
+    // Duplicate merge: 301 each extra → keeper, then trash the extra post.
+    register_rest_route('affiliateos/v1', '/merge-duplicates', [
+        'methods'             => 'POST',
+        'permission_callback' => '__return_true',
+        'callback'            => function (WP_REST_Request $req) {
+            if (!mvp_affiliate_write_authed($req)) return new WP_REST_Response(['ok' => false, 'error' => 'unauthorized'], 401);
+            $merges = $req->get_param('merges');
+            if (!is_array($merges)) return new WP_REST_Response(['ok' => false, 'error' => 'merges required'], 400);
+            $trashed = 0; $redirected = 0; $errors = [];
+            foreach ($merges as $m) {
+                $keeper = isset($m['keeper']) ? esc_url_raw($m['keeper']) : '';
+                $extras = (isset($m['extras']) && is_array($m['extras'])) ? $m['extras'] : [];
+                if (!$keeper || empty($extras)) continue;
+                foreach ($extras as $e) {
+                    $id   = isset($e['id']) ? intval($e['id']) : 0;
+                    $path = isset($e['path']) ? (string) $e['path'] : '';
+                    if ($path) { mvp_affiliate_add_redirects([['from' => $path, 'to' => $keeper]]); $redirected++; }
+                    if ($id > 0) {
+                        $post = get_post($id);
+                        if ($post && $post->post_type === 'post') {
+                            if (wp_trash_post($id)) $trashed++; else $errors[] = "trash failed for {$id}";
+                        }
+                    }
+                }
+            }
+            return new WP_REST_Response(['ok' => true, 'trashed' => $trashed, 'redirected' => $redirected, 'errors' => $errors], 200);
+        },
+    ]);
+    // Generic redirect add — body { redirects: [{from,to}] }. For the 404→301 tool.
+    register_rest_route('affiliateos/v1', '/redirects', [
+        'methods'             => 'POST',
+        'permission_callback' => '__return_true',
+        'callback'            => function (WP_REST_Request $req) {
+            if (!mvp_affiliate_write_authed($req)) return new WP_REST_Response(['ok' => false, 'error' => 'unauthorized'], 401);
+            $redirects = $req->get_param('redirects');
+            if (!is_array($redirects)) return new WP_REST_Response(['ok' => false, 'error' => 'redirects required'], 400);
+            return new WP_REST_Response(['ok' => true, 'count' => mvp_affiliate_add_redirects($redirects)], 200);
+        },
+    ]);
 });
 
 // ─── 1. Authorization header fix (zero-touch — no .htaccess needed) ──────────
