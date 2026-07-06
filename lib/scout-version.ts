@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.11.53'
+export const SCOUT_LATEST_VERSION = '1.11.54'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'SCOUT now announces itself to MVP automatically, so the app always finds it — no more "install / enable SCOUT" when it\'s already installed (any build: Web Store, sideload, or dev). Plus the earlier Check CC fix: it opens the real Creator Connections grid even with no CC tab open. Chrome auto-updates the Web Store build in the background.'
+  'Check CC is now precise: SCOUT searches Creator Connections by the product\'s ASIN (not the keyword), so it confirms a real campaign for THAT product and brings the campaign id back into MVP. "Check all CC" runs the same per-product check down the list. Plus: SCOUT auto-announces itself so the app always finds it. Chrome auto-updates the Web Store build in the background.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar

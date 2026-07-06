@@ -105,7 +105,7 @@ export default function ProductFinderPage() {
   // `imported` = one of the user's own Creator Connections campaigns (instant DB
   // check). `live` = the result of an on-demand SCOUT CC search for that product.
   type Imported = { detailsUrl: string; brandName: string | null; commissionPct: number | null }
-  type Live = { found: boolean; detailsUrl?: string | null; brand?: string | null; commissionPct?: number | null }
+  type Live = { found: boolean; campaignId?: string | null; detailsUrl?: string | null; brand?: string | null; commissionPct?: number | null }
   const [imported, setImported] = useState<Record<string, Imported>>({})
   const [live, setLive] = useState<Record<string, Live>>({})
   const [ccChecking, setCcChecking] = useState<string | null>(null) // asin being live-checked
@@ -250,8 +250,8 @@ export default function ProductFinderPage() {
     try {
       const r = await requestFindCampaign(keyword.trim() || p.asin, p.asin)
       if (r.ok) {
-        setLive(s => ({ ...s, [p.asin]: { found: !!r.found, detailsUrl: r.detailsUrl, brand: r.brand, commissionPct: r.commissionPct } }))
-        if (r.found) toast.success(`It's a campaign${r.brand ? ` from ${r.brand}` : ''} — you can auto-send.`)
+        setLive(s => ({ ...s, [p.asin]: { found: !!r.found, campaignId: r.campaignId ?? null, detailsUrl: r.detailsUrl, brand: r.brand, commissionPct: r.commissionPct } }))
+        if (r.found) toast.success(`It's a campaign${r.brand ? ` from ${r.brand}` : ''}${r.campaignId ? ` (${r.campaignId})` : ''} — you can auto-send.`)
         else toast.message('Not a Creator Connections campaign', { description: 'You can still copy a pitch to reach the brand.' })
       } else if (r.error === 'not-installed') toast.error('Install / enable SCOUT to check Creator Connections.')
       else if (r.error === 'timeout') toast.error('The Creator Connections check timed out — try again.')
@@ -286,7 +286,7 @@ export default function ProductFinderPage() {
         for (const asin of todo) {
           const m = byAsin[asin.toUpperCase()]
           next[asin] = m
-            ? { found: true, detailsUrl: m.detailsUrl, brand: m.brand, commissionPct: m.commissionPct }
+            ? { found: true, campaignId: m.campaignId ?? null, detailsUrl: m.detailsUrl, brand: m.brand, commissionPct: m.commissionPct }
             : { found: false }
         }
         return next
@@ -417,10 +417,19 @@ export default function ProductFinderPage() {
     const isCampaign = !!imp || !!lv?.found
     if (isCampaign) {
       const brand = imp?.brandName || lv?.brand || ''
+      const campaignId = lv?.campaignId || null
+      const shortId = campaignId ? campaignId.replace(/^amzn1\.campaign\./, '') : ''
       return (
         <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#248a3d]"
-          title={`Creator Connections campaign${brand ? ` · ${brand}` : ''} — Message will auto-send on Amazon`}>
+          title={`Creator Connections campaign${brand ? ` · ${brand}` : ''}${campaignId ? ` · ${campaignId}` : ''} — Message will auto-send on Amazon`}>
           🎯 Campaign{imp ? '' : ' (live)'} · auto-send
+          {shortId && (
+            <span className="ml-0.5 font-mono font-normal text-[10px] px-1 py-px rounded"
+              style={{ background: 'rgba(36,138,61,0.10)', color: '#248a3d' }}
+              title={`Campaign id: ${campaignId}`}>
+              #{shortId.length > 12 ? shortId.slice(0, 12) + '…' : shortId}
+            </span>
+          )}
         </span>
       )
     }

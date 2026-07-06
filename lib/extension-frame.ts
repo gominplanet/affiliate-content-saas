@@ -477,31 +477,31 @@ export async function requestProductSearch(
 export interface FindCampaignResult {
   ok: boolean
   found?: boolean
+  campaignId?: string | null   // the CC campaign id (amzn1.campaign.…) read off the card
   detailsUrl?: string | null
   campaignName?: string | null
   brand?: string | null
   commissionPct?: number | null
   endsAt?: string | null
-  scanned?: number    // how many result cards we resolved before giving up
+  scanned?: number    // how many result cards the ASIN search rendered
   total?: number      // how many campaigns Amazon's search returned
   error?: string
 }
 
 /**
- * Live "is this product a Creator Connections campaign?" lookup. Given the
- * product's brand/keyword and its ASIN, SCOUT drives Amazon's CC search in a
- * background tab and resolves each result card's real ASIN (hidden on the card)
- * until one matches — returning the campaign's details URL so the caller can
- * auto-send a brand message. Used by the Product Finder's Message flow when the
- * user has NOT already imported this campaign. Slow (a search + up to ~15
- * background ASIN resolves), so a long timeout. Best-effort: resolves, never
- * throws.
+ * Live "is this product a Creator Connections campaign?" lookup. SCOUT SEARCHES
+ * THE CC GRID BY THE ASIN (Amazon's CC search matches ASINs) — an exact query
+ * returns that product's campaign card if one exists, so there's no keyword
+ * guessing or per-card ASIN resolution. Returns the campaign id + details URL so
+ * the caller can show it and auto-send a brand message. Used by the Product
+ * Finder's "Check CC" / Message flow. Best-effort: resolves, never throws.
+ * (The `query` param is unused now — kept for call-site compatibility.)
  */
 export async function requestFindCampaign(query: string, asin: string): Promise<FindCampaignResult> {
   if (!/^[A-Za-z0-9]{10}$/.test(asin || '')) return { ok: false, error: 'no-asin' }
   if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
   const resp = await sendToExtension<{
-    ok?: boolean; found?: boolean; detailsUrl?: string | null; campaignName?: string | null
+    ok?: boolean; found?: boolean; campaignId?: string | null; detailsUrl?: string | null; campaignName?: string | null
     brand?: string | null; commissionPct?: number | null; endsAt?: string | null
     scanned?: number; total?: number; error?: string
   }>({ type: 'MVP_CC_FIND', query: query || '', asin }, 185000)
@@ -509,6 +509,7 @@ export async function requestFindCampaign(query: string, asin: string): Promise<
   if (resp.ok) {
     return {
       ok: true, found: !!resp.found,
+      campaignId: resp.campaignId ?? null,
       detailsUrl: resp.detailsUrl ?? null,
       campaignName: resp.campaignName ?? null,
       brand: resp.brand ?? null,
@@ -522,6 +523,7 @@ export async function requestFindCampaign(query: string, asin: string): Promise<
 
 export interface CampaignMatch {
   asin: string
+  campaignId: string | null    // the CC campaign id (amzn1.campaign.…) read off the card
   detailsUrl: string | null
   campaignName: string | null
   brand: string | null
@@ -536,12 +538,12 @@ export interface CcMatchResult {
 }
 
 /**
- * "Check all CC" — batch version of requestFindCampaign. Given the Product
- * Finder's keyword and a list of result ASINs, SCOUT runs ONE Creator
- * Connections search for the keyword, resolves each result card's ASIN once, and
- * returns which target ASINs are campaigns (with their details URLs). Far cheaper
- * than one CC search per product. Slow (a search + up to ~40 background ASIN
- * resolves, plus a possible foreground grid pass), so a long timeout.
+ * "Check all CC" — batch version of requestFindCampaign. SCOUT searches the CC
+ * grid by EACH ASIN in turn (same rule as the single check) and returns which
+ * products have a campaign, each with its campaign id + details URL. Paced
+ * between searches to stay under Amazon's rate limits, and capped, so a long
+ * list can't run away. Slow (one CC search per product), so a long timeout.
+ * (The `keyword` param is unused now — kept for call-site compatibility.)
  * Best-effort: resolves, never throws.
  */
 export async function requestCcMatch(keyword: string, asins: string[]): Promise<CcMatchResult> {

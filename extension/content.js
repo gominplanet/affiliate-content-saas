@@ -323,38 +323,40 @@ if (!window.__ccScoutListener) {
       })().catch(e => sendResponse({ error: e?.message || 'parse failed', campaigns: [], diag: collectDiag() }))
       return true // async response
     }
-    // CC_FIND — "is THIS product a live Creator Connections campaign?" Given a
-    // search query (brand/product keyword) + the target ASIN, drive Amazon's CC
-    // search, then resolve each result card's real ASIN (hidden on the card, only
-    // on its details page) until we hit the match. Short-circuits on the first
-    // hit and caps how many cards we resolve so a miss stays fast. Powers the
-    // Product Finder's "Find on Creator Connections → auto-send" path.
+    // CC_FIND — "is THIS product a live Creator Connections campaign?" Rule (per
+    // how CC actually works): SEARCH THE CC GRID BY THE ASIN. Amazon's CC search
+    // matches ASINs, so an exact query returns that product's campaign card if one
+    // exists — no keyword guessing, no opening each card's details page to resolve
+    // its ASIN. The campaign id lives right on the card (Accept button testid), so
+    // we hand it straight back to MVP. Powers the Product Finder's "Check CC" row.
     if (msg?.type === 'CC_FIND') {
       ;(async () => {
         try {
           const want = String(msg.asin || '').toUpperCase()
           if (!/^[A-Z0-9]{10}$/.test(want)) { sendResponse({ ok: false, error: 'no-asin' }); return }
-          const { rows, total } = await scoutRunSearch({ keyword: msg.query || '', maxCards: msg.maxCards || 120 })
-          const cands = rows.filter((r) => r.detailsUrl)
-          const cap = Math.min(cands.length, msg.maxResolve || 15)
-          for (let i = 0; i < cap; i++) {
-            const r = cands[i]
-            if (i > 0) await new Promise((res) => setTimeout(res, 600 + Math.floor(Math.random() * 500))) // pace Amazon hits
-            let asin = null
-            try { asin = await resolveCampaignAsin(r.detailsUrl) } catch (e) {}
-            if (asin && asin.toUpperCase() === want) {
-              sendResponse({
-                ok: true, found: true,
-                detailsUrl: r.detailsUrl,
-                campaignName: r.campaignName || null,
-                brand: r.brand || null,
-                commissionPct: r.commissionPct != null ? r.commissionPct : null,
-                endsAt: r.endsAt || null,
-              })
-              return
-            }
+          const { rows, total } = await scoutRunSearch({ asin: want, maxCards: msg.maxCards || 40 })
+          // Any card returned by an ASIN-exact search = a campaign for this product.
+          // Prefer a card that exposes a campaign id; else take the first.
+          const hit = rows.find((r) => r.campaignId) || rows[0] || null
+          if (hit) {
+            sendResponse({
+              ok: true, found: true,
+              asin: want,
+              campaignId: hit.campaignId || null,
+              detailsUrl: hit.detailsUrl || null,
+              campaignName: hit.campaignName || null,
+              brand: hit.brand || null,
+              commissionPct: hit.commissionPct != null ? hit.commissionPct : null,
+              endsAt: hit.endsAt || null,
+            })
+            return
           }
-          sendResponse({ ok: true, found: false, scanned: cap, total: total != null ? total : rows.length })
+          // No card. `scanned` tells the background worker whether this is a REAL
+          // miss (the grid rendered a result count, even 0 → scanned≥1, trust it)
+          // or a non-render (total null AND no rows → scanned 0 → it retries in a
+          // foreground pass). Prevents a false "no campaign" from a throttled tab.
+          const rendered = total != null || rows.length > 0
+          sendResponse({ ok: true, found: false, scanned: rendered ? Math.max(1, rows.length) : 0 })
         } catch (e) {
           sendResponse({ ok: false, error: (e && e.message) || 'cc-find-failed' })
         }
@@ -362,41 +364,42 @@ if (!window.__ccScoutListener) {
       return true // async response
     }
     // CC_MATCH — "which of THESE products are Creator Connections campaigns?"
-    // Powers the Product Finder's "Check all CC" button: run ONE CC search for the
-    // keyword, resolve each result card's ASIN once, and match against the whole
-    // set of target ASINs — far cheaper than one CC search per product. Stops
-    // early once every target is found; caps how many cards it resolves.
+    // Powers "Check all CC". Same rule as CC_FIND, one product at a time: search
+    // the CC grid by each ASIN in turn; if a card comes back, that product has a
+    // campaign — record it with its campaign id. Paced between searches so we
+    // don't hammer Amazon. Caps the batch so a huge list can't run away.
     if (msg?.type === 'CC_MATCH') {
       ;(async () => {
         try {
-          const want = new Set((msg.asins || []).map((a) => String(a || '').toUpperCase()).filter((a) => /^[A-Z0-9]{10}$/.test(a)))
-          if (!want.size) { sendResponse({ ok: true, matches: [], scanned: 0, total: 0 }); return }
-          const { rows, total } = await scoutRunSearch({ keyword: msg.keyword || '', maxCards: msg.maxCards || 200 })
-          const cands = rows.filter((r) => r.detailsUrl)
-          const cap = Math.min(cands.length, msg.maxResolve || 40)
+          const wants = Array.from(new Set((msg.asins || []).map((a) => String(a || '').toUpperCase()).filter((a) => /^[A-Z0-9]{10}$/.test(a))))
+          if (!wants.length) { sendResponse({ ok: true, matches: [], scanned: 0 }); return }
+          const cap = Math.min(wants.length, msg.maxAsins || 25)
           const matches = []
-          const foundAsins = new Set()
           let scanned = 0
-          for (let i = 0; i < cap && foundAsins.size < want.size; i++) {
-            const r = cands[i]
-            if (i > 0) await new Promise((res) => setTimeout(res, 600 + Math.floor(Math.random() * 500))) // pace Amazon hits
-            let asin = null
-            try { asin = await resolveCampaignAsin(r.detailsUrl) } catch (e) {}
+          let rendered = false
+          for (let i = 0; i < cap; i++) {
+            const asin = wants[i]
+            if (i > 0) await new Promise((res) => setTimeout(res, 700 + Math.floor(Math.random() * 500))) // pace Amazon searches
+            let rows = [], total = null
+            try { const r = await scoutRunSearch({ asin, maxCards: msg.maxCards || 30 }); rows = r.rows || []; total = r.total } catch (e) {}
+            if (total != null || rows.length > 0) rendered = true
             scanned++
-            if (!asin) continue
-            const A = asin.toUpperCase()
-            if (want.has(A) && !foundAsins.has(A)) {
-              foundAsins.add(A)
+            const hit = rows.find((r) => r.campaignId) || rows[0] || null
+            if (hit) {
               matches.push({
-                asin: A,
-                detailsUrl: r.detailsUrl,
-                campaignName: r.campaignName || null,
-                brand: r.brand || null,
-                commissionPct: r.commissionPct != null ? r.commissionPct : null,
+                asin,
+                campaignId: hit.campaignId || null,
+                detailsUrl: hit.detailsUrl || null,
+                campaignName: hit.campaignName || null,
+                brand: hit.brand || null,
+                commissionPct: hit.commissionPct != null ? hit.commissionPct : null,
               })
             }
+            // Live progress to the panel (best-effort).
+            try { const p = chrome.runtime.sendMessage({ type: 'CC_SCAN_PROGRESS', found: matches.length, scanned }); if (p && p.catch) p.catch(() => {}) } catch (e) {}
           }
-          sendResponse({ ok: true, matches, scanned, total: total != null ? total : rows.length })
+          // scanned 0 (nothing ever rendered) → background retries foreground.
+          sendResponse({ ok: true, matches, scanned: rendered ? scanned : 0 })
         } catch (e) {
           sendResponse({ ok: false, error: (e && e.message) || 'cc-match-failed' })
         }
