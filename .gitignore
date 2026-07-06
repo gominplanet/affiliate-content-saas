@@ -37,3 +37,6 @@ extension-signing/
 
 # Local Creator Connections catalog exports (hundreds of MB — never commit)
 /campaign/
+
+# Pulled production env (vercel env pull) — holds the service-role key
+.env.vercel
