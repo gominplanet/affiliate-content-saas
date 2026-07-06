@@ -756,7 +756,7 @@ function BrandTagsInput({ videoId, initial }: { videoId: string; initial: string
 // Big snappiness win on the 20-card paginated Posts tab. 2026-06-07.
 const VideoCard = memo(function VideoCardImpl({
   video, post, wpSiteUrl, fbConnected, pinterestConnected, threadsConnected, linkedInConnected, twitterConnected, blueskyConnected, telegramConnected, instagramConnected, tiktokConnected, fbAccounts, igAccounts, userTier, brandNiches, customCategories, brandDisclaimer, brandFacebookGroups, blogImagePref, failedSchedulePlatforms, onCustomCategoryAdded,
-  onGenerated, onDismiss, onDelete, onPinPreview,
+  onGenerated, onDismiss, onDelete, onPinPreview, hidden,
 }: {
   video: Record<string, unknown>
   post?: { url: string; title: string; postId?: string; wpPostId?: number; indexed?: boolean | null; coverage?: string | null; bodyImagesCount?: number | null; scheduledFor?: string | null; scheduleMode?: string | null; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string; instagramReelId?: string; instagramStoryId?: string } | null
@@ -787,6 +787,9 @@ const VideoCard = memo(function VideoCardImpl({
   onCustomCategoryAdded: (next: string[]) => void
   onGenerated: (videoId: string, url: string, title: string, postId: string) => void
   onDismiss: () => void
+  /** True when this video is on the Ignored list and only visible because
+   *  "Show hidden" is on — the card dims and Ignore flips to a green Restore. */
+  hidden?: boolean
   onDelete: (postId: string) => void
   onPinPreview: (data: PinPreviewData) => void
 }) {
@@ -1067,7 +1070,7 @@ const VideoCard = memo(function VideoCardImpl({
   }
 
   return (
-    <div className="card p-4 flex gap-4 items-start">
+    <div className={`card p-4 flex gap-4 items-start ${hidden ? 'opacity-60' : ''}`}>
       {(thumb || (!post && video.is_vertical !== true)) && (
         <div className="w-28 flex-shrink-0 flex flex-col items-center gap-1.5">
           {thumb && (
@@ -1083,15 +1086,27 @@ const VideoCard = memo(function VideoCardImpl({
           {/* Ignore — hides this video from the TODO list. Lives right under
               the thumbnail (red) so it reads as "skip this video", not as part
               of the tags/category row it used to sit in. Only meaningful before
-              a post exists (after that, Delete on the manage row covers it). */}
+              a post exists (after that, Delete on the manage row covers it).
+              On an already-hidden card (revealed via "Show hidden") the same
+              spot shows a green RESTORE instead — per-video undo. */}
           {!post && video.is_vertical !== true && (
-            <button
-              onClick={onDismiss}
-              title="Hide this video from the list — MVP won't suggest a post for it"
-              className="inline-flex items-center gap-1 text-xs font-medium text-[#ff3b30] hover:text-[#d70015] transition-colors"
-            >
-              <X size={11} /> Ignore
-            </button>
+            hidden ? (
+              <button
+                onClick={onDismiss}
+                title="Bring this video back to your list"
+                className="inline-flex items-center gap-1 text-xs font-medium text-[#34c759] hover:text-[#248a3d] transition-colors"
+              >
+                <RefreshCw size={11} /> Restore
+              </button>
+            ) : (
+              <button
+                onClick={onDismiss}
+                title="Hide this video from the list — MVP won't suggest a post for it. Bring it back anytime via 'Show hidden' above the list."
+                className="inline-flex items-center gap-1 text-xs font-medium text-[#ff3b30] hover:text-[#d70015] transition-colors"
+              >
+                <X size={11} /> Ignore
+              </button>
+            )
           )}
         </div>
       )}
@@ -3050,9 +3065,13 @@ export default function ContentPage() {
     }
   }
 
+  // Toggle: Ignore hides the video; on an already-hidden card (visible via
+  // "Show hidden") the same action RESTORES it — per-video recovery, not just
+  // the all-or-nothing "Unhide all".
   function dismissVideo(videoId: string) {
     const next = new Set(dismissed)
-    next.add(videoId)
+    if (next.has(videoId)) next.delete(videoId)
+    else next.add(videoId)
     setDismissed(next)
     saveDismissed(next)
   }
@@ -3584,6 +3603,7 @@ export default function ContentPage() {
                     onCustomCategoryAdded={setCustomCategories}
                     onGenerated={(vid, url, title, postId) => setPosts((prev) => ({ ...prev, [vid]: { url, title, postId } }))}
                     onDismiss={() => dismissVideo(video.id as string)}
+                    hidden={dismissed.has(video.id as string)}
                     onDelete={(postId) => {
                       setPosts((prev) => {
                         const next = { ...prev }
@@ -3993,6 +4013,7 @@ export default function ContentPage() {
                     onCustomCategoryAdded={setCustomCategories}
                     onGenerated={(vid, url, title, postId) => setPosts((prev) => ({ ...prev, [vid]: { url, title, postId } }))}
                     onDismiss={() => dismissVideo(video.id as string)}
+                    hidden={dismissed.has(video.id as string)}
                     onDelete={(postId) => {
                       setPosts((prev) => {
                         const next = { ...prev }
