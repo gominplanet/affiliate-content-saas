@@ -39,7 +39,7 @@ import {
   UserCog, AlertTriangle, DollarSign, Newspaper, Plug, Wrench,
   Camera, MessageCircle, Activity, BarChart3, Wand2, ShieldCheck,
   Share2, UserSquare, Lightbulb, LifeBuoy, Link2, FlaskConical, Store, Send, ShoppingBag, Megaphone,
-  Inbox, PackageSearch,
+  Inbox, PackageSearch, Copy,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { DEALS_HUB_PAUSED } from '@/lib/deal-occasion'
@@ -404,6 +404,9 @@ export default function DashboardShellV2({
         // Clean affiliate links — removes duplicate-tag leftovers from old
         // plugins (Lasso). Free text fix, no rebuild. Added 2026-06-28.
         { href: '/tools/clean-links', icon: <Wand2 size={15} />, label: 'Clean Links' },
+        // Duplicate posts — finds the same product reviewed twice (WP -2/-3
+        // slugs) that split rankings + cause "crawled, not indexed". 2026-07-05.
+        { href: '/tools/duplicates', icon: <Copy size={15} />, label: 'Duplicates' },
         // Analytics still hidden 2026-06-12 — route stays alive (/analytics),
         // just unlinked for now.
       ],
