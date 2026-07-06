@@ -39,7 +39,7 @@ import {
   UserCog, AlertTriangle, DollarSign, Newspaper, Plug, Wrench,
   Camera, MessageCircle, Activity, BarChart3, Wand2, ShieldCheck,
   Share2, UserSquare, Lightbulb, LifeBuoy, Link2, FlaskConical, Store, Send, ShoppingBag, Megaphone,
-  Inbox, PackageSearch, Copy,
+  Inbox, PackageSearch, Copy, Signpost,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { DEALS_HUB_PAUSED } from '@/lib/deal-occasion'
@@ -407,6 +407,9 @@ export default function DashboardShellV2({
         // Duplicate posts — finds the same product reviewed twice (WP -2/-3
         // slugs) that split rankings + cause "crawled, not indexed". 2026-07-05.
         { href: '/tools/duplicates', icon: <Copy size={15} />, label: 'Duplicates' },
+        // 404 → 301 fixer — paste GSC "Not found (404)" export, match each dead
+        // URL to a live post, write redirects via the plugin. 2026-07-05.
+        { href: '/tools/redirects', icon: <Signpost size={15} />, label: 'Fix 404s' },
         // Analytics still hidden 2026-06-12 — route stays alive (/analytics),
         // just unlinked for now.
       ],
