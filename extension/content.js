@@ -446,6 +446,13 @@ if (!window.__ccScoutListener) {
       ;(async () => {
         try {
           const rules = msg.rules || {}
+          // ONE clock for the WHOLE handler (tab clicks + grid scan + deep
+          // checks). The old budget only timed the deep loop — a slow grid
+          // scan pushed the total past the app's message timeout and the run
+          // died as a timeout instead of returning partial results (live bug
+          // 2026-07-06, "mattress"). Background allows 420s, app 430s; respond
+          // by ~330s and there's always headroom.
+          const t0 = Date.now()
           // The CC page has TWO tab rows: PROGRAM ("Affiliate+ campaigns" |
           // "Sponsored Products for Creators") and STATUS (New Opportunities |
           // Accepted | Submitted). A REUSED tab can be parked on the Sponsored
@@ -467,7 +474,10 @@ if (!window.__ccScoutListener) {
           let rawCount = 0
           let gridTab = null
           try {
-            const r = await scoutRunSearch({ keyword: focus, minCommission: rules.minCommissionPct || 0, lastDays: rules.minDaysLeft || 0, maxCards: 600 })
+            // 400 cards (was 600): the candidates are re-sorted by commission
+            // before deep-checking anyway, so the marginal tail past 400 never
+            // reaches a deep check — it only burned scan time toward the clock.
+            const r = await scoutRunSearch({ keyword: focus, minCommission: rules.minCommissionPct || 0, lastDays: rules.minDaysLeft || 0, maxCards: 400 })
             rows = r.rows || []; rawCount = r.rawCount || rows.length; gridTab = r.tab || null
           } catch (e) {}
           // Still on the Sponsored grid after the program-tab click → these are
@@ -491,10 +501,10 @@ if (!window.__ccScoutListener) {
           // separates "rules being strict" (drops spread across sales/carousel/
           // price) from "extraction bug" (everything piling into unreadable).
           const drops = { unreadable: 0, price: 0, sales: 0, rating: 0, carousel: 0, category: 0 }
-          const startedAt = Date.now()
           for (let i = 0; i < cap; i++) {
-            // Stay inside the app's message timeout — return what we have.
-            if (Date.now() - startedAt > 270000) break
+            // Whole-handler clock (t0 includes the grid scan) — return what we
+            // have well before the background/app timeouts (420s/430s) fire.
+            if (Date.now() - t0 > 300000) break
             const c = candidates[i]
             if (!c.detailsUrl) continue
             if (i > 0) await new Promise((res) => setTimeout(res, 2500 + Math.floor(Math.random() * 2000))) // pace Amazon
