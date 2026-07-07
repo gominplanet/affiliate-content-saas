@@ -239,6 +239,9 @@ export default function EpcScoutPage() {
           onMessageBrand={(c) => setMsgModal(c)}
           onSavedChange={() => setSavedReloadKey(k => k + 1)}
         />
+        <p className="text-[11px] leading-relaxed mt-2 px-1" style={{ color: 'var(--text-faint)' }}>
+          MVP does not guarantee commissions or any type of return. The MVP Finder is simply a focused search through Amazon affiliate campaigns using criteria that have been fruitful for influencers over the past 4 years — actual results depend on the product, your content, and your audience.
+        </p>
       </div>
 
       {/* ── Saved for later — the buy-to-review shortlist (replaced the old
