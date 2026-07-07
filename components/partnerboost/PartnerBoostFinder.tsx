@@ -12,9 +12,17 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Sparkles, Play, Loader2, ExternalLink, CheckCircle2, Clock, ShoppingCart, Bookmark } from 'lucide-react'
+import { Sparkles, Play, Loader2, ExternalLink, CheckCircle2, Clock, ShoppingCart, Bookmark, RefreshCw } from 'lucide-react'
 
 const CYAN = '#0E7490'
+
+function timeAgo(iso: string): string {
+  const s = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000))
+  if (s < 60) return 'just now'
+  const m = Math.floor(s / 60); if (m < 60) return `${m}m ago`
+  const h = Math.floor(m / 60); if (h < 24) return `${h}h ago`
+  return `${Math.floor(h / 24)}d ago`
+}
 
 interface Match {
   key: string
@@ -47,6 +55,8 @@ export default function PartnerBoostFinder({ onSavedChange }: { onSavedChange?: 
   const [saved, setSaved] = useState<Set<string>>(new Set())
   const [seen, setSeen] = useState<Set<string>>(new Set())
   const [lastKey, setLastKey] = useState('')
+  const [syncing, setSyncing] = useState(false)
+  const [syncInfo, setSyncInfo] = useState<{ count: number; syncedAt: string | null } | null>(null)
 
   const scanKey = `${mode}|${focus.trim().toLowerCase()}|${count}`
   const willAppend = !!(matches && matches.length && scanKey === lastKey)
@@ -55,7 +65,24 @@ export default function PartnerBoostFinder({ onSavedChange }: { onSavedChange?: 
     fetch('/api/partnerboost/saved').then(r => r.json()).then(d => {
       if (d?.ok && Array.isArray(d.saved)) setSaved(new Set(d.saved.map((s: { asin: string }) => s.asin)))
     }).catch(() => {})
+    fetch('/api/partnerboost/sync').then(r => r.json()).then(d => {
+      if (d?.ok) setSyncInfo({ count: d.count, syncedAt: d.syncedAt })
+    }).catch(() => {})
   }, [])
+
+  async function runSync() {
+    setSyncing(true); setError(''); setNote('Syncing your PartnerBoost catalog — this can take a couple of minutes…')
+    try {
+      const res = await fetch('/api/partnerboost/sync', { method: 'POST' })
+      const j = await res.json()
+      if (j.needsToken) { setError('Connect your PartnerBoost API key at the top of this page first.'); return }
+      if (!j.ok) { setError(j.error || 'Sync failed.'); return }
+      setSyncInfo({ count: j.products, syncedAt: j.syncedAt })
+      setNote(`Catalog synced — ${(j.products || 0).toLocaleString()} products across ${j.brandsSwept} of your ${j.joinedBrands} joined brands${j.timedOut ? ' (partial — re-sync to finish the rest)' : ''}. Scans are now instant.`)
+      setMatches(null); setSeen(new Set()); setLastKey('') // next scan reads the fresh cache
+    } catch { setError('Network error during sync.') }
+    finally { setSyncing(false) }
+  }
 
   async function runScan() {
     const append = willAppend
@@ -77,6 +104,9 @@ export default function PartnerBoostFinder({ onSavedChange }: { onSavedChange?: 
         setNote("That's every matching pick across the brands swept. Switch to Wide or change the focus keyword to widen the net.")
       } else if (j.note) {
         setNote(j.note)
+      } else if (j.source === 'cache') {
+        const total = (append ? (matches?.length || 0) : 0) + fresh.length
+        setNote(`${total} MVP-approved pick${total === 1 ? '' : 's'}${append ? ` (+${fresh.length} new)` : ''} · from your synced catalog (${(j.scannedProducts || 0).toLocaleString()} products${j.syncedAt ? `, synced ${timeAgo(j.syncedAt)}` : ''}).`)
       } else {
         const total = (append ? (matches?.length || 0) : 0) + fresh.length
         const brandCov = j.joinedBrands && j.joinedBrands > j.brandsSwept
@@ -185,6 +215,21 @@ export default function PartnerBoostFinder({ onSavedChange }: { onSavedChange?: 
             title="Draft = saves to WordPress as a draft to review first. Live = publishes immediately.">
             {publishLive ? <><CheckCircle2 size={13} /> Publishing live</> : <><Clock size={13} /> Saving as draft</>}
           </button>
+        </div>
+
+        {/* Catalog sync — cache the whole joined set so scans are instant. */}
+        <div className="flex items-center gap-2 flex-wrap mt-2 text-[11px]" style={{ color: 'var(--text-faint)' }}>
+          <button onClick={runSync} disabled={syncing || running}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-semibold border disabled:opacity-60"
+            style={{ borderColor: 'var(--border)', color: CYAN }}
+            title="Pull your whole joined-brand catalog into MVP so scans return instantly. Takes a couple of minutes.">
+            {syncing ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />} {syncing ? 'Syncing…' : 'Sync catalog'}
+          </button>
+          <span>
+            {syncInfo && syncInfo.count > 0
+              ? <>{syncInfo.count.toLocaleString()} products cached{syncInfo.syncedAt ? ` · synced ${timeAgo(syncInfo.syncedAt)}` : ''} — scans are instant</>
+              : 'Not synced yet — your first scan runs live (slower). Sync once for instant scans.'}
+          </span>
         </div>
       </div>
 
