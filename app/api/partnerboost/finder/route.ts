@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
     const { count: cacheCount } = await sb.from('pb_finder_cache').select('id', { count: 'exact', head: true })
     if ((cacheCount ?? 0) > 0) {
       let q = sb.from('pb_finder_cache')
-        .select('product_key, name, price, commission_pct, per_sale, image_url, url, category, brand_name, network, sku, tracking_url, brand_tracking_url, synced_at')
+        .select('product_key, name, price, commission_pct, per_sale, image_url, url, category, brand_name, brand_id, brand_mcid, network, sku, tracking_url, brand_tracking_url, synced_at')
         .eq('avoided', false)
         .gte('price', rules.minPrice).lte('price', rules.maxPrice)
         // Match brandPassesPb: percent brands by commission, flat-CPA brands by payout.
@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
         price: r.price != null ? String(r.price) : null,
         commissionPct: r.commission_pct, perSale: r.per_sale,
         image: r.image_url, url: r.url, category: r.category,
-        brandName: r.brand_name, network: r.network, sku: r.sku,
+        brandName: r.brand_name, brandId: r.brand_id, brandMcid: r.brand_mcid, network: r.network, sku: r.sku,
         trackingUrl: r.tracking_url || '', brandTrackingUrl: r.brand_tracking_url || '',
       }))
       const matches = diversify(list as (Match & { key: string; brandName: string | null; network: string })[], { limit, maxPerBrand: MAX_PER_BRAND, exclude })

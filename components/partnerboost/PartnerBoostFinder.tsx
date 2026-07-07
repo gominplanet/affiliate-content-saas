@@ -36,6 +36,8 @@ interface Match {
   url: string
   category: string | null
   brandName: string | null
+  brandId?: string | null
+  brandMcid?: string | null
   network: string
   sku: string | null
   trackingUrl: string
@@ -264,7 +266,7 @@ export default function PartnerBoostFinder({ onSavedChange }: { onSavedChange?: 
                   </p>
                   {g.error && <p className="text-[11px] mt-1" style={{ color: '#ef4444' }}>{g.error}</p>}
                   <div className="flex items-center gap-2 mt-2 flex-wrap">
-                    <button onClick={() => setMsg({ product: m.name, brand: m.brandName || '', asin: m.sku, commissionPct: m.commissionPct, network: 'PartnerBoost', networkUrl: 'https://app.partnerboost.com/' })}
+                    <button onClick={() => setMsg({ product: m.name, brand: m.brandName || '', asin: m.sku, commissionPct: m.commissionPct, network: 'PartnerBoost', networkUrl: m.brandId ? `https://app.partnerboost.com/partner/brands/detail?id=${m.brandId}` : 'https://app.partnerboost.com/' })}
                       className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border"
                       style={{ borderColor: 'rgba(124,58,237,0.4)', color: '#7C3AED' }}>
                       <MessageCircle size={11} /> Message brand

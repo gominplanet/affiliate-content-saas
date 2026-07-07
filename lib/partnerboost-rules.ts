@@ -99,6 +99,8 @@ export interface PbCandidate {
   category: string | null
   brandName: string | null
   brandCategories: string | null
+  brandId: string | null       // PartnerBoost brand_id (→ brand detail page)
+  brandMcid: string | null     // PartnerBoost mcid ("brand key")
   network: string
   sku: string | null
   trackingUrl: string       // product's own datafeed tracking link (may be '')
