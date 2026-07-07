@@ -300,8 +300,10 @@ export default function SmartScanPanel({
   )
 
   return (
-    <div className="card mb-5 overflow-hidden">
-      <div className="px-4 py-3">
+    <div
+      className="card mb-5 overflow-hidden"
+      style={{ borderWidth: 2, borderColor: 'rgba(124,58,237,0.45)', boxShadow: '0 14px 36px -16px rgba(124,58,237,0.45)' }}>
+      <div className="px-4 py-3" style={{ background: 'linear-gradient(180deg, rgba(124,58,237,0.10), transparent 85%)' }}>
         <div className="flex items-start gap-3 flex-wrap">
           <span className="grid place-items-center w-7 h-7 rounded-lg flex-shrink-0 mt-0.5" style={{ background: 'rgba(124,58,237,0.12)' }}>
             <Sparkles size={14} className="text-[#7C3AED]" />

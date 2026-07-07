@@ -232,7 +232,8 @@ export default function EpcScoutPage() {
       <div ref={finderRef} className="scroll-mt-24">
         <div className="flex items-center gap-2 mb-2">
           <span className="grid place-items-center w-5 h-5 rounded-full text-[11px] font-bold text-white flex-shrink-0" style={{ background: '#7C3AED' }}>3</span>
-          <p className="text-[12px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-faint)' }}>Search the MVP Finder</p>
+          <p className="text-[13px] font-bold uppercase tracking-wide" style={{ color: '#7C3AED' }}>Search the MVP Finder</p>
+          <span className="text-[11px] font-medium" style={{ color: 'var(--text-faint)' }}>— run your searches here</span>
         </div>
         <SmartScanPanel
           coveredAsins={covered.map(c => c.asin)}
