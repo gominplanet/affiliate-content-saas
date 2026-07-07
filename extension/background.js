@@ -483,7 +483,29 @@ function readDpSignalsInPage() {
     if (bc) crumbs = (bc.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 300) || null
   } catch (e) {}
 
-  return { sales, hasVideo: carouselPos !== 'none', carouselPos, price, rating, crumbs }
+  // Main product image — the hero thumbnail for the Saved shelf / Finder rows.
+  // Prefer the landing image's hi-res data attr, then its src, then og:image.
+  let image = null
+  try {
+    const img = document.querySelector('#landingImage, #imgTagWrapperId img, #main-image, #ivLargeImage img')
+    if (img) {
+      let src = img.getAttribute('data-old-hires') || ''
+      if (!src) {
+        // data-a-dynamic-image is a JSON map of {url: [w,h]} — take the first url.
+        const dyn = img.getAttribute('data-a-dynamic-image')
+        if (dyn) { try { src = Object.keys(JSON.parse(dyn))[0] || '' } catch (e) {} }
+      }
+      if (!src) src = img.getAttribute('src') || ''
+      if (src && /^https?:\/\//.test(src) && !/^data:/.test(src)) image = src
+    }
+    if (!image) {
+      const og = document.querySelector('meta[property="og:image"]')
+      const c = og && og.getAttribute('content')
+      if (c && /^https?:\/\//.test(c)) image = c
+    }
+  } catch (e) {}
+
+  return { sales, hasVideo: carouselPos !== 'none', carouselPos, price, rating, crumbs, image }
 }
 
 // Deep import check for one campaign: resolve its ASIN (from the details page),
@@ -1559,7 +1581,7 @@ async function verifyCatalogAsins(candidates, rules) {
     for (const c of list) {
       if (results.length >= wantPassers || deepChecked >= deepBudget) break
       const asin = String(c.asin).toUpperCase()
-      let sig = { sales: null, hasVideo: false, carouselPos: 'none', price: null, rating: null, crumbs: null }
+      let sig = { sales: null, hasVideo: false, carouselPos: 'none', price: null, rating: null, crumbs: null, image: null }
       try {
         await chrome.tabs.update(tabId, { url: `https://www.amazon.com/dp/${asin}` })
         await waitForTabLoad(tabId, 20000)
@@ -1598,6 +1620,7 @@ async function verifyCatalogAsins(candidates, rules) {
         daysLeft: typeof c.daysLeft === 'number' ? c.daysLeft : null,
         price, monthlySales: sales, rating, carouselPos, hasVideo: carouselPos !== 'none',
         crumbs: sig.crumbs || null,
+        image: sig.image || null,
       })
       await pace()
     }
