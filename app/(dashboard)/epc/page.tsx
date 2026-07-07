@@ -26,6 +26,7 @@ import { toast } from 'sonner'
 import { getScoutInstallKind, requestAcceptCampaign } from '@/lib/extension-frame'
 import MessageBrandModal, { type MessageBrandCampaign } from '@/components/campaigns/MessageBrandModal'
 import SmartScanPanel from '@/components/campaigns/SmartScanPanel'
+import SavedFinds from '@/components/campaigns/SavedFinds'
 import { SCOUT_STORE_LISTING_URL } from '@/lib/scout-version'
 
 // The REAL Creator Connections app (Amazon's 2026 redesign). The legacy
@@ -171,6 +172,8 @@ export default function EpcScoutPage() {
   const [gen, setGen] = useState<Record<string, 'running' | 'done' | 'error'>>({})
   const [genErr, setGenErr] = useState<Record<string, string>>({})
   const [msgModal, setMsgModal] = useState<MessageBrandCampaign | null>(null)
+  // Bumped when the Finder saves/unsaves a find → SavedFinds reloads.
+  const [savedReloadKey, setSavedReloadKey] = useState(0)
   // Per-row "Fix image" state for already-published rows (repairs the CTA hero).
   const [fixing, setFixing] = useState<Record<string, boolean>>({})
   // Per-row "Remove" state (delete a campaign row + its WP post if any).
@@ -669,274 +672,14 @@ export default function EpcScoutPage() {
         <SmartScanPanel
           coveredAsins={campaigns.map(c => c.asin)}
           onMessageBrand={(c) => setMsgModal(c)}
+          onSavedChange={() => setSavedReloadKey(k => k + 1)}
         />
       </div>
 
-      {/* ── Queue: filter + generate ─────────────────────────────────────── */}
-      <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
-        <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>
-          Campaign queue {campaigns.length > 0 && <span className="font-normal" style={{ color: 'var(--text-faint)' }}>· {campaigns.length} pushed</span>}
-        </p>
-        <div className="flex items-center gap-4">
-          {clearable.length > 0 && (
-            <button onClick={clearQueue} disabled={clearing}
-              className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-[#c0001a] hover:underline disabled:opacity-50"
-              title="Delete the un-actioned scouted campaigns (published posts + running jobs are kept)">
-              {clearing ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />} Clear queue ({clearable.length})
-            </button>
-          )}
-          <button onClick={loadList} className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-[#7C3AED] hover:underline">
-            <RefreshCw size={12} /> Refresh
-          </button>
-        </div>
-      </div>
+      {/* ── Saved for later — the buy-to-review shortlist (replaced the old
+             Campaign queue 2026-07-06). Fed by the Finder's Save button. ── */}
+      <SavedFinds reloadKey={savedReloadKey} onMessageBrand={(c) => setMsgModal(c)} />
 
-      {!loading && campaigns.length === 0 ? (
-        <div className="card p-6 text-center text-sm" style={{ color: 'var(--text-faint)' }}>
-          Nothing pushed yet. Install SCOUT, connect your token, then <span className="font-medium">Scan this page</span> → pick → <span className="font-medium">Push to MVP</span> on a Creator Connections page.
-        </div>
-      ) : (
-        <>
-          {/* View switcher — browse queue vs brand-outreach history */}
-          <div className="flex items-center gap-2 mb-3">
-            {([['queue', 'Campaign queue'], ['messaged', `✉️ Messaged${messagedCount ? ` (${messagedCount})` : ''}`]] as const).map(([v, label]) => (
-              <button key={v} onClick={() => setView(v)}
-                className="px-3 py-1.5 rounded-lg text-[13px] font-semibold transition-colors"
-                style={view === v ? { background: '#7C3AED', color: '#fff' } : { color: 'var(--text-soft)', border: '1px solid var(--border)' }}>
-                {label}
-              </button>
-            ))}
-          </div>
-
-          {/* Program tabs — Affiliate+ (%/sale) and EPC ($/click) are separate lists */}
-          {view === 'queue' && (
-            <div className="flex items-center gap-2 mb-4 border-b" style={{ borderColor: 'var(--border)' }}>
-              {([['affiliate', 'Affiliate+', plusRows.length, '#7C3AED'], ['epc', 'EPC', epcRows.length, '#0a84ff']] as const).map(([p, label, count, color]) => (
-                <button key={p} onClick={() => setProgramTab(p)}
-                  className="px-3 py-2 text-[13px] font-semibold transition-colors -mb-px border-b-2"
-                  style={programTab === p
-                    ? { color, borderColor: color }
-                    : { color: 'var(--text-faint)', borderColor: 'transparent' }}>
-                  {label} <span className="ml-1 text-[11px] font-medium" style={{ opacity: 0.7 }}>{count}</span>
-                </button>
-              ))}
-              <span className="ml-2 text-[11px]" style={{ color: 'var(--text-faint)' }}>
-                {programTab === 'affiliate' ? 'extra commission per sale' : 'paid per click'}
-              </span>
-            </div>
-          )}
-
-          {/* Messaged view: compact keyword search only */}
-          {view === 'messaged' && (
-            <div className="card p-4 mb-4 flex flex-wrap items-end gap-4">
-              <Field label="Search messaged brands">
-                <div className="relative">
-                  <Search size={13} className="absolute left-2 top-1/2 -translate-y-1/2 text-[#86868b]" />
-                  <input type="text" value={keyword} onChange={e => setKeyword(e.target.value)} placeholder="brand, product, ASIN…"
-                    className="w-56 pl-7 pr-2 py-1.5 rounded-lg border text-sm bg-transparent" style={{ borderColor: 'var(--border)' }} />
-                </div>
-              </Field>
-              <span className="ml-auto text-[12px] pb-1.5" style={{ color: 'var(--text-faint)' }}>
-                {filtered.length} brand{filtered.length === 1 ? '' : 's'} messaged
-              </span>
-            </div>
-          )}
-
-          {/* Filter/sort bar removed 2026-07-06 — discovery + ranking now live in
-              the MVP Finder above; the queue is just the workspace for campaigns
-              you've committed to. The filter STATE stays at permissive defaults
-              (minEpc 0, onlyPending true) so `filtered` shows every not-yet-
-              published campaign, best-earnings first. The tab labels carry the
-              counts. Only the not-yet-published default remains, surfaced as a
-              tiny toggle so nothing is silently hidden. */}
-          {view === 'queue' && (campaigns.some(isLiveRow)) && (
-            <label className="flex items-center gap-2 text-[12px] font-medium mb-3 cursor-pointer w-fit" style={{ color: 'var(--text-soft)' }}>
-              <input type="checkbox" checked={onlyPending} onChange={e => setOnlyPending(e.target.checked)} className="accent-[#7C3AED] w-4 h-4" />
-              Hide campaigns you&apos;ve already published
-            </label>
-          )}
-
-          {/* Action bar (queue view only) */}
-          {view === 'queue' && (
-          <div className="flex items-center gap-3 mb-3">
-            <button onClick={toggleAll} className="text-[12px] font-semibold text-[#7C3AED] hover:underline">
-              {allShownSelected ? 'Deselect all' : 'Select all shown'}
-            </button>
-            <span className="text-[12px]" style={{ color: 'var(--text-faint)' }}>{selectedCount} selected</span>
-            <div className="ml-auto flex items-center gap-2">
-              {selectedCount > 0 && (
-                <button onClick={deleteSelected} disabled={deletingSel}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold border disabled:opacity-50"
-                  style={{ borderColor: 'rgba(192,0,26,0.35)', color: '#c0001a' }}
-                  title="Delete the ticked campaigns from the queue">
-                  {deletingSel ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />} Delete {selectedCount}
-                </button>
-              )}
-              <button onClick={generateSelected} disabled={selectedCount === 0 || anyRunning}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
-                style={{ backgroundColor: '#34c759' }}>
-                {anyRunning ? <><Loader2 size={15} className="animate-spin" /> Generating…</> : <><Sparkles size={15} /> Generate {selectedCount || ''} selected</>}
-              </button>
-            </div>
-          </div>
-          )}
-
-          {view === 'messaged' && filtered.length === 0 && (
-            <div className="card p-6 text-center text-sm" style={{ color: 'var(--text-faint)' }}>
-              No brands messaged yet. On a campaign, hit <span className="font-medium">Message</span> to send your outreach — it'll show up here.
-            </div>
-          )}
-
-          {/* Table */}
-          <div className="card divide-y divide-gray-100 dark:divide-white/10">
-            <div className="px-3 py-2 grid grid-cols-[24px_1fr_56px_48px_auto] gap-2 text-[10px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-faint)' }}>
-              <span /><span>Product</span><span className="text-right" title="EPC $ per click, or Affiliate+ % per sale">Rate</span><span className="text-right">Ends</span><span className="text-right">Generate</span>
-            </div>
-            {shown.map(c => {
-              const dl = daysLeft(c.ends_at)
-              const g = gen[c.asin]
-              const live = isLiveRow(c)
-              const isFail = g === 'error' || c.status === 'failed'
-              const isPending = PENDING_STATUSES.has(c.status)
-              // Not live, not pending, not failed = a 'researching'/'generating'
-              // row from an aborted run — stuck, money spent, no post. Retryable.
-              const isStuck = !live && !isPending && !isFail
-              const err = genErr[c.asin] || c.error_message || (isStuck ? 'Stopped before it finished — no post was published.' : '')
-              const isPlus = c.program === 'affiliate_plus'
-              // Metric shown in the row: Affiliate+ → commission %, EPC → $/click.
-              // Legacy rows that stored "10% commission" in `epc` still read as %.
-              const legacyPct = c.epc && /%/.test(c.epc) ? parseFloat(c.epc.match(/(\d+(?:\.\d+)?)/)?.[1] || '') : null
-              const commissionPct = c.commission_pct != null ? c.commission_pct : legacyPct
-              const epcDollars = !isPlus && legacyPct == null ? parseDollar(c.epc) : null
-              const metricLabel = isPlus
-                ? (commissionPct != null ? `${commissionPct}%` : '—')
-                : (epcDollars != null ? `$${epcDollars.toFixed(2)}` : (commissionPct != null ? `${commissionPct}%` : '—'))
-              return (
-                <div key={c.id} className={`px-3 py-2.5 grid grid-cols-[24px_1fr_56px_48px_auto] gap-2 items-center ${live ? 'opacity-80' : ''}`}>
-                  <input type="checkbox" disabled={live} checked={selected.has(c.asin)} onChange={() => toggle(c.asin)} className="accent-[#7C3AED] w-4 h-4" />
-                  <div className="min-w-0">
-                    <p className="text-[13px] font-medium truncate" style={{ color: 'var(--text)' }}>{c.campaign_name || c.product_title || c.asin}</p>
-                    <div className="flex items-center gap-1.5">
-                      <span className={`text-[9px] font-bold uppercase tracking-wide px-1.5 py-[1px] rounded flex-shrink-0 ${isPlus ? 'bg-[#7C3AED]/15 text-[#7C3AED]' : 'bg-[#0a84ff]/15 text-[#0a84ff]'}`}
-                        title={isPlus ? 'Affiliate+ — extra commission on each sale' : 'EPC — paid per click'}>
-                        {isPlus ? 'Affiliate+' : 'EPC'}
-                      </span>
-                      <a href={`https://www.amazon.com/dp/${c.asin}`} target="_blank" rel="noopener noreferrer"
-                        className="text-[11px] inline-flex items-center gap-0.5 text-[#7C3AED] hover:underline">
-                        {c.asin} <ExternalLink size={9} />
-                      </a>
-                    </div>
-                    {(c.monthly_sales != null || c.product_price != null || c.carousel_video_pos != null || c.has_carousel_video != null || c.messaged_at || c.accepted_at) && (
-                      <div className="flex items-center gap-2 mt-0.5 text-[10px]" style={{ color: 'var(--text-faint)' }}>
-                        {(() => { const p = parseDollar(c.product_price); return p != null ? <span title="Product price (SCOUT deep check)">💲{p.toFixed(2)}</span> : null })()}
-                        {c.monthly_sales != null && <span title="Bought in past month (SCOUT deep check)">📈 {fmtSales(c.monthly_sales)}/mo</span>}
-                        {c.accepted_at && <span className="text-[#34c759] font-semibold" title={`Accepted on Amazon ${new Date(c.accepted_at).toLocaleString()}`}>✓ accepted</span>}
-                        {c.messaged_at && <span className="text-[#34c759] font-semibold" title={`Brand messaged ${new Date(c.messaged_at).toLocaleString()}`}>✉️ messaged</span>}
-                        {(() => {
-                          // Prefer the precise position; fall back to the legacy boolean.
-                          const pos = c.carousel_video_pos ?? (c.has_carousel_video === true ? 'top' : c.has_carousel_video === false ? 'none' : null)
-                          if (pos === 'top') return <span className="text-[#34c759] font-semibold" title="Video in the TOP hero image carousel — the high-value placement">🎬 top video</span>
-                          if (pos === 'bottom') return <span className="text-[#FF9500] font-semibold" title="Video only in the lower “Videos for this product” carousel">🎬 bottom video</span>
-                          if (pos === 'none') return <span title="No carousel video on the product page">🚫 no video</span>
-                          return null
-                        })()}
-                      </div>
-                    )}
-                    {(isFail || isStuck) && err && (
-                      <p className="text-[11px] text-[#ff3b30] mt-0.5 truncate" title={err}>⚠ {err}</p>
-                    )}
-                    {view === 'messaged' && c.last_message && (
-                      <div className="mt-1">
-                        <button onClick={() => setOpenMsg(openMsg === c.id ? null : c.id)}
-                          className="text-[11px] font-semibold text-[#7C3AED] hover:underline">
-                          {openMsg === c.id ? 'Hide message ▴' : 'View message sent ▾'}
-                        </button>
-                        {openMsg === c.id && (
-                          <pre className="mt-1 text-[11px] whitespace-pre-wrap rounded-lg p-2 max-h-56 overflow-y-auto" style={{ background: 'var(--surface-2)', color: 'var(--text)', fontFamily: 'inherit', border: '1px solid var(--border)' }}>{c.last_message}</pre>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  <span className="text-right text-[13px] font-semibold tabular-nums" style={{ color: metricLabel !== '—' ? '#34c759' : 'var(--text-faint)' }}
-                    title={isPlus ? 'Commission per sale' : 'Earnings per click'}>
-                    {metricLabel}
-                  </span>
-                  <span className="text-right text-[12px] tabular-nums" style={{ color: dl <= 7 ? '#FF9500' : 'var(--text-faint)' }}>
-                    {dl === Infinity ? 'open' : `${dl}d`}
-                  </span>
-                  <div className="flex justify-end">
-                    {g === 'running' ? (
-                      <span className="inline-flex items-center gap-1 text-[11px] text-[#7C3AED]"><Loader2 size={13} className="animate-spin" /> writing…</span>
-                    ) : live ? (
-                      <div className="flex items-center gap-2">
-                        <a href={c.wordpress_url || '/content'} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[12px] font-semibold text-[#34c759] hover:underline">
-                          <CheckCircle2 size={13} /> View post
-                        </a>
-                        <button onClick={() => fixImage(c)} disabled={!!fixing[c.asin]}
-                          title="Rebuild the product image in the post's CTA card (no AI text spend)"
-                          className="inline-flex items-center gap-1 text-[11px] font-medium text-[#7C3AED] hover:underline disabled:opacity-50">
-                          {fixing[c.asin] ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={11} />} Fix image
-                        </button>
-                        <button onClick={() => removeRow(c)} disabled={!!removing[c.asin]}
-                          title="Delete this campaign + its WordPress post" aria-label="Delete this campaign"
-                          className="text-[var(--text-faint)] hover:text-[#ff3b30] disabled:opacity-50">
-                          {removing[c.asin] ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <button onClick={() => runGenerate([c])}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[12px] font-semibold text-white"
-                          style={{ background: (isFail || isStuck) ? '#ff3b30' : 'linear-gradient(45deg, #7C3AED 0%, #bc1888 100%)' }}>
-                          <Sparkles size={12} /> {(isFail || isStuck) ? 'Retry' : 'Generate'}
-                        </button>
-                        {c.details_url && (
-                          c.accepted_at ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-1 text-[12px] font-semibold text-[#34c759]" title={`Accepted on Amazon ${new Date(c.accepted_at).toLocaleString()}`}>
-                              <CheckCircle2 size={12} /> Accepted
-                            </span>
-                          ) : (
-                            <button onClick={() => acceptOnAmazon(c)} disabled={!!accepting[c.asin]}
-                              title="Accept this campaign on Amazon — SCOUT clicks Accept on its details page, in the background"
-                              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[12px] font-semibold text-white disabled:opacity-60"
-                              style={{ background: '#34c759' }}>
-                              {accepting[c.asin] ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />} Accept
-                            </button>
-                          )
-                        )}
-                        {c.details_url && (
-                          <button onClick={() => openMessage(c)}
-                            title="Compose a pitch and send it to the brand"
-                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[12px] font-semibold border"
-                            style={{ color: '#7C3AED', borderColor: '#d6c6fb' }}>
-                            <MessageSquare size={12} /> Message
-                          </button>
-                        )}
-                        <button onClick={() => removeRow(c)} disabled={!!removing[c.asin]}
-                          title="Remove this row" aria-label="Remove this row"
-                          className="text-[var(--text-faint)] hover:text-[#ff3b30] disabled:opacity-50">
-                          {removing[c.asin] ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-            {shown.length === 0 && (
-              <div className="p-6 text-center text-sm" style={{ color: 'var(--text-faint)' }}>
-                {view === 'queue' && programTab === 'epc'
-                  ? 'No EPC campaigns here yet. Find some in the MVP Finder above.'
-                  : view === 'queue' && programTab === 'affiliate'
-                    ? 'No Affiliate+ campaigns here yet — check the EPC tab, or find more in the MVP Finder above.'
-                    : onlyPending
-                      ? 'Nothing left to publish here. Untick “Hide campaigns you’ve already published” to see the rest.'
-                      : 'No campaigns in your queue yet. Use the MVP Finder above to find some.'}
-              </div>
-            )}
-          </div>
-        </>
-      )}
       {msgModal && <MessageBrandModal campaign={msgModal} onClose={() => setMsgModal(null)} onSent={loadList} />}
     </>
   )

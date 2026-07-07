@@ -18,7 +18,8 @@
 // the numbers (lib/cc-smart-rules.ts is the single source of truth).
 
 import { useState } from 'react'
-import { Sparkles, Loader2, ExternalLink, MessageCircle, ShoppingCart, Play, Star } from 'lucide-react'
+import { useEffect } from 'react'
+import { Sparkles, Loader2, ExternalLink, MessageCircle, ShoppingCart, Play, Star, Bookmark, BookmarkCheck } from 'lucide-react'
 import { requestCcSmartScan, requestCcVerify, requestProductSearch, type FinderProduct, type CatalogCandidate } from '@/lib/extension-frame'
 import {
   ONSITE_RULES, AMZ_MARKETPLACES, type AmzMarketplace,
@@ -34,10 +35,13 @@ const PER_WAVE = 12 // deep-check passers requested per SCOUT call (throttle-saf
 export default function SmartScanPanel({
   coveredAsins,
   onMessageBrand,
+  onSavedChange,
 }: {
   /** ASINs already in the user's queue / covered by their content — skipped. */
   coveredAsins: string[]
   onMessageBrand: (c: MessageBrandCampaign) => void
+  /** Fired after a save/unsave so the parent's Saved list can refresh. */
+  onSavedChange?: () => void
 }) {
   const [mode, setMode] = useState<'campaigns' | 'onsite'>('campaigns')
   // Focus (MVP Profitability Rules — recommended) vs Wide (looser net).
@@ -59,8 +63,52 @@ export default function SmartScanPanel({
   const [hasMore, setHasMore] = useState(false)
   // Onsite-mode results
   const [products, setProducts] = useState<FinderProduct[] | null>(null)
+  // ASINs the user has Saved for later — drives the bookmark toggle on results.
+  const [savedAsins, setSavedAsins] = useState<Set<string>>(new Set())
 
   const marketHost = AMZ_MARKETPLACES.find(m => m.id === market)?.host || 'www.amazon.com'
+
+  // Load which ASINs are already saved so their bookmark shows filled.
+  useEffect(() => {
+    fetch('/api/campaigns/saved').then(r => r.json()).then(d => {
+      if (d?.ok && Array.isArray(d.saved)) setSavedAsins(new Set(d.saved.map((s: { asin: string }) => s.asin.toUpperCase())))
+    }).catch(() => {})
+  }, [])
+
+  // Save / unsave a find (campaign or onsite product). Optimistic; refreshes the
+  // parent's Saved list on success.
+  async function toggleSave(payload: {
+    asin: string; source: 'campaign' | 'onsite'; title?: string | null; brand?: string | null
+    campaignId?: string | null; imageUrl?: string | null; commissionPct?: number | null
+    price?: number | null; monthlySales?: number | null; rating?: number | null
+    hasVideo?: boolean | null; marketplace?: string; detailsUrl?: string | null
+  }) {
+    const asin = payload.asin.toUpperCase()
+    const wasSaved = savedAsins.has(asin)
+    setSavedAsins(prev => { const n = new Set(prev); if (wasSaved) n.delete(asin); else n.add(asin); return n })
+    try {
+      if (wasSaved) await fetch(`/api/campaigns/saved?asin=${asin}`, { method: 'DELETE' })
+      else await fetch('/api/campaigns/saved', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      onSavedChange?.()
+    } catch {
+      // revert on failure
+      setSavedAsins(prev => { const n = new Set(prev); if (wasSaved) n.add(asin); else n.delete(asin); return n })
+    }
+  }
+
+  const SaveBtn = ({ asin, onClick }: { asin: string; onClick: () => void }) => {
+    const saved = savedAsins.has(asin.toUpperCase())
+    return (
+      <button onClick={onClick}
+        title={saved ? 'Saved for later — click to remove' : 'Save for later'}
+        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border"
+        style={saved
+          ? { borderColor: '#f59e0b', background: 'rgba(245,158,11,0.10)', color: '#b26a00' }
+          : { borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
+        {saved ? <BookmarkCheck size={11} /> : <Bookmark size={11} />} {saved ? 'Saved' : 'Save'}
+      </button>
+    )
+  }
 
   // Any change to what we're searching restarts pagination from the top.
   function restartSearch() { setScanOffset(0); setHasMore(false); resetRun() }
@@ -375,6 +423,14 @@ export default function SmartScanPanel({
                     </p>
                   )}
                   <div className="flex items-center gap-2 mt-2 flex-wrap">
+                    {m.asin && (
+                      <SaveBtn asin={m.asin} onClick={() => toggleSave({
+                        asin: m.asin!, source: 'campaign', title: m.campaignName, brand: m.brand,
+                        campaignId: m.campaignId, imageUrl: m.image, commissionPct: m.commissionPct,
+                        price: m.price, monthlySales: m.monthlySales, rating: m.rating,
+                        hasVideo: m.hasVideo, detailsUrl: m.detailsUrl,
+                      })} />
+                    )}
                     <button
                       onClick={() => onMessageBrand({
                         product: m.campaignName || m.asin || 'this product',
@@ -439,6 +495,12 @@ export default function SmartScanPanel({
                     {p.hasVideo ? <> · 🎬 video carousel{p.carouselPos === 'top' ? ' (hero)' : ''}</> : null}
                   </p>
                   <div className="flex items-center gap-2 mt-2 flex-wrap">
+                    <SaveBtn asin={p.asin} onClick={() => toggleSave({
+                      asin: p.asin, source: 'onsite', title: p.title, imageUrl: p.image,
+                      price: typeof p.price === 'string' ? Number(p.price.replace(/[^\d.]/g, '')) || null : null,
+                      monthlySales: p.monthlySales, rating: p.rating != null ? Number(p.rating) : null,
+                      hasVideo: !!p.hasVideo, marketplace: p.marketplace || market,
+                    })} />
                     <a
                       href={`https://${marketHost}/dp/${p.asin}`}
                       target="_blank" rel="noopener noreferrer"
