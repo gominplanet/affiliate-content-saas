@@ -28,6 +28,68 @@ export interface PBProduct {
 /** PartnerBoost networks (the API's `brand_type` values). */
 export type PBBrandType = 'Walmart' | 'Amazon' | 'DTC' | 'TikTok' | 'Indirect'
 
+/** A brand/merchant relationship from the Monetization API. */
+export interface PBBrand {
+  mcid: string | null
+  brandId: string | null
+  merchantName: string
+  commRate: string       // e.g. "5%", "Up to 8%", "$5.00" — parse at the rulebook
+  avgPayout: string
+  relationship: string   // Joined | Pending | Rejected | No Relationship
+  allowSml: boolean      // deep-linking enabled
+  categories: string
+  tags: string
+  logo: string
+  trackingUrl: string    // deep-link base
+}
+
+/**
+ * List the caller's brands for one network via the Monetization API
+ * (mod=medium&op=monetization_api). Pass relationship='Joined' to get only the
+ * brands you can actually monetize. Cursor-free page/limit pagination.
+ */
+export async function listPartnerBoostBrands(
+  token: string,
+  opts: { brandType?: PBBrandType; relationship?: string; page?: number; limit?: number } = {},
+): Promise<{ brands: PBBrand[]; total: number; totalPage: number }> {
+  const qs = new URLSearchParams({
+    mod: 'medium',
+    op: 'monetization_api',
+    token,
+    brand_type: opts.brandType || 'Walmart',
+    type: 'json',
+    page: String(opts.page ?? 1),
+    limit: String(opts.limit ?? 500),
+  })
+  if (opts.relationship) qs.set('relationship', opts.relationship)
+
+  const json = await pbGet(qs)
+  if (json?.status?.code !== 0) {
+    throw new Error(json?.status?.msg ? `PartnerBoost: ${json.status.msg}` : 'PartnerBoost monetization error')
+  }
+  const data = json?.data || {}
+  const list = Array.isArray(data.list) ? data.list : []
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const brands: PBBrand[] = list.map((b: any) => ({
+    mcid: b.mcid ?? null,
+    brandId: b.brand_id != null ? String(b.brand_id) : null,
+    merchantName: b.merchant_name ?? '',
+    commRate: b.comm_rate ?? '',
+    avgPayout: b.avg_payout ?? '',
+    relationship: b.relationship ?? '',
+    allowSml: String(b.allow_sml ?? '') === '1',
+    categories: b.categories ?? '',
+    tags: b.tags ?? '',
+    logo: b.logo ?? '',
+    trackingUrl: b.tracking_url ?? '',
+  }))
+  return {
+    brands,
+    total: Number(data.total_mcid ?? brands.length) || brands.length,
+    totalPage: Number(data.total_page ?? 1) || 1,
+  }
+}
+
 interface PBEnvelope {
   status?: { code?: number; msg?: string }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
