@@ -127,9 +127,19 @@ export async function POST(request: NextRequest) {
       const prev = bestByAsin.get(c.asin)
       if (!prev || scored.score > prev.score) bestByAsin.set(c.asin, scored)
     }
-    const matches = Array.from(bestByAsin.values())
-      .sort((a, b) => b.score - a.score)
-      .slice(0, limit)
+    // Diversity cap — at most 2 picks per brand so one brand's near-duplicate
+    // listings can't crowd the top of the results.
+    const ranked = Array.from(bestByAsin.values()).sort((a, b) => b.score - a.score)
+    const perBrand = new Map<string, number>()
+    const matches: typeof ranked = []
+    for (const m of ranked) {
+      if (matches.length >= limit) break
+      const bk = (m.brandName || m.marketplace || '').toLowerCase()
+      const n = perBrand.get(bk) ?? 0
+      if (n >= 2) continue
+      perBrand.set(bk, n + 1)
+      matches.push(m)
+    }
 
     return NextResponse.json({
       ok: true,

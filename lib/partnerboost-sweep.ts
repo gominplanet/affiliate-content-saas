@@ -9,7 +9,7 @@ import {
   listPartnerBoostBrands, listPartnerBoostProducts, listAmazonProducts,
   type PBBrandType, type PBProduct,
 } from '@/services/partnerboost'
-import { parseCommissionPct, parseDollars, type PbCandidate } from '@/lib/partnerboost-rules'
+import { parseCommissionPct, parseDollars, scorePb, isAvoidedPb, PB_RULES, type PbCandidate } from '@/lib/partnerboost-rules'
 
 const NETWORKS: PBBrandType[] = ['Walmart', 'Amazon', 'DTC']
 const MAX_BRAND_PAGES = 6
@@ -102,6 +102,59 @@ export async function sweepJoinedProducts(
   }))
 
   return { raw, joinedTotal, brandsSwept, timedOut }
+}
+
+/**
+ * Sweep a user's whole joined catalog and (re)populate pb_finder_cache for them.
+ * Shared by the manual sync route and the nightly cron — pass an authed client
+ * (self-serve) or the admin client (cron, arbitrary user). Precomputes
+ * score/per_sale/avoided so Finder reads stay a simple ordered SELECT.
+ */
+export async function syncUserCache(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  sb: any, userId: string, token: string, opts: { deadlineMs?: number } = {},
+): Promise<{ products: number; brandsSwept: number; joinedTotal: number; timedOut: boolean; syncedAt: string }> {
+  const { raw, joinedTotal, brandsSwept, timedOut } = await sweepJoinedProducts(token, {
+    concurrency: 12,
+    deadlineMs: opts.deadlineMs ?? 260_000,
+    // Cache everything worth keeping — drop only zero-commission brands.
+    brandGate: (b) => (b.commissionPct ?? 0) >= 1 || (b.flatPayout ?? 0) >= 1,
+  })
+  const runStart = new Date().toISOString()
+  const bestByKey = new Map<string, ReturnType<typeof scorePb>>()
+  for (const c of raw) {
+    if (!c.key) continue
+    const scored = scorePb(c)
+    const prev = bestByKey.get(c.key)
+    if (!prev || scored.score > prev.score) bestByKey.set(c.key, scored)
+  }
+  const rows = Array.from(bestByKey.values()).map((m) => ({
+    user_id: userId,
+    product_key: String(m.key).slice(0, 1000),
+    name: m.name ? String(m.name).slice(0, 400) : null,
+    price: m.priceNum,
+    commission_pct: m.commissionPct,
+    flat_payout: m.flatPayout,
+    per_sale: m.perSale,
+    score: m.score,
+    avoided: isAvoidedPb(m, PB_RULES),
+    image_url: m.image ? String(m.image).slice(0, 1000) : null,
+    url: m.url ? String(m.url).slice(0, 1000) : null,
+    category: m.category ? String(m.category).slice(0, 200) : null,
+    brand_name: m.brandName ? String(m.brandName).slice(0, 200) : null,
+    network: m.network,
+    sku: m.sku ? String(m.sku).slice(0, 120) : null,
+    tracking_url: m.trackingUrl ? String(m.trackingUrl).slice(0, 1000) : null,
+    brand_tracking_url: m.brandTrackingUrl ? String(m.brandTrackingUrl).slice(0, 1000) : null,
+    synced_at: runStart,
+  }))
+  for (let i = 0; i < rows.length; i += 500) {
+    const { error } = await sb.from('pb_finder_cache').upsert(rows.slice(i, i + 500), { onConflict: 'user_id,product_key' })
+    if (error) throw new Error(error.message)
+  }
+  // Purge products not refreshed this run (brands left / gone stale).
+  await sb.from('pb_finder_cache').delete().eq('user_id', userId).lt('synced_at', runStart)
+  return { products: rows.length, brandsSwept, joinedTotal, timedOut, syncedAt: runStart }
 }
 
 /**
