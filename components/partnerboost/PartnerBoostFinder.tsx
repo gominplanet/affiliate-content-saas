@@ -12,7 +12,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Sparkles, Play, Loader2, ExternalLink, CheckCircle2, Clock, ShoppingCart, Bookmark, RefreshCw, MessageCircle } from 'lucide-react'
+import { Sparkles, Play, Loader2, ExternalLink, CheckCircle2, Clock, ShoppingCart, Bookmark, RefreshCw, MessageCircle, SlidersHorizontal } from 'lucide-react'
 import MessageBrandFlow, { type MessageBrandTarget } from '@/components/campaigns/MessageBrandFlow'
 
 const CYAN = '#0E7490'
@@ -186,6 +186,9 @@ export default function PartnerBoostFinder({ onSavedChange }: { onSavedChange?: 
             <p className="text-[12px] leading-relaxed mt-0.5" style={{ color: 'var(--text-soft)' }}>
               One scan sweeps every brand you&rsquo;ve joined across Walmart, Amazon &amp; DTC and keeps only the products worth a review — vetted for commission, price and category, ranked by estimated earnings per sale. Products you&rsquo;ve already generated are skipped.
             </p>
+            <a href="/collaborations" className="inline-flex items-center gap-1 text-[11px] font-semibold hover:underline mt-1.5" style={{ color: CYAN }}>
+              <SlidersHorizontal size={11} /> Customize how your brand messages are written
+            </a>
           </div>
         </div>
 

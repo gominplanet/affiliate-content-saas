@@ -19,7 +19,7 @@
 
 import { useState } from 'react'
 import { useEffect } from 'react'
-import { Sparkles, Loader2, ExternalLink, MessageCircle, ShoppingCart, Play, Star, Bookmark, BookmarkCheck } from 'lucide-react'
+import { Sparkles, Loader2, ExternalLink, MessageCircle, ShoppingCart, Play, Star, Bookmark, BookmarkCheck, SlidersHorizontal } from 'lucide-react'
 import { requestCcSmartScan, requestCcVerify, requestProductSearch, type FinderProduct, type CatalogCandidate } from '@/lib/extension-frame'
 import {
   ONSITE_RULES, AMZ_MARKETPLACES, type AmzMarketplace,
@@ -317,6 +317,9 @@ export default function SmartScanPanel({
                 ? <>SCOUT sweeps your Affiliate+ opportunities and MVP keeps only the campaigns worth your time — vetted for real commission, runway, demand, product quality and review visibility — ranked with the buy-to-review math. Products already in your queue are skipped.</>
                 : <>SCOUT searches Amazon directly and live-verifies each product on its page — price, demand, reviews, rating and an open video carousel. Slower by design, but every result is <b>MVP-approved</b>: a product you can confidently invest in, review, and earn from onsite.</>}
             </p>
+            <a href="/collaborations" className="inline-flex items-center gap-1 text-[11px] font-semibold hover:underline mt-1.5" style={{ color: '#7C3AED' }}>
+              <SlidersHorizontal size={11} /> Customize how your brand messages are written
+            </a>
           </div>
         </div>
         {/* Controls */}

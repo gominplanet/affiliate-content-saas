@@ -11,7 +11,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { X, Loader2, Sparkles, Copy, ExternalLink, MessageSquare } from 'lucide-react'
+import { X, Loader2, Sparkles, Copy, ExternalLink, MessageSquare, SlidersHorizontal } from 'lucide-react'
 
 export interface NetworkOutreachTarget {
   product: string
@@ -80,6 +80,9 @@ export default function NetworkOutreachModal({ target, onClose }: { target: Netw
           <p className="text-[12px] leading-relaxed mb-2" style={{ color: 'var(--text-soft)' }}>
             No Amazon Affiliate+ campaign for this product, so MVP drafts a direct message from your Outreach Profile. <b>Copy it</b>, then open {target.network} and paste it on the brand&rsquo;s page.
           </p>
+          <a href="/collaborations" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[11px] font-semibold hover:underline mb-2" style={{ color: '#7C3AED' }}>
+            <SlidersHorizontal size={11} /> Change your greeting, offer, links &amp; sign-off
+          </a>
           {drafting && !message ? (
             <div className="h-40 grid place-items-center"><Loader2 size={18} className="animate-spin text-[#7C3AED]" /></div>
           ) : (
