@@ -28,14 +28,14 @@ import {
 import type { Tier } from '@/lib/tier'
 
 export const dynamic = 'force-dynamic'
-export const maxDuration = 180
+export const maxDuration = 300
 
 const NETWORKS: PBBrandType[] = ['Walmart', 'Amazon', 'DTC']
 const MAX_BRAND_PAGES = 6         // per network, 500/page → up to ~3000 joined/network
 const BRAND_LIMIT = 500
-const MAX_BRANDS_SWEPT = 50       // product calls are per-brand; cap the fan-out
 const PRODUCT_LIMIT = 30          // products pulled per brand
-const SWEEP_DEADLINE_MS = 90_000
+const CONCURRENCY = 12            // product calls are per-brand → run them in a pool so ALL brands get checked
+const SWEEP_DEADLINE_MS = 250_000 // backstop under the 300s function ceiling
 
 export async function POST(request: NextRequest) {
   try {
@@ -100,19 +100,25 @@ export async function POST(request: NextRequest) {
     // Best-commission brands first so the budget is spent where the money is.
     gatedBrands.sort((a, b) => (b.commissionPct ?? 0) - (a.commissionPct ?? 0) || (b.flatPayout ?? 0) - (a.flatPayout ?? 0))
 
-    // ── 2. Product sweep — per brand, highest-commission first, budget-bounded ──
+    // ── 2. Product sweep — EVERY gated brand, in a concurrency pool ───────────
+    // PartnerBoost's product feed is per-brand (no bulk multi-brand call), so
+    // covering 1000+ joined brands means 1000+ calls. Running them CONCURRENCY
+    // at a time (instead of one-by-one) is what makes checking them all fit in
+    // the budget. Highest-commission brands go first so if the deadline does
+    // bite, the money brands are already done.
     const raw: PbCandidate[] = []
     const t0 = Date.now()
     let brandsSwept = 0
-    for (const b of gatedBrands) {
-      if (brandsSwept >= MAX_BRANDS_SWEPT || Date.now() - t0 > SWEEP_DEADLINE_MS) break
+    let cursor = 0
+    const tok: string = token // capture the narrowed token for the nested closure
+    async function sweepOne(b: SweepBrand) {
       let products: PBProduct[] = []
       try {
         const r = b.network === 'Amazon'
-          ? await listAmazonProducts(token, { brandId: b.brandId || undefined, keywords: focus || undefined, limit: PRODUCT_LIMIT })
-          : await listPartnerBoostProducts(token, { brandType: b.network, brandId: b.brandId || undefined, mcid: b.mcid || undefined, keywords: focus || undefined, limit: PRODUCT_LIMIT })
+          ? await listAmazonProducts(tok, { brandId: b.brandId || undefined, keywords: focus || undefined, limit: PRODUCT_LIMIT })
+          : await listPartnerBoostProducts(tok, { brandType: b.network, brandId: b.brandId || undefined, mcid: b.mcid || undefined, keywords: focus || undefined, limit: PRODUCT_LIMIT })
         products = r.products
-      } catch { brandsSwept++; continue }
+      } catch { brandsSwept++; return /* skip a failed/rate-limited brand */ }
       for (const p of products) {
         raw.push({
           key: (p.sku && String(p.sku)) || p.url,
@@ -134,6 +140,14 @@ export async function POST(request: NextRequest) {
       }
       brandsSwept++
     }
+    // CONCURRENCY workers pull from a shared cursor until every brand is done
+    // (or the wall-clock backstop trips).
+    await Promise.all(Array.from({ length: CONCURRENCY }, async () => {
+      while (cursor < gatedBrands.length && Date.now() - t0 <= SWEEP_DEADLINE_MS) {
+        const b = gatedBrands[cursor++]
+        await sweepOne(b)
+      }
+    }))
 
     // ── 3. Gate → dedupe (best per key) → focus → rank → top-N ────────────────
     const bestByKey = new Map<string, ReturnType<typeof scorePb>>()
