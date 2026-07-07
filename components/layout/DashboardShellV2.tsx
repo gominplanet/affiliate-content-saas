@@ -116,6 +116,7 @@ const SECTION_ACCENTS: Record<string, { dark: string; light: string }> = {
 const SECTION_ICONS: Record<string, React.ReactNode> = {
   'Set up': <Plug size={12} />,
   'Create': <Sparkles size={12} />,
+  'Source & Earn': <DollarSign size={12} />,
   'Grow': <BarChart3 size={12} />,
   'Collaborate': <Share2 size={12} />,
   'Labs': <FlaskConical size={12} />,
@@ -396,6 +397,22 @@ export default function DashboardShellV2({
       ],
     },
     {
+      // SOURCE & EARN — the three product/campaign FINDERS (Amazon Creator
+      // Connections + onsite, Levanta, PartnerBoost). Each scans an affiliate
+      // program for products worth reviewing, then generates content or messages
+      // the brand. STUDIO + PRO only (canUseFinders). AMZ Product Finder
+      // graduated out of Labs into here 2026-07-07. Each page has an inline
+      // "connect your API key" panel at the top. Placed ABOVE Grow + given a
+      // green wash (render loop, isSourceEarn) so the money-making zone pops
+      // (user request 2026-07-07).
+      label: 'Source & Earn',
+      items: [
+        { href: '/epc', icon: <PackageSearch size={15} />, label: 'AMZ Product Finder', gate: canUseFinders },
+        { href: '/levanta', icon: <ShoppingBag size={15} />, label: 'MVP x Levanta', gate: canUseFinders },
+        { href: '/partnerboost', icon: <Store size={15} />, label: 'MVP x PartnerBoost', gate: canUseFinders },
+      ],
+    },
+    {
       label: 'Grow',
       items: [
         { href: '/seo', icon: <TrendingUp size={15} />, label: 'SEO & Indexing' },
@@ -414,20 +431,6 @@ export default function DashboardShellV2({
         { href: '/tools/redirects', icon: <Signpost size={15} />, label: 'Fix 404s' },
         // Analytics still hidden 2026-06-12 — route stays alive (/analytics),
         // just unlinked for now.
-      ],
-    },
-    {
-      // SOURCE & EARN — the three product/campaign FINDERS (Amazon Creator
-      // Connections + onsite, Levanta, PartnerBoost). Each scans an affiliate
-      // program for products worth reviewing, then generates content or messages
-      // the brand. STUDIO + PRO only (canUseFinders). AMZ Product Finder
-      // graduated out of Labs into here 2026-07-07. Each page has an inline
-      // "connect your API key" panel at the top.
-      label: 'Source & Earn',
-      items: [
-        { href: '/epc', icon: <PackageSearch size={15} />, label: 'AMZ Product Finder', gate: canUseFinders },
-        { href: '/levanta', icon: <ShoppingBag size={15} />, label: 'MVP x Levanta', gate: canUseFinders },
-        { href: '/partnerboost', icon: <Store size={15} />, label: 'MVP x PartnerBoost', gate: canUseFinders },
       ],
     },
     {
@@ -635,7 +638,18 @@ export default function DashboardShellV2({
             // tinted card so it visibly reads as "different" from the app's own
             // nav — a faint teal wash matching its header accent, with a border.
             const isRecommended = group.label === 'Recommended tools'
-            const cardStyle = isRecommended && !collapsed
+            // Source & Earn = the revenue finders. Wrap it in a GREEN card so the
+            // whole "make money here" zone pops out of the plain nav (user
+            // request 2026-07-07). Green tones track its lime header accent, a
+            // touch stronger than the Recommended teal wash so it's the loudest.
+            const isSourceEarn = group.label === 'Source & Earn'
+            const isCard = (isRecommended || isSourceEarn) && !collapsed
+            const cardStyle = isSourceEarn && !collapsed
+              ? {
+                  backgroundColor: isDark ? 'rgba(163,230,53,0.10)' : 'rgba(77,124,15,0.09)',
+                  borderColor: isDark ? 'rgba(163,230,53,0.32)' : 'rgba(77,124,15,0.24)',
+                }
+              : isRecommended && !collapsed
               ? {
                   backgroundColor: isDark ? 'rgba(45,212,191,0.08)' : 'rgba(15,118,110,0.06)',
                   borderColor: isDark ? 'rgba(45,212,191,0.22)' : 'rgba(15,118,110,0.18)',
@@ -644,7 +658,7 @@ export default function DashboardShellV2({
             return (
               <div
                 key={group.label}
-                className={cn(isRecommended && !collapsed && 'rounded-xl border p-2')}
+                className={cn(isCard && 'rounded-xl border p-2')}
                 style={cardStyle}
               >
                 {!collapsed && group.label && (
