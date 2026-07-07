@@ -11,7 +11,7 @@ import type { NextRequest } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { listPartnerBoostProducts, listAmazonProducts, type PBBrandType } from '@/services/partnerboost'
 import { getExternalKey } from '@/lib/external-keys'
-import type { Tier } from '@/lib/tier'
+import { tierAllowsFinders, type Tier } from '@/lib/tier'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,8 +24,8 @@ export async function GET(request: NextRequest) {
     const { data: intRow } = await supabase
       .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
     const tier = (intRow?.tier as Tier) ?? 'trial'
-    if (tier === 'trial') {
-      return NextResponse.json({ ok: false, error: 'MVP x PartnerBoost requires a paid plan.' }, { status: 403 })
+    if (!tierAllowsFinders(tier)) {
+      return NextResponse.json({ ok: false, error: 'MVP x PartnerBoost requires a Studio or Pro plan.' }, { status: 403 })
     }
 
     const token = await getExternalKey(supabase, user.id, 'partnerboost')

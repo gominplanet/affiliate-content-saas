@@ -89,22 +89,19 @@ export async function middleware(request: NextRequest) {
   }
 
   // ── Labs early-access gate ──────────────────────────────────────────────
-  // EPC Scout (/epc, /api/campaigns/*) and LTK (/ltk, /api/ltk/*) are limited to
-  // invited users via a single shared password (env LABS_PASSWORD), on TOP of
-  // their tier gates. When the password is set, a LABS request needs the
-  // labs_unlocked cookie — pages redirect to /labs-unlock, APIs return 401 JSON.
-  // Service self-calls (the EPC worker) were already bypassed at the top; public
-  // ingest endpoints are exempt via isPublic. With LABS_PASSWORD UNSET this is a
-  // no-op. NOTE: Levanta + PartnerBoost (+ /external-integrations, /api/walmart,
-  // /api/levanta, /api/integrations/external) GRADUATED OUT of this gate on
-  // 2026-06-30 — they're now open to all paid tiers (gated only at the API by
-  // tier !== 'trial'), so they must NOT require the Labs password.
+  // LTK (/ltk, /api/ltk/*) is limited to invited users via a single shared
+  // password (env LABS_PASSWORD), on TOP of its tier gate. When the password is
+  // set, a LABS request needs the labs_unlocked cookie — pages redirect to
+  // /labs-unlock, APIs return 401 JSON. With LABS_PASSWORD UNSET this is a no-op.
+  // GRADUATED OUT of this gate (now tier-gated at the routes, no Labs password):
+  //   • Levanta + PartnerBoost (2026-06-30) — all paid tiers.
+  //   • AMZ Product Finder /epc + /api/campaigns/* (2026-07-07) — into "Source &
+  //     Earn", Studio+Pro (tierAllowsFinders enforced per route).
   if (session && !isPublic(pathname)) {
     const isLabsPage =
-      pathname === '/epc' || pathname === '/ltk' ||
-      pathname.startsWith('/epc/') || pathname.startsWith('/ltk/')
+      pathname === '/ltk' || pathname.startsWith('/ltk/')
     const isLabsApi =
-      pathname.startsWith('/api/campaigns') || pathname.startsWith('/api/ltk')
+      pathname.startsWith('/api/ltk')
     if (isLabsPage || isLabsApi) {
       const expected = await expectedLabsToken()
       if (expected && request.cookies.get(LABS_COOKIE)?.value !== expected) {

@@ -1,10 +1,12 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// MVP x Levanta — admin-only Labs tool. Browse your Levanta brands + products
-// (Amazon Creator network) and turn any product into a published post with a
-// real commissionable Levanta tracking link. Mirrors Brand Boost: read-only
-// browse here; joining brands happens in the Levanta dashboard. Token is a
-// server-only env var (LEVANTA_API_TOKEN) surfaced via a setup notice when unset.
+// MVP x Levanta — a Source & Earn finder (Studio + Pro only, matching
+// tierAllowsFinders on the /api/levanta/* routes). Browse your Levanta brands +
+// products (Amazon Creator network) and turn any product into a published post
+// with a real commissionable Levanta tracking link. Read-only browse here;
+// joining brands happens in the Levanta dashboard. The Creator API key is stored
+// encrypted per-user (External Integrations) and surfaced via a setup notice when
+// unset. Graduated out of Labs 2026-07-07.
 
 'use client'
 
@@ -13,6 +15,10 @@ import PageHero from '@/components/layout/PageHero'
 import ExternalKeyConnect from '@/components/integrations/ExternalKeyConnect'
 import LevantaFinder from '@/components/levanta/LevantaFinder'
 import LevantaSaved from '@/components/levanta/LevantaSaved'
+import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
+import { createBrowserClient } from '@/lib/supabase/client'
+import { normalizeTier } from '@/lib/tier'
+import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
 import {
   ShoppingBag, RefreshCw, Loader2, ExternalLink,
   CheckCircle2, Clock, Lock, Sparkles,
@@ -48,6 +54,28 @@ export default function LevantaPage() {
   const [prodErr, setProdErr] = useState<Record<string, string>>({})
   const [prodLoading, setProdLoading] = useState<string | null>(null)
   const [gen, setGen] = useState<Record<string, GenState>>({}) // keyed by asin
+
+  // Tier gate — Studio + Pro only (Source & Earn), mirroring tierAllowsFinders on
+  // the API. null = still resolving. Creator / Trial get the FeatureLockedCard.
+  const [tier, setTier] = useState<string | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    let realTier = 'trial'
+    const apply = () => { if (!cancelled) setTier(effectiveTier(realTier)) }
+    ;(async () => {
+      try {
+        const supabase = createBrowserClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) { apply(); return }
+        const { data } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+        realTier = (data?.tier as string | undefined) ?? 'trial'
+        apply()
+      } catch { apply() }
+    })()
+    window.addEventListener(VIEW_AS_EVENT, apply)
+    return () => { cancelled = true; window.removeEventListener(VIEW_AS_EVENT, apply) }
+  }, [])
+  const canUseFinder = tier === 'studio' || tier === 'pro' || tier === 'admin'
 
   const load = useCallback(async () => {
     setLoading(true); setError(''); setForbidden(false); setNeedsToken(false)
@@ -125,6 +153,25 @@ export default function LevantaPage() {
         accent="rgba(34,211,238,0.32)"
       />
 
+      {tier !== null && !canUseFinder && (
+        <FeatureLockedCard
+          icon={<ShoppingBag size={28} strokeWidth={1.8} />}
+          feature="MVP x Levanta"
+          description="Sweep every brand you're partnered with on Levanta (the Amazon Creator network, often paying above standard Associates), and MVP's finder surfaces the products worth promoting — each with a real commissionable tracking link and a fact-grounded post written in your voice."
+          bullets={[
+            'One scan across all your partnered Levanta brands',
+            'MVP profitability criteria — commission, price, rating, EPC',
+            'Save winners + message the brand right from the results',
+            'Generate a published, affiliate-linked review per product',
+            'Part of Source & Earn — also unlocks AMZ + PartnerBoost finders',
+          ]}
+          requiredTier="studio"
+          currentTier={normalizeTier(tier)}
+        />
+      )}
+
+      {(tier === null || canUseFinder) && (
+      <>
       {/* Connect your Levanta API key — inline panel, collapses once saved.
           Refreshes the brand list on connect/disconnect. */}
       <ExternalKeyConnect provider="levanta" onConnected={load} />
@@ -181,14 +228,6 @@ export default function LevantaPage() {
           </p>
         </div>
       </details>
-
-      {forbidden && (
-        <div className="rounded-xl border p-4 mb-4 flex items-start gap-3"
-          style={{ background: 'rgba(239,68,68,0.08)', borderColor: 'rgba(239,68,68,0.35)' }}>
-          <Lock size={16} className="flex-shrink-0 mt-0.5" style={{ color: '#ef4444' }} />
-          <p className="text-[13px]" style={{ color: 'var(--text)' }}>MVP x Levanta is available on any paid plan.</p>
-        </div>
-      )}
 
       {needsToken && (
         <div className="rounded-xl border p-4 mb-4 flex items-start gap-3"
@@ -357,6 +396,8 @@ export default function LevantaPage() {
           )
         })}
       </div>
+      </>
+      )}
     </div>
   )
 }

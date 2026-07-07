@@ -103,6 +103,7 @@ const SECTION_ACCENTS: Record<string, { dark: string; light: string }> = {
   'Set up':            { dark: '#60A5FA', light: '#1D4ED8' }, // blue    — foundational
   'Create':            { dark: '#A78BFA', light: '#6D28D9' }, // violet  — creative core
   'Grow':              { dark: '#34D399', light: '#047857' }, // emerald — growth
+  'Source & Earn':     { dark: '#A3E635', light: '#4D7C0F' }, // lime    — find & monetize
   'Collaborate':       { dark: '#FBBF24', light: '#B45309' }, // amber   — deals / people
   'Labs':              { dark: '#22D3EE', light: '#0E7490' }, // cyan    — experimental
   'Help & Community':  { dark: '#FB7185', light: '#BE123C' }, // rose    — support
@@ -239,13 +240,14 @@ export default function DashboardShellV2({
   }, [collapsed])
 
   const isAdmin = tier === 'admin'
-  // Labs (EPC Scout, LTK) is Pro-only by request (2026-06-15). Admins always
-  // retain access. Mirrors tierAllowsCampaigns() in lib/tier.ts — pro || admin.
+  // Labs (LTK) is Pro-only by request (2026-06-15). Admins always retain access.
   const canUseLabs = tier === 'pro' || isAdmin
-  // Paid = any non-trial plan (Creator, Studio, Pro, admin). Gates the partner
-  // integrations (MVP x Levanta / MVP x PartnerBoost) that graduated out of Labs
-  // to all paid tiers 2026-06-30 — their APIs now block only Trial.
+  // Paid = any non-trial plan (Creator, Studio, Pro, admin).
   const isPaid = tier !== 'trial'
+  // Source & Earn (the three product/campaign finders: Amazon, Levanta,
+  // PartnerBoost) — STUDIO + PRO (+ admin) only, per 2026-07-07. Mirrors
+  // tierAllowsFinders() in lib/tier.ts. AMZ Product Finder left Labs into here.
+  const canUseFinders = tier === 'studio' || tier === 'pro' || isAdmin
 
   // Admin-only: count of OPEN support tickets (not yet answered/closed). Drives
   // the red "Support" alert in the topbar so the founder catches new tickets
@@ -415,13 +417,22 @@ export default function DashboardShellV2({
       ],
     },
     {
+      // SOURCE & EARN — the three product/campaign FINDERS (Amazon Creator
+      // Connections + onsite, Levanta, PartnerBoost). Each scans an affiliate
+      // program for products worth reviewing, then generates content or messages
+      // the brand. STUDIO + PRO only (canUseFinders). AMZ Product Finder
+      // graduated out of Labs into here 2026-07-07. Each page has an inline
+      // "connect your API key" panel at the top.
+      label: 'Source & Earn',
+      items: [
+        { href: '/epc', icon: <PackageSearch size={15} />, label: 'AMZ Product Finder', gate: canUseFinders },
+        { href: '/levanta', icon: <ShoppingBag size={15} />, label: 'MVP x Levanta', gate: canUseFinders },
+        { href: '/partnerboost', icon: <Store size={15} />, label: 'MVP x PartnerBoost', gate: canUseFinders },
+      ],
+    },
+    {
       label: 'Collaborate',
       items: [
-        // Partner affiliate networks — graduated out of Labs to all paid tiers
-        // (2026-06-30). Each page has an inline "connect your API key" panel at
-        // the top. Above Brand Deals per request.
-        { href: '/levanta', icon: <ShoppingBag size={15} />, label: 'MVP x Levanta', gate: isPaid },
-        { href: '/partnerboost', icon: <Store size={15} />, label: 'MVP x PartnerBoost', gate: isPaid },
         { href: '/collaborations', icon: <Handshake size={15} />, label: 'Brand Deals' },
         // Inbound: brand messages from the blog's "Work with brands" banner.
         { href: '/brand-inquiries', icon: <Inbox size={15} />, label: 'Brand Inquiries', badge: unreadBrand > 0 ? unreadBrand : undefined },
@@ -457,14 +468,9 @@ export default function DashboardShellV2({
       // add them as items here (set each item's gate as it opens up).
       label: 'Labs',
       items: [
-        // ONE page for both hunts (2026-07-06 consolidation): Campaigns ON =
-        // Affiliate+ Smart Scan; Campaigns OFF = onsite product search. The old
-        // /product-finder page redirects here.
-        { href: '/epc', icon: <PackageSearch size={15} />, label: 'AMZ Product Finder', gate: canUseLabs },
-        // MVP x PartnerBoost + MVP x Levanta graduated out of Labs into
-        // Collaborate (all paid tiers) on 2026-06-30; their API-key connect moved
-        // inline onto each page (External Integrations page retired from nav).
-        // EPC + LTK stay here — still Pro-only + behind the LABS_PASSWORD gate.
+        // AMZ Product Finder graduated out of Labs into "Source & Earn"
+        // 2026-07-07 (Studio+Pro). MVP x Levanta / PartnerBoost left earlier.
+        // LTK stays here — still Pro-only + behind the LABS_PASSWORD gate.
         { href: '/ltk', icon: <Sparkles size={15} />, label: 'MVP x LTK', gate: canUseLabs },
       ],
     },

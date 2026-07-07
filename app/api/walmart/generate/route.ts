@@ -29,7 +29,7 @@ import { buildCampaignHero } from '@/lib/hero-image'
 import { pickProductReferenceImage } from '@/lib/product-image'
 import { scrubBanned } from '@/lib/scrub'
 import { spendGate } from '@/lib/ai-spend'
-import type { Tier } from '@/lib/tier'
+import { tierAllowsFinders, type Tier } from '@/lib/tier'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -66,8 +66,8 @@ export async function POST(request: NextRequest) {
       .eq('user_id', user.id)
       .maybeSingle()
     const tier = (intRow?.tier as Tier) ?? 'trial'
-    if (tier === 'trial') {
-      return NextResponse.json({ ok: false, error: 'MVP x PartnerBoost requires a paid plan.' }, { status: 403 })
+    if (!tierAllowsFinders(tier)) {
+      return NextResponse.json({ ok: false, error: 'MVP x PartnerBoost requires a Studio or Pro plan.' }, { status: 403 })
     }
 
     // Dollar backstop — this path runs Opus + image gen, so it must respect the

@@ -15,19 +15,24 @@
  * The old Campaign queue (SCOUT-imported campaigns + per-row Generate) was
  * retired 2026-07-06 — discovery lives in the Finder, follow-up in the Saved
  * shelf. The legacy campaigns table + /api/campaigns/{generate,ingest,…} stay in
- * place but are no longer surfaced here. Lives in the sidebar "Labs" group,
- * Pro-only (canUseLabs in DashboardShellV2).
+ * place but are no longer surfaced here. Lives in the sidebar "Source & Earn"
+ * group, Studio + Pro only (canUseFinders in DashboardShellV2 / tierAllowsFinders
+ * on the /api/campaigns/* routes). Graduated out of Labs 2026-07-07.
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import PageHero from '@/components/layout/PageHero'
-import { CheckCircle2, Download, Copy, RefreshCw, KeyRound, ChevronDown, ChevronRight, FlaskConical } from 'lucide-react'
+import { CheckCircle2, Download, Copy, RefreshCw, KeyRound, ChevronDown, ChevronRight, Search } from 'lucide-react'
 import { toast } from 'sonner'
 import { getScoutInstallKind } from '@/lib/extension-frame'
 import MessageBrandModal, { type MessageBrandCampaign } from '@/components/campaigns/MessageBrandModal'
 import SmartScanPanel from '@/components/campaigns/SmartScanPanel'
 import SavedFinds from '@/components/campaigns/SavedFinds'
 import { SCOUT_STORE_LISTING_URL } from '@/lib/scout-version'
+import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
+import { createBrowserClient } from '@/lib/supabase/client'
+import { normalizeTier } from '@/lib/tier'
+import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
 
 // The REAL Creator Connections app (Amazon's 2026 redesign). The legacy
 // www.amazon.com/creatorconnections/ URL is a dead shell that renders nothing;
@@ -56,6 +61,30 @@ export default function EpcScoutPage() {
   const [scout, setScout] = useState<{ kind: 'store' | 'sideload' | 'none'; version: string | null } | null>(null)
 
   useEffect(() => { getScoutInstallKind().then(setScout).catch(() => setScout({ kind: 'none', version: null })) }, [])
+
+  // ── Tier gate — the finders (AMZ / Levanta / PartnerBoost) are Studio + Pro
+  // only, mirroring tierAllowsFinders on the API routes. Creator / Trial land
+  // on the FeatureLockedCard upsell instead of a finder that would 403. null =
+  // still resolving (render the finder optimistically to avoid a flash).
+  const [tier, setTier] = useState<string | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    let realTier = 'trial'
+    const apply = () => { if (!cancelled) setTier(effectiveTier(realTier)) }
+    ;(async () => {
+      try {
+        const supabase = createBrowserClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) { apply(); return }
+        const { data } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+        realTier = (data?.tier as string | undefined) ?? 'trial'
+        apply()
+      } catch { apply() }
+    })()
+    window.addEventListener(VIEW_AS_EVENT, apply)
+    return () => { cancelled = true; window.removeEventListener(VIEW_AS_EVENT, apply) }
+  }, [])
+  const canUseFinder = tier === 'studio' || tier === 'pro' || tier === 'admin'
 
   const loadList = useCallback(async () => {
     try {
@@ -104,17 +133,30 @@ export default function EpcScoutPage() {
 
   return (
     <>
-      <div className="mb-2">
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide"
-          style={{ background: 'rgba(124,58,237,0.12)', color: '#7C3AED' }}>
-          <FlaskConical size={11} /> MVP Labs · experimental
-        </span>
-      </div>
       <PageHero
         title="AMZ Product Finder"
         subtitle="A proven way to accelerate your Amazon commissions — Onsite + Affiliate+ (Creator Connections). One search, MVP-approved results: campaigns worth accepting, and products worth buying to review."
       />
 
+      {tier !== null && !canUseFinder && (
+        <FeatureLockedCard
+          icon={<Search size={28} strokeWidth={1.8} />}
+          feature="AMZ Product Finder"
+          description="MVP's one-click finder scans Amazon Creator Connections (Affiliate+) and onsite products against proprietary profitability criteria, then hands you the campaigns worth accepting and the products worth buying to review — no more digging brand-by-brand."
+          bullets={[
+            'One search → MVP-approved Affiliate+ campaigns and onsite products',
+            'Focus / Wide criteria tuned from 4 years of what actually converts',
+            'Save winners to a buy-to-review shortlist',
+            'Message the brand — auto-send through SCOUT or a drafted outreach',
+            'Also unlocks the Levanta and PartnerBoost finders in Source & Earn',
+          ]}
+          requiredTier="studio"
+          currentTier={normalizeTier(tier)}
+        />
+      )}
+
+      {(tier === null || canUseFinder) && (
+      <>
       {/* ── Numbered setup steps — Connect → Update → Search. Steps 1 & 2 are
              expand-on-click pills; step 3 points at the MVP Finder below. Each
              carries a numbered badge (✓ green once that step is satisfied). ── */}
@@ -250,6 +292,8 @@ export default function EpcScoutPage() {
       <SavedFinds reloadKey={savedReloadKey} onMessageBrand={(c) => setMsgModal(c)} />
 
       {msgModal && <MessageBrandModal campaign={msgModal} onClose={() => setMsgModal(null)} onSent={loadList} />}
+      </>
+      )}
     </>
   )
 }

@@ -7,15 +7,26 @@
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { tierAllowsFinders, type Tier } from '@/lib/tier'
 
 export const dynamic = 'force-dynamic'
 
 const COLS = 'id, asin, source, campaign_id, title, brand, image_url, commission_pct, price, monthly_sales, rating, has_video, marketplace, details_url, created_at'
 
+// The saved shelf lives under the AMZ Product Finder (Source & Earn) — Studio +
+// Pro only. RLS already scopes rows to the owner; this gate matches the UI so
+// Creator / Trial can't reach the shelf at all. 2026-07-07.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function finderTierOk(supabase: any, userId: string): Promise<boolean> {
+  const { data } = await supabase.from('integrations').select('tier').eq('user_id', userId).maybeSingle()
+  return tierAllowsFinders((data?.tier as Tier) ?? 'trial')
+}
+
 export async function GET() {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!(await finderTierOk(supabase, user.id))) return NextResponse.json({ ok: false, error: 'The AMZ Product Finder requires a Studio or Pro plan.', saved: [] }, { status: 403 })
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
     .from('cc_saved_finds').select(COLS)
@@ -29,6 +40,7 @@ export async function POST(request: Request) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!(await finderTierOk(supabase, user.id))) return NextResponse.json({ error: 'The AMZ Product Finder requires a Studio or Pro plan.' }, { status: 403 })
 
   const b = await request.json().catch(() => ({}))
   const asin = String(b.asin || '').toUpperCase().trim()
@@ -64,6 +76,7 @@ export async function DELETE(request: Request) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!(await finderTierOk(supabase, user.id))) return NextResponse.json({ error: 'The AMZ Product Finder requires a Studio or Pro plan.' }, { status: 403 })
   const url = new URL(request.url)
   const id = url.searchParams.get('id')
   const asin = (url.searchParams.get('asin') || '').toUpperCase()

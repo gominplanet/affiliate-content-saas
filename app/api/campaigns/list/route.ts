@@ -4,11 +4,18 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { tierAllowsFinders, type Tier } from '@/lib/tier'
 
 export async function GET() {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  // AMZ Product Finder (Source & Earn) is Studio + Pro only. 2026-07-07.
+  const { data: intRow } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+  if (!tierAllowsFinders((intRow?.tier as Tier) ?? 'trial')) {
+    return NextResponse.json({ error: 'The AMZ Product Finder requires a Studio or Pro plan.', campaigns: [] }, { status: 403 })
+  }
 
   // Columns the queue never works without. Everything else is optional and may be
   // missing on an account whose DB is a migration behind the deploy.

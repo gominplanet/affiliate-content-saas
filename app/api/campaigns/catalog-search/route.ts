@@ -13,6 +13,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { campaignRules, type CampaignRuleMode } from '@/lib/cc-smart-rules'
+import { tierAllowsFinders, type Tier } from '@/lib/tier'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,6 +21,13 @@ export async function GET(request: Request) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  // Source & Earn is Studio + Pro only — and this route reads the proprietary
+  // shared CC catalog, so gate it here too (not just at the UI). 2026-07-07.
+  const { data: intRow } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+  if (!tierAllowsFinders((intRow?.tier as Tier) ?? 'trial')) {
+    return NextResponse.json({ error: 'The AMZ Product Finder requires a Studio or Pro plan.' }, { status: 403 })
+  }
 
   const url = new URL(request.url)
   const q = (url.searchParams.get('q') || '').trim().slice(0, 80)

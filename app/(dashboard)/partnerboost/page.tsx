@@ -1,15 +1,15 @@
 'use client'
 
 /**
- * Walmart PB — admin-only Labs tool that shows your live PartnerBoost Walmart
- * brands (via /api/walmart/brands → Monetization API). Read-only on purpose:
- * it lists the brands you can promote + your relationship status + the
- * deep-link tracking base. JOINING happens in PartnerBoost (terms + merchant
- * approval), so this links out to the dashboard for that. Once a brand is
- * Joined (green), MVP can monetize any product on its site via the deep-link.
- *
- * Admin-only while testing: the sidebar entry is isAdmin-gated and the API
- * returns 403 for non-admins (we show a clean notice if someone deep-links in).
+ * MVP x PartnerBoost — a Source & Earn finder (Studio + Pro only, matching
+ * tierAllowsFinders on the /api/walmart/* + /api/partnerboost/* routes). Shows
+ * your live PartnerBoost brands across every network you've joined (Walmart /
+ * Amazon / DTC via the Monetization API). Read-only on purpose: it lists the
+ * brands you can promote + your relationship status + the deep-link tracking
+ * base. JOINING happens in PartnerBoost (terms + merchant approval), so this
+ * links out to the dashboard for that. Once a brand is Joined (green), MVP can
+ * monetize any product on its site via the deep-link. Graduated out of Labs
+ * 2026-07-07; the API returns 403 for Creator / Trial.
  */
 
 import { useState, useEffect, useCallback } from 'react'
@@ -17,6 +17,10 @@ import PageHero from '@/components/layout/PageHero'
 import ExternalKeyConnect from '@/components/integrations/ExternalKeyConnect'
 import PartnerBoostFinder from '@/components/partnerboost/PartnerBoostFinder'
 import PartnerBoostSaved from '@/components/partnerboost/PartnerBoostSaved'
+import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
+import { createBrowserClient } from '@/lib/supabase/client'
+import { normalizeTier } from '@/lib/tier'
+import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
 import { Loader2, RefreshCw, ExternalLink, Copy, Lock, Store, CheckCircle2, Clock, ChevronDown, Wand2, Package } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -83,6 +87,28 @@ export default function WalmartPBPage() {
   const [rel, setRel] = useState<string>('')
   const [network, setNetwork] = useState<string>('Walmart')
   const [savedReloadKey, setSavedReloadKey] = useState(0)
+
+  // Tier gate — Studio + Pro only (Source & Earn), mirroring tierAllowsFinders on
+  // the API. null = still resolving. Creator / Trial get the FeatureLockedCard.
+  const [tier, setTier] = useState<string | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    let realTier = 'trial'
+    const apply = () => { if (!cancelled) setTier(effectiveTier(realTier)) }
+    ;(async () => {
+      try {
+        const supabase = createBrowserClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) { apply(); return }
+        const { data } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+        realTier = (data?.tier as string | undefined) ?? 'trial'
+        apply()
+      } catch { apply() }
+    })()
+    window.addEventListener(VIEW_AS_EVENT, apply)
+    return () => { cancelled = true; window.removeEventListener(VIEW_AS_EVENT, apply) }
+  }, [])
+  const canUseFinder = tier === 'studio' || tier === 'pro' || tier === 'admin'
 
   const load = useCallback(async () => {
     setLoading(true); setError(null)
@@ -181,6 +207,25 @@ export default function WalmartPBPage() {
         accent="rgba(34,211,238,0.32)"
       />
 
+      {tier !== null && !canUseFinder && (
+        <FeatureLockedCard
+          icon={<Store size={28} strokeWidth={1.8} />}
+          feature="MVP x PartnerBoost"
+          description="Sweep every brand you've joined on PartnerBoost — Walmart, Amazon and DTC — and MVP's finder surfaces the products worth promoting, each with a cloaked deep-link tracking base and a fact-grounded post written in your voice."
+          bullets={[
+            'One scan across all your joined PartnerBoost brands (Walmart / Amazon / DTC)',
+            'MVP criteria — commission, price, category — ranked by estimated $/sale',
+            'Cached catalog for instant full-coverage results',
+            'Save winners + message the brand right from the results',
+            'Part of Source & Earn — also unlocks AMZ + Levanta finders',
+          ]}
+          requiredTier="studio"
+          currentTier={normalizeTier(tier)}
+        />
+      )}
+
+      {(tier === null || canUseFinder) && (
+      <>
       {/* Connect your PartnerBoost API token — inline panel, collapses once saved.
           Refreshes the brand list on connect/disconnect. */}
       <ExternalKeyConnect provider="partnerboost" onConnected={load} />
@@ -248,17 +293,7 @@ export default function WalmartPBPage() {
         </div>
       </details>
 
-      {/* Forbidden / token / error states */}
-      {forbidden && (
-        <div className="rounded-xl border p-4 mb-4 flex items-start gap-3"
-          style={{ background: 'rgba(239,68,68,0.08)', borderColor: 'rgba(239,68,68,0.35)' }}>
-          <Lock size={16} className="flex-shrink-0 mt-0.5" style={{ color: '#ef4444' }} />
-          <p className="text-[13px]" style={{ color: 'var(--text)' }}>
-            MVP x PartnerBoost is available on any paid plan.
-          </p>
-        </div>
-      )}
-
+      {/* Token / error states */}
       {needsToken && (
         <div className="rounded-xl border p-4 mb-4 flex items-start gap-3"
           style={{ background: 'rgba(245,158,11,0.10)', borderColor: 'rgba(245,158,11,0.40)' }}>
@@ -497,6 +532,8 @@ export default function WalmartPBPage() {
           )
         })}
       </div>
+      </>
+      )}
     </div>
   )
 }

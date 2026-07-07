@@ -544,11 +544,18 @@ export function tierAllowsPublishAll(tier: Tier): boolean {
   return TIERS[normalizeTier(tier)].publishAll
 }
 
+/** Whether a tier can use the product/campaign FINDERS — the "Source & Earn"
+ *  section: Amazon (Creator Connections + onsite), Levanta, PartnerBoost.
+ *  STUDIO + PRO (+ admin) only — NOT Creator, NOT Trial (2026-07-07). Single
+ *  source of truth for all three finders + their routes. */
+export function tierAllowsFinders(tier: Tier): boolean {
+  return tier === 'studio' || tier === 'pro' || tier === 'admin'
+}
+
 /** Whether a tier can use Creator Campaigns (Amazon Creator Connections +
- *  EPC scouting → research/write/publish). Pro-only. Explicit gate — do
- *  NOT proxy this off a social-platform check. */
+ *  EPC scouting → research/write/publish). Same gate as the finders. */
 export function tierAllowsCampaigns(tier: Tier): boolean {
-  return tier === 'pro' || tier === 'admin'
+  return tierAllowsFinders(tier)
 }
 
 /**

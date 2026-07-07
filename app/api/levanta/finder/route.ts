@@ -20,7 +20,7 @@ import {
   levantaRules, passesLevantaGates, scoreLevanta,
   type LevantaCandidate, type LevantaRuleMode,
 } from '@/lib/levanta-rules'
-import type { Tier } from '@/lib/tier'
+import { tierAllowsFinders, type Tier } from '@/lib/tier'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 180
@@ -46,8 +46,8 @@ export async function POST(request: NextRequest) {
     const { data: intRow } = await supabase
       .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
     const tier = (intRow?.tier as Tier) ?? 'trial'
-    if (tier === 'trial') {
-      return NextResponse.json({ ok: false, error: 'MVP x Levanta requires a paid plan.' }, { status: 403 })
+    if (!tierAllowsFinders(tier)) {
+      return NextResponse.json({ ok: false, error: 'MVP x Levanta requires a Studio or Pro plan.' }, { status: 403 })
     }
 
     const token = await getExternalKey(supabase, user.id, 'levanta')
