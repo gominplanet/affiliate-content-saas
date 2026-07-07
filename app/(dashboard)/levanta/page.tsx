@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import PageHero from '@/components/layout/PageHero'
 import ExternalKeyConnect from '@/components/integrations/ExternalKeyConnect'
+import LevantaFinder from '@/components/levanta/LevantaFinder'
 import {
   ShoppingBag, RefreshCw, Loader2, ExternalLink,
   CheckCircle2, Clock, Lock, Sparkles,
@@ -203,6 +204,21 @@ export default function LevantaPage() {
           style={{ background: 'rgba(239,68,68,0.08)', borderColor: 'rgba(239,68,68,0.35)', color: 'var(--text)' }}>
           {error}
         </div>
+      )}
+
+      {/* ── MVP Finder — the opinionated one-scan shortcut (hero action). The
+             brand-by-brand browse below stays as the manual fallback. ── */}
+      {!forbidden && !needsToken && (
+        <>
+          <LevantaFinder />
+          <p className="text-[11px] leading-relaxed -mt-3 mb-5 px-1" style={{ color: 'var(--text-faint)' }}>
+            MVP does not guarantee commissions or any type of return. The MVP Finder is simply a focused search through your Levanta campaigns using criteria that have been fruitful for influencers over the past 4 years — actual results depend on the product, your content, and your audience.
+          </p>
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-[12px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-faint)' }}>Or browse a specific brand</span>
+            <span className="flex-1 h-px" style={{ background: 'var(--border)' }} />
+          </div>
+        </>
       )}
 
       {/* Controls */}
