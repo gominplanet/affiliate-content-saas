@@ -57,6 +57,11 @@ interface OutreachBody {
   brief?: string
   options?: OutreachOptions
   extraNotes?: string
+  /** 'cc' (default) = Amazon Creator Connections message group. 'direct' = one
+   *  cohesive message to send a brand directly (Levanta / PartnerBoost). */
+  channel?: 'cc' | 'direct'
+  /** For 'direct' — the network the creator found the brand on (flavor only). */
+  network?: string
 }
 
 export async function POST(request: Request) {
@@ -102,6 +107,8 @@ export async function POST(request: Request) {
     const asin = (body.asin || '').toString().trim().toUpperCase()
     const brief = (body.brief || '').toString().trim().slice(0, 3000)
     const commissionPct = typeof body.commissionPct === 'number' && isFinite(body.commissionPct) ? body.commissionPct : null
+    const channel: 'cc' | 'direct' = body.channel === 'direct' ? 'direct' : 'cc'
+    const network = (body.network || '').toString().trim().slice(0, 40)
     if (!brand && !product) {
       return NextResponse.json({ error: 'Need a brand or product to draft a message' }, { status: 400, headers: CORS })
     }
@@ -158,7 +165,9 @@ export async function POST(request: Request) {
     const asks: string[] = []
     // Msg 2 — the base offer is always present (this IS an outreach); the ASIN +
     // any extra offers ride the SAME product message.
-    asks.push('Offer authentic video/content that drives their Creator Connections sales.')
+    asks.push(channel === 'direct'
+      ? 'Offer authentic video/content that promotes their product to my audience through my affiliate links.'
+      : 'Offer authentic video/content that drives their Creator Connections sales.')
     if (o.includeAsin !== false && asin) asks.push(`In the PRODUCT message, name the product and quote its ASIN (${asin}) once.`)
     if (o.offerLivestream) asks.push('In the offer, also mention we can feature the product in a livestream.')
     if (o.offerBannerAds) asks.push('In the offer, also mention bonus homepage / banner-ad placement on our site.')
@@ -179,6 +188,26 @@ export async function POST(request: Request) {
     if (!wantSample) asks.push('Do NOT include a sample-request / shipping message (skip that message entirely).')
     const extraNotes = (body.extraNotes || '').toString().trim().slice(0, 500)
     if (extraNotes) asks.push(`Also weave in: ${extraNotes}`)
+
+    // DIRECT channel (Levanta / PartnerBoost) — ONE cohesive message the creator
+    // pastes into the brand's contact/message form. No Amazon Creator Connections.
+    const systemDirect = `You draft a warm, professional brand-outreach message a creator sends DIRECTLY to a brand${network ? ` (found via ${network})` : ''} — pasted into the brand's contact form / message box / email. It is ONE cohesive message, NOT a message group.
+
+Write ONE message that:
+- Opens with the given greeting style (or "Hi <Brand> team," when a brand name is given; if none, a neutral "Hi there,"). NEVER greet with the product name.
+- Says who the creator is + real credibility, ONLY from the creator facts.
+- Names the specific product and says clearly what the creator will create for them: authentic video/content that drives sales through the creator's affiliate links (mention the commission only if given).
+- Points the brand to where they can see the creator's work (the portfolio / YouTube / blog / media-kit / storefront links given), in a short line.
+- If a sample is requested or an address is given: politely request a free sample and give the EXACT name + address (+ phone) on their own lines.
+- Closes warmly hoping for a long-term collaboration; sign off with my name and email if given.
+
+Rules:
+- ONE message, ≤ 1800 characters, plain text, first person. No subject line, no "Dear", no message-group markers.
+- NEVER mention "Amazon Creator Connections" or "Creator Connections" — this is a DIRECT brand partnership.
+- NEVER invent credibility, follower counts, sales, or any claim beyond the facts given.
+- No markdown, no bullet lists, no emojis unless natural.
+${BANNED_RULE}
+Output ONLY the message text — nothing else.`
 
     const system = `You draft a warm, professional brand-outreach a creator sends inside Amazon Creator Connections' "Message Brand" chat. Not an email: no subject line, no "Dear", no signature block.
 
@@ -213,7 +242,7 @@ Output ONLY the message text (with the marker lines) — nothing else.`
     const msg = await client.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 1100, // a few short messages + the group markers
-      system,
+      system: channel === 'direct' ? systemDirect : system,
       messages: [{ role: 'user', content: userMsg }],
     })
     try {
@@ -226,6 +255,12 @@ Output ONLY the message text (with the marker lines) — nothing else.`
       .join('')
       .trim()
     text = scrubBanned(text)
+    // DIRECT channel → one message, no group markers. Cap generously and return.
+    if (channel === 'direct') {
+      const single = (text.length > 2500 ? text.slice(0, 2500) : text).trim()
+      if (!single) return NextResponse.json({ error: 'Draft came back empty — try again' }, { status: 502, headers: CORS })
+      return NextResponse.json({ ok: true, message: single }, { headers: CORS })
+    }
     // The draft is a MESSAGE GROUP separated by "---- Add to Message Group ----".
     // Amazon caps EACH message at 1000 chars, so enforce the cap PER SEGMENT
     // (word-boundary), not on the whole thing — a whole-text chop would truncate

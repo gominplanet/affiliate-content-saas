@@ -10,7 +10,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Sparkles, Play, Loader2, ExternalLink, CheckCircle2, Clock, Star, ShoppingCart, Bookmark } from 'lucide-react'
+import { Sparkles, Play, Loader2, ExternalLink, CheckCircle2, Clock, Star, ShoppingCart, Bookmark, MessageCircle } from 'lucide-react'
+import MessageBrandFlow, { type MessageBrandTarget } from '@/components/campaigns/MessageBrandFlow'
 
 const CYAN = '#0E7490'
 
@@ -44,6 +45,7 @@ export default function LevantaFinder({ onSavedChange }: { onSavedChange?: () =>
   const [saved, setSaved] = useState<Set<string>>(new Set()) // ASINs already on the Saved shelf
   const [seen, setSeen] = useState<Set<string>>(new Set()) // every ASIN already SHOWN → paged past on re-scan
   const [lastKey, setLastKey] = useState('') // mode|focus|count of the last scan → same key = "show me more"
+  const [msg, setMsg] = useState<MessageBrandTarget | null>(null)
 
   const scanKey = `${mode}|${focus.trim().toLowerCase()}|${count}`
   // Same search as last time AND we already have results → the next click pages
@@ -249,6 +251,11 @@ export default function LevantaFinder({ onSavedChange }: { onSavedChange?: () =>
                   </p>
                   {g.error && <p className="text-[11px] mt-1" style={{ color: '#ef4444' }}>{g.error}</p>}
                   <div className="flex items-center gap-2 mt-2 flex-wrap">
+                    <button onClick={() => setMsg({ product: m.title || m.asin, brand: m.brandName || '', asin: m.asin, commissionPct: m.commission, network: 'Levanta', networkUrl: 'https://app.levanta.io/' })}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border"
+                      style={{ borderColor: 'rgba(124,58,237,0.4)', color: '#7C3AED' }}>
+                      <MessageCircle size={11} /> Message brand
+                    </button>
                     <a href={`https://www.${m.marketplace}/dp/${m.asin}`} target="_blank" rel="noopener noreferrer"
                       className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold text-white" style={{ background: '#34c759' }}>
                       <ShoppingCart size={11} /> Buy to review
@@ -281,6 +288,8 @@ export default function LevantaFinder({ onSavedChange }: { onSavedChange?: () =>
           })}
         </div>
       )}
+
+      {msg && <MessageBrandFlow target={msg} onClose={() => setMsg(null)} />}
     </div>
   )
 }

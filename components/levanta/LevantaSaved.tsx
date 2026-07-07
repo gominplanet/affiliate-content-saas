@@ -8,7 +8,8 @@
 // /api/levanta/saved. Parent bumps `reloadKey` after the Finder saves something.
 
 import { useEffect, useState, useCallback } from 'react'
-import { Bookmark, ShoppingCart, Sparkles, X, Loader2, Star, CheckCircle2, ExternalLink } from 'lucide-react'
+import { Bookmark, ShoppingCart, Sparkles, X, Loader2, Star, CheckCircle2, ExternalLink, MessageCircle } from 'lucide-react'
+import MessageBrandFlow, { type MessageBrandTarget } from '@/components/campaigns/MessageBrandFlow'
 
 const CYAN = '#0E7490'
 
@@ -29,6 +30,7 @@ export default function LevantaSaved({ reloadKey }: { reloadKey: number }) {
   const [items, setItems] = useState<SavedItem[] | null>(null)
   const [removing, setRemoving] = useState<Set<string>>(new Set())
   const [gen, setGen] = useState<Record<string, GenState>>({})
+  const [msg, setMsg] = useState<MessageBrandTarget | null>(null)
 
   const load = useCallback(() => {
     fetch('/api/levanta/saved').then(r => r.json()).then(d => {
@@ -126,6 +128,11 @@ export default function LevantaSaved({ reloadKey }: { reloadKey: number }) {
                       className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold text-white" style={{ background: '#34c759' }}>
                       <ShoppingCart size={11} /> Buy to review
                     </a>
+                    <button onClick={() => setMsg({ product: it.title || it.asin, brand: it.brand || '', asin: it.asin, commissionPct: it.commission_pct, network: 'Levanta', networkUrl: 'https://app.levanta.io/' })}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border"
+                      style={{ borderColor: 'rgba(124,58,237,0.4)', color: '#7C3AED' }}>
+                      <MessageCircle size={11} /> Message brand
+                    </button>
                     <button onClick={() => remove(it.id)} disabled={removing.has(it.id)}
                       className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium disabled:opacity-50"
                       style={{ color: 'var(--text-faint)' }} title="Remove from Saved">
@@ -138,6 +145,8 @@ export default function LevantaSaved({ reloadKey }: { reloadKey: number }) {
           })}
         </div>
       )}
+
+      {msg && <MessageBrandFlow target={msg} onClose={() => setMsg(null)} />}
     </div>
   )
 }

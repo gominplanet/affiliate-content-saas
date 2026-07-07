@@ -12,7 +12,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Sparkles, Play, Loader2, ExternalLink, CheckCircle2, Clock, ShoppingCart, Bookmark, RefreshCw } from 'lucide-react'
+import { Sparkles, Play, Loader2, ExternalLink, CheckCircle2, Clock, ShoppingCart, Bookmark, RefreshCw, MessageCircle } from 'lucide-react'
+import MessageBrandFlow, { type MessageBrandTarget } from '@/components/campaigns/MessageBrandFlow'
 
 const CYAN = '#0E7490'
 
@@ -53,6 +54,7 @@ export default function PartnerBoostFinder({ onSavedChange }: { onSavedChange?: 
   const [matches, setMatches] = useState<Match[] | null>(null)
   const [gen, setGen] = useState<Record<string, GenState>>({})
   const [saved, setSaved] = useState<Set<string>>(new Set())
+  const [msg, setMsg] = useState<MessageBrandTarget | null>(null)
   const [seen, setSeen] = useState<Set<string>>(new Set())
   const [lastKey, setLastKey] = useState('')
   const [syncing, setSyncing] = useState(false)
@@ -262,6 +264,11 @@ export default function PartnerBoostFinder({ onSavedChange }: { onSavedChange?: 
                   </p>
                   {g.error && <p className="text-[11px] mt-1" style={{ color: '#ef4444' }}>{g.error}</p>}
                   <div className="flex items-center gap-2 mt-2 flex-wrap">
+                    <button onClick={() => setMsg({ product: m.name, brand: m.brandName || '', asin: m.sku, commissionPct: m.commissionPct, network: 'PartnerBoost', networkUrl: 'https://app.partnerboost.com/' })}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border"
+                      style={{ borderColor: 'rgba(124,58,237,0.4)', color: '#7C3AED' }}>
+                      <MessageCircle size={11} /> Message brand
+                    </button>
                     <a href={m.url} target="_blank" rel="noopener noreferrer"
                       className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold text-white" style={{ background: '#34c759' }}>
                       <ShoppingCart size={11} /> Buy to review
@@ -292,6 +299,8 @@ export default function PartnerBoostFinder({ onSavedChange }: { onSavedChange?: 
           })}
         </div>
       )}
+
+      {msg && <MessageBrandFlow target={msg} onClose={() => setMsg(null)} />}
     </div>
   )
 }
