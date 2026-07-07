@@ -43,14 +43,14 @@ export interface CcSmartRules {
 export const CC_SMART_RULES: CcSmartRules = {
   minCommissionPct: 15,
   minDaysLeft: 100,
-  minPrice: 45,
-  maxPrice: 300,
-  minMonthlySales: 200,
-  minRating: 3.8,
+  minPrice: 30,
+  maxPrice: 600,
+  minMonthlySales: 100,
+  minRating: 3,
   minEpc: 0.25,
   hardFloorPrice: 25,
   requireCarousel: true,
-  deepCheckCap: 25,
+  deepCheckCap: 40,
   // never: supplements, food, pharmacy, clothing
   avoidPatterns: [
     // supplements
@@ -82,12 +82,12 @@ export const CC_SMART_RULES_WIDE: CcSmartRules = {
   ...CC_SMART_RULES,
   minCommissionPct: 10,
   minDaysLeft: 45,
-  minPrice: 20,
-  maxPrice: 500,
-  minMonthlySales: 75,
-  minRating: 3.5,
+  minPrice: 15,
+  maxPrice: 1000,
+  minMonthlySales: 100,
+  minRating: 3,
   hardFloorPrice: 15,
-  requireCarousel: false,
+  requireCarousel: true,
 }
 
 /** The two Campaigns-ON presets, keyed by the UI toggle. */
