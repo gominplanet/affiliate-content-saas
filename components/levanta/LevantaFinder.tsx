@@ -9,8 +9,8 @@
 
 'use client'
 
-import { useState } from 'react'
-import { Sparkles, Play, Loader2, ExternalLink, CheckCircle2, Clock, Star } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Sparkles, Play, Loader2, ExternalLink, CheckCircle2, Clock, Star, ShoppingCart, Bookmark } from 'lucide-react'
 
 const CYAN = '#0E7490'
 
@@ -30,7 +30,7 @@ interface Match {
 }
 type GenState = { loading?: boolean; url?: string; error?: string }
 
-export default function LevantaFinder() {
+export default function LevantaFinder({ onSavedChange }: { onSavedChange?: () => void }) {
   const [mode, setMode] = useState<'focus' | 'wide'>('focus')
   const [focus, setFocus] = useState('')
   const [count, setCount] = useState<10 | 20 | 50>(20)
@@ -41,6 +41,35 @@ export default function LevantaFinder() {
   const [matches, setMatches] = useState<Match[] | null>(null)
   const [gen, setGen] = useState<Record<string, GenState>>({})
   const [done, setDone] = useState<string[]>([]) // ASINs already generated → excluded next scan
+  const [saved, setSaved] = useState<Set<string>>(new Set()) // ASINs already on the Saved shelf
+
+  // Seed the Save-button state from the shelf so already-saved picks show "Saved".
+  useEffect(() => {
+    fetch('/api/levanta/saved').then(r => r.json()).then(d => {
+      if (d?.ok && Array.isArray(d.saved)) setSaved(new Set(d.saved.map((s: { asin: string }) => s.asin)))
+    }).catch(() => {})
+  }, [])
+
+  async function toggleSave(m: Match) {
+    const isSaved = saved.has(m.asin)
+    setSaved((prev) => { const n = new Set(prev); if (isSaved) n.delete(m.asin); else n.add(m.asin); return n }) // optimistic
+    try {
+      if (isSaved) {
+        await fetch(`/api/levanta/saved?asin=${encodeURIComponent(m.asin)}`, { method: 'DELETE' })
+      } else {
+        await fetch('/api/levanta/saved', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            asin: m.asin, title: m.title, brand: m.brandName, imageUrl: m.image,
+            commissionPct: m.commission, price: m.price, rating: m.rating, marketplace: m.marketplace,
+          }),
+        })
+      }
+      onSavedChange?.()
+    } catch {
+      setSaved((prev) => { const n = new Set(prev); if (isSaved) n.add(m.asin); else n.delete(m.asin); return n }) // revert
+    }
+  }
 
   async function runScan() {
     setRunning(true); setError(''); setNote('')
@@ -194,6 +223,19 @@ export default function LevantaFinder() {
                     </a>
                   </p>
                   {g.error && <p className="text-[11px] mt-1" style={{ color: '#ef4444' }}>{g.error}</p>}
+                  <div className="flex items-center gap-2 mt-2 flex-wrap">
+                    <a href={`https://www.${m.marketplace}/dp/${m.asin}`} target="_blank" rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold text-white" style={{ background: '#34c759' }}>
+                      <ShoppingCart size={11} /> Buy to review
+                    </a>
+                    <button onClick={() => toggleSave(m)}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-colors"
+                      style={saved.has(m.asin)
+                        ? { borderColor: '#f59e0b', background: 'rgba(245,158,11,0.10)', color: '#b26a00' }
+                        : { borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
+                      <Bookmark size={11} className={saved.has(m.asin) ? 'fill-current' : ''} /> {saved.has(m.asin) ? 'Saved' : 'Save'}
+                    </button>
+                  </div>
                 </div>
                 <div className="flex-shrink-0">
                   {g.url ? (

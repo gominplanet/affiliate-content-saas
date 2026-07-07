@@ -37,9 +37,12 @@ export interface LevantaRules {
 // The hard NO categories are the same across Focus and Wide — supplements, food,
 // pharmacy and clothing are never good review picks (compliance, returns, sizing).
 const AVOID_PATTERNS: string[] = [
-  // supplements
+  // supplements (incl. common single-ingredient supplements Levanta surfaces —
+  // "Magnesium Complex" etc. slipped the earlier list)
   'supplement', 'vitamin', 'gummies', 'protein powder', 'creatine', 'collagen',
   'probiotic', 'pre-workout', 'preworkout', 'multivitamin', 'omega-3', 'omega 3',
+  'magnesium', 'melatonin', 'ashwagandha', 'turmeric', 'elderberry', 'fish oil',
+  'electrolyte', 'capsule', 'softgel', 'nootropic',
   // food / grocery
   'grocery', 'gourmet food', 'snack', 'coffee', 'chocolate', 'candy', 'sauce',
   'seasoning', 'beverage', 'drink mix', 'tea bags', 'protein bar', 'cereal',

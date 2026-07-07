@@ -101,7 +101,10 @@ export async function POST(request: NextRequest) {
     // ── 3. Gate → dedupe (keep best per ASIN) → focus filter → rank → top-N ───
     const bestByAsin = new Map<string, ReturnType<typeof scoreLevanta>>()
     for (const c of raw) {
-      if (!c.asin || exclude.has(c.asin)) continue
+      // Amazon ASINs are exactly 10 alphanumerics. Levanta occasionally returns
+      // a non-Amazon product whose primary id is an EAN/barcode (14 digits) —
+      // those have no /dp page, so Buy/Generate/Save would all break. Drop them.
+      if (!/^[A-Z0-9]{10}$/.test(c.asin) || exclude.has(c.asin)) continue
       if (focus && !`${c.title || ''} ${c.category || ''}`.toLowerCase().includes(focus)) continue
       if (!passesLevantaGates(c, rules)) continue
       const scored = scoreLevanta(c)
