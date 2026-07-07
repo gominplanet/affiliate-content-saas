@@ -1,29 +1,29 @@
 'use client'
 
 /**
- * EPC Scout — token-based cockpit for Amazon Creator Connections.
+ * AMZ Product Finder — the MVP Finder + Saved shelf for Amazon Creator
+ * Connections (Affiliate+) and onsite products.
  *
- * Flow (Option A — works for every user, no fixed-extension-ID dependency):
- *   1. Install SCOUT from the Chrome Web Store (auto-updating).
- *   2. Copy your ingest token from here.
- *   3. On a Creator Connections page, the inline SCOUT panel searches campaigns;
- *      pick the winners and Import selected into MVP (pushes via the token, no
- *      MVP login needed on Amazon's side).
- *   4. Back here: filter the queue by EPC / commission / end date, pick winners,
- *      and generate posts.
+ * Flow:
+ *   1. Connect SCOUT (paste the ingest token here).
+ *   2. Keep SCOUT updated (Web Store auto-updates; sideloaders get a nudge).
+ *   3. Search the MVP Finder — MVP's proprietary criteria surface the campaigns
+ *      / products worth your time; Save the winners.
+ *   → Saved-for-later shelf holds your buy-to-review shortlist (Message brand /
+ *      Buy to review / Remove).
  *
- * The extension only scrapes + pushes; all review/filtering/generation lives
- * here. Lives in the sidebar "Labs" group, Pro-only (canUseLabs = pro || admin
- * in DashboardShellV2) — mirrors tierAllowsCampaigns(), which gates the
- * campaign APIs. The eligibility callout below still sets expectations because
- * even most Pro users won't have Amazon Creator Connections / EPC access.
+ * The old Campaign queue (SCOUT-imported campaigns + per-row Generate) was
+ * retired 2026-07-06 — discovery lives in the Finder, follow-up in the Saved
+ * shelf. The legacy campaigns table + /api/campaigns/{generate,ingest,…} stay in
+ * place but are no longer surfaced here. Lives in the sidebar "Labs" group,
+ * Pro-only (canUseLabs in DashboardShellV2).
  */
 
-import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import PageHero from '@/components/layout/PageHero'
-import { Loader2, ExternalLink, CheckCircle2, Sparkles, Search, Download, Copy, RefreshCw, KeyRound, Trash2, ChevronDown, ChevronRight, FlaskConical, MessageSquare } from 'lucide-react'
+import { CheckCircle2, Download, Copy, RefreshCw, KeyRound, ChevronDown, ChevronRight, FlaskConical } from 'lucide-react'
 import { toast } from 'sonner'
-import { getScoutInstallKind, requestAcceptCampaign } from '@/lib/extension-frame'
+import { getScoutInstallKind } from '@/lib/extension-frame'
 import MessageBrandModal, { type MessageBrandCampaign } from '@/components/campaigns/MessageBrandModal'
 import SmartScanPanel from '@/components/campaigns/SmartScanPanel'
 import SavedFinds from '@/components/campaigns/SavedFinds'
@@ -35,153 +35,21 @@ import { SCOUT_STORE_LISTING_URL } from '@/lib/scout-version'
 // id from their logged-in session).
 const CC_URL = 'https://affiliate-program.amazon.com/p/connect/requests?status=opportunity&type=affiliate-plus'
 
-interface CampaignRow {
-  id: string
-  asin: string
-  product_title: string | null
-  campaign_name: string | null
-  // The real brand name (campaign-card-brand-name) for greeting the brand.
-  brand_name: string | null
-  epc: string | null
-  // Which Creator Connections program: 'epc' = pay-per-click (dollar `epc`);
-  // 'affiliate_plus' = commission per sale (`commission_pct`, a percent).
-  program: 'epc' | 'affiliate_plus' | null
-  commission_pct: number | null
-  // Deep-import signals (SCOUT read these off the product's Amazon page).
-  monthly_sales: number | null
-  has_carousel_video: boolean | null
-  // Carousel-video placement: 'top' (hero image gallery), 'bottom' (lower
-  // "Videos for this product" section) or 'none'. null on rows imported before
-  // this signal existed / via quick Accept (no deep check).
-  carousel_video_pos: 'top' | 'bottom' | 'none' | null
-  // Where SCOUT can re-open this campaign to message the brand.
-  details_url: string | null
-  ends_at: string | null
-  status: string
-  blog_post_id: string | null
-  wordpress_url: string | null
-  product_price: string | number | null
-  error_message: string | null
-  // When SCOUT sent the brand-outreach for this campaign (the "messaged" record).
-  messaged_at: string | null
-  // The message that was sent (for the Messaged history view).
-  last_message: string | null
-  // When the user accepted this campaign on Amazon from here (via SCOUT).
-  accepted_at: string | null
-  created_at: string
-}
-
-// 1200 → "1.2K", 2_000_000 → "2M"
-function fmtSales(n: number): string {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M'
-  if (n >= 1_000) return (n / 1_000).toFixed(1).replace(/\.0$/, '') + 'K'
-  return String(n)
-}
-
-// "$24.99" / "Up to $0.38" → 24.99 / 0.38
-function parseDollar(s?: string | number | null): number | null {
-  if (s == null) return null
-  if (typeof s === 'number') return s
-  const m = s.match(/\$?\s?([\d,]+(?:\.\d+)?)/)
-  if (!m) return null
-  const v = parseFloat(m[1].replace(/,/g, ''))
-  return isNaN(v) ? null : v
-}
-
-function daysLeft(endsAt?: string | null): number {
-  if (!endsAt || /no end date/i.test(endsAt)) return Infinity
-  const t = Date.parse(endsAt)
-  if (isNaN(t)) return Infinity
-  return Math.ceil((t - Date.now()) / 86400_000)
-}
-
-const PENDING_STATUSES = new Set(['pending', 'queued', 'ready', 'new', 'researching', 'generating'])
-
-// Poll a queued campaign-generation job to completion. Resolves on 'done' OR
-// once the campaign row actually goes live (the worker hands off long runs and
-// leaves the job 'running' while the generate function keeps going and still
-// publishes — so the post is the source of truth, not the job). Throws on
-// 'failed' or after the cap. Used by the async (enqueue) path.
-async function pollCampaignJob(jobId: string, campaignId?: string): Promise<void> {
-  const start = Date.now()
-  const deadline = start + 12 * 60_000
-  while (Date.now() < deadline) {
-    await new Promise(r => setTimeout(r, 3000))
-
-    let job: { status?: string; error?: string } | null = null
-    try {
-      const r = await fetch(`/api/campaigns/job/${jobId}`)
-      if (r.ok) job = await r.json()
-    } catch { /* transient network blip — fall through to the row reconcile */ }
-    if (job?.status === 'done') return
-    if (job?.status === 'failed') throw new Error(job.error || 'Generation failed')
-
-    // After the worker's hand-off window, accept a now-live campaign row as
-    // success even if the job is still marked 'running'.
-    if (campaignId && Date.now() - start > 60_000) {
-      try {
-        const lr = await fetch('/api/campaigns/list')
-        if (lr.ok) {
-          const ld = await lr.json()
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const row = (ld.campaigns || []).find((x: any) => x.id === campaignId)
-          if (row && isLiveRow(row)) return
-        }
-      } catch { /* ignore — keep polling */ }
-    }
-  }
-  throw new Error('Still working in the background — refresh in a minute to see the result.')
-}
-// A row only counts as "done" when there's an actual published post. Anything
-// else (pending, failed, or a stuck 'researching'/'generating' from an aborted
-// run) is (re)generatable — so interrupted runs aren't orphaned.
-function isLiveRow(c: { status: string; blog_post_id: string | null; wordpress_url: string | null }) {
-  return c.status === 'published' || !!c.blog_post_id || !!c.wordpress_url
-}
-
 export default function EpcScoutPage() {
   const [token, setToken] = useState<string | null>(null)
-  const [campaigns, setCampaigns] = useState<CampaignRow[]>([])
+  // Only the ASINs are read (SmartScanPanel skips ones already covered), so a
+  // lightweight shape is enough — /api/campaigns/list returns full rows.
+  const [covered, setCovered] = useState<{ asin: string }[]>([])
   const [loading, setLoading] = useState(true)
-  // The setup/how-it-works panel is collapsed by default so the queue is right
-  // there; it auto-opens only for users who haven't connected SCOUT yet.
+  // The setup/how-it-works panel is collapsed by default; it auto-opens only for
+  // users who haven't connected SCOUT yet.
   const [setupOpen, setSetupOpen] = useState(false)
   const [storeOpen, setStoreOpen] = useState(false)
   const finderRef = useRef<HTMLDivElement>(null) // step-3 pill scrolls here
 
-  // Queue filters — the filter/sort bar was removed 2026-07-06 (discovery moved
-  // to the MVP Finder). These stay at PERMISSIVE defaults so `filtered` shows
-  // every queued campaign, best-earnings first. `keyword` still powers the
-  // Messaged-view search; `onlyPending` is the one surviving toggle. The rest
-  // are effectively constants now, kept so the filter logic below is untouched.
-  const [minEpc] = useState(0)
-  const [minCommission] = useState(0)
-  const [endsWithin] = useState('')
-  const [keyword, setKeyword] = useState('')
-  const [onlyPending, setOnlyPending] = useState(true)
-  // Earnings rank (commission / EPC). Price-sort options went with the bar.
-  const [sortBy] = useState<'default' | 'price-asc' | 'price-desc' | 'sales-desc'>('default')
-  // 'queue' = the browse/generate list; 'messaged' = brand-outreach history.
-  const [view, setView] = useState<'queue' | 'messaged'>('queue')
-  // Within the queue, the two pay models get their own tab (a % commission and a
-  // $ EPC don't belong on one list). 'affiliate' = Affiliate+, 'epc' = EPC.
-  const [programTab, setProgramTab] = useState<'affiliate' | 'epc'>('affiliate')
-  const [openMsg, setOpenMsg] = useState<string | null>(null) // expanded message row (by id)
-
-  const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [gen, setGen] = useState<Record<string, 'running' | 'done' | 'error'>>({})
-  const [genErr, setGenErr] = useState<Record<string, string>>({})
   const [msgModal, setMsgModal] = useState<MessageBrandCampaign | null>(null)
   // Bumped when the Finder saves/unsaves a find → SavedFinds reloads.
   const [savedReloadKey, setSavedReloadKey] = useState(0)
-  // Per-row "Fix image" state for already-published rows (repairs the CTA hero).
-  const [fixing, setFixing] = useState<Record<string, boolean>>({})
-  // Per-row "Remove" state (delete a campaign row + its WP post if any).
-  const [removing, setRemoving] = useState<Record<string, boolean>>({})
-  // Per-row "Accept on Amazon" state (SCOUT clicks Accept on the details page).
-  const [accepting, setAccepting] = useState<Record<string, boolean>>({})
-  // "Clear queue" state (bulk-delete the scouted backlog).
-  const [clearing, setClearing] = useState(false)
   // Which SCOUT is installed (via MVP_PING) → drives the "move to the Web Store"
   // nudge for legacy sideloaders. null = not yet checked; store installs
   // auto-update so they get no banner at all.
@@ -193,7 +61,7 @@ export default function EpcScoutPage() {
     try {
       const res = await fetch('/api/campaigns/list')
       const d = await res.json()
-      if (res.ok) setCampaigns(d.campaigns ?? [])
+      if (res.ok) setCovered((d.campaigns ?? []).map((c: { asin: string }) => ({ asin: c.asin })))
     } catch { /* best-effort */ }
   }, [])
 
@@ -222,8 +90,7 @@ export default function EpcScoutPage() {
   }, [])
 
   // Setup panel: honor a saved preference; otherwise open it only for users who
-  // haven't connected a token yet (they need the setup — everyone else jumps
-  // straight to the queue).
+  // haven't connected a token yet (everyone else jumps straight to the Finder).
   useEffect(() => {
     if (loading) return
     let stored: string | null = null
@@ -234,308 +101,6 @@ export default function EpcScoutPage() {
   const toggleSetup = useCallback(() => {
     setSetupOpen(o => { const n = !o; try { localStorage.setItem('epc_setup_open', n ? '1' : '0') } catch { /* ignore */ } return n })
   }, [])
-
-  const filtered = useMemo(() => {
-    const terms = keyword.toLowerCase().split(/[,\n]/).map(s => s.trim()).filter(Boolean)
-    const within = parseFloat(endsWithin)
-    // Messaged history — only campaigns we've reached out to, newest first.
-    // Keyword still filters; the browse gates (EPC/commission/ends) don't apply.
-    if (view === 'messaged') {
-      return campaigns
-        .filter(c => {
-          if (!c.messaged_at) return false
-          if (terms.length) {
-            const hay = `${c.campaign_name || ''} ${c.product_title || ''} ${c.brand_name || ''} ${c.asin}`.toLowerCase()
-            if (!terms.some(t => hay.includes(t))) return false
-          }
-          return true
-        })
-        .map(c => ({ ...c, epcValue: parseDollar(c.epc), isPlus: c.program === 'affiliate_plus', rankValue: 0 }))
-        .sort((a, b) => (b.messaged_at || '').localeCompare(a.messaged_at || ''))
-    }
-    return campaigns
-      .map(c => {
-        const isPlus = c.program === 'affiliate_plus'
-        const epcValue = parseDollar(c.epc)
-        // Each row ranks by its OWN headline metric: $ EPC (pay-per-click) or
-        // % commission (pay-per-sale). They're different units but both "bigger
-        // is better", so a single numeric sort keeps the richest offers on top.
-        const rankValue = isPlus ? (c.commission_pct ?? -1) : (epcValue ?? -1)
-        return { ...c, epcValue, isPlus, rankValue }
-      })
-      .filter(c => {
-        // "Not published yet" = anything without a live post — pending AND
-        // failed AND stuck (so money-spent failures stay visible + retryable).
-        if (onlyPending && isLiveRow(c)) return false
-        // Failed/stuck rows already COST money — always surface them for retry,
-        // never hide behind the browse filters. Keyword still applies.
-        const needsAttention = !isLiveRow(c) && !PENDING_STATUSES.has(c.status)
-        if (!needsAttention) {
-          // Program-aware: EPC ($) gates only EPC rows, commission (%) gates only
-          // Affiliate+ rows — neither program hides the other.
-          if (c.isPlus) {
-            if (minCommission > 0 && (c.commission_pct == null || c.commission_pct < minCommission)) return false
-          } else {
-            if (minEpc > 0 && (c.epcValue == null || c.epcValue < minEpc)) return false
-          }
-          if (!isNaN(within) && daysLeft(c.ends_at) > within) return false
-        }
-        if (terms.length) {
-          const hay = `${c.campaign_name || ''} ${c.product_title || ''} ${c.asin}`.toLowerCase()
-          if (!terms.some(t => hay.includes(t))) return false
-        }
-        return true
-      })
-      .sort((a, b) => {
-        // Product price (Buy Box $ captured on Import's deep check). Rows without a
-        // price sink to the bottom of a price sort. Default = the earnings rank.
-        if (sortBy === 'price-asc')  return (parseDollar(a.product_price) ?? Number.POSITIVE_INFINITY) - (parseDollar(b.product_price) ?? Number.POSITIVE_INFINITY)
-        if (sortBy === 'price-desc') return (parseDollar(b.product_price) ?? -1) - (parseDollar(a.product_price) ?? -1)
-        if (sortBy === 'sales-desc') return (b.monthly_sales ?? -1) - (a.monthly_sales ?? -1)
-        return b.rankValue - a.rankValue
-      })
-  }, [campaigns, minEpc, minCommission, endsWithin, keyword, onlyPending, view, sortBy])
-
-  const messagedCount = useMemo(() => campaigns.filter(c => c.messaged_at).length, [campaigns])
-
-  // Split by program so the two pay models live on separate tabs — a % commission
-  // (Affiliate+) never ranks against a $ EPC. Each list keeps `filtered`'s own
-  // within-program sort. The messaged view is a flat outreach history (no tabs).
-  const plusRows = useMemo(() => filtered.filter(c => c.isPlus), [filtered])
-  const epcRows = useMemo(() => filtered.filter(c => !c.isPlus), [filtered])
-  const shown = view === 'messaged' ? filtered : (programTab === 'epc' ? epcRows : plusRows)
-
-  const selectableShown = shown.filter(c => !isLiveRow(c))
-  const allShownSelected = selectableShown.length > 0 && selectableShown.every(c => selected.has(c.asin))
-  function toggleAll() {
-    setSelected(prev => {
-      const next = new Set(prev)
-      if (allShownSelected) selectableShown.forEach(c => next.delete(c.asin))
-      else selectableShown.forEach(c => next.add(c.asin))
-      return next
-    })
-  }
-  function toggle(asin: string) {
-    setSelected(prev => { const n = new Set(prev); n.has(asin) ? n.delete(asin) : n.add(asin); return n })
-  }
-
-  const anyRunning = Object.values(gen).some(s => s === 'running')
-  const selectedCount = selectableShown.filter(c => selected.has(c.asin)).length
-
-  // Land on whichever program tab actually has campaigns, so a user with only EPC
-  // rows doesn't open to an empty Affiliate+ tab (and vice versa).
-  useEffect(() => {
-    if (view !== 'queue') return
-    if (programTab === 'affiliate' && plusRows.length === 0 && epcRows.length > 0) setProgramTab('epc')
-    else if (programTab === 'epc' && epcRows.length === 0 && plusRows.length > 0) setProgramTab('affiliate')
-  }, [view, programTab, plusRows.length, epcRows.length])
-
-  // Generate posts for a set of campaign rows, sequentially. Passes campaignId
-  // so the route REUSES the pushed pending row (no duplicate insert), and keeps
-  // the real failure reason per-row so a "failed" is actually diagnosable.
-  const runGenerate = useCallback(async (picks: CampaignRow[]) => {
-    if (!picks.length) return
-    let ok = 0
-    for (const c of picks) {
-      setGen(g => ({ ...g, [c.asin]: 'running' }))
-      setGenErr(e => { const n = { ...e }; delete n[c.asin]; return n })
-      try {
-        const payload = { campaignId: c.id, asin: c.asin, campaignName: c.campaign_name, epc: c.epc, endsAt: c.ends_at }
-        // Async first: enqueue a background job (no 300s request ceiling) and
-        // poll it to completion. If async is disabled (503), fall back to the
-        // synchronous route — same payload, same result.
-        const enq = await fetch('/api/campaigns/enqueue', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        })
-        if (enq.status === 503) {
-          const res = await fetch('/api/campaigns/generate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-          })
-          const d = await res.json().catch(() => ({}))
-          if (!res.ok) throw new Error(d.error || `HTTP ${res.status}`)
-        } else {
-          const eq = await enq.json().catch(() => ({}))
-          if (!enq.ok) throw new Error(eq.error || `HTTP ${enq.status}`)
-          await pollCampaignJob(eq.jobId as string, c.id)  // resolves on done OR row-live, throws on failed
-        }
-        setGen(g => ({ ...g, [c.asin]: 'done' }))
-        ok++
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : 'generation failed'
-        setGen(g => ({ ...g, [c.asin]: 'error' }))
-        setGenErr(er => ({ ...er, [c.asin]: msg }))
-      }
-    }
-    if (ok > 0) toast.success(`${ok} campaign post${ok === 1 ? '' : 's'} published.`)
-    loadList()
-  }, [loadList])
-
-  // Fix the hero image on an already-published post (no Opus spend — just
-  // re-builds the product hero and rewrites the CTA card image on the same post).
-  const fixImage = useCallback(async (c: CampaignRow) => {
-    setFixing(f => ({ ...f, [c.asin]: true }))
-    try {
-      const res = await fetch('/api/campaigns/refresh-image', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ campaignId: c.id }),
-      })
-      const d = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(d.error || `HTTP ${res.status}`)
-      toast.success('Image fixed — refresh the live post to see it.')
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Couldn\'t fix the image')
-    } finally {
-      setFixing(f => { const n = { ...f }; delete n[c.asin]; return n })
-    }
-  }, [])
-
-  // Remove a campaign row (and its WP post, if one exists). Used to clean up
-  // duplicate ASIN rows the scout ingested twice.
-  const removeRow = useCallback(async (c: CampaignRow) => {
-    const isLive = !!(c.wordpress_url || c.blog_post_id)
-    const msg = isLive
-      ? `Delete this campaign AND its published WordPress post?\n\n${c.product_title || c.asin}`
-      : `Remove this row?\n\n${c.product_title || c.asin}`
-    if (!window.confirm(msg)) return
-    setRemoving(r => ({ ...r, [c.asin]: true }))
-    try {
-      const res = await fetch('/api/campaigns/delete', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ campaignId: c.id }),
-      })
-      const d = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(d.error || `HTTP ${res.status}`)
-      toast.success('Removed.')
-      loadList()
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Couldn\'t remove the row')
-    } finally {
-      setRemoving(r => { const n = { ...r }; delete n[c.asin]; return n })
-    }
-  }, [loadList])
-
-  // Open the compose-and-send modal for a campaign row (details_url required).
-  const openMessage = useCallback((c: CampaignRow) => {
-    if (!c.details_url) { toast.error('No Amazon link stored for this campaign — re-import it via SCOUT.'); return }
-    setMsgModal({
-      product: c.campaign_name || c.product_title || '',
-      asin: c.asin,
-      commissionPct: c.commission_pct,
-      detailsUrl: c.details_url,
-      brandLabel: c.brand_name || undefined,
-    })
-  }, [])
-
-  // Accept this campaign on Amazon — SCOUT opens its details page in the user's
-  // session and clicks Accept (background-first, brief foreground fallback), then
-  // we record accepted_at so the row shows "✓ Accepted". Accepting is a
-  // deliberate choice here; importing never accepts.
-  const acceptOnAmazon = useCallback(async (c: CampaignRow) => {
-    if (!c.details_url) { toast.error('No Amazon link stored for this campaign — re-import it via SCOUT.'); return }
-    setAccepting(a => ({ ...a, [c.asin]: true }))
-    try {
-      const r = await requestAcceptCampaign(c.details_url)
-      if (r.ok) {
-        toast.success(r.already ? 'Already accepted on Amazon ✓' : 'Accepted on Amazon ✓')
-        // Optimistic: flag the row accepted immediately, then persist.
-        setCampaigns(cs => cs.map(x => x.id === c.id ? { ...x, accepted_at: new Date().toISOString() } : x))
-        try {
-          await fetch('/api/campaigns/mark-accepted', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ asin: c.asin }),
-          })
-        } catch { /* the accept already happened on Amazon — non-fatal */ }
-      } else if (r.error === 'not-installed') {
-        toast.error('Install / enable SCOUT to accept campaigns.')
-      } else if (r.error === 'timeout') {
-        toast.error('Accepting timed out — try again, or accept it on Amazon directly.')
-      } else {
-        // eslint-disable-next-line no-console
-        console.warn('[MVP] accept-campaign failed:', r)
-        toast.error(`Couldn't accept: ${r.reason || r.error || 'unknown'} — you can accept it on Amazon directly.`, { duration: 10000 })
-      }
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Accept failed')
-    } finally {
-      setAccepting(a => { const n = { ...a }; delete n[c.asin]; return n })
-    }
-  }, [])
-
-  // Clear the scouted backlog — the un-actioned rows piling up after repeated
-  // pushes. Never touches published posts or in-flight jobs (server enforces
-  // the same scope: status pending/ready/new/failed with no post).
-  const clearable = campaigns.filter(c => !isLiveRow(c) && !['queued', 'researching', 'generating'].includes(c.status))
-  const clearQueue = useCallback(async () => {
-    const n = campaigns.filter(c => !isLiveRow(c) && !['queued', 'researching', 'generating'].includes(c.status)).length
-    if (n === 0) return
-    if (!window.confirm(
-      `Clear ${n} scouted campaign${n === 1 ? '' : 's'} from the queue?\n\n` +
-      `This removes un-actioned pushes only. Published posts and any running generations are kept.`,
-    )) return
-    setClearing(true)
-    try {
-      const res = await fetch('/api/campaigns/clear', { method: 'POST' })
-      const d = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(d.error || `HTTP ${res.status}`)
-      toast.success(`Cleared ${d.deleted} from the queue.`)
-      setSelected(new Set())
-      loadList()
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Couldn\'t clear the queue')
-    } finally {
-      setClearing(false)
-    }
-  }, [campaigns, loadList])
-
-  // Delete just the ticked rows (vs "Clear queue" which drops every un-actioned
-  // row). Selected rows are always non-live — the checkbox is disabled on
-  // published rows — so there's no WordPress post to clean up.
-  const [deletingSel, setDeletingSel] = useState(false)
-  const deleteSelected = useCallback(async () => {
-    const picks = filtered.filter(c => selected.has(c.asin) && !isLiveRow(c))
-    if (!picks.length) return
-    if (!window.confirm(`Delete ${picks.length} selected campaign${picks.length === 1 ? '' : 's'} from the queue?`)) return
-    setDeletingSel(true)
-    try {
-      const results = await Promise.allSettled(picks.map(c =>
-        fetch('/api/campaigns/delete', {
-          method: 'DELETE', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ campaignId: c.id }),
-        }).then(r => { if (!r.ok) throw new Error() }),
-      ))
-      const ok = results.filter(r => r.status === 'fulfilled').length
-      const failed = picks.length - ok
-      if (ok) toast.success(`Deleted ${ok}${failed ? ` · ${failed} couldn't be removed` : ''}.`)
-      else toast.error('Couldn\'t delete the selected rows.')
-      setSelected(new Set())
-      loadList()
-    } finally {
-      setDeletingSel(false)
-    }
-  }, [filtered, selected, loadList])
-
-  // Hard cap on a single bulk run — each generation is a full ~$0.50 AI job, so
-  // "Select all → Generate" must NOT fire dozens at once (that caused a runaway
-  // spend). Cap the batch and confirm the cost first.
-  const MAX_BATCH = 5
-  const generateSelected = useCallback(() => {
-    const picks = filtered.filter(c => selected.has(c.asin) && !isLiveRow(c))
-    if (!picks.length) return
-    const batch = picks.slice(0, MAX_BATCH)
-    const overflow = picks.length - batch.length
-    const ok = window.confirm(
-      `Generate ${batch.length} blog post${batch.length === 1 ? '' : 's'} now?\n\n` +
-      `Each is a full AI generation (research + write + image, ~$0.50 each).` +
-      (overflow > 0 ? `\n\nOnly the first ${MAX_BATCH} of ${picks.length} selected will run — repeat for the rest.` : ''),
-    )
-    if (ok) runGenerate(batch)
-  }, [filtered, selected, runGenerate])
 
   return (
     <>
@@ -634,9 +199,9 @@ export default function EpcScoutPage() {
             </p>
             <ol className="text-[12px] leading-relaxed list-decimal pl-5 mb-4 space-y-1" style={{ color: 'var(--text-soft)' }}>
               <li><a href={SCOUT_STORE_LISTING_URL} target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] font-medium hover:underline inline-flex items-center gap-0.5">Install SCOUT <Download size={10} /></a> — one click from the Chrome Web Store.</li>
-              <li>Copy your token below → paste into SCOUT → <span className="font-medium">Connect</span>.</li>
-              <li>On a <a href={CC_URL} target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] font-medium hover:underline inline-flex items-center gap-0.5">Creator Connections <ExternalLink size={10} /></a> page the SCOUT panel sits above the filters — search, sort by commission or EPC, tick the winners, <span className="font-medium">Import selected into MVP</span>.</li>
-              <li>They land in the queue below (Affiliate+ / EPC tabs) — pick and Generate.</li>
+              <li>Copy your token below → paste into the SCOUT popup → <span className="font-medium">Connect</span>.</li>
+              <li>Search the <span className="font-medium">MVP Finder</span> below — it surfaces the MVP-approved campaigns &amp; products. Hit <span className="font-medium">Save</span> on the winners.</li>
+              <li>They land in <span className="font-medium">Saved for later</span> — your buy-to-review shortlist to Message the brand or Buy &amp; review.</li>
             </ol>
             <label className="block text-[10px] uppercase tracking-wide font-semibold mb-1" style={{ color: 'var(--text-faint)' }}>
               <KeyRound size={11} className="inline mr-1" /> Your ingest token
@@ -670,7 +235,7 @@ export default function EpcScoutPage() {
           <p className="text-[12px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-faint)' }}>Search the MVP Finder</p>
         </div>
         <SmartScanPanel
-          coveredAsins={campaigns.map(c => c.asin)}
+          coveredAsins={covered.map(c => c.asin)}
           onMessageBrand={(c) => setMsgModal(c)}
           onSavedChange={() => setSavedReloadKey(k => k + 1)}
         />
@@ -682,14 +247,5 @@ export default function EpcScoutPage() {
 
       {msgModal && <MessageBrandModal campaign={msgModal} onClose={() => setMsgModal(null)} onSent={loadList} />}
     </>
-  )
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <label className="block text-[10px] uppercase tracking-wide font-semibold mb-1" style={{ color: 'var(--text-faint)' }}>{label}</label>
-      {children}
-    </div>
   )
 }
