@@ -9,7 +9,7 @@
 // category and ranks by estimated commission dollars per sale. Honest about what
 // the data supports; don't pretend to demand/quality signals we don't have.
 //
-// SINGLE SOURCE OF TRUTH — tweak the numbers here; the /walmart-pb Finder sends
+// SINGLE SOURCE OF TRUTH — tweak the numbers here; the /partnerboost Finder sends
 // them to the sweep route at search time.
 
 export interface PbRules {

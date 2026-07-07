@@ -421,7 +421,7 @@ export default function DashboardShellV2({
         // (2026-06-30). Each page has an inline "connect your API key" panel at
         // the top. Above Brand Deals per request.
         { href: '/levanta', icon: <ShoppingBag size={15} />, label: 'MVP x Levanta', gate: isPaid },
-        { href: '/walmart-pb', icon: <Store size={15} />, label: 'MVP x PartnerBoost', gate: isPaid },
+        { href: '/partnerboost', icon: <Store size={15} />, label: 'MVP x PartnerBoost', gate: isPaid },
         { href: '/collaborations', icon: <Handshake size={15} />, label: 'Brand Deals' },
         // Inbound: brand messages from the blog's "Work with brands" banner.
         { href: '/brand-inquiries', icon: <Inbox size={15} />, label: 'Brand Inquiries', badge: unreadBrand > 0 ? unreadBrand : undefined },

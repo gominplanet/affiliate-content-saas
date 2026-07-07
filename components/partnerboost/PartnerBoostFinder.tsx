@@ -1,6 +1,6 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// The MVP Finder for PartnerBoost — the cyan-framed hero of /walmart-pb. One
+// The MVP Finder for PartnerBoost — the cyan-framed hero of /partnerboost. One
 // scan sweeps the brands you've JOINED across Walmart · Amazon · DTC, applies
 // MVP's hidden rulebook (lib/partnerboost-rules.ts) via /api/partnerboost/finder,
 // and lists the vetted, ranked picks. Each row: Generate post · Buy to review ·
