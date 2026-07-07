@@ -128,7 +128,7 @@ export default function LevantaSaved({ reloadKey }: { reloadKey: number }) {
                       className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold text-white" style={{ background: '#34c759' }}>
                       <ShoppingCart size={11} /> Buy to review
                     </a>
-                    <button onClick={() => setMsg({ product: it.title || it.asin, brand: it.brand || '', asin: it.asin, commissionPct: it.commission_pct, network: 'Levanta', networkUrl: 'https://app.levanta.io/' })}
+                    <button onClick={() => setMsg({ product: it.title || it.asin, brand: it.brand || '', asin: it.asin, commissionPct: it.commission_pct, network: 'Levanta', networkUrl: 'https://app.levanta.io/creator' })}
                       className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border"
                       style={{ borderColor: 'rgba(124,58,237,0.4)', color: '#7C3AED' }}>
                       <MessageCircle size={11} /> Message brand

@@ -65,11 +65,11 @@ export async function POST(request: NextRequest) {
     const exclude = new Set((Array.isArray(body.exclude) ? body.exclude : []).map((a) => String(a).toUpperCase()))
 
     // ── 1. Partnered brands (access:true) — paginate the FULL set ─────────────
-    const partnered: { brandId: string; brandName: string }[] = []
+    const partnered: { brandId: string; brandName: string; url: string | null }[] = []
     let bCursor: string | undefined
     for (let p = 0; p < MAX_BRAND_PAGES; p++) {
       const { brands, cursor } = await listLevantaBrands(token, { access: true, marketplace: 'all', limit: BRAND_PAGE, cursor: bCursor })
-      for (const b of brands) if (b.access && b.brandId) partnered.push({ brandId: b.brandId, brandName: b.brandName || b.brandId })
+      for (const b of brands) if (b.access && b.brandId) partnered.push({ brandId: b.brandId, brandName: b.brandName || b.brandId, url: b.url || null })
       if (!cursor) break
       bCursor = cursor
     }
@@ -78,6 +78,7 @@ export async function POST(request: NextRequest) {
         note: 'No partnered brands yet. Approve brands in the Levanta dashboard, then scan.' })
     }
     const brandName = new Map(partnered.map((b) => [b.brandId, b.brandName]))
+    const brandUrl = new Map(partnered.map((b) => [b.brandId, b.url])) // brand's Levanta page → Message-brand deep-link
     const allIds = partnered.map((b) => b.brandId)
 
     // ── 2. Product sweep — breadth-first across ALL partnered brands in
@@ -141,9 +142,12 @@ export async function POST(request: NextRequest) {
       matches.push(m)
     }
 
+    // Attach each pick's Levanta brand page so "Message brand" can deep-link.
+    const withBrand = matches.map((m) => ({ ...m, brandUrl: (m.brandId && brandUrl.get(m.brandId)) || null }))
+
     return NextResponse.json({
       ok: true,
-      matches,
+      matches: withBrand,
       totalBrands: partnered.length,
       scannedBrands: brandsSwept,
       scannedProducts: raw.length,
