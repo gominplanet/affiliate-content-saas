@@ -13,7 +13,7 @@
 # - Rows not touched by this import (campaigns that left the catalog) are
 #   purged at the end by imported_at < run start.
 
-import csv, json, os, re, sys, time, urllib.request
+import csv, json, os, re, sys, time, urllib.request, urllib.parse
 from datetime import date, datetime, timezone
 
 # Import the FULL catalog (all commission levels) — completeness + future-proofing;
@@ -55,8 +55,11 @@ def post(rows):
     urllib.request.urlopen(req, timeout=60).read()
 
 def purge_older_than(iso):
+    # URL-encode the timestamp — a raw ISO string has '+' (tz) and ':' that
+    # PostgREST rejects as a 400 in the query string.
+    ts = urllib.parse.quote(iso, safe='')
     req = urllib.request.Request(
-        f'{URL}/rest/v1/cc_campaign_catalog?imported_at=lt.{iso}',
+        f'{URL}/rest/v1/cc_campaign_catalog?imported_at=lt.{ts}',
         headers={'apikey': KEY, 'Authorization': f'Bearer {KEY}', 'Prefer': 'return=minimal'},
         method='DELETE')
     urllib.request.urlopen(req, timeout=120).read()
