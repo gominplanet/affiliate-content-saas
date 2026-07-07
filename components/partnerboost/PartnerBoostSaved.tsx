@@ -128,7 +128,7 @@ export default function PartnerBoostSaved({ reloadKey }: { reloadKey: number }) 
                         <ShoppingCart size={11} /> Buy to review
                       </a>
                     )}
-                    <button onClick={() => setMsg({ product: it.title || '', brand: it.brand || '', asin: it.asin, commissionPct: it.commission_pct, network: 'PartnerBoost', networkUrl: it.brand ? `https://app.partnerboost.com/partner/brands/all?keyword=${encodeURIComponent(it.brand)}` : 'https://app.partnerboost.com/partner/brands/all' })}
+                    <button onClick={() => setMsg({ product: it.title || '', brand: it.brand || '', asin: it.asin, commissionPct: it.commission_pct, network: 'PartnerBoost', networkUrl: 'https://app.partnerboost.com/partner/brands/all' })}
                       className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border"
                       style={{ borderColor: 'rgba(124,58,237,0.4)', color: '#7C3AED' }}>
                       <MessageCircle size={11} /> Message brand
