@@ -11,7 +11,7 @@
  * the background and sends them one after another (one Send per box).
  */
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { toast } from 'sonner'
 import { X, Loader2, Sparkles, Send, MessageSquare, Plus, Trash2, Copy, Radar } from 'lucide-react'
 import { requestSendBrand, type FindCampaignResult } from '@/lib/extension-frame'
@@ -157,7 +157,10 @@ export default function MessageBrandModal({ campaign, onClose, onSent, onFindCam
   // Live CC lookup: ask SCOUT whether this product is a running campaign. On a hit
   // we adopt its details URL (→ auto-send) and, if it surfaced the real brand,
   // re-draft so the greeting names the brand.
-  const runFind = useCallback(async () => {
+  // `silent` = the automatic on-open check (below). It stays quiet on the
+  // not-installed / error cases (no toast) so a user who just wants to copy
+  // isn't nagged; the manual button still surfaces the louder feedback.
+  const runFind = useCallback(async (o?: { silent?: boolean }) => {
     if (!onFindCampaign) return
     setFinding(true); setFindMiss(null)
     try {
@@ -170,7 +173,8 @@ export default function MessageBrandModal({ campaign, onClose, onSent, onFindCam
       } else if (r.ok) {
         setFindMiss(`No live campaign matched${typeof r.scanned === 'number' ? ` (checked ${r.scanned})` : ''}. You can still copy the pitch.`)
       } else if (r.error === 'not-installed') {
-        toast.error('Install / enable SCOUT to search Creator Connections.')
+        if (o?.silent) setFindMiss('Connect SCOUT to auto-send this on Amazon — otherwise copy the pitch below.')
+        else toast.error('Install / enable SCOUT to search Creator Connections.')
       } else if (r.error === 'timeout') {
         setFindMiss('The Creator Connections search timed out. You can still copy the pitch, or try again.')
       } else {
@@ -182,6 +186,23 @@ export default function MessageBrandModal({ campaign, onClose, onSent, onFindCam
       setFinding(false)
     }
   }, [onFindCampaign, effectiveBrand])
+
+  // Auto-check Creator Connections the moment the modal opens. Every product that
+  // reaches this modal is an Affiliate+ campaign (the Finder + saved shelf only
+  // wire "Message brand" for campaign finds), but catalog-verified ones arrive
+  // WITHOUT a campaign details URL — so kick off the live SCOUT lookup right away
+  // to fetch it and flip the primary button from Copy → Send on its own, no
+  // hunting for a button. Runs once; no-op when a details URL was already passed
+  // (Levanta/PartnerBoost, or an imported campaign) or no lookup hook is wired.
+  const autoFound = useRef(false)
+  useEffect(() => {
+    if (autoFound.current) return
+    if (campaign.detailsUrl || !onFindCampaign) return
+    if (!/^[A-Za-z0-9]{10}$/.test(campaign.asin || '')) return
+    autoFound.current = true
+    runFind({ silent: true })
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [])
 
   // When a live find surfaced a different brand, refresh the draft so the greeting
   // uses it. Runs only after liveBrand changes (not on first mount).
@@ -363,7 +384,7 @@ export default function MessageBrandModal({ campaign, onClose, onSent, onFindCam
               </div>
             ) : (
               <>
-                <button onClick={runFind} disabled={finding || sending}
+                <button onClick={() => runFind()} disabled={finding || sending}
                   className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-[12px] font-semibold border disabled:opacity-60"
                   style={{ color: '#7C3AED', borderColor: '#d6c6fb', background: 'rgba(124,58,237,0.05)' }}>
                   {finding ? <Loader2 size={13} className="animate-spin" /> : <Radar size={13} />}
@@ -393,7 +414,9 @@ export default function MessageBrandModal({ campaign, onClose, onSent, onFindCam
         <p className="px-5 pb-4 -mt-1 text-[11px]" style={{ color: 'var(--text-faint)' }}>
           {canSend
             ? <>SCOUT sends {cleanSegments.length > 1 ? `these ${cleanSegments.length} messages one after another` : 'this message'} from your Amazon session — in the background, without leaving this page (it even fixes your Store ID if needed). Review {cleanSegments.length > 1 ? 'them' : 'it'} above first; {cleanSegments.length > 1 ? 'they go' : 'it goes'} out as written.</>
-            : <>This product isn&apos;t a Creator Connections campaign, so Amazon has no brand chat to auto-send through. Copy the pitch and send it wherever you reach the brand (email, their site, or their CC campaign if they run one).</>}
+            : finding
+            ? <>Checking Creator Connections for this campaign so SCOUT can auto-send it on Amazon — the button flips to <b>Send</b> the moment it&apos;s found. You can copy the pitch now instead if you&apos;d rather.</>
+            : <>No live Creator Connections chat found for this one, so Amazon has no brand chat to auto-send through. Copy the pitch and send it wherever you reach the brand (email, their site, or their CC campaign if they run one).</>}
         </p>
       </div>
     </div>

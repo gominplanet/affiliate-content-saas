@@ -24,7 +24,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import PageHero from '@/components/layout/PageHero'
 import { CheckCircle2, Download, Copy, RefreshCw, KeyRound, ChevronDown, ChevronRight, Search } from 'lucide-react'
 import { toast } from 'sonner'
-import { getScoutInstallKind } from '@/lib/extension-frame'
+import { getScoutInstallKind, requestFindCampaign } from '@/lib/extension-frame'
 import MessageBrandModal, { type MessageBrandCampaign } from '@/components/campaigns/MessageBrandModal'
 import SmartScanPanel from '@/components/campaigns/SmartScanPanel'
 import SavedFinds from '@/components/campaigns/SavedFinds'
@@ -291,7 +291,19 @@ export default function EpcScoutPage() {
              Campaign queue 2026-07-06). Fed by the Finder's Save button. ── */}
       <SavedFinds reloadKey={savedReloadKey} onMessageBrand={(c) => setMsgModal(c)} />
 
-      {msgModal && <MessageBrandModal campaign={msgModal} onClose={() => setMsgModal(null)} onSent={loadList} />}
+      {msgModal && (
+        <MessageBrandModal
+          campaign={msgModal}
+          onClose={() => setMsgModal(null)}
+          onSent={loadList}
+          // Every "Message brand" here is an Affiliate+ campaign, but the
+          // catalog-verified ones arrive without a campaign details URL (SCOUT
+          // verifies on the /dp, not the CC grid). Hand the modal a live SCOUT
+          // lookup so it fetches the real details URL by ASIN and flips Copy →
+          // Send — direct brand-message, not copy-only.
+          onFindCampaign={() => requestFindCampaign(msgModal?.brandLabel || msgModal?.product || '', msgModal?.asin || '')}
+        />
+      )}
       </>
       )}
     </>
