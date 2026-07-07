@@ -42,7 +42,28 @@ export const BANNED_RULE =
 
 export function scrubBanned(input: string | null | undefined): string {
   if (!input) return ''
-  let s = input
+
+  // GUARD HTML comments FIRST. Gutenberg block delimiters are HTML comments —
+  // `<!-- wp:group {…} -->` — and their `--` / `-->` sequences ARE the ASCII
+  // double-hyphen idiom ASCII_EMDASH rewrites to a comma. Without this guard the
+  // scrub turns every `<!-- wp:group -->` into `<!, wp:group, >`, dumping raw
+  // block markup as visible text all over the published post (reported on a
+  // Levanta post 2026-07-07). The campaign-writer routes (Levanta + Walmart/PB)
+  // scrub the FULL block HTML through here, unlike blog/generate which uses the
+  // already-guarded lib/html-scrub. Pull each comment out to an inert token, run
+  // the scrubs, then restore verbatim. Plain-text callers (titles, social copy)
+  // have no comments, so this is a no-op for them.
+  //
+  // Token shape `[[MVPCMT:N:]]` is deliberate: no whitespace, commas, dashes, or
+  // "<space><punct>" runs, so NONE of the tidy passes below can touch it (checked
+  // pass-by-pass), and it restores cleanly. Same token lib/html-scrub uses.
+  const comments: string[] = []
+  let s = input.replace(/<!--[\s\S]*?-->/g, (m) => {
+    comments.push(m)
+    return `[[MVPCMT:${comments.length - 1}:]]`
+  })
+
+  s = s
     .replace(BANNED, '')
     .replace(ENTITY_MDASH, ', ')
     .replace(EM_DASH, ', ')
@@ -57,5 +78,7 @@ export function scrubBanned(input: string | null | undefined): string {
     .replace(/\([^\S\r\n]*\)/g, '')          // empty parens
     .replace(/[^\S\r\n]{2,}/g, ' ')
     .trim()
-  return s
+
+  // Restore the untouched block comments verbatim.
+  return s.replace(/\[\[MVPCMT:(\d+):\]\]/g, (_m, i) => comments[Number(i)] ?? '')
 }
