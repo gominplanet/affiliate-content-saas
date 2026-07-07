@@ -209,6 +209,12 @@ export default function PartnerBoostFinder({ onSavedChange }: { onSavedChange?: 
             {running ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
             {running ? 'Scanning…' : (willAppend ? 'Scan again — more' : (matches && matches.length ? 'Scan again' : 'Smart Scan'))}
           </button>
+          <button onClick={runSync} disabled={syncing || running}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-semibold border disabled:opacity-60"
+            style={{ borderColor: 'rgba(14,116,144,0.5)', color: CYAN }}
+            title="Pull your whole joined-brand catalog into MVP so scans return instantly. Takes a couple of minutes.">
+            {syncing ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} {syncing ? 'Syncing…' : 'Sync catalog'}
+          </button>
           <button onClick={() => setPublishLive((v) => !v)} disabled={running}
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-semibold disabled:opacity-60"
             style={{ background: publishLive ? 'rgba(16,185,129,0.14)' : 'rgba(245,158,11,0.14)', color: publishLive ? '#10B981' : '#f59e0b', border: '1px solid var(--border)' }}
@@ -217,19 +223,11 @@ export default function PartnerBoostFinder({ onSavedChange }: { onSavedChange?: 
           </button>
         </div>
 
-        {/* Catalog sync — cache the whole joined set so scans are instant. */}
-        <div className="flex items-center gap-2 flex-wrap mt-2 text-[11px]" style={{ color: 'var(--text-faint)' }}>
-          <button onClick={runSync} disabled={syncing || running}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-semibold border disabled:opacity-60"
-            style={{ borderColor: 'var(--border)', color: CYAN }}
-            title="Pull your whole joined-brand catalog into MVP so scans return instantly. Takes a couple of minutes.">
-            {syncing ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />} {syncing ? 'Syncing…' : 'Sync catalog'}
-          </button>
-          <span>
-            {syncInfo && syncInfo.count > 0
-              ? <>{syncInfo.count.toLocaleString()} products cached{syncInfo.syncedAt ? ` · synced ${timeAgo(syncInfo.syncedAt)}` : ''} — scans are instant</>
-              : 'Not synced yet — your first scan runs live (slower). Sync once for instant scans.'}
-          </span>
+        {/* Catalog sync status — the button lives in the controls row above. */}
+        <div className="mt-2 text-[11px]" style={{ color: 'var(--text-faint)' }}>
+          {syncInfo && syncInfo.count > 0
+            ? <>{syncInfo.count.toLocaleString()} products cached{syncInfo.syncedAt ? ` · synced ${timeAgo(syncInfo.syncedAt)}` : ''} — scans are instant</>
+            : 'Not synced yet — your first scan runs live (slower). Sync once for instant scans.'}
         </div>
       </div>
 
