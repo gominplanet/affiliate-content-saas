@@ -2655,26 +2655,39 @@ async function sendBrandMessageInPage(message) {
       aria: (b.getAttribute('aria-label') || '').slice(0, 30),
       disabled: b.disabled === true || b.getAttribute('aria-disabled') === 'true',
     }))
-  // After Send, Amazon pops "Potential Personal Information was detected …" with
-  // a CONTINUE button. It's a PLAIN modal (not role="dialog"), so find it by its
-  // TEXT, then click Continue/OK. NO visibility check — a background tab has no
-  // layout (offsetParent/getBoundingClientRect are 0), which is what stalled the
-  // send on this dialog before.
+  // After Send, Amazon pops a "you're about to share personal information" warning
+  // (on messages carrying an address / email / phone) with a Continue button. We
+  // MUST click it or the message never posts and the whole send stalls → timeout.
+  // It renders as a PLAIN modal (often NOT role="dialog"), and Amazon keeps
+  // rewording it, so cast a WIDE net: scope to any element whose text reads like
+  // the warning, then click the affirmative button (never Cancel / Edit / Go
+  // back). NO visibility check — a background tab has no layout.
+  const isConfirmText = (t) => /^(continue|ok|okay|yes|yes,?\s*(continue|send)?|send|send message|send it|send anyway|send now|i understand|understood|got it|proceed|agree|i agree|accept|acknowledge|confirm|share|share anyway)$/i.test(t)
+  const isDismissText = (t) => /^(cancel|go back|back|edit|edit message|no|no,?\s*thanks|close|dismiss|review|keep editing|return)$/i.test(t)
+  const looksLikePiModal = (el) => {
+    const tx = norm(el && (el.textContent || ''))
+    if (!tx || tx.length > 2500) return false
+    return /personal information|share (personal|sensitive|your (address|contact))|sharing (personal|sensitive|your)|about to share|contains (personal|sensitive)|sensitive information|your (address|phone|email)( |,|\.|\swill)/i.test(tx)
+  }
+  let lastPiText = ''
   const findConfirmOk = () => {
-    const isConfirm = (t) => /^(continue|ok|okay|i understand|understood|got it|proceed|agree|accept|acknowledge|confirm|send( message| anyway)?)$/i.test(t)
-    const scopes = [...document.querySelectorAll('[role="dialog"],[role="alertdialog"],[aria-modal="true"]')]
-    const pi = [...document.querySelectorAll('div,section,form')].find((e) => {
-      const tx = e.textContent || ''
-      return /personal information (was )?detected|share personal information/i.test(tx) && tx.length < 900
-    })
-    if (pi) scopes.push(pi)
-    const roots = scopes.length ? scopes : [document.body || document]
-    for (let i = roots.length - 1; i >= 0; i--) {
-      const btn = [...roots[i].querySelectorAll('button,[role="button"],input[type="submit"],a')].find((b) => {
-        if (b.disabled === true || b.getAttribute('aria-disabled') === 'true') return false
-        return isConfirm(attrText(b))
-      })
-      if (btn) return btn
+    // Scope to any container whose TEXT reads like the personal-info warning
+    // (covers plain modals AND role=dialog / a-modal / a-popover variants), then
+    // pick the affirmative action inside it — explicit confirm word, else the
+    // Amazon primary button, else the sole non-dismiss action. Dismiss buttons
+    // (Cancel / Edit / Go back) are always excluded so we never abort the send.
+    const roots = [...document.querySelectorAll('[role="dialog"],[role="alertdialog"],[aria-modal="true"],.a-modal,.a-popover,[data-a-modal],div,section,form')]
+      .filter(looksLikePiModal)
+    // Innermost first (tightest wrapper around the warning, not document.body).
+    roots.sort((a, z) => norm(a.textContent).length - norm(z.textContent).length)
+    for (const root of roots) {
+      const btns = [...root.querySelectorAll('button,[role="button"],input[type="submit"],a')]
+        .filter((b) => !(b.disabled === true || b.getAttribute('aria-disabled') === 'true'))
+        .filter((b) => { const t = attrText(b); return t && !isDismissText(t) })
+      const btn = btns.find((b) => isConfirmText(attrText(b)))
+        || btns.find((b) => /a-button-primary/.test(b.className || ''))
+        || (btns.length === 1 ? btns[0] : null)
+      if (btn) { lastPiText = norm(root.textContent).slice(0, 240); return btn }
     }
     return null
   }
@@ -2702,34 +2715,50 @@ async function sendBrandMessageInPage(message) {
   steps.opened = true
 
   // Send the group as SEPARATE messages: fill a segment → click Send → it posts
-  // → the box clears → fill the next → Send again. ONE Send per marker, NOT a
-  // queue (this is how OINK / ViralVue do it). readInput isn't relied on here —
-  // we just fill, wait for Send to enable, click it, and move on.
+  // → the box clears → fill the next → Send again. ONE Send per marker.
   void readInput
+  const boxEmpty = (inp) => { try { return norm(readInput(inp)).length === 0 } catch (e) { return false } }
+  const clickHard = (el) => { realClick(el); try { el.click() } catch (e) {} }
   const segments = splitSegments(message)
   let sent = 0
+  const segLog = []
   for (let i = 0; i < segments.length; i++) {
     const inp = findInput() || input
     setInput(inp, segments[i]); steps.filled = true
     await sleep(650)                                 // let React register the text + enable Send
     let send = null
-    for (let t = 0; t < 20 && !send; t++) {          // wait up to ~5s for Send to enable
+    for (let t = 0; t < 24 && !send; t++) {          // wait up to ~6s for Send to enable
       send = findSend(inp.el.closest('[role="dialog"],form,section,div') || document) || findSend(document)
       if (!send) await sleep(250)
     }
-    if (!send) break                                 // Send never enabled — stop (segment is placed)
-    realClick(send); sent++; steps.sent = true
-    // Amazon pops "Personal Information detected" (with a Continue button) on
-    // messages with an address/email/phone — click it, then wait for it to close.
-    await sleep(500)
-    for (let k = 0; k < 16; k++) { const ok = findConfirmOk(); if (ok) { realClick(ok); await sleep(700); break } await sleep(300) }
-    await sleep(1300)                                // wait for the message to post + the box to clear
+    if (!send) { segLog.push({ seg: i + 1, sent: false, reason: 'send-never-enabled' }); break }
+    clickHard(send); sent++; steps.sent = true
+    // SETTLE. Amazon may pop a "sharing personal information" confirm (address /
+    // email / phone messages). Keep clicking Continue and waiting until the box
+    // CLEARS (= message actually posted) or the window elapses — RETRYING the
+    // click across ticks because the modal renders a beat after Send and one
+    // synthetic click doesn't always take. This is the fix for the send stalling
+    // out (→ timeout) on personal-info messages: dismiss the popup and carry on
+    // with the rest of the messages until every one is delivered.
+    let dismissed = false, cleared = false, quiet = 0
+    for (let k = 0; k < 30; k++) {                   // hard ceiling ~11s per message
+      const ok = findConfirmOk()
+      if (ok) { clickHard(ok); dismissed = true; quiet = 0; await sleep(450); continue }
+      if (boxEmpty(inp)) { cleared = true; break }
+      // Once the PI popup has been dismissed and stays gone for a few ticks, the
+      // message has posted even if the box text lingers — don't burn the budget.
+      if (dismissed && ++quiet >= 4) { cleared = boxEmpty(inp); break }
+      await sleep(350)
+    }
+    segLog.push({ seg: i + 1, sent: true, dismissedPiDialog: dismissed, boxCleared: cleared, piText: dismissed ? lastPiText : undefined })
+    await sleep(700)
   }
+  try { console.debug('[MVP SCOUT] brand-send', { groups: sent, segments: segments.length, log: segLog }) } catch (e) {}
   if (sent === 0) {
     return { ok: false, steps, reason: 'send-button-not-found', groups: 0,
-      diag: { filled: steps.filled, sendCandidates: sendCandidatesDump() } }
+      diag: { filled: steps.filled, sendCandidates: sendCandidatesDump(), segLog } }
   }
-  return { ok: true, steps, groups: sent }
+  return { ok: true, steps, groups: sent, diag: { segLog } }
 }
 
 // Runs IN a campaign tab: if the session is on an ONSITE store-id (the "onamz…"

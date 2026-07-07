@@ -139,7 +139,10 @@ export async function requestSendBrand(detailsUrl: string, message: string): Pro
   if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
   const resp = await sendToExtension<{ ok?: boolean; error?: string; reason?: string; steps?: Record<string, boolean>; diag?: Record<string, unknown>; groups?: number }>(
     { type: 'MVP_SEND_BRAND', detailsUrl, message },
-    120000, // sends N messages one-by-one with ~1.4s between each
+    // Headroom: N messages sent one-by-one, each may pause on Amazon's "sharing
+    // personal information" confirm (address messages) + a possible store-id
+    // switch up front. 120s was too tight and surfaced as a false "timeout".
+    180000,
   )
   if (!resp) return { ok: false, error: 'timeout' }
   return { ok: !!resp.ok, error: resp.error, reason: resp.reason, steps: resp.steps, diag: resp.diag, groups: resp.groups }

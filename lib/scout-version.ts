@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.11.67'
+export const SCOUT_LATEST_VERSION = '1.11.68'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'The AMZ Product Finder is now ONE page inside MVP: Campaigns ON finds Affiliate+ campaigns worth your time; Campaigns OFF searches Amazon directly (US, Canada, UK or Australia) and live-verifies every product against MVP\'s approved-product criteria — pick 10, 20 or 50 results. International marketplaces need a one-time toggle in this popup.'
+  'Message-brand auto-send now clicks through Amazon\'s "you\'re sharing personal information" confirmation and keeps going until every message is delivered — fixes the send timing out on messages that include your shipping address.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
