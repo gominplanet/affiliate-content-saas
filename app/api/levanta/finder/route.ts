@@ -23,15 +23,19 @@ import {
 import type { Tier } from '@/lib/tier'
 
 export const dynamic = 'force-dynamic'
-export const maxDuration = 120
+export const maxDuration = 180
 
-// Bound the sweep so a big account can't fan out forever. Levanta accepts
-// comma-joined brand_ids and up to 500 products/page; a few pages across the
-// partnered set is plenty to surface the winners.
-const MAX_BRANDS = 60
-const PRODUCT_PAGE = 200
-const MAX_PAGES = 5
-const MAX_PRODUCTS = 1000
+// Sweep the creator's FULL partnered set. Levanta pages brands + products via
+// cursor and takes comma-joined brand_ids; we paginate every partnered brand,
+// then pull products in URL-safe brand batches, breadth-first (one page per
+// batch) so every brand is represented — bounded by a wall-clock budget so a
+// huge account (800+ brands) can't run past the function ceiling.
+const BRAND_PAGE = 100
+const MAX_BRAND_PAGES = 40        // up to ~4000 partnered brands
+const BRAND_CHUNK = 25            // brand_ids per /products call (URL-length safe)
+const PRODUCT_PAGE = 500          // Levanta's per-page max
+const MAX_PRODUCTS = 12000
+const SWEEP_DEADLINE_MS = 90_000  // stop the product sweep before the 180s function ceiling
 
 export async function POST(request: NextRequest) {
   try {
@@ -60,43 +64,55 @@ export async function POST(request: NextRequest) {
     const focus = (body.focus || '').trim().toLowerCase()
     const exclude = new Set((Array.isArray(body.exclude) ? body.exclude : []).map((a) => String(a).toUpperCase()))
 
-    // ── 1. Partnered brands (access:true) — the sweep universe ────────────────
-    const { brands } = await listLevantaBrands(token, { access: true, marketplace: 'all', limit: 100 })
-    const partnered = brands.filter((b) => b.access && b.brandId)
+    // ── 1. Partnered brands (access:true) — paginate the FULL set ─────────────
+    const partnered: { brandId: string; brandName: string }[] = []
+    let bCursor: string | undefined
+    for (let p = 0; p < MAX_BRAND_PAGES; p++) {
+      const { brands, cursor } = await listLevantaBrands(token, { access: true, marketplace: 'all', limit: BRAND_PAGE, cursor: bCursor })
+      for (const b of brands) if (b.access && b.brandId) partnered.push({ brandId: b.brandId, brandName: b.brandName || b.brandId })
+      if (!cursor) break
+      bCursor = cursor
+    }
     if (partnered.length === 0) {
-      return NextResponse.json({ ok: true, matches: [], scannedBrands: 0, scannedProducts: 0, kept: 0,
+      return NextResponse.json({ ok: true, matches: [], totalBrands: 0, scannedBrands: 0, scannedProducts: 0, kept: 0,
         note: 'No partnered brands yet. Approve brands in the Levanta dashboard, then scan.' })
     }
-    const brandName = new Map(partnered.map((b) => [b.brandId, b.brandName || b.brandId]))
-    const brandIds = partnered.slice(0, MAX_BRANDS).map((b) => b.brandId).join(',')
+    const brandName = new Map(partnered.map((b) => [b.brandId, b.brandName]))
+    const allIds = partnered.map((b) => b.brandId)
 
-    // ── 2. Bulk product pull across the partnered set (bounded paging) ────────
+    // ── 2. Product sweep — breadth-first across ALL partnered brands in
+    //        URL-safe batches (one page each so every brand is represented),
+    //        bounded by a wall-clock budget. "Scan again — more" pages deeper. ──
     const raw: LevantaCandidate[] = []
-    let cursor: string | undefined
-    for (let page = 0; page < MAX_PAGES && raw.length < MAX_PRODUCTS; page++) {
-      const { products, cursor: next } = await listLevantaProducts(token, {
-        brandIds, cursor, marketplace: 'all', limit: PRODUCT_PAGE,
-      })
-      for (const p of products) {
-        raw.push({
-          asin: p.asin,
-          title: p.title,
-          price: p.price,
-          commission: p.commission,
-          rating: p.rating != null ? Number(p.rating) : null,
-          ratingsTotal: p.ratingsTotal,
-          platformEpc: p.platformEpc,
-          category: p.category,
-          inStock: p.inStock,
-          image: p.image,
-          brandId: p.brandId,
-          brandName: (p.brandId && brandName.get(p.brandId)) || null,
-          marketplace: p.marketplace || 'amazon.com',
-        })
-      }
-      if (!next) break
-      cursor = next
+    const t0 = Date.now()
+    let sweepErr: unknown = null
+    let brandsSwept = 0
+    for (let i = 0; i < allIds.length; i += BRAND_CHUNK) {
+      if (raw.length >= MAX_PRODUCTS || Date.now() - t0 > SWEEP_DEADLINE_MS) break
+      const chunk = allIds.slice(i, i + BRAND_CHUNK)
+      try {
+        const { products } = await listLevantaProducts(token, { brandIds: chunk.join(','), marketplace: 'all', limit: PRODUCT_PAGE })
+        for (const p of products) {
+          raw.push({
+            asin: p.asin,
+            title: p.title,
+            price: p.price,
+            commission: p.commission,
+            rating: p.rating != null ? Number(p.rating) : null,
+            ratingsTotal: p.ratingsTotal,
+            platformEpc: p.platformEpc,
+            category: p.category,
+            inStock: p.inStock,
+            image: p.image,
+            brandId: p.brandId,
+            brandName: (p.brandId && brandName.get(p.brandId)) || null,
+            marketplace: p.marketplace || 'amazon.com',
+          })
+        }
+        brandsSwept += chunk.length
+      } catch (e) { sweepErr = e /* one bad batch shouldn't kill the whole sweep */ }
     }
+    if (raw.length === 0 && sweepErr) throw sweepErr
 
     // ── 3. Gate → dedupe (keep best per ASIN) → focus filter → rank → top-N ───
     const bestByAsin = new Map<string, ReturnType<typeof scoreLevanta>>()
@@ -118,7 +134,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       matches,
-      scannedBrands: Math.min(partnered.length, MAX_BRANDS),
+      totalBrands: partnered.length,
+      scannedBrands: brandsSwept,
       scannedProducts: raw.length,
       kept: matches.length,
       ...(matches.length === 0 ? { note: 'No products cleared the MVP criteria on this sweep. Try Wide, a different focus keyword, or partner with more brands in Levanta.' } : {}),

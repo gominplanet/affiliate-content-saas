@@ -105,7 +105,10 @@ export default function LevantaFinder({ onSavedChange }: { onSavedChange?: () =>
         setNote(j.note)
       } else {
         const total = (append ? (matches?.length || 0) : 0) + fresh.length
-        setNote(`${total} MVP-approved pick${total === 1 ? '' : 's'}${append ? ` (+${fresh.length} new)` : ''} · swept ${j.scannedProducts} products across ${j.scannedBrands} partnered brand${j.scannedBrands === 1 ? '' : 's'}.`)
+        const brandCov = j.totalBrands && j.totalBrands > j.scannedBrands
+          ? `${j.scannedBrands} of your ${j.totalBrands}`
+          : `${j.scannedBrands}`
+        setNote(`${total} MVP-approved pick${total === 1 ? '' : 's'}${append ? ` (+${fresh.length} new)` : ''} · swept ${j.scannedProducts} products across ${brandCov} partnered brand${j.scannedBrands === 1 ? '' : 's'}.`)
       }
     } catch {
       setError('Network error during scan.'); if (!append) setMatches([])
