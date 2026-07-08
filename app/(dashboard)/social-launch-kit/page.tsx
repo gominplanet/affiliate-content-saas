@@ -247,7 +247,7 @@ function PlatformCard({
                 filename={`${spec.id}-avatar.png`} />
             </div>
             <p className="text-[11px] mt-2" style={{ color: 'var(--text-faint)' }}>
-              Prefer your own logo? Set it in <a href="/brand" className="hover:underline" style={{ color: '#7C3AED' }}>Brand Profile</a> and use it as your profile picture instead.
+              These are built from your logo + banner in <a href="/brand" className="hover:underline" style={{ color: '#7C3AED' }}>Brand Profile</a> — add or update them there to change the look. Want your exact logo as the profile picture? Download it from Brand Profile and upload that instead.
             </p>
           </Field>
 

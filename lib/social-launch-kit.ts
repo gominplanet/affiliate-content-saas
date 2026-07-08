@@ -37,7 +37,9 @@ export const LAUNCH_PLATFORMS: Record<LaunchPlatform, PlatformSpec> = {
     nameMax: 50,
     bioShortMax: 101,   // Page "bio"
     bioLongMax: 250,    // Page "about" intro
-    banner: { w: 820, h: 312, label: 'Cover photo', aspect: '16:9' },
+    // FB recommends uploading 820×360 (displays 820×312 desktop / 640×360 mobile);
+    // keep the key visual centered so mobile cropping is safe.
+    banner: { w: 820, h: 360, label: 'Cover photo', aspect: '16:9' },
     avatar: { w: 320, h: 320, label: 'Profile picture', aspect: '1:1' },
     steps: [
       { title: 'Start a new Page', detail: 'Open the create link below and choose a Page (not a personal profile). You must be logged into a personal Facebook account first — the Page attaches to it but stays separate.' },
