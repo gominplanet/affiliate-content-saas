@@ -241,6 +241,18 @@ export default function DashboardShellV2({
     try { localStorage.setItem('mvp_shell_collapsed', collapsed ? '1' : '0') } catch { /* ignore */ }
   }, [collapsed])
 
+  // The Admin section is a long list of tools most sessions never touch, so keep
+  // it COLLAPSED by default and let the admin expand it on demand (choice
+  // persisted). It force-opens while you're actually on an /admin page so the
+  // active tool stays visible.
+  const [adminOpen, setAdminOpen] = useState(false)
+  useEffect(() => {
+    try { if (localStorage.getItem('mvp_admin_nav_open') === '1') setAdminOpen(true) } catch { /* ignore */ }
+  }, [])
+  useEffect(() => {
+    try { localStorage.setItem('mvp_admin_nav_open', adminOpen ? '1' : '0') } catch { /* ignore */ }
+  }, [adminOpen])
+
   const isAdmin = tier === 'admin'
   // Labs (LTK) is Pro-only by request (2026-06-15). Admins always retain access.
   const canUseLabs = tier === 'pro' || isAdmin
@@ -672,6 +684,11 @@ export default function DashboardShellV2({
                   borderColor: isDark ? 'rgba(45,212,191,0.22)' : 'rgba(15,118,110,0.18)',
                 }
               : undefined
+            // Admin group collapses to just its header when not in use (long,
+            // rarely-touched tool list). Other groups always render their items.
+            const isAdminGroup = group.label === 'Admin'
+            const collapsibleSection = isAdminGroup && !collapsed
+            const sectionOpen = !collapsibleSection || adminOpen || pathname.startsWith('/admin')
             return (
               <div
                 key={group.label}
@@ -679,24 +696,45 @@ export default function DashboardShellV2({
                 style={cardStyle}
               >
                 {!collapsed && group.label && (
-                  <p
-                    className="px-2.5 mb-1.5 text-[11px] uppercase tracking-[0.14em] font-semibold flex items-center gap-1.5"
-                    style={{ color: headerAccent || 'var(--text-faint)' }}
-                  >
-                    {headerIcon}
-                    {group.label}
-                  </p>
+                  collapsibleSection ? (
+                    <button
+                      type="button"
+                      onClick={() => setAdminOpen((o) => !o)}
+                      className="w-full px-2.5 mb-1.5 text-[11px] uppercase tracking-[0.14em] font-semibold flex items-center gap-1.5 hover:opacity-80 transition-opacity"
+                      style={{ color: headerAccent || 'var(--text-faint)' }}
+                      aria-expanded={sectionOpen}
+                      title={sectionOpen ? 'Collapse admin tools' : 'Expand admin tools'}
+                    >
+                      {headerIcon}
+                      {group.label}
+                      <ChevronDown
+                        size={12}
+                        className="ml-auto transition-transform"
+                        style={{ transform: sectionOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }}
+                      />
+                    </button>
+                  ) : (
+                    <p
+                      className="px-2.5 mb-1.5 text-[11px] uppercase tracking-[0.14em] font-semibold flex items-center gap-1.5"
+                      style={{ color: headerAccent || 'var(--text-faint)' }}
+                    >
+                      {headerIcon}
+                      {group.label}
+                    </p>
+                  )
                 )}
-                <div className="flex flex-col gap-0.5">
-                  {visibleItems.map((item) => (
-                    <NavItem
-                      key={item.href + item.label}
-                      item={item}
-                      active={isActive(item.href)}
-                      collapsed={collapsed}
-                    />
-                  ))}
-                </div>
+                {sectionOpen && (
+                  <div className="flex flex-col gap-0.5">
+                    {visibleItems.map((item) => (
+                      <NavItem
+                        key={item.href + item.label}
+                        item={item}
+                        active={isActive(item.href)}
+                        collapsed={collapsed}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
             )
           })}
