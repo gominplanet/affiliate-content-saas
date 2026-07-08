@@ -323,6 +323,12 @@ export default function SmartScanPanel({
                 ? <>SCOUT sweeps your Affiliate+ opportunities and MVP keeps only the campaigns worth your time — vetted for real commission, runway, demand, product quality and review visibility — ranked with the buy-to-review math. Products already in your queue are skipped.</>
                 : <>SCOUT searches Amazon directly and live-verifies each product on its page — price, demand, reviews, rating and an open video carousel. Slower by design, but every result is <b>MVP-approved</b>: a product you can confidently invest in, review, and earn from onsite.</>}
             </p>
+            <p className="text-[11px] leading-relaxed mt-2 rounded-lg px-2.5 py-2" style={{ color: 'var(--text-faint)', background: 'rgba(124,58,237,0.06)' }}>
+              <b style={{ color: 'var(--text-soft)' }}>How to use it:</b>{' '}
+              {mode === 'campaigns'
+                ? <>Run a Smart Scan, then keep hitting <b>Scan again</b> for more. Each pass digs deeper into the catalog and never repeats a product you&apos;ve already seen, so re-scan as many times as you like to keep pulling fresh campaigns. <b>Save</b> the ones worth acting on, then <b>Message brand</b> or <b>Buy to review</b> when you&apos;re ready.</>
+                : <>Enter a keyword and pick how many results you want (each one is live-verified on Amazon, so larger counts take longer). Run the search again anytime for a fresh set of products. <b>Save</b> the winners and <b>Buy to review</b> when you&apos;re ready.</>}
+            </p>
             <a href="/collaborations" className="inline-flex items-center gap-1 text-[11px] font-semibold hover:underline mt-1.5" style={{ color: '#7C3AED' }}>
               <SlidersHorizontal size={11} /> Customize how your brand messages are written
             </a>
