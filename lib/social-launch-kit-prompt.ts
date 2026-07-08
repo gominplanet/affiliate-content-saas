@@ -17,6 +17,7 @@ export interface CoverBrief {
   colorLine: string            // brand colour instruction (set or "from the logo")
   hasLogo: boolean
   context?: string             // optional: about / audience / tone, for accuracy
+  categories?: string[]        // the brand's actual content mix, dominant first
 }
 
 // ── Reusable sections ────────────────────────────────────────────────────────
@@ -44,7 +45,7 @@ const SAFE =
   'SAFE AREA: keep the headline and the logo comfortably within the centre of the frame (both horizontally and vertically) so they survive the platform cropping the outer edges on desktop and mobile. The product scene and background may run to the edges.'
 
 const NEGATIVE =
-  'AVOID: generic / flat / Canva-template layouts, low contrast, small or thin fonts, busy or cheap-gradient backgrounds, watermarks, people, cartoon style, poor spacing, and any misspelled or invented text. Never render the word "honest".'
+  'AVOID: any humans, faces, hands or people (products and objects only); generic / flat / Canva-template layouts, low contrast, small or thin fonts, busy or cheap-gradient backgrounds, watermarks, cartoon style, poor spacing, and any misspelled or invented text. Never render the word "honest".'
 
 function colorSection(b: CoverBrief): string {
   return `COLOUR SYSTEM: ${b.colorLine} Primary = the brand colour, secondary = white, accent = the brand's secondary colour. Use large white typography mixed with accent-colour words; use the accent only where it increases emphasis.`
@@ -58,7 +59,7 @@ function layoutSection(b: CoverBrief): string {
     `LAYOUT — a cinematic composition in three zones (roughly 30% / 40% / 30%):`,
     `LEFT: ${b.hasLogo ? 'the attached brand LOGO, reproduced faithfully, with a soft glow / rim light, integrated naturally into the artwork (never simply pasted flat)' : 'a premium brand emblem with a soft glow'}.`,
     `CENTRE (dominant): a MASSIVE headline reading "${b.headline}" in a heavy condensed sans-serif — mix large WHITE words with large ACCENT-colour words and multiple weights for clear hierarchy.`,
-    `RIGHT: a dynamic visual scene of real ${b.industry} items (products / packaging / devices) with depth, overlap and perspective — never leave this side empty.`,
+    `RIGHT: a dynamic visual scene of real products / objects from the brand's actual content${b.categories?.length ? ` — mainly ${b.categories.slice(0, 4).join(', ')}${b.categories[0] ? `, weighted toward ${b.categories[0]} (what they publish most)` : ''}` : ` (${b.industry})`}, with depth, overlap and perspective. Products and objects ONLY — absolutely no humans, faces, hands or people. Never leave this side empty.`,
   ].join(' ')
 }
 

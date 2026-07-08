@@ -111,9 +111,35 @@ export async function POST(request: Request) {
   const coverHeadline = ((headline.split(/[.!?•|]/)[0] || headline).trim().split(/\s+/).slice(0, 8).join(' ')) || headline
   const sellingPoints = keywords.length ? keywords.slice(0, 5) : ['Tested', 'No sponsor bias', 'Just the truth']
 
+  // The brand's ACTUAL content mix: rank their declared categories by how often
+  // they appear in the user's real published post titles (dominant first), so
+  // the cover's product scene leans into what they truly publish most. Banner only.
+  let categories: string[] = []
+  if (kind === 'banner') {
+    const declared = Array.from(new Set([
+      ...(Array.isArray(b.niches) ? b.niches : []),
+      ...(Array.isArray(b.custom_categories) ? b.custom_categories : []),
+    ].map(c => String(c || '').trim()).filter(Boolean)))
+    categories = declared.slice(0, 5)
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: recent } = await (supabase as any).from('blog_posts')
+        .select('title').eq('user_id', user.id).order('created_at', { ascending: false }).limit(80)
+      const titles = ((recent ?? []) as { title?: string }[]).map(r => String(r.title || '').toLowerCase())
+      if (titles.length && declared.length) {
+        const score = (cat: string) => {
+          const words = cat.toLowerCase().split(/\s+/).filter(w => w.length > 2 && !['and', 'the', 'for'].includes(w))
+          return titles.filter(t => words.some(w => t.includes(w))).length
+        }
+        const ranked = declared.map(c => ({ c, n: score(c) })).sort((x, y) => y.n - x.n)
+        if ((ranked[0]?.n ?? 0) > 0) categories = ranked.map(r => r.c).slice(0, 5)
+      }
+    } catch { /* fall back to declared order */ }
+  }
+
   // Modular prompt engine (lib/social-launch-kit-prompt) — premium cover spec.
   const prompt = kind === 'banner'
-    ? buildCoverPrompt({ platformLabel: `${spec.label} cover`, style: bannerStyle, brandName, headline: coverHeadline, industry: niches, sellingPoints, colorLine, hasLogo, context })
+    ? buildCoverPrompt({ platformLabel: `${spec.label} cover`, style: bannerStyle, brandName, headline: coverHeadline, industry: niches, sellingPoints, colorLine, hasLogo, context, categories })
     : buildAvatarPrompt({ brandName, industry: niches, colorLine, hasLogo, context })
 
   // Visual references: uploaded inspiration first, then the real logo (and the
