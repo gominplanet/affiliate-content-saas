@@ -62,9 +62,14 @@ export default function SocialLaunchKitPage() {
     const key = `${platform}:${kind}`
     setBusyImg(key)
     try {
+      // Feed the banner the generated copy so the designed layout reflects it.
+      const kit = kits[platform]
       const res = await fetch('/api/social-launch-kit/image', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ platform, kind, referenceImage: refImages[key] }),
+        body: JSON.stringify({
+          platform, kind, referenceImage: refImages[key],
+          headline: kit?.bioShort, features: kit?.keywords?.slice(0, 3), brandName: kit?.names?.[0],
+        }),
       })
       const data = await res.json()
       if (!res.ok) { if (res.status === 403) setLocked(true); toast.error(data.error || 'Image generation failed.'); return }
