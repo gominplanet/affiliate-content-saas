@@ -22,6 +22,10 @@ const publicPaths = [
   '/api/newsletter/confirm',
   '/api/newsletter/unsubscribe',
   '/api/newsletter/resend-webhook',
+  // Broadcast unsubscribe — hit from an operator-broadcast email in the user's
+  // inbox (no session). Authenticates via a signed token (lib/broadcast-token);
+  // also serves RFC 8058 one-click POST from Gmail/Apple Mail.
+  '/api/email/unsubscribe',
   // AI Product Finder — public endpoint hit from the JS widget that runs in
   // customer-blog visitors' browsers. CORS preflight (OPTIONS) must reach the
   // route handler too, which is why it's allowlisted here.

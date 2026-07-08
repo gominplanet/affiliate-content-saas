@@ -537,6 +537,7 @@ export default function DashboardShellV2({
         { href: '/admin/template-performance', icon: <BarChart3 size={15} />, label: 'Template Performance' },
         { href: '/admin/designer-text', icon: <Wand2 size={15} />, label: 'Designer Text Playground' },
         { href: '/admin/announcement', icon: <Newspaper size={15} />, label: 'News banner (admin)' },
+        { href: '/admin/broadcast', icon: <Megaphone size={15} />, label: 'Broadcast email (admin)' },
         { href: '/admin/encrypt-secrets', icon: <ShieldCheck size={15} />, label: 'Encrypt Secrets' },
       ],
     }] : []),
