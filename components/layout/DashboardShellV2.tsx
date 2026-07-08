@@ -39,7 +39,7 @@ import {
   UserCog, AlertTriangle, DollarSign, Newspaper, Plug, Wrench,
   Camera, MessageCircle, Activity, BarChart3, Wand2, ShieldCheck,
   Share2, UserSquare, Lightbulb, LifeBuoy, Link2, FlaskConical, Store, Send, ShoppingBag, Megaphone,
-  Inbox, PackageSearch, Copy, Signpost,
+  Inbox, PackageSearch, Copy, Signpost, Code2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { DEALS_HUB_PAUSED } from '@/lib/deal-occasion'
@@ -429,6 +429,10 @@ export default function DashboardShellV2({
         // 404 → 301 fixer — paste GSC "Not found (404)" export, match each dead
         // URL to a live post, write redirects via the plugin. 2026-07-05.
         { href: '/tools/redirects', icon: <Signpost size={15} />, label: 'Fix 404s' },
+        // Fix broken post formatting — self-serve repair for posts that render
+        // raw block code (`<!, wp:… , >`) from the old em-dash scrub. Fixes the
+        // live post + stored copy + queued drafts. Free text fix. 2026-07-08.
+        { href: '/tools/fix-formatting', icon: <Code2 size={15} />, label: 'Fix Formatting' },
         // Analytics still hidden 2026-06-12 — route stays alive (/analytics),
         // just unlinked for now.
       ],
