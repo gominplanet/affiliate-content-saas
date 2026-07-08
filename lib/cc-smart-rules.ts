@@ -42,9 +42,9 @@ export interface CcSmartRules {
 
 export const CC_SMART_RULES: CcSmartRules = {
   minCommissionPct: 15,
-  minDaysLeft: 100,
+  minDaysLeft: 90,
   minPrice: 30,
-  maxPrice: 600,
+  maxPrice: 800,
   minMonthlySales: 100,
   minRating: 3,
   minEpc: 0.25,
@@ -83,7 +83,7 @@ export const CC_SMART_RULES_WIDE: CcSmartRules = {
   minCommissionPct: 10,
   minDaysLeft: 45,
   minPrice: 15,
-  maxPrice: 1000,
+  maxPrice: 1500,
   minMonthlySales: 100,
   minRating: 3,
   hardFloorPrice: 15,

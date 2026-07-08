@@ -62,8 +62,8 @@ const AVOID_PATTERNS: string[] = [
 export const LEVANTA_RULES: LevantaRules = {
   minCommissionPct: 10,
   minPrice: 30,
-  maxPrice: 600,
-  minRating: 3,
+  maxPrice: 900,
+  minRating: 3.5,
   minReviews: 50,
   minEpc: 0.30,
   requireInStock: true,
@@ -80,8 +80,8 @@ export const LEVANTA_RULES_WIDE: LevantaRules = {
   ...LEVANTA_RULES,
   minCommissionPct: 7,
   minPrice: 15,
-  maxPrice: 1000,
-  minRating: 2.8,
+  maxPrice: 1500,
+  minRating: 3,
   minReviews: 20,
   minEpc: 0.15,
 }
