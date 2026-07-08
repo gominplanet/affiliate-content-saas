@@ -41,7 +41,7 @@ export async function POST(req: Request) {
   if (!userId) return NextResponse.json({ error: 'userId is required' }, { status: 400 })
 
   // Per-request results (function-local — never share across requests).
-  const results: Array<{ postId: number; slug?: string; before: number; after: number; changed: boolean; error?: string }> = []
+  const results: Array<{ postId: number; slug?: string; before: number; after: number; changed: boolean; error?: string; source?: 'wp' | 'stored' }> = []
 
   // Service-role client for the cross-user site lookup — the caller's session
   // client is RLS-scoped to the ADMIN's own rows, so it can't see Lisa's site.
@@ -98,16 +98,45 @@ export async function POST(req: Request) {
     return got ? { content: got.content, viaProxy: false } : null
   }
 
+  // Fallback source when WordPress only returns RENDERED content (WAF hosts like
+  // Hostinger strip REST auth headers → the reader can't get content.raw). MVP
+  // stored the ORIGINAL block HTML in Supabase (blog_posts.content) at generation
+  // time — for a post corrupted BEFORE the scrub fix, that copy carries the same
+  // literal `<!,` markers, which repairs cleanly. Owner-scoped via the service
+  // client + the WP post id we already resolved.
+  async function readStoredSource(postId: number): Promise<string | null> {
+    const { data } = await admin
+      .from('blog_posts')
+      .select('content')
+      .eq('user_id', userId)
+      .eq('wordpress_post_id', postId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    const c = data?.content
+    return typeof c === 'string' && c ? c : null
+  }
+
   let anyRepaired = false
   for (const postId of ids) {
     try {
       const got = await readRawContent(postId)
       if (!got) { results.push({ postId, before: 0, after: 0, changed: false, error: 'could not read post' }); continue }
       const before = countCorruptedMarkers(got.content)
-      // We only got RENDERED content (escaped markers) — raw is unavailable, so
-      // we can't safely repair this post here. Use Rebuild for it instead.
+      // WordPress only returned RENDERED content (escaped markers). Writing that
+      // back would flatten the blocks — so repair from MVP's STORED block source
+      // instead and push the fixed HTML back to this same post (same URL).
       if (before === 0 && /&lt;!,/.test(got.content)) {
-        results.push({ postId, before: 0, after: 0, changed: false, error: 'raw content unavailable (only rendered) — repair blocked; use Rebuild for this post' })
+        const stored = await readStoredSource(postId)
+        const storedBefore = stored ? countCorruptedMarkers(stored) : 0
+        if (!stored || storedBefore === 0) {
+          results.push({ postId, before: 0, after: 0, changed: false, error: 'raw content unavailable (only rendered) and no stored source to repair from — use Rebuild for this post' })
+          continue
+        }
+        const repaired = repairCorruptedBlocks(stored)
+        const after = countCorruptedMarkers(repaired)
+        if (!body.dryRun) { await wp.updatePost(postId, { content: repaired }); anyRepaired = true }
+        results.push({ postId, before: storedBefore, after, changed: !body.dryRun, source: 'stored' })
         continue
       }
       if (before === 0) { results.push({ postId, before: 0, after: 0, changed: false }); continue }
@@ -117,7 +146,7 @@ export async function POST(req: Request) {
         await wp.updatePost(postId, { content: repaired })
         anyRepaired = true
       }
-      results.push({ postId, before, after, changed: !body.dryRun })
+      results.push({ postId, before, after, changed: !body.dryRun, source: 'wp' })
     } catch (err) {
       results.push({ postId, before: 0, after: 0, changed: false, error: err instanceof Error ? err.message : 'repair failed' })
     }
