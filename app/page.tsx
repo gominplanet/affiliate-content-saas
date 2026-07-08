@@ -746,7 +746,7 @@ function AsinSection() {
               </span>
               <h3 className="text-[15px] font-semibold mb-1.5" style={{ color: 'var(--text)' }}>{o.title}</h3>
               <p className="text-[13.5px] leading-relaxed flex-1" style={{ color: 'var(--text-soft)' }}>{o.body}</p>
-              <span className="mt-4 inline-flex self-start items-center px-2 py-0.5 rounded-full text-[10.5px] font-medium uppercase tracking-wide" style={{ backgroundColor: 'var(--surface-2)', color: 'var(--text-faint)', border: '1px solid var(--border)' }}>
+              <span className="mt-4 inline-flex self-start items-center px-2 py-0.5 rounded-full text-[10.5px] font-medium uppercase tracking-wide" style={{ backgroundColor: 'var(--surface-bright)', color: 'var(--text-soft)', border: '1px solid var(--border)' }}>
                 {o.tag}
               </span>
             </div>
@@ -798,7 +798,7 @@ function PartnerNetworksSection() {
               </span>
               <h3 className="text-[15px] font-semibold mb-1.5" style={{ color: 'var(--text)' }}>{o.title}</h3>
               <p className="text-[13.5px] leading-relaxed flex-1" style={{ color: 'var(--text-soft)' }}>{o.body}</p>
-              <span className="mt-4 inline-flex self-start items-center px-2 py-0.5 rounded-full text-[10.5px] font-medium uppercase tracking-wide" style={{ backgroundColor: 'var(--surface-2)', color: 'var(--text-faint)', border: '1px solid var(--border)' }}>
+              <span className="mt-4 inline-flex self-start items-center px-2 py-0.5 rounded-full text-[10.5px] font-medium uppercase tracking-wide" style={{ backgroundColor: 'var(--surface-bright)', color: 'var(--text-soft)', border: '1px solid var(--border)' }}>
                 {o.tag}
               </span>
             </div>
