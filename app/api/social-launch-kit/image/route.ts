@@ -18,7 +18,7 @@ import sharp from 'sharp'
 import { createServerClient } from '@/lib/supabase/server'
 import { spendGate } from '@/lib/ai-spend'
 import { recordUsage } from '@/lib/ai-usage'
-import { composeWithNanoBananaPro, generateWithIdeogram, rehostAll } from '@/lib/thumbnail-generators'
+import { composeWithNanoBananaPro, generateWithIdeogram, rehostAll, uploadDataUrlToFal } from '@/lib/thumbnail-generators'
 import { LAUNCH_PLATFORMS, type LaunchPlatform } from '@/lib/social-launch-kit'
 import type { Tier } from '@/lib/tier'
 
@@ -29,7 +29,7 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const body = await request.json().catch(() => ({})) as { platform?: string; kind?: string }
+  const body = await request.json().catch(() => ({})) as { platform?: string; kind?: string; referenceImage?: string }
   const platform = body.platform as LaunchPlatform
   const spec = platform ? LAUNCH_PLATFORMS[platform] : undefined
   if (!spec) return NextResponse.json({ error: 'Unknown platform' }, { status: 400 })
@@ -56,22 +56,27 @@ export async function POST(request: Request) {
 
   const target = kind === 'banner' ? spec.banner! : spec.avatar
 
-  // Reference assets = the user's real brand. Banner leans on the header banner
-  // then the logo; avatar leans on the logo. Rehost to fal so the model can read
-  // them (WordPress / Supabase URLs aren't always fal-reachable directly).
-  const refCandidates = kind === 'banner'
+  // References: a user-uploaded inspiration image (any image they like) leads,
+  // then their real brand assets (header banner + logo for covers; logo for the
+  // avatar). Upload the data URL to fal; brand URLs get rehosted (WordPress /
+  // Supabase URLs aren't always fal-reachable directly). Cap at 3.
+  const customRef = body.referenceImage ? await uploadDataUrlToFal(body.referenceImage) : null
+  const brandCandidates = kind === 'banner'
     ? [bannerUrl, logoUrl].filter(Boolean)
     : [logoUrl].filter(Boolean)
-  const refs = refCandidates.length ? await rehostAll(refCandidates) : []
+  const brandRefs = brandCandidates.length ? await rehostAll(brandCandidates) : []
+  const refs = [customRef, ...brandRefs].filter((u): u is string => !!u).slice(0, 3)
+  const hasCustom = !!customRef
 
   let sourceUrl = ''
   let usedModel: 'fal-nano-banana-pro' | 'fal-ideogram-v3' = 'fal-nano-banana-pro'
 
   if (refs.length) {
-    // GROUNDED path — build ON the user's real assets.
+    // GROUNDED path — build ON the attached references (custom inspiration + brand).
+    const lead = hasCustom ? 'Use the FIRST attached image as the primary style inspiration (its mood, palette and composition). ' : ''
     const prompt = kind === 'banner'
-      ? `Using the attached brand assets (the creator's real logo and/or banner) as the visual reference, design a clean, modern ${spec.label} cover banner in THIS brand's exact colors (${primary}, ${secondary}) and style. Extend the brand look into a wide banner: tasteful shapes, plenty of empty space, a clear horizontal center safe zone. You MAY place the brand's real logo/mark tastefully. Do NOT invent any text, words, letters, slogans or gibberish — only the real mark and color. Premium, uncluttered, wide landscape.`
-      : `Using the attached brand logo as the reference, create a clean circular profile picture / app icon for this ${niches} creator. Center the brand's real mark on a solid on-brand background using ${primary}. Do NOT invent any text, words, letters or gibberish — reproduce the real mark faithfully, nothing else. Crisp, modern, perfectly centered, 1:1.`
+      ? `${lead}Using the attached ${hasCustom ? 'reference and brand assets' : "brand assets (the creator's real logo and/or banner)"} as the visual reference, design a clean, modern ${spec.label} cover banner in this brand's colors (${primary}, ${secondary}) and style. Extend the look into a wide banner: tasteful shapes, plenty of empty space, a clear horizontal center safe zone. You MAY place the brand's real logo/mark tastefully. Do NOT invent any text, words, letters, slogans or gibberish. Premium, uncluttered, wide landscape.`
+      : `${lead}Using the attached ${hasCustom ? 'reference and brand logo' : 'brand logo'} as the reference, create a clean circular profile picture / app icon for this ${niches} creator, centered on a solid on-brand background using ${primary}. Do NOT invent any text, words, letters or gibberish — reproduce the real mark faithfully, nothing else. Crisp, modern, perfectly centered, 1:1.`
     const out = await composeWithNanoBananaPro({ prompt, referenceImageUrls: refs, aspectRatio: kind === 'banner' ? '16:9' : '1:1', numImages: 1 })
     sourceUrl = out?.[0] || ''
   }
@@ -89,9 +94,9 @@ export async function POST(request: Request) {
 
   if (!sourceUrl) {
     return NextResponse.json({
-      error: logoUrl || bannerUrl
+      error: refs.length
         ? 'Image generation failed — try again in a moment.'
-        : 'Add your logo (and/or a banner) in Brand Profile so MVP can build on-brand images, then try again.',
+        : 'Add your logo in Brand Profile, or upload a reference image below, so MVP has something to build on.',
     }, { status: 502 })
   }
 

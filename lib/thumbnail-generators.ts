@@ -65,6 +65,23 @@ export async function rehostAll(urls: string[]): Promise<string[]> {
   return out.filter((u): u is string => !!u)
 }
 
+/** Upload a base64 data URL (e.g. a user-supplied reference image) straight to
+ *  fal storage and return its fal URL for use as an image reference. Caps size
+ *  and validates the shape; returns null on any failure so the caller can drop
+ *  the reference. */
+export async function uploadDataUrlToFal(dataUrl: string): Promise<string | null> {
+  try {
+    const m = /^data:([^;]+);base64,([\s\S]+)$/.exec((dataUrl || '').trim())
+    if (!m) return null
+    const buf = Buffer.from(m[2], 'base64')
+    if (!buf.length || buf.length > 12 * 1024 * 1024) return null // ~12MB ceiling
+    const blob = new Blob([buf], { type: m[1] || 'image/png' })
+    return await fal.storage.upload(blob)
+  } catch {
+    return null
+  }
+}
+
 // ── Style reference thumbnails ──────────────────────────────────────────────
 // Curated YouTube-thumbnail style references passed as input images to Nano
 // Banana Pro so the model learns the visual language we want (cinematic

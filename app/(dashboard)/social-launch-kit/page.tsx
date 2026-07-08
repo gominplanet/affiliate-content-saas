@@ -6,12 +6,12 @@
 // walks the user through setup with deep links. v1: Facebook Page + Pinterest.
 'use client'
 
-import { useState, type ReactNode } from 'react'
+import { useState, useRef, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
 import { Button } from '@/components/ui/button'
 import {
-  Rocket, Sparkles, Copy, Check, Download, ExternalLink, ListChecks, Image as ImageIcon, FlaskConical, Lock,
+  Rocket, Sparkles, Copy, Check, Download, ExternalLink, ListChecks, Image as ImageIcon, FlaskConical, Lock, Upload, X,
 } from 'lucide-react'
 import { LAUNCH_PLATFORM_LIST, type LaunchPlatform, type PlatformSpec, type SocialKit } from '@/lib/social-launch-kit'
 
@@ -25,6 +25,8 @@ export default function SocialLaunchKitPage() {
   const [busyImg, setBusyImg] = useState<string | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
   const [locked, setLocked] = useState(false)   // set if the API 403s (non-Pro deep-link)
+  // Optional per-image inspiration the user uploads, keyed by `${platform}:${kind}`.
+  const [refImages, setRefImages] = useState<Record<string, string>>({})
 
   async function copy(text: string, key: string, label = 'Copied') {
     try {
@@ -62,7 +64,7 @@ export default function SocialLaunchKitPage() {
     try {
       const res = await fetch('/api/social-launch-kit/image', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ platform, kind }),
+        body: JSON.stringify({ platform, kind, referenceImage: refImages[key] }),
       })
       const data = await res.json()
       if (!res.ok) { if (res.status === 403) setLocked(true); toast.error(data.error || 'Image generation failed.'); return }
@@ -70,6 +72,21 @@ export default function SocialLaunchKitPage() {
     } catch { toast.error('Network error — try again.') }
     finally { setBusyImg(null) }
   }
+
+  // Read a user-uploaded inspiration image into state (as a data URL) for a slot.
+  async function pickRef(key: string, file: File | null) {
+    if (!file) return
+    if (!file.type.startsWith('image/')) { toast.error('Please choose an image file.'); return }
+    if (file.size > 8 * 1024 * 1024) { toast.error('That image is too large (max 8MB).'); return }
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const r = new FileReader(); r.onload = () => resolve(String(r.result)); r.onerror = reject; r.readAsDataURL(file)
+      })
+      setRefImages(prev => ({ ...prev, [key]: dataUrl }))
+      toast.success('Reference added — hit Generate to use it')
+    } catch { toast.error('Could not read that image.') }
+  }
+  function clearRef(key: string) { setRefImages(prev => { const n = { ...prev }; delete n[key]; return n }) }
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-6">
@@ -114,8 +131,11 @@ export default function SocialLaunchKitPage() {
             images={images}
             busyImg={busyImg}
             copied={copied}
+            refImages={refImages}
             onGenerateKit={() => generateKit(spec.id)}
             onGenerateImage={(kind) => generateImage(spec.id, kind)}
+            onPickRef={(kind, file) => pickRef(`${spec.id}:${kind}`, file)}
+            onClearRef={(kind) => clearRef(`${spec.id}:${kind}`)}
             onCopy={copy}
             onDownload={download}
           />
@@ -127,7 +147,7 @@ export default function SocialLaunchKitPage() {
 
 // ── One platform's card ──────────────────────────────────────────────────────
 function PlatformCard({
-  spec, kit, busyKit, images, busyImg, copied, onGenerateKit, onGenerateImage, onCopy, onDownload,
+  spec, kit, busyKit, images, busyImg, copied, refImages, onGenerateKit, onGenerateImage, onPickRef, onClearRef, onCopy, onDownload,
 }: {
   spec: PlatformSpec
   kit?: SocialKit
@@ -135,8 +155,11 @@ function PlatformCard({
   images: Record<string, string>
   busyImg: string | null
   copied: string | null
+  refImages: Record<string, string>
   onGenerateKit: () => void
   onGenerateImage: (kind: 'banner' | 'avatar') => void
+  onPickRef: (kind: 'banner' | 'avatar', file: File | null) => void
+  onClearRef: (kind: 'banner' | 'avatar') => void
   onCopy: (text: string, key: string, label?: string) => void
   onDownload: (src: string, filename: string) => void
 }) {
@@ -238,12 +261,16 @@ function PlatformCard({
               {spec.banner && (
                 <ImageSlot label={`${spec.banner.label} · ${spec.banner.w}×${spec.banner.h}`}
                   imgKey={`${spec.id}:banner`} images={images} busyImg={busyImg}
+                  refDataUrl={refImages[`${spec.id}:banner`]}
                   onGenerate={() => onGenerateImage('banner')} onDownload={onDownload}
+                  onPickRef={(f) => onPickRef('banner', f)} onClearRef={() => onClearRef('banner')}
                   filename={`${spec.id}-cover.png`} />
               )}
               <ImageSlot label={`${spec.avatar.label} · ${spec.avatar.w}×${spec.avatar.h}`}
                 imgKey={`${spec.id}:avatar`} images={images} busyImg={busyImg} round
+                refDataUrl={refImages[`${spec.id}:avatar`]}
                 onGenerate={() => onGenerateImage('avatar')} onDownload={onDownload}
+                onPickRef={(f) => onPickRef('avatar', f)} onClearRef={() => onClearRef('avatar')}
                 filename={`${spec.id}-avatar.png`} />
             </div>
             <p className="text-[11px] mt-2" style={{ color: 'var(--text-faint)' }}>
@@ -333,12 +360,16 @@ function CopyBox({ text, ck, copied, onCopy }: { text: string; ck: string; copie
   )
 }
 
-function ImageSlot({ label, imgKey, images, busyImg, onGenerate, onDownload, filename, round }: {
+function ImageSlot({ label, imgKey, images, busyImg, refDataUrl, onGenerate, onDownload, onPickRef, onClearRef, filename, round }: {
   label: string; imgKey: string; images: Record<string, string>; busyImg: string | null
-  onGenerate: () => void; onDownload: (src: string, filename: string) => void; filename: string; round?: boolean
+  refDataUrl?: string
+  onGenerate: () => void; onDownload: (src: string, filename: string) => void
+  onPickRef: (file: File | null) => void; onClearRef: () => void
+  filename: string; round?: boolean
 }) {
   const src = images[imgKey]
   const busy = busyImg === imgKey
+  const fileRef = useRef<HTMLInputElement>(null)
   return (
     <div className="rounded-lg p-2.5" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
       <p className="text-[11px] font-medium mb-2" style={{ color: 'var(--text-soft)' }}>{label}</p>
@@ -348,7 +379,7 @@ function ImageSlot({ label, imgKey, images, busyImg, onGenerate, onDownload, fil
           ? <img src={src} alt="" className="w-full h-full object-cover" />
           : <ImageIcon size={20} style={{ color: 'var(--text-faint)' }} />}
       </div>
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1.5 flex-wrap">
         <Button variant="secondary" size="sm" loading={busy} onClick={onGenerate}
           leftIcon={busy ? undefined : <Sparkles className="h-3.5 w-3.5" />}>
           {src ? 'Regenerate' : 'Generate'}
@@ -360,7 +391,25 @@ function ImageSlot({ label, imgKey, images, busyImg, onGenerate, onDownload, fil
             <Download size={13} /> Download
           </button>
         )}
+        {/* Optional inspiration image the user uploads to guide this generation. */}
+        <input ref={fileRef} type="file" accept="image/*" className="hidden"
+          onChange={e => { onPickRef(e.target.files?.[0] ?? null); e.currentTarget.value = '' }} />
+        {refDataUrl ? (
+          <span className="inline-flex items-center gap-1 pl-1 pr-1.5 py-1 rounded-lg text-[11px] font-semibold border" style={{ borderColor: 'rgba(124,58,237,0.4)', color: '#7C3AED' }}>
+            <img src={refDataUrl} alt="" className="w-4 h-4 rounded object-cover" /> Reference
+            <button onClick={onClearRef} title="Remove reference" className="ml-0.5"><X size={11} /></button>
+          </span>
+        ) : (
+          <button onClick={() => fileRef.current?.click()} title="Upload your own image as inspiration"
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[12px] font-semibold border"
+            style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
+            <Upload size={13} /> Reference
+          </button>
+        )}
       </div>
+      <p className="text-[10px] mt-1.5" style={{ color: 'var(--text-faint)' }}>
+        {refDataUrl ? 'Your image will guide the look — hit Generate.' : 'Optional: upload an image (a look you love) to guide the design.'}
+      </p>
     </div>
   )
 }
