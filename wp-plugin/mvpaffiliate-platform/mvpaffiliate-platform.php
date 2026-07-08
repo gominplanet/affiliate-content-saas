@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.65
+ * Version: 1.0.66
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -27,6 +27,37 @@ $mvp_affiliate_self_meta = function_exists('get_file_data')
     : ['Version' => '1.0.48'];
 define('MVP_AFFILIATE_VERSION', (string) ($mvp_affiliate_self_meta['Version'] ?: '1.0.48'));
 unset($mvp_affiliate_self_meta);
+
+// ─── Self-heal corrupted Gutenberg block delimiters on save ───────────────────
+// An old MVP text-cleanup step once rewrote the `--` inside block-comment
+// delimiters to a comma, turning `<!-- wp:paragraph -->` into `<!, wp:paragraph, >`.
+// That dumps raw block markup as visible text on the post. The dashboard fixed
+// the source, but drafts written during that window sit in WordPress already
+// corrupted — and publishing one straight from wp-admin never touches MVP, so
+// nothing repairs it. This filter closes that gap at the one chokepoint every
+// save flows through: it restores the delimiters the instant a post is written,
+// no matter where the save came from (block editor, Quick Edit, publish, REST).
+//
+// Surgical + safe: gated on the `<!,` marker (a `<` `!` `,` run never occurs in
+// valid markup), it only rewrites spans that look like corrupted delimiters, so a
+// genuine `<!-- wp:x -->` is left untouched. It changes the delimiters only (no
+// quote/entity edits), so it is safe on the slashed content WordPress passes here.
+// Mirrors repairCorruptedBlocks() in the dashboard (lib/repair-blocks.ts).
+add_filter('wp_insert_post_data', function ($data) {
+    if (empty($data['post_content']) || strpos($data['post_content'], '<!,') === false) {
+        return $data;
+    }
+    $c = $data['post_content'];
+    // 1) Opening delimiter: `<!,` → `<!--`
+    $c = str_replace('<!,', '<!--', $c);
+    // 2) Closing delimiter: `<!-- … , >` → `<!-- … -->`, never crossing a real
+    //    `-->` (so an already-correct comment with no `, >` is left alone).
+    $fixed = preg_replace('/<!--((?:(?!-->).)*?),\s*>/s', '<!--$1 -->', $c);
+    if (is_string($fixed)) {
+        $data['post_content'] = $fixed;
+    }
+    return $data;
+}, 5);
 
 // ─── 0. allow MVP to receive Authorize-Application redirects ──────────────────
 // WordPress core's wp-admin/authorize-application.php calls wp_safe_redirect()
