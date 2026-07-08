@@ -57,14 +57,16 @@ export const LAUNCH_PLATFORMS: Record<LaunchPlatform, PlatformSpec> = {
     createUrl: 'https://www.pinterest.com/business/create/',
     createLabel: 'Create your Pinterest business account',
     nameMax: 30,
-    bioShortMax: 160,   // Pinterest "about"
-    bioLongMax: 160,
+    // Pinterest has ONE bio field ("Introduce yourself" in Edit profile), 255
+    // chars. bioShort is an optional tighter version; bioLong = the real field.
+    bioShortMax: 160,
+    bioLongMax: 255,
     avatar: { w: 165, h: 165, label: 'Profile photo', aspect: '1:1' },
     boards: 5,
     steps: [
       { title: 'Create a free business account', detail: 'Open the link below. If you already have a personal Pinterest you can convert it or add a business account — business is free and unlocks analytics.' },
       { title: 'Set your name and photo', detail: 'Paste the business name and upload the profile photo MVP made (or your logo).' },
-      { title: 'Write your about', detail: 'Paste the bio into your profile "About". Add your website and storefront links.' },
+      { title: 'Write your bio', detail: 'Open Edit profile → "Introduce yourself" (up to 255 characters) and paste the About that MVP wrote. Add your website and storefront links.' },
       { title: 'Claim your website', detail: 'In Settings → Claimed accounts, claim your blog domain. This ties every Pin back to you and unlocks site analytics.' },
       { title: 'Create your starter boards', detail: 'Make the boards MVP suggested and paste each board description. Keyword-rich descriptions are how Pinterest surfaces your Pins in search.' },
       { title: 'Pin your first products', detail: 'Add a few Pins linking to your reviews. Once connected in MVP, new posts can auto-Pin for you.' },
