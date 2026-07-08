@@ -118,6 +118,7 @@ const SECTION_ICONS: Record<string, React.ReactNode> = {
   'Create': <Sparkles size={12} />,
   'Source & Earn': <DollarSign size={12} />,
   'Grow': <BarChart3 size={12} />,
+  'Site Tools': <Wrench size={12} />,
   'Collaborate': <Share2 size={12} />,
   'Labs': <FlaskConical size={12} />,
   'Help & Community': <LifeBuoy size={12} />,
@@ -416,25 +417,31 @@ export default function DashboardShellV2({
       label: 'Grow',
       items: [
         { href: '/seo', icon: <TrendingUp size={15} />, label: 'SEO & Indexing' },
-        // Title Check (title-vs-body accuracy) re-linked here under Grow
-        // 2026-06-27 at the user's request — it's an SEO-hygiene tool reached
-        // from the SEO page's "Fix title" CTA, now also always one click away.
-        { href: '/tools/title-audit', icon: <ShieldCheck size={15} />, label: 'Title Check' },
-        // Clean affiliate links — removes duplicate-tag leftovers from old
-        // plugins (Lasso). Free text fix, no rebuild. Added 2026-06-28.
-        { href: '/tools/clean-links', icon: <Wand2 size={15} />, label: 'Clean Links' },
-        // Duplicate posts — finds the same product reviewed twice (WP -2/-3
-        // slugs) that split rankings + cause "crawled, not indexed". 2026-07-05.
-        { href: '/tools/duplicates', icon: <Copy size={15} />, label: 'Duplicates' },
-        // 404 → 301 fixer — paste GSC "Not found (404)" export, match each dead
-        // URL to a live post, write redirects via the plugin. 2026-07-05.
-        { href: '/tools/redirects', icon: <Signpost size={15} />, label: 'Fix 404s' },
-        // Fix broken post formatting — self-serve repair for posts that render
-        // raw block code (`<!, wp:… , >`) from the old em-dash scrub. Fixes the
-        // live post + stored copy + queued drafts. Free text fix. 2026-07-08.
-        { href: '/tools/fix-formatting', icon: <Code2 size={15} />, label: 'Fix Formatting' },
         // Analytics still hidden 2026-06-12 — route stays alive (/analytics),
         // just unlinked for now.
+      ],
+    },
+    {
+      // Site Tools — the post-publish fix/clean utilities (all /tools/*), split
+      // out of Grow 2026-07-08 so they have their own home and Grow stays about
+      // growth. Each is a free, no-AI text fix on the user's own posts.
+      label: 'Site Tools',
+      items: [
+        // Title Check — title-vs-body accuracy (SEO hygiene; also reached from
+        // the SEO page's "Fix title" CTA).
+        { href: '/tools/title-audit', icon: <ShieldCheck size={15} />, label: 'Title Check' },
+        // Clean Links — removes duplicate affiliate-tag leftovers from old
+        // plugins (Lasso).
+        { href: '/tools/clean-links', icon: <Wand2 size={15} />, label: 'Clean Links' },
+        // Duplicates — same product reviewed twice (WP -2/-3 slugs) that split
+        // rankings + cause "crawled, not indexed".
+        { href: '/tools/duplicates', icon: <Copy size={15} />, label: 'Duplicates' },
+        // Fix 404s — paste GSC "Not found (404)" export, match each dead URL to a
+        // live post, write 301 redirects via the plugin.
+        { href: '/tools/redirects', icon: <Signpost size={15} />, label: 'Fix 404s' },
+        // Fix Formatting — self-serve repair for posts that render raw block code
+        // (`<!, wp:… , >`); fixes the live post + stored copy + queued drafts.
+        { href: '/tools/fix-formatting', icon: <Code2 size={15} />, label: 'Fix Formatting' },
       ],
     },
     {
