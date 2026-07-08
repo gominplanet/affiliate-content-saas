@@ -27,6 +27,8 @@ export default function SocialLaunchKitPage() {
   const [locked, setLocked] = useState(false)   // set if the API 403s (non-Pro deep-link)
   // Optional per-image inspiration the user uploads, keyed by `${platform}:${kind}`.
   const [refImages, setRefImages] = useState<Record<string, string>>({})
+  // Banner style per platform — how much goes on the cover.
+  const [bannerStyle, setBannerStyle] = useState<Record<string, 'bold' | 'minimal'>>({})
 
   async function copy(text: string, key: string, label = 'Copied') {
     try {
@@ -68,6 +70,7 @@ export default function SocialLaunchKitPage() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           platform, kind, referenceImage: refImages[key],
+          style: kind === 'banner' ? (bannerStyle[platform] || 'bold') : undefined,
           // Full brand brief so gpt-image-1 designs uniquely + accurately.
           headline: kit?.bioShort, about: kit?.bioLong, category: kit?.category,
           keywords: kit?.keywords, brandName: kit?.names?.[0],
@@ -139,6 +142,8 @@ export default function SocialLaunchKitPage() {
             busyImg={busyImg}
             copied={copied}
             refImages={refImages}
+            bannerStyle={bannerStyle[spec.id] || 'bold'}
+            onBannerStyle={(s) => setBannerStyle(prev => ({ ...prev, [spec.id]: s }))}
             onGenerateKit={() => generateKit(spec.id)}
             onGenerateImage={(kind) => generateImage(spec.id, kind)}
             onPickRef={(kind, file) => pickRef(`${spec.id}:${kind}`, file)}
@@ -154,7 +159,7 @@ export default function SocialLaunchKitPage() {
 
 // ── One platform's card ──────────────────────────────────────────────────────
 function PlatformCard({
-  spec, kit, busyKit, images, busyImg, copied, refImages, onGenerateKit, onGenerateImage, onPickRef, onClearRef, onCopy, onDownload,
+  spec, kit, busyKit, images, busyImg, copied, refImages, bannerStyle, onBannerStyle, onGenerateKit, onGenerateImage, onPickRef, onClearRef, onCopy, onDownload,
 }: {
   spec: PlatformSpec
   kit?: SocialKit
@@ -163,6 +168,8 @@ function PlatformCard({
   busyImg: string | null
   copied: string | null
   refImages: Record<string, string>
+  bannerStyle: 'bold' | 'minimal'
+  onBannerStyle: (s: 'bold' | 'minimal') => void
   onGenerateKit: () => void
   onGenerateImage: (kind: 'banner' | 'avatar') => void
   onPickRef: (kind: 'banner' | 'avatar', file: File | null) => void
@@ -269,6 +276,7 @@ function PlatformCard({
                 <ImageSlot label={`${spec.banner.label} · ${spec.banner.w}×${spec.banner.h}`}
                   imgKey={`${spec.id}:banner`} images={images} busyImg={busyImg}
                   refDataUrl={refImages[`${spec.id}:banner`]}
+                  styleValue={bannerStyle} onStyle={onBannerStyle}
                   onGenerate={() => onGenerateImage('banner')} onDownload={onDownload}
                   onPickRef={(f) => onPickRef('banner', f)} onClearRef={() => onClearRef('banner')}
                   filename={`${spec.id}-cover.png`} />
@@ -367,9 +375,10 @@ function CopyBox({ text, ck, copied, onCopy }: { text: string; ck: string; copie
   )
 }
 
-function ImageSlot({ label, imgKey, images, busyImg, refDataUrl, onGenerate, onDownload, onPickRef, onClearRef, filename, round }: {
+function ImageSlot({ label, imgKey, images, busyImg, refDataUrl, styleValue, onStyle, onGenerate, onDownload, onPickRef, onClearRef, filename, round }: {
   label: string; imgKey: string; images: Record<string, string>; busyImg: string | null
   refDataUrl?: string
+  styleValue?: 'bold' | 'minimal'; onStyle?: (s: 'bold' | 'minimal') => void
   onGenerate: () => void; onDownload: (src: string, filename: string) => void
   onPickRef: (file: File | null) => void; onClearRef: () => void
   filename: string; round?: boolean
@@ -379,7 +388,20 @@ function ImageSlot({ label, imgKey, images, busyImg, refDataUrl, onGenerate, onD
   const fileRef = useRef<HTMLInputElement>(null)
   return (
     <div className="rounded-lg p-2.5" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
-      <p className="text-[11px] font-medium mb-2" style={{ color: 'var(--text-soft)' }}>{label}</p>
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <p className="text-[11px] font-medium" style={{ color: 'var(--text-soft)' }}>{label}</p>
+        {onStyle && (
+          <div className="inline-flex items-center gap-0.5 p-0.5 rounded-lg" style={{ background: 'var(--surface-bright, rgba(0,0,0,0.05))' }} title="How much goes on the cover">
+            {(['bold', 'minimal'] as const).map(s => (
+              <button key={s} onClick={() => onStyle(s)}
+                className="px-2 py-0.5 rounded-md text-[10px] font-semibold capitalize transition-colors"
+                style={styleValue === s ? { background: '#7C3AED', color: '#fff' } : { color: 'var(--text-faint)' }}>
+                {s}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
       <div className={`w-full overflow-hidden grid place-items-center mb-2 ${round ? 'rounded-full max-w-[96px] aspect-square mx-auto' : 'aspect-video rounded-md'}`}
         style={{ background: 'var(--surface-bright, rgba(0,0,0,0.04))' }}>
         {src

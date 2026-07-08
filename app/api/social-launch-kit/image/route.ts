@@ -51,9 +51,10 @@ export async function POST(request: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await request.json().catch(() => ({})) as {
-    platform?: string; kind?: string; referenceImage?: string
+    platform?: string; kind?: string; referenceImage?: string; style?: string
     headline?: string; about?: string; category?: string; keywords?: string[]; brandName?: string
   }
+  const bannerStyle: 'bold' | 'minimal' = body.style === 'minimal' ? 'minimal' : 'bold'
   const platform = body.platform as LaunchPlatform
   const spec = platform ? LAUNCH_PLATFORMS[platform] : undefined
   if (!spec) return NextResponse.json({ error: 'Unknown platform' }, { status: 400 })
@@ -110,15 +111,25 @@ export async function POST(request: Request) {
   const customRef = (body.referenceImage || '').trim()
   const target = kind === 'banner' ? spec.banner! : spec.avatar
 
-  const prompt = kind === 'banner'
+  const bannerLayout = bannerStyle === 'minimal'
     ? [
-        brief,
+        `Now design a MINIMAL, elegant ${spec.label} cover banner (wide landscape) — mostly clean negative space, understated and premium.`,
+        (logoUrl || customRef) ? `The attached brand LOGO, reproduced faithfully, on the left or center-left.` : '',
+        `A single clean headline in a modern sans-serif reading "${headline}". Nothing else — NO product images, NO checklists, NO icons, NO badges. Lots of empty space.`,
+        colorLine,
+      ]
+    : [
         `Now design a CLEAN, modern, premium ${spec.label} cover banner (wide landscape). Keep it uncluttered with generous negative space — do NOT overcrowd it.`,
         (logoUrl || customRef) ? `Left side: the attached brand LOGO, reproduced faithfully.` : '',
         `Center-left: a bold headline in a heavy condensed sans-serif reading "${headline}" (max 2 lines), key words accented in the brand's accent colour, with up to 3 short check-point words beneath it.`,
         `Right side: a small, tasteful cluster of 3 to 4 everyday ${niches} products — not a big pile.`,
         `Do NOT add a grid or strip of category icons, do NOT add long rows of feature icons, do NOT add multiple badges or seals. ONE clean layout.`,
         colorLine,
+      ]
+  const prompt = kind === 'banner'
+    ? [
+        brief,
+        ...bannerLayout,
         `CRITICAL COMPOSITION: this banner gets cropped very wide, so keep the logo, headline and products inside the MIDDLE 65% of the height and leave the top ~18% and bottom ~18% as plain background — anything placed there will be cut off. Perfectly-spelled legible text only. Never render the word "honest".`,
       ].filter(Boolean).join(' ')
     : [
