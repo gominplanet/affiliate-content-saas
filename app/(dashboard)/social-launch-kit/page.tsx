@@ -68,7 +68,9 @@ export default function SocialLaunchKitPage() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           platform, kind, referenceImage: refImages[key],
-          headline: kit?.bioShort, features: kit?.keywords?.slice(0, 3), brandName: kit?.names?.[0],
+          // Full brand brief so gpt-image-1 designs uniquely + accurately.
+          headline: kit?.bioShort, about: kit?.bioLong, category: kit?.category,
+          keywords: kit?.keywords, brandName: kit?.names?.[0],
         }),
       })
       const data = await res.json()

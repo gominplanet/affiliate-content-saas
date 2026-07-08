@@ -1,16 +1,15 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// POST /api/social-launch-kit/image  { platform, kind, referenceImage?, headline?, features?, brandName? }
+// POST /api/social-launch-kit/image  { platform, kind, referenceImage?, headline?, about?, category?, keywords?, brandName? }
 //
-// COVER BANNER → a rich, designed, "viral" marketing graphic via gpt-image-1
-// (OpenAI, the model that reliably bakes legible headlines + composes a real
-// layout): the creator's logo placed on it, a bold headline, a value-prop
-// checklist, a product hero shot, trust badges — in their brand colors.
-// AVATAR → the creator's real logo/mark, grounded via Nano Banana Pro.
-//
-// Every image can also be steered by a user-uploaded inspiration image. Output
-// is cropped to the platform's exact pixel size and returned as a base64 data
-// URL. Never renders the banned word "honest".
+// Both the cover BANNER and the profile LOGO/avatar are designed by gpt-image-1
+// (OpenAI) from a full BRAND BRIEF — the generated copy (name, bio, about,
+// category, keywords) fused with everything MVP knows about the creator (niche,
+// audience, tone, brand colors, their real logo/banner) — so every asset is
+// unique and accurate to THIS brand, not generic. The creator's real logo (and
+// any uploaded inspiration image) are passed as visual references so the mark is
+// reproduced faithfully. Falls back to Nano Banana Pro / Ideogram if OpenAI is
+// unavailable. Output cropped to exact platform dims. Never renders "honest".
 
 import { NextResponse } from 'next/server'
 import sharp from 'sharp'
@@ -34,7 +33,7 @@ function dataUrlToRef(dataUrl: string): ImgRef | null {
   return { data: buf, filename: 'reference.png', mime: m[1] || 'image/png' }
 }
 
-async function urlToRef(url: string): Promise<ImgRef | null> {
+async function urlToRef(url: string, name: string): Promise<ImgRef | null> {
   try {
     const r = await fetch(url, { signal: AbortSignal.timeout(15000) })
     if (!r.ok) return null
@@ -42,7 +41,7 @@ async function urlToRef(url: string): Promise<ImgRef | null> {
     const buf = Buffer.from(await r.arrayBuffer())
     if (!buf.length || buf.length > 12 * 1024 * 1024) return null
     const ext = mime.includes('png') ? 'png' : mime.includes('webp') ? 'webp' : 'jpg'
-    return { data: buf, filename: `logo.${ext}`, mime }
+    return { data: buf, filename: `${name}.${ext}`, mime }
   } catch { return null }
 }
 
@@ -53,7 +52,7 @@ export async function POST(request: Request) {
 
   const body = await request.json().catch(() => ({})) as {
     platform?: string; kind?: string; referenceImage?: string
-    headline?: string; features?: string[]; brandName?: string
+    headline?: string; about?: string; category?: string; keywords?: string[]; brandName?: string
   }
   const platform = body.platform as LaunchPlatform
   const spec = platform ? LAUNCH_PLATFORMS[platform] : undefined
@@ -63,7 +62,6 @@ export async function POST(request: Request) {
 
   const { data: intRow } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
   const tier = (intRow?.tier as Tier) ?? 'trial'
-  // Labs — Pro-only until it graduates public (same gate as MVP x LTK).
   if (tier !== 'pro' && tier !== 'admin') {
     return NextResponse.json({ error: 'The Social Launch Kit is a Pro Labs feature.' }, { status: 403 })
   }
@@ -78,70 +76,83 @@ export async function POST(request: Request) {
   const niches = (Array.isArray(b.niches) ? b.niches : []).filter(Boolean).join(', ') || 'lifestyle products'
   const logoUrl = String(b.logo_url || '').trim()
   const bannerUrl = String(b.header_banner_url || '').trim()
-  const brandName = String(body.brandName || b.name || '').trim() || 'this brand'
+
   // "honest" is a banned word — never let it into a baked-text image prompt.
-  const strip = (s: string) => s.replace(/\bhonest(?:ly)?\b/gi, 'real').replace(/\s{2,}/g, ' ').trim()
-  const headline = strip(String(body.headline || b.tagline || `Real reviews for ${niches}`))
-  const features = (Array.isArray(body.features) ? body.features : []).map(f => strip(String(f))).filter(Boolean).slice(0, 3)
+  const strip = (s: unknown) => String(s ?? '').replace(/\bhonest(?:ly)?\b/gi, 'real').replace(/\s{2,}/g, ' ').trim()
+  const brandName = strip(body.brandName || b.name) || 'this brand'
+  const headline = strip(body.headline || b.tagline || `Real reviews for ${niches}`)
+  const about = strip(body.about)
+  const category = strip(body.category)
+  const keywords = (Array.isArray(body.keywords) ? body.keywords : []).map(strip).filter(Boolean).slice(0, 10)
+  const audience = strip(b.target_audience)
+  const tone = (Array.isArray(b.tone) ? b.tone : []).filter(Boolean).map(String).join(', ')
 
-  const target = kind === 'banner' ? spec.banner! : spec.avatar
+  // The full brand brief every image is designed from — copy + profile fused.
+  const brief = [
+    `BRAND BRIEF (design something unique and accurate to THIS specific brand, not generic):`,
+    `Name: ${brandName}${category ? ` — category: ${category}` : ''}.`,
+    `Niche: ${niches}.`,
+    headline ? `Tagline: "${headline}".` : '',
+    about ? `About: ${about}` : '',
+    audience ? `Audience: ${audience}.` : '',
+    tone ? `Voice / tone: ${tone}.` : '',
+    keywords.length ? `Key topics: ${keywords.join(', ')}.` : '',
+    `Brand colors: ${primary} (primary) and ${secondary} (accent).`,
+  ].filter(Boolean).join(' ')
+
   const customRef = (body.referenceImage || '').trim()
+  const target = kind === 'banner' ? spec.banner! : spec.avatar
 
-  let sourceB64 = ''   // gpt-image-1 (base64)
-  let sourceUrl = ''   // fal (hosted URL)
+  const prompt = kind === 'banner'
+    ? [
+        brief,
+        `Now design a bold, modern, high-energy "viral" ${spec.label} cover banner (wide landscape) for this brand.`,
+        (logoUrl || customRef) ? `Place the attached brand LOGO prominently on the left as a glowing badge, reproduced faithfully.` : '',
+        `A huge punchy headline in a heavy condensed sans-serif reading "${headline}", with the key words highlighted in ${secondary}.`,
+        `A tidy checklist with bold ${secondary} check icons of value props: ${(keywords.slice(0, 3).join(' · ')) || 'Tested in real life · No sponsor bias · Just the truth'}.`,
+        `On the right, a dynamic hero shot of real everyday ${niches} products bursting out of an open cardboard shipping box, with energetic paint-splash and halftone accents.`,
+        `Small trust badges. Premium near-black background with bold ${secondary} and white. Crisp, perfectly-spelled legible text, professional marketing graphic.`,
+        `Compose key elements within a wide central band (top/bottom edges may be cropped). Never render the word "honest".`,
+      ].filter(Boolean).join(' ')
+    : [
+        brief,
+        `Now create a polished, professional circular profile picture / logo mark for this brand — a clean, iconic app-badge.`,
+        (logoUrl || customRef)
+          ? `Reproduce the attached brand mark faithfully, refined and crisp, centered on a solid on-brand background using ${primary} with a ${secondary} accent.`
+          : `A bold, simple geometric emblem that represents the brand, centered on a solid ${primary} background with a ${secondary} accent.`,
+        `Only include text that appears in the real logo — do not invent new words, letters or gibberish. Perfectly centered, 1:1, high fidelity. Never render the word "honest".`,
+      ].filter(Boolean).join(' ')
+
+  // Visual references: uploaded inspiration first, then the real logo (and the
+  // header banner too, for covers) so gpt-image-1 stays faithful to the brand.
+  const imgRefs: ImgRef[] = []
+  const cr = customRef ? dataUrlToRef(customRef) : null
+  if (cr) imgRefs.push(cr)
+  if (logoUrl) { const lr = await urlToRef(logoUrl, 'logo'); if (lr) imgRefs.push(lr) }
+  if (kind === 'banner' && bannerUrl) { const br = await urlToRef(bannerUrl, 'banner'); if (br) imgRefs.push(br) }
+  const refs = imgRefs.slice(0, 4)
+
+  let sourceB64 = ''
+  let sourceUrl = ''
   let usedModel: 'gpt-image-1' | 'fal-nano-banana-pro' | 'fal-ideogram-v3' = 'gpt-image-1'
 
-  if (kind === 'banner') {
-    // ── Rich designed cover via gpt-image-1 ────────────────────────────────
-    const featureLine = features.length
-      ? `A tidy checklist of these value props, each with a bold ${secondary} check icon: ${features.join(' · ')}.`
-      : `A tidy checklist with bold ${secondary} check icons: "Tested in real life" · "No sponsor bias" · "Just the truth".`
-    const prompt = [
-      `Design a bold, modern, high-energy "viral" Facebook cover banner (wide landscape) for "${brandName}", a ${niches} brand.`,
-      logoUrl || customRef ? `Place the attached brand LOGO prominently on the left as a glowing badge, reproduced faithfully.` : '',
-      `A huge punchy headline in a heavy condensed sans-serif reading "${headline}", with the key words highlighted in the brand's ${secondary}.`,
-      featureLine,
-      `On the right, a dynamic hero shot of real everyday products bursting out of an open cardboard shipping box, with energetic paint-splash and halftone accents.`,
-      `Small trust badges like "Tested & Trusted" and "Trusted by thousands".`,
-      `Premium near-black background with bold ${secondary} and white. Crisp, perfectly-spelled legible text, sticker / paint-stroke accents, professional marketing graphic.`,
-      `Compose all key elements within a wide central horizontal band (the top and bottom edges may be cropped) so nothing important is lost. Never render the word "honest".`,
-    ].filter(Boolean).join(' ')
-
-    try {
-      const openai = createOpenAIService()
-      const refs: ImgRef[] = []
-      const cr = customRef ? dataUrlToRef(customRef) : null
-      if (cr) refs.push(cr)
-      if (logoUrl) { const lr = await urlToRef(logoUrl); if (lr) refs.push(lr) }
-      sourceB64 = refs.length
-        ? await openai.generateWithReferences({ prompt, images: refs, size: '1536x1024', quality: 'high' })
-        : await openai.generateHeroImage(prompt)
-      usedModel = 'gpt-image-1'
-    } catch {
-      // gpt-image-1 unavailable → Nano Banana Pro with the same rich prompt (needs a fal ref).
-      const falRefs = [customRef ? await uploadDataUrlToFal(customRef) : null, ...(logoUrl ? await rehostAll([logoUrl]) : [])]
-        .filter((u): u is string => !!u)
-      if (falRefs.length) {
-        const out = await composeWithNanoBananaPro({ prompt, referenceImageUrls: falRefs, aspectRatio: '16:9', numImages: 1 })
-        sourceUrl = out?.[0] || ''
-        usedModel = 'fal-nano-banana-pro'
-      }
-    }
-  } else {
-    // ── Avatar → the real logo/mark, grounded via Nano Banana Pro ──────────
-    const refs = [
-      customRef ? await uploadDataUrlToFal(customRef) : null,
-      ...(logoUrl ? await rehostAll([logoUrl]) : []),
-    ].filter((u): u is string => !!u).slice(0, 3)
-    if (refs.length) {
-      const lead = customRef ? 'Use the FIRST attached image as the primary inspiration. ' : ''
-      const prompt = `${lead}Using the attached brand logo as the reference, create a clean circular profile picture / app icon for this ${niches} creator, the real mark centered on a solid on-brand background using ${primary}. Reproduce the mark faithfully. Never invent any text, words, letters or gibberish. Crisp, modern, perfectly centered, 1:1.`
-      const out = await composeWithNanoBananaPro({ prompt, referenceImageUrls: refs, aspectRatio: '1:1', numImages: 1 })
+  try {
+    const openai = createOpenAIService()
+    sourceB64 = refs.length
+      ? await openai.generateWithReferences({ prompt, images: refs, size: kind === 'banner' ? '1536x1024' : '1024x1024', quality: 'high' })
+      : await openai.generateHeroImage(prompt)
+    usedModel = 'gpt-image-1'
+  } catch {
+    // OpenAI unavailable → Nano Banana Pro with the same brief-driven prompt (needs a fal ref).
+    const falRefs = [customRef ? await uploadDataUrlToFal(customRef) : null, ...(logoUrl ? await rehostAll([logoUrl]) : [])]
+      .filter((u): u is string => !!u)
+    if (falRefs.length) {
+      const out = await composeWithNanoBananaPro({ prompt, referenceImageUrls: falRefs, aspectRatio: kind === 'banner' ? '16:9' : '1:1', numImages: 1 })
       sourceUrl = out?.[0] || ''
       usedModel = 'fal-nano-banana-pro'
-    } else {
+    } else if (kind === 'avatar') {
       const out = await generateWithIdeogram({
-        prompt: `A minimalist circular brand emblem / app icon for a ${niches} creator. A bold geometric mark on a solid ${primary} background with a ${secondary} accent. Flat vector. ABSOLUTELY NO text, no words, no letters. Clean, centered.`,
+        prompt: `A minimalist circular brand emblem / app icon for ${brandName}, a ${niches} brand. A bold geometric mark on a solid ${primary} background with a ${secondary} accent. Flat vector. ABSOLUTELY NO text, words or letters. Clean, centered.`,
         numImages: 1,
       })
       sourceUrl = out?.[0] || ''
@@ -159,11 +170,8 @@ export async function POST(request: Request) {
 
   recordUsage({ userId: user.id, tier, feature: 'social-launch-kit-image', model: usedModel, images: 1 })
 
-  // Crop to the platform's exact dimensions.
   try {
-    const buf = sourceB64
-      ? Buffer.from(sourceB64, 'base64')
-      : Buffer.from(await (await fetch(sourceUrl)).arrayBuffer())
+    const buf = sourceB64 ? Buffer.from(sourceB64, 'base64') : Buffer.from(await (await fetch(sourceUrl)).arrayBuffer())
     const png = await sharp(buf).resize(target.w, target.h, { fit: 'cover', position: 'attention' }).png().toBuffer()
     return NextResponse.json({ ok: true, platform, kind, width: target.w, height: target.h, image: `data:image/png;base64,${png.toString('base64')}` })
   } catch {
