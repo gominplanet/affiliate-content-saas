@@ -16,7 +16,7 @@ const CYAN = '#22D3EE'
 /** Only follow internal same-origin paths — never an attacker-supplied URL. */
 function safeNext(raw: string | null): string {
   if (raw && raw.startsWith('/') && !raw.startsWith('//')) return raw
-  return '/epc'
+  return '/amz-finder'
 }
 
 function LabsUnlockForm() {

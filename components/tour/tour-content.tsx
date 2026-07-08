@@ -370,7 +370,7 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
               commissionable link, published to your blog. Same engine, now fed the right products.
             </li>
           </ul>
-          {isApp && <SectionCta href="/epc" label="Open Source & Earn" />}
+          {isApp && <SectionCta href="/amz-finder" label="Open Source & Earn" />}
         </Section>
 
         {/* ── 6. Deals Hub ─────────────────────────────────────────── */}

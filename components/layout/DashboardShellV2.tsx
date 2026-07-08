@@ -408,7 +408,7 @@ export default function DashboardShellV2({
       // (user request 2026-07-07).
       label: 'Source & Earn',
       items: [
-        { href: '/epc', icon: <PackageSearch size={15} />, label: 'AMZ Product Finder', gate: canUseFinders },
+        { href: '/amz-finder', icon: <PackageSearch size={15} />, label: 'AMZ Product Finder', gate: canUseFinders },
         { href: '/levanta', icon: <ShoppingBag size={15} />, label: 'MVP x Levanta', gate: canUseFinders },
         { href: '/partnerboost', icon: <Store size={15} />, label: 'MVP x PartnerBoost', gate: canUseFinders },
       ],
