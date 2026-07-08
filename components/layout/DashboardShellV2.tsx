@@ -100,16 +100,17 @@ interface NavGroupDef {
 // sections stay distinct and steer clear of the brand violet (active state),
 // Oink pink, and amber warnings.
 const SECTION_ACCENTS: Record<string, { dark: string; light: string }> = {
-  'Set up':            { dark: '#60A5FA', light: '#1D4ED8' }, // blue    — foundational
-  'Create':            { dark: '#A78BFA', light: '#6D28D9' }, // violet  — creative core
-  'Grow':              { dark: '#34D399', light: '#047857' }, // emerald — growth
-  'Source & Earn':     { dark: '#A3E635', light: '#4D7C0F' }, // lime    — find & monetize
-  'Collaborate':       { dark: '#FBBF24', light: '#B45309' }, // amber   — deals / people
-  'Labs':              { dark: '#22D3EE', light: '#0E7490' }, // cyan    — experimental
-  'Help & Community':  { dark: '#FB7185', light: '#BE123C' }, // rose    — support
-  'Account':           { dark: '#94A3B8', light: '#475569' }, // slate   — neutral utility
-  'Recommended tools': { dark: '#2DD4BF', light: '#0F766E' }, // teal    — discovery
-  'Admin':             { dark: '#F87171', light: '#B91C1C' }, // red     — control / danger
+  'Set up':            { dark: '#60A5FA', light: '#1D4ED8' }, // blue      — foundational
+  'Create':            { dark: '#FACC15', light: '#A16207' }, // yellow    — creative core
+  'Grow':              { dark: '#C084FC', light: '#7E22CE' }, // purple    — growth
+  'Source & Earn':     { dark: '#A3E635', light: '#4D7C0F' }, // green     — find & monetize
+  'Site Tools':        { dark: '#FB923C', light: '#C2410C' }, // orange    — post-publish fixes
+  'Collaborate':       { dark: '#F472B6', light: '#BE185D' }, // pink      — deals / people
+  'Labs':              { dark: '#F87171', light: '#DC2626' }, // red       — experimental
+  'Help & Community':  { dark: '#5EEAD4', light: '#0D9488' }, // turquoise — support
+  'Account':           { dark: '#94A3B8', light: '#475569' }, // slate     — neutral utility
+  'Recommended tools': { dark: '#2DD4BF', light: '#0F766E' }, // teal      — discovery
+  'Admin':             { dark: '#F87171', light: '#B91C1C' }, // red       — control / danger
 }
 
 // Leading icon per section header (matches the Labs flask). Keyed by label.
@@ -125,6 +126,16 @@ const SECTION_ICONS: Record<string, React.ReactNode> = {
   'Account': <UserCog size={12} />,
   'Recommended tools': <Wrench size={12} />,
   'Admin': <ShieldCheck size={12} />,
+}
+
+// Turn a #RRGGBB section accent into an rgba() wash so every section can render
+// as its own colour-coded card (background + border) derived from its accent —
+// one source of truth for the header colour AND the card tint.
+function hexToRgba(hex: string, alpha: number): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim())
+  if (!m) return hex
+  const n = parseInt(m[1], 16)
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`
 }
 
 // Per-theme CSS variable definitions. Components reference these via
@@ -419,9 +430,9 @@ export default function DashboardShellV2({
       // program for products worth reviewing, then generates content or messages
       // the brand. All PAID tiers (canUseFinders = tier !== trial). AMZ Product Finder
       // graduated out of Labs into here 2026-07-07. Each page has an inline
-      // "connect your API key" panel at the top. Placed ABOVE Grow + given a
-      // green wash (render loop, isSourceEarn) so the money-making zone pops
-      // (user request 2026-07-07).
+      // "connect your API key" panel at the top. Placed ABOVE Grow. Its green
+      // card comes from the shared SECTION_ACCENTS wash (every section is now
+      // colour-coded), keyed off this label.
       label: 'Source & Earn',
       items: [
         { href: '/amz-finder', icon: <PackageSearch size={15} />, label: 'AMZ Product Finder', gate: canUseFinders },
@@ -663,25 +674,20 @@ export default function DashboardShellV2({
             const palette = group.label ? SECTION_ACCENTS[group.label] : undefined
             const headerAccent = group.accent ?? (palette ? (isDark ? palette.dark : palette.light) : undefined)
             const headerIcon = group.icon ?? (group.label ? SECTION_ICONS[group.label] : undefined)
-            // Recommended Tools = revenue-converting partner links. Give it a
-            // tinted card so it visibly reads as "different" from the app's own
-            // nav — a faint teal wash matching its header accent, with a border.
-            const isRecommended = group.label === 'Recommended tools'
-            // Source & Earn = the revenue finders. Wrap it in a GREEN card so the
-            // whole "make money here" zone pops out of the plain nav (user
-            // request 2026-07-07). Green tones track its lime header accent, a
-            // touch stronger than the Recommended teal wash so it's the loudest.
-            const isSourceEarn = group.label === 'Source & Earn'
-            const isCard = (isRecommended || isSourceEarn) && !collapsed
-            const cardStyle = isSourceEarn && !collapsed
+            // Every named section (except neutral Account / Admin) renders as its
+            // own colour-coded card — a faint wash + border in the section's
+            // accent hue, like Source & Earn's green. Derived from headerAccent so
+            // the card tint always tracks the header colour (see SECTION_ACCENTS).
+            const isCard =
+              !!group.label &&
+              group.label !== 'Account' &&
+              group.label !== 'Admin' &&
+              !collapsed &&
+              !!headerAccent
+            const cardStyle = isCard && headerAccent
               ? {
-                  backgroundColor: isDark ? 'rgba(163,230,53,0.10)' : 'rgba(77,124,15,0.09)',
-                  borderColor: isDark ? 'rgba(163,230,53,0.32)' : 'rgba(77,124,15,0.24)',
-                }
-              : isRecommended && !collapsed
-              ? {
-                  backgroundColor: isDark ? 'rgba(45,212,191,0.08)' : 'rgba(15,118,110,0.06)',
-                  borderColor: isDark ? 'rgba(45,212,191,0.22)' : 'rgba(15,118,110,0.18)',
+                  backgroundColor: hexToRgba(headerAccent, isDark ? 0.10 : 0.08),
+                  borderColor: hexToRgba(headerAccent, isDark ? 0.30 : 0.22),
                 }
               : undefined
             // Admin group collapses to just its header when not in use (long,
