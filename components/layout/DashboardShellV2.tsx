@@ -39,7 +39,7 @@ import {
   UserCog, AlertTriangle, DollarSign, Newspaper, Plug, Wrench,
   Camera, MessageCircle, Activity, BarChart3, Wand2, ShieldCheck,
   Share2, UserSquare, Lightbulb, LifeBuoy, Link2, FlaskConical, Store, Send, ShoppingBag, Megaphone,
-  Inbox, PackageSearch, Copy, Signpost, Code2,
+  Inbox, PackageSearch, Copy, Signpost, Code2, Rocket,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { DEALS_HUB_PAUSED } from '@/lib/deal-occasion'
@@ -367,6 +367,10 @@ export default function DashboardShellV2({
         // for content-only ("bring your own theme") users, so hide it for them.
         { href: '/customize', icon: <Brush size={15} />, label: 'Customize Blog', gate: !contentOnly },
         { href: '/photobooth', icon: <UserSquare size={15} />, label: 'Face Models' },
+        // Social Launch Kit — generates the name/bio/banner/avatar + step-by-step
+        // to stand up a FB Page / Pinterest, for users with no time or know-how.
+        // Precedes Connect Socials (build + brand the account → then link it). 2026-07-08.
+        { href: '/social-launch-kit', icon: <Rocket size={15} />, label: 'Social Launch Kit' },
         { href: '/connect-socials', icon: <Share2 size={15} />, label: 'Connect Socials' },
         // Ads — one home for AdSense + affiliate banners. Shown to everyone:
         // AdSense injection works on BYO-theme sites too (via the MVP plugin),
