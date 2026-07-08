@@ -31,6 +31,7 @@ const SECTIONS: Array<{ id: string; label: string }> = [
   { id: 'seo',          label: 'SEO that moves rank' },
   { id: 'newsletter',   label: 'Newsletter' },
   { id: 'collabs',      label: 'Brand outreach' },
+  { id: 'finders',      label: 'Source & Earn — product finders' },
   { id: 'deals',        label: 'Deals Hub' },
   { id: 'brainstorm',   label: 'Brainstorm' },
   { id: 'multisite',    label: 'Multi-site WordPress' },
@@ -331,6 +332,45 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
             </li>
           </ul>
           {isApp && <SectionCta href="/collaborations" label="Open Collaborations" />}
+        </Section>
+
+        {/* ── Source & Earn — the three product/campaign finders ────── */}
+        <Section id="finders" icon={<Search size={18} />} title="Source & Earn — find products worth promoting">
+          <p>
+            Content is only half the game — you still have to pick WHAT to promote. Source &amp; Earn does the sourcing:
+            it sweeps the affiliate programs you&apos;re in and surfaces only the campaigns and products actually worth
+            your time, then hands each one straight to the content engine. Available on every paid plan.
+          </p>
+          <ul>
+            <li>
+              <strong>Three finders, one place.</strong> Amazon Creator Connections (Affiliate+ campaigns + onsite
+              products), Levanta (the Amazon creator network), and PartnerBoost (Walmart, Amazon &amp; DTC brands) — each
+              scanned against MVP&apos;s proprietary criteria: commission, runway, monthly demand, rating, product
+              quality, and whether the listing even has the review-video real estate that converts. A Focus/Wide toggle
+              tightens or loosens the bar.
+            </li>
+            <li>
+              <strong>Sweeps EVERY brand you&apos;re partnered with.</strong> Connected to 800 Levanta brands or 1,300
+              PartnerBoost brands? MVP scans them all and ranks the best picks — no digging brand-by-brand — with a
+              cached catalog so results come back fast.
+            </li>
+            <li>
+              <strong>Message the brand in one click.</strong> If the product runs an Amazon Creator Connections
+              campaign, MVP sends your pitch through Amazon&apos;s brand chat for you; otherwise it drafts the outreach
+              and drops you on the brand&apos;s page with it ready to paste. Your greeting, offer, portfolio links, and
+              shipping address flow in from your Outreach Profile.
+            </li>
+            <li>
+              <strong>Buy-to-review math + a saved shortlist.</strong> Every pick shows the cost to buy vs. the
+              commission back and the break-even, so you invest only in winners — and Save the ones you like to a
+              buy-to-review shelf for later.
+            </li>
+            <li>
+              <strong>One click to a post.</strong> Turn any find into a fact-grounded review or comparison with a real
+              commissionable link, published to your blog. Same engine, now fed the right products.
+            </li>
+          </ul>
+          {isApp && <SectionCta href="/epc" label="Open Source & Earn" />}
         </Section>
 
         {/* ── 6. Deals Hub ─────────────────────────────────────────── */}

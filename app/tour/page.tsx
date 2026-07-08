@@ -19,12 +19,12 @@ import { TourBody } from '@/components/tour/tour-content'
 export const metadata: Metadata = {
   title: 'Product tour · MVP Affiliate',
   description:
-    'The full tour of MVP Affiliate: turn a review video — or just a product link — into a blog post that ranks, comparisons, buying guides, thumbnails, a newsletter, brand pitches, and more, all fact-grounded and published to a blog you own. Everything that ships today.',
+    'The full tour of MVP Affiliate: turn a review video — or just a product link — into a blog post that ranks, comparisons, buying guides, thumbnails, a newsletter, and brand pitches, plus Source & Earn finders that surface the Amazon, Levanta & PartnerBoost products worth promoting. All fact-grounded and published to a blog you own. Everything that ships today.',
   alternates: { canonical: '/tour' },
   openGraph: {
     title: 'Product tour · MVP Affiliate',
     description:
-      'Turn a review video — or just a product link — into content that ranks: blog, comparisons, buying guides, thumbnails, newsletter, brand outreach. The full tour of what ships today.',
+      'Turn a review video — or just a product link — into content that ranks: blog, comparisons, buying guides, thumbnails, newsletter, brand outreach, plus finders that source the products worth promoting. The full tour of what ships today.',
     url: '/tour',
     type: 'website',
   },

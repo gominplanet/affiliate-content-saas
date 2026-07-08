@@ -23,7 +23,7 @@ import {
   Youtube, ShieldCheck, Zap, Upload, X as XIcon, Check, Quote,
   Crown, Rocket, Plus, Minus,
   LayoutTemplate, BadgePercent, Pin,
-  ShoppingBag, Store, ShoppingCart,
+  ShoppingBag, Store, ShoppingCart, Search,
 } from 'lucide-react'
 
 const DARK_VARS: React.CSSProperties = {
@@ -483,11 +483,15 @@ function RolesSection() {
 }
 
 /** The "business layer" — content-first doesn't mean content-ONLY. After the
- *  content engine, this section shows how MVP helps you EARN and SCALE: brand
- *  deals (live), deal-moment posts (Studio+), and VA seats (Pro).
- *  NOTE: EPC Scout / Creator Connections is admin-only while testing — do NOT
- *  advertise it here or in /pricing until it's opened to Pro. */
+ *  content engine, this section shows how MVP helps you SOURCE, EARN and SCALE:
+ *  the Source & Earn finders (all paid tiers), brand deals (live), deal-moment
+ *  posts (Studio+), and VA seats (Pro). */
 const BUSINESS_CARDS: Array<{ icon: React.ReactNode; title: string; body: string; pro?: boolean }> = [
+  {
+    icon: <Search size={18} />,
+    title: 'Find products worth promoting',
+    body: 'Source & Earn scans Amazon Creator Connections, Levanta, and PartnerBoost for the campaigns and products actually worth your time — vetted for commission, demand, product quality, and review visibility. Message the brand right from the results, then turn any winner into a fact-grounded post in one click.',
+  },
   {
     icon: <HeartHandshake size={18} />,
     title: 'Land brand deals',
@@ -526,11 +530,11 @@ function BusinessLayerSection() {
             </span>
           </h2>
           <p className="text-[16px] sm:text-[17px] leading-relaxed max-w-2xl mx-auto" style={{ color: 'var(--text-soft)' }}>
-            Discoverable content earns. MVP closes the loop — the brands you pitch, the deals worth your time, and the team that scales it.
+            Discoverable content earns. MVP closes the loop — the products worth promoting, the brands you pitch, the deals worth your time, and the team that scales it.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
           {BUSINESS_CARDS.map((c) => (
             <div key={c.title} className="rounded-2xl border p-6" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}>
               <div className="flex items-center gap-2 mb-3">
