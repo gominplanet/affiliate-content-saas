@@ -80,7 +80,9 @@ Everything must be specific to THIS brand and niche.`
     const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
     const stream = client.messages.stream({
       model: 'claude-opus-4-8',
-      max_tokens: 3000,
+      // Headroom so adaptive-thinking tokens + the Pinterest boards array can't
+      // truncate the JSON mid-object (you only pay for tokens actually used).
+      max_tokens: 6000,
       thinking: { type: 'adaptive' },
       system,
       messages: [{ role: 'user', content: userMsg }],
