@@ -11,7 +11,7 @@ import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
 import { Button } from '@/components/ui/button'
 import {
-  Rocket, Sparkles, Copy, Check, Download, ExternalLink, ListChecks, Image as ImageIcon,
+  Rocket, Sparkles, Copy, Check, Download, ExternalLink, ListChecks, Image as ImageIcon, FlaskConical, Lock,
 } from 'lucide-react'
 import { LAUNCH_PLATFORM_LIST, type LaunchPlatform, type PlatformSpec, type SocialKit } from '@/lib/social-launch-kit'
 
@@ -24,6 +24,7 @@ export default function SocialLaunchKitPage() {
   const [images, setImages] = useState<Record<string, string>>({})
   const [busyImg, setBusyImg] = useState<string | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
+  const [locked, setLocked] = useState(false)   // set if the API 403s (non-Pro deep-link)
 
   async function copy(text: string, key: string, label = 'Copied') {
     try {
@@ -48,7 +49,7 @@ export default function SocialLaunchKitPage() {
         body: JSON.stringify({ platform }),
       })
       const data = await res.json()
-      if (!res.ok) { toast.error(data.error || 'Generation failed.'); return }
+      if (!res.ok) { if (res.status === 403) setLocked(true); toast.error(data.error || 'Generation failed.'); return }
       setKits(prev => ({ ...prev, [platform]: data.kit as SocialKit }))
       toast.success(`${LAUNCH_PLATFORM_LIST.find(p => p.id === platform)?.label} kit ready`)
     } catch { toast.error('Network error — try again.') }
@@ -64,7 +65,7 @@ export default function SocialLaunchKitPage() {
         body: JSON.stringify({ platform, kind }),
       })
       const data = await res.json()
-      if (!res.ok) { toast.error(data.error || 'Image generation failed.'); return }
+      if (!res.ok) { if (res.status === 403) setLocked(true); toast.error(data.error || 'Image generation failed.'); return }
       setImages(prev => ({ ...prev, [key]: data.image || data.imageUrl }))
     } catch { toast.error('Network error — try again.') }
     finally { setBusyImg(null) }
@@ -74,8 +75,25 @@ export default function SocialLaunchKitPage() {
     <div className="max-w-4xl mx-auto px-4 py-6">
       <PageHero
         title="Social Launch Kit"
-        subtitle="No time to figure out Facebook Pages or Pinterest? Pick a platform and MVP hands you everything — name, bio, banner, avatar, and a step-by-step setup — ready to paste."
+        subtitle={
+          <>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold mr-2 align-middle"
+              style={{ background: 'rgba(34,211,238,0.14)', color: 'var(--text-soft)' }}>
+              <FlaskConical size={11} className="text-[#22D3EE]" /> Labs · Pro
+            </span>
+            No time to figure out Facebook Pages or Pinterest? Pick a platform and MVP hands you everything, name, bio, banner, avatar, and a step-by-step setup, ready to paste.
+          </>
+        }
       />
+
+      {locked && (
+        <div className="flex items-start gap-2.5 rounded-xl px-3 py-3 mt-4" style={{ background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.3)' }}>
+          <Lock size={16} style={{ color: '#b26a00' }} className="flex-shrink-0 mt-0.5" />
+          <p className="text-[12px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
+            The Social Launch Kit is a <b>Pro Labs</b> feature while we finish it. <a href="/pricing" className="font-semibold hover:underline" style={{ color: '#7C3AED' }}>Upgrade to Pro</a> to use it.
+          </p>
+        </div>
+      )}
 
       <div className="flex items-start gap-2.5 rounded-xl px-3 py-2.5 mt-4 mb-5"
         style={{ background: 'rgba(124,58,237,0.06)', border: '1px solid var(--border)' }}>

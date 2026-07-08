@@ -31,6 +31,10 @@ export async function POST(request: Request) {
 
   const { data: intRow } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
   const tier = (intRow?.tier as Tier) ?? 'trial'
+  // Labs — Pro-only until it graduates public (same gate as MVP x LTK).
+  if (tier !== 'pro' && tier !== 'admin') {
+    return NextResponse.json({ error: 'The Social Launch Kit is a Pro Labs feature.' }, { status: 403 })
+  }
 
   const gate = await spendGate(user.id, tier)
   if (gate) return gate

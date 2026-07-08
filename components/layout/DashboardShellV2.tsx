@@ -367,10 +367,6 @@ export default function DashboardShellV2({
         // for content-only ("bring your own theme") users, so hide it for them.
         { href: '/customize', icon: <Brush size={15} />, label: 'Customize Blog', gate: !contentOnly },
         { href: '/photobooth', icon: <UserSquare size={15} />, label: 'Face Models' },
-        // Social Launch Kit — generates the name/bio/banner/avatar + step-by-step
-        // to stand up a FB Page / Pinterest, for users with no time or know-how.
-        // Precedes Connect Socials (build + brand the account → then link it). 2026-07-08.
-        { href: '/social-launch-kit', icon: <Rocket size={15} />, label: 'Social Launch Kit' },
         { href: '/connect-socials', icon: <Share2 size={15} />, label: 'Connect Socials' },
         // Ads — one home for AdSense + affiliate banners. Shown to everyone:
         // AdSense injection works on BYO-theme sites too (via the MVP plugin),
@@ -490,6 +486,9 @@ export default function DashboardShellV2({
         // 2026-07-07 (Studio+Pro). MVP x Levanta / PartnerBoost left earlier.
         // LTK stays here — still Pro-only + behind the LABS_PASSWORD gate.
         { href: '/ltk', icon: <Sparkles size={15} />, label: 'MVP x LTK', gate: canUseLabs },
+        // Social Launch Kit — Pro Labs, gated until it graduates public. Generates
+        // name/bio/banner/avatar + setup guide for FB Page / Pinterest. 2026-07-08.
+        { href: '/social-launch-kit', icon: <Rocket size={15} />, label: 'Social Launch Kit', gate: canUseLabs },
       ],
     },
     {
