@@ -402,12 +402,20 @@ function ImageSlot({ label, imgKey, images, busyImg, refDataUrl, styleValue, onS
           </div>
         )}
       </div>
-      <div className={`w-full overflow-hidden grid place-items-center mb-2 ${round ? 'rounded-full max-w-[96px] aspect-square mx-auto' : 'aspect-video rounded-md'}`}
-        style={{ background: 'var(--surface-bright, rgba(0,0,0,0.04))' }}>
-        {src
-          ? <img src={src} alt="" className="w-full h-full object-cover" />
-          : <ImageIcon size={20} style={{ color: 'var(--text-faint)' }} />}
-      </div>
+      {round ? (
+        <div className="w-full max-w-[96px] aspect-square rounded-full overflow-hidden grid place-items-center mx-auto mb-2"
+          style={{ background: 'var(--surface-bright, rgba(0,0,0,0.04))' }}>
+          {src ? <img src={src} alt="" className="w-full h-full object-cover" /> : <ImageIcon size={20} style={{ color: 'var(--text-faint)' }} />}
+        </div>
+      ) : (
+        // Show the full banner at its true aspect ratio (no crop) so the preview
+        // matches exactly what downloads — otherwise a 16:9 box clips the wider cover.
+        <div className="w-full rounded-md overflow-hidden mb-2" style={{ background: 'var(--surface-bright, rgba(0,0,0,0.04))' }}>
+          {src
+            ? <img src={src} alt="" className="block w-full h-auto" />
+            : <div className="aspect-video grid place-items-center"><ImageIcon size={20} style={{ color: 'var(--text-faint)' }} /></div>}
+        </div>
+      )}
       <div className="flex items-center gap-1.5 flex-wrap">
         <Button variant="secondary" size="sm" loading={busy} onClick={onGenerate}
           leftIcon={busy ? undefined : <Sparkles className="h-3.5 w-3.5" />}>
