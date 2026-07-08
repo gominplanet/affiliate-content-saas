@@ -32,7 +32,10 @@ import { errText } from '@/lib/err-text'
 import { generateBlogRequest } from '@/lib/blog-generate-client'
 
 // ── Generation status ───────────────────────────────────────────────────
-type GenStatus = 'idle' | 'generating' | 'done' | 'error'
+// 'pending' = the job ran past our wait window but is STILL generating in the
+// background (it isn't a failure — it lands in the Library on its own). Shown as
+// calm info, never a red error with a duplicate-causing Retry.
+type GenStatus = 'idle' | 'generating' | 'done' | 'error' | 'pending'
 
 // Cosmetic step indicator while /api/blog/generate is in flight. The image
 // step is intentionally NOT here — image generation runs fire-and-forget
@@ -54,14 +57,12 @@ const GEN_STEPS = [
 ]
 // Hard client-side abort if generation hasn't resolved in this many ms.
 // With the async queue (Phase 4) the request is enqueue + poll: worker
-// pickup adds up to ~60s and the job itself runs 2-4 min server-side, so
-// the old 270s fuse (tuned to the sync route's 300s maxDuration) fired
-// while jobs were still happily finishing. 11 min sits just past the
-// poll helper's own 10-min ceiling, so its friendlier "still running in
-// the background — check your Library" result wins the race. On the
-// sync fallback path a dead server still surfaces earlier as a network
-// error with its own actionable message.
-const GENERATE_ABORT_MS = 660_000
+// pickup adds up to ~60s and the job itself runs 2-4 min server-side. This
+// fuse must sit just PAST the poll helper's own ceiling (MAX_POLL_MS, 13 min)
+// so the poll's friendlier "still running in the background — check your
+// Library" result wins the race instead of a bare abort. On the sync fallback
+// path a dead server still surfaces earlier as a network error.
+const GENERATE_ABORT_MS = 840_000 // 14 min (> MAX_POLL_MS 13 min)
 
 export function GenerateButton({
   videoId, existingPost, userTier, blogImagePref, onDone,
@@ -392,7 +393,11 @@ export function GenerateButton({
         message = 'Server returned an unexpected response — it may have crashed. Check Vercel logs, or try again in a moment.'
       }
       setError(message)
-      setStatus('error')
+      // "Still finishing in the background" / "may have published anyway" are NOT
+      // failures — the job keeps running server-side and lands in the Library. Show
+      // them as calm INFO (no red, no Retry that would spin up a duplicate).
+      const stillRunning = /still (being generated|finishing) in the background|taking longer than usual|may have published|likely still finishing/i.test(message)
+      setStatus(stillRunning ? 'pending' : 'error')
     }
   }
 
@@ -492,6 +497,18 @@ export function GenerateButton({
             dialog (raised from inside generate() right after status flips to
             'generating') has a host in this branch's tree. */}
         <ConfirmHost />
+      </div>
+    )
+  }
+  if (status === 'pending') {
+    // Still generating in the background — NOT a failure. Calm amber, and a
+    // "Refresh" (not "Retry") so the user picks up the finished post from the
+    // Library instead of kicking off a duplicate generation.
+    return (
+      <div className="flex flex-col gap-1 rounded-lg px-2.5 py-2"
+        style={{ background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.35)' }}>
+        <p className="text-xs" style={{ color: '#b26a00' }}>{error}</p>
+        <button onClick={() => window.location.reload()} className="text-xs text-[#7C3AED] hover:underline text-left">Refresh to check →</button>
       </div>
     )
   }

@@ -26,10 +26,13 @@ interface GenResponseLike {
 
 const POLL_INTERVAL_MS = 3000
 // Safety ceiling so a stuck or backlogged job never spins the UI forever. The
-// worker runs up to 300s; this leaves generous headroom for a short queue. The
-// job may still finish server-side after this — so we tell the user to check the
-// Library rather than calling it a failure.
-const MAX_POLL_MS = 10 * 60 * 1000
+// worker runs up to 300s, but a BUSY queue (this job waiting behind others) +
+// a slow WordPress host can push wall-clock past 10 min — which was firing this
+// "still generating, check your Library" fallback on jobs that then finished
+// fine a moment later. 13 min covers the common busy-queue tail. The job may
+// still finish server-side after this — so we tell the user to check the
+// Library rather than calling it a failure (it's not one).
+const MAX_POLL_MS = 13 * 60 * 1000
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function generateBlogRequest(body: Record<string, any>, signal?: AbortSignal): Promise<GenResponseLike> {
