@@ -81,10 +81,24 @@ export async function GET(request: Request) {
     return AVOID.some(p => hay.includes(p))
   }
 
-  const candidates = rows
-    .filter(r => Array.isArray(r.asins) && r.asins.length > 0)
-    .filter(r => !hitsAvoid(r))
-    .slice(0, limit)
+  // Walk the fetched window in rank order, collecting up to `limit` valid
+  // candidates and tracking how many RAW rows we consumed to get them — so the
+  // next scan resumes exactly past the last campaign shown. The old code sliced
+  // the first `limit` valid rows but then advanced `offset` by the whole
+  // over-fetch window (limit*3), leapfrogging the ~2/3 of fetched rows it never
+  // returned — so "Scan again" skipped approved campaigns and dead-ended early.
+  // Consuming precisely gives every re-scan genuinely new results (offset only
+  // moves forward → no repeats) with no skipped campaigns in between.
+  const picked: Row[] = []
+  let consumed = 0
+  for (const r of rows) {
+    consumed++
+    if (Array.isArray(r.asins) && r.asins.length > 0 && !hitsAvoid(r)) {
+      picked.push(r)
+      if (picked.length >= limit) break
+    }
+  }
+  const candidates = picked
     .map(r => {
       let daysLeft: number | null = null
       try { daysLeft = Math.max(0, Math.ceil((new Date(r.ends_at).getTime() - Date.now()) / 86400000)) } catch { /* keep null */ }
@@ -102,12 +116,14 @@ export async function GET(request: Request) {
       }
     })
 
-  // A full DB window came back ⇒ there are almost certainly more pages. The
-  // panel advances `offset` by the window size on the next scan to dig deeper.
+  // A full DB window came back ⇒ there are almost certainly more pages. Advance
+  // `offset` by the rows we actually consumed (not the whole over-fetch window),
+  // so the next scan resumes right after the last campaign shown — fresh results
+  // each time, nothing skipped, nothing repeated.
   const windowSize = limit * 3
   const hasMore = rows.length >= windowSize
   return NextResponse.json({
     ok: true, query: q, candidates, matched: rows.length,
-    offset, nextOffset: offset + windowSize, hasMore,
+    offset, nextOffset: offset + consumed, hasMore,
   })
 }
