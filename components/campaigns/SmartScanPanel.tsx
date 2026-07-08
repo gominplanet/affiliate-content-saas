@@ -144,17 +144,23 @@ export default function SmartScanPanel({
     const paging = scanOffset > 0
     let usedCatalog = false
     try {
-      const r = await fetch(`/api/campaigns/catalog-search?q=${encodeURIComponent(focus)}&limit=60&mode=${ruleMode}&offset=${scanOffset}`)
+      // Fetch a batch sized to SCOUT's Amazon-safe deep-check ceiling (~25/scan).
+      // Matching the fetch to what SCOUT actually verifies means the WHOLE batch
+      // gets checked and the offset advances past exactly what was examined, so
+      // "Scan again" never leapfrogs unverified campaigns. A bigger fetch (we ran
+      // 60) just means SCOUT can't reach the tail before its cap and those get
+      // skipped between scans.
+      const r = await fetch(`/api/campaigns/catalog-search?q=${encodeURIComponent(focus)}&limit=25&mode=${ruleMode}&offset=${scanOffset}`)
       const data = await r.json().catch(() => ({}))
       if (data?.ok && Array.isArray(data.candidates) && data.candidates.length) {
         usedCatalog = true
-        setProgress(`${data.candidates.length} more candidate campaigns from the catalog — SCOUT is live-verifying the best…`)
+        setProgress(`SCOUT is live-verifying ${data.candidates.length} campaigns from the catalog on Amazon…`)
         const fresh = (data.candidates as CatalogCandidate[]).filter(c => {
           const a = (c.asin || '').toUpperCase()
           return a && !covered.has(a) && !alreadyShown.has(a)
         })
         setSkippedCovered(prev => prev + (data.candidates.length - fresh.length))
-        const ver = await requestCcVerify(fresh.slice(0, 40), { ...RULES, wantPassers: 15 })
+        const ver = await requestCcVerify(fresh.slice(0, 25), { ...RULES, wantPassers: 15 })
         setProgress(null)
         if (!ver.ok) {
           setError(ver.error === 'not-installed'
@@ -174,7 +180,7 @@ export default function SmartScanPanel({
             .sort((a, b) => b.score - a.score)
         })
         // Advance so the NEXT scan digs deeper; remember if more remain.
-        setScanOffset(typeof data.nextOffset === 'number' ? data.nextOffset : scanOffset + 180)
+        setScanOffset(typeof data.nextOffset === 'number' ? data.nextOffset : scanOffset + 75)
         setHasMore(!!data.hasMore)
         const dl = dropLine(ver.drops)
         const more = data.hasMore ? ' Scan again for the next batch — it digs deeper each time.' : ' That’s the full catalog for this search.'
