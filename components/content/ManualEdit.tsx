@@ -11,7 +11,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Edit3, Loader2, Save } from 'lucide-react'
+import { Edit3, Loader2, Save, Image as ImageIcon, Upload } from 'lucide-react'
 
 export function ManualEdit({ postId }: { postId?: string }) {
   const [open, setOpen] = useState(false)
@@ -21,6 +21,11 @@ export function ManualEdit({ postId }: { postId?: string }) {
   const [html, setHtml] = useState('')
   const ref = useRef<HTMLDivElement>(null)
   const seeded = useRef(false)
+  // Thumbnail (WP featured image) editing — works for any post.
+  const [thumbBusy, setThumbBusy] = useState(false)
+  const [thumbUrl, setThumbUrl] = useState<string | null>(null)
+  const [thumbMsg, setThumbMsg] = useState<string | null>(null)
+  const thumbFileRef = useRef<HTMLInputElement>(null)
 
   // Seed the contentEditable AFTER it mounts (it only renders once
   // loading is false). Only once per open so user edits aren't clobbered.
@@ -76,6 +81,31 @@ export function ManualEdit({ postId }: { postId?: string }) {
     }
   }
 
+  // Upload a new hero/featured image for this post and set it live on WordPress.
+  async function uploadThumb(file: File) {
+    if (!postId) { setThumbMsg('Save the post first, then set a thumbnail.'); return }
+    if (!file.type.startsWith('image/')) { setThumbMsg('Please choose an image file.'); return }
+    if (file.size > 8 * 1024 * 1024) { setThumbMsg('That image is too large (max 8MB).'); return }
+    setThumbBusy(true); setThumbMsg(null)
+    try {
+      const dataUrl = await new Promise<string>((res, rej) => {
+        const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = rej; r.readAsDataURL(file)
+      })
+      const resp = await fetch('/api/blog/thumbnail', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ postId, image: dataUrl }),
+      })
+      const data = await resp.json().catch(() => ({}))
+      if (!resp.ok) { setThumbMsg(data.error || 'Upload failed.'); return }
+      setThumbUrl(data.url || dataUrl)
+      setThumbMsg('Thumbnail updated ✓ (may take a minute to refresh on the live site)')
+    } catch {
+      setThumbMsg('Upload failed — try again.')
+    } finally {
+      setThumbBusy(false)
+    }
+  }
+
   return (
     <div className={open ? 'basis-full order-last mt-1' : ''}>
       <button
@@ -92,6 +122,29 @@ export function ManualEdit({ postId }: { postId?: string }) {
             </div>
           ) : (
             <>
+              {/* Thumbnail (WP featured image) — change it without leaving MVP. */}
+              <div className="mb-3 rounded-lg border border-gray-100 dark:border-white/5 p-2.5 flex items-center gap-3">
+                {thumbUrl ? (
+                  <img src={thumbUrl} alt="Thumbnail" className="w-16 h-10 rounded object-cover border border-gray-200 dark:border-white/10 flex-shrink-0" />
+                ) : (
+                  <div className="w-16 h-10 rounded grid place-items-center bg-gray-100 dark:bg-white/5 flex-shrink-0">
+                    <ImageIcon size={14} className="text-[#86868b]" />
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Thumbnail (hero image)</p>
+                  <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">{thumbMsg || 'Upload a new featured image for this post — sets it live on WordPress.'}</p>
+                </div>
+                <input ref={thumbFileRef} type="file" accept="image/*" className="hidden"
+                  onChange={e => { const f = e.target.files?.[0]; e.currentTarget.value = ''; if (f) uploadThumb(f) }} />
+                <button
+                  onClick={() => thumbFileRef.current?.click()}
+                  disabled={thumbBusy || !postId}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 dark:border-white/10 text-[#3a3a3c] dark:text-[#ebebf0] disabled:opacity-60 flex-shrink-0"
+                >
+                  {thumbBusy ? <><Loader2 size={12} className="animate-spin" /> Uploading…</> : <><Upload size={12} /> Upload thumbnail</>}
+                </button>
+              </div>
               <div
                 ref={ref}
                 contentEditable
