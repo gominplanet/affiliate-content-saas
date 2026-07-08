@@ -23,6 +23,11 @@ import { createWordPressService } from '@/services/wordpress'
 import { tryWpProxy } from '@/lib/wp-proxy'
 import { repairCorruptedBlocks, countCorruptedMarkers } from '@/lib/repair-blocks'
 
+// Sweeping a user's whole backlog reads + rewrites each post one-by-one, so give
+// the route headroom rather than the default short ceiling.
+export const maxDuration = 300
+export const dynamic = 'force-dynamic'
+
 export async function POST(req: Request) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -36,6 +41,10 @@ export async function POST(req: Request) {
 
   const body = await req.json().catch(() => ({})) as {
     userId?: string; slugs?: string[]; postIds?: number[]; siteId?: string | null; dryRun?: boolean
+    // Bulk sweep — repair the user's WHOLE backlog, not just named posts. The
+    // real fix for "it happened again": pre-fix drafts sit in WordPress already
+    // corrupted, so we find + repair every one BEFORE the user publishes it.
+    sweep?: boolean; statuses?: string[]; maxPosts?: number
   }
   const userId = (body.userId || '').trim()
   if (!userId) return NextResponse.json({ error: 'userId is required' }, { status: 400 })
@@ -71,8 +80,23 @@ export async function POST(req: Request) {
       results.push({ postId: 0, slug: s, before: 0, after: 0, changed: false, error: 'slug lookup failed' })
     }
   }
+  // Bulk sweep: enumerate the user's backlog and add every id. Defaults to the
+  // UNPUBLISHED set (draft/pending/future) — the posts that will corrupt on
+  // publish — but callers can pass statuses:['publish',…] to also re-check live
+  // posts. Runs alongside any explicit slugs/postIds. The per-post loop below
+  // skips anything already clean (before:0, changed:false), so sweeping a mostly
+  // clean site is safe — it just no-ops on the clean ones.
+  if (body.sweep) {
+    const statuses = (body.statuses && body.statuses.length) ? body.statuses : ['draft', 'pending', 'future']
+    try {
+      const listed = await wp.listPostIds(statuses, Math.min(1000, Math.max(1, body.maxPosts || 400)))
+      for (const p of listed) ids.add(p.id)
+    } catch { /* enumeration failed → fall back to explicit ids only */ }
+  }
+
   if (ids.size === 0 && results.length === 0) {
-    return NextResponse.json({ error: 'Provide slugs[] or postIds[] to repair' }, { status: 400 })
+    if (body.sweep) return NextResponse.json({ ok: true, dryRun: !!body.dryRun, swept: true, results: [], note: 'No matching posts found to check.' })
+    return NextResponse.json({ error: 'Provide slugs[] or postIds[], or set sweep:true' }, { status: 400 })
   }
 
   // Read RAW post content. Prefer the plugin's body-auth proxy — it dispatches

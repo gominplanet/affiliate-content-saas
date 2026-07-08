@@ -819,6 +819,36 @@ export class WordPressService {
     }
   }
 
+  /** Enumerate post ids across the given statuses (default: the unpublished
+   *  backlog — draft/pending/future). Used by the block-repair tool to sweep a
+   *  user's WHOLE queue, not just posts we can name by slug: pre-fix drafts sit
+   *  in WordPress already corrupted, so we must find + repair them BEFORE the
+   *  user publishes. Paginated + capped so a huge site can't run the request
+   *  away. Proxy-first via request() → WAF-safe. */
+  async listPostIds(
+    statuses: string[] = ['draft', 'pending', 'future'],
+    maxPosts = 400,
+  ): Promise<Array<{ id: number; slug: string; status: string }>> {
+    const statusCsv = statuses.filter(Boolean).join(',') || 'draft'
+    const out: Array<{ id: number; slug: string; status: string }> = []
+    const perPage = 100
+    for (let page = 1; page <= Math.ceil(maxPosts / perPage); page++) {
+      let rows: Array<{ id?: number; slug?: string; status?: string }> = []
+      try {
+        rows = await this.request<Array<{ id?: number; slug?: string; status?: string }>>(
+          `/posts?per_page=${perPage}&page=${page}&status=${statusCsv}&_fields=id,slug,status&orderby=date&order=desc`,
+        )
+      } catch { break } // page beyond the last returns 400 on some hosts — stop
+      if (!Array.isArray(rows) || rows.length === 0) break
+      for (const r of rows) {
+        if (typeof r.id === 'number') out.push({ id: r.id, slug: r.slug || '', status: r.status || '' })
+        if (out.length >= maxPosts) return out
+      }
+      if (rows.length < perPage) break
+    }
+    return out
+  }
+
   /** Category names actually assigned to a published post (source of
    *  truth for "what niche is this post in"). */
   async getPostCategoryNames(postId: number): Promise<string[]> {
