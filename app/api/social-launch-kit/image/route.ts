@@ -19,6 +19,7 @@ import { recordUsage } from '@/lib/ai-usage'
 import { composeWithNanoBananaPro, generateWithIdeogram, rehostAll, uploadDataUrlToFal } from '@/lib/thumbnail-generators'
 import { createOpenAIService } from '@/services/openai'
 import { LAUNCH_PLATFORMS, type LaunchPlatform } from '@/lib/social-launch-kit'
+import { buildCoverPrompt, buildAvatarPrompt } from '@/lib/social-launch-kit-prompt'
 import type { Tier } from '@/lib/tier'
 
 export const maxDuration = 180
@@ -95,51 +96,25 @@ export async function POST(request: Request) {
   const audience = strip(b.target_audience)
   const tone = (Array.isArray(b.tone) ? b.tone : []).filter(Boolean).map(String).join(', ')
 
-  // The full brand brief every image is designed from — copy + profile fused.
-  const brief = [
-    `BRAND BRIEF (design something unique and accurate to THIS specific brand, not generic):`,
-    `Name: ${brandName}${category ? ` — category: ${category}` : ''}.`,
-    `Niche: ${niches}.`,
-    headline ? `Tagline: "${headline}".` : '',
-    about ? `About: ${about}` : '',
-    audience ? `Audience: ${audience}.` : '',
-    tone ? `Voice / tone: ${tone}.` : '',
-    keywords.length ? `Key topics: ${keywords.slice(0, 4).join(', ')}.` : '',
-    colorLine,
-  ].filter(Boolean).join(' ')
-
   const customRef = (body.referenceImage || '').trim()
   const target = kind === 'banner' ? spec.banner! : spec.avatar
+  const hasLogo = !!(logoUrl || customRef)
 
-  const bannerLayout = bannerStyle === 'minimal'
-    ? [
-        `Now design a MINIMAL, elegant ${spec.label} cover banner (wide landscape) — mostly clean negative space, understated and premium.`,
-        (logoUrl || customRef) ? `The attached brand LOGO, reproduced faithfully, on the left or center-left.` : '',
-        `A single clean headline in a modern sans-serif reading "${headline}". Nothing else — NO product images, NO checklists, NO icons, NO badges. Lots of empty space.`,
-        colorLine,
-      ]
-    : [
-        `Now design a CLEAN, modern, premium ${spec.label} cover banner (wide landscape). Keep it uncluttered with generous negative space — do NOT overcrowd it.`,
-        (logoUrl || customRef) ? `Left side: the attached brand LOGO, reproduced faithfully.` : '',
-        `Center-left: a bold headline in a heavy condensed sans-serif reading "${headline}" (max 2 lines), key words accented in the brand's accent colour, with up to 3 short check-point words beneath it.`,
-        `Right side: a small, tasteful cluster of 3 to 4 everyday ${niches} products — not a big pile.`,
-        `Do NOT add a grid or strip of category icons, do NOT add long rows of feature icons, do NOT add multiple badges or seals. ONE clean layout.`,
-        colorLine,
-      ]
+  // Compact brand context (for accuracy) + a short, punchy cover headline.
+  const context = [
+    `${brandName}${category ? ` (${category})` : ''}`,
+    `a ${niches} brand`,
+    audience ? `for ${audience}` : '',
+    about ? `— ${about}` : '',
+    tone ? `Voice: ${tone}.` : '',
+  ].filter(Boolean).join(' ')
+  const coverHeadline = ((headline.split(/[.!?•|]/)[0] || headline).trim().split(/\s+/).slice(0, 8).join(' ')) || headline
+  const sellingPoints = keywords.length ? keywords.slice(0, 5) : ['Tested', 'No sponsor bias', 'Just the truth']
+
+  // Modular prompt engine (lib/social-launch-kit-prompt) — premium cover spec.
   const prompt = kind === 'banner'
-    ? [
-        brief,
-        ...bannerLayout,
-        `CRITICAL COMPOSITION: this banner gets cropped very wide, so keep the logo, headline and products inside the MIDDLE 65% of the height and leave the top ~18% and bottom ~18% as plain background — anything placed there will be cut off. Perfectly-spelled legible text only. Never render the word "honest".`,
-      ].filter(Boolean).join(' ')
-    : [
-        brief,
-        `Now create a polished, professional circular profile picture / logo mark for this brand — a clean, iconic app-badge, centered, 1:1.`,
-        (logoUrl || customRef)
-          ? `Reproduce the attached brand mark faithfully, refined and crisp, on a clean on-brand background. ${colorLine}`
-          : `A bold, simple geometric emblem that represents the brand on a clean background. ${colorLine}`,
-        `Only include text that appears in the real logo — do not invent new words, letters or gibberish. High fidelity. Never render the word "honest".`,
-      ].filter(Boolean).join(' ')
+    ? buildCoverPrompt({ platformLabel: `${spec.label} cover`, style: bannerStyle, brandName, headline: coverHeadline, industry: niches, sellingPoints, colorLine, hasLogo, context })
+    : buildAvatarPrompt({ brandName, industry: niches, colorLine, hasLogo, context })
 
   // Visual references: uploaded inspiration first, then the real logo (and the
   // header banner too, for covers) so gpt-image-1 stays faithful to the brand.
