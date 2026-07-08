@@ -145,6 +145,32 @@ export async function POST(req: Request) {
   // open counter so the cron's winner-pick has real data.
   const variant = tagMap['variant']
 
+  // ── Admin broadcast (the operator's /admin/broadcast tool) ───────────────
+  // Different table + shape from the per-creator newsletter. Attribute the
+  // event to admin_broadcast_events (deduped by PK so opens/clicks are unique),
+  // and stop emailing anyone who reports a broadcast as spam.
+  if (kind === 'broadcast') {
+    const admin = createAdminClient()
+    const EVENT_MAP: Record<string, string | null> = {
+      'email.delivered': 'delivered', 'email.opened': 'opened', 'email.clicked': 'clicked',
+      'email.bounced': 'bounced', 'email.complained': 'complained',
+    }
+    const et = EVENT_MAP[type]
+    const recipient = (event.data?.to || [])[0]
+    if (broadcastId && et && recipient) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (admin as any).from('admin_broadcast_events').upsert(
+        { broadcast_id: broadcastId, email: normaliseEmail(recipient), event_type: et },
+        { onConflict: 'broadcast_id,email,event_type', ignoreDuplicates: true },
+      )
+    }
+    if (type === 'email.complained' && userId) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (admin as any).from('integrations').update({ marketing_opt_out: true }).eq('user_id', userId)
+    }
+    return NextResponse.json({ ok: true, kind: 'broadcast' })
+  }
+
   // Only handle events we tagged as newsletter broadcasts. Other email
   // types (transactional confirms, etc.) just 200-ack so Resend doesn't
   // retry forever.

@@ -88,7 +88,7 @@ async function resolveRecipients(
   return out
 }
 
-function buildEmail(subject: string, body: string, userId: string) {
+function buildEmail(subject: string, body: string, userId: string, broadcastId?: string) {
   const unsubscribeUrl = `${APP_BASE}/api/email/unsubscribe?token=${encodeURIComponent(signUnsub(userId))}`
   return {
     subject,
@@ -98,7 +98,13 @@ function buildEmail(subject: string, body: string, userId: string) {
       'List-Unsubscribe': `<${unsubscribeUrl}>`,
       'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
     },
-    tags: [{ name: 'kind', value: 'broadcast' }],
+    // Tags come back on Resend's webhook events so we can attribute each
+    // open/click/bounce to this blast + recipient (send-history log).
+    tags: [
+      { name: 'kind', value: 'broadcast' },
+      { name: 'user_id', value: userId },
+      ...(broadcastId ? [{ name: 'broadcast_id', value: broadcastId }] : []),
+    ],
   }
 }
 
@@ -118,7 +124,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json().catch(() => ({})) as {
-      action?: 'count' | 'test' | 'send'
+      action?: 'count' | 'test' | 'send' | 'log'
       audience?: string
       subject?: string
       body?: string
@@ -132,6 +138,38 @@ export async function POST(request: Request) {
     if (action === 'count') {
       const recipients = await resolveRecipients(admin, audience)
       return NextResponse.json({ ok: true, count: recipients.length })
+    }
+
+    // Send-history log — recent blasts + unique engagement from webhook events.
+    if (action === 'log') {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: rows } = await (admin as any)
+        .from('admin_broadcasts')
+        .select('id,created_at,subject,audience,total,sent,failed')
+        .order('created_at', { ascending: false }).limit(25)
+      const list = (rows ?? []) as Array<{
+        id: string; created_at: string; subject: string; audience: string
+        total: number; sent: number; failed: number
+      }>
+      const ids = list.map(r => r.id)
+      const tally: Record<string, Record<string, number>> = {}
+      if (ids.length) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: evts } = await (admin as any)
+          .from('admin_broadcast_events').select('broadcast_id,event_type').in('broadcast_id', ids)
+        for (const e of (evts ?? []) as { broadcast_id: string; event_type: string }[]) {
+          (tally[e.broadcast_id] ??= {})[e.event_type] = (tally[e.broadcast_id]?.[e.event_type] || 0) + 1
+        }
+      }
+      const broadcasts = list.map(r => ({
+        id: r.id, createdAt: r.created_at, subject: r.subject, audience: r.audience,
+        total: r.total, sent: r.sent, failed: r.failed,
+        delivered: tally[r.id]?.delivered || 0,
+        opened: tally[r.id]?.opened || 0,
+        clicked: tally[r.id]?.clicked || 0,
+        bounced: (tally[r.id]?.bounced || 0) + (tally[r.id]?.complained || 0),
+      }))
+      return NextResponse.json({ ok: true, broadcasts })
     }
 
     if (!isEmailConfigured()) {
@@ -160,15 +198,33 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'That segment has no reachable recipients.' }, { status: 400 })
     }
 
+    // Log the blast first so webhook events arriving mid-send can attribute.
+    // Best-effort: if the log table isn't migrated yet, still send the emails.
+    let broadcastId: string | undefined
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: row } = await (admin as any)
+        .from('admin_broadcasts')
+        .insert({ created_by: user.id, subject, audience, total: recipients.length })
+        .select('id').single()
+      broadcastId = row?.id
+    } catch { /* logging is optional — never block the send */ }
+
     let sent = 0
     let failed = 0
     for (let i = 0; i < recipients.length; i += CHUNK) {
       const chunk = recipients.slice(i, i + CHUNK)
       const results = await Promise.allSettled(
-        chunk.map(r => sendEmail({ to: r.email, replyTo, ...buildEmail(subject, text, r.id) })),
+        chunk.map(r => sendEmail({ to: r.email, replyTo, ...buildEmail(subject, text, r.id, broadcastId) })),
       )
       for (const res of results) (res.status === 'fulfilled' ? sent++ : failed++)
       if (i + CHUNK < recipients.length) await sleep(PAUSE_MS)
+    }
+
+    if (broadcastId) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      try { await (admin as any).from('admin_broadcasts').update({ sent, failed }).eq('id', broadcastId) }
+      catch { /* count update optional */ }
     }
 
     return NextResponse.json({ ok: true, total: recipients.length, sent, failed, audience })

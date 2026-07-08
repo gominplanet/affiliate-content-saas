@@ -10,9 +10,15 @@ import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
 import { Button } from '@/components/ui/button'
-import { Send, Users, Mail, ShieldCheck, Info } from 'lucide-react'
+import { Send, Users, Mail, ShieldCheck, Info, History, RefreshCw } from 'lucide-react'
 
 type Audience = 'all' | 'trial' | 'paid' | 'creator' | 'studio' | 'pro'
+type BroadcastLog = {
+  id: string; createdAt: string; subject: string; audience: string
+  total: number; sent: number; failed: number
+  delivered: number; opened: number; clicked: number; bounced: number
+}
+const pct = (n: number, d: number) => (d > 0 ? `${Math.round((n / d) * 100)}%` : '—')
 const AUDIENCES: { id: Audience; label: string; hint: string }[] = [
   { id: 'all', label: 'All users', hint: 'Everyone (trial + paid)' },
   { id: 'trial', label: 'Trial only', hint: 'Free-trial accounts' },
@@ -32,6 +38,23 @@ export default function BroadcastPage() {
   const [busy, setBusy] = useState<'test' | 'send' | null>(null)
   const [confirmText, setConfirmText] = useState('')
   const [result, setResult] = useState<{ sent: number; failed: number; total: number } | null>(null)
+  const [history, setHistory] = useState<BroadcastLog[]>([])
+  const [loadingHistory, setLoadingHistory] = useState(false)
+
+  const loadHistory = useCallback(async () => {
+    setLoadingHistory(true)
+    try {
+      const res = await fetch('/api/admin/broadcast', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'log' }),
+      })
+      const data = await res.json()
+      if (res.ok) setHistory(data.broadcasts ?? [])
+    } catch { /* silent — the log is a nice-to-have */ }
+    finally { setLoadingHistory(false) }
+  }, [])
+
+  useEffect(() => { loadHistory() }, [loadHistory])
 
   const refreshCount = useCallback(async (aud: Audience) => {
     setCounting(true); setCount(null)
@@ -80,6 +103,7 @@ export default function BroadcastPage() {
       setResult({ sent: data.sent, failed: data.failed, total: data.total })
       setConfirmText('')
       toast.success(`Sent to ${data.sent} of ${data.total}${data.failed ? ` (${data.failed} failed)` : ''} ✓`, { id: t })
+      loadHistory()
     } catch { toast.error('Network error.', { id: t }) }
     finally { setBusy(null) }
   }
@@ -175,6 +199,54 @@ export default function BroadcastPage() {
             style={{ background: 'rgba(52,199,89,0.08)', border: '1px solid rgba(52,199,89,0.25)', color: 'var(--text-soft)' }}>
             <Info size={13} className="mt-0.5 flex-shrink-0" style={{ color: '#34c759' }} />
             <span>Delivered to <b style={{ color: 'var(--text)' }}>{result.sent}</b> of {result.total}{result.failed ? ` · ${result.failed} failed (bad/blocked addresses)` : ' · no failures'}.</span>
+          </div>
+        )}
+      </div>
+
+      {/* Send history */}
+      <div className="card p-4 mt-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <History size={14} className="text-[#7C3AED]" />
+            <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>Recent broadcasts</p>
+          </div>
+          <button onClick={loadHistory} title="Refresh" className="inline-flex items-center gap-1 text-[11px] font-semibold hover:underline" style={{ color: '#7C3AED' }}>
+            <RefreshCw size={11} className={loadingHistory ? 'animate-spin' : ''} /> Refresh
+          </button>
+        </div>
+        {history.length === 0 ? (
+          <p className="text-[12px]" style={{ color: 'var(--text-faint)' }}>
+            {loadingHistory ? 'Loading…' : 'No broadcasts sent yet. Your history and open/click rates will show here.'}
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-[12px] border-collapse">
+              <thead>
+                <tr style={{ color: 'var(--text-faint)' }} className="text-left">
+                  <th className="font-semibold pb-2 pr-3">Sent</th>
+                  <th className="font-semibold pb-2 pr-3">Subject</th>
+                  <th className="font-semibold pb-2 pr-3">To</th>
+                  <th className="font-semibold pb-2 pr-3 text-right">Recipients</th>
+                  <th className="font-semibold pb-2 pr-3 text-right">Opened</th>
+                  <th className="font-semibold pb-2 text-right">Clicked</th>
+                </tr>
+              </thead>
+              <tbody style={{ color: 'var(--text-soft)' }}>
+                {history.map(h => (
+                  <tr key={h.id} style={{ borderTop: '1px solid var(--border)' }}>
+                    <td className="py-2 pr-3 whitespace-nowrap">{new Date(h.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</td>
+                    <td className="py-2 pr-3 max-w-[220px] truncate" title={h.subject} style={{ color: 'var(--text)' }}>{h.subject}</td>
+                    <td className="py-2 pr-3 capitalize">{h.audience}</td>
+                    <td className="py-2 pr-3 text-right">{h.sent}{h.failed ? <span style={{ color: '#dc2626' }}> (−{h.failed})</span> : ''}</td>
+                    <td className="py-2 pr-3 text-right">{h.opened} <span style={{ color: 'var(--text-faint)' }}>({pct(h.opened, h.delivered || h.sent)})</span></td>
+                    <td className="py-2 text-right">{h.clicked} <span style={{ color: 'var(--text-faint)' }}>({pct(h.clicked, h.delivered || h.sent)})</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="text-[11px] mt-2" style={{ color: 'var(--text-faint)' }}>
+              Open/click rates fill in over the following minutes/hours as Resend reports engagement (needs the Resend webhook configured). Opens are unique per person.
+            </p>
           </div>
         )}
       </div>
