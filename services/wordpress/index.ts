@@ -1,6 +1,7 @@
 // WordPress REST API service
 
 import { WP_USER_AGENT } from '@/lib/wp-user-agent'
+import { repairCorruptedBlocks } from '@/lib/repair-blocks'
 
 export interface WPPost {
   id?: number
@@ -655,7 +656,24 @@ export class WordPressService {
 
   // ── Posts ─────────────────────────────────────────────────────────────────
 
+  /** Last line of defence against block-comment corruption reaching WordPress.
+   *  Two AI-HTML scrubs (lib/html-scrub + lib/scrub) each once rewrote `--`→`,`
+   *  inside Gutenberg delimiters (`<!-- wp:x -->` → `<!, wp:x, >`), dumping raw
+   *  markup as visible text on the published post. Both are guarded now, but this
+   *  is the single chokepoint EVERY publish flows through, so we self-heal here
+   *  too — no future code path can push corrupted blocks live. GATED on the `<!,`
+   *  marker actually being present: the repair truncates at `, >`, so running it
+   *  on clean content could damage a legit comment — this touches ONLY genuinely
+   *  corrupted content (a `<` `!` `,` sequence never occurs in valid markup). */
+  private healBlocks<T extends { content?: string }>(post: T): T {
+    if (typeof post.content === 'string' && post.content.includes('<!,')) {
+      return { ...post, content: repairCorruptedBlocks(post.content) }
+    }
+    return post
+  }
+
   async createPost(post: WPPost): Promise<WPPostResponse> {
+    post = this.healBlocks(post)
     const created = await this.request<WPPostResponse>('/posts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -719,6 +737,7 @@ export class WordPressService {
   }
 
   async updatePost(id: number, post: Partial<WPPost>): Promise<WPPostResponse> {
+    post = this.healBlocks(post)
     return this.request<WPPostResponse>(`/posts/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
