@@ -11,7 +11,7 @@
 
 import { useState } from 'react'
 import PageHero from '@/components/layout/PageHero'
-import { FlaskConical, Loader2, ExternalLink, CheckCircle2, XCircle, Sparkles, Lock } from 'lucide-react'
+import { Loader2, ExternalLink, CheckCircle2, XCircle, Sparkles, Lock } from 'lucide-react'
 
 const PINK = 'rgba(236,72,153,0.30)' // LTK skews fashion/lifestyle — warmer accent
 
@@ -95,13 +95,6 @@ export default function LtkPage() {
 
   return (
     <div className="max-w-3xl mx-auto px-5 lg:px-8 py-6">
-      <div className="flex items-center gap-2 mb-3">
-        <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full"
-          style={{ background: 'rgba(236,72,153,0.14)', color: '#EC4899', border: '1px solid rgba(236,72,153,0.28)' }}>
-          <FlaskConical size={11} /> MVP Labs · Pro
-        </span>
-      </div>
-
       <PageHero
         title="MVP x LTK"
         subtitle={'Paste an LTK product link and MVP writes a Google-ready blog post in your voice — with your LTK link as the "Shop" button. A new way for shoppers to find your picks and click straight through to your LTK shop.'}
@@ -217,7 +210,7 @@ export default function LtkPage() {
       {result && (
         <div className="mt-4 rounded-xl border p-4 text-[14px]" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
           {result.forbidden ? (
-            <p className="flex items-center gap-2" style={{ color: 'var(--text-soft)' }}><Lock size={15} /> {result.error || 'MVP x LTK is a Pro feature.'}</p>
+            <p className="flex items-center gap-2" style={{ color: 'var(--text-soft)' }}><Lock size={15} /> {result.error || 'MVP x LTK is available on any paid plan — upgrade to unlock it.'}</p>
           ) : result.error ? (
             <p style={{ color: '#ff6b6b' }}>{result.error}</p>
           ) : (

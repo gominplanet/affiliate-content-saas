@@ -23,7 +23,7 @@ import { injectInlineAffiliateLinks } from '@/lib/inline-affiliate'
 import { buildCampaignHero } from '@/lib/hero-image'
 import { scrubBanned } from '@/lib/scrub'
 import { spendGate } from '@/lib/ai-spend'
-import type { Tier } from '@/lib/tier'
+import { tierAllowsFinders, type Tier } from '@/lib/tier'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -41,8 +41,9 @@ export async function POST(request: NextRequest) {
     const { data: intRow } = await supabase
       .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
     const tier = (intRow?.tier as Tier) ?? 'trial'
-    if (tier !== 'pro' && tier !== 'admin') {
-      return NextResponse.json({ ok: false, error: 'MVP x LTK is a Pro feature.' }, { status: 403 })
+    // Graduated out of Labs 2026-07-08 → available on any PAID plan (not Trial).
+    if (!tierAllowsFinders(tier)) {
+      return NextResponse.json({ ok: false, error: 'MVP x LTK is available on any paid plan — upgrade to unlock it.' }, { status: 403 })
     }
     // Runs Opus + image gen — respect the spend ceiling like every gen route.
     const gate = await spendGate(user.id, tier)

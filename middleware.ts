@@ -1,7 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createMiddlewareClient } from '@/lib/supabase/middleware'
 import { isPathBlockedForVa } from '@/lib/agency-routes'
-import { LABS_COOKIE, expectedLabsToken } from '@/lib/labs-access'
 
 const publicPaths = [
   '/login', '/signup', '/reset-password',
@@ -92,33 +91,14 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // ── Labs early-access gate ──────────────────────────────────────────────
-  // LTK (/ltk, /api/ltk/*) is limited to invited users via a single shared
-  // password (env LABS_PASSWORD), on TOP of its tier gate. When the password is
-  // set, a LABS request needs the labs_unlocked cookie — pages redirect to
-  // /labs-unlock, APIs return 401 JSON. With LABS_PASSWORD UNSET this is a no-op.
-  // GRADUATED OUT of this gate (now tier-gated at the routes, no Labs password):
-  //   • Levanta + PartnerBoost (2026-06-30) — all paid tiers.
-  //   • AMZ Product Finder /epc + /api/campaigns/* (2026-07-07) — into "Source &
-  //     Earn", Studio+Pro (tierAllowsFinders enforced per route).
-  if (session && !isPublic(pathname)) {
-    const isLabsPage =
-      pathname === '/ltk' || pathname.startsWith('/ltk/')
-    const isLabsApi =
-      pathname.startsWith('/api/ltk')
-    if (isLabsPage || isLabsApi) {
-      const expected = await expectedLabsToken()
-      if (expected && request.cookies.get(LABS_COOKIE)?.value !== expected) {
-        if (isLabsApi) {
-          return NextResponse.json({ error: 'Labs access locked', labsLocked: true }, { status: 401 })
-        }
-        const url = request.nextUrl.clone()
-        url.pathname = '/labs-unlock'
-        url.searchParams.set('next', pathname)
-        return NextResponse.redirect(url)
-      }
-    }
-  }
+  // ── Labs early-access gate — RETIRED 2026-07-08 ─────────────────────────
+  // The shared-password (LABS_PASSWORD → labs_unlocked cookie) gate only ever
+  // guarded /ltk + /api/ltk. MVP x LTK graduated out of Labs into Create (all
+  // paid tiers, enforced per-route via tierAllowsFinders), so this gate now
+  // protects nothing and is removed. Levanta/PartnerBoost/AMZ Finder graduated
+  // earlier. The lib/labs-access + /labs-unlock infra stays dormant for any
+  // future invite-only tool. Social Launch Kit (the last Labs item) is gated by
+  // tier at its sidebar entry + API (canUseLabs), not by this password.
 
   // ── Virtual Assistant guard ─────────────────────────────────────────────
   // VAs (agency_members) can never access owner-only surfaces (branding,

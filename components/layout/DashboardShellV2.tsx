@@ -388,6 +388,10 @@ export default function DashboardShellV2({
         // not a create action). YouTube has its own SET UP > "YouTube" entry.
         { href: '/comparison', icon: <Scale size={15} />, label: 'Comparisons' },
         { href: '/buying-guides', icon: <BookOpen size={15} />, label: 'Buying Guides', gate: showBuyingGuides },
+        // MVP x LTK — paste an LTK link → SEO blog post with the LTK link as the
+        // CTA. Graduated OUT of Labs into Create (right under Buying Guides) and
+        // opened to ALL PAID tiers (canUseFinders = tier !== 'trial'), 2026-07-08.
+        { href: '/ltk', icon: <Sparkles size={15} />, label: 'MVP x LTK', gate: canUseFinders },
         { href: '/deals', icon: <BadgePercent size={15} />, label: 'Deals Hub', gate: showDeals, badge: DEALS_HUB_PAUSED ? 'Paused' : undefined },
         { href: '/script', icon: <PenLine size={15} />, label: 'Scriptwriter' },
         { href: '/newsletter', icon: <Mail size={15} />, label: 'Newsletter' },
@@ -484,10 +488,8 @@ export default function DashboardShellV2({
       items: [
         // AMZ Product Finder graduated out of Labs into "Source & Earn"
         // 2026-07-07 (Studio+Pro). MVP x Levanta / PartnerBoost left earlier.
-        // LTK stays here — still Pro-only + behind the LABS_PASSWORD gate.
-        { href: '/ltk', icon: <Sparkles size={15} />, label: 'MVP x LTK', gate: canUseLabs },
-        // Social Launch Kit — Pro Labs, gated until it graduates public. Generates
-        // name/bio/banner/avatar + setup guide for FB Page / Pinterest. 2026-07-08.
+        // MVP x LTK graduated into Create (under Buying Guides), all paid tiers,
+        // 2026-07-08. Social Launch Kit is the only Pro-Labs item left.
         { href: '/social-launch-kit', icon: <Rocket size={15} />, label: 'Social Launch Kit', gate: canUseLabs },
       ],
     },
