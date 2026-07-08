@@ -71,8 +71,15 @@ export async function POST(request: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: brand } = await (supabase as any).from('brand_profiles').select('*').eq('user_id', user.id).maybeSingle()
   const b = (brand ?? {}) as Record<string, unknown>
-  const primary = String(b.primary_color || '').trim() || '#111111'
-  const secondary = String(b.secondary_color || '').trim() || '#F5B301'
+  // Adapt to EACH brand's colours. Fallbacks are neutral (NOT a Gomin-style
+  // black+gold) so a brand that hasn't set colours doesn't inherit another
+  // brand's look — the prompt tells the model to pull colours from their logo.
+  const hasColors = !!(String(b.primary_color || '').trim() && String(b.secondary_color || '').trim())
+  const primary = String(b.primary_color || '').trim() || '#1F2937'
+  const secondary = String(b.secondary_color || '').trim() || '#6366F1'
+  const colorLine = hasColors
+    ? `Use this brand's own colours: ${primary} (primary) and ${secondary} (accent).`
+    : `Use this brand's OWN colours, drawn from the attached logo — do NOT impose black-and-gold or any preset palette.`
   const niches = (Array.isArray(b.niches) ? b.niches : []).filter(Boolean).join(', ') || 'lifestyle products'
   const logoUrl = String(b.logo_url || '').trim()
   const bannerUrl = String(b.header_banner_url || '').trim()
@@ -96,8 +103,8 @@ export async function POST(request: Request) {
     about ? `About: ${about}` : '',
     audience ? `Audience: ${audience}.` : '',
     tone ? `Voice / tone: ${tone}.` : '',
-    keywords.length ? `Key topics: ${keywords.join(', ')}.` : '',
-    `Brand colors: ${primary} (primary) and ${secondary} (accent).`,
+    keywords.length ? `Key topics: ${keywords.slice(0, 4).join(', ')}.` : '',
+    colorLine,
   ].filter(Boolean).join(' ')
 
   const customRef = (body.referenceImage || '').trim()
@@ -106,21 +113,21 @@ export async function POST(request: Request) {
   const prompt = kind === 'banner'
     ? [
         brief,
-        `Now design a bold, modern, high-energy "viral" ${spec.label} cover banner (wide landscape) for this brand.`,
-        (logoUrl || customRef) ? `Place the attached brand LOGO prominently on the left as a glowing badge, reproduced faithfully.` : '',
-        `A huge punchy headline in a heavy condensed sans-serif reading "${headline}", with the key words highlighted in ${secondary}.`,
-        `A tidy checklist with bold ${secondary} check icons of value props: ${(keywords.slice(0, 3).join(' · ')) || 'Tested in real life · No sponsor bias · Just the truth'}.`,
-        `On the right, a dynamic hero shot of real everyday ${niches} products bursting out of an open cardboard shipping box, with energetic paint-splash and halftone accents.`,
-        `Small trust badges. Premium near-black background with bold ${secondary} and white. Crisp, perfectly-spelled legible text, professional marketing graphic.`,
-        `Compose key elements within a wide central band (top/bottom edges may be cropped). Never render the word "honest".`,
+        `Now design a CLEAN, modern, premium ${spec.label} cover banner (wide landscape). Keep it uncluttered with generous negative space — do NOT overcrowd it.`,
+        (logoUrl || customRef) ? `Left side: the attached brand LOGO, reproduced faithfully.` : '',
+        `Center-left: a bold headline in a heavy condensed sans-serif reading "${headline}" (max 2 lines), key words accented in the brand's accent colour, with up to 3 short check-point words beneath it.`,
+        `Right side: a small, tasteful cluster of 3 to 4 everyday ${niches} products — not a big pile.`,
+        `Do NOT add a grid or strip of category icons, do NOT add long rows of feature icons, do NOT add multiple badges or seals. ONE clean layout.`,
+        colorLine,
+        `CRITICAL COMPOSITION: this banner gets cropped very wide, so keep the logo, headline and products inside the MIDDLE 65% of the height and leave the top ~18% and bottom ~18% as plain background — anything placed there will be cut off. Perfectly-spelled legible text only. Never render the word "honest".`,
       ].filter(Boolean).join(' ')
     : [
         brief,
-        `Now create a polished, professional circular profile picture / logo mark for this brand — a clean, iconic app-badge.`,
+        `Now create a polished, professional circular profile picture / logo mark for this brand — a clean, iconic app-badge, centered, 1:1.`,
         (logoUrl || customRef)
-          ? `Reproduce the attached brand mark faithfully, refined and crisp, centered on a solid on-brand background using ${primary} with a ${secondary} accent.`
-          : `A bold, simple geometric emblem that represents the brand, centered on a solid ${primary} background with a ${secondary} accent.`,
-        `Only include text that appears in the real logo — do not invent new words, letters or gibberish. Perfectly centered, 1:1, high fidelity. Never render the word "honest".`,
+          ? `Reproduce the attached brand mark faithfully, refined and crisp, on a clean on-brand background. ${colorLine}`
+          : `A bold, simple geometric emblem that represents the brand on a clean background. ${colorLine}`,
+        `Only include text that appears in the real logo — do not invent new words, letters or gibberish. High fidelity. Never render the word "honest".`,
       ].filter(Boolean).join(' ')
 
   // Visual references: uploaded inspiration first, then the real logo (and the
