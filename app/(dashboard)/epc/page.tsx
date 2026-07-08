@@ -16,8 +16,8 @@
  * retired 2026-07-06 — discovery lives in the Finder, follow-up in the Saved
  * shelf. The legacy campaigns table + /api/campaigns/{generate,ingest,…} stay in
  * place but are no longer surfaced here. Lives in the sidebar "Source & Earn"
- * group, Studio + Pro only (canUseFinders in DashboardShellV2 / tierAllowsFinders
- * on the /api/campaigns/* routes). Graduated out of Labs 2026-07-07.
+ * group, ALL PAID tiers (not Trial) — canUseFinders in DashboardShellV2 /
+ * tierAllowsFinders on the /api/campaigns/* routes. Graduated out of Labs 2026-07-07.
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react'
@@ -84,7 +84,7 @@ export default function EpcScoutPage() {
     window.addEventListener(VIEW_AS_EVENT, apply)
     return () => { cancelled = true; window.removeEventListener(VIEW_AS_EVENT, apply) }
   }, [])
-  const canUseFinder = tier === 'studio' || tier === 'pro' || tier === 'admin'
+  const canUseFinder = tier !== 'trial' // all PAID tiers; Trial sees the upsell
 
   const loadList = useCallback(async () => {
     try {
@@ -150,7 +150,7 @@ export default function EpcScoutPage() {
             'Message the brand — auto-send through SCOUT or a drafted outreach',
             'Also unlocks the Levanta and PartnerBoost finders in Source & Earn',
           ]}
-          requiredTier="studio"
+          requiredTier="creator"
           currentTier={normalizeTier(tier)}
         />
       )}

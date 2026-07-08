@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
       .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
     const tier = (intRow?.tier as Tier) ?? 'trial'
     if (!tierAllowsFinders(tier)) {
-      return NextResponse.json({ ok: false, error: 'MVP x PartnerBoost requires a Studio or Pro plan.' }, { status: 403 })
+      return NextResponse.json({ ok: false, error: 'MVP x PartnerBoost requires a paid plan.' }, { status: 403 })
     }
 
     const token = await getExternalKey(supabase, user.id, 'partnerboost')

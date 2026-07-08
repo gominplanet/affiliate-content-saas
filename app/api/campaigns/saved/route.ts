@@ -26,7 +26,7 @@ export async function GET() {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (!(await finderTierOk(supabase, user.id))) return NextResponse.json({ ok: false, error: 'The AMZ Product Finder requires a Studio or Pro plan.', saved: [] }, { status: 403 })
+  if (!(await finderTierOk(supabase, user.id))) return NextResponse.json({ ok: false, error: 'The AMZ Product Finder requires a paid plan.', saved: [] }, { status: 403 })
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
     .from('cc_saved_finds').select(COLS)
@@ -40,7 +40,7 @@ export async function POST(request: Request) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (!(await finderTierOk(supabase, user.id))) return NextResponse.json({ error: 'The AMZ Product Finder requires a Studio or Pro plan.' }, { status: 403 })
+  if (!(await finderTierOk(supabase, user.id))) return NextResponse.json({ error: 'The AMZ Product Finder requires a paid plan.' }, { status: 403 })
 
   const b = await request.json().catch(() => ({}))
   const asin = String(b.asin || '').toUpperCase().trim()
@@ -76,7 +76,7 @@ export async function DELETE(request: Request) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (!(await finderTierOk(supabase, user.id))) return NextResponse.json({ error: 'The AMZ Product Finder requires a Studio or Pro plan.' }, { status: 403 })
+  if (!(await finderTierOk(supabase, user.id))) return NextResponse.json({ error: 'The AMZ Product Finder requires a paid plan.' }, { status: 403 })
   const url = new URL(request.url)
   const id = url.searchParams.get('id')
   const asin = (url.searchParams.get('asin') || '').toUpperCase()

@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
       .maybeSingle()
     const tier = (intRow?.tier as Tier) ?? 'trial'
     if (!tierAllowsFinders(tier)) {
-      return NextResponse.json({ ok: false, error: 'MVP x PartnerBoost requires a Studio or Pro plan.' }, { status: 403 })
+      return NextResponse.json({ ok: false, error: 'MVP x PartnerBoost requires a paid plan.' }, { status: 403 })
     }
 
     // Per-user key (External Integrations) with shared env fallback. getExternalKey

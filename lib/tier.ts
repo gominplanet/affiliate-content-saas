@@ -546,10 +546,10 @@ export function tierAllowsPublishAll(tier: Tier): boolean {
 
 /** Whether a tier can use the product/campaign FINDERS — the "Source & Earn"
  *  section: Amazon (Creator Connections + onsite), Levanta, PartnerBoost.
- *  STUDIO + PRO (+ admin) only — NOT Creator, NOT Trial (2026-07-07). Single
- *  source of truth for all three finders + their routes. */
+ *  ALL PAID tiers (Creator, Studio, Pro, admin) — everyone EXCEPT the free
+ *  Trial (2026-07-07). Single source of truth for all three finders + routes. */
 export function tierAllowsFinders(tier: Tier): boolean {
-  return tier === 'studio' || tier === 'pro' || tier === 'admin'
+  return tier !== 'trial'
 }
 
 /** Whether a tier can use Creator Campaigns (Amazon Creator Connections +

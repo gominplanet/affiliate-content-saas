@@ -248,7 +248,7 @@ export default function DashboardShellV2({
   // Source & Earn (the three product/campaign finders: Amazon, Levanta,
   // PartnerBoost) — STUDIO + PRO (+ admin) only, per 2026-07-07. Mirrors
   // tierAllowsFinders() in lib/tier.ts. AMZ Product Finder left Labs into here.
-  const canUseFinders = tier === 'studio' || tier === 'pro' || isAdmin
+  const canUseFinders = tier !== 'trial' // Source & Earn: all PAID tiers, not Trial (2026-07-07)
 
   // Admin-only: count of OPEN support tickets (not yet answered/closed). Drives
   // the red "Support" alert in the topbar so the founder catches new tickets
@@ -400,7 +400,7 @@ export default function DashboardShellV2({
       // SOURCE & EARN — the three product/campaign FINDERS (Amazon Creator
       // Connections + onsite, Levanta, PartnerBoost). Each scans an affiliate
       // program for products worth reviewing, then generates content or messages
-      // the brand. STUDIO + PRO only (canUseFinders). AMZ Product Finder
+      // the brand. All PAID tiers (canUseFinders = tier !== trial). AMZ Product Finder
       // graduated out of Labs into here 2026-07-07. Each page has an inline
       // "connect your API key" panel at the top. Placed ABOVE Grow + given a
       // green wash (render loop, isSourceEarn) so the money-making zone pops

@@ -75,7 +75,7 @@ export default function LevantaPage() {
     window.addEventListener(VIEW_AS_EVENT, apply)
     return () => { cancelled = true; window.removeEventListener(VIEW_AS_EVENT, apply) }
   }, [])
-  const canUseFinder = tier === 'studio' || tier === 'pro' || tier === 'admin'
+  const canUseFinder = tier !== 'trial' // all PAID tiers; Trial sees the upsell
 
   const load = useCallback(async () => {
     setLoading(true); setError(''); setForbidden(false); setNeedsToken(false)
@@ -165,7 +165,7 @@ export default function LevantaPage() {
             'Generate a published, affiliate-linked review per product',
             'Part of Source & Earn — also unlocks AMZ + PartnerBoost finders',
           ]}
-          requiredTier="studio"
+          requiredTier="creator"
           currentTier={normalizeTier(tier)}
         />
       )}

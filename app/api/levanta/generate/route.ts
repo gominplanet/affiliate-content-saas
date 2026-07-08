@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
       .maybeSingle()
     const tier = (intRow?.tier as Tier) ?? 'trial'
     if (!tierAllowsFinders(tier)) {
-      return NextResponse.json({ ok: false, error: 'MVP x Levanta requires a Studio or Pro plan.' }, { status: 403 })
+      return NextResponse.json({ ok: false, error: 'MVP x Levanta requires a paid plan.' }, { status: 403 })
     }
 
     // Monthly AI-spend circuit breaker.

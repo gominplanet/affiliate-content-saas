@@ -108,7 +108,7 @@ export default function WalmartPBPage() {
     window.addEventListener(VIEW_AS_EVENT, apply)
     return () => { cancelled = true; window.removeEventListener(VIEW_AS_EVENT, apply) }
   }, [])
-  const canUseFinder = tier === 'studio' || tier === 'pro' || tier === 'admin'
+  const canUseFinder = tier !== 'trial' // all PAID tiers; Trial sees the upsell
 
   const load = useCallback(async () => {
     setLoading(true); setError(null)
@@ -219,7 +219,7 @@ export default function WalmartPBPage() {
             'Save winners + message the brand right from the results',
             'Part of Source & Earn — also unlocks AMZ + Levanta finders',
           ]}
-          requiredTier="studio"
+          requiredTier="creator"
           currentTier={normalizeTier(tier)}
         />
       )}

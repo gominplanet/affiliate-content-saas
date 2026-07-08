@@ -26,7 +26,7 @@ export async function GET(request: Request) {
   // shared CC catalog, so gate it here too (not just at the UI). 2026-07-07.
   const { data: intRow } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
   if (!tierAllowsFinders((intRow?.tier as Tier) ?? 'trial')) {
-    return NextResponse.json({ error: 'The AMZ Product Finder requires a Studio or Pro plan.' }, { status: 403 })
+    return NextResponse.json({ error: 'The AMZ Product Finder requires a paid plan.' }, { status: 403 })
   }
 
   const url = new URL(request.url)

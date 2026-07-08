@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
       .maybeSingle()
     const tier = (intRow?.tier as Tier) ?? 'trial'
     if (!tierAllowsFinders(tier)) {
-      return NextResponse.json({ ok: false, error: 'MVP x PartnerBoost requires a Studio or Pro plan.' }, { status: 403 })
+      return NextResponse.json({ ok: false, error: 'MVP x PartnerBoost requires a paid plan.' }, { status: 403 })
     }
 
     // Dollar backstop — this path runs Opus + image gen, so it must respect the

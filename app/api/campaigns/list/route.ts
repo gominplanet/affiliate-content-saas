@@ -14,7 +14,7 @@ export async function GET() {
   // AMZ Product Finder (Source & Earn) is Studio + Pro only. 2026-07-07.
   const { data: intRow } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
   if (!tierAllowsFinders((intRow?.tier as Tier) ?? 'trial')) {
-    return NextResponse.json({ error: 'The AMZ Product Finder requires a Studio or Pro plan.', campaigns: [] }, { status: 403 })
+    return NextResponse.json({ error: 'The AMZ Product Finder requires a paid plan.', campaigns: [] }, { status: 403 })
   }
 
   // Columns the queue never works without. Everything else is optional and may be
