@@ -85,14 +85,25 @@ export default function SmartScanPanel({
   }) {
     const asin = payload.asin.toUpperCase()
     const wasSaved = savedAsins.has(asin)
+    // When SAVING (not un-saving), pull the item straight out of the scan
+    // results into the "Saved for later" shelf below. Capture it first so we
+    // can put it back if the save request fails.
+    const removedMatch = !wasSaved ? matches?.find(m => (m.asin || '').toUpperCase() === asin) : undefined
+    const removedProduct = !wasSaved ? products?.find(p => (p.asin || '').toUpperCase() === asin) : undefined
     setSavedAsins(prev => { const n = new Set(prev); if (wasSaved) n.delete(asin); else n.add(asin); return n })
+    if (!wasSaved) {
+      setMatches(prev => prev ? prev.filter(m => (m.asin || '').toUpperCase() !== asin) : prev)
+      setProducts(prev => prev ? prev.filter(p => (p.asin || '').toUpperCase() !== asin) : prev)
+    }
     try {
       if (wasSaved) await fetch(`/api/campaigns/saved?asin=${asin}`, { method: 'DELETE' })
       else await fetch('/api/campaigns/saved', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       onSavedChange?.()
     } catch {
-      // revert on failure
+      // revert on failure: restore the saved flag AND the card in its list.
       setSavedAsins(prev => { const n = new Set(prev); if (wasSaved) n.add(asin); else n.delete(asin); return n })
+      if (removedMatch) setMatches(prev => (prev ? [...prev, removedMatch] : [removedMatch]).sort((a, b) => b.score - a.score))
+      if (removedProduct) setProducts(prev => prev ? [...prev, removedProduct] : [removedProduct])
     }
   }
 
@@ -157,7 +168,7 @@ export default function SmartScanPanel({
         setProgress(`SCOUT is live-verifying ${data.candidates.length} campaigns from the catalog on Amazon…`)
         const fresh = (data.candidates as CatalogCandidate[]).filter(c => {
           const a = (c.asin || '').toUpperCase()
-          return a && !covered.has(a) && !alreadyShown.has(a)
+          return a && !covered.has(a) && !alreadyShown.has(a) && !savedAsins.has(a)
         })
         setSkippedCovered(prev => prev + (data.candidates.length - fresh.length))
         const ver = await requestCcVerify(fresh.slice(0, 25), { ...RULES, wantPassers: 15 })
@@ -209,7 +220,7 @@ export default function SmartScanPanel({
       return
     }
     const raw = res.matches ?? []
-    const fresh = raw.filter(m => !(m.asin && covered.has(m.asin.toUpperCase())))
+    const fresh = raw.filter(m => { const a = m.asin?.toUpperCase(); return !(a && (covered.has(a) || savedAsins.has(a))) })
     setSkippedCovered(raw.length - fresh.length)
     const scored = fresh
       .filter(m => passesGates(m, RULES))
@@ -253,7 +264,8 @@ export default function SmartScanPanel({
         break // later-wave hiccup — keep what we have
       }
       for (const p of res.products ?? []) {
-        if (p.asin && covered.has(p.asin.toUpperCase())) continue
+        const a = p.asin?.toUpperCase()
+        if (a && (covered.has(a) || savedAsins.has(a))) continue // already queued or saved
         if (!verified.some(v => v.asin === p.asin)) verified.push(p)
       }
       for (const a of res.checkedAsins ?? []) if (!exclude.includes(a)) exclude.push(a)
@@ -320,7 +332,7 @@ export default function SmartScanPanel({
             </p>
             <p className="text-[12px] leading-relaxed mt-0.5" style={{ color: 'var(--text-soft)' }}>
               {mode === 'campaigns'
-                ? <>SCOUT sweeps your Affiliate+ opportunities and MVP keeps only the campaigns worth your time — vetted for real commission, runway, demand, product quality and review visibility — ranked with the buy-to-review math. Products already in your queue are skipped.</>
+                ? <>SCOUT sweeps your Affiliate+ opportunities and MVP keeps only the campaigns worth your time — vetted for real commission, runway, demand, product quality and review visibility — ranked with the buy-to-review math. Products already in your queue or saved for later are skipped.</>
                 : <>SCOUT searches Amazon directly and live-verifies each product on its page — price, demand, reviews, rating and an open video carousel. Slower by design, but every result is <b>MVP-approved</b>: a product you can confidently invest in, review, and earn from onsite.</>}
             </p>
             <p className="text-[11px] leading-relaxed mt-2 rounded-lg px-2.5 py-2" style={{ color: 'var(--text-faint)', background: 'rgba(124,58,237,0.06)' }}>
