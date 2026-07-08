@@ -964,6 +964,7 @@ export class WordPressService {
   }
 
   async createPage(title: string, content: string): Promise<{ id: number; link: string }> {
+    if (content.includes('<!,')) content = repairCorruptedBlocks(content) // self-heal, same gate as healBlocks
     return this.request<{ id: number; link: string }>('/pages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
