@@ -137,9 +137,16 @@ export async function POST(request: Request) {
     } catch { /* fall back to declared order */ }
   }
 
+  // gpt-image-1 paints 1.5:1; cover-cropping (centre) to the wider banner slices
+  // the top+bottom. Reserve exactly that fraction so the safe-band prompt lines
+  // up with the crop — wider banners (X/Bluesky 3:1, LinkedIn 4:1) reserve more
+  // than Facebook's 2.28:1, so text/products never land in the cropped strip.
+  const GEN_ASPECT = 1536 / 1024
+  const reservePct = Math.min(0.34, Math.max(0.10, (1 - GEN_ASPECT / (target.w / target.h)) / 2))
+
   // Modular prompt engine (lib/social-launch-kit-prompt) — premium cover spec.
   const prompt = kind === 'banner'
-    ? buildCoverPrompt({ platformLabel: `${spec.label} cover`, style: bannerStyle, brandName, headline: coverHeadline, industry: niches, sellingPoints, colorLine, hasLogo, context, categories })
+    ? buildCoverPrompt({ platformLabel: `${spec.label} cover`, style: bannerStyle, brandName, headline: coverHeadline, industry: niches, sellingPoints, colorLine, hasLogo, context, categories, reservePct })
     : buildAvatarPrompt({ brandName, industry: niches, colorLine, hasLogo, context })
 
   // Visual references: uploaded inspiration first, then the real logo (and the

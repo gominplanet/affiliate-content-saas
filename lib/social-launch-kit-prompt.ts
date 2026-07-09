@@ -18,6 +18,8 @@ export interface CoverBrief {
   hasLogo: boolean
   context?: string             // optional: about / audience / tone, for accuracy
   categories?: string[]        // the brand's actual content mix, dominant first
+  reservePct?: number          // fraction of TOP and of BOTTOM the crop removes
+                               // (wider banners crop more) — default 0.18
 }
 
 // ── Reusable sections ────────────────────────────────────────────────────────
@@ -42,9 +44,15 @@ const QUALITY =
 // The generator paints a taller frame than the final wide banner, so the top
 // and bottom get cropped off. Everything that matters must live in a central
 // safe band with clear margins on every edge — otherwise headlines and products
-// get sliced by the crop (and FB/Pinterest trim the edges again on top).
-const SAFE =
-  'CRITICAL — SAFE FRAMING. The finished cover is a WIDE, SHORT banner and the TOP and BOTTOM of the artwork WILL BE CROPPED AWAY. Compose the ENTIRE design inside a central horizontal band: every word of the headline, the whole logo, and all products must sit within the middle ~66% of the height, with a clear empty margin on ALL FOUR sides. NOTHING important may enter the top ~18% or the bottom ~18% of the frame, and nothing may touch or cross any edge — leave those outer zones as plain background / gradient / atmosphere only. Every letter of the headline must be fully visible and un-clipped, well away from the top, bottom, left and right edges. If the headline is long, make it smaller or use more lines so the whole phrase fits INSIDE the safe band — never let any text or product run off, get cut, or bleed past an edge.'
+// get sliced by the crop (and FB/Pinterest trim the edges again on top). The
+// reserved margin scales with the banner's aspect: a 4:1 LinkedIn cover crops
+// far more top/bottom than a 2.28:1 Facebook one, so we tell the model exactly
+// how much to keep clear.
+function safeSection(b: CoverBrief): string {
+  const pct = Math.round((b.reservePct ?? 0.18) * 100)
+  const band = 100 - pct * 2
+  return `CRITICAL — SAFE FRAMING. The finished cover is a WIDE, SHORT banner and the TOP and BOTTOM of the artwork WILL BE CROPPED AWAY. Compose the ENTIRE design inside a central horizontal band: every word of the headline, the whole logo, and all products must sit within the middle ~${band}% of the height, with a clear empty margin on ALL FOUR sides. NOTHING important may enter the top ~${pct}% or the bottom ~${pct}% of the frame, and nothing may touch or cross any edge — leave those outer zones as plain background / gradient / atmosphere only. Every letter of the headline must be fully visible and un-clipped, well away from the top, bottom, left and right edges. If the headline is long, make it smaller or use more lines so the whole phrase fits INSIDE the safe band — never let any text or product run off, get cut, or bleed past an edge.`
+}
 
 const NEGATIVE =
   'AVOID: any humans, faces, hands or people (products and objects only); any text, letter, logo or product that is clipped, cut off, or bleeding past the frame edges; anything important placed in the top or bottom margin; generic / flat / Canva-template layouts, low contrast, small or thin fonts, busy or cheap-gradient backgrounds, watermarks, cartoon style, poor spacing, and any misspelled or invented text. Never render the word "honest".'
@@ -89,7 +97,7 @@ export function buildCoverPrompt(b: CoverBrief): string {
     ribbonSection(b),
     b.style === 'minimal' ? '' : DEPTH,
     QUALITY,
-    SAFE,
+    safeSection(b),
     NEGATIVE,
   ].filter(Boolean).join('\n\n')
 }

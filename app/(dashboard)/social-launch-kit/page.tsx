@@ -15,7 +15,9 @@ import {
 } from 'lucide-react'
 import { LAUNCH_PLATFORM_LIST, type LaunchPlatform, type PlatformSpec, type SocialKit } from '@/lib/social-launch-kit'
 
-const EMOJI: Record<LaunchPlatform, string> = { facebook: '📘', pinterest: '📌' }
+const EMOJI: Record<LaunchPlatform, string> = {
+  facebook: '📘', pinterest: '📌', twitter: '🐦', threads: '🧵', bluesky: '🦋', linkedin: '💼',
+}
 
 export default function SocialLaunchKitPage() {
   const [kits, setKits] = useState<Partial<Record<LaunchPlatform, SocialKit>>>({})
