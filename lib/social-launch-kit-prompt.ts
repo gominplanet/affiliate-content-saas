@@ -20,6 +20,10 @@ export interface CoverBrief {
   categories?: string[]        // the brand's actual content mix, dominant first
   reservePct?: number          // fraction of TOP and of BOTTOM the crop removes
                                // (wider banners crop more) — default 0.18
+  containFill?: boolean        // true for extreme-wide banners: the WHOLE image
+                               // is kept (contain, never cropped) + placed on a
+                               // blurred fill, so the model should use the full
+                               // frame, not reserve big top/bottom margins.
 }
 
 // ── Reusable sections ────────────────────────────────────────────────────────
@@ -49,6 +53,12 @@ const QUALITY =
 // far more top/bottom than a 2.28:1 Facebook one, so we tell the model exactly
 // how much to keep clear.
 function safeSection(b: CoverBrief): string {
+  // Extreme-wide banners are placed WHOLE (contain, never cropped) on a blurred
+  // fill, so the model should use the full frame with just a small even margin —
+  // no big reserved strips (that would waste the frame once it's scaled down).
+  if (b.containFill) {
+    return 'FRAMING: the COMPLETE image is kept — nothing is cropped — and placed on a wider banner. Use the full frame edge to edge, but keep a small, even clear margin (about 6%) on ALL FOUR sides so no text, logo or product touches or crosses an edge. Fill the frame with a rich, balanced composition (do NOT leave large empty top or bottom areas). Every letter must be fully visible and un-clipped.'
+  }
   const pct = Math.round((b.reservePct ?? 0.18) * 100)
   const band = 100 - pct * 2
   return `CRITICAL — SAFE FRAMING. The finished cover is a WIDE, SHORT banner and the TOP and BOTTOM of the artwork WILL BE CROPPED AWAY. Compose the ENTIRE design inside a central horizontal band: every word of the headline, the whole logo, and all products must sit within the middle ~${band}% of the height, with a clear empty margin on ALL FOUR sides. NOTHING important may enter the top ~${pct}% or the bottom ~${pct}% of the frame, and nothing may touch or cross any edge — leave those outer zones as plain background / gradient / atmosphere only. Every letter of the headline must be fully visible and un-clipped, well away from the top, bottom, left and right edges. If the headline is long, make it smaller or use more lines so the whole phrase fits INSIDE the safe band — never let any text or product run off, get cut, or bleed past an edge.`

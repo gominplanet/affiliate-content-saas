@@ -138,16 +138,20 @@ export async function POST(request: Request) {
     } catch { /* fall back to declared order */ }
   }
 
-  // gpt-image-1 paints 1.5:1; cover-cropping (centre) to the wider banner slices
-  // the top+bottom. Reserve exactly that fraction so the safe-band prompt lines
-  // up with the crop — wider banners (X/Bluesky 3:1, LinkedIn 4:1) reserve more
-  // than Facebook's 2.28:1, so text/products never land in the cropped strip.
+  // gpt-image-1 paints 1.5:1; cover-cropping (centre) to a wider banner slices
+  // the top+bottom. cropFrac is how much each of top/bottom a cover-crop removes.
   const GEN_ASPECT = 1536 / 1024
-  const reservePct = Math.min(0.34, Math.max(0.10, (1 - GEN_ASPECT / (target.w / target.h)) / 2))
+  const cropFrac = kind === 'banner' ? Math.max(0, (1 - GEN_ASPECT / (target.w / target.h)) / 2) : 0
+  // A cover-crop over ~20% is too much to trust the model with (X/Bluesky 3:1,
+  // LinkedIn 4:1). Those banners are placed WHOLE on a blurred fill below —
+  // never cropped — so the prompt uses only a small even margin, not a big
+  // reserved strip. Milder banners (FB 2.28:1) keep the full-bleed centre crop.
+  const useContain = kind === 'banner' && cropFrac > 0.20
+  const reservePct = useContain ? 0.06 : Math.min(0.34, Math.max(0.10, cropFrac))
 
   // Modular prompt engine (lib/social-launch-kit-prompt) — premium cover spec.
   const prompt = kind === 'banner'
-    ? buildCoverPrompt({ platformLabel: `${spec.label} cover`, style: bannerStyle, brandName, headline: coverHeadline, industry: niches, sellingPoints, colorLine, hasLogo, context, categories, reservePct })
+    ? buildCoverPrompt({ platformLabel: `${spec.label} cover`, style: bannerStyle, brandName, headline: coverHeadline, industry: niches, sellingPoints, colorLine, hasLogo, context, categories, reservePct, containFill: useContain })
     : buildAvatarPrompt({ brandName, industry: niches, colorLine, hasLogo, context })
 
   // Visual references: uploaded inspiration first, then the real logo (and the
@@ -199,10 +203,20 @@ export async function POST(request: Request) {
 
   try {
     const buf = sourceB64 ? Buffer.from(sourceB64, 'base64') : Buffer.from(await (await fetch(sourceUrl)).arrayBuffer())
-    // Center crop (not 'attention'): the prompt reserves a central safe band and
-    // pads the top/bottom, so a deterministic middle crop trims exactly those
-    // margins — 'attention' could shift the crop and slice through the headline.
-    const png = await sharp(buf).resize(target.w, target.h, { fit: 'cover', position: 'centre' }).png().toBuffer()
+    let png: Buffer
+    if (useContain) {
+      // GUARANTEE nothing is ever cut on extreme-wide banners: place the FULL
+      // design (contain — no crop) centred over a stretched, heavily-blurred fill
+      // of itself. The blurred fill covers the sides seamlessly (no hard bars),
+      // and because the whole image is contained, no text/logo/product can clip.
+      const bg = await sharp(buf).resize(target.w, target.h, { fit: 'fill' }).blur(40).modulate({ brightness: 0.7 }).toBuffer()
+      const fg = await sharp(buf).resize(target.w, target.h, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer()
+      png = await sharp(bg).composite([{ input: fg, gravity: 'centre' }]).png().toBuffer()
+    } else {
+      // Milder banners + avatars: deterministic centre cover-crop (the prompt
+      // reserves a matching top/bottom safe band, so nothing important is cut).
+      png = await sharp(buf).resize(target.w, target.h, { fit: 'cover', position: 'centre' }).png().toBuffer()
+    }
     const dataUrl = `data:image/png;base64,${png.toString('base64')}`
     // Persist to durable storage + save the URL so this image stays on the page
     // across sessions (one saved slot per user+platform+kind). Best-effort — we
