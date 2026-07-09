@@ -6,6 +6,7 @@ import type HCaptcha from '@hcaptcha/react-hcaptcha'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import HCaptchaField, { captchaRequired } from '@/components/auth/HCaptchaField'
+import { friendlyAuthError } from '@/lib/auth-error'
 
 export default function LoginForm() {
   const router = useRouter()
@@ -41,7 +42,7 @@ export default function LoginForm() {
     })
 
     if (error) {
-      setError(error.message)
+      setError(friendlyAuthError(error.message))
       setLoading(false)
       resetCaptcha() // tokens are single-use
     } else {
@@ -65,7 +66,7 @@ export default function LoginForm() {
     setResetLoading(false)
     resetCaptcha() // single-use token, whether or not the call succeeded
     if (error) {
-      setError(error.message)
+      setError(friendlyAuthError(error.message))
     } else {
       setResetSent(true)
     }

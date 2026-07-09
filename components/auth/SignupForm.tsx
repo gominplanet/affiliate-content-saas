@@ -7,6 +7,7 @@ import { createBrowserClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
 import HCaptchaField, { captchaRequired } from '@/components/auth/HCaptchaField'
+import { friendlyAuthError } from '@/lib/auth-error'
 
 export default function SignupForm() {
   const router = useRouter()
@@ -112,7 +113,7 @@ export default function SignupForm() {
     })
 
     if (error) {
-      setError(error.message)
+      setError(friendlyAuthError(error.message))
       setLoading(false)
       // hCaptcha tokens are single-use — reset so the user can retry.
       captchaRef.current?.resetCaptcha()

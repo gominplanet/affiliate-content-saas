@@ -21,6 +21,16 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         <div className="flex-1 flex items-center justify-center">
           <div className="w-full max-w-sm">
             {children}
+            {/* Always give logged-out users a way to reach a human — the in-app
+                Help/Support links require a session, so a user stuck at the door
+                (captcha or email-confirmation trouble) would otherwise have no
+                path forward. */}
+            <p className="text-center text-xs mt-5 text-[#6e6e73] dark:text-[#8e8e93]">
+              Trouble signing in? Email{' '}
+              <a href="mailto:support@mvpaffiliate.io" className="text-[#7C3AED] hover:underline font-medium">
+                support@mvpaffiliate.io
+              </a>
+            </p>
           </div>
         </div>
 
