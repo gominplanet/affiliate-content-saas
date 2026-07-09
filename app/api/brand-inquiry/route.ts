@@ -44,20 +44,11 @@ export async function OPTIONS() {
 async function verifyTurnstile(token: string): Promise<boolean> {
   const secret = process.env.TURNSTILE_SECRET_KEY
   if (!secret) {
-    // Transitional: if Turnstile isn't configured yet but a legacy hCaptcha
-    // secret still is, verify against hCaptcha so nothing breaks mid-migration.
-    const legacy = process.env.HCAPTCHA_SECRET
-    if (legacy && token) {
-      try {
-        const res = await fetch('https://hcaptcha.com/siteverify', {
-          method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({ secret: legacy, response: token }),
-        })
-        const d = (await res.json().catch(() => ({}))) as { success?: boolean }
-        return !!d.success
-      } catch { return false }
-    }
-    console.warn('[brand-inquiry] TURNSTILE_SECRET_KEY not set — captcha not verified')
+    // Turnstile secret not configured yet. Fail-OPEN rather than trying to
+    // verify against the legacy hCaptcha secret — the plugin may already be
+    // rendering Turnstile (whose token would wrongly fail an hCaptcha check and
+    // block a real person). The honeypot + HMAC signature still gate the form.
+    console.warn('[brand-inquiry] TURNSTILE_SECRET_KEY not set — captcha not verified (honeypot + HMAC still enforced)')
     return true
   }
   if (!token) return false
