@@ -2,10 +2,9 @@
 
 import { useRef, useState } from 'react'
 import Link from 'next/link'
-import type HCaptcha from '@hcaptcha/react-hcaptcha'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
-import HCaptchaField, { captchaRequired } from '@/components/auth/HCaptchaField'
+import TurnstileField, { captchaRequired, type TurnstileHandle } from '@/components/auth/TurnstileField'
 import { friendlyAuthError } from '@/lib/auth-error'
 
 export default function LoginForm() {
@@ -19,10 +18,10 @@ export default function LoginForm() {
   const [resetSent, setResetSent] = useState(false)
   const [resetLoading, setResetLoading] = useState(false)
   const [captchaToken, setCaptchaToken] = useState<string | null>(null)
-  const captchaRef = useRef<HCaptcha>(null)
+  const captchaRef = useRef<TurnstileHandle>(null)
 
   function resetCaptcha() {
-    captchaRef.current?.resetCaptcha()
+    captchaRef.current?.reset()
     setCaptchaToken(null)
   }
 
@@ -117,7 +116,7 @@ export default function LoginForm() {
                 </p>
               )}
 
-              <HCaptchaField ref={captchaRef} onVerify={setCaptchaToken} onExpire={() => setCaptchaToken(null)} />
+              <TurnstileField ref={captchaRef} onVerify={setCaptchaToken} onExpire={() => setCaptchaToken(null)} />
 
               <button type="submit" disabled={resetLoading} className="btn-primary w-full mt-1">
                 {resetLoading ? 'Sending…' : 'Send reset link'}
@@ -186,7 +185,7 @@ export default function LoginForm() {
           </p>
         )}
 
-        <HCaptchaField ref={captchaRef} onVerify={setCaptchaToken} onExpire={() => setCaptchaToken(null)} />
+        <TurnstileField ref={captchaRef} onVerify={setCaptchaToken} onExpire={() => setCaptchaToken(null)} />
 
         <button type="submit" disabled={loading} className="btn-primary w-full mt-1">
           {loading ? 'Signing in…' : 'Sign in'}

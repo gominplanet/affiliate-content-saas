@@ -2,11 +2,10 @@
 
 import { useRef, useState, useEffect } from 'react'
 import Link from 'next/link'
-import type HCaptcha from '@hcaptcha/react-hcaptcha'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
-import HCaptchaField, { captchaRequired } from '@/components/auth/HCaptchaField'
+import TurnstileField, { captchaRequired, type TurnstileHandle } from '@/components/auth/TurnstileField'
 import { friendlyAuthError } from '@/lib/auth-error'
 
 export default function SignupForm() {
@@ -36,7 +35,7 @@ export default function SignupForm() {
   const [success, setSuccess] = useState(false)
   const [paidTier, setPaidTier] = useState<string | null>(null)
   const [captchaToken, setCaptchaToken] = useState<string | null>(null)
-  const captchaRef = useRef<HCaptcha>(null)
+  const captchaRef = useRef<TurnstileHandle>(null)
 
   // A logged-out visitor who clicked a paid plan ("Get Pro") arrives as
   // /signup?tier=pro. In that case this form runs the PAID flow: create the
@@ -85,7 +84,7 @@ export default function SignupForm() {
         if (!res.ok || !data.url) {
           setError(data.error || 'Could not start checkout. Please try again.')
           setLoading(false)
-          captchaRef.current?.resetCaptcha()
+          captchaRef.current?.reset()
           setCaptchaToken(null)
           return
         }
@@ -116,7 +115,7 @@ export default function SignupForm() {
       setError(friendlyAuthError(error.message))
       setLoading(false)
       // hCaptcha tokens are single-use — reset so the user can retry.
-      captchaRef.current?.resetCaptcha()
+      captchaRef.current?.reset()
       setCaptchaToken(null)
     } else {
       setSuccess(true)
@@ -200,7 +199,7 @@ export default function SignupForm() {
           </p>
         )}
 
-        <HCaptchaField ref={captchaRef} onVerify={setCaptchaToken} onExpire={() => setCaptchaToken(null)} />
+        <TurnstileField ref={captchaRef} onVerify={setCaptchaToken} onExpire={() => setCaptchaToken(null)} />
 
         <button type="submit" disabled={loading} className="btn-primary w-full mt-1">
           {loading
