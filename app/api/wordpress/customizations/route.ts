@@ -229,13 +229,12 @@ export async function POST(req: Request) {
             mediaKitLabel: (String(bc?.mediaKitLabel || '').trim() || 'View my media kit').slice(0, 60),
             inbox: !!bc?.inbox,
             directLink: !!bc?.directLink,
-            // Public Cloudflare Turnstile site key so the plugin (v1.0.67+) can
-            // render the widget on the contact form; the server verifies the
-            // token against TURNSTILE_SECRET_KEY. Empty = no widget (endpoint
-            // fail-opens on missing secret). `hcaptchaSiteKey` is still sent for
-            // older cached plugins that haven't updated yet.
-            turnstileSiteKey: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || '',
-            hcaptchaSiteKey: process.env.NEXT_PUBLIC_HCAPTCHA_SITE_KEY || '',
+            // Captcha removed from the brand modal (2026-07-09). We deliberately
+            // send EMPTY keys so the plugin renders no captcha widget at all —
+            // any plugin version only draws the widget when a site key is
+            // present. The form stays protected by honeypot + HMAC + rate-limit.
+            turnstileSiteKey: '',
+            hcaptchaSiteKey: '',
           }
         })(),
       }

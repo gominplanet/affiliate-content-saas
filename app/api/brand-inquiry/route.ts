@@ -33,55 +33,16 @@ export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS_HEADERS })
 }
 
-/** Verify a Cloudflare Turnstile token server-side (same captcha the auth forms
- *  now use). Returns true when it passes — or when TURNSTILE_SECRET_KEY isn't
- *  configured yet (fail-open with a warning, so the form doesn't hard-break
- *  before the operator adds the secret). A present-but-invalid token always
- *  fails. The plugin renders the Turnstile widget with the public site key
- *  (NEXT_PUBLIC_TURNSTILE_SITE_KEY). Legacy note: older cached plugin pages may
- *  still send an hCaptcha token — those verify against HCAPTCHA_SECRET as a
- *  transitional fallback until every cached page has refreshed. */
-async function verifyTurnstile(token: string): Promise<boolean> {
-  const secret = process.env.TURNSTILE_SECRET_KEY
-  if (!secret) {
-    // Turnstile secret not configured yet. Fail-OPEN rather than trying to
-    // verify against the legacy hCaptcha secret — the plugin may already be
-    // rendering Turnstile (whose token would wrongly fail an hCaptcha check and
-    // block a real person). The honeypot + HMAC signature still gate the form.
-    console.warn('[brand-inquiry] TURNSTILE_SECRET_KEY not set — captcha not verified (honeypot + HMAC still enforced)')
-    return true
-  }
-  if (!token) return false
-  try {
-    const res = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ secret, response: token }),
-    })
-    const d = (await res.json().catch(() => ({}))) as { success?: boolean }
-    if (d.success) return true
-    // A token minted by the OLD hCaptcha widget won't validate against Turnstile.
-    // During rollout, fall back to hCaptcha if its secret is still present.
-    const legacy = process.env.HCAPTCHA_SECRET
-    if (legacy) {
-      const r2 = await fetch('https://hcaptcha.com/siteverify', {
-        method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ secret: legacy, response: token }),
-      })
-      const d2 = (await r2.json().catch(() => ({}))) as { success?: boolean }
-      return !!d2.success
-    }
-    return false
-  } catch {
-    return false
-  }
-}
+// Captcha removed from the brand modal (2026-07-09). Turnstile's per-widget
+// hostname cap (~10) can't cover an unbounded set of creator blog domains, and
+// hCaptcha's cross-domain behaviour wasn't worth a second vendor. The form is
+// still gated by the honeypot, the HMAC request signature, and the IP rate
+// limit below — no visible captcha needed.
 
 export async function POST(req: NextRequest) {
   let p: {
     creatorUserId?: string; name?: string; company?: string; email?: string
     message?: string; hp?: string; sourceUrl?: string; origin?: string; ts?: string; sig?: string
-    turnstileToken?: string; hcaptchaToken?: string
   }
   try { p = await req.json() } catch { return json({ ok: false, error: 'Bad request.' }, { status: 400 }) }
 
@@ -106,14 +67,6 @@ export async function POST(req: NextRequest) {
   const message = (p.message || '').trim()
   if (message.length < 2 || message.length > 4000) {
     return json({ ok: false, error: 'Please add a short message.' }, { status: 400 })
-  }
-
-  // 3. Captcha — Cloudflare Turnstile, verified server-side (enforced whenever
-  //    TURNSTILE_SECRET_KEY is set; the plugin renders the widget with the site
-  //    key). Accepts the legacy hcaptchaToken field from cached plugin pages.
-  const captchaOk = await verifyTurnstile((p.turnstileToken || p.hcaptchaToken || '').trim())
-  if (!captchaOk) {
-    return json({ ok: false, error: 'Please complete the captcha and try again.' }, { status: 400 })
   }
 
   const admin = createAdminClient()
