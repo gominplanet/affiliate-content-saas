@@ -113,34 +113,25 @@ export function buildCoverPrompt(b: CoverBrief): string {
 }
 
 /**
- * Prompt for an EXTREME-WIDE banner (X/Bluesky 3:1, LinkedIn 4:1) generated
- * NATIVELY wide by Ideogram at 3:1 — not cropped down from a 1.5:1 design. The
- * composition must fill the whole frame edge to edge. When the brand has a real
- * logo we reserve a clean left zone and composite the actual logo there
- * afterwards (Ideogram would otherwise invent a garbled fake mark); with no
- * logo we let Ideogram render the brand NAME cleanly. Ideogram bakes crisp text,
- * so we ask ONLY for the single big headline — never small chips/captions, which
- * it misspells. Key elements stay in the central 75% because a 4:1 crop trims
- * ~12.5% off the top and bottom.
+ * Prompt for the EXTREME-WIDE banner (X/Bluesky 3:1, LinkedIn 4:1) BACKGROUND.
+ * We do NOT ask any image model to render the headline or logo — every model
+ * either garbles text at these widths or invents fake nav bars / subtitles. So
+ * Ideogram makes ONLY a text-free dark backdrop + product hero on the right,
+ * leaving the left two-thirds clean; then composeWideBanner() bakes the real
+ * headline (opentype vector paths, accent word in brand colour) and composites
+ * the creator's actual logo. `b.headline` here is used only to keep the product
+ * scene on-theme — it is never rendered by the model.
  */
 export function buildWideBannerPrompt(b: CoverBrief): string {
-  // CRITICAL: Ideogram RENDERS any text-like words in the prompt as baked text.
-  // So we must NOT feed it the brand's category taxonomy, keyword list or verbose
-  // brand copy — that comes out as a garbled wall of gibberish. The ONLY text
-  // that should appear in the image is the single headline. Products are named
-  // as CONCRETE PHYSICAL OBJECTS (which Ideogram depicts, not writes).
-  const logoLine = b.hasLogo
-    ? 'Keep the far-LEFT edge calm, dark and atmospheric — no logo, badge, emblem, wordmark, brand name or extra text there (a real logo is added separately). Do NOT invent any brand mark, wordmark or lettering anywhere in the image.'
-    : `Top-left corner only: the brand name "${b.brandName}" in bold, clean, correctly-spelled letters — nothing else.`
+  const products = b.categories?.length
+    ? 'items from this brand\'s world (' + b.categories.slice(0, 4).join(', ') + ')'
+    : 'assorted real consumer-review products — a hardshell suitcase, over-ear headphones, a blender, a backpack, an insulated water bottle, a small action camera and a power bank'
   return [
-    'Design ONE premium, flat, WIDE MARKETING BANNER image in 3:1 landscape — a single cinematic graphic that fills the whole frame edge to edge. It is NOT a website, app screen, browser window, social profile page or user interface: absolutely no navigation bars, menus, buttons, pills, cards, tabs, search boxes, cursors or browser chrome anywhere.',
-    `A dark, premium, cinematic backdrop with soft gradients, gentle diagonal light streaks and depth — expensive-looking, not busy. ${b.colorLine} Use those brand colours as glowing accents and for the highlighted words of the headline.`,
-    `CENTRE: exactly ONE headline in a heavy condensed sans-serif reading exactly "${b.headline}" and NOTHING else — do NOT add any subtitle, tagline, second smaller line, or descriptive sentence beneath or near it. Mix large WHITE words with large ACCENT-colour words, crisp, perfectly spelled, high contrast, on at most 3 lines. This one headline is the ONLY text in the whole image.`,
-    logoLine,
-    'RIGHT THIRD: a dynamic, photorealistic hero arrangement of assorted real consumer-review products — such as a hardshell suitcase, over-ear headphones, a blender, a backpack, an insulated water bottle and a small tech gadget — with depth, overlap, perspective and studio lighting. The products must be CLEAN and UNBRANDED with NO text, labels, writing, numbers or logos on them or their screens. Physical products only — absolutely no people, faces or hands. Never leave this side empty.',
-    'Keep the headline and every product within the CENTRAL 75% of the height (the top and bottom ~12% may be trimmed) — nothing important near an edge.',
-    'The ONLY text in the entire image is the one headline above. There must be NO other text of any kind — no subtitle, no caption, no paragraph, no feature chips, no category names, no product labels, no URLs, no watermark and no small print. No misspelled or invented words. Never render the word "honest".',
-    'Ultra sharp, photorealistic, no blur, nothing clipped or cut off at any edge.',
+    'Create ONLY a premium, wide 3:1 marketing-banner BACKGROUND — a single cinematic graphic, NOT a website, app screen, profile page or user interface (no navigation bars, menus, buttons, cards, tabs, search boxes or browser chrome).',
+    `A dark, premium, cinematic backdrop (deep navy to black) with soft gradients, gentle diagonal light streaks and depth. ${b.colorLine} Use those colours only as subtle glowing light accents.`,
+    `On the RIGHT ~40% of the frame: a dynamic, photorealistic hero arrangement of ${products}, with depth, overlap, perspective and studio lighting. Physical products only — no people, faces or hands.`,
+    'The LEFT ~60% of the frame stays clean, dark, empty atmospheric background — NO products or objects there (that space is reserved for a logo and headline added afterwards).',
+    'ABSOLUTELY NO text anywhere — no words, letters, numbers, headline, subtitle, caption, labels, logos, brand marks, watermark, product labels or screen text of any kind. If you are about to draw any letter or word, do not. Ultra sharp, photorealistic, nothing clipped at any edge. Never render the word "honest".',
   ].filter(Boolean).join('\n\n')
 }
 

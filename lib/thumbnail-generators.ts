@@ -373,10 +373,10 @@ export async function generateWideBanner(prompt: string): Promise<string | null>
     const result = await fal.subscribe(IDEOGRAM_V3 as any, {
       input: {
         prompt,
-        // Ideogram loves to bake EXTRA text (a garbled subtitle under the
-        // headline, fake labels on products). Suppress all of it — the prompt
-        // asks for one headline and nothing else.
-        negative_prompt: 'subtitle, tagline, caption, second line of text, paragraph, body text, sentence, small text, product label, brand name on product, screen text, watermark, signature, gibberish text, blurry text, misspelled words, extra text',
+        // This generates only a TEXT-FREE background + product hero (the headline
+        // and logo are baked/composited afterwards). Suppress ALL text so nothing
+        // garbled sneaks in.
+        negative_prompt: 'text, words, letters, typography, headline, title, subtitle, tagline, caption, paragraph, sentence, label, product label, brand name, logo, wordmark, watermark, signature, screen text, ui, navigation bar, menu, button, gibberish text, blurry text, numbers',
         image_size: { width: 1536, height: 512 },
         rendering_speed: 'QUALITY',
         num_images: 1,

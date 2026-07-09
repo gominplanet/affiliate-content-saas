@@ -20,6 +20,7 @@ import { composeWithNanoBananaPro, generateWithIdeogram, rehostAll, uploadDataUr
 import { createOpenAIService } from '@/services/openai'
 import { LAUNCH_PLATFORMS, type LaunchPlatform } from '@/lib/social-launch-kit'
 import { buildCoverPrompt, buildAvatarPrompt, buildWideBannerPrompt } from '@/lib/social-launch-kit-prompt'
+import { composeWideBanner } from '@/lib/social-launch-kit-banner'
 import { tierAllowsFinders, type Tier } from '@/lib/tier'
 
 export const maxDuration = 180
@@ -46,38 +47,6 @@ async function urlToRef(url: string, name: string): Promise<ImgRef | null> {
   } catch { return null }
 }
 
-/**
- * Composite the brand's real logo into the reserved clean LEFT zone of a
- * natively-wide (3:1) banner. The Ideogram prompt keeps that zone empty, so the
- * real logo lands cleanly — vertically centred and comfortably inside the ~12.5%
- * top/bottom that a 4:1 crop trims. Preserves the logo's aspect ratio.
- */
-async function compositeLogoLeft(banner: Buffer, logo: Buffer): Promise<Buffer> {
-  const meta = await sharp(banner).metadata()
-  const W = meta.width ?? 1536
-  const H = meta.height ?? 512
-  // Keep the logo modest and HARD-LEFT so it clears the headline even when
-  // Ideogram pushes the headline further left than we asked: sized to ~half the
-  // height and ~13% of the width, it ends by ~15% in — well before the headline.
-  const logoPng = await sharp(logo)
-    .resize({ width: Math.round(W * 0.13), height: Math.round(H * 0.52), fit: 'inside', withoutEnlargement: false })
-    .png().toBuffer()
-  const lm = await sharp(logoPng).metadata()
-  const lh = lm.height ?? Math.round(H * 0.52)
-  const left = Math.round(W * 0.02)               // hard-left, small margin
-  const top = Math.round((H - lh) / 2)
-  // Soft dark gradient over the far-left ~15% (fully transparent by 15%): gives
-  // the logo a clean patch to sit on and hides any stray mark Ideogram may have
-  // put at the edge — while fading out before the centre so it never dims the
-  // headline (which sits at ~18%+).
-  const panelW = Math.round(W * 0.15)
-  const scrim = Buffer.from(
-    `<svg width="${panelW}" height="${H}" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#0A0A0A" stop-opacity="0.82"/><stop offset="55%" stop-color="#0A0A0A" stop-opacity="0.45"/><stop offset="100%" stop-color="#0A0A0A" stop-opacity="0"/></linearGradient></defs><rect width="${panelW}" height="${H}" fill="url(#g)"/></svg>`,
-  )
-  return await sharp(banner)
-    .composite([{ input: scrim, left: 0, top: 0 }, { input: logoPng, left, top }])
-    .png().toBuffer()
-}
 
 export async function POST(request: Request) {
   const supabase = await createServerClient()
@@ -222,12 +191,13 @@ export async function POST(request: Request) {
   let sourceUrl = ''
   let usedModel: 'gpt-image-1' | 'fal-nano-banana-pro' | 'fal-ideogram-v3' = 'gpt-image-1'
 
-  // ── NATIVE-WIDE PATH ──────────────────────────────────────────────────────
-  // Extreme-wide banners (X/Bluesky 3:1, LinkedIn 4:1) are generated NATIVELY
-  // wide at 3:1 by Ideogram (crisp baked headline, composition designed to fill
-  // the frame), the real logo composited into the reserved left zone, then a
-  // gentle crop to the exact dims. This fills the banner edge-to-edge instead of
-  // slicing a 1.5:1 design. On any failure we fall through to the 1.5:1 path.
+  // ── HAND-COMPOSITED WIDE PATH ─────────────────────────────────────────────
+  // Extreme-wide banners (X/Bluesky 3:1, LinkedIn 4:1): no model renders both an
+  // extreme width AND clean text, so Ideogram makes ONLY a text-free dark
+  // backdrop + product hero, then composeWideBanner() bakes the headline
+  // (opentype vector paths — cannot garble) and composites the creator's real
+  // logo. Edge-to-edge, nothing clipped. Falls through to the 1.5:1 path on any
+  // failure.
   let nativeWide: Buffer | null = null
   if (useContain) {
     const widePrompt = buildWideBannerPrompt({
@@ -238,11 +208,17 @@ export async function POST(request: Request) {
     const wideUrl = await generateWideBanner(widePrompt)
     if (wideUrl) {
       try {
-        let wb: Buffer = Buffer.from(await (await fetch(wideUrl)).arrayBuffer())
-        if (compositeLogo) wb = await compositeLogoLeft(wb, compositeLogo.data)
-        nativeWide = await sharp(wb).resize(target.w, target.h, { fit: 'cover', position: 'centre' }).png().toBuffer()
+        const bg = Buffer.from(await (await fetch(wideUrl)).arrayBuffer())
+        nativeWide = await composeWideBanner({
+          background: bg,
+          logo: compositeLogo?.data ?? null,
+          headline: coverHeadline,
+          accentColor: hasColors ? secondary : '#E7B84B',
+          targetW: target.w,
+          targetH: target.h,
+        })
         usedModel = 'fal-ideogram-v3'
-      } catch (e) { console.warn('[launch-kit] native-wide post-process failed:', e); nativeWide = null }
+      } catch (e) { console.warn('[launch-kit] hand-composite failed:', e); nativeWide = null }
     }
   }
 
