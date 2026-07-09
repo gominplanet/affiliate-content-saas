@@ -56,16 +56,27 @@ async function compositeLogoLeft(banner: Buffer, logo: Buffer): Promise<Buffer> 
   const meta = await sharp(banner).metadata()
   const W = meta.width ?? 1536
   const H = meta.height ?? 512
+  // Keep the logo modest and HARD-LEFT so it clears the headline even when
+  // Ideogram pushes the headline further left than we asked: sized to ~half the
+  // height and ~13% of the width, it ends by ~15% in — well before the headline.
   const logoPng = await sharp(logo)
-    .resize({ width: Math.round(W * 0.18), height: Math.round(H * 0.52), fit: 'inside', withoutEnlargement: false })
+    .resize({ width: Math.round(W * 0.13), height: Math.round(H * 0.52), fit: 'inside', withoutEnlargement: false })
     .png().toBuffer()
   const lm = await sharp(logoPng).metadata()
-  const lw = lm.width ?? Math.round(W * 0.18)
   const lh = lm.height ?? Math.round(H * 0.52)
-  const cx = Math.round(W * 0.11)                 // centre of the left zone
-  const left = Math.max(24, Math.round(cx - lw / 2))
+  const left = Math.round(W * 0.02)               // hard-left, small margin
   const top = Math.round((H - lh) / 2)
-  return await sharp(banner).composite([{ input: logoPng, left, top }]).png().toBuffer()
+  // Soft dark gradient over the far-left ~15% (fully transparent by 15%): gives
+  // the logo a clean patch to sit on and hides any stray mark Ideogram may have
+  // put at the edge — while fading out before the centre so it never dims the
+  // headline (which sits at ~18%+).
+  const panelW = Math.round(W * 0.15)
+  const scrim = Buffer.from(
+    `<svg width="${panelW}" height="${H}" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#0A0A0A" stop-opacity="0.82"/><stop offset="55%" stop-color="#0A0A0A" stop-opacity="0.45"/><stop offset="100%" stop-color="#0A0A0A" stop-opacity="0"/></linearGradient></defs><rect width="${panelW}" height="${H}" fill="url(#g)"/></svg>`,
+  )
+  return await sharp(banner)
+    .composite([{ input: scrim, left: 0, top: 0 }, { input: logoPng, left, top }])
+    .png().toBuffer()
 }
 
 export async function POST(request: Request) {
