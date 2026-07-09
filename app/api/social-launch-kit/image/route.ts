@@ -202,7 +202,21 @@ export async function POST(request: Request) {
     // pads the top/bottom, so a deterministic middle crop trims exactly those
     // margins — 'attention' could shift the crop and slice through the headline.
     const png = await sharp(buf).resize(target.w, target.h, { fit: 'cover', position: 'centre' }).png().toBuffer()
-    return NextResponse.json({ ok: true, platform, kind, width: target.w, height: target.h, image: `data:image/png;base64,${png.toString('base64')}` })
+    const dataUrl = `data:image/png;base64,${png.toString('base64')}`
+    // Persist to durable storage + save the URL so this image stays on the page
+    // across sessions (one saved slot per user+platform+kind). Best-effort — we
+    // still return the base64 for instant display even if the save fails.
+    let savedUrl: string | null = null
+    try {
+      savedUrl = await uploadDataUrlToFal(dataUrl)
+      if (savedUrl) {
+        const col = kind === 'banner' ? 'banner_url' : 'avatar_url'
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (supabase as any).from('social_launch_kits')
+          .upsert({ user_id: user.id, platform, [col]: savedUrl, updated_at: new Date().toISOString() }, { onConflict: 'user_id,platform' })
+      }
+    } catch { /* persistence is best-effort */ }
+    return NextResponse.json({ ok: true, platform, kind, width: target.w, height: target.h, image: dataUrl, imageUrl: savedUrl || undefined })
   } catch {
     return NextResponse.json({ ok: true, platform, kind, width: target.w, height: target.h, ...(sourceUrl ? { imageUrl: sourceUrl } : { image: `data:image/png;base64,${sourceB64}` }) })
   }

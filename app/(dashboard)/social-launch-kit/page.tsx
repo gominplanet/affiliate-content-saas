@@ -6,7 +6,7 @@
 // walks the user through setup with deep links. v1: Facebook Page + Pinterest.
 'use client'
 
-import { useState, useRef, type ReactNode } from 'react'
+import { useState, useRef, useEffect, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
 import { Button } from '@/components/ui/button'
@@ -31,6 +31,31 @@ export default function SocialLaunchKitPage() {
   const [refImages, setRefImages] = useState<Record<string, string>>({})
   // Banner style per platform — how much goes on the cover.
   const [bannerStyle, setBannerStyle] = useState<Record<string, 'bold' | 'minimal'>>({})
+
+  // Hydrate any previously-generated kits on load, so a user's saved copy +
+  // images stay on the page across sessions (one saved slot per platform).
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch('/api/social-launch-kit/saved')
+        if (!res.ok) return
+        const data = await res.json()
+        if (cancelled || !data?.saved) return
+        const savedKits: Partial<Record<LaunchPlatform, SocialKit>> = {}
+        const savedImages: Record<string, string> = {}
+        for (const [p, v] of Object.entries(data.saved as Record<string, { kit?: SocialKit; bannerUrl?: string; avatarUrl?: string }>)) {
+          if (v.kit) savedKits[p as LaunchPlatform] = v.kit
+          if (v.bannerUrl) savedImages[`${p}:banner`] = v.bannerUrl
+          if (v.avatarUrl) savedImages[`${p}:avatar`] = v.avatarUrl
+        }
+        // Don't stomp anything the user generated this session — saved is the base.
+        setKits(prev => ({ ...savedKits, ...prev }))
+        setImages(prev => ({ ...savedImages, ...prev }))
+      } catch { /* ignore — page still works without saved data */ }
+    })()
+    return () => { cancelled = true }
+  }, [])
 
   async function copy(text: string, key: string, label = 'Copied') {
     try {

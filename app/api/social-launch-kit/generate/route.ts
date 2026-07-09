@@ -128,5 +128,13 @@ Everything must be specific to THIS brand and niche.`
       .slice(0, spec.boards)
   }
 
+  // Save this platform's copy so it persists (one saved slot per user+platform).
+  // Only touches `kit` — leaves any saved banner/avatar URLs intact. Best-effort.
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any).from('social_launch_kits')
+      .upsert({ user_id: user.id, platform, kit, updated_at: new Date().toISOString() }, { onConflict: 'user_id,platform' })
+  } catch { /* saving is best-effort — never block the response */ }
+
   return NextResponse.json({ ok: true, platform, kit })
 }
