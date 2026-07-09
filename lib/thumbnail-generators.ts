@@ -28,6 +28,15 @@ export const NANO_BANANA_EDIT = 'fal-ai/nano-banana/edit'
 export const NANO_BANANA_PRO_EDIT = 'fal-ai/gemini-3-pro-image-preview/edit'
 export const IDEOGRAM_V3 = 'fal-ai/ideogram/v3'
 
+// Configure the fal client once at module load. The client is a singleton and
+// needs credentials before ANY subscribe/upload — otherwise every call 401s and
+// returns null. Some routes (e.g. the YouTube thumbnail route) call fal.config
+// themselves, but others (Social Launch Kit) rely on the helpers here, so we
+// self-configure to cover every caller. No-op if FAL_KEY is unset.
+if (process.env.FAL_KEY) {
+  try { fal.config({ credentials: process.env.FAL_KEY }) } catch { /* client sorts it out at call time */ }
+}
+
 /** Model keys used for cost telemetry (see lib/ai-usage.ts). */
 export const NANO_BANANA_COST_MODEL = 'fal-nano-banana'
 export const NANO_BANANA_PRO_COST_MODEL = 'fal-nano-banana-pro'
