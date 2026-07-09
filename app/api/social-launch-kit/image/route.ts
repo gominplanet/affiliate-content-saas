@@ -204,6 +204,7 @@ export async function POST(request: Request) {
   try {
     const buf = sourceB64 ? Buffer.from(sourceB64, 'base64') : Buffer.from(await (await fetch(sourceUrl)).arrayBuffer())
     let png: Buffer
+    let mode: 'crop' | 'expand' | 'contain-fallback' = 'crop'
     if (useContain) {
       // Extreme-wide banner: EXPAND-TO-FIT. Outpaint the design out to the full
       // banner width so it fills edge-to-edge — nothing cropped, no bars, native
@@ -216,22 +217,27 @@ export async function POST(request: Request) {
           const eb = Buffer.from(await (await fetch(expandedUrl)).arrayBuffer())
           expanded = await sharp(eb).resize(target.w, target.h, { fit: 'cover', position: 'centre' }).png().toBuffer()
           recordUsage({ userId: user.id, tier, feature: 'social-launch-kit-image', model: 'fal-ideogram-v3', images: 1 })
-        } catch { expanded = null }
+        } catch (e) { console.warn('[launch-kit] expand post-process failed:', e); expanded = null }
       }
       if (expanded) {
         png = expanded
+        mode = 'expand'
       } else {
         // Fallback: full design (contain, no crop) centred over a stretched,
         // heavily-blurred fill of itself — seamless sides, never clips.
         const bg = await sharp(buf).resize(target.w, target.h, { fit: 'fill' }).blur(40).modulate({ brightness: 0.7 }).toBuffer()
         const fg = await sharp(buf).resize(target.w, target.h, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer()
         png = await sharp(bg).composite([{ input: fg, gravity: 'centre' }]).png().toBuffer()
+        mode = 'contain-fallback'
       }
     } else {
       // Milder banners + avatars: deterministic centre cover-crop (the prompt
       // reserves a matching top/bottom safe band, so nothing important is cut).
       png = await sharp(buf).resize(target.w, target.h, { fit: 'cover', position: 'centre' }).png().toBuffer()
     }
+    // One clear log line so we can tell exactly which framing path ran (and
+    // whether fal creds are present) without guessing from screenshots.
+    console.log('[launch-kit] banner', JSON.stringify({ platform, kind, w: target.w, h: target.h, cropFrac: Number(cropFrac.toFixed(2)), useContain, mode, hasFalKey: !!process.env.FAL_KEY }))
     const dataUrl = `data:image/png;base64,${png.toString('base64')}`
     // Persist to durable storage + save the URL so this image stays on the page
     // across sessions (one saved slot per user+platform+kind). Best-effort — we

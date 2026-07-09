@@ -375,23 +375,21 @@ export async function expandBannerToWidth(sourceDataUrl: string, targetW: number
     if (!m) return null
     // Scale to the target height first → the reframe only extends sideways.
     const scaled = await sharp(Buffer.from(m[2], 'base64')).resize({ height: targetH }).png().toBuffer()
-    const url = await uploadDataUrlToFal(`data:image/png;base64,${scaled.toString('base64')}`)
-    if (!url) return null
+    // Pass the image as a data URI — the fal client auto-uploads inline data,
+    // so we don't depend on a separate fal.storage.upload (which can fail in
+    // Node). Only image_url + image_size are required for reframe.
+    const dataUri = `data:image/png;base64,${scaled.toString('base64')}`
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await fal.subscribe(IDEOGRAM_V3_REFRAME as any, {
-      input: {
-        image_url: url,
-        image_size: { width: targetW, height: targetH },
-        rendering_speed: 'BALANCED',
-        num_images: 1,
-      },
+      input: { image_url: dataUri, image_size: { width: targetW, height: targetH } },
       pollInterval: 2000,
     })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const out = ((result.data as any)?.images?.[0]?.url) as string | undefined
+    if (!out) console.warn('[expand] reframe returned no image; data:', JSON.stringify(result.data)?.slice(0, 300))
     return out || null
   } catch (err) {
-    console.warn('[expand] reframe failed:', err instanceof Error ? err.message : String(err))
+    console.warn('[expand] reframe threw:', err instanceof Error ? err.message : String(err))
     return null
   }
 }
