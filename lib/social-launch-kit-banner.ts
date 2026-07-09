@@ -135,7 +135,7 @@ export interface WideBannerOptions {
   background: Buffer          // wide, text-free bg + product hero (Ideogram)
   logo?: Buffer | null        // creator's real logo (composited hard-left)
   headline: string            // e.g. "Real Reviews, Smarter Choices"
-  accentColor?: string        // brand accent for the emphasis word (default gold)
+  accentColor?: string        // brand accent for the emphasis word; omitted → all-white headline (no imposed colour)
   targetW: number
   targetH: number
 }
@@ -149,7 +149,8 @@ export interface WideBannerOptions {
 export async function composeWideBanner(opts: WideBannerOptions): Promise<Buffer> {
   const W = opts.targetW
   const H = opts.targetH
-  const accent = opts.accentColor || '#E7B84B'
+  // No brand accent supplied → all-white headline (never impose Gomin gold).
+  const accent = opts.accentColor || '#FFFFFF'
   const hasLogo = !!opts.logo
 
   let base = await sharp(opts.background).resize(W, H, { fit: 'cover', position: 'centre' }).png().toBuffer()

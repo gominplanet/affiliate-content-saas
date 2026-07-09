@@ -123,14 +123,21 @@ export function buildCoverPrompt(b: CoverBrief): string {
  * scene on-theme — it is never rendered by the model.
  */
 export function buildWideBannerPrompt(b: CoverBrief): string {
+  // Products/objects are drawn from the BRAND'S OWN niche — never a hardcoded
+  // review-gear list. Fallback (no declared categories) describes the industry
+  // generically so a SaaS / food / fashion / fitness brand gets ITS world, not
+  // suitcases and blenders.
   const products = b.categories?.length
-    ? 'items from this brand\'s world (' + b.categories.slice(0, 4).join(', ') + ')'
-    : 'assorted real consumer-review products — a hardshell suitcase, over-ear headphones, a blender, a backpack, an insulated water bottle, a small action camera and a power bank'
+    ? `real products, objects or imagery from this brand's world (${b.categories.slice(0, 4).join(', ')})`
+    : `real products, objects or imagery that authentically represent a ${b.industry} brand`
   return [
     'Create ONLY a premium, wide 3:1 marketing-banner BACKGROUND — a single cinematic graphic, NOT a website, app screen, profile page or user interface (no navigation bars, menus, buttons, cards, tabs, search boxes or browser chrome).',
-    `A dark, premium, cinematic backdrop (deep navy to black) with soft gradients, gentle diagonal light streaks and depth. ${b.colorLine} Use those colours only as subtle glowing light accents.`,
-    `On the RIGHT ~40% of the frame: a dynamic, photorealistic hero arrangement of ${products}, with depth, overlap, perspective and studio lighting. Physical products only — no people, faces or hands.`,
-    'The LEFT ~60% of the frame stays clean, dark, empty atmospheric background — NO products or objects there (that space is reserved for a logo and headline added afterwards).',
+    // Backdrop is built from THE BRAND'S colours (deep rich tones of them), not a
+    // fixed navy — so a green/purple/warm brand looks like itself, not Gomin. Kept
+    // dark only so the light baked headline reads on top.
+    `A premium, cinematic backdrop built from THIS brand's OWN colours — deep, rich, darker tones of them — with soft gradients, gentle diagonal light streaks and depth. ${b.colorLine} Do NOT default to navy or black-and-gold unless those actually are the brand's colours. Keep it dark enough that light text will read clearly on top.`,
+    `On the RIGHT ~40% of the frame: a dynamic, photorealistic hero arrangement of ${products}, with depth, overlap, perspective and studio lighting. Physical products/objects only — no people, faces or hands.`,
+    'The LEFT ~60% of the frame stays clean and empty (atmospheric background only) — NO products or objects there (that space is reserved for a logo and headline added afterwards).',
     'ABSOLUTELY NO text anywhere — no words, letters, numbers, headline, subtitle, caption, labels, logos, brand marks, watermark, product labels or screen text of any kind. If you are about to draw any letter or word, do not. Ultra sharp, photorealistic, nothing clipped at any edge. Never render the word "honest".',
   ].filter(Boolean).join('\n\n')
 }

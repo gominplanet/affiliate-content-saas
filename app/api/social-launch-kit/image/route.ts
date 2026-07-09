@@ -110,7 +110,9 @@ export async function POST(request: Request) {
   // "honest" is a banned word — never let it into a baked-text image prompt.
   const strip = (s: unknown) => String(s ?? '').replace(/\bhonest(?:ly)?\b/gi, 'real').replace(/\s{2,}/g, ' ').trim()
   const brandName = strip(body.brandName || b.name) || 'this brand'
-  const headline = strip(body.headline || b.tagline || `Real reviews for ${niches}`)
+  // Headline: the brand's own tagline; falls back to the brand name (never a
+  // review-flavoured default) so any niche gets an accurate headline.
+  const headline = strip(body.headline || b.tagline || brandName)
   const about = strip(body.about)
   const category = strip(body.category)
   const keywords = (Array.isArray(body.keywords) ? body.keywords : []).map(strip).filter(Boolean).slice(0, 10)
@@ -213,7 +215,7 @@ export async function POST(request: Request) {
           background: bg,
           logo: compositeLogo?.data ?? null,
           headline: coverHeadline,
-          accentColor: hasColors ? secondary : '#E7B84B',
+          accentColor: hasColors ? secondary : undefined,   // their accent, else all-white (no imposed gold)
           targetW: target.w,
           targetH: target.h,
         })
