@@ -265,8 +265,6 @@ export default function DashboardShellV2({
   }, [adminOpen])
 
   const isAdmin = tier === 'admin'
-  // Labs (LTK) is Pro-only by request (2026-06-15). Admins always retain access.
-  const canUseLabs = tier === 'pro' || isAdmin
   // Paid = any non-trial plan (Creator, Studio, Pro, admin).
   const isPaid = tier !== 'trial'
   // Source & Earn (the three product/campaign finders: Amazon, Levanta,
@@ -396,6 +394,9 @@ export default function DashboardShellV2({
         // and the /ads page itself hides the theme-only banner blocks for
         // content-only sites.
         { href: '/ads', icon: <Megaphone size={15} />, label: 'Ads' },
+        // Social Launch Kit — graduated OUT of Labs into SET UP (under Ads),
+        // opened to ALL PAID tiers (canUseFinders = tier !== 'trial'), 2026-07-08.
+        { href: '/social-launch-kit', icon: <Rocket size={15} />, label: 'Social Launch Kit', gate: canUseFinders },
       ],
     },
     {
@@ -496,26 +497,10 @@ export default function DashboardShellV2({
         { href: 'https://geni.us/khuHTe', icon: <ExternalLink size={13} />, label: 'Archer Affiliate', external: true },
       ],
     },
-    {
-      // LABS — MVP's experimental / bonus tools we're trying out: opt-in extras
-      // that may change and aren't part of the core engine. Given its own
-      // identity (cyan accent + flask icon) so it reads as a distinct "special
-      // zone", set apart from the default grey section headers. Sits right
-      // below Collaborate. EPC Scout lives here (not in Create) because it only
-      // works for creators with Amazon Creator Connections (EPC) access — most
-      // users can't use it, so it doesn't belong in the everyday flow. PRO-ONLY
-      // (canUseLabs = pro || admin) per the 2026-06-15 request; the whole
-      // section auto-hides for everyone below Pro. As more bonus tools land,
-      // add them as items here (set each item's gate as it opens up).
-      label: 'Labs',
-      items: [
-        // AMZ Product Finder graduated out of Labs into "Source & Earn"
-        // 2026-07-07 (Studio+Pro). MVP x Levanta / PartnerBoost left earlier.
-        // MVP x LTK graduated into Create (under Buying Guides), all paid tiers,
-        // 2026-07-08. Social Launch Kit is the only Pro-Labs item left.
-        { href: '/social-launch-kit', icon: <Rocket size={15} />, label: 'Social Launch Kit', gate: canUseLabs },
-      ],
-    },
+    // LABS section RETIRED 2026-07-08 — its last item (Social Launch Kit)
+    // graduated into SET UP (under Ads), all paid tiers. Everything else left
+    // earlier (Source & Earn finders → their own section; MVP x LTK → Create).
+    // Re-add a group here if a new experimental tool ever needs a home.
     {
       // HELP & COMMUNITY — support + learning surfaces. "Create a Help Ticket"
       // (-> /support) ships in Phase 3 with its DB table + admin inbox; the

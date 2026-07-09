@@ -20,7 +20,7 @@ import { composeWithNanoBananaPro, generateWithIdeogram, rehostAll, uploadDataUr
 import { createOpenAIService } from '@/services/openai'
 import { LAUNCH_PLATFORMS, type LaunchPlatform } from '@/lib/social-launch-kit'
 import { buildCoverPrompt, buildAvatarPrompt } from '@/lib/social-launch-kit-prompt'
-import type { Tier } from '@/lib/tier'
+import { tierAllowsFinders, type Tier } from '@/lib/tier'
 
 export const maxDuration = 180
 
@@ -64,8 +64,9 @@ export async function POST(request: Request) {
 
   const { data: intRow } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
   const tier = (intRow?.tier as Tier) ?? 'trial'
-  if (tier !== 'pro' && tier !== 'admin') {
-    return NextResponse.json({ error: 'The Social Launch Kit is a Pro Labs feature.' }, { status: 403 })
+  // Graduated out of Labs 2026-07-08 → available on any PAID plan (not Trial).
+  if (!tierAllowsFinders(tier)) {
+    return NextResponse.json({ error: 'The Social Launch Kit is available on any paid plan — upgrade to unlock it.' }, { status: 403 })
   }
   const gate = await spendGate(user.id, tier)
   if (gate) return gate
