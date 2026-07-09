@@ -13,6 +13,11 @@ export async function GET() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  // Admins can regenerate freely; everyone else gets one generation per slot,
+  // so the page hides the regenerate control once a slot is filled.
+  const { data: intRow } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+  const isAdmin = intRow?.tier === 'admin'
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data } = await (supabase as any)
     .from('social_launch_kits')
@@ -27,5 +32,5 @@ export async function GET() {
       avatarUrl: r.avatar_url ?? undefined,
     }
   }
-  return NextResponse.json({ ok: true, saved })
+  return NextResponse.json({ ok: true, saved, isAdmin })
 }

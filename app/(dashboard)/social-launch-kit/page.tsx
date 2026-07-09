@@ -27,6 +27,8 @@ export default function SocialLaunchKitPage() {
   const [busyImg, setBusyImg] = useState<string | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
   const [locked, setLocked] = useState(false)   // set if the API 403s (non-Pro deep-link)
+  // Only admins may regenerate; everyone else gets one generation per slot.
+  const [isAdmin, setIsAdmin] = useState(false)
   // Optional per-image inspiration the user uploads, keyed by `${platform}:${kind}`.
   const [refImages, setRefImages] = useState<Record<string, string>>({})
   // Banner style per platform — how much goes on the cover.
@@ -41,7 +43,9 @@ export default function SocialLaunchKitPage() {
         const res = await fetch('/api/social-launch-kit/saved')
         if (!res.ok) return
         const data = await res.json()
-        if (cancelled || !data?.saved) return
+        if (cancelled) return
+        if (typeof data?.isAdmin === 'boolean') setIsAdmin(data.isAdmin)
+        if (!data?.saved) return
         const savedKits: Partial<Record<LaunchPlatform, SocialKit>> = {}
         const savedImages: Record<string, string> = {}
         for (const [p, v] of Object.entries(data.saved as Record<string, { kit?: SocialKit; bannerUrl?: string; avatarUrl?: string }>)) {
@@ -80,7 +84,9 @@ export default function SocialLaunchKitPage() {
         body: JSON.stringify({ platform }),
       })
       const data = await res.json()
-      if (!res.ok) { if (res.status === 403) setLocked(true); toast.error(data.error || 'Generation failed.'); return }
+      // 403 + no `locked` flag = the plan gate (show upgrade banner). 403 + locked
+      // = one-generation-per-account regen lock (just toast; button is hidden).
+      if (!res.ok) { if (res.status === 403 && !data.locked) setLocked(true); toast.error(data.error || 'Generation failed.'); return }
       setKits(prev => ({ ...prev, [platform]: data.kit as SocialKit }))
       toast.success(`${LAUNCH_PLATFORM_LIST.find(p => p.id === platform)?.label} kit ready`)
     } catch { toast.error('Network error — try again.') }
@@ -104,7 +110,7 @@ export default function SocialLaunchKitPage() {
         }),
       })
       const data = await res.json()
-      if (!res.ok) { if (res.status === 403) setLocked(true); toast.error(data.error || 'Image generation failed.'); return }
+      if (!res.ok) { if (res.status === 403 && !data.locked) setLocked(true); toast.error(data.error || 'Image generation failed.'); return }
       setImages(prev => ({ ...prev, [key]: data.image || data.imageUrl }))
     } catch { toast.error('Network error — try again.') }
     finally { setBusyImg(null) }
@@ -156,6 +162,7 @@ export default function SocialLaunchKitPage() {
             key={spec.id}
             spec={spec}
             kit={kits[spec.id]}
+            isAdmin={isAdmin}
             busyKit={busyKit === spec.id}
             images={images}
             busyImg={busyImg}
@@ -178,10 +185,11 @@ export default function SocialLaunchKitPage() {
 
 // ── One platform's card ──────────────────────────────────────────────────────
 function PlatformCard({
-  spec, kit, busyKit, images, busyImg, copied, refImages, bannerStyle, onBannerStyle, onGenerateKit, onGenerateImage, onPickRef, onClearRef, onCopy, onDownload,
+  spec, kit, isAdmin, busyKit, images, busyImg, copied, refImages, bannerStyle, onBannerStyle, onGenerateKit, onGenerateImage, onPickRef, onClearRef, onCopy, onDownload,
 }: {
   spec: PlatformSpec
   kit?: SocialKit
+  isAdmin: boolean
   busyKit: boolean
   images: Record<string, string>
   busyImg: string | null
@@ -207,10 +215,18 @@ function PlatformCard({
           <p className="text-[14px] font-semibold" style={{ color: 'var(--text)' }}>{spec.label}</p>
           <p className="text-[12px] leading-relaxed mt-0.5" style={{ color: 'var(--text-soft)' }}>{spec.blurb}</p>
         </div>
-        <Button variant={kit ? 'secondary' : 'primary'} size="sm" loading={busyKit}
-          leftIcon={<Sparkles className="h-4 w-4" />} onClick={onGenerateKit}>
-          {kit ? 'Regenerate' : 'Generate kit'}
-        </Button>
+        {(isAdmin || !kit) ? (
+          <Button variant={kit ? 'secondary' : 'primary'} size="sm" loading={busyKit}
+            leftIcon={<Sparkles className="h-4 w-4" />} onClick={onGenerateKit}>
+            {kit ? 'Regenerate' : 'Generate kit'}
+          </Button>
+        ) : (
+          <span className="inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-1.5 rounded-lg flex-shrink-0"
+            style={{ color: '#34c759', background: 'rgba(52,199,89,0.10)' }}
+            title="You get one generation per account — your kit is saved below, ready to use anytime.">
+            <Check className="h-3.5 w-3.5" /> Generated
+          </span>
+        )}
       </div>
 
       {!kit ? (
@@ -293,7 +309,7 @@ function PlatformCard({
             <div className="grid sm:grid-cols-2 gap-3">
               {spec.banner && (
                 <ImageSlot label={`${spec.banner.label} · ${spec.banner.w}×${spec.banner.h}`}
-                  imgKey={`${spec.id}:banner`} images={images} busyImg={busyImg}
+                  imgKey={`${spec.id}:banner`} images={images} busyImg={busyImg} isAdmin={isAdmin}
                   refDataUrl={refImages[`${spec.id}:banner`]}
                   styleValue={bannerStyle} onStyle={onBannerStyle}
                   onGenerate={() => onGenerateImage('banner')} onDownload={onDownload}
@@ -301,7 +317,7 @@ function PlatformCard({
                   filename={`${spec.id}-cover.png`} />
               )}
               <ImageSlot label={`${spec.avatar.label} · ${spec.avatar.w}×${spec.avatar.h}`}
-                imgKey={`${spec.id}:avatar`} images={images} busyImg={busyImg} round
+                imgKey={`${spec.id}:avatar`} images={images} busyImg={busyImg} isAdmin={isAdmin} round
                 refDataUrl={refImages[`${spec.id}:avatar`]}
                 onGenerate={() => onGenerateImage('avatar')} onDownload={onDownload}
                 onPickRef={(f) => onPickRef('avatar', f)} onClearRef={() => onClearRef('avatar')}
@@ -394,8 +410,8 @@ function CopyBox({ text, ck, copied, onCopy }: { text: string; ck: string; copie
   )
 }
 
-function ImageSlot({ label, imgKey, images, busyImg, refDataUrl, styleValue, onStyle, onGenerate, onDownload, onPickRef, onClearRef, filename, round }: {
-  label: string; imgKey: string; images: Record<string, string>; busyImg: string | null
+function ImageSlot({ label, imgKey, images, busyImg, isAdmin, refDataUrl, styleValue, onStyle, onGenerate, onDownload, onPickRef, onClearRef, filename, round }: {
+  label: string; imgKey: string; images: Record<string, string>; busyImg: string | null; isAdmin: boolean
   refDataUrl?: string
   styleValue?: 'bold' | 'minimal'; onStyle?: (s: 'bold' | 'minimal') => void
   onGenerate: () => void; onDownload: (src: string, filename: string) => void
@@ -404,6 +420,7 @@ function ImageSlot({ label, imgKey, images, busyImg, refDataUrl, styleValue, onS
 }) {
   const src = images[imgKey]
   const busy = busyImg === imgKey
+  const canRegen = isAdmin || !src          // one generation per slot; admins may redo
   const fileRef = useRef<HTMLInputElement>(null)
   return (
     <div className="rounded-lg p-2.5" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
@@ -436,10 +453,18 @@ function ImageSlot({ label, imgKey, images, busyImg, refDataUrl, styleValue, onS
         </div>
       )}
       <div className="flex items-center gap-1.5 flex-wrap">
-        <Button variant="secondary" size="sm" loading={busy} onClick={onGenerate}
-          leftIcon={busy ? undefined : <Sparkles className="h-3.5 w-3.5" />}>
-          {src ? 'Regenerate' : 'Generate'}
-        </Button>
+        {canRegen ? (
+          <Button variant="secondary" size="sm" loading={busy} onClick={onGenerate}
+            leftIcon={busy ? undefined : <Sparkles className="h-3.5 w-3.5" />}>
+            {src ? 'Regenerate' : 'Generate'}
+          </Button>
+        ) : (
+          <span className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[12px] font-semibold"
+            style={{ color: '#34c759', background: 'rgba(52,199,89,0.10)' }}
+            title="You get one generation per account — download and use it.">
+            <Check size={13} /> Saved
+          </span>
+        )}
         {src && (
           <button onClick={() => onDownload(src, filename)} title="Download"
             className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[12px] font-semibold border"

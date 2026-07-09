@@ -35,6 +35,20 @@ export async function POST(request: Request) {
   if (!tierAllowsFinders(tier)) {
     return NextResponse.json({ error: 'The Social Launch Kit is available on any paid plan — upgrade to unlock it.' }, { status: 403 })
   }
+  // ONE generation per platform for everyone except admins. Once a kit is saved,
+  // regenerating is admin-only — the saved kit stays on the page to use anytime.
+  const isAdmin = tier === 'admin'
+  if (!isAdmin) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: existingKit } = await (supabase as any).from('social_launch_kits')
+      .select('kit').eq('user_id', user.id).eq('platform', platform).maybeSingle()
+    if (existingKit?.kit) {
+      return NextResponse.json({
+        error: 'You\'ve already generated this kit. It\'s saved on the page to use anytime — regenerating is available to admins only.',
+        locked: true,
+      }, { status: 403 })
+    }
+  }
 
   const gate = await spendGate(user.id, tier)
   if (gate) return gate

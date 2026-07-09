@@ -101,6 +101,24 @@ export async function POST(request: Request) {
   if (!tierAllowsFinders(tier)) {
     return NextResponse.json({ error: 'The Social Launch Kit is available on any paid plan — upgrade to unlock it.' }, { status: 403 })
   }
+  // ONE generation per slot (banner / avatar) for everyone except admins. Once a
+  // slot is saved, regenerating is admin-only — keeps image costs predictable and
+  // the user's saved asset stable. A failed first attempt saves no URL, so retry
+  // still works.
+  const isAdmin = tier === 'admin'
+  if (!isAdmin) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: existingKit } = await (supabase as any).from('social_launch_kits')
+      .select('banner_url, avatar_url').eq('user_id', user.id).eq('platform', platform).maybeSingle()
+    const already = kind === 'banner' ? existingKit?.banner_url : existingKit?.avatar_url
+    if (already) {
+      return NextResponse.json({
+        error: `You've already generated your ${kind === 'banner' ? 'cover image' : 'profile image'}. It's saved on the page to use anytime — regenerating is available to admins only.`,
+        locked: true,
+        imageUrl: already,
+      }, { status: 403 })
+    }
+  }
   const gate = await spendGate(user.id, tier)
   if (gate) return gate
 
