@@ -62,11 +62,16 @@ export const LAUNCH_PLATFORMS: Record<LaunchPlatform, PlatformSpec> = {
     // chars. bioShort is an optional tighter version; bioLong = the real field.
     bioShortMax: 160,
     bioLongMax: 255,
+    // Pinterest profile cover = a 16:9 hero image (recommended 800×450; we make
+    // it larger for crispness). Only ~8% is trimmed from the 1.5:1 render, so it
+    // uses the rich gpt-image cover path (like Facebook), NOT the wide compositor.
+    banner: { w: 1600, h: 900, label: 'Profile cover', aspect: '16:9' },
     avatar: { w: 165, h: 165, label: 'Profile photo', aspect: '1:1' },
     boards: 5,
     steps: [
       { title: 'Create a free business account', detail: 'Open the link below. If you already have a personal Pinterest you can convert it or add a business account — business is free and unlocks analytics.' },
       { title: 'Set your name and photo', detail: 'Paste the business name and upload the profile photo MVP made (or your logo).' },
+      { title: 'Add your profile cover', detail: 'Open Edit profile → the cover photo at the top → upload the cover image MVP made. Keep it uncropped; Pinterest centres it automatically.' },
       { title: 'Write your bio', detail: 'Open Edit profile → "Introduce yourself" (up to 255 characters) and paste the About that MVP wrote. Add your website and storefront links.' },
       { title: 'Claim your website', detail: 'In Settings → Claimed accounts, claim your blog domain. This ties every Pin back to you and unlocks site analytics.' },
       { title: 'Create your starter boards', detail: 'Make the boards MVP suggested and paste each board description. Keyword-rich descriptions are how Pinterest surfaces your Pins in search.' },
