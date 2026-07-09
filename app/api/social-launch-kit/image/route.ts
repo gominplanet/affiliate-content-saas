@@ -16,10 +16,10 @@ import sharp from 'sharp'
 import { createServerClient } from '@/lib/supabase/server'
 import { spendGate } from '@/lib/ai-spend'
 import { recordUsage } from '@/lib/ai-usage'
-import { composeWithNanoBananaPro, generateWithIdeogram, rehostAll, uploadDataUrlToFal, expandBannerToWidth } from '@/lib/thumbnail-generators'
+import { composeWithNanoBananaPro, generateWithIdeogram, rehostAll, uploadDataUrlToFal, expandBannerToWidth, generateWideBanner } from '@/lib/thumbnail-generators'
 import { createOpenAIService } from '@/services/openai'
 import { LAUNCH_PLATFORMS, type LaunchPlatform } from '@/lib/social-launch-kit'
-import { buildCoverPrompt, buildAvatarPrompt } from '@/lib/social-launch-kit-prompt'
+import { buildCoverPrompt, buildAvatarPrompt, buildWideBannerPrompt } from '@/lib/social-launch-kit-prompt'
 import { tierAllowsFinders, type Tier } from '@/lib/tier'
 
 export const maxDuration = 180
@@ -44,6 +44,28 @@ async function urlToRef(url: string, name: string): Promise<ImgRef | null> {
     const ext = mime.includes('png') ? 'png' : mime.includes('webp') ? 'webp' : 'jpg'
     return { data: buf, filename: `${name}.${ext}`, mime }
   } catch { return null }
+}
+
+/**
+ * Composite the brand's real logo into the reserved clean LEFT zone of a
+ * natively-wide (3:1) banner. The Ideogram prompt keeps that zone empty, so the
+ * real logo lands cleanly — vertically centred and comfortably inside the ~12.5%
+ * top/bottom that a 4:1 crop trims. Preserves the logo's aspect ratio.
+ */
+async function compositeLogoLeft(banner: Buffer, logo: Buffer): Promise<Buffer> {
+  const meta = await sharp(banner).metadata()
+  const W = meta.width ?? 1536
+  const H = meta.height ?? 512
+  const logoPng = await sharp(logo)
+    .resize({ width: Math.round(W * 0.18), height: Math.round(H * 0.52), fit: 'inside', withoutEnlargement: false })
+    .png().toBuffer()
+  const lm = await sharp(logoPng).metadata()
+  const lw = lm.width ?? Math.round(W * 0.18)
+  const lh = lm.height ?? Math.round(H * 0.52)
+  const cx = Math.round(W * 0.11)                 // centre of the left zone
+  const left = Math.max(24, Math.round(cx - lw / 2))
+  const top = Math.round((H - lh) / 2)
+  return await sharp(banner).composite([{ input: logoPng, left, top }]).png().toBuffer()
 }
 
 export async function POST(request: Request) {
@@ -159,15 +181,43 @@ export async function POST(request: Request) {
   const imgRefs: ImgRef[] = []
   const cr = customRef ? dataUrlToRef(customRef) : null
   if (cr) imgRefs.push(cr)
-  if (logoUrl) { const lr = await urlToRef(logoUrl, 'logo'); if (lr) imgRefs.push(lr) }
+  const logoRef = logoUrl ? await urlToRef(logoUrl, 'logo') : null
+  if (logoRef) imgRefs.push(logoRef)
   if (kind === 'banner' && bannerUrl) { const br = await urlToRef(bannerUrl, 'banner'); if (br) imgRefs.push(br) }
   const refs = imgRefs.slice(0, 4)
+  // The logo to drop into the reserved left zone of a native-wide banner: the
+  // real brand logo if set, otherwise the uploaded reference image.
+  const compositeLogo: ImgRef | null = logoRef || cr
 
   let sourceB64 = ''
   let sourceUrl = ''
   let usedModel: 'gpt-image-1' | 'fal-nano-banana-pro' | 'fal-ideogram-v3' = 'gpt-image-1'
 
-  try {
+  // ── NATIVE-WIDE PATH ──────────────────────────────────────────────────────
+  // Extreme-wide banners (X/Bluesky 3:1, LinkedIn 4:1) are generated NATIVELY
+  // wide at 3:1 by Ideogram (crisp baked headline, composition designed to fill
+  // the frame), the real logo composited into the reserved left zone, then a
+  // gentle crop to the exact dims. This fills the banner edge-to-edge instead of
+  // slicing a 1.5:1 design. On any failure we fall through to the 1.5:1 path.
+  let nativeWide: Buffer | null = null
+  if (useContain) {
+    const widePrompt = buildWideBannerPrompt({
+      platformLabel: `${spec.label} cover`, style: bannerStyle, brandName,
+      headline: coverHeadline, industry: niches, sellingPoints, colorLine,
+      hasLogo: !!compositeLogo, context, categories,
+    })
+    const wideUrl = await generateWideBanner(widePrompt)
+    if (wideUrl) {
+      try {
+        let wb: Buffer = Buffer.from(await (await fetch(wideUrl)).arrayBuffer())
+        if (compositeLogo) wb = await compositeLogoLeft(wb, compositeLogo.data)
+        nativeWide = await sharp(wb).resize(target.w, target.h, { fit: 'cover', position: 'centre' }).png().toBuffer()
+        usedModel = 'fal-ideogram-v3'
+      } catch (e) { console.warn('[launch-kit] native-wide post-process failed:', e); nativeWide = null }
+    }
+  }
+
+  if (!nativeWide) try {
     const openai = createOpenAIService()
     sourceB64 = refs.length
       ? await openai.generateWithReferences({ prompt, images: refs, size: kind === 'banner' ? '1536x1024' : '1024x1024', quality: 'high' })
@@ -191,7 +241,7 @@ export async function POST(request: Request) {
     }
   }
 
-  if (!sourceB64 && !sourceUrl) {
+  if (!nativeWide && !sourceB64 && !sourceUrl) {
     return NextResponse.json({
       error: (logoUrl || bannerUrl || customRef)
         ? 'Image generation failed — try again in a moment.'
@@ -202,9 +252,15 @@ export async function POST(request: Request) {
   recordUsage({ userId: user.id, tier, feature: 'social-launch-kit-image', model: usedModel, images: 1 })
 
   try {
-    const buf = sourceB64 ? Buffer.from(sourceB64, 'base64') : Buffer.from(await (await fetch(sourceUrl)).arrayBuffer())
     let png: Buffer
-    let mode: 'crop' | 'expand' | 'contain-fallback' = 'crop'
+    let mode: 'crop' | 'expand' | 'contain-fallback' | 'native-wide' = 'crop'
+    if (nativeWide) {
+      // Best path: banner was generated natively wide (3:1) + logo composited +
+      // cropped to exact dims — already the final image, fills edge-to-edge.
+      png = nativeWide
+      mode = 'native-wide'
+    } else {
+    const buf = sourceB64 ? Buffer.from(sourceB64, 'base64') : Buffer.from(await (await fetch(sourceUrl)).arrayBuffer())
     if (useContain) {
       // Extreme-wide banner: EXPAND-TO-FIT. Outpaint the design out to the full
       // banner width so it fills edge-to-edge — nothing cropped, no bars, native
@@ -247,9 +303,10 @@ export async function POST(request: Request) {
       // reserves a matching top/bottom safe band, so nothing important is cut).
       png = await sharp(buf).resize(target.w, target.h, { fit: 'cover', position: 'centre' }).png().toBuffer()
     }
+    }
     // One clear log line so we can tell exactly which framing path ran (and
     // whether fal creds are present) without guessing from screenshots.
-    console.log('[launch-kit] banner', JSON.stringify({ platform, kind, w: target.w, h: target.h, cropFrac: Number(cropFrac.toFixed(2)), useContain, mode, hasFalKey: !!process.env.FAL_KEY }))
+    console.log('[launch-kit] banner', JSON.stringify({ platform, kind, w: target.w, h: target.h, cropFrac: Number(cropFrac.toFixed(2)), useContain, mode, usedModel, hasFalKey: !!process.env.FAL_KEY }))
     const dataUrl = `data:image/png;base64,${png.toString('base64')}`
     // Persist to durable storage + save the URL so this image stays on the page
     // across sessions (one saved slot per user+platform+kind). Best-effort — we
@@ -266,6 +323,7 @@ export async function POST(request: Request) {
     } catch { /* persistence is best-effort */ }
     return NextResponse.json({ ok: true, platform, kind, width: target.w, height: target.h, image: dataUrl, imageUrl: savedUrl || undefined })
   } catch {
+    if (nativeWide) return NextResponse.json({ ok: true, platform, kind, width: target.w, height: target.h, image: `data:image/png;base64,${nativeWide.toString('base64')}` })
     return NextResponse.json({ ok: true, platform, kind, width: target.w, height: target.h, ...(sourceUrl ? { imageUrl: sourceUrl } : { image: `data:image/png;base64,${sourceB64}` }) })
   }
 }

@@ -112,6 +112,35 @@ export function buildCoverPrompt(b: CoverBrief): string {
   ].filter(Boolean).join('\n\n')
 }
 
+/**
+ * Prompt for an EXTREME-WIDE banner (X/Bluesky 3:1, LinkedIn 4:1) generated
+ * NATIVELY wide by Ideogram at 3:1 — not cropped down from a 1.5:1 design. The
+ * composition must fill the whole frame edge to edge. When the brand has a real
+ * logo we reserve a clean left zone and composite the actual logo there
+ * afterwards (Ideogram would otherwise invent a garbled fake mark); with no
+ * logo we let Ideogram render the brand NAME cleanly. Ideogram bakes crisp text,
+ * so we ask ONLY for the single big headline — never small chips/captions, which
+ * it misspells. Key elements stay in the central 75% because a 4:1 crop trims
+ * ~12.5% off the top and bottom.
+ */
+export function buildWideBannerPrompt(b: CoverBrief): string {
+  const products = b.categories?.length ? b.categories.slice(0, 5).join(', ') : b.industry
+  const logoLine = b.hasLogo
+    ? 'LEFT ~20% of the frame: keep it as clean, dark, premium background with only a soft glow — NO logo, NO badge, NO emblem, NO text and NO objects there. This space is intentionally left empty because the brand\'s real logo will be placed into it afterwards.'
+    : `TOP-LEFT: render the brand name "${b.brandName}" in bold, clean, correctly-spelled letters — and no other small text.`
+  return [
+    'You are an award-winning brand designer. Create a premium, high-converting WIDE social banner in 3:1 landscape that FILLS THE ENTIRE FRAME edge to edge with a balanced, cinematic composition — commercial-advertising quality, scroll-stopping, 2026 design trends. It must instantly communicate trust and quality.',
+    b.context ? `BRAND: ${b.context}` : `BRAND: ${b.brandName}, a ${b.industry} brand.`,
+    `BACKGROUND / COLOUR: ${b.colorLine} A dark, premium backdrop with gradients, soft directional lighting, depth and gentle gold/accent light streaks. Expensive-looking but not busy — no flat solid fill.`,
+    logoLine,
+    `CENTRE: ONE huge, bold headline in a heavy condensed sans-serif reading "${b.headline}" — mix large WHITE words with large ACCENT-colour words for hierarchy. Perfectly spelled, crisp, high contrast, on at most 3 lines. This is the focal element.`,
+    `RIGHT: a dynamic, photorealistic scene of real products / objects from the brand's world${products ? ` (${products})` : ''}, with depth, overlap and perspective, filling the right third of the frame. Products and objects ONLY — absolutely no humans, faces or hands. Never leave the right side empty.`,
+    'Keep the headline and every product within the CENTRAL 75% of the height (the top and bottom ~12% may be trimmed) — nothing important near the top or bottom edge.',
+    'DO NOT render any small paragraph text, feature chips, badges, captions, buttons, URLs or watermarks anywhere — only the single big headline (and the brand name only if asked above). No misspelled or invented words. Never render the word "honest".',
+    'Ultra sharp, no blur, photorealistic where appropriate, nothing clipped or cut off at any edge.',
+  ].filter(Boolean).join('\n\n')
+}
+
 /** Circular profile picture / logo mark. */
 export function buildAvatarPrompt(b: Pick<CoverBrief, 'brandName' | 'industry' | 'colorLine' | 'hasLogo' | 'context'>): string {
   return [

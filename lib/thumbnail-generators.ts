@@ -356,6 +356,40 @@ export async function generateWithIdeogram(opts: {
   }
 }
 
+/**
+ * Generate a WIDE brand banner NATIVELY at 3:1 (1536×512) — Ideogram's widest
+ * bucket and its crispest baked headline text. This is the right way to make an
+ * extreme-wide banner (X/Bluesky 3:1, LinkedIn 4:1): instead of cropping a 1.5:1
+ * design (which slices 62% of the height for 4:1) or centring it on bars, the
+ * design is COMPOSED wide from the start, so it fills the frame edge to edge.
+ * The caller reserves a clean left zone (to composite the real logo) and trims a
+ * gentle ~12.5% for 4:1. Returns a fal CDN URL, or null on failure (caller
+ * falls back to the 1.5:1 path). Ideogram clamps any wider request back to 3:1,
+ * so we request 3:1 directly.
+ */
+export async function generateWideBanner(prompt: string): Promise<string | null> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await fal.subscribe(IDEOGRAM_V3 as any, {
+      input: {
+        prompt,
+        image_size: { width: 1536, height: 512 },
+        rendering_speed: 'QUALITY',
+        num_images: 1,
+        expand_prompt: false,
+      },
+      pollInterval: 2000,
+    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const url = ((result.data as any)?.images?.[0]?.url) as string | undefined
+    if (!url) console.warn('[wide-banner] ideogram returned no image; data:', JSON.stringify(result.data)?.slice(0, 300))
+    return url || null
+  } catch (err) {
+    console.warn('[wide-banner] ideogram threw:', err instanceof Error ? err.message : String(err))
+    return null
+  }
+}
+
 export const IDEOGRAM_V3_REFRAME = 'fal-ai/ideogram/v3/reframe'
 
 /**
