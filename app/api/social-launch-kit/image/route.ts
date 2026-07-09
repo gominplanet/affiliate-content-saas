@@ -16,7 +16,7 @@ import sharp from 'sharp'
 import { createServerClient } from '@/lib/supabase/server'
 import { spendGate } from '@/lib/ai-spend'
 import { recordUsage } from '@/lib/ai-usage'
-import { composeWithNanoBananaPro, generateWithIdeogram, rehostAll, uploadDataUrlToFal } from '@/lib/thumbnail-generators'
+import { composeWithNanoBananaPro, generateWithIdeogram, rehostAll, uploadDataUrlToFal, expandBannerToWidth } from '@/lib/thumbnail-generators'
 import { createOpenAIService } from '@/services/openai'
 import { LAUNCH_PLATFORMS, type LaunchPlatform } from '@/lib/social-launch-kit'
 import { buildCoverPrompt, buildAvatarPrompt } from '@/lib/social-launch-kit-prompt'
@@ -205,13 +205,28 @@ export async function POST(request: Request) {
     const buf = sourceB64 ? Buffer.from(sourceB64, 'base64') : Buffer.from(await (await fetch(sourceUrl)).arrayBuffer())
     let png: Buffer
     if (useContain) {
-      // GUARANTEE nothing is ever cut on extreme-wide banners: place the FULL
-      // design (contain — no crop) centred over a stretched, heavily-blurred fill
-      // of itself. The blurred fill covers the sides seamlessly (no hard bars),
-      // and because the whole image is contained, no text/logo/product can clip.
-      const bg = await sharp(buf).resize(target.w, target.h, { fit: 'fill' }).blur(40).modulate({ brightness: 0.7 }).toBuffer()
-      const fg = await sharp(buf).resize(target.w, target.h, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer()
-      png = await sharp(bg).composite([{ input: fg, gravity: 'centre' }]).png().toBuffer()
+      // Extreme-wide banner: EXPAND-TO-FIT. Outpaint the design out to the full
+      // banner width so it fills edge-to-edge — nothing cropped, no bars, native
+      // look. Falls back to a contain + blurred-fill compose if the outpaint is
+      // unavailable (still guaranteed no clip).
+      let expanded: Buffer | null = null
+      const expandedUrl = await expandBannerToWidth(`data:image/png;base64,${buf.toString('base64')}`, target.w, target.h)
+      if (expandedUrl) {
+        try {
+          const eb = Buffer.from(await (await fetch(expandedUrl)).arrayBuffer())
+          expanded = await sharp(eb).resize(target.w, target.h, { fit: 'cover', position: 'centre' }).png().toBuffer()
+          recordUsage({ userId: user.id, tier, feature: 'social-launch-kit-image', model: 'fal-ideogram-v3', images: 1 })
+        } catch { expanded = null }
+      }
+      if (expanded) {
+        png = expanded
+      } else {
+        // Fallback: full design (contain, no crop) centred over a stretched,
+        // heavily-blurred fill of itself — seamless sides, never clips.
+        const bg = await sharp(buf).resize(target.w, target.h, { fit: 'fill' }).blur(40).modulate({ brightness: 0.7 }).toBuffer()
+        const fg = await sharp(buf).resize(target.w, target.h, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer()
+        png = await sharp(bg).composite([{ input: fg, gravity: 'centre' }]).png().toBuffer()
+      }
     } else {
       // Milder banners + avatars: deterministic centre cover-crop (the prompt
       // reserves a matching top/bottom safe band, so nothing important is cut).

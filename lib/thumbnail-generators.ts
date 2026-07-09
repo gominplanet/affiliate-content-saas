@@ -346,3 +346,43 @@ export async function generateWithIdeogram(opts: {
     return []
   }
 }
+
+export const IDEOGRAM_V3_REFRAME = 'fal-ai/ideogram/v3/reframe'
+
+/**
+ * "Expand to fit" — outpaint a design out to a wider banner so it fills the
+ * whole frame edge-to-edge instead of being cropped (clips content) or centred
+ * on bars. No image model outputs an extreme 4:1 natively, so for wide banners
+ * we generate the design normally, scale it to the banner's HEIGHT (so the
+ * reframe never has to crop vertically), then let Ideogram V3 Reframe generate
+ * matching background on the LEFT and RIGHT to reach the exact target width.
+ * The original design region is preserved; only the sides are new.
+ *
+ * Returns the expanded image URL, or null on any failure (caller falls back).
+ */
+export async function expandBannerToWidth(sourceDataUrl: string, targetW: number, targetH: number): Promise<string | null> {
+  try {
+    const m = /^data:([^;]+);base64,([\s\S]+)$/.exec((sourceDataUrl || '').trim())
+    if (!m) return null
+    // Scale to the target height first → the reframe only extends sideways.
+    const scaled = await sharp(Buffer.from(m[2], 'base64')).resize({ height: targetH }).png().toBuffer()
+    const url = await uploadDataUrlToFal(`data:image/png;base64,${scaled.toString('base64')}`)
+    if (!url) return null
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await fal.subscribe(IDEOGRAM_V3_REFRAME as any, {
+      input: {
+        image_url: url,
+        image_size: { width: targetW, height: targetH },
+        rendering_speed: 'BALANCED',
+        num_images: 1,
+      },
+      pollInterval: 2000,
+    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const out = ((result.data as any)?.images?.[0]?.url) as string | undefined
+    return out || null
+  } catch (err) {
+    console.warn('[expand] reframe failed:', err instanceof Error ? err.message : String(err))
+    return null
+  }
+}
