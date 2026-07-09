@@ -223,11 +223,23 @@ export async function POST(request: Request) {
         png = expanded
         mode = 'expand'
       } else {
-        // Fallback: full design (contain, no crop) centred over a stretched,
-        // heavily-blurred fill of itself — seamless sides, never clips.
-        const bg = await sharp(buf).resize(target.w, target.h, { fit: 'fill' }).blur(40).modulate({ brightness: 0.7 }).toBuffer()
-        const fg = await sharp(buf).resize(target.w, target.h, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer()
-        png = await sharp(bg).composite([{ input: fg, gravity: 'centre' }]).png().toBuffer()
+        // Deterministic full-bleed fallback (no AI, no bars): scale the design to
+        // the banner HEIGHT, then EXTEND its own left/right edge pixels outward to
+        // fill the width. Because the design keeps a background margin at its
+        // edges, the extension is seamless dark background — never black bars,
+        // never clipped content.
+        const design = await sharp(buf).resize({ height: target.h }).png().toBuffer()
+        const dw = (await sharp(design).metadata()).width ?? target.w
+        if (dw >= target.w) {
+          png = await sharp(design).resize(target.w, target.h, { fit: 'cover', position: 'centre' }).png().toBuffer()
+        } else {
+          const gapL = Math.floor((target.w - dw) / 2)
+          const gapR = target.w - dw - gapL
+          png = await sharp(design)
+            .extend({ left: gapL, right: gapR, extendWith: 'copy' })
+            .resize(target.w, target.h, { fit: 'cover', position: 'centre' })
+            .png().toBuffer()
+        }
         mode = 'contain-fallback'
       }
     } else {
