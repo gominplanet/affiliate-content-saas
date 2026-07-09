@@ -39,13 +39,15 @@ const DEPTH =
 const QUALITY =
   'QUALITY: photorealistic where appropriate, sharp details, luxury lighting, ultra-high resolution, no blur, no clipart, no stock-template look.'
 
-// FB/Pinterest crop the edges differently (desktop trims top/bottom, mobile
-// trims the sides), so the must-not-lose elements stay in the centre.
+// The generator paints a taller frame than the final wide banner, so the top
+// and bottom get cropped off. Everything that matters must live in a central
+// safe band with clear margins on every edge — otherwise headlines and products
+// get sliced by the crop (and FB/Pinterest trim the edges again on top).
 const SAFE =
-  'SAFE AREA: keep the headline and the logo comfortably within the centre of the frame (both horizontally and vertically) so they survive the platform cropping the outer edges on desktop and mobile. The product scene and background may run to the edges.'
+  'CRITICAL — SAFE FRAMING. The finished cover is a WIDE, SHORT banner and the TOP and BOTTOM of the artwork WILL BE CROPPED AWAY. Compose the ENTIRE design inside a central horizontal band: every word of the headline, the whole logo, and all products must sit within the middle ~66% of the height, with a clear empty margin on ALL FOUR sides. NOTHING important may enter the top ~18% or the bottom ~18% of the frame, and nothing may touch or cross any edge — leave those outer zones as plain background / gradient / atmosphere only. Every letter of the headline must be fully visible and un-clipped, well away from the top, bottom, left and right edges. If the headline is long, make it smaller or use more lines so the whole phrase fits INSIDE the safe band — never let any text or product run off, get cut, or bleed past an edge.'
 
 const NEGATIVE =
-  'AVOID: any humans, faces, hands or people (products and objects only); generic / flat / Canva-template layouts, low contrast, small or thin fonts, busy or cheap-gradient backgrounds, watermarks, cartoon style, poor spacing, and any misspelled or invented text. Never render the word "honest".'
+  'AVOID: any humans, faces, hands or people (products and objects only); any text, letter, logo or product that is clipped, cut off, or bleeding past the frame edges; anything important placed in the top or bottom margin; generic / flat / Canva-template layouts, low contrast, small or thin fonts, busy or cheap-gradient backgrounds, watermarks, cartoon style, poor spacing, and any misspelled or invented text. Never render the word "honest".'
 
 function colorSection(b: CoverBrief): string {
   return `COLOUR SYSTEM: ${b.colorLine} Primary = the brand colour, secondary = white, accent = the brand's secondary colour. Use large white typography mixed with accent-colour words; use the accent only where it increases emphasis.`
@@ -56,10 +58,10 @@ function layoutSection(b: CoverBrief): string {
     return `LAYOUT: ${b.hasLogo ? 'the attached brand LOGO (reproduced faithfully, with a soft glow, integrated into the artwork) sits left or centre-left' : 'a clean brand emblem sits left'}, with one large headline reading "${b.headline}" in a modern sans-serif. Nothing else — no product scene, no cards, no ribbon. Mostly clean negative space.`
   }
   return [
-    `LAYOUT — a cinematic composition in three zones (roughly 30% / 40% / 30%):`,
-    `LEFT: ${b.hasLogo ? 'the attached brand LOGO, reproduced faithfully, with a soft glow / rim light, integrated naturally into the artwork (never simply pasted flat)' : 'a premium brand emblem with a soft glow'}.`,
-    `CENTRE (dominant): a MASSIVE headline reading "${b.headline}" in a heavy condensed sans-serif — mix large WHITE words with large ACCENT-colour words and multiple weights for clear hierarchy.`,
-    `RIGHT: a dynamic visual scene of real products / objects from the brand's actual content${b.categories?.length ? ` — mainly ${b.categories.slice(0, 4).join(', ')}${b.categories[0] ? `, weighted toward ${b.categories[0]} (what they publish most)` : ''}` : ` (${b.industry})`}, with depth, overlap and perspective. Products and objects ONLY — absolutely no humans, faces, hands or people. Never leave this side empty.`,
+    `LAYOUT — a cinematic composition in three zones (roughly 30% / 40% / 30%), all sitting inside the central safe band (see SAFE AREA):`,
+    `LEFT: ${b.hasLogo ? 'the attached brand LOGO, reproduced faithfully, with a soft glow / rim light, integrated naturally into the artwork (never simply pasted flat)' : 'a premium brand emblem with a soft glow'} — kept fully inside the frame with clear margin, not touching any edge.`,
+    `CENTRE (dominant): a large, bold headline reading "${b.headline}" in a heavy condensed sans-serif — mix large WHITE words with large ACCENT-colour words and multiple weights for clear hierarchy. Size it so the ENTIRE phrase fits within the central safe band on AT MOST 3 lines, with clear empty space above and below — never let any line touch or cross the top or bottom edge.`,
+    `RIGHT: a dynamic visual scene of real products / objects from the brand's actual content${b.categories?.length ? ` — mainly ${b.categories.slice(0, 4).join(', ')}${b.categories[0] ? `, weighted toward ${b.categories[0]} (what they publish most)` : ''}` : ` (${b.industry})`}, with depth, overlap and perspective, arranged fully inside the frame (nothing cropped by or bleeding past the right/top/bottom edges). Products and objects ONLY — absolutely no humans, faces, hands or people. Never leave this side empty.`,
   ].join(' ')
 }
 

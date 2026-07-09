@@ -191,7 +191,10 @@ export async function POST(request: Request) {
 
   try {
     const buf = sourceB64 ? Buffer.from(sourceB64, 'base64') : Buffer.from(await (await fetch(sourceUrl)).arrayBuffer())
-    const png = await sharp(buf).resize(target.w, target.h, { fit: 'cover', position: 'attention' }).png().toBuffer()
+    // Center crop (not 'attention'): the prompt reserves a central safe band and
+    // pads the top/bottom, so a deterministic middle crop trims exactly those
+    // margins — 'attention' could shift the crop and slice through the headline.
+    const png = await sharp(buf).resize(target.w, target.h, { fit: 'cover', position: 'centre' }).png().toBuffer()
     return NextResponse.json({ ok: true, platform, kind, width: target.w, height: target.h, image: `data:image/png;base64,${png.toString('base64')}` })
   } catch {
     return NextResponse.json({ ok: true, platform, kind, width: target.w, height: target.h, ...(sourceUrl ? { imageUrl: sourceUrl } : { image: `data:image/png;base64,${sourceB64}` }) })
