@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.66
+ * Version: 1.0.67
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -3337,7 +3337,13 @@ if (!function_exists('mvp_affiliate_render_brand_cta')) {
             ? (string) $bc['headline']
             : 'Are you a brand that wants to get featured here?';
         $intro    = isset($bc['intro']) ? (string) $bc['intro'] : '';
-        $site_key = isset($bc['hcaptchaSiteKey']) ? trim((string) $bc['hcaptchaSiteKey']) : '';
+        // Captcha: Cloudflare Turnstile (v1.0.67+). Falls back to the legacy
+        // hCaptcha key only if the dashboard hasn't sent a Turnstile key yet.
+        $turnstile_key = isset($bc['turnstileSiteKey']) ? trim((string) $bc['turnstileSiteKey']) : '';
+        $site_key      = $turnstile_key !== ''
+            ? $turnstile_key
+            : (isset($bc['hcaptchaSiteKey']) ? trim((string) $bc['hcaptchaSiteKey']) : '');
+        $use_turnstile = ($turnstile_key !== '');
 
         $api_base = apply_filters('mvp_affiliate_api_base', 'https://www.mvpaffiliate.io');
         $uid = wp_generate_uuid4();
@@ -3415,7 +3421,7 @@ if (!function_exists('mvp_affiliate_render_brand_cta')) {
         <input type="text" name="hp" tabindex="-1" autocomplete="off" aria-hidden="true"
                style="position:absolute;left:-9999px;top:-9999px;height:0;width:0;opacity:0;" />
         <?php if ($site_key !== ''): ?>
-        <div class="h-captcha" data-sitekey="<?php echo esc_attr($site_key); ?>" style="margin:2px 0;"></div>
+        <div class="<?php echo $use_turnstile ? 'cf-turnstile' : 'h-captcha'; ?>" data-sitekey="<?php echo esc_attr($site_key); ?>" style="margin:2px 0;"></div>
         <?php endif; ?>
         <button type="submit"
                 style="padding:12px 18px;border:none;border-radius:11px;background:#1d1d1f;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">Send message</button>
@@ -3427,7 +3433,7 @@ if (!function_exists('mvp_affiliate_render_brand_cta')) {
   <?php endif; ?>
 </div>
 <?php if (!$direct_link && $inbox && $site_key !== ''): ?>
-<script src="https://js.hcaptcha.com/1/api.js" async defer></script>
+<script src="<?php echo $use_turnstile ? 'https://challenges.cloudflare.com/turnstile/v0/api.js' : 'https://js.hcaptcha.com/1/api.js'; ?>" async defer></script>
 <?php endif; ?>
 <script>
 (function(){
@@ -3484,8 +3490,10 @@ if (!function_exists('mvp_affiliate_render_brand_cta')) {
     if (!name)    { msg.style.color = '#ff3b30'; msg.textContent = 'Please add your name.'; return; }
     if (!email)   { msg.style.color = '#ff3b30'; msg.textContent = 'Please add your email so they can reply.'; return; }
     if (!message) { msg.style.color = '#ff3b30'; msg.textContent = 'Please add a short message.'; return; }
-    // hCaptcha token (if the widget is present on the page).
-    var captchaEl = form.querySelector('textarea[name="h-captcha-response"]');
+    // Captcha token — Turnstile (cf-turnstile-response) or, for legacy pages,
+    // hCaptcha (h-captcha-response), whichever widget is present.
+    var captchaEl = form.querySelector('[name="cf-turnstile-response"]')
+                 || form.querySelector('[name="h-captcha-response"]');
     var captchaToken = captchaEl ? (captchaEl.value || '') : '';
     btn.disabled = true; btn.textContent = 'Sending…';
     fetch(<?php echo wp_json_encode($api_base . '/api/brand-inquiry'); ?>, {
@@ -3498,6 +3506,7 @@ if (!function_exists('mvp_affiliate_render_brand_cta')) {
         company: company,
         message: message,
         hp: hp,
+        turnstileToken: captchaToken,
         hcaptchaToken: captchaToken,
         sourceUrl: window.location.href,
         origin: <?php echo wp_json_encode($origin); ?>,
@@ -3510,7 +3519,8 @@ if (!function_exists('mvp_affiliate_render_brand_cta')) {
         if (!res.ok || !res.data || res.data.ok === false) {
           msg.style.color = '#ff3b30';
           msg.textContent = (res.data && res.data.error) ? res.data.error : 'Something went wrong. Please try again.';
-          if (window.hcaptcha) { try { window.hcaptcha.reset(); } catch(_){} }
+          if (window.turnstile) { try { window.turnstile.reset(); } catch(_){} }
+          else if (window.hcaptcha) { try { window.hcaptcha.reset(); } catch(_){} }
           return;
         }
         msg.style.color = '#34c759';
