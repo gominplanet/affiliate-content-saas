@@ -28,6 +28,7 @@ import Link from 'next/link'
 import { useTheme } from 'next-themes'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { getViewAsTier, setViewAsTier } from '@/lib/view-as'
+import { tierBadge } from '@/lib/tier-badge'
 import UsageChip from '@/components/dashboard/UsageChip'
 import type { Tier } from '@/lib/tier'
 import {
@@ -319,6 +320,13 @@ export default function DashboardShellV2({
   // sidebar reflects whichever tier the admin is currently previewing.
   const [viewAs, setViewAs] = useState<Tier>('admin')
   useEffect(() => { setViewAs(getViewAsTier() ?? 'admin') }, [])
+
+  // Sidebar brand badge. Creator/Studio/Pro/Admin each get their own square
+  // lockup (the art already contains the "MVP Affiliate" wordmark, so it
+  // replaces the mark AND title); only Trial falls back to the purple "M". An
+  // admin previewing another tier sees that tier's badge.
+  const badgeTier: Tier | string = isAdmin && viewAs !== 'admin' ? viewAs : tier
+  const brandBadge = tierBadge(badgeTier)
 
   // ── Nav definition ────────────────────────────────────────────────────
   // Mirrors the preview's IA but maps to the real routes. Gates honor the
@@ -626,22 +634,50 @@ export default function DashboardShellV2({
         className={`${collapsed ? 'w-[68px]' : 'w-[232px]'} flex-shrink-0 border-r flex flex-col transition-[width] duration-200 sticky top-0 h-screen`}
         style={{ backgroundColor: 'var(--bg-sidebar)', borderColor: 'var(--border)' }}
       >
-        {/* Brand + collapse toggle */}
-        <div className="px-4 pt-5 pb-4 flex items-center justify-between">
-          <Link href="/dashboard" className="flex items-center gap-2">
-            <span className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#7C3AED] to-[#C026D3] flex items-center justify-center font-bold text-white text-[14px]">M</span>
+        {/* Brand + collapse toggle. Creator/Studio/Pro/Admin show their square
+            tier badge — the artwork already contains the "MVP Affiliate"
+            wordmark, so it stands in for BOTH the mark and the title. Trial
+            keeps the default purple "M" + title (no badge art for it). */}
+        {brandBadge ? (
+          <div className={`relative ${collapsed ? 'px-3 pt-4 pb-2' : 'px-4 pt-4 pb-3'}`}>
+            <Link href="/dashboard" className="block" title={`MVP Affiliate ${brandBadge.label}`}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={brandBadge.src}
+                alt={`MVP Affiliate ${brandBadge.label}`}
+                width={collapsed ? 40 : 112}
+                height={collapsed ? 40 : 112}
+                draggable={false}
+                className={`${collapsed ? 'w-10 h-10' : 'w-28 h-28'} mx-auto select-none`}
+              />
+            </Link>
             {!collapsed && (
-              <span className="font-semibold text-[15px] tracking-tight" style={{ color: 'var(--text)' }}>
-                MVP Affiliate
-              </span>
+              <button
+                onClick={() => setCollapsed(true)}
+                className="absolute top-3 right-3 opacity-40 hover:opacity-90 transition-opacity"
+                title="Collapse sidebar"
+              >
+                <ChevronsLeft size={14} />
+              </button>
             )}
-          </Link>
-          {!collapsed && (
-            <button onClick={() => setCollapsed(true)} className="opacity-40 hover:opacity-90 transition-opacity" title="Collapse sidebar">
-              <ChevronsLeft size={14} />
-            </button>
-          )}
-        </div>
+          </div>
+        ) : (
+          <div className="px-4 pt-5 pb-4 flex items-center justify-between">
+            <Link href="/dashboard" className="flex items-center gap-2">
+              <span className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#7C3AED] to-[#C026D3] flex items-center justify-center font-bold text-white text-[14px]">M</span>
+              {!collapsed && (
+                <span className="font-semibold text-[15px] tracking-tight" style={{ color: 'var(--text)' }}>
+                  MVP Affiliate
+                </span>
+              )}
+            </Link>
+            {!collapsed && (
+              <button onClick={() => setCollapsed(true)} className="opacity-40 hover:opacity-90 transition-opacity" title="Collapse sidebar">
+                <ChevronsLeft size={14} />
+              </button>
+            )}
+          </div>
+        )}
 
         {collapsed && (
           <button onClick={() => setCollapsed(false)} className="mx-auto mb-3 opacity-40 hover:opacity-90 transition-opacity" title="Expand sidebar">
