@@ -13,6 +13,7 @@ import { resolveBlogPostId } from '@/lib/resolve-post-id'
 import { recordSocialPermalink } from '@/lib/social-permalink'
 import { socialPermalink } from '@/lib/brand-recap'
 import { fetchOgImage, stripLinkPlaceholders } from '@/lib/og-image'
+import { ensureDisclaimer } from '@/lib/social-disclaimer'
 
 export const maxDuration = 60
 
@@ -156,7 +157,9 @@ Return ONLY the post text, no extra commentary.`,
     // Strip any "link in comments" / bracketed placeholder the model may have
     // invented — the link is the article card (ARTICLE share) or appended below
     // (IMAGE share), never a comment.
-    const cleaned = scrubBanned(stripLinkPlaceholders(rawText))
+    // Guarantee the FTC affiliate disclosure — the writer prompt intentionally
+    // omits it, and LinkedIn has ample room. Idempotent (won't double up).
+    const cleaned = ensureDisclaimer(scrubBanned(stripLinkPlaceholders(rawText)))
     // For an IMAGE post the link must live in the caption (no card); for the
     // ARTICLE fallback the card carries it, so don't duplicate it.
     const withLink = (imageUrl && !cleaned.includes(post.wordpress_url))
