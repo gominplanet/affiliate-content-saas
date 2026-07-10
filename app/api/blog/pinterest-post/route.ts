@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { publishPinForPost, PinPublishError } from '@/lib/pin-publish'
+import { buildPinAssets } from '@/lib/pin-assets'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } from '@/lib/social-cap'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
@@ -74,11 +75,31 @@ export async function POST(request: NextRequest) {
     }, { status: 429 })
   }
 
+  // If the caller didn't send a pre-composed pin image (the manual preview
+  // modal does; a bulk "push a few socials at once" action does NOT — it only
+  // passes the horizontal thumbnail as fallbackImageUrl), build the SAME
+  // vertical 2:3 pin the preview makes, server-side. Otherwise Pinterest gets
+  // the raw landscape thumbnail — the exact off-brand pin a creator reported.
+  let effImageBase64 = imageBase64
+  let effMediaType = mediaType
+  if (!effImageBase64 && hasRow) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: fullPost } = await (supabase as any)
+        .from('blog_posts').select('*').eq('id', postId).eq('user_id', user.id).maybeSingle()
+      if (fullPost) {
+        const a = await buildPinAssets(fullPost, { userId: user.id, tier: null })
+        if (a.imageBase64) { effImageBase64 = a.imageBase64; effMediaType = a.mediaType }
+      }
+    } catch { /* compose failed — fall back to fallbackImageUrl (thumbnail) */ }
+  }
+
   try {
     // Decrypt the integrations row before handing it to publishPinForPost
     // (2026-06-02 rollout — the pin lib reads pinterest_access_token raw).
     const { pinId } = await publishPinForPost({
-      p, ig: decryptIntegrationRow(integration), site: wpSite, title, description, imageBase64, mediaType, fallbackImageUrl,
+      p, ig: decryptIntegrationRow(integration), site: wpSite, title, description,
+      imageBase64: effImageBase64, mediaType: effMediaType, fallbackImageUrl,
     })
     // Persist pin id + bump the per-post cap counter — only when there's a real
     // blog_posts row (a synthetic WP-only post has no id to write to).
