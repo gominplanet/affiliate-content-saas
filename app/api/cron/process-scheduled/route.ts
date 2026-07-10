@@ -49,6 +49,23 @@ export const maxDuration = 60
 // edited stays clean and we append ours at publish time.
 const THREADS_DISCLAIMER = '#ad — As an Amazon Associate I earn from qualifying purchases.'
 
+// FTC-compliant default for the long-form platforms that have room for it
+// (LinkedIn, Telegram). Short-form (X, Bluesky) carry the blog link and the
+// full disclaimer lives on the destination post.
+const AFFILIATE_DISCLAIMER_DEFAULT =
+  '📌 As an Amazon Associate I earn from qualifying purchases. This post may contain affiliate links — I may earn a small commission at no extra cost to you.'
+
+/** Append the affiliate disclaimer to a caption ONLY if it isn't already
+ *  disclosed — so every scheduled post carries it, and a body_text that already
+ *  includes it never doubles up. Idempotent by design. */
+function ensureDisclaimer(text: string, disclaimer: string): string {
+  const t = (text || '').trim()
+  // Per-alternative boundaries: a leading \b fails before "#" (space→# isn't a
+  // word boundary), which would let a caption ending in "#ad" double up.
+  if (/\baffiliate\b|#ad\b|\bamazon associate\b/i.test(t)) return t
+  return `${t}\n\n${disclaimer}`
+}
+
 interface ScheduledRow {
   id: string
   user_id: string
@@ -375,7 +392,10 @@ async function publishOne(
       if (!integration.threads_access_token || !integration.threads_user_id) {
         throw new Error('Threads not connected')
       }
-      const fullText = capSocialText(row.body_text, SOCIAL_LIMITS.threads, `\n\n${THREADS_DISCLAIMER}`)
+      // Body → blog link → disclaimer, capped to the Threads limit. The link
+      // was previously missing entirely (post had no way back to the blog).
+      const threadsSuffix = `${row.body_text.includes(url) ? '' : `\n\n🔗 ${url}`}\n\n${THREADS_DISCLAIMER}`
+      const fullText = capSocialText(stripLinkPlaceholders(row.body_text), SOCIAL_LIMITS.threads, threadsSuffix)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const imageUrl = (post as any).youtube_videos?.thumbnail_url ?? undefined
       const threads = new ThreadsService(integration.threads_access_token, integration.threads_user_id)
@@ -401,7 +421,7 @@ async function publishOne(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         : ((post as any).youtube_videos?.thumbnail_url || '')
       if (!liImage) liImage = (await fetchOgImage(url)) || ''
-      const liClean = stripLinkPlaceholders(row.body_text)
+      const liClean = ensureDisclaimer(stripLinkPlaceholders(row.body_text), AFFILIATE_DISCLAIMER_DEFAULT)
       const postText = capSocialText(
         liImage && !liClean.includes(url) ? `${liClean}\n\n🔗 Read the full review: ${url}` : liClean,
         SOCIAL_LIMITS.linkedin,
@@ -483,7 +503,7 @@ async function publishOne(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let imageUrl: string | null = (post as any).youtube_videos?.thumbnail_url ?? null
       if (!imageUrl) imageUrl = (await fetchOgImage(url)) || null
-      const escapedBody = escapeMarkdownV2(stripLinkPlaceholders(row.body_text))
+      const escapedBody = escapeMarkdownV2(ensureDisclaimer(stripLinkPlaceholders(row.body_text), AFFILIATE_DISCLAIMER_DEFAULT))
       const escapedUrl = escapeMarkdownV2(url)
       const linkLabel = escapeMarkdownV2('Read the full review →')
       const finalCaption = `${escapedBody}\n\n[${linkLabel}](${escapedUrl})`
