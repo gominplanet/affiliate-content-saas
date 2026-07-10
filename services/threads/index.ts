@@ -69,7 +69,9 @@ export class ThreadsService {
     })
     if (!containerRes.ok) {
       const err = await containerRes.json()
-      throw new Error(err.error?.message || `Threads container error: ${containerRes.status}`)
+      // Name the step. Both fetches used to rethrow Meta's bare message, which
+      // made an identical error unattributable between the two calls.
+      throw new Error(`Threads container create failed: ${err.error?.message || `HTTP ${containerRes.status}`}`)
     }
     const { id: creationId } = await containerRes.json() as { id: string }
 
@@ -84,7 +86,7 @@ export class ThreadsService {
     })
     if (!publishRes.ok) {
       const err = await publishRes.json()
-      throw new Error(err.error?.message || `Threads publish error: ${publishRes.status}`)
+      throw new Error(`Threads publish failed: ${err.error?.message || `HTTP ${publishRes.status}`}`)
     }
     const { id } = await publishRes.json() as { id: string }
 
