@@ -21,9 +21,15 @@ interface PageHeroProps {
    *  violet/pink combo used on the dashboard hero. Pass any rgba string
    *  with alpha; the component layers it as a third radial. */
   accent?: string
+  /** Optional block (a video, an illustration) pinned right of the title as a
+   *  true second column. Distinct from `actions`, which is a shrink-to-fit
+   *  button row: a wide media block can't share a flex-wrap line with a
+   *  full-width subtitle, so `media` switches the header to a grid. Stacks
+   *  below the text on narrow screens. */
+  media?: ReactNode
 }
 
-export default function PageHero({ title, subtitle, actions, accent }: PageHeroProps) {
+export default function PageHero({ title, subtitle, actions, accent, media }: PageHeroProps) {
   return (
     <div
       className="-mx-4 sm:-mx-6 lg:-mx-8 -mt-6 mb-8 relative overflow-hidden border-b"
@@ -40,7 +46,15 @@ export default function PageHero({ title, subtitle, actions, accent }: PageHeroP
           `,
         }}
       />
-      <div className="relative px-6 sm:px-8 pt-10 pb-8 flex items-end justify-between gap-4 flex-wrap">
+      <div
+        className={
+          media
+            // The media column may shrink to 300px so the title never gets
+            // squeezed onto two lines on a 1024px viewport beside the sidebar.
+            ? 'relative px-6 sm:px-8 pt-10 pb-8 grid gap-6 lg:gap-10 items-center lg:grid-cols-[minmax(0,1fr)_minmax(300px,400px)]'
+            : 'relative px-6 sm:px-8 pt-10 pb-8 flex items-end justify-between gap-4 flex-wrap'
+        }
+      >
         <div className="min-w-0">
           <h1
             className="text-[32px] font-semibold tracking-tight"
@@ -53,8 +67,12 @@ export default function PageHero({ title, subtitle, actions, accent }: PageHeroP
               {subtitle}
             </p>
           )}
+          {media && actions && (
+            <div className="flex items-center gap-2 mt-4">{actions}</div>
+          )}
         </div>
-        {actions && (
+        {media && <div className="min-w-0">{media}</div>}
+        {!media && actions && (
           <div className="flex items-center gap-2 flex-shrink-0">
             {actions}
           </div>

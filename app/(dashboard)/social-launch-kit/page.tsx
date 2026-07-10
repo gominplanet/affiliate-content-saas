@@ -140,10 +140,10 @@ export default function SocialLaunchKitPage() {
       <PageHero
         title="Social Launch Kit"
         subtitle="No time to figure out Facebook, Pinterest, X, Threads, Bluesky or LinkedIn? Pick a platform and MVP hands you everything — name, bio, banner, avatar, and a step-by-step setup, ready to paste."
-        actions={
+        media={
           // Click-to-play: the YouTube iframe is ~1MB and this page loads for
           // every paid user, so we show the poster until someone wants it.
-          <div className="w-[320px] sm:w-[380px] max-w-full">
+          <div className="w-full">
             {playing ? (
               <div
                 className="relative rounded-xl overflow-hidden border"
