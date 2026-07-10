@@ -47,6 +47,7 @@ import { cn } from '@/lib/utils'
 import { DEALS_HUB_PAUSED } from '@/lib/deal-occasion'
 import NotificationBell from './NotificationBell'
 import WpUpdateTopbarButton from './WpUpdateTopbarButton'
+import WpConnectionDoctorButton from './WpConnectionDoctorButton'
 import ScoutTopbarButton from './ScoutTopbarButton'
 import { HelpDeskButton } from '@/components/HelpDeskSidebar'
 
@@ -905,6 +906,11 @@ export default function DashboardShellV2({
                     plugin update is available, so the user catches it from
                     wherever they are. Renders nothing when the site is current. */}
                 <WpUpdateTopbarButton />
+                {/* Fix connection — self-hides unless a recent publish was
+                    blocked by the user's WordPress site (firewall/deactivated
+                    plugin). Amber alert → Connection Doctor. Same
+                    only-when-actionable pattern as the update button above. */}
+                <WpConnectionDoctorButton />
                 {/* Visit Blog — opens the LIVE WordPress site in a new
                     tab. Paired with WP Admin so both topbar shortcuts
                     are right next to each other. The old sidebar
