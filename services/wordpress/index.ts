@@ -59,6 +59,31 @@ const SHARED_NONCE = new Map<string, { cookies: string; nonce: string; expiry: n
 const LOGIN_BREAKER = new Map<string, number>() // key → cooldown-until ms
 const LOGIN_COOLDOWN_MS = 15 * 60 * 1000
 
+/** An HTML body where a WordPress REST call should return JSON is always a
+ *  firewall/challenge page (Wordfence, Cloudflare "I'm Under Attack",
+ *  LiteSpeed/host interstitial) standing in front of WordPress — never a real
+ *  response. Parse defensively so any WP call converts that into the actionable
+ *  Connection-Doctor message instead of an opaque "Unexpected token '<'".
+ *  The message text is matched by lib/wp-connection-health — keep it in sync. */
+function wpBodyLooksHtml(s: string): boolean {
+  return s.trim().startsWith('<') || s.toLowerCase().includes('<html')
+}
+function wpFirewallError(): Error {
+  return new Error(
+    'Your WordPress firewall (Wordfence, SG Security, Cloudflare, or similar) is blocking MVP from publishing. ' +
+    'Run the Connection Doctor at /setup/wp-doctor — it identifies the exact plugin and gives click-by-click fix steps.',
+  )
+}
+async function parseWpJson<T>(res: Response): Promise<T> {
+  const text = await res.text()
+  try {
+    return JSON.parse(text) as T
+  } catch {
+    if (wpBodyLooksHtml(text)) throw wpFirewallError()
+    throw new Error(`WordPress returned a non-JSON response (${res.status}): ${text.slice(0, 200)}`)
+  }
+}
+
 export class WordPressService {
   private baseUrl: string
   private siteUrl: string
@@ -443,7 +468,7 @@ export class WordPressService {
       const text = await res.text()
       throw new Error(`WordPress ${res.status}: ${text.slice(0, 300)}`)
     }
-    return res.json()
+    return parseWpJson(res)
   }
 
   async getCustomEndpoint(fullPath: string): Promise<unknown> {
@@ -451,7 +476,7 @@ export class WordPressService {
       headers: { Authorization: this.authHeader },
     })
     if (!res.ok) return {}
-    return res.json()
+    return parseWpJson(res)
   }
 
   /**
@@ -565,7 +590,7 @@ export class WordPressService {
     const res = await fetch(url, { ...options, headers: { ...headers, ...(options.headers || {}) } })
     if (!res.ok) throw new Error(`WordPress request failed: ${res.status}`)
     const totalPages = parseInt(res.headers.get('X-WP-TotalPages') || '1', 10)
-    const data = await res.json() as T
+    const data = await parseWpJson<T>(res)
     return { data, totalPages }
   }
 
@@ -681,7 +706,7 @@ export class WordPressService {
       const body = await res.text()
       throw new Error(`WP media upload ${res.status}: ${body.slice(0, 300)}`)
     }
-    return res.json() as Promise<WPMediaResponse>
+    return parseWpJson<WPMediaResponse>(res)
   }
 
   async uploadImageFromBase64(b64: string, filename: string, mimeType = 'image/png'): Promise<WPMediaResponse> {
