@@ -219,13 +219,21 @@ export interface CompatDetection {
  *  populated CompatDetection regardless of outcome (never throws). */
 export async function detectWpCompat(siteUrl: string): Promise<CompatDetection> {
   const base = siteUrl.replace(/\/$/, '')
-  const url = `${base}/wp-json/`
+  // Cache-bust: the /wp-json/ index is aggressively cached by LiteSpeed/SG
+  // Optimizer/Cloudflare, which serve a STALE copy for minutes after a plugin
+  // is (re)activated — making a freshly-activated MVP plugin look "not
+  // installed" in the namespaces list (the exact false-negative that sent a
+  // user reinstalling a plugin that was already active). A unique query param
+  // forces a cache miss so we read the live index.
+  const url = `${base}/wp-json/?_mvp=${Date.now()}`
   try {
     const res = await fetch(url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
         'Accept': 'application/json',
+        'Cache-Control': 'no-cache',
       },
+      cache: 'no-store',
       signal: AbortSignal.timeout(10_000),
     })
     const contentType = res.headers.get('content-type') || ''

@@ -235,6 +235,20 @@ export async function GET(req: Request) {
     detail: proxyDetail,
   })
 
+  // A responding body-auth proxy is one of the PLUGIN'S OWN routes
+  // (/affiliateos/v1/*) — so proxyOk===true is authoritative proof the plugin
+  // is installed and active, and it's an uncacheable POST so it can't be faked
+  // by a stale edge cache. If it answered, trust it over the /wp-json/
+  // namespace list (which caches stale) and clear the false "not installed"
+  // red that otherwise tells the user to reinstall a working plugin.
+  if (proxyOk === true) {
+    const pluginTest = tests.find(t => t.id === 'mvp_plugin')
+    if (pluginTest && pluginTest.ok !== true) {
+      pluginTest.ok = true
+      pluginTest.detail = undefined
+    }
+  }
+
   // ── AI-readiness (ADVISORY — does NOT gate `healthy`): is /llms.txt served
   //     and does robots.txt carry the AI-crawler allowlist? (plugin v1.0.54+).
   //     A STATIC robots.txt file on disk silently bypasses the plugin's virtual

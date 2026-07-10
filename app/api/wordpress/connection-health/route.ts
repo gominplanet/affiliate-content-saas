@@ -44,28 +44,42 @@ export async function GET() {
 
   const since = new Date(Date.now() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString()
 
+  // Pull BOTH failed and completed recent jobs so we can compare timelines:
+  // a connection failure only matters if the user hasn't published SUCCESSFULLY
+  // since. Once a publish goes through, the connection is demonstrably healthy
+  // and the button must self-clear — not nag for the rest of the lookback.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
     .from('generation_jobs')
-    .select('error, updated_at')
+    .select('status, error, updated_at')
     .eq('owner_id', ownerId)
-    .eq('status', 'failed')
+    .eq('kind', 'blog')
+    .in('status', ['failed', 'done'])
     .gte('created_at', since)
     .order('updated_at', { ascending: false })
-    .limit(20)
+    .limit(40)
 
   // Never let a diagnostic-health probe throw an error into the topbar — if we
   // can't read, assume healthy (the button just stays hidden).
   if (error) return NextResponse.json({ needsAttention: false })
 
-  const rows = (data ?? []) as Array<{ error: string | null; updated_at: string }>
-  const hit = rows.find(r => {
-    const e = (r.error || '').toLowerCase()
-    return CONNECTION_ERROR_PATTERNS.some(p => e.includes(p.toLowerCase()))
-  })
+  const rows = (data ?? []) as Array<{ status: string; error: string | null; updated_at: string }>
+
+  const isConnErr = (e: string | null) =>
+    CONNECTION_ERROR_PATTERNS.some(p => (e || '').toLowerCase().includes(p.toLowerCase()))
+
+  // Rows are newest-first. The most recent connection failure and the most
+  // recent successful publish tell us the CURRENT state.
+  const lastConnFail = rows.find(r => r.status === 'failed' && isConnErr(r.error))
+  const lastSuccess = rows.find(r => r.status === 'done')
+
+  // Alert only if a connection failure is the more recent event — i.e. the user
+  // has NOT published successfully since it broke.
+  const needsAttention = !!lastConnFail
+    && (!lastSuccess || lastConnFail.updated_at > lastSuccess.updated_at)
 
   return NextResponse.json({
-    needsAttention: !!hit,
-    ...(hit ? { lastFailedAt: hit.updated_at } : {}),
+    needsAttention,
+    ...(needsAttention ? { lastFailedAt: lastConnFail.updated_at } : {}),
   })
 }
