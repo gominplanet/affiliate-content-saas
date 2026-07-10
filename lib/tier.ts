@@ -414,6 +414,13 @@ export function tierLabel(tier: Tier): string {
   return TIERS[normalizeTier(tier)].label
 }
 
+/** Can this tier still move up a plan? Drives the sidebar's "Upgrade" CTA.
+ *  Pro is the top purchasable plan, and admin is internal staff with no plan to
+ *  buy — neither should ever be shown an upgrade prompt. */
+export function canUpgradeTier(tier: Tier | string): boolean {
+  return tier === 'trial' || tier === 'creator' || tier === 'studio'
+}
+
 /** Newsletter subscriber cap for the given tier. null = unlimited (admin).
  *  Used by /api/newsletter/subscribe to reject new sign-ups past the cap
  *  with an upgrade nudge instead of silently dropping them.

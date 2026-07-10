@@ -30,6 +30,7 @@ import { createBrowserClient } from '@/lib/supabase/client'
 import { getViewAsTier, setViewAsTier } from '@/lib/view-as'
 import { tierBadge } from '@/lib/tier-badge'
 import UsageChip from '@/components/dashboard/UsageChip'
+import { canUpgradeTier } from '@/lib/tier'
 import type { Tier } from '@/lib/tier'
 import {
   Home, Youtube, Library, Mail, Palette, Brush, TrendingUp,
@@ -676,6 +677,26 @@ export default function DashboardShellV2({
                 <ChevronsLeft size={14} />
               </button>
             )}
+          </div>
+        )}
+
+        {/* Upgrade CTA, directly under the tier badge. Shown for every tier that
+            can still move up a plan (Trial, Creator, Studio) — never for Pro
+            (top plan) or admin (staff, nothing to buy). Follows the previewed
+            tier when an admin uses "View as tier". */}
+        {canUpgradeTier(badgeTier) && (
+          <div className={`${collapsed ? 'px-2' : 'px-4'} -mt-1 mb-2 flex justify-center`}>
+            <Link
+              href="/billing"
+              title="Upgrade your plan"
+              className={`inline-flex items-center justify-center gap-1 rounded-full font-semibold transition-opacity hover:opacity-80 ${
+                collapsed ? 'p-1.5' : 'px-2.5 py-1 text-[11px]'
+              }`}
+              style={{ color: '#7C3AED', background: 'rgba(124,58,237,0.10)' }}
+            >
+              <Sparkles size={collapsed ? 15 : 12} />
+              {!collapsed && 'Upgrade'}
+            </Link>
           </div>
         )}
 
