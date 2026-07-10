@@ -1048,7 +1048,23 @@ function NavItem({ item, active, collapsed }: { item: NavItemDef; active: boolea
       {/* Left indicator bar — only for active internal items. External
           tools never get the bar even on hover. */}
       {active && <span className="absolute -left-2 top-2 bottom-2 w-[3px] rounded-r-full" style={{ background: hl || '#7C3AED' }} />}
-      <span className="flex-shrink-0">{item.icon}</span>
+      <span className="relative flex-shrink-0">
+        {item.icon}
+        {/* Collapsed sidebar has no room for the count pill, so an unread count
+            shows as a red dot on the icon instead — otherwise a new brand
+            inquiry would be completely invisible to anyone who collapses the
+            nav. Numeric badges only: word badges ("Paused") aren't alerts. */}
+        {collapsed && typeof item.badge === 'number' && item.badge > 0 && (
+          <>
+            <span
+              className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full"
+              style={{ backgroundColor: '#ff3b30', boxShadow: '0 0 0 2px var(--bg-sidebar)' }}
+              aria-hidden="true"
+            />
+            <span className="sr-only">{item.badge} unread</span>
+          </>
+        )}
+      </span>
       {!collapsed && <span className="flex-1 truncate">{item.label}</span>}
       {/* External-link glyph — small tail icon hinting "opens off-site".
           Hidden when the sidebar is collapsed (the row icon is already
