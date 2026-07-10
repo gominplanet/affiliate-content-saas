@@ -83,7 +83,9 @@ interface IntegrationRow {
   threads_user_id?: string | null
   twitter_access_token?: string | null
   twitter_refresh_token?: string | null
-  twitter_token_expiry?: number | null
+  // X is the one platform whose expiry column is a timestamptz named
+  // twitter_expires_at. The others are `<platform>_token_expiry` epoch ms.
+  twitter_expires_at?: string | null
   linkedin_access_token?: string | null
   linkedin_person_id?: string | null
   bluesky_handle?: string | null
@@ -326,16 +328,21 @@ async function publishOne(
         if (!refreshToken) throw new Error('X needs reconnecting — no refresh token on file.')
         const refreshed = await refreshTwitterToken(refreshToken)
         refreshToken = refreshed.refresh_token ?? refreshToken
-        await admin.from('integrations').update(encryptIntegrationWrite({
+        const { error: saveErr } = await admin.from('integrations').update(encryptIntegrationWrite({
           twitter_access_token: refreshed.access_token,
           twitter_refresh_token: refreshToken,
-          twitter_token_expiry: Date.now() + refreshed.expires_in * 1000,
+          twitter_expires_at: new Date(Date.now() + refreshed.expires_in * 1000).toISOString(),
         })).eq('user_id', row.user_id)
+        // X rotates refresh tokens: the one we just spent is now dead on their
+        // side. If this write fails we've lost the replacement, so every later
+        // refresh 400s until the user reconnects — fail loudly rather than post
+        // once and break tomorrow.
+        if (saveErr) throw new Error(`X token saved failed — reconnect X: ${saveErr.message}`)
         return refreshed.access_token
       }
 
       // Proactive refresh when we KNOW it's expired.
-      const expiry = integration.twitter_token_expiry
+      const expiry = integration.twitter_expires_at ? new Date(integration.twitter_expires_at).getTime() : 0
       if (expiry && Date.now() > expiry - 60_000 && refreshToken) {
         try { accessToken = await doRefresh() }
         catch (e) { throw new Error(`X token refresh failed: ${e instanceof Error ? e.message : String(e)}`) }
