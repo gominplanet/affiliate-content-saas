@@ -21,9 +21,15 @@ import { getAuthAndOwner } from '@/lib/agency-auth'
 import { enqueueGenerationJob } from '@/lib/generation-jobs'
 import { checkUsageLimit, checkGenerationLimit, normalizeTier } from '@/lib/tier'
 import { spendGate } from '@/lib/ai-spend'
-import { getWpConnectionHealth } from '@/lib/wp-connection-health'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { createWordPressService } from '@/services/wordpress'
+import { alertOps } from '@/lib/ops-alert'
+
+// Operator-alert throttle for WP-block pre-flight failures: don't ping on every
+// click from the same stuck owner. Module-level (per warm instance) — same
+// good-enough approach the failure-spike alert in process-generation-jobs uses.
+const WP_BLOCK_ALERT_THROTTLE_MS = 6 * 60 * 60_000
+const lastWpBlockAlertAt = new Map<string, number>()
 
 export const dynamic = 'force-dynamic'
 
@@ -146,36 +152,43 @@ async function handleEnqueue(request: Request) {
   }
 
   // ── WordPress publish pre-flight ───────────────────────────────────────────
-  // Only for owners whose connection recently FAILED and hasn't recovered
-  // (the healthy majority skip this entirely — no probe, no latency). For them,
-  // verify we can still publish BEFORE queuing: a job that would only die at the
-  // publish step otherwise burns the (billed) AI work and 3 retries, then shows
-  // an opaque error. If the site still refuses a write, block at the door and
-  // point at the Connection Doctor instead.
+  // Verify we can actually publish BEFORE queuing: a job that would only die at
+  // the publish step otherwise burns the (billed) AI work and shows an opaque
+  // error. Runs on every generation (owner opted into always-on) — content-only
+  // / no-site owners skip it since there's nothing to publish to. If the site
+  // refuses a write, block at the door, point at the Connection Doctor, and
+  // alert the operator once per outage.
   {
-    const health = await getWpConnectionHealth(admin, ownerId)
-    if (health.needsAttention) {
-      const site = await getWordPressCredentials(supabase, ownerId, (body.siteId as string) || undefined)
-      // content-only / no WP site → nothing to publish to → skip the probe.
-      if (site && !site.content_only) {
-        const svc = createWordPressService(
-          site.wordpress_url,
-          site.wordpress_username,
-          site.wordpress_app_password,
-          site.wordpress_api_token || undefined,
-        )
-        const probe = await svc.verifyPublishReady()
-        if (!probe.ok) {
-          return NextResponse.json({
-            // request() already throws the friendly firewall→doctor message on a
-            // WAF/HTML block; surface it verbatim, else a generic actionable line.
-            error: probe.detail && /Connection Doctor/.test(probe.detail)
-              ? probe.detail
-              : "Your WordPress connection is currently blocked, so this post can't publish. Run the Connection Doctor to fix it, then try again — no generation was used.",
-            reason: 'wp_connection',
-            doctorUrl: '/setup/wp-doctor',
-          }, { status: 422 })
+    const site = await getWordPressCredentials(supabase, ownerId, (body.siteId as string) || undefined)
+    if (site && !site.content_only) {
+      const svc = createWordPressService(
+        site.wordpress_url,
+        site.wordpress_username,
+        site.wordpress_app_password,
+        site.wordpress_api_token || undefined,
+      )
+      const probe = await svc.verifyPublishReady()
+      if (!probe.ok) {
+        // Operator heads-up (throttled per owner) — hear about a stuck creator
+        // before they email. Best-effort; never blocks the user's response.
+        const now = Date.now()
+        const last = lastWpBlockAlertAt.get(ownerId) || 0
+        if (now - last > WP_BLOCK_ALERT_THROTTLE_MS) {
+          lastWpBlockAlertAt.set(ownerId, now)
+          alertOps(
+            `WordPress publish blocked — a creator can't publish`,
+            `Owner: ${ownerId}\nSite: ${site.wordpress_url}\nPre-flight write-test failed:\n${probe.detail || 'unknown'}`,
+          ).catch(() => { /* alerting is best-effort */ })
         }
+        return NextResponse.json({
+          // request() already throws the friendly firewall→doctor message on a
+          // WAF/HTML block; surface it verbatim, else a generic actionable line.
+          error: probe.detail && /Connection Doctor/.test(probe.detail)
+            ? probe.detail
+            : "Your WordPress connection is currently blocked, so this post can't publish. Run the Connection Doctor to fix it, then try again — no generation was used.",
+          reason: 'wp_connection',
+          doctorUrl: '/setup/wp-doctor',
+        }, { status: 422 })
       }
     }
   }

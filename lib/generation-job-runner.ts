@@ -15,6 +15,7 @@
 // the matching service-auth branch (a later increment); they throw until then.
 
 import type { GenerationJob } from '@/lib/generation-jobs'
+import { isWpConnectionError } from '@/lib/wp-connection-health'
 
 /** This deployment's own absolute base URL (the worker calls back into it). */
 function resolveSelfBaseUrl(): string {
@@ -126,7 +127,12 @@ async function runServiceRouteJob(
     // validation) — retrying replays the exact same refusal three times. Tag
     // them so the worker terminally fails the job on the first attempt; 5xx /
     // network errors keep the normal retry budget.
-    if (res.status >= 400 && res.status < 500) {
+    //
+    // A WordPress connection block (firewall/WAF, deactivated plugin, bad app
+    // password) is ALSO deterministic even though it surfaces as a 5xx — the
+    // site refuses every write until the user fixes it, so 3 retries just burn
+    // time. Tag it PERMANENT too so it fails fast with the doctor message.
+    if ((res.status >= 400 && res.status < 500) || isWpConnectionError(msg)) {
       throw new Error('PERMANENT: ' + msg)
     }
     throw new Error(msg)
