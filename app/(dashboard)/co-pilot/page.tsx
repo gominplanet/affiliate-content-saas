@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { toast } from 'sonner'
 import { createBrowserClient } from '@/lib/supabase/client'
 import PageHero from '@/components/layout/PageHero'
+import HeroVideo from '@/components/layout/HeroVideo'
 import { CapReachedBanner } from '@/components/CapReachedBanner'
 import { useConfirm } from '@/components/ui/useConfirm'
 import { pickWeightedStyleIndex, OVERLAY_STYLES, drawHeadline, type HeadlinePosition, type FaceBox } from '@/lib/thumbnail-overlay'
@@ -18,6 +19,9 @@ import {
   Copy, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, RefreshCw, Link2, Tag, Lock, Eye, Globe,
   Image, Download, Sparkles, Upload, X, Search, Calendar, Camera, Package, Plus,
 } from 'lucide-react'
+
+/** Walkthrough shown beside the page title. */
+const WALKTHROUGH_ID = 'nHrSHlrN9pI'
 
 interface DraftVideo {
   youtubeVideoId: string
@@ -3287,6 +3291,7 @@ export default function StudioPage() {
         <PageHero
           title="YouTube Co-Pilot"
           subtitle="Generate titles, descriptions, tags, hashtags and thumbnails for any video, then push it all back to YouTube in one click."
+          media={<HeroVideo videoId={WALKTHROUGH_ID} title="YouTube Co-Pilot walkthrough" />}
         />
         <div className="flex items-center justify-center py-20 text-[#86868b] dark:text-[#8e8e93] text-sm">
           <Loader2 size={16} className="animate-spin mr-2" /> Loading your videos…
@@ -3300,6 +3305,7 @@ export default function StudioPage() {
       <PageHero
         title="YouTube Co-Pilot"
         subtitle="Generate titles, descriptions, tags, hashtags and thumbnails for any video, then push it all back to YouTube in one click."
+        media={<HeroVideo videoId={WALKTHROUGH_ID} title="YouTube Co-Pilot walkthrough" />}
       />
 
       {/* Top planning row — TWO columns: the month calendar takes 2/3 (left),

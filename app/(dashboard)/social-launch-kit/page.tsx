@@ -11,8 +11,9 @@ import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
 import { Button } from '@/components/ui/button'
 import {
-  Rocket, Sparkles, Copy, Check, Download, ExternalLink, ListChecks, Image as ImageIcon, Lock, Upload, X, Play,
+  Rocket, Sparkles, Copy, Check, Download, ExternalLink, ListChecks, Image as ImageIcon, Lock, Upload, X,
 } from 'lucide-react'
+import HeroVideo from '@/components/layout/HeroVideo'
 import { LAUNCH_PLATFORM_LIST, type LaunchPlatform, type PlatformSpec, type SocialKit } from '@/lib/social-launch-kit'
 
 const EMOJI: Record<LaunchPlatform, string> = {
@@ -30,7 +31,6 @@ export default function SocialLaunchKitPage() {
   const [busyImg, setBusyImg] = useState<string | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
   const [locked, setLocked] = useState(false)   // set if the API 403s (non-Pro deep-link)
-  const [playing, setPlaying] = useState(false) // walkthrough video in the hero
   // Only admins may regenerate; everyone else gets one generation per slot.
   const [isAdmin, setIsAdmin] = useState(false)
   // Optional per-image inspiration the user uploads, keyed by `${platform}:${kind}`.
@@ -140,47 +140,7 @@ export default function SocialLaunchKitPage() {
       <PageHero
         title="Social Launch Kit"
         subtitle="No time to figure out Facebook, Pinterest, X, Threads, Bluesky or LinkedIn? Pick a platform and MVP hands you everything — name, bio, banner, avatar, and a step-by-step setup, ready to paste."
-        media={
-          // Click-to-play: the YouTube iframe is ~1MB and this page loads for
-          // every paid user, so we show the poster until someone wants it.
-          <div className="w-full">
-            {playing ? (
-              <div
-                className="relative rounded-xl overflow-hidden border"
-                style={{ borderColor: 'var(--border)', paddingBottom: '56.25%', height: 0 }}
-              >
-                <iframe
-                  src={`https://www.youtube.com/embed/${WALKTHROUGH_ID}?autoplay=1&rel=0&modestbranding=1&playsinline=1`}
-                  title="Social Launch Kit walkthrough"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
-                  style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 0 }}
-                />
-              </div>
-            ) : (
-              <button
-                onClick={() => setPlaying(true)}
-                className="relative w-full block group rounded-xl overflow-hidden border shadow-lg"
-                style={{ aspectRatio: '16/9', borderColor: 'var(--border)' }}
-                aria-label="Play the Social Launch Kit walkthrough"
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={`https://img.youtube.com/vi/${WALKTHROUGH_ID}/maxresdefault.jpg`}
-                  alt="Social Launch Kit walkthrough thumbnail"
-                  className="w-full h-full object-cover"
-                  // maxresdefault 404s on some uploads; hqdefault always exists.
-                  onError={e => { e.currentTarget.src = `https://img.youtube.com/vi/${WALKTHROUGH_ID}/hqdefault.jpg` }}
-                />
-                <div className="absolute inset-0 flex items-center justify-center bg-black/30 group-hover:bg-black/20 transition-colors">
-                  <div className="w-14 h-14 rounded-full bg-[#7C3AED] flex items-center justify-center shadow-xl group-hover:scale-110 transition-transform">
-                    <Play size={22} className="text-white ml-0.5" fill="white" />
-                  </div>
-                </div>
-              </button>
-            )}
-          </div>
-        }
+        media={<HeroVideo videoId={WALKTHROUGH_ID} title="Social Launch Kit walkthrough" />}
       />
 
       {locked && (
