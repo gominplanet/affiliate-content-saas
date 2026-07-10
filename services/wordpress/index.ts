@@ -629,22 +629,35 @@ export class WordPressService {
    *  On failure it returns the same friendly message request() already throws
    *  (firewall → Connection Doctor), so callers can surface it verbatim. */
   async verifyPublishReady(): Promise<{ ok: boolean; detail?: string }> {
-    const name = `mvp-preflight-${Date.now()}`
-    try {
-      const created = await this.request<WPTagResponse>('/tags', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, slug: name }),
-      })
-      // Best-effort cleanup — never let a failed delete flip the verdict; the
-      // tag carries a clear throwaway name if it lingers.
-      if (created?.id) {
-        await this.request(`/tags/${created.id}?force=true`, { method: 'DELETE' }).catch(() => {})
+    const attempt = async (): Promise<{ ok: boolean; detail?: string }> => {
+      const name = `mvp-preflight-${Date.now()}`
+      try {
+        const created = await this.request<WPTagResponse>('/tags', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, slug: name }),
+        })
+        // Best-effort cleanup — never let a failed delete flip the verdict; the
+        // tag carries a clear throwaway name if it lingers.
+        if (created?.id) {
+          await this.request(`/tags/${created.id}?force=true`, { method: 'DELETE' }).catch(() => {})
+        }
+        return { ok: true }
+      } catch (e) {
+        return { ok: false, detail: e instanceof Error ? e.message : String(e) }
       }
-      return { ok: true }
-    } catch (e) {
-      return { ok: false, detail: e instanceof Error ? e.message : String(e) }
     }
+
+    const first = await attempt()
+    if (first.ok) return first
+    // A firewall/plugin block is DETERMINISTIC — retrying just adds latency, so
+    // fail fast on the known-actionable errors. Only a transient-looking failure
+    // (network blip, timeout, a one-off 5xx) gets a single retry, so a momentary
+    // hiccup on a HEALTHY site doesn't wrongly block the generation.
+    const deterministic = /Connection Doctor|did not accept the connection|WordPress \d/i.test(first.detail || '')
+    if (deterministic) return first
+    await new Promise(r => setTimeout(r, 800))
+    return attempt()
   }
 
   // ── Media ─────────────────────────────────────────────────────────────────

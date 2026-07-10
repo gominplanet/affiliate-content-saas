@@ -23,6 +23,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { createClaudeService } from '@/services/claude'
 import { createWordPressService } from '@/services/wordpress'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
+import { preflightWpPublish } from '@/lib/wp-preflight'
 import { fetchWpProxySecret } from '@/lib/wp-proxy'
 import { maybeEncrypt } from '@/lib/secrets'
 import { rebuildCtaCard } from '@/lib/cta-thumb'
@@ -161,6 +162,11 @@ export async function POST(request: Request) {
       if (!usage.allowed) {
         return NextResponse.json({ error: usage.reason, limitReached: true, cap: 'generations', currentTier: usage.tier, upgrade: usage.upgrade }, { status: 429 })
       }
+      // WordPress publish pre-flight (sync path only — the worker self-call gets
+      // fail-fast instead). Verify the site accepts a write before the billed
+      // campaign generation runs; block with the Connection Doctor otherwise.
+      const block = await preflightWpPublish(supabase, user.id)
+      if (block) return NextResponse.json(block, { status: 422 })
     }
     // WordPress credentials MUST come from getWordPressCredentials — it reads
     // the canonical multi-site table AND transparently DECRYPTS app_password +

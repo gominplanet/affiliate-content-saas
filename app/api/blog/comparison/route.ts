@@ -27,6 +27,7 @@ import { recordUsage, usageFromAnthropic } from '@/lib/ai-usage'
 import { pingIndexNowForUrl } from '@/lib/seo-on-publish'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
+import { preflightWpPublish } from '@/lib/wp-preflight'
 import { listYouTubeChannels } from '@/lib/youtube-channels'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { spendGate } from '@/lib/ai-spend'
@@ -267,6 +268,14 @@ export async function POST(request: Request) {
         currentTier: gen.tier, upgrade: gen.upgrade,
       }, { status: 429 })
     }
+  }
+
+  // WordPress publish pre-flight — verify the site can accept a write before
+  // the (billed) comparison generation runs; block at the door with the
+  // Connection Doctor otherwise. Shared with blog + campaigns.
+  {
+    const block = await preflightWpPublish(supabase, ownerId, effSiteId)
+    if (block) return NextResponse.json(block, { status: 422 })
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
