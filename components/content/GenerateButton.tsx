@@ -87,6 +87,10 @@ export function GenerateButton({
   const [status, setStatus] = useState<GenStatus>(existingPost ? 'done' : 'idle')
   const [stepIdx, setStepIdx] = useState(0)
   const [error, setError] = useState<string | null>(null)
+  // Set when the pre-flight blocked because WordPress is refusing writes — the
+  // error offers "Run Connection Doctor" instead of a Retry that would just
+  // hit the same wall.
+  const [needsDoctor, setNeedsDoctor] = useState(false)
   const [result, setResult] = useState(existingPost || null)
   // In-line "Add images" action on already-published rows. Was previously
   // only available on the older-posts simple list; rich VideoCard rows
@@ -206,6 +210,7 @@ export function GenerateButton({
     setStatus('generating')
     setStepIdx(0)
     setError(null)
+    setNeedsDoctor(false)
     try {
       // Frame capture used to live here — the extension would open a YouTube
       // tab in the background to scrub HD frames. That tab-opening is what
@@ -304,6 +309,15 @@ export function GenerateButton({
             },
           )
           setStatus('idle')
+          return
+        }
+        // Pre-flight blocked the publish: WordPress is refusing writes. Offer the
+        // Connection Doctor instead of a Retry (which would replay the same
+        // wall). No generation was consumed.
+        if (data.reason === 'wp_connection') {
+          setNeedsDoctor(true)
+          setError(errText(data.error) || 'Your WordPress connection is blocked — run the Connection Doctor to fix it, then try again.')
+          setStatus('error')
           return
         }
         throw new Error(errText(data.error) || 'Generation failed')
@@ -516,7 +530,11 @@ export function GenerateButton({
     return (
       <div className="flex flex-col gap-1">
         <p className="text-xs text-[#ff3b30] line-clamp-3">{error}</p>
-        <button onClick={() => generate()} className="text-xs text-[#7C3AED] hover:underline text-left">Retry →</button>
+        {needsDoctor ? (
+          <a href="/setup/wp-doctor" className="text-xs text-[#7C3AED] hover:underline text-left font-semibold">Run Connection Doctor →</a>
+        ) : (
+          <button onClick={() => generate()} className="text-xs text-[#7C3AED] hover:underline text-left">Retry →</button>
+        )}
       </div>
     )
   }

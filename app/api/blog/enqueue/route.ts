@@ -21,6 +21,9 @@ import { getAuthAndOwner } from '@/lib/agency-auth'
 import { enqueueGenerationJob } from '@/lib/generation-jobs'
 import { checkUsageLimit, checkGenerationLimit, normalizeTier } from '@/lib/tier'
 import { spendGate } from '@/lib/ai-spend'
+import { getWpConnectionHealth } from '@/lib/wp-connection-health'
+import { getWordPressCredentials } from '@/lib/wordpress-sites'
+import { createWordPressService } from '@/services/wordpress'
 
 export const dynamic = 'force-dynamic'
 
@@ -140,6 +143,41 @@ async function handleEnqueue(request: Request) {
       .maybeSingle()
     const gate = await spendGate(ownerId, spendTierRow?.tier)
     if (gate) return gate
+  }
+
+  // ── WordPress publish pre-flight ───────────────────────────────────────────
+  // Only for owners whose connection recently FAILED and hasn't recovered
+  // (the healthy majority skip this entirely — no probe, no latency). For them,
+  // verify we can still publish BEFORE queuing: a job that would only die at the
+  // publish step otherwise burns the (billed) AI work and 3 retries, then shows
+  // an opaque error. If the site still refuses a write, block at the door and
+  // point at the Connection Doctor instead.
+  {
+    const health = await getWpConnectionHealth(admin, ownerId)
+    if (health.needsAttention) {
+      const site = await getWordPressCredentials(supabase, ownerId, (body.siteId as string) || undefined)
+      // content-only / no WP site → nothing to publish to → skip the probe.
+      if (site && !site.content_only) {
+        const svc = createWordPressService(
+          site.wordpress_url,
+          site.wordpress_username,
+          site.wordpress_app_password,
+          site.wordpress_api_token || undefined,
+        )
+        const probe = await svc.verifyPublishReady()
+        if (!probe.ok) {
+          return NextResponse.json({
+            // request() already throws the friendly firewall→doctor message on a
+            // WAF/HTML block; surface it verbatim, else a generic actionable line.
+            error: probe.detail && /Connection Doctor/.test(probe.detail)
+              ? probe.detail
+              : "Your WordPress connection is currently blocked, so this post can't publish. Run the Connection Doctor to fix it, then try again — no generation was used.",
+            reason: 'wp_connection',
+            doctorUrl: '/setup/wp-doctor',
+          }, { status: 422 })
+        }
+      }
+    }
   }
 
   const jobId = await enqueueGenerationJob(admin, {
