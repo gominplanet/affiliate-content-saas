@@ -378,23 +378,36 @@ export class WordPressService {
       }
     }
 
+    // WAF / CDN block detection: an HTML body where WordPress should return
+    // JSON means a firewall or challenge page (Wordfence, Sucuri, Cloudflare
+    // "I'm Under Attack", Hostinger/LiteSpeed interstitial) is standing in
+    // front of WordPress. Pasting raw HTML into the user's error is unhelpful;
+    // point them at the doctor, which names the exact plugin and gives fix steps.
+    const firewallError = () => new Error(
+      'Your WordPress firewall (Wordfence, SG Security, Cloudflare, or similar) is blocking MVP from publishing. ' +
+      'Run the Connection Doctor at /setup/wp-doctor — it identifies the exact plugin and gives click-by-click fix steps.',
+    )
+    const looksHtml = (s: string) => s.trim().startsWith('<') || s.toLowerCase().includes('<html')
+
     if (!res.ok) {
       const body = await res.text()
-      // WAF / CDN block detection: a 403 with an HTML body (instead of WP's
-      // usual JSON error) means a firewall in front of WordPress is blocking
-      // us — Wordfence, Sucuri, Cloudflare, Hostinger WAF, etc. Pasting the
-      // raw HTML into the user's error toast is unhelpful; point them at the
-      // doctor which names the exact plugin/firewall and gives fix steps.
-      const isHtml = body.trim().startsWith('<') || body.toLowerCase().includes('<html')
-      if (res.status === 403 && isHtml) {
-        throw new Error(
-          'Your WordPress firewall (Wordfence, SG Security, Cloudflare, or similar) is blocking MVP from publishing. ' +
-          'Run the Connection Doctor at /setup/wp-doctor — it identifies the exact plugin and gives click-by-click fix steps.',
-        )
-      }
+      if (res.status === 403 && looksHtml(body)) throw firewallError()
       throw new Error(`WordPress ${res.status}: ${body.slice(0, 300)}`)
     }
-    return res.json() as Promise<T>
+
+    // Success path: some hosts return 200 with an HTML challenge/interstitial
+    // page (Cloudflare JS challenge, cached maintenance page). res.ok is true,
+    // so the block above never fires — and a bare res.json() on that HTML threw
+    // the opaque "Unexpected token '<', "<html><hea"..." that surfaced to users
+    // as "Server may have crashed". A REST 200 is ALWAYS JSON, so any HTML here
+    // is a firewall artifact: parse defensively and reuse the doctor message.
+    const text = await res.text()
+    try {
+      return JSON.parse(text) as T
+    } catch {
+      if (looksHtml(text)) throw firewallError()
+      throw new Error(`WordPress returned a non-JSON ${res.status} response: ${text.slice(0, 200)}`)
+    }
   }
 
   // ── Custom endpoint (nonce fallback for non-/wp/v2 paths) ────────────────
