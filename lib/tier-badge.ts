@@ -5,8 +5,9 @@
 // in — so it REPLACES both the generic mark and the title text (rendered large
 // enough that its own wordmark reads).
 //
-// Creator, Studio, Pro and Admin each have a badge. Only Trial falls back to the
-// default purple "M" + "MVP Affiliate" title, since no badge art exists for it.
+// Every tier — Trial, Creator, Studio, Pro and Admin — has its own badge. The
+// shell still keeps a purple "M" + title fallback for any tier that somehow
+// resolves to nothing (e.g. a new tier added before its art exists).
 // For an admin using "View as tier", the shell resolves the previewed tier so
 // the badge swaps too (and shows the Admin badge when not previewing).
 //
@@ -23,13 +24,14 @@ export interface TierBadge {
 }
 
 export const TIER_BADGES: Partial<Record<Tier, TierBadge>> = {
+  trial: { src: '/tier-badges/trial.webp', label: 'Trial' },
   creator: { src: '/tier-badges/creator.webp', label: 'Creator' },
   studio: { src: '/tier-badges/studio.webp', label: 'Studio' },
   pro: { src: '/tier-badges/pro.webp', label: 'Pro' },
   admin: { src: '/tier-badges/admin.webp', label: 'Admin' },
 }
 
-/** The badge for a tier, or null when none exists (trial only). */
+/** The badge for a tier, or null if art is missing (shell falls back to the mark). */
 export function tierBadge(tier: Tier | string | null | undefined): TierBadge | null {
   if (!tier) return null
   return TIER_BADGES[tier as Tier] ?? null

@@ -321,10 +321,10 @@ export default function DashboardShellV2({
   const [viewAs, setViewAs] = useState<Tier>('admin')
   useEffect(() => { setViewAs(getViewAsTier() ?? 'admin') }, [])
 
-  // Sidebar brand badge. Creator/Studio/Pro/Admin each get their own square
-  // lockup (the art already contains the "MVP Affiliate" wordmark, so it
-  // replaces the mark AND title); only Trial falls back to the purple "M". An
-  // admin previewing another tier sees that tier's badge.
+  // Sidebar brand badge. Every tier has its own square lockup (the art already
+  // contains the "MVP Affiliate" wordmark, so it replaces the mark AND title).
+  // An admin previewing another tier sees that tier's badge. If art is ever
+  // missing for a tier, the shell falls back to the purple "M" + title.
   const badgeTier: Tier | string = isAdmin && viewAs !== 'admin' ? viewAs : tier
   const brandBadge = tierBadge(badgeTier)
 
@@ -634,10 +634,10 @@ export default function DashboardShellV2({
         className={`${collapsed ? 'w-[68px]' : 'w-[232px]'} flex-shrink-0 border-r flex flex-col transition-[width] duration-200 sticky top-0 h-screen`}
         style={{ backgroundColor: 'var(--bg-sidebar)', borderColor: 'var(--border)' }}
       >
-        {/* Brand + collapse toggle. Creator/Studio/Pro/Admin show their square
-            tier badge — the artwork already contains the "MVP Affiliate"
-            wordmark, so it stands in for BOTH the mark and the title. Trial
-            keeps the default purple "M" + title (no badge art for it). */}
+        {/* Brand + collapse toggle. Each tier shows its own square badge — the
+            artwork already contains the "MVP Affiliate" wordmark, so it stands
+            in for BOTH the mark and the title. The purple "M" + title branch is
+            a fallback for any tier whose art is missing. */}
         {brandBadge ? (
           <div className={`relative ${collapsed ? 'px-3 pt-4 pb-2' : 'px-4 pt-4 pb-3'}`}>
             <Link href="/dashboard" className="block" title={`MVP Affiliate ${brandBadge.label}`}>
