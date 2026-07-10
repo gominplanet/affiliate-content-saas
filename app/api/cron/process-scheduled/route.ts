@@ -37,6 +37,7 @@ import { pingIndexNowForUrl } from '@/lib/seo-on-publish'
 import { publishTikTokForTarget, type TikTokScheduleOptions } from '@/lib/tiktok-publish'
 import { publishInstagramForTarget, type IgMode } from '@/lib/instagram-publish'
 import { publishPinForPost } from '@/lib/pin-publish'
+import { buildPinAssets, composePinDescription } from '@/lib/pin-assets'
 
 // Vercel cron functions run with a generous timeout but we still want
 // to cap the per-tick work — if the batch is huge we'll catch the
@@ -500,21 +501,37 @@ async function publishOne(
     case 'pinterest': {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       if (!(integration as any).pinterest_access_token) throw new Error('Pinterest not connected')
-      // Pin the post's image (video thumbnail → og:image fallback) and link
-      // back to the blog. publishPinForPost resolves the board (category →
-      // fallback → "Reviews") and scrubs banned words. Same lib the live
-      // "Pin to Pinterest" button uses.
+      // Build the SAME vertical pin the manual "Pin to Pinterest" button makes —
+      // a composed 2:3 image + AI copy — instead of pinning the raw HORIZONTAL
+      // thumbnail. The scheduled/cascade path used to fall back to thumbnail_url,
+      // so scheduled pins came out landscape and off-brand while manual pins
+      // looked right (the exact mismatch a creator reported). buildPinAssets
+      // needs the full post row (content/excerpt/image fields), which the cron's
+      // lean select doesn't have — fetch it. Falls back to the thumbnail only if
+      // composition fails, so a pin still goes out.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let pinImage: string | null = (post as any).youtube_videos?.thumbnail_url ?? null
-      if (!pinImage) pinImage = (await fetchOgImage(url)) || null
-      if (!pinImage) throw new Error('No image available for the Pinterest pin')
+      const { data: fullPost } = await admin.from('blog_posts').select('*').eq('id', row.blog_post_id).maybeSingle()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let assets: Awaited<ReturnType<typeof buildPinAssets>> | null = null
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        assets = await buildPinAssets(fullPost ?? post, { userId: row.user_id, tier: (integration as any).tier ?? null })
+      } catch (e) {
+        console.warn('[cron/pinterest] buildPinAssets failed — falling back to thumbnail:', e instanceof Error ? e.message : String(e))
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let fallbackImage: string | null = assets?.fallbackImageUrl ?? (post as any).youtube_videos?.thumbnail_url ?? null
+      if (!assets?.imageBase64 && !fallbackImage) fallbackImage = (await fetchOgImage(url)) || null
+      if (!assets?.imageBase64 && !fallbackImage) throw new Error('No image available for the Pinterest pin')
       const { pinId } = await publishPinForPost({
         p: post,
         ig: integration,
         site: null,
-        title: post.title ?? '',
-        description: row.body_text || post.title || '',
-        fallbackImageUrl: pinImage,
+        title: assets?.title || post.title || '',
+        description: assets ? composePinDescription(assets) : (row.body_text || post.title || ''),
+        imageBase64: assets?.imageBase64 ?? undefined,
+        mediaType: assets?.mediaType ?? undefined,
+        fallbackImageUrl: fallbackImage ?? undefined,
       })
       await admin.from('blog_posts').update({ pinterest_pin_id: pinId }).eq('id', row.blog_post_id)
       await recordSocialPermalink(admin, row.blog_post_id, 'pinterest', socialPermalink.pinterest(pinId))
