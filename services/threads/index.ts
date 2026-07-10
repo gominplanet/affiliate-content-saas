@@ -1,7 +1,51 @@
 const BASE = 'https://graph.threads.net/v1.0'
 
+// A media container is not publishable the instant it's created — Meta has to
+// process it (for IMAGE posts, that means downloading the image_url). Publishing
+// an unfinished container fails with an opaque "The requested resource does not
+// exist", because the container node isn't resolvable yet. Meta puts processing
+// at ~30s on average, so we poll. The scheduled-post cron runs on a 60s budget
+// and publishes its batch concurrently, so a 35s ceiling costs nothing on the
+// common path (TEXT containers come back FINISHED on the first poll).
+const CONTAINER_TIMEOUT_MS = 35_000
+
 export class ThreadsService {
   constructor(private accessToken: string, private userId: string) {}
+
+  /** Block until Threads reports the container is FINISHED (ready to publish).
+   *  Throws with Meta's own reason on ERROR/EXPIRED, so a failed image download
+   *  is reported as a failed image download rather than a missing resource. */
+  private async waitForContainer(containerId: string): Promise<void> {
+    const deadline = Date.now() + CONTAINER_TIMEOUT_MS
+    let detail = 'no status returned'
+    let delay = 500
+
+    for (;;) {
+      const res = await fetch(
+        `${BASE}/${containerId}?fields=status,error_message&access_token=${encodeURIComponent(this.accessToken)}`,
+      )
+      if (res.ok) {
+        const d = await res.json().catch(() => ({})) as { status?: string; error_message?: string }
+        // PUBLISHED shouldn't happen pre-publish, but treat it as ready rather
+        // than spinning until the deadline.
+        if (d.status === 'FINISHED' || d.status === 'PUBLISHED') return
+        if (d.status === 'ERROR' || d.status === 'EXPIRED') {
+          throw new Error(`Threads container ${d.status}: ${d.error_message || 'no detail given'}`)
+        }
+        detail = d.status ?? detail
+      } else {
+        detail = `status check HTTP ${res.status}`
+      }
+
+      if (Date.now() + delay >= deadline) {
+        throw new Error(
+          `Threads container not ready after ${Math.round(CONTAINER_TIMEOUT_MS / 1000)}s (${detail})`,
+        )
+      }
+      await new Promise(r => setTimeout(r, delay))
+      delay = Math.min(delay * 2, 4_000)
+    }
+  }
 
   async createPost(text: string, imageUrl?: string): Promise<{ id: string; permalink?: string }> {
     const headers = {
@@ -29,7 +73,10 @@ export class ThreadsService {
     }
     const { id: creationId } = await containerRes.json() as { id: string }
 
-    // Step 2: publish the container
+    // Step 2: wait for Meta to finish processing it (see CONTAINER_TIMEOUT_MS).
+    await this.waitForContainer(creationId)
+
+    // Step 3: publish the container
     const publishRes = await fetch(`${BASE}/me/threads_publish`, {
       method: 'POST',
       headers,

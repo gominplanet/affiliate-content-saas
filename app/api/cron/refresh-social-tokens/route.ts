@@ -76,8 +76,14 @@ export async function GET(request: Request) {
           .update(encryptIntegrationWrite({ threads_access_token: r.accessToken }))
           .eq('user_id', row.user_id)
         tally.threads.refreshed++
-      } catch {
-        // <24h-old token or revoked — keep the current token; not fatal.
+      } catch (e) {
+        // <24h-old token is a benign no-op. A revoked one fails here every
+        // night forever, and nothing else notices until a post dies — so log
+        // it rather than swallowing it whole.
+        console.error('[cron/refresh-social-tokens] threads refresh failed', {
+          user_id: row.user_id,
+          error: e instanceof Error ? e.message : String(e),
+        })
         tally.threads.failed++
       }
     }
