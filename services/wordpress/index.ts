@@ -183,8 +183,13 @@ export class WordPressService {
       headers: { Cookie: cookies },
     })
     if (nonceRes.ok) {
-      const body = await nonceRes.json() as { nonce?: string }
-      nonce = body.nonce ?? ''
+      // Guard the parse: a host that serves a 200 HTML page for this route
+      // (cache/challenge) would otherwise throw "Unexpected token '<'" here.
+      // Non-JSON just leaves nonce empty → falls through to the admin scrape.
+      try {
+        const body = await nonceRes.json() as { nonce?: string }
+        nonce = body.nonce ?? ''
+      } catch { /* non-JSON — fall through to scraping wp-admin below */ }
     }
     if (!nonce) {
       const adminRes = await fetch(`${this.siteUrl}/wp-admin/index.php`, {
