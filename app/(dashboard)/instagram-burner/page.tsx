@@ -490,7 +490,7 @@ export default function InstagramBurnerPage() {
             {mode === 'batch' ? (
               <BatchBurner supabase={supabase} />
             ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_240px] gap-5 items-start">
             {/* Controls — one card per step so it reads as a short flow */}
             <div className="space-y-3">
               {/* 1. Source video — pick one of your own Shorts, or upload a file */}
@@ -659,23 +659,23 @@ export default function InstagramBurnerPage() {
                       {myStickers.length > 0 && (
                         <div className="mt-3">
                           <p className="text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">My boxes</p>
-                          <div className="grid grid-cols-2 gap-2">
+                          <div className="grid grid-cols-3 gap-1.5 max-h-[150px] overflow-y-auto pr-1">
                             {myStickers.map(s => (
                               <div key={s.url} className="relative">
                                 <button
                                   onClick={() => { setGenStickerUrl(s.url); setStickerId(null) }}
-                                  className={`w-full p-1.5 rounded-lg border transition-colors ${genStickerUrl === s.url ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-gray-300'}`}
+                                  title={s.tag || 'CTA box'}
+                                  className={`w-full p-1 rounded-lg border transition-colors ${genStickerUrl === s.url ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-gray-300'}`}
                                 >
                                   {/* eslint-disable-next-line @next/next/no-img-element */}
                                   <img src={s.url} alt={s.tag || 'CTA box'} className="w-full h-auto rounded bg-[#1d1d1f]/5" />
-                                  {s.tag && <span className="block text-[10px] text-center mt-1 truncate text-[#1d1d1f] dark:text-[#f5f5f7]">{s.tag}</span>}
                                 </button>
                                 <button
                                   onClick={() => void deleteSticker(s.id, s.url)}
                                   title="Delete this box"
-                                  className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/55 text-white flex items-center justify-center hover:bg-black/80"
+                                  className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-black/55 text-white flex items-center justify-center hover:bg-black/80"
                                 >
-                                  <Trash2 size={11} />
+                                  <Trash2 size={9} />
                                 </button>
                               </div>
                             ))}
@@ -907,14 +907,14 @@ export default function InstagramBurnerPage() {
               ) : (
                 <div className="card p-3">
                   <p className="text-[11px] font-semibold text-[#86868b] dark:text-[#8e8e93] mb-2 text-center uppercase tracking-wide">Live preview</p>
-                  <div className="relative mx-auto rounded-xl overflow-hidden bg-black" style={{ aspectRatio: '9 / 16', maxWidth: '250px' }}>
+                  <div className={`relative mx-auto rounded-xl overflow-hidden ${sourceUrl ? 'bg-black' : 'bg-gray-50 dark:bg-white/[0.03] border border-dashed border-gray-200 dark:border-white/10'}`} style={{ aspectRatio: '9 / 16', maxWidth: '210px' }}>
                     {sourceUrl ? (
                       // eslint-disable-next-line jsx-a11y/media-has-caption
                       <video src={`${sourceUrl}#t=0.1`} muted playsInline preload="metadata" className="absolute inset-0 w-full h-full object-cover" />
                     ) : (
                       <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-5">
-                        <Video size={28} className="text-white/40 mb-2" />
-                        <p className="text-[12px] text-white/55 leading-relaxed">Pick a video in step 1 and your call-to-action will preview here.</p>
+                        <Video size={24} className="text-[#c7c7cc] dark:text-white/25 mb-2" />
+                        <p className="text-[12px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed">Pick a video to preview it here.</p>
                       </div>
                     )}
 
