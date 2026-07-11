@@ -452,7 +452,7 @@ export default function InstagramBurnerPage() {
         subtitle="Turn a YouTube Short into an Instagram Reel or TikTok — burn on a CTA, set up an auto-DM link, and publish."
       />
 
-      <div className="max-w-4xl">
+      <div className="max-w-5xl">
         {loading ? (
           <div className="flex items-center gap-2 text-sm text-[#86868b] py-12 justify-center"><Loader2 size={14} className="animate-spin" /> Loading…</div>
         ) : (
@@ -490,9 +490,9 @@ export default function InstagramBurnerPage() {
             {mode === 'batch' ? (
               <BatchBurner supabase={supabase} />
             ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_240px] gap-5 items-start">
-            {/* Controls — one card per step so it reads as a short flow */}
-            <div className="space-y-3">
+          <div className="space-y-4">
+            {/* Steps 1–3 side by side, then the preview + Burn below */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
               {/* 1. Source video — pick one of your own Shorts, or upload a file */}
               <div className="card p-4">
                 <label className="block text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">1 · Your video <span className="font-normal text-[11px] text-[#86868b]">(vertical, under 300MB)</span></label>
@@ -718,6 +718,7 @@ export default function InstagramBurnerPage() {
                   ))}
                 </div>
               </div>
+            </div>
 
               {/* Optional link + auto-DM — collapsed by default so the core flow is video → CTA → publish */}
               {!showLink ? (
@@ -828,18 +829,8 @@ export default function InstagramBurnerPage() {
 
               {error && <p className="text-xs text-[#ff3b30] flex items-center gap-1.5"><AlertCircle size={12} /> {error}</p>}
 
-              <button
-                onClick={burn}
-                disabled={burning || uploading || !sourceUrl}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#7C3AED] hover:bg-[#6D28D9] disabled:opacity-50 transition-colors w-full justify-center"
-              >
-                {burning ? <><Loader2 size={14} className="animate-spin" /> Burning… (~20–40s)</> : <><Flame size={14} /> Burn caption</>}
-              </button>
-              <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] text-center">The caption is rendered into the video itself, so it shows on-screen anywhere you post it.</p>
-            </div>
-
-            {/* Result / live preview */}
-            <div className="lg:sticky lg:top-4 lg:self-start">
+            {/* Live preview / result — centered, below the steps */}
+            <div className="max-w-[260px] mx-auto">
               {resultUrl ? (
                 <div className="card p-3 space-y-3">
                   {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
@@ -944,6 +935,15 @@ export default function InstagramBurnerPage() {
                 </div>
               )}
             </div>
+
+              <button
+                onClick={burn}
+                disabled={burning || uploading || !sourceUrl}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#7C3AED] hover:bg-[#6D28D9] disabled:opacity-50 transition-colors w-full justify-center"
+              >
+                {burning ? <><Loader2 size={14} className="animate-spin" /> Burning… (~20–40s)</> : <><Flame size={14} /> Burn caption</>}
+              </button>
+              <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] text-center">The caption is rendered into the video itself, so it shows on-screen anywhere you post it.</p>
           </div>
             )}
           </>
