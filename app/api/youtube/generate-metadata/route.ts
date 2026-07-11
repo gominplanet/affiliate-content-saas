@@ -8,6 +8,7 @@ import { createGeniuslinkService } from '@/services/geniuslink'
 import { resolveGeniuslinkYouTubeGroupId, appendAmazonSubtag, YOUTUBE_COPILOT_GROUP_NAME } from '@/lib/geniuslink-group'
 import Anthropic from '@anthropic-ai/sdk'
 import { createAnthropicClient } from '@/lib/anthropic'
+import { YoutubeTranscript } from 'youtube-transcript'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { TIERS, nextTierFor, normalizeTier, type Tier } from '@/lib/tier'
 import { spendGate } from '@/lib/ai-spend'
@@ -182,6 +183,45 @@ function parseJSON<T>(raw: string, fallback: T): T {
   try { return JSON.parse(match[0]) as T } catch { return fallback }
 }
 
+// ── Transcript → video brief ──────────────────────────────────────────────────
+// The single biggest reason Co-Pilot titles felt "unrelated to the video" is
+// that the title agents never saw what the video actually SAYS — only the
+// (often placeholder) original title + an optional Amazon listing. This distils
+// the transcript into a tight, factual brief the downstream agents treat as
+// ground truth. Haiku + a capped input keep it cheap; returns '' when there's no
+// usable transcript so callers cleanly fall back to the title/description path.
+async function distillVideoBrief(
+  anthropic: Anthropic,
+  transcript: string,
+  videoTitle: string,
+  niches: string,
+): Promise<string> {
+  const clip = (transcript || '').replace(/\s+/g, ' ').trim().slice(0, 9000)
+  if (clip.length < 120) return ''
+  try {
+    const raw = await runAgent(anthropic, {
+      model: 'claude-haiku-4-5-20251001',
+      maxTokens: 450,
+      feature: 'yt_meta_video_brief',
+      system: 'You distil a YouTube video transcript into a tight, factual brief that a title writer will trust as ground truth. Use ONLY what is actually said — never invent, never generalise beyond the transcript. Auto-captions are messy and unpunctuated; infer the real subject anyway. Return plain text only, no preamble.',
+      user: `Produce a brief from this transcript. Use EXACTLY this format:
+SUBJECT: <one line — what the video is really about: the actual product, topic, or story>
+MOMENTS:
+- <4 to 6 concrete, specific things that actually happen or are said: real numbers, results, reactions, before/after, surprises, complaints, demos — each tight and grounded in the transcript>
+VERDICT: <the creator's actual takeaway or conclusion in one line, or "none stated">
+
+Niche: ${niches}
+Original title (may be a placeholder/filename — do NOT trust it over the transcript): "${videoTitle}"
+
+TRANSCRIPT:
+${clip}`,
+    })
+    return raw.trim()
+  } catch {
+    return ''
+  }
+}
+
 // ── AGENT 1: Product / Video Analyst ──────────────────────────────────────────
 // In product mode this analyses an Amazon product for a review video.
 // In general mode (no ASIN) this analyses the video's topic and intent
@@ -275,6 +315,7 @@ TONE: ${tone}
 ${seoRule}
 
 CORE PRINCIPLES (do not violate):
+0. RELEVANCE IS NON-NEGOTIABLE — THIS IS THE #1 FAILURE MODE. The ${isProduct ? 'PRODUCT' : 'VIDEO CONTEXT'} above may include a "WHAT ACTUALLY HAPPENS IN THIS VIDEO" section pulled from the transcript. If it's there, it is the GROUND TRUTH — every title MUST be about that exact subject and reflect a real moment from it. A title that is generic, that names a topic/product NOT in that section, or that could describe any random video, is an automatic REJECT. If the ORIGINAL TITLE disagrees with the transcript section (it may be a placeholder, a filename, or just vague), TRUST THE TRANSCRIPT, not the original title. If there is no transcript section, ground the titles in the product/video context and original title instead — but never invent a topic that isn't supported by what you were given.
 1. EACH title must be GROUNDED in a SPECIFIC benefit, pain point, or moment from the analysis above. Quote a real number, a real result, a real before/after — never generic filler.
 2. EACH of the 5 alternatives must use a STRUCTURALLY DIFFERENT opening. If alt #1 starts with "I Tested…", #2 cannot start with "I Tried…" or "I Tested…". If #1 is a question, #2 must be a statement. The 5 titles together should read as 5 distinct creators wrote them.
 3. NO TEMPLATED HOOKS. The following openings are BANNED across all 5 outputs because they've been overused: "Worth It?", "Before You Buy", "Don't Buy Until", "Real Talk", "Watch This First", "Is It Worth It?", "I Tested … for 30 Days", "The Truth About…", "What Nobody Tells You", "Here's What Happened When".
@@ -439,10 +480,14 @@ export async function POST(request: Request) {
     if (auth.error) return auth.error
     const { user, ownerId } = auth
 
-    const { asin, videoTitle, videoDescription, youtubeVideoId, skipAsinCheck = false, productOverride = null } = await request.json() as {
+    const { asin, videoTitle, videoDescription, youtubeVideoId, skipAsinCheck = false, productOverride = null, transcript: bodyTranscript = null } = await request.json() as {
       asin?: string | null
       videoTitle: string
       videoDescription?: string
+      /** Optional transcript the client already has (e.g. SCOUT fetched it from
+       *  the browser IP for a draft the server can't reach). Trusted as the
+       *  video's ground truth for title/description grounding when present. */
+      transcript?: string | null
       /** YouTube native ID (e.g. dQw4w9WgXcQ). Used to persist
        *  generated metadata back to youtube_videos for the voice-
        *  anchor loop. Optional — generation still works without it. */
@@ -496,7 +541,7 @@ export async function POST(request: Request) {
       youtubeVideoId
         ? (supabase as any)
             .from('youtube_videos')
-            .select('id,product_url')
+            .select('id,product_url,transcript')
             .eq('user_id', ownerId)
             .eq('youtube_video_id', youtubeVideoId)
             .maybeSingle()
@@ -780,8 +825,39 @@ export async function POST(request: Request) {
 
     // Build subject context for the agent swarm. In product mode this is
     // the Amazon scrape; in general mode it's the video's own metadata.
+    // ── Ground the metadata in what the video ACTUALLY says ───────────────────
+    // Resolve the transcript — the real "what is this video about" signal the
+    // title agents were missing. Priority: client-supplied (SCOUT can grab it
+    // from the browser IP for a draft the server can't reach) → cached on the
+    // row → best-effort scraper (free, no API-quota cost; often IP-blocked on
+    // servers, so a bonus not a guarantee). Whatever we get is cached back so
+    // re-runs + the thumbnail path reuse it.
+    const anthropic = createAnthropicClient()
+    let videoTranscript = (bodyTranscript || '').trim()
+    if (!videoTranscript) {
+      videoTranscript = (((videoRowResult?.data as { transcript?: string | null } | null)?.transcript) || '').trim()
+    }
+    if (!videoTranscript && youtubeVideoId) {
+      try {
+        const segs = await YoutubeTranscript.fetchTranscript(youtubeVideoId, { lang: 'en' })
+        const t = segs.map((s: { text: string }) => s.text).join(' ').trim()
+        if (t.length >= 40) {
+          videoTranscript = t
+          try {
+            await (supabase as any).from('youtube_videos')
+              .update({ transcript: t }).eq('user_id', ownerId).eq('youtube_video_id', youtubeVideoId)
+          } catch { /* cache-back is best-effort */ }
+        }
+      } catch { /* scraper blocked / no captions — degrade to title+description */ }
+    }
+    const videoBrief = await distillVideoBrief(anthropic, videoTranscript, videoTitle, niches)
+    const briefBlock = videoBrief
+      ? `WHAT ACTUALLY HAPPENS IN THIS VIDEO — from its transcript. Treat this as GROUND TRUTH: the title and description MUST reflect THIS. If the original title disagrees with it (e.g. it's a placeholder or filename), trust the transcript.\n${videoBrief}`
+      : ''
+
     const productContext = isProduct
       ? [
+          briefBlock,
           product.title ? `Product: ${product.title}` : '',
           product.price ? `Price: ${product.price}` : '',
           product.rating ? `Rating: ${product.rating}/5` : '',
@@ -790,6 +866,7 @@ export async function POST(request: Request) {
           videoDescription ? `Video context: "${videoDescription.slice(0, 200)}"` : '',
         ].filter(Boolean).join('\n')
       : [
+          briefBlock,
           `(General video — no Amazon product attached. Build metadata around the video's topic.)`,
           `Video title: ${videoTitle}`,
           videoDescription ? `Video description / notes: "${videoDescription.slice(0, 800)}"` : '',
@@ -818,7 +895,7 @@ export async function POST(request: Request) {
     const priorPinnedComments = priorRows.map(r => r.generated_pinned_comment || '').filter(Boolean)
 
     // ── SWARM PHASE 1: Product Analyst + SEO Researcher run in parallel ────────
-    const anthropic = createAnthropicClient()
+    // (anthropic client created above, before the transcript brief)
 
     // Extract a clean "brand + product name" from the Amazon title for SEO
     // anchoring in the title strategist. Amazon titles look like:
