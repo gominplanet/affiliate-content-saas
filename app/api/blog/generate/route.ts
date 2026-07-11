@@ -625,6 +625,16 @@ async function handleGenerate(request: Request) {
       : (linkVideoId || rawTitle)
     const destinationWithSubtag = appendAmazonSubtag(destination, linkVideoId)
 
+    // The non-Geniuslink fallback link. CRITICAL: when we have an Amazon ASIN
+    // AND the user's Associates tag, this applies the tag so the link still
+    // EARNS. Used whenever Geniuslink is absent, throws (e.g. a 401 on rejected
+    // API keys), or produces a wrong-destination link — previously the catch
+    // path dropped to an UNTAGGED /dp link, so a user with valid keys that were
+    // failing got product links that earned nothing. (2026-07-11)
+    const tagFallback = (asinOverride && wp?.amazon_associates_tag)
+      ? appendAmazonSubtag(`https://www.amazon.com/dp/${asinOverride}?tag=${wp.amazon_associates_tag}`, linkVideoId)
+      : destinationWithSubtag
+
     if (alreadyGeniuslink) {
       affiliateUrlOverride = destination
     } else if (wp?.geniuslink_api_key && wp?.geniuslink_api_secret) {
@@ -666,18 +676,16 @@ async function handleGenerate(request: Request) {
         if (pointsToIntendedProduct(destination, trueDest, !!asinOverride)) {
           affiliateUrlOverride = wrapped
         } else {
-          console.warn(`[blog/generate] Geniuslink ${wrapped} resolved to "${trueDest}", not the intended product "${destination}" — falling back to the raw product URL.`)
-          affiliateUrlOverride = (asinOverride && wp?.amazon_associates_tag)
-            ? appendAmazonSubtag(`https://www.amazon.com/dp/${asinOverride}?tag=${wp.amazon_associates_tag}`, linkVideoId)
-            : destinationWithSubtag
+          console.warn(`[blog/generate] Geniuslink ${wrapped} resolved to "${trueDest}", not the intended product "${destination}" — falling back to the tagged product URL.`)
+          affiliateUrlOverride = tagFallback
         }
       } catch {
-        affiliateUrlOverride = destinationWithSubtag
+        // Geniuslink threw (e.g. rejected/401 API keys). Fall back to the
+        // TAGGED product link so the user's Associates commission still applies.
+        affiliateUrlOverride = tagFallback
       }
-    } else if (asinOverride && wp?.amazon_associates_tag) {
-      affiliateUrlOverride = appendAmazonSubtag(`https://www.amazon.com/dp/${asinOverride}?tag=${wp.amazon_associates_tag}`, linkVideoId)
     } else {
-      affiliateUrlOverride = destinationWithSubtag
+      affiliateUrlOverride = tagFallback
     }
   }
 
