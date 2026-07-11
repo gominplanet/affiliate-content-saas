@@ -103,8 +103,14 @@ export async function processCommentEvent(ev: IgCommentEvent): Promise<string> {
     .maybeSingle()
   const userId = integ?.user_id as string | undefined
   if (!userId) {
-    // Log the unresolved id so a first-test miss is diagnosable in Vercel logs.
+    // Diagnostic: log a trace row (user_id null, mig 171) so a "webhook fired but
+    // couldn't match the account" miss is visible in the DB — vs. no row at all,
+    // which means the webhook never fired (Meta subscription issue).
     console.warn('[ig-dm] no user for IG account', acct)
+    await sb.from('ig_dm_sends').insert({
+      comment_id: ev.commentId, media_id: ev.mediaId, commenter_id: ev.commenterId,
+      status: 'skipped', error: `no-user for account ${acct}`,
+    }).then(() => {}, () => {})
     return 'skip:no-user'
   }
 
