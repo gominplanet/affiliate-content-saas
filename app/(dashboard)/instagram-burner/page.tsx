@@ -1198,12 +1198,12 @@ function BatchBurner({ supabase }: { supabase: ReturnType<typeof createBrowserCl
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      {/* Controls */}
-      <div className="card p-5 space-y-4">
-        <div>
-          <div className="flex items-center justify-between mb-1.5">
-            <label className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">1. Videos <span className="font-normal text-[#86868b]">({items.filter(it => it.url).length}/5)</span></label>
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+      {/* Controls — one card per step */}
+      <div className="space-y-3">
+        <div className="card p-4">
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">1 · Videos <span className="font-normal text-[11px] text-[#86868b]">({items.filter(it => it.url).length}/5)</span></label>
             {bSource === 'upload' && <button onClick={addItem} disabled={items.length >= 5} className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#7C3AED] hover:underline disabled:opacity-40"><Plus size={11} /> Add video</button>}
           </div>
 
@@ -1271,8 +1271,8 @@ function BatchBurner({ supabase }: { supabase: ReturnType<typeof createBrowserCl
         </div>
 
         {/* Overlay (all videos) — CTA box or caption text, same as single video */}
-        <div>
-          <label className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">2. Overlay (all videos)</label>
+        <div className="card p-4">
+          <label className="block text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">2 · Overlay (all videos)</label>
           <div className="grid grid-cols-2 gap-2 mb-2">
             <button onClick={() => setBOverlay('sticker')} className={`text-center px-3 py-2 rounded-lg border text-[13px] font-medium transition-colors ${bOverlay === 'sticker' ? 'border-[#7C3AED] bg-[#7C3AED]/5 text-[#7C3AED]' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:border-gray-300'}`}>CTA box</button>
             <button onClick={() => setBOverlay('text')} className={`text-center px-3 py-2 rounded-lg border text-[13px] font-medium transition-colors ${bOverlay === 'text' ? 'border-[#7C3AED] bg-[#7C3AED]/5 text-[#7C3AED]' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:border-gray-300'}`}>Caption text</button>
@@ -1315,8 +1315,8 @@ function BatchBurner({ supabase }: { supabase: ReturnType<typeof createBrowserCl
         </div>
 
         {/* Shared style */}
-        <div>
-          <label className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">3. Style (all videos)</label>
+        <div className="card p-4">
+          <label className="block text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">3 · Style (all videos)</label>
           <div className="grid grid-cols-2 gap-2">
             {STYLES.map(s => (
               <button key={s.key} onClick={() => setBStyle(s.key)} className={`text-left p-2 rounded-lg border transition-colors ${bStyle === s.key ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-gray-300'}`}>
@@ -1327,8 +1327,8 @@ function BatchBurner({ supabase }: { supabase: ReturnType<typeof createBrowserCl
         </div>
 
         {/* Shared position */}
-        <div>
-          <label className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">4. Position (all videos)</label>
+        <div className="card p-4">
+          <label className="block text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">4 · Position (all videos)</label>
           <div className="grid grid-cols-2 gap-2">
             {POSITIONS.map(p => (
               <button key={p.key} onClick={() => setBPos(p.key)} className={`text-left p-2.5 rounded-lg border transition-colors ${bPos === p.key ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-gray-300'}`}>
@@ -1339,8 +1339,8 @@ function BatchBurner({ supabase }: { supabase: ReturnType<typeof createBrowserCl
         </div>
 
         {/* Schedule */}
-        <div>
-          <label className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">5. Schedule</label>
+        <div className="card p-4">
+          <label className="block text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">5 · Schedule</label>
           <div className="flex flex-col gap-2">
             <div>
               <span className="block text-[11px] text-[#86868b] mb-1">First post at</span>
@@ -1371,7 +1371,7 @@ function BatchBurner({ supabase }: { supabase: ReturnType<typeof createBrowserCl
       </div>
 
       {/* Queue */}
-      <div className="card p-5">
+      <div className="card p-5 lg:sticky lg:top-4 lg:self-start">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Queue</h3>
           <button onClick={loadJobs} className="text-[11px] text-[#7C3AED] hover:underline">Refresh</button>
