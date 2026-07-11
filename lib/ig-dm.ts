@@ -90,14 +90,23 @@ export async function processCommentEvent(ev: IgCommentEvent): Promise<string> {
   // Ignore the account's own comments/replies.
   if (ev.commenterId && ev.commenterId === ev.igAccountId) return 'skip:self'
 
-  // 1. Which user owns this IG account?
+  // 1. Which user owns this IG account? Match on EITHER the app-scoped user id
+  //    (from OAuth) or the Business Account id — the webhook's entry.id can be
+  //    either, and they differ for the same account (see migration 170). Guard
+  //    the .or() interpolation to digits only (the id is always numeric).
+  const acct = String(ev.igAccountId).replace(/[^0-9]/g, '')
+  if (!acct) return 'skip:bad-account-id'
   const { data: integ } = await sb
     .from('integrations')
     .select('user_id')
-    .eq('instagram_user_id', ev.igAccountId)
+    .or(`instagram_user_id.eq.${acct},instagram_business_id.eq.${acct}`)
     .maybeSingle()
   const userId = integ?.user_id as string | undefined
-  if (!userId) return 'skip:no-user'
+  if (!userId) {
+    // Log the unresolved id so a first-test miss is diagnosable in Vercel logs.
+    console.warn('[ig-dm] no user for IG account', acct)
+    return 'skip:no-user'
+  }
 
   // 2. Automation settings — must be enabled.
   const { data: settings } = await sb

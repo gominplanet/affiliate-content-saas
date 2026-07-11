@@ -86,7 +86,12 @@ export async function POST(req: Request) {
   try {
     const events = extractCommentEvents(body)
     for (const ev of events) {
-      try { await processCommentEvent(ev) } catch { /* logged in ig_dm_sends; never fail the webhook */ }
+      try {
+        const outcome = await processCommentEvent(ev)
+        console.log('[ig-webhook] comment', { media: ev.mediaId, account: ev.igAccountId, outcome })
+      } catch (e) {
+        console.error('[ig-webhook] processing error', e instanceof Error ? e.message : String(e))
+      }
     }
   } catch { /* malformed payload — ack anyway */ }
 
