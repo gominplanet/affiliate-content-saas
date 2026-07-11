@@ -64,6 +64,20 @@ const COLORS = [
   '#1d1d1f', '#374151', '#6b7280', '#d1d5db',
 ]
 
+/** Flag a value that clearly isn't a Geniuslink API key/secret — those are
+ *  long hex tokens (the form placeholder is `e353413c5f52…`). Catches the
+ *  common mistake of pasting an email, a URL, or a store name into these
+ *  fields (the real-world cause of a silent 401). Lenient on purpose: the
+ *  live "Test connection" call is the authoritative gate; this is just an
+ *  instant inline nudge so the mistake is caught at entry, not weeks later. */
+function geniuslinkCredLooksWrong(v: string): boolean {
+  const t = (v || '').trim()
+  if (!t) return false
+  if (/[@\s]|:\/\//.test(t)) return true       // an email, URL, or whitespace
+  if (!/^[a-f0-9-]{12,}$/i.test(t)) return true // not a hex-ish token, or too short
+  return false
+}
+
 function ColorPicker({
   label,
   value,
@@ -332,6 +346,53 @@ export default function BrandPage() {
       setGeniusSetupBusy(false)
     }
   }
+
+  // ── Live Geniuslink credential test ─────────────────────────────────────
+  // Runs the real list-groups call so "Connected" means the keys actually
+  // WORK — not just that both fields are non-empty (the old false positive
+  // that let wrong values, e.g. an email, sit there silently 401ing).
+  type GlTest = { status: 'idle' | 'testing' | 'ok' | 'fail'; message?: string; groupCount?: number }
+  const [glTest, setGlTest] = useState<GlTest>({ status: 'idle' })
+  // Test the values currently in the form (pass them in the body so the user
+  // gets ✓/✗ BEFORE saving).
+  const testGeniuslink = useCallback(async () => {
+    const key = geniuslinkKey.trim(); const secret = geniuslinkSecret.trim()
+    if (!key || !secret) { setGlTest({ status: 'idle' }); return }
+    setGlTest({ status: 'testing' })
+    try {
+      const res = await fetch('/api/geniuslink/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey: key, apiSecret: secret }),
+      })
+      const json = await res.json() as { ok: boolean; groupCount?: number; error?: string }
+      setGlTest(json.ok
+        ? { status: 'ok', groupCount: json.groupCount }
+        : { status: 'fail', message: json.error || 'Geniuslink rejected these credentials.' })
+    } catch {
+      setGlTest({ status: 'fail', message: 'Could not reach Geniuslink. Try again in a moment.' })
+    }
+  }, [geniuslinkKey, geniuslinkSecret])
+
+  // On load, verify whatever is SAVED against the live API (no body → tests the
+  // saved row) so the badge reflects reality the moment the page opens.
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch('/api/geniuslink/test', { method: 'POST' })
+        const json = await res.json() as { ok: boolean; groupCount?: number; error?: string }
+        if (cancelled) return
+        if (json.ok) setGlTest({ status: 'ok', groupCount: json.groupCount })
+        // Ignore the "enter your key first" blank-state message — that's just
+        // "not configured yet", not a failure worth flagging red.
+        else if (json.error && !/enter your geniuslink/i.test(json.error)) {
+          setGlTest({ status: 'fail', message: json.error })
+        }
+      } catch { /* silent on mount */ }
+    })()
+    return () => { cancelled = true }
+  }, [])
   // User's tier — drives the dropdown options for "Images per article"
   // (Trial 0-2, Creator/Studio 0-3, Pro/Admin 0-4). Loaded alongside
   // the Geniuslink + Amazon-tag fields from `integrations` below. 2026-06-07.
@@ -838,10 +899,25 @@ export default function BrandPage() {
                   <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Geniuslink</p>
                   <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Geo-targeted short links from any ASIN</p>
                 </div>
+                {/* Badge reflects the LIVE test, not just "fields non-empty". */}
                 {geniuslinkKey && geniuslinkSecret && (
-                  <span className="flex items-center gap-1 text-[11px] font-medium text-[#34c759] flex-shrink-0">
-                    <Check size={12} /> Connected
-                  </span>
+                  glTest.status === 'ok' ? (
+                    <span className="flex items-center gap-1 text-[11px] font-medium text-[#34c759] flex-shrink-0">
+                      <Check size={12} /> Connected
+                    </span>
+                  ) : glTest.status === 'fail' ? (
+                    <span className="flex items-center gap-1 text-[11px] font-medium text-[#ff3b30] flex-shrink-0">
+                      <X size={12} /> Rejected
+                    </span>
+                  ) : glTest.status === 'testing' ? (
+                    <span className="flex items-center gap-1 text-[11px] font-medium text-[#86868b] flex-shrink-0">
+                      <Loader2 size={12} className="animate-spin" /> Testing…
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1 text-[11px] font-medium text-[#ff9500] flex-shrink-0">
+                      Not verified
+                    </span>
+                  )
                 )}
               </div>
               <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mb-3 leading-relaxed">
@@ -855,10 +931,13 @@ export default function BrandPage() {
                     name="geniuslink-key"
                     type="text"
                     value={geniuslinkKey}
-                    onChange={e => setGeniuslinkKey(e.target.value)}
+                    onChange={e => { setGeniuslinkKey(e.target.value); setGlTest({ status: 'idle' }) }}
                     placeholder="e.g. e353413c5f52..."
                     className="input-field text-xs font-mono"
                   />
+                  {geniuslinkCredLooksWrong(geniuslinkKey) && glTest.status !== 'ok' && (
+                    <p className="mt-1 text-[10px] text-[#ff9500]">That doesn&apos;t look like a Geniuslink API key — it should be a long hex string like <code>e353413c5f52…</code>, not an email or store name.</p>
+                  )}
                 </div>
                 <div>
                   <label htmlFor="brand-geniuslink-secret" className="block text-[11px] font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">API Secret</label>
@@ -867,12 +946,41 @@ export default function BrandPage() {
                     name="geniuslink-secret"
                     type="password"
                     value={geniuslinkSecret}
-                    onChange={e => setGeniuslinkSecret(e.target.value)}
+                    onChange={e => { setGeniuslinkSecret(e.target.value); setGlTest({ status: 'idle' }) }}
                     placeholder="Your Geniuslink API secret"
                     className="input-field text-xs font-mono"
                   />
+                  {geniuslinkCredLooksWrong(geniuslinkSecret) && glTest.status !== 'ok' && (
+                    <p className="mt-1 text-[10px] text-[#ff9500]">That doesn&apos;t look like a Geniuslink API secret — copy the exact Secret from Geniuslink → Tools → &ldquo;Integrate with our API&rdquo;.</p>
+                  )}
                 </div>
               </div>
+
+              {/* Live "does it actually work?" test — the real gate. Turns a
+                  wrong key/secret into an immediate ✗ instead of a silent 401
+                  the user only hits later when generating posts. */}
+              {geniuslinkKey && geniuslinkSecret && (
+                <div className="mt-2 flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={testGeniuslink}
+                    disabled={glTest.status === 'testing'}
+                    className="text-[11px] font-medium px-3 py-1.5 rounded-md border border-gray-200 dark:border-white/20 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#7C3AED] hover:bg-[#7C3AED]/5 disabled:opacity-60 flex items-center gap-1.5"
+                  >
+                    {glTest.status === 'testing' ? <><Loader2 size={12} className="animate-spin" /> Testing…</> : 'Test connection'}
+                  </button>
+                  {glTest.status === 'ok' && (
+                    <span className="text-[11px] font-medium text-[#34c759] flex items-center gap-1">
+                      <Check size={12} /> Working{typeof glTest.groupCount === 'number' ? ` — ${glTest.groupCount} group${glTest.groupCount === 1 ? '' : 's'} on your account` : ''}
+                    </span>
+                  )}
+                  {glTest.status === 'fail' && (
+                    <span className="text-[11px] text-[#ff3b30] flex items-start gap-1 min-w-0">
+                      <X size={12} className="flex-shrink-0 mt-0.5" /> <span>{glTest.message}</span>
+                    </span>
+                  )}
+                </div>
+              )}
 
               {/* Group setup — verify the tracking groups MVP routes to. */}
               {geniuslinkKey && geniuslinkSecret && (
