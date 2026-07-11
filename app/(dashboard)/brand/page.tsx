@@ -845,7 +845,7 @@ export default function BrandPage() {
                 )}
               </div>
               <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mb-3 leading-relaxed">
-                Log in at <a href="https://app.geni.us/settings" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">app.geni.us/settings → Integrate with our API</a> and copy your API Key and API Secret.
+                In Geniuslink, open <a href="https://my.geni.us/tools" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">Tools → &ldquo;Integrate with our API&rdquo;</a>, click <strong>Add an API key</strong>, then copy the API Key and API Secret here. (API access requires a paid Geniuslink plan.)
               </p>
               <div className="flex flex-col gap-2">
                 <div>

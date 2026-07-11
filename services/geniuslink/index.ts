@@ -39,6 +39,18 @@ export class GeniuslinkService {
       signal: AbortSignal.timeout(12000),
     })
     const text = await res.text()
+    // A 401/403 here is Geniuslink rejecting the API Key/Secret pair (their
+    // ServiceStack backend throws a raw AuthenticationException JSON blob).
+    // Surface a clear, actionable message instead of that blob so the user
+    // knows it's a credential problem — not an MVP outage — and how to fix it.
+    if (res.status === 401 || res.status === 403) {
+      throw new Error(
+        'Geniuslink rejected your API Key/Secret (401 Unauthorized). ' +
+        'Open Geniuslink → Tools → "Integrate with our API", create or copy a fresh API Key + Secret, ' +
+        'then re-paste BOTH in MVP → Brand Profile (make sure the Key and Secret aren\'t swapped). ' +
+        'API access requires a paid Geniuslink plan.',
+      )
+    }
     if (!res.ok) throw new Error(`Geniuslink groups error ${res.status}: ${text.slice(0, 200)}`)
     const data = JSON.parse(text) as { Groups?: Array<{ Id: number; Name: string; Enabled: number }> }
     return (data.Groups ?? []).filter(g => g.Enabled === 1)
