@@ -1291,8 +1291,9 @@ export default function BrandPage() {
         {/* Right — voice & style */}
         <div className="flex flex-col gap-5">
 
-          {/* Brand Logo */}
-          <div className="card p-5">
+          {/* Brand Logo — id="logo" is the anchor the topbar search
+              ("upload brand logo") jumps to; scroll-mt offsets the sticky header. */}
+          <div id="logo" className="card p-5 scroll-mt-24">
             <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Brand Logo</h2>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
               Used as your site favicon and in the footer of your WordPress blog. Square or transparent PNG works best.

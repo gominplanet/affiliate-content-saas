@@ -47,6 +47,7 @@ import { cn } from '@/lib/utils'
 import { DEALS_HUB_PAUSED } from '@/lib/deal-occasion'
 import NotificationBell from './NotificationBell'
 import WpUpdateTopbarButton from './WpUpdateTopbarButton'
+import TopbarSearch from './TopbarSearch'
 import WpConnectionDoctorButton from './WpConnectionDoctorButton'
 import ScoutTopbarButton from './ScoutTopbarButton'
 import { HelpDeskButton } from '@/components/HelpDeskSidebar'
@@ -891,6 +892,10 @@ export default function DashboardShellV2({
             {wpHostname || 'No WordPress yet'}
             <ChevronDown size={12} style={{ color: 'var(--text-faint)' }} />
           </Link>
+
+          {/* Search MVP — jump to any page or section (Geniuslink, upload
+              brand logo, AdSense…). ⌘K focuses it from anywhere. */}
+          <TopbarSearch isAdmin={isAdmin} />
 
           <div className="ml-auto flex items-center gap-3">
             {/* Get / Update SCOUT — a load-unpacked extension never auto-
