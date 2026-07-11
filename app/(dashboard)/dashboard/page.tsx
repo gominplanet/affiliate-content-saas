@@ -314,6 +314,10 @@ export default async function DashboardPage() {
             <div className="rounded-2xl p-5 sm:p-6" style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.18)' }}>
               <RecommendedToolsCard />
             </div>
+            {/* Monthly-consumption gauge — placed right under Recommended Tools
+                per user request. Standalone card; the detailed per-bucket bars
+                still live in the "Plan & usage" section below. */}
+            <ConsumptionGauge />
             {/* To-dos & opportunities — orange panel. */}
             <section className="rounded-2xl p-5 sm:p-6" style={{ background: 'rgba(255, 149, 0, 0.08)', border: '1px solid rgba(255, 149, 0, 0.18)' }}>
             <p className="text-[11px] font-semibold uppercase tracking-[0.12em] mb-3" style={{ color: 'var(--text-faint)' }}>Your opportunities</p>
@@ -457,13 +461,6 @@ export default async function DashboardPage() {
             <Link href="/billing" className="text-[12px] font-medium text-[#7C3AED] hover:text-[#9D6BFF] inline-flex items-center gap-1">
               {tier === 'pro' || tier === 'admin' ? 'Manage plan' : 'Upgrade'} <ArrowUpRight size={11} />
             </Link>
-          </div>
-          {/* Consumption gauge — the at-a-glance visual of how much of this
-              period's generation allowance is used (blog + thumbnails + metadata). */}
-          <div className="flex justify-center mb-5 pb-5 border-b" style={{ borderColor: 'var(--border)' }}>
-            <div className="w-full max-w-[300px]">
-              <ConsumptionGauge embedded />
-            </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
             {usage.map(({ label, used, limit }) => {
