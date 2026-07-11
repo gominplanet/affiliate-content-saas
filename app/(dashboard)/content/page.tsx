@@ -2064,6 +2064,11 @@ export default function ContentPage() {
   const [selectedPostIds, setSelectedPostIds] = useState<Set<number>>(new Set())
   // Search box for the Posts tab — filters the published list by title.
   const [postSearch, setPostSearch] = useState('')
+  // "Blog to Social" declutter: hide posts already fanned out to every connected
+  // social (X/Twitter excluded — its free-tier rate limit routinely blocks it, so
+  // requiring it would leave posts perpetually "unshared"). Opt-in; off by default
+  // so the tab stays the full catalogue until the user asks to focus.
+  const [hideShared, setHideShared] = useState(false)
   // Pagination — Posts tab. Render-only optimization: the full set still
   // loads, we just slice what hits the DOM. Before this, 127 VideoCards
   // mounted on every Posts-tab visit (4000+ DOM nodes once you count
@@ -2616,6 +2621,7 @@ export default function ContentPage() {
       const postedFor = (p: SbRow): string[] => {
         const s: string[] = []
         if (p.facebook_post_id) s.push('facebook')
+        if (p.pinterest_pin_id) s.push('pinterest')
         if (p.threads_post_id) s.push('threads')
         if (p.linkedin_post_id) s.push('linkedin')
         if (p.twitter_post_id) s.push('twitter')
@@ -3304,6 +3310,41 @@ export default function ContentPage() {
     : recentStream,
     [recentStream, postQuery, posts])
 
+  // Platforms that must be posted for a post to count as "shared" — every
+  // connected social EXCEPT X/Twitter (frequently rate-limited → never blocks).
+  const sharedRequired = useMemo<string[]>(() => ([
+    fbConnected && 'facebook',
+    pinterestConnected && 'pinterest',
+    threadsConnected && 'threads',
+    linkedInConnected && 'linkedin',
+    blueskyConnected && 'bluesky',
+    telegramConnected && 'telegram',
+  ].filter(Boolean) as string[]), [fbConnected, pinterestConnected, threadsConnected, linkedInConnected, blueskyConnected, telegramConnected])
+
+  // The list the posts tab actually renders. When "Hide shared" is on, drop any
+  // post already pushed to all of `sharedRequired`. Video rows read their posted
+  // set from the posts-map (kept fresh by mvp-social-posted); orphan rows use
+  // their persisted `posted[]` array.
+  const postsVisible = useMemo<RecentStreamItem[]>(() => {
+    if (!hideShared || sharedRequired.length === 0) return recentMatched
+    return recentMatched.filter((it) => {
+      const done = new Set<string>()
+      if (it.kind === 'video') {
+        const p = posts[it.video.id as string]
+        if (p?.facebookPostId) done.add('facebook')
+        if (p?.pinterestPinId) done.add('pinterest')
+        if (p?.threadsPostId) done.add('threads')
+        if (p?.linkedInPostId) done.add('linkedin')
+        if (p?.blueskyPostUri) done.add('bluesky')
+        if (p?.telegramMessageId) done.add('telegram')
+      } else {
+        for (const pl of (it.post.posted ?? [])) done.add(pl)
+      }
+      const shared = sharedRequired.every((pl) => done.has(pl))
+      return !shared // keep only the NOT-yet-shared posts
+    })
+  }, [recentMatched, hideShared, sharedRequired, posts])
+
   return (
     <>
       <PageHero
@@ -3641,12 +3682,17 @@ export default function ContentPage() {
             // (recentStream / recentMatched) so the catalogue isn't re-sorted on
             // every keystroke. Alias them here to keep the JSX below unchanged.
             const stream = recentStream
-            const matched = recentMatched
+            const matched = postsVisible
             if (matched.length === 0) {
+              const allShared = hideShared && !postQuery && recentMatched.length > 0
               return (
                 <div className="card p-6 max-w-md flex flex-col items-center text-center gap-2">
-                  <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">No posts match &ldquo;{postSearch}&rdquo;</p>
-                  <button onClick={() => setPostSearch('')} className="text-xs text-[#7C3AED] hover:underline">Clear search</button>
+                  <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
+                    {allShared ? 'All caught up — every post is shared to your socials.' : <>No posts match &ldquo;{postSearch}&rdquo;</>}
+                  </p>
+                  <button onClick={() => allShared ? setHideShared(false) : setPostSearch('')} className="text-xs text-[#7C3AED] hover:underline">
+                    {allShared ? 'Show all posts' : 'Clear search'}
+                  </button>
                 </div>
               )
             }
@@ -3664,7 +3710,20 @@ export default function ContentPage() {
                       <span className="ml-2 text-[11px] font-normal text-[#86868b] dark:text-[#8e8e93]">showing {start + 1}–{end}</span>
                     )}
                   </h3>
-                  <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Newest first · everything live on your blog</p>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => { setHideShared(v => !v); setRecentPage(1) }}
+                      className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-colors"
+                      style={hideShared
+                        ? { background: 'rgba(124,58,237,0.12)', borderColor: 'rgba(124,58,237,0.4)', color: '#7C3AED' }
+                        : { background: 'transparent', borderColor: 'var(--border, rgba(0,0,0,0.12))', color: 'var(--text-soft, #6e6e73)' }}
+                      title="Hide posts already shared to every connected social (X/Twitter doesn't count — its free tier is rate-limited). Toggle off to see everything."
+                    >
+                      {hideShared ? '✓ Hiding shared' : 'Hide shared'}
+                    </button>
+                    <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Newest first · everything live on your blog</p>
+                  </div>
                 </div>
                 {sliced.map(it => {
                   if (it.kind === 'video') {
