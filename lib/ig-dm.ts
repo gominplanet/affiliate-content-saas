@@ -19,6 +19,9 @@ export interface IgCommentEvent {
   mediaId: string | null
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Sb = any
+
 const REFRESH_THRESHOLD_MS = 7 * 24 * 60 * 60 * 1000 // refresh when <7 days left
 
 /** Does the comment contain the trigger keyword as a whole word? Case-insensitive. */
@@ -81,86 +84,113 @@ async function getValidIgToken(
  * Process one comment webhook event end-to-end. Idempotent + best-effort:
  * every early-return is a deliberate skip, and nothing throws (the webhook must
  * always 200 to Meta). Returns a short outcome for logging.
+ *
+ * Resolution is driven by the MEDIA id, not the account id. A media id is
+ * globally unique and MVP stored it at publish time, so `media → user + link`
+ * sidesteps the app-scoped-vs-Business-Account id mismatch that plagues the
+ * webhook's entry.id (see migration 170) — we never need to match the account.
+ *
+ * Two link sources, checked in order:
+ *   A) a standalone ig_dm_campaigns row (the upload-a-Reel feature) — its own
+ *      keyword + link, self-gated by status='active';
+ *   B) an MVP-published blog post — the user's global ig_dm_settings keyword +
+ *      that post's own resolved affiliate link.
  */
 export async function processCommentEvent(ev: IgCommentEvent): Promise<string> {
-  const admin = createAdminClient()
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const sb = admin as any
+  const sb: Sb = createAdminClient()
 
   // Ignore the account's own comments/replies.
   if (ev.commenterId && ev.commenterId === ev.igAccountId) return 'skip:self'
 
-  // 1. Which user owns this IG account? Match on EITHER the app-scoped user id
-  //    (from OAuth) or the Business Account id — the webhook's entry.id can be
-  //    either, and they differ for the same account (see migration 170). Guard
-  //    the .or() interpolation to digits only (the id is always numeric).
-  const acct = String(ev.igAccountId).replace(/[^0-9]/g, '')
-  if (!acct) return 'skip:bad-account-id'
-  const { data: integ } = await sb
-    .from('integrations')
-    .select('user_id')
-    .or(`instagram_user_id.eq.${acct},instagram_business_id.eq.${acct}`)
+  const media = ev.mediaId ? String(ev.mediaId).replace(/[^0-9]/g, '') : ''
+  if (!media) return 'skip:no-media'
+
+  let userId: string | undefined
+  let keyword = ''
+  let link: string | null = null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let settings: any = null
+  let source: 'campaign' | 'global' = 'global'
+
+  // A) Standalone per-post campaign?
+  const { data: campaign } = await sb
+    .from('ig_dm_campaigns')
+    .select('user_id,keyword,link,status')
+    .eq('ig_media_id', media)
     .maybeSingle()
-  const userId = integ?.user_id as string | undefined
-  if (!userId) {
-    // Diagnostic: log a trace row (user_id null, mig 171) so a "webhook fired but
-    // couldn't match the account" miss is visible in the DB — vs. no row at all,
-    // which means the webhook never fired (Meta subscription issue).
-    console.warn('[ig-dm] no user for IG account', acct)
-    await sb.from('ig_dm_sends').insert({
-      comment_id: ev.commentId, media_id: ev.mediaId, commenter_id: ev.commenterId,
-      status: 'skipped', error: `no-user for account ${acct}`,
-    }).then(() => {}, () => {})
-    return 'skip:no-user'
+  if (campaign) {
+    if (campaign.status !== 'active') return 'skip:campaign-inactive'
+    userId = campaign.user_id
+    keyword = campaign.keyword
+    link = campaign.link
+    source = 'campaign'
+    // Pull the user's template/public-reply prefs (optional) for the DM body.
+    const { data: s } = await sb
+      .from('ig_dm_settings')
+      .select('message_template,reply_to_comment')
+      .eq('user_id', userId)
+      .maybeSingle()
+    settings = s
+  } else {
+    // B) MVP-published blog post → global settings + that post's own link.
+    const { data: post } = await sb
+      .from('blog_posts')
+      .select('user_id,geniuslink_code,content,wordpress_url')
+      .or(`instagram_image_post_id.eq.${media},instagram_reel_id.eq.${media},instagram_story_id.eq.${media}`)
+      .maybeSingle()
+    if (!post) {
+      // Diagnostic trace row (user_id null, mig 171) so a "webhook fired but we
+      // don't recognise the media" miss is visible in the DB — vs. no row at
+      // all, which means the webhook never fired (Meta subscription issue).
+      console.warn('[ig-dm] no campaign/post for media', media)
+      await sb.from('ig_dm_sends').insert({
+        comment_id: ev.commentId, media_id: ev.mediaId, commenter_id: ev.commenterId,
+        status: 'skipped', error: `no campaign/post for media ${media}`,
+      }).then(() => {}, () => {})
+      return 'skip:no-media-match'
+    }
+    userId = post.user_id
+    const { data: s } = await sb
+      .from('ig_dm_settings')
+      .select('enabled,keyword,message_template,reply_to_comment')
+      .eq('user_id', userId)
+      .maybeSingle()
+    if (!s?.enabled) return 'skip:disabled'
+    settings = s
+    keyword = s.keyword
+    link = resolvePostDmLink(post)
   }
 
-  // 2. Automation settings — must be enabled.
-  const { data: settings } = await sb
-    .from('ig_dm_settings')
-    .select('enabled,keyword,message_template,reply_to_comment')
-    .eq('user_id', userId)
-    .maybeSingle()
-  if (!settings?.enabled) return 'skip:disabled'
+  if (!userId) return 'skip:no-user'
 
-  // 3. Keyword gate.
-  if (!matchesKeyword(ev.text, settings.keyword)) return 'skip:no-keyword'
+  // Keyword gate.
+  if (!matchesKeyword(ev.text, keyword)) return 'skip:no-keyword'
 
-  // 4. Dedupe — claim the comment (unique comment_id). A conflict = already
-  //    handled (Meta redelivery), so we skip without a second DM.
+  // Dedupe — claim the comment (unique comment_id). A conflict = already handled
+  // (Meta redelivery), so we skip without a second DM.
   const { error: claimErr } = await sb.from('ig_dm_sends').insert({
     user_id: userId,
     comment_id: ev.commentId,
     media_id: ev.mediaId,
     commenter_id: ev.commenterId,
-    keyword: settings.keyword,
+    keyword,
     status: 'sent', // optimistic; downgraded to 'failed' below on error
   })
   if (claimErr) return 'skip:duplicate'
 
-  // 5. Resolve the link for the commented-on post.
-  let link: string | null = null
-  if (ev.mediaId) {
-    const { data: post } = await sb
-      .from('blog_posts')
-      .select('geniuslink_code,content,wordpress_url')
-      .eq('user_id', userId)
-      .or(`instagram_image_post_id.eq.${ev.mediaId},instagram_reel_id.eq.${ev.mediaId},instagram_story_id.eq.${ev.mediaId}`)
-      .maybeSingle()
-    if (post) link = resolvePostDmLink(post)
-  }
   if (!link) {
     await sb.from('ig_dm_sends').update({ status: 'skipped', error: 'no link for media' }).eq('comment_id', ev.commentId)
     return 'skip:no-link'
   }
 
-  // 6. Token + send.
+  // Token + send.
   const tok = await getValidIgToken(sb, userId)
   if (!tok) {
     await sb.from('ig_dm_sends').update({ status: 'failed', error: 'no IG token' }).eq('comment_id', ev.commentId)
     return 'fail:no-token'
   }
 
-  const message = renderMessage(settings.message_template, link)
+  const message = renderMessage(settings?.message_template || '', link)
   try {
     await sendPrivateReply({ igUserId: tok.igUserId, commentId: ev.commentId, message, accessToken: tok.accessToken })
     await sb.from('ig_dm_sends').update({ status: 'sent', link_sent: link }).eq('comment_id', ev.commentId)
@@ -169,9 +199,9 @@ export async function processCommentEvent(ev: IgCommentEvent): Promise<string> {
     return 'fail:send'
   }
 
-  // 7. Optional public "Sent you a DM!" reply (best-effort).
-  if (settings.reply_to_comment) {
+  // Optional public "Sent you a DM!" reply (best-effort).
+  if (settings?.reply_to_comment) {
     await replyToComment({ commentId: ev.commentId, message: 'Sent you a DM! 📩', accessToken: tok.accessToken })
   }
-  return 'sent'
+  return source === 'campaign' ? 'sent:campaign' : 'sent'
 }

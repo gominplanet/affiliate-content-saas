@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { exchangeCodeForTokens } from '@/services/instagram'
+import { exchangeCodeForTokens, subscribeToComments } from '@/services/instagram'
 import { syncInstagramAccount } from '@/lib/social-accounts'
 
 export async function GET(request: NextRequest) {
@@ -68,6 +68,16 @@ export async function GET(request: NextRequest) {
       })
     } catch (e) {
       console.warn('[instagram/callback] syncInstagramAccount failed:', e)
+    }
+
+    // Auto-subscribe this account to the `comments` webhook so comment→DM works
+    // the moment it's connected — the one setup step a user can't do themselves
+    // (it otherwise needs a per-account toggle in the Meta dashboard). Only fires
+    // if the token carries the comment permission; harmless no-op otherwise.
+    try {
+      await subscribeToComments({ igUserId: tokens.userId, accessToken: tokens.accessToken })
+    } catch (e) {
+      console.warn('[instagram/callback] subscribeToComments failed:', e)
     }
 
     return NextResponse.redirect(`${appUrl}/connect-socials?instagram_connected=1`)

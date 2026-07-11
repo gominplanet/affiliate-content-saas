@@ -233,3 +233,94 @@ Return ONLY a single JSON object with NO prose around it, shaped EXACTLY:
     hook,
   }
 }
+
+// ── Auto-DM campaign caption ──────────────────────────────────────────────────
+// For the "upload a Reel → auto-DM its link" feature. Same voice as the direct
+// caption, but the whole point is a comment→DM funnel, so the caption MUST end
+// with a CTA telling viewers to comment the trigger word to get the link. That
+// CTA line is composed deterministically (not by the model) so the exact trigger
+// word always appears verbatim — a typo there would break the whole automation.
+
+export interface DmCampaignCaptionInput {
+  /** What the creator is promoting — drives the hook + description. */
+  productName: string
+  /** Optional creator-written product description. If present we polish it;
+   *  if empty the model writes one from the product name. */
+  description?: string
+  /** The exact trigger word a viewer must comment to get the DM. */
+  keyword: string
+  niches: string[]
+  wordsToAvoid: string[]
+  affiliateDisclaimer: string
+}
+
+/** Build the CTA line that turns a comment into a DM. Kept in code so the
+ *  trigger word is always spelled exactly as configured. */
+function dmCtaLine(keyword: string): string {
+  const kw = (keyword || 'LINK').trim()
+  return `💬 Comment "${kw}" and I'll DM you the link 🔗`
+}
+
+export async function generateDmCampaignCaption(
+  input: DmCampaignCaptionInput,
+  ctx: { userId: string; tier: Tier },
+): Promise<DirectCaptionResult> {
+  const rules = PLATFORM_RULES.instagram
+  const disclaimer = input.affiliateDisclaimer.trim() ||
+    'Some links may be affiliate links — I may earn a small commission at no cost to you.'
+  const cta = dmCtaLine(input.keyword)
+
+  const prompt = `You're writing an Instagram Reel caption for a product the creator is promoting through a comment-to-DM funnel. Viewers who comment a trigger word get the affiliate link auto-sent to their DMs. Your caption needs:
+
+1. A punchy hook line — under 80 characters — built around the product.
+2. 1-2 lines of concrete value: what the product is and one specific reason it's worth it. ${input.description ? 'Polish the creator\'s description below; keep their facts, tighten the wording.' : 'Write this from the product name — but stay generic; never invent specs, numbers, or features you can\'t verify.'}
+3. Then ${rules.hashtagCount} hashtags on one line, #lowercase, no duplicates: 2-3 tied to ${input.niches.slice(0, 4).join(', ') || 'the topic'}, 1-2 from the product, 1 general Instagram tag.
+
+Do NOT write the call-to-action or the disclaimer — those are appended separately. Do NOT use the word "honest" in any form, and avoid hype clichés (game-changer, mind-blowing, next-level).${input.wordsToAvoid.length ? `\nCreator's banned words: ${input.wordsToAvoid.slice(0, 30).join(', ')}` : ''}
+
+PRODUCT NAME
+${input.productName}
+${input.description ? `\nCREATOR'S DESCRIPTION\n${input.description.slice(0, 800)}` : ''}
+
+Return ONLY a JSON object shaped EXACTLY:
+{ "hook": "<punchy opener>", "body": "<1-2 lines of value>", "hashtags": ["#tag1", "..."] }`
+
+  let parsed: { hook?: string; body?: string; hashtags?: string[] }
+  try {
+    const anthropic = createAnthropicClient()
+    const msg = await anthropic.messages.create({
+      model: MODEL,
+      max_tokens: 600,
+      messages: [{ role: 'user', content: prompt }],
+    })
+    recordAnthropicUsage(msg, { userId: ctx.userId, tier: ctx.tier, feature: 'ig_dm_campaign_caption', model: MODEL })
+    const raw = (msg.content[0] as { type: string; text: string }).text.trim()
+    const start = raw.indexOf('{')
+    const end = raw.lastIndexOf('}')
+    if (start < 0 || end <= start) throw new Error('Model returned no JSON')
+    parsed = JSON.parse(raw.slice(start, end + 1))
+  } catch {
+    const niche = input.niches[0] || 'review'
+    parsed = {
+      hook: input.productName,
+      body: input.description?.slice(0, 300) || '',
+      hashtags: [`#${niche.toLowerCase().replace(/[^a-z0-9]+/g, '')}`, '#review', '#reels'],
+    }
+  }
+
+  const hook = scrub((parsed.hook || input.productName).slice(0, 200))
+  const body = scrub((parsed.body || '').slice(0, 400))
+  const hashtags = (Array.isArray(parsed.hashtags) ? parsed.hashtags : [])
+    .map(t => String(t).trim())
+    .filter(Boolean)
+    .map(t => (t.startsWith('#') ? t : `#${t}`))
+    .map(t => t.replace(/\s+/g, ''))
+    .filter((t, i, arr) => arr.indexOf(t) === i)
+    .slice(0, rules.hashtagCount)
+
+  // hook · value · CTA (with trigger word) · hashtags · disclaimer
+  const caption = [hook, body, cta, hashtags.join(' '), disclaimer]
+    .filter(Boolean).join('\n\n').slice(0, rules.charCap)
+
+  return { caption, hashtags, hook }
+}

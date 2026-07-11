@@ -325,6 +325,22 @@ export async function sendPrivateReply(opts: {
   return { recipientId: data.recipient_id, messageId: data.message_id }
 }
 
+/** Subscribe the connected IG account to the app's `comments` webhook. Required
+ *  for comment→DM events to actually fire — and it's the piece a user can't do
+ *  manually, so we call it on connect. Best-effort; returns whether it stuck. */
+export async function subscribeToComments(opts: { igUserId: string; accessToken: string }): Promise<boolean> {
+  try {
+    const url = `${GRAPH_BASE}/${GRAPH_VERSION}/${opts.igUserId}/subscribed_apps?subscribed_fields=comments&access_token=${encodeURIComponent(opts.accessToken)}`
+    const res = await fetch(url, { method: 'POST' })
+    const data = await res.json().catch(() => ({})) as { success?: boolean; error?: { message: string } }
+    if (!res.ok) { console.warn('[instagram] subscribe_apps failed:', data?.error?.message || res.status); return false }
+    return data.success !== false
+  } catch (e) {
+    console.warn('[instagram] subscribe_apps threw:', e instanceof Error ? e.message : String(e))
+    return false
+  }
+}
+
 /** Post a PUBLIC reply on a comment (e.g. "Sent you a DM! 📩") — what ManyChat
  *  does so other viewers see the automation is live. Best-effort; never throws. */
 export async function replyToComment(opts: {
