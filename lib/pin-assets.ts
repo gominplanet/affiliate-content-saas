@@ -45,7 +45,16 @@ export function composePinDescription(a: PinAssets): string {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function buildPinAssets(p: any, ctx: { userId?: string | null; tier?: string | null }): Promise<PinAssets> {
+export async function buildPinAssets(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  p: any,
+  ctx: { userId?: string | null; tier?: string | null },
+  // aiScene: opt in to the bespoke Gemini-generated pin scene (a deliberate
+  // single pin). DEFAULT is the cheap path — composite the post's EXISTING
+  // image into the vertical pin, no fresh gen — which is what scheduled/bulk
+  // pushes use so a burst of N pins doesn't fire N image generations.
+  opts?: { aiScene?: boolean },
+): Promise<PinAssets> {
   // Apply the user's LEARN voice profile to the pin copy too (whatever
   // parts they filled in). Best-effort — a fetch failure must not block
   // pin generation.
@@ -146,7 +155,7 @@ Return ONLY valid JSON with these exact keys:
   // scrape the product link → the article's own hero image. Single-product
   // scenes only; the multi-product collage stays name-grounded.
   let referenceImageUrl: string | null = null
-  if (ctx.userId && p.video_id && !useCollage) {
+  if (opts?.aiScene && ctx.userId && p.video_id && !useCollage) {
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: vid } = await (createAdminClient() as any)
@@ -191,11 +200,22 @@ Return ONLY valid JSON with these exact keys:
   // for non-collage, a scene composition each generation so pins vary — and
   // re-roll on regenerate.
   const designVariant = Math.floor(Math.random() * PIN_DESIGN_COUNT)
-  const imagePrompt = useCollage
-    ? buildCollageImagePrompt(fields.product_category, collageProducts)
-    : buildViralImagePrompt(fields, Math.floor(Math.random() * PIN_COMPOSITIONS.length), !!referenceImageUrl)
-  let rawImage = await generatePinImage(imagePrompt, useCollage ? null : referenceImageUrl)
-  if (rawImage) recordUsage({ userId: ctx.userId, tier: ctx.tier, feature: 'pinterest_image', model: 'gemini-2.5-flash-image', images: 1 })
+  let rawImage: { data: string; mediaType: string } | null = null
+  let imagePrompt = '' // hoisted so the QC-retry block below can reuse it
+  if (opts?.aiScene) {
+    // Premium path: generate a bespoke pin scene with Gemini (single-pin opt-in).
+    imagePrompt = useCollage
+      ? buildCollageImagePrompt(fields.product_category, collageProducts)
+      : buildViralImagePrompt(fields, Math.floor(Math.random() * PIN_COMPOSITIONS.length), !!referenceImageUrl)
+    rawImage = await generatePinImage(imagePrompt, useCollage ? null : referenceImageUrl)
+    if (rawImage) recordUsage({ userId: ctx.userId, tier: ctx.tier, feature: 'pinterest_image', model: 'gemini-2.5-flash-image', images: 1 })
+  } else {
+    // Cheap DEFAULT: composite the post's EXISTING image (real thumbnail / hero)
+    // into the vertical pin — no fresh gen, no QC. Skips the QC block below.
+    const srcUrl = (p.featured_image_url as string | null) || (p.thumbnail_url as string | null)
+      || (p.video_id ? `https://i.ytimg.com/vi/${p.video_id}/hqdefault.jpg` : null)
+    rawImage = srcUrl ? await fetchImageAsBase64(srcUrl) : null
+  }
 
   // Vision QC (Claude) on the SCENE (before the Satori text overlay, so the
   // checks read the photo, not our own caption):
@@ -204,7 +224,7 @@ Return ONLY valid JSON with these exact keys:
   //   • brand-leak scan — no Amazon/retailer logo or watermark (all scenes,
   //     incl. collage).
   // On a confident failure of either, regenerate ONCE and keep the retry.
-  if (rawImage && !useCollage) {
+  if (opts?.aiScene && rawImage && !useCollage) {
     const gen = { base64: rawImage.data, mediaType: rawImage.mediaType }
     const idCtx = { userId: ctx.userId, tier: ctx.tier }
     const [prod, leak] = await Promise.all([
@@ -220,7 +240,7 @@ Return ONLY valid JSON with these exact keys:
         rawImage = retry
       }
     }
-  } else if (rawImage && useCollage) {
+  } else if (opts?.aiScene && rawImage && useCollage) {
     // Collage roundup: no single reference to match, but still scan for leaks.
     const leak = await verifyNoBrandLeak({ base64: rawImage.data, mediaType: rawImage.mediaType }, { userId: ctx.userId, tier: ctx.tier })
     if (!leak.clean) {
@@ -312,6 +332,25 @@ ABSOLUTELY NO TEXT: Do NOT render ANY text, letters, words, numbers, captions, l
 NO BRANDS: Do NOT render or invent any retailer/marketplace names or logos (especially "Amazon", "Prime", "Walmart", "eBay"), any company/store logos, watermarks, copyright/trademark symbols, or price tags anywhere — only the product's own physical branding is allowed.
 
 Final quality: high resolution, photorealistic, professional advertising photography, cinematic post-processing. Vertical 2:3 portrait. Completely text-free.`
+}
+
+/** Fetch an image URL and return it as base64 + media type for composePin.
+ *  Used by the cheap default path to composite the post's existing thumbnail /
+ *  hero into the vertical pin instead of generating a fresh scene. Best-effort:
+ *  returns null on any failure (caller then returns fallbackImageUrl). */
+async function fetchImageAsBase64(url: string): Promise<{ data: string; mediaType: string } | null> {
+  if (!/^https?:\/\//i.test(url)) return null
+  try {
+    const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(10000) })
+    if (!res.ok) return null
+    const mediaType = (res.headers.get('content-type') || 'image/jpeg').split(';')[0].trim()
+    if (!/^image\//i.test(mediaType)) return null
+    const buf = Buffer.from(await res.arrayBuffer())
+    if (buf.length < 100) return null
+    return { data: buf.toString('base64'), mediaType }
+  } catch {
+    return null
+  }
 }
 
 async function generatePinImage(prompt: string, referenceImageUrl?: string | null): Promise<{ data: string; mediaType: string } | null> {

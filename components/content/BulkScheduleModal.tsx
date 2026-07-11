@@ -76,8 +76,13 @@ export function BulkScheduleModal({
   const [error, setError] = useState<string | null>(null)
 
   const totalJobs = posts.length * selectedPlatforms.size
+  // Large batches get a second explicit confirm (guards against an accidental
+  // 20-posts-×-7-platforms runaway). Changing the selection re-arms it.
+  const BIG_BATCH = 25
+  const [confirmBig, setConfirmBig] = useState(false)
 
   function togglePlatform(p: Platform) {
+    setConfirmBig(false)
     setSelectedPlatforms(prev => {
       const next = new Set(prev)
       next.has(p) ? next.delete(p) : next.add(p)
@@ -87,6 +92,8 @@ export function BulkScheduleModal({
 
   async function run() {
     if (!totalJobs) return
+    // Big-batch guard: first click on a large batch just arms the confirm.
+    if (totalJobs >= BIG_BATCH && !confirmBig) { setConfirmBig(true); return }
     setRunning(true)
     setError(null)
     setProgress({ done: 0, total: totalJobs })
@@ -296,6 +303,13 @@ export function BulkScheduleModal({
 
           {error && <p className="text-xs text-[#ff3b30] mb-3 flex items-center gap-1.5"><AlertCircle size={11} /> {error}</p>}
 
+          {confirmBig && !running && (
+            <p className="text-xs text-[#ff9500] mb-3 flex items-start gap-1.5">
+              <AlertCircle size={12} className="flex-shrink-0 mt-0.5" />
+              <span>That&apos;s <strong>{totalJobs} pushes</strong> ({posts.length} post{posts.length !== 1 ? 's' : ''} × {selectedPlatforms.size} platform{selectedPlatforms.size !== 1 ? 's' : ''}). Large batch — every Pinterest pin builds an image. Click again to confirm.</span>
+            </p>
+          )}
+
           <div className="flex items-center justify-end gap-2">
             <button
               onClick={onClose}
@@ -311,7 +325,9 @@ export function BulkScheduleModal({
             >
               {running
                 ? <><Loader2 size={12} className="animate-spin" /> Scheduling {progress?.done ?? 0}/{progress?.total ?? 0}…</>
-                : <><CheckCircle size={12} /> Schedule {totalJobs}</>
+                : confirmBig
+                  ? <><AlertCircle size={12} /> Confirm {totalJobs} pushes</>
+                  : <><CheckCircle size={12} /> Schedule {totalJobs}</>
               }
             </button>
           </div>
