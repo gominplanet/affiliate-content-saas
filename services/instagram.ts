@@ -40,6 +40,14 @@ const AUTH_BASE = 'https://www.instagram.com/oauth'
 const SCOPES = [
   'instagram_business_basic',
   'instagram_business_content_publish',
+  // Comment→DM automation scopes. Only requested when the operator opts in via
+  // IG_DM_SCOPES=true — requesting these from NON-tester users before App Review
+  // is approved would fail the whole connect flow. For testing, the app owner +
+  // added testers CAN grant them in dev mode without full review. Flip to
+  // always-on once Meta approves the messaging permissions (Phase 2).
+  ...(process.env.IG_DM_SCOPES === 'true'
+    ? ['instagram_business_manage_comments', 'instagram_business_manage_messages']
+    : []),
 ].join(',')
 
 export interface InstagramTokens {
