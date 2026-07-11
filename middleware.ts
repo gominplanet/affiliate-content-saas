@@ -5,6 +5,10 @@ import { isPathBlockedForVa } from '@/lib/agency-routes'
 const publicPaths = [
   '/login', '/signup', '/reset-password',
   '/api/auth', '/api/proxy-image', '/api/cron', '/api/wp-version', '/api/campaigns/ingest',
+  // Plugin/theme zip downloads — served as octet-stream so Safari doesn't
+  // auto-unzip them (which leaves users with the inner .php). The underlying
+  // static /public/*.zip is public, so keep the download route public too.
+  '/api/download',
   // Stripe webhook — Stripe POSTs with no session cookie, so without this the
   // middleware 307-redirects every event to /login and Stripe (which never
   // follows redirects) marks the delivery failed → paid customers never get

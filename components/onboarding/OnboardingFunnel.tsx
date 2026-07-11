@@ -34,7 +34,7 @@ const ONBOARDING_VIDEO_ID = 'aBo0ruDuVuE'
 
 const HOSTINGER_URL = 'https://geni.us/MVPhosting'
 const GENIUSLINK_URL = 'https://geni.us/Y70p9R'
-const PLUGIN_ZIP = '/mvp-affiliate.zip'
+const PLUGIN_ZIP = '/api/download/plugin'
 const THEME_ZIP = '/mvp-affiliate-theme.zip'
 
 // Mirror the option lists from the full Brand Profile editor (app/(dashboard)/
