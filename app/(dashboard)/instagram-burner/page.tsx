@@ -553,7 +553,7 @@ export default function InstagramBurnerPage() {
         subtitle="Turn a YouTube Short into an Instagram Reel or TikTok — burn on a CTA, set up an auto-DM link, and publish."
       />
 
-      <div className="max-w-5xl">
+      <div className="max-w-6xl">
         {loading ? (
           <div className="flex items-center gap-2 text-sm text-[#86868b] py-12 justify-center"><Loader2 size={14} className="animate-spin" /> Loading…</div>
         ) : (
@@ -591,7 +591,7 @@ export default function InstagramBurnerPage() {
             {mode === 'batch' ? (
               <BatchBurner supabase={supabase} />
             ) : (
-          <div className="space-y-3 max-w-2xl">
+          <div className="space-y-3">
               {/* 1. Source video — pick one of your own Shorts, or upload a file */}
               <div className="card p-4">
                 <label className="block text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">1 · Your video <span className="font-normal text-[11px] text-[#86868b]">(vertical, under 300MB)</span></label>
