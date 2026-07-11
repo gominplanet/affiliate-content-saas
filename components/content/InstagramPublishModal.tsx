@@ -14,7 +14,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
-import { CheckCircle, Loader2, RefreshCw, Wand2, X, Flame, ExternalLink } from 'lucide-react'
+import { CheckCircle, Loader2, RefreshCw, Wand2, X, Flame, ExternalLink, MessageCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { useModalA11y } from '@/components/ui/useModalA11y'
@@ -103,6 +103,18 @@ export function InstagramPublishModal({
   // Aggregated feedback summary used to bias the random style picker.
   // Re-fetched on mount + after every reaction so weights stay fresh.
   const [styleWeights, setStyleWeights] = useState<{ liked: Record<string, number>; disliked: Record<string, number> }>({ liked: {}, disliked: {} })
+  // Global Auto-DM state — surfaced (not configured) here. When on, commenting
+  // the keyword on this post already DMs its affiliate link (the global rule
+  // resolves the link from the blog post's stored media id). Null until loaded.
+  const [dmEnabled, setDmEnabled] = useState<boolean | null>(null)
+  const [dmKeyword, setDmKeyword] = useState('LINK')
+
+  useEffect(() => {
+    fetch('/api/instagram/dm-settings')
+      .then(r => r.json())
+      .then(d => { const s = d.settings || {}; setDmEnabled(!!s.enabled); setDmKeyword(s.keyword || 'LINK') })
+      .catch(() => setDmEnabled(false))
+  }, [])
 
   // Load Pro status + face models on mount so the AI option only shows
   // to users who can actually use it. Free-tier users see no second
@@ -772,6 +784,24 @@ export function InstagramPublishModal({
                 </div>
               )}
             </div>
+          )}
+
+          {/* Auto-DM status — the global rule already covers this post; we just
+              surface it. It's especially relevant here: the feed post can't carry
+              a clickable link, and comment→DM is the workaround. */}
+          {dmEnabled !== null && (
+            dmEnabled ? (
+              <div className="flex items-start gap-1.5 rounded-lg border px-3 py-2 text-[11px] text-[#6e6e73] dark:text-[#a1a1a6]"
+                style={{ background: 'rgba(225,48,108,0.06)', borderColor: 'rgba(225,48,108,0.22)' }}>
+                <MessageCircle size={13} className="text-[#E1306C] flex-shrink-0 mt-0.5" />
+                <span><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Auto-DM is on.</strong> A comment of “{dmKeyword}” on this post will DM your affiliate link automatically — the workaround for Instagram’s no-clickable-link rule.</span>
+              </div>
+            ) : (
+              <Link href="/instagram-dm" className="flex items-start gap-1.5 rounded-lg border border-gray-200 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.03] px-3 py-2 text-[11px] text-[#6e6e73] dark:text-[#a1a1a6] hover:border-[#E1306C]/40 transition-colors">
+                <MessageCircle size={13} className="text-[#E1306C] flex-shrink-0 mt-0.5" />
+                <span><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Turn on Auto-DM</strong> so a comment fetches your link automatically — since this feed post can’t carry a clickable link. Set it up →</span>
+              </Link>
+            )
           )}
 
           {/* Step 4 — Publish (only shown once preview is loaded) */}
