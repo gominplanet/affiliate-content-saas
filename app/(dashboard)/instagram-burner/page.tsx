@@ -20,6 +20,11 @@ import type { Tier } from '@/lib/tier'
 import { Flame, Loader2, Sparkles, Download, AlertCircle, UploadCloud, Video, CheckCircle, Copy, Instagram, Plus, Trash2, Clock, Search } from 'lucide-react'
 
 const CAPTION_PRESETS = ['LINK IN BIO', 'LINK IN BIO 👆', 'FULL REVIEW ON YOUTUBE', 'WATCH THE FULL VIDEO', 'FOLLOW FOR MORE']
+/** On-video CTA options for Auto-DM Reels — the trigger word is spliced in. */
+const dmCtaPresets = (kw: string): string[] => {
+  const k = (kw || 'LINK').trim() || 'LINK'
+  return [`COMMENT ${k} 👇`, `COMMENT "${k}" FOR THE LINK`, `WANT THE LINK? COMMENT ${k}`, `COMMENT ${k} & I'LL DM YOU`]
+}
 const POSITIONS: Array<{ key: string; label: string; desc: string }> = [
   { key: 'lower-left', label: 'Lower third', desc: 'Bottom-left — clears Instagram & TikTok UI' },
   { key: 'upper-left', label: 'Upper third', desc: 'Top-left of the screen' },
@@ -70,6 +75,13 @@ export default function InstagramBurnerPage() {
   const [style, setStyle] = useState('white-pill')
   const [product, setProduct] = useState('')
   const [productName, setProductName] = useState('')
+  // Auto-DM: when on, publishing attaches a comment→DM campaign to the Reel, so
+  // a viewer who comments `dmKeyword` gets `dmLink` sent to their DMs.
+  const [autoDm, setAutoDm] = useState(false)
+  const [dmKeyword, setDmKeyword] = useState('LINK')
+  const [dmUrl, setDmUrl] = useState('')      // product URL to convert → affiliate link
+  const [dmLink, setDmLink] = useState('')     // resolved affiliate link (or pasted manually)
+  const [dmResolving, setDmResolving] = useState(false)
 
   const [uploading, setUploading] = useState(false)
   const [sourceUrl, setSourceUrl] = useState<string | null>(null)
@@ -269,7 +281,10 @@ export default function InstagramBurnerPage() {
   async function burn() {
     if (!sourceUrl) { setError('Upload a video first.'); return }
     if (overlayType === 'sticker' && !stickerId && !genStickerUrl) { setError('Pick a CTA box or make one from text, or switch to caption text.'); return }
-    setBurning(true); setError(null); setResultUrl(null); setIgCaption(null); setPublished(false); setIgError(null)
+    setBurning(true); setError(null); setResultUrl(null); setPublished(false); setIgError(null)
+    // In Auto-DM mode the Reel caption comes from the resolved product (it carries
+    // the "comment WORD for the link" CTA), so keep it — otherwise reset it.
+    if (!autoDm) setIgCaption(null)
     try {
       const res = await fetch('/api/instagram/burn', {
         method: 'POST',
@@ -282,14 +297,15 @@ export default function InstagramBurnerPage() {
           // A generated badge takes precedence over a gallery pick.
           customStickerUrl: overlayType === 'sticker' ? (genStickerUrl || undefined) : undefined,
           stickerId: overlayType === 'sticker' && !genStickerUrl ? stickerId : undefined,
-          product: product.trim() || undefined,
-          productName: productName.trim() || undefined,
+          // Auto-DM supplies its own caption; don't let the burn route compose one.
+          product: autoDm ? undefined : (product.trim() || undefined),
+          productName: autoDm ? undefined : (productName.trim() || undefined),
         }),
       })
       const d = await res.json().catch(() => ({} as Record<string, unknown>))
       if (!res.ok) throw new Error((d.error as string) || `Failed (HTTP ${res.status})`)
       setResultUrl(d.url as string)
-      setIgCaption((d.caption as string) || null)
+      if (!autoDm) setIgCaption((d.caption as string) || null)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Burn failed')
     } finally {
@@ -297,16 +313,56 @@ export default function InstagramBurnerPage() {
     }
   }
 
+  // Auto-DM: turn a pasted product URL into the creator's affiliate link + a
+  // ready caption (product blurb + "comment WORD for the link" CTA).
+  async function resolveDmLink() {
+    if (!/^https?:\/\//i.test(dmUrl.trim())) { setError('Paste a full product link (https://…).'); return }
+    setDmResolving(true); setError(null)
+    try {
+      const res = await fetch('/api/instagram/dm-campaign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resolveUrl: dmUrl.trim(), keyword: dmKeyword }),
+      })
+      const d = await res.json().catch(() => ({} as Record<string, unknown>))
+      if (!res.ok) throw new Error((d.error as string) || 'Could not read that link')
+      if (d.affiliateUrl) setDmLink(d.affiliateUrl as string)
+      if (d.productName && !productName.trim()) setProductName(d.productName as string)
+      if (d.caption) setIgCaption(d.caption as string) // becomes the Reel caption (kept across burn)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not read that link')
+    } finally {
+      setDmResolving(false)
+    }
+  }
+
   // Explicit, user-initiated publish — kept separate from burn() so we never
   // auto-post (Meta content-publishing policy requires an explicit action).
   async function publishToIg() {
     if (!resultUrl) return
+    // Auto-DM needs an affiliate link to send; block publish until we have one.
+    if (autoDm && !/^https?:\/\//i.test(dmLink.trim())) {
+      setIgError('Add the affiliate link to DM (paste a product link and hit “Get link”, or drop the link in yourself).')
+      return
+    }
+    let publishCaption = (igCaption ?? caption.trim() ?? 'LINK IN BIO')
+    // Guarantee the comment→DM ask is in the caption so viewers know what to do.
+    if (autoDm) {
+      const kw = (dmKeyword || 'LINK').trim() || 'LINK'
+      if (!publishCaption.toLowerCase().includes(kw.toLowerCase())) {
+        publishCaption = `${publishCaption}\n\n💬 Comment "${kw}" and I'll DM you the link 🔗`.slice(0, 2200)
+      }
+    }
     setPublishing(true); setIgError(null)
     try {
       const res = await fetch('/api/instagram/publish-burned', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoUrl: resultUrl, caption: igCaption ?? caption.trim() ?? 'LINK IN BIO' }),
+        body: JSON.stringify({
+          videoUrl: resultUrl,
+          caption: publishCaption,
+          ...(autoDm ? { autoDm: { link: dmLink.trim(), keyword: dmKeyword, productName: productName.trim() || undefined } } : {}),
+        }),
       })
       const d = await res.json().catch(() => ({} as Record<string, unknown>))
       if (!res.ok || d.published !== true) throw new Error((d.error as string) || `Failed (HTTP ${res.status})`)
@@ -380,7 +436,7 @@ export default function InstagramBurnerPage() {
     <>
       <PageHero
         title="Shop Burner"
-        subtitle="Pick one of your YouTube Shorts (or upload a clip), burn a caption or CTA box onto it, then publish straight to Instagram Reels and TikTok — or download for Stories."
+        subtitle="Pick one of your YouTube Shorts (or upload a clip), burn a caption or CTA box onto it, optionally set up an auto-DM link on a trigger word, then publish straight to Instagram Reels and TikTok — or download for Stories."
       />
 
       <div className="max-w-4xl">
@@ -676,6 +732,92 @@ export default function InstagramBurnerPage() {
                 <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">We research the link (or use the name) and write a caption — 3 niche hashtags + #ad disclosure — to post with the video.</p>
               </div>
 
+              {/* 5. Auto-DM (optional) — attach a comment→DM campaign to this Reel */}
+              <div className="rounded-xl border border-[#E1306C]/25 bg-[#E1306C]/[0.03] p-3.5 space-y-3">
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={autoDm}
+                    onChange={(e) => {
+                      const on = e.target.checked
+                      setAutoDm(on)
+                      // Nudge the on-video overlay toward the comment CTA (only if
+                      // it's still a default so we don't clobber their own text).
+                      if (on && (!caption.trim() || CAPTION_PRESETS.includes(caption.trim()))) {
+                        setCaption(`COMMENT ${(dmKeyword || 'LINK').trim()} 👇`)
+                        setOverlayType('text')
+                      }
+                    }}
+                    className="mt-0.5 w-4 h-4 rounded accent-[#E1306C]"
+                  />
+                  <div>
+                    <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] flex items-center gap-1.5">
+                      <Instagram size={14} className="text-[#E1306C]" /> Auto-DM a link when someone comments
+                      <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-[#DC2626]/[0.12] text-[#DC2626]">Labs</span>
+                    </p>
+                    <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">A viewer comments your word on this Reel → MVP DMs them the link. The Reel posts now; the auto-DM activates once Meta approves it.</p>
+                  </div>
+                </label>
+
+                {autoDm && (
+                  <div className="space-y-3 pl-0.5">
+                    {/* Product link → affiliate link + caption */}
+                    <div>
+                      <label className="block text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Paste a product link — MVP makes your affiliate link + caption</label>
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <input
+                          type="text"
+                          value={dmUrl}
+                          onChange={(e) => setDmUrl(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); resolveDmLink() } }}
+                          className="input-field text-sm flex-1"
+                          placeholder="Amazon / any store URL, or a geni.us link"
+                        />
+                        <button
+                          onClick={resolveDmLink}
+                          disabled={dmResolving}
+                          className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold text-white bg-[#E1306C] hover:bg-[#c72a5d] disabled:opacity-60 whitespace-nowrap"
+                        >
+                          {dmResolving ? <><Loader2 size={14} className="animate-spin" /> Reading…</> : 'Get link + caption'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Resolved / manual DM link */}
+                    <div>
+                      <label className="block text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Link to DM</label>
+                      <input type="text" value={dmLink} onChange={(e) => setDmLink(e.target.value)} className="input-field text-sm" placeholder="https://geni.us/… (auto-filled above, or paste your own)" />
+                    </div>
+
+                    {/* Trigger word */}
+                    <div>
+                      <label className="block text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Trigger word</label>
+                      <input type="text" value={dmKeyword} onChange={(e) => setDmKeyword(e.target.value.slice(0, 30))} className="input-field text-sm max-w-[220px]" placeholder="LINK" />
+                    </div>
+
+                    {/* On-video CTA options — user chooses how to showcase it */}
+                    <div>
+                      <p className="text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Show the CTA on the video (optional)</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {dmCtaPresets(dmKeyword).map((p) => {
+                          const active = overlayType === 'text' && caption === p
+                          return (
+                            <button
+                              key={p}
+                              onClick={() => { setCaption(p); setOverlayType('text') }}
+                              className={`text-[11px] px-2 py-1 rounded-full border transition-colors ${active ? 'border-[#E1306C] bg-[#E1306C]/5 text-[#E1306C]' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:border-gray-300'}`}
+                            >
+                              {p}
+                            </button>
+                          )
+                        })}
+                      </div>
+                      <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1.5">Prefer a CTA box or your own wording? Use the overlay picker above — your choice. Either way the “comment {(dmKeyword || 'LINK').trim()}” ask is also written into the caption.</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {error && <p className="text-xs text-[#ff3b30] flex items-center gap-1.5"><AlertCircle size={12} /> {error}</p>}
 
               <button
@@ -710,8 +852,16 @@ export default function InstagramBurnerPage() {
 
                   {/* Publish status / explicit publish action */}
                   {published ? (
-                    <div className="flex items-center gap-1.5 rounded-lg bg-[#34c759]/10 border border-[#34c759]/25 px-3 py-2 text-[12px] text-[#1d1d1f] dark:text-[#f5f5f7]">
-                      <Instagram size={13} className="text-[#E1306C] flex-shrink-0" /> Posted to your Instagram as a Reel.
+                    <div className="rounded-lg bg-[#34c759]/10 border border-[#34c759]/25 px-3 py-2 text-[12px] text-[#1d1d1f] dark:text-[#f5f5f7] space-y-1">
+                      <div className="flex items-center gap-1.5">
+                        <Instagram size={13} className="text-[#E1306C] flex-shrink-0" /> Posted to your Instagram as a Reel.
+                      </div>
+                      {autoDm && (
+                        <div className="flex items-start gap-1.5 text-[11px] text-[#6e6e73] dark:text-[#a1a1a6]">
+                          <CheckCircle size={12} className="text-[#34c759] flex-shrink-0 mt-0.5" />
+                          Auto-DM armed — a comment of “{(dmKeyword || 'LINK').trim()}” will DM your link (once Meta approval lands). Manage it under Instagram Auto-DM.
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <>
