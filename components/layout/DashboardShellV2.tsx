@@ -419,6 +419,9 @@ export default function DashboardShellV2({
         // Jumps straight to the "Published Posts & Social Push" tab — publish or
         // schedule any existing post to every connected channel.
         { href: '/content?tab=posts', icon: <Send size={15} />, label: 'Social Push' },
+        // Instagram comment→auto-DM automation (Phase 1). Config lives here; goes
+        // live once Meta approves the messaging permissions.
+        { href: '/instagram-dm', icon: <MessageCircle size={15} />, label: 'Instagram Auto-DM' },
         // Socials connection moved to SET UP > "Connect Socials" (it's setup,
         // not a create action). YouTube has its own SET UP > "YouTube" entry.
         { href: '/comparison', icon: <Scale size={15} />, label: 'Comparisons' },

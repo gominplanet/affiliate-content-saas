@@ -284,3 +284,55 @@ export async function publishMedia(opts: {
     containerId,
   })
 }
+
+// ─── Messaging: comment → DM (Private Replies) ───────────────────────────────
+// The comment→DM mechanic. `recipient.comment_id` is the ONLY way to initiate a
+// DM to someone who hasn't messaged first, and you get exactly ONE per comment
+// (Meta rule). Requires the instagram_business_manage_messages/_comments
+// permissions (Advanced Access via App Review) — see project_ig_comment_to_dm.
+// Docs: https://developers.facebook.com/docs/instagram-platform/private-replies/
+
+/** Send a one-time private-reply DM to the author of a comment. Returns Meta's
+ *  message/recipient ids. Throws with the raw error on failure so the caller can
+ *  log it. `message` is hard-capped to keep well under IG's limit. */
+export async function sendPrivateReply(opts: {
+  igUserId: string
+  commentId: string
+  message: string
+  accessToken: string
+}): Promise<{ recipientId?: string; messageId?: string }> {
+  const url = `${GRAPH_BASE}/${GRAPH_VERSION}/${opts.igUserId}/messages?access_token=${encodeURIComponent(opts.accessToken)}`
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      recipient: { comment_id: opts.commentId },
+      message: { text: opts.message.slice(0, 900) },
+    }),
+  })
+  const text = await res.text()
+  if (!res.ok) throw new Error(`IG private reply failed (${res.status}): ${text.slice(0, 300)}`)
+  let data: { recipient_id?: string; message_id?: string } = {}
+  try { data = JSON.parse(text) } catch { /* non-JSON success is fine */ }
+  return { recipientId: data.recipient_id, messageId: data.message_id }
+}
+
+/** Post a PUBLIC reply on a comment (e.g. "Sent you a DM! 📩") — what ManyChat
+ *  does so other viewers see the automation is live. Best-effort; never throws. */
+export async function replyToComment(opts: {
+  commentId: string
+  message: string
+  accessToken: string
+}): Promise<boolean> {
+  try {
+    const url = `${GRAPH_BASE}/${GRAPH_VERSION}/${opts.commentId}/replies?access_token=${encodeURIComponent(opts.accessToken)}`
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: opts.message.slice(0, 280) }),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
