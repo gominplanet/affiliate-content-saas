@@ -998,8 +998,15 @@ const VideoCard = memo(function VideoCardImpl({
         fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ postId: currentPostId, ...(extra || {}) }) })
           .then(async (r) => {
             if (r.ok) { onOk(); postedKeys.push(patchKey); return }
-            const d = await r.json().catch(() => ({} as { error?: string }))
-            failures.push(`${label} (${d.error || `HTTP ${r.status}`})`)
+            const d = await r.json().catch(() => ({} as { error?: string; rateLimited?: boolean }))
+            // Rate limit (e.g. X's free-tier daily cap) → a clean, actionable
+            // note rather than a raw HTTP error. The post published everywhere
+            // else; the user can retry this one platform later.
+            if (r.status === 429 || d.rateLimited) {
+              failures.push(`${label} (daily limit reached — try again later)`)
+            } else {
+              failures.push(`${label} (${d.error || `HTTP ${r.status}`})`)
+            }
           })
           .catch((e) => { failures.push(`${label} (${e instanceof Error ? e.message : 'network error'})`) }),
       )

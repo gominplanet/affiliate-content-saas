@@ -207,6 +207,11 @@ Return ONLY the tweet text.`,
     })
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
+    // X rate-limit (free-tier daily cap) → a proper 429 with a clean message and
+    // a flag, so the caller can say "try later" instead of surfacing a raw 500.
+    if (/^RATE_LIMIT:/.test(msg)) {
+      return NextResponse.json({ error: msg.replace(/^RATE_LIMIT:\s*/, ''), rateLimited: true }, { status: 429 })
+    }
     return NextResponse.json({ error: msg }, { status: 500 })
   }
 }

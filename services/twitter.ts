@@ -116,6 +116,24 @@ export async function createTweet(accessToken: string, text: string): Promise<{ 
   })
   if (!res.ok) {
     const errText = await res.text()
+    // X's free API tier has a very low post cap (a handful/day, ~500/month).
+    // Once it's hit, every tweet 429s until the window resets. Surface that as
+    // a clear, user-facing message (with the reset time when X gives us one),
+    // tagged RATE_LIMIT: so the route can return a proper 429. Everything else
+    // keeps the raw diagnostic.
+    if (res.status === 429) {
+      const resetHdr =
+        res.headers.get('x-user-limit-24hour-reset') ||
+        res.headers.get('x-app-limit-24hour-reset') ||
+        res.headers.get('x-rate-limit-reset')
+      const resetSec = resetHdr ? parseInt(resetHdr, 10) : NaN
+      let when = 'later'
+      if (!isNaN(resetSec) && resetSec > 0) {
+        const mins = Math.max(1, Math.round((resetSec * 1000 - Date.now()) / 60_000))
+        when = mins >= 90 ? `in about ${Math.round(mins / 60)} hour${Math.round(mins / 60) === 1 ? '' : 's'}` : `in about ${mins} min`
+      }
+      throw new Error(`RATE_LIMIT: X's daily post limit is reached — X won't accept more posts right now. Try again ${when}.`)
+    }
     throw new Error(`Twitter tweet failed (${res.status}): ${errText.slice(0, 300)}`)
   }
   const json = await res.json() as { data: { id: string; text: string } }
