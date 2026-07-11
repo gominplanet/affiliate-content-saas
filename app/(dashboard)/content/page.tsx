@@ -3340,7 +3340,14 @@ export default function ContentPage() {
       } else {
         for (const pl of (it.post.posted ?? [])) done.add(pl)
       }
-      const shared = sharedRequired.every((pl) => done.has(pl))
+      // Forgiving rule: a post counts as "shared" once it's posted to all but
+      // ONE of the required socials — so a single stray failure (a flaky
+      // Bluesky/Threads push, etc.) doesn't keep an otherwise-done post in the
+      // list. `need` never drops below 1, so a single-platform account still
+      // requires that one platform to have actually posted.
+      const postedCount = sharedRequired.filter((pl) => done.has(pl)).length
+      const need = Math.max(1, sharedRequired.length - 1)
+      const shared = postedCount >= need
       return !shared // keep only the NOT-yet-shared posts
     })
   }, [recentMatched, hideShared, sharedRequired, posts])
@@ -3718,7 +3725,7 @@ export default function ContentPage() {
                       style={hideShared
                         ? { background: 'rgba(124,58,237,0.12)', borderColor: 'rgba(124,58,237,0.4)', color: '#7C3AED' }
                         : { background: 'transparent', borderColor: 'var(--border, rgba(0,0,0,0.12))', color: 'var(--text-soft, #6e6e73)' }}
-                      title="Hide posts already shared to every connected social (X/Twitter doesn't count — its free tier is rate-limited). Toggle off to see everything."
+                      title="Hide posts already shared to your connected socials — X/Twitter is excluded (rate-limited) and one stray platform failure is forgiven. Toggle off to see everything."
                     >
                       {hideShared ? '✓ Hiding shared' : 'Hide shared'}
                     </button>
