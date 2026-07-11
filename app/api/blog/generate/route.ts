@@ -108,9 +108,16 @@ function bodyWordCount(content: string): number {
 }
 
 
-// Phase 1: Claude generation + WordPress text publish only (~30-40s)
-// Images are generated separately via /api/blog/images
-export const maxDuration = 300
+// Phase 1: Claude generation + WordPress text publish only.
+// Images are generated separately via /api/blog/images.
+//
+// Opus 4.8 + the stacked quality passes now push generation to ~250-290s, which
+// was brushing the old 300s cap and forcing near-every async job into a timeout
+// + checkpoint-resume retry (see lib/generation-jobs.ts). 600s gives attempt #1
+// the headroom to finish in one pass. NOTE: Vercel enforces the plan limit —
+// without Fluid Compute enabled this is silently clamped back to 300 (so it's
+// safe to ship ahead of that toggle; it simply has no effect until Fluid is on).
+export const maxDuration = 600
 
 /** Turn anything thrown into a human-readable string. Plain objects used
  *  to stringify as "[object Object]" via String(err), hiding the real

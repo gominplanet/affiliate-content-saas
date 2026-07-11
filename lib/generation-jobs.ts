@@ -84,24 +84,25 @@ export async function claimNextJob(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   admin: any,
   // Stale-running reclaim window. A blog attempt that times out at the worker's
-  // 290s abort is left 'running' (the route may still be publishing on its own
+  // abort is left 'running' (the route may still be publishing on its own
   // invocation, so we must NOT requeue into a concurrent double-run / double-
   // Opus-bill). This window is how long we wait before assuming the attempt is
   // truly dead and retrying it from checkpoint.
   //
-  // MUST stay strictly above the generate route's own hard cap (maxDuration=300s)
-  // — after 300s Vercel has killed the route invocation, so 420s leaves a 120s
-  // safety margin over that guaranteed-dead point (money-safe, no double-run).
+  // MONEY-SAFETY INVARIANT: this MUST stay strictly above the generate route's
+  // hard cap — after that cap Vercel has killed the route invocation, so we can
+  // reclaim without risking a concurrent run. The route's cap is now 600s (with
+  // Fluid Compute; clamped to 300s without it), so 720s clears the *maximum*
+  // possible cap in EVERY Fluid/GENERATION_LONG_RUN combination — there is no
+  // config where a live attempt can be reclaimed. This is deliberately a single
+  // universal value rather than one coupled to the flag, so a partial rollout
+  // (Fluid enabled but the flag unset, or vice-versa) can never open a
+  // double-bill window.
   //
-  // Was 600s, which added a needless ~4-5 min of DEAD WAIT to every job whose
-  // first attempt timed out — and near-every blog job does, now that Opus 4.8 +
-  // the quality passes push generation to ~250-290s, right at the 290s abort.
-  // That dead wait was the bulk of the ~15-min wall-clock (real work is ~4 min)
-  // that made jobs cross the client's 13-min poll ceiling → the alarming
-  // "still generating, check your Library" message. 420s halves the wait while
-  // preserving the double-bill guard. The real cure (generation finishing inside
-  // one attempt) is a separate change; this just stops bleeding time on the retry.
-  staleSeconds = 420,
+  // In the steady state this rarely fires at all: once GENERATION_LONG_RUN gives
+  // attempt #1 a 560s budget it finishes in one pass (~250-290s) with no timeout
+  // and no retry, so the reclaim path is reserved for genuinely dead invocations.
+  staleSeconds = 720,
 ): Promise<GenerationJob | null> {
   const { data, error } = await admin.rpc('claim_generation_job', { stale_seconds: staleSeconds })
   if (error) throw new Error(`claim_generation_job failed: ${error.message}`)

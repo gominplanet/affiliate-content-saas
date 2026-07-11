@@ -83,7 +83,12 @@ async function maybeAlertFailSpike(admin: ReturnType<typeof createAdminClient>):
 // rate is ~N jobs/min (the every-minute cron) and ticks still overlap, so the
 // queue drains ~N× faster than the old 1-at-a-time worker. Capped at 10 so a
 // fat-finger env value can't fan out unbounded concurrent generations.
-export const maxDuration = 300
+// Must be ≥ the generate route's own maxDuration — this worker holds the
+// in-flight self-call fetch and awaits it. Raised to 600 in lockstep with the
+// route (Vercel clamps to 300 without Fluid Compute, so it's safe to ship
+// ahead of that toggle). With GENERATION_LONG_RUN=true the runner awaits up to
+// 560s; the worker must outlive that.
+export const maxDuration = 600
 const CONCURRENCY = Math.max(1, Math.min(10, Number(process.env.GENERATION_WORKER_CONCURRENCY) || 3))
 
 /** Run a single claimed job to completion, returning a result row. Holds the

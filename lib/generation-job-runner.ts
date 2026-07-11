@@ -17,6 +17,19 @@
 import type { GenerationJob } from '@/lib/generation-jobs'
 import { isWpConnectionError } from '@/lib/wp-connection-health'
 
+// How long the worker awaits the internal generate self-call before aborting.
+// Default 290s stays just under the legacy 300s function cap. When the operator
+// enables Vercel Fluid Compute (which unlocks the route's 600s maxDuration) and
+// sets GENERATION_LONG_RUN=true, this rises to 560s so a ~250-290s generation
+// finishes in ONE attempt — no timeout, no checkpoint-resume retry, no 10-min-
+// class stale wait. These two switches are meant to be flipped together: the
+// flag alone (without Fluid) just aborts later than the clamped 300s cap allows,
+// which is harmless. The stale-reclaim window (720s, see lib/generation-jobs.ts)
+// sits safely above the 600s route cap in every combination, so raising this
+// can never cause a job to be reclaimed into a concurrent double-Opus-bill.
+const LONG_RUN = process.env.GENERATION_LONG_RUN === 'true'
+const RUNNER_ABORT_MS = LONG_RUN ? 560_000 : 290_000
+
 /** This deployment's own absolute base URL (the worker calls back into it). */
 function resolveSelfBaseUrl(): string {
   const explicit = process.env.NEXT_PUBLIC_APP_URL
@@ -71,9 +84,10 @@ async function runServiceRouteJob(
       'x-mvp-service-job': job.id,
     },
     body: JSON.stringify(job.input ?? {}),
-    // Almost the worker's whole 300s budget; the route is tuned to finish
-    // under it (Opus effort:'medium').
-    signal: AbortSignal.timeout(290_000),
+    // Abort budget for the internal generate call. 290s under the legacy 300s
+    // cap; 560s when GENERATION_LONG_RUN + Fluid Compute give the route a 600s
+    // budget so attempt #1 finishes in one pass (see RUNNER_ABORT_MS above).
+    signal: AbortSignal.timeout(RUNNER_ABORT_MS),
     // CRITICAL: never auto-follow. NEXT_PUBLIC_APP_URL is the non-www
     // canonical, but the domain layer 30x-redirects non-www → www — and
     // fetch's auto-follow DOWNGRADES POST to GET on 301/302, which hits the
