@@ -32,6 +32,7 @@ import WpUpdateBanner from '@/components/dashboard/WpUpdateBanner'
 import WpUpdatePill from '@/components/dashboard/WpUpdatePill'
 import ScoutUpdatePill from '@/components/dashboard/ScoutUpdatePill'
 import ScoutTokenStrip from '@/components/dashboard/ScoutTokenStrip'
+import ConsumptionGauge from '@/components/dashboard/ConsumptionGauge'
 import AmazonSitesReminder from '@/components/dashboard/AmazonSitesReminder'
 import ProTourBanner from '@/components/dashboard/ProTourBanner'
 import RecommendedToolsCard from '@/components/dashboard/RecommendedToolsCard'
@@ -456,6 +457,13 @@ export default async function DashboardPage() {
             <Link href="/billing" className="text-[12px] font-medium text-[#7C3AED] hover:text-[#9D6BFF] inline-flex items-center gap-1">
               {tier === 'pro' || tier === 'admin' ? 'Manage plan' : 'Upgrade'} <ArrowUpRight size={11} />
             </Link>
+          </div>
+          {/* Consumption gauge — the at-a-glance visual of how much of this
+              period's generation allowance is used (blog + thumbnails + metadata). */}
+          <div className="flex justify-center mb-5 pb-5 border-b" style={{ borderColor: 'var(--border)' }}>
+            <div className="w-full max-w-[300px]">
+              <ConsumptionGauge embedded />
+            </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
             {usage.map(({ label, used, limit }) => {
