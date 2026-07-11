@@ -7,7 +7,7 @@
 
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { Instagram, MessageCircle, Loader2, Info } from 'lucide-react'
+import { Instagram, MessageCircle, Loader2, Info, FlaskConical } from 'lucide-react'
 
 const EXAMPLE_LINK = 'https://geni.us/Abc123'
 
@@ -55,9 +55,13 @@ export default function InstagramDmPage() {
 
   return (
     <div className="max-w-2xl mx-auto py-6 px-4 flex flex-col gap-5">
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
         <Instagram size={20} className="text-[#E1306C]" />
         <h1 className="text-lg font-semibold" style={{ color: 'var(--text)' }}>Instagram Auto-DM</h1>
+        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full"
+          style={{ background: 'rgba(220,38,38,0.12)', color: '#DC2626' }}>
+          <FlaskConical size={11} /> Labs
+        </span>
       </div>
       <p className="text-sm" style={{ color: 'var(--text-soft)' }}>
         When someone comments your keyword on any of your Instagram posts, MVP automatically DMs

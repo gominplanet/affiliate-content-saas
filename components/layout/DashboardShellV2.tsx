@@ -269,6 +269,7 @@ export default function DashboardShellV2({
   }, [adminOpen])
 
   const isAdmin = tier === 'admin'
+  const isPro = tier === 'pro' || tier === 'admin' // Labs = Pro-only
   // Paid = any non-trial plan (Creator, Studio, Pro, admin).
   const isPaid = tier !== 'trial'
   // Source & Earn (the three product/campaign finders: Amazon, Levanta,
@@ -419,9 +420,6 @@ export default function DashboardShellV2({
         // Jumps straight to the "Published Posts & Social Push" tab — publish or
         // schedule any existing post to every connected channel.
         { href: '/content?tab=posts', icon: <Send size={15} />, label: 'Social Push' },
-        // Instagram comment→auto-DM automation (Phase 1). Config lives here; goes
-        // live once Meta approves the messaging permissions.
-        { href: '/instagram-dm', icon: <MessageCircle size={15} />, label: 'Instagram Auto-DM' },
         // Socials connection moved to SET UP > "Connect Socials" (it's setup,
         // not a create action). YouTube has its own SET UP > "YouTube" entry.
         { href: '/comparison', icon: <Scale size={15} />, label: 'Comparisons' },
@@ -511,10 +509,16 @@ export default function DashboardShellV2({
         { href: 'https://geni.us/khuHTe', icon: <ExternalLink size={13} />, label: 'Archer Affiliate', external: true },
       ],
     },
-    // LABS section RETIRED 2026-07-08 — its last item (Social Launch Kit)
-    // graduated into SET UP (under Ads), all paid tiers. Everything else left
-    // earlier (Source & Earn finders → their own section; MVP x LTK → Create).
-    // Re-add a group here if a new experimental tool ever needs a home.
+    // LABS — experimental tools, Pro-only (gate: isPro), NOT promoted on
+    // landing/pricing until they graduate out. Retired 2026-07-08 (Social Launch
+    // Kit graduated to SET UP), re-opened 2026-07-11 for Instagram Auto-DM
+    // (Phase 1; dormant until Meta approves the messaging permissions).
+    {
+      label: 'Labs',
+      items: [
+        { href: '/instagram-dm', icon: <MessageCircle size={15} />, label: 'Instagram Auto-DM', gate: isPro },
+      ],
+    },
     {
       // HELP & COMMUNITY — support + learning surfaces. "Create a Help Ticket"
       // (-> /support) ships in Phase 3 with its DB table + admin inbox; the
