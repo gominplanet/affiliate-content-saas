@@ -81,6 +81,7 @@ export default function InstagramBurnerPage() {
   const [dmKeyword, setDmKeyword] = useState('LINK')
   const [dmLink, setDmLink] = useState('')     // resolved affiliate link (or pasted manually)
   const [dmResolving, setDmResolving] = useState(false)
+  const [showLink, setShowLink] = useState(false) // collapse the optional link + auto-DM steps by default
 
   const [uploading, setUploading] = useState(false)
   const [sourceUrl, setSourceUrl] = useState<string | null>(null)
@@ -718,6 +719,13 @@ export default function InstagramBurnerPage() {
                 </div>
               </div>
 
+              {/* Optional link + auto-DM — collapsed by default so the core flow is video → CTA → publish */}
+              {!showLink ? (
+                <button onClick={() => setShowLink(true)} className="w-full card p-3.5 flex items-center justify-between text-left hover:border-[#7C3AED]/40 transition-colors">
+                  <span className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Add a product link &amp; auto-DM <span className="font-normal text-[11px] text-[#86868b]">— optional</span></span>
+                  <Plus size={16} className="text-[#7C3AED] flex-shrink-0" />
+                </button>
+              ) : (<>
               {/* Product (optional) — ASIN / store URL / TikTok Shop link → smart caption + shared with auto-DM */}
               <div className="card p-4">
                 <label className="block text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">4 · Product link <span className="font-normal text-[11px] text-[#86868b]">(optional)</span></label>
@@ -816,6 +824,7 @@ export default function InstagramBurnerPage() {
                   </div>
                 )}
               </div>
+              </>)}
 
               {error && <p className="text-xs text-[#ff3b30] flex items-center gap-1.5"><AlertCircle size={12} /> {error}</p>}
 
