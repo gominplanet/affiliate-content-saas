@@ -591,9 +591,7 @@ export default function InstagramBurnerPage() {
             {mode === 'batch' ? (
               <BatchBurner supabase={supabase} />
             ) : (
-          <div className="space-y-4">
-            {/* Steps 1–3 side by side, then the preview + Burn below */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
+          <div className="space-y-3 max-w-2xl">
               {/* 1. Source video — pick one of your own Shorts, or upload a file */}
               <div className="card p-4">
                 <label className="block text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">1 · Your video <span className="font-normal text-[11px] text-[#86868b]">(vertical, under 300MB)</span></label>
@@ -807,9 +805,7 @@ export default function InstagramBurnerPage() {
                 )}
               </div>
 
-              {/* Column 3 — where it appears, with the live preview stacked below it */}
-              <div className="space-y-3">
-                {/* Position */}
+              {/* 3. Position */}
                 <div className="card p-4">
                   <label className="block text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">3 · Where it appears</label>
                   <div className="grid grid-cols-2 gap-2">
@@ -929,10 +925,8 @@ export default function InstagramBurnerPage() {
               </div>
               </>)}
 
-                {/* Live preview / result */}
-                {previewNode}
-              </div>
-            </div>
+              {/* Live preview / result */}
+              <div className="max-w-sm mx-auto">{previewNode}</div>
 
               {error && <p className="text-xs text-[#ff3b30] flex items-center gap-1.5"><AlertCircle size={12} /> {error}</p>}
 
