@@ -85,52 +85,74 @@ export class GeniuslinkService {
     return match ? match.Id : null
   }
 
-  /** Create a new group on the account. Tries many known endpoint
-   *  shapes in order — Geniuslink doesn't publish a stable create
-   *  endpoint, so we attempt every documented + community-reported
-   *  pattern until one returns 2xx. Returns null on all-fail so callers
-   *  fall back to the default group + log a "please create manually" hint.
+  /** Create a new group on the account.
    *
-   *  Each attempt has its own 6s timeout so a single hung endpoint can
-   *  never block past ~30s total (vs the previous unbounded behavior
-   *  that ate the entire 4-minute request budget on a stuck endpoint).
+   *  2026-07-10 ROOT-CAUSE FIX: the previous version POSTed to guessed
+   *  endpoint shapes (`/v3/groups`, `/v1/groups/add` with a `name`/`enabled`
+   *  body) — NONE of which Geniuslink accepts, so createGroup ALWAYS
+   *  returned null and every blog link silently fell back to the default
+   *  group. Users saw "Geniuslink isn't creating separate groups per site."
    *
-   *  Last-resort attempts use the same query-string-on-POST shape as the
-   *  WORKING /v3/shorturls endpoint — same auth, same param style. */
+   *  The real, working shape (confirmed against Geniuslink's own Node SDK,
+   *  github.com/mishguruorg/geniuslink → requests/addGroup.ts, whose nock
+   *  test pins it exactly) is:
+   *      GET /v1/groups/add?GroupName=<name>
+   *      → 200 { NewGroupId: <int>, IsError: { ErrorMessage } }
+   *  It's a GET (not POST), the param is `GroupName` (not `name`), and the
+   *  id comes back as `NewGroupId`. Geniuslink also hard-caps the group
+   *  name at 20 characters — longer names are rejected outright, so we clip
+   *  to 20 (groupNameForSiteUrl already keeps names short + single-token).
+   *
+   *  We lead with that correct call and keep a couple of legacy POST shapes
+   *  as a defensive fallback for any account on an older API surface, so a
+   *  future Geniuslink change can't silently break us the same way twice.
+   *  Returns null on all-fail so callers fall back to the default group +
+   *  surface a "please create manually" hint. */
   async createGroup(name: string): Promise<number | null> {
-    const cleanName = name.trim().slice(0, 80)
+    // Geniuslink rejects group names over 20 chars. Clip so the create
+    // succeeds; groupNameForSiteUrl uses the same 20-char cap so the name
+    // we look up later matches the name we create here.
+    const cleanName = name.trim().slice(0, 20)
     if (!cleanName) return null
 
-    const formBody = new URLSearchParams({ name: cleanName, enabled: '1' }).toString()
-    const formBodyCap = new URLSearchParams({ Name: cleanName, Enabled: '1' }).toString()
-    const jsonLowerBody = JSON.stringify({ name: cleanName, enabled: true })
-    const jsonCapBody = JSON.stringify({ Name: cleanName, Enabled: 1 })
-
-    type Attempt = {
-      url: string
-      body?: string
-      contentType?: string
-      label: string
+    // ── Primary: the confirmed GET shape ────────────────────────────────
+    try {
+      const url = `${GENIUSLINK_API}/v1/groups/add?${new URLSearchParams({ GroupName: cleanName }).toString()}`
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: this.authHeaders,
+        signal: AbortSignal.timeout(8000),
+      })
+      const text = await res.text().catch(() => '')
+      if (res.ok) {
+        let data: Record<string, unknown> | null = null
+        try { data = JSON.parse(text) } catch { /* not JSON */ }
+        const errMsg = (data?.IsError as { ErrorMessage?: string } | undefined)?.ErrorMessage
+        const newId = data?.NewGroupId
+        if (typeof newId === 'number' && newId > 0) {
+          console.log(`[geniuslink.createGroup] ✓ created "${cleanName}" (NewGroupId=${newId})`)
+          return newId
+        }
+        // 200 but no id — usually a duplicate name; the caller already
+        // checked findGroupIdByName first, but log the API's reason.
+        console.warn(`[geniuslink.createGroup] /v1/groups/add returned no NewGroupId for "${cleanName}"${errMsg ? ` — ${errMsg}` : ''}`)
+      } else {
+        console.warn(`[geniuslink.createGroup] /v1/groups/add ${res.status} for "${cleanName}": ${text.slice(0, 200)}`)
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.warn(`[geniuslink.createGroup] /v1/groups/add threw for "${cleanName}": ${msg.slice(0, 120)}`)
     }
 
-    const attempts: Attempt[] = [
-      // Pattern #1 — mirrors the working /v3/shorturls call (query string on POST, no body).
-      { url: `${GENIUSLINK_API}/v3/groups?${formBody}`, label: 'v3-querystring' },
-      { url: `${GENIUSLINK_API}/v1/groups?${formBody}`, label: 'v1-querystring' },
-      { url: `${GENIUSLINK_API}/v1/groups/add?${formBody}`, label: 'v1-add-querystring' },
-      // Pattern #2 — form-urlencoded body (the most common REST-y create shape)
-      { url: `${GENIUSLINK_API}/v3/groups`, body: formBody, contentType: 'application/x-www-form-urlencoded', label: 'v3-form' },
-      { url: `${GENIUSLINK_API}/v1/groups`, body: formBody, contentType: 'application/x-www-form-urlencoded', label: 'v1-form' },
-      { url: `${GENIUSLINK_API}/v1/groups/add`, body: formBody, contentType: 'application/x-www-form-urlencoded', label: 'v1-add-form' },
-      { url: `${GENIUSLINK_API}/v1/groups/add`, body: formBodyCap, contentType: 'application/x-www-form-urlencoded', label: 'v1-add-form-cap' },
-      // Pattern #3 — JSON body
-      { url: `${GENIUSLINK_API}/v3/groups`, body: jsonLowerBody, contentType: 'application/json', label: 'v3-json' },
-      { url: `${GENIUSLINK_API}/v3/groups`, body: jsonCapBody, contentType: 'application/json', label: 'v3-json-cap' },
-      { url: `${GENIUSLINK_API}/v1/groups`, body: jsonLowerBody, contentType: 'application/json', label: 'v1-json' },
-      { url: `${GENIUSLINK_API}/v1/groups/add`, body: jsonCapBody, contentType: 'application/json', label: 'v1-add-json-cap' },
-    ]
-
+    // ── Fallback: legacy POST shapes (older API surfaces only) ──────────
     const failures: string[] = []
+    const formBody = new URLSearchParams({ GroupName: cleanName }).toString()
+    const jsonBody = JSON.stringify({ GroupName: cleanName })
+    const attempts: Array<{ url: string; body?: string; contentType?: string; label: string }> = [
+      { url: `${GENIUSLINK_API}/v1/groups/add`, body: formBody, contentType: 'application/x-www-form-urlencoded', label: 'v1-add-form' },
+      { url: `${GENIUSLINK_API}/v1/groups/add`, body: jsonBody, contentType: 'application/json', label: 'v1-add-json' },
+      { url: `${GENIUSLINK_API}/v3/groups`, body: jsonBody, contentType: 'application/json', label: 'v3-json' },
+    ]
     for (const attempt of attempts) {
       try {
         const headers: Record<string, string> = { ...this.authHeaders }
@@ -142,26 +164,17 @@ export class GeniuslinkService {
           signal: AbortSignal.timeout(6000),
         })
         const text = await res.text().catch(() => '')
-        if (!res.ok) {
-          failures.push(`${attempt.label}=${res.status}`)
-          continue
-        }
+        if (!res.ok) { failures.push(`${attempt.label}=${res.status}`); continue }
         let data: Record<string, unknown> | null = null
         try { data = JSON.parse(text) } catch { /* not JSON */ }
-        if (!data) {
-          failures.push(`${attempt.label}=ok-non-json`)
-          continue
-        }
-        // Response shapes seen across versions: { Id }, { id },
-        // { Group: { Id } }, { group: { id } }, { Data: { Id } }
-        const id = (data.Id
+        if (!data) { failures.push(`${attempt.label}=ok-non-json`); continue }
+        const id = (data.NewGroupId
+          ?? data.Id
           ?? data.id
           ?? (data.Group as { Id?: number })?.Id
-          ?? (data.group as { id?: number })?.id
-          ?? (data.Data as { Id?: number })?.Id
         ) as number | undefined
-        if (typeof id === 'number') {
-          console.log(`[geniuslink.createGroup] ✓ created "${cleanName}" via ${attempt.label} (Id=${id})`)
+        if (typeof id === 'number' && id > 0) {
+          console.log(`[geniuslink.createGroup] ✓ created "${cleanName}" via fallback ${attempt.label} (Id=${id})`)
           return id
         }
         failures.push(`${attempt.label}=ok-no-id(keys:${Object.keys(data).join(',')})`)

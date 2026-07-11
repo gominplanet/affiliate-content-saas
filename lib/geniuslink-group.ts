@@ -52,7 +52,12 @@ export function groupNameForSiteUrl(siteUrl: string): string | null {
     const cleaned = noTld.replace(/\./g, '-')
     // Final safety: drop anything Geniuslink might still reject
     // (whitespace, slashes, etc.). Keep alnum + hyphen + underscore.
-    return cleaned.replace(/[^a-z0-9_-]/g, '') || null
+    // Then clip to 20 chars — Geniuslink HARD-rejects group names over 20
+    // characters (see services/geniuslink createGroup + the Node SDK's
+    // GroupNameCharLimitExceeded). The lookup path uses this same function,
+    // so create + match always agree on the (possibly clipped) name.
+    const safe = cleaned.replace(/[^a-z0-9_-]/g, '')
+    return safe.slice(0, 20) || null
   } catch {
     return null
   }

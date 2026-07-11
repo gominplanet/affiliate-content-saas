@@ -93,7 +93,13 @@ export async function POST(request: Request) {
   const jsonLowerBody = JSON.stringify({ name, enabled: true })
   const jsonCapBody = JSON.stringify({ Name: name, Enabled: 1 })
 
-  const attempts: Array<{ label: string; url: string; body?: string; contentType?: string }> = [
+  // The FIRST attempt is the confirmed-working shape (GET /v1/groups/add?
+  // GroupName=…, per Geniuslink's own Node SDK). The rest are legacy POST
+  // guesses kept only so the report proves they still fail (or succeed on
+  // some odd account) — see services/geniuslink createGroup.
+  const getShape = `${GENIUSLINK_API}/v1/groups/add?${new URLSearchParams({ GroupName: name }).toString()}`
+  const attempts: Array<{ label: string; url: string; body?: string; contentType?: string; method?: string }> = [
+    { label: 'GET-v1-add-GroupName', url: getShape, method: 'GET' },
     { label: 'v3-querystring',     url: `${GENIUSLINK_API}/v3/groups?${formBody}` },
     { label: 'v1-querystring',     url: `${GENIUSLINK_API}/v1/groups?${formBody}` },
     { label: 'v1-add-querystring', url: `${GENIUSLINK_API}/v1/groups/add?${formBody}` },
@@ -113,7 +119,7 @@ export async function POST(request: Request) {
       const headers: Record<string, string> = { ...authHeaders(creds) }
       if (a.contentType) headers['Content-Type'] = a.contentType
       const res = await fetch(a.url, {
-        method: 'POST',
+        method: a.method ?? 'POST',
         headers,
         body: a.body,
         signal: AbortSignal.timeout(6000),
