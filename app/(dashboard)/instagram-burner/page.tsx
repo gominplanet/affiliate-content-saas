@@ -448,7 +448,7 @@ export default function InstagramBurnerPage() {
     <>
       <PageHero
         title="Shop Burner"
-        subtitle="Pick one of your YouTube Shorts (or upload a clip), burn a caption or CTA box onto it, optionally set up an auto-DM link on a trigger word, then publish straight to Instagram Reels and TikTok — or download for Stories."
+        subtitle="Turn a YouTube Short into an Instagram Reel or TikTok — burn on a CTA, set up an auto-DM link, and publish."
       />
 
       <div className="max-w-4xl">
@@ -457,7 +457,7 @@ export default function InstagramBurnerPage() {
         ) : (
           <>
             {/* Connected accounts — Instagram + TikTok, the two publish targets. */}
-            <div className="flex flex-wrap items-center gap-2 mb-4">
+            <div className="flex flex-wrap items-center gap-2 mb-3">
               {igUsername ? (
                 <div className="flex items-center gap-2 rounded-lg border border-[#E1306C]/25 bg-[#E1306C]/5 px-3 py-2 w-fit">
                   <Instagram size={15} className="text-[#E1306C] flex-shrink-0" />
@@ -482,7 +482,7 @@ export default function InstagramBurnerPage() {
               )}
             </div>
 
-            <div className="flex gap-2 mb-4">
+            <div className="flex gap-2 mb-3">
               <button onClick={() => setMode('single')} className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${mode === 'single' ? 'border-[#7C3AED] bg-[#7C3AED]/5 text-[#7C3AED]' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0]'}`}>Single video</button>
               <button onClick={() => setMode('batch')} className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${mode === 'batch' ? 'border-[#7C3AED] bg-[#7C3AED]/5 text-[#7C3AED]' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0]'}`}>Batch &amp; schedule · up to 5</button>
             </div>
@@ -621,13 +621,10 @@ export default function InstagramBurnerPage() {
                         <button key={p} onClick={() => setCaption(p)} className={`text-[11px] px-2 py-1 rounded-full border transition-colors ${caption === p ? 'border-[#7C3AED] bg-[#7C3AED]/5 text-[#7C3AED]' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:border-gray-300'}`}>{p}</button>
                       ))}
                     </div>
-                    {/* Style */}
-                    <div className="grid grid-cols-2 gap-2 mt-3">
+                    {/* Style — compact chips (see it live in the preview) */}
+                    <div className="flex flex-wrap gap-1.5 mt-2">
                       {STYLES.map(s => (
-                        <button key={s.key} onClick={() => setStyle(s.key)} className={`text-left p-2 rounded-lg border transition-colors ${style === s.key ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-gray-300'}`}>
-                          <span className="block text-[13px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{s.label}</span>
-                          <span className="block text-[10px] text-[#86868b] dark:text-[#8e8e93]">{s.desc}</span>
-                        </button>
+                        <button key={s.key} onClick={() => setStyle(s.key)} className={`text-[11px] px-2 py-1 rounded-full border transition-colors ${style === s.key ? 'border-[#7C3AED] bg-[#7C3AED]/5 text-[#7C3AED]' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:border-gray-300'}`}>{s.label}</button>
                       ))}
                     </div>
                   </>
@@ -655,7 +652,7 @@ export default function InstagramBurnerPage() {
                         </button>
                       </div>
                       {genStickerError && <p className="text-[11px] text-[#ff3b30] mt-1.5">{genStickerError}</p>}
-                      <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-1.5">1–6 words. MVP designs a transparent badge in our box style (~20s). Saved to “My boxes” to reuse anytime.</p>
+                      <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-1.5">1–6 words → we design a badge in ~20s. Saved to reuse.</p>
 
                       {/* My boxes — the creator's saved designs, reusable across sessions */}
                       {myStickers.length > 0 && (
@@ -688,17 +685,17 @@ export default function InstagramBurnerPage() {
 
                     {CTA_STICKERS.length > 0 && (
                       <>
-                        <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mb-1.5">…or pick a ready-made box:</p>
-                        <div className="grid grid-cols-2 gap-2">
+                        <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mb-1.5">…or pick a ready-made box <span className="text-[#86868b]/70">(scroll for more)</span>:</p>
+                        <div className="grid grid-cols-3 gap-1.5 max-h-[172px] overflow-y-auto pr-1">
                           {CTA_STICKERS.map(s => (
                             <button
                               key={s.id}
                               onClick={() => { setStickerId(s.id); setGenStickerUrl(null) }}
-                              className={`p-1.5 rounded-lg border transition-colors ${stickerId === s.id ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-gray-300'}`}
+                              title={s.label}
+                              className={`p-1 rounded-lg border transition-colors ${stickerId === s.id ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-gray-300'}`}
                             >
                               {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img src={ctaStickerUrl(s.file)} alt={s.label} className="w-full h-auto rounded bg-[#1d1d1f]/5" />
-                              <span className="block text-[11px] text-center mt-1 text-[#1d1d1f] dark:text-[#f5f5f7]">{s.label}</span>
                             </button>
                           ))}
                         </div>
