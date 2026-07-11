@@ -289,7 +289,18 @@ async function titleStrategistAgent(
    *  no marketing fluff. Passed explicitly so the SEO rule below can be
    *  concrete ("use THIS exact name") rather than vague. */
   seoProductName?: string | null,
+  /** True when a transcript-derived brief IS in productContext. When false we
+   *  have NO idea what the creator did/said, so the prompt forbids inventing a
+   *  first-person experience (the "My Clothes Survived a Humid 2-Week Trip"
+   *  fabrication) and restricts titles to product-grounded claims. */
+  hasBrief = false,
 ): Promise<{ best: string; alternatives: string[] }> {
+  // Anti-fabrication guard for the no-transcript case (the common one until
+  // SCOUT ships transcripts for drafts). Honors the standing "never fabricate
+  // first person" rule — without a transcript we cannot know the creator's
+  // lived experience, so titles must NOT claim one.
+  const antiFabrication = hasBrief ? '' : `
+0.5. NO-TRANSCRIPT MODE (CRITICAL): You do NOT have a transcript for this video — you do NOT know what the creator personally did, said, tested, or experienced. So you MUST NOT invent ANY first-person lived experience, personal story, specific trip, timeframe, or personal outcome (BANNED examples: "My Clothes Survived a Humid 2-Week Trip", "I Used It For 3 Weeks", "This Cut MY Luggage in Half", "I Stopped Doing X After…"). Inventing one is fabrication and is an automatic REJECT. Ground every title ONLY in the product's real features/benefits from the PRODUCT data — framed as a claim, a question, a comparison, or a benefit the product ENABLES ("Cusangel Vacuum Bags Can Halve Your Luggage Space — Pump Included"), never as something the creator lived through. In this mode the "Story snapshot", "Skeptic-to-believer", and "specific-result-from-my-own-use" angles are BANNED; use product-claim / question / comparison / direct-benefit angles instead.`
   const voiceAnchor = (priorTitles && priorTitles.length > 0)
     ? `\n\nUSER'S RECENT TITLES (match this cadence + hook style; do NOT copy):\n${priorTitles.map(t => `- "${t}"`).join('\n')}\n`
     : ''
@@ -315,8 +326,8 @@ TONE: ${tone}
 ${seoRule}
 
 CORE PRINCIPLES (do not violate):
-0. RELEVANCE IS NON-NEGOTIABLE — THIS IS THE #1 FAILURE MODE. The ${isProduct ? 'PRODUCT' : 'VIDEO CONTEXT'} above may include a "WHAT ACTUALLY HAPPENS IN THIS VIDEO" section pulled from the transcript. If it's there, it is the GROUND TRUTH — every title MUST be about that exact subject and reflect a real moment from it. A title that is generic, that names a topic/product NOT in that section, or that could describe any random video, is an automatic REJECT. If the ORIGINAL TITLE disagrees with the transcript section (it may be a placeholder, a filename, or just vague), TRUST THE TRANSCRIPT, not the original title. If there is no transcript section, ground the titles in the product/video context and original title instead — but never invent a topic that isn't supported by what you were given.
-1. EACH title must be GROUNDED in a SPECIFIC benefit, pain point, or moment from the analysis above. Quote a real number, a real result, a real before/after — never generic filler.
+0. RELEVANCE IS NON-NEGOTIABLE — THIS IS THE #1 FAILURE MODE. The ${isProduct ? 'PRODUCT' : 'VIDEO CONTEXT'} above may include a "WHAT ACTUALLY HAPPENS IN THIS VIDEO" section pulled from the transcript. If it's there, it is the GROUND TRUTH — every title MUST be about that exact subject and reflect a real moment from it. A title that is generic, that names a topic/product NOT in that section, or that could describe any random video, is an automatic REJECT. If the ORIGINAL TITLE disagrees with the transcript section (it may be a placeholder, a filename, or just vague), TRUST THE TRANSCRIPT, not the original title. If there is no transcript section, ground the titles in the product/video context and original title instead — but never invent a topic that isn't supported by what you were given.${antiFabrication}
+1. EACH title must be GROUNDED in a SPECIFIC benefit, pain point, or moment from the analysis above${hasBrief ? '. Quote a real number, a real result, a real before/after — never generic filler' : ' — but per rule 0.5, only claims supported by the PRODUCT data, never an invented personal result'}.
 2. EACH of the 5 alternatives must use a STRUCTURALLY DIFFERENT opening. If alt #1 starts with "I Tested…", #2 cannot start with "I Tried…" or "I Tested…". If #1 is a question, #2 must be a statement. The 5 titles together should read as 5 distinct creators wrote them.
 3. NO TEMPLATED HOOKS. The following openings are BANNED across all 5 outputs because they've been overused: "Worth It?", "Before You Buy", "Don't Buy Until", "Real Talk", "Watch This First", "Is It Worth It?", "I Tested … for 30 Days", "The Truth About…", "What Nobody Tells You", "Here's What Happened When".
 4. NEVER use the word "honest" anywhere.
@@ -925,7 +936,7 @@ export async function POST(request: Request) {
     // ── SWARM PHASE 2: Title + Content + Engagement run in parallel ───────────
     // (Title strategist gets product analysis context; content + engagement agents get title)
     const titleResult = await titleStrategistAgent(
-      anthropic, productContext, videoTitle, tone, productAnalysis, isProduct, priorTitles, seoProductName,
+      anthropic, productContext, videoTitle, tone, productAnalysis, isProduct, priorTitles, seoProductName, !!videoBrief,
     )
 
     // ── Internal title scoring (Phase 2 / Track A) ────────────────────────────
