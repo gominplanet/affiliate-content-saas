@@ -21,7 +21,14 @@ export async function GET() {
   // Pages (the /me/accounts-empty case). It works immediately for the app's own
   // admins/devs/testers; for customers it's granted only after App Review and
   // is silently dropped until then — so it can't regress the live connect flow.
-  const scope = 'pages_show_list,pages_manage_posts,business_management'
+  // Comment→DM (Private Replies) needs pages_messaging (send) +
+  // pages_read_engagement (read comments) + pages_manage_metadata (subscribe the
+  // Page to feed webhooks). Env-gated so we only request them once the feature
+  // is App-Review-approved — set FB_DM_SCOPES=true, reconnect, set it back false
+  // (mirrors the Instagram IG_DM_SCOPES flow). Granted scopes stick on the token.
+  const scope = process.env.FB_DM_SCOPES === 'true'
+    ? 'pages_show_list,pages_manage_posts,business_management,pages_messaging,pages_read_engagement,pages_manage_metadata'
+    : 'pages_show_list,pages_manage_posts,business_management'
 
   // CSRF protection: pass the user's id as `state`, then verify at the
   // callback that the returning user matches. Without this, an attacker

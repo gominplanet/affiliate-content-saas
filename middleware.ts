@@ -31,6 +31,11 @@ const publicPaths = [
   // subscription gets disabled. The route enforces its own auth: the verify
   // token on GET + X-Hub-Signature-256 (INSTAGRAM_APP_SECRET) on POST.
   '/api/instagram/webhook',
+  // Facebook Page webhook — Meta hits it unauthenticated for the verification
+  // handshake (GET hub.challenge) + signed comment events (POST). Same reasons
+  // as the Instagram webhook; auth is the verify token on GET +
+  // X-Hub-Signature-256 (FACEBOOK_APP_SECRET) on POST.
+  '/api/facebook/webhook',
   // Broadcast unsubscribe — hit from an operator-broadcast email in the user's
   // inbox (no session). Authenticates via a signed token (lib/broadcast-token);
   // also serves RFC 8058 one-click POST from Gmail/Apple Mail.

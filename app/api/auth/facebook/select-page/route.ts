@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { syncFacebookAccounts, setDefaultSocialAccount } from '@/lib/social-accounts'
 import { encryptIntegrationWrite } from '@/lib/integration-secrets'
+import { subscribePageToFeed } from '@/services/facebook'
 
 export async function POST(request: NextRequest) {
   const supabase = await createServerClient()
@@ -38,6 +39,15 @@ export async function POST(request: NextRequest) {
     await setDefaultSocialAccount(supabase, user.id, 'facebook', page.id)
   } catch (e) {
     console.warn('[facebook/select-page] social_accounts sync failed:', e)
+  }
+
+  // Auto-subscribe the Page to `feed` webhooks so comment→DM works the moment
+  // it's connected (the manual per-Page toggle users can't do themselves). Only
+  // succeeds if the token carries pages_manage_metadata; harmless no-op otherwise.
+  try {
+    await subscribePageToFeed({ pageId: page.id, pageAccessToken: page.access_token })
+  } catch (e) {
+    console.warn('[facebook/select-page] subscribePageToFeed failed:', e)
   }
 
   return NextResponse.json({ ok: true, page: { id: page.id, name: page.name } })

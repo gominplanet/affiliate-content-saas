@@ -80,6 +80,50 @@ export async function getLongLivedToken(shortToken: string): Promise<string> {
   return data.access_token
 }
 
+// ── Comment→DM (Private Replies) ─────────────────────────────────────────────
+// Facebook is where Private Replies originated (Instagram's is the newer copy).
+// A Page can send ONE private message to the author of a public comment on its
+// post, within 7 days — the only way to cold-DM on Facebook. Needs the token to
+// carry pages_messaging (send) + pages_read_engagement (read comments); the
+// webhook subscription below needs pages_manage_metadata. See project_ig_comment_to_dm.
+
+/** DM the author of a Page comment. Returns the message id; throws on error. */
+export async function sendPrivateReply(opts: { commentId: string; message: string; pageAccessToken: string }): Promise<string> {
+  const res = await fetch(`${GRAPH}/${encodeURIComponent(opts.commentId)}/private_replies`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: opts.message, access_token: opts.pageAccessToken }),
+  })
+  const body = await res.json().catch(() => ({} as Record<string, unknown>))
+  if (!res.ok) throw new Error(`FB private reply ${res.status}: ${JSON.stringify(body).slice(0, 300)}`)
+  return (body.id as string) || ''
+}
+
+/** Optional public "Sent you a DM!" reply under the comment — best-effort. */
+export async function replyToCommentPublic(opts: { commentId: string; message: string; pageAccessToken: string }): Promise<void> {
+  try {
+    await fetch(`${GRAPH}/${encodeURIComponent(opts.commentId)}/comments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: opts.message, access_token: opts.pageAccessToken }),
+    })
+  } catch { /* non-fatal */ }
+}
+
+/** Subscribe this Page to `feed` webhooks so comment events reach our endpoint.
+ *  The #1 "no events" cause is a Page that was never subscribed. Idempotent. */
+export async function subscribePageToFeed(opts: { pageId: string; pageAccessToken: string }): Promise<void> {
+  const res = await fetch(`${GRAPH}/${opts.pageId}/subscribed_apps`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ subscribed_fields: 'feed', access_token: opts.pageAccessToken }),
+  })
+  if (!res.ok) {
+    const body = await res.text()
+    throw new Error(`FB subscribe ${res.status}: ${body.slice(0, 200)}`)
+  }
+}
+
 export async function getPages(userToken: string): Promise<FacebookPage[]> {
   // Primary: Pages the user has a direct role on. Covers Classic Pages and
   // most of the New Pages Experience.

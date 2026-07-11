@@ -102,8 +102,8 @@ export default function InstagramDmPage() {
         </span>
       </div>
       <p className="text-sm" style={{ color: 'var(--text-soft)' }}>
-        When someone comments your keyword on an Instagram post, MVP automatically DMs them the right
-        affiliate link — no manual replies, no “link in bio.”
+        When someone comments your keyword on an Instagram <em>or Facebook</em> post, MVP automatically DMs
+        them the right affiliate link — no manual replies, no “link in bio.”
       </p>
 
       {/* Pending-approval banner */}
@@ -129,7 +129,7 @@ export default function InstagramDmPage() {
             <div>
               <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Global rule — every post you publish</p>
               <p className="text-[12px]" style={{ color: 'var(--text-faint)' }}>
-                Comment the keyword on any MVP-published post → MVP DMs that post&apos;s own affiliate link.
+                Comment the keyword on any MVP-published Instagram or Facebook post → MVP DMs that post&apos;s own affiliate link.
               </p>
             </div>
 
