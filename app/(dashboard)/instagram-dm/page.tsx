@@ -16,7 +16,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Instagram, MessageCircle, Loader2, Info, FlaskConical, Upload, Video, Trash2, Wand2, Send } from 'lucide-react'
+import { Instagram, MessageCircle, Loader2, Info, FlaskConical, Upload, Video, Trash2, Wand2, Send, Link2, Sparkles } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
 
 const EXAMPLE_LINK = 'https://geni.us/Abc123'
@@ -49,6 +49,8 @@ export default function InstagramDmPage() {
   const [videoUrl, setVideoUrl] = useState('')
   const [fileName, setFileName] = useState('')
   const [uploading, setUploading] = useState(false)
+  const [cUrl, setCUrl] = useState('')
+  const [resolving, setResolving] = useState(false)
   const [cProduct, setCProduct] = useState('')
   const [cDescription, setCDescription] = useState('')
   const [cLink, setCLink] = useState('')
@@ -128,6 +130,30 @@ export default function InstagramDmPage() {
       toast.error(err instanceof Error ? err.message : 'Upload failed')
     } finally {
       setUploading(false)
+    }
+  }
+
+  async function resolveUrl() {
+    if (!/^https?:\/\//i.test(cUrl.trim())) { toast.error('Paste a full product link (https://…).'); return }
+    setResolving(true)
+    try {
+      const res = await fetch('/api/instagram/dm-campaign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resolveUrl: cUrl.trim(), keyword: cKeyword }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) { toast.error(d.error || 'Could not read that link'); return }
+      if (d.affiliateUrl) setCLink(d.affiliateUrl)
+      if (d.productName) setCProduct(d.productName)
+      if (d.caption) setCCaption(d.caption)
+      toast.success(d.affiliateUrl && d.affiliateUrl !== cUrl.trim()
+        ? 'Turned it into your affiliate link + wrote a caption'
+        : 'Pulled the product details')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not read that link')
+    } finally {
+      setResolving(false)
     }
   }
 
@@ -295,6 +321,27 @@ export default function InstagramDmPage() {
               <p className="text-[12px]" style={{ color: 'var(--text-faint)' }}>
                 Upload a vertical video + a link. MVP writes the caption, posts the Reel, and DMs that exact
                 link to anyone who comments your trigger word on it.
+              </p>
+            </div>
+
+            {/* Product URL → affiliate link + caption */}
+            <div className="rounded-xl border p-3" style={{ borderColor: 'var(--border-bright)', background: 'var(--surface-2)' }}>
+              <label htmlFor="dm-url" className="flex items-center gap-1.5 text-sm font-medium mb-1.5" style={{ color: 'var(--text)' }}>
+                <Sparkles size={14} className="text-[#E1306C]" /> Paste a product link — MVP does the rest
+              </label>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input id="dm-url" value={cUrl} onChange={e => setCUrl(e.target.value)} maxLength={500}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); resolveUrl() } }}
+                  className="flex-1 px-3 py-2 rounded-lg border bg-transparent text-sm" style={inputStyle}
+                  placeholder="Amazon / any store URL, or a geni.us link" />
+                <button type="button" onClick={resolveUrl} disabled={resolving}
+                  className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-60 whitespace-nowrap"
+                  style={{ background: 'linear-gradient(135deg,#833AB4,#E1306C)' }}>
+                  {resolving ? <><Loader2 size={14} className="animate-spin" /> Reading…</> : <><Link2 size={14} /> Get link + caption</>}
+                </button>
+              </div>
+              <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-faint)' }}>
+                We convert it to your Geniuslink (or tagged Amazon link) and fill in the product name, caption, and DM link below. Everything stays editable.
               </p>
             </div>
 

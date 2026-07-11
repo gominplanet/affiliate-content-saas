@@ -19,6 +19,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier, tierAllowsSocial, type Tier } from '@/lib/tier'
 import { publishMedia, refreshLongLivedToken, subscribeToComments } from '@/services/instagram'
 import { generateDmCampaignCaption } from '@/lib/direct-caption'
+import { resolveProductForCampaign } from '@/lib/ig-dm-resolve'
 
 export const maxDuration = 300
 
@@ -85,8 +86,52 @@ export async function POST(request: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
 
-  let body: { videoUrl?: string; link?: string; keyword?: string; productName?: string; description?: string; caption?: string }
+  let body: { videoUrl?: string; link?: string; keyword?: string; productName?: string; description?: string; caption?: string; resolveUrl?: string }
   try { body = await request.json() } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }) }
+
+  // ── Resolve a pasted product URL → affiliate link + product name + caption ──
+  // The creator drops any product URL and we turn it into THEIR affiliate link
+  // (Geniuslink if configured, else tagged Amazon) and seed the composer.
+  if (typeof body.resolveUrl === 'string') {
+    const url = body.resolveUrl.trim()
+    const keyword = cleanKeyword(body.keyword)
+    if (!/^https?:\/\//i.test(url)) return NextResponse.json({ error: 'Paste a full product link (https://…).' }, { status: 400 })
+
+    const [{ data: integ }, { data: brand }] = await Promise.all([
+      sb.from('integrations').select('tier,amazon_associates_tag,geniuslink_api_key,geniuslink_api_secret').eq('user_id', user.id).maybeSingle(),
+      sb.from('brand_profiles').select('niches,words_to_avoid,affiliate_disclaimer').eq('user_id', user.id).maybeSingle(),
+    ])
+    const tier: Tier = normalizeTier(integ?.tier)
+
+    const resolved = await resolveProductForCampaign(url, {
+      userId: user.id,
+      tier,
+      amazonTag: integ?.amazon_associates_tag ?? null,
+      geniuslinkApiKey: integ?.geniuslink_api_key ?? null,
+      geniuslinkApiSecret: integ?.geniuslink_api_secret ?? null,
+    })
+
+    let caption = ''
+    if (resolved.productName) {
+      try {
+        const result = await generateDmCampaignCaption({
+          productName: resolved.productName,
+          description: resolved.description,
+          keyword,
+          niches: Array.isArray(brand?.niches) ? (brand.niches as string[]) : [],
+          wordsToAvoid: Array.isArray(brand?.words_to_avoid) ? (brand.words_to_avoid as string[]) : [],
+          affiliateDisclaimer: (brand?.affiliate_disclaimer as string) || '',
+        }, { userId: user.id, tier })
+        caption = result.caption
+      } catch { /* caption optional — creator can Generate later */ }
+    }
+
+    return NextResponse.json({
+      affiliateUrl: resolved.affiliateUrl,
+      productName: resolved.productName,
+      caption,
+    })
+  }
 
   const videoUrl = body.videoUrl
   const link = (body.link || '').trim()
