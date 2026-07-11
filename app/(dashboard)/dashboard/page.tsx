@@ -31,6 +31,7 @@ import ReferralBanner from '@/components/dashboard/ReferralBanner'
 import WpUpdateBanner from '@/components/dashboard/WpUpdateBanner'
 import WpUpdatePill from '@/components/dashboard/WpUpdatePill'
 import ScoutUpdatePill from '@/components/dashboard/ScoutUpdatePill'
+import ScoutTokenStrip from '@/components/dashboard/ScoutTokenStrip'
 import AmazonSitesReminder from '@/components/dashboard/AmazonSitesReminder'
 import ProTourBanner from '@/components/dashboard/ProTourBanner'
 import RecommendedToolsCard from '@/components/dashboard/RecommendedToolsCard'
@@ -257,6 +258,10 @@ export default async function DashboardPage() {
               Tutorials
             </Link>
           </div>
+          {/* Ingest-token grab strip — appears under the pills once SCOUT is
+              installed so a fresh user can copy the token straight into the
+              SCOUT popup without hunting for the AMZ+ & EPC page. */}
+          <ScoutTokenStrip />
           </div>
           {/* Right column: Pro capabilities tour — shown only to users who
               aren't Pro yet (upsell). Dismissible via localStorage. */}
