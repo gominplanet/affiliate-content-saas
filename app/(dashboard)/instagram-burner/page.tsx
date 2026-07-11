@@ -7,7 +7,7 @@
  * Instagram (separate action — never auto-posted) or download it for Reels /
  * Stories / TikTok. Pro-only.
  */
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, type CSSProperties } from 'react'
 import Link from 'next/link'
 import { createBrowserClient } from '@/lib/supabase/client'
 import PageHero from '@/components/layout/PageHero'
@@ -79,7 +79,6 @@ export default function InstagramBurnerPage() {
   // a viewer who comments `dmKeyword` gets `dmLink` sent to their DMs.
   const [autoDm, setAutoDm] = useState(false)
   const [dmKeyword, setDmKeyword] = useState('LINK')
-  const [dmUrl, setDmUrl] = useState('')      // product URL to convert → affiliate link
   const [dmLink, setDmLink] = useState('')     // resolved affiliate link (or pasted manually)
   const [dmResolving, setDmResolving] = useState(false)
 
@@ -316,13 +315,13 @@ export default function InstagramBurnerPage() {
   // Auto-DM: turn a pasted product URL into the creator's affiliate link + a
   // ready caption (product blurb + "comment WORD for the link" CTA).
   async function resolveDmLink() {
-    if (!/^https?:\/\//i.test(dmUrl.trim())) { setError('Paste a full product link (https://…).'); return }
+    if (!/^https?:\/\//i.test(product.trim())) { setError('Add a product link in step 4 first (must start with https://).'); return }
     setDmResolving(true); setError(null)
     try {
       const res = await fetch('/api/instagram/dm-campaign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ resolveUrl: dmUrl.trim(), keyword: dmKeyword }),
+        body: JSON.stringify({ resolveUrl: product.trim(), keyword: dmKeyword }),
       })
       const d = await res.json().catch(() => ({} as Record<string, unknown>))
       if (!res.ok) throw new Error((d.error as string) || 'Could not read that link')
@@ -392,6 +391,19 @@ export default function InstagramBurnerPage() {
       URL.revokeObjectURL(href)
     } catch { window.open(resultUrl, '_blank') }
   }
+
+  // Approximate the burned caption pill for the live preview (mirrors the four
+  // Cloudinary styles closely enough to eyeball before rendering for real).
+  const previewTextStyle = (s: string): CSSProperties => {
+    switch (s) {
+      case 'black-pill': return { background: '#fff', color: '#000' }
+      case 'yellow-pill': return { background: 'rgba(0,0,0,0.78)', color: '#ffd400' }
+      case 'white-shadow': return { color: '#fff', textShadow: '0 1px 5px rgba(0,0,0,0.9)' }
+      default: return { background: 'rgba(0,0,0,0.78)', color: '#fff' } // white-pill
+    }
+  }
+  const previewStickerFile = stickerId ? (CTA_STICKERS.find(s => s.id === stickerId)?.file || '') : ''
+  const previewStickerWidth = stickerId ? (CTA_STICKERS.find(s => s.id === stickerId)?.widthPct || 0.6) : 0.6
 
   if (!metaUnlocked) {
     return (
@@ -477,12 +489,12 @@ export default function InstagramBurnerPage() {
             {mode === 'batch' ? (
               <BatchBurner supabase={supabase} />
             ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Controls */}
-            <div className="card p-5 space-y-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+            {/* Controls — one card per step so it reads as a short flow */}
+            <div className="space-y-3">
               {/* 1. Source video — pick one of your own Shorts, or upload a file */}
-              <div>
-                <label className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">1. Your video <span className="font-normal text-[#86868b]">(vertical, under 300MB)</span></label>
+              <div className="card p-4">
+                <label className="block text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">1 · Your video <span className="font-normal text-[11px] text-[#86868b]">(vertical, under 300MB)</span></label>
                 <input ref={fileRef} type="file" accept="video/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) { setShortLoaded(false); setSelectedShortId(null); setYtDownloadHint(null); handleUpload(f) } }} />
 
                 {/* Mode toggle — only when the creator actually has Shorts. */}
@@ -581,8 +593,8 @@ export default function InstagramBurnerPage() {
               </div>
 
               {/* Overlay — styled text caption OR a pre-designed CTA box (PNG) */}
-              <div>
-                <label className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">2. Overlay</label>
+              <div className="card p-4">
+                <label className="block text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">2 · Add your call-to-action</label>
                 <div className="grid grid-cols-2 gap-2 mb-3">
                   <button
                     onClick={() => setOverlayType('sticker')}
@@ -697,8 +709,8 @@ export default function InstagramBurnerPage() {
               </div>
 
               {/* Position */}
-              <div>
-                <label className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">3. Position</label>
+              <div className="card p-4">
+                <label className="block text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">3 · Where it appears</label>
                 <div className="grid grid-cols-2 gap-2">
                   {POSITIONS.map(p => (
                     <button key={p.key} onClick={() => setPosition(p.key)} className={`text-left p-2.5 rounded-lg border transition-colors ${position === p.key ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-gray-300'}`}>
@@ -709,9 +721,9 @@ export default function InstagramBurnerPage() {
                 </div>
               </div>
 
-              {/* Product (optional) — ASIN / store URL / TikTok Shop link → smart caption */}
-              <div>
-                <label className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">4. Product link <span className="font-normal text-[#86868b]">(optional)</span></label>
+              {/* Product (optional) — ASIN / store URL / TikTok Shop link → smart caption + shared with auto-DM */}
+              <div className="card p-4">
+                <label className="block text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">4 · Product link <span className="font-normal text-[11px] text-[#86868b]">(optional)</span></label>
                 <input
                   type="text"
                   value={product}
@@ -752,7 +764,7 @@ export default function InstagramBurnerPage() {
                   />
                   <div>
                     <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] flex items-center gap-1.5">
-                      <Instagram size={14} className="text-[#E1306C]" /> Auto-DM a link when someone comments
+                      <Instagram size={14} className="text-[#E1306C]" /> 5 · Auto-DM a link when someone comments
                       <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-[#DC2626]/[0.12] text-[#DC2626]">Labs</span>
                     </p>
                     <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">A viewer comments your word on this Reel → MVP DMs them the link. The Reel posts now; the auto-DM activates once Meta approves it.</p>
@@ -761,26 +773,16 @@ export default function InstagramBurnerPage() {
 
                 {autoDm && (
                   <div className="space-y-3 pl-0.5">
-                    {/* Product link → affiliate link + caption */}
+                    {/* Reuse the product link from step 4 → affiliate link + caption */}
                     <div>
-                      <label className="block text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Paste a product link — MVP makes your affiliate link + caption</label>
-                      <div className="flex flex-col sm:flex-row gap-2">
-                        <input
-                          type="text"
-                          value={dmUrl}
-                          onChange={(e) => setDmUrl(e.target.value)}
-                          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); resolveDmLink() } }}
-                          className="input-field text-sm flex-1"
-                          placeholder="Amazon / any store URL, or a geni.us link"
-                        />
-                        <button
-                          onClick={resolveDmLink}
-                          disabled={dmResolving}
-                          className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold text-white bg-[#E1306C] hover:bg-[#c72a5d] disabled:opacity-60 whitespace-nowrap"
-                        >
-                          {dmResolving ? <><Loader2 size={14} className="animate-spin" /> Reading…</> : 'Get link + caption'}
-                        </button>
-                      </div>
+                      <button
+                        onClick={resolveDmLink}
+                        disabled={dmResolving || !product.trim()}
+                        className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold text-white bg-[#E1306C] hover:bg-[#c72a5d] disabled:opacity-50 whitespace-nowrap"
+                      >
+                        {dmResolving ? <><Loader2 size={14} className="animate-spin" /> Reading…</> : <><Sparkles size={13} /> Turn my product link into the DM link</>}
+                      </button>
+                      <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">Uses the product link from step 4 — we convert it to your affiliate link and write the caption. Or paste the exact link to DM below.</p>
                     </div>
 
                     {/* Resolved / manual DM link */}
@@ -830,8 +832,8 @@ export default function InstagramBurnerPage() {
               <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] text-center">The caption is rendered into the video itself, so it shows on-screen anywhere you post it.</p>
             </div>
 
-            {/* Result */}
-            <div>
+            {/* Result / live preview */}
+            <div className="lg:sticky lg:top-4 lg:self-start">
               {resultUrl ? (
                 <div className="card p-3 space-y-3">
                   {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
@@ -897,9 +899,42 @@ export default function InstagramBurnerPage() {
                   </button>
                 </div>
               ) : (
-                <div className="card p-8 text-center h-full flex flex-col items-center justify-center">
-                  <Flame size={28} className="text-[#86868b] mx-auto mb-3" />
-                  <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0]">Your captioned video will appear here.</p>
+                <div className="card p-3">
+                  <p className="text-[11px] font-semibold text-[#86868b] dark:text-[#8e8e93] mb-2 text-center uppercase tracking-wide">Live preview</p>
+                  <div className="relative mx-auto rounded-xl overflow-hidden bg-black" style={{ aspectRatio: '9 / 16', maxWidth: '250px' }}>
+                    {sourceUrl ? (
+                      // eslint-disable-next-line jsx-a11y/media-has-caption
+                      <video src={`${sourceUrl}#t=0.1`} muted playsInline preload="metadata" className="absolute inset-0 w-full h-full object-cover" />
+                    ) : (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-5">
+                        <Video size={28} className="text-white/40 mb-2" />
+                        <p className="text-[12px] text-white/55 leading-relaxed">Pick a video in step 1 and your call-to-action will preview here.</p>
+                      </div>
+                    )}
+
+                    {/* Overlay — mirrors what gets burned (position + style/box) */}
+                    {sourceUrl && (
+                      <div className={`absolute left-[6%] right-[6%] flex justify-start ${position === 'upper-left' ? 'top-[8%]' : 'bottom-[15%]'}`}>
+                        {overlayType === 'sticker' ? (
+                          (genStickerUrl || previewStickerFile) ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={genStickerUrl || ctaStickerUrl(previewStickerFile)}
+                              alt=""
+                              style={{ width: genStickerUrl ? '58%' : `${previewStickerWidth * 100}%` }}
+                            />
+                          ) : (
+                            <span className="text-[10px] text-white/80 bg-black/55 px-2 py-1 rounded-md">Pick a CTA box in step 2</span>
+                          )
+                        ) : (
+                          <span className="text-[13px] font-bold leading-tight px-2.5 py-1 rounded-md" style={previewTextStyle(style)}>{caption || 'LINK IN BIO'}</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] text-center mt-2 leading-relaxed">
+                    Roughly how the burned video will look. Hit <strong>Burn caption</strong> to render it for real.
+                  </p>
                 </div>
               )}
             </div>
