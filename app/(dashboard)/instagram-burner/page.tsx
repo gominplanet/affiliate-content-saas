@@ -822,15 +822,10 @@ export default function InstagramBurnerPage() {
                   </div>
                 </div>
 
-                {/* Live preview / result */}
-                {previewNode}
-              </div>
-            </div>
-
-              {/* Optional link + auto-DM — collapsed by default so the core flow is video → CTA → publish */}
-              {!showLink ? (
+                {/* 4 · Optional link + auto-DM — in column 3 so it's on the same row as 1–3 */}
+                {!showLink ? (
                 <button onClick={() => setShowLink(true)} className="w-full card p-3.5 flex items-center justify-between text-left hover:border-[#7C3AED]/40 transition-colors">
-                  <span className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Add a product link &amp; auto-DM <span className="font-normal text-[11px] text-[#86868b]">— optional</span></span>
+                  <span className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">4 · Add a product link &amp; auto-DM <span className="font-normal text-[11px] text-[#86868b]">— optional</span></span>
                   <Plus size={16} className="text-[#7C3AED] flex-shrink-0" />
                 </button>
               ) : (<>
@@ -933,6 +928,11 @@ export default function InstagramBurnerPage() {
                 )}
               </div>
               </>)}
+
+                {/* Live preview / result */}
+                {previewNode}
+              </div>
+            </div>
 
               {error && <p className="text-xs text-[#ff3b30] flex items-center gap-1.5"><AlertCircle size={12} /> {error}</p>}
 
