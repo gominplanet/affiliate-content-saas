@@ -926,9 +926,46 @@ const VideoCard = memo(function VideoCardImpl({
           throw new Error(errText(data.error) || 'Blog generation failed')
         }
         currentPostId = data.postId as string
+        const newWpPostId = data.wordpressPostId as number | undefined
         onGenerated(id, data.wordpressUrl as string, data.title as string, data.postId as string)
+
+        // In-article images. Publish-All used to skip this entirely — unlike the
+        // standalone Generate button, which fires the reliable refresh-images
+        // step after generation. That's why "Generate + publish all" posts
+        // landed text-only even when the user had "Images per article" set.
+        // Fire the same step here so the two paths match. Gated on the images
+        // pref (>=1) to respect the cost opt-in — refresh-images always makes at
+        // least one image once called. Fire-and-forget with a toast (it takes
+        // 1-3 min); socials below run in parallel and don't depend on it.
+        if (newWpPostId && blogImagePref != null && blogImagePref >= 1) {
+          const wpId = newWpPostId
+          toast.loading('Generating in-article images… (1-3 min — runs in the background)', { id: `pa-img-${wpId}`, duration: Infinity })
+          ;(async () => {
+            try {
+              const ir = await fetch('/api/blog/refresh-images', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ wordpressPostId: wpId }) })
+              const idata = await ir.json().catch(() => ({} as Record<string, unknown>))
+              if (ir.ok && typeof idata.count === 'number' && idata.count > 0) {
+                toast.success(`Added ${idata.count} in-article image${idata.count === 1 ? '' : 's'}`, { id: `pa-img-${wpId}`, duration: 5000 })
+              } else {
+                toast.error(`${(idata.error as string) || 'Couldn’t add in-article images.'} Click “Add images” on the post row to retry.`, { id: `pa-img-${wpId}`, duration: 10000 })
+              }
+            } catch (e) {
+              toast.error(`${e instanceof Error ? e.message : 'Image step failed.'} Click “Add images” on the post row to retry.`, { id: `pa-img-${wpId}`, duration: 10000 })
+            }
+          })()
+        }
       } catch (err) {
-        setPublishAllError(err instanceof Error ? err.message : 'Blog generation failed')
+        const msg = err instanceof Error ? err.message : 'Blog generation failed'
+        // "Still finishing in the background" is NOT a failure — the server job
+        // keeps running and the post lands in the Library. It just means we
+        // can't chain the socials yet (they need the live post). Tell the user
+        // exactly what to do rather than showing a red dead-end error.
+        const stillRunning = /still (being generated|finishing) in the background|taking longer than usual|may have published|likely still finishing/i.test(msg)
+        setPublishAllError(
+          stillRunning
+            ? 'Post is still generating — it’ll appear in your Library shortly. Once it’s live, click “Publish to all” on that row to post your socials.'
+            : msg,
+        )
         setPublishingAll(false)
         return
       }
