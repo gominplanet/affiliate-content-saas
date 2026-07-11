@@ -986,12 +986,18 @@ const VideoCard = memo(function VideoCardImpl({
     // connected-but-failing platform (e.g. Threads missing its user id) looked
     // like it just "didn't post" with no explanation.
     const failures: string[] = []
-    const addTask = (cond: boolean, label: string, url: string, onOk: () => void, extra?: Record<string, unknown>) => {
+    // Which platforms actually posted this run — broadcast at the end so the
+    // PARENT posts-map learns the posted state (the local setXPosted flags are
+    // lost when this card remounts on a tab switch, which is why posted pills
+    // looked "unposted" again and Publish-All kept re-offering — and worse,
+    // re-clicking would double-post since the !xPosted guard had reset).
+    const postedKeys: string[] = []
+    const addTask = (cond: boolean, label: string, url: string, onOk: () => void, patchKey: string, extra?: Record<string, unknown>) => {
       if (!cond) return
       tasks.push(
         fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ postId: currentPostId, ...(extra || {}) }) })
           .then(async (r) => {
-            if (r.ok) { onOk(); return }
+            if (r.ok) { onOk(); postedKeys.push(patchKey); return }
             const d = await r.json().catch(() => ({} as { error?: string }))
             failures.push(`${label} (${d.error || `HTTP ${r.status}`})`)
           })
@@ -999,12 +1005,12 @@ const VideoCard = memo(function VideoCardImpl({
       )
     }
 
-    addTask(fbConnected && !fbPosted, 'Facebook', '/api/blog/facebook-post', () => setFbPosted(true), { socialAccountId: effectiveFbAccountId ?? undefined })
-    addTask(linkedInConnected && !liPosted, 'LinkedIn', '/api/blog/linkedin-post', () => setLiPosted(true))
-    addTask(threadsConnected && !thPosted, 'Threads', '/api/blog/threads-post', () => setThPosted(true))
-    addTask(twitterConnected && !twPosted, 'X', '/api/blog/twitter-post', () => setTwPosted(true))
-    addTask(blueskyConnected && !bsPosted, 'Bluesky', '/api/blog/bluesky-post', () => setBsPosted(true))
-    addTask(telegramConnected && !tgPosted, 'Telegram', '/api/blog/telegram-post', () => setTgPosted(true))
+    addTask(fbConnected && !fbPosted, 'Facebook', '/api/blog/facebook-post', () => setFbPosted(true), 'facebookPostId', { socialAccountId: effectiveFbAccountId ?? undefined })
+    addTask(linkedInConnected && !liPosted, 'LinkedIn', '/api/blog/linkedin-post', () => setLiPosted(true), 'linkedInPostId')
+    addTask(threadsConnected && !thPosted, 'Threads', '/api/blog/threads-post', () => setThPosted(true), 'threadsPostId')
+    addTask(twitterConnected && !twPosted, 'X', '/api/blog/twitter-post', () => setTwPosted(true), 'twitterPostId')
+    addTask(blueskyConnected && !bsPosted, 'Bluesky', '/api/blog/bluesky-post', () => setBsPosted(true), 'blueskyPostUri')
+    addTask(telegramConnected && !tgPosted, 'Telegram', '/api/blog/telegram-post', () => setTgPosted(true), 'telegramMessageId')
 
     // Pinterest — two-step (preview builds the pin image + description, then
     // post). Auto-runs here using the configured board, skipping the manual
@@ -1023,6 +1029,7 @@ const VideoCard = memo(function VideoCardImpl({
           const r = await pp.json().catch(() => ({} as { error?: string }))
           if (!pp.ok) throw new Error(r.error || `Pinterest rejected the pin (HTTP ${pp.status})`)
           setPinPosted(true)
+          postedKeys.push('pinterestPinId')
         } catch (e) {
           failures.push(`Pinterest (${e instanceof Error ? e.message : 'error'})`)
         }
@@ -1031,6 +1038,13 @@ const VideoCard = memo(function VideoCardImpl({
 
     await Promise.allSettled(tasks)
     if (failures.length) setPublishAllError(`Couldn't post to ${failures.join(', ')}`)
+    // Broadcast the platforms that posted so the PARENT posts-map records them —
+    // keeps the pills "posted" across tab-switch remounts and stops Publish-All
+    // from re-offering (and re-posting) platforms already done. The real ids
+    // hydrate from the DB on the next full load; this is the instant UI sync.
+    if (postedKeys.length && currentPostId) {
+      window.dispatchEvent(new CustomEvent('mvp-social-posted', { detail: { videoId: id, keys: postedKeys } }))
+    }
     setPublishingAll(false)
     setPublishAllStep('')
   }
@@ -2442,6 +2456,32 @@ export default function ContentPage() {
     }
     window.addEventListener('mvp-schedule-applied', onScheduleApplied)
     return () => window.removeEventListener('mvp-schedule-applied', onScheduleApplied)
+  }, [])
+
+  // Listen for "mvp-social-posted" — emitted by a card's Publish-All after
+  // socials post. Merges truthy markers for each posted platform into the
+  // parent posts-map so the row's pills stay "posted" when the card remounts
+  // (tab switch), and Publish-All stops re-offering them (which also prevents a
+  // re-click from double-posting). The routes already wrote the real ids to the
+  // DB; a full load() hydrates the exact values later — this is the instant sync.
+  useEffect(() => {
+    function onSocialPosted(e: Event) {
+      const detail = (e as CustomEvent<{ videoId: string; keys: string[] }>).detail
+      if (!detail?.videoId || !Array.isArray(detail.keys) || detail.keys.length === 0) return
+      setPosts((prev) => {
+        const existing = prev[detail.videoId] ?? { url: '', title: '' }
+        const patch: Record<string, string> = {}
+        for (const k of detail.keys) {
+          // Preserve a real id if we already have one; else a truthy marker so
+          // `!!post.<key>` reads as posted. Real value hydrates on next load().
+          const cur = (existing as Record<string, unknown>)[k]
+          patch[k] = typeof cur === 'string' && cur ? cur : 'posted'
+        }
+        return { ...prev, [detail.videoId]: { ...existing, ...patch } }
+      })
+    }
+    window.addEventListener('mvp-social-posted', onSocialPosted)
+    return () => window.removeEventListener('mvp-social-posted', onSocialPosted)
   }, [])
 
   async function handlePublishPin(description: string, title: string): Promise<{ ok: boolean; error?: string }> {
