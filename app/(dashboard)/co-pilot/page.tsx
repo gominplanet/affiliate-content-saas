@@ -9,7 +9,7 @@ import HeroVideo from '@/components/layout/HeroVideo'
 import { CapReachedBanner } from '@/components/CapReachedBanner'
 import { useConfirm } from '@/components/ui/useConfirm'
 import { pickWeightedStyleIndex, OVERLAY_STYLES, drawHeadline, type HeadlinePosition, type FaceBox } from '@/lib/thumbnail-overlay'
-import { isExtensionAvailable, requestVideoFrames, requestAmazonProduct, requestStudioSchedule, requestStudioVideos, requestStudioFinish, type StudioFinishResult } from '@/lib/extension-frame'
+import { isExtensionAvailable, requestVideoFrames, requestAmazonProduct, requestVideoTranscript, requestStudioSchedule, requestStudioVideos, requestStudioFinish, type StudioFinishResult } from '@/lib/extension-frame'
 import { SCOUT_STORE_LISTING_URL } from '@/lib/scout-version'
 import { effectiveTier } from '@/lib/view-as'
 import type { Tier } from '@/lib/tier'
@@ -811,6 +811,19 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
       // already retries 8× internally, but if it still surfaces we automatically
       // retry once more on the client after a back-off so the user doesn't have
       // to click again. Total ceiling ≈ server attempts + 2 client tries.
+      // Grounding: pull the video's TRANSCRIPT through SCOUT first (browser IP
+      // + the user's own YouTube session — reaches private drafts the server
+      // can't). Best-effort; on any failure we send no transcript and the
+      // server grounds titles in the product instead (never a fabricated one).
+      let scoutTranscript = ''
+      try {
+        if (video.youtubeVideoId && await isExtensionAvailable()) {
+          setError('Reading the video transcript through SCOUT…')
+          scoutTranscript = await requestVideoTranscript(video.youtubeVideoId)
+          setError(null)
+        }
+      } catch { /* no transcript available — proceed with product grounding */ }
+
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const callOnce = (productOverride?: any) => fetch('/api/youtube/generate-metadata', {
         method: 'POST',
@@ -825,6 +838,9 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           youtubeVideoId: video.youtubeVideoId,
           // "Generate anyway" → bypass the ASIN-mismatch tripwire.
           skipAsinCheck,
+          // SCOUT-fetched transcript → grounds titles/description in what the
+          // video actually says. Omitted when unavailable.
+          ...(scoutTranscript ? { transcript: scoutTranscript } : {}),
           // SCOUT-scraped product (only on the fallback retry below).
           ...(productOverride ? { productOverride } : {}),
         }),

@@ -263,6 +263,90 @@ async function captureYouTubeFrames({ youtubeVideoId, fractions, callerTabId }) 
   }
 }
 
+// ── YouTube transcript fetch (browser IP + the user's own YT session) ───────
+// MVP's server can't reliably pull captions: its datacenter IP is throttled,
+// and the Data API costs 200 quota units per download. SCOUT opens the watch
+// page in the user's own browser — which reaches even their PRIVATE / unlisted
+// DRAFTS because it rides their logged-in session — and reads the caption track
+// straight off the page. Best-effort: a still-processing draft with no captions
+// yet returns ok:false and the app falls back cleanly (no fabricated titles).
+async function fetchYouTubeTranscript({ youtubeVideoId, callerTabId }) {
+  if (!youtubeVideoId || !/^[a-zA-Z0-9_-]{6,20}$/.test(youtubeVideoId)) {
+    return { ok: false, error: 'bad-video-id' }
+  }
+  let tabId = null
+  const url = `https://www.youtube.com/watch?v=${youtubeVideoId}&autoplay=0&mute=1`
+  try {
+    const tab = await chrome.tabs.create({ url, active: false })
+    tabId = tab.id
+    await new Promise((resolve) => {
+      const onUpdated = (id, info) => {
+        if (id === tabId && info.status === 'complete') {
+          chrome.tabs.onUpdated.removeListener(onUpdated)
+          resolve()
+        }
+      }
+      chrome.tabs.onUpdated.addListener(onUpdated)
+      setTimeout(() => { chrome.tabs.onUpdated.removeListener(onUpdated); resolve() }, 15000)
+    })
+    // MAIN world so we can read the page's ytInitialPlayerResponse global.
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'MAIN',
+      func: grabTranscriptInPage,
+    })
+    const out = results && results[0] && results[0].result
+    return out || { ok: false, error: 'no-result' }
+  } catch (e) {
+    return { ok: false, error: e && e.message ? e.message : 'transcript-exception' }
+  } finally {
+    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+  }
+}
+
+// Runs in the PAGE (MAIN world) on a youtube.com/watch page. Reads the caption
+// track off ytInitialPlayerResponse and fetches the timedtext (json3) with the
+// user's cookies. Self-contained — executeScript serializes it, so no outer refs.
+async function grabTranscriptInPage() {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  // ytInitialPlayerResponse is set during page load; poll briefly for it.
+  let pr = null
+  for (let i = 0; i < 30; i++) {
+    pr = window.ytInitialPlayerResponse || null
+    if (!pr && window.ytplayer && window.ytplayer.config && window.ytplayer.config.args) {
+      try { pr = JSON.parse(window.ytplayer.config.args.player_response) } catch (e) { pr = null }
+    }
+    if (pr && pr.captions) break
+    await sleep(100)
+  }
+  try {
+    const tracks = pr && pr.captions
+      && pr.captions.playerCaptionsTracklistRenderer
+      && pr.captions.playerCaptionsTracklistRenderer.captionTracks
+    if (!tracks || !tracks.length) return { ok: false, error: 'no-captions' }
+    // Prefer an English track, manual over auto-generated (asr); else the first.
+    const en = tracks.filter((t) => (t.languageCode || '').toLowerCase().indexOf('en') === 0)
+    const pick = en.find((t) => t.kind !== 'asr') || en[0] || tracks[0]
+    let baseUrl = pick && pick.baseUrl
+    if (!baseUrl) return { ok: false, error: 'no-base-url' }
+    baseUrl += (baseUrl.indexOf('?') >= 0 ? '&' : '?') + 'fmt=json3'
+    const res = await fetch(baseUrl, { credentials: 'include' })
+    if (!res.ok) return { ok: false, error: 'timedtext-' + res.status }
+    const data = await res.json()
+    const parts = []
+    for (const ev of (data.events || [])) {
+      if (!ev.segs) continue
+      for (const s of ev.segs) { if (s.utf8) parts.push(s.utf8) }
+    }
+    let text = parts.join('').replace(/\s+/g, ' ').trim()
+    if (text.length < 20) return { ok: false, error: 'empty-transcript' }
+    if (text.length > 50000) text = text.slice(0, 50000)
+    return { ok: true, transcript: text, lang: (pick && pick.languageCode) || null }
+  } catch (e) {
+    return { ok: false, error: (e && e.message) ? e.message : 'parse-error' }
+  }
+}
+
 // ── Creator Connections scout (scraper-only) ───────────────────────────────
 // The MVP "EPC" page drives this via externally_connectable. One click: we
 // FOCUS the user's already-open Creator Connections tab (or open the
@@ -2434,6 +2518,17 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     const callerTabId = sender && sender.tab ? sender.tab.id : null
     const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), CAPTURE_TIMEOUT_MS)
     captureYouTubeFrames({ youtubeVideoId: msg.youtubeVideoId, fractions, callerTabId })
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true // async response — keep the channel open
+  }
+  if (msg.type === 'MVP_YT_TRANSCRIPT') {
+    // MVP asks us to pull the video's transcript from the user's own browser
+    // session (reaches private drafts; no server quota) so the metadata
+    // generator can ground titles in what the video actually says.
+    const callerTabId = sender && sender.tab ? sender.tab.id : null
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 45000)
+    fetchYouTubeTranscript({ youtubeVideoId: msg.youtubeVideoId, callerTabId })
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async response — keep the channel open

@@ -268,6 +268,27 @@ export async function requestVideoFrame(youtubeVideoId: string, seekFraction = 0
   return frames[0] ?? null
 }
 
+/**
+ * Ask SCOUT to pull the video's TRANSCRIPT from the user's own browser session.
+ * The server can't reliably fetch captions (its IP is throttled, and the Data
+ * API costs 200 quota units), and it can't reach the user's PRIVATE drafts at
+ * all — but SCOUT can, because it opens the watch page inside the user's logged-
+ * in YouTube session. The transcript then grounds the metadata generator so
+ * titles reflect what the video actually says.
+ *
+ * Returns '' on any failure (extension missing, no captions yet on a still-
+ * processing draft, timeout) — the caller simply omits `transcript` and the
+ * server falls back to product-grounded, non-fabricated titles.
+ */
+export async function requestVideoTranscript(youtubeVideoId: string): Promise<string> {
+  if (!youtubeVideoId) return ''
+  const resp = await sendToExtension<{ ok?: boolean; transcript?: string; error?: string }>(
+    { type: 'MVP_YT_TRANSCRIPT', youtubeVideoId },
+    45000,
+  )
+  return resp?.ok && typeof resp.transcript === 'string' ? resp.transcript : ''
+}
+
 /** One Amazon Influencer video harvested from the user's Manage Content page
  *  (their logged-in session). `asin` is the product the video is attached to,
  *  parsed from the vdp URL — lets MVP match a video to a post reliably. */
