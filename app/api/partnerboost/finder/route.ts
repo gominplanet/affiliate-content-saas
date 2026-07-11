@@ -60,10 +60,13 @@ export async function POST(request: NextRequest) {
     const sb = supabase as any
 
     // ── CACHE path — if the user has synced, read from pb_finder_cache ─────────
-    const { count: cacheCount } = await sb.from('pb_finder_cache').select('id', { count: 'exact', head: true })
+    // Explicit user_id filter (defense-in-depth): pb_finder_cache is RLS-scoped
+    // to auth.uid(), but a security-sensitive read must never rely on RLS alone.
+    const { count: cacheCount } = await sb.from('pb_finder_cache').select('id', { count: 'exact', head: true }).eq('user_id', user.id)
     if ((cacheCount ?? 0) > 0) {
       let q = sb.from('pb_finder_cache')
         .select('product_key, name, price, commission_pct, per_sale, image_url, url, category, brand_name, brand_id, brand_mcid, network, sku, tracking_url, brand_tracking_url, synced_at')
+        .eq('user_id', user.id)
         .eq('avoided', false)
         .gte('price', rules.minPrice).lte('price', rules.maxPrice)
         // Match brandPassesPb: percent brands by commission, flat-CPA brands by payout.

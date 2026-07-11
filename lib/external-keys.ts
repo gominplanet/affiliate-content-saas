@@ -16,7 +16,9 @@ export function isExternalProvider(v: unknown): v is ExternalProvider {
   return typeof v === 'string' && (EXTERNAL_PROVIDERS as string[]).includes(v)
 }
 
-/** The shared env-var fallback for a provider (admin / legacy single-account). */
+/** The shared env-var key for a provider. This is the OPERATOR's own account
+ *  key — it must NEVER be handed to another user, or every user would see the
+ *  operator's connected brands/products. Gated to admin only below. */
 function envKeyFor(provider: ExternalProvider): string | null {
   const v = provider === 'levanta' ? process.env.LEVANTA_API_TOKEN : process.env.PARTNERBOOST_API_TOKEN
   return v?.trim() || null
@@ -24,9 +26,21 @@ function envKeyFor(provider: ExternalProvider): string | null {
 
 type SB = Awaited<ReturnType<typeof createServerClient>>
 
+/** True only for the operator (integrations.tier === 'admin'). Fails closed. */
+async function isAdminUser(sb: SB, userId: string): Promise<boolean> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data } = await (sb as any)
+      .from('integrations').select('tier').eq('user_id', userId).maybeSingle()
+    return data?.tier === 'admin'
+  } catch { return false }
+}
+
 /**
- * Decrypted key for one provider: the user's own key if set, else the shared
- * env var. Returns null if neither exists. Tolerates a pre-migration DB.
+ * Decrypted key for one provider: the user's OWN key if they set one, else null.
+ * The shared env key is returned ONLY for the operator (admin) — regular users
+ * see nothing until they insert their own key (the env key is the operator's
+ * private account and must not leak across users). Tolerates a pre-migration DB.
  */
 export async function getExternalKey(sb: SB, userId: string, provider: ExternalProvider): Promise<string | null> {
   try {
@@ -41,8 +55,9 @@ export async function getExternalKey(sb: SB, userId: string, provider: ExternalP
       const k = maybeDecrypt(data.encrypted_key)?.trim()
       if (k) return k
     }
-  } catch { /* table absent pre-migration → fall back to env */ }
-  return envKeyFor(provider)
+  } catch { /* table absent pre-migration → no per-user key */ }
+  // Only the operator inherits the shared env key. Everyone else = blank.
+  return (await isAdminUser(sb, userId)) ? envKeyFor(provider) : null
 }
 
 export async function setExternalKey(sb: SB, userId: string, provider: ExternalProvider, key: string): Promise<void> {
@@ -69,7 +84,10 @@ export interface ExternalKeyStatus { connected: boolean; last4: string | null; v
  */
 export async function externalKeyStatus(sb: SB, userId: string): Promise<Record<ExternalProvider, ExternalKeyStatus>> {
   const out = {} as Record<ExternalProvider, ExternalKeyStatus>
-  for (const p of EXTERNAL_PROVIDERS) out[p] = { connected: false, last4: null, viaEnv: !!envKeyFor(p) }
+  // viaEnv drives the UI's "connected via MVP" state — gate it to the operator
+  // so regular users show as not-connected until they add their own key.
+  const admin = await isAdminUser(sb, userId)
+  for (const p of EXTERNAL_PROVIDERS) out[p] = { connected: false, last4: null, viaEnv: admin && !!envKeyFor(p) }
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data } = await (sb as any).from('external_api_keys').select('provider,encrypted_key').eq('user_id', userId)
