@@ -130,9 +130,13 @@ export async function resolveAffiliateUrl(opts: AffiliateResolveOpts): Promise<A
       } else if (/^https?:\/\/(www\.)?amazon\.[a-z.]+\//i.test(pUrl)) {
         const a = asinFromAmazonUrl(pUrl)
         if (a && isValidAsin(a)) asin = a
-        else destination = pUrl
+        // else: an Amazon URL with no valid ASIN (storefront /shop/, brand
+        // /stores/, search, browse) — NOT a product. Leave destination null so
+        // discovery-by-title below finds the real product and tags a /dp/ link,
+        // never sending readers to a generic storefront. (firstProductUrl now
+        // pre-filters these too; this is defense-in-depth.) (2026-07-11)
       } else {
-        destination = pUrl // direct store / brand page
+        destination = pUrl // direct store / brand page (non-Amazon)
       }
     }
     if (!asin && !destination) {

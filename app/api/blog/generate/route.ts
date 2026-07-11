@@ -14,7 +14,7 @@ import { scrubAiHtml } from '@/lib/html-scrub'
 import { scrubVoicePatterns } from '@/lib/blog-voice-scrub'
 import { selfCheckBlogPost, selfCritiqueBlogPost } from '@/lib/blog-self-check'
 import { discoverProductForVideo } from '@/lib/product-detect'
-import { firstProductUrl, resolveFinalUrl } from '@/lib/product-link'
+import { firstProductUrl, resolveFinalUrl, asinFromAmazonUrl, isAmazonNonProductUrl } from '@/lib/product-link'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { resolveGeniuslinkGroupId, appendAmazonSubtag, groupNameForSiteUrl } from '@/lib/geniuslink-group'
 import { extractAsin, fetchAmazonProduct } from '@/services/amazon'
@@ -561,16 +561,35 @@ async function handleGenerate(request: Request) {
         // Amazon product, treat it as Amazon (extract the ASIN); otherwise
         // use whatever store it actually points to.
         const finalUrl = await resolveFinalUrl(directProductUrl)
-        const asinFromFinal = finalUrl.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1]
+        const asinFromFinal = asinFromAmazonUrl(finalUrl)
         if (asinFromFinal) {
-          asinOverride = asinFromFinal.toUpperCase()
+          asinOverride = asinFromFinal
           destination = `https://www.amazon.com/dp/${asinOverride}`
+        } else if (isAmazonNonProductUrl(finalUrl)) {
+          // Short link resolved to an Amazon storefront/search page (no ASIN),
+          // not a product — discover the real product by title so we tag a
+          // /dp/ link instead of linking readers to a generic storefront.
+          const discovered = await discoverProductForVideo(rawTitle, rawDescription, { userId: user.id, tier: (wp?.tier as string) ?? null })
+          if (discovered.asin) {
+            asinOverride = discovered.asin
+            destination = `https://www.amazon.com/dp/${discovered.asin}`
+          }
         } else {
           destination = finalUrl
         }
       } else {
-        // The creator's direct store / product page (any domain).
-        destination = directProductUrl
+        // A direct link on any domain. If it's an Amazon product URL, normalize
+        // to /dp/ASIN so the Associates tag gets applied downstream. A
+        // NON-Amazon URL is a real store product page — keep it as-is.
+        // (firstProductUrl already dropped Amazon storefront/search pages, so
+        // an Amazon URL reaching here carries a real product ASIN.)
+        const directAsin = asinFromAmazonUrl(directProductUrl)
+        if (directAsin) {
+          asinOverride = directAsin
+          destination = `https://www.amazon.com/dp/${directAsin}`
+        } else {
+          destination = directProductUrl
+        }
       }
     } else {
       // No usable link anywhere → last-resort Amazon product discovery.

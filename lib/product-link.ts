@@ -18,6 +18,18 @@ export function asinFromAmazonUrl(url: string): string | null {
   return m ? m[1].toUpperCase() : null
 }
 
+/** True for an Amazon URL that is NOT a specific product — a creator
+ *  storefront (amazon.com/shop/<name>), an Amazon-Influencer page, a brand
+ *  store (/stores/…), or a search / browse page. The invariant: any Amazon
+ *  URL we'd link a reader to as "the product" MUST carry a /dp/ (or /gp/…)
+ *  ASIN. Without one it's a landing page, never the reviewed item — so we
+ *  discard it and discover the real product by title, then build a
+ *  /dp/ASIN?tag= link. Non-Amazon URLs are out of scope (real store pages). */
+export function isAmazonNonProductUrl(url: string): boolean {
+  if (!/^https?:\/\/(www\.)?amazon\.[a-z.]+\//i.test(url)) return false
+  return asinFromAmazonUrl(url) == null
+}
+
 /**
  * Find the product link a creator points buyers to in a video description.
  * geni.us / amzn.to are NOT skipped — the creator's product link may BE a
@@ -38,6 +50,11 @@ export function firstProductUrl(description: string, ownSite?: string | null): s
     const clean = raw.replace(/[.,;:)\]>"']+$/, '')
     if (skip.test(clean)) return null
     if (own && clean.includes(own)) return null
+    // An Amazon storefront / brand-store / search / browse page is NOT the
+    // reviewed product — skip it so the resolver discovers the actual product
+    // and tags a /dp/ link, instead of sending every reader to a generic
+    // storefront (e.g. amazon.com/shop/<creator>). (2026-07-11)
+    if (isAmazonNonProductUrl(clean)) return null
     return clean
   }
   // 1. URL right after a buy/price/availability cue — the product link.
@@ -120,11 +137,16 @@ export async function resolveProductLink(title: string, description: string, own
     const finalUrl = await resolveFinalUrl(pUrl)
     const a = asinFromAmazonUrl(finalUrl)
     if (a) return { kind: 'amazon', asin: a }
+    // Short link that lands on an Amazon storefront/search (no ASIN) is not a
+    // product → 'none' so the caller discovers the real one. Non-Amazon = store.
+    if (isAmazonNonProductUrl(finalUrl)) return { kind: 'none' }
     return { kind: 'store', url: finalUrl, alreadyGeniuslink: false }
   }
   if (/^https?:\/\/(www\.)?amazon\.[a-z.]+\//i.test(pUrl)) {
     const a = asinFromAmazonUrl(pUrl)
     if (a) return { kind: 'amazon', asin: a }
+    // An Amazon URL with no ASIN = storefront/search/browse, not a product.
+    return { kind: 'none' }
   }
   return { kind: 'store', url: pUrl, alreadyGeniuslink: false }
 }
