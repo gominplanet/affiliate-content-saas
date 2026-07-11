@@ -802,6 +802,11 @@ const VideoCard = memo(function VideoCardImpl({
   const id = video.id as string
 
   const [deleting, setDeleting] = useState(false)
+  // Lifted "Include photos in the article" state — shared by the Generate
+  // button's checkbox AND this row's "Generate + publish all" / "Schedule"
+  // buttons, so all three honor the SAME toggle. Seeded from the Brand Profile
+  // "Images per article" pref (>=1 → pre-ticked), matching the checkbox default.
+  const [includeImages, setIncludeImages] = useState<boolean>(blogImagePref != null && blogImagePref >= 1)
   const [fbPosting, setFbPosting] = useState(false)
   const [fbPosted, setFbPosted] = useState(!!post?.facebookPostId)
   // Schedule modal — only relevant for un-generated rows (post == null);
@@ -933,11 +938,12 @@ const VideoCard = memo(function VideoCardImpl({
         // standalone Generate button, which fires the reliable refresh-images
         // step after generation. That's why "Generate + publish all" posts
         // landed text-only even when the user had "Images per article" set.
-        // Fire the same step here so the two paths match. Gated on the images
-        // pref (>=1) to respect the cost opt-in — refresh-images always makes at
-        // least one image once called. Fire-and-forget with a toast (it takes
-        // 1-3 min); socials below run in parallel and don't depend on it.
-        if (newWpPostId && blogImagePref != null && blogImagePref >= 1) {
+        // Fire the same step here so the two paths match. Gated on the shared
+        // "Include photos" checkbox (lifted to this card) — the exact toggle the
+        // user sees, honoring an explicit untick. The COUNT comes from Content
+        // Preferences server-side (refresh-images reads blog_image_count). Fire-
+        // and-forget with a toast (1-3 min); socials below run in parallel.
+        if (newWpPostId && includeImages) {
           const wpId = newWpPostId
           toast.loading('Generating in-article images… (1-3 min — runs in the background)', { id: `pa-img-${wpId}`, duration: Infinity })
           ;(async () => {
@@ -1269,7 +1275,7 @@ const VideoCard = memo(function VideoCardImpl({
                 don't apply when there's no blog post in this flow. */}
           {video.is_vertical !== true && (
           <div className="flex items-center gap-x-4 gap-y-1.5 flex-wrap">
-            <GenerateButton videoId={id} youtubeVideoId={(video.youtube_video_id as string) || undefined} existingPost={post} userTier={userTier} blogImagePref={blogImagePref} onDone={(url, t, pid) => onGenerated(id, url, t, pid)} />
+            <GenerateButton videoId={id} youtubeVideoId={(video.youtube_video_id as string) || undefined} existingPost={post} userTier={userTier} blogImagePref={blogImagePref} includeImages={includeImages} onIncludeImagesChange={setIncludeImages} onDone={(url, t, pid) => onGenerated(id, url, t, pid)} />
             {/* Optional custom blog hero (else the YT thumbnail is the hero).
                 Only meaningful before a post exists — the featured image is
                 set at generation time. */}
@@ -1647,6 +1653,7 @@ const VideoCard = memo(function VideoCardImpl({
         connectedChannels={connectedChannels}
         userTier={userTier}
         existingPostId={post?.postId ?? null}
+        includeImages={includeImages}
         open={scheduleOpen}
         onClose={() => setScheduleOpen(false)}
         onScheduled={(result) => {

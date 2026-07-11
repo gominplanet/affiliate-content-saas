@@ -66,6 +66,7 @@ const GENERATE_ABORT_MS = 840_000 // 14 min (> MAX_POLL_MS 13 min)
 
 export function GenerateButton({
   videoId, existingPost, userTier, blogImagePref, onDone,
+  includeImages: includeImagesProp, onIncludeImagesChange,
 }: {
   videoId: string
   /** YouTube native id — historically used for extension-side frame
@@ -83,6 +84,12 @@ export function GenerateButton({
    *  (opt-in default preserved for everyone who hasn't asked). */
   blogImagePref?: number | null
   onDone: (url: string, title: string, postId: string) => void
+  /** Controlled "Include photos" state, lifted to the parent card so the
+   *  card's "Generate + publish all" and "Schedule" buttons honor the SAME
+   *  checkbox the user sees here. When omitted, the button falls back to its
+   *  own internal state (unchanged for any other call site). */
+  includeImages?: boolean
+  onIncludeImagesChange?: (v: boolean) => void
 }) {
   const [status, setStatus] = useState<GenStatus>(existingPost ? 'done' : 'idle')
   const [stepIdx, setStepIdx] = useState(0)
@@ -148,9 +155,15 @@ export function GenerateButton({
   // so nothing was generated). Null (Default/auto) and 0 (text-only) keep it
   // off, preserving the opt-in default for anyone who hasn't asked. The user
   // can still tick/untick per post.
-  const [includeImages, setIncludeImages] = useState(
+  // Controlled-or-internal: when the parent card passes includeImagesProp +
+  // onIncludeImagesChange, that lifted state wins (so Generate+publish-all and
+  // Schedule share this exact toggle). Otherwise fall back to local state,
+  // seeded from the Brand Profile "Images per article" pref as before.
+  const [internalIncludeImages, setInternalIncludeImages] = useState(
     typeof blogImagePref === 'number' && blogImagePref >= 1,
   )
+  const includeImages = includeImagesProp ?? internalIncludeImages
+  const setIncludeImages = (v: boolean) => (onIncludeImagesChange ?? setInternalIncludeImages)(v)
   // Optional: bring-your-own in-article images (up to 3). When present, these
   // are placed throughout the post INSTEAD of AI-generated photos.
   const [userImages, setUserImages] = useState<string[]>([])

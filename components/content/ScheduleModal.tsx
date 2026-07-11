@@ -72,6 +72,10 @@ export interface ScheduleModalProps {
    *  POST to /api/blog/schedule-cascade-only instead of
    *  /api/blog/schedule-publish. The "Save as draft" toggle hides. */
   existingPostId?: string | null
+  /** Whether to add in-article images to the generated post — mirrors the
+   *  "Include photos in the article" checkbox on the row. Ignored in cascade-
+   *  only mode (the post already exists). Default true. */
+  includeImages?: boolean
   /** Open/close control. Owned by the parent (the row). */
   open: boolean
   onClose: () => void
@@ -98,7 +102,7 @@ function defaultScheduleIso(): string {
 }
 
 export default function ScheduleModal({
-  videoId, videoTitle, connectedChannels, userTier, siteId, existingPostId, open, onClose, onScheduled,
+  videoId, videoTitle, connectedChannels, userTier, siteId, existingPostId, includeImages = true, open, onClose, onScheduled,
 }: ScheduleModalProps) {
   const cascadeOnly = !!existingPostId
   // A channel is USABLE only when it's connected AND the user's tier allows it.
@@ -218,7 +222,7 @@ export default function ScheduleModal({
               scheduleMode: localScheduleMode,
               scheduledFor: localIso,
               socials,
-              includeImages: true,
+              includeImages,
             }
         const res = await fetch(endpoint, {
           method: 'POST',
@@ -230,6 +234,7 @@ export default function ScheduleModal({
           error?: string
           parentScheduleId?: string | null
           childScheduleIds?: string[]
+          wordpressPostId?: number
           warning?: string
         }
         if (!res.ok || !json.ok) {
@@ -241,6 +246,33 @@ export default function ScheduleModal({
           id: toastId,
           duration: 6_000,
         })
+
+        // In-article images for the freshly-generated (but not-yet-live) post.
+        // schedule-publish deliberately skips images server-side (its after()
+        // block is unreliable), so we run the SAME reliable refresh-images path
+        // the "Generate + publish all" button uses. The post is scheduled for
+        // later, so images bake in well before it goes live. Gated on the row's
+        // "Include photos" toggle + non-cascade mode (cascade has no fresh post).
+        // The COUNT comes from Content Preferences (blog_image_count) server-side.
+        const wpImgId = json.wordpressPostId
+        if (!cascadeOnly && includeImages && typeof wpImgId === 'number') {
+          const imgToastId = `sch-img-${wpImgId}`
+          toast.loading('Generating in-article images… (1-3 min — runs in the background)', { id: imgToastId, duration: Infinity })
+          void fetch('/api/blog/refresh-images', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ wordpressPostId: wpImgId }),
+          })
+            .then(async (r) => {
+              const d = (await r.json().catch(() => ({}))) as { count?: number; error?: string }
+              if (r.ok && typeof d.count === 'number' && d.count > 0) {
+                toast.success(`Added ${d.count} in-article image${d.count === 1 ? '' : 's'} to the scheduled post`, { id: imgToastId, duration: 5_000 })
+              } else {
+                toast.error(`${d.error || 'Couldn’t add in-article images.'} Use “Add images” on the row once it’s live.`, { id: imgToastId, duration: 9_000 })
+              }
+            })
+            .catch((e) => toast.error(`${e instanceof Error ? e.message : 'Image step failed.'} Use “Add images” once it’s live.`, { id: imgToastId, duration: 9_000 }))
+        }
         onScheduled({
           parentScheduleId: json.parentScheduleId ?? null,
           childScheduleIds: json.childScheduleIds ?? [],

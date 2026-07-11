@@ -57,6 +57,13 @@ import { DEFAULT_SOCIAL_OFFSETS_MIN } from '@/lib/schedule-types'
 const SUPPORTED_SOCIALS: SchedulableSocial[] = ['facebook', 'threads', 'twitter', 'linkedin', 'bluesky', 'telegram', 'pinterest']
 const SUPPORTED_MODES: ScheduleMode[] = ['wp-native', 'draft-flip']
 
+// This route SYNCHRONOUSLY awaits the internal /api/blog/generate call, which
+// now takes ~250-290s (Opus 4.8 + quality passes). Without an explicit budget
+// the platform default can cut the request off mid-generate — so scheduling
+// would silently fail. Match the generate route's 600s (Vercel clamps to 300
+// without Fluid Compute). See lib/generation-jobs.ts for the same reasoning.
+export const maxDuration = 600
+
 export async function POST(request: Request) {
   try {
     const supabase = await createServerClient()
@@ -146,7 +153,12 @@ export async function POST(request: Request) {
       body: JSON.stringify({
         videoId,
         siteId: siteId ?? null,
-        includeImages: includeImages !== false,
+        // Skip the generate route's own (unreliable, Vercel-cut-off) after()
+        // image block. The client fires the reliable /api/blog/refresh-images
+        // step after this returns — the same path the Library "Add images" and
+        // "Generate + publish all" buttons use — so images are baked into the
+        // post before it goes live, without double-generating (double cost).
+        includeImages: false,
         scheduleMode,
         scheduledFor,
       }),
