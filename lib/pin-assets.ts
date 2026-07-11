@@ -202,19 +202,24 @@ Return ONLY valid JSON with these exact keys:
   const designVariant = Math.floor(Math.random() * PIN_DESIGN_COUNT)
   let rawImage: { data: string; mediaType: string } | null = null
   let imagePrompt = '' // hoisted so the QC-retry block below can reuse it
-  if (opts?.aiScene) {
-    // Premium path: generate a bespoke pin scene with Gemini (single-pin opt-in).
+
+  // Cheap DEFAULT: composite the post's EXISTING image (its real thumbnail /
+  // hero) into the vertical pin — no fresh gen. Best-effort: some hosts (a WP
+  // WAF) block a server-side image fetch, so this can come back empty.
+  if (!opts?.aiScene) {
+    const srcUrl = (p.featured_image_url as string | null) || (p.thumbnail_url as string | null) || null
+    if (srcUrl) rawImage = await fetchImageAsBase64(String(srcUrl))
+  }
+
+  // Generate a fresh scene when the premium path is requested OR the cheap fetch
+  // came back empty — so a pin is NEVER blank (the cheap fetch failing must not
+  // ship a broken pin; it just costs a generation for that one pin).
+  if (!rawImage) {
     imagePrompt = useCollage
       ? buildCollageImagePrompt(fields.product_category, collageProducts)
       : buildViralImagePrompt(fields, Math.floor(Math.random() * PIN_COMPOSITIONS.length), !!referenceImageUrl)
     rawImage = await generatePinImage(imagePrompt, useCollage ? null : referenceImageUrl)
     if (rawImage) recordUsage({ userId: ctx.userId, tier: ctx.tier, feature: 'pinterest_image', model: 'gemini-2.5-flash-image', images: 1 })
-  } else {
-    // Cheap DEFAULT: composite the post's EXISTING image (real thumbnail / hero)
-    // into the vertical pin — no fresh gen, no QC. Skips the QC block below.
-    const srcUrl = (p.featured_image_url as string | null) || (p.thumbnail_url as string | null)
-      || (p.video_id ? `https://i.ytimg.com/vi/${p.video_id}/hqdefault.jpg` : null)
-    rawImage = srcUrl ? await fetchImageAsBase64(srcUrl) : null
   }
 
   // Vision QC (Claude) on the SCENE (before the Satori text overlay, so the
