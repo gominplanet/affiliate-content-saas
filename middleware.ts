@@ -21,6 +21,12 @@ const publicPaths = [
   '/api/newsletter/confirm',
   '/api/newsletter/unsubscribe',
   '/api/newsletter/resend-webhook',
+  // Instagram webhook — Meta hits it with no session for the verification
+  // handshake (GET hub.challenge) + signed comment events (POST). Without this
+  // the middleware 307-redirects to /login and Meta's verification fails / the
+  // subscription gets disabled. The route enforces its own auth: the verify
+  // token on GET + X-Hub-Signature-256 (INSTAGRAM_APP_SECRET) on POST.
+  '/api/instagram/webhook',
   // Broadcast unsubscribe — hit from an operator-broadcast email in the user's
   // inbox (no session). Authenticates via a signed token (lib/broadcast-token);
   // also serves RFC 8058 one-click POST from Gmail/Apple Mail.
