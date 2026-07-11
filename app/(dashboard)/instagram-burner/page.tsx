@@ -406,6 +406,107 @@ export default function InstagramBurnerPage() {
   const previewStickerFile = stickerId ? (CTA_STICKERS.find(s => s.id === stickerId)?.file || '') : ''
   const previewStickerWidth = stickerId ? (CTA_STICKERS.find(s => s.id === stickerId)?.widthPct || 0.6) : 0.6
 
+  // The preview / burned-result card — lives in column 3 (under "where it appears"),
+  // so it sits alongside steps 1 & 2 instead of pushing the page down.
+  const previewNode = resultUrl ? (
+    <div className="card p-3 space-y-3">
+      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+      <video src={resultUrl} controls playsInline className="w-full rounded-lg bg-black max-h-[60vh]" />
+
+      {igCaption && (
+        <div className="rounded-lg border border-gray-200 dark:border-white/10 p-2.5">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Reel caption</span>
+            <button onClick={copyCaption} className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#7C3AED] hover:underline">
+              {copied ? <><CheckCircle size={11} /> Copied!</> : <><Copy size={11} /> Copy</>}
+            </button>
+          </div>
+          <pre className="text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7] whitespace-pre-wrap font-sans leading-relaxed max-h-40 overflow-y-auto">{igCaption}</pre>
+        </div>
+      )}
+
+      {published ? (
+        <div className="rounded-lg bg-[#34c759]/10 border border-[#34c759]/25 px-3 py-2 text-[12px] text-[#1d1d1f] dark:text-[#f5f5f7] space-y-1">
+          <div className="flex items-center gap-1.5">
+            <Instagram size={13} className="text-[#E1306C] flex-shrink-0" /> Posted to your Instagram as a Reel.
+          </div>
+          {autoDm && (
+            <div className="flex items-start gap-1.5 text-[11px] text-[#6e6e73] dark:text-[#a1a1a6]">
+              <CheckCircle size={12} className="text-[#34c759] flex-shrink-0 mt-0.5" />
+              Auto-DM armed — a comment of “{(dmKeyword || 'LINK').trim()}” will DM your link (once Meta approval lands). Manage it under Instagram Auto-DM.
+            </div>
+          )}
+        </div>
+      ) : (
+        <>
+          {igError && (
+            <div className="flex items-start gap-1.5 rounded-lg bg-[#ff9500]/10 border border-[#ff9500]/25 px-3 py-2 text-[12px] text-[#1d1d1f] dark:text-[#f5f5f7]">
+              <AlertCircle size={13} className="text-[#ff9500] flex-shrink-0 mt-0.5" /> Couldn’t publish ({igError}). You can download below and post it manually.
+            </div>
+          )}
+          <button
+            onClick={() => setConfirmPublish(true)}
+            disabled={publishing}
+            className="inline-flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-lg text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
+            style={{ background: 'linear-gradient(90deg, #F58529, #DD2A7B, #8134AF)' }}
+          >
+            {publishing ? <><Loader2 size={13} className="animate-spin" /> Publishing to Instagram…</> : <><Instagram size={13} /> Publish to Instagram</>}
+          </button>
+          <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] text-center -mt-1">Review the video and caption above, then publish when you’re ready. Nothing is posted automatically.</p>
+        </>
+      )}
+
+      <button
+        onClick={() => setTtOpen(true)}
+        className="inline-flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-lg text-xs font-semibold text-white hover:opacity-90 bg-black"
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="white"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5.8 20.1a6.34 6.34 0 0 0 10.86-4.43V8.45a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1.84-.34z" /></svg>
+        Post to TikTok
+      </button>
+
+      <button onClick={download} className="inline-flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-lg text-xs font-semibold bg-[#34c759] text-white hover:opacity-90">
+        <Download size={13} /> Download captioned video
+      </button>
+    </div>
+  ) : (
+    <div className="card p-3">
+      <p className="text-[11px] font-semibold text-[#86868b] dark:text-[#8e8e93] mb-2 text-center uppercase tracking-wide">Live preview</p>
+      <div className={`relative mx-auto rounded-xl overflow-hidden ${sourceUrl ? 'bg-black' : 'bg-gray-50 dark:bg-white/[0.03] border border-dashed border-gray-200 dark:border-white/10'}`} style={{ aspectRatio: '9 / 16', maxWidth: '200px' }}>
+        {sourceUrl ? (
+          // eslint-disable-next-line jsx-a11y/media-has-caption
+          <video src={`${sourceUrl}#t=0.1`} muted playsInline preload="metadata" className="absolute inset-0 w-full h-full object-cover" />
+        ) : (
+          <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-4">
+            <Video size={22} className="text-[#c7c7cc] dark:text-white/25 mb-2" />
+            <p className="text-[12px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed">Pick a video to preview it here.</p>
+          </div>
+        )}
+
+        {sourceUrl && (
+          <div className={`absolute left-[6%] right-[6%] flex justify-start ${position === 'upper-left' ? 'top-[8%]' : 'bottom-[15%]'}`}>
+            {overlayType === 'sticker' ? (
+              (genStickerUrl || previewStickerFile) ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={genStickerUrl || ctaStickerUrl(previewStickerFile)}
+                  alt=""
+                  style={{ width: genStickerUrl ? '58%' : `${previewStickerWidth * 100}%` }}
+                />
+              ) : (
+                <span className="text-[10px] text-white/80 bg-black/55 px-2 py-1 rounded-md">Pick a CTA box in step 2</span>
+              )
+            ) : (
+              <span className="text-[13px] font-bold leading-tight px-2.5 py-1 rounded-md" style={previewTextStyle(style)}>{caption || 'LINK IN BIO'}</span>
+            )}
+          </div>
+        )}
+      </div>
+      <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] text-center mt-2 leading-relaxed">
+        Roughly how the burned video will look. Hit <strong>Burn caption</strong> to render it.
+      </p>
+    </div>
+  )
+
   if (!metaUnlocked) {
     return (
       <>
@@ -706,17 +807,23 @@ export default function InstagramBurnerPage() {
                 )}
               </div>
 
-              {/* Position */}
-              <div className="card p-4">
-                <label className="block text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">3 · Where it appears</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {POSITIONS.map(p => (
-                    <button key={p.key} onClick={() => setPosition(p.key)} className={`text-left p-2.5 rounded-lg border transition-colors ${position === p.key ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-gray-300'}`}>
-                      <span className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{p.label}</span>
-                      <span className="block text-[11px] text-[#86868b] dark:text-[#8e8e93]">{p.desc}</span>
-                    </button>
-                  ))}
+              {/* Column 3 — where it appears, with the live preview stacked below it */}
+              <div className="space-y-3">
+                {/* Position */}
+                <div className="card p-4">
+                  <label className="block text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">3 · Where it appears</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {POSITIONS.map(p => (
+                      <button key={p.key} onClick={() => setPosition(p.key)} className={`text-left p-2.5 rounded-lg border transition-colors ${position === p.key ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-gray-300'}`}>
+                        <span className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{p.label}</span>
+                        <span className="block text-[11px] text-[#86868b] dark:text-[#8e8e93]">{p.desc}</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
+
+                {/* Live preview / result */}
+                {previewNode}
               </div>
             </div>
 
@@ -828,113 +935,6 @@ export default function InstagramBurnerPage() {
               </>)}
 
               {error && <p className="text-xs text-[#ff3b30] flex items-center gap-1.5"><AlertCircle size={12} /> {error}</p>}
-
-            {/* Live preview / result — centered, below the steps */}
-            <div className="max-w-[260px] mx-auto">
-              {resultUrl ? (
-                <div className="card p-3 space-y-3">
-                  {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-                  <video src={resultUrl} controls playsInline className="w-full rounded-lg bg-black max-h-[60vh]" />
-
-                  {/* Composed Reel caption — review before publishing */}
-                  {igCaption && (
-                    <div className="rounded-lg border border-gray-200 dark:border-white/10 p-2.5">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Reel caption</span>
-                        <button onClick={copyCaption} className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#7C3AED] hover:underline">
-                          {copied ? <><CheckCircle size={11} /> Copied!</> : <><Copy size={11} /> Copy</>}
-                        </button>
-                      </div>
-                      <pre className="text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7] whitespace-pre-wrap font-sans leading-relaxed max-h-40 overflow-y-auto">{igCaption}</pre>
-                    </div>
-                  )}
-
-                  {/* Publish status / explicit publish action */}
-                  {published ? (
-                    <div className="rounded-lg bg-[#34c759]/10 border border-[#34c759]/25 px-3 py-2 text-[12px] text-[#1d1d1f] dark:text-[#f5f5f7] space-y-1">
-                      <div className="flex items-center gap-1.5">
-                        <Instagram size={13} className="text-[#E1306C] flex-shrink-0" /> Posted to your Instagram as a Reel.
-                      </div>
-                      {autoDm && (
-                        <div className="flex items-start gap-1.5 text-[11px] text-[#6e6e73] dark:text-[#a1a1a6]">
-                          <CheckCircle size={12} className="text-[#34c759] flex-shrink-0 mt-0.5" />
-                          Auto-DM armed — a comment of “{(dmKeyword || 'LINK').trim()}” will DM your link (once Meta approval lands). Manage it under Instagram Auto-DM.
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <>
-                      {igError && (
-                        <div className="flex items-start gap-1.5 rounded-lg bg-[#ff9500]/10 border border-[#ff9500]/25 px-3 py-2 text-[12px] text-[#1d1d1f] dark:text-[#f5f5f7]">
-                          <AlertCircle size={13} className="text-[#ff9500] flex-shrink-0 mt-0.5" /> Couldn’t publish ({igError}). You can download below and post it manually.
-                        </div>
-                      )}
-                      <button
-                        onClick={() => setConfirmPublish(true)}
-                        disabled={publishing}
-                        className="inline-flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-lg text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
-                        style={{ background: 'linear-gradient(90deg, #F58529, #DD2A7B, #8134AF)' }}
-                      >
-                        {publishing ? <><Loader2 size={13} className="animate-spin" /> Publishing to Instagram…</> : <><Instagram size={13} /> Publish to Instagram</>}
-                      </button>
-                      <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] text-center -mt-1">Review the video and caption above, then publish when you’re ready. Nothing is posted automatically.</p>
-                    </>
-                  )}
-
-                  {/* Post the burned video straight to TikTok — opens the
-                      audit-compliant composer (privacy picker, disclosure, etc.). */}
-                  <button
-                    onClick={() => setTtOpen(true)}
-                    className="inline-flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-lg text-xs font-semibold text-white hover:opacity-90 bg-black"
-                  >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="white"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5.8 20.1a6.34 6.34 0 0 0 10.86-4.43V8.45a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1.84-.34z" /></svg>
-                    Post to TikTok
-                  </button>
-
-                  <button onClick={download} className="inline-flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-lg text-xs font-semibold bg-[#34c759] text-white hover:opacity-90">
-                    <Download size={13} /> Download captioned video
-                  </button>
-                </div>
-              ) : (
-                <div className="card p-3">
-                  <p className="text-[11px] font-semibold text-[#86868b] dark:text-[#8e8e93] mb-2 text-center uppercase tracking-wide">Live preview</p>
-                  <div className={`relative mx-auto rounded-xl overflow-hidden ${sourceUrl ? 'bg-black' : 'bg-gray-50 dark:bg-white/[0.03] border border-dashed border-gray-200 dark:border-white/10'}`} style={{ aspectRatio: '9 / 16', maxWidth: '210px' }}>
-                    {sourceUrl ? (
-                      // eslint-disable-next-line jsx-a11y/media-has-caption
-                      <video src={`${sourceUrl}#t=0.1`} muted playsInline preload="metadata" className="absolute inset-0 w-full h-full object-cover" />
-                    ) : (
-                      <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-5">
-                        <Video size={24} className="text-[#c7c7cc] dark:text-white/25 mb-2" />
-                        <p className="text-[12px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed">Pick a video to preview it here.</p>
-                      </div>
-                    )}
-
-                    {/* Overlay — mirrors what gets burned (position + style/box) */}
-                    {sourceUrl && (
-                      <div className={`absolute left-[6%] right-[6%] flex justify-start ${position === 'upper-left' ? 'top-[8%]' : 'bottom-[15%]'}`}>
-                        {overlayType === 'sticker' ? (
-                          (genStickerUrl || previewStickerFile) ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={genStickerUrl || ctaStickerUrl(previewStickerFile)}
-                              alt=""
-                              style={{ width: genStickerUrl ? '58%' : `${previewStickerWidth * 100}%` }}
-                            />
-                          ) : (
-                            <span className="text-[10px] text-white/80 bg-black/55 px-2 py-1 rounded-md">Pick a CTA box in step 2</span>
-                          )
-                        ) : (
-                          <span className="text-[13px] font-bold leading-tight px-2.5 py-1 rounded-md" style={previewTextStyle(style)}>{caption || 'LINK IN BIO'}</span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] text-center mt-2 leading-relaxed">
-                    Roughly how the burned video will look. Hit <strong>Burn caption</strong> to render it for real.
-                  </p>
-                </div>
-              )}
-            </div>
 
               <button
                 onClick={burn}
