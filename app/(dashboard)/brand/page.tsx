@@ -78,6 +78,14 @@ function geniuslinkCredLooksWrong(v: string): boolean {
   return false
 }
 
+/** Normalize a user-typed hex to `#rrggbb`, expanding `#rgb` shorthand and
+ *  tolerating a missing `#`. Returns null if it isn't a valid hex color. */
+function normalizeHex(raw: string): string | null {
+  let t = raw.trim().replace(/^#/, '')
+  if (/^[0-9a-fA-F]{3}$/.test(t)) t = t.split('').map((c) => c + c).join('')
+  return /^[0-9a-fA-F]{6}$/.test(t) ? `#${t.toLowerCase()}` : null
+}
+
 function ColorPicker({
   label,
   value,
@@ -87,13 +95,52 @@ function ColorPicker({
   value: string
   onChange: (color: string) => void
 }) {
+  // Local echo so the user can type freely (incl. partial/invalid states)
+  // without the field fighting the committed value. Re-sync when `value`
+  // changes from outside (a preset swatch or the native picker).
+  const [hexText, setHexText] = useState(value)
+  useEffect(() => { setHexText(value) }, [value])
+
+  const commitHex = (raw: string) => {
+    const norm = normalizeHex(raw)
+    if (norm) onChange(norm)
+    else setHexText(value) // invalid → snap back to the committed color
+  }
+
   return (
     <div>
       <div className="flex items-center gap-2 mb-2">
         <div className="w-5 h-5 rounded-md border border-gray-200 dark:border-white/10 flex-shrink-0" style={{ backgroundColor: value }} />
         <p className="text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0]">{label}</p>
-        <code className="text-xs font-mono text-[#86868b] dark:text-[#8e8e93] ml-auto">{value}</code>
       </div>
+
+      {/* Custom hex: native picker + free-type field. Type any #RRGGBB. */}
+      <div className="flex items-center gap-2 mb-2.5">
+        <input
+          type="color"
+          aria-label={`${label} custom color picker`}
+          value={normalizeHex(value) || '#000000'}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-8 h-8 rounded-md border border-gray-200 dark:border-white/10 bg-transparent cursor-pointer p-0.5 flex-shrink-0"
+        />
+        <div className="relative flex-1">
+          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-mono text-[#86868b] pointer-events-none">#</span>
+          <input
+            type="text"
+            value={hexText.replace(/^#/, '')}
+            onChange={(e) => setHexText(e.target.value)}
+            onBlur={(e) => commitHex(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commitHex((e.target as HTMLInputElement).value) } }}
+            spellCheck={false}
+            maxLength={7}
+            placeholder="7C3AED"
+            className="w-full pl-5 pr-2 py-1.5 rounded-lg border bg-transparent text-xs font-mono text-[#1d1d1f] dark:text-[#f5f5f7] uppercase"
+            style={{ borderColor: 'var(--border-bright, #d2d2d7)' }}
+          />
+        </div>
+      </div>
+
+      {/* Quick presets */}
       <div className="grid grid-cols-8 gap-1.5">
         {COLORS.map((color) => (
           <button
@@ -102,7 +149,7 @@ function ColorPicker({
             className="w-7 h-7 rounded-lg border-2 transition-transform hover:scale-110"
             style={{
               backgroundColor: color,
-              borderColor: value === color ? '#1d1d1f' : 'transparent',
+              borderColor: value.toLowerCase() === color.toLowerCase() ? '#1d1d1f' : 'transparent',
             }}
             title={color}
           />
@@ -115,6 +162,10 @@ function ColorPicker({
 interface BrandData {
   name: string
   tagline: string
+  /** Long-form "About Me" bio shown in the blog footer + author card.
+   *  Distinct from the one-line tagline. Syncs to the WP theme as
+   *  profile.authorBio (footer bio → falls back to tagline when empty). */
+  author_bio: string
   author_name: string
   website_url: string
   niches: string[]
@@ -218,6 +269,7 @@ const FONT_THEMES = [
 const DEFAULT: BrandData = {
   name: '',
   tagline: '',
+  author_bio: '',
   author_name: '',
   website_url: '',
   niches: [],
@@ -452,6 +504,8 @@ export default function BrandPage() {
       setData({
         name: row.name ?? '',
         tagline: row.tagline ?? '',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        author_bio: (row as any).author_bio ?? '',
         author_name: row.author_name ?? '',
         website_url: row.website_url ?? '',
         niches: row.niches ?? [],
@@ -588,6 +642,7 @@ export default function BrandPage() {
           authorName:     normalized.author_name,
           brandName:      normalized.name,
           tagline:        normalized.tagline,
+          authorBio:      normalized.author_bio,
           primaryColor:   normalized.primary_color,
           secondaryColor: normalized.secondary_color,
           fontTheme:      normalized.font_theme,
@@ -1474,12 +1529,32 @@ export default function BrandPage() {
             </div>
           </div>
 
-          {/* About You Photo — round image in the footer About band */}
+          {/* About You — footer bio + round photo (the "About the reviewer" band) */}
           <div className="card p-5">
-            <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">About You Photo <span className="text-[#86868b] font-normal">(optional)</span></h2>
+            <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">About You <span className="text-[#86868b] font-normal">(optional)</span></h2>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-              A round headshot (or your logo) shown next to your &quot;About you&quot; bio in the blog footer. Recommended <strong>500×500 px</strong> square — it&apos;s displayed circular.
+              Your bio + photo shown in the blog footer and the &ldquo;About the reviewer&rdquo; card at the bottom of every post.
             </p>
+
+            {/* About Me bio → footer bio (falls back to your tagline if left blank) */}
+            <div className="mb-5">
+              <label htmlFor="brand-author-bio" className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">About Me bio</label>
+              <textarea
+                id="brand-author-bio"
+                value={data.author_bio}
+                onChange={(e) => set('author_bio', e.target.value)}
+                rows={4}
+                maxLength={600}
+                placeholder="A few sentences about who you are and why readers should trust your reviews — e.g. &quot;I'm Jane, and I've tested 200+ kitchen gadgets over 6 years. I only recommend gear I'd buy again with my own money.&quot;"
+                className="w-full px-3 py-2 rounded-lg border bg-transparent text-sm text-[#1d1d1f] dark:text-[#f5f5f7] resize-y"
+                style={{ borderColor: 'var(--border-bright, #d2d2d7)' }}
+              />
+              <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-1">
+                {data.author_bio.length}/600 · Shown in the footer &amp; author card. Leave blank to fall back to your tagline.
+              </p>
+            </div>
+
+            <p className="text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-2">Photo — a round headshot (or logo) shown next to your bio. Recommended <strong>500×500 px</strong> square, displayed circular.</p>
             <div className="flex items-center gap-4">
               {data.headshot_url ? (
                 <div className="relative group w-20 h-20 rounded-full border border-gray-200 dark:border-white/10 bg-white flex items-center justify-center overflow-hidden flex-shrink-0">
