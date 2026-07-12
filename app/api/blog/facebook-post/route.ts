@@ -192,7 +192,12 @@ Topic: ${(post.content as string).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').
         const r = imageUrl
           ? await fbService.postPhoto({ imageUrl, caption })
           : await fbService.postLink({ message: caption, link: post.wordpress_url })
-        results.push({ accountId: acct.id, page: acct.displayName, ok: true, id: r.id })
+        // A /photos post returns { id: <photo id>, post_id: <PAGEID_POSTID> }. We
+        // must store the PAGE-POST id (post_id) so it matches the comment
+        // webhook's post_id — otherwise comment→DM can never resolve the post. A
+        // /feed (link) post returns the page-post id directly as `id`.
+        const pagePostId = (r as { id: string; post_id?: string }).post_id || r.id
+        results.push({ accountId: acct.id, page: acct.displayName, ok: true, id: pagePostId })
       } catch (e) {
         results.push({ accountId: acct.id, page: acct.displayName, ok: false, error: e instanceof Error ? e.message : String(e) })
       }
