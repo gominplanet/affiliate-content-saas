@@ -14,6 +14,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { Instagram, MessageCircle, Loader2, Info, FlaskConical, Trash2, Flame } from 'lucide-react'
+import FacebookDmStatus from '@/components/instagram/FacebookDmStatus'
 
 const EXAMPLE_LINK = 'https://geni.us/Abc123'
 
@@ -116,6 +117,10 @@ export default function InstagramDmPage() {
           starts sending the moment approval lands.
         </span>
       </div>
+
+      {/* Live self-diagnostic for the Facebook comment→DM chain (why a trigger
+          isn't firing). Pulls /api/facebook/dm-debug — admin/self only. */}
+      <FacebookDmStatus />
 
       {loading ? (
         <div className="flex items-center gap-2 text-sm py-8 justify-center" style={{ color: 'var(--text-faint)' }}>
