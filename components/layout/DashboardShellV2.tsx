@@ -49,6 +49,7 @@ import NotificationBell from './NotificationBell'
 import WpUpdateTopbarButton from './WpUpdateTopbarButton'
 import TopbarSearch from './TopbarSearch'
 import WpConnectionDoctorButton from './WpConnectionDoctorButton'
+import PurgeCacheTopbarButton from './PurgeCacheTopbarButton'
 import ScoutTopbarButton from './ScoutTopbarButton'
 import { HelpDeskButton } from '@/components/HelpDeskSidebar'
 
@@ -960,6 +961,10 @@ export default function DashboardShellV2({
                 >
                   WP Admin <ExternalLink size={11} />
                 </a>
+                {/* Clear Cache — one click purges the site's page cache
+                    (LiteSpeed/SG/Cloudflare) so brand + theme changes go live
+                    immediately. Sits next to Visit Blog / WP Admin. */}
+                <PurgeCacheTopbarButton />
               </>
             )}
 
