@@ -84,6 +84,34 @@ async function parseWpJson<T>(res: Response): Promise<T> {
   }
 }
 
+// ── Write pacing (anti-rate-limit) ──────────────────────────────────────────
+// Security plugins (Wordfence et al.) and host WAFs rate-limit bursts of REST
+// writes from a single datacenter IP. One publish fires MANY writes back-to-back
+// — pre-flight (tag create + delete), tag/category resolves, each media upload,
+// the post itself, then meta — all from our one AWS egress IP in ~1–2s. That
+// burst reads as a crawler and trips the limiter mid-publish, which surfaces to
+// the user as the "firewall is blocking MVP" failure (see Alejandro's Wordfence
+// log: two /wp-json hits 182ms apart from 44.201.240.24). We can't allowlist a
+// rotating serverless IP, so instead we stop *looking* like a flood: space
+// consecutive writes to the same host by a short jittered gap. Keeps us under
+// per-window thresholds at a few seconds' cost on an image-heavy publish. Reads
+// are never paced, so page loads / previews stay instant.
+const WRITE_MIN_GAP_MS = 450
+const lastWriteAt = new Map<string, number>() // host → next-allowed write time (ms)
+
+async function paceWrite(host: string): Promise<void> {
+  const now = Date.now()
+  const prevFireAt = lastWriteAt.get(host) || 0
+  const jitter = Math.floor(Math.random() * 250) // de-periodicise so it doesn't look robotic
+  // Fire no earlier than one gap after the previous write's slot. Reserve this
+  // slot synchronously (before the await) so concurrent writes to the same host
+  // queue behind it instead of all firing at once.
+  const fireAt = Math.max(now, prevFireAt + WRITE_MIN_GAP_MS + jitter)
+  lastWriteAt.set(host, fireAt)
+  const wait = fireAt - now
+  if (wait > 0) await new Promise((r) => setTimeout(r, wait))
+}
+
 export class WordPressService {
   private baseUrl: string
   private siteUrl: string
@@ -329,6 +357,11 @@ export class WordPressService {
   private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const method = (options.method || 'GET').toUpperCase()
     const isWrite = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)
+
+    // Anti-rate-limit: space out the burst of writes a single publish fires so
+    // the host WAF / Wordfence doesn't flag our datacenter IP as a crawler and
+    // block us mid-publish. Reads are never paced. See paceWrite() above.
+    if (isWrite) await paceWrite(this.siteUrl)
 
     // Multi-host header-strip workaround (Hostinger LiteSpeed, etc.): when
     // we have a body-auth proxy secret AND this is a write request, route
@@ -698,6 +731,11 @@ export class WordPressService {
         // 401-retry path the worst case is ~3 * 90s = 4.5 min.
         signal: AbortSignal.timeout(90_000),
       })
+
+    // Pace media uploads alongside post writes — they hit /wp/v2/media on the
+    // same host and add to the burst a WAF rate-limiter counts. (mediaUpload
+    // has its own fetch, so it doesn't inherit request()'s pacing.)
+    await paceWrite(this.siteUrl)
 
     let res = await run(buildHeaders())
     if (res.status === 401 || res.status === 403) {
