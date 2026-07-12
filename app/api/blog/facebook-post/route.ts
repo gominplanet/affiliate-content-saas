@@ -14,6 +14,7 @@ import { socialPermalink } from '@/lib/brand-recap'
 import { metaEnabledForUser } from '@/lib/feature-flags'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { maybeDecrypt } from '@/lib/secrets'
+import { resolveBestThumbnail } from '@/lib/youtube-frames'
 
 export const maxDuration = 60
 
@@ -146,9 +147,14 @@ Return ONLY the post text, nothing else.`,
     }
 
     // ── 6. Build image URL ────────────────────────────────────────────────────
+    // maxresdefault.jpg only exists for HD uploads — for many videos it 404s,
+    // and Facebook's /photos endpoint then rejects the unreachable URL with
+    // "Missing or invalid image file". resolveBestThumbnail HEAD-probes
+    // maxres→sd→hq→mq and returns the first that actually exists (hq always
+    // does), so we only ever hand Facebook a fetchable image.
     const youtubeId = video?.youtube_video_id
     const imageUrl = youtubeId
-      ? `https://img.youtube.com/vi/${youtubeId}/maxresdefault.jpg`
+      ? await resolveBestThumbnail(youtubeId)
       : (video?.thumbnail_url || '')
 
     // ── 7. Build full caption ─────────────────────────────────────────────────
@@ -189,14 +195,29 @@ Topic: ${(post.content as string).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').
     for (const acct of fbAccounts) {
       try {
         const fbService = createFacebookService(acct.accessToken, acct.externalId)
-        const r = imageUrl
-          ? await fbService.postPhoto({ imageUrl, caption })
-          : await fbService.postLink({ message: caption, link: post.wordpress_url })
         // A /photos post returns { id: <photo id>, post_id: <PAGEID_POSTID> }. We
         // must store the PAGE-POST id (post_id) so it matches the comment
         // webhook's post_id — otherwise comment→DM can never resolve the post. A
         // /feed (link) post returns the page-post id directly as `id`.
-        const pagePostId = (r as { id: string; post_id?: string }).post_id || r.id
+        let pagePostId: string
+        if (imageUrl) {
+          try {
+            const r = await fbService.postPhoto({ imageUrl, caption })
+            pagePostId = (r as { id: string; post_id?: string }).post_id || r.id
+          } catch (photoErr) {
+            // Facebook couldn't fetch/validate the image (e.g. an unreachable
+            // thumbnail host). Rather than fail the whole publish, fall back to
+            // a link post — Facebook scrapes the WP post's og:image for the card
+            // preview, so the post still goes out with an image + is fully
+            // comment→DM capable.
+            console.warn('[facebook-post] photo post failed, falling back to link post:', photoErr)
+            const r = await fbService.postLink({ message: caption, link: post.wordpress_url })
+            pagePostId = r.id
+          }
+        } else {
+          const r = await fbService.postLink({ message: caption, link: post.wordpress_url })
+          pagePostId = r.id
+        }
         results.push({ accountId: acct.id, page: acct.displayName, ok: true, id: pagePostId })
       } catch (e) {
         results.push({ accountId: acct.id, page: acct.displayName, ok: false, error: e instanceof Error ? e.message : String(e) })
