@@ -37,6 +37,7 @@ import { pingIndexNowForUrl } from '@/lib/seo-on-publish'
 import { publishTikTokForTarget, type TikTokScheduleOptions } from '@/lib/tiktok-publish'
 import { publishInstagramForTarget, type IgMode } from '@/lib/instagram-publish'
 import { publishPinForPost } from '@/lib/pin-publish'
+import { resolveBestThumbnail } from '@/lib/youtube-frames'
 import { buildPinAssets, composePinDescription } from '@/lib/pin-assets'
 import { ensureDisclaimer, AFFILIATE_DISCLAIMER_DEFAULT } from '@/lib/social-disclaimer'
 
@@ -404,8 +405,11 @@ async function publishOne(
       // real link in the body (IMAGE posts have no link card).
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const liYt = (post as any).youtube_videos?.youtube_video_id
+      // resolveBestThumbnail avoids the maxresdefault 404 that non-HD uploads
+      // hit — LinkedIn fetches the bytes server-side, so a dead URL breaks the
+      // image post (and this runs unattended, so the failure would be silent).
       let liImage = liYt
-        ? `https://img.youtube.com/vi/${liYt}/maxresdefault.jpg`
+        ? await resolveBestThumbnail(liYt)
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         : ((post as any).youtube_videos?.thumbnail_url || '')
       if (!liImage) liImage = (await fetchOgImage(url)) || ''
@@ -469,18 +473,35 @@ async function publishOne(
         || '⚠️ This post may contain affiliate links. We may earn a commission at no extra cost to you.'
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const ytId = (post as any).youtube_videos?.youtube_video_id
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // resolveBestThumbnail avoids the maxresdefault 404 that made Facebook
+      // reject the photo with "Missing or invalid image file".
       const imageUrl: string = ytId
-        ? `https://img.youtube.com/vi/${ytId}/maxresdefault.jpg`
+        ? await resolveBestThumbnail(ytId)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         : ((post as any).youtube_videos?.thumbnail_url ?? '')
       const caption = `${row.body_text}\n\n🔗 Read the full post: ${url}\n\n${disclaimer}`
       const fb = createFacebookService(fbPageToken, fbPageId)
-      const result = imageUrl
-        ? await fb.postPhoto({ imageUrl, caption })
-        : await fb.postLink({ message: caption, link: url })
-      await admin.from('blog_posts').update({ facebook_post_id: result.id }).eq('id', row.blog_post_id)
-      await recordSocialPermalink(admin, row.blog_post_id, 'facebook', socialPermalink.facebook(result.id))
-      return { externalId: result.id }
+      // Store the PAGE-POST id (a /photos post returns { id: <photo id>,
+      // post_id: <PAGEID_POSTID> }; a /feed post returns the page-post id as
+      // `id`) so the comment→DM webhook can match this post. Fall back to a
+      // link post if the image is unreachable so this unattended job never
+      // fails silently.
+      let fbPostId: string
+      if (imageUrl) {
+        try {
+          const r = await fb.postPhoto({ imageUrl, caption })
+          fbPostId = (r as { id: string; post_id?: string }).post_id || r.id
+        } catch {
+          const r = await fb.postLink({ message: caption, link: url })
+          fbPostId = r.id
+        }
+      } else {
+        const r = await fb.postLink({ message: caption, link: url })
+        fbPostId = r.id
+      }
+      await admin.from('blog_posts').update({ facebook_post_id: fbPostId }).eq('id', row.blog_post_id)
+      await recordSocialPermalink(admin, row.blog_post_id, 'facebook', socialPermalink.facebook(fbPostId))
+      return { externalId: fbPostId }
     }
 
     // ─────────────────────────── TELEGRAM ─────────────────────────────────

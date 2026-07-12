@@ -14,6 +14,7 @@ import { recordSocialPermalink } from '@/lib/social-permalink'
 import { socialPermalink } from '@/lib/brand-recap'
 import { fetchOgImage, stripLinkPlaceholders } from '@/lib/og-image'
 import { ensureDisclaimer } from '@/lib/social-disclaimer'
+import { resolveBestThumbnail } from '@/lib/youtube-frames'
 
 export const maxDuration = 60
 
@@ -82,7 +83,10 @@ export async function POST(request: NextRequest) {
         .eq('user_id', user.id)
         .maybeSingle()
       imageUrl = vid?.youtube_video_id
-        ? `https://img.youtube.com/vi/${vid.youtube_video_id}/maxresdefault.jpg`
+        // maxresdefault 404s for non-HD uploads → LinkedIn's image upload
+        // (which fetches the bytes server-side) fails. resolveBestThumbnail
+        // returns a quality that actually exists.
+        ? await resolveBestThumbnail(vid.youtube_video_id)
         : (vid?.thumbnail_url || '')
     }
     if (!imageUrl) imageUrl = (await fetchOgImage(post.wordpress_url)) || ''
