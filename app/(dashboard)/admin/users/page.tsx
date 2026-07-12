@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import PageHero from '@/components/layout/PageHero'
-import { Search, Loader2, CheckCircle, AlertCircle, User as UserIcon } from 'lucide-react'
+import { Search, Loader2, CheckCircle, AlertCircle, User as UserIcon, ChevronLeft, ChevronRight, Users as UsersIcon } from 'lucide-react'
 
 type Tier = 'trial' | 'creator' | 'pro' | 'admin'
 
@@ -16,6 +16,17 @@ interface TargetUser {
   brandName: string | null
   authorName: string | null
   postCount: number
+}
+
+/** A row in the browse list — lighter than TargetUser (no post count). */
+interface ListUser {
+  id: string
+  email: string
+  createdAt: string
+  lastSignInAt: string | null
+  tier: Tier
+  wordpressUrl: string | null
+  brandName: string | null
 }
 
 const TIER_BADGE: Record<Tier, string> = {
@@ -36,8 +47,39 @@ export default function AdminUsersPage() {
   const [savedMsg, setSavedMsg] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
 
-  async function lookup() {
-    if (!email.trim()) return
+  // Browse list
+  const [list, setList] = useState<ListUser[]>([])
+  const [listLoading, setListLoading] = useState(true)
+  const [listError, setListError] = useState<string | null>(null)
+  const [listPage, setListPage] = useState(1)
+  const [hasMore, setHasMore] = useState(false)
+  const detailRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => { loadList(1) }, [])
+
+  async function loadList(page: number) {
+    setListLoading(true)
+    setListError(null)
+    try {
+      const res = await fetch(`/api/admin/users-list?page=${page}&perPage=50`)
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Could not load users')
+      setList((data.users ?? []) as ListUser[])
+      setListPage(page)
+      setHasMore(!!data.hasMore)
+    } catch (err) {
+      setListError(err instanceof Error ? err.message : 'Could not load users')
+    } finally {
+      setListLoading(false)
+    }
+  }
+
+  // Accepts an optional email so a row click can open that user's detail card,
+  // reusing the whole lookup → detail → tier-change flow the search box uses.
+  async function lookup(overrideEmail?: string) {
+    const em = (overrideEmail ?? email).trim()
+    if (!em) return
+    if (overrideEmail) setEmail(overrideEmail)
     setLooking(true)
     setLookupError(null)
     setUser(null)
@@ -47,12 +89,14 @@ export default function AdminUsersPage() {
       const res = await fetch('/api/admin/user-lookup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim() }),
+        body: JSON.stringify({ email: em }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || 'Lookup failed')
       setUser(data.user as TargetUser)
       setNewTier(data.user.tier as Tier)
+      // Bring the detail card into view — the list can be far down the page.
+      requestAnimationFrame(() => detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }))
     } catch (err) {
       setLookupError(err instanceof Error ? err.message : 'Lookup failed')
     } finally {
@@ -102,7 +146,7 @@ export default function AdminUsersPage() {
             autoComplete="off"
           />
           <button
-            onClick={lookup}
+            onClick={() => lookup()}
             disabled={looking || !email.trim()}
             className="btn-primary flex items-center gap-1.5 text-sm whitespace-nowrap"
           >
@@ -118,7 +162,7 @@ export default function AdminUsersPage() {
       </div>
 
       {user && (
-        <div className="card p-5 max-w-2xl mt-5">
+        <div ref={detailRef} className="card p-5 max-w-2xl mt-5">
           <div className="flex items-start gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
             <div className="w-10 h-10 rounded-full bg-gray-100 dark:bg-white/5 flex items-center justify-center flex-shrink-0">
               <UserIcon size={18} className="text-[#86868b]" />
@@ -180,6 +224,86 @@ export default function AdminUsersPage() {
           </div>
         </div>
       )}
+
+      {/* ── All users (browse) ─────────────────────────────────────────────── */}
+      <div className="card p-0 mt-5 overflow-hidden">
+        <div className="flex items-center gap-2 px-5 py-3.5 border-b border-gray-100 dark:border-white/10">
+          <UsersIcon size={15} className="text-[#86868b]" />
+          <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">All users</p>
+          <span className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">· click a row to manage</span>
+          <button
+            onClick={() => loadList(listPage)}
+            disabled={listLoading}
+            className="ml-auto text-[11px] text-[#7C3AED] hover:underline disabled:opacity-50 inline-flex items-center gap-1"
+          >
+            {listLoading ? <Loader2 size={11} className="animate-spin" /> : null} Refresh
+          </button>
+        </div>
+
+        {listError ? (
+          <p className="text-xs text-[#ff3b30] px-5 py-4 flex items-center gap-1.5"><AlertCircle size={12} /> {listError}</p>
+        ) : listLoading && list.length === 0 ? (
+          <div className="flex items-center gap-2 text-sm px-5 py-8 justify-center text-[#86868b]">
+            <Loader2 size={16} className="animate-spin" /> Loading users…
+          </div>
+        ) : list.length === 0 ? (
+          <p className="text-sm text-[#86868b] px-5 py-8 text-center">No users found.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-[10px] font-semibold uppercase tracking-wider text-[#86868b] dark:text-[#8e8e93] border-b border-gray-100 dark:border-white/10">
+                  <th className="text-left font-semibold px-5 py-2.5">Email</th>
+                  <th className="text-left font-semibold px-3 py-2.5">Tier</th>
+                  <th className="text-left font-semibold px-3 py-2.5">Brand</th>
+                  <th className="text-left font-semibold px-3 py-2.5">Signed up</th>
+                  <th className="text-left font-semibold px-3 py-2.5">Last seen</th>
+                </tr>
+              </thead>
+              <tbody>
+                {list.map((u) => (
+                  <tr
+                    key={u.id}
+                    onClick={() => lookup(u.email)}
+                    className="border-b border-gray-50 dark:border-white/5 last:border-0 cursor-pointer hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+                  >
+                    <td className="px-5 py-2.5 text-[#1d1d1f] dark:text-[#f5f5f7] whitespace-nowrap">{u.email || <span className="italic text-[#86868b]">no email</span>}</td>
+                    <td className="px-3 py-2.5">
+                      <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${TIER_BADGE[u.tier] ?? TIER_BADGE.trial}`}>{u.tier}</span>
+                    </td>
+                    <td className="px-3 py-2.5 text-[#6e6e73] dark:text-[#ebebf0] max-w-[160px] truncate">{u.brandName || <span className="italic text-[#86868b]">—</span>}</td>
+                    <td className="px-3 py-2.5 text-[#6e6e73] dark:text-[#ebebf0] whitespace-nowrap">{u.createdAt ? new Date(u.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</td>
+                    <td className="px-3 py-2.5 text-[#6e6e73] dark:text-[#ebebf0] whitespace-nowrap">{u.lastSignInAt ? new Date(u.lastSignInAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Pagination */}
+        {(list.length > 0 || listPage > 1) && (
+          <div className="flex items-center justify-between px-5 py-3 border-t border-gray-100 dark:border-white/10">
+            <span className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Page {listPage}{list.length > 0 ? ` · ${list.length} shown` : ''}</span>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => loadList(listPage - 1)}
+                disabled={listLoading || listPage <= 1}
+                className="px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-white/15 text-[12px] inline-flex items-center gap-1 disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+              >
+                <ChevronLeft size={13} /> Prev
+              </button>
+              <button
+                onClick={() => loadList(listPage + 1)}
+                disabled={listLoading || !hasMore}
+                className="px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-white/15 text-[12px] inline-flex items-center gap-1 disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+              >
+                Next <ChevronRight size={13} />
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
     </>
   )
 }
