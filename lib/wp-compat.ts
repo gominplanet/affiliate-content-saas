@@ -63,22 +63,37 @@ const LITESPEED_FIX: PluginFix = {
   ],
 }
 
+/** Comprehensive Wordfence fix — reused whether we detect Wordfence by its
+ *  REST namespace (site reachable, writes may fail) or by fingerprinting its
+ *  block page (edge-blocked).
+ *
+ *  Why this is longer than "just allowlist the URL": Wordfence blocks MVP in
+ *  TWO independent ways, and the URL allowlist only fixes the first.
+ *    1. Firewall RULES (SQLi/XSS heuristics) can false-positive on a rich
+ *       affiliate post body → fixed by allowlisting the wp-json URL.
+ *    2. RATE LIMITING / IP blocking flags the burst of REST writes from our
+ *       single hosting (AWS) IP as a "crawler" and blocks it mid-publish →
+ *       fixed by relaxing the crawler rate limit + unblocking the IP. This is
+ *       the one we saw in the wild (a Wordfence Live-Traffic log showing our
+ *       Ashburn/AWS IP hitting /wp-json/). The URL allowlist does NOT bypass
+ *       rate limiting, so we walk through both. */
+const WORDFENCE_FIX: PluginFix = {
+  id: 'wordfence',
+  label: 'Wordfence',
+  summary: 'Wordfence is blocking MVP\'s requests to /wp-json/. It can do this two ways: its firewall rules (fixed by allowlisting the URL) and its rate-limiting / IP blocking, which flags the burst of requests from our hosting IP as a crawler (fixed by relaxing the limit and unblocking the IP). Do both to be safe — rate limiting is the most common cause.',
+  severity: 'block',
+  steps: [
+    'ALLOWLIST THE URL — wp-admin → Wordfence → Firewall → All Options → find "Allowlisted URLs" (search the page) → add this exact line: */wp-json/* → Save Changes.',
+    'RELAX RATE LIMITING (most common cause) — same "All Options" page → "Rate Limiting" section → set "If a crawler\'s page views exceed" and "…pages not found (404s) exceed" to a high value or "Unlimited", and change the action to "Throttle it" instead of "Block it". Save.',
+    'UNBLOCK MVP\'s SERVER — wp-admin → Wordfence → Tools → Live Traffic. If you see recent blocked hits to /wp-json/ from a US "Ashburn, Virginia" / Amazon (AWS) IP, that\'s MVP — click it → "Unblock". (Our server IP rotates, so relaxing the rate limit above is the durable fix, not blocking a single IP.)',
+    'CHECK NETWORK/COUNTRY BLOCKING — wp-admin → Wordfence → Blocking: make sure you are not blocking whole hosting networks or the entire US, which would block MVP\'s servers.',
+    'Wait ~1 minute, then click "Re-test connection" above.',
+  ],
+}
+
 export const KNOWN_PLUGINS: Record<string, PluginFix> = {
   // ─── Security plugins ───────────────────────────────────────────────
-  'wordfence/v1': {
-    id: 'wordfence',
-    label: 'Wordfence',
-    summary: 'Wordfence blocks non-browser POST requests to /wp-json/ unless the path is allowlisted.',
-    severity: 'block',
-    steps: [
-      'In wp-admin → go to Wordfence → All Options',
-      'Scroll to the "Firewall Options" section',
-      'Find "Allowlisted URLs" (search the page if needed)',
-      'Add this exact line: */wp-json/*',
-      'Click "Save Changes" at the bottom',
-      'Return here and click "Re-test connection"',
-    ],
-  },
+  'wordfence/v1': WORDFENCE_FIX,
   'sucuri-scanner/v1': {
     id: 'sucuri',
     label: 'Sucuri',
@@ -192,6 +207,76 @@ export const EDGE_BLOCK_FIX: PluginFix = {
   ],
 }
 
+/** Cloudflare edge block — cf-ray header or a Cloudflare challenge/block body. */
+const CLOUDFLARE_EDGE_FIX: PluginFix = {
+  id: 'cloudflare',
+  label: 'Cloudflare',
+  summary: 'Cloudflare is intercepting MVP\'s requests to /wp-json/ before they reach WordPress — usually Bot Fight Mode or a WAF managed rule challenging non-browser traffic.',
+  severity: 'block',
+  steps: [
+    'dash.cloudflare.com → your domain → Security → WAF → Custom rules → Create rule: When incoming requests match URI Path "starts with" /wp-json/ → Action "Skip" → check "All remaining custom rules" + the managed ruleset → Deploy.',
+    'Security → Bots → turn OFF "Bot Fight Mode". (On paid plans, set Super Bot Fight Mode → "Definitely automated" to Allow — it challenges legitimate server traffic like MVP.)',
+    'If "Under Attack Mode" / a Managed Challenge is on, disable it or add the /wp-json/* Skip rule above.',
+    'Wait ~1 minute for the rule to deploy, then click "Re-test connection" above.',
+  ],
+}
+
+/** Sucuri cloud firewall block — x-sucuri-* header or "Sucuri WebSite Firewall" body. */
+const SUCURI_EDGE_FIX: PluginFix = {
+  id: 'sucuri',
+  label: 'Sucuri Firewall',
+  summary: 'Sucuri\'s cloud firewall is blocking server-to-server REST requests to /wp-json/.',
+  severity: 'block',
+  steps: [
+    'Log into Sucuri (sucuri.net/firewall) → Settings → Whitelist → "Whitelist URL Paths" → add /wp-json/',
+    'Under Access Control, make sure the site isn\'t in "Emergency DDoS / Under Attack" mode (it challenges all non-browser traffic).',
+    'Save and wait 1–2 minutes for the rule to deploy.',
+    'Click "Re-test connection" above.',
+  ],
+}
+
+/** SiteGround edge (SG Security plugin / SG Optimizer / host WAF) block. */
+const SITEGROUND_EDGE_FIX: PluginFix = {
+  id: 'siteground-edge',
+  label: 'SiteGround (security / host WAF)',
+  summary: 'SiteGround\'s security layer (the SG Security plugin or the host-level WAF) is blocking REST requests to /wp-json/ before they reach WordPress.',
+  severity: 'block',
+  steps: [
+    'wp-admin → SG Security → turn OFF "Limit Login Attempts" temporarily and disable any "Block XML-RPC" / "REST API" toggles.',
+    'SiteGround Site Tools (your hosting client area, NOT wp-admin) → Security → check for a Web Application Firewall / managed rule on /wp-json/ and allow it.',
+    'Also purge SiteGround caching: SG Optimizer → Purge Cache (a cached block page can persist after you fix the rule).',
+    'Wait 1–2 minutes, then click "Re-test connection" above.',
+  ],
+}
+
+/** Identify WHICH edge layer produced an HTML block page, from response
+ *  headers (most reliable) + body markers, so the doctor shows the ONE precise
+ *  fix instead of the generic six-cause list. Falls back to EDGE_BLOCK_FIX when
+ *  nothing matches. Header/body checks are lowercased + substring — deliberately
+ *  lenient (a false match still lands the user on a close, actionable card). */
+export function fingerprintEdgeBlock(headers: Headers, body: string): PluginFix {
+  const h = (k: string) => (headers.get(k) || '').toLowerCase()
+  const b = (body || '').toLowerCase()
+  const server = h('server')
+
+  // Wordfence has no distinctive header, but its block page is unmistakable:
+  // "Your access to this site has been limited by the site owner" + a footer
+  // "Generated by Wordfence".
+  const wfLimited = b.includes('access to this') && b.includes('has been limited')
+  if (b.includes('wordfence') || wfLimited) return WORDFENCE_FIX
+
+  if (h('cf-ray') || server.includes('cloudflare') || b.includes('cf-ray') || b.includes('cloudflare') || b.includes('attention required')) {
+    return CLOUDFLARE_EDGE_FIX
+  }
+  if (h('x-sucuri-id') || h('x-sucuri-block') || b.includes('sucuri')) {
+    return SUCURI_EDGE_FIX
+  }
+  if (b.includes('sgcaptcha') || b.includes('siteground') || b.includes('sg-security')) {
+    return SITEGROUND_EDGE_FIX
+  }
+  return EDGE_BLOCK_FIX
+}
+
 /** /wp-json/ root response shape we care about. */
 interface WpJsonRoot {
   name?: string
@@ -243,12 +328,15 @@ export async function detectWpCompat(siteUrl: string): Promise<CompatDetection> 
     // before WP. The status code is usually 403/406 but the giveaway is
     // the body being HTML — a real WP REST 403 returns JSON.
     if (!contentType.includes('application/json') || body.trim().startsWith('<')) {
+      // Fingerprint WHICH edge layer blocked us (Wordfence / Cloudflare /
+      // Sucuri / SiteGround) from headers + body, so the doctor shows the one
+      // precise fix instead of the generic list. Falls back to EDGE_BLOCK_FIX.
       return {
         reachable: false,
         site: null,
         namespaces: [],
         detected: [],
-        edgeBlock: EDGE_BLOCK_FIX,
+        edgeBlock: fingerprintEdgeBlock(res.headers, body),
         rawSnippet: body.slice(0, 200),
       }
     }
