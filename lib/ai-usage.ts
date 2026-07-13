@@ -108,11 +108,25 @@ export function costOf(r: UsageRow): number {
   )
 }
 
-/** Pull token + server-tool counts off an Anthropic message/finalMessage. */
+/** Pull token + server-tool counts off an Anthropic message/finalMessage.
+ *
+ *  Cache tokens are folded into a BILLING-EQUIVALENT `input` count using
+ *  Anthropic's real cache multipliers — cache WRITE bills at 1.25× the base
+ *  input rate, cache READ at 0.1×. The old version summed all three at full
+ *  1×, which massively over-stated cost: the blog writer runs a large cached
+ *  system prompt, so most of a post's "input" is cache-READ tokens that were
+ *  being priced at 10× their true cost. That inflated the spend meter + tripped
+ *  the ceiling early. We weight here (rather than add cache columns) so costOf
+ *  stays a single input×rate multiply — the stored input_tokens is thus a
+ *  billing-equivalent count, not the raw sum, which is what we actually want to
+ *  cost against. 2026-07-13. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function usageFromAnthropic(msg: any): { input: number; output: number; webSearches: number } {
   const u = msg?.usage ?? {}
-  const input = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0)
+  const regular = u.input_tokens ?? 0
+  const cacheWrite = u.cache_creation_input_tokens ?? 0
+  const cacheRead = u.cache_read_input_tokens ?? 0
+  const input = regular + Math.round(cacheWrite * 1.25 + cacheRead * 0.1)
   const output = u.output_tokens ?? 0
   const webSearches = u.server_tool_use?.web_search_requests ?? 0
   return { input, output, webSearches }
