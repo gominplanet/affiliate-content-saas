@@ -40,7 +40,7 @@ import { publishPinForPost } from '@/lib/pin-publish'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
 import { resolvePostAffiliateLink } from '@/lib/ig-dm'
 import { buildPinAssets, composePinDescription } from '@/lib/pin-assets'
-import { ensureDisclaimer, AFFILIATE_DISCLAIMER_DEFAULT, affiliateCtaLine } from '@/lib/social-disclaimer'
+import { ensureDisclaimer, AFFILIATE_DISCLAIMER_DEFAULT } from '@/lib/social-disclaimer'
 
 // Vercel cron functions run with a generous timeout but we still want
 // to cap the per-tick work — if the batch is huge we'll catch the
@@ -415,19 +415,8 @@ async function publishOne(
         : ((post as any).youtube_videos?.thumbnail_url || '')
       if (!liImage) liImage = (await fetchOgImage(url)) || ''
       const liClean = ensureDisclaimer(stripLinkPlaceholders(row.body_text), AFFILIATE_DISCLAIMER_DEFAULT)
-      // Optional affiliate CTA — same opt-in as Facebook, persisted on the
-      // scheduled row's options. LinkedIn has ample room; append after the link.
-      let liIncludeAffiliate = false
-      try {
-        const { data: liOpt } = await admin.from('scheduled_posts').select('options').eq('id', row.id).maybeSingle()
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        liIncludeAffiliate = !!((liOpt?.options as any)?.includeAffiliateCta)
-      } catch { /* options column absent on an old DB — flag can't exist there */ }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const liAffiliate = liIncludeAffiliate ? resolvePostAffiliateLink(post as any) : null
-      const liBody = liImage && !liClean.includes(url) ? `${liClean}\n\n🔗 Read the full review: ${url}` : liClean
       const postText = capSocialText(
-        liAffiliate ? `${liBody}\n\n${affiliateCtaLine(liAffiliate)}` : liBody,
+        liImage && !liClean.includes(url) ? `${liClean}\n\n🔗 Read the full review: ${url}` : liClean,
         SOCIAL_LIMITS.linkedin,
       )
       const linkedin = createLinkedInService(integration.linkedin_access_token, integration.linkedin_person_id)

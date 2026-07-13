@@ -13,8 +13,7 @@ import { resolveBlogPostId } from '@/lib/resolve-post-id'
 import { recordSocialPermalink } from '@/lib/social-permalink'
 import { socialPermalink } from '@/lib/brand-recap'
 import { fetchOgImage, stripLinkPlaceholders } from '@/lib/og-image'
-import { ensureDisclaimer, affiliateCtaLine } from '@/lib/social-disclaimer'
-import { resolvePostAffiliateLink } from '@/lib/ig-dm'
+import { ensureDisclaimer } from '@/lib/social-disclaimer'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
 
 export const maxDuration = 60
@@ -40,10 +39,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const body = await request.json() as { postId?: string; dryRun?: boolean; text?: string; postUrl?: string; includeAffiliateCta?: boolean }
+    const body = await request.json() as { postId?: string; dryRun?: boolean; text?: string; postUrl?: string }
     const rawPostId = body.postId
     const dryRun = body.dryRun === true
-    const includeAffiliateCta = body.includeAffiliateCta === true
     const overrideText = body.text?.trim()
     if (!rawPostId) return NextResponse.json({ error: 'postId required' }, { status: 400 })
     // Content-page "Published Posts" rows for video-less posts (guides,
@@ -54,7 +52,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: postRow } = await supabase
       .from('blog_posts')
-      .select('id,title,excerpt,content,wordpress_url,video_id,social_publish_counts,geniuslink_code')
+      .select('id,title,excerpt,content,wordpress_url,video_id,social_publish_counts')
       .eq('id', postId)
       .eq('user_id', user.id)
       .single()
@@ -171,15 +169,11 @@ Return ONLY the post text, no extra commentary.`,
     const withLink = (imageUrl && !cleaned.includes(post.wordpress_url))
       ? `${cleaned}\n\n🔗 Read the full review: ${post.wordpress_url}`
       : cleaned
-    // Optional "buy it now" CTA — appended after the blog link when the user
-    // opted in AND the post has a real product link (never the blog URL).
-    const affiliateLink = includeAffiliateCta ? resolvePostAffiliateLink(post) : ''
-    const withAffiliate = affiliateLink ? `${withLink}\n\n${affiliateCtaLine(affiliateLink)}` : withLink
     // LinkedIn's UGC API allows up to 3000 chars per post — defensive cap.
-    const postText = capSocialText(withAffiliate, SOCIAL_LIMITS.linkedin)
+    const postText = capSocialText(withLink, SOCIAL_LIMITS.linkedin)
 
     if (dryRun) {
-      return NextResponse.json({ ok: true, dryRun: true, text: postText, finalText: postText, affiliateAvailable: !!resolvePostAffiliateLink(post) })
+      return NextResponse.json({ ok: true, dryRun: true, text: postText, finalText: postText })
     }
 
     // ── 5. Publish to LinkedIn ────────────────────────────────────────────────

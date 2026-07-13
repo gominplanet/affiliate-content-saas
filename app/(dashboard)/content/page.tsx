@@ -1024,7 +1024,7 @@ const VideoCard = memo(function VideoCardImpl({
     }
 
     addTask(fbConnected && !fbPosted && !disabled.has('facebook'), 'Facebook', '/api/blog/facebook-post', () => setFbPosted(true), 'facebookPostId', { socialAccountId: effectiveFbAccountId ?? undefined, includeAffiliateCta: opts.includeAffiliateCta || undefined })
-    addTask(linkedInConnected && !liPosted && !disabled.has('linkedin'), 'LinkedIn', '/api/blog/linkedin-post', () => setLiPosted(true), 'linkedInPostId', { includeAffiliateCta: opts.includeAffiliateCta || undefined })
+    addTask(linkedInConnected && !liPosted && !disabled.has('linkedin'), 'LinkedIn', '/api/blog/linkedin-post', () => setLiPosted(true), 'linkedInPostId')
     addTask(threadsConnected && !thPosted && !disabled.has('threads'), 'Threads', '/api/blog/threads-post', () => setThPosted(true), 'threadsPostId')
     addTask(twitterConnected && !twPosted && !disabled.has('twitter'), 'X', '/api/blog/twitter-post', () => setTwPosted(true), 'twitterPostId')
     addTask(blueskyConnected && !bsPosted && !disabled.has('bluesky'), 'Bluesky', '/api/blog/bluesky-post', () => setBsPosted(true), 'blueskyPostUri')
@@ -1725,11 +1725,9 @@ const VideoCard = memo(function VideoCardImpl({
           { key: 'telegram', label: 'Telegram', on: telegramConnected && !tgPosted },
           { key: 'pinterest', label: 'Pinterest', on: pinterestConnected && !pinPosted },
         ].filter(p => p.on)
-        // The affiliate-link CTA is supported on Facebook + LinkedIn (both allow
-        // direct affiliate links). Show the opt-in when either is a live target.
-        const affiliateEligible =
-          (fbConnected && !fbPosted && !paDisabled.has('facebook')) ||
-          (linkedInConnected && !liPosted && !paDisabled.has('linkedin'))
+        // The affiliate-link CTA is supported on Facebook only. Show the opt-in
+        // when Facebook is a live target.
+        const affiliateEligible = fbConnected && !fbPosted && !paDisabled.has('facebook')
         const anySelected = platforms.some(p => !paDisabled.has(p.key))
         return (
           <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4" onClick={() => setPublishAllOptionsOpen(false)}>
@@ -1749,8 +1747,8 @@ const VideoCard = memo(function VideoCardImpl({
                 <label className="flex items-start gap-2.5 p-2.5 rounded-lg bg-[#7C3AED]/5 border border-[#7C3AED]/20 cursor-pointer mb-3">
                   <input type="checkbox" checked={paIncludeAffiliate} onChange={e => setPaIncludeAffiliate(e.target.checked)} className="w-4 h-4 rounded accent-[#7C3AED] mt-0.5" />
                   <span>
-                    <span className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Also add my affiliate link (Facebook &amp; LinkedIn)</span>
-                    <span className="block text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-0.5">Adds your product link + disclaimer to the caption so shoppers can buy without reading. Only added when the post has a product link.</span>
+                    <span className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Also add my affiliate link to Facebook</span>
+                    <span className="block text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-0.5">Leads the caption with your product link + disclaimer so shoppers can buy without reading. Only added when the post has a product link.</span>
                   </span>
                 </label>
               )}

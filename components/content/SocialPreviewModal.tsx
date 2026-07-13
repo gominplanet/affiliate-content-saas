@@ -117,13 +117,12 @@ export function SocialPreviewModal({
   const [serverHashtags, setServerHashtags] = useState('')
 
   // Facebook opt-in: append the post's direct affiliate link (+ disclaimer) as a
-  // "buy it now" affiliate CTA. Offered on Facebook + LinkedIn (both allow
-  // direct affiliate links), and only when the post actually has an affiliate
-  // link (the server reports it via affiliateAvailable).
-  const affiliateCapable = platformKey === 'facebook' || platformKey === 'linkedin'
+  // "buy it now" second CTA. Only offered on Facebook, and only when the post
+  // actually has an affiliate link (the server reports it via affiliateAvailable).
+  const isFacebook = platformKey === 'facebook'
   const [includeAffiliate, setIncludeAffiliate] = useState(false)
   const [affiliateAvailable, setAffiliateAvailable] = useState(false)
-  const affiliateExtra = affiliateCapable ? { includeAffiliateCta: includeAffiliate } : {}
+  const affiliateExtra = isFacebook ? { includeAffiliateCta: includeAffiliate } : {}
 
   // Flip the affiliate CTA and re-preview WITH the current text (so it re-assembles
   // the caption without regenerating the AI body or losing edits).
@@ -314,9 +313,9 @@ export function SocialPreviewModal({
                 </details>
               )}
 
-              {/* Facebook + LinkedIn opt-in: add a "buy it now" CTA with the
-                  direct affiliate link (+ disclaimer). Only when the post has one. */}
-              {affiliateCapable && affiliateAvailable && (
+              {/* Facebook opt-in: add a second "buy it now" CTA with the direct
+                  affiliate link (+ disclaimer). Only when the post has one. */}
+              {isFacebook && affiliateAvailable && (
                 <label className="flex items-start gap-2.5 mb-3 p-2.5 rounded-lg border cursor-pointer select-none"
                   style={{ borderColor: 'var(--border, #e5e5e7)' }}>
                   <input
