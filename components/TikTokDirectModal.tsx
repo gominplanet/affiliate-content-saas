@@ -242,34 +242,39 @@ export function TikTokDirectModal({
     setPosting(true)
     setPostError(null)
     try {
-      const res = await fetch(isBurned ? '/api/tiktok/publish-burned' : '/api/blog/tiktok-post/video', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...(isBurned ? { videoUrl: burnedVideoUrl } : { videoId }),
-          caption,
-          privacyLevel: privacy,
-          disableComment: !allowComment || (info?.commentDisabled ?? false),
-          disableDuet: !allowDuet || (info?.duetDisabled ?? false),
-          disableStitch: !allowStitch || (info?.stitchDisabled ?? false),
-          brandContentToggle: isCommercial && brandedPartnership,
-          brandOrganicToggle: isCommercial && brandedContent,
-        }),
-      })
-      const json = await res.json()
-      if (!res.ok) {
-        setPostError(json.error || 'Posting failed.')
-        setReconnectRequired(!!json.reconnectRequired)
-        setPosting(false)
-        return
+      // Skip the TikTok post if it already went live (publishId set). This makes
+      // a re-click a safe "retry the rest" — it only re-fires the secondary
+      // platforms that haven't succeeded, so we NEVER double-post to TikTok.
+      if (!publishId) {
+        const res = await fetch(isBurned ? '/api/tiktok/publish-burned' : '/api/blog/tiktok-post/video', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...(isBurned ? { videoUrl: burnedVideoUrl } : { videoId }),
+            caption,
+            privacyLevel: privacy,
+            disableComment: !allowComment || (info?.commentDisabled ?? false),
+            disableDuet: !allowDuet || (info?.duetDisabled ?? false),
+            disableStitch: !allowStitch || (info?.stitchDisabled ?? false),
+            brandContentToggle: isCommercial && brandedPartnership,
+            brandOrganicToggle: isCommercial && brandedContent,
+          }),
+        })
+        const json = await res.json()
+        if (!res.ok) {
+          setPostError(json.error || 'Posting failed.')
+          setReconnectRequired(!!json.reconnectRequired)
+          setPosting(false)
+          return
+        }
+        setPublishId(json.publishId)
+        setPublishStatus('processing')
       }
-      setPublishId(json.publishId)
-      setPublishStatus('processing')
 
       // One-click cross-post: also publish the same video to Instagram as a Reel.
       // Burned clip → /publish-burned (by URL); a Short → /post-direct-video (by
       // videoId). Reported separately so a failed IG post never masks TikTok.
-      if (alsoIg) {
+      if (alsoIg && igResult !== 'done') {
         setIgResult('posting'); setIgErr(null)
         try {
           const igRes = isBurned
@@ -292,7 +297,7 @@ export function TikTokDirectModal({
       // …and a Pinterest video pin. Cover = the Short's YouTube thumbnail when we
       // have it, else the route derives a frame from the (Cloudinary) burn. Link
       // defaults to the creator's blog (route-side) — never an affiliate redirect.
-      if (alsoPin) {
+      if (alsoPin && pinResult !== 'done') {
         const vUrl = isBurned ? burnedVideoUrl : meta?.videoUrl
         if (vUrl) {
           setPinResult('posting'); setPinErr(null)
@@ -318,7 +323,7 @@ export function TikTokDirectModal({
       // …and a YouTube Short — publish the same vertical render to the creator's
       // own channel. Privacy mirrors the TikTok choice (public / private / else
       // unlisted). Reported separately so a YouTube failure never masks TikTok.
-      if (ytEnabled && alsoYt) {
+      if (ytEnabled && alsoYt && ytResult !== 'done') {
         const vUrl = isBurned ? burnedVideoUrl : meta?.videoUrl
         if (vUrl) {
           setYtResult('posting'); setYtErr(null); setYtUrl(null)
@@ -346,7 +351,7 @@ export function TikTokDirectModal({
     } finally {
       setPosting(false)
     }
-  }, [canPost, videoId, isBurned, burnedVideoUrl, caption, privacy, allowComment, allowDuet, allowStitch, isCommercial, brandedContent, brandedPartnership, info, alsoIg, alsoPin, ytEnabled, alsoYt, youtubeId, meta?.videoUrl, meta?.title])
+  }, [canPost, videoId, isBurned, burnedVideoUrl, caption, privacy, allowComment, allowDuet, allowStitch, isCommercial, brandedContent, brandedPartnership, info, alsoIg, alsoPin, ytEnabled, alsoYt, youtubeId, meta?.videoUrl, meta?.title, publishId, igResult, pinResult, ytResult])
 
   // Schedule this Short for a future time (real video targets only — a URL-only
   // burned clip has no DB row, so it can't be queued).
@@ -756,7 +761,10 @@ export function TikTokDirectModal({
             <button onClick={onClose} disabled={!closeAllowed} className="btn-secondary text-sm">Cancel</button>
             <button
               onClick={() => void submit()}
-              disabled={!canPost}
+              // Once TikTok is live, the button becomes "Retry the rest" and is
+              // only enabled when a secondary platform actually failed — so it
+              // never re-posts a video that already went out.
+              disabled={!canPost || (!!publishId && !(igResult === 'failed' || pinResult === 'failed' || ytResult === 'failed'))}
               title={commercialNeedsChoice
                 ? 'You need to indicate if your content promotes yourself, a third party, or both'
                 : brandedNoPrivate
@@ -766,7 +774,9 @@ export function TikTokDirectModal({
             >
               {posting
                 ? <><Loader2 size={14} className="animate-spin" /> Sending…</>
-                : <><Send size={14} /> Post to TikTok</>
+                : publishId
+                  ? <><Send size={14} /> Retry the rest</>
+                  : <><Send size={14} /> Post to TikTok</>
               }
             </button>
           </div>

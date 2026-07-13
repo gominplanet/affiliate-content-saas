@@ -147,9 +147,13 @@ export class PinterestService {
       throw new Error(`Pinterest media upload failed: ${up.status}`)
     }
 
-    // 3. Poll until the video finishes processing.
+    // 3. Poll until the video finishes processing. Pinterest's async video
+    //    ingest routinely takes 1-3 min, so wait up to ~150s (60 × 2.5s) — the
+    //    route's maxDuration is 300s, so there's ample headroom. A shorter
+    //    window made pins time out ("still processing") even though TikTok/etc
+    //    went live in the same push.
     let status = 'registered'
-    for (let i = 0; i < 30 && status !== 'succeeded'; i++) {
+    for (let i = 0; i < 60 && status !== 'succeeded'; i++) {
       await new Promise(r => setTimeout(r, 2500))
       const st = await fetch(`${BASE}/media/${media.media_id}`, { headers: auth })
       if (!st.ok) continue
