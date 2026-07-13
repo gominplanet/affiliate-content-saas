@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
@@ -19,27 +19,57 @@ export default function LoginForm() {
   const [resetLoading, setResetLoading] = useState(false)
   const [captchaToken, setCaptchaToken] = useState<string | null>(null)
   const captchaRef = useRef<TurnstileHandle>(null)
+  // When the user clicks a button before Turnstile has minted a token (its
+  // first challenge often fails then auto-retries to success a couple seconds
+  // later), we QUEUE the action instead of erroring, and fire it the moment the
+  // token arrives. This kills the spurious "Please complete the captcha below."
+  const [pendingAction, setPendingAction] = useState<null | 'signin' | 'reset'>(null)
+  const pendingTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   function resetCaptcha() {
     captchaRef.current?.reset()
     setCaptchaToken(null)
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (captchaRequired && !captchaToken) {
-      setError('Please complete the captcha below.')
-      return
-    }
+  function clearPending() {
+    setPendingAction(null)
+    if (pendingTimer.current) { clearTimeout(pendingTimer.current); pendingTimer.current = null }
+  }
+
+  // Queue an action to run as soon as a captcha token arrives. Times out after
+  // 15s (Turnstile blocked by an extension / offline) with a friendly retry.
+  function queuePending(action: 'signin' | 'reset') {
+    setError(null)
+    setPendingAction(action)
+    if (pendingTimer.current) clearTimeout(pendingTimer.current)
+    pendingTimer.current = setTimeout(() => {
+      setPendingAction(null)
+      setError('Couldn’t verify you’re human — please try again.')
+      resetCaptcha()
+    }, 15000)
+  }
+
+  // Fire a queued action once the token lands. Done in an effect (not the
+  // widget's callback) on purpose: TurnstileField renders the widget ONCE and
+  // captures its onVerify closure, so a callback-based dispatch would read a
+  // stale `pendingAction`. This effect always sees fresh state.
+  useEffect(() => {
+    if (!captchaToken || !pendingAction) return
+    const action = pendingAction
+    clearPending()
+    if (action === 'signin') void doSignIn(captchaToken)
+    else if (action === 'reset') void doReset(captchaToken)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [captchaToken, pendingAction])
+
+  async function doSignIn(token: string | null) {
     setLoading(true)
     setError(null)
-
     const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
-      options: { captchaToken: captchaToken ?? undefined },
+      options: { captchaToken: token ?? undefined },
     })
-
     if (error) {
       setError(friendlyAuthError(error.message))
       setLoading(false)
@@ -50,17 +80,19 @@ export default function LoginForm() {
     }
   }
 
-  async function handleReset(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (captchaRequired && !captchaToken) {
-      setError('Please complete the captcha below.')
-      return
-    }
+    // Not ready? Don't error — wait for the token, then auto-submit.
+    if (captchaRequired && !captchaToken) { queuePending('signin'); return }
+    await doSignIn(captchaToken)
+  }
+
+  async function doReset(token: string | null) {
     setResetLoading(true)
     setError(null)
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}/reset-password`,
-      captchaToken: captchaToken ?? undefined,
+      captchaToken: token ?? undefined,
     })
     setResetLoading(false)
     resetCaptcha() // single-use token, whether or not the call succeeded
@@ -69,6 +101,12 @@ export default function LoginForm() {
     } else {
       setResetSent(true)
     }
+  }
+
+  async function handleReset(e: React.FormEvent) {
+    e.preventDefault()
+    if (captchaRequired && !captchaToken) { queuePending('reset'); return }
+    await doReset(captchaToken)
   }
 
   if (resetMode) {
@@ -118,8 +156,8 @@ export default function LoginForm() {
 
               <TurnstileField ref={captchaRef} onVerify={setCaptchaToken} onExpire={() => setCaptchaToken(null)} />
 
-              <button type="submit" disabled={resetLoading} className="btn-primary w-full mt-1">
-                {resetLoading ? 'Sending…' : 'Send reset link'}
+              <button type="submit" disabled={resetLoading || pendingAction === 'reset'} className="btn-primary w-full mt-1">
+                {pendingAction === 'reset' ? 'Verifying…' : resetLoading ? 'Sending…' : 'Send reset link'}
               </button>
             </form>
 
@@ -187,8 +225,8 @@ export default function LoginForm() {
 
         <TurnstileField ref={captchaRef} onVerify={setCaptchaToken} onExpire={() => setCaptchaToken(null)} />
 
-        <button type="submit" disabled={loading} className="btn-primary w-full mt-1">
-          {loading ? 'Signing in…' : 'Sign in'}
+        <button type="submit" disabled={loading || pendingAction === 'signin'} className="btn-primary w-full mt-1">
+          {pendingAction === 'signin' ? 'Verifying…' : loading ? 'Signing in…' : 'Sign in'}
         </button>
       </form>
 

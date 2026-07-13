@@ -36,6 +36,23 @@ export default function SignupForm() {
   const [paidTier, setPaidTier] = useState<string | null>(null)
   const [captchaToken, setCaptchaToken] = useState<string | null>(null)
   const captchaRef = useRef<TurnstileHandle>(null)
+  // Queue the submit until Turnstile mints a token instead of erroring when the
+  // user clicks during its verify/retry window (the spurious "complete the
+  // captcha" bug). See LoginForm for the same pattern.
+  const [pendingSubmit, setPendingSubmit] = useState(false)
+  const pendingTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  function clearPending() {
+    setPendingSubmit(false)
+    if (pendingTimer.current) { clearTimeout(pendingTimer.current); pendingTimer.current = null }
+  }
+  // Fire the queued submit once the token lands. In an effect (not the widget
+  // callback) so it reads fresh `pendingSubmit` — TurnstileField captures its
+  // onVerify closure once, which would otherwise go stale.
+  useEffect(() => {
+    if (captchaToken && pendingSubmit) { clearPending(); void doSignup(captchaToken) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [captchaToken, pendingSubmit])
 
   // A logged-out visitor who clicked a paid plan ("Get Pro") arrives as
   // /signup?tier=pro. In that case this form runs the PAID flow: create the
@@ -53,10 +70,23 @@ export default function SignupForm() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    // Not ready? Queue it — don't error — and fire when the token arrives.
     if (captchaRequired && !captchaToken) {
-      setError('Please complete the captcha below.')
+      setError(null)
+      setPendingSubmit(true)
+      if (pendingTimer.current) clearTimeout(pendingTimer.current)
+      pendingTimer.current = setTimeout(() => {
+        setPendingSubmit(false)
+        setError('Couldn’t verify you’re human — please try again.')
+        captchaRef.current?.reset()
+        setCaptchaToken(null)
+      }, 15000)
       return
     }
+    await doSignup(captchaToken)
+  }
+
+  async function doSignup(token: string | null) {
     setLoading(true)
     setError(null)
 
@@ -102,7 +132,7 @@ export default function SignupForm() {
       password,
       options: {
         data: { full_name: fullName },
-        captchaToken: captchaToken ?? undefined,
+        captchaToken: token ?? undefined,
         // Send the confirmation link through our auth callback (which exchanges
         // the code for a session) and on to onboarding. window.origin keeps it
         // correct across preview + prod. NOTE: the Supabase Auth → URL
@@ -201,8 +231,10 @@ export default function SignupForm() {
 
         <TurnstileField ref={captchaRef} onVerify={setCaptchaToken} onExpire={() => setCaptchaToken(null)} />
 
-        <button type="submit" disabled={loading} className="btn-primary w-full mt-1">
-          {loading
+        <button type="submit" disabled={loading || pendingSubmit} className="btn-primary w-full mt-1">
+          {pendingSubmit
+            ? 'Verifying…'
+            : loading
             ? (paidTier ? 'Starting checkout…' : 'Creating account…')
             : (paidTier ? 'Continue to payment →' : 'Create my free account')}
         </button>

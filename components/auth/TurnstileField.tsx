@@ -80,6 +80,13 @@ const TurnstileField = forwardRef<TurnstileHandle, Props>(function TurnstileFiel
           callback: (token: string) => onVerify(token),
           'expired-callback': () => onExpire?.(),
           'error-callback': () => onExpire?.(),
+          // Auto-recover from the transient "Verification failed" flicker instead
+          // of sitting there until the user retries: retry the challenge on
+          // failure and silently refresh an expired token. The form also queues
+          // the submit until a token lands, so this + that = no dead-ends.
+          retry: 'auto',
+          'retry-interval': 2000,
+          'refresh-expired': 'auto',
           theme: 'auto',
         })
       })
