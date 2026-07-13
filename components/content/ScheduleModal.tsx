@@ -187,8 +187,8 @@ export default function ScheduleModal({
       platform,
       offsetMinutes: offsetOverrides[platform],
       bodyText: videoTitle.slice(0, 280),
-      // Facebook-only: opt in to leading the caption with the affiliate link.
-      ...(platform === 'facebook' && includeFbAffiliate ? { includeAffiliateCta: true } : {}),
+      // Facebook + LinkedIn: opt in to adding the affiliate link to the caption.
+      ...((platform === 'facebook' || platform === 'linkedin') && includeFbAffiliate ? { includeAffiliateCta: true } : {}),
     }))
     const localIso = new Date(scheduledFor).toISOString()
     const localScheduleMode = scheduleMode
@@ -436,13 +436,13 @@ export default function ScheduleModal({
                 )
               })}
             </div>
-            {/* Facebook-only affiliate CTA opt-in (mirrors immediate publish). */}
-            {selectedChannels.has('facebook') && (
+            {/* Affiliate CTA opt-in for Facebook + LinkedIn (mirrors immediate publish). */}
+            {(selectedChannels.has('facebook') || selectedChannels.has('linkedin')) && (
               <label className="flex items-start gap-2 mt-2 px-3 py-2 rounded-lg border cursor-pointer" style={{ borderColor: 'rgba(124,58,237,0.30)', backgroundColor: 'rgba(124,58,237,0.06)' }}>
                 <input type="checkbox" checked={includeFbAffiliate} onChange={e => setIncludeFbAffiliate(e.target.checked)} className="w-3.5 h-3.5 rounded accent-[#7C3AED] mt-0.5" />
                 <span>
-                  <span className="block text-sm">Also add my affiliate link to Facebook</span>
-                  <span className="block text-[11px]" style={{ color: 'var(--text-faint, rgba(255,255,255,0.5))' }}>Leads the caption with your product link + disclaimer. Only added when the post has a product link.</span>
+                  <span className="block text-sm">Also add my affiliate link (Facebook &amp; LinkedIn)</span>
+                  <span className="block text-[11px]" style={{ color: 'var(--text-faint, rgba(255,255,255,0.5))' }}>Adds your product link + disclaimer to the caption. Only added when the post has a product link.</span>
                 </span>
               </label>
             )}

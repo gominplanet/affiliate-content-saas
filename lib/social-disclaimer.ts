@@ -18,3 +18,15 @@ export function ensureDisclaimer(text: string, disclaimer = AFFILIATE_DISCLAIMER
   if (/\baffiliate\b|#ad\b|\bamazon associate\b/i.test(t)) return t
   return `${t}\n\n${disclaimer}`
 }
+
+/** Platforms where the opt-in "add my affiliate link" CTA is supported. The
+ *  char-tight platforms (X, Bluesky, Threads) are intentionally excluded — a
+ *  second link crowds them out. Facebook leads its caption with the link;
+ *  LinkedIn appends the CTA line; Pinterest points the pin's destination link
+ *  at the product. */
+export const AFFILIATE_CTA_PLATFORMS = ['facebook', 'linkedin', 'pinterest'] as const
+
+/** One-line affiliate CTA appended to a text caption (LinkedIn). */
+export function affiliateCtaLine(link: string): string {
+  return `🛒 Shop it here 👉 ${link}`
+}
