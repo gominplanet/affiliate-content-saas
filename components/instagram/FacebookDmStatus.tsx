@@ -49,8 +49,27 @@ export default function FacebookDmStatus() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [data, setData] = useState<DebugResult | null>(null)
+  const [fixing, setFixing] = useState(false)
+  const [fixError, setFixError] = useState<string | null>(null)
 
   useEffect(() => { run() }, [])
+
+  // One-click repair for the per-Page feed subscription (the auto-step on
+  // connect is best-effort and can fail). Subscribes, then re-checks.
+  async function subscribeFeed() {
+    setFixing(true)
+    setFixError(null)
+    try {
+      const res = await fetch('/api/facebook/subscribe-feed', { method: 'POST' })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(d.error || 'Could not subscribe the Page')
+      await run()
+    } catch (e) {
+      setFixError(e instanceof Error ? e.message : 'Could not subscribe the Page')
+    } finally {
+      setFixing(false)
+    }
+  }
 
   async function run() {
     setLoading(true)
@@ -110,6 +129,22 @@ export default function FacebookDmStatus() {
               <Row state={c.appSubscribedToFeed} label="App subscribed to Page “feed” webhook (Meta dashboard)" />
               <Row state={c.feedSubscribed} label={c.feedSubscribed === false ? 'This Page subscribed to “feed” — no' : `This Page subscribed to “feed”${c.subscribedFields.length ? ` (${c.subscribedFields.join(', ')})` : ''}`} />
               <Row state={c.autoDmEnabled} label={c.autoDmEnabled ? `Auto-DM enabled — keyword “${c.keyword ?? '—'}”` : 'Auto-DM toggle is OFF'} />
+            </div>
+          )}
+
+          {/* One-click repair: subscribe THIS Page to feed when it's the only gap. */}
+          {c && c.pageConnected && c.feedSubscribed === false && (
+            <div className="flex flex-col gap-1.5">
+              <button
+                onClick={subscribeFeed}
+                disabled={fixing}
+                className="self-start inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] font-semibold text-white disabled:opacity-60"
+                style={{ background: '#1877F2' }}
+              >
+                {fixing ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+                {fixing ? 'Subscribing…' : 'Subscribe this Page to feed'}
+              </button>
+              {fixError && <p className="text-[12px]" style={{ color: '#ff3b30' }}>{fixError}</p>}
             </div>
           )}
 
