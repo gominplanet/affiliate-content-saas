@@ -91,28 +91,25 @@ export async function POST(req: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let body: any = null
   try { body = JSON.parse(raw) } catch { /* Meta always sends JSON; ignore junk */ }
-  // Only diagnose things that structurally look like a Meta webhook, so the
-  // bad-signature breadcrumb can't be spammed by random unsigned POSTs.
-  const looksLikeWebhook = !!(body && Array.isArray(body.entry))
 
-  if (!sigOk) {
-    // Delivered but the signature didn't match FACEBOOK_APP_SECRET → we'd 401
-    // and drop it silently. Leave a breadcrumb so this is visible.
-    if (looksLikeWebhook) await logFbDiag('bad-signature — event delivered but X-Hub-Signature-256 did not match FACEBOOK_APP_SECRET (wrong app secret?)')
-    return new Response('Invalid signature', { status: 401 })
+  // TEMP diagnostic: log EVERY inbound JSON POST (Meta's Test button, real
+  // events, anything) so we can definitively see whether Meta is reaching us
+  // and whether the signature matches. Bounded to JSON bodies. Remove once
+  // comment→DM is confirmed live.
+  if (body && typeof body === 'object') {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const shape = Array.isArray(body.entry)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ? (body.entry as any[]).flatMap((e: any) => (e.changes ?? []).map((c: any) => `${c.field}/${c.value?.item ?? '?'}/${c.value?.verb ?? '?'}`)).slice(0, 6).join(', ')
+      : Object.keys(body).slice(0, 6).join(',')
+    await logFbDiag(`POST received (sig=${sigOk ? 'ok' : 'BAD'}) [${shape || 'empty'}]`)
   }
+
+  if (!sigOk) return new Response('Invalid signature', { status: 401 })
 
   // Fast 200 for Meta; process inline (each event is cheap, failures swallowed).
   try {
-    const events = extractCommentEvents(body)
-    if (events.length === 0 && looksLikeWebhook) {
-      // Verified + delivered, but nothing we act on (not a fresh top-level
-      // comment). Summarise the change shape (no PII) so we can see what came in.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const summary = (body.entry ?? []).flatMap((e: any) => (e.changes ?? []).map((c: any) => `${c.field}/${c.value?.item ?? '?'}/${c.value?.verb ?? '?'}`)).slice(0, 6).join(', ')
-      await logFbDiag(`received + verified, 0 comment events [${summary || 'no changes'}]`)
-    }
-    for (const ev of events) {
+    for (const ev of extractCommentEvents(body)) {
       try {
         const outcome = await processFacebookCommentEvent(ev)
         console.log('[fb-webhook] comment', { post: ev.postId, page: ev.pageId, outcome })
