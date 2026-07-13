@@ -15,6 +15,7 @@ import { metaEnabledForUser } from '@/lib/feature-flags'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { maybeDecrypt } from '@/lib/secrets'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
+import { resolvePostAffiliateLink } from '@/lib/ig-dm'
 
 export const maxDuration = 60
 
@@ -25,7 +26,10 @@ export async function POST(request: NextRequest) {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     if (!(await metaEnabledForUser(supabase, user))) return NextResponse.json({ error: 'Facebook publishing is temporarily unavailable while our Meta integration is under review.' }, { status: 503 })
 
-    const body = await request.json() as { postId?: string; dryRun?: boolean; text?: string; socialAccountId?: string; socialAccountIds?: string[]; postUrl?: string }
+    const body = await request.json() as { postId?: string; dryRun?: boolean; text?: string; socialAccountId?: string; socialAccountIds?: string[]; postUrl?: string; includeAffiliateCta?: boolean }
+    // Opt-in second CTA: append the post's direct affiliate link (+ disclaimer)
+    // for readers who want to buy without reading the blog first.
+    const includeAffiliateCta = body.includeAffiliateCta === true
     const rawPostId = body.postId
     const dryRun = body.dryRun === true
     const overrideText = body.text?.trim()
@@ -43,7 +47,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: postRow } = await supabase
       .from('blog_posts')
-      .select('id,title,excerpt,content,wordpress_url,video_id,social_publish_counts')
+      .select('id,title,excerpt,content,wordpress_url,video_id,social_publish_counts,geniuslink_code')
       .eq('id', postId)
       .eq('user_id', user.id)
       .single()
@@ -158,7 +162,15 @@ Return ONLY the post text, nothing else.`,
       : (video?.thumbnail_url || '')
 
     // ── 7. Build full caption ─────────────────────────────────────────────────
-    const caption = `${scrubBanned(reviewText)}\n\n🔗 Read the full post: ${post.wordpress_url}\n\n${disclaimer}`
+    // Optional "buy it now" second CTA — the post's direct affiliate link with
+    // the disclaimer immediately after it. Never falls back to the blog URL
+    // (that's already the primary CTA above), so it only appears when the post
+    // has a real product link.
+    const affiliateLink = resolvePostAffiliateLink(post)
+    const affiliateCta = includeAffiliateCta && affiliateLink
+      ? `\n\n⚡ No need to read more — grab it right here 👉 ${affiliateLink}`
+      : ''
+    const caption = `${scrubBanned(reviewText)}\n\n🔗 Read the full post: ${post.wordpress_url}${affiliateCta}\n\n${disclaimer}`
 
     if (dryRun) {
       // Generate 3 SPECIFIC, niche hashtags that fit this exact product/topic
@@ -184,7 +196,7 @@ Topic: ${(post.content as string).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').
           feature: 'social_facebook_hashtags', model: 'claude-haiku-4-5-20251001',
         })
       } catch { /* hashtags optional — copy block still works without them */ }
-      return NextResponse.json({ ok: true, dryRun: true, text: reviewText, finalText: caption, hashtags })
+      return NextResponse.json({ ok: true, dryRun: true, text: reviewText, finalText: caption, hashtags, affiliateAvailable: !!affiliateLink })
     }
 
     // ── 8. Post to Facebook — fan out to each selected Page ───────────────────

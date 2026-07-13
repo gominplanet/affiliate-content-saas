@@ -38,6 +38,7 @@ import { publishTikTokForTarget, type TikTokScheduleOptions } from '@/lib/tiktok
 import { publishInstagramForTarget, type IgMode } from '@/lib/instagram-publish'
 import { publishPinForPost } from '@/lib/pin-publish'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
+import { resolvePostAffiliateLink } from '@/lib/ig-dm'
 import { buildPinAssets, composePinDescription } from '@/lib/pin-assets'
 import { ensureDisclaimer, AFFILIATE_DISCLAIMER_DEFAULT } from '@/lib/social-disclaimer'
 
@@ -279,7 +280,7 @@ async function publishOne(
   const [postRes, intRes] = await Promise.all([
     admin
       .from('blog_posts')
-      .select('id,title,wordpress_url,wordpress_post_id,youtube_videos(thumbnail_url,youtube_video_id)')
+      .select('id,title,wordpress_url,wordpress_post_id,geniuslink_code,content,youtube_videos(thumbnail_url,youtube_video_id)')
       .eq('id', row.blog_post_id)
       .single(),
     admin
@@ -479,7 +480,19 @@ async function publishOne(
         ? await resolveBestThumbnail(ytId)
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         : ((post as any).youtube_videos?.thumbnail_url ?? '')
-      const caption = `${row.body_text}\n\n🔗 Read the full post: ${url}\n\n${disclaimer}`
+      // Optional "buy it now" second CTA — the same opt-in as immediate publish,
+      // persisted on the scheduled row's `options`. Appended before the
+      // disclaimer; only when the post has a real affiliate link.
+      let fbIncludeAffiliate = false
+      try {
+        const { data: fbOpt } = await admin.from('scheduled_posts').select('options').eq('id', row.id).maybeSingle()
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        fbIncludeAffiliate = !!((fbOpt?.options as any)?.includeAffiliateCta)
+      } catch { /* options column absent on an old DB — flag can't exist there */ }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const fbAffiliateLink = fbIncludeAffiliate ? resolvePostAffiliateLink(post as any) : null
+      const fbAffiliateCta = fbAffiliateLink ? `\n\n⚡ No need to read more — grab it right here 👉 ${fbAffiliateLink}` : ''
+      const caption = `${row.body_text}\n\n🔗 Read the full post: ${url}${fbAffiliateCta}\n\n${disclaimer}`
       const fb = createFacebookService(fbPageToken, fbPageId)
       // Store the PAGE-POST id (a /photos post returns { id: <photo id>,
       // post_id: <PAGEID_POSTID> }; a /feed post returns the page-post id as

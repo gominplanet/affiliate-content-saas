@@ -35,6 +35,7 @@ export async function POST(request: Request) {
       text?: string
       socialAccountId?: string
       postUrl?: string
+      includeAffiliateCta?: boolean
     }
 
     const rawPostId = body.postId
@@ -96,9 +97,10 @@ export async function POST(request: Request) {
       if (acct?.id) resolvedAccountId = acct.id
     }
 
-    // Insert the scheduled row
+    // Insert the scheduled row. Cast the client — `options` isn't in the
+    // generated types yet (migration 137); same pattern used elsewhere.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: inserted, error: insertErr } = await supabase
+    const { data: inserted, error: insertErr } = await (supabase as any)
       .from('scheduled_posts')
       .insert({
         user_id: user.id,
@@ -108,6 +110,10 @@ export async function POST(request: Request) {
         body_text: text,
         status: 'pending',
         social_account_id: resolvedAccountId,
+        // Persist the Facebook "add my affiliate link" opt-in so the cron can
+        // append the same second CTA it does on immediate publish (options is
+        // the flexible per-platform settings column, migration 137).
+        ...(body.includeAffiliateCta ? { options: { includeAffiliateCta: true } } : {}),
       })
       .select('id,scheduled_at,platform')
       .single()

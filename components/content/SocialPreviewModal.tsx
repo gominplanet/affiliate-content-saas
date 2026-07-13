@@ -116,6 +116,29 @@ export function SocialPreviewModal({
   // the generic brand-niche fallback passed in via shareHashtags).
   const [serverHashtags, setServerHashtags] = useState('')
 
+  // Facebook opt-in: append the post's direct affiliate link (+ disclaimer) as a
+  // "buy it now" second CTA. Only offered on Facebook, and only when the post
+  // actually has an affiliate link (the server reports it via affiliateAvailable).
+  const isFacebook = platformKey === 'facebook'
+  const [includeAffiliate, setIncludeAffiliate] = useState(false)
+  const [affiliateAvailable, setAffiliateAvailable] = useState(false)
+  const affiliateExtra = isFacebook ? { includeAffiliateCta: includeAffiliate } : {}
+
+  // Flip the affiliate CTA and re-preview WITH the current text (so it re-assembles
+  // the caption without regenerating the AI body or losing edits).
+  async function toggleAffiliate(next: boolean) {
+    setIncludeAffiliate(next)
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ postId, dryRun: true, text, ...extraBody, includeAffiliateCta: next }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (res.ok) setFinalText(data.finalText || data.text || '')
+    } catch { /* keep the last preview on failure */ }
+  }
+
   // Assembled copy-paste block for manual Group sharing: the (edited) post
   // text + hashtags + URL + FTC disclaimer. Reactive to textarea edits.
   const groupCopy = [text.trim(), (serverHashtags || shareHashtags || '').trim(), (shareUrl || '').trim(), (shareDisclaimer || '').trim()]
@@ -127,13 +150,14 @@ export function SocialPreviewModal({
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ postId, dryRun: true, ...extraBody }),
+        body: JSON.stringify({ postId, dryRun: true, ...extraBody, ...affiliateExtra }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || 'Preview failed')
       setText(data.text || '')
       setFinalText(data.finalText || data.text || '')
       if (typeof data.hashtags === 'string' && data.hashtags.trim()) setServerHashtags(data.hashtags.trim())
+      if (typeof data.affiliateAvailable === 'boolean') setAffiliateAvailable(data.affiliateAvailable)
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : 'Preview failed')
     }
@@ -162,7 +186,7 @@ export function SocialPreviewModal({
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ postId, text, ...effectiveExtraBody }),
+        body: JSON.stringify({ postId, text, ...effectiveExtraBody, ...affiliateExtra }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || 'Publish failed')
@@ -197,6 +221,7 @@ export function SocialPreviewModal({
           scheduledAt: when.toISOString(),
           text,
           ...effectiveExtraBody,
+          ...affiliateExtra,
         }),
       })
       const data = await res.json().catch(() => ({}))
@@ -286,6 +311,26 @@ export function SocialPreviewModal({
                   </summary>
                   <pre className="mt-2 p-3 rounded-lg bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 whitespace-pre-wrap font-mono leading-relaxed">{finalText}</pre>
                 </details>
+              )}
+
+              {/* Facebook opt-in: add a second "buy it now" CTA with the direct
+                  affiliate link (+ disclaimer). Only when the post has one. */}
+              {isFacebook && affiliateAvailable && (
+                <label className="flex items-start gap-2.5 mb-3 p-2.5 rounded-lg border cursor-pointer select-none"
+                  style={{ borderColor: 'var(--border, #e5e5e7)' }}>
+                  <input
+                    type="checkbox"
+                    checked={includeAffiliate}
+                    onChange={(e) => toggleAffiliate(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 rounded accent-[#7C3AED] flex-shrink-0"
+                  />
+                  <span>
+                    <span className="block text-[13px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Also add my affiliate link</span>
+                    <span className="block text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
+                      Adds a second CTA — &ldquo;grab it right here 👉 [your link]&rdquo; — with the disclaimer, for readers who want to buy without reading the blog.
+                    </span>
+                  </span>
+                </label>
               )}
 
               {/* Facebook manual-share: copy block + saved Groups. Only shown

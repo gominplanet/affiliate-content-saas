@@ -47,6 +47,18 @@ export function resolvePostDmLink(post: {
   return post.wordpress_url || null
 }
 
+/** Just the post's affiliate/product link (geni.us from the stored code → the
+ *  first geni.us/Amazon link in the body) with NO blog-URL fallback. Returns
+ *  null when the post has no distinct affiliate link — used for the optional
+ *  "buy it now" CTA, which must never fall back to the blog URL (that's already
+ *  the primary CTA). */
+export function resolvePostAffiliateLink(post: {
+  geniuslink_code?: string | null
+  content?: string | null
+}): string | null {
+  return resolvePostDmLink({ ...post, wordpress_url: null })
+}
+
 /** Fill the {link} placeholder in the message template. */
 export function renderMessage(template: string, link: string): string {
   const t = (template && template.trim()) || 'Here you go 🔗 {link}'
