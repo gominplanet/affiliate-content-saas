@@ -97,6 +97,9 @@ export default function InstagramBurnerPage() {
   const [shorts, setShorts] = useState<ShortItem[] | null>(null)
   const [loadingShorts, setLoadingShorts] = useState(false)
   const [shortsQuery, setShortsQuery] = useState('')
+  // Hide Shorts already posted (to TikTok/IG) from the picker by default, so the
+  // creator isn't looking at clips they've already burned. Toggle off to re-post.
+  const [hidePosted, setHidePosted] = useState(true)
   const [selectedShortId, setSelectedShortId] = useState<string | null>(null)
   const [burning, setBurning] = useState(false)
   const [resultUrl, setResultUrl] = useState<string | null>(null)
@@ -623,9 +626,15 @@ export default function InstagramBurnerPage() {
                         className="input-field text-sm pl-8"
                       />
                     </div>
+                    {shorts.some(s => s.posted) && (
+                      <label className="flex items-center gap-1.5 mb-1.5 text-[11px] text-[#6e6e73] dark:text-[#ebebf0] cursor-pointer select-none">
+                        <input type="checkbox" checked={hidePosted} onChange={e => setHidePosted(e.target.checked)} className="w-3.5 h-3.5 rounded accent-[#7C3AED]" />
+                        Hide already-posted
+                      </label>
+                    )}
                     <div className="max-h-[300px] overflow-y-auto -mx-1 px-1 space-y-1.5">
                       {shorts
-                        .filter(s => !shortsQuery || s.title.toLowerCase().includes(shortsQuery.toLowerCase()))
+                        .filter(s => (!hidePosted || !s.posted) && (!shortsQuery || s.title.toLowerCase().includes(shortsQuery.toLowerCase())))
                         .map(s => (
                           <button
                             key={s.id}
@@ -1037,6 +1046,7 @@ function BatchBurner({ supabase }: { supabase: ReturnType<typeof createBrowserCl
   const [bSource, setBSource] = useState<'shorts' | 'upload'>('upload')
   const [shorts, setShorts] = useState<ShortItem[] | null>(null)
   const [shortsQuery, setShortsQuery] = useState('')
+  const [hidePosted, setHidePosted] = useState(true) // hide already-posted Shorts from the batch picker by default
   const [addingId, setAddingId] = useState<string | null>(null)
   const [startAt, setStartAt] = useState(defaultStartLocal())
   const [intervalHours, setIntervalHours] = useState(24)
@@ -1222,8 +1232,14 @@ function BatchBurner({ supabase }: { supabase: ReturnType<typeof createBrowserCl
                 <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#86868b]" />
                 <input type="text" value={shortsQuery} onChange={(e) => setShortsQuery(e.target.value)} placeholder="Search your Shorts…" className="input-field text-[12px] pl-8" />
               </div>
+              {shorts.some(s => s.posted) && (
+                <label className="flex items-center gap-1.5 mb-1.5 text-[11px] text-[#6e6e73] dark:text-[#ebebf0] cursor-pointer select-none">
+                  <input type="checkbox" checked={hidePosted} onChange={e => setHidePosted(e.target.checked)} className="w-3.5 h-3.5 rounded accent-[#7C3AED]" />
+                  Hide already-posted
+                </label>
+              )}
               <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
-                {shorts.filter(s => !shortsQuery || s.title.toLowerCase().includes(shortsQuery.toLowerCase())).slice(0, 40).map(s => {
+                {shorts.filter(s => (!hidePosted || !s.posted) && (!shortsQuery || s.title.toLowerCase().includes(shortsQuery.toLowerCase()))).slice(0, 40).map(s => {
                   const added = items.some(it => it.videoId === s.id)
                   return (
                     <button key={s.id} onClick={() => addShort(s)} disabled={added || addingId === s.id} className={`w-full flex items-center gap-2 rounded-lg border p-1.5 text-left transition-colors ${added ? 'border-[#34c759]/40 bg-[#34c759]/5' : 'border-gray-200 dark:border-white/10 hover:border-[#7C3AED]'} disabled:opacity-70`}>
