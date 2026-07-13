@@ -59,7 +59,7 @@ export default function InstagramBurnerPage() {
   const [ttUsername, setTtUsername] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
-  const [mode, setMode] = useState<'single' | 'batch'>('single')
+  const [mode, setMode] = useState<'single' | 'batch' | 'published'>('single')
   // Overlay type: a styled text caption, or a pre-designed CTA box (PNG sticker).
   const [overlayType, setOverlayType] = useState<'text' | 'sticker'>('sticker')
   const [stickerId, setStickerId] = useState<string | null>(null)
@@ -593,8 +593,11 @@ export default function InstagramBurnerPage() {
             <div className="flex gap-2 mb-3">
               <button onClick={() => setMode('single')} className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${mode === 'single' ? 'border-[#7C3AED] bg-[#7C3AED]/5 text-[#7C3AED]' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0]'}`}>Single video</button>
               <button onClick={() => setMode('batch')} className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${mode === 'batch' ? 'border-[#7C3AED] bg-[#7C3AED]/5 text-[#7C3AED]' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0]'}`}>Batch &amp; schedule · up to 5</button>
+              <button onClick={() => setMode('published')} className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${mode === 'published' ? 'border-[#7C3AED] bg-[#7C3AED]/5 text-[#7C3AED]' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0]'}`}>Published</button>
             </div>
-            {mode === 'batch' ? (
+            {mode === 'published' ? (
+              <PublishedShorts />
+            ) : mode === 'batch' ? (
               <BatchBurner supabase={supabase} />
             ) : (
           <div className="space-y-3">
@@ -1024,6 +1027,62 @@ export default function InstagramBurnerPage() {
         </div>
       )}
     </>
+  )
+}
+
+// ── Published ────────────────────────────────────────────────────────────────
+// Read-only history: Shorts that were burned + posted (have a TikTok or
+// Instagram posted timestamp). Newest first.
+interface PublishedItem { id: string; title: string; thumbnailUrl: string | null; youtubeVideoId: string | null; tiktokPostedAt: string | null; instagramPostedAt: string | null; views: number | null }
+function PublishedShorts() {
+  const [items, setItems] = useState<PublishedItem[] | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const r = await fetch('/api/instagram/burn/shorts')
+        const d = await r.json() as { shorts?: Array<PublishedItem & { posted?: boolean }> }
+        if (cancelled) return
+        const posted = (d.shorts || [])
+          .filter(s => s.posted)
+          .map(s => ({ id: s.id, title: s.title, thumbnailUrl: s.thumbnailUrl, youtubeVideoId: s.youtubeVideoId, tiktokPostedAt: s.tiktokPostedAt, instagramPostedAt: s.instagramPostedAt, views: s.views }))
+          .sort((a, b) => new Date(b.tiktokPostedAt || b.instagramPostedAt || 0).getTime() - new Date(a.tiktokPostedAt || a.instagramPostedAt || 0).getTime())
+        setItems(posted)
+      } catch { if (!cancelled) setItems([]) }
+    })()
+    return () => { cancelled = true }
+  }, [])
+
+  if (items === null) return <div className="card p-6 flex items-center justify-center gap-2 text-sm text-[#86868b]"><Loader2 size={14} className="animate-spin" /> Loading…</div>
+  if (items.length === 0) return (
+    <div className="card p-8 text-center">
+      <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">No published Shorts yet</p>
+      <p className="text-[12px] text-[#86868b] dark:text-[#8e8e93] mt-1">Burn a CTA onto a Short and post it to TikTok or Instagram — it lands here.</p>
+    </div>
+  )
+  const fmt = (iso: string | null) => iso ? new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : ''
+  return (
+    <div className="space-y-2">
+      <p className="text-[12px] text-[#86868b] dark:text-[#8e8e93] mb-1">{items.length} Short{items.length === 1 ? '' : 's'} burned &amp; posted.</p>
+      {items.map(s => (
+        <div key={s.id} className="card p-2.5 flex items-center gap-3">
+          {s.thumbnailUrl
+            // eslint-disable-next-line @next/next/no-img-element
+            ? <img src={s.thumbnailUrl} alt="" className="w-12 h-12 rounded object-cover flex-shrink-0 bg-black/5" />
+            : <div className="w-12 h-12 rounded bg-black/5 dark:bg-white/5 flex-shrink-0" />}
+          <div className="min-w-0 flex-1">
+            <p className="text-[13px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] truncate">{s.title || 'Untitled Short'}</p>
+            <div className="flex flex-wrap items-center gap-1.5 mt-1">
+              {s.tiktokPostedAt && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-black text-white">TikTok · {fmt(s.tiktokPostedAt)}</span>}
+              {s.instagramPostedAt && <span className="text-[10px] px-1.5 py-0.5 rounded-full text-white" style={{ background: 'linear-gradient(90deg,#f58529,#dd2a7b,#8134af)' }}>Instagram · {fmt(s.instagramPostedAt)}</span>}
+            </div>
+          </div>
+          {s.youtubeVideoId && (
+            <a href={`https://youtube.com/shorts/${s.youtubeVideoId}`} target="_blank" rel="noopener noreferrer" className="text-[11px] font-semibold text-[#7C3AED] hover:underline flex-shrink-0 pr-1">View ↗</a>
+          )}
+        </div>
+      ))}
+    </div>
   )
 }
 

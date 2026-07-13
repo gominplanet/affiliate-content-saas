@@ -38,6 +38,8 @@ export async function GET() {
     hasVideo: !!v.instagram_video_url,
     youtubeVideoId: (v.youtube_video_id as string | null) || null,
     posted: !!(v.tiktok_posted_at || v.instagram_posted_at),
+    tiktokPostedAt: (v.tiktok_posted_at as string | null) || null,
+    instagramPostedAt: (v.instagram_posted_at as string | null) || null,
   }))
   return NextResponse.json({ shorts })
 }
