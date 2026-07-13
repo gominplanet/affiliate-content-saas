@@ -74,6 +74,10 @@ export interface SocialScheduleEntry {
   bodyText: string
   /** Optional Pro multi-account selector — see scheduled_posts.social_account_id. */
   socialAccountId?: string | null
+  /** Facebook only: opt in to leading the caption with the post's affiliate
+   *  link + disclaimer. Persisted to scheduled_posts.options so the cron
+   *  worker appends the same CTA it does on immediate publish. */
+  includeAffiliateCta?: boolean
 }
 
 // Re-export Social so consumers don't need to import from both modules.

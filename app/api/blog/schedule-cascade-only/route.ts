@@ -192,6 +192,9 @@ export async function POST(request: Request) {
         kind: 'social' as const,
         parent_id: null,           // no parent — this is a standalone cascade
         social_account_id: resolvedAccountId,
+        // Facebook affiliate-CTA opt-in → cron appends it on publish (options
+        // is the flexible per-platform settings column, migration 137).
+        ...(s.platform === 'facebook' && s.includeAffiliateCta ? { options: { includeAffiliateCta: true } } : {}),
       })
     }
 

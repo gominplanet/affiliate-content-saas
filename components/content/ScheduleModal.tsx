@@ -118,6 +118,10 @@ export default function ScheduleModal({
     if (open) setSelectedChannels(new Set(CHANNEL_OPTIONS.map(c => c.key).filter(k => channelUsable(k))))
   }, [open, connectedChannels])
 
+  // Facebook-only: lead the scheduled FB caption with the affiliate link +
+  // disclaimer (mirrors the immediate-publish opt-in). Off by default.
+  const [includeFbAffiliate, setIncludeFbAffiliate] = useState(false)
+
   // Show / hide the Advanced per-channel offset overrides. Defaults are
   // good for almost everyone; power users get the knob.
   const [showAdvanced, setShowAdvanced] = useState(false)
@@ -183,6 +187,8 @@ export default function ScheduleModal({
       platform,
       offsetMinutes: offsetOverrides[platform],
       bodyText: videoTitle.slice(0, 280),
+      // Facebook-only: opt in to leading the caption with the affiliate link.
+      ...(platform === 'facebook' && includeFbAffiliate ? { includeAffiliateCta: true } : {}),
     }))
     const localIso = new Date(scheduledFor).toISOString()
     const localScheduleMode = scheduleMode
@@ -430,6 +436,16 @@ export default function ScheduleModal({
                 )
               })}
             </div>
+            {/* Facebook-only affiliate CTA opt-in (mirrors immediate publish). */}
+            {selectedChannels.has('facebook') && (
+              <label className="flex items-start gap-2 mt-2 px-3 py-2 rounded-lg border cursor-pointer" style={{ borderColor: 'rgba(124,58,237,0.30)', backgroundColor: 'rgba(124,58,237,0.06)' }}>
+                <input type="checkbox" checked={includeFbAffiliate} onChange={e => setIncludeFbAffiliate(e.target.checked)} className="w-3.5 h-3.5 rounded accent-[#7C3AED] mt-0.5" />
+                <span>
+                  <span className="block text-sm">Also add my affiliate link to Facebook</span>
+                  <span className="block text-[11px]" style={{ color: 'var(--text-faint, rgba(255,255,255,0.5))' }}>Leads the caption with your product link + disclaimer. Only added when the post has a product link.</span>
+                </span>
+              </label>
+            )}
           </div>
 
           {/* Advanced offsets */}

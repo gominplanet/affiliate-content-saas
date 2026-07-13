@@ -300,6 +300,7 @@ export async function POST(request: Request) {
       kind: 'social'
       parent_id: string | null
       social_account_id: string | null
+      options?: { includeAffiliateCta: boolean }
     }> = []
     // Audit perf fix 2026-06-06: batch the social_account_id lookups
     // instead of one-await-per-platform (was a 500-900ms N+1 for a Pro
@@ -345,6 +346,8 @@ export async function POST(request: Request) {
         kind: 'social',
         parent_id: parentScheduleId,
         social_account_id: resolvedAccountId,
+        // Facebook affiliate-CTA opt-in → cron appends it on publish.
+        ...(s.platform === 'facebook' && s.includeAffiliateCta ? { options: { includeAffiliateCta: true } } : {}),
       })
     }
 
