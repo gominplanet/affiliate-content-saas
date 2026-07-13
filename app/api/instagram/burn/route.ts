@@ -50,7 +50,13 @@ export async function POST(request: Request) {
     const body = await request.json() as {
       videoUrl?: string; caption?: string; position?: string; style?: string
       product?: string; productName?: string; stickerId?: string; customStickerUrl?: string
+      stickerDurationSec?: number
     }
+    // How long the CTA stays on screen: 5 / 10 / 30s, or 0 = the whole video.
+    // Clamp to the allowed set so a bad value can't produce a weird transform.
+    const ALLOWED_DURATIONS = [0, 5, 10, 30]
+    const stickerDurationSec = ALLOWED_DURATIONS.includes(Number(body.stickerDurationSec))
+      ? Number(body.stickerDurationSec) : 0
     const videoUrl = (body.videoUrl || '').trim()
     if (!/^https:\/\//i.test(videoUrl)) return NextResponse.json({ error: 'Upload a video first.' }, { status: 400 })
     const overlayText = (body.caption || 'LINK IN BIO').trim().slice(0, 60) || 'LINK IN BIO'
@@ -73,8 +79,8 @@ export async function POST(request: Request) {
     // A CTA sticker (PNG) takes precedence over the text caption when picked.
     const stickerOverlayUrl = customOk ? customStickerUrl : sticker ? ctaStickerUrl(sticker.file) : null
     const burned = await overlayCaptionOnVideo(videoUrl, overlayText, stickerOverlayUrl
-      ? { position, stickerUrl: stickerOverlayUrl, stickerWidthPct: customOk ? 0.55 : sticker?.widthPct }
-      : { position, style })
+      ? { position, stickerUrl: stickerOverlayUrl, stickerWidthPct: customOk ? 0.55 : sticker?.widthPct, stickerDurationSec }
+      : { position, style, stickerDurationSec })
     if (!burned?.url) {
       return NextResponse.json({ error: `Could not burn the caption: ${getLastOverlayError() || 'unknown error'}` }, { status: 500 })
     }

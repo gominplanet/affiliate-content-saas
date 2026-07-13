@@ -14,7 +14,22 @@ export interface CreateLinkOpts {
 }
 
 export class GeniuslinkService {
-  constructor(private apiKey: string, private apiSecret: string) {}
+  private apiKey: string
+  private apiSecret: string
+
+  constructor(apiKey: string, apiSecret: string) {
+    // TRIM ON CONSTRUCTION. Geniuslink authenticates via the X-Api-Key /
+    // X-Api-Secret headers, and a single trailing space or newline (very easy to
+    // pick up when copy-pasting from their dashboard) makes them reject the pair
+    // with a 401. Previously only /api/geniuslink/test trimmed, so the "Test
+    // connection" badge went green ("Working — N groups") while EVERY real call
+    // path — group setup, blog generation, YouTube metadata, analytics — sent
+    // the raw saved value and 401'd. Trimming here is the one choke point every
+    // consumer flows through, so an already-saved value with stray whitespace
+    // starts working without the user re-pasting. 2026-07-13.
+    this.apiKey = (apiKey || '').trim()
+    this.apiSecret = (apiSecret || '').trim()
+  }
 
   private get authHeaders() {
     return {

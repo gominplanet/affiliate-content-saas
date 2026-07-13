@@ -36,6 +36,7 @@ export async function POST(request: Request) {
       style?: string; position?: string
       startAt?: string; intervalHours?: number
       stickerUrl?: string
+      stickerDurationSec?: number
     }
     const videos = (body.videos || []).filter(v => typeof v?.videoUrl === 'string' && /^https:\/\//i.test(v.videoUrl)).slice(0, MAX_BATCH)
     if (videos.length === 0) return NextResponse.json({ error: 'Upload at least one video.' }, { status: 400 })
@@ -50,6 +51,8 @@ export async function POST(request: Request) {
       : null
     const startMs = body.startAt && !isNaN(Date.parse(body.startAt)) ? Date.parse(body.startAt) : Date.now()
     const intervalHours = Math.max(0, Math.min(24 * 30, Number(body.intervalHours) || 0)) // 0 = post all ASAP
+    // How long the CTA box stays on screen (0 = whole video). Clamp to the set.
+    const stickerDurationSec = [0, 5, 10, 30].includes(Number(body.stickerDurationSec)) ? Number(body.stickerDurationSec) : 0
 
     const rows = videos.map((v, i) => ({
       user_id: user.id,
@@ -58,6 +61,7 @@ export async function POST(request: Request) {
       style,
       position,
       sticker_url: stickerUrl,
+      sticker_duration_sec: stickerDurationSec,
       product: (v.product || '').trim() || null,
       scheduled_at: new Date(startMs + i * intervalHours * 3600_000).toISOString(),
       status: 'pending',

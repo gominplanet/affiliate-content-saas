@@ -856,3 +856,45 @@ export async function requestStudioFinish(
   if (!resp) return { ok: false, steps: [], error: 'timeout' }
   return { ok: !!resp.ok, steps: Array.isArray(resp.steps) ? resp.steps : [], error: resp.error }
 }
+
+export interface VideoDownloadResult {
+  ok: boolean
+  /** The Short's MP4 as a data URL (data:video/mp4;base64,…). */
+  dataUrl?: string
+  mimeType?: string
+  sizeBytes?: number
+  /** 'not-installed' | 'not-owner' | 'no-download' | 'signed-out' | 'timeout' | … */
+  error?: string
+}
+
+/**
+ * Ask SCOUT to download the creator's OWN Short straight from YouTube Studio —
+ * so the user never has to open Studio and download it by hand for Shop Burner.
+ *
+ * SCOUT opens the video in a background Studio tab (the user's logged-in
+ * session), triggers Studio's built-in owner Download, captures the resulting
+ * signed googlevideo MP4 in the browser, and returns it as a data URL. The page
+ * then uploads it to storage and persists it as the Short's vertical MP4. This
+ * is the ToS-clean path: the user's own video, their own Studio Download, all in
+ * their own browser — MVP never fetches the file server-side (Google throttles
+ * datacenter IPs anyway). Best-effort: resolves, never throws.
+ *
+ * Long timeout: opening Studio + the owner-download handshake + reading bytes.
+ * ▶ SCOUT contract (implement on the extension side): handle
+ *   { type: 'MVP_VIDEO_DOWNLOAD', youtubeVideoId } → respond
+ *   { ok: true, dataUrl: 'data:video/mp4;base64,…', mimeType, sizeBytes } or
+ *   { ok: false, error }.
+ */
+export async function requestVideoDownload(youtubeVideoId: string): Promise<VideoDownloadResult> {
+  if (!youtubeVideoId) return { ok: false, error: 'no-video-id' }
+  if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
+  const resp = await sendToExtension<{ ok?: boolean; dataUrl?: string; mimeType?: string; sizeBytes?: number; error?: string }>(
+    { type: 'MVP_VIDEO_DOWNLOAD', youtubeVideoId },
+    180000,
+  )
+  if (!resp) return { ok: false, error: 'timeout' }
+  if (resp.ok && typeof resp.dataUrl === 'string' && resp.dataUrl.startsWith('data:')) {
+    return { ok: true, dataUrl: resp.dataUrl, mimeType: resp.mimeType, sizeBytes: resp.sizeBytes }
+  }
+  return { ok: false, error: resp.error || 'download-failed' }
+}

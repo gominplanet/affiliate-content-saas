@@ -140,6 +140,9 @@ export async function overlayCaptionOnVideo(
     stickerUrl?: string
     /** Sticker width as a fraction of video width (0–1, default 0.85). */
     stickerWidthPct?: number
+    /** How long (seconds from the start) the overlay stays on screen. Omit / 0
+     *  → the whole video. Cloudinary time-boxes the overlay via so_0,eo_<n>. */
+    stickerDurationSec?: number
   },
 ): Promise<OverlaidVideo | null> {
   if (!ensureConfig() || !sourceVideoUrl) return null
@@ -147,6 +150,12 @@ export async function overlayCaptionOnVideo(
   try {
     const { gravity, x, y } = placement(opts?.position ?? 'lower-third')
     const sp = styleParams(opts?.style ?? 'white-pill')
+    // Time-box the overlay: when a positive duration is given, the CTA shows
+    // from 0s to <n>s then disappears; otherwise it rides the whole clip.
+    const dur = Number(opts?.stickerDurationSec)
+    const timing = Number.isFinite(dur) && dur > 0
+      ? { start_offset: 0, end_offset: Math.round(dur * 10) / 10 }
+      : {}
     // Cloudinary's Arial text layer can't render emoji / non-ASCII and 400s the
     // transform — strip to plain text for the burned caption.
     const safeCaption = (caption.replace(/[^\x20-\x7E]/g, '').replace(/\s{2,}/g, ' ').trim()) || 'LINK IN BIO'
@@ -172,6 +181,7 @@ export async function overlayCaptionOnVideo(
           gravity,
           ...(x ? { x } : {}),
           y,
+          ...timing,
         }
       : {
           overlay: { font_family: 'Arial', font_size: opts?.fontSize ?? 64, font_weight: 'bold', text: safeCaption },
@@ -181,6 +191,7 @@ export async function overlayCaptionOnVideo(
           gravity,
           ...(x ? { x } : {}),
           y,
+          ...timing,
         }
 
     // 2. Build the derived URL: normalize to the IG Reel spec (1080×1920, 9:16,

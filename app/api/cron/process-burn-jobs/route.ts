@@ -28,6 +28,7 @@ interface BurnJob {
   position: string
   sticker_url: string | null
   product: string | null
+  sticker_duration_sec: number | null
 }
 
 export async function GET(request: Request) {
@@ -49,7 +50,7 @@ export async function GET(request: Request) {
     .update({ status: 'processing', claimed_at: nowIso })
     .eq('status', 'pending')
     .lte('scheduled_at', nowIso)
-    .select('id,user_id,source_video_url,caption_text,style,position,sticker_url,product')
+    .select('id,user_id,source_video_url,caption_text,style,position,sticker_url,product,sticker_duration_sec')
     .order('scheduled_at', { ascending: true })
     .limit(1)
   if (claimErr) return NextResponse.json({ error: `Claim failed: ${claimErr.message}` }, { status: 500 })
@@ -64,16 +65,19 @@ export async function GET(request: Request) {
     // 1. Burn the overlay — a CTA box sticker (PNG) when set, else the caption
     //    text. Matches the single-video burner: sticker mode passes an empty
     //    caption + the sticker URL; caption mode passes the text.
+    const burnDurationSec = job.sticker_duration_sec ?? 0
     const burned = job.sticker_url
       ? await overlayCaptionOnVideo(job.source_video_url, '', {
           position: job.position as OverlayPosition,
           style: job.style as CaptionStyle,
           stickerUrl: job.sticker_url,
           stickerWidthPct: 0.55,
+          stickerDurationSec: burnDurationSec,
         })
       : await overlayCaptionOnVideo(job.source_video_url, job.caption_text, {
           position: job.position as OverlayPosition,
           style: job.style as CaptionStyle,
+          stickerDurationSec: burnDurationSec,
         })
     if (!burned?.url) throw new Error(`burn failed: ${getLastOverlayError() || 'unknown'}`)
     recordUsage({ userId: job.user_id, tier: null, feature: 'instagram_burn', model: 'cloudinary', images: 1 })

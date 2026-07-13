@@ -480,9 +480,10 @@ async function publishOne(
         ? await resolveBestThumbnail(ytId)
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         : ((post as any).youtube_videos?.thumbnail_url ?? '')
-      // Optional "buy it now" second CTA — the same opt-in as immediate publish,
-      // persisted on the scheduled row's `options`. Appended before the
-      // disclaimer; only when the post has a real affiliate link.
+      // Optional "buy it now" CTA — the same opt-in as immediate publish,
+      // persisted on the scheduled row's `options`. When on it LEADS the caption
+      // (first line + disclaimer), then the blurb + blog link, then a closing
+      // disclaimer — matching the manual endpoint. Only when the post has a link.
       let fbIncludeAffiliate = false
       try {
         const { data: fbOpt } = await admin.from('scheduled_posts').select('options').eq('id', row.id).maybeSingle()
@@ -491,8 +492,8 @@ async function publishOne(
       } catch { /* options column absent on an old DB — flag can't exist there */ }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const fbAffiliateLink = fbIncludeAffiliate ? resolvePostAffiliateLink(post as any) : null
-      const fbAffiliateCta = fbAffiliateLink ? `\n\n⚡ No need to read more — grab it right here 👉 ${fbAffiliateLink}` : ''
-      const caption = `${row.body_text}\n\n🔗 Read the full post: ${url}${fbAffiliateCta}\n\n${disclaimer}`
+      const fbAffiliateHeader = fbAffiliateLink ? `⚡ No need to read more — grab it right here 👉 ${fbAffiliateLink}\n${disclaimer}\n\n` : ''
+      const caption = `${fbAffiliateHeader}${row.body_text}\n\n🔗 Read the full post: ${url}\n\n${disclaimer}`
       const fb = createFacebookService(fbPageToken, fbPageId)
       // Store the PAGE-POST id (a /photos post returns { id: <photo id>,
       // post_id: <PAGEID_POSTID> }; a /feed post returns the page-post id as

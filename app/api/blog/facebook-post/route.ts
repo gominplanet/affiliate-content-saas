@@ -162,15 +162,16 @@ Return ONLY the post text, nothing else.`,
       : (video?.thumbnail_url || '')
 
     // ── 7. Build full caption ─────────────────────────────────────────────────
-    // Optional "buy it now" second CTA — the post's direct affiliate link with
-    // the disclaimer immediately after it. Never falls back to the blog URL
-    // (that's already the primary CTA above), so it only appears when the post
-    // has a real product link.
+    // Optional "buy it now" CTA — the post's direct affiliate link. When opted
+    // in it leads the caption (first line + disclaimer) so shoppers can grab the
+    // product before reading, then the review blurb + blog link follow, and the
+    // disclaimer repeats at the very end. Never falls back to the blog URL, so it
+    // only appears when the post has a real product link.
     const affiliateLink = resolvePostAffiliateLink(post)
-    const affiliateCta = includeAffiliateCta && affiliateLink
-      ? `\n\n⚡ No need to read more — grab it right here 👉 ${affiliateLink}`
+    const affiliateHeader = includeAffiliateCta && affiliateLink
+      ? `⚡ No need to read more — grab it right here 👉 ${affiliateLink}\n${disclaimer}\n\n`
       : ''
-    const caption = `${scrubBanned(reviewText)}\n\n🔗 Read the full post: ${post.wordpress_url}${affiliateCta}\n\n${disclaimer}`
+    const caption = `${affiliateHeader}${scrubBanned(reviewText)}\n\n🔗 Read the full post: ${post.wordpress_url}\n\n${disclaimer}`
 
     if (dryRun) {
       // Generate 3 SPECIFIC, niche hashtags that fit this exact product/topic

@@ -16,6 +16,7 @@ import { metaEnabled } from '@/lib/feature-flags'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { TikTokDirectModal } from '@/components/TikTokDirectModal'
 import { CTA_STICKERS, ctaStickerUrl } from '@/lib/cta-stickers'
+import { requestVideoDownload } from '@/lib/extension-frame'
 import type { Tier } from '@/lib/tier'
 import { Flame, Loader2, Sparkles, Download, AlertCircle, UploadCloud, Video, CheckCircle, Copy, Instagram, Plus, Trash2, Clock, Search } from 'lucide-react'
 
@@ -48,6 +49,44 @@ interface ShortItem {
   posted: boolean
 }
 
+/** SCOUT-download a Short's MP4 from the creator's OWN YouTube Studio, upload it
+ *  to storage, and persist it on the youtube_videos row (→ "Ready to burn"). All
+ *  in the user's browser/session; returns a friendly error string on failure. */
+async function downloadShortToStorage(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  short: ShortItem,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!short.youtubeVideoId) return { ok: false, error: 'This Short has no YouTube video id.' }
+  const dl = await requestVideoDownload(short.youtubeVideoId)
+  if (!dl.ok || !dl.dataUrl) {
+    const e = dl.error
+    return {
+      ok: false,
+      error: e === 'not-installed' ? 'Install/enable the SCOUT extension to download from YouTube.'
+        : e === 'signed-out' ? 'Sign in to YouTube Studio in this browser, then try again.'
+        : e === 'not-owner' ? 'SCOUT can only download videos on your own channel.'
+        : e === 'timeout' ? 'YouTube took too long — please try again.'
+        : 'Could not download this Short from YouTube.',
+    }
+  }
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { ok: false, error: 'Not signed in' }
+  const blob = await (await fetch(dl.dataUrl)).blob()
+  const path = `${user.id}/short-${short.youtubeVideoId}-${crypto.randomUUID()}.mp4`
+  const { error: upErr } = await supabase.storage.from('instagram-videos').upload(path, blob, {
+    cacheControl: '3600', upsert: false, contentType: 'video/mp4',
+  })
+  if (upErr) return { ok: false, error: upErr.message || 'Upload failed' }
+  const { data: urlData } = supabase.storage.from('instagram-videos').getPublicUrl(path)
+  const res = await fetch('/api/instagram/burn/save-download', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ videoId: short.id, videoUrl: urlData.publicUrl }),
+  })
+  if (!res.ok) { const d = await res.json().catch(() => ({})); return { ok: false, error: (d.error as string) || 'Save failed' } }
+  return { ok: true }
+}
+
 export default function InstagramBurnerPage() {
   const supabase = createBrowserClient()
   const [tier, setTier] = useState('trial')
@@ -73,6 +112,8 @@ export default function InstagramBurnerPage() {
   const [caption, setCaption] = useState('LINK IN BIO')
   const [position, setPosition] = useState('lower-left')
   const [style, setStyle] = useState('white-pill')
+  // How long the CTA overlay stays on screen. 0 = the whole video (default).
+  const [burnDuration, setBurnDuration] = useState<0 | 5 | 10 | 30>(0)
   const [product, setProduct] = useState('')
   const [productName, setProductName] = useState('')
   // Auto-DM: when on, publishing attaches a comment→DM campaign to the Reel, so
@@ -101,6 +142,9 @@ export default function InstagramBurnerPage() {
   // creator isn't looking at clips they've already burned. Toggle off to re-post.
   const [hidePosted, setHidePosted] = useState(true)
   const [selectedShortId, setSelectedShortId] = useState<string | null>(null)
+  // Which Short is mid-download from YouTube (SCOUT → storage), so its row can
+  // show a spinner and be disabled without blocking the rest of the picker.
+  const [downloadingId, setDownloadingId] = useState<string | null>(null)
   const [burning, setBurning] = useState(false)
   const [resultUrl, setResultUrl] = useState<string | null>(null)
   const [igCaption, setIgCaption] = useState<string | null>(null)
@@ -159,6 +203,24 @@ export default function InstagramBurnerPage() {
     if (s.productUrl) setProduct(s.productUrl)
     void loadShortVideo(s.id)
   }, [loadShortVideo])
+
+  // "Download from YouTube" — SCOUT grabs the Short's MP4 from the creator's own
+  // Studio (their session), the browser uploads it to storage, we record it, and
+  // the row flips to "Ready to burn" without the user ever leaving MVP.
+  const downloadFromYouTube = useCallback(async (s: ShortItem) => {
+    setError(null)
+    setDownloadingId(s.id)
+    try {
+      const res = await downloadShortToStorage(supabase, s)
+      if (!res.ok) throw new Error(res.error || 'Could not download this Short.')
+      setShorts(prev => prev ? prev.map(x => x.id === s.id ? { ...x, hasVideo: true } : x) : prev)
+      pickShort({ ...s, hasVideo: true }) // auto-select + load it, ready to burn
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not download this Short.')
+    } finally {
+      setDownloadingId(null)
+    }
+  }, [supabase, pickShort])
 
   // Prefill from deep-link params (the Short pills pass ?productName=&product=
   // &videoId= so the clip + caption are grounded the moment you land here).
@@ -303,6 +365,7 @@ export default function InstagramBurnerPage() {
           // Auto-DM supplies its own caption; don't let the burn route compose one.
           product: autoDm ? undefined : (product.trim() || undefined),
           productName: autoDm ? undefined : (productName.trim() || undefined),
+          stickerDurationSec: burnDuration,
         }),
       })
       const d = await res.json().catch(() => ({} as Record<string, unknown>))
@@ -638,8 +701,9 @@ export default function InstagramBurnerPage() {
                         .map(s => (
                           <button
                             key={s.id}
-                            onClick={() => pickShort(s)}
-                            className={`w-full flex items-center gap-2.5 p-1.5 rounded-lg border text-left transition-colors ${selectedShortId === s.id ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-gray-300'}`}
+                            onClick={() => s.hasVideo ? pickShort(s) : downloadFromYouTube(s)}
+                            disabled={downloadingId === s.id}
+                            className={`w-full flex items-center gap-2.5 p-1.5 rounded-lg border text-left transition-colors disabled:opacity-70 ${selectedShortId === s.id ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-gray-300'}`}
                           >
                             {s.thumbnailUrl
                               // eslint-disable-next-line @next/next/no-img-element
@@ -647,30 +711,45 @@ export default function InstagramBurnerPage() {
                               : <div className="w-11 h-11 rounded bg-black/5 dark:bg-white/5 flex-shrink-0" />}
                             <span className="min-w-0 flex-1">
                               <span className="block text-[12px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] line-clamp-2 leading-snug">{s.title || 'Untitled Short'}</span>
-                              <span className="block text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-0.5">
-                                {s.hasVideo ? 'Ready to burn' : 'Needs download from YouTube'}{s.posted ? ' · already posted' : ''}
+                              <span className={`block text-[10px] mt-0.5 ${!s.hasVideo && downloadingId !== s.id ? 'text-[#7C3AED] font-semibold' : 'text-[#86868b] dark:text-[#8e8e93]'}`}>
+                                {downloadingId === s.id
+                                  ? 'Downloading from YouTube…'
+                                  : s.hasVideo ? 'Ready to burn' : '⬇ Download from YouTube'}{s.posted ? ' · already posted' : ''}
                               </span>
                             </span>
-                            {selectedShortId === s.id && (
-                              loadingShort
-                                ? <Loader2 size={14} className="animate-spin text-[#7C3AED] flex-shrink-0" />
-                                : shortLoaded
-                                ? <CheckCircle size={14} className="text-[#34c759] flex-shrink-0" />
-                                : null
-                            )}
+                            {downloadingId === s.id
+                              ? <Loader2 size={14} className="animate-spin text-[#7C3AED] flex-shrink-0" />
+                              : selectedShortId === s.id && (
+                                loadingShort
+                                  ? <Loader2 size={14} className="animate-spin text-[#7C3AED] flex-shrink-0" />
+                                  : shortLoaded
+                                  ? <CheckCircle size={14} className="text-[#34c759] flex-shrink-0" />
+                                  : null
+                              )}
                           </button>
                         ))}
                     </div>
-                    {/* Selected Short has no stored MP4 → link to YouTube Studio,
-                        where the owner has a real Download button (⋮ → Download). */}
+                    {/* Selected Short has no stored MP4 → one-click SCOUT download
+                        from the creator's own Studio, with a manual fallback. */}
                     {selectedShortId && ytDownloadHint && !sourceUrl && (
-                      <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-2 leading-relaxed">
-                        We don&apos;t have this Short&apos;s MP4 yet.{' '}
-                        {ytDownloadHint.youtubeVideoId && (
-                          <a href={`https://studio.youtube.com/video/${ytDownloadHint.youtubeVideoId}/edit`} target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] font-semibold hover:underline">Open it in YouTube Studio</a>
-                        )}{ytDownloadHint.youtubeVideoId ? ' → ⋮ → Download, then ' : 'Download it from YouTube Studio, then '}
-                        <button onClick={() => setSourceMode('upload')} className="text-[#7C3AED] font-semibold hover:underline">upload it here</button> once.
-                      </p>
+                      <div className="mt-2 space-y-1.5">
+                        <button
+                          onClick={() => downloadFromYouTube({ id: selectedShortId, title: productName, thumbnailUrl: null, views: null, productUrl: product || null, hasVideo: false, youtubeVideoId: ytDownloadHint.youtubeVideoId, posted: false })}
+                          disabled={downloadingId === selectedShortId}
+                          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-[#7C3AED] text-white text-[12px] font-semibold hover:bg-[#6D28D9] transition-colors disabled:opacity-60"
+                        >
+                          {downloadingId === selectedShortId
+                            ? <><Loader2 size={13} className="animate-spin" /> Downloading from YouTube…</>
+                            : <><Download size={13} /> Download from YouTube</>}
+                        </button>
+                        <p className="text-[10.5px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed">
+                          Grabs it straight from your Studio (needs SCOUT). Or{' '}
+                          {ytDownloadHint.youtubeVideoId && (
+                            <a href={`https://studio.youtube.com/video/${ytDownloadHint.youtubeVideoId}/edit`} target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] font-semibold hover:underline">open it in Studio</a>
+                          )}{ytDownloadHint.youtubeVideoId ? ' → ⋮ → Download and ' : 'download it from Studio and '}
+                          <button onClick={() => setSourceMode('upload')} className="text-[#7C3AED] font-semibold hover:underline">upload it here</button>.
+                        </p>
+                      </div>
                     )}
                   </>
                 ) : (
@@ -767,7 +846,7 @@ export default function InstagramBurnerPage() {
                       {myStickers.length > 0 && (
                         <div className="mt-3">
                           <p className="text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">My boxes</p>
-                          <div className="grid grid-cols-3 gap-1.5 max-h-[150px] overflow-y-auto pr-1">
+                          <div className="grid grid-cols-4 gap-1.5 max-h-[150px] overflow-y-auto pr-1">
                             {myStickers.map(s => (
                               <div key={s.url} className="relative">
                                 <button
@@ -776,7 +855,7 @@ export default function InstagramBurnerPage() {
                                   className={`w-full p-1 rounded-lg border transition-colors ${genStickerUrl === s.url ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-gray-300'}`}
                                 >
                                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                                  <img src={s.url} alt={s.tag || 'CTA box'} className="w-full h-auto rounded bg-[#1d1d1f]/5" />
+                                  <img src={s.url} alt={s.tag || 'CTA box'} className="w-full h-auto max-h-16 object-contain rounded bg-[#1d1d1f]/5" />
                                 </button>
                                 <button
                                   onClick={() => void deleteSticker(s.id, s.url)}
@@ -795,7 +874,7 @@ export default function InstagramBurnerPage() {
                     {CTA_STICKERS.length > 0 && (
                       <>
                         <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mb-1.5">…or pick a ready-made box <span className="text-[#86868b]/70">(scroll for more)</span>:</p>
-                        <div className="grid grid-cols-3 gap-1.5 max-h-[172px] overflow-y-auto pr-1">
+                        <div className="grid grid-cols-4 gap-1.5 max-h-[172px] overflow-y-auto pr-1">
                           {CTA_STICKERS.map(s => (
                             <button
                               key={s.id}
@@ -804,7 +883,7 @@ export default function InstagramBurnerPage() {
                               className={`p-1 rounded-lg border transition-colors ${stickerId === s.id ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-gray-300'}`}
                             >
                               {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img src={ctaStickerUrl(s.file)} alt={s.label} className="w-full h-auto rounded bg-[#1d1d1f]/5" />
+                              <img src={ctaStickerUrl(s.file)} alt={s.label} className="w-full h-auto max-h-16 object-contain rounded bg-[#1d1d1f]/5" />
                             </button>
                           ))}
                         </div>
@@ -822,6 +901,19 @@ export default function InstagramBurnerPage() {
                       <button key={p.key} onClick={() => setPosition(p.key)} className={`text-left p-2.5 rounded-lg border transition-colors ${position === p.key ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-gray-300'}`}>
                         <span className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{p.label}</span>
                         <span className="block text-[11px] text-[#86868b] dark:text-[#8e8e93]">{p.desc}</span>
+                      </button>
+                    ))}
+                  </div>
+                  {/* How long the CTA box stays on screen — 5/10/30s or the whole clip. */}
+                  <label className="block text-[13px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mt-3 mb-1.5">How long it shows</label>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {([[5, '5s'], [10, '10s'], [30, '30s'], [0, 'Whole video']] as const).map(([val, label]) => (
+                      <button
+                        key={val}
+                        onClick={() => setBurnDuration(val)}
+                        className={`px-1.5 py-2 rounded-lg border text-[12px] font-medium transition-colors ${burnDuration === val ? 'border-[#7C3AED] bg-[#7C3AED]/5 text-[#7C3AED]' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:border-gray-300'}`}
+                      >
+                        {label}
                       </button>
                     ))}
                   </div>
@@ -1033,6 +1125,8 @@ function BatchBurner({ supabase }: { supabase: ReturnType<typeof createBrowserCl
   const [items, setItems] = useState<BatchItem[]>([{ id: crypto.randomUUID(), url: null, uploading: false, caption: 'LINK IN BIO', product: '' }])
   const [bStyle, setBStyle] = useState('white-pill')
   const [bPos, setBPos] = useState('lower-left')
+  // CTA on-screen duration for every video in the batch (0 = whole video).
+  const [bBurnDuration, setBBurnDuration] = useState<0 | 5 | 10 | 30>(0)
   // Overlay (all videos): a pre-designed CTA box (PNG) or plain caption text —
   // mirrors the single-video burner. Default to the CTA box.
   const [bOverlay, setBOverlay] = useState<'sticker' | 'text'>('sticker')
@@ -1111,6 +1205,13 @@ function BatchBurner({ supabase }: { supabase: ReturnType<typeof createBrowserCl
     if (items.some(it => it.videoId === s.id)) return
     setAddingId(s.id); setErr(null)
     try {
+      // No stored MP4 yet → SCOUT-download it from the creator's own YouTube
+      // Studio first, then it resolves like any other Short below.
+      if (!s.hasVideo) {
+        const dl = await downloadShortToStorage(supabase, s)
+        if (!dl.ok) { setErr(dl.error || `Could not download “${s.title.slice(0, 40)}”.`); return }
+        setShorts(prev => prev ? prev.map(x => x.id === s.id ? { ...x, hasVideo: true } : x) : prev)
+      }
       const r = await fetch(`/api/instagram/burn/source?videoId=${encodeURIComponent(s.id)}`)
       const d = await r.json() as { videoUrl?: string | null; noVideo?: boolean }
       if (!d.videoUrl) { setErr(`“${s.title.slice(0, 40)}” has no MP4 yet — download it from YouTube or upload the file.`); return }
@@ -1192,6 +1293,7 @@ function BatchBurner({ supabase }: { supabase: ReturnType<typeof createBrowserCl
           style: bStyle, position: bPos,
           // CTA box (all videos) when in sticker mode; omit for caption-text mode.
           stickerUrl: bOverlay === 'sticker' ? (bBoxUrl || undefined) : undefined,
+          stickerDurationSec: bBurnDuration,
           startAt: new Date(startAt).toISOString(),
           intervalHours,
         }),
@@ -1247,7 +1349,7 @@ function BatchBurner({ supabase }: { supabase: ReturnType<typeof createBrowserCl
                       {s.thumbnailUrl ? <img src={s.thumbnailUrl} alt="" className="w-10 h-10 rounded object-cover flex-shrink-0" /> : <div className="w-10 h-10 rounded bg-[#1d1d1f]/5 flex-shrink-0" />}
                       <div className="min-w-0 flex-1">
                         <p className="text-[12px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] truncate">{s.title}</p>
-                        <p className="text-[10px] text-[#86868b]">{s.hasVideo ? 'Ready to burn' : 'Needs download from YouTube'}{s.posted ? ' · already posted' : ''}</p>
+                        <p className={`text-[10px] ${!s.hasVideo && addingId !== s.id ? 'text-[#7C3AED] font-semibold' : 'text-[#86868b]'}`}>{addingId === s.id ? (s.hasVideo ? 'Adding…' : 'Downloading from YouTube…') : s.hasVideo ? 'Ready to burn' : '⬇ Download from YouTube'}{s.posted ? ' · already posted' : ''}</p>
                       </div>
                       <span className="text-[11px] font-semibold flex-shrink-0 pr-1">{addingId === s.id ? <Loader2 size={12} className="animate-spin" /> : added ? <CheckCircle size={13} className="text-[#34c759]" /> : <Plus size={13} className="text-[#7C3AED]" />}</span>
                     </button>
@@ -1311,7 +1413,7 @@ function BatchBurner({ supabase }: { supabase: ReturnType<typeof createBrowserCl
               {boxes.length > 0 && (
                 <div className="mt-2">
                   <p className="text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">My boxes</p>
-                  <div className="grid grid-cols-3 gap-1.5">
+                  <div className="grid grid-cols-4 gap-1.5">
                     {boxes.map(b => (
                       <button
                         key={b.url}
@@ -1320,7 +1422,7 @@ function BatchBurner({ supabase }: { supabase: ReturnType<typeof createBrowserCl
                         className={`p-1.5 rounded-lg border transition-colors ${bBoxUrl === b.url ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-gray-300'}`}
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={b.url} alt={b.tag || 'CTA box'} className="w-full h-auto rounded bg-[#1d1d1f]/5" />
+                        <img src={b.url} alt={b.tag || 'CTA box'} className="w-full h-auto max-h-16 object-contain rounded bg-[#1d1d1f]/5" />
                       </button>
                     ))}
                   </div>
@@ -1349,6 +1451,19 @@ function BatchBurner({ supabase }: { supabase: ReturnType<typeof createBrowserCl
             {POSITIONS.map(p => (
               <button key={p.key} onClick={() => setBPos(p.key)} className={`text-left p-2.5 rounded-lg border transition-colors ${bPos === p.key ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-gray-300'}`}>
                 <span className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{p.label}</span>
+              </button>
+            ))}
+          </div>
+          {/* How long the CTA box shows on every video in the batch. */}
+          <label className="block text-[13px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mt-3 mb-1.5">How long it shows</label>
+          <div className="grid grid-cols-4 gap-1.5">
+            {([[5, '5s'], [10, '10s'], [30, '30s'], [0, 'Whole video']] as const).map(([val, label]) => (
+              <button
+                key={val}
+                onClick={() => setBBurnDuration(val)}
+                className={`px-1.5 py-2 rounded-lg border text-[12px] font-medium transition-colors ${bBurnDuration === val ? 'border-[#7C3AED] bg-[#7C3AED]/5 text-[#7C3AED]' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:border-gray-300'}`}
+              >
+                {label}
               </button>
             ))}
           </div>
