@@ -17,6 +17,22 @@
 import { NextResponse } from 'next/server'
 import crypto from 'node:crypto'
 import { processFacebookCommentEvent, type FbCommentEvent } from '@/lib/fb-dm'
+import { createAdminClient } from '@/lib/supabase/admin'
+
+// Diagnostic breadcrumb → ig_dm_sends (shows up in the Auto-DM status panel's
+// "Recent attempts"). Lets us SEE whether Meta is delivering events at all, vs.
+// us dropping them (bad signature / a non-comment event). No PII stored.
+async function logFbDiag(error: string): Promise<void> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (createAdminClient() as any).from('ig_dm_sends').insert({
+      comment_id: `diag-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      status: 'skipped',
+      error: error.slice(0, 400),
+      platform: 'facebook',
+    })
+  } catch { /* best-effort */ }
+}
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -70,18 +86,33 @@ function extractCommentEvents(body: any): FbCommentEvent[] {
 
 export async function POST(req: Request) {
   const raw = await req.text()
-
-  if (!verifySignature(raw, req.headers.get('x-hub-signature-256'))) {
-    return new Response('Invalid signature', { status: 401 })
-  }
+  const sigOk = verifySignature(raw, req.headers.get('x-hub-signature-256'))
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let body: any = null
   try { body = JSON.parse(raw) } catch { /* Meta always sends JSON; ignore junk */ }
+  // Only diagnose things that structurally look like a Meta webhook, so the
+  // bad-signature breadcrumb can't be spammed by random unsigned POSTs.
+  const looksLikeWebhook = !!(body && Array.isArray(body.entry))
+
+  if (!sigOk) {
+    // Delivered but the signature didn't match FACEBOOK_APP_SECRET → we'd 401
+    // and drop it silently. Leave a breadcrumb so this is visible.
+    if (looksLikeWebhook) await logFbDiag('bad-signature — event delivered but X-Hub-Signature-256 did not match FACEBOOK_APP_SECRET (wrong app secret?)')
+    return new Response('Invalid signature', { status: 401 })
+  }
 
   // Fast 200 for Meta; process inline (each event is cheap, failures swallowed).
   try {
-    for (const ev of extractCommentEvents(body)) {
+    const events = extractCommentEvents(body)
+    if (events.length === 0 && looksLikeWebhook) {
+      // Verified + delivered, but nothing we act on (not a fresh top-level
+      // comment). Summarise the change shape (no PII) so we can see what came in.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const summary = (body.entry ?? []).flatMap((e: any) => (e.changes ?? []).map((c: any) => `${c.field}/${c.value?.item ?? '?'}/${c.value?.verb ?? '?'}`)).slice(0, 6).join(', ')
+      await logFbDiag(`received + verified, 0 comment events [${summary || 'no changes'}]`)
+    }
+    for (const ev of events) {
       try {
         const outcome = await processFacebookCommentEvent(ev)
         console.log('[fb-webhook] comment', { post: ev.postId, page: ev.pageId, outcome })
