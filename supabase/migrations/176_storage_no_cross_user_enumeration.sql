@@ -19,20 +19,26 @@
 -- flip `headshots` to private + signed URLs — bigger change, needs the render
 -- pipeline to hand fal a signed URL, so it's intentionally out of scope here.
 
+-- Idempotent: drop the old public policy AND any prior run of the new one
+-- before re-creating, so this is safe to run more than once.
+
 -- headshots
 DROP POLICY IF EXISTS "Public read headshots" ON storage.objects;
+DROP POLICY IF EXISTS "Owner reads own headshots" ON storage.objects;
 CREATE POLICY "Owner reads own headshots" ON storage.objects
   FOR SELECT TO authenticated
   USING (bucket_id = 'headshots' AND (storage.foldername(name))[1] = auth.uid()::text);
 
 -- ad-banners
 DROP POLICY IF EXISTS "Public read banners" ON storage.objects;
+DROP POLICY IF EXISTS "Owner reads own banners" ON storage.objects;
 CREATE POLICY "Owner reads own banners" ON storage.objects
   FOR SELECT TO authenticated
   USING (bucket_id = 'ad-banners' AND (storage.foldername(name))[1] = auth.uid()::text);
 
 -- product-images
 DROP POLICY IF EXISTS "Public read product images" ON storage.objects;
+DROP POLICY IF EXISTS "Owner reads own product images" ON storage.objects;
 CREATE POLICY "Owner reads own product images" ON storage.objects
   FOR SELECT TO authenticated
   USING (bucket_id = 'product-images' AND (storage.foldername(name))[1] = auth.uid()::text);
