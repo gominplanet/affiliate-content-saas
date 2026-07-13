@@ -189,16 +189,15 @@ export async function spendGate(userId: string, tier: unknown): Promise<NextResp
   const status = await spendStatus(userId, tier)
   if (!status.exceeded) return null
   const next = nextTierFor(status.tier, 'postsPerMonth')
+  // NEVER surface the underlying AI cost/ceiling to the user — no dollars, no
+  // "AI usage", no spend object. Keep the pause message about generation only.
   return NextResponse.json({
     error:
-      `This account has reached its monthly AI usage limit ` +
-      `($${status.ceiling?.toFixed(0)} of AI cost this month). ` +
-      `Generation is paused until the 1st, or ` +
-      `${next ? `upgrade to ${next.label} for a higher limit.` : 'contact support to raise the limit.'}`,
+      `Generation is paused on this account for now — it resets on the 1st. ` +
+      `${next ? `Upgrade to ${next.label} for a higher monthly limit.` : 'Contact support if you need it raised sooner.'}`,
     limitReached: true,
     cap: 'spend',
     currentTier: status.tier,
-    spend: { spent: Number(status.spent.toFixed(2)), ceiling: status.ceiling },
     upgrade: next,
   }, { status: 403 })
 }
