@@ -129,8 +129,13 @@ export const TIERS = {
     label: 'Creator',
     price: 49,
     regularPrice: 99,
-    /** Monthly AI-spend circuit breaker (USD of real ai_usage cost) — see trial. */
-    monthlyAiSpendCeilingUsd: 15 as number | null,
+    /** Monthly AI-spend circuit breaker (USD of real ai_usage cost) — see trial.
+     *  Sized ABOVE the cost of the full postsPerMonth allotment (image-heavy
+     *  posts run ~$1.7 each → 20 posts ≈ $34) so postsPerMonth is the real
+     *  limit and this only trips on a runaway loop/bug — never a paying user
+     *  using the posts they bought. Raised 15→45 on 2026-07-13 after a Creator
+     *  hit the old ceiling ~halfway through her 20 posts. */
+    monthlyAiSpendCeilingUsd: 45 as number | null,
     /** Shared counter: 20 generations/mo across blog + thumbnail + metadata.
      *  Each path currently enforces its own cap at this value (true atomic
      *  shared bucket is a follow-up RPC — see TASK_X). */
@@ -185,8 +190,10 @@ export const TIERS = {
     label: 'Studio',
     price: 99,
     regularPrice: 199,
-    /** Monthly AI-spend circuit breaker (USD of real ai_usage cost) — see trial. */
-    monthlyAiSpendCeilingUsd: 40 as number | null,
+    /** Monthly AI-spend circuit breaker — sized above the full 45-post
+     *  allotment cost (~$77) so postsPerMonth is the real limit and this only
+     *  catches runaway spend. Raised 40→90 on 2026-07-13. */
+    monthlyAiSpendCeilingUsd: 90 as number | null,
     /** Shared counter: 45 generations/mo (lowered 60 → 45, 2026-06-14). Honest
      *  cap: 45 image-posts (~$28) + 30 scripts (~$3) sits comfortably under the
      *  $40 ceiling, so a Studio user can consume the FULL advertised allowance
@@ -243,12 +250,13 @@ export const TIERS = {
     price: 199,
     regularPrice: 499,
     /** Monthly AI-spend circuit breaker (USD of real ai_usage cost) — see trial.
-     *  Lowered 120 → 90 (2026-06-14 margin tune): 200 image-posts cost ~$124
-     *  so the old $120 ceiling already gated before the cap; $90 lifts Pro's
-     *  worst-case margin from 40% → ~55% while still covering ~145 image-posts
-     *  or ~180 text-posts/mo — far more than any real Pro user generates. The
-     *  spendGate ceiling, not postsPerMonth, is the true cost cap. */
-    monthlyAiSpendCeilingUsd: 90 as number | null,
+     *  Raised 90 → 200 on 2026-07-13. POLICY CHANGE: postsPerMonth is now the
+     *  real limit; this ceiling sits ABOVE the full 100-post allotment cost
+     *  (image-heavy posts ~$1.7 each → ~$171) so it only ever trips on a
+     *  runaway loop/bug, never a Pro using the posts they paid for. (The old
+     *  "$90 ceiling is the true cap" logic silently gated heavy users at ~half
+     *  their posts.) */
+    monthlyAiSpendCeilingUsd: 200 as number | null,
     /** Shared counter: 100 generations/mo (lowered 200 → 100, 2026-06-14).
      *  Honest cap: 100 image-posts (~$62) + 150 scripts (~$15) sits under the
      *  $90 ceiling, so a Pro user can consume the FULL advertised allowance
