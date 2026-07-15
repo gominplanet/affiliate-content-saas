@@ -35,6 +35,10 @@
     {
       "path": "/api/cron/partnerboost-sync",
       "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/cron/heal-thumbnails",
+      "schedule": "0 */6 * * *"
     }
   ]
 }
