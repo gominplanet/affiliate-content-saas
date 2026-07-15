@@ -4,7 +4,7 @@
  *
  * Inputs:
  *   input  string  Amazon ASIN, Amazon URL, Geniuslink, or any product URL.
- *   style  string  'first_look' | 'hands_on' | 'long_term'
+ *   style  string  'hands_on' | 'long_term'  (retired 'first_look' → hands_on)
  *
  * Tier gate: Pro / Admin only. Trial / Creator get a 403 with upgrade hint
  * (the /script page shows an upsell card instead of the generator).
@@ -42,8 +42,10 @@ import { resolveFinalUrl } from '@/lib/product-link'
 import { checkScriptUsage } from '@/lib/tier'
 import { spendGate } from '@/lib/ai-spend'
 
-type Style = 'first_look' | 'hands_on' | 'long_term'
-const VALID_STYLES: Style[] = ['first_look', 'hands_on', 'long_term']
+// 'first_look' retired 2026-07-15 — no longer offered. Incoming first_look
+// requests fall back to hands_on (see the default below).
+type Style = 'hands_on' | 'long_term'
+const VALID_STYLES: Style[] = ['hands_on', 'long_term']
 
 interface ScriptSection {
   id: string
@@ -78,8 +80,7 @@ interface ScriptPayload {
    *  side-by-side so the creator can scan and pick. */
   hooks: string[]
   sections: ScriptSection[]
-  /** Auto vertical short for hands_on + long_term — undefined for first_look
-   *  (a first_look IS the vertical). */
+  /** Auto vertical short cutdown (both styles include one). */
   shortCutdown?: ShortCutdown
 }
 
@@ -92,19 +93,6 @@ const STYLE_SPEC: Record<Style, {
   hasShort: boolean
   spine: Array<{ id: string; label: string; sec: number; scripted: boolean; note: string }>
 }> = {
-  first_look: {
-    label: 'First Look',
-    totalSec: 75,           // 60-90s vertical
-    shotCount: { min: 5, max: 7 },
-    hasShort: false,        // First Look IS the vertical — no separate cutdown
-    spine: [
-      { id: 'hook',         label: 'Hook',                sec: 8,  scripted: true,  note: 'Open on a visual surprise or trade-off tease. 1 sentence max. Picks from the 3 hook variants above.' },
-      { id: 'reveal',       label: 'Reveal',              sec: 12, scripted: false, note: 'Name the product (no price). 1-2 lines. What it is, who it is for — fast.' },
-      { id: 'first_impression', label: 'First Impression', sec: 25, scripted: false, note: 'Hands on it. Build quality + feel in 2-3 specific beats. Skip generic "feels premium" — say WHY.' },
-      { id: 'verdict',      label: 'Quick Verdict',       sec: 25, scripted: true,  note: '"Worth it if... not for you if..." Bundles the trade-off into the recommendation. No separate cons block.' },
-      { id: 'close',        label: 'Close',               sec: 5,  scripted: true,  note: '1 line. NO mention of links / subscribe / description. Just a clean ending beat.' },
-    ],
-  },
   hands_on: {
     label: 'Hands-On Test',
     totalSec: 300,          // 5 min target (range 3-6 min)
@@ -158,8 +146,8 @@ export async function POST(req: Request) {
   if (!input) return NextResponse.json({ error: 'Paste an Amazon ASIN or product URL.' }, { status: 400 })
 
   // Default to hands_on (the 3-6 min "decision moment" review — the main one
-  // creators reach for). first_look is the vertical-only style; long_term is
-  // the 8-12 min deep dive after weeks of use.
+  // creators reach for); long_term is the 8-12 min deep dive after weeks of
+  // use. Retired 'first_look' requests also land here.
   const style: Style = VALID_STYLES.includes(body.style as Style) ? (body.style as Style) : 'hands_on'
 
   // ── Tier + monthly cap gate ───────────────────────────────────────────────

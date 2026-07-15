@@ -3,10 +3,10 @@
 /**
  * Video Script & Shot List generator — UGC pre-production tool.
  *
- * Styles (2026-05-28 reframe — time-based, mapped to buyer-research stage):
- *   • First Look — 60-90s vertical, the just-got-it teaser
+ * Styles (time-based, mapped to buyer-research stage):
  *   • Hands-On Test — 3-6 min horizontal master + auto vertical short cutdown
  *   • Long-Term Review — 8-12 min horizontal + auto vertical short cutdown
+ * (First Look retired 2026-07-15 — kept in STYLE_META only so old rows render.)
  *
  * Pro-only feature. 30 generations / UTC calendar month. Trial / Creator see
  * an upsell card instead of the generator.
@@ -36,9 +36,11 @@ import {
   Hand, Calendar, Lock, ArrowUpRight, Lightbulb,
 } from 'lucide-react'
 
-// New style enum + legacy compatibility for rows generated before the rebuild.
-type Style = 'first_look' | 'hands_on' | 'long_term'
-type LegacyStyle = 'unboxing' | 'quick_test' | 'full_review'
+// Selectable style enum + legacy compatibility for rows generated before the
+// rebuild. 'first_look' retired 2026-07-15 → moved to LegacyStyle so old rows
+// still render but it's no longer offered in the picker.
+type Style = 'hands_on' | 'long_term'
+type LegacyStyle = 'first_look' | 'unboxing' | 'quick_test' | 'full_review'
 type AnyStyle = Style | LegacyStyle
 
 interface ScriptSection {
@@ -95,18 +97,18 @@ interface UsageInfo {
 }
 
 const STYLE_META: Record<AnyStyle, { label: string; tag: string; runtime: string; icon: typeof Smartphone; accent: string }> = {
-  // New (post 2026-05-28)
-  first_look: { label: 'First Look',       tag: 'Just got it',         runtime: '60-90 sec',  icon: Smartphone, accent: '#5856d6' },
+  // Selectable styles
   hands_on:   { label: 'Hands-On Test',    tag: 'Decision moment',     runtime: '3-6 min',    icon: Hand,       accent: '#7C3AED' },
   long_term:  { label: 'Long-Term Review', tag: 'After weeks of use',  runtime: '8-12 min',   icon: Calendar,   accent: '#34c759' },
-  // Legacy — kept for old rows so the recent strip doesn't crash. Not
-  // selectable from the style picker.
+  // Legacy / retired — kept for old rows so the recent strip doesn't crash.
+  // Not selectable from the style picker.
+  first_look:  { label: 'First Look',  tag: 'Legacy',               runtime: '60-90 sec',  icon: Smartphone, accent: '#8e8e93' },
   unboxing:    { label: 'Unboxing',    tag: 'Legacy',               runtime: '~4 min',     icon: Smartphone, accent: '#8e8e93' },
   quick_test:  { label: 'Quick Test',  tag: 'Legacy',               runtime: '~6 min',     icon: Hand,       accent: '#8e8e93' },
   full_review: { label: 'Full Review', tag: 'Legacy',               runtime: '~12 min',    icon: Calendar,   accent: '#8e8e93' },
 }
 
-const NEW_STYLES: Style[] = ['first_look', 'hands_on', 'long_term']
+const NEW_STYLES: Style[] = ['hands_on', 'long_term']
 
 function fmtDuration(sec: number): string {
   if (sec < 60) return `${sec}s`
@@ -258,7 +260,7 @@ export default function ScriptPage() {
       <FeatureLockedCard
         icon={<FileText size={28} strokeWidth={1.8} />}
         feature="Video Script & Shot List"
-        description="Paste a product, pick a style (First Look / Hands-On / Long-Term), and get a film-ready script in your voice. Built on a UGC review playbook with scripted hook + verdict, talking-point middle, and a subject-only shot list."
+        description="Paste a product, pick a style (Hands-On / Long-Term), and get a film-ready script in your voice. Built on a UGC review playbook with scripted hook + verdict, talking-point middle, and a subject-only shot list."
         bullets={[
           '3 hook variants per generation — pick the one that fits',
           'Scripted hook + verdict (word-for-word) + talking-point middle',
@@ -302,7 +304,7 @@ export default function ScriptPage() {
             />
 
             <label className="block text-xs font-medium text-[#3a3a3c] dark:text-[#d2d2d7] mb-2">Style</label>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">
               {NEW_STYLES.map(s => {
                 const meta = STYLE_META[s]
                 const Icon = meta.icon
@@ -460,7 +462,7 @@ function UpsellCard({ usage }: { usage: UsageInfo }) {
           {usage.reason || 'Video scripts are a Pro feature.'} Paste a product, pick a style, get a film-ready script written in your brand voice — applying a UGC review playbook built with seasoned creators so the structure, hooks, and verdict land the way reviews actually convert.
         </p>
         <ul className="text-[13px] text-[#3a3a3c] dark:text-[#d2d2d7] mb-5 flex flex-col gap-1.5 max-w-lg">
-          <li className="flex items-start gap-2"><CheckCircle size={13} className="text-[#34c759] flex-shrink-0 mt-0.5" /> <span>First Look · Hands-On Test · Long-Term Review — three time-based styles</span></li>
+          <li className="flex items-start gap-2"><CheckCircle size={13} className="text-[#34c759] flex-shrink-0 mt-0.5" /> <span>Hands-On Test · Long-Term Review — time-based styles</span></li>
           <li className="flex items-start gap-2"><CheckCircle size={13} className="text-[#34c759] flex-shrink-0 mt-0.5" /> <span>Vertical short cutdown written fresh — not lifted from the long master</span></li>
           <li className="flex items-start gap-2"><CheckCircle size={13} className="text-[#34c759] flex-shrink-0 mt-0.5" /> <span>30 generations per month — comfortably 2 per business day</span></li>
         </ul>
