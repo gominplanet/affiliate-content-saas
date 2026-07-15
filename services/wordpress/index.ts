@@ -732,6 +732,19 @@ export class WordPressService {
         signal: AbortSignal.timeout(90_000),
       })
 
+    // Body-auth proxy FIRST (plugin v1.0.69+): image uploads ride the SAME
+    // header-strip-proof, App-Password-independent path post writes already
+    // use. This fixes thumbnail-less posts on hosts that strip the
+    // Authorization header (Basic auth never reaches WP → 401) or where the
+    // App Password went stale (both the Basic and nonce fallbacks below depend
+    // on it, but the proxy authenticates with the separate posting key). On an
+    // older plugin or if the proxy can't handle it, this returns null and we
+    // fall through to the legacy Basic-auth + nonce flow.
+    if (this.apiToken) {
+      const viaProxy = await this.tryProxyMediaUpload(buffer, filename, contentType)
+      if (viaProxy) return viaProxy
+    }
+
     // Pace media uploads alongside post writes — they hit /wp/v2/media on the
     // same host and add to the burst a WAF rate-limiter counts. (mediaUpload
     // has its own fetch, so it doesn't inherit request()'s pacing.)
@@ -758,6 +771,44 @@ export class WordPressService {
       throw new Error(`WP media upload ${res.status}: ${body.slice(0, 300)}`)
     }
     return parseWpJson<WPMediaResponse>(res)
+  }
+
+  /** Upload an image through the body-auth proxy (plugin v1.0.69+): the bytes
+   *  ride in a base64 JSON field, so no Authorization header and no App
+   *  Password is involved — the proxy authenticates with the posting key and
+   *  creates the attachment as the site admin. Returns null (→ caller falls
+   *  back to Basic+nonce) whenever the proxy can't do it: no posting key, plugin
+   *  too old (no media handler → dispatches an empty /wp/v2/media call that
+   *  errors without an id), a WAF/HTML challenge, or a bad token. */
+  private async tryProxyMediaUpload(buffer: Buffer, filename: string, contentType: string): Promise<WPMediaResponse | null> {
+    if (!this.apiToken) return null
+    await paceWrite(this.siteUrl)
+    try {
+      const res = await fetch(`${this.siteUrl}/wp-json/affiliateos/v1/proxy`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+        },
+        body: JSON.stringify({
+          token: this.apiToken,
+          method: 'POST',
+          path: '/wp/v2/media',
+          media: { filename, content_type: contentType, data: buffer.toString('base64') },
+        }),
+        signal: AbortSignal.timeout(90_000),
+      })
+      if (!res.ok) return null
+      const ct = res.headers.get('content-type') || ''
+      if (!ct.includes('application/json')) return null
+      const data = await res.json() as WPMediaResponse
+      // Older plugins ignore `media`, dispatch an empty POST /wp/v2/media, and
+      // return an error object with no id — treat a missing numeric id as a
+      // miss so we fall back to the legacy path.
+      return (data && typeof (data as { id?: number }).id === 'number') ? data : null
+    } catch {
+      return null
+    }
   }
 
   async uploadImageFromBase64(b64: string, filename: string, mimeType = 'image/png'): Promise<WPMediaResponse> {

@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.68
+ * Version: 1.0.69
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -2968,6 +2968,19 @@ if (!function_exists('mvp_affiliate_rest_proxy')) {
         if (!$allowed) {
             return new WP_REST_Response(['code' => 'forbidden_path', 'message' => 'Proxy route not in allowlist.'], 403);
         }
+
+        // ── Media upload over the proxy (v1.0.69+) ───────────────────────────
+        // A REST media upload needs FILE params, which rest_do_request() can't
+        // carry from a JSON envelope. So when the dashboard sends a base64 image
+        // for /wp/v2/media, create the attachment directly (as the admin set
+        // above). This lets image uploads ride the same header-strip-proof,
+        // App-Password-independent path as post writes — fixing thumbnail-less
+        // posts on hosts that strip Authorization or where the App Password went
+        // stale (the proxy authenticates with the separate posting key).
+        if ($method === 'POST' && $path === '/wp/v2/media' && !empty($body['media']) && is_array($body['media'])) {
+            return mvp_affiliate_proxy_media_upload($body['media']);
+        }
+
         $inner = new WP_REST_Request($method, $path);
         if (!empty($body['body']) && is_array($body['body'])) {
             $inner->set_body_params($body['body']);
@@ -2986,6 +2999,79 @@ if (!function_exists('mvp_affiliate_rest_proxy')) {
         $status = method_exists($response, 'get_status') ? $response->get_status() : 200;
         $data = method_exists($response, 'get_data') ? $response->get_data() : null;
         return new WP_REST_Response($data, $status);
+    }
+}
+
+if (!function_exists('mvp_affiliate_proxy_media_upload')) {
+    /**
+     * Create a media attachment from a base64 payload sent through /proxy.
+     * Runs as the administrator already established by the proxy caller, so
+     * capability checks pass exactly as a real admin upload would. Returns the
+     * same { id, source_url } shape the REST media controller returns, so the
+     * dashboard's existing response parsing is unchanged. (v1.0.69+)
+     */
+    function mvp_affiliate_proxy_media_upload($media) {
+        $filename = isset($media['filename']) ? sanitize_file_name((string) $media['filename']) : '';
+        $b64      = isset($media['data']) ? (string) $media['data'] : '';
+        if ($filename === '' || $b64 === '') {
+            return new WP_REST_Response(['code' => 'bad_media', 'message' => 'filename and data are required.'], 400);
+        }
+        $bytes = base64_decode($b64, true);
+        if ($bytes === false || strlen($bytes) === 0) {
+            return new WP_REST_Response(['code' => 'bad_media', 'message' => 'data is not valid base64.'], 400);
+        }
+        // Size cap — hero/thumbnail images only. 12 MB is generous.
+        if (strlen($bytes) > 12 * 1024 * 1024) {
+            return new WP_REST_Response(['code' => 'too_large', 'message' => 'Image exceeds 12 MB.'], 413);
+        }
+        // MIME allowlist — images only. Sniff the real bytes; never trust the
+        // client-declared type. Reject anything that isn't a known image so a
+        // leaked posting key can't drop a PHP file into uploads.
+        $mime = '';
+        if (function_exists('finfo_open')) {
+            $finfo = finfo_open(FILEINFO_MIME_TYPE);
+            if ($finfo) { $mime = (string) finfo_buffer($finfo, $bytes); finfo_close($finfo); }
+        }
+        if ($mime === '' && function_exists('getimagesizefromstring')) {
+            $info = @getimagesizefromstring($bytes);
+            if (is_array($info) && !empty($info['mime'])) $mime = (string) $info['mime'];
+        }
+        $allowed = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/gif' => 'gif', 'image/webp' => 'webp'];
+        if (!isset($allowed[$mime])) {
+            return new WP_REST_Response(['code' => 'bad_mime', 'message' => 'Only JPEG/PNG/GIF/WebP images are allowed.'], 415);
+        }
+        // Force the extension to match the sniffed type so WP stores it cleanly.
+        $base = preg_replace('/\.[A-Za-z0-9]+$/', '', $filename);
+        if ($base === '') $base = 'image';
+        $filename = $base . '.' . $allowed[$mime];
+
+        // Write into the uploads dir via WP's own helper (year/month folder +
+        // unique-filename handling).
+        $upload = wp_upload_bits($filename, null, $bytes);
+        if (!is_array($upload) || !empty($upload['error'])) {
+            return new WP_REST_Response(['code' => 'upload_failed', 'message' => is_array($upload) ? (string) $upload['error'] : 'wp_upload_bits failed.'], 500);
+        }
+
+        require_once ABSPATH . 'wp-admin/includes/image.php';
+        require_once ABSPATH . 'wp-admin/includes/media.php';
+
+        $attach_id = wp_insert_attachment([
+            'post_mime_type' => $mime,
+            'post_title'     => sanitize_text_field($base),
+            'post_content'   => '',
+            'post_status'    => 'inherit',
+        ], $upload['file']);
+        if (is_wp_error($attach_id) || !$attach_id) {
+            @unlink($upload['file']);
+            return new WP_REST_Response(['code' => 'attach_failed', 'message' => 'Could not create attachment.'], 500);
+        }
+        $meta = wp_generate_attachment_metadata($attach_id, $upload['file']);
+        if (is_array($meta)) wp_update_attachment_metadata($attach_id, $meta);
+
+        return new WP_REST_Response([
+            'id'         => (int) $attach_id,
+            'source_url' => wp_get_attachment_url($attach_id),
+        ], 201);
     }
 }
 

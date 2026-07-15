@@ -30,5 +30,8 @@ talk to your site.
 
 == Changelog ==
 
+= 1.0.69 =
+* Body-auth proxy now handles image uploads, so featured thumbnails and in-article images post reliably on hosts that strip the Authorization header (they no longer depend on the Application Password).
+
 = 1.0.0 =
 * Initial release
