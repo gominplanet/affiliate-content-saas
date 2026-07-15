@@ -344,6 +344,21 @@ export async function GET(request: Request) {
   // (The per-row inSitemap is still per-site accurate; this is the global
   // UI flag for the "couldn't read your sitemap" banner.)
   const anySitemapFound = Array.from(siteCache.values()).some(c => c?.sitemapFound === true)
+
+  // Count posts whose featured thumbnail failed to upload (migration 177) so the
+  // SEO page can show a "N posts missing thumbnails · Re-attach" banner. Cheap
+  // partial-index count; drift-safe (0 if the column isn't applied yet).
+  let thumbnailBlocked = 0
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { count } = await (supabase as any)
+      .from('blog_posts')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', ownerId)
+      .eq('thumbnail_blocked', true)
+    thumbnailBlocked = count || 0
+  } catch { /* column may not exist yet */ }
+
   const summary = {
     total,
     avgScore,
@@ -352,6 +367,7 @@ export async function GET(request: Request) {
     unknown: out.filter(r => r.indexed === null).length,
     notInSitemap: out.filter(r => r.inSitemap === false).length,
     recentlyDropped,
+    thumbnailBlocked,
     sitemapFound: anySitemapFound,
     totalClicks: out.reduce((s, r) => s + (r.clicks as number), 0),
     totalImpressions: out.reduce((s, r) => s + (r.impressions as number), 0),

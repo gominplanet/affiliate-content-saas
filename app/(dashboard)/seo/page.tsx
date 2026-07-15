@@ -12,7 +12,8 @@ import { generateBlogRequest } from '@/lib/blog-generate-client'
 import OpportunitiesPanel from '@/components/seo/OpportunitiesPanel'
 import Link from 'next/link'
 import PageHero from '@/components/layout/PageHero'
-import { Gauge, Loader2, RefreshCw, ExternalLink, CheckCircle, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight, Wand2, X, Zap, Youtube, DollarSign } from 'lucide-react'
+import { Gauge, Loader2, RefreshCw, ExternalLink, CheckCircle, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight, Wand2, X, Zap, Youtube, DollarSign, ImageOff } from 'lucide-react'
+import { toast } from 'sonner'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { type Tier } from '@/lib/tier'
 import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
@@ -37,7 +38,7 @@ interface PostRow {
 }
 interface Overview {
   connected: boolean; property: string | null
-  summary: { total: number; avgScore: number; indexed: number; notIndexed: number; unknown: number; notInSitemap: number; recentlyDropped: number; sitemapFound: boolean; totalClicks: number; totalImpressions: number }
+  summary: { total: number; avgScore: number; indexed: number; notIndexed: number; unknown: number; notInSitemap: number; recentlyDropped: number; thumbnailBlocked: number; sitemapFound: boolean; totalClicks: number; totalImpressions: number }
   posts: PostRow[]
 }
 
@@ -160,6 +161,25 @@ export default function SeoPage() {
     finally { setLoading(false) }
   }, [])
   useEffect(() => { load() }, [load])
+
+  // Re-attach missing thumbnails: heals published posts whose featured image
+  // failed to upload (host was blocking WP media uploads). Idempotent + safe to
+  // click anytime; reloads the overview so the banner clears as they're fixed.
+  const [reattaching, setReattaching] = useState(false)
+  const reattachThumbnails = useCallback(async () => {
+    setReattaching(true)
+    try {
+      const res = await fetch('/api/blog/reattach-thumbnails', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+      const d = await res.json()
+      if (!res.ok) { toast.error(d.error || 'Couldn’t re-attach thumbnails.'); return }
+      if (d.fixed > 0 && d.stillBlocked === 0) toast.success(`Re-attached ${d.fixed} thumbnail${d.fixed !== 1 ? 's' : ''}. ✅`)
+      else if (d.fixed > 0) toast.success(`Re-attached ${d.fixed}, but ${d.stillBlocked} still blocked — your host is likely still rejecting uploads.`)
+      else if (d.stillBlocked > 0) toast.error(`Still blocked on ${d.stillBlocked} post${d.stillBlocked !== 1 ? 's' : ''} — your host is rejecting image uploads. Allowlist /wp-json/wp/v2/media, then retry.`)
+      else toast.success('All thumbnails are already in place.')
+      await load()
+    } catch { toast.error('Couldn’t reach the server.') }
+    finally { setReattaching(false) }
+  }, [load])
 
   // One-time repair: pull live bodies from WordPress for legacy/imported posts
   // whose stored body is empty (they score near-zero). After it runs, reload so
@@ -773,6 +793,31 @@ export default function SeoPage() {
                   className="inline-flex items-center gap-1.5 text-xs font-semibold text-white px-3 py-1.5 rounded-lg bg-[#ff9500] hover:opacity-90 disabled:opacity-60 transition-opacity"
                 >
                   {pinging ? <><Loader2 size={12} className="animate-spin" /> Refreshing…</> : <><Zap size={12} /> Refresh sitemap &amp; ping engines</>}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Missing-thumbnail warning — posts that published without a featured
+              image because the host blocked the upload (WAF/plugin on /wp/v2/media,
+              or the connected WP user losing upload permission). One click heals
+              the whole backlog once the host is unblocked. */}
+          {data.summary.thumbnailBlocked > 0 && (
+            <div className="card p-4 border border-[#ff9500]/30 bg-[#ff9500]/5 flex items-start gap-3">
+              <ImageOff size={16} className="text-[#ff9500] mt-0.5 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-0.5">
+                  {data.summary.thumbnailBlocked} post{data.summary.thumbnailBlocked !== 1 ? 's' : ''} published without a thumbnail
+                </p>
+                <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-2 leading-relaxed">
+                  The post{data.summary.thumbnailBlocked !== 1 ? 's' : ''} published fine, but the featured image couldn’t be uploaded — usually your host’s firewall or a security plugin blocking image uploads via the API. First test it: in <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">wp-admin → Media → Add New</strong>, try uploading any image. If that’s blocked, allowlist the <code>/wp-json/wp/v2/media</code> endpoint (or confirm your connected WordPress user can upload files). Then re-attach — it skips anything already fixed, so it’s safe to run anytime.
+                </p>
+                <button
+                  onClick={reattachThumbnails}
+                  disabled={reattaching}
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-white px-3 py-1.5 rounded-lg bg-[#ff9500] hover:opacity-90 disabled:opacity-60 transition-opacity"
+                >
+                  {reattaching ? <><Loader2 size={12} className="animate-spin" /> Re-attaching…</> : <><ImageOff size={12} /> Re-attach missing thumbnails</>}
                 </button>
               </div>
             </div>

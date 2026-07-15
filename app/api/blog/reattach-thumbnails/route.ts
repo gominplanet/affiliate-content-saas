@@ -68,6 +68,11 @@ export async function POST(req: Request) {
   const base = site.wordpress_url.replace(/\/+$/, '')
   let checked = 0, fixed = 0, alreadyOk = 0, stillBlocked = 0
   const failures: Array<{ wpPostId: number; title: string; reason: string }> = []
+  // Keep the thumbnail_blocked marker (migration 177) honest so the SEO banner +
+  // admin alert reflect reality: clear it on posts that now have a thumbnail,
+  // set it on posts still being rejected.
+  const nowFixedIds: number[] = []
+  const stillBlockedIds: number[] = []
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   for (const p of (posts ?? []) as any[]) {
@@ -84,7 +89,7 @@ export async function POST(req: Request) {
       })
       if (res.ok) {
         const j = (await res.json()) as { featured_media?: number }
-        if (j.featured_media && j.featured_media > 0) { alreadyOk++; continue }
+        if (j.featured_media && j.featured_media > 0) { alreadyOk++; nowFixedIds.push(wpId); continue }
       }
       // Upload the hero (custom blog thumb wins, else the YT thumb with a
       // maxres→hqdefault fallback), then attach it as featured_media ONLY.
@@ -100,9 +105,11 @@ export async function POST(req: Request) {
       }
       await wpService.updatePost(wpId, { featured_media: media.id })
       fixed++
+      nowFixedIds.push(wpId)
     } catch (err) {
       // Almost always the host still blocking the media upload.
       stillBlocked++
+      stillBlockedIds.push(wpId)
       if (failures.length < 10) {
         failures.push({
           wpPostId: wpId,
@@ -111,6 +118,17 @@ export async function POST(req: Request) {
         })
       }
     }
+  }
+
+  // Sync the durable marker. Best-effort + column-drift-safe (177 may not be
+  // applied yet) — never fail the heal on a marker write.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sb = supabase as any
+  if (nowFixedIds.length) {
+    try { await sb.from('blog_posts').update({ thumbnail_blocked: false }).eq('user_id', ownerId).in('wordpress_post_id', nowFixedIds) } catch { /* non-fatal / column may not exist */ }
+  }
+  if (stillBlockedIds.length) {
+    try { await sb.from('blog_posts').update({ thumbnail_blocked: true }).eq('user_id', ownerId).in('wordpress_post_id', stillBlockedIds) } catch { /* non-fatal */ }
   }
 
   return NextResponse.json({ ok: true, checked, fixed, alreadyOk, stillBlocked, failures })

@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import PageHero from '@/components/layout/PageHero'
 import { generateBlogRequest } from '@/lib/blog-generate-client'
-import { RefreshCw, Trash2, AlertCircle, ChevronDown, ChevronRight, CheckCircle2, Loader2 } from 'lucide-react'
+import { RefreshCw, Trash2, AlertCircle, ChevronDown, ChevronRight, CheckCircle2, Loader2, ImageOff } from 'lucide-react'
 
 type JobType = 'blog_generation' | 'wp_publish' | 'social_draft' | 'youtube_sync'
 type FailureStatus = 'pending_retry' | 'retrying' | 'resolved' | 'dismissed'
@@ -206,6 +206,44 @@ function FailureRow({
   )
 }
 
+// Ops alert: sites whose new posts are publishing WITHOUT a thumbnail because
+// the host is blocking WP media uploads (blog_posts.thumbnail_blocked). Lets us
+// reach out before the user notices. Self-contained; renders nothing when clean.
+function ThumbnailBlocksPanel() {
+  const [sites, setSites] = useState<Array<{ userId: string; host: string; blocked: number }>>([])
+  const [loaded, setLoaded] = useState(false)
+  useEffect(() => {
+    fetch('/api/admin/thumbnail-blocks')
+      .then(r => r.json())
+      .then(d => { if (Array.isArray(d.sites)) setSites(d.sites) })
+      .catch(() => {})
+      .finally(() => setLoaded(true))
+  }, [])
+  if (!loaded || sites.length === 0) return null
+  const total = sites.reduce((s, x) => s + x.blocked, 0)
+  return (
+    <div className="card p-4 border border-[#ff9500]/30 bg-[#ff9500]/5 mb-5">
+      <div className="flex items-center gap-2 mb-2">
+        <ImageOff size={16} className="text-[#ff9500]" />
+        <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+          Thumbnail uploads blocked · {total} post{total !== 1 ? 's' : ''} across {sites.length} site{sites.length !== 1 ? 's' : ''}
+        </p>
+      </div>
+      <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3 leading-relaxed">
+        These sites are publishing posts with no featured image — almost always a host firewall / security plugin blocking uploads to <code>/wp-json/wp/v2/media</code>. Reach out so they allowlist it, then they can hit “Re-attach missing thumbnails” on their SEO page.
+      </p>
+      <div className="flex flex-col gap-1">
+        {sites.slice(0, 20).map(s => (
+          <div key={s.userId} className="flex items-center justify-between text-xs py-1 border-t border-[#ff9500]/10">
+            <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7] truncate">{s.host}</span>
+            <span className="text-[#ff9500] font-semibold flex-shrink-0 ml-3">{s.blocked} blocked</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function FailuresPage() {
   const [failures, setFailures] = useState<Failure[]>([])
   const [loading, setLoading] = useState(true)
@@ -274,6 +312,8 @@ export default function FailuresPage() {
           )
         }
       />
+
+      <ThumbnailBlocksPanel />
 
       {/* Filters */}
       <div className="flex items-center gap-1.5 mb-5">

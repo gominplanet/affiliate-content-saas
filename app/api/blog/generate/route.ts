@@ -1669,6 +1669,11 @@ async function handleGenerate(request: Request) {
     ai_model: 'claude-opus-4-8', // matches the #248 writer upgrade (was stale 'claude-sonnet-4-6')
     generation_prompt_version: 'v3.0',
     published_at: new Date().toISOString(),
+    // Record the thumbnail-upload outcome — but ONLY on a fresh generate, since
+    // that's the only path that actually attempts the upload (rewrites skip it,
+    // so they must not clobber a prior post's flag). Cleared by the re-attach
+    // heal once the image finally lands.
+    ...(!existingWpPostId ? { thumbnail_blocked: thumbnailBlocked } : {}),
     image_prompts: generated.imagePrompts,
     ...(geniuslinkCode ? { geniuslink_code: geniuslinkCode } : {}),
     // Track rewrite usage so the next attempt on the same post can be
@@ -1700,12 +1705,15 @@ async function handleGenerate(request: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const stripScheduleKeys = (p: any) => {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { scheduled_for, schedule_mode, ...rest } = p
+    const { scheduled_for, schedule_mode, thumbnail_blocked, ...rest } = p
     return rest
   }
+  // Also matches thumbnail_blocked (migration 177) — same drift safety net: if a
+  // DB hasn't run the migration yet, strip the optional column and retry so the
+  // post still saves (the flag just won't persist until the migration runs).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const isMissingColumn104 = (err: any) =>
-    err && typeof err.message === 'string' && /column .* (scheduled_for|schedule_mode).* does not exist/i.test(err.message)
+    err && typeof err.message === 'string' && /column .* (scheduled_for|schedule_mode|thumbnail_blocked).* does not exist/i.test(err.message)
   if (ep?.id) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let { data, error: upErr } = await (supabase as any)
