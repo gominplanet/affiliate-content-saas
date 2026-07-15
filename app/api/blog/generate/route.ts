@@ -1546,8 +1546,23 @@ async function handleGenerate(request: Request) {
   // into the article body, because the post already embeds the YouTube video
   // and a duplicate image at the top would be redundant.
   const customBlogThumb = ((v as Record<string, unknown>).blog_thumbnail_url as string | null)?.trim() || null
+  // Surfaced in the response (below) so a blocked thumbnail is VISIBLE instead
+  // of vanishing. If the host rejects the media upload (WAF/security plugin
+  // blocking /wp/v2/media, or the connected WP user losing the upload_files
+  // capability), the old code swallowed it and published a thumbnail-less post
+  // with zero signal — invisible for days (see jdtheot.com, 2026-07). We now
+  // retry once, then flag it; /api/blog/reattach-thumbnails heals the backlog
+  // once the host is unblocked.
+  let thumbnailBlocked = false
   if (!existingWpPostId) {
-    try {
+    // One upload+attach attempt. CRITICAL: preserve the WP status from
+    // createPost. When the post was created as 'future' (wp-native scheduling)
+    // or 'draft' (draft-flip), hardcoding 'publish' here would force the post
+    // live immediately, breaking the schedule. For 'future' status, re-send
+    // `date` so WordPress doesn't reset the scheduled timestamp (a REST PATCH
+    // without a date on a future post can drift post_date to "now" on some WP
+    // versions).
+    const setFeaturedThumb = async (): Promise<void> => {
       let media
       if (customBlogThumb) {
         media = await wpService.uploadImageFromUrl(customBlogThumb, `${youtubeVideoId}-blogthumb.jpg`)
@@ -1560,21 +1575,35 @@ async function handleGenerate(request: Request) {
           media = await wpService.uploadImageFromUrl(fallback, `${youtubeVideoId}.jpg`)
         }
       }
-      // CRITICAL: preserve the WP status from createPost. When the post was
-      // created as 'future' (wp-native scheduling) or 'draft' (draft-flip),
-      // hardcoding 'publish' here would force the post live immediately,
-      // breaking the schedule. Only flip to 'publish' for non-scheduled
-      // posts (where wpStatus is 'publish' anyway). For 'future' status,
-      // re-send `date` so WordPress doesn't reset the scheduled timestamp
-      // — REST PATCH without a date on a future post can drift the
-      // post_date to "now" on some WP versions.
       await wpService.updatePost(wpPost.id, {
         title: generated.title, slug, content, excerpt: generated.excerpt,
         status: wpStatus,
         ...(wpStatus === 'future' && scheduledForIso ? { date: scheduledForIso } : {}),
         tags: tagIds, featured_media: media.id,
       })
-    } catch { /* non-fatal — post is already published without thumbnail */ }
+    }
+    try {
+      await setFeaturedThumb()
+    } catch {
+      // Retry once — a single transient WAF rate-limit / write-pacing hiccup
+      // is common on an image-heavy publish, and a short wait usually clears
+      // it. This alone recovers the flaky cases for everyone.
+      await new Promise((r) => setTimeout(r, 1500))
+      try {
+        await setFeaturedThumb()
+      } catch (err) {
+        // Still failing after a retry — the host is almost certainly rejecting
+        // the media upload. Do NOT swallow it: log it (observable in prod) and
+        // flag the response so the UI can tell the user + offer the re-attach.
+        thumbnailBlocked = true
+        let host = ''
+        try { host = new URL(site.wordpress_url || '').host } catch { /* ignore */ }
+        console.error('[blog-thumbnail] featured-image upload BLOCKED — post published without a thumbnail', {
+          ownerId, wpPostId: wpPost.id, host,
+          reason: (err instanceof Error ? err.message : String(err)).slice(0, 200),
+        })
+      }
+    }
   }
 
   // ── 9. Save to blog_posts (upsert so re-generates update the WP post ID) ──
@@ -2389,6 +2418,11 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
     title: generated.title,
     productUrl,
     hasImages: includeImages,
+    // True when the post published but the featured thumbnail could NOT be
+    // uploaded to WordPress (host WAF/plugin blocking /wp/v2/media, or the
+    // connected WP user lost the upload_files cap). The UI surfaces this so it
+    // isn't silent; /api/blog/reattach-thumbnails heals it once unblocked.
+    thumbnailBlocked,
     // false when both transcript sources failed; the article was grounded on
     // description + product info only. The client can show a soft notice —
     // the post is fine, just a bit shorter / less specific.
