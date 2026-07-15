@@ -849,61 +849,31 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
   // Fire IndexNow (Bing / Copilot / Yandex) — best-effort, non-blocking.
   void pingIndexNowForUrl(supabase, ownerId, wpPost.link, siteId).catch(() => {})
 
-  // ── Hallucination guard pass (parity with blog/generate, 2026-06-09) ───────
-  // Multi-product comparison posts have the SAME hallucination risk as a
-  // single-product review — the writer can invent specs, accessory lists, or
-  // "multi-function" claims for any of the N products. factCheckAndGuard runs
-  // both layers in ONE Haiku call (cost #2, 2026-06-14): the broad pass
-  // (identity + price + spec lies) AND the narrow cite-or-omit classes (numeric
-  // specs, model numbers, materials, certs, accessory lists, 2-in-1 identity
-  // claims).
+  // ── Save the blog_posts row FIRST — right after publish, BEFORE the ────────
+  //    post-publish fact-check pass.
   //
-  // Source budget concatenates all transcripts + descriptions across the
-  // products. Same per-source slicing as the helpers expect (transcript +
-  // productResearch are passed as concatenated strings). Best-effort: any
-  // failure leaves the original body. Both helpers have internal length +
-  // affiliate-link safety guards.
-  let bodyAfterChecks = body
-  try {
-    const claudeSvc = createClaudeService()
-    // Concatenate per-product transcripts with a separator so the model can
-    // tell them apart. Same for productResearch (descriptions + bullets).
-    const combinedTranscript = resolved
-      .map(p => `── ${p.productName} ──\n${(p.transcript || '').slice(0, 4500)}`)
-      .join('\n\n')
-      .slice(0, 18000)
-    const combinedResearch = resolved
-      .map(p => `── ${p.productName} ──\nDescription: ${(p.description || '').slice(0, 600)}\nBullets:\n${(p.bullets || []).slice(0, 10).join('\n')}`)
-      .join('\n\n')
-      .slice(0, 2500)
-
-    try {
-      const checked = await claudeSvc.factCheckAndGuard(bodyAfterChecks, combinedTranscript, combinedResearch, { userId: user.id, tier })
-      if (checked && checked !== bodyAfterChecks) bodyAfterChecks = scrub(checked)
-    } catch { /* non-fatal */ }
-
-    // Only push the corrected text back to WordPress if something actually
-    // changed — avoids an unnecessary WP write on the (common) clean pass.
-    if (bodyAfterChecks !== body) {
-      try { await wpService.updatePost(wpPost.id, { content: bodyAfterChecks }) } catch { /* keep prior text */ }
-    }
-  } catch { /* non-fatal — published post stands */ }
-
-  // ── Save blog_posts row (post_type distinguishes it; counts as 1 post) ──────
+  // Why the order matters: a multi-product guide runs the resolver N times +
+  // the writer + a hero image, so a 7-product guide can burn most of the 300s
+  // function budget BEFORE we even get here. The old order published to WP and
+  // THEN (after an ~18K-char factCheckAndGuard Haiku call + a possible second
+  // WP write) inserted the row last — so if the function was killed anywhere in
+  // that window, the post went live on WordPress but never got a local row.
+  // Result: an orphaned guide (no Library entry, no dedup key, no Rebuild),
+  // exactly the "published fine but missing from the app" symptom. Saving here
+  // guarantees the row exists the instant the post is live; the fact-check
+  // below then patches BOTH WordPress and this row in place if it changes text.
+  //
   // video_id is a uuid FK to youtube_videos — a multi-video guide/comparison
   // has no single canonical video, so it's NULL (like campaign posts; migration
-  // 024 made it nullable). The OLD code wrote resolved[0].videoId here — the
-  // 11-char YouTube id — into the uuid column, which failed the ENTIRE insert
-  // silently, so these posts were never tracked locally (no Recent-guides row,
-  // no dedup data). NULL also dodges the unique(user_id, video_id) clash with
-  // an existing single-video review of the same first video. The real line-up
-  // lives in source_video_ids (the dedup key).
+  // 024 made it nullable). The real line-up lives in affiliate_keywords (the
+  // sorted source video-id set — the dedup key).
+  let savedRowId: string | null = rebuildRowId
   if (rebuildRowId) {
     // Rebuild: UPDATE the existing row in place (don't insert a duplicate).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (supabase as any).from('blog_posts').update({
       title,
-      content: bodyAfterChecks,
+      content: body,
       excerpt: scrub(parsed.meta_description),
       affiliate_keywords: videoIdSig,
       ai_model: 'claude-sonnet-4-6',
@@ -912,12 +882,12 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
     }).eq('id', rebuildRowId).eq('user_id', ownerId)
   } else {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from('blog_posts').insert({
+    const { data: savedRow } = await (supabase as any).from('blog_posts').insert({
       user_id: ownerId,
       video_id: null,
       title,
       slug,
-      content: bodyAfterChecks,
+      content: body,
       excerpt: scrub(parsed.meta_description),
       status: 'published',
       post_type: mode,
@@ -933,8 +903,54 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
       ai_model: 'claude-sonnet-4-6',
       generation_prompt_version: 'comparison-v2',
       published_at: new Date().toISOString(),
-    })
+    }).select('id').maybeSingle()
+    savedRowId = (savedRow?.id as string) || null
   }
+
+  // ── Hallucination guard pass (parity with blog/generate, 2026-06-09) ───────
+  // Multi-product comparison posts have the SAME hallucination risk as a
+  // single-product review — the writer can invent specs, accessory lists, or
+  // "multi-function" claims for any of the N products. factCheckAndGuard runs
+  // both layers in ONE Haiku call (cost #2, 2026-06-14): the broad pass
+  // (identity + price + spec lies) AND the narrow cite-or-omit classes (numeric
+  // specs, model numbers, materials, certs, accessory lists, 2-in-1 identity
+  // claims).
+  //
+  // Source budget concatenates all transcripts + descriptions across the
+  // products. Same per-source slicing as the helpers expect (transcript +
+  // productResearch are passed as concatenated strings). Best-effort: any
+  // failure leaves the original body (already live + saved). Both helpers have
+  // internal length + affiliate-link safety guards.
+  try {
+    const claudeSvc = createClaudeService()
+    // Concatenate per-product transcripts with a separator so the model can
+    // tell them apart. Same for productResearch (descriptions + bullets).
+    const combinedTranscript = resolved
+      .map(p => `── ${p.productName} ──\n${(p.transcript || '').slice(0, 4500)}`)
+      .join('\n\n')
+      .slice(0, 18000)
+    const combinedResearch = resolved
+      .map(p => `── ${p.productName} ──\nDescription: ${(p.description || '').slice(0, 600)}\nBullets:\n${(p.bullets || []).slice(0, 10).join('\n')}`)
+      .join('\n\n')
+      .slice(0, 2500)
+
+    let bodyAfterChecks = body
+    try {
+      const checked = await claudeSvc.factCheckAndGuard(body, combinedTranscript, combinedResearch, { userId: user.id, tier })
+      if (checked && checked !== body) bodyAfterChecks = scrub(checked)
+    } catch { /* non-fatal */ }
+
+    // Only push the corrected text back if something actually changed — patch
+    // BOTH the live WP post and the row we already saved above (so the Library
+    // copy stays in sync). Avoids an unnecessary write on the common clean pass.
+    if (bodyAfterChecks !== body) {
+      try { await wpService.updatePost(wpPost.id, { content: bodyAfterChecks }) } catch { /* keep prior text */ }
+      if (savedRowId) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        try { await (supabase as any).from('blog_posts').update({ content: bodyAfterChecks }).eq('id', savedRowId).eq('user_id', ownerId) } catch { /* keep prior text */ }
+      }
+    }
+  } catch { /* non-fatal — published post + saved row stand */ }
 
   return NextResponse.json({
     ok: true,
