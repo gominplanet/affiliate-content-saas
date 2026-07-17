@@ -1022,11 +1022,28 @@ function SetupPageInner() {
           // PG returned a column-not-found error, the whole query failed,
           // and `connectedUrl` was always undefined, so the setup page
           // showed the wizard even when wordpress_url was set.
-          const { data: intRow } = await supabase.from('integrations').select('wordpress_url').eq('user_id', user.id).single()
-          const connectedUrl = intRow?.wordpress_url
-          if (connectedUrl) {
+          // Show the connected/manager view for ANY already-set-up user —
+          // keyed off a connected WordPress URL OR onboarding_completed OR a
+          // done setup_status. Belt-and-suspenders: a hiccup reading one field
+          // must NOT dump a fully-onboarded user into the blank wizard and lock
+          // them out (Doug, 2026-07-15: "update plugin" → stuck on wizard step 4
+          // despite 18 published posts). maybeSingle (not single) so a transient
+          // / edge read doesn't throw into the stale-localStorage fallback.
+          // Onboarded users land on the manager, where reconnect is calm and
+          // optional — never a forced wizard.
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { data: intRow } = await (supabase as any)
+            .from('integrations')
+            .select('wordpress_url, onboarding_completed, setup_status')
+            .eq('user_id', user.id)
+            .maybeSingle()
+          const connectedUrl = intRow?.wordpress_url as string | undefined
+          const isOnboarded =
+            intRow?.onboarding_completed === true ||
+            ['site_ready', 'complete', 'completed', 'ready'].includes(String(intRow?.setup_status || ''))
+          if (connectedUrl || isOnboarded) {
             setSetupComplete(true)
-            setCompletedUrl(connectedUrl)
+            if (connectedUrl) setCompletedUrl(connectedUrl)
             setHydrated(true)
             return
           }
