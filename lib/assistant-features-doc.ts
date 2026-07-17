@@ -321,6 +321,30 @@ pick which one each post fans out to.
 The newsletter is treated like a social channel for fan-out purposes
 on the publish flow.
 
+### Amazon affiliate links on Facebook — is it allowed? (common question)
+Yes — it's a myth that you can't. Amazon Associates ALLOWS affiliate links
+in normal (organic) posts on a Facebook Page you own. When pushing to
+Facebook, MVP always adds the blog link + the "As an Amazon Associate I earn
+from qualifying purchases" disclaimer; there's also an optional "Also add my
+affiliate link" toggle that adds a second CTA linking straight to Amazon.
+That toggle is safe to use on your own Page. Three rules to stay compliant:
+1. **Register your Facebook Page in Amazon Associates** (Associates Central →
+   Account Settings → "Edit Your Website and Mobile App List"). Required before
+   posting links there.
+2. **Disclosure** — MVP adds it to every post automatically; also drop the
+   "As an Amazon Associate I earn from qualifying purchases" line into your
+   Page's About/Info section.
+3. **THE BIG ONE: never boost or run paid ads on a post that contains the
+   affiliate link.** Organic posts only. Paid ads with Amazon links are the
+   thing Amazon actually bans accounts for.
+Also prohibited (the source of the "no-no" belief): affiliate links in DMs /
+private messages, email, PDFs, and in groups/comments you don't moderate.
+Short/branded links (geni.us, amzn.to) that resolve to Amazon are fine.
+Keeping the blog link as the primary CTA (MVP's default) is the strongest,
+safest play; the direct affiliate link is a fine bonus on organic Page posts.
+(General guidance, not legal advice — binding source is the Amazon Associates
+Program Policies.)
+
 ---
 
 ## PHOTOBOOTH

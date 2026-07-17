@@ -443,6 +443,7 @@ export default function ScheduleModal({
                 <span>
                   <span className="block text-sm">Also add my affiliate link to Facebook</span>
                   <span className="block text-[11px]" style={{ color: 'var(--text-faint, rgba(255,255,255,0.5))' }}>Leads the caption with your product link + disclaimer. Only added when the post has a product link.</span>
+                  <span className="block text-[11px] mt-1" style={{ color: 'var(--text-faint, rgba(255,255,255,0.5))' }}>✓ Allowed on your own Page (list it in your Amazon Associates account). Just never boost or run paid ads on posts with the link.</span>
                 </span>
               </label>
             )}

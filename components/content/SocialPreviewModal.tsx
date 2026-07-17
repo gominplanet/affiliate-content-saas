@@ -329,6 +329,9 @@ export function SocialPreviewModal({
                     <span className="block text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
                       Adds a second CTA — &ldquo;grab it right here 👉 [your link]&rdquo; — with the disclaimer, for readers who want to buy without reading the blog.
                     </span>
+                    <span className="block text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">
+                      ✓ Allowed on your own Page (add it to your Amazon Associates account). Just never <strong className="font-semibold">boost or run paid ads</strong> on posts with the link.
+                    </span>
                   </span>
                 </label>
               )}
