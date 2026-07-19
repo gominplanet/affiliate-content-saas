@@ -70,16 +70,66 @@ function classify(platform: string, err: string): { reason: DeadReason; message:
   }
 }
 
+/** The field on `integrations` that means "this platform is connected". */
+const CONNECTION_FIELD: Record<string, string> = {
+  telegram: 'telegram_channel_id',
+  linkedin: 'linkedin_access_token',
+  twitter: 'twitter_access_token',
+  bluesky: 'bluesky_app_password',
+  pinterest: 'pinterest_access_token',
+  threads: 'threads_access_token',
+  facebook: 'facebook_page_access_token',
+  instagram: 'instagram_access_token',
+  tiktok: 'tiktok_access_token',
+}
+
+/** Platforms this user has actually connected (legacy integrations columns OR a
+ *  multi-account social_accounts row). Used to keep "reconnect" nagging off
+ *  platforms the creator never set up — most people only wire up a few. */
+export async function getConnectedPlatforms(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  userId: string,
+): Promise<Set<string>> {
+  const connected = new Set<string>()
+  try {
+    const { data } = await supabase
+      .from('integrations')
+      .select(Object.values(CONNECTION_FIELD).join(','))
+      .eq('user_id', userId)
+      .maybeSingle()
+    if (data) {
+      for (const [platform, field] of Object.entries(CONNECTION_FIELD)) {
+        const v = (data as Record<string, unknown>)[field]
+        if (typeof v === 'string' ? v.trim() !== '' : v != null) connected.add(platform)
+      }
+    }
+  } catch { /* ignore */ }
+  try {
+    const { data } = await supabase.from('social_accounts').select('platform').eq('user_id', userId)
+    for (const r of (data || []) as Array<{ platform: string | null }>) {
+      if (r.platform) connected.add(r.platform)
+    }
+  } catch { /* table may not exist on older DBs */ }
+  return connected
+}
+
 /** Dead channels for one user, newest-failure-first. Safe + cheap: one indexed
- *  read of recent finished rows. Returns [] on any error (never blocks a flow). */
+ *  read of recent finished rows. Returns [] on any error (never blocks a flow).
+ *
+ *  `requireConnected` (default TRUE) drops platforms the user never connected —
+ *  telling someone to "reconnect Telegram" they never set up is pure noise. The
+ *  CRON passes false, so it still silently pauses those rows (stopping the daily
+ *  failures) without nagging anyone about a channel they don't use. */
 export async function getDeadChannels(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
   userId: string,
-  opts: { threshold?: number; lookback?: number } = {},
+  opts: { threshold?: number; lookback?: number; requireConnected?: boolean } = {},
 ): Promise<DeadChannel[]> {
   const threshold = opts.threshold ?? DEAD_CHANNEL_THRESHOLD
   const lookback = opts.lookback ?? 150
+  const requireConnected = opts.requireConnected !== false
   try {
     const { data, error } = await supabase
       .from('scheduled_posts')
@@ -120,7 +170,13 @@ export async function getDeadChannels(
         })
       }
     }
-    return dead.sort((a, b) => b.consecutiveFailures - a.consecutiveFailures)
+    const ordered = dead.sort((a, b) => b.consecutiveFailures - a.consecutiveFailures)
+    if (!requireConnected || ordered.length === 0) return ordered
+    // Only surface channels the creator actually connected. A platform that was
+    // never set up isn't something they can "reconnect" — the cron still pauses
+    // it silently (requireConnected: false) so the failures stop either way.
+    const connected = await getConnectedPlatforms(supabase, userId)
+    return ordered.filter(d => connected.has(d.platform))
   } catch {
     return []
   }

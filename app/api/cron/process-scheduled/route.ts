@@ -181,7 +181,10 @@ export async function GET(request: Request) {
   const socialUserIds = [...new Set(rows.filter(r => r.platform).map(r => r.user_id))]
   const deadByUser = new Map<string, DeadChannel[]>()
   await Promise.all(socialUserIds.map(async (uid) => {
-    deadByUser.set(uid, await getDeadChannels(admin, uid))
+    // requireConnected: false — the cron pauses NEVER-CONNECTED platforms too
+    // (that's most of the failure volume), it just doesn't nag the user about
+    // them. The topbar alert uses the default (connected-only).
+    deadByUser.set(uid, await getDeadChannels(admin, uid, { requireConnected: false }))
   }))
   const skipRows: ScheduledRow[] = []
   const liveRows: ScheduledRow[] = []
