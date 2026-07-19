@@ -27,6 +27,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { tierAllowsSocial, normalizeTier, TIERS, type Tier } from '@/lib/tier'
 import type { SocialScheduleEntry, SchedulableSocial } from '@/lib/schedule-types'
+import { getConnectedPlatforms } from '@/lib/channel-health'
 import { DEFAULT_SOCIAL_OFFSETS_MIN } from '@/lib/schedule-types'
 
 const SUPPORTED_SOCIALS: SchedulableSocial[] = ['facebook', 'threads', 'twitter', 'linkedin', 'bluesky', 'telegram', 'pinterest']
@@ -171,9 +172,32 @@ export async function POST(request: Request) {
       }
     }
 
+    // Never queue a channel the creator hasn't connected — scheduling to an
+    // unconnected platform is a guaranteed failure at fire time. Filter at the
+    // source rather than letting the cron discover it later.
+    const connectedPlatforms = await getConnectedPlatforms(supabase, user.id)
+    const schedulable = socials.filter(s => connectedPlatforms.has(s.platform))
+    const skippedPlatforms = [...new Set(
+      socials.filter(s => !connectedPlatforms.has(s.platform)).map(s => s.platform),
+    )]
+    if (skippedPlatforms.length) {
+      console.warn('[schedule-cascade-only] skipped unconnected platforms', { userId: user.id, skippedPlatforms })
+    }
+    if (schedulable.length === 0) {
+      // Everything they picked is unconnected — say so plainly instead of
+      // queueing nothing and reporting success.
+      return NextResponse.json(
+        {
+          error: `None of those channels are connected yet (${skippedPlatforms.join(', ')}). Connect them in Connect Socials, then schedule again.`,
+          skippedPlatforms,
+        },
+        { status: 400 },
+      )
+    }
+
     const baseMs = new Date(scheduledFor).getTime()
     const childRows = []
-    for (const s of socials) {
+    for (const s of schedulable) {
       const offsetMin = typeof s.offsetMinutes === 'number'
         ? s.offsetMinutes
         : DEFAULT_SOCIAL_OFFSETS_MIN[s.platform]
@@ -235,7 +259,9 @@ export async function POST(request: Request) {
     const childScheduleIds = ((inserted ?? []) as Array<{ id: string }>).map(r => r.id)
     console.log('[schedule-cascade-only] queued', { postId, count: childScheduleIds.length })
 
-    return NextResponse.json({ ok: true, childScheduleIds })
+    // skippedPlatforms: channels dropped for being unconnected, so the UI can
+    // say what was left out instead of silently scheduling less than asked.
+    return NextResponse.json({ ok: true, childScheduleIds, skippedPlatforms })
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
     return NextResponse.json({ error: msg }, { status: 500 })

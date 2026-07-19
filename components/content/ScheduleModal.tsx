@@ -242,12 +242,22 @@ export default function ScheduleModal({
           childScheduleIds?: string[]
           wordpressPostId?: number
           warning?: string
+          skippedPlatforms?: string[]
         }
         if (!res.ok || !json.ok) {
           toast.error(json.error || `Schedule failed (${res.status})`, { id: toastId, duration: 8_000 })
           return
         }
         if (json.warning) toast.warning(json.warning)
+        // Channels dropped for not being connected — say so, so a schedule that
+        // quietly does less than asked is never a surprise.
+        if (json.skippedPlatforms?.length) {
+          const names = json.skippedPlatforms.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(', ')
+          toast.warning(`${names} skipped — not connected yet`, {
+            description: 'Connect it in Connect Socials and it’ll be included next time.',
+            duration: 8_000,
+          })
+        }
         toast.success(`Scheduled for ${new Date(localIso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}`, {
           id: toastId,
           duration: 6_000,
