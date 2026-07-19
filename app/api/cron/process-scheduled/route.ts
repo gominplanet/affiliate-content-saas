@@ -564,7 +564,15 @@ async function publishOne(
 
     // ─────────────────────────── TELEGRAM ─────────────────────────────────
     case 'telegram': {
-      if (!integration.telegram_bot_token || !integration.telegram_channel_id) {
+      // MVP runs ONE shared bot (env TELEGRAM_BOT_TOKEN) — that's what the
+      // connect flow verifies against and what /api/blog/telegram-post posts
+      // with. The per-user telegram_bot_token column is a leftover from an
+      // older bring-your-own-bot design and is never written by any code path,
+      // so requiring it here failed EVERY scheduled Telegram post while the
+      // immediate "Post now" button worked fine. Prefer a per-user token if one
+      // ever exists, else fall back to the shared bot.
+      const tgToken = integration.telegram_bot_token || process.env.TELEGRAM_BOT_TOKEN || ''
+      if (!tgToken || !integration.telegram_channel_id) {
         throw new Error('Telegram not connected')
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -575,8 +583,8 @@ async function publishOne(
       const linkLabel = escapeMarkdownV2('Read the full review →')
       const finalCaption = `${escapedBody}\n\n[${linkLabel}](${escapedUrl})`
       const result = imageUrl
-        ? await sendPhoto(integration.telegram_bot_token, integration.telegram_channel_id, imageUrl, finalCaption)
-        : await sendMessage(integration.telegram_bot_token, integration.telegram_channel_id, finalCaption)
+        ? await sendPhoto(tgToken, integration.telegram_channel_id, imageUrl, finalCaption)
+        : await sendMessage(tgToken, integration.telegram_channel_id, finalCaption)
       await admin
         .from('blog_posts')
         .update({ telegram_message_id: String(result.messageId) })
