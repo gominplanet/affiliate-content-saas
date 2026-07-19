@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { createServerClient } from '@/lib/supabase/server'
+import { clearChannelFailures } from '@/lib/channel-health'
 import { exchangeCodeForToken, getProfile } from '@/services/twitter'
 import { encryptIntegrationWrite } from '@/lib/integration-secrets'
 
@@ -75,6 +76,9 @@ export async function GET(request: NextRequest) {
     // Clear the verifier cookie — it's single-use.
     cookieStore.delete('twitter_pkce_verifier')
 
+    // Reconnecting must clear the "needs reconnecting" alert immediately —
+    // otherwise the old failures stay the newest outcomes and it keeps nagging.
+    await clearChannelFailures(supabase, userId, 'twitter')
     return NextResponse.redirect(`${appUrl}/connect-socials?twitter_connected=1`)
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'callback_failed'

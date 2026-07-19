@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { clearChannelFailures } from '@/lib/channel-health'
 import { exchangeCodeForToken, getProfile } from '@/services/linkedin'
 
 export async function GET(request: NextRequest) {
@@ -52,6 +53,9 @@ export async function GET(request: NextRequest) {
     )
     if (saveErr) throw new Error(saveErr.message || 'token save failed')
 
+    // Reconnecting must clear the "needs reconnecting" alert immediately —
+    // otherwise the old failures stay the newest outcomes and it keeps nagging.
+    await clearChannelFailures(supabase, userId, 'linkedin')
     return NextResponse.redirect(`${appUrl}/connect-socials?linkedin_connected=1`)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)

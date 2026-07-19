@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { clearChannelFailures } from '@/lib/channel-health'
 import { exchangeCodeForToken, PinterestService } from '@/services/pinterest'
 import { encryptIntegrationWrite } from '@/lib/integration-secrets'
 
@@ -49,6 +50,9 @@ export async function GET(request: NextRequest) {
     // pill would stay red with no explanation (exactly this bug class).
     if (saveErr) throw new Error(saveErr.message || 'token save failed')
 
+    // Reconnecting must clear the "needs reconnecting" alert immediately —
+    // otherwise the old failures stay the newest outcomes and it keeps nagging.
+    await clearChannelFailures(supabase, user.id, 'pinterest')
     return NextResponse.redirect(`${appUrl}/connect-socials?pinterest_connected=1`)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)

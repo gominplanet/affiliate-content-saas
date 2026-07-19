@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { clearChannelFailures } from '@/lib/channel-health'
 import { exchangeCodeForTokens, subscribeToComments } from '@/services/instagram'
 import { syncInstagramAccount } from '@/lib/social-accounts'
 
@@ -80,6 +81,9 @@ export async function GET(request: NextRequest) {
       console.warn('[instagram/callback] subscribeToComments failed:', e)
     }
 
+    // Reconnecting must clear the "needs reconnecting" alert immediately —
+    // otherwise the old failures stay the newest outcomes and it keeps nagging.
+    await clearChannelFailures(supabase, user.id, 'instagram')
     return NextResponse.redirect(`${appUrl}/connect-socials?instagram_connected=1`)
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'callback_failed'

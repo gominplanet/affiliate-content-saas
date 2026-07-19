@@ -20,6 +20,11 @@ export const DEAD_CHANNEL_THRESHOLD = 3
  *  noticed promptly without retrying on every single scheduled post. */
 export const PROBE_INTERVAL_MS = 24 * 60 * 60 * 1000
 export const AUTO_SKIP_PREFIX = '[auto-skipped]'
+/** Stamped on old failures when a channel is successfully (re)connected, so the
+ *  streak resets AT ONCE. Without it, reconnecting looks like it did nothing:
+ *  the old failures are still the newest outcomes on record, so the "needs
+ *  reconnecting" alert keeps nagging until some future scheduled post succeeds. */
+export const RESOLVED_PREFIX = '[resolved]'
 
 export type DeadReason = 'not_connected' | 'expired' | 'failing'
 
@@ -143,8 +148,11 @@ export async function getDeadChannels(
     const byPlatform = new Map<string, Array<{ status: string; error_message: string | null; updated_at: string }>>()
     for (const r of data as Array<{ platform: string | null; status: string; error_message: string | null; updated_at: string }>) {
       if (!r.platform) continue
-      // Don't let our own auto-skips count as evidence (see deadlock guard).
-      if ((r.error_message || '').startsWith(AUTO_SKIP_PREFIX)) continue
+      // Ignore our own bookkeeping rows: auto-skips (deadlock guard) and
+      // failures already resolved by a reconnect. Neither is evidence that the
+      // channel is currently broken.
+      const em = r.error_message || ''
+      if (em.startsWith(AUTO_SKIP_PREFIX) || em.startsWith(RESOLVED_PREFIX)) continue
       if (!byPlatform.has(r.platform)) byPlatform.set(r.platform, [])
       byPlatform.get(r.platform)!.push(r)
     }
@@ -190,6 +198,32 @@ export function shouldSkipChannel(dead: DeadChannel, now = Date.now()): boolean 
   const t = new Date(dead.lastFailedAt).getTime()
   if (!Number.isFinite(t)) return false
   return now - t < PROBE_INTERVAL_MS
+}
+
+/** Call after a channel is successfully (re)connected: stamps its past failures
+ *  as resolved so the streak resets IMMEDIATELY and the "needs reconnecting"
+ *  alert clears on the spot.
+ *
+ *  Without this, reconnecting appears to do nothing — those old failures are
+ *  still the newest outcomes on record, so the alert nags until some future
+ *  scheduled post happens to succeed (which could be days). Reported by a user
+ *  who reconnected LinkedIn three times and kept getting alerted.
+ *
+ *  Best-effort: never throws, never blocks a connect flow. */
+export async function clearChannelFailures(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  userId: string,
+  platform: string,
+): Promise<void> {
+  try {
+    await supabase
+      .from('scheduled_posts')
+      .update({ error_message: `${RESOLVED_PREFIX} cleared when ${platformLabel(platform)} was reconnected` })
+      .eq('user_id', userId)
+      .eq('platform', platform)
+      .eq('status', 'failed')
+  } catch { /* non-fatal — a connect must never fail because of bookkeeping */ }
 }
 
 /** Message stored on an auto-skipped row (prefixed so it's excluded from the

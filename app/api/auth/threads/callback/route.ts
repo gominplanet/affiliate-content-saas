@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { clearChannelFailures } from '@/lib/channel-health'
 import { exchangeCodeForToken, fetchThreadsProfile } from '@/services/threads'
 import { encryptIntegrationWrite } from '@/lib/integration-secrets'
 import { syncThreadsAccount } from '@/lib/social-accounts'
@@ -54,6 +55,9 @@ export async function GET(request: NextRequest) {
       })
     } catch { /* non-fatal — connection works without the handle */ }
 
+    // Reconnecting must clear the "needs reconnecting" alert immediately —
+    // otherwise the old failures stay the newest outcomes and it keeps nagging.
+    await clearChannelFailures(supabase, user.id, 'threads')
     return NextResponse.redirect(`${appUrl}/connect-socials?threads_connected=1`)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)

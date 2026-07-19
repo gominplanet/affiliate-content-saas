@@ -17,6 +17,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { clearChannelFailures } from '@/lib/channel-health'
 
 interface TikTokTokenResponse {
   access_token?: string
@@ -156,5 +157,8 @@ export async function GET(request: Request) {
     return redirect(`tiktok_error=${encodeURIComponent(`Couldn't save TikTok tokens: ${upsertErr.message}`)}`)
   }
 
+  // Reconnecting must clear the "needs reconnecting" alert immediately —
+  // otherwise the old failures stay the newest outcomes and it keeps nagging.
+  await clearChannelFailures(supabase, user.id, 'tiktok')
   return redirect(`tiktok_connected=1`)
 }

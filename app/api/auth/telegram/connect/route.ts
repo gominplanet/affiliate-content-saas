@@ -10,6 +10,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { clearChannelFailures } from '@/lib/channel-health'
 import { verifyBotInChannel } from '@/services/telegram'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 
@@ -78,6 +79,10 @@ export async function POST(request: NextRequest) {
         { onConflict: 'user_id' },
       )
     if (upErr) return NextResponse.json({ error: upErr.message }, { status: 500 })
+
+    // Reconnecting must clear the "needs reconnecting" alert immediately —
+    // otherwise the old failures stay the newest outcomes and it keeps nagging.
+    await clearChannelFailures(supabase, user.id, 'telegram')
 
     return NextResponse.json({
       ok: true,
