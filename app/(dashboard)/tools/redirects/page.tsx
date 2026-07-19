@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
+import { gscPageIndexingUrl } from '@/lib/gsc-links'
 import { Loader2, ExternalLink, ChevronLeft, ArrowRight, Upload, Signpost, CheckCircle2 } from 'lucide-react'
 
 type Confidence = 'high' | 'medium' | 'low' | 'none'
@@ -60,8 +61,7 @@ export default function RedirectsPage() {
 
   // The whole job starts in Search Console, so send people straight to their
   // OWN Page indexing report rather than the console root, where they'd have to
-  // find their property first. Search Console wants the resource_id colons and
-  // slashes left unescaped, so encode then put them back.
+  // find their property first.
   useEffect(() => {
     fetch('/api/seo/gsc-property')
       .then(r => r.json())
@@ -69,9 +69,7 @@ export default function RedirectsPage() {
       .catch(() => { /* link falls back to the console root */ })
   }, [])
 
-  const gscUrl = gscProperty
-    ? `https://search.google.com/search-console/index?resource_id=${encodeURIComponent(gscProperty).replace(/%3A/gi, ':').replace(/%2F/gi, '/')}`
-    : 'https://search.google.com/search-console'
+  const gscUrl = gscPageIndexingUrl(gscProperty)
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]

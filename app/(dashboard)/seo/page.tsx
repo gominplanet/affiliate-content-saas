@@ -17,6 +17,7 @@ import { toast } from 'sonner'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { type Tier } from '@/lib/tier'
 import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
+import { gscSitemapsUrl, gscPageIndexingUrl } from '@/lib/gsc-links'
 
 interface Check { id: string; label: string; pass: boolean; weight: number; hint?: string }
 interface PostRow {
@@ -64,10 +65,6 @@ const isAutoFixable = (p: { title: string }, c: Check): boolean => {
   return (AUTO_FIX_IDS as readonly string[]).includes(c.id)
 }
 
-// Google Search Console deep links expect LITERAL ':' and '/' in resource_id
-// and id. encodeURIComponent turns them into %3A / %2F, which makes GSC return
-// a 404. Encode everything else (spaces, &, #, ?) but keep those two literal.
-const gscParam = (s: string) => encodeURIComponent(s).replace(/%3A/gi, ':').replace(/%2F/gi, '/')
 
 export default function SeoPage() {
   const [data, setData] = useState<Overview | null>(null)
@@ -1344,10 +1341,8 @@ export default function SeoPage() {
  */
 function IndexingGuide({ property, connected }: { property: string | null; connected: boolean }) {
   const [open, setOpen] = useState(false)
-  const rid = property ? gscParam(property) : null
-  const sitemapsUrl = rid
-    ? `https://search.google.com/search-console/sitemaps?resource_id=${rid}`
-    : 'https://search.google.com/search-console'
+  const sitemapsUrl = gscSitemapsUrl(property)
+  const pageIndexingUrl = gscPageIndexingUrl(property)
   return (
     <div className="card overflow-hidden">
       <button
@@ -1403,6 +1398,13 @@ function IndexingGuide({ property, connected }: { property: string | null; conne
               </li>
               <li>
                 <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Build links and momentum.</span> Share each post on the social channels you’ve connected — every share is a crawlable link back. Internal links are already handled (a “Related reviews” block is added to each post). Over time, a few real backlinks from other sites are the single biggest accelerator.
+              </li>
+              <li>
+                <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Check what Google is actually seeing.</span> Open{' '}
+                <a href={pageIndexingUrl} target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline inline-flex items-center gap-0.5">Search Console → Page indexing <ExternalLink size={11} /></a>{' '}
+                for the real reason anything isn’t indexed. If you see a <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Not found (404)</strong> group, those are dead URLs still holding ranking history — export that list and{' '}
+                <Link href="/tools/redirects" className="text-[#7C3AED] hover:underline">Fix 404s</Link>{' '}
+                matches each one to the right live post and redirects it, so the history carries over instead of being lost.
               </li>
             </ol>
           </div>
