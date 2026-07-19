@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import PageHero from '@/components/layout/PageHero'
-import { Search, Loader2, CheckCircle, AlertCircle, User as UserIcon, ChevronLeft, ChevronRight, Users as UsersIcon } from 'lucide-react'
+import { Search, Loader2, CheckCircle, AlertCircle, User as UserIcon, ChevronLeft, ChevronRight, Users as UsersIcon, Mail, Send } from 'lucide-react'
 
 type Tier = 'trial' | 'creator' | 'pro' | 'admin'
 
@@ -47,6 +47,15 @@ export default function AdminUsersPage() {
   const [savedMsg, setSavedMsg] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
 
+  // Direct message
+  const [msgOpen, setMsgOpen] = useState(false)
+  const [msgSubject, setMsgSubject] = useState('')
+  const [msgBody, setMsgBody] = useState('')
+  const [msgSending, setMsgSending] = useState(false)
+  const [msgConfirm, setMsgConfirm] = useState(false)
+  const [msgSent, setMsgSent] = useState<string | null>(null)
+  const [msgError, setMsgError] = useState<string | null>(null)
+
   // Browse list
   const [list, setList] = useState<ListUser[]>([])
   const [listLoading, setListLoading] = useState(true)
@@ -85,6 +94,14 @@ export default function AdminUsersPage() {
     setUser(null)
     setSavedMsg(null)
     setSaveError(null)
+    // Never carry a half-typed message across to a DIFFERENT user — that's how
+    // the wrong person gets emailed.
+    setMsgOpen(false)
+    setMsgSubject('')
+    setMsgBody('')
+    setMsgConfirm(false)
+    setMsgSent(null)
+    setMsgError(null)
     try {
       const res = await fetch('/api/admin/user-lookup', {
         method: 'POST',
@@ -101,6 +118,35 @@ export default function AdminUsersPage() {
       setLookupError(err instanceof Error ? err.message : 'Lookup failed')
     } finally {
       setLooking(false)
+    }
+  }
+
+  // Two-step on purpose: the first click arms, the second sends. An email to a
+  // customer can't be recalled, and the confirm line restates WHO it's going to
+  // — the one detail that makes a misfire obvious before it happens.
+  async function sendMessage() {
+    if (!user) return
+    if (!msgConfirm) { setMsgConfirm(true); setMsgError(null); return }
+    setMsgSending(true)
+    setMsgError(null)
+    try {
+      const res = await fetch('/api/admin/message-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, subject: msgSubject, body: msgBody }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.ok) throw new Error(data.error || `Send failed (${res.status})`)
+      setMsgSent(`Sent to ${data.to}`)
+      setMsgSubject('')
+      setMsgBody('')
+      setMsgConfirm(false)
+      setMsgOpen(false)
+    } catch (err) {
+      setMsgError(err instanceof Error ? err.message : 'Send failed')
+      setMsgConfirm(false)
+    } finally {
+      setMsgSending(false)
     }
   }
 
@@ -183,6 +229,82 @@ export default function AdminUsersPage() {
             <Field label="Posts published">{user.postCount}</Field>
             <Field label="Brand">{user.brandName || <span className="italic text-[#86868b]">not set</span>}</Field>
             <Field label="WordPress">{user.wordpressUrl ? <a href={user.wordpressUrl} target="_blank" rel="noreferrer" className="text-[#7C3AED] hover:underline truncate inline-block max-w-[200px]">{user.wordpressUrl.replace(/^https?:\/\//, '')}</a> : <span className="italic text-[#86868b]">not connected</span>}</Field>
+          </div>
+
+          {/* Direct message — account-specific updates ("your Telegram is
+              fixed", "reconnect X"). Replies come back to the admin's inbox. */}
+          <div className="border-t border-gray-100 dark:border-white/10 pt-4 mb-4">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Message this user</p>
+                <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-0.5">
+                  Emails {user.email} directly. Replies come back to you.
+                </p>
+              </div>
+              {!msgOpen && (
+                <button
+                  onClick={() => { setMsgOpen(true); setMsgSent(null); setMsgError(null) }}
+                  className="btn-secondary text-sm flex items-center gap-1.5 flex-shrink-0"
+                >
+                  <Mail size={13} /> Message
+                </button>
+              )}
+              {msgSent && !msgOpen && (
+                <span className="text-xs text-[#34c759] flex items-center gap-1">
+                  <CheckCircle size={12} /> {msgSent}
+                </span>
+              )}
+            </div>
+
+            {msgOpen && (
+              <div className="mt-3 space-y-2">
+                <input
+                  value={msgSubject}
+                  onChange={e => { setMsgSubject(e.target.value); setMsgConfirm(false) }}
+                  placeholder="Subject — e.g. Your Telegram posts are fixed"
+                  maxLength={200}
+                  className="input-field text-sm w-full"
+                />
+                <textarea
+                  value={msgBody}
+                  onChange={e => { setMsgBody(e.target.value); setMsgConfirm(false) }}
+                  rows={7}
+                  maxLength={10_000}
+                  placeholder={'Write it the way you\'d say it.\n\nBlank lines become paragraphs. It goes out on MVP letterhead, signed off with your reply address.'}
+                  className="input-field text-sm w-full leading-relaxed"
+                />
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    onClick={sendMessage}
+                    disabled={msgSending || !msgSubject.trim() || !msgBody.trim()}
+                    className="btn-primary text-sm flex items-center gap-1.5"
+                  >
+                    {msgSending
+                      ? <><Loader2 size={13} className="animate-spin" /> Sending…</>
+                      : msgConfirm
+                        ? <><Send size={13} /> Confirm send</>
+                        : <><Send size={13} /> Send</>}
+                  </button>
+                  <button
+                    onClick={() => { setMsgOpen(false); setMsgConfirm(false); setMsgError(null) }}
+                    disabled={msgSending}
+                    className="btn-secondary text-sm"
+                  >
+                    Cancel
+                  </button>
+                  {msgConfirm && !msgSending && (
+                    <span className="text-xs text-[#ff9500] flex items-center gap-1">
+                      <AlertCircle size={12} /> Sends to {user.email} — click again to confirm.
+                    </span>
+                  )}
+                  {msgError && (
+                    <span className="text-xs text-[#ff3b30] flex items-center gap-1">
+                      <AlertCircle size={12} /> {msgError}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Tier change */}

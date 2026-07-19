@@ -72,3 +72,55 @@ export function renderBroadcastHtml(opts: {
 </body>
 </html>`
 }
+
+// ── 1:1 direct messages (admin → one user) ────────────────────────────────
+//
+// Deliberately NOT the broadcast shell. A broadcast is marketing: it carries
+// "you're receiving this because you have an account" plus an unsubscribe
+// link, and it must, because it's a bulk send people opted into.
+//
+// A direct message is a service reply about that person's own account ("your
+// Telegram is fixed", "your X connection expired"). Offering to unsubscribe
+// from THAT is wrong twice over: it invites someone to switch off the notices
+// they most need, and it makes a personal reply read like a mailing list.
+// Same branded shell, honest footer, reply-to points at a human.
+
+export function renderDirectText(bodyText: string, replyTo: string): string {
+  return `${(bodyText || '').trim()}\n\n—\n${BRAND}\nReply to this email to reach us directly${replyTo ? ` (${replyTo})` : ''}.`
+}
+
+export function renderDirectHtml(opts: {
+  subject: string
+  bodyText: string
+  replyTo?: string
+  preheader?: string
+}): string {
+  const { subject, bodyText, replyTo, preheader } = opts
+  return `<!doctype html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(subject)}</title></head>
+<body style="margin:0;padding:0;background:#f5f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+  ${preheader ? `<div style="display:none;max-height:0;overflow:hidden;opacity:0">${escapeHtml(preheader)}</div>` : ''}
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f7">
+    <tr><td align="center" style="padding:32px 16px">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:14px;overflow:hidden;border:1px solid #e5e5ea">
+        <tr><td style="padding:22px 28px 8px">
+          <span style="font-size:15px;font-weight:700;color:#7C3AED;letter-spacing:-0.01em">${BRAND}</span>
+        </td></tr>
+        <tr><td style="padding:8px 28px 4px">
+          <h1 style="margin:0 0 18px;font-size:21px;line-height:1.3;color:#1d1d1f;font-weight:700;letter-spacing:-0.02em">${escapeHtml(subject)}</h1>
+          ${bodyToHtml(bodyText)}
+        </td></tr>
+        <tr><td style="padding:20px 28px 26px">
+          <hr style="border:none;border-top:1px solid #e5e5ea;margin:0 0 14px">
+          <p style="margin:0;font-size:12px;line-height:1.5;color:#86868b">
+            This is a message about your ${BRAND} account — just hit reply to reach us${replyTo ? ` at ${escapeHtml(replyTo)}` : ''}.<br>
+            <a href="${APP_BASE}" style="color:#86868b;text-decoration:underline">${APP_BASE.replace(/^https?:\/\//, '')}</a>
+          </p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`
+}
