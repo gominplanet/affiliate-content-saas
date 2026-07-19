@@ -6,7 +6,7 @@
 // found for URLs that no longer exist (deleted duplicates, re-slugged posts).
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
@@ -54,8 +54,24 @@ export default function RedirectsPage() {
   const [siteUrl, setSiteUrl] = useState('')
   const [choice, setChoice] = useState<Record<string, string>>({})   // from → target url | HOME | SKIP
   const [appliedFroms, setAppliedFroms] = useState<Set<string>>(new Set())
+  const [gscProperty, setGscProperty] = useState<string | null>(null)
 
   const parsedCount = useMemo(() => extractUrls(input).length, [input])
+
+  // The whole job starts in Search Console, so send people straight to their
+  // OWN Page indexing report rather than the console root, where they'd have to
+  // find their property first. Search Console wants the resource_id colons and
+  // slashes left unescaped, so encode then put them back.
+  useEffect(() => {
+    fetch('/api/seo/gsc-property')
+      .then(r => r.json())
+      .then(d => setGscProperty(d?.property || null))
+      .catch(() => { /* link falls back to the console root */ })
+  }, [])
+
+  const gscUrl = gscProperty
+    ? `https://search.google.com/search-console/index?resource_id=${encodeURIComponent(gscProperty).replace(/%3A/gi, ':').replace(/%2F/gi, '/')}`
+    : 'https://search.google.com/search-console'
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]
@@ -140,7 +156,33 @@ export default function RedirectsPage() {
 
         {/* Input */}
         <div className="card p-4 mb-4">
-          <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-2)' }}>404 URLs</label>
+          {/* Step 1 — the list lives in Search Console, so make getting there
+              one click instead of a set of directions people have to follow. */}
+          <div
+            className="flex items-center justify-between gap-3 flex-wrap rounded-lg px-3 py-2.5 mb-3"
+            style={{ backgroundColor: 'var(--surface-2)', border: '1px solid var(--border)' }}
+          >
+            <div className="min-w-0">
+              <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>
+                Step 1 — grab your 404 list from Search Console
+              </p>
+              <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-faint)' }}>
+                {gscProperty
+                  ? <>Opens <span className="font-medium">{gscProperty}</span> → Page indexing. Scroll to <span className="font-medium">Not found (404)</span> → open it → export icon (top-right) → Download CSV.</>
+                  : <>Opens Search Console → pick your site → Page indexing → <span className="font-medium">Not found (404)</span> → open it → export icon (top-right) → Download CSV.</>}
+              </p>
+            </div>
+            <a
+              href={gscUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-semibold text-white bg-[#7C3AED] hover:bg-[#6d28d9] flex-shrink-0"
+            >
+              Open Search Console <ExternalLink size={13} />
+            </a>
+          </div>
+
+          <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-2)' }}>Step 2 — paste or upload it here</label>
           <textarea value={input} onChange={e => setInput(e.target.value)} rows={5}
             placeholder={`Paste 404 URLs, one per line — or the exported CSV's contents:\nhttps://yoursite.com/old-review/\nhttps://yoursite.com/another-review-2/`}
             className="w-full rounded-lg px-3 py-2 text-[13px] font-mono outline-none"
@@ -160,7 +202,7 @@ export default function RedirectsPage() {
             </button>
           </div>
           <p className="text-[11px] mt-2" style={{ color: 'var(--text-faint)' }}>
-            In Search Console → Page indexing → <span className="font-medium">Not found (404)</span> → open it → the export icon (top-right) → download, then paste or upload the CSV here.
+            The CSV has extra columns — that&apos;s fine, MVP pulls the URLs out and ignores the rest.
           </p>
         </div>
 
