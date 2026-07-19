@@ -51,6 +51,7 @@ import TopbarSearch from './TopbarSearch'
 import WpConnectionDoctorButton from './WpConnectionDoctorButton'
 import PurgeCacheTopbarButton from './PurgeCacheTopbarButton'
 import ScoutTopbarButton from './ScoutTopbarButton'
+import SocialHealthTopbarButton from './SocialHealthTopbarButton'
 import { HelpDeskButton } from '@/components/HelpDeskSidebar'
 
 // Wrapper to handle context safely
@@ -910,6 +911,11 @@ export default function DashboardShellV2({
                 updates, so the latest zip is reachable here next to the WP
                 theme-update button. Renders nothing when SCOUT is current. */}
             <ScoutTopbarButton />
+            {/* Dead social connection alert — self-hides unless a channel has
+                failed several scheduled posts in a row (expired token, or a
+                platform still in the schedule that was never connected). Not
+                gated on wpSiteUrl: it's about socials, not WordPress. */}
+            <SocialHealthTopbarButton />
             {/* WP admin shortcut — links straight into wp-admin if a site
                 is connected. */}
             {wpSiteUrl && (

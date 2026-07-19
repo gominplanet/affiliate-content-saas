@@ -31,6 +31,7 @@ import { sendPhoto, sendMessage, escapeMarkdownV2 } from '@/services/telegram'
 import { capSocialText, SOCIAL_LIMITS } from '@/lib/social-cap'
 import { decryptIntegrationRow, encryptIntegrationWrite } from '@/lib/integration-secrets'
 import { maybeDecrypt } from '@/lib/secrets'
+import { getDeadChannels, shouldSkipChannel, autoSkipMessage, type DeadChannel } from '@/lib/channel-health'
 import { createWordPressService } from '@/services/wordpress'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { pingIndexNowForUrl } from '@/lib/seo-on-publish'
@@ -167,6 +168,46 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, processed: 0 })
   }
 
+  // 1.5 Dead-channel guard.
+  //
+  // A creator with an expired X token + an unconnected Telegram was failing
+  // EVERY scheduled post, every day, silently (39 of 43 weekly failures came
+  // from one account). Look up each affected user's dead channels once, then
+  // skip those rows instead of hammering a connection we already know is
+  // broken. shouldSkipChannel still lets ONE real attempt through per day, so
+  // the moment they reconnect publishing resumes on its own. Skipped rows are
+  // tagged with AUTO_SKIP_PREFIX so they never count toward the streak that
+  // marks a channel dead (otherwise skipping would keep it dead forever).
+  const socialUserIds = [...new Set(rows.filter(r => r.platform).map(r => r.user_id))]
+  const deadByUser = new Map<string, DeadChannel[]>()
+  await Promise.all(socialUserIds.map(async (uid) => {
+    deadByUser.set(uid, await getDeadChannels(admin, uid))
+  }))
+  const skipRows: ScheduledRow[] = []
+  const liveRows: ScheduledRow[] = []
+  for (const row of rows) {
+    const dead = row.platform
+      ? (deadByUser.get(row.user_id) || []).find(d => d.platform === row.platform)
+      : undefined
+    if (dead && shouldSkipChannel(dead)) skipRows.push(row)
+    else liveRows.push(row)
+  }
+  if (skipRows.length) {
+    await Promise.allSettled(skipRows.map(row =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (admin as any)
+        .from('scheduled_posts')
+        .update({
+          status: 'failed',
+          error_message: autoSkipMessage(row.platform as string).slice(0, 500),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', row.id),
+    ))
+    console.warn('[cron/process-scheduled] auto-skipped dead channels',
+      skipRows.map(r => `${r.user_id.slice(0, 8)}:${r.platform}`))
+  }
+
   // 2. Publish all claimed rows in PARALLEL.
   //
   // Perf (audit 2026-06-02): previously serial. Each publish is
@@ -175,7 +216,7 @@ export async function GET(request: Request) {
   // independent (different blog posts, often different users,
   // different platforms) so parallelism is safe. allSettled means
   // one failure doesn't poison the batch.
-  const results = await Promise.allSettled(rows.map(async (row): Promise<{ id: string; ok: boolean; error?: string; externalId?: string }> => {
+  const results = await Promise.allSettled(liveRows.map(async (row): Promise<{ id: string; ok: boolean; error?: string; externalId?: string }> => {
     try {
       const result = await publishOne(admin, row)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
