@@ -30,9 +30,8 @@
  *     refuse the signup — protects creators who turned it off.
  */
 import { NextRequest, NextResponse } from 'next/server'
-import { createHmac, timingSafeEqual } from 'crypto'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { maybeDecrypt } from '@/lib/secrets'
+import { verifyWpFormHmac } from '@/lib/wp-form-hmac'
 import { normalizeTier, allowedNewsletterSubscribers } from '@/lib/tier'
 import { sendEmail, isEmailConfigured } from '@/services/email'
 import {
@@ -48,77 +47,10 @@ import {
  *  cover pages cached by Cloudflare/SG-CDN/SuperCacher for a day, but
  *  tight enough that a leaked sig from yesterday can't be replayed
  *  forever. */
-const HMAC_MAX_AGE_SECONDS = 24 * 60 * 60
 
-/** Verify the form's HMAC signature against the WP site's proxy_secret.
- *
- *  Returns:
- *    { valid: true }            — sig present and verified ✓
- *    { valid: false, reason }   — sig present but invalid (reject)
- *    { valid: null, reason }    — sig absent or unverifiable (accept-but-warn
- *                                 during the v1.0.26 → v1.0.27 transition;
- *                                 once all installs are on v1.0.27+, flip
- *                                 these to hard-reject)
- *
- *  Plugin v1.0.27+ signs `creatorUserId|origin|ts` with hash_hmac('sha256',
- *  affiliateos_proxy_secret). We look up the matching WP site by
- *  (user_id = creatorUserId AND wordpress_url's host = origin), pull its
- *  api_token (which mirrors affiliateos_proxy_secret), and recompute.
- */
-async function verifyFormHmac(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  admin: any,
-  creatorUserId: string,
-  payload: { origin?: string; ts?: string; sig?: string },
-): Promise<{ valid: true } | { valid: false; reason: string } | { valid: null; reason: string }> {
-  const { origin, ts, sig } = payload
-  if (!sig || !ts || !origin) {
-    return { valid: null, reason: 'sig/ts/origin missing (old plugin version)' }
-  }
-  // Time-bound check (drops sigs older than 24h to prevent replay).
-  const tsNum = parseInt(ts, 10)
-  if (!Number.isFinite(tsNum)) return { valid: false, reason: 'invalid ts' }
-  const now = Math.floor(Date.now() / 1000)
-  if (Math.abs(now - tsNum) > HMAC_MAX_AGE_SECONDS) {
-    return { valid: false, reason: 'ts outside window' }
-  }
-  // Find the proxy_secret for the site that rendered the form. The plugin
-  // signs with the site's wp_options:affiliateos_proxy_secret; the dashboard
-  // mirrors it into wordpress_sites.api_token (auto-persisted on /status
-  // poll or pasted via /setup/wp-doctor's Posting Key panel).
-  const originLower = origin.toLowerCase()
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: sites } = await admin
-    .from('wordpress_sites')
-    .select('wordpress_url, api_token')
-    .eq('user_id', creatorUserId)
-  if (!sites || sites.length === 0) {
-    return { valid: null, reason: 'no wordpress_sites row for creator (legacy single-site install)' }
-  }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const match = sites.find((s: any) => {
-    if (!s.wordpress_url || !s.api_token) return false
-    try {
-      const h = new URL(s.wordpress_url).hostname.toLowerCase()
-      return h === originLower
-    } catch { return false }
-  })
-  if (!match) return { valid: false, reason: 'origin does not match any registered WP site' }
-  // wordpress_sites.api_token is stored encrypted; the WP plugin signs with the
-  // PLAINTEXT proxy secret, so we must decrypt before the HMAC compare or every
-  // public-signup signature fails. maybeDecrypt is a no-op on legacy plaintext.
-  const secret = maybeDecrypt(String(match.api_token || ''))
-  if (!secret) return { valid: null, reason: 'site has no api_token persisted' }
-
-  const expected = createHmac('sha256', secret)
-    .update(`${creatorUserId}|${originLower}|${ts}`)
-    .digest('hex')
-  // hex strings → Buffers → constant-time compare. Lengths must match
-  // first; timingSafeEqual throws on length mismatch.
-  if (expected.length !== sig.length) return { valid: false, reason: 'sig length mismatch' }
-  const ok = timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(sig, 'hex'))
-  return ok ? { valid: true } : { valid: false, reason: 'hmac mismatch' }
-}
+// HMAC verification lives in lib/wp-form-hmac.ts. A duplicate implementation
+// used to live here and drifted: both carried the same wrong-column bug, so
+// fixing one would have left this path wide open. One copy now.
 
 // Open CORS for the WP blog — the form is on the creator's domain, the API
 // is on mvpaffiliate.io, so the browser sends a preflight. We don't accept
@@ -169,7 +101,7 @@ export async function POST(req: NextRequest) {
   // attacker could POST arbitrary creatorUserIds and flood-spam a creator's
   // Resend sender, killing deliverability for everyone on the platform.
   const admin = createAdminClient()
-  const hmac = await verifyFormHmac(admin, creatorUserId, payload)
+  const hmac = await verifyWpFormHmac(admin, creatorUserId, payload)
   if (hmac.valid === false) {
     // Verifiable fail (sig present but wrong, ts expired, origin doesn't
     // match a registered site). REJECT — this is almost certainly an
