@@ -61,6 +61,32 @@ export async function reattachThumbnailsForOwner(
   if (error) return empty({ ok: false, error: error.message })
 
   const base = site.wordpress_url.replace(/\/+$/, '')
+
+  // Batch the "does it already have a featured image?" probe. This used to be
+  // one GET per post inside the loop — up to 40 per owner, and the cron walks
+  // 15 owners per tick, so ~600 serial round trips under a 300s cap before any
+  // real upload work. One `?include=` request per owner instead; the same
+  // idiom is already used in wordpress/posts, fix-thumbnails and
+  // backfill-video-links. Falls back to an empty map on failure, which lands
+  // on the pre-existing "couldn't read it, try the upload" path.
+  const wpIds = ((posts ?? []) as Array<{ wordpress_post_id: number | null }>)
+    .map(p => p.wordpress_post_id).filter((n): n is number => typeof n === 'number' && n > 0)
+  const featuredById = new Map<number, number>()
+  if (wpIds.length > 0) {
+    try {
+      const res = await fetch(
+        `${base}/wp-json/wp/v2/posts?include=${wpIds.join(',')}&_fields=id,featured_media&per_page=100&status=any`,
+        { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(20_000) },
+      )
+      if (res.ok) {
+        const rows = (await res.json()) as Array<{ id?: number; featured_media?: number }>
+        for (const r of Array.isArray(rows) ? rows : []) {
+          if (typeof r.id === 'number') featuredById.set(r.id, r.featured_media ?? 0)
+        }
+      }
+    } catch { /* fall through — loop treats a miss as "unknown, try the upload" */ }
+  }
+
   let checked = 0, fixed = 0, alreadyOk = 0, stillBlocked = 0
   const failures: ReattachResult['failures'] = []
   const nowFixedIds: number[] = []
@@ -78,14 +104,11 @@ export async function reattachThumbnailsForOwner(
     if (!wpId || (!ytId && !customThumb)) continue
     checked++
     try {
-      const res = await fetch(`${base}/wp-json/wp/v2/posts/${wpId}?_fields=featured_media`, {
-        headers: { Accept: 'application/json' },
-        signal: AbortSignal.timeout(12_000),
-      })
-      if (res.ok) {
-        const j = (await res.json()) as { featured_media?: number }
-        if (j.featured_media && j.featured_media > 0) { alreadyOk++; nowFixedIds.push(wpId); continue }
-      }
+      // Already has a featured image → nothing to do. A wpId missing from the
+      // batch (post gone, or the batch request failed) falls through to the
+      // upload, exactly as the old per-post probe did when it wasn't res.ok.
+      const existingMedia = featuredById.get(wpId)
+      if (existingMedia && existingMedia > 0) { alreadyOk++; nowFixedIds.push(wpId); continue }
       let media
       if (customThumb) {
         media = await wpService.uploadImageFromUrl(customThumb, `${ytId || wpId}-blogthumb.jpg`)

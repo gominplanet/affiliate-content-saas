@@ -11,6 +11,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { maybeDecrypt } from '@/lib/secrets'
 import { overlayCaptionOnVideo, getLastOverlayError, type OverlayPosition, type CaptionStyle } from '@/services/cloudinary'
 import { researchProductContext, composeReelCaption } from '@/lib/ig-burn'
 import { publishMedia } from '@/services/instagram'
@@ -62,6 +63,24 @@ export async function GET(request: Request) {
   if (!job) return NextResponse.json({ ok: true, processed: 0 })
 
   try {
+    // 0. Check the destination FIRST. This read used to sit after the burn and
+    //    the two LLM calls, so a job for a user without Instagram connected
+    //    paid for a full Cloudinary render plus product research plus caption
+    //    composition — tens of seconds and real money — only to throw
+    //    'Instagram not connected' at the end. Hoisting it turns that into an
+    //    instant, free failure.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: integ } = await admin
+      .from('integrations')
+      .select('instagram_user_id,instagram_access_token')
+      .eq('user_id', job.user_id)
+      .single()
+    const igUserId = integ?.instagram_user_id as string | undefined
+    const igToken = maybeDecrypt(integ?.instagram_access_token) as string | undefined
+    if (!igUserId || !igToken) {
+      throw new Error('Instagram not connected')
+    }
+
     // 1. Burn the overlay — a CTA box sticker (PNG) when set, else the caption
     //    text. Matches the single-video burner: sticker mode passes an empty
     //    caption + the sticker URL; caption mode passes the text.
@@ -88,18 +107,10 @@ export async function GET(request: Request) {
     const reelCaption = productContext ? await composeReelCaption(productContext, ctx) : null
 
     // 3. Publish the Reel to the user's connected Instagram (default account).
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: integ } = await admin
-      .from('integrations')
-      .select('instagram_user_id,instagram_access_token')
-      .eq('user_id', job.user_id)
-      .single()
-    if (!integ?.instagram_user_id || !integ?.instagram_access_token) {
-      throw new Error('Instagram not connected')
-    }
+    //    Credentials were resolved in step 0.
     await publishMedia({
-      userId: integ.instagram_user_id,
-      accessToken: integ.instagram_access_token,
+      userId: igUserId,
+      accessToken: igToken,
       mediaType: 'REELS',
       videoUrl: burned.url,
       caption: reelCaption ?? job.caption_text,
