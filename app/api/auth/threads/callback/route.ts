@@ -10,6 +10,7 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const code = searchParams.get('code')
   const error = searchParams.get('error')
+  const state = searchParams.get('state')
 
   if (error || !code) {
     return NextResponse.redirect(`${appUrl}/connect-socials?threads_error=${encodeURIComponent(error || 'no_code')}`)
@@ -18,6 +19,20 @@ export async function GET(request: NextRequest) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.redirect(`${appUrl}/login`)
+
+  // CSRF: the state we issued must decode to the CURRENT session user.
+  // Without this, an attacker could start their own Threads authorization,
+  // hold the code, and get a logged-in victim to load this URL — binding the
+  // attacker's Threads account to the victim's tenant. Matches the check in
+  // twitter/callback and facebook/callback.
+  let stateUserId: string | null = null
+  if (state) {
+    try { stateUserId = Buffer.from(state, 'base64url').toString('utf-8') } catch { stateUserId = null }
+  }
+  if (!stateUserId || stateUserId !== user.id) {
+    console.warn('[threads/callback] state mismatch — possible CSRF', { hasState: !!stateUserId, sessionUid: user.id })
+    return NextResponse.redirect(`${appUrl}/connect-socials?threads_error=${encodeURIComponent('Session changed mid-OAuth. Try connecting again.')}`)
+  }
 
   let step = 'token_exchange'
   try {

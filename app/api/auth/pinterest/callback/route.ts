@@ -11,6 +11,7 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const code = searchParams.get('code')
   const error = searchParams.get('error')
+  const state = searchParams.get('state')
 
   if (error || !code) {
     return NextResponse.redirect(`${appUrl}/connect-socials?pinterest_error=${encodeURIComponent(error || 'no_code')}`)
@@ -19,6 +20,18 @@ export async function GET(request: NextRequest) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.redirect(`${appUrl}/login`)
+
+  // CSRF: state must decode to the current session user. Pinterest also hands
+  // back a long-lived refresh token here, so a successful cross-bind would give
+  // the attacker durable publish access to the victim's boards.
+  let stateUserId: string | null = null
+  if (state) {
+    try { stateUserId = Buffer.from(state, 'base64url').toString('utf-8') } catch { stateUserId = null }
+  }
+  if (!stateUserId || stateUserId !== user.id) {
+    console.warn('[pinterest/callback] state mismatch — possible CSRF', { hasState: !!stateUserId, sessionUid: user.id })
+    return NextResponse.redirect(`${appUrl}/connect-socials?pinterest_error=${encodeURIComponent('Session changed mid-OAuth. Try connecting again.')}`)
+  }
 
   // Track which step failed so the surfaced error is actionable
   // (token exchange vs. boards fetch behave very differently in sandbox).

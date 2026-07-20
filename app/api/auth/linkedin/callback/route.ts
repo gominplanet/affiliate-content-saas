@@ -15,22 +15,25 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${appUrl}/connect-socials?linkedin_error=${error || 'no_code'}`)
   }
 
-  // Decode user ID from state (set during OAuth initiation)
-  let userId: string | null = null
+  // The account being linked is the SESSION's, never whatever the caller put
+  // in `state`. The old code decoded a user id out of state and wrote the token
+  // to it — so anyone could authorize their own LinkedIn, then replay the
+  // callback with state=base64(victim id) and plant their token on that
+  // account. (RLS on the server client was the only thing standing in the way.)
+  // State is now purely a CSRF check, matching twitter/facebook.
+  const supabase = await createServerClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.redirect(`${appUrl}/login`)
+
+  let stateUserId: string | null = null
   if (state) {
-    try {
-      userId = Buffer.from(state, 'base64url').toString('utf-8')
-    } catch { /* ignore */ }
+    try { stateUserId = Buffer.from(state, 'base64url').toString('utf-8') } catch { stateUserId = null }
   }
-
-  // Fall back to session cookie if state decode fails
-  if (!userId) {
-    const supabase = await createServerClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    userId = user?.id ?? null
+  if (!stateUserId || stateUserId !== user.id) {
+    console.warn('[linkedin/callback] state mismatch — possible CSRF', { hasState: !!stateUserId, sessionUid: user.id })
+    return NextResponse.redirect(`${appUrl}/connect-socials?linkedin_error=${encodeURIComponent('Session changed mid-OAuth. Try connecting again.')}`)
   }
-
-  if (!userId) return NextResponse.redirect(`${appUrl}/login`)
+  const userId = user.id
 
   let step = 'token_exchange'
   try {
@@ -41,7 +44,6 @@ export async function GET(request: NextRequest) {
     const profile = await getProfile(accessToken)
 
     step = 'save_token'
-    const supabase = await createServerClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error: saveErr } = await supabase.from('integrations').upsert(
       encryptIntegrationWrite({

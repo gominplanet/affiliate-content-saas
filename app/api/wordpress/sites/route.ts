@@ -38,8 +38,15 @@ export async function GET() {
   const sites = await listSites(supabase, ownerId)
   const cap = await canAddSite(supabase, ownerId, tier)
 
+  // listSites decrypts appPassword/apiToken because the server-side callers
+  // need them to talk to WordPress — but nothing in the UI does, and sending
+  // them here put live WordPress credentials in a browser response, in
+  // devtools, and in the hands of any VA seat that can load this page.
+  // Strip them; every field the manager and picker actually render survives.
+  const safeSites = sites.map(({ appPassword: _pw, apiToken: _tok, ...rest }) => rest)
+
   return NextResponse.json({
-    sites,
+    sites: safeSites,
     cap: {
       current: cap.current,
       max: cap.cap,

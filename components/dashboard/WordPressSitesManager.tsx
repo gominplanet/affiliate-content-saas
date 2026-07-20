@@ -33,8 +33,12 @@ interface Site {
   label: string
   url: string
   username: string
-  appPassword: string  // not displayed; here for type completeness
-  apiToken: string | null
+  // Credentials are deliberately NOT sent by GET /api/wordpress/sites — they
+  // were never displayed, and shipping live WordPress passwords to the browser
+  // was a needless exposure. Kept optional so nothing here can start relying
+  // on them again without the type complaining.
+  appPassword?: never
+  apiToken?: never
   isDefault: boolean
   contentOnly: boolean
   ctaStyle: 'button' | 'link'
