@@ -23,7 +23,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await admin
     .from('blog_posts')
-    .select('id, title, slug, status, post_type, content, meta_description, wordpress_post_id, wordpress_url, hero_image_url, published_at, created_at, updated_at')
+    // `hero_image_url` was in this list but exists on no table — and unlike
+    // most of our reads this route DOES surface the error, so the documented
+    // public API returned 500 on every single request. blog_posts carries no
+    // image column at all; the thumbnail lives on the linked youtube_videos
+    // row, which this endpoint doesn't join.
+    .select('id, title, slug, status, post_type, content, meta_description, wordpress_post_id, wordpress_url, published_at, created_at, updated_at')
     .eq('id', id)
     .eq('user_id', auth.caller.userId)
     .maybeSingle()

@@ -148,12 +148,18 @@ async function resolveReviewerName(
   supabase: any,
   userId: string,
 ): Promise<string> {
-  const { data } = await supabase
-    .from('integrations')
-    .select('reviewer_name')
+  // The author's name lives on brand_profiles.author_name. This used to read
+  // integrations.reviewer_name, which exists on no table — so the query always
+  // errored and every Deals post fell through to "the editor", writing in a
+  // third-person voice that contradicts the first-person rule the rest of the
+  // generator follows. Latent only because Deals Hub is paused.
+  const { data, error } = await supabase
+    .from('brand_profiles')
+    .select('author_name')
     .eq('user_id', userId)
     .maybeSingle()
-  return (data?.reviewer_name as string | null)?.trim() || 'the editor'
+  if (error) console.warn('[deals] author lookup failed — falling back to "the editor"', error.message)
+  return (data?.author_name as string | null)?.trim() || 'the editor'
 }
 
 // ─── GET: list recent deals + occasion catalogue ───────────────────────────

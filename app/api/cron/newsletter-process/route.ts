@@ -182,18 +182,27 @@ async function fireScheduled(opts: { broadcastId: string }): Promise<void> {
   }
   if (Array.isArray(row.blog_post_ids) && row.blog_post_ids.length > 0) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data } = await (admin as any)
+    // See lib/newsletter-send.ts — blog_posts has no image column; the
+    // thumbnail is on the linked youtube_videos row. Selecting the
+    // non-existent `featured_image_url` errored the whole query, so every
+    // scheduled send resolved to zero posts and mailed intro + outro only.
+    const { data, error } = await (admin as any)
       .from('blog_posts')
-      .select('id,title,excerpt,wordpress_url,featured_image_url')
+      .select('id,title,excerpt,wordpress_url,youtube_videos(blog_thumbnail_url,thumbnail_url)')
       .eq('user_id', row.user_id)
       .in('id', row.blog_post_ids)
-    baseInput.posts = ((data ?? []) as Array<{ id: string; title: string; excerpt: string | null; wordpress_url: string | null; featured_image_url: string | null }>)
+    if (error) console.error('[newsletter-process] post lookup failed — sending with no articles', error.message)
+    type Row = {
+      id: string; title: string; excerpt: string | null; wordpress_url: string | null
+      youtube_videos?: { blog_thumbnail_url?: string | null; thumbnail_url?: string | null } | null
+    }
+    baseInput.posts = ((data ?? []) as Row[])
       .filter(p => p.wordpress_url)
       .map(p => ({
         url: p.wordpress_url as string,
         title: p.title,
         excerpt: p.excerpt ?? '',
-        imageUrl: p.featured_image_url ?? null,
+        imageUrl: p.youtube_videos?.blog_thumbnail_url ?? p.youtube_videos?.thumbnail_url ?? null,
       }))
   }
 

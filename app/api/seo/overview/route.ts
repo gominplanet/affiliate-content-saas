@@ -91,7 +91,7 @@ export async function GET(request: Request) {
   if (summaryOnly) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: scoreRows } = await (supabase as any)
-      .from('post_seo').select('post_id,score').eq('user_id', ownerId)
+      .from('post_seo').select('post_id,score:seo_score').eq('user_id', ownerId)
     const scoreCache = new Map<string, number>(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (scoreRows ?? [])
@@ -175,7 +175,7 @@ export async function GET(request: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: cacheRows } = await supabase
     .from('post_seo')
-    .select('post_id,indexed_state,coverage_state,last_crawl,clicks,impressions,position,ctr,dropped_at,checked_at,score')
+    .select('post_id,indexed_state,coverage_state,last_crawl,clicks,impressions,position,ctr,dropped_at,checked_at,score:seo_score')
     .eq('user_id', ownerId)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const cache = new Map<string, any>((cacheRows ?? []).map((r: any) => [r.post_id, r]))
