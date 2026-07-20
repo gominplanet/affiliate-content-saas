@@ -30,6 +30,7 @@ import { fetchOgImage, stripLinkPlaceholders } from '@/lib/og-image'
 import { sendPhoto, sendMessage, escapeMarkdownV2 } from '@/services/telegram'
 import { capSocialText, SOCIAL_LIMITS } from '@/lib/social-cap'
 import { decryptIntegrationRow, encryptIntegrationWrite } from '@/lib/integration-secrets'
+import { scrubBanned } from '@/lib/scrub'
 import { maybeDecrypt } from '@/lib/secrets'
 import { getDeadChannels, shouldSkipChannel, autoSkipMessage, type DeadChannel } from '@/lib/channel-health'
 import { createWordPressService } from '@/services/wordpress'
@@ -283,6 +284,19 @@ async function publishOne(
   // Social path — platform is guaranteed non-null by the kind ↔ platform
   // DB check constraint (migration 103), but TS can't see that, so
   // narrow here for the exhaustive switch below.
+  // Scrub ONCE here rather than per-platform. Every immediate publish route
+  // wraps its body in scrubBanned, but this cron never did — so "Publish"
+  // stripped banned words and "Schedule for later" shipped them verbatim,
+  // including ones we forbid outright. Facebook, Threads and X were the live
+  // cases; LinkedIn/Telegram/Bluesky happened to be clean because their
+  // dry-runs pre-scrub. Doing it at the single entry point means a platform
+  // added later can't quietly miss it. scrubBanned is idempotent, so the
+  // already-clean platforms are unaffected.
+  //
+  // Must sit ABOVE the platform guard: reassigning `row` after it would reset
+  // TS's non-null narrowing and break the exhaustive `never` check below.
+  row = { ...row, body_text: scrubBanned(row.body_text) }
+
   if (!row.platform) {
     throw new Error(`scheduled_posts row ${row.id}: kind=social but platform is null (DB invariant broken)`)
   }

@@ -14,6 +14,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { scrubBanned } from '@/lib/scrub'
+import { ensureDisclaimer, AFFILIATE_DISCLAIMER_DEFAULT } from '@/lib/social-disclaimer'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { sendPhoto, sendMessage, escapeMarkdownV2 } from '@/services/telegram'
@@ -153,7 +154,18 @@ Return ONLY the post text.`,
       })
     }
 
-    captionText = scrubBanned(stripLinkPlaceholders(captionText))
+    // Guarantee the affiliate disclosure. The scheduled path has always called
+    // ensureDisclaimer, and so do Facebook / LinkedIn / Threads — but "Post
+    // now" to Telegram never did and the caption prompt doesn't ask for one,
+    // so an immediate push shipped an Amazon affiliate link with no FTC
+    // disclosure at all and reported success.
+    //
+    // Applied BEFORE the length cap so the disclaimer is inside the budget
+    // rather than being appended past it and truncated away.
+    captionText = ensureDisclaimer(
+      scrubBanned(stripLinkPlaceholders(captionText)),
+      AFFILIATE_DISCLAIMER_DEFAULT,
+    )
     if (captionText.length > CAPTION_BUDGET) {
       captionText = captionText.slice(0, CAPTION_BUDGET - 1).replace(/\s+\S*$/, '') + '…'
     }

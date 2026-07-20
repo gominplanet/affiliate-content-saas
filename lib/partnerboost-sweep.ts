@@ -115,7 +115,7 @@ export async function sweepJoinedProducts(
 export async function syncUserCache(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   sb: any, userId: string, token: string, opts: { deadlineMs?: number } = {},
-): Promise<{ products: number; brandsSwept: number; joinedTotal: number; timedOut: boolean; syncedAt: string }> {
+): Promise<{ products: number; brandsSwept: number; joinedTotal: number; timedOut: boolean; syncedAt: string; purged: boolean }> {
   const { raw, joinedTotal, brandsSwept, timedOut } = await sweepJoinedProducts(token, {
     concurrency: 12,
     deadlineMs: opts.deadlineMs ?? 260_000,
@@ -157,8 +157,26 @@ export async function syncUserCache(
     if (error) throw new Error(error.message)
   }
   // Purge products not refreshed this run (brands left / gone stale).
-  await sb.from('pb_finder_cache').delete().eq('user_id', userId).lt('synced_at', runStart)
-  return { products: rows.length, brandsSwept, joinedTotal, timedOut, syncedAt: runStart }
+  //
+  // Only safe when this run actually saw the catalogue. The sweep swallows
+  // everything — a `catch { break }` on the brand list, a `catch { return }`
+  // per brand — so a PartnerBoost outage during the half-hourly cron produced
+  // brands=[] → rows=[] and this delete then wiped 100% of the user's cached
+  // catalogue while the cron reported {ok:true, products:0}. Their Finder went
+  // empty, and because the rows were gone they dropped out of the `oldest`
+  // selection query and were never retried.
+  //
+  // A partial run (timedOut) is equally unsafe to purge against: the brands it
+  // didn't reach look identical to brands that disappeared.
+  const purgeSafe = rows.length > 0 && !timedOut
+  if (purgeSafe) {
+    await sb.from('pb_finder_cache').delete().eq('user_id', userId).lt('synced_at', runStart)
+  } else {
+    console.warn('[partnerboost-sweep] skipping stale-purge — incomplete run, keeping existing cache', {
+      userId, products: rows.length, brandsSwept, joinedTotal, timedOut,
+    })
+  }
+  return { products: rows.length, brandsSwept, joinedTotal, timedOut, syncedAt: runStart, purged: purgeSafe }
 }
 
 /**

@@ -171,7 +171,12 @@ Return ONLY the post text, nothing else.`,
     const affiliateHeader = includeAffiliateCta && affiliateLink
       ? `⚡ No need to read more — grab it right here 👉 ${affiliateLink}\n${disclaimer}\n\n`
       : ''
-    const caption = `${affiliateHeader}${scrubBanned(reviewText)}\n\n🔗 Read the full post: ${post.wordpress_url}\n\n${disclaimer}`
+    // Scrub BEFORE composing, so the dry-run preview returns exactly what
+    // gets published. It used to scrub only inline at composition, so the
+    // text handed back to the modal — and saved as scheduled_posts.body_text
+    // — still contained banned words.
+    reviewText = scrubBanned(reviewText)
+    const caption = `${affiliateHeader}${reviewText}\n\n🔗 Read the full post: ${post.wordpress_url}\n\n${disclaimer}`
 
     if (dryRun) {
       // Generate 3 SPECIFIC, niche hashtags that fit this exact product/topic

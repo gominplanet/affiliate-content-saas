@@ -109,7 +109,12 @@ Write ONLY the post text, nothing else. Do not include a disclaimer or #ad tag.`
 
     // Threads API hard caps body text at 500 chars. Cap defensively then append disclaimer.
     const sep = '\n\n'
-    const fullText = capSocialText(scrubBanned(bodyText), SOCIAL_LIMITS.threads, `${sep}${DISCLAIMER}`)
+    // Scrub BEFORE composing, so the dry-run preview returns exactly what
+    // gets published. It used to scrub only inline at composition, so the
+    // text handed back to the modal — and saved as scheduled_posts.body_text
+    // — still contained banned words.
+    bodyText = scrubBanned(bodyText)
+    const fullText = capSocialText(bodyText, SOCIAL_LIMITS.threads, `${sep}${DISCLAIMER}`)
 
     if (dryRun) {
       return NextResponse.json({ ok: true, dryRun: true, text: bodyText.trim(), finalText: fullText })

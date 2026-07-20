@@ -180,7 +180,12 @@ Return ONLY the tweet text.`,
       tweetText = tweetText.slice(0, generationBudget - 1).replace(/\s+\S*$/, '') + '…'
     }
 
-    const finalText = `${scrubBanned(tweetText)} ${post.wordpress_url}`
+    // Scrub BEFORE composing, so the dry-run preview returns exactly what
+    // gets published. It used to scrub only inline at composition, so the
+    // text handed back to the modal — and saved as scheduled_posts.body_text
+    // — still contained banned words.
+    tweetText = scrubBanned(tweetText)
+    const finalText = `${tweetText} ${post.wordpress_url}`
 
     if (dryRun) {
       return NextResponse.json({ ok: true, dryRun: true, text: tweetText, finalText })
