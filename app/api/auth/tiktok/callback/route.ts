@@ -17,6 +17,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { encryptIntegrationWrite } from '@/lib/integration-secrets'
 import { clearChannelFailures } from '@/lib/channel-health'
 
 interface TikTokTokenResponse {
@@ -138,7 +139,7 @@ export async function GET(request: Request) {
   const { error: upsertErr } = await supabase
     .from('integrations')
     .upsert(
-      {
+      encryptIntegrationWrite({
         user_id: user.id,
         tiktok_open_id: tokens.open_id ?? null,
         tiktok_username: username || null,
@@ -149,7 +150,7 @@ export async function GET(request: Request) {
         tiktok_token_expiry: tokenExpiry,
         tiktok_refresh_expiry: refreshExpiry,
         tiktok_scopes: tokens.scope ?? null,
-      },
+      }),
       { onConflict: 'user_id' },
     )
 

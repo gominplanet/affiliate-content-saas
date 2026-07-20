@@ -12,6 +12,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { maybeDecrypt } from '@/lib/secrets'
 import { normalizeTier, tierAllowsSocial, type Tier } from '@/lib/tier'
 import { resolveSocialAccount } from '@/lib/social-accounts'
 import { publishMedia, subscribeToComments } from '@/services/instagram'
@@ -57,7 +58,7 @@ export async function POST(request: Request) {
 
     const igAccount = await resolveSocialAccount(supabase, user.id, 'instagram', {
       allowSelection: true,
-      legacy: { externalId: intRow?.instagram_user_id, accessToken: intRow?.instagram_access_token, displayName: intRow?.instagram_username },
+      legacy: { externalId: intRow?.instagram_user_id, accessToken: maybeDecrypt(intRow?.instagram_access_token), displayName: intRow?.instagram_username },
     })
     if (!igAccount) {
       return NextResponse.json({ error: 'Instagram not connected — connect it under Setup → Integrations to publish.' }, { status: 400 })

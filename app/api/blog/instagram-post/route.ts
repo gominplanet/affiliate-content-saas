@@ -14,6 +14,8 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { maybeDecrypt } from '@/lib/secrets'
+import { encryptIntegrationWrite } from '@/lib/integration-secrets'
 import { resolveBlogPostId } from '@/lib/resolve-post-id'
 import { scrubBanned } from '@/lib/scrub'
 import { createAnthropicClient } from '@/lib/anthropic'
@@ -88,7 +90,7 @@ export async function POST(request: NextRequest) {
       allowSelection: true,
       legacy: {
         externalId: intRow?.instagram_user_id,
-        accessToken: intRow?.instagram_access_token,
+        accessToken: maybeDecrypt(intRow?.instagram_access_token),
         displayName: intRow?.instagram_username,
       },
     })
@@ -110,7 +112,7 @@ export async function POST(request: NextRequest) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await supabase
           .from('integrations')
-          .update({ instagram_access_token: refreshed.accessToken, instagram_token_expiry: refreshed.expiresAt })
+          .update(encryptIntegrationWrite({ instagram_access_token: refreshed.accessToken, instagram_token_expiry: refreshed.expiresAt }))
           .eq('user_id', user.id)
         // Keep the mirrored social_accounts row's token fresh too.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any

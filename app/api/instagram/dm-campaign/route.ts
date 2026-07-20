@@ -16,6 +16,8 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { maybeDecrypt } from '@/lib/secrets'
+import { encryptIntegrationWrite } from '@/lib/integration-secrets'
 import { normalizeTier, tierAllowsSocial, type Tier } from '@/lib/tier'
 import { publishMedia, refreshLongLivedToken, subscribeToComments } from '@/services/instagram'
 import { generateDmCampaignCaption } from '@/lib/direct-caption'
@@ -153,7 +155,7 @@ export async function POST(request: Request) {
   if (!tierAllowsSocial(tier, 'instagram')) {
     return NextResponse.json({ error: 'Instagram posting is a Pro feature.', tierRequired: 'pro' }, { status: 403 })
   }
-  let accessToken = integ?.instagram_access_token as string | undefined
+  let accessToken = maybeDecrypt(integ?.instagram_access_token) as string | undefined
   const igUserId = integ?.instagram_user_id as string | undefined
   if (!accessToken || !igUserId) {
     return NextResponse.json({ error: "Instagram isn't connected. Connect it in Integrations first.", reconnectRequired: true }, { status: 412 })
@@ -163,7 +165,7 @@ export async function POST(request: Request) {
     try {
       const refreshed = await refreshLongLivedToken(accessToken)
       accessToken = refreshed.accessToken
-      await sb.from('integrations').update({ instagram_access_token: accessToken, instagram_token_expiry: refreshed.expiresAt }).eq('user_id', user.id)
+      await sb.from('integrations').update(encryptIntegrationWrite({ instagram_access_token: accessToken, instagram_token_expiry: refreshed.expiresAt })).eq('user_id', user.id)
     } catch { /* fall through with the current token */ }
   }
 

@@ -6,6 +6,7 @@
  * forgotten locally) — matters for the OAuth verification demo.
  */
 import { NextResponse } from 'next/server'
+import { maybeDecrypt } from '@/lib/secrets'
 import { createServerClient } from '@/lib/supabase/server'
 
 export async function POST() {
@@ -23,7 +24,8 @@ export async function POST() {
     .eq('user_id', user.id)
     .maybeSingle()
 
-  const token = row?.youtube_oauth_refresh_token || row?.youtube_oauth_access_token
+  // Stored encrypted — revoke needs the plaintext or the grant survives.
+  const token = maybeDecrypt(row?.youtube_oauth_refresh_token) || maybeDecrypt(row?.youtube_oauth_access_token)
   if (token) {
     try {
       await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(token)}`, {

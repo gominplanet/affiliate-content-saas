@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { encryptIntegrationWrite } from '@/lib/integration-secrets'
 import { clearChannelFailures } from '@/lib/channel-health'
 import { exchangeCodeForTokens, subscribeToComments } from '@/services/instagram'
 import { syncInstagramAccount } from '@/lib/social-accounts'
@@ -49,13 +50,13 @@ export async function GET(request: NextRequest) {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await supabase.from('integrations').upsert(
-      {
+      encryptIntegrationWrite({
         user_id: user.id,
         instagram_user_id: tokens.userId,
         instagram_username: tokens.username,
         instagram_access_token: tokens.accessToken,
         instagram_token_expiry: tokens.expiresAt,
-      },
+      }),
       { onConflict: 'user_id' },
     )
 

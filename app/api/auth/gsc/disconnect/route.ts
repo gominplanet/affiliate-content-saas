@@ -6,6 +6,7 @@
  * forgotten locally.
  */
 import { NextResponse } from 'next/server'
+import { maybeDecrypt } from '@/lib/secrets'
 import { createServerClient } from '@/lib/supabase/server'
 
 export async function POST() {
@@ -20,7 +21,9 @@ export async function POST() {
     .eq('user_id', user.id)
     .single()
 
-  const token = row?.gsc_oauth_refresh_token || row?.gsc_oauth_access_token
+  // Columns are stored encrypted (enc:v1:) — the revoke POST must send the
+  // real token, not ciphertext, or Google rejects it and access stays live.
+  const token = maybeDecrypt(row?.gsc_oauth_refresh_token) || maybeDecrypt(row?.gsc_oauth_access_token)
   if (token) {
     try {
       await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(token)}`, {

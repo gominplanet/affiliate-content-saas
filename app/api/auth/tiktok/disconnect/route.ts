@@ -7,6 +7,7 @@
  * post, and the access token itself expires in 24h anyway.
  */
 import { NextResponse } from 'next/server'
+import { maybeDecrypt } from '@/lib/secrets'
 import { createServerClient } from '@/lib/supabase/server'
 
 export async function POST() {
@@ -22,7 +23,8 @@ export async function POST() {
       .select('tiktok_access_token')
       .eq('user_id', user.id)
       .single()
-    const token = integ?.tiktok_access_token as string | undefined
+    // Stored encrypted — revoke needs the plaintext or the grant survives.
+    const token = maybeDecrypt(integ?.tiktok_access_token) as string | undefined
     const clientKey = process.env.TIKTOK_CLIENT_KEY
     const clientSecret = process.env.TIKTOK_CLIENT_SECRET
     if (token && clientKey && clientSecret) {

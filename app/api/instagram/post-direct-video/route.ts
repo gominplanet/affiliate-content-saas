@@ -16,6 +16,8 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { maybeDecrypt } from '@/lib/secrets'
+import { encryptIntegrationWrite } from '@/lib/integration-secrets'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { publishMedia, refreshLongLivedToken } from '@/services/instagram'
 
@@ -52,7 +54,7 @@ export async function POST(request: Request) {
   }
 
   // ── Token check + refresh-if-stale ───────────────────────────────────────
-  let accessToken = integ?.instagram_access_token as string | undefined
+  let accessToken = maybeDecrypt(integ?.instagram_access_token) as string | undefined
   const igUserId = integ?.instagram_user_id as string | undefined
   if (!accessToken || !igUserId) {
     return NextResponse.json({
@@ -68,7 +70,7 @@ export async function POST(request: Request) {
       accessToken = refreshed.accessToken
       await sb
         .from('integrations')
-        .update({ instagram_access_token: accessToken, instagram_token_expiry: refreshed.expiresAt })
+        .update(encryptIntegrationWrite({ instagram_access_token: accessToken, instagram_token_expiry: refreshed.expiresAt }))
         .eq('user_id', user.id)
     } catch { /* fall through with the existing token */ }
   }

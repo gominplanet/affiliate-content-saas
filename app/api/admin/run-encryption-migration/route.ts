@@ -56,12 +56,14 @@ const PLAN: Record<string, { idColumn: string; secretColumns: string[] }> = {
       'bluesky_app_password',
       'tiktok_access_token',
       'tiktok_refresh_token',
-      // NOTE: instagram_user_access_token + instagram_long_lived_token
-      // were originally in this list but those columns don't exist in
-      // the live schema (Instagram tokens live on social_accounts
-      // instead). Including them caused the entire SELECT to fail
-      // wholesale. Removed 2026-06-02 after the first dry-run errored
-      // on integrations.
+      // instagram_user_access_token + instagram_long_lived_token were
+      // dropped here on 2026-06-02 because those columns don't exist —
+      // correct, but the conclusion drawn at the time ("Instagram tokens
+      // live on social_accounts instead") was wrong. integrations
+      // .instagram_access_token is real, is what the OAuth callback
+      // writes, and was simply never added back — so IG tokens have been
+      // sitting in plaintext ever since. Added 2026-07-20.
+      'instagram_access_token',
       'telegram_bot_token',
       'youtube_oauth_access_token',
       'youtube_oauth_refresh_token',

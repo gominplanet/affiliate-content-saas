@@ -49,9 +49,12 @@ export const INTEGRATION_SECRET_COLUMNS = [
   // TikTok
   'tiktok_access_token',
   'tiktok_refresh_token',
-  // Instagram
-  'instagram_user_access_token',
-  'instagram_long_lived_token',
+  // Instagram — `instagram_access_token` is the column the OAuth callback and
+  // every publish path actually use. The two names previously listed here
+  // (`instagram_user_access_token`, `instagram_long_lived_token`) exist in no
+  // migration and are read/written by nothing, so for as long as they sat here
+  // instead of the real one, IG tokens were stored in plaintext.
+  'instagram_access_token',
   // Telegram
   'telegram_bot_token',
   // YouTube OAuth

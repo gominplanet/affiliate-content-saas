@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { encryptIntegrationWrite } from '@/lib/integration-secrets'
 import { clearChannelFailures } from '@/lib/channel-health'
 import { exchangeCodeForToken, getProfile } from '@/services/linkedin'
 
@@ -43,12 +44,12 @@ export async function GET(request: NextRequest) {
     const supabase = await createServerClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error: saveErr } = await supabase.from('integrations').upsert(
-      {
+      encryptIntegrationWrite({
         user_id: userId,
         linkedin_access_token: accessToken,
         linkedin_person_id: profile.sub,
         linkedin_person_name: profile.name,
-      },
+      }),
       { onConflict: 'user_id' },
     )
     if (saveErr) throw new Error(saveErr.message || 'token save failed')
