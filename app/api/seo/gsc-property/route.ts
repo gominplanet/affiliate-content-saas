@@ -26,14 +26,14 @@ export async function GET() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: integ } = await (supabase as any)
       .from('integrations')
-      .select('gsc_property, gsc_refresh_token')
+      .select('gsc_property, gsc_oauth_refresh_token')
       .eq('user_id', ownerId)
       .maybeSingle()
 
     const property: string | null = integ?.gsc_property || null
     return NextResponse.json({
       property,
-      connected: !!(property && integ?.gsc_refresh_token),
+      connected: !!(property && integ?.gsc_oauth_refresh_token),
     })
   } catch {
     // Never break a page over a convenience link — it falls back to the
