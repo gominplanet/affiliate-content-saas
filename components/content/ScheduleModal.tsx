@@ -313,14 +313,20 @@ export default function ScheduleModal({
       role="presentation"
     >
       <div
-        className="w-full max-w-xl rounded-2xl border shadow-2xl"
+        // Bounded flex column: header + footer stay pinned, only the middle
+        // scrolls. Without the height cap the card grew past the viewport when
+        // all channels + the affiliate CTA + preview were shown, pushing the
+        // Schedule button off-screen (had to zoom out to reach it). 100dvh
+        // accounts for mobile browser chrome; the -2rem matches the overlay's
+        // p-4 padding so the card never touches the screen edges.
+        className="w-full max-w-xl rounded-2xl border shadow-2xl flex flex-col max-h-[calc(100dvh-2rem)] overflow-hidden"
         style={{ backgroundColor: 'var(--bg, #0E0E11)', color: 'var(--text, #F5F5F7)', borderColor: 'var(--border, rgba(255,255,255,0.08))' }}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-labelledby="schedule-modal-title"
       >
-        <div className="flex items-center justify-between p-5 border-b" style={{ borderColor: 'var(--border, rgba(255,255,255,0.08))' }}>
+        <div className="flex items-center justify-between p-5 border-b shrink-0" style={{ borderColor: 'var(--border, rgba(255,255,255,0.08))' }}>
           <div className="flex items-center gap-2">
             <Calendar size={18} className="text-[#7C3AED]" />
             <h2 id="schedule-modal-title" className="text-lg font-semibold">
@@ -332,7 +338,7 @@ export default function ScheduleModal({
           </button>
         </div>
 
-        <div className="p-5 space-y-5">
+        <div className="p-5 space-y-5 flex-1 overflow-y-auto min-h-0">
           {/* Video title — context */}
           <div>
             <p className="text-[11px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-faint, rgba(255,255,255,0.5))' }}>
@@ -514,7 +520,7 @@ export default function ScheduleModal({
           )}
         </div>
 
-        <div className="p-5 border-t flex items-center justify-end gap-2" style={{ borderColor: 'var(--border, rgba(255,255,255,0.08))' }}>
+        <div className="p-5 border-t flex items-center justify-end gap-2 shrink-0" style={{ borderColor: 'var(--border, rgba(255,255,255,0.08))' }}>
           <button
             onClick={onClose}
             disabled={submitting}
