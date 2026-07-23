@@ -75,20 +75,54 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        await stripe.subscriptions.update(live.id, {
+        // Upgrade or downgrade? Compare real Stripe amounts rather than
+        // assuming tier order, so a future price change can't invert this.
+        const newPrice = await stripe.prices.retrieve(priceId)
+        const isUpgrade = (newPrice.unit_amount ?? 0) > (item.price?.unit_amount ?? 0)
+
+        const updated = await stripe.subscriptions.update(live.id, {
           items: [{ id: item.id, price: priceId }],
-          // Credit the unused portion of the current plan against the new one.
-          proration_behavior: 'create_prorations',
+          // UPGRADE → bill the difference NOW. With 'create_prorations' the
+          // charge was deferred to the next invoice, so someone could move to
+          // a higher plan, get the bigger limits instantly, and pay nothing
+          // until the next billing date — or drop back down before it and
+          // largely avoid paying at all. Generation is real AI spend, so that
+          // window had teeth. It also made the eventual invoice look like it
+          // came out of nowhere, which is exactly what confused the customer
+          // who prompted this.
+          //
+          // DOWNGRADE → keep deferring. The proration is a CREDIT; invoicing
+          // it immediately would raise a negative invoice instead of simply
+          // reducing what they owe next time.
+          proration_behavior: isUpgrade ? 'always_invoice' : 'create_prorations',
           // Applied in the SAME update as the price swap so the two can't land
           // half-done — Stripe either accepts both or neither.
           ...(promotionCodeId ? { discounts: [{ promotion_code: promotionCodeId }] } : {}),
           // Stamp so the webhook resolves user + tier directly.
           metadata: { user_id: user.id, tier },
+          expand: ['latest_invoice'],
         })
+
+        // Did the immediate charge actually clear? The price change sticks
+        // either way (Stripe has moved the subscription), and the webhook is
+        // the source of truth for tier — but a silent decline would leave them
+        // on the new plan with an unpaid invoice and no idea, so surface it.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const inv = updated.latest_invoice as any
+        const chargeCleared = !isUpgrade || !inv || inv.status === 'paid' || (inv.amount_due ?? 0) === 0
+        const chargedAmount = isUpgrade && inv?.amount_paid ? inv.amount_paid / 100 : 0
+
         // Reflect the new tier immediately (webhook re-confirms it).
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await (supabase as any).from('integrations').update({ tier }).eq('user_id', user.id)
-        return NextResponse.json({ updated: true, tier })
+        return NextResponse.json({
+          updated: true,
+          tier,
+          chargedNow: chargedAmount || undefined,
+          ...(chargeCleared ? {} : {
+            warning: "Your plan is switched, but the payment for the difference didn't go through. Update your card in Manage subscription so the invoice clears.",
+          }),
+        })
       }
       // customerId exists but no live subscription (cancelled/expired) → fall
       // through to a fresh Checkout below.

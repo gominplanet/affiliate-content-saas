@@ -131,14 +131,23 @@ export default function BillingPage() {
         // leave this blank.
         body: JSON.stringify({ tier: t, promoCode: promoCode.trim() || null }),
       })
-      const { url, updated, alreadyOnPlan, error } = await res.json()
+      const { url, updated, alreadyOnPlan, chargedNow, warning, error } = await res.json()
       if (error) { toast.error(error, { duration: 8_000 }); return }
       // Existing subscriber → plan was switched in place (prorated), no
       // redirect. New subscriber → a Checkout URL to visit.
       if (updated) {
         const label = t.charAt(0).toUpperCase() + t.slice(1)
-        toast.success(alreadyOnPlan ? `You're already on ${label}.` : `Switched to ${label} — billing is prorated, so your unused time is credited.`)
-        setTimeout(() => window.location.reload(), 1400)
+        // Say plainly when money just moved. Upgrades now bill the difference
+        // immediately, and a charge nobody was told about is exactly what made
+        // the next invoice look wrong to the customer who prompted this.
+        const msg = alreadyOnPlan
+          ? `You're already on ${label}.`
+          : chargedNow
+            ? `Switched to ${label} — we charged $${Number(chargedNow).toFixed(2)} now for the rest of this billing period, with your unused time credited.`
+            : `Switched to ${label} — your unused time is credited against your next invoice.`
+        toast.success(msg, { duration: 7_000 })
+        if (warning) toast.warning(warning, { duration: 10_000 })
+        setTimeout(() => window.location.reload(), warning ? 3_000 : 1400)
         return
       }
       if (url) { window.location.href = url; return }
