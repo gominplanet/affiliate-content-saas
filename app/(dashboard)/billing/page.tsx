@@ -23,6 +23,7 @@ export default function BillingPage() {
   const [upgraded, setUpgraded] = useState(false)
   const [portalLoading, setPortalLoading] = useState(false)
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null)
+  const [promoCode, setPromoCode] = useState('')
 
   const load = useCallback(async () => {
     try {
@@ -124,10 +125,14 @@ export default function BillingPage() {
       const res = await fetch('/api/stripe/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tier: t }),
+        // promoCode only matters for existing subscribers: their plan is
+        // swapped in place (no Checkout), so Stripe's own "Add promotion code"
+        // field never appears. New subscribers get that field on Checkout and
+        // leave this blank.
+        body: JSON.stringify({ tier: t, promoCode: promoCode.trim() || null }),
       })
       const { url, updated, alreadyOnPlan, error } = await res.json()
-      if (error) { toast.error(error); return }
+      if (error) { toast.error(error, { duration: 8_000 }); return }
       // Existing subscriber → plan was switched in place (prorated), no
       // redirect. New subscriber → a Checkout URL to visit.
       if (updated) {
@@ -330,6 +335,29 @@ export default function BillingPage() {
                     </button>
                   </div>
                 ))}
+              </div>
+
+              {/* Promo code. Only meaningful for people who already pay: their
+                  plan is swapped in place (prorated, no Checkout), so Stripe's
+                  own "Add promotion code" field never appears for them — which
+                  used to make promo codes impossible on any upgrade. New
+                  subscribers get that field on the Checkout page instead. */}
+              <div className="mt-4 pt-4 border-t border-gray-100 dark:border-white/10">
+                <label htmlFor="promo-code" className="block text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">
+                  Have a promo code?
+                </label>
+                <input
+                  id="promo-code"
+                  value={promoCode}
+                  onChange={e => setPromoCode(e.target.value.toUpperCase())}
+                  placeholder="e.g. EARLY20"
+                  autoCapitalize="characters"
+                  spellCheck={false}
+                  className="w-full sm:max-w-xs px-3 py-2 rounded-lg text-sm font-mono tracking-wide border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 text-[#1d1d1f] dark:text-[#f5f5f7] placeholder:font-sans placeholder:tracking-normal placeholder:text-[#86868b] focus:outline-none focus:border-[#7C3AED]"
+                />
+                <p className="text-[11px] text-[#6e6e73] dark:text-[#8e8e93] mt-1.5">
+                  Enter it before picking a plan and it&apos;s applied to that change. Use the short code, not the <code>promo_…</code> id.
+                </p>
               </div>
             </div>
           )}

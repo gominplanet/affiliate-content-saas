@@ -15,10 +15,14 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { tier, referral, couponId } = await request.json() as {
+  const { tier, referral, couponId, promoCode } = await request.json() as {
     tier: Tier
     referral?: string | null
     couponId?: string | null
+    /** Customer-facing promotion code the user typed (e.g. "EARLY20"), NOT a
+     *  Stripe promo_… object id. Only used by the in-place swap below — fresh
+     *  Checkout sessions get Stripe's own "Add promotion code" field. */
+    promoCode?: string | null
   }
   const priceId = PRICE_IDS[tier as keyof typeof PRICE_IDS]
   if (!priceId) return NextResponse.json({ error: 'Invalid tier' }, { status: 400 })
@@ -53,10 +57,31 @@ export async function POST(request: NextRequest) {
         if (item.price?.id === priceId) {
           return NextResponse.json({ updated: true, tier, alreadyOnPlan: true })
         }
+
+        // Resolve a typed promotion code BEFORE touching the subscription, so
+        // a bad code is a clean 400 and nothing changes. Existing subscribers
+        // previously had no way to use a promo code at all: the "Add promotion
+        // code" field only exists on Stripe Checkout, which this branch skips
+        // (a second Checkout subscription would double-bill them).
+        let promotionCodeId: string | null = null
+        const typedCode = (promoCode || '').trim()
+        if (typedCode) {
+          const found = await stripe.promotionCodes.list({ code: typedCode, active: true, limit: 1 })
+          promotionCodeId = found.data[0]?.id ?? null
+          if (!promotionCodeId) {
+            return NextResponse.json({
+              error: `"${typedCode}" isn't an active promo code. Check for typos — and note it's the short code (like SAVE20), not the promo_… id from Stripe.`,
+            }, { status: 400 })
+          }
+        }
+
         await stripe.subscriptions.update(live.id, {
           items: [{ id: item.id, price: priceId }],
           // Credit the unused portion of the current plan against the new one.
           proration_behavior: 'create_prorations',
+          // Applied in the SAME update as the price swap so the two can't land
+          // half-done — Stripe either accepts both or neither.
+          ...(promotionCodeId ? { discounts: [{ promotion_code: promotionCodeId }] } : {}),
           // Stamp so the webhook resolves user + tier directly.
           metadata: { user_id: user.id, tier },
         })
