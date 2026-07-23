@@ -131,7 +131,7 @@ export default function BillingPage() {
         // leave this blank.
         body: JSON.stringify({ tier: t, promoCode: promoCode.trim() || null }),
       })
-      const { url, updated, alreadyOnPlan, chargedNow, warning, error } = await res.json()
+      const { url, updated, alreadyOnPlan, chargedNow, discountApplied, warning, error } = await res.json()
       if (error) { toast.error(error, { duration: 8_000 }); return }
       // Existing subscriber → plan was switched in place (prorated), no
       // redirect. New subscriber → a Checkout URL to visit.
@@ -141,7 +141,11 @@ export default function BillingPage() {
         // immediately, and a charge nobody was told about is exactly what made
         // the next invoice look wrong to the customer who prompted this.
         const msg = alreadyOnPlan
-          ? `You're already on ${label}.`
+          ? discountApplied
+            // They were already on the plan and redeemed a code — say the code
+            // landed, not "nothing to do", which is what it used to report.
+            ? `Promo code applied to your ${label} plan — you'll see it on your next invoice.`
+            : `You're already on ${label}.`
           : chargedNow
             ? `Switched to ${label} — we charged $${Number(chargedNow).toFixed(2)} now for the rest of this billing period, with your unused time credited.`
             : `Switched to ${label} — your unused time is credited against your next invoice.`

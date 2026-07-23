@@ -53,16 +53,18 @@ export async function POST(request: NextRequest) {
       const live = subs.data.find(s => ['active', 'trialing', 'past_due', 'unpaid'].includes(s.status))
       const item = live?.items.data[0]
       if (live && item) {
-        // Already on this price → nothing to change or charge.
-        if (item.price?.id === priceId) {
-          return NextResponse.json({ updated: true, tier, alreadyOnPlan: true })
-        }
-
-        // Resolve a typed promotion code BEFORE touching the subscription, so
-        // a bad code is a clean 400 and nothing changes. Existing subscribers
-        // previously had no way to use a promo code at all: the "Add promotion
-        // code" field only exists on Stripe Checkout, which this branch skips
-        // (a second Checkout subscription would double-bill them).
+        // Resolve a typed promotion code FIRST — before both the
+        // already-on-plan short-circuit and any subscription write. Two
+        // reasons: a bad code becomes a clean 400 with nothing changed, and
+        // someone ALREADY on the right plan can still redeem one. That second
+        // case is why this sits above the check below: handing a customer a
+        // code they physically cannot enter (because they're on the plan
+        // already) is the same dead end the promo field was added to remove.
+        //
+        // Existing subscribers get no promo field from Stripe at all — the
+        // "Add promotion code" box only exists on Checkout, which this whole
+        // branch skips because a second Checkout subscription would
+        // double-bill them.
         let promotionCodeId: string | null = null
         const typedCode = (promoCode || '').trim()
         if (typedCode) {
@@ -73,6 +75,20 @@ export async function POST(request: NextRequest) {
               error: `"${typedCode}" isn't an active promo code. Check for typos — and note it's the short code (like SAVE20), not the promo_… id from Stripe.`,
             }, { status: 400 })
           }
+        }
+
+        // Already on this price → no plan change to make. Apply the discount
+        // on its own if they supplied one, rather than saying nothing happened.
+        if (item.price?.id === priceId) {
+          if (promotionCodeId) {
+            await stripe.subscriptions.update(live.id, {
+              discounts: [{ promotion_code: promotionCodeId }],
+              // Don't re-prorate: the price isn't moving, only the discount.
+              proration_behavior: 'none',
+            })
+            return NextResponse.json({ updated: true, tier, alreadyOnPlan: true, discountApplied: true })
+          }
+          return NextResponse.json({ updated: true, tier, alreadyOnPlan: true })
         }
 
         // Upgrade or downgrade? Compare real Stripe amounts rather than
