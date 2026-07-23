@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
-import { Save, Check, Plus, Trash2, GripVertical, Upload, X, RefreshCw, Loader2 } from 'lucide-react'
+import { Save, Check, Plus, Trash2, GripVertical, Upload, X, RefreshCw, Loader2, AlertCircle } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { InfoTip } from '@/components/ui/InfoTip'
 
@@ -308,6 +308,43 @@ const DEFAULT: BrandData = {
   sample_full_name: '',
   sample_address: '',
   sample_phone: '',
+}
+
+/**
+ * Sanity-check a social profile URL and return a human warning, or null.
+ *
+ * These fields render as icons on the creator's live blog, so a typo ships
+ * publicly and silently. A real case: an email address typed into the Threads
+ * field became `https://someone@gmail.com`, which browsers read as a username
+ * plus the host `gmail.com` — so the icon sat on the blog pointing nowhere,
+ * and the creator couldn't tell which icon it even was.
+ *
+ * Deliberately a WARNING, not a block. Custom domains, link shorteners and
+ * regional hosts are all legitimate, and trapping someone behind a validator
+ * that is wrong about their URL is worse than a wrong icon.
+ */
+function socialUrlWarning(raw: string, label: string, hosts: string[]): string | null {
+  const v = raw.trim()
+  if (!v) return null
+
+  // A bare email address in a link field.
+  if (/^mailto:/i.test(v) || /^[^\s/@]+@[^\s/@]+\.[^\s/@]+$/.test(v)) {
+    return `That looks like an email address. Put it in Contact email below — this field wants your ${label} link.`
+  }
+
+  let host: string
+  try {
+    host = new URL(/^https?:\/\//i.test(v) ? v : `https://${v}`).hostname.toLowerCase()
+  } catch {
+    return `That doesn't look like a web address. It should look like ${hosts[0]}/yourhandle`
+  }
+  if (!host.includes('.')) {
+    return `That doesn't look like a web address. It should look like ${hosts[0]}/yourhandle`
+  }
+  if (hosts.length && !hosts.some(h => host === h || host.endsWith(`.${h}`))) {
+    return `This points to ${host}, which doesn't look like ${label}. Check it, or clear the field to hide the icon.`
+  }
+  return null
 }
 
 export default function BrandPage() {
@@ -1229,26 +1266,41 @@ export default function BrandPage() {
             </p>
             <div className="grid grid-cols-1 gap-3">
               {[
-                { key: 'youtube_channel_url' as const, label: 'YouTube',   placeholder: 'youtube.com/@yourchannel' },
-                { key: 'instagram_url' as const,        label: 'Instagram', placeholder: 'instagram.com/yourhandle' },
-                { key: 'tiktok_url' as const,           label: 'TikTok',    placeholder: 'tiktok.com/@yourhandle' },
-                { key: 'twitter_url' as const,          label: 'X / Twitter', placeholder: 'x.com/yourhandle' },
-                { key: 'pinterest_url' as const,        label: 'Pinterest', placeholder: 'pinterest.com/yourprofile' },
-                { key: 'facebook_url' as const,         label: 'Facebook',  placeholder: 'facebook.com/yourpage' },
-                { key: 'threads_url' as const,          label: 'Threads',   placeholder: 'threads.net/@yourhandle' },
-                { key: 'contact_email' as const,        label: 'Contact email', placeholder: 'hello@yourdomain.com' },
-              ].map(({ key, label, placeholder }) => (
-                <div key={key}>
-                  <label className="block text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">{label}</label>
-                  <input
-                    type={key === 'contact_email' ? 'email' : 'text'}
-                    value={data[key]}
-                    onChange={(e) => set(key, e.target.value)}
-                    placeholder={placeholder}
-                    className="input-field text-sm"
-                  />
-                </div>
-              ))}
+                { key: 'youtube_channel_url' as const, label: 'YouTube',   placeholder: 'youtube.com/@yourchannel', hosts: ['youtube.com', 'youtu.be'] },
+                { key: 'instagram_url' as const,        label: 'Instagram', placeholder: 'instagram.com/yourhandle', hosts: ['instagram.com'] },
+                { key: 'tiktok_url' as const,           label: 'TikTok',    placeholder: 'tiktok.com/@yourhandle', hosts: ['tiktok.com'] },
+                { key: 'twitter_url' as const,          label: 'X / Twitter', placeholder: 'x.com/yourhandle', hosts: ['x.com', 'twitter.com'] },
+                { key: 'pinterest_url' as const,        label: 'Pinterest', placeholder: 'pinterest.com/yourprofile', hosts: ['pinterest.com', 'pin.it'] },
+                { key: 'facebook_url' as const,         label: 'Facebook',  placeholder: 'facebook.com/yourpage', hosts: ['facebook.com', 'fb.com', 'fb.me'] },
+                { key: 'threads_url' as const,          label: 'Threads',   placeholder: 'threads.net/@yourhandle', hosts: ['threads.net', 'threads.com'] },
+                { key: 'contact_email' as const,        label: 'Contact email', placeholder: 'hello@yourdomain.com', hosts: [] },
+              ].map(({ key, label, placeholder, hosts }) => {
+                // Contact email is a real email field; everything else is a
+                // link that ends up as a public icon on the blog.
+                const warning = key === 'contact_email'
+                  ? null
+                  : socialUrlWarning(data[key], label, hosts)
+                return (
+                  <div key={key}>
+                    <label className="block text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">{label}</label>
+                    <input
+                      type={key === 'contact_email' ? 'email' : 'text'}
+                      value={data[key]}
+                      onChange={(e) => set(key, e.target.value)}
+                      placeholder={placeholder}
+                      aria-invalid={warning ? true : undefined}
+                      className="input-field text-sm"
+                      style={warning ? { borderColor: '#ff9500' } : undefined}
+                    />
+                    {warning && (
+                      <p className="text-[11px] mt-1 flex items-start gap-1" style={{ color: '#b25000' }}>
+                        <AlertCircle size={12} className="flex-shrink-0 mt-0.5" />
+                        <span>{warning}</span>
+                      </p>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           </div>
 
