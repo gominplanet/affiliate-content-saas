@@ -8,6 +8,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { rowToShort } from '@/lib/shorts-row'
+import { ingestConfigured } from '@/lib/youtube-ingest'
 
 export async function GET(request: Request) {
   const supabase = await createServerClient()
@@ -35,5 +36,7 @@ export async function GET(request: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     shorts: ((rows ?? []) as any[]).map(rowToShort),
     hasSource: !!(video.source_video_url as string | null),
+    // Whether this deployment can fetch the video automatically (no upload).
+    ingestEnabled: ingestConfigured(),
   })
 }

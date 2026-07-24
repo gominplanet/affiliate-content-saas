@@ -1,0 +1,17 @@
+{
+  "name": "shorts-ingest-service",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Downloads a YouTube video and uploads the MP4 to Supabase Storage for Shorts Studio (the no-upload path).",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.106.2",
+    "express": "^4.21.2"
+  }
+}

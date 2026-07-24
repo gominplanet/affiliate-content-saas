@@ -47,6 +47,8 @@ export function ShortsStudioModal({
   const [planning, setPlanning] = useState(false)
   const [clips, setClips] = useState<ShortRow[]>([])
   const [hasSource, setHasSource] = useState(false)
+  const [ingestEnabled, setIngestEnabled] = useState(false)
+  const [preparing, setPreparing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // Per-clip UI: chosen subtitle style + render state.
   const [styleById, setStyleById] = useState<Record<string, SubtitleStyle>>({})
@@ -59,6 +61,7 @@ export function ShortsStudioModal({
       if (!res.ok) throw new Error(data.error || 'Failed to load')
       setClips(data.shorts || [])
       setHasSource(!!data.hasSource)
+      setIngestEnabled(!!data.ingestEnabled)
     } catch (e) {
       setError(errText(e))
     } finally {
@@ -93,6 +96,33 @@ export function ShortsStudioModal({
       setPlanning(false)
     }
   }, [videoId, youtubeVideoId])
+
+  // No-upload path: ask the server to fetch the video for us, then find Shorts.
+  const fetchAutomatically = useCallback(async () => {
+    setPreparing(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/youtube/shorts/ingest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoId }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        if (data.ingestDisabled) setIngestEnabled(false)
+        if (data.limitReached) dispatchCapReached(data.error || 'Shorts Studio is a Pro feature.', { cap: data.cap || 'shorts_studio', currentTier: data.currentTier, upgrade: data.upgrade })
+        throw new Error(data.error || 'Could not fetch the video automatically.')
+      }
+      setHasSource(true)
+      toast.success('Video ready')
+      await findShorts()
+    } catch (e) {
+      setError(errText(e))
+      toast.error(errText(e))
+    } finally {
+      setPreparing(false)
+    }
+  }, [videoId, findShorts])
 
   const renderClip = useCallback(async (clip: ShortRow) => {
     if (!hasSource) { toast.error('Upload the source video first.'); return }
@@ -158,20 +188,38 @@ export function ShortsStudioModal({
             </button>
           </div>
 
-          {/* Source-video prompt (needed only to RENDER) */}
+          {/* Source-video prompt — needed to transcribe (if no captions) + render */}
           {!hasSource && (
-            <div className="rounded-xl border border-dashed border-black/10 dark:border-white/15 p-4">
-              <p className="text-[12px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">
-                Upload the full video once — we transcribe it and cut your clips from it
-              </p>
-              <ShortVideoUpload
-                videoId={videoId}
-                targetColumn="source_video_url"
-                extraFields={{ source_video_uploaded_at: new Date().toISOString() }}
-                label="Drop the full video (the long one) here"
-                helpText="MP4, under 300 MB. We transcribe it and cut every clip from it — it never touches YouTube."
-                onUploaded={async () => { setHasSource(true); toast.success('Video uploaded — hit Find Shorts'); }}
-              />
+            <div className="rounded-xl border border-dashed border-black/10 dark:border-white/15 p-4 space-y-3">
+              {ingestEnabled && (
+                <div>
+                  <button
+                    onClick={fetchAutomatically}
+                    disabled={preparing}
+                    className="w-full inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
+                    style={{ backgroundColor: PURPLE }}
+                  >
+                    {preparing ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
+                    {preparing ? 'Preparing video…' : 'Fetch this video automatically — no upload'}
+                  </button>
+                  <p className="text-[10px] text-[#86868b] text-center mt-1.5">
+                    We download it for you and cut the clips. Takes a few minutes.
+                  </p>
+                </div>
+              )}
+              <div>
+                <p className="text-[12px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">
+                  {ingestEnabled ? 'Or upload the video yourself' : 'Upload the full video once — we transcribe it and cut your clips from it'}
+                </p>
+                <ShortVideoUpload
+                  videoId={videoId}
+                  targetColumn="source_video_url"
+                  extraFields={{ source_video_uploaded_at: new Date().toISOString() }}
+                  label="Drop the full video (the long one) here"
+                  helpText="MP4, under 300 MB. We transcribe it and cut every clip from it — it never touches YouTube."
+                  onUploaded={async () => { setHasSource(true); toast.success('Video uploaded — hit Find Shorts'); }}
+                />
+              </div>
             </div>
           )}
 
