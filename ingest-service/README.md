@@ -69,7 +69,26 @@ session out from under it). Never commit cookies to the repo.
 If cookies expire (downloads start failing with the bot message again), re-export
 and update `YOUTUBE_COOKIES_B64`.
 
-Advanced: `YT_DLP_EXTRA` can pass extra space-separated yt-dlp args if needed.
+### If cookies still hit the bot wall (residential proxy)
+
+Cookies help but YouTube's "confirm you're not a bot" check is intermittent on
+datacenter IPs (Railway/Fly/Render). The reliable fix is a **residential or
+mobile proxy** so the download looks like a home connection. Sign up for any
+residential proxy (Webshare, IPRoyal, Bright Data, etc.), then set on the
+service:
+
+| var | value |
+|---|---|
+| `YT_DLP_PROXY` | `http://user:pass@host:port` (your proxy) |
+
+Every `yt-dlp` call then routes through it and the bot check generally stops.
+This is what services like vidIQ run behind the scenes (a proxy farm).
+
+Other knobs:
+- `YT_DLP_PLAYER_CLIENTS` — comma-separated YouTube player clients to try
+  (default `default,web_safari,mweb`). Alternate clients slip past the check
+  more often than the default alone.
+- `YT_DLP_EXTRA` — extra space-separated yt-dlp args.
 
 ## Contract
 
