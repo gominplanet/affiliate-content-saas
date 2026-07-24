@@ -134,9 +134,12 @@ app.post('/ingest', async (req, res) => {
       }
     } catch { /* non-fatal — proceed to download */ }
 
-    // Best merged mp4 up to 1080p (keeps files sane; Shorts are 9:16 anyway).
+    // Best video ≤1080p + best audio, ANY codec (VP9/webm included), merged to
+    // mp4 by ffmpeg. No ext filter — that's what caused "Requested format is not
+    // available" on videos YouTube only serves in webm. Cloudinary re-encodes on
+    // render, so the source codec doesn't matter downstream.
     await ytDlp([
-      '-f', 'bv*[height<=1080][ext=mp4]+ba[ext=m4a]/b[ext=mp4]/b',
+      '-f', 'bv*[height<=1080]+ba/b[height<=1080]/bv*+ba/b',
       '--merge-output-format', 'mp4',
       '-o', tmp,
       '--no-playlist', '--no-warnings',
