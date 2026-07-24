@@ -25,8 +25,12 @@ export function ShortVideoUpload({
   videoId,
   onUploaded,
   compact = false,
+  targetColumn = 'instagram_video_url',
+  extraFields,
+  label,
+  helpText,
 }: {
-  /** youtube_videos.id (uuid) — the row whose instagram_video_url we update. */
+  /** youtube_videos.id (uuid) — the row whose video column we update. */
   videoId: string
   /** Fires once the upload + DB patch both succeed. Parent should re-load
    *  meta so the new video URL flows through to the preview + caption. */
@@ -34,6 +38,15 @@ export function ShortVideoUpload({
   /** Smaller layout for the "wrong video, replace this" path under an
    *  already-loaded preview. Big drop-zone for the first-time case. */
   compact?: boolean
+  /** Which youtube_videos column to store the public URL on. Defaults to the
+   *  finished-Short column; Shorts Studio passes 'source_video_url' to store the
+   *  long-form video it chops from. */
+  targetColumn?: 'instagram_video_url' | 'source_video_url'
+  /** Extra columns to set alongside the URL (e.g. an uploaded-at timestamp). */
+  extraFields?: Record<string, unknown>
+  /** Override the drop-zone copy for non-Short uploads. */
+  label?: string
+  helpText?: string
 }) {
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -77,9 +90,9 @@ export function ShortVideoUpload({
       if (!publicUrl) throw new Error('Storage did not return a public URL.')
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error: dbErr } = await supabase
+      const { error: dbErr } = await (supabase as any)
         .from('youtube_videos')
-        .update({ instagram_video_url: publicUrl })
+        .update({ [targetColumn]: publicUrl, ...(extraFields ?? {}) })
         .eq('id', videoId)
         .eq('user_id', user.id)
       if (dbErr) throw new Error(`Couldn't link the video: ${dbErr.message}`)
@@ -91,7 +104,7 @@ export function ShortVideoUpload({
       setUploading(false)
       if (inputRef.current) inputRef.current.value = ''
     }
-  }, [videoId, supabase, onUploaded])
+  }, [videoId, supabase, onUploaded, targetColumn, extraFields])
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -154,10 +167,10 @@ export function ShortVideoUpload({
       ) : (
         <>
           <Upload size={20} className="text-[#7C3AED]" />
-          <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Drop the MP4 here</p>
+          <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{label || 'Drop the MP4 here'}</p>
           <p className="text-[11px] text-[#86868b] text-center">
-            or click to pick from your computer. 9:16 vertical, under 300 MB.<br />
-            Probably already in your Downloads folder from when you uploaded to YouTube.
+            {helpText || (<>or click to pick from your computer. 9:16 vertical, under 300 MB.<br />
+            Probably already in your Downloads folder from when you uploaded to YouTube.</>)}
           </p>
         </>
       )}

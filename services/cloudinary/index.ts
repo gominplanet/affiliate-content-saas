@@ -8,6 +8,7 @@
  * this can never break a publish.
  */
 import { v2 as cloudinary } from 'cloudinary'
+import type { CaptionChunk, SubtitleStyle } from '@/lib/shorts-types'
 
 // Accept EITHER the single CLOUDINARY_URL (cloudinary://key:secret@cloud — the
 // format Cloudinary hands you) OR the three discrete vars.
@@ -229,4 +230,138 @@ export async function overlayCaptionOnVideo(
 export async function deleteVideoAsset(publicId: string | null | undefined): Promise<void> {
   if (!ensureConfig() || !publicId) return
   try { await cloudinary.uploader.destroy(publicId, { resource_type: 'video' }) } catch { /* non-fatal */ }
+}
+
+// ── Shorts Studio: chop a long video into a captioned vertical Short ──────────
+
+/** Last failure reason from renderVerticalShort — surfaced by the render route
+ *  so the creator sees the real Cloudinary error, not a generic message. */
+let lastShortError: string | null = null
+export function getLastShortError(): string | null { return lastShortError }
+
+/** Per-caption visual params. Burned as time-boxed Arial-bold text layers so the
+ *  words track the audio. Boxed/pop styles use a pill background (proven legible
+ *  in the IG burner); bold-white leans on a drop shadow. */
+function subtitleParams(style: SubtitleStyle): { color: string; background?: string; radius?: number; effect?: string } {
+  switch (style) {
+    case 'yellow-pop': return { color: '#ffd400', background: '#111111', radius: 18 }
+    case 'boxed': return { color: 'white', background: '#111111', radius: 18 }
+    case 'bold-white':
+    default: return { color: 'white', effect: 'shadow:60' }
+  }
+}
+
+/** Cloudinary's Arial layer 400s on emoji / non-ASCII — strip to plain text
+ *  (mirrors overlayCaptionOnVideo). Also upper-caps runaway length. */
+function safeLayerText(s: string, max = 90): string {
+  return (s || '').replace(/[^\x20-\x7E]/g, '').replace(/\s{2,}/g, ' ').trim().slice(0, max)
+}
+
+export interface RenderShortOpts {
+  /** Public (https) URL of the SOURCE long-form video — the creator-uploaded MP4. */
+  sourceVideoUrl: string
+  /** Clip window on the SOURCE timeline, in seconds. */
+  startSec: number
+  endSec: number
+  /** Clip-RELATIVE caption timeline (0 = clip start) from lib/shorts-captions. */
+  captions: CaptionChunk[]
+  style?: SubtitleStyle
+  /** Optional persistent title burned along the top of the whole clip. */
+  hook?: string
+  /** Reuse a previously-uploaded Cloudinary source asset (public id) so
+   *  rendering N clips from one video only uploads the big file once. When
+   *  omitted, we upload the source and return its id for the caller to cache. */
+  sourcePublicId?: string | null
+}
+
+export interface RenderShortResult {
+  /** Render-ready delivery URL of the finished vertical Short. */
+  url: string
+  /** Public id of the DERIVED source asset (for cache reuse + cleanup). */
+  sourcePublicId: string
+}
+
+/**
+ * Trim [startSec, endSec] out of the source, reframe it to a 1080×1920 vertical
+ * (content-aware crop), and burn the caption timeline in — one time-boxed text
+ * layer per chunk, plus an optional persistent hook title. Because the trim is
+ * the FIRST transform component, the clip is re-based to 0, so the caption
+ * start/end offsets (already clip-relative) line up with the words.
+ *
+ * Returns null on any failure (reason in getLastShortError()) so the route can
+ * report it without the render ever throwing.
+ */
+export async function renderVerticalShort(opts: RenderShortOpts): Promise<RenderShortResult | null> {
+  lastShortError = null
+  if (!ensureConfig()) { lastShortError = 'Cloudinary not configured.'; return null }
+  const { sourceVideoUrl, startSec, endSec } = opts
+  if (!sourceVideoUrl || !(endSec > startSec)) { lastShortError = 'Invalid clip window.'; return null }
+
+  try {
+    // 1. Reuse the cached source asset, or upload it once (Cloudinary fetches
+    //    the Supabase-hosted URL server-side).
+    let sourcePublicId = (opts.sourcePublicId || '').trim()
+    if (!sourcePublicId) {
+      const up = await cloudinary.uploader.upload(sourceVideoUrl, { resource_type: 'video', folder: 'shorts-src' })
+      sourcePublicId = up.public_id
+    }
+
+    const dur = Math.round((endSec - startSec) * 10) / 10
+    const sp = subtitleParams(opts.style ?? 'bold-white')
+
+    // 2a. Trim + reframe to 9:16. gravity 'auto' keeps the subject in frame when
+    //     cropping a horizontal source down to vertical.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const transformation: any[] = [
+      {
+        start_offset: Math.round(startSec * 10) / 10,
+        end_offset: Math.round(endSec * 10) / 10,
+        width: 1080, height: 1920, crop: 'fill', gravity: 'auto', video_codec: 'h264',
+      },
+    ]
+
+    // 2b. Optional persistent hook title along the top.
+    const hook = safeLayerText(opts.hook || '', 60)
+    if (hook) {
+      transformation.push({
+        overlay: { font_family: 'Arial', font_size: 58, font_weight: 'bold', text: hook },
+        color: 'white', background: '#000000', radius: 16,
+        width: 940, crop: 'fit', gravity: 'north', y: 150,
+      })
+    }
+
+    // 2c. One time-boxed caption layer per chunk. Clip-relative so_/eo_ track the
+    //     spoken words; capped defensively so the delivery URL stays bounded.
+    for (const c of (opts.captions || []).slice(0, 40)) {
+      const text = safeLayerText(c.text)
+      if (!text) continue
+      const so = Math.max(0, Math.min(dur, Math.round(c.startSec * 10) / 10))
+      const eo = Math.max(so + 0.2, Math.min(dur, Math.round(c.endSec * 10) / 10))
+      transformation.push({
+        overlay: { font_family: 'Arial', font_size: 62, font_weight: 'bold', text },
+        color: sp.color,
+        ...(sp.background ? { background: sp.background, radius: sp.radius ?? 18 } : {}),
+        ...(sp.effect ? { effect: sp.effect } : {}),
+        width: 920, crop: 'fit',
+        gravity: 'south', y: 430,
+        start_offset: so, end_offset: eo,
+      })
+    }
+
+    const url = cloudinary.url(sourcePublicId, {
+      resource_type: 'video', secure: true, format: 'mp4',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      transformation: transformation as any,
+    })
+
+    // 3. Cloudinary renders derivations lazily (423 while processing) — poll
+    //    until it serves real bytes. A trimmed+captioned clip is fast to render.
+    const { ready, detail } = await waitForVideo(url, 180_000)
+    if (!ready) { lastShortError = detail; console.warn('[cloudinary] short not ready:', detail, '| url:', url); return null }
+    return { url, sourcePublicId }
+  } catch (e) {
+    lastShortError = e instanceof Error ? e.message : String(e)
+    console.warn('[cloudinary] renderVerticalShort failed:', lastShortError)
+    return null
+  }
 }
