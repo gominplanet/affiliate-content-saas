@@ -9,6 +9,10 @@
 // and the rest of Shorts Studio (Whisper transcript + Cloudinary render) just
 // works — exactly the vidIQ "select a video → Get clips" flow.
 //
+// Storage is done over Supabase's HTTP API directly (not @supabase/supabase-js):
+// the SDK eagerly initialises a realtime WebSocket at createClient() and crashes
+// on Node without a global WebSocket — and we only need a file upload anyway.
+//
 // Deploy this anywhere with a normal IP (Railway / Fly / Render). See README.md.
 //
 // Contract:
@@ -22,11 +26,10 @@ const { execFile } = require('child_process')
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
-const { createClient } = require('@supabase/supabase-js')
 
 const PORT = process.env.PORT || 8080
 const SECRET = process.env.INGEST_SECRET || ''
-const SUPABASE_URL = process.env.SUPABASE_URL
+const SUPABASE_URL = (process.env.SUPABASE_URL || '').replace(/\/+$/, '')
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
 const BUCKET = process.env.SUPABASE_BUCKET || 'instagram-videos'
 // Cost guard: refuse videos longer than this (seconds). Default 2h (vidIQ's cap).
@@ -36,7 +39,6 @@ if (!SUPABASE_URL || !SERVICE_KEY) {
   console.error('Missing SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY')
   process.exit(1)
 }
-const supabase = createClient(SUPABASE_URL, SERVICE_KEY)
 
 const app = express()
 app.use(express.json())
@@ -60,6 +62,29 @@ function ffprobeDuration(file) {
       resolve(Number.isFinite(d) ? Math.round(d) : null)
     })
   })
+}
+
+// Upload bytes to Supabase Storage over the REST API (service role bypasses RLS).
+async function uploadToSupabase(key, buf) {
+  const endpoint = `${SUPABASE_URL}/storage/v1/object/${BUCKET}/${key.split('/').map(encodeURIComponent).join('/')}`
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${SERVICE_KEY}`,
+      apikey: SERVICE_KEY,
+      'Content-Type': 'video/mp4',
+      'x-upsert': 'true',
+    },
+    body: buf,
+  })
+  if (!res.ok) {
+    const t = await res.text().catch(() => '')
+    throw new Error(`storage upload ${res.status}: ${t.slice(0, 200)}`)
+  }
+}
+
+function publicUrl(key) {
+  return `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${key.split('/').map(encodeURIComponent).join('/')}`
 }
 
 app.post('/ingest', async (req, res) => {
@@ -98,14 +123,10 @@ app.post('/ingest', async (req, res) => {
     // Path shape matches the bucket's RLS convention (first folder = user id)
     // when we know the user; the service role bypasses RLS either way.
     const key = `${userId || 'ingest'}/ingest-${videoId}-${Date.now()}.mp4`
-    const { error: upErr } = await supabase.storage.from(BUCKET).upload(key, buf, {
-      contentType: 'video/mp4', upsert: true,
-    })
-    if (upErr) throw new Error(upErr.message)
-    const { data: { publicUrl } } = supabase.storage.from(BUCKET).getPublicUrl(key)
+    await uploadToSupabase(key, buf)
 
     const durationSeconds = await ffprobeDuration(tmp)
-    return res.json({ url: publicUrl, durationSeconds })
+    return res.json({ url: publicUrl(key), durationSeconds })
   } catch (e) {
     console.error('[ingest] failed', videoId, e && e.message)
     return res.status(502).json({ error: String((e && e.message) || e).slice(0, 300) })
