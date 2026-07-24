@@ -42,7 +42,7 @@ import {
   UserCog, AlertTriangle, DollarSign, Newspaper, Plug, Wrench,
   Camera, MessageCircle, Activity, BarChart3, Wand2, ShieldCheck,
   Share2, UserSquare, Lightbulb, LifeBuoy, Link2, FlaskConical, Store, Send, ShoppingBag, Megaphone,
-  Inbox, PackageSearch, Copy, Signpost, Code2, Rocket,
+  Inbox, PackageSearch, Copy, Signpost, Code2, Rocket, Scissors,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { DEALS_HUB_PAUSED } from '@/lib/deal-occasion'
@@ -521,6 +521,10 @@ export default function DashboardShellV2({
       label: 'Labs',
       items: [
         { href: '/instagram-dm', icon: <MessageCircle size={15} />, label: 'Instagram Auto-DM', gate: isPro },
+        // Shorts Studio — long video → captioned vertical Shorts. Admin-only
+        // while it's being tested; flip `isAdmin`→`isPro` to graduate it to the
+        // Pro Labs beta (the API routes are already Pro+, so admins pass today).
+        { href: '/shorts-studio', icon: <Scissors size={15} />, label: 'Shorts Studio', gate: isAdmin },
       ],
     },
     {

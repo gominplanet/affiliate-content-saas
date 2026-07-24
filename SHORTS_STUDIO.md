@@ -42,16 +42,23 @@ Planning needs no file; rendering prompts for the upload if it's missing.
 | DB-row → client mapper | `lib/shorts-row.ts` |
 | Cloudinary render | `services/cloudinary/index.ts` → `renderVerticalShort()` |
 | API | `app/api/youtube/shorts/{plan,render}/route.ts`, `.../shorts/route.ts` |
-| UI | `components/content/ShortsStudioModal.tsx` (opened from "Make Shorts" on the Content page) |
+| UI — picker page (Labs) | `app/(dashboard)/shorts-studio/page.tsx` |
+| UI — the studio | `components/content/ShortsStudioModal.tsx` |
 | Upload | `components/ShortVideoUpload.tsx` (generalised with `targetColumn`) |
 | Schema | `supabase/migrations/178_youtube_shorts.sql` |
 | Tests | `scripts/test-shorts-captions.ts` (`npm run test:shorts`, wired into build) |
 
-## Gating
+## Gating & where it lives
 
-Pro-only (video-processing feature, matches the Instagram burner). Planning's AI
-cost is bounded by the per-account monthly spend ceiling (`spendGate`); rendering
-is pure Cloudinary (off the AI quota).
+Lives in **Labs** (`/shorts-studio`) so it can be tested safely before it
+graduates to the main Content flow. The sidebar entry is **admin-only** for now
+(`gate: isAdmin` in `DashboardShellV2`); the API routes are **Pro+** (admin
+passes), so an admin can test end-to-end today. To open it to the Pro Labs beta,
+flip the sidebar gate `isAdmin`→`isPro`. To graduate it fully, add a launcher on
+the Content page (the `ShortsStudioModal` is already reusable there).
+
+Planning's AI cost is bounded by the per-account monthly spend ceiling
+(`spendGate`); rendering is pure Cloudinary (off the AI quota).
 
 ## Known follow-up
 

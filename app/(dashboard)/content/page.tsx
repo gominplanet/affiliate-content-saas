@@ -30,7 +30,7 @@ import { effectiveTier } from '@/lib/view-as'
 import { metaEnabled } from '@/lib/feature-flags'
 import {
   Youtube, Wand2, ExternalLink, CheckCircle, AlertCircle,
-  RefreshCw, Loader2, ChevronRight, Sparkles, X, Facebook, Pin, MessageCircle, Save, Upload, Search, Calendar, Handshake, ImagePlus, Scissors,
+  RefreshCw, Loader2, ChevronRight, Sparkles, X, Facebook, Pin, MessageCircle, Save, Upload, Search, Calendar, Handshake, ImagePlus,
 } from 'lucide-react'
 import type { PinPreviewData } from '@/components/PinterestPreviewModal'
 
@@ -56,12 +56,6 @@ const FromLinkModal = dynamic(
 )
 const InstagramDirectModal = dynamic(
   () => import('@/components/InstagramDirectModal').then(m => ({ default: m.InstagramDirectModal })),
-  { ssr: false },
-)
-// Shorts Studio — chop a long-form video into captioned vertical Shorts.
-// Heavy (video upload + preview), so only loaded when a creator opens it.
-const ShortsStudioModal = dynamic(
-  () => import('@/components/content/ShortsStudioModal').then(m => ({ default: m.ShortsStudioModal })),
   { ssr: false },
 )
 // Interaction-gated modals are code-split (next/dynamic, client-only) so they
@@ -897,7 +891,6 @@ const VideoCard = memo(function VideoCardImpl({
   // modal, NOT the existing post-based InstagramPublishModal. The two
   // surfaces serve different jobs (vertical direct vs horizontal post).
   const [igDirectModalOpen, setIgDirectModalOpen] = useState(false)
-  const [shortsOpen, setShortsOpen] = useState(false)
   const [igDirectPosted, setIgDirectPosted] = useState(
     !!(video.instagram_reel_id || video.instagram_story_id),
   )
@@ -1315,18 +1308,6 @@ const VideoCard = memo(function VideoCardImpl({
           {video.is_vertical !== true && (
           <div className="flex items-center gap-x-4 gap-y-1.5 flex-wrap">
             <GenerateButton videoId={id} youtubeVideoId={(video.youtube_video_id as string) || undefined} existingPost={post} userTier={userTier} blogImagePref={blogImagePref} includeImages={includeImages} onIncludeImagesChange={setIncludeImages} onDone={(url, t, pid) => onGenerated(id, url, t, pid)} />
-            {/* Shorts Studio — chop this long video into captioned vertical
-                Shorts. Same "video → everything" engine as the blog generator,
-                for short-form. Pro (enforced by the route); shown to all as an
-                upgrade hook. */}
-            <button
-              type="button"
-              onClick={() => setShortsOpen(true)}
-              className="inline-flex items-center gap-1 text-[13px] font-medium text-[#7C3AED] hover:text-[#6D28D9]"
-              title="Turn this video into short vertical clips with subtitles"
-            >
-              <Scissors size={13} /> Make Shorts
-            </button>
             {/* Optional custom blog hero (else the YT thumbnail is the hero).
                 Only meaningful before a post exists — the featured image is
                 set at generation time. */}
@@ -1641,17 +1622,6 @@ const VideoCard = memo(function VideoCardImpl({
               videoId={id}
               onClose={() => setIgDirectModalOpen(false)}
               onPosted={() => setIgDirectPosted(true)}
-            />
-          )}
-
-          {/* Shorts Studio — chop this long-form video into captioned vertical
-              Shorts. Opens from the "Make Shorts" link in the manage row. */}
-          {shortsOpen && (
-            <ShortsStudioModal
-              videoId={id}
-              youtubeVideoId={(video.youtube_video_id as string) || null}
-              videoTitle={(video.title as string) || 'Untitled'}
-              onClose={() => setShortsOpen(false)}
             />
           )}
 
