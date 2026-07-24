@@ -52,6 +52,8 @@ export function ShortsStudioModal({
   const [error, setError] = useState<string | null>(null)
   // Per-clip UI: chosen subtitle style + render state.
   const [styleById, setStyleById] = useState<Record<string, SubtitleStyle>>({})
+  // Per-clip captions on/off (default on). captions off = a clean clip.
+  const [captionsById, setCaptionsById] = useState<Record<string, boolean>>({})
   const [renderingId, setRenderingId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
@@ -131,7 +133,11 @@ export function ShortsStudioModal({
       const res = await fetch('/api/youtube/shorts/render', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ shortId: clip.id, subtitleStyle: styleById[clip.id] || clip.subtitleStyle || 'bold-white' }),
+        body: JSON.stringify({
+          shortId: clip.id,
+          subtitleStyle: styleById[clip.id] || clip.subtitleStyle || 'bold-white',
+          captions: captionsById[clip.id] !== false,
+        }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -147,7 +153,7 @@ export function ShortsStudioModal({
     } finally {
       setRenderingId(null)
     }
-  }, [hasSource, styleById])
+  }, [hasSource, styleById, captionsById])
 
   return (
     <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:p-8" onClick={onClose}>
@@ -238,6 +244,7 @@ export function ShortsStudioModal({
             <div className="space-y-3">
               {clips.map(clip => {
                 const style = styleById[clip.id] || clip.subtitleStyle || 'bold-white'
+                const captionsOn = captionsById[clip.id] !== false
                 const rendering = renderingId === clip.id
                 const ytLink = clip.youtubeVideoId
                   ? `https://youtu.be/${clip.youtubeVideoId}?t=${Math.floor(clip.startSec)}`
@@ -280,11 +287,24 @@ export function ShortsStudioModal({
 
                     {/* Actions */}
                     <div className="flex items-center gap-2 flex-wrap mt-3">
+                      {/* Captions = the running, audio-synced subtitle track (the
+                          whole clip's script, readable with sound off). Toggle
+                          off for a clean clip. */}
+                      <label className="inline-flex items-center gap-1.5 text-[11px] text-[#4b4b4f] dark:text-[#b0b0b5] cursor-pointer select-none" title="Burn running subtitles that follow the audio">
+                        <input
+                          type="checkbox"
+                          checked={captionsOn}
+                          onChange={e => setCaptionsById(prev => ({ ...prev, [clip.id]: e.target.checked }))}
+                          disabled={rendering}
+                          className="accent-[#7C3AED]"
+                        />
+                        Captions
+                      </label>
                       <select
                         value={style}
                         onChange={e => setStyleById(prev => ({ ...prev, [clip.id]: e.target.value as SubtitleStyle }))}
-                        disabled={rendering}
-                        className="text-[11px] rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-2 py-1 text-[#1d1d1f] dark:text-[#f5f5f7]"
+                        disabled={rendering || !captionsOn}
+                        className="text-[11px] rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-2 py-1 text-[#1d1d1f] dark:text-[#f5f5f7] disabled:opacity-40"
                       >
                         {SUBTITLE_STYLES.map(s => <option key={s} value={s}>{STYLE_LABEL[s]}</option>)}
                       </select>

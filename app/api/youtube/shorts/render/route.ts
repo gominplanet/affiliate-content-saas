@@ -44,8 +44,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Video rendering isn\'t configured yet. Try again shortly.' }, { status: 503 })
     }
 
-    const body = await request.json().catch(() => ({})) as { shortId?: string; subtitleStyle?: string }
+    const body = await request.json().catch(() => ({})) as { shortId?: string; subtitleStyle?: string; captions?: boolean }
     const shortId = (body.shortId || '').trim()
+    // Captions default ON; captions:false renders a clean clip (no burned text).
+    const withCaptions = body.captions !== false
     if (!shortId) return NextResponse.json({ error: 'shortId is required.' }, { status: 400 })
     const style: SubtitleStyle = SUBTITLE_STYLES.includes(body.subtitleStyle as SubtitleStyle)
       ? (body.subtitleStyle as SubtitleStyle) : 'bold-white'
@@ -74,9 +76,10 @@ export async function POST(request: Request) {
       sourceVideoUrl: sourceUrl,
       startSec: Number(short.start_sec),
       endSec: Number(short.end_sec),
-      captions,
+      // Captions off → render a clean vertical clip (no subtitles, no hook banner).
+      captions: withCaptions ? captions : [],
       style,
-      hook: (short.hook as string) || '',
+      hook: withCaptions ? ((short.hook as string) || '') : '',
       sourcePublicId: (video?.cloudinary_source_id as string | null) || null,
     })
 
