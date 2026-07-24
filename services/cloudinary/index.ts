@@ -234,6 +234,25 @@ export async function deleteVideoAsset(publicId: string | null | undefined): Pro
 
 // ── Shorts Studio: chop a long video into a captioned vertical Short ──────────
 
+/** Pull a human message out of any thrown value. Cloudinary rejects with plain
+ *  objects ({ message }, { error: { message } }, { http_code }), not Error
+ *  instances — String(e) on those yields the useless "[object Object]". */
+function errMessage(e: unknown): string {
+  if (!e) return 'unknown error'
+  if (e instanceof Error) return e.message
+  if (typeof e === 'string') return e
+  if (typeof e === 'object') {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const o = e as any
+    if (o.message) return String(o.message)
+    if (o.error?.message) return String(o.error.message)
+    if (typeof o.error === 'string') return o.error
+    if (o.http_code) return `Cloudinary HTTP ${o.http_code}${o.name ? ` (${o.name})` : ''}`
+    try { return JSON.stringify(o).slice(0, 300) } catch { /* fall through */ }
+  }
+  return String(e)
+}
+
 /** Last failure reason from renderVerticalShort — surfaced by the render route
  *  so the creator sees the real Cloudinary error, not a generic message. */
 let lastShortError: string | null = null
@@ -360,7 +379,7 @@ export async function renderVerticalShort(opts: RenderShortOpts): Promise<Render
     if (!ready) { lastShortError = detail; console.warn('[cloudinary] short not ready:', detail, '| url:', url); return null }
     return { url, sourcePublicId }
   } catch (e) {
-    lastShortError = e instanceof Error ? e.message : String(e)
+    lastShortError = errMessage(e)
     console.warn('[cloudinary] renderVerticalShort failed:', lastShortError)
     return null
   }
