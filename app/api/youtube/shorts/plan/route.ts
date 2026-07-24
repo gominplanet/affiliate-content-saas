@@ -21,7 +21,8 @@ import { spendGate } from '@/lib/ai-spend'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { fetchTranscriptCues, cuesToText, normalizeCues, parseSrtCues } from '@/lib/shorts-transcript'
 import { getChannelOAuthToken } from '@/lib/youtube-channels'
-import { createYouTubeOAuthService } from '@/services/youtube'
+import { createYouTubeOAuthService, fetchYouTubeVideoSnippet } from '@/services/youtube'
+import { extractYouTubeVideoId } from '@/lib/youtube-url'
 import { transcribeToCues, transcriptionConfigured } from '@/lib/shorts-transcribe'
 import { recordUsage } from '@/lib/ai-usage'
 import { planShorts } from '@/lib/shorts-planner'
@@ -58,6 +59,10 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({})) as {
       videoId?: string
       youtubeVideoId?: string
+      /** A pasted YouTube link (vidIQ-style). We extract the id, and — gated by
+       *  ownershipConfirmed — create the video row if it isn't synced yet. */
+      youtubeUrl?: string
+      ownershipConfirmed?: boolean
       count?: number
       /** Optional client-supplied timestamped cues (e.g. SCOUT fetched them from
        *  the browser IP when the server scraper is blocked). Trusted as-is. */
@@ -67,7 +72,13 @@ export async function POST(request: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sb = supabase as any
     const videoId = (body.videoId || '').trim()
-    const ytId = (body.youtubeVideoId || '').trim()
+    let ytId = (body.youtubeVideoId || '').trim()
+    const youtubeUrl = (body.youtubeUrl || '').trim()
+    if (youtubeUrl && !ytId && !videoId) {
+      const extracted = extractYouTubeVideoId(youtubeUrl)
+      if (!extracted) return NextResponse.json({ error: "That doesn't look like a YouTube link — paste a full video URL." }, { status: 400 })
+      ytId = extracted
+    }
     if (!videoId && !ytId) {
       return NextResponse.json({ error: 'A video is required.' }, { status: 400 })
     }
@@ -76,9 +87,35 @@ export async function POST(request: Request) {
     const q = sb.from('youtube_videos')
       .select('id,youtube_video_id,title,transcript,channel_id,source_video_url')
       .eq('user_id', user.id)
-    const { data: video } = await (videoId
+    let { data: video } = await (videoId
       ? q.eq('id', videoId)
       : q.eq('youtube_video_id', ytId)).maybeSingle()
+
+    // Pasted a link for a video that isn't synced yet → create the row, but only
+    // after the creator confirms ownership (the copyright safeguard).
+    if (!video && ytId) {
+      if (body.ownershipConfirmed !== true) {
+        return NextResponse.json({
+          error: 'Confirm you own this video (or have the rights to use it) before we generate clips.',
+          ownershipRequired: true,
+        }, { status: 403 })
+      }
+      const apiKey = process.env.YOUTUBE_API_KEY
+      const snip = apiKey ? await fetchYouTubeVideoSnippet(apiKey, ytId) : null
+      if (!snip) return NextResponse.json({ error: "We couldn't find that YouTube video — double-check the link." }, { status: 404 })
+      const { data: created, error: createErr } = await sb.from('youtube_videos').insert({
+        user_id: user.id,
+        youtube_video_id: snip.youtubeVideoId,
+        title: snip.title,
+        channel_id: snip.channelId || 'unknown',
+        channel_title: snip.channelTitle || '',
+        published_at: snip.publishedAt,
+        thumbnail_url: snip.thumbnailUrl || null,
+        duration_seconds: snip.durationSeconds || null,
+      }).select('id,youtube_video_id,title,transcript,channel_id,source_video_url').maybeSingle()
+      if (createErr || !created) return NextResponse.json({ error: createErr?.message || 'Could not add that video.' }, { status: 500 })
+      video = created
+    }
     if (!video) return NextResponse.json({ error: 'Video not found.' }, { status: 404 })
 
     const youtubeVideoId = (video.youtube_video_id as string | null) || ytId || null
@@ -184,7 +221,12 @@ export async function POST(request: Request) {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const shorts: ShortRow[] = (inserted as any[]).map(rowToShort)
-    return NextResponse.json({ ok: true, shorts })
+    // Return the resolved video so a link-based caller can open the studio for it.
+    return NextResponse.json({
+      ok: true,
+      shorts,
+      video: { id: video.id as string, youtubeVideoId, title: videoTitle },
+    })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error('[shorts/plan]', msg)

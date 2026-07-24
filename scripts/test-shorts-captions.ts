@@ -13,6 +13,7 @@
 
 import { normalizeCues, cuesToTimestampedText, parseSrtCues } from '../lib/shorts-transcript'
 import { sliceCuesToWindow, buildCaptionChunks, captionsForClip, chunksToSrt } from '../lib/shorts-captions'
+import { extractYouTubeVideoId } from '../lib/youtube-url'
 import type { TranscriptCue } from '../lib/shorts-types'
 
 let failures = 0
@@ -127,6 +128,18 @@ console.log('captionsForClip + chunksToSrt — integration')
 
   const ts = cuesToTimestampedText(cues)
   check('timestamped text uses [mm:ss]', /^\[00:08\] this is the hook line/.test(ts), ts.slice(0, 30))
+}
+
+console.log('extractYouTubeVideoId — link parsing')
+{
+  const id = 'dQw4w9WgXcQ'
+  check('watch?v=', extractYouTubeVideoId(`https://www.youtube.com/watch?v=${id}`) === id)
+  check('youtu.be', extractYouTubeVideoId(`https://youtu.be/${id}`) === id)
+  check('/shorts/', extractYouTubeVideoId(`https://youtube.com/shorts/${id}`) === id)
+  check('/embed/', extractYouTubeVideoId(`https://www.youtube.com/embed/${id}`) === id)
+  check('extra params', extractYouTubeVideoId(`https://youtu.be/${id}?t=42&si=abc`) === id)
+  check('bare id', extractYouTubeVideoId(id) === id)
+  check('garbage → null', extractYouTubeVideoId('https://example.com/not-a-video') === null)
 }
 
 if (failures > 0) {

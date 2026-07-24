@@ -11,11 +11,14 @@
 // Content page will use once this graduates). This page is just the picker: it
 // lists the creator's long-form videos and opens the studio for the one chosen.
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { FlaskConical, Scissors, Loader2, Search, Youtube } from 'lucide-react'
+import { toast } from 'sonner'
+import { FlaskConical, Scissors, Loader2, Search, Youtube, Link2, Sparkles } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { ShortsStudioModal } from '@/components/content/ShortsStudioModal'
+import { dispatchCapReached } from '@/components/CapReachedBanner'
+import { errText } from '@/lib/err-text'
 
 const PURPLE = '#7C3AED'
 
@@ -42,6 +45,10 @@ export default function ShortsStudioPage() {
   const [videos, setVideos] = useState<VideoLite[]>([])
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<VideoLite | null>(null)
+  // Paste-a-link (vidIQ-style) — generate clips from any YouTube URL.
+  const [linkUrl, setLinkUrl] = useState('')
+  const [ownership, setOwnership] = useState(false)
+  const [generating, setGenerating] = useState(false)
 
   useEffect(() => {
     const supabase = createBrowserClient()
@@ -78,6 +85,34 @@ export default function ShortsStudioPage() {
     return q ? videos.filter(v => v.title.toLowerCase().includes(q)) : videos
   }, [videos, query])
 
+  const generateFromLink = useCallback(async () => {
+    const url = linkUrl.trim()
+    if (!url) { toast.error('Paste a YouTube link first.'); return }
+    if (!ownership) { toast.error('Confirm you own the video first.'); return }
+    setGenerating(true)
+    try {
+      const res = await fetch('/api/youtube/shorts/plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ youtubeUrl: url, ownershipConfirmed: true }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        if (data.limitReached) dispatchCapReached(data.error || 'Shorts Studio is a Pro feature.', { cap: data.cap || 'shorts_studio', currentTier: data.currentTier, upgrade: data.upgrade })
+        throw new Error(data.error || 'Could not generate clips from that link.')
+      }
+      if (data.video) {
+        setSelected({ id: data.video.id, youtubeVideoId: data.video.youtubeVideoId ?? null, title: data.video.title ?? 'Video', thumbnailUrl: null, durationSeconds: null })
+        setLinkUrl(''); setOwnership(false)
+        toast.success(`Found ${data.shorts?.length ?? 0} Short${data.shorts?.length === 1 ? '' : 's'}`)
+      }
+    } catch (e) {
+      toast.error(errText(e))
+    } finally {
+      setGenerating(false)
+    }
+  }, [linkUrl, ownership])
+
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
       {/* Header */}
@@ -91,8 +126,42 @@ export default function ShortsStudioPage() {
       <p className="text-[13px] text-[#4b4b4f] dark:text-[#b0b0b5] max-w-2xl mb-5">
         Turn one long video into a batch of 15–30s vertical Shorts with burned-in subtitles. We read the
         transcript, pull the strongest moments, and cut them for you — subtitles are word-for-word from what you
-        actually said. Pick a video to start. <span className="italic">Experimental; still being tested.</span>
+        actually said. Pick a video below, or paste a link. <span className="italic">Experimental; still being tested.</span>
       </p>
+
+      {/* Generate from a YouTube link (vidIQ-style) */}
+      <div className="rounded-xl border border-black/5 dark:border-white/10 p-4 mb-5 bg-white dark:bg-[#1c1c1e]">
+        <div className="flex items-center gap-2 mb-2">
+          <Link2 size={15} style={{ color: PURPLE }} />
+          <p className="text-[13px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Paste a YouTube link</p>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2">
+          <input
+            value={linkUrl}
+            onChange={e => setLinkUrl(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') void generateFromLink() }}
+            placeholder="https://youtube.com/watch?v=…"
+            className="flex-1 rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm text-[#1d1d1f] dark:text-[#f5f5f7]"
+          />
+          <button
+            onClick={generateFromLink}
+            disabled={generating || !linkUrl.trim() || !ownership}
+            className="shrink-0 inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+            style={{ backgroundColor: PURPLE }}
+          >
+            {generating ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
+            {generating ? 'Generating…' : 'Generate Clips'}
+          </button>
+        </div>
+        <label className="flex items-start gap-2 mt-2.5 cursor-pointer select-none">
+          <input type="checkbox" checked={ownership} onChange={e => setOwnership(e.target.checked)} className="mt-0.5 accent-[#7C3AED]" />
+          <span className="text-[11px] text-[#4b4b4f] dark:text-[#b0b0b5]">I own this video or have the rights to use it.</span>
+        </label>
+        <p className="text-[10px] text-[#86868b] mt-1.5 leading-relaxed">
+          For best results, videos should include faces and speech. Unauthorized videos may violate copyright — by
+          proceeding, you confirm ownership. Rendering a link needs the video file; if we can&apos;t fetch it, you&apos;ll be asked to upload it once.
+        </p>
+      </div>
 
       {/* Search */}
       {videos.length > 0 && (

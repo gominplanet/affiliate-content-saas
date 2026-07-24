@@ -168,6 +168,53 @@ export function createYouTubeService(apiKey: string) {
 }
 
 /**
+ * Fetch snippet + duration for ONE video via the public Data API key — used when
+ * a creator pastes a YouTube link for a video that isn't in their synced library
+ * yet, so we can create the youtube_videos row. Returns null on any failure.
+ */
+export async function fetchYouTubeVideoSnippet(
+  apiKey: string,
+  videoId: string,
+): Promise<{
+  youtubeVideoId: string
+  title: string
+  channelId: string
+  channelTitle: string
+  publishedAt: string
+  thumbnailUrl: string
+  durationSeconds: number
+} | null> {
+  if (!apiKey || !videoId) return null
+  try {
+    const url = new URL(`${BASE}/videos`)
+    url.searchParams.set('key', apiKey)
+    url.searchParams.set('part', 'snippet,contentDetails')
+    url.searchParams.set('id', videoId)
+    const res = await fetch(url.toString())
+    if (!res.ok) return null
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data = await res.json() as any
+    const item = data.items?.[0]
+    if (!item) return null
+    const s = item.snippet ?? {}
+    const iso: string = item.contentDetails?.duration ?? 'PT0S'
+    const m = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/)
+    const durationSeconds = (m?.[1] ? +m[1] * 3600 : 0) + (m?.[2] ? +m[2] * 60 : 0) + (m?.[3] ? +m[3] : 0)
+    return {
+      youtubeVideoId: videoId,
+      title: s.title ?? 'Untitled',
+      channelId: s.channelId ?? '',
+      channelTitle: s.channelTitle ?? '',
+      publishedAt: s.publishedAt ?? new Date(0).toISOString(),
+      thumbnailUrl: s.thumbnails?.maxres?.url ?? s.thumbnails?.high?.url ?? s.thumbnails?.default?.url ?? '',
+      durationSeconds,
+    }
+  } catch {
+    return null
+  }
+}
+
+/**
  * Resolve a pasted YouTube channel reference to its channel ID + title, using
  * the public API key (no OAuth). Accepts a full URL or a bare value:
  *   - .../channel/UC…  or a bare UC… id   → channels.list?id=
