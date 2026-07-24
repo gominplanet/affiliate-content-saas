@@ -17,6 +17,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier, type Tier } from '@/lib/tier'
 import { cloudinaryConfigured, renderVerticalShort, getLastShortError } from '@/services/cloudinary'
+import { ingestConfigured, clipSegment } from '@/lib/youtube-ingest'
 import { recordUsage } from '@/lib/ai-usage'
 import { rowToShort } from '@/lib/shorts-row'
 import { SUBTITLE_STYLES, type SubtitleStyle, type CaptionChunk } from '@/lib/shorts-types'
@@ -72,15 +73,27 @@ export async function POST(request: Request) {
     }
 
     const captions = (Array.isArray(short.subtitles) ? short.subtitles : []) as CaptionChunk[]
+    const startSec = Number(short.start_sec)
+    const endSec = Number(short.end_sec)
+
+    // Trim the clip first (ffmpeg on the ingest service) so Cloudinary only
+    // ingests the ~15-30s segment — the whole source can exceed Cloudinary's
+    // 100MB upload cap ("File size too large"). Falls back to the full source
+    // when the ingest service isn't configured or trimming fails.
+    const clip = ingestConfigured() ? await clipSegment(sourceUrl, startSec, endSec, user.id) : null
+    const usingClip = !!clip
+
     const result = await renderVerticalShort({
-      sourceVideoUrl: sourceUrl,
-      startSec: Number(short.start_sec),
-      endSec: Number(short.end_sec),
+      sourceVideoUrl: usingClip ? clip!.url : sourceUrl,
+      // The trimmed clip is already the window, re-based to 0.
+      startSec: usingClip ? 0 : startSec,
+      endSec: usingClip ? (clip!.durationSeconds ?? (endSec - startSec)) : endSec,
       // Captions off → render a clean vertical clip (no subtitles, no hook banner).
       captions: withCaptions ? captions : [],
       style,
       hook: withCaptions ? ((short.hook as string) || '') : '',
-      sourcePublicId: (video?.cloudinary_source_id as string | null) || null,
+      // Don't reuse the cached full-source asset when uploading a fresh clip.
+      sourcePublicId: usingClip ? null : ((video?.cloudinary_source_id as string | null) || null),
     })
 
     if (!result) {
@@ -93,8 +106,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: `Couldn't render the clip: ${detail}` }, { status: 500 })
     }
 
-    // Cache the one-time Cloudinary source upload so the next clip skips it.
-    if (result.sourcePublicId && result.sourcePublicId !== video?.cloudinary_source_id) {
+    // Cache the one-time Cloudinary source upload so the next clip skips it —
+    // only on the full-source path (a trimmed clip is unique per clip).
+    if (!usingClip && result.sourcePublicId && result.sourcePublicId !== video?.cloudinary_source_id) {
       try {
         await sb.from('youtube_videos')
           .update({ cloudinary_source_id: result.sourcePublicId })

@@ -54,3 +54,37 @@ export async function ingestYouTubeVideo(youtubeVideoId: string, userId?: string
     return null
   }
 }
+
+/**
+ * Trim a [startSec, endSec] segment out of an already-hosted video (the source
+ * MP4) and return a small hosted clip URL. This keeps Cloudinary under its
+ * 100MB upload cap — we only ever hand it the ~15-30s clip, not the whole video.
+ * Returns null when unconfigured or on failure (caller falls back to the full
+ * source). Best-effort, never throws.
+ */
+export async function clipSegment(
+  sourceUrl: string,
+  startSec: number,
+  endSec: number,
+  userId?: string,
+): Promise<IngestResult | null> {
+  const base = (process.env.YOUTUBE_INGEST_URL || '').replace(/\/+$/, '')
+  if (!base || !sourceUrl || !(endSec > startSec)) return null
+  try {
+    const res = await fetch(`${base}/clip`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(process.env.YOUTUBE_INGEST_SECRET ? { 'x-ingest-secret': process.env.YOUTUBE_INGEST_SECRET } : {}),
+      },
+      body: JSON.stringify({ url: sourceUrl, startSec, endSec, ...(userId ? { userId } : {}) }),
+      signal: AbortSignal.timeout(180_000),
+    })
+    if (!res.ok) return null
+    const data = await res.json() as { url?: string; durationSeconds?: number }
+    if (!data?.url || !/^https:\/\//i.test(data.url)) return null
+    return { url: data.url, durationSeconds: Number.isFinite(Number(data.durationSeconds)) ? Number(data.durationSeconds) : (endSec - startSec) }
+  } catch {
+    return null
+  }
+}
