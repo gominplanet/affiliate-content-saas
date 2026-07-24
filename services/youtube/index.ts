@@ -809,8 +809,31 @@ export class YouTubeOAuthService {
    * track if no English one exists.
    */
   async getTranscript(videoId: string): Promise<string | null> {
+    const srt = await this.getCaptionSrt(videoId)
+    if (!srt) return null
+    // Strip SRT framing (index lines + "00:00:00,000 --> 00:00:00,000") and
+    // HTML-style tags YouTube embeds for styling, then collapse whitespace.
+    const plain = srt
+      .replace(/\r/g, '')
+      .split('\n\n')
+      .map(block => block.split('\n').slice(2).join(' '))
+      .join(' ')
+      .replace(/<[^>]+>/g, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim()
+    return plain || null
+  }
+
+  /**
+   * Download the best English caption track for a video as RAW SRT (timestamps
+   * intact). Same track-selection as getTranscript, but returns the SRT so
+   * callers that need TIMINGS (e.g. Shorts Studio) can parse them. This uses the
+   * official Data API (force-ssl scope), so — unlike the youtube-transcript
+   * scraper — it is NOT blocked from cloud/server IPs. Returns null on any
+   * failure (no tracks, ASR download refused, etc.).
+   */
+  async getCaptionSrt(videoId: string): Promise<string | null> {
     try {
-      // 1) List caption tracks for the video.
       interface CaptionItem {
         id: string
         snippet?: { language?: string; trackKind?: string; name?: string }
@@ -835,27 +858,13 @@ export class YouTubeOAuthService {
       const picked = items.slice().sort((a, b) => score(b) - score(a))[0]
       if (!picked?.id) return null
 
-      // 2) Download the picked track as SRT.
       const dlRes = await fetch(
         `https://www.googleapis.com/youtube/v3/captions/${encodeURIComponent(picked.id)}?tfmt=srt`,
         { headers: { Authorization: `Bearer ${this.accessToken}` }, signal: AbortSignal.timeout(15_000) },
       )
       if (!dlRes.ok) return null
       const srt = await dlRes.text()
-      if (!srt) return null
-
-      // 3) Strip SRT framing (index lines + "00:00:00,000 --> 00:00:00,000")
-      //    and HTML-style tags YouTube embeds for styling, then collapse
-      //    whitespace. Plain text only.
-      const plain = srt
-        .replace(/\r/g, '')
-        .split('\n\n')
-        .map(block => block.split('\n').slice(2).join(' '))
-        .join(' ')
-        .replace(/<[^>]+>/g, '')
-        .replace(/\s{2,}/g, ' ')
-        .trim()
-      return plain || null
+      return srt || null
     } catch {
       return null
     }

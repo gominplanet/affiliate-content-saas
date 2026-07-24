@@ -19,12 +19,17 @@ import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier, type Tier } from '@/lib/tier'
 import { spendGate } from '@/lib/ai-spend'
 import { createAnthropicClient } from '@/lib/anthropic'
-import { fetchTranscriptCues, cuesToText, normalizeCues } from '@/lib/shorts-transcript'
+import { fetchTranscriptCues, cuesToText, normalizeCues, parseSrtCues } from '@/lib/shorts-transcript'
+import { getChannelOAuthToken } from '@/lib/youtube-channels'
+import { createYouTubeOAuthService } from '@/services/youtube'
+import { transcribeToCues, transcriptionConfigured } from '@/lib/shorts-transcribe'
+import { recordUsage } from '@/lib/ai-usage'
 import { planShorts } from '@/lib/shorts-planner'
 import { rowToShort } from '@/lib/shorts-row'
 import type { ShortRow, TranscriptCue } from '@/lib/shorts-types'
 
-export const maxDuration = 120
+// Transcription of a longer uploaded video can take a while — give it room.
+export const maxDuration = 300
 
 export async function POST(request: Request) {
   try {
@@ -69,7 +74,7 @@ export async function POST(request: Request) {
 
     // Resolve the source video row (must belong to the caller).
     const q = sb.from('youtube_videos')
-      .select('id,youtube_video_id,title,transcript')
+      .select('id,youtube_video_id,title,transcript,channel_id,source_video_url')
       .eq('user_id', user.id)
     const { data: video } = await (videoId
       ? q.eq('id', videoId)
@@ -88,18 +93,47 @@ export async function POST(request: Request) {
     const niches = ((brand?.niches as string[]) || []).join(', ') || 'general'
     const tone = ((brand?.tone as string[]) || []).join(', ') || 'conversational, energetic'
 
-    // Timestamped transcript: client-supplied cues win (browser IP), else the
-    // server scraper. Timings are REQUIRED here — no timings, no clip windows.
+    // Timestamped transcript — timings are REQUIRED here (no timings, no clip
+    // windows). Layered, most-reliable first:
+    //   1. Client-supplied cues (browser IP — e.g. SCOUT).
+    //   2. Official YouTube Data API captions via the creator's OAuth token.
+    //      This is the KEY source: it keeps timings AND isn't IP-blocked like
+    //      the scraper, so it works from Vercel for the creator's own videos.
+    //   3. youtube-transcript scraper — last resort (often IP-blocked on cloud).
     let cues: TranscriptCue[] = []
     if (Array.isArray(body.cues) && body.cues.length > 0) {
       cues = normalizeCues(body.cues)
-    } else if (youtubeVideoId) {
+    }
+    if (cues.length === 0 && youtubeVideoId) {
+      try {
+        const token = await getChannelOAuthToken(supabase, user.id, (video.channel_id as string | null) ?? null)
+        if (token) {
+          const srt = await createYouTubeOAuthService(token).getCaptionSrt(youtubeVideoId)
+          if (srt) cues = parseSrtCues(srt)
+        }
+      } catch { /* fall through to the scraper */ }
+    }
+    if (cues.length === 0 && youtubeVideoId) {
       cues = await fetchTranscriptCues(youtubeVideoId)
     }
+    // 4. vidIQ-style fallback: transcribe the creator's OWN uploaded video with
+    //    Whisper. This is the reliable source — it works for any video, needs no
+    //    YouTube captions, and the file is one the creator explicitly uploaded.
+    const sourceUrl = (video.source_video_url as string | null) || ''
+    if (cues.length === 0 && /^https:\/\//i.test(sourceUrl) && transcriptionConfigured()) {
+      cues = await transcribeToCues(sourceUrl)
+      if (cues.length > 0) {
+        recordUsage({ userId: user.id, tier, feature: 'shorts_transcribe', model: 'fal-whisper', images: 1 })
+      }
+    }
     if (cues.length === 0) {
+      const canUpload = !/^https:\/\//i.test(sourceUrl)
       return NextResponse.json({
-        error: "We couldn't pull this video's captions with timings — YouTube sometimes blocks that from a server. Try again in a moment, or make sure the video has captions.",
+        error: canUpload
+          ? "We couldn't read this video's captions from YouTube. Upload the full video below and we'll transcribe it ourselves to find your Shorts — works every time."
+          : "We couldn't transcribe this video. Make sure it has clear speech and try again in a moment.",
         noTranscript: true,
+        needsUpload: canUpload,
       }, { status: 422 })
     }
 
