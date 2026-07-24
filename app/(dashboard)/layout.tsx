@@ -14,7 +14,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: intRow } = await (supabase as any)
     .from('integrations')
-    .select('wordpress_url, tier, wp_post_count, wp_post_count_updated_at, onboarding_completed, content_only')
+    // wp_post_count / wp_post_count_updated_at dropped 2026-07-20: the
+    // Buying Guides nav no longer depends on post volume, and nothing
+    // else in this layout reads them.
+    .select('wordpress_url, tier, onboarding_completed, content_only')
     .eq('user_id', user.id)
     .maybeSingle()
 
@@ -54,35 +57,31 @@ export default async function DashboardLayout({ children }: { children: React.Re
   // Fallback: if no cached value yet (brand new user, migration 106
   // not applied, cache >24h stale), do a single live fetch — same
   // path as before. Fail-open as "not unlocked" on timeout.
-  let showBuyingGuides = tier === 'admin'
-  if (!showBuyingGuides) {
-    const cachedCount = intRow?.wp_post_count as number | null | undefined
-    const cachedAt = intRow?.wp_post_count_updated_at as string | null | undefined
-    const cacheAgeHours = cachedAt
-      ? (Date.now() - new Date(cachedAt).getTime()) / (1000 * 60 * 60)
-      : Infinity
-    if (typeof cachedCount === 'number' && cacheAgeHours < 24) {
-      // Fresh cache — instant decision, no WP fetch.
-      showBuyingGuides = cachedCount >= 500
-    } else if (wpSiteUrl) {
-      // Stale or missing — one-time live fetch as fallback. Same as
-      // the legacy path so users with new accounts / first dashboard
-      // load still get the gate. The cron will populate the cache for
-      // next time.
-      try {
-        const wpBase = wpSiteUrl.replace(/\/+$/, '')
-        const res = await fetch(`${wpBase}/wp-json/wp/v2/posts?per_page=1&_fields=id`, {
-          signal: AbortSignal.timeout(2500),
-          headers: { Accept: 'application/json' },
-          next: { revalidate: 300 },
-        })
-        if (res.ok) {
-          const total = parseInt(res.headers.get('x-wp-total') || '0', 10)
-          showBuyingGuides = total >= 500
-        }
-      } catch { /* timeout / network error — leave gated */ }
-    }
-  }
+  // Buying Guides gate: tier ONLY, matching the page's own check
+  // (buying-guides/page.tsx renders FeatureLockedCard for anyone who
+  // isn't Pro or Admin).
+  //
+  // This used to also require 500+ published posts, which hid the nav
+  // entry — and therefore the whole feature — from paying Pro users
+  // below that count. But the 500 threshold only applies to ONE of the
+  // two ways in: "pick from my catalogue" auto-curates from existing
+  // reviews and needs the volume. "Paste 2-10 YouTube URLs" has no
+  // threshold at all and works on day one. Gating the navigation on the
+  // post count took the unrestricted path away too, so a Pro customer
+  // with 153 posts had no route to a feature they'd paid for.
+  //
+  // The catalogue path still locks itself: GET /api/blog/buying-guide
+  // returns { locked, threshold, currentPostCount } and the page renders
+  // the explanation in place, where it can say WHY rather than silently
+  // vanishing from the sidebar.
+  //
+  // Dropping the count here also removes a live-WP fetch from the
+  // layout's critical path, and kills a failure mode found in the
+  // 2026-07-20 audit: refresh-wp-post-counts caches wp_post_count = 0
+  // when a host's WAF returns 200 without the x-wp-total header, which
+  // this trusted for 24h — so an 800-post creator could lose Buying
+  // Guides for a day with no explanation.
+  const showBuyingGuides = tier === 'pro' || tier === 'admin'
 
   // Deals Hub gate: Studio + Pro + Admin only. Unlike Buying Guides, there's
   // no post-volume threshold — a brand-new Studio user should be able to ship
