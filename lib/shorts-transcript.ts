@@ -76,6 +76,41 @@ export async function fetchTranscriptCues(youtubeVideoId: string): Promise<Trans
   }
 }
 
+/** SRT timestamp `HH:MM:SS,mmm` (or `.mmm`) → seconds. Returns NaN if unparseable. */
+function srtStampToSec(stamp: string): number {
+  const m = stamp.trim().match(/(\d{1,2}):(\d{2}):(\d{2})[,.](\d{1,3})/)
+  if (!m) return NaN
+  return Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]) + Number(m[4].padEnd(3, '0')) / 1000
+}
+
+/**
+ * Parse a raw SRT string (from the YouTube Data API captions.download) into
+ * timestamped cues. This is the RELIABLE, server-safe transcript source — the
+ * official API isn't IP-blocked like the youtube-transcript scraper. Exported
+ * and unit-tested because the timestamp parsing is exactly where an SRT-format
+ * quirk would silently break clip windows.
+ */
+export function parseSrtCues(srt: string): TranscriptCue[] {
+  if (!srt) return []
+  const blocks = srt.replace(/\r/g, '').split(/\n\s*\n/)
+  const cues: TranscriptCue[] = []
+  for (const block of blocks) {
+    const lines = block.split('\n').filter(l => l.trim().length > 0)
+    if (lines.length === 0) continue
+    // Find the timing line (has "-->"); text is everything after it.
+    const timingIdx = lines.findIndex(l => l.includes('-->'))
+    if (timingIdx === -1) continue
+    const [rawStart, rawEnd] = lines[timingIdx].split('-->')
+    const start = srtStampToSec(rawStart || '')
+    const end = srtStampToSec(rawEnd || '')
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) continue
+    const text = lines.slice(timingIdx + 1).join(' ').replace(/<[^>]+>/g, '').replace(/\s{2,}/g, ' ').trim()
+    if (!text) continue
+    cues.push({ start, end, text })
+  }
+  return cues.sort((a, b) => a.start - b.start)
+}
+
 /** Flatten cues to plain text (for the planner's "full transcript" context and
  *  for caching back to youtube_videos.transcript). */
 export function cuesToText(cues: TranscriptCue[]): string {

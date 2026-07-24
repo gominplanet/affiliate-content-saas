@@ -11,7 +11,7 @@
 //
 // Run: `npm run test:shorts` (wired into `npm run build`, like test:thumbnails).
 
-import { normalizeCues, cuesToTimestampedText } from '../lib/shorts-transcript'
+import { normalizeCues, cuesToTimestampedText, parseSrtCues } from '../lib/shorts-transcript'
 import { sliceCuesToWindow, buildCaptionChunks, captionsForClip, chunksToSrt } from '../lib/shorts-captions'
 import type { TranscriptCue } from '../lib/shorts-types'
 
@@ -53,6 +53,26 @@ console.log('normalizeCues — unit detection')
   check('empty-text cue dropped', messy.length === 2, `got ${messy.length}`)
   check('cues sorted by start', messy[0].text === 'first', `got ${messy[0].text}`)
   check('missing duration gets a width', messy[1].end > messy[1].start)
+}
+
+console.log('parseSrtCues — official-API SRT → timestamped cues')
+{
+  const srt = [
+    '1',
+    '00:00:01,000 --> 00:00:03,500',
+    'Hello and <b>welcome</b> back',
+    '',
+    '2',
+    '00:00:03,500 --> 00:00:06,000',
+    'today we test the projector',
+    '',
+  ].join('\n')
+  const cues = parseSrtCues(srt)
+  check('two cues parsed', cues.length === 2, `got ${cues.length}`)
+  check('start parsed from HH:MM:SS,mmm', Math.abs(cues[0].start - 1) < 0.001, `got ${cues[0].start}`)
+  check('end parsed with millis', Math.abs(cues[0].end - 3.5) < 0.001, `got ${cues[0].end}`)
+  check('HTML tags stripped', cues[0].text === 'Hello and welcome back', cues[0].text)
+  check('garbage in → empty out', parseSrtCues('not an srt at all').length === 0)
 }
 
 console.log('sliceCuesToWindow — clip-relative rebasing')

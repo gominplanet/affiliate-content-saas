@@ -143,8 +143,9 @@ export function ShortsStudioModal({
           {/* Intro + action */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <p className="text-[13px] text-[#4b4b4f] dark:text-[#b0b0b5] max-w-md">
-              We read the video&apos;s transcript and pull the strongest 15–30s moments. Subtitles are taken
-              word-for-word from what you actually said — nothing invented.
+              We find the strongest 15–30s moments and cut them for you. If the transcript isn&apos;t on YouTube,
+              upload the video and we&apos;ll transcribe it ourselves. Subtitles are word-for-word from what you
+              actually said — nothing invented.
             </p>
             <button
               onClick={findShorts}
@@ -161,15 +162,15 @@ export function ShortsStudioModal({
           {!hasSource && (
             <div className="rounded-xl border border-dashed border-black/10 dark:border-white/15 p-4">
               <p className="text-[12px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">
-                To render a clip, upload the full video file once
+                Upload the full video once — we transcribe it and cut your clips from it
               </p>
               <ShortVideoUpload
                 videoId={videoId}
                 targetColumn="source_video_url"
                 extraFields={{ source_video_uploaded_at: new Date().toISOString() }}
                 label="Drop the full video (the long one) here"
-                helpText="MP4, under 300 MB. We only use it to cut your clips — it never touches YouTube. You can find suggestions without this."
-                onUploaded={async () => { setHasSource(true); toast.success('Source video ready'); }}
+                helpText="MP4, under 300 MB. We transcribe it and cut every clip from it — it never touches YouTube."
+                onUploaded={async () => { setHasSource(true); toast.success('Video uploaded — hit Find Shorts'); }}
               />
             </div>
           )}
