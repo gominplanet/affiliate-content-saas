@@ -21,6 +21,8 @@
 //     res  { url: "https://…public…/…​.mp4", durationSeconds: number|null }
 //   GET  /health -> { ok: true }
 
+// v2: relaxed format selector (any-codec ≤1080p → mp4) + cookies. Bump this
+// comment to force a Railway redeploy of the latest ingest-service code.
 const express = require('express')
 const { execFile } = require('child_process')
 const fs = require('fs')
