@@ -81,6 +81,22 @@ function ytDlp(args) {
   })
 }
 
+// Cut [startSec, startSec+dur] out of a (remote) video into a small mp4. Fast
+// input-seek + re-encode = frame-accurate and tiny, so Cloudinary never has to
+// ingest the whole source (its 100MB cap is why full-video render failed).
+function ffmpegClip(url, startSec, dur, outPath) {
+  return new Promise((resolve, reject) => {
+    execFile('ffmpeg', [
+      '-ss', String(startSec), '-i', url, '-t', String(dur),
+      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23',
+      '-c:a', 'aac', '-movflags', '+faststart', '-y', outPath,
+    ], { maxBuffer: 1024 * 1024 * 64 }, (err, _so, se) => {
+      if (err) reject(new Error((se || err.message || '').slice(0, 400)))
+      else resolve()
+    })
+  })
+}
+
 function ffprobeDuration(file) {
   return new Promise((resolve) => {
     execFile('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', file], (err, stdout) => {
@@ -159,6 +175,38 @@ app.post('/ingest', async (req, res) => {
     return res.json({ url: publicUrl(key), durationSeconds })
   } catch (e) {
     console.error('[ingest] failed', videoId, e && e.message)
+    return res.status(502).json({ error: String((e && e.message) || e).slice(0, 300) })
+  } finally {
+    try { if (fs.existsSync(tmp)) fs.unlinkSync(tmp) } catch { /* ignore */ }
+  }
+})
+
+// Trim a segment out of an already-hosted video and return a small mp4 URL, so
+// the render only sends Cloudinary the clip (not the whole 100MB+ source).
+app.post('/clip', async (req, res) => {
+  if (SECRET && req.get('x-ingest-secret') !== SECRET) {
+    return res.status(401).json({ error: 'unauthorized' })
+  }
+  const url = String(req.body?.url || '').trim()
+  const userId = String(req.body?.userId || '').trim()
+  const startSec = Number(req.body?.startSec)
+  const endSec = Number(req.body?.endSec)
+  if (!/^https?:\/\//i.test(url)) return res.status(400).json({ error: 'bad url' })
+  if (!Number.isFinite(startSec) || !Number.isFinite(endSec) || endSec <= startSec) {
+    return res.status(400).json({ error: 'bad window' })
+  }
+  // Clips are 15–30s; cap defensively so a bad request can't cut a huge segment.
+  const dur = Math.min(120, endSec - startSec)
+  const tmp = path.join(os.tmpdir(), `clip-${Date.now()}-${Math.round(startSec)}.mp4`)
+  try {
+    await ffmpegClip(url, Math.max(0, startSec), dur, tmp)
+    if (!fs.existsSync(tmp)) throw new Error('clip produced no file')
+    const buf = fs.readFileSync(tmp)
+    const key = `${userId || 'ingest'}/clip-${Date.now()}-${Math.round(startSec)}.mp4`
+    await uploadToSupabase(key, buf)
+    return res.json({ url: publicUrl(key), durationSeconds: Math.round(dur * 10) / 10 })
+  } catch (e) {
+    console.error('[clip] failed', e && e.message)
     return res.status(502).json({ error: String((e && e.message) || e).slice(0, 300) })
   } finally {
     try { if (fs.existsSync(tmp)) fs.unlinkSync(tmp) } catch { /* ignore */ }
