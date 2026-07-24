@@ -60,6 +60,13 @@ if (process.env.YOUTUBE_COOKIES_B64) {
 }
 // Optional extra yt-dlp args (space-separated) for advanced tweaks.
 const EXTRA_ARGS = (process.env.YT_DLP_EXTRA || '').trim().split(/\s+/).filter(Boolean)
+// Residential/mobile proxy — the reliable fix for YouTube's "confirm you're not
+// a bot" wall on datacenter IPs. Set YT_DLP_PROXY to e.g.
+// http://user:pass@host:port and every yt-dlp call routes through it.
+const PROXY = (process.env.YT_DLP_PROXY || '').trim()
+// YouTube player clients to try, in order. Alternate clients (web_safari, mweb)
+// slip past the bot check more often than the default web client alone.
+const PLAYER_CLIENTS = (process.env.YT_DLP_PLAYER_CLIENTS || 'default,web_safari,mweb').trim()
 
 const app = express()
 app.use(express.json())
@@ -67,9 +74,13 @@ app.use(express.json())
 app.get('/health', (_req, res) => res.json({ ok: true }))
 
 function ytDlp(args) {
-  // Prepend cookies (if configured) + any extra args to every yt-dlp call.
+  // Every yt-dlp call gets: proxy (if set) + cookies (if set) + alternate
+  // player clients + retries, to beat YouTube's bot check as best we can.
   const full = [
+    ...(PROXY ? ['--proxy', PROXY] : []),
     ...(COOKIES_FILE ? ['--cookies', COOKIES_FILE] : []),
+    '--extractor-args', `youtube:player_client=${PLAYER_CLIENTS}`,
+    '--extractor-retries', '3',
     ...EXTRA_ARGS,
     ...args,
   ]
