@@ -87,11 +87,16 @@ function ytDlp(args) {
 function ffmpegClip(url, startSec, dur, outPath) {
   return new Promise((resolve, reject) => {
     execFile('ffmpeg', [
+      // -hide_banner + loglevel error so stderr is the REAL error, not the
+      // version banner. reconnect flags = tolerate a flaky remote HTTP read.
+      '-hide_banner', '-loglevel', 'error',
+      '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5',
       '-ss', String(startSec), '-i', url, '-t', String(dur),
       '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23',
       '-c:a', 'aac', '-movflags', '+faststart', '-y', outPath,
     ], { maxBuffer: 1024 * 1024 * 64 }, (err, _so, se) => {
-      if (err) reject(new Error((se || err.message || '').slice(0, 400)))
+      // The real error is at the END of stderr — keep the tail, not the head.
+      if (err) reject(new Error(('ffmpeg: ' + (se || err.message || 'failed')).trim().slice(-400)))
       else resolve()
     })
   })
