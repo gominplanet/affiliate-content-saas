@@ -40,14 +40,39 @@ if (!SUPABASE_URL || !SERVICE_KEY) {
   process.exit(1)
 }
 
+// YouTube bot-walls datacenter IPs ("Sign in to confirm you're not a bot").
+// Passing cookies from a logged-in session makes yt-dlp fetch as that user.
+// Supply them base64-encoded (a Netscape cookies.txt) via YOUTUBE_COOKIES_B64
+// — base64 avoids newline mangling in the Railway/Vercel env UI. Optional:
+// without it the service still works for videos that don't need auth.
+let COOKIES_FILE = null
+if (process.env.YOUTUBE_COOKIES_B64) {
+  try {
+    COOKIES_FILE = path.join(os.tmpdir(), 'yt-cookies.txt')
+    fs.writeFileSync(COOKIES_FILE, Buffer.from(process.env.YOUTUBE_COOKIES_B64, 'base64').toString('utf8'))
+    console.log('yt-dlp cookies loaded')
+  } catch (e) {
+    console.error('YOUTUBE_COOKIES_B64 invalid:', e && e.message)
+    COOKIES_FILE = null
+  }
+}
+// Optional extra yt-dlp args (space-separated) for advanced tweaks.
+const EXTRA_ARGS = (process.env.YT_DLP_EXTRA || '').trim().split(/\s+/).filter(Boolean)
+
 const app = express()
 app.use(express.json())
 
 app.get('/health', (_req, res) => res.json({ ok: true }))
 
 function ytDlp(args) {
+  // Prepend cookies (if configured) + any extra args to every yt-dlp call.
+  const full = [
+    ...(COOKIES_FILE ? ['--cookies', COOKIES_FILE] : []),
+    ...EXTRA_ARGS,
+    ...args,
+  ]
   return new Promise((resolve, reject) => {
-    execFile('yt-dlp', args, { maxBuffer: 1024 * 1024 * 64 }, (err, stdout, stderr) => {
+    execFile('yt-dlp', full, { maxBuffer: 1024 * 1024 * 64 }, (err, stdout, stderr) => {
       if (err) reject(new Error((stderr || err.message || '').slice(0, 500)))
       else resolve(stdout)
     })

@@ -44,6 +44,33 @@ That's it. With `YOUTUBE_INGEST_URL` set, Shorts Studio shows **“Fetch this
 video automatically — no upload.”** Without it, the feature falls back to the
 manual upload (nothing breaks either way).
 
+## YouTube cookies (usually required)
+
+YouTube blocks downloads from datacenter IPs with *"Sign in to confirm you're
+not a bot."* To get past it, give `yt-dlp` cookies from a logged-in YouTube
+session:
+
+1. In a browser logged into YouTube (ideally a **secondary/burner Google
+   account** — see the warning below), install the open-source extension
+   **"Get cookies.txt LOCALLY"**.
+2. Open `youtube.com`, click the extension → **Export** → you get a
+   `cookies.txt` (Netscape format).
+3. Base64-encode it so it survives the env-var UI (one line, no newline issues):
+   - macOS: `base64 -i cookies.txt | pbcopy`
+   - Linux: `base64 -w0 cookies.txt`
+4. Add it to the **Railway** service as `YOUTUBE_COOKIES_B64` (paste the base64).
+5. Redeploy. The logs will show `yt-dlp cookies loaded`.
+
+⚠️ **Account safety:** YouTube can rotate/invalidate cookies, and heavy use can
+flag the account. Use a **burner Google account** you don't care about, exported
+from an **incognito window that you then close** (so YouTube doesn't rotate the
+session out from under it). Never commit cookies to the repo.
+
+If cookies expire (downloads start failing with the bot message again), re-export
+and update `YOUTUBE_COOKIES_B64`.
+
+Advanced: `YT_DLP_EXTRA` can pass extra space-separated yt-dlp args if needed.
+
 ## Contract
 
 ```
