@@ -230,6 +230,13 @@ export async function getChannelOAuthToken(
       .eq(isUuid ? 'id' : 'channel_id', idOrChannelId)
       .maybeSingle()
     row = (data as ChannelRow) ?? null
+    // The requested channel is connected PULL-ONLY (added by URL, e.g. a Brand
+    // Account OAuth can't select) — it has no push token. Return null instead of
+    // falling through to the default/legacy channel's token: that token belongs
+    // to a DIFFERENT channel and 403s when used to edit this channel's video
+    // (the "Applied with warnings: 403 Forbidden" report). Null makes callers
+    // cleanly say "connect THIS channel for write-back."
+    if (row && !row.oauth_access_token) return null
   }
   if (!row) {
     const { data } = await supabase
