@@ -1,5 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase/server'
+import { canSeeNav } from '@/lib/feature-access'
+import type { Tier } from '@/lib/tier'
 import DashboardShellV2 from '@/components/layout/DashboardShellV2'
 import { Toaster } from '@/components/ui/toaster'
 import MigrationDriftBanner from '@/components/admin/MigrationDriftBanner'
@@ -44,57 +46,13 @@ export default async function DashboardLayout({ children }: { children: React.Re
     redirect('/onboarding')
   }
 
-  // Buying Guides feature gate (500-post threshold). The round-up
-  // format only earns its keep on a wide catalogue.
-  //
-  // Audit perf fix 2026-06-07: read the count from the cached
-  // integrations.wp_post_count column (refreshed nightly by
-  // /api/cron/refresh-wp-post-counts). The previous implementation
-  // hit WordPress on every non-admin dashboard navigation — 300ms-
-  // 2.5s per route change with the layout blocked behind it. Big
-  // win.
-  //
-  // Fallback: if no cached value yet (brand new user, migration 106
-  // not applied, cache >24h stale), do a single live fetch — same
-  // path as before. Fail-open as "not unlocked" on timeout.
-  // Buying Guides gate: tier ONLY, matching the page's own check
-  // (buying-guides/page.tsx renders FeatureLockedCard for anyone who
-  // isn't Pro or Admin).
-  //
-  // This used to also require 500+ published posts, which hid the nav
-  // entry — and therefore the whole feature — from paying Pro users
-  // below that count. But the 500 threshold only applies to ONE of the
-  // two ways in: "pick from my catalogue" auto-curates from existing
-  // reviews and needs the volume. "Paste 2-10 YouTube URLs" has no
-  // threshold at all and works on day one. Gating the navigation on the
-  // post count took the unrestricted path away too, so a Pro customer
-  // with 153 posts had no route to a feature they'd paid for.
-  //
-  // The catalogue path still locks itself: GET /api/blog/buying-guide
-  // returns { locked, threshold, currentPostCount } and the page renders
-  // the explanation in place, where it can say WHY rather than silently
-  // vanishing from the sidebar.
-  //
-  // Dropping the count here also removes a live-WP fetch from the
-  // layout's critical path, and kills a failure mode found in the
-  // 2026-07-20 audit: refresh-wp-post-counts caches wp_post_count = 0
-  // when a host's WAF returns 200 without the x-wp-total header, which
-  // this trusted for 24h — so an 800-post creator could lose Buying
-  // Guides for a day with no explanation.
-  const showBuyingGuides = tier === 'pro' || tier === 'admin'
-
-  // Deals Hub gate: Studio + Pro + Admin only. Unlike Buying Guides, there's
-  // no post-volume threshold — a brand-new Studio user should be able to ship
-  // a deal post on day one. The sidebar entry hides outright for Trial/
-  // Creator so we don't tease a feature they can't reach. Admin always sees
-  // it (so the View-as-Studio/Pro preview also exposes it for screenshots).
-  const showDeals = tier === 'studio' || tier === 'pro' || tier === 'admin'
-
-  // Instagram Burner gate — Pro-only (the publish route requires Pro), and only
-  // now that Meta publishing is approved (metaEnabled is globally on as of
-  // 2026-06-15). Admin sees it too for testing / view-as previews. Re-surfaced
-  // 2026-06-22 after a live burn→publish test confirmed the pipeline works.
-  const showBurner = tier === 'pro' || tier === 'admin'
+  // Sidebar visibility. Every rule lives in lib/feature-access.ts: tier
+  // only, never post counts or connection state, and each rule names the
+  // route that does the real enforcing. See that file for why the nav and
+  // the enforcement are deliberately allowed to differ.
+  const showBuyingGuides = canSeeNav('buyingGuides', tier as Tier)
+  const showDeals = canSeeNav('deals', tier as Tier)
+  const showBurner = canSeeNav('burner', tier as Tier)
 
   return (
     <HelpDeskProvider>

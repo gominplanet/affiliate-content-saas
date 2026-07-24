@@ -31,6 +31,7 @@ import { getViewAsTier, setViewAsTier } from '@/lib/view-as'
 import { tierBadge } from '@/lib/tier-badge'
 import UsageChip from '@/components/dashboard/UsageChip'
 import { canUpgradeTier } from '@/lib/tier'
+import { canSeeNav } from '@/lib/feature-access'
 import type { Tier } from '@/lib/tier'
 import {
   Home, Youtube, Library, Mail, Palette, Brush, TrendingUp,
@@ -271,13 +272,14 @@ export default function DashboardShellV2({
   }, [adminOpen])
 
   const isAdmin = tier === 'admin'
-  const isPro = tier === 'pro' || tier === 'admin' // Labs = Pro-only
-  // Paid = any non-trial plan (Creator, Studio, Pro, admin).
+  // Paid = any non-trial plan (Creator, Studio, Pro, admin). Not a feature
+  // gate on its own — used for generic paid-vs-trial UI copy.
   const isPaid = tier !== 'trial'
-  // Source & Earn (the three product/campaign finders: Amazon, Levanta,
-  // PartnerBoost) — STUDIO + PRO (+ admin) only, per 2026-07-07. Mirrors
-  // tierAllowsFinders() in lib/tier.ts. AMZ Product Finder left Labs into here.
-  const canUseFinders = tier !== 'trial' // Source & Earn: all PAID tiers, not Trial (2026-07-07)
+  // Feature nav gates come from lib/feature-access.ts so the sidebar and
+  // the enforcing routes are described in one place. See that file: the
+  // nav is a hint, the route is the law.
+  const isPro = canSeeNav('labs', tier as Tier)
+  const canUseFinders = canSeeNav('finders', tier as Tier)
 
   // Admin-only: count of OPEN support tickets (not yet answered/closed). Drives
   // the red "Support" alert in the topbar so the founder catches new tickets
