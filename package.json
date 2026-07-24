@@ -4,12 +4,13 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "npm run build:extension && npm run test:thumbnails && next build",
+    "build": "npm run build:extension && npm run test:thumbnails && npm run test:access && next build",
     "build:extension": "bash scripts/zip-extension.sh && bash scripts/zip-extension-store.sh",
     "start": "next start",
     "lint": "next lint",
     "type-check": "tsc --noEmit",
-    "test:thumbnails": "tsx scripts/test-thumbnail-headlines.ts"
+    "test:thumbnails": "tsx scripts/test-thumbnail-headlines.ts",
+    "test:access": "node scripts/test-feature-access.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.0",

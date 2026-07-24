@@ -68,7 +68,9 @@ export const NAV_ACCESS = {
   finders: {
     label: 'Source & Earn (AMZ Finder, Levanta, PartnerBoost, LTK, Launch Kit)',
     tiers: PAID,
-    enforcedBy: 'each finder route rejects tier === "trial"',
+    // Named concretely so scripts/test-feature-access.mjs can verify these
+    // rather than shrug at prose. All three call tierAllowsFinders().
+    enforcedBy: '/api/campaigns/catalog-search + /api/levanta/finder + /api/partnerboost/finder',
   },
   labs: {
     label: 'Labs (Instagram Auto-DM)',
