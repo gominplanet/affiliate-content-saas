@@ -20,6 +20,7 @@ import { cloudinaryConfigured, renderVerticalShort, getLastShortError } from '@/
 import { ingestConfigured, clipSegment } from '@/lib/youtube-ingest'
 import { recordUsage } from '@/lib/ai-usage'
 import { rowToShort } from '@/lib/shorts-row'
+import { storagePathFromPublicUrl } from '@/lib/storage-url'
 import { SUBTITLE_STYLES, type SubtitleStyle, type CaptionChunk } from '@/lib/shorts-types'
 
 export const runtime = 'nodejs'
@@ -99,6 +100,11 @@ export async function POST(request: Request) {
     })
 
     if (!result) {
+      // Render failed — still purge the orphaned trim clip so it doesn't linger.
+      if (usingClip && clip?.url) {
+        const p = storagePathFromPublicUrl(clip.url, 'instagram-videos')
+        if (p) { try { await supabase.storage.from('instagram-videos').remove([p]) } catch { /* non-fatal */ } }
+      }
       const detail = getLastShortError() || 'unknown error'
       try {
         await sb.from('youtube_shorts')
@@ -116,6 +122,15 @@ export async function POST(request: Request) {
           .update({ cloudinary_source_id: result.sourcePublicId })
           .eq('id', short.video_id).eq('user_id', user.id)
       } catch { /* non-fatal */ }
+    }
+
+    // The trimmed clip was only an intermediate handed to Cloudinary; the final
+    // Short now lives at result.url, so purge the trim from Storage immediately
+    // (we don't retain source/intermediate video). Best-effort; RLS lets a user
+    // delete their own `{uid}/…` object.
+    if (usingClip && clip?.url) {
+      const p = storagePathFromPublicUrl(clip.url, 'instagram-videos')
+      if (p) { try { await supabase.storage.from('instagram-videos').remove([p]) } catch { /* non-fatal */ } }
     }
 
     const { data: updated } = await sb.from('youtube_shorts')

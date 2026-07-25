@@ -39,6 +39,10 @@
     {
       "path": "/api/cron/heal-thumbnails",
       "schedule": "0 */6 * * *"
+    },
+    {
+      "path": "/api/cron/purge-shorts-sources",
+      "schedule": "0 3 * * *"
     }
   ]
 }
