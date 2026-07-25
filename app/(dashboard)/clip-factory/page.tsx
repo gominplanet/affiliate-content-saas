@@ -106,6 +106,15 @@ export default function ClipFactoryPage() {
 
   const [stage, setStage] = useState<Stage>('create')
   const [clip, setClip] = useState<WorkingClip | null>(null)
+  // Monthly Shorts usage (X / 50). null limit = unlimited (admin).
+  const [usage, setUsage] = useState<{ used: number; limit: number | null; resetLabel: string } | null>(null)
+  const loadUsage = useCallback(async () => {
+    try {
+      const res = await fetch('/api/youtube/shorts/usage')
+      if (res.ok) setUsage(await res.json())
+    } catch { /* non-fatal */ }
+  }, [])
+  useEffect(() => { void loadUsage() }, [loadUsage])
 
   // ---- Create: long-video on-ramp (opens Shorts Studio) ----
   const [videos, setVideos] = useState<VideoLite[]>([])
@@ -424,6 +433,17 @@ export default function ClipFactoryPage() {
         <span className="inline-flex items-center gap-1 text-[10px] font-semibold rounded-full px-2 py-0.5 text-white bg-[#DC2626]">
           <FlaskConical size={10} /> Labs
         </span>
+        {usage && usage.limit !== null && (
+          <span
+            className="inline-flex items-center gap-1 text-[11px] font-semibold rounded-full px-2.5 py-0.5 border"
+            style={usage.used >= usage.limit
+              ? { borderColor: '#ff3b30', color: '#ff3b30' }
+              : { borderColor: `${PURPLE}66`, color: PURPLE }}
+            title={usage.resetLabel ? `Resets ${usage.resetLabel}` : undefined}
+          >
+            {usage.used} / {usage.limit} Shorts this month
+          </span>
+        )}
       </div>
       <p className="text-[13px] text-[#4b4b4f] dark:text-[#b0b0b5] max-w-2xl mb-5">
         Make a vertical short from a long video, add a shoppable CTA and product link, then publish to Instagram,
@@ -483,6 +503,7 @@ export default function ClipFactoryPage() {
                 onUseClip={(c) => {
                   setClipSource('created')
                   setClip({ url: c.url, title: c.title, hashtags: c.hashtags })
+                  void loadUsage()
                   // Seed a caption in case Enhance is skipped; burn overwrites it.
                   setComposedCaption([c.caption, (c.hashtags || []).join(' ')].filter(Boolean).join('\n\n').trim())
                   setSelectedVideo(null)
