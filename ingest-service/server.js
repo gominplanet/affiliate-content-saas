@@ -28,6 +28,8 @@ const { execFile } = require('child_process')
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
+const { pipeline } = require('stream/promises')
+const { Readable } = require('stream')
 
 const PORT = process.env.PORT || 8080
 const SECRET = process.env.INGEST_SECRET || ''
@@ -97,10 +99,11 @@ function ytDlp(args) {
 // support) and was failing silently. So we fetch first, then trim locally.
 async function downloadToFile(url, dest) {
   const res = await fetch(url)
-  if (!res.ok) throw new Error(`source fetch ${res.status}`)
-  const buf = Buffer.from(await res.arrayBuffer())
-  fs.writeFileSync(dest, buf)
-  return buf.length
+  if (!res.ok || !res.body) throw new Error(`source fetch ${res.status}`)
+  // STREAM to disk (constant memory) — buffering a 100MB+ file in a Node Buffer
+  // spikes memory and OOM-kills ffmpeg on a small container.
+  await pipeline(Readable.fromWeb(res.body), fs.createWriteStream(dest))
+  return fs.statSync(dest).size
 }
 
 // Cut [startSec, startSec+dur] out of a LOCAL video into a small mp4. Fast
@@ -109,13 +112,19 @@ async function downloadToFile(url, dest) {
 function ffmpegClip(input, startSec, dur, outPath) {
   return new Promise((resolve, reject) => {
     execFile('ffmpeg', [
-      '-hide_banner', '-loglevel', 'error',
+      '-hide_banner', '-loglevel', 'error', '-threads', '1',
       '-ss', String(startSec), '-i', input, '-t', String(dur),
+      // Cap at 720p — the clip is reframed to 9:16 by Cloudinary anyway, so 1080p
+      // is wasted memory/bytes here; keeps the encode light on a small container.
+      '-vf', "scale='min(1280,iw)':-2",
       '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23',
       '-c:a', 'aac', '-movflags', '+faststart', '-y', outPath,
     ], { maxBuffer: 1024 * 1024 * 64 }, (err, _so, se) => {
-      if (err) reject(new Error('ffmpeg: ' + (((se && se.trim()) || err.message || 'failed').slice(0, 400))))
-      else resolve()
+      if (err) {
+        // Empty stderr + a signal = the process was killed (usually OOM).
+        const detail = (se && se.trim()) || `${err.message || 'failed'}${err.signal ? ` [signal ${err.signal}]` : ''}`
+        reject(new Error('ffmpeg: ' + detail.slice(0, 400)))
+      } else resolve()
     })
   })
 }
