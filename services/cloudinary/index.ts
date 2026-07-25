@@ -117,7 +117,9 @@ async function waitForVideo(url: string, timeoutMs: number): Promise<{ ready: bo
         last = `processing (${res.status})`
       } else {
         const body = await res.text().catch(() => '')
-        last = `HTTP ${res.status}: ${body.slice(0, 220)}`
+        // Cloudinary puts the real transform error in the x-cld-error header.
+        const cldErr = res.headers.get('x-cld-error') || ''
+        last = `HTTP ${res.status}: ${(cldErr || body).slice(0, 260)}`
         if (res.status >= 400 && res.status < 500) return { ready: false, detail: last } // invalid transform — stop
       }
     } catch (e) {
@@ -335,7 +337,8 @@ export async function renderVerticalShort(opts: RenderShortOpts): Promise<Render
       {
         start_offset: Math.round(startSec * 10) / 10,
         end_offset: Math.round(endSec * 10) / 10,
-        width: 1080, height: 1920, crop: 'fill', gravity: 'auto', video_codec: 'h264',
+        // gravity 'center' (not 'auto' — Cloudinary can 400 on g_auto video crop).
+        width: 1080, height: 1920, crop: 'fill', gravity: 'center', video_codec: 'h264',
       },
     ]
 
