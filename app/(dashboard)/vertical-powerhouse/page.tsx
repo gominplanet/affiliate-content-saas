@@ -24,7 +24,7 @@ import {
   Sparkles, UploadCloud, Video, Check, Download, Instagram, Music2, ArrowRight, ArrowLeft,
 } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
-import { ShortsStudioModal } from '@/components/content/ShortsStudioModal'
+import { ShortsCreatePanel } from '@/components/vertical/ShortsCreatePanel'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { dispatchCapReached } from '@/components/CapReachedBanner'
 import { errText } from '@/lib/err-text'
@@ -112,6 +112,7 @@ export default function VerticalPowerhousePage() {
   const [loadingShorts, setLoadingShorts] = useState(false)
   const [shortQuery, setShortQuery] = useState('')
   const [uploading, setUploading] = useState(false)
+  const [fetchingShortId, setFetchingShortId] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   // ---- Enhance ----
@@ -205,15 +206,36 @@ export default function VerticalPowerhousePage() {
   }, [linkUrl, ownership])
 
   const pickShort = useCallback(async (s: ShortItem) => {
-    if (!s.hasVideo) { toast.error('This Short has no stored video. Download it from YouTube Studio and re-upload.'); return }
     try {
-      const res = await fetch(`/api/instagram/burn/source?videoId=${encodeURIComponent(s.id)}`)
-      const data = await res.json()
-      if (!data.videoUrl) throw new Error('No stored video for this Short.')
+      let videoUrl = ''
+      if (s.hasVideo) {
+        const res = await fetch(`/api/instagram/burn/source?videoId=${encodeURIComponent(s.id)}`)
+        const data = await res.json()
+        videoUrl = (data.videoUrl as string) || ''
+      }
+      // No stored MP4 — fetch it inside MVP (the downloader service), never send
+      // the creator to YouTube Studio to download + re-upload.
+      if (!videoUrl) {
+        setFetchingShortId(s.id)
+        const res = await fetch('/api/youtube/shorts/ingest', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ videoId: s.id, target: 'short' }),
+        })
+        const data = await res.json()
+        if (!res.ok || !data.videoUrl) {
+          if (data.ingestDisabled) throw new Error("Automatic fetch isn't set up on this deployment yet.")
+          if (data.limitReached) dispatchCapReached(data.error || 'Vertical Powerhouse is a Pro feature.', { cap: data.cap || 'shorts_studio', currentTier: data.currentTier, upgrade: data.upgrade })
+          throw new Error(data.error || "We couldn't fetch this Short automatically.")
+        }
+        videoUrl = data.videoUrl as string
+        setShorts(prev => prev.map(x => (x.id === s.id ? { ...x, hasVideo: true } : x)))
+      }
+      if (!videoUrl) throw new Error('No video available for this Short.')
       if (s.productUrl) setProduct(s.productUrl)
-      setClip({ url: data.videoUrl as string, title: s.title })
+      setClip({ url: videoUrl, title: s.title })
       setStage('enhance')
     } catch (e) { toast.error(errText(e)) }
+    finally { setFetchingShortId(null) }
   }, [])
 
   const handleUpload = useCallback(async (file: File) => {
@@ -364,7 +386,25 @@ export default function VerticalPowerhousePage() {
             </button>
           </div>
 
-          {onramp === 'long' ? (
+          {onramp === 'long' && selectedVideo ? (
+            <div>
+              <button onClick={() => setSelectedVideo(null)} className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[#86868b] mb-4">
+                <ArrowLeft size={14} /> Pick a different video
+              </button>
+              <ShortsCreatePanel
+                videoId={selectedVideo.id}
+                youtubeVideoId={selectedVideo.youtubeVideoId}
+                videoTitle={selectedVideo.title}
+                onUseClip={(c) => {
+                  setClip({ url: c.url, title: c.title })
+                  // Seed a caption in case Enhance is skipped; burn overwrites it.
+                  setComposedCaption([c.caption, (c.hashtags || []).join(' ')].filter(Boolean).join('\n\n').trim())
+                  setSelectedVideo(null)
+                  setStage('enhance')
+                }}
+              />
+            </div>
+          ) : onramp === 'long' ? (
             <div>
               {/* Paste a link */}
               <div className="rounded-xl border border-black/5 dark:border-white/10 p-4 mb-5 bg-white dark:bg-[#1c1c1e]">
@@ -415,7 +455,7 @@ export default function VerticalPowerhousePage() {
                 </div>
               )}
               <p className="text-[11px] text-[#86868b] mt-4">
-                Building from a long video opens Shorts Studio to pick and render the clip. Rendered clips can be published there, or upload the result here to add a CTA overlay first.
+                Pick a video to find its best moments and render a vertical clip right here, then add a CTA and publish. No downloads, no re-uploads.
               </p>
             </div>
           ) : (
@@ -437,17 +477,20 @@ export default function VerticalPowerhousePage() {
                 <p className="text-sm text-[#86868b] py-8 text-center">No vertical shorts found. Upload one above, or build one from a long video.</p>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                  {filteredShorts.map(s => (
-                    <button key={s.id} onClick={() => pickShort(s)} className="group text-left rounded-xl border border-black/5 dark:border-white/10 overflow-hidden hover:border-[#7C3AED]/50 transition-colors bg-white dark:bg-[#1c1c1e]">
-                      <div className="relative aspect-[9/16] bg-black/5 dark:bg-white/5">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        {s.thumbnailUrl ? <img src={s.thumbnailUrl} alt="" className="w-full h-full object-cover" /> : <Video size={22} className="absolute inset-0 m-auto text-[#c7c7cc]" />}
-                        {s.posted && <span className="absolute top-1.5 left-1.5 text-[9px] font-semibold rounded-full bg-[#34c759] text-white px-1.5 py-0.5">Posted</span>}
-                        {!s.hasVideo && <span className="absolute bottom-1.5 left-1.5 right-1.5 text-[9px] text-white bg-black/70 rounded px-1 py-0.5 text-center">Needs download</span>}
-                      </div>
-                      <p className="text-[11px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] p-2 line-clamp-2">{s.title}</p>
-                    </button>
-                  ))}
+                  {filteredShorts.map(s => {
+                    const fetching = fetchingShortId === s.id
+                    return (
+                      <button key={s.id} onClick={() => pickShort(s)} disabled={fetching} className="group text-left rounded-xl border border-black/5 dark:border-white/10 overflow-hidden hover:border-[#7C3AED]/50 transition-colors bg-white dark:bg-[#1c1c1e] disabled:opacity-70">
+                        <div className="relative aspect-[9/16] bg-black/5 dark:bg-white/5">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          {s.thumbnailUrl ? <img src={s.thumbnailUrl} alt="" className="w-full h-full object-cover" /> : <Video size={22} className="absolute inset-0 m-auto text-[#c7c7cc]" />}
+                          {s.posted && <span className="absolute top-1.5 left-1.5 text-[9px] font-semibold rounded-full bg-[#34c759] text-white px-1.5 py-0.5">Posted</span>}
+                          {fetching && <span className="absolute inset-0 flex items-center justify-center bg-black/50 text-white text-[10px] font-medium gap-1"><Loader2 size={14} className="animate-spin" /> Fetching…</span>}
+                        </div>
+                        <p className="text-[11px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] p-2 line-clamp-2">{s.title}</p>
+                      </button>
+                    )
+                  })}
                 </div>
               )}
             </div>
@@ -559,16 +602,6 @@ export default function VerticalPowerhousePage() {
             </div>
           </div>
         </div>
-      )}
-
-      {/* Shorts Studio modal (long-video creator) */}
-      {selectedVideo && (
-        <ShortsStudioModal
-          videoId={selectedVideo.id}
-          youtubeVideoId={selectedVideo.youtubeVideoId}
-          videoTitle={selectedVideo.title}
-          onClose={() => setSelectedVideo(null)}
-        />
       )}
 
       {/* Publish modals */}
