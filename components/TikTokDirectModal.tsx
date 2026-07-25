@@ -582,6 +582,18 @@ export function TikTokDirectModal({
                     )
                   })}
                 </select>
+                {/* One-tap Public shortcut. TikTok's audit forbids a pre-selected
+                    default, so we don't auto-pick it — but a single click sets it,
+                    which counts as the creator's active choice. */}
+                {privacy === '' && info.privacyLevelOptions.includes('PUBLIC_TO_EVERYONE') && (
+                  <button
+                    type="button"
+                    onClick={() => setPrivacy('PUBLIC_TO_EVERYONE')}
+                    className="mt-1.5 inline-flex items-center gap-1 rounded-full border border-[#34c759]/50 px-2.5 py-1 text-[11px] font-medium text-[#248a3d] hover:bg-[#34c759]/10"
+                  >
+                    Recommended: Public — anyone can see
+                  </button>
+                )}
                 {brandedNoPrivate && (
                   <p className="text-[10px] text-[#ff3b30] mt-1">Branded content visibility can&apos;t be set to private.</p>
                 )}

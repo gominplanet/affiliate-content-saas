@@ -16,7 +16,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { toast } from 'sonner'
-import { X, Scissors, Loader2, Sparkles, Download, ExternalLink, AlertCircle, Film, Youtube, Instagram, Music2 } from 'lucide-react'
+import { X, Scissors, Loader2, Sparkles, Download, ExternalLink, AlertCircle, Film, Youtube, Instagram, Music2, Check } from 'lucide-react'
 import { ShortVideoUpload } from '@/components/ShortVideoUpload'
 import { dispatchCapReached } from '@/components/CapReachedBanner'
 import { errText } from '@/lib/err-text'
@@ -52,6 +52,36 @@ const STYLE_LABEL: Record<SubtitleStyle, string> = {
   'boxed': 'Boxed',
 }
 
+// A cross-post pill. Outline + brand color when not yet posted; fills solid with
+// a check once the clip has been published there (so it's clear it's done).
+function PostPill({
+  posted, label, color, icon, onClick, busy, disabled, postedAt,
+}: {
+  posted: boolean
+  label: string
+  color: string
+  icon: React.ReactNode
+  onClick: () => void
+  busy?: boolean
+  disabled?: boolean
+  postedAt?: string | null
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled || busy}
+      title={posted ? `Posted to ${label}${postedAt ? ` · ${new Date(postedAt).toLocaleString()}` : ''}` : `Post to ${label}`}
+      className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[12px] font-medium border transition-colors disabled:opacity-50"
+      style={posted
+        ? { backgroundColor: color, borderColor: color, color: '#fff' }
+        : { borderColor: `${color}66`, color }}
+    >
+      {busy ? <Loader2 size={12} className="animate-spin" /> : posted ? <Check size={12} /> : icon}
+      {label}{posted ? ' · Posted' : ''}
+    </button>
+  )
+}
+
 export function ShortsStudioModal({
   videoId, youtubeVideoId, videoTitle, onClose,
 }: {
@@ -75,8 +105,8 @@ export function ShortsStudioModal({
   // Publishing: a `${clipId}:ig|yt` key while a direct post is in flight, and
   // the clip whose rendered URL is being posted to TikTok (opens the modal).
   const [publishing, setPublishing] = useState<string | null>(null)
-  const [ttPost, setTtPost] = useState<{ url: string; caption: string } | null>(null)
-  const [igPost, setIgPost] = useState<{ url: string; caption: string } | null>(null)
+  const [ttPost, setTtPost] = useState<{ id: string; url: string; caption: string } | null>(null)
+  const [igPost, setIgPost] = useState<{ id: string; url: string; caption: string } | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -184,6 +214,21 @@ export function ShortsStudioModal({
       [clip.caption, (clip.hashtags || []).join(' ')].filter(Boolean).join('\n\n').trim(),
     )
 
+  // Record a successful cross-post so the platform's pill flips to "posted"
+  // and stays that way across reloads. Best-effort: the post already happened.
+  const markPosted = useCallback(async (shortId: string, platform: 'tiktok' | 'instagram' | 'youtube') => {
+    const key = platform === 'tiktok' ? 'postedTiktok' : platform === 'instagram' ? 'postedInstagram' : 'postedYoutube'
+    const now = new Date().toISOString()
+    setClips(prev => prev.map(c => (c.id === shortId ? { ...c, [key]: now } : c)))
+    try {
+      await fetch('/api/youtube/shorts/mark-posted', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shortId, platform }),
+      })
+    } catch { /* pill already flipped locally; non-fatal */ }
+  }, [])
+
   const postYouTube = useCallback(async (clip: ShortRow) => {
     if (!clip.renderedUrl) return
     setPublishing(clip.id + ':yt')
@@ -196,12 +241,13 @@ export function ShortsStudioModal({
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'YouTube upload failed')
       toast.success('Uploaded to YouTube as a Short')
+      void markPosted(clip.id, 'youtube')
     } catch (e) {
       toast.error(errText(e))
     } finally {
       setPublishing(null)
     }
-  }, [])
+  }, [markPosted])
 
   return (
     <>
@@ -372,26 +418,32 @@ export function ShortsStudioModal({
                             <Download size={12} /> Download
                           </a>
                           <span className="text-[11px] text-[#86868b] ml-1">Post to</span>
-                          <button
-                            onClick={() => setTtPost({ url: clip.renderedUrl!, caption: captionFor(clip) })}
-                            className="inline-flex items-center gap-1 text-[12px] font-medium hover:underline text-[#1d1d1f] dark:text-[#f5f5f7]"
-                          >
-                            <Music2 size={12} /> TikTok
-                          </button>
-                          <button
-                            onClick={() => setIgPost({ url: clip.renderedUrl!, caption: captionFor(clip) })}
-                            className="inline-flex items-center gap-1 text-[12px] font-medium hover:underline text-[#E1306C]"
-                          >
-                            <Instagram size={12} /> Instagram
-                          </button>
+                          <PostPill
+                            label="TikTok"
+                            color="#FE2C55"
+                            icon={<Music2 size={12} />}
+                            posted={!!clip.postedTiktok}
+                            postedAt={clip.postedTiktok}
+                            onClick={() => setTtPost({ id: clip.id, url: clip.renderedUrl!, caption: captionFor(clip) })}
+                          />
+                          <PostPill
+                            label="Instagram"
+                            color="#E1306C"
+                            icon={<Instagram size={12} />}
+                            posted={!!clip.postedInstagram}
+                            postedAt={clip.postedInstagram}
+                            onClick={() => setIgPost({ id: clip.id, url: clip.renderedUrl!, caption: captionFor(clip) })}
+                          />
                           {youtubeUploadEnabled() && (
-                            <button
+                            <PostPill
+                              label="YouTube"
+                              color="#FF0000"
+                              icon={<Youtube size={12} />}
+                              posted={!!clip.postedYoutube}
+                              postedAt={clip.postedYoutube}
+                              busy={publishing === clip.id + ':yt'}
                               onClick={() => postYouTube(clip)}
-                              disabled={publishing === clip.id + ':yt'}
-                              className="inline-flex items-center gap-1 text-[12px] font-medium hover:underline text-[#FF0000] disabled:opacity-50"
-                            >
-                              {publishing === clip.id + ':yt' ? <Loader2 size={12} className="animate-spin" /> : <Youtube size={12} />} YouTube
-                            </button>
+                            />
                           )}
                         </>
                       )}
@@ -416,7 +468,7 @@ export function ShortsStudioModal({
           burnedVideoUrl={ttPost.url}
           initialCaption={ttPost.caption}
           onClose={() => setTtPost(null)}
-          onPosted={() => { setTtPost(null); toast.success('Posted to TikTok') }}
+          onPosted={() => { void markPosted(ttPost.id, 'tiktok'); setTtPost(null); toast.success('Posted to TikTok') }}
         />
       </div>
     )}
@@ -427,7 +479,7 @@ export function ShortsStudioModal({
           burnedVideoUrl={igPost.url}
           initialCaption={igPost.caption}
           onClose={() => setIgPost(null)}
-          onPosted={() => toast.success('Posted to Instagram')}
+          onPosted={() => { void markPosted(igPost.id, 'instagram'); toast.success('Posted to Instagram') }}
         />
       </div>
     )}
