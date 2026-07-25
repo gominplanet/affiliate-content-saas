@@ -22,6 +22,7 @@ import { toast } from 'sonner'
 import {
   Rocket, Scissors, Flame, Send, FlaskConical, Loader2, Search, Youtube, Link2,
   Sparkles, UploadCloud, Video, Check, Download, Instagram, Music2, ArrowRight, ArrowLeft,
+  Trash2, Wand2, Package,
 } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { ShortsCreatePanel } from '@/components/vertical/ShortsCreatePanel'
@@ -42,6 +43,13 @@ const InstagramBurnedModal = dynamic(
 )
 
 const PURPLE = '#7C3AED'
+// Legible-in-both-themes styling for an UNSELECTED pill/chip. The old inline
+// rgba(0,0,0,.12) borders + grey text were near-invisible on the dark theme.
+const PILL_IDLE = 'text-[#1d1d1f] dark:text-[#f5f5f7] bg-black/[0.04] dark:bg-white/[0.08] border-black/15 dark:border-white/25 hover:border-[#7C3AED]/60'
+// A selected pill: solid purple fill (paired with inline backgroundColor).
+const PILL_ON = 'text-white border-transparent'
+// A selected-but-outline chip (e.g. style/position choices): purple text + tint.
+const PILL_SEL = 'text-[#7C3AED] bg-[#7C3AED]/10 border-[#7C3AED]'
 const CAPTION_PRESETS = ['LINK IN BIO', 'LINK IN BIO 👆', 'FULL REVIEW ON YOUTUBE', 'WATCH THE FULL VIDEO', 'FOLLOW FOR MORE']
 const POSITIONS = [
   { key: 'lower-left', label: 'Lower third', desc: 'Bottom — clears IG & TikTok UI' },
@@ -115,9 +123,20 @@ export default function VerticalPowerhousePage() {
   const [fetchingShortId, setFetchingShortId] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
+  // Where the working clip came from: 'created' (rendered from a long video, so
+  // it carries a plan caption) vs 'existing' (uploaded / picked short — no
+  // caption yet, so we push the creator to add a product link for a real one).
+  const [clipSource, setClipSource] = useState<'created' | 'existing'>('existing')
+
   // ---- Enhance ----
   const [overlayType, setOverlayType] = useState<'sticker' | 'text'>('sticker')
+  const [stickerTab, setStickerTab] = useState<'gallery' | 'mine' | 'make'>('gallery')
   const [stickerId, setStickerId] = useState<string>(CTA_STICKERS[0]?.id ?? '')
+  // A custom (AI-generated / saved) box URL. When set, it wins over stickerId.
+  const [customStickerUrl, setCustomStickerUrl] = useState<string | null>(null)
+  const [myStickers, setMyStickers] = useState<Array<{ id: string; url: string; tag: string }>>([])
+  const [tagText, setTagText] = useState('')
+  const [genLoading, setGenLoading] = useState(false)
   const [caption, setCaption] = useState('LINK IN BIO')
   const [style, setStyle] = useState<typeof STYLES[number]['key']>('white-pill')
   const [position, setPosition] = useState<typeof POSITIONS[number]['key']>('lower-left')
@@ -232,6 +251,7 @@ export default function VerticalPowerhousePage() {
       }
       if (!videoUrl) throw new Error('No video available for this Short.')
       if (s.productUrl) setProduct(s.productUrl)
+      setClipSource('existing')
       setClip({ url: videoUrl, title: s.title })
       setStage('enhance')
     } catch (e) { toast.error(errText(e)) }
@@ -251,18 +271,61 @@ export default function VerticalPowerhousePage() {
       const { error: upErr } = await (supabase.storage as any).from('instagram-videos').upload(path, file, { cacheControl: '3600', upsert: false, contentType: file.type || 'video/mp4' })
       if (upErr) throw new Error(upErr.message || 'Upload failed')
       const { data: urlData } = supabase.storage.from('instagram-videos').getPublicUrl(path)
+      setClipSource('existing')
       setClip({ url: urlData.publicUrl, title: file.name })
       setStage('enhance')
     } catch (e) { toast.error(errText(e)) }
     finally { setUploading(false); if (fileRef.current) fileRef.current.value = '' }
   }, [supabase])
 
+  // Load the creator's saved custom CTA boxes ("My boxes").
+  const loadMyStickers = useCallback(async () => {
+    try {
+      const res = await fetch('/api/instagram/burn/my-stickers')
+      const data = await res.json()
+      setMyStickers((data.stickers || []) as Array<{ id: string; url: string; tag: string }>)
+    } catch { /* non-fatal */ }
+  }, [])
+
+  // Generate a custom CTA box from a typed tag (AI badge -> transparent PNG).
+  const generateSticker = useCallback(async () => {
+    const tag = tagText.trim()
+    if (!tag) { toast.error('Type a few words for your CTA box.'); return }
+    setGenLoading(true)
+    try {
+      const res = await fetch('/api/instagram/burn/generate-sticker', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tag }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.ok) {
+        if (res.status === 429 || data.limitReached) dispatchCapReached(data.error || 'You have hit your monthly CTA box limit.', { cap: data.cap || 'cta_box', currentTier: data.currentTier, upgrade: data.upgrade })
+        throw new Error(data.error || 'Could not create the box')
+      }
+      setCustomStickerUrl(data.stickerUrl as string)
+      setStickerId('')
+      setMyStickers(prev => [{ id: data.id as string, url: data.stickerUrl as string, tag: data.tag as string }, ...prev])
+      setTagText('')
+      toast.success('CTA box created')
+    } catch (e) { toast.error(errText(e)) }
+    finally { setGenLoading(false) }
+  }, [tagText])
+
+  const deleteMySticker = useCallback(async (id: string, url: string) => {
+    setMyStickers(prev => prev.filter(s => s.id !== id))
+    if (customStickerUrl === url) { setCustomStickerUrl(null); setStickerId(CTA_STICKERS[0]?.id ?? '') }
+    try { await fetch(`/api/instagram/burn/my-stickers?id=${encodeURIComponent(id)}`, { method: 'DELETE' }) } catch { /* non-fatal */ }
+  }, [customStickerUrl])
+
+  useEffect(() => { void loadMyStickers() }, [loadMyStickers])
+
   const runBurn = useCallback(async () => {
     if (!clip) return
     setBurning(true)
     setBurnedUrl(null)
     try {
-      const sticker = overlayType === 'sticker' ? CTA_STICKERS.find(s => s.id === stickerId) : undefined
+      const useCustom = overlayType === 'sticker' && !!customStickerUrl
+      const sticker = overlayType === 'sticker' && !customStickerUrl ? CTA_STICKERS.find(s => s.id === stickerId) : undefined
       const res = await fetch('/api/instagram/burn', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -270,6 +333,7 @@ export default function VerticalPowerhousePage() {
           caption: overlayType === 'text' ? caption : undefined,
           style: overlayType === 'text' ? style : undefined,
           stickerId: sticker?.id,
+          customStickerUrl: useCustom ? customStickerUrl : undefined,
           position,
           product: product.trim() || undefined,
           productName: productName.trim() || undefined,
@@ -287,7 +351,7 @@ export default function VerticalPowerhousePage() {
       toast.success('Overlay burned')
     } catch (e) { toast.error(errText(e)) }
     finally { setBurning(false) }
-  }, [clip, overlayType, stickerId, caption, style, position, product, productName, burnDuration])
+  }, [clip, overlayType, stickerId, customStickerUrl, caption, style, position, product, productName, burnDuration])
 
   const skipEnhance = useCallback(() => { setBurnedUrl(null); setComposedCaption(''); setStage('publish') }, [])
 
@@ -358,17 +422,19 @@ export default function VerticalPowerhousePage() {
               <button
                 onClick={() => reachable && setStage(s.key)}
                 disabled={!reachable}
-                className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold border transition-colors disabled:opacity-40"
-                style={active
-                  ? { backgroundColor: PURPLE, borderColor: PURPLE, color: '#fff' }
-                  : done
-                    ? { borderColor: `${PURPLE}66`, color: PURPLE }
-                    : { borderColor: 'rgba(0,0,0,0.12)', color: '#86868b' }}
+                className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-semibold border transition-colors disabled:opacity-50 ${
+                  active
+                    ? 'text-white border-transparent'
+                    : done
+                      ? 'text-[#7C3AED] bg-[#7C3AED]/10 border-[#7C3AED]/50'
+                      : 'text-[#1d1d1f] dark:text-[#f5f5f7] bg-black/[0.03] dark:bg-white/[0.08] border-black/15 dark:border-white/25 hover:border-[#7C3AED]/60'
+                }`}
+                style={active ? { backgroundColor: PURPLE } : undefined}
               >
                 {done ? <Check size={14} /> : s.icon}
                 {i + 1}. {s.label}
               </button>
-              {i < STEPS.length - 1 && <ArrowRight size={14} className="text-[#c7c7cc]" />}
+              {i < STEPS.length - 1 && <ArrowRight size={14} className="text-black/30 dark:text-white/40" />}
             </div>
           )
         })}
@@ -378,10 +444,10 @@ export default function VerticalPowerhousePage() {
       {stage === 'create' && (
         <div>
           <div className="flex gap-2 mb-4">
-            <button onClick={() => setOnramp('long')} className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold border transition-colors" style={onramp === 'long' ? { backgroundColor: PURPLE, borderColor: PURPLE, color: '#fff' } : { borderColor: 'rgba(0,0,0,0.12)', color: '#4b4b4f' }}>
+            <button onClick={() => setOnramp('long')} className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-semibold border transition-colors ${onramp === 'long' ? PILL_ON : PILL_IDLE}`} style={onramp === 'long' ? { backgroundColor: PURPLE } : undefined}>
               <Scissors size={13} /> From a long video
             </button>
-            <button onClick={() => setOnramp('existing')} className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold border transition-colors" style={onramp === 'existing' ? { backgroundColor: PURPLE, borderColor: PURPLE, color: '#fff' } : { borderColor: 'rgba(0,0,0,0.12)', color: '#4b4b4f' }}>
+            <button onClick={() => setOnramp('existing')} className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-semibold border transition-colors ${onramp === 'existing' ? PILL_ON : PILL_IDLE}`} style={onramp === 'existing' ? { backgroundColor: PURPLE } : undefined}>
               <UploadCloud size={13} /> Upload or pick a short
             </button>
           </div>
@@ -396,6 +462,7 @@ export default function VerticalPowerhousePage() {
                 youtubeVideoId={selectedVideo.youtubeVideoId}
                 videoTitle={selectedVideo.title}
                 onUseClip={(c) => {
+                  setClipSource('created')
                   setClip({ url: c.url, title: c.title })
                   // Seed a caption in case Enhance is skipped; burn overwrites it.
                   setComposedCaption([c.caption, (c.hashtags || []).join(' ')].filter(Boolean).join('\n\n').trim())
@@ -507,26 +574,75 @@ export default function VerticalPowerhousePage() {
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-wide text-[#3a3a3c] dark:text-[#d2d2d7] mb-2">Call-to-action overlay</p>
               <div className="flex gap-2 mb-3">
-                <button onClick={() => setOverlayType('sticker')} className="rounded-lg border-2 px-3 py-1.5 text-[12px] font-medium" style={overlayType === 'sticker' ? { borderColor: PURPLE, color: PURPLE } : { borderColor: 'rgba(0,0,0,0.12)', color: '#86868b' }}>CTA box</button>
-                <button onClick={() => setOverlayType('text')} className="rounded-lg border-2 px-3 py-1.5 text-[12px] font-medium" style={overlayType === 'text' ? { borderColor: PURPLE, color: PURPLE } : { borderColor: 'rgba(0,0,0,0.12)', color: '#86868b' }}>Caption text</button>
+                <button onClick={() => setOverlayType('sticker')} className={`rounded-lg border px-3 py-1.5 text-[12px] font-semibold transition-colors ${overlayType === 'sticker' ? PILL_SEL : PILL_IDLE}`}>CTA box</button>
+                <button onClick={() => setOverlayType('text')} className={`rounded-lg border px-3 py-1.5 text-[12px] font-semibold transition-colors ${overlayType === 'text' ? PILL_SEL : PILL_IDLE}`}>Caption text</button>
               </div>
               {overlayType === 'sticker' ? (
-                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                  {CTA_STICKERS.map(s => (
-                    <button key={s.id} onClick={() => setStickerId(s.id)} className="rounded-lg border-2 overflow-hidden p-1.5 bg-white dark:bg-[#2c2c2e]" style={{ borderColor: stickerId === s.id ? PURPLE : 'rgba(0,0,0,0.1)' }} title={s.label}>
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={ctaStickerUrl(s.file)} alt={s.label} className="w-full h-12 object-contain" />
-                      </button>
-                  ))}
+                <div>
+                  {/* Gallery / My boxes / Make your own */}
+                  <div className="flex gap-2 mb-3">
+                    <button onClick={() => setStickerTab('gallery')} className={`rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ${stickerTab === 'gallery' ? PILL_SEL : PILL_IDLE}`}>Gallery</button>
+                    <button onClick={() => setStickerTab('mine')} className={`rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ${stickerTab === 'mine' ? PILL_SEL : PILL_IDLE}`}>My boxes{myStickers.length ? ` (${myStickers.length})` : ''}</button>
+                    <button onClick={() => setStickerTab('make')} className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ${stickerTab === 'make' ? PILL_SEL : PILL_IDLE}`}><Wand2 size={12} /> Make your own</button>
+                  </div>
+
+                  {stickerTab === 'gallery' && (
+                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                      {CTA_STICKERS.map(s => {
+                        const on = !customStickerUrl && stickerId === s.id
+                        return (
+                          <button key={s.id} onClick={() => { setStickerId(s.id); setCustomStickerUrl(null) }} className="rounded-lg border-2 overflow-hidden p-1.5 bg-white dark:bg-[#2c2c2e] transition-colors" style={{ borderColor: on ? PURPLE : 'rgba(128,128,128,0.25)' }} title={s.label}>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={ctaStickerUrl(s.file)} alt={s.label} className="w-full h-12 object-contain" />
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+
+                  {stickerTab === 'mine' && (
+                    myStickers.length === 0 ? (
+                      <p className="text-[12px] text-[#86868b] py-4">No custom boxes yet. Hit <span className="font-medium text-[#7C3AED]">Make your own</span> to design one from a few words.</p>
+                    ) : (
+                      <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                        {myStickers.map(m => {
+                          const on = customStickerUrl === m.url
+                          return (
+                            <div key={m.id} className="relative group">
+                              <button onClick={() => { setCustomStickerUrl(m.url); setStickerId('') }} className="w-full rounded-lg border-2 overflow-hidden p-1.5 bg-white dark:bg-[#2c2c2e]" style={{ borderColor: on ? PURPLE : 'rgba(128,128,128,0.25)' }} title={m.tag}>
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={m.url} alt={m.tag} className="w-full h-12 object-contain" />
+                              </button>
+                              <button onClick={() => deleteMySticker(m.id, m.url)} className="absolute -top-1.5 -right-1.5 rounded-full bg-[#ff3b30] text-white p-0.5 opacity-0 group-hover:opacity-100 transition-opacity" title="Delete"><Trash2 size={11} /></button>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )
+                  )}
+
+                  {stickerTab === 'make' && (
+                    <div className="rounded-xl border border-[#7C3AED]/25 bg-[#7C3AED]/5 p-3">
+                      <p className="text-[12px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">Describe your CTA box in a few words — we design a transparent badge for it.</p>
+                      <div className="flex gap-2">
+                        <input value={tagText} onChange={e => setTagText(e.target.value.slice(0, 40))} onKeyDown={e => { if (e.key === 'Enter') void generateSticker() }} placeholder="e.g. Grab yours today" className="flex-1 rounded-lg border border-black/10 dark:border-white/15 bg-white dark:bg-[#2c2c2e] px-3 py-2 text-sm text-[#1d1d1f] dark:text-[#f5f5f7]" />
+                        <button onClick={generateSticker} disabled={genLoading || !tagText.trim()} className="shrink-0 inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-[12px] font-semibold text-white disabled:opacity-50" style={{ backgroundColor: PURPLE }}>
+                          {genLoading ? <Loader2 size={13} className="animate-spin" /> : <Wand2 size={13} />}
+                          {genLoading ? 'Designing…' : 'Create box'}
+                        </button>
+                      </div>
+                      <p className="text-[10px] text-[#86868b] mt-1.5">1–6 words work best. New boxes are saved to My boxes and selected automatically.</p>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div>
                   <input value={caption} onChange={e => setCaption(e.target.value.slice(0, 60))} placeholder="LINK IN BIO" className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm text-[#1d1d1f] dark:text-[#f5f5f7] mb-2" />
                   <div className="flex flex-wrap gap-1.5 mb-3">
-                    {CAPTION_PRESETS.map(p => <button key={p} onClick={() => setCaption(p)} className="text-[11px] rounded-full border border-black/10 dark:border-white/15 px-2 py-1 text-[#4b4b4f] dark:text-[#b0b0b5] hover:border-[#7C3AED]/50">{p}</button>)}
+                    {CAPTION_PRESETS.map(p => <button key={p} onClick={() => setCaption(p)} className={`text-[11px] rounded-full border px-2.5 py-1 transition-colors ${caption === p ? PILL_SEL : PILL_IDLE}`}>{p}</button>)}
                   </div>
                   <div className="flex flex-wrap gap-1.5">
-                    {STYLES.map(st => <button key={st.key} onClick={() => setStyle(st.key)} className="text-[11px] rounded-full border-2 px-2.5 py-1" style={style === st.key ? { borderColor: PURPLE, color: PURPLE } : { borderColor: 'rgba(0,0,0,0.12)', color: '#86868b' }}>{st.label}</button>)}
+                    {STYLES.map(st => <button key={st.key} onClick={() => setStyle(st.key)} className={`text-[11px] rounded-full border px-2.5 py-1 transition-colors ${style === st.key ? PILL_SEL : PILL_IDLE}`}>{st.label}</button>)}
                   </div>
                 </div>
               )}
@@ -536,20 +652,32 @@ export default function VerticalPowerhousePage() {
             <div className="flex flex-wrap gap-4">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-[#3a3a3c] dark:text-[#d2d2d7] mb-2">Position</p>
-                <div className="flex gap-2">{POSITIONS.map(p => <button key={p.key} onClick={() => setPosition(p.key)} className="rounded-lg border-2 px-3 py-1.5 text-[12px] font-medium" style={position === p.key ? { borderColor: PURPLE, color: PURPLE } : { borderColor: 'rgba(0,0,0,0.12)', color: '#86868b' }} title={p.desc}>{p.label}</button>)}</div>
+                <div className="flex gap-2">{POSITIONS.map(p => <button key={p.key} onClick={() => setPosition(p.key)} className={`rounded-lg border px-3 py-1.5 text-[12px] font-semibold transition-colors ${position === p.key ? PILL_SEL : PILL_IDLE}`} title={p.desc}>{p.label}</button>)}</div>
               </div>
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-[#3a3a3c] dark:text-[#d2d2d7] mb-2">How long it shows</p>
-                <div className="flex gap-2">{DURATIONS.map(d => <button key={d.key} onClick={() => setBurnDuration(d.key)} className="rounded-lg border-2 px-3 py-1.5 text-[12px] font-medium" style={burnDuration === d.key ? { borderColor: PURPLE, color: PURPLE } : { borderColor: 'rgba(0,0,0,0.12)', color: '#86868b' }}>{d.label}</button>)}</div>
+                <div className="flex gap-2">{DURATIONS.map(d => <button key={d.key} onClick={() => setBurnDuration(d.key)} className={`rounded-lg border px-3 py-1.5 text-[12px] font-semibold transition-colors ${burnDuration === d.key ? PILL_SEL : PILL_IDLE}`}>{d.label}</button>)}</div>
               </div>
             </div>
 
-            {/* Product link */}
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-[#3a3a3c] dark:text-[#d2d2d7] mb-2">Product link (optional)</p>
-              <input value={product} onChange={e => setProduct(e.target.value)} placeholder="Amazon ASIN, store URL, or TikTok Shop link" className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm text-[#1d1d1f] dark:text-[#f5f5f7] mb-2" />
-              <input value={productName} onChange={e => setProductName(e.target.value)} placeholder="Product name (helps the AI caption)" className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm text-[#1d1d1f] dark:text-[#f5f5f7]" />
-            </div>
+            {/* Product link — pushed hard for clips that didn't come from a scripted
+                long video (uploads / existing shorts have no caption otherwise). */}
+            {clipSource === 'existing' ? (
+              <div className="rounded-xl border border-[#ff9500]/40 bg-[#ff9500]/10 p-3.5">
+                <p className="text-[12px] font-semibold text-[#9a5d00] dark:text-[#ffcf8f] flex items-center gap-1.5"><Package size={13} /> Add your product link so we can write the caption</p>
+                <p className="text-[11px] text-[#9a5d00] dark:text-[#ffcf8f]/85 mt-0.5 mb-2.5 leading-relaxed">
+                  This short didn&apos;t come from a scripted video, so we need the ASIN or affiliate link to write a proper caption with your link and hashtags. Without it the caption comes out empty.
+                </p>
+                <input value={product} onChange={e => setProduct(e.target.value)} placeholder="Amazon ASIN, store URL, or TikTok Shop link" className="w-full rounded-lg border border-black/15 dark:border-white/20 bg-white dark:bg-[#2c2c2e] px-3 py-2 text-sm text-[#1d1d1f] dark:text-[#f5f5f7] mb-2" />
+                <input value={productName} onChange={e => setProductName(e.target.value)} placeholder="Product name (helps the AI caption)" className="w-full rounded-lg border border-black/15 dark:border-white/20 bg-white dark:bg-[#2c2c2e] px-3 py-2 text-sm text-[#1d1d1f] dark:text-[#f5f5f7]" />
+              </div>
+            ) : (
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-[#3a3a3c] dark:text-[#d2d2d7] mb-2">Product link (optional)</p>
+                <input value={product} onChange={e => setProduct(e.target.value)} placeholder="Amazon ASIN, store URL, or TikTok Shop link" className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm text-[#1d1d1f] dark:text-[#f5f5f7] mb-2" />
+                <input value={productName} onChange={e => setProductName(e.target.value)} placeholder="Product name (helps the AI caption)" className="w-full rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm text-[#1d1d1f] dark:text-[#f5f5f7]" />
+              </div>
+            )}
 
             <div className="flex items-center gap-3 pt-1">
               <button onClick={() => setStage('create')} className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[#86868b]"><ArrowLeft size={14} /> Back</button>
