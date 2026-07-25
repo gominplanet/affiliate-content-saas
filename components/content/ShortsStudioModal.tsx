@@ -21,7 +21,6 @@ import { ShortVideoUpload } from '@/components/ShortVideoUpload'
 import { dispatchCapReached } from '@/components/CapReachedBanner'
 import { errText } from '@/lib/err-text'
 import { ensureDisclaimer } from '@/lib/social-disclaimer'
-import { youtubeUploadEnabled } from '@/lib/feature-flags'
 import { SUBTITLE_STYLES, type SubtitleStyle, type ShortRow } from '@/lib/shorts-types'
 
 // TikTok publish reuses the existing compliant modal (creator info + privacy
@@ -239,7 +238,15 @@ export function ShortsStudioModal({
         body: JSON.stringify({ videoUrl: clip.renderedUrl, title: (clip.hook || 'New Short').slice(0, 100), description: captionFor(clip) }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'YouTube upload failed')
+      if (!res.ok) {
+        // Missing upload scope — grant it via incremental auth, then retry.
+        if (data.reconnectRequired) {
+          toast('One-time step: grant YouTube publishing access…')
+          window.location.href = `/api/auth/youtube?intent=upload&returnTo=${encodeURIComponent(window.location.pathname)}`
+          return
+        }
+        throw new Error(data.error || 'YouTube upload failed')
+      }
       toast.success('Uploaded to YouTube as a Short')
       void markPosted(clip.id, 'youtube')
     } catch (e) {
@@ -434,17 +441,15 @@ export function ShortsStudioModal({
                             postedAt={clip.postedInstagram}
                             onClick={() => setIgPost({ id: clip.id, url: clip.renderedUrl!, caption: captionFor(clip) })}
                           />
-                          {youtubeUploadEnabled() && (
-                            <PostPill
-                              label="YouTube"
-                              color="#FF0000"
-                              icon={<Youtube size={12} />}
-                              posted={!!clip.postedYoutube}
-                              postedAt={clip.postedYoutube}
-                              busy={publishing === clip.id + ':yt'}
-                              onClick={() => postYouTube(clip)}
-                            />
-                          )}
+                          <PostPill
+                            label="YouTube"
+                            color="#FF0000"
+                            icon={<Youtube size={12} />}
+                            posted={!!clip.postedYoutube}
+                            postedAt={clip.postedYoutube}
+                            busy={publishing === clip.id + ':yt'}
+                            onClick={() => postYouTube(clip)}
+                          />
                         </>
                       )}
                       {clip.status === 'failed' && clip.renderError && (

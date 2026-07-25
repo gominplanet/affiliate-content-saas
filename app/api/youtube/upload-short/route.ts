@@ -12,7 +12,6 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier, type Tier } from '@/lib/tier'
-import { youtubeUploadEnabled } from '@/lib/feature-flags'
 import { getChannelOAuthToken } from '@/lib/youtube-channels'
 import { YouTubeOAuthService } from '@/services/youtube'
 import { recordUsage } from '@/lib/ai-usage'
@@ -23,9 +22,9 @@ export const maxDuration = 300
 const MAX_BYTES = 300 * 1024 * 1024
 
 export async function POST(request: Request) {
-  if (!youtubeUploadEnabled()) {
-    return NextResponse.json({ error: 'YouTube Shorts publishing isn\'t enabled yet.' }, { status: 503 })
-  }
+  // No feature-flag gate: publishing works whenever the connection carries the
+  // youtube.upload scope. A connection without it returns reconnectRequired
+  // below, and the client kicks off the incremental-auth flow to grant it.
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
