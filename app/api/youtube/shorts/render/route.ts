@@ -88,10 +88,12 @@ export async function POST(request: Request) {
       // The trimmed clip is already the window, re-based to 0.
       startSec: usingClip ? 0 : startSec,
       endSec: usingClip ? (clip!.durationSeconds ?? (endSec - startSec)) : endSec,
-      // Captions off → render a clean vertical clip (no subtitles, no hook banner).
+      // Captions off → render a clean vertical clip (no subtitles).
       captions: withCaptions ? captions : [],
       style,
-      hook: withCaptions ? ((short.hook as string) || '') : '',
+      // No burned title banner — creators didn't want a static title pinned to
+      // the top of the Short. The hook still shows in the app as the clip label.
+      hook: '',
       // Don't reuse the cached full-source asset when uploading a fresh clip.
       sourcePublicId: usingClip ? null : ((video?.cloudinary_source_id as string | null) || null),
     })
