@@ -20,6 +20,7 @@ import { X, Scissors, Loader2, Sparkles, Download, ExternalLink, AlertCircle, Fi
 import { ShortVideoUpload } from '@/components/ShortVideoUpload'
 import { dispatchCapReached } from '@/components/CapReachedBanner'
 import { errText } from '@/lib/err-text'
+import { ensureDisclaimer } from '@/lib/social-disclaimer'
 import { youtubeUploadEnabled } from '@/lib/feature-flags'
 import { SUBTITLE_STYLES, type SubtitleStyle, type ShortRow } from '@/lib/shorts-types'
 
@@ -27,6 +28,13 @@ import { SUBTITLE_STYLES, type SubtitleStyle, type ShortRow } from '@/lib/shorts
 // picker required by TikTok's API). Lazy — only loads when a creator posts.
 const TikTokDirectModal = dynamic(
   () => import('@/components/TikTokDirectModal').then(m => ({ default: m.TikTokDirectModal })),
+  { ssr: false },
+)
+
+// Instagram publish reuses the same review-then-post modal shape as TikTok:
+// preview the clip, edit the caption, then Post as a Reel.
+const InstagramBurnedModal = dynamic(
+  () => import('@/components/InstagramBurnedModal').then(m => ({ default: m.InstagramBurnedModal })),
   { ssr: false },
 )
 
@@ -68,6 +76,7 @@ export function ShortsStudioModal({
   // the clip whose rendered URL is being posted to TikTok (opens the modal).
   const [publishing, setPublishing] = useState<string | null>(null)
   const [ttPost, setTtPost] = useState<{ url: string; caption: string } | null>(null)
+  const [igPost, setIgPost] = useState<{ url: string; caption: string } | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -168,28 +177,12 @@ export function ShortsStudioModal({
     }
   }, [hasSource, styleById, captionsById])
 
-  // Caption for a cross-post: the clip's caption + its hashtags.
+  // Caption for a cross-post: the clip's caption + its hashtags, with the FTC
+  // affiliate disclosure appended (ensureDisclaimer skips it if already present).
   const captionFor = (clip: ShortRow) =>
-    [clip.caption, (clip.hashtags || []).join(' ')].filter(Boolean).join('\n\n').trim()
-
-  const postInstagram = useCallback(async (clip: ShortRow) => {
-    if (!clip.renderedUrl) return
-    setPublishing(clip.id + ':ig')
-    try {
-      const res = await fetch('/api/instagram/publish-burned', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoUrl: clip.renderedUrl, caption: captionFor(clip) }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Instagram publish failed')
-      toast.success('Posted to Instagram')
-    } catch (e) {
-      toast.error(errText(e))
-    } finally {
-      setPublishing(null)
-    }
-  }, [])
+    ensureDisclaimer(
+      [clip.caption, (clip.hashtags || []).join(' ')].filter(Boolean).join('\n\n').trim(),
+    )
 
   const postYouTube = useCallback(async (clip: ShortRow) => {
     if (!clip.renderedUrl) return
@@ -386,11 +379,10 @@ export function ShortsStudioModal({
                             <Music2 size={12} /> TikTok
                           </button>
                           <button
-                            onClick={() => postInstagram(clip)}
-                            disabled={publishing === clip.id + ':ig'}
-                            className="inline-flex items-center gap-1 text-[12px] font-medium hover:underline text-[#E1306C] disabled:opacity-50"
+                            onClick={() => setIgPost({ url: clip.renderedUrl!, caption: captionFor(clip) })}
+                            className="inline-flex items-center gap-1 text-[12px] font-medium hover:underline text-[#E1306C]"
                           >
-                            {publishing === clip.id + ':ig' ? <Loader2 size={12} className="animate-spin" /> : <Instagram size={12} />} Instagram
+                            <Instagram size={12} /> Instagram
                           </button>
                           {youtubeUploadEnabled() && (
                             <button
@@ -425,6 +417,17 @@ export function ShortsStudioModal({
           initialCaption={ttPost.caption}
           onClose={() => setTtPost(null)}
           onPosted={() => { setTtPost(null); toast.success('Posted to TikTok') }}
+        />
+      </div>
+    )}
+    {/* Same z-[70] lift so the IG modal opens above this Shorts modal (z-[60]). */}
+    {igPost && (
+      <div className="relative z-[70]">
+        <InstagramBurnedModal
+          burnedVideoUrl={igPost.url}
+          initialCaption={igPost.caption}
+          onClose={() => setIgPost(null)}
+          onPosted={() => toast.success('Posted to Instagram')}
         />
       </div>
     )}
