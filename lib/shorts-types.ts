@@ -64,4 +64,11 @@ export interface ShortRow {
   renderedUrl: string | null
   subtitleStyle: SubtitleStyle
   renderError: string | null
+  // Cross-post history: ISO timestamp of when this clip was published to each
+  // platform, or null if it hasn't been. Drives the "posted" pill state.
+  postedTiktok: string | null
+  postedInstagram: string | null
+  postedYoutube: string | null
 }
+
+export type ShortPlatform = 'tiktok' | 'instagram' | 'youtube'

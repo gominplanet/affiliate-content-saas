@@ -21,5 +21,8 @@ export function rowToShort(r: any): ShortRow {
     renderedUrl: r.rendered_url ?? null,
     subtitleStyle: (r.subtitle_style as ShortRow['subtitleStyle']) ?? 'bold-white',
     renderError: r.render_error ?? null,
+    postedTiktok: r.posted_tiktok ?? null,
+    postedInstagram: r.posted_instagram ?? null,
+    postedYoutube: r.posted_youtube ?? null,
   }
 }
