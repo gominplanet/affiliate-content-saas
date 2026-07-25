@@ -237,21 +237,26 @@ export default function ClipFactoryPage() {
     finally { setGenerating(false) }
   }, [linkUrl, ownership])
 
-  const pickShort = useCallback(async (s: ShortItem) => {
+  // Load a vertical Short (a youtube_videos row) into the Enhance stage: use its
+  // stored MP4, or fetch it in-app if there isn't one. Shared by the picker and
+  // the ?videoId= deep-link (e.g. from the Instagram publish modal).
+  const loadShortById = useCallback(async (id: string, fallbackTitle?: string, productUrl?: string) => {
     try {
       let videoUrl = ''
-      if (s.hasVideo) {
-        const res = await fetch(`/api/instagram/burn/source?videoId=${encodeURIComponent(s.id)}`)
-        const data = await res.json()
-        videoUrl = (data.videoUrl as string) || ''
+      let title = fallbackTitle || 'Short'
+      const res0 = await fetch(`/api/instagram/burn/source?videoId=${encodeURIComponent(id)}`)
+      if (res0.ok) {
+        const d0 = await res0.json()
+        videoUrl = (d0.videoUrl as string) || ''
+        if (d0.title) title = d0.title as string
       }
       // No stored MP4 — fetch it inside MVP (the downloader service), never send
       // the creator to YouTube Studio to download + re-upload.
       if (!videoUrl) {
-        setFetchingShortId(s.id)
+        setFetchingShortId(id)
         const res = await fetch('/api/youtube/shorts/ingest', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ videoId: s.id, target: 'short' }),
+          body: JSON.stringify({ videoId: id, target: 'short' }),
         })
         const data = await res.json()
         if (!res.ok || !data.videoUrl) {
@@ -260,16 +265,31 @@ export default function ClipFactoryPage() {
           throw new Error(data.error || "We couldn't fetch this Short automatically.")
         }
         videoUrl = data.videoUrl as string
-        setShorts(prev => prev.map(x => (x.id === s.id ? { ...x, hasVideo: true } : x)))
+        setShorts(prev => prev.map(x => (x.id === id ? { ...x, hasVideo: true } : x)))
       }
       if (!videoUrl) throw new Error('No video available for this Short.')
-      if (s.productUrl) setProduct(s.productUrl)
+      if (productUrl) setProduct(productUrl)
       setClipSource('existing')
-      setClip({ url: videoUrl, title: s.title })
+      setOnramp('existing')
+      setClip({ url: videoUrl, title })
       setStage('enhance')
     } catch (e) { toast.error(errText(e)) }
     finally { setFetchingShortId(null) }
   }, [])
+
+  const pickShort = useCallback((s: ShortItem) => {
+    void loadShortById(s.id, s.title, s.productUrl || undefined)
+  }, [loadShortById])
+
+  // Deep-link: /clip-factory?videoId=<uuid>[&product=…] jumps straight into
+  // Enhance for that Short (e.g. from the Instagram publish modal).
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const vid = (params.get('videoId') || '').trim()
+    if (vid && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vid)) {
+      void loadShortById(vid, undefined, params.get('product') || undefined)
+    }
+  }, [loadShortById])
 
   const handleUpload = useCallback(async (file: File) => {
     if (!file.type.startsWith('video/')) { toast.error('Please select a video file (MP4 recommended).'); return }
