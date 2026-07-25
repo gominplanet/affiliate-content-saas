@@ -13,6 +13,7 @@
 import { useCallback, useRef, useState } from 'react'
 import { Loader2, AlertCircle, CheckCircle, Send, ExternalLink, X, Instagram } from 'lucide-react'
 import { useModalA11y } from '@/components/ui/useModalA11y'
+import { igDmEnabled } from '@/lib/feature-flags'
 
 export function InstagramBurnedModal({
   burnedVideoUrl,
@@ -34,7 +35,9 @@ export function InstagramBurnedModal({
   const [posted, setPosted] = useState(false)
 
   // Auto-DM: commenting `dmKeyword` on the Reel DMs `dmLink` to that person.
-  const [autoDm, setAutoDm] = useState(!!(defaultDmLink && defaultDmLink.trim()))
+  // Hidden until Meta approves the messaging permissions (igDmEnabled).
+  const dmAvailable = igDmEnabled()
+  const [autoDm, setAutoDm] = useState(dmAvailable && !!(defaultDmLink && defaultDmLink.trim()))
   const [dmKeyword, setDmKeyword] = useState('LINK')
   const [dmLink, setDmLink] = useState((defaultDmLink || '').trim())
 
@@ -132,7 +135,9 @@ export function InstagramBurnedModal({
               <p className="text-[10px] text-[#86868b] mt-1">{caption.length} / 2200 · Hashtags + disclaimer included.</p>
             </div>
 
-            {/* Auto-DM: comment a keyword → DM the link. */}
+            {/* Auto-DM: comment a keyword → DM the link. Gated until Meta
+                approves the messaging permissions. */}
+            {dmAvailable && (
             <div className="rounded-lg border border-gray-200 dark:border-white/10 p-3">
               <label className="flex items-center gap-2 cursor-pointer select-none">
                 <input type="checkbox" checked={autoDm} onChange={(e) => setAutoDm(e.target.checked)} className="accent-[#7C3AED]" />
@@ -161,6 +166,7 @@ export function InstagramBurnedModal({
                 </div>
               )}
             </div>
+            )}
 
             {postError && (
               <div className="rounded-lg border-[#ff3b30]/20 bg-[#ff3b30]/5 p-3">

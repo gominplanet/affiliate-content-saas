@@ -45,6 +45,18 @@ export function youtubeUploadEnabled(): boolean {
   return process.env.NEXT_PUBLIC_YOUTUBE_UPLOAD_ENABLED === 'true'
 }
 
+/**
+ * Instagram comment→DM automation (auto-DM the link when someone comments a
+ * keyword). Requires Meta to approve the messaging permissions
+ * (instagram_business_manage_messages) — until then it only works for the app
+ * owner + added testers, so the toggle stays hidden for everyone else. Flip on
+ * with NEXT_PUBLIC_IG_DM_ENABLED=true (client toggle) alongside IG_DM_SCOPES=true
+ * (server scope request) once Meta approves.
+ */
+export function igDmEnabled(): boolean {
+  return process.env.NEXT_PUBLIC_IG_DM_ENABLED === 'true'
+}
+
 export function socialEnabled(
   platform: GatedSocialPlatform,
   opts?: { tier?: string | null; email?: string | null },
