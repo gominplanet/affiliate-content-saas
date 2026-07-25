@@ -14,12 +14,21 @@
  *      same upload the Instagram burner uses.
  */
 import { useCallback, useEffect, useState } from 'react'
+import dynamic from 'next/dynamic'
 import { toast } from 'sonner'
-import { X, Scissors, Loader2, Sparkles, Download, ExternalLink, AlertCircle, Film } from 'lucide-react'
+import { X, Scissors, Loader2, Sparkles, Download, ExternalLink, AlertCircle, Film, Youtube, Instagram, Music2 } from 'lucide-react'
 import { ShortVideoUpload } from '@/components/ShortVideoUpload'
 import { dispatchCapReached } from '@/components/CapReachedBanner'
 import { errText } from '@/lib/err-text'
+import { youtubeUploadEnabled } from '@/lib/feature-flags'
 import { SUBTITLE_STYLES, type SubtitleStyle, type ShortRow } from '@/lib/shorts-types'
+
+// TikTok publish reuses the existing compliant modal (creator info + privacy
+// picker required by TikTok's API). Lazy — only loads when a creator posts.
+const TikTokDirectModal = dynamic(
+  () => import('@/components/TikTokDirectModal').then(m => ({ default: m.TikTokDirectModal })),
+  { ssr: false },
+)
 
 const PURPLE = '#7C3AED'
 
@@ -55,6 +64,10 @@ export function ShortsStudioModal({
   // Per-clip captions on/off (default on). captions off = a clean clip.
   const [captionsById, setCaptionsById] = useState<Record<string, boolean>>({})
   const [renderingId, setRenderingId] = useState<string | null>(null)
+  // Publishing: a `${clipId}:ig|yt` key while a direct post is in flight, and
+  // the clip whose rendered URL is being posted to TikTok (opens the modal).
+  const [publishing, setPublishing] = useState<string | null>(null)
+  const [ttPost, setTtPost] = useState<{ url: string; caption: string } | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -155,7 +168,50 @@ export function ShortsStudioModal({
     }
   }, [hasSource, styleById, captionsById])
 
+  // Caption for a cross-post: the clip's caption + its hashtags.
+  const captionFor = (clip: ShortRow) =>
+    [clip.caption, (clip.hashtags || []).join(' ')].filter(Boolean).join('\n\n').trim()
+
+  const postInstagram = useCallback(async (clip: ShortRow) => {
+    if (!clip.renderedUrl) return
+    setPublishing(clip.id + ':ig')
+    try {
+      const res = await fetch('/api/instagram/publish-burned', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoUrl: clip.renderedUrl, caption: captionFor(clip) }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Instagram publish failed')
+      toast.success('Posted to Instagram')
+    } catch (e) {
+      toast.error(errText(e))
+    } finally {
+      setPublishing(null)
+    }
+  }, [])
+
+  const postYouTube = useCallback(async (clip: ShortRow) => {
+    if (!clip.renderedUrl) return
+    setPublishing(clip.id + ':yt')
+    try {
+      const res = await fetch('/api/youtube/upload-short', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoUrl: clip.renderedUrl, title: (clip.hook || 'New Short').slice(0, 100), description: captionFor(clip) }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'YouTube upload failed')
+      toast.success('Uploaded to YouTube as a Short')
+    } catch (e) {
+      toast.error(errText(e))
+    } finally {
+      setPublishing(null)
+    }
+  }, [])
+
   return (
+    <>
     <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:p-8" onClick={onClose}>
       <div
         className="w-full max-w-3xl rounded-2xl bg-white dark:bg-[#1c1c1e] shadow-2xl my-4"
@@ -318,9 +374,34 @@ export function ShortsStudioModal({
                         {rendering ? 'Rendering…' : clip.status === 'rendered' ? 'Re-render' : 'Render Short'}
                       </button>
                       {clip.status === 'rendered' && clip.renderedUrl && (
-                        <a href={clip.renderedUrl} download target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[12px] font-medium hover:underline" style={{ color: PURPLE }}>
-                          <Download size={12} /> Download
-                        </a>
+                        <>
+                          <a href={clip.renderedUrl} download target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[12px] font-medium hover:underline" style={{ color: PURPLE }}>
+                            <Download size={12} /> Download
+                          </a>
+                          <span className="text-[11px] text-[#86868b] ml-1">Post to</span>
+                          <button
+                            onClick={() => setTtPost({ url: clip.renderedUrl!, caption: captionFor(clip) })}
+                            className="inline-flex items-center gap-1 text-[12px] font-medium hover:underline text-[#1d1d1f] dark:text-[#f5f5f7]"
+                          >
+                            <Music2 size={12} /> TikTok
+                          </button>
+                          <button
+                            onClick={() => postInstagram(clip)}
+                            disabled={publishing === clip.id + ':ig'}
+                            className="inline-flex items-center gap-1 text-[12px] font-medium hover:underline text-[#E1306C] disabled:opacity-50"
+                          >
+                            {publishing === clip.id + ':ig' ? <Loader2 size={12} className="animate-spin" /> : <Instagram size={12} />} Instagram
+                          </button>
+                          {youtubeUploadEnabled() && (
+                            <button
+                              onClick={() => postYouTube(clip)}
+                              disabled={publishing === clip.id + ':yt'}
+                              className="inline-flex items-center gap-1 text-[12px] font-medium hover:underline text-[#FF0000] disabled:opacity-50"
+                            >
+                              {publishing === clip.id + ':yt' ? <Loader2 size={12} className="animate-spin" /> : <Youtube size={12} />} YouTube
+                            </button>
+                          )}
+                        </>
                       )}
                       {clip.status === 'failed' && clip.renderError && (
                         <span className="text-[11px] text-[#ff3b30] inline-flex items-center gap-1"><AlertCircle size={11} /> {clip.renderError}</span>
@@ -334,5 +415,15 @@ export function ShortsStudioModal({
         </div>
       </div>
     </div>
+
+    {ttPost && (
+      <TikTokDirectModal
+        burnedVideoUrl={ttPost.url}
+        initialCaption={ttPost.caption}
+        onClose={() => setTtPost(null)}
+        onPosted={() => { setTtPost(null); toast.success('Posted to TikTok') }}
+      />
+    )}
+    </>
   )
 }
