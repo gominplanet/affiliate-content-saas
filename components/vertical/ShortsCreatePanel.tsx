@@ -4,11 +4,11 @@
 /**
  * ShortsCreatePanel — the Shorts Studio "create" flow, inline (no modal).
  *
- * Used inside Vertical Powerhouse: pick a long video, find the strongest 15–30s
+ * Used inside Clip Factory: pick a long video, find the strongest 15–30s
  * moments, render one to a 9:16 clip with running captions, then hand that
  * rendered clip up to the page via onUseClip so it flows into Enhance → Publish.
  * This is the same plan/ingest/render pipeline the ShortsStudioModal uses, minus
- * the publish pills (publishing happens in the Powerhouse's own stage).
+ * the publish pills (publishing happens in Clip Factory's own stage).
  */
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
@@ -73,7 +73,7 @@ export function ShortsCreatePanel({
       })
       const data = await res.json()
       if (!res.ok) {
-        if (data.limitReached) dispatchCapReached(data.error || 'Vertical Powerhouse is a Pro feature.', { cap: data.cap || 'shorts_studio', currentTier: data.currentTier, upgrade: data.upgrade })
+        if (data.limitReached) dispatchCapReached(data.error || 'Clip Factory is a Pro feature.', { cap: data.cap || 'shorts_studio', currentTier: data.currentTier, upgrade: data.upgrade })
         throw new Error(data.error || 'Could not find Shorts')
       }
       setClips(data.shorts || [])
@@ -95,7 +95,7 @@ export function ShortsCreatePanel({
       const data = await res.json()
       if (!res.ok) {
         if (data.ingestDisabled) setIngestEnabled(false)
-        if (data.limitReached) dispatchCapReached(data.error || 'Vertical Powerhouse is a Pro feature.', { cap: data.cap || 'shorts_studio', currentTier: data.currentTier, upgrade: data.upgrade })
+        if (data.limitReached) dispatchCapReached(data.error || 'Clip Factory is a Pro feature.', { cap: data.cap || 'shorts_studio', currentTier: data.currentTier, upgrade: data.upgrade })
         throw new Error(data.error || 'Could not fetch the video automatically.')
       }
       setHasSource(true)

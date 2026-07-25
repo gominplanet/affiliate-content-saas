@@ -21,6 +21,7 @@ import { ingestConfigured, clipSegment } from '@/lib/youtube-ingest'
 import { recordUsage } from '@/lib/ai-usage'
 import { rowToShort } from '@/lib/shorts-row'
 import { storagePathFromPublicUrl } from '@/lib/storage-url'
+import { checkUsageCap, PRIMARY_FEATURE, SHORTS_MONTHLY_CAP } from '@/lib/usage-cap'
 import { SUBTITLE_STYLES, type SubtitleStyle, type CaptionChunk } from '@/lib/shorts-types'
 
 export const runtime = 'nodejs'
@@ -33,7 +34,9 @@ export async function POST(request: Request) {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const { data: intRow } = await supabase
-      .from('integrations').select('tier').eq('user_id', user.id).single()
+      .from('integrations')
+      .select('tier,subscription_period_start,subscription_period_end')
+      .eq('user_id', user.id).single()
     const tier = normalizeTier(intRow?.tier) as Tier
     if (tier !== 'pro' && tier !== 'admin') {
       return NextResponse.json({
@@ -41,6 +44,23 @@ export async function POST(request: Request) {
         limitReached: true, cap: 'shorts_studio', currentTier: tier,
         upgrade: { tier: 'pro', label: 'Pro', limit: null },
       }, { status: 403 })
+    }
+
+    // Monthly cap on finished Shorts (admin = unlimited). Counts shorts_render
+    // rows this billing window; checked BEFORE we spend on the render. A re-render
+    // of an already-rendered clip still counts (it's a new render event).
+    const capLimit = tier === 'admin' ? null : SHORTS_MONTHLY_CAP
+    const capCheck = await checkUsageCap(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      supabase, user.id, PRIMARY_FEATURE.short, capLimit,
+      (intRow?.subscription_period_start as string | null) ?? null,
+      (intRow?.subscription_period_end as string | null) ?? null,
+    )
+    if (capCheck?.exceeded) {
+      return NextResponse.json({
+        error: `You've rendered all ${capLimit} Shorts for this billing period. Resets ${capCheck.resetLabel}.`,
+        limitReached: true, cap: 'shorts_studio', currentTier: tier,
+      }, { status: 429 })
     }
     if (!cloudinaryConfigured()) {
       return NextResponse.json({ error: 'Video rendering isn\'t configured yet. Try again shortly.' }, { status: 503 })

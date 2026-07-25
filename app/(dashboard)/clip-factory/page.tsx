@@ -2,7 +2,7 @@
 
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential. No copying, redistribution, reverse-engineering, or reuse. See LICENSE.
 //
-// Vertical Powerhouse (LABS) — the merged home of Shorts Studio (make a vertical
+// Clip Factory (LABS) — the merged home of Shorts Studio (make a vertical
 // clip from a long video, from the ground up) and Shop Burner (add a CTA/link
 // overlay + product + auto-DM, then publish). One section, three stages:
 //
@@ -97,7 +97,7 @@ function PostPill({ posted, label, color, icon, onClick, busy, disabled }: {
   )
 }
 
-export default function VerticalPowerhousePage() {
+export default function ClipFactoryPage() {
   const supabase = useMemo(() => createBrowserClient(), [])
   const [tier, setTier] = useState<Tier | string>('trial')
   const [gateLoaded, setGateLoaded] = useState(false)
@@ -216,7 +216,7 @@ export default function VerticalPowerhousePage() {
       })
       const data = await res.json()
       if (!res.ok) {
-        if (data.limitReached) dispatchCapReached(data.error || 'Vertical Powerhouse is a Pro feature.', { cap: data.cap || 'shorts_studio', currentTier: data.currentTier, upgrade: data.upgrade })
+        if (data.limitReached) dispatchCapReached(data.error || 'Clip Factory is a Pro feature.', { cap: data.cap || 'shorts_studio', currentTier: data.currentTier, upgrade: data.upgrade })
         throw new Error(data.error || 'Could not generate clips from that link.')
       }
       if (data.video) {
@@ -246,7 +246,7 @@ export default function VerticalPowerhousePage() {
         const data = await res.json()
         if (!res.ok || !data.videoUrl) {
           if (data.ingestDisabled) throw new Error("Automatic fetch isn't set up on this deployment yet.")
-          if (data.limitReached) dispatchCapReached(data.error || 'Vertical Powerhouse is a Pro feature.', { cap: data.cap || 'shorts_studio', currentTier: data.currentTier, upgrade: data.upgrade })
+          if (data.limitReached) dispatchCapReached(data.error || 'Clip Factory is a Pro feature.', { cap: data.cap || 'shorts_studio', currentTier: data.currentTier, upgrade: data.upgrade })
           throw new Error(data.error || "We couldn't fetch this Short automatically.")
         }
         videoUrl = data.videoUrl as string
@@ -372,7 +372,7 @@ export default function VerticalPowerhousePage() {
         // grant just youtube.upload, then the creator comes back and posts.
         if (data.reconnectRequired) {
           toast('One-time step: grant YouTube publishing access…')
-          window.location.href = `/api/auth/youtube?intent=upload&returnTo=${encodeURIComponent('/vertical-powerhouse')}`
+          window.location.href = `/api/auth/youtube?intent=upload&returnTo=${encodeURIComponent('/clip-factory')}`
           return
         }
         throw new Error(data.error || 'YouTube upload failed')
@@ -393,7 +393,7 @@ export default function VerticalPowerhousePage() {
       <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
         <FeatureLockedCard
           icon={<Rocket size={22} />}
-          feature="Vertical Powerhouse"
+          feature="Clip Factory"
           description="Turn a long video into captioned vertical Shorts, add a shoppable CTA overlay, and publish to Instagram, TikTok and YouTube, all in one flow."
           requiredTier="pro"
           currentTier={tier as Tier}
@@ -414,7 +414,7 @@ export default function VerticalPowerhousePage() {
       {/* Header */}
       <div className="flex items-center gap-2 mb-1">
         <Rocket size={20} style={{ color: PURPLE }} />
-        <h1 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Vertical Powerhouse</h1>
+        <h1 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Clip Factory</h1>
         <span className="inline-flex items-center gap-1 text-[10px] font-semibold rounded-full px-2 py-0.5 text-white bg-[#DC2626]">
           <FlaskConical size={10} /> Labs
         </span>
