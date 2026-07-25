@@ -368,7 +368,9 @@ export async function renderVerticalShort(opts: RenderShortOpts): Promise<Render
         ...(sp.background ? { background: sp.background, radius: sp.radius ?? 18 } : {}),
         ...(sp.effect ? { effect: sp.effect } : {}),
         width: 920, crop: 'fit',
-        gravity: 'south', y: 430,
+        // Sit the running captions a little higher so they clear the bottom-corner
+        // CTA box (which sits at y≈150) with clean space between them.
+        gravity: 'south', y: 520,
         start_offset: so, end_offset: eo,
       })
     }
