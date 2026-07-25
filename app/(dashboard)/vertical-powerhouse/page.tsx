@@ -22,7 +22,7 @@ import { toast } from 'sonner'
 import {
   Rocket, Scissors, Flame, Send, FlaskConical, Loader2, Search, Youtube, Link2,
   Sparkles, UploadCloud, Video, Check, Download, Instagram, Music2, ArrowRight, ArrowLeft,
-  Trash2, Wand2, Package,
+  Trash2, Wand2, Package, ExternalLink,
 } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { ShortsCreatePanel } from '@/components/vertical/ShortsCreatePanel'
@@ -151,6 +151,9 @@ export default function VerticalPowerhousePage() {
   const [igOpen, setIgOpen] = useState(false)
   const [publishingYt, setPublishingYt] = useState(false)
   const [posted, setPosted] = useState<{ tiktok?: boolean; instagram?: boolean; youtube?: boolean }>({})
+  // The uploaded YouTube video id, so we can link the creator straight to it
+  // (a Short can take a few minutes to process before it's visible).
+  const [ytVideoId, setYtVideoId] = useState<string | null>(null)
 
   // The clip that flows into Publish: the burned one if Enhance ran, else the raw clip.
   const publishUrl = burnedUrl || clip?.url || ''
@@ -374,7 +377,8 @@ export default function VerticalPowerhousePage() {
         throw new Error(data.error || 'YouTube upload failed')
       }
       setPosted(p => ({ ...p, youtube: true }))
-      toast.success('Uploaded to YouTube as a Short')
+      if (data.videoId) setYtVideoId(data.videoId as string)
+      toast.success('Uploaded to YouTube — it may take a few minutes to process')
     } catch (e) { toast.error(errText(e)) }
     finally { setPublishingYt(false) }
   }, [publishUrl, publishCaption, clip])
@@ -721,6 +725,15 @@ export default function VerticalPowerhousePage() {
               <PostPill label="YouTube" color="#FF0000" icon={<Youtube size={13} />} posted={!!posted.youtube} busy={publishingYt} onClick={postYouTube} />
               <a href={publishUrl} download target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-medium border border-black/10 dark:border-white/15 text-[#1d1d1f] dark:text-[#f5f5f7]"><Download size={13} /> Download</a>
             </div>
+            {ytVideoId && (
+              <div className="rounded-lg border border-[#FF0000]/25 bg-[#FF0000]/5 p-3 text-[12px] text-[#4b4b4f] dark:text-[#d2d2d7]">
+                <p className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Uploaded to YouTube. A Short can take a few minutes to process before it shows publicly.</p>
+                <div className="flex flex-wrap gap-3">
+                  <a href={`https://studio.youtube.com/video/${ytVideoId}/edit`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium hover:underline" style={{ color: '#FF0000' }}><ExternalLink size={12} /> Open in YouTube Studio</a>
+                  <a href={`https://youtube.com/shorts/${ytVideoId}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium hover:underline" style={{ color: '#FF0000' }}><ExternalLink size={12} /> View the Short</a>
+                </div>
+              </div>
+            )}
             {composedCaption && (
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-[#3a3a3c] dark:text-[#d2d2d7] mb-1.5">Suggested caption</p>
