@@ -14,7 +14,7 @@ import type Anthropic from '@anthropic-ai/sdk'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import type { TranscriptCue, ClipSuggestion } from '@/lib/shorts-types'
 import { cuesToTimestampedText } from '@/lib/shorts-transcript'
-import { captionsForClip } from '@/lib/shorts-captions'
+import { sliceCuesToWindow } from '@/lib/shorts-captions'
 
 const MODEL = 'claude-sonnet-4-6'
 
@@ -172,7 +172,11 @@ export async function planShorts(anthropic: Anthropic, opts: PlanOpts): Promise<
     const win = snapWindow(cues, ws, we, minSec, maxSec)
     if (!win) continue
     // Subtitles are lifted VERBATIM from the transcript — the no-fabrication line.
-    const subtitles = captionsForClip(cues, win.start, win.end)
+    // Stored WORD-level (clip-relative) so the caption engine can animate each
+    // word; the render groups them into lines (Cloudinary) or karaokes them
+    // per-word (FFmpeg + libass).
+    const subtitles = sliceCuesToWindow(cues, win.start, win.end)
+      .map(c => ({ startSec: c.start, endSec: c.end, text: c.text }))
     if (subtitles.length === 0) continue
     out.push({
       startSec: win.start,

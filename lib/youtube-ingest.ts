@@ -88,3 +88,38 @@ export async function clipSegment(
     return null
   }
 }
+
+/**
+ * Render a finished vertical Short on the ingest service in ONE ffmpeg pass:
+ * trim [startSec,endSec] → reframe to 1080x1920 → burn Hormozi word-by-word
+ * captions (FFmpeg + libass). This is the caption engine Cloudinary can't do.
+ * `words` are clip-relative { startSec, endSec, text } cues (word-level ideal).
+ * Returns null when unconfigured or on failure (caller falls back to Cloudinary).
+ */
+export async function renderShort(
+  sourceUrl: string,
+  startSec: number,
+  endSec: number,
+  words: Array<{ startSec: number; endSec: number; text: string }>,
+  userId?: string,
+): Promise<IngestResult | null> {
+  const base = (process.env.YOUTUBE_INGEST_URL || '').replace(/\/+$/, '')
+  if (!base || !sourceUrl || !(endSec > startSec)) return null
+  try {
+    const res = await fetch(`${base}/render-short`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(process.env.YOUTUBE_INGEST_SECRET ? { 'x-ingest-secret': process.env.YOUTUBE_INGEST_SECRET } : {}),
+      },
+      body: JSON.stringify({ videoUrl: sourceUrl, startSec, endSec, words: words || [], ...(userId ? { userId } : {}) }),
+      signal: AbortSignal.timeout(280_000),
+    })
+    if (!res.ok) return null
+    const data = await res.json() as { url?: string; durationSeconds?: number }
+    if (!data?.url || !/^https:\/\//i.test(data.url)) return null
+    return { url: data.url, durationSeconds: Number.isFinite(Number(data.durationSeconds)) ? Number(data.durationSeconds) : (endSec - startSec) }
+  } catch {
+    return null
+  }
+}
