@@ -254,4 +254,9 @@ app.post('/clip', async (req, res) => {
   }
 })
 
-app.listen(PORT, () => console.log(`ingest-service listening on :${PORT}`))
+// BUILD marker: bump this string when the service code changes so the Railway
+// deploy logs unambiguously show which build is actually running (Railway can
+// re-run an older commit). "streaming-upload" = the OOM fix (uploads stream
+// from disk instead of buffering the whole file).
+const BUILD = 'streaming-upload-2026-07-25'
+app.listen(PORT, () => console.log(`ingest-service listening on :${PORT} [build ${BUILD}]`))
