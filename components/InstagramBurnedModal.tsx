@@ -17,11 +17,14 @@ import { useModalA11y } from '@/components/ui/useModalA11y'
 export function InstagramBurnedModal({
   burnedVideoUrl,
   initialCaption,
+  defaultDmLink,
   onClose,
   onPosted,
 }: {
   burnedVideoUrl: string
   initialCaption?: string
+  /** Prefills the auto-DM link (e.g. the clip's product/affiliate link). */
+  defaultDmLink?: string
   onClose: () => void
   onPosted?: () => void
 }) {
@@ -30,15 +33,25 @@ export function InstagramBurnedModal({
   const [postError, setPostError] = useState<string | null>(null)
   const [posted, setPosted] = useState(false)
 
+  // Auto-DM: commenting `dmKeyword` on the Reel DMs `dmLink` to that person.
+  const [autoDm, setAutoDm] = useState(!!(defaultDmLink && defaultDmLink.trim()))
+  const [dmKeyword, setDmKeyword] = useState('LINK')
+  const [dmLink, setDmLink] = useState((defaultDmLink || '').trim())
+
   const submit = useCallback(async () => {
     if (posting || posted) return
+    const wantDm = autoDm && /^https?:\/\//i.test(dmLink.trim())
     setPosting(true)
     setPostError(null)
     try {
       const res = await fetch('/api/instagram/publish-burned', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoUrl: burnedVideoUrl, caption }),
+        body: JSON.stringify({
+          videoUrl: burnedVideoUrl,
+          caption,
+          ...(wantDm ? { autoDm: { link: dmLink.trim(), keyword: dmKeyword.trim() || 'LINK' } } : {}),
+        }),
       })
       const json = await res.json()
       if (!res.ok || !json.ok) {
@@ -52,7 +65,7 @@ export function InstagramBurnedModal({
     } finally {
       setPosting(false)
     }
-  }, [posting, posted, burnedVideoUrl, caption, onPosted])
+  }, [posting, posted, burnedVideoUrl, caption, autoDm, dmKeyword, dmLink, onPosted])
 
   const closeAllowed = !posting
   const panelRef = useRef<HTMLDivElement | null>(null)
@@ -117,6 +130,36 @@ export function InstagramBurnedModal({
                 className="w-full text-sm px-3 py-2 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-[#f5f5f7]"
               />
               <p className="text-[10px] text-[#86868b] mt-1">{caption.length} / 2200 · Hashtags + disclaimer included.</p>
+            </div>
+
+            {/* Auto-DM: comment a keyword → DM the link. */}
+            <div className="rounded-lg border border-gray-200 dark:border-white/10 p-3">
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input type="checkbox" checked={autoDm} onChange={(e) => setAutoDm(e.target.checked)} className="accent-[#7C3AED]" />
+                <span className="text-[13px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Auto-DM the link when someone comments</span>
+              </label>
+              {autoDm && (
+                <div className="mt-2.5 flex flex-col gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-[#86868b] shrink-0">When they comment</span>
+                    <input
+                      value={dmKeyword}
+                      onChange={(e) => setDmKeyword(e.target.value.replace(/\s+/g, ' ').trimStart().slice(0, 30))}
+                      placeholder="LINK"
+                      className="flex-1 text-sm px-2.5 py-1.5 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-[#f5f5f7]"
+                    />
+                  </div>
+                  <input
+                    value={dmLink}
+                    onChange={(e) => setDmLink(e.target.value)}
+                    placeholder="Link to DM them (https://…)"
+                    className="w-full text-sm px-2.5 py-1.5 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-[#f5f5f7]"
+                  />
+                  <p className="text-[10px] text-[#86868b]">
+                    Anyone who comments <span className="font-semibold">{(dmKeyword || 'LINK').toUpperCase()}</span> on this Reel gets your link in their DMs automatically. Tip: add &quot;Comment {(dmKeyword || 'LINK').toUpperCase()} for the link&quot; to the caption or the video.
+                  </p>
+                </div>
+              )}
             </div>
 
             {postError && (

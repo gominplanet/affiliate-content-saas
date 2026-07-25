@@ -808,6 +808,7 @@ export default function ClipFactoryPage() {
         <InstagramBurnedModal
           burnedVideoUrl={publishUrl}
           initialCaption={publishCaption}
+          defaultDmLink={product.trim()}
           onClose={() => setIgOpen(false)}
           onPosted={() => { setPosted(p => ({ ...p, instagram: true })); toast.success('Posted to Instagram') }}
         />
