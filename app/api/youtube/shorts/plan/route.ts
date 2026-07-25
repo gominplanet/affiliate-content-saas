@@ -138,9 +138,23 @@ export async function POST(request: Request) {
     //      the scraper, so it works from Vercel for the creator's own videos.
     //   3. youtube-transcript scraper — last resort (often IP-blocked on cloud).
     let cues: TranscriptCue[] = []
-    if (Array.isArray(body.cues) && body.cues.length > 0) {
+    const sourceUrl = (video.source_video_url as string | null) || ''
+
+    // 1. PREFER Whisper word-level when we have the source file. Word-accurate
+    //    timings are what make captions land on the beat (the YouTube caption
+    //    SRT is only phrase-level, so its lines drift). Falls through to the
+    //    caption sources below if transcription isn't available or fails.
+    if (/^https:\/\//i.test(sourceUrl) && transcriptionConfigured()) {
+      cues = await transcribeToCues(sourceUrl)
+      if (cues.length > 0) {
+        recordUsage({ userId: user.id, tier, feature: 'shorts_transcribe', model: 'fal-whisper', images: 1 })
+      }
+    }
+    // 2. Client-supplied cues (browser IP scrape).
+    if (cues.length === 0 && Array.isArray(body.cues) && body.cues.length > 0) {
       cues = normalizeCues(body.cues)
     }
+    // 3. Official YouTube Data API captions via the creator's OAuth token.
     if (cues.length === 0 && youtubeVideoId) {
       try {
         const token = await getChannelOAuthToken(supabase, user.id, (video.channel_id as string | null) ?? null)
@@ -150,18 +164,9 @@ export async function POST(request: Request) {
         }
       } catch { /* fall through to the scraper */ }
     }
+    // 4. youtube-transcript scraper — last resort (often IP-blocked on cloud).
     if (cues.length === 0 && youtubeVideoId) {
       cues = await fetchTranscriptCues(youtubeVideoId)
-    }
-    // 4. vidIQ-style fallback: transcribe the creator's OWN uploaded video with
-    //    Whisper. This is the reliable source — it works for any video, needs no
-    //    YouTube captions, and the file is one the creator explicitly uploaded.
-    const sourceUrl = (video.source_video_url as string | null) || ''
-    if (cues.length === 0 && /^https:\/\//i.test(sourceUrl) && transcriptionConfigured()) {
-      cues = await transcribeToCues(sourceUrl)
-      if (cues.length > 0) {
-        recordUsage({ userId: user.id, tier, feature: 'shorts_transcribe', model: 'fal-whisper', images: 1 })
-      }
     }
     if (cues.length === 0) {
       const canUpload = !/^https:\/\//i.test(sourceUrl)

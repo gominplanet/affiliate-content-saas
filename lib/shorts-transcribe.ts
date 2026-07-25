@@ -38,9 +38,12 @@ export async function transcribeToCues(mediaUrl: string): Promise<TranscriptCue[
       input: {
         audio_url: mediaUrl,
         task: 'transcribe',
-        // Segment-level chunks = phrase-sized cues; the caption builder splits
-        // them further into punchy on-screen lines.
-        chunk_level: 'segment',
+        // WORD-level chunks = one cue per spoken word with its own [start,end].
+        // This is what makes captions land on the beat: the builder groups words
+        // into short lines using their real timings instead of dividing a phrase
+        // evenly (which drifts off the words). The clip-selection text merges
+        // words back into lines, so the LLM prompt stays compact.
+        chunk_level: 'word',
         language: 'en',
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
