@@ -283,7 +283,6 @@ interface SubtitleLook {
 function subtitleParams(style: SubtitleStyle): SubtitleLook {
   switch (style) {
     case 'yellow-pop': return { color: '#ffd400', background: '#111111', radius: 18 }
-    case 'boxed': return { color: 'white', background: '#111111', radius: 18 }
     // Clean white text with a thick black outline, no box — the most legible
     // "Creator Cut" look over any footage.
     case 'outline': return { color: 'white', border: '8px_solid_black', fontWeight: 'bold' }

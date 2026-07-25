@@ -19,7 +19,7 @@ import { errText } from '@/lib/err-text'
 import { SUBTITLE_STYLES, type SubtitleStyle, type ShortRow } from '@/lib/shorts-types'
 
 const PURPLE = '#7C3AED'
-const STYLE_LABEL: Record<SubtitleStyle, string> = { 'bold-white': 'Bold white', 'yellow-pop': 'Yellow pop', 'boxed': 'Boxed', 'outline': 'Outline', 'hype': 'Hype', 'brand': 'Brand' }
+const STYLE_LABEL: Record<SubtitleStyle, string> = { 'bold-white': 'Bold white', 'yellow-pop': 'Yellow pop', 'outline': 'Outline', 'hype': 'Hype', 'brand': 'Brand' }
 
 function fmt(sec: number): string {
   const m = Math.floor(sec / 60), s = Math.floor(sec % 60)
