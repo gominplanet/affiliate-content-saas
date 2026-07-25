@@ -286,9 +286,10 @@ function subtitleParams(style: SubtitleStyle): SubtitleLook {
     case 'boxed': return { color: 'white', background: '#111111', radius: 18 }
     // Clean white text with a thick black outline, no box — the most legible
     // "Creator Cut" look over any footage.
-    case 'outline': return { color: 'white', border: '5px_solid_black', fontWeight: 'bold' }
-    // Big Impact uppercase, yellow with a black outline — high-energy.
-    case 'hype': return { color: '#ffd400', border: '6px_solid_black', fontFamily: 'Impact', fontWeight: 'bold', upper: true, fontSize: 66 }
+    case 'outline': return { color: 'white', border: '8px_solid_black', fontWeight: 'bold' }
+    // Big UPPERCASE yellow with a heavy black outline — high-energy, still very
+    // readable (Arial, not Impact — Impact rendered small/muddy).
+    case 'hype': return { color: '#ffd400', border: '10px_solid_black', fontWeight: 'bold', upper: true, fontSize: 104 }
     // White text on a brand-violet pill.
     case 'brand': return { color: 'white', background: '#7C3AED', radius: 22 }
     case 'bold-white':
@@ -384,12 +385,14 @@ export async function renderVerticalShort(opts: RenderShortOpts): Promise<Render
       const so = Math.max(0, Math.min(dur, Math.round(c.startSec * 10) / 10))
       const eo = Math.max(so + 0.2, Math.min(dur, Math.round(c.endSec * 10) / 10))
       transformation.push({
-        overlay: { font_family: sp.fontFamily ?? 'Arial', font_size: sp.fontSize ?? 62, font_weight: sp.fontWeight ?? 'bold', text },
+        // Big by default (word-level lines are only 2–3 words, so a small font
+        // looks lost). Short lines stay at this size; long ones scale down to fit.
+        overlay: { font_family: sp.fontFamily ?? 'Arial', font_size: sp.fontSize ?? 92, font_weight: sp.fontWeight ?? 'bold', text },
         color: sp.color,
         ...(sp.background ? { background: sp.background, radius: sp.radius ?? 18 } : {}),
         ...(sp.effect ? { effect: sp.effect } : {}),
         ...(sp.border ? { border: sp.border } : {}),
-        width: 920, crop: 'fit',
+        width: 960, crop: 'fit',
         // Sit the running captions a little higher so they clear the bottom-corner
         // CTA box (which sits at y≈150) with clean space between them.
         gravity: 'south', y: 520,
