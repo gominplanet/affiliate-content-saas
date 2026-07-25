@@ -525,11 +525,12 @@ export default function DashboardShellV2({
         // while it's being tested; flip `isAdmin`→`isPro` to graduate it to the
         // Pro Labs beta (the API routes are already Pro+, so admins pass today).
         { href: '/shorts-studio', icon: <Scissors size={15} />, label: 'Shorts Studio', gate: isAdmin },
-        // Vertical Powerhouse — Shorts Studio (create) + Shop Burner (enhance +
+        // Clip Factory — Shorts Studio (create) + Shop Burner (enhance +
         // publish) merged into one Create → Enhance → Publish flow. Admin-only
-        // while it's tested; graduates by flipping isAdmin→isPro once it replaces
-        // the two originals.
-        { href: '/vertical-powerhouse', icon: <Rocket size={15} />, label: 'Vertical Powerhouse', gate: isAdmin },
+        // while it's tested; graduates by flipping isAdmin→isPro to open it to
+        // all Pro users (the APIs + page are already Pro-gated, capped at 50
+        // finished Shorts/month).
+        { href: '/clip-factory', icon: <Rocket size={15} />, label: 'Clip Factory', gate: isAdmin },
       ],
     },
     {

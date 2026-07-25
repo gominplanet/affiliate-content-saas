@@ -34,7 +34,13 @@ export const PRIMARY_FEATURE = {
   /** Shop Burner "Make one from text" CTA box — one row per generation
    *  (the Nano Banana Pro render). Caps the only paid step in the burner. */
   ctaBox: ['cta_sticker_gen'] as string[],
+  /** Clip Factory — one row per FINISHED Short (the render step). Counting it =
+   *  total Shorts rendered this period. Planning / finding clips is free. */
+  short: ['shorts_render'] as string[],
 }
+
+/** Finished Shorts a Pro user can render per billing period (admin = unlimited). */
+export const SHORTS_MONTHLY_CAP = 50
 
 interface CapCheck {
   used: number

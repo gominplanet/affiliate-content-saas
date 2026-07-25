@@ -1,6 +1,6 @@
 /**
  * GET /api/cron/purge-shorts-sources — retention sweep for Shorts Studio /
- * Vertical Powerhouse source video files.
+ * Clip Factory source video files.
  *
  * We never keep the raw source once a creator has cut their clips from it: this
  * deletes fetched/uploaded long-form sources older than a short window from both
