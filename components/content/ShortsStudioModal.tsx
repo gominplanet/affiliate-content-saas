@@ -22,6 +22,7 @@ import { dispatchCapReached } from '@/components/CapReachedBanner'
 import { errText } from '@/lib/err-text'
 import { ensureDisclaimer } from '@/lib/social-disclaimer'
 import { buildYouTubeShortTitle } from '@/lib/youtube-title'
+import { buildYouTubeTags } from '@/lib/youtube-tags'
 import { SUBTITLE_STYLES, type SubtitleStyle, type ShortRow } from '@/lib/shorts-types'
 
 // TikTok publish reuses the existing compliant modal (creator info + privacy
@@ -239,7 +240,7 @@ export function ShortsStudioModal({
       const res = await fetch('/api/youtube/upload-short', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoUrl: clip.renderedUrl, title: buildYouTubeShortTitle(clip.hook, clip.hashtags), description: captionFor(clip) }),
+        body: JSON.stringify({ videoUrl: clip.renderedUrl, title: buildYouTubeShortTitle(clip.hook, clip.hashtags), description: captionFor(clip), tags: buildYouTubeTags(clip.hashtags, clip.hook) }),
       })
       const data = await res.json()
       if (!res.ok) {

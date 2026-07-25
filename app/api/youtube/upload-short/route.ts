@@ -29,7 +29,7 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  let body: { videoUrl?: string; title?: string; description?: string; privacyStatus?: 'public' | 'unlisted' | 'private'; channelId?: string }
+  let body: { videoUrl?: string; title?: string; description?: string; tags?: string[]; privacyStatus?: 'public' | 'unlisted' | 'private'; channelId?: string }
   try { body = await request.json() } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }) }
   const videoUrl = (body.videoUrl || '').trim()
   if (!/^https:\/\//i.test(videoUrl)) return NextResponse.json({ error: 'A video URL is required.' }, { status: 400 })
@@ -64,9 +64,11 @@ export async function POST(request: Request) {
   // #Shorts in the description helps YouTube classify it as a Short.
   const description = `${(body.description || '').trim()}\n\n#Shorts`.trim().slice(0, 4900)
 
+  const tags = Array.isArray(body.tags) ? body.tags.map(t => String(t)).filter(Boolean).slice(0, 15) : []
+
   try {
     const yt = new YouTubeOAuthService(token)
-    const { id } = await yt.uploadShort(bytes, { title, description, privacyStatus: body.privacyStatus || 'public' })
+    const { id } = await yt.uploadShort(bytes, { title, description, tags, privacyStatus: body.privacyStatus || 'public' })
     recordUsage({ userId: user.id, tier, feature: 'youtube_short_upload', model: 'youtube-data-api', images: 1 })
     return NextResponse.json({ ok: true, videoId: id, url: `https://youtube.com/shorts/${id}` })
   } catch (e) {
