@@ -14,7 +14,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
-import { CheckCircle, Loader2, RefreshCw, Wand2, X, Flame, ExternalLink, MessageCircle } from 'lucide-react'
+import { CheckCircle, Loader2, RefreshCw, Wand2, X, Flame, MessageCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { useModalA11y } from '@/components/ui/useModalA11y'
@@ -675,29 +675,17 @@ export function InstagramPublishModal({
                 )}
               </label>
             )}
-            {/* No vertical video yet → help them get the source MP4 (download
-                from their own YouTube video) and offer to make one in Shop Burner
-                (adds a “Shop Now” sticker). The burner stores the 9:16 render on
-                the same field, so it's ready here AND on TikTok afterwards. */}
+            {/* No vertical video yet → make one in Clip Factory (adds a CTA
+                and stores the 9:16 render on the same field, so it's ready here
+                AND on TikTok afterwards). */}
             {videoKind === 'vertical' && !uploading && (
               <div className="mt-2 flex flex-col gap-1.5">
-                {ytVideoId && (
-                  <a
-                    href={`https://studio.youtube.com/video/${encodeURIComponent(ytVideoId)}/edit`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 text-xs font-medium text-[#7C3AED] hover:underline"
-                  >
-                    <ExternalLink size={14} />
-                    Don&apos;t have the file? Download it from your YouTube video
-                  </a>
-                )}
                 <a
-                  href={`/instagram-burner?videoId=${encodeURIComponent(videoDbId)}&from=instagram`}
+                  href={`/clip-factory?videoId=${encodeURIComponent(videoDbId)}&from=instagram`}
                   className="inline-flex items-center gap-1.5 text-xs font-medium text-[#7C3AED] hover:underline"
                 >
                   <Flame size={14} />
-                  or make one in Shop Burner (add a “Shop Now” sticker)
+                  or make one in Clip Factory (add a shoppable CTA)
                 </a>
               </div>
             )}
