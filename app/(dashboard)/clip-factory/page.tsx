@@ -30,6 +30,7 @@ import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { dispatchCapReached } from '@/components/CapReachedBanner'
 import { errText } from '@/lib/err-text'
 import { buildYouTubeShortTitle } from '@/lib/youtube-title'
+import { buildYouTubeTags } from '@/lib/youtube-tags'
 import { CTA_STICKERS, ctaStickerUrl } from '@/lib/cta-stickers'
 import type { Tier } from '@/lib/tier'
 
@@ -364,7 +365,12 @@ export default function ClipFactoryPage() {
     try {
       const res = await fetch('/api/youtube/upload-short', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoUrl: publishUrl, title: buildYouTubeShortTitle(clip?.title || 'New Short', clip?.hashtags || []), description: publishCaption }),
+        body: JSON.stringify({
+          videoUrl: publishUrl,
+          title: buildYouTubeShortTitle(clip?.title || 'New Short', clip?.hashtags || []),
+          description: publishCaption,
+          tags: buildYouTubeTags(clip?.hashtags || [], clip?.title || ''),
+        }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -741,6 +747,19 @@ export default function ClipFactoryPage() {
                 <textarea readOnly value={composedCaption} rows={5} className="w-full text-sm px-3 py-2 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-[#f5f5f7]" />
               </div>
             )}
+            {(() => {
+              const tags = buildYouTubeTags(clip?.hashtags || [], clip?.title || '')
+              return tags.length > 0 ? (
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-[#3a3a3c] dark:text-[#d2d2d7] mb-1.5">YouTube tags (added automatically)</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {tags.map(t => (
+                      <span key={t} className="text-[11px] rounded-full px-2.5 py-1 border border-black/10 dark:border-white/15 text-[#4b4b4f] dark:text-[#b0b0b5]">{t}</span>
+                    ))}
+                  </div>
+                </div>
+              ) : null
+            })()}
             <div className="flex items-center gap-3 pt-1">
               <button onClick={() => setStage('enhance')} className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[#86868b]"><ArrowLeft size={14} /> Back to Enhance</button>
               <button onClick={restart} className="text-[13px] font-medium hover:underline" style={{ color: PURPLE }}>Start another</button>

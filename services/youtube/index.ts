@@ -793,12 +793,23 @@ export class YouTubeOAuthService {
    */
   async uploadShort(
     videoBytes: Uint8Array,
-    opts: { title: string; description?: string; privacyStatus?: 'public' | 'unlisted' | 'private' },
+    opts: { title: string; description?: string; tags?: string[]; privacyStatus?: 'public' | 'unlisted' | 'private' },
   ): Promise<{ id: string }> {
+    // YouTube caps combined tag length at ~500 chars — trim defensively.
+    const tags: string[] = []
+    let tagLen = 0
+    for (const t of (opts.tags || [])) {
+      const v = String(t).trim().slice(0, 40)
+      if (!v) continue
+      tagLen += v.length + 1
+      if (tagLen > 480 || tags.length >= 15) break
+      tags.push(v)
+    }
     const meta = {
       snippet: {
         title: (opts.title || 'Short').slice(0, 100),
         description: (opts.description || '').slice(0, 4900),
+        ...(tags.length ? { tags } : {}),
       },
       status: {
         privacyStatus: opts.privacyStatus || 'public',
