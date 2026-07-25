@@ -5,7 +5,7 @@
 // The GLOBAL rule (below): comment the keyword on any MVP-published IG post →
 // MVP DMs that post's own affiliate link (per-post link resolved at send time).
 //
-// Per-post Auto-DM Reels are CREATED in Shop Burner (source a Short/upload →
+// Per-post Auto-DM Reels are CREATED in Clip Factory (source a Short/upload →
 // burn a CTA → paste a product link → set a trigger word → publish). Each one
 // shows up in the list here, where you can turn it off. Goes live once Meta
 // approves the messaging permissions (Phase 2). See project_ig_comment_to_dm.
@@ -196,20 +196,20 @@ export default function InstagramDmPage() {
             </button>
           </div>
 
-          {/* ── Create an Auto-DM Reel → Shop Burner ────────────────────────── */}
+          {/* ── Create an Auto-DM Reel → Clip Factory ───────────────────────── */}
           <div className="rounded-2xl border p-4 flex items-start gap-3"
             style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
             <Flame size={18} className="text-[#7C3AED] flex-shrink-0 mt-0.5" />
             <div className="flex-1">
               <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Want a Reel with its own trigger word + link?</p>
               <p className="text-[12px] mt-0.5" style={{ color: 'var(--text-faint)' }}>
-                Head to Shop Burner — pick a Short or upload a clip, burn a CTA, paste a product link, and flip on
+                Head to Clip Factory — make a clip or pick a Short, add a CTA, paste a product link, and flip on
                 Auto-DM. Each one you publish shows up below.
               </p>
-              <Link href="/instagram-burner"
+              <Link href="/clip-factory"
                 className="inline-flex items-center gap-1.5 mt-2 px-3 py-1.5 rounded-lg text-[13px] font-semibold text-white"
                 style={{ background: '#7C3AED' }}>
-                <Flame size={13} /> Open Shop Burner
+                <Flame size={13} /> Open Clip Factory
               </Link>
             </div>
           </div>
