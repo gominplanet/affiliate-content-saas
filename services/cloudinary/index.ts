@@ -85,8 +85,11 @@ function placement(pos: OverlayPosition): { gravity: string; x: number; y: numbe
     case 'bottom': return { gravity: 'south', x: 0, y: 130 }
     case 'center': return { gravity: 'center', x: 0, y: 0 }
     case 'top': return { gravity: 'north', x: 0, y: 220 }
-    case 'lower-left': return { gravity: 'south_west', x: 60, y: 320 }
-    case 'lower-right': return { gravity: 'south_east', x: 60, y: 320 }
+    // Tuck into the very bottom corner, BELOW the running-caption band (Shorts
+    // render burns captions centered at y≈430), so a CTA box never covers the
+    // subtitles. Also pulled tighter to the edge (x:40).
+    case 'lower-left': return { gravity: 'south_west', x: 40, y: 150 }
+    case 'lower-right': return { gravity: 'south_east', x: 40, y: 150 }
     case 'upper-left': return { gravity: 'north_west', x: 60, y: 240 }
     case 'upper-right': return { gravity: 'north_east', x: 60, y: 240 }
     case 'lower-third':
