@@ -139,8 +139,11 @@ function ffprobeDuration(file) {
   })
 }
 
-// Upload bytes to Supabase Storage over the REST API (service role bypasses RLS).
-async function uploadToSupabase(key, buf) {
+// Upload a LOCAL file to Supabase Storage over the REST API (service role
+// bypasses RLS). Streams straight from disk — reading the whole MP4 into a Node
+// Buffer (fs.readFileSync) is what OOM-killed the container on long videos.
+async function uploadToSupabase(key, filePath) {
+  const size = fs.statSync(filePath).size
   const endpoint = `${SUPABASE_URL}/storage/v1/object/${BUCKET}/${key.split('/').map(encodeURIComponent).join('/')}`
   const res = await fetch(endpoint, {
     method: 'POST',
@@ -148,9 +151,13 @@ async function uploadToSupabase(key, buf) {
       Authorization: `Bearer ${SERVICE_KEY}`,
       apikey: SERVICE_KEY,
       'Content-Type': 'video/mp4',
+      'Content-Length': String(size),
       'x-upsert': 'true',
     },
-    body: buf,
+    // Stream the file body (constant memory). duplex:'half' is required by fetch
+    // for a streaming request body.
+    body: Readable.toWeb(fs.createReadStream(filePath)),
+    duplex: 'half',
   })
   if (!res.ok) {
     const t = await res.text().catch(() => '')
@@ -197,11 +204,10 @@ app.post('/ingest', async (req, res) => {
     ])
     if (!fs.existsSync(tmp)) throw new Error('download produced no file')
 
-    const buf = fs.readFileSync(tmp)
     // Path shape matches the bucket's RLS convention (first folder = user id)
     // when we know the user; the service role bypasses RLS either way.
     const key = `${userId || 'ingest'}/ingest-${videoId}-${Date.now()}.mp4`
-    await uploadToSupabase(key, buf)
+    await uploadToSupabase(key, tmp)
 
     const durationSeconds = await ffprobeDuration(tmp)
     return res.json({ url: publicUrl(key), durationSeconds })
@@ -236,9 +242,8 @@ app.post('/clip', async (req, res) => {
     await downloadToFile(url, srcTmp)
     await ffmpegClip(srcTmp, Math.max(0, startSec), dur, outTmp)
     if (!fs.existsSync(outTmp)) throw new Error('clip produced no file')
-    const buf = fs.readFileSync(outTmp)
     const key = `${userId || 'ingest'}/clip-${Date.now()}-${Math.round(startSec)}.mp4`
-    await uploadToSupabase(key, buf)
+    await uploadToSupabase(key, outTmp)
     return res.json({ url: publicUrl(key), durationSeconds: Math.round(dur * 10) / 10 })
   } catch (e) {
     console.error('[clip] failed', e && e.message)
