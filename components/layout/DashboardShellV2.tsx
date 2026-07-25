@@ -435,10 +435,11 @@ export default function DashboardShellV2({
         { href: '/deals', icon: <BadgePercent size={15} />, label: 'Deals Hub', gate: showDeals, badge: DEALS_HUB_PAUSED ? 'Paused' : undefined },
         { href: '/script', icon: <PenLine size={15} />, label: 'Scriptwriter' },
         { href: '/newsletter', icon: <Mail size={15} />, label: 'Newsletter' },
-        // Instagram Burner — re-surfaced 2026-06-22 after Meta publishing was
-        // approved (2026-06-15) and a live burn→publish test passed. Pro-gated
-        // via showBurner; the route enforces Pro + metaEnabled server-side too.
-        { href: '/instagram-burner', icon: <Flame size={15} />, label: 'Shop Burner', gate: showBurner },
+        // Shop Burner — sidelined 2026-07-25: Clip Factory now covers the
+        // burn→publish flow (plus creating clips from scratch). The page + APIs
+        // still work if you hit the URL directly; just no longer in the nav.
+        // Re-add with `gate: showBurner` to bring it back.
+        { href: '/instagram-burner', icon: <Flame size={15} />, label: 'Shop Burner', gate: false },
       ],
     },
     {

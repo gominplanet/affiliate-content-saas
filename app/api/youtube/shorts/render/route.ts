@@ -17,7 +17,8 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier, type Tier } from '@/lib/tier'
 import { cloudinaryConfigured, renderVerticalShort, getLastShortError } from '@/services/cloudinary'
-import { ingestConfigured, clipSegment } from '@/lib/youtube-ingest'
+import { ingestConfigured, clipSegment, renderShort } from '@/lib/youtube-ingest'
+import { buildCaptionChunks } from '@/lib/shorts-captions'
 import { recordUsage } from '@/lib/ai-usage'
 import { rowToShort } from '@/lib/shorts-row'
 import { storagePathFromPublicUrl } from '@/lib/storage-url'
@@ -62,7 +63,9 @@ export async function POST(request: Request) {
         limitReached: true, cap: 'shorts_studio', currentTier: tier,
       }, { status: 429 })
     }
-    if (!cloudinaryConfigured()) {
+    // Need at least one render engine: the FFmpeg service (primary, animated
+    // captions) or Cloudinary (fallback, static captions).
+    if (!ingestConfigured() && !cloudinaryConfigured()) {
       return NextResponse.json({ error: 'Video rendering isn\'t configured yet. Try again shortly.' }, { status: 503 })
     }
 
@@ -93,70 +96,67 @@ export async function POST(request: Request) {
       }, { status: 412 })
     }
 
-    const captions = (Array.isArray(short.subtitles) ? short.subtitles : []) as CaptionChunk[]
+    // Cues are stored WORD-level (one entry per spoken word, clip-relative) so
+    // the caption engine can animate word-by-word.
+    const rawCues = (Array.isArray(short.subtitles) ? short.subtitles : []) as CaptionChunk[]
     const startSec = Number(short.start_sec)
     const endSec = Number(short.end_sec)
 
-    // Trim the clip first (ffmpeg on the ingest service) so Cloudinary only
-    // ingests the ~15-30s segment — the whole source can exceed Cloudinary's
-    // 100MB upload cap ("File size too large"). Falls back to the full source
-    // when the ingest service isn't configured or trimming fails.
-    const clip = ingestConfigured() ? await clipSegment(sourceUrl, startSec, endSec, user.id) : null
-    const usingClip = !!clip
+    let renderedUrl: string | null = null
+    let engine = 'ffmpeg-ass'
 
-    const result = await renderVerticalShort({
-      sourceVideoUrl: usingClip ? clip!.url : sourceUrl,
-      // The trimmed clip is already the window, re-based to 0.
-      startSec: usingClip ? 0 : startSec,
-      endSec: usingClip ? (clip!.durationSeconds ?? (endSec - startSec)) : endSec,
-      // Captions off → render a clean vertical clip (no subtitles).
-      captions: withCaptions ? captions : [],
-      style,
-      // No burned title banner — creators didn't want a static title pinned to
-      // the top of the Short. The hook still shows in the app as the clip label.
-      hook: '',
-      // Don't reuse the cached full-source asset when uploading a fresh clip.
-      sourcePublicId: usingClip ? null : ((video?.cloudinary_source_id as string | null) || null),
-    })
+    // PRIMARY: FFmpeg + libass on the ingest service — trim + reframe to 9:16 +
+    // burn Hormozi word-by-word captions in one pass. Cloudinary can't animate
+    // text, so this is what makes the captions look pro.
+    if (ingestConfigured()) {
+      const r = await renderShort(sourceUrl, startSec, endSec, withCaptions ? rawCues : [], user.id)
+      if (r?.url) renderedUrl = r.url
+    }
 
-    if (!result) {
-      // Render failed — still purge the orphaned trim clip so it doesn't linger.
+    // FALLBACK: Cloudinary (static captions) if the service is unset or fails.
+    // Word-level cues are grouped into readable lines for the static burn.
+    if (!renderedUrl) {
+      engine = 'cloudinary'
+      const clip = ingestConfigured() ? await clipSegment(sourceUrl, startSec, endSec, user.id) : null
+      const usingClip = !!clip
+      const result = await renderVerticalShort({
+        sourceVideoUrl: usingClip ? clip!.url : sourceUrl,
+        startSec: usingClip ? 0 : startSec,
+        endSec: usingClip ? (clip!.durationSeconds ?? (endSec - startSec)) : endSec,
+        captions: withCaptions ? buildCaptionChunks(rawCues.map(c => ({ start: c.startSec, end: c.endSec, text: c.text }))) : [],
+        style,
+        hook: '',
+        sourcePublicId: usingClip ? null : ((video?.cloudinary_source_id as string | null) || null),
+      })
+      // Purge the intermediate trim regardless of outcome (we don't retain it).
       if (usingClip && clip?.url) {
         const p = storagePathFromPublicUrl(clip.url, 'instagram-videos')
         if (p) { try { await supabase.storage.from('instagram-videos').remove([p]) } catch { /* non-fatal */ } }
       }
-      const detail = getLastShortError() || 'unknown error'
-      try {
-        await sb.from('youtube_shorts')
-          .update({ status: 'failed', render_error: detail, updated_at: new Date().toISOString() })
-          .eq('id', shortId).eq('user_id', user.id)
-      } catch { /* non-fatal */ }
-      return NextResponse.json({ error: `Couldn't render the clip: ${detail}` }, { status: 500 })
-    }
-
-    // Cache the one-time Cloudinary source upload so the next clip skips it —
-    // only on the full-source path (a trimmed clip is unique per clip).
-    if (!usingClip && result.sourcePublicId && result.sourcePublicId !== video?.cloudinary_source_id) {
-      try {
-        await sb.from('youtube_videos')
-          .update({ cloudinary_source_id: result.sourcePublicId })
-          .eq('id', short.video_id).eq('user_id', user.id)
-      } catch { /* non-fatal */ }
-    }
-
-    // The trimmed clip was only an intermediate handed to Cloudinary; the final
-    // Short now lives at result.url, so purge the trim from Storage immediately
-    // (we don't retain source/intermediate video). Best-effort; RLS lets a user
-    // delete their own `{uid}/…` object.
-    if (usingClip && clip?.url) {
-      const p = storagePathFromPublicUrl(clip.url, 'instagram-videos')
-      if (p) { try { await supabase.storage.from('instagram-videos').remove([p]) } catch { /* non-fatal */ } }
+      if (!result) {
+        const detail = getLastShortError() || 'unknown error'
+        try {
+          await sb.from('youtube_shorts')
+            .update({ status: 'failed', render_error: detail, updated_at: new Date().toISOString() })
+            .eq('id', shortId).eq('user_id', user.id)
+        } catch { /* non-fatal */ }
+        return NextResponse.json({ error: `Couldn't render the clip: ${detail}` }, { status: 500 })
+      }
+      renderedUrl = result.url
+      // Cache the one-time Cloudinary source upload (full-source path only).
+      if (!usingClip && result.sourcePublicId && result.sourcePublicId !== video?.cloudinary_source_id) {
+        try {
+          await sb.from('youtube_videos')
+            .update({ cloudinary_source_id: result.sourcePublicId })
+            .eq('id', short.video_id).eq('user_id', user.id)
+        } catch { /* non-fatal */ }
+      }
     }
 
     const { data: updated } = await sb.from('youtube_shorts')
       .update({
         status: 'rendered',
-        rendered_url: result.url,
+        rendered_url: renderedUrl,
         subtitle_style: style,
         render_error: null,
         rendered_at: new Date().toISOString(),
@@ -165,7 +165,7 @@ export async function POST(request: Request) {
       .eq('id', shortId).eq('user_id', user.id)
       .select('*').maybeSingle()
 
-    recordUsage({ userId: user.id, tier, feature: 'shorts_render', model: 'cloudinary', images: 1 })
+    recordUsage({ userId: user.id, tier, feature: 'shorts_render', model: engine, images: 1 })
     return NextResponse.json({ ok: true, short: updated ? rowToShort(updated) : null })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)

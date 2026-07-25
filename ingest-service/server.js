@@ -256,9 +256,156 @@ app.post('/clip', async (req, res) => {
   }
 })
 
+// ── Hormozi-style captions (FFmpeg + libass) ────────────────────────────────
+// Word-by-word: 1–3 words on screen, the ACTIVE word pops (scale bounce) and
+// turns yellow as it's spoken. Rendered as an ASS subtitle burned by ffmpeg,
+// which is what the good caption tools do — Cloudinary's static text can't.
+
+function assTime(sec) {
+  let s = Number(sec)
+  if (!Number.isFinite(s) || s < 0) s = 0
+  const cs = Math.round(s * 100)
+  const h = Math.floor(cs / 360000)
+  const m = Math.floor((cs % 360000) / 6000)
+  const ss = Math.floor((cs % 6000) / 100)
+  const c = cs % 100
+  return `${h}:${String(m).padStart(2, '0')}:${String(ss).padStart(2, '0')}.${String(c).padStart(2, '0')}`
+}
+
+// Strip ASS-special chars so a stray brace/backslash can't break the subtitle.
+function assEscape(t) {
+  return String(t == null ? '' : t).replace(/[{}\\]/g, '').replace(/\r?\n/g, ' ').trim()
+}
+
+// Normalize incoming cues to per-WORD timing. Single-word cues (Whisper
+// word-level) pass through with real timings; multi-word cues (phrase-level
+// source) are split evenly across their span so we still get word animation.
+function toWords(cues) {
+  const out = []
+  for (const c of Array.isArray(cues) ? cues : []) {
+    const start = Number(c && (c.startSec != null ? c.startSec : c.start))
+    let end = Number(c && (c.endSec != null ? c.endSec : c.end))
+    const text = assEscape(c && c.text)
+    if (!text || !Number.isFinite(start)) continue
+    if (!Number.isFinite(end) || end <= start) end = start + 0.4
+    const toks = text.split(/\s+/).filter(Boolean)
+    if (toks.length <= 1) { out.push({ start, end, text: toks[0] || text }); continue }
+    const per = (end - start) / toks.length
+    toks.forEach((w, i) => out.push({ start: start + i * per, end: start + (i + 1) * per, text: w }))
+  }
+  return out.sort((a, b) => a.start - b.start)
+}
+
+// Group words into short lines (<=maxWords, break on a speech pause or sentence).
+function groupLines(words, maxWords, gap) {
+  const lines = []
+  let cur = []
+  const flush = () => { if (cur.length) { lines.push(cur); cur = [] } }
+  for (const w of words) {
+    if (cur.length) {
+      const g = w.start - cur[cur.length - 1].end
+      if (cur.length >= maxWords || g > gap || /[.!?]$/.test(cur[cur.length - 1].text)) flush()
+    }
+    cur.push(w)
+  }
+  flush()
+  return lines
+}
+
+function buildAss(cues) {
+  const words = toWords(cues)
+  const lines = groupLines(words, 3, 0.6)
+  const HIGHLIGHT = '&H0000FFFF&' // yellow, ASS is &HBBGGRR
+
+  const header = [
+    '[Script Info]',
+    'ScriptType: v4.00+',
+    'PlayResX: 1080',
+    'PlayResY: 1920',
+    'WrapStyle: 1',
+    'ScaledBorderAndShadow: yes',
+    '',
+    '[V4+ Styles]',
+    'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
+    // Anton 108, white fill, black outline 8 + shadow 4, bottom-center, MarginV 520.
+    'Style: Cap,Anton,108,&H00FFFFFF,&H000000FF,&H00000000,&H90000000,0,0,0,0,100,100,2,0,1,8,4,2,120,120,520,1',
+    '',
+    '[Events]',
+    'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',
+  ].join('\n')
+
+  const events = []
+  for (const line of lines) {
+    for (let i = 0; i < line.length; i++) {
+      const start = line[i].start
+      // Hold each state until the next word starts (no flicker gap).
+      const end = i < line.length - 1 ? line[i + 1].start : line[i].end
+      const text = line.map((w, j) => {
+        const up = w.text.toUpperCase()
+        return j === i
+          ? `{\\c${HIGHLIGHT}\\fscx118\\fscy118\\t(0,90,\\fscx100\\fscy100)}${up}{\\r}`
+          : up
+      }).join(' ')
+      events.push(`Dialogue: 0,${assTime(start)},${assTime(end)},Cap,,0,0,0,,${text}`)
+    }
+  }
+  return `${header}\n${events.join('\n')}\n`
+}
+
+function ffmpegRender(input, startSec, dur, vf, outPath) {
+  return new Promise((resolve, reject) => {
+    execFile('ffmpeg', [
+      '-hide_banner', '-loglevel', 'error', '-threads', '1',
+      // -ss before -i is fast AND frame-accurate in modern ffmpeg; output PTS
+      // resets to 0 at startSec, so the clip-relative caption timings line up.
+      '-ss', String(startSec), '-i', input, '-t', String(dur),
+      '-vf', vf,
+      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p',
+      '-c:a', 'aac', '-movflags', '+faststart', '-y', outPath,
+    ], { maxBuffer: 1024 * 1024 * 64 }, (err, _so, se) => {
+      if (err) reject(new Error('ffmpeg: ' + (((se && se.trim()) || err.message || 'failed') + (err.signal ? ` [signal ${err.signal}]` : '')).slice(0, 400)))
+      else resolve()
+    })
+  })
+}
+
+// POST /render-short — trim [startSec,endSec] + reframe to 1080x1920 + burn
+// Hormozi captions in ONE ffmpeg pass. Replaces the Cloudinary render for the
+// captioned Short. Body: { videoUrl, startSec, endSec, words[], userId }.
+app.post('/render-short', async (req, res) => {
+  if (SECRET && req.get('x-ingest-secret') !== SECRET) return res.status(401).json({ error: 'unauthorized' })
+  const url = String(req.body?.videoUrl || '').trim()
+  const startSec = Math.max(0, Number(req.body?.startSec) || 0)
+  const endSec = Number(req.body?.endSec)
+  const words = Array.isArray(req.body?.words) ? req.body.words : []
+  const userId = String(req.body?.userId || '').trim()
+  if (!/^https?:\/\//i.test(url)) return res.status(400).json({ error: 'bad url' })
+  if (!Number.isFinite(endSec) || endSec <= startSec) return res.status(400).json({ error: 'bad window' })
+  const dur = Math.min(180, endSec - startSec)
+  const srcTmp = path.join(os.tmpdir(), `rsrc-${Date.now()}.mp4`)
+  const assTmp = path.join(os.tmpdir(), `rcap-${Date.now()}.ass`)
+  const outTmp = path.join(os.tmpdir(), `rout-${Date.now()}.mp4`)
+  try {
+    await downloadToFile(url, srcTmp)
+    const withCaptions = words.length > 0
+    if (withCaptions) fs.writeFileSync(assTmp, buildAss(words))
+    const reframe = 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920'
+    const vf = withCaptions ? `${reframe},ass=${assTmp}` : reframe
+    await ffmpegRender(srcTmp, startSec, dur, vf, outTmp)
+    if (!fs.existsSync(outTmp)) throw new Error('render produced no file')
+    const key = `${userId || 'ingest'}/short-${Date.now()}.mp4`
+    await uploadToSupabase(key, outTmp)
+    return res.json({ url: publicUrl(key), durationSeconds: Math.round(dur * 10) / 10 })
+  } catch (e) {
+    console.error('[render-short] failed', e && e.message)
+    return res.status(502).json({ error: String((e && e.message) || e).slice(0, 300) })
+  } finally {
+    for (const f of [srcTmp, assTmp, outTmp]) { try { if (fs.existsSync(f)) fs.unlinkSync(f) } catch { /* ignore */ } }
+  }
+})
+
 // BUILD marker: bump this string when the service code changes so the Railway
 // deploy logs unambiguously show which build is actually running (Railway can
-// re-run an older commit). "streaming-upload" = the OOM fix (uploads stream
-// from disk instead of buffering the whole file).
-const BUILD = '720p-streaming-2026-07-25'
+// re-run an older commit).
+const BUILD = 'hormozi-captions-2026-07-25'
 app.listen(PORT, () => console.log(`ingest-service listening on :${PORT} [build ${BUILD}]`))
