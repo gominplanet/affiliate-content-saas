@@ -32,7 +32,8 @@ export async function GET(request: Request) {
   const admin = createAdminClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = admin as any
-  const cutoff = new Date(Date.now() - RETENTION_HOURS * 3600 * 1000).toISOString()
+  const cutoffMs = Date.now() - RETENTION_HOURS * 3600 * 1000
+  const cutoff = new Date(cutoffMs).toISOString()
 
   // Sources past the retention window. Uploaded rows may lack an uploaded_at
   // timestamp, so also sweep any source whose row hasn't changed since cutoff.
@@ -60,5 +61,43 @@ export async function GET(request: Request) {
     if (!upErr) cleared++
   }
 
-  return NextResponse.json({ ok: true, scanned: rows?.length || 0, storageDeleted, cloudinaryDeleted, cleared })
+  // --- Storage sweep: Shop Burner uploads + orphaned trim clips ---------------
+  // burner-* (upload-to-burn inputs) and clip-* (intermediate trims) aren't held
+  // by a durable DB column, so we find them by listing and age them out. Exclude
+  // any upload a still-pending batch job references (schedules run up to 30 days
+  // out) so we never delete a file a queued job still needs. ingest-* is left to
+  // the DB-driven purge above, which nulls the row pointer as it deletes.
+  const excluded = new Set<string>()
+  try {
+    const { data: jobs } = await sb.from('ig_burn_jobs')
+      .select('source_video_url').in('status', ['pending', 'processing']).limit(5000)
+    for (const j of (jobs || [])) {
+      const p = storagePathFromPublicUrl(j.source_video_url as string, BUCKET)
+      if (p) excluded.add(p)
+    }
+  } catch { /* if we can't read the queue, skip the sweep to stay safe */ }
+
+  let sweptFiles = 0
+  try {
+    const { data: folders } = await admin.storage.from(BUCKET).list('', { limit: 1000 })
+    for (const folder of (folders || [])) {
+      // Top-level entries with an id are stray files; the user-id folders we want
+      // to descend into come back with id === null.
+      if (folder.id) continue
+      const { data: files } = await admin.storage.from(BUCKET).list(folder.name, { limit: 1000 })
+      const stale = (files || []).filter((f) => {
+        if (!f.id || !f.name) return false                 // skip sub-folders
+        if (!/^(burner|clip)-/.test(f.name)) return false  // only transient inputs
+        const created = f.created_at ? new Date(f.created_at).getTime() : 0
+        if (!created || created >= cutoffMs) return false  // still within window
+        return !excluded.has(`${folder.name}/${f.name}`)
+      }).map((f) => `${folder.name}/${f.name}`)
+      if (stale.length) {
+        const { error: rmErr } = await admin.storage.from(BUCKET).remove(stale)
+        if (!rmErr) sweptFiles += stale.length
+      }
+    }
+  } catch { /* non-fatal */ }
+
+  return NextResponse.json({ ok: true, scanned: rows?.length || 0, storageDeleted, cloudinaryDeleted, cleared, sweptFiles })
 }
