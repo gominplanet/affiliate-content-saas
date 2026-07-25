@@ -126,11 +126,41 @@ export function cuesToTimestampedText(cues: TranscriptCue[], maxChars = 16000): 
     const s = Math.floor(sec % 60)
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
   }
+  // Word-level cues (Whisper chunk_level:'word') would emit one line per word and
+  // blow the budget — merge them into ~sentence lines first (keeping each line's
+  // start time) so the LLM sees compact, timestamped context.
+  const lines = mergeCuesToLines(cues)
   let out = ''
-  for (const c of cues) {
+  for (const c of lines) {
     const line = `[${fmt(c.start)}] ${c.text}\n`
     if (out.length + line.length > maxChars) break
     out += line
   }
   return out.trim()
+}
+
+/** Merge WORD-level cues into readable lines (~12 words, or on a speech pause),
+ *  keeping each line's start/end. Phrase-level cues pass through unchanged. */
+function mergeCuesToLines(cues: TranscriptCue[]): TranscriptCue[] {
+  if (cues.length < 4) return cues
+  let singles = 0
+  for (const c of cues) if (c.text.trim().split(/\s+/).length <= 1) singles++
+  if (singles / cues.length <= 0.6) return cues // not word-level
+
+  const lines: TranscriptCue[] = []
+  let cur: TranscriptCue[] = []
+  const flush = () => {
+    if (!cur.length) return
+    lines.push({ start: cur[0].start, end: cur[cur.length - 1].end, text: cur.map(w => w.text).join(' ').replace(/\s+/g, ' ').trim() })
+    cur = []
+  }
+  for (const w of cues) {
+    if (cur.length) {
+      const gap = w.start - cur[cur.length - 1].end
+      if (cur.length >= 12 || gap > 0.8 || /[.!?]$/.test(cur[cur.length - 1].text)) flush()
+    }
+    cur.push(w)
+  }
+  flush()
+  return lines
 }

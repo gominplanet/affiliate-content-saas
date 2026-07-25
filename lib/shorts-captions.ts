@@ -37,22 +37,61 @@ export function sliceCuesToWindow(
   return out
 }
 
+/** True when the cues are WORD-level (Whisper chunk_level:'word') — most cues
+ *  are a single token. Word-level cues carry real per-word timings, so we group
+ *  them into lines instead of evenly splitting a phrase. */
+function isWordLevel(cues: TranscriptCue[]): boolean {
+  if (cues.length < 4) return false
+  let singles = 0
+  for (const c of cues) if (c.text.trim().split(/\s+/).length <= 1) singles++
+  return singles / cues.length > 0.6
+}
+
+/** Group word-level cues into short caption lines timed to the ACTUAL words:
+ *  line window = [first word start, last word end]. Breaks on maxWords or a
+ *  speech pause (`gapSec`) so lines end naturally. This is the on-the-beat path. */
+function groupWordsIntoLines(words: TranscriptCue[], maxWords: number, gapSec: number): CaptionChunk[] {
+  const chunks: CaptionChunk[] = []
+  let cur: TranscriptCue[] = []
+  const flush = () => {
+    if (!cur.length) return
+    const text = cur.map(w => w.text).join(' ').replace(/\s+/g, ' ').trim()
+    if (text) chunks.push({ startSec: r1(cur[0].start), endSec: r1(Math.max(cur[cur.length - 1].end, cur[0].start + 0.2)), text })
+    cur = []
+  }
+  for (const w of words) {
+    if (cur.length) {
+      const gap = w.start - cur[cur.length - 1].end
+      // End the line on a full group or a real pause, or when punctuation ends it.
+      if (cur.length >= maxWords || gap > gapSec || /[.!?]$/.test(cur[cur.length - 1].text)) flush()
+    }
+    cur.push(w)
+  }
+  flush()
+  return chunks
+}
+
 /**
  * Break clip-relative cues into short, readable caption chunks — the punchy
- * ≤N-word lines that read well on a phone. A cue's time span is split evenly
- * across its sub-chunks, so a chunk's on-screen window tracks the words being
- * spoken. Output is monotonic, non-overlapping, and capped at `maxChunks` so
- * the Cloudinary transform URL stays bounded.
+ * ≤N-word lines that read well on a phone. WORD-level cues are grouped by their
+ * real timings (on the beat); phrase-level cues fall back to an even split of
+ * the phrase's span. Output is monotonic, non-overlapping, and capped so the
+ * Cloudinary transform URL stays bounded.
  */
 export function buildCaptionChunks(
   windowCues: TranscriptCue[],
   opts: { maxWords?: number; maxChunks?: number } = {},
 ): CaptionChunk[] {
-  const maxWords = Math.max(1, opts.maxWords ?? 5)
+  const wordLevel = isWordLevel(windowCues)
+  // Punchier lines for word-level (vidIQ-style ≤3 words); a touch longer when we
+  // only have phrase timings and must approximate.
+  const maxWords = Math.max(1, opts.maxWords ?? (wordLevel ? 3 : 5))
   const maxChunks = Math.max(1, opts.maxChunks ?? 40)
 
-  const chunks: CaptionChunk[] = []
-  for (const cue of windowCues) {
+  const chunks: CaptionChunk[] = wordLevel
+    ? groupWordsIntoLines(windowCues, maxWords, 0.6)
+    : []
+  if (!wordLevel) for (const cue of windowCues) {
     const words = cue.text.split(/\s+/).filter(Boolean)
     if (words.length === 0) continue
     const span = Math.max(0.1, cue.end - cue.start)
