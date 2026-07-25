@@ -101,7 +101,9 @@ POST /ingest        header  x-ingest-secret: <INGEST_SECRET>
 
 ## Notes
 
-- Downloads best MP4 ≤1080p (Shorts are 9:16, so higher res is wasted bytes).
+- Downloads best MP4 ≤720p (Shorts are a 9:16 center-crop that Cloudinary
+  re-encodes, so higher res is wasted bytes — and the download runs through a
+  per-GB residential proxy, so 720p roughly halves the per-video cost).
 - Rejects videos longer than `MAX_SECONDS`.
 - The app only calls this after the creator confirms ownership, and only for
   Pro accounts.

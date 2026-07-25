@@ -191,12 +191,14 @@ app.post('/ingest', async (req, res) => {
       }
     } catch { /* non-fatal — proceed to download */ }
 
-    // Best video ≤1080p + best audio, ANY codec (VP9/webm included), merged to
-    // mp4 by ffmpeg. No ext filter — that's what caused "Requested format is not
-    // available" on videos YouTube only serves in webm. Cloudinary re-encodes on
-    // render, so the source codec doesn't matter downstream.
+    // Best video ≤720p + best audio, ANY codec (VP9/webm included), merged to
+    // mp4 by ffmpeg. 720p (not 1080p) because Shorts are a 9:16 center-crop that
+    // Cloudinary re-encodes anyway, so 1080p is wasted bytes — and the download
+    // runs through a per-GB residential proxy, so ~halving the bytes ~halves the
+    // dominant per-video cost. No ext filter — that's what caused "Requested
+    // format is not available" on videos YouTube only serves in webm.
     await ytDlp([
-      '-f', 'bv*[height<=1080]+ba/b[height<=1080]/bv*+ba/b',
+      '-f', 'bv*[height<=720]+ba/b[height<=720]/bv*+ba/b',
       '--merge-output-format', 'mp4',
       '-o', tmp,
       '--no-playlist', '--no-warnings',
@@ -258,5 +260,5 @@ app.post('/clip', async (req, res) => {
 // deploy logs unambiguously show which build is actually running (Railway can
 // re-run an older commit). "streaming-upload" = the OOM fix (uploads stream
 // from disk instead of buffering the whole file).
-const BUILD = 'streaming-upload-2026-07-25'
+const BUILD = '720p-streaming-2026-07-25'
 app.listen(PORT, () => console.log(`ingest-service listening on :${PORT} [build ${BUILD}]`))
