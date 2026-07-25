@@ -416,13 +416,17 @@ export function ShortsStudioModal({
       </div>
     </div>
 
+    {/* z-[70] wrapper: the TikTok modal is z-50 and this Shorts modal is z-[60],
+        so without lifting it the TikTok modal opens BEHIND this one. */}
     {ttPost && (
-      <TikTokDirectModal
-        burnedVideoUrl={ttPost.url}
-        initialCaption={ttPost.caption}
-        onClose={() => setTtPost(null)}
-        onPosted={() => { setTtPost(null); toast.success('Posted to TikTok') }}
-      />
+      <div className="relative z-[70]">
+        <TikTokDirectModal
+          burnedVideoUrl={ttPost.url}
+          initialCaption={ttPost.caption}
+          onClose={() => setTtPost(null)}
+          onPosted={() => { setTtPost(null); toast.success('Posted to TikTok') }}
+        />
+      </div>
     )}
     </>
   )
