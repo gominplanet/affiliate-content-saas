@@ -92,22 +92,29 @@ function ytDlp(args) {
   })
 }
 
-// Cut [startSec, startSec+dur] out of a (remote) video into a small mp4. Fast
+// Download a URL to a local file. ffmpeg seeking a LOCAL file is instant and
+// reliable; seeking a remote URL over HTTP is fragile (moov-atom location, range
+// support) and was failing silently. So we fetch first, then trim locally.
+async function downloadToFile(url, dest) {
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`source fetch ${res.status}`)
+  const buf = Buffer.from(await res.arrayBuffer())
+  fs.writeFileSync(dest, buf)
+  return buf.length
+}
+
+// Cut [startSec, startSec+dur] out of a LOCAL video into a small mp4. Fast
 // input-seek + re-encode = frame-accurate and tiny, so Cloudinary never has to
 // ingest the whole source (its 100MB cap is why full-video render failed).
-function ffmpegClip(url, startSec, dur, outPath) {
+function ffmpegClip(input, startSec, dur, outPath) {
   return new Promise((resolve, reject) => {
     execFile('ffmpeg', [
-      // -hide_banner + loglevel error so stderr is the REAL error, not the
-      // version banner. reconnect flags = tolerate a flaky remote HTTP read.
       '-hide_banner', '-loglevel', 'error',
-      '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5',
-      '-ss', String(startSec), '-i', url, '-t', String(dur),
+      '-ss', String(startSec), '-i', input, '-t', String(dur),
       '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23',
       '-c:a', 'aac', '-movflags', '+faststart', '-y', outPath,
     ], { maxBuffer: 1024 * 1024 * 64 }, (err, _so, se) => {
-      // The real error is at the END of stderr — keep the tail, not the head.
-      if (err) reject(new Error(('ffmpeg: ' + (se || err.message || 'failed')).trim().slice(-400)))
+      if (err) reject(new Error('ffmpeg: ' + (((se && se.trim()) || err.message || 'failed').slice(0, 400))))
       else resolve()
     })
   })
@@ -213,11 +220,14 @@ app.post('/clip', async (req, res) => {
   }
   // Clips are 15–30s; cap defensively so a bad request can't cut a huge segment.
   const dur = Math.min(120, endSec - startSec)
-  const tmp = path.join(os.tmpdir(), `clip-${Date.now()}-${Math.round(startSec)}.mp4`)
+  const srcTmp = path.join(os.tmpdir(), `src-${Date.now()}.mp4`)
+  const outTmp = path.join(os.tmpdir(), `clip-${Date.now()}-${Math.round(startSec)}.mp4`)
   try {
-    await ffmpegClip(url, Math.max(0, startSec), dur, tmp)
-    if (!fs.existsSync(tmp)) throw new Error('clip produced no file')
-    const buf = fs.readFileSync(tmp)
+    // Fetch the source locally, then trim the local file (reliable seeking).
+    await downloadToFile(url, srcTmp)
+    await ffmpegClip(srcTmp, Math.max(0, startSec), dur, outTmp)
+    if (!fs.existsSync(outTmp)) throw new Error('clip produced no file')
+    const buf = fs.readFileSync(outTmp)
     const key = `${userId || 'ingest'}/clip-${Date.now()}-${Math.round(startSec)}.mp4`
     await uploadToSupabase(key, buf)
     return res.json({ url: publicUrl(key), durationSeconds: Math.round(dur * 10) / 10 })
@@ -225,7 +235,8 @@ app.post('/clip', async (req, res) => {
     console.error('[clip] failed', e && e.message)
     return res.status(502).json({ error: String((e && e.message) || e).slice(0, 300) })
   } finally {
-    try { if (fs.existsSync(tmp)) fs.unlinkSync(tmp) } catch { /* ignore */ }
+    try { if (fs.existsSync(srcTmp)) fs.unlinkSync(srcTmp) } catch { /* ignore */ }
+    try { if (fs.existsSync(outTmp)) fs.unlinkSync(outTmp) } catch { /* ignore */ }
   }
 })
 
