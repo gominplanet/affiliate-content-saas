@@ -178,6 +178,8 @@ export async function fetchYouTubeVideoSnippet(
 ): Promise<{
   youtubeVideoId: string
   title: string
+  description: string
+  tags: string[]
   channelId: string
   channelTitle: string
   publishedAt: string
@@ -203,6 +205,8 @@ export async function fetchYouTubeVideoSnippet(
     return {
       youtubeVideoId: videoId,
       title: s.title ?? 'Untitled',
+      description: s.description ?? '',
+      tags: Array.isArray(s.tags) ? s.tags.map((t: unknown) => String(t)) : [],
       channelId: s.channelId ?? '',
       channelTitle: s.channelTitle ?? '',
       publishedAt: s.publishedAt ?? new Date(0).toISOString(),

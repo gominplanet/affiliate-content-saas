@@ -28,6 +28,10 @@ export interface PlanOpts {
   /** Clip length bounds in seconds. Defaults 15–30 (YouTube Shorts sweet spot). */
   minSec?: number
   maxSec?: number
+  /** The source video's own description (from YouTube). Gives the model the
+   *  product name + the creator's framing so hooks/captions/hashtags land the
+   *  product, not just generic angles. */
+  sourceDescription?: string
   telemetry?: { userId: string | null; tier: string | null }
 }
 
@@ -126,10 +130,16 @@ export async function planShorts(anthropic: Anthropic, opts: PlanOpts): Promise<
     'write a hook + caption for each — you must NOT invent or paraphrase anything the speaker says; the on-screen ' +
     'subtitles are taken verbatim from the transcript later. Return ONLY valid JSON.'
 
+  // The creator's own description names the product + framing — a big help for
+  // writing captions/hooks/hashtags that actually sell it. Trimmed so it can't
+  // dominate the prompt.
+  const desc = (opts.sourceDescription || '').replace(/\s+/g, ' ').trim().slice(0, 1200)
+
   const user =
     `VIDEO: "${opts.videoTitle}"\n` +
     `NICHE: ${niches}\nTONE: ${tone}\n` +
     `VIDEO LENGTH: ${Math.round(videoEnd)}s\n\n` +
+    (desc ? `VIDEO DESCRIPTION (for product + context — use it to make hooks, captions and hashtags land the product; do NOT quote it as a subtitle):\n${desc}\n\n` : '') +
     `Timestamps below are [mm:ss]; seconds = minutes*60 + seconds.\n\n` +
     `TRANSCRIPT:\n${timestamped}\n\n` +
     `Pick the ${count} BEST moments to cut as standalone Shorts. A great Short moment is: a strong hook or ` +

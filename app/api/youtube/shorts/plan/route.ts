@@ -23,6 +23,7 @@ import { fetchTranscriptCues, cuesToText, normalizeCues, parseSrtCues } from '@/
 import { getChannelOAuthToken } from '@/lib/youtube-channels'
 import { createYouTubeOAuthService, fetchYouTubeVideoSnippet } from '@/services/youtube'
 import { extractYouTubeVideoId } from '@/lib/youtube-url'
+import { extractProductLink } from '@/lib/extract-product-link'
 import { transcribeToCues, transcriptionConfigured } from '@/lib/shorts-transcribe'
 import { recordUsage } from '@/lib/ai-usage'
 import { planShorts } from '@/lib/shorts-planner'
@@ -74,6 +75,9 @@ export async function POST(request: Request) {
     const videoId = (body.videoId || '').trim()
     let ytId = (body.youtubeVideoId || '').trim()
     const youtubeUrl = (body.youtubeUrl || '').trim()
+    // The pasted video's own description (product + affiliate context), captured
+    // on create and fed to the planner for sharper captions/titles.
+    let sourceDescription = ''
     if (youtubeUrl && !ytId && !videoId) {
       const extracted = extractYouTubeVideoId(youtubeUrl)
       if (!extracted) return NextResponse.json({ error: "That doesn't look like a YouTube link — paste a full video URL." }, { status: 400 })
@@ -103,6 +107,11 @@ export async function POST(request: Request) {
       const apiKey = process.env.YOUTUBE_API_KEY
       const snip = apiKey ? await fetchYouTubeVideoSnippet(apiKey, ytId) : null
       if (!snip) return NextResponse.json({ error: "We couldn't find that YouTube video — double-check the link." }, { status: 404 })
+      // The creator's own description names the product + their affiliate link.
+      // Pull the link (prefills the product field) and keep the description to
+      // give the planner real product context for better hooks/captions/title.
+      sourceDescription = snip.description || ''
+      const productLink = extractProductLink(sourceDescription)
       const { data: created, error: createErr } = await sb.from('youtube_videos').insert({
         user_id: user.id,
         youtube_video_id: snip.youtubeVideoId,
@@ -112,6 +121,7 @@ export async function POST(request: Request) {
         published_at: snip.publishedAt,
         thumbnail_url: snip.thumbnailUrl || null,
         duration_seconds: snip.durationSeconds || null,
+        ...(productLink ? { product_url: productLink } : {}),
       }).select('id,youtube_video_id,title,transcript,channel_id,source_video_url').maybeSingle()
       if (createErr || !created) return NextResponse.json({ error: createErr?.message || 'Could not add that video.' }, { status: 500 })
       video = created
@@ -193,6 +203,7 @@ export async function POST(request: Request) {
     const clips = await planShorts(anthropic, {
       cues, videoTitle, niches, tone,
       count: Math.min(10, Math.max(1, Number(body.count) || 5)),
+      sourceDescription,
       telemetry: { userId: user.id, tier },
     })
     if (clips.length === 0) {
