@@ -485,6 +485,7 @@ export default function VerticalPowerhousePage() {
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           {s.thumbnailUrl ? <img src={s.thumbnailUrl} alt="" className="w-full h-full object-cover" /> : <Video size={22} className="absolute inset-0 m-auto text-[#c7c7cc]" />}
                           {s.posted && <span className="absolute top-1.5 left-1.5 text-[9px] font-semibold rounded-full bg-[#34c759] text-white px-1.5 py-0.5">Posted</span>}
+                          {!s.hasVideo && !fetching && <span className="absolute bottom-1.5 left-1.5 right-1.5 inline-flex items-center justify-center gap-1 text-[9px] text-white bg-black/70 rounded px-1 py-0.5"><Download size={10} /> Tap to fetch</span>}
                           {fetching && <span className="absolute inset-0 flex items-center justify-center bg-black/50 text-white text-[10px] font-medium gap-1"><Loader2 size={14} className="animate-spin" /> Fetching…</span>}
                         </div>
                         <p className="text-[11px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] p-2 line-clamp-2">{s.title}</p>
