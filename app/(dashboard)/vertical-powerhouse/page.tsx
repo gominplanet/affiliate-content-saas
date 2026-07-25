@@ -29,6 +29,7 @@ import { ShortsCreatePanel } from '@/components/vertical/ShortsCreatePanel'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { dispatchCapReached } from '@/components/CapReachedBanner'
 import { errText } from '@/lib/err-text'
+import { buildYouTubeShortTitle } from '@/lib/youtube-title'
 import { CTA_STICKERS, ctaStickerUrl } from '@/lib/cta-stickers'
 import type { Tier } from '@/lib/tier'
 
@@ -68,7 +69,7 @@ const DURATIONS = [
 ] as const
 
 type Stage = 'create' | 'enhance' | 'publish'
-interface WorkingClip { url: string; title: string }
+interface WorkingClip { url: string; title: string; hashtags?: string[] }
 interface VideoLite { id: string; youtubeVideoId: string | null; title: string; thumbnailUrl: string | null; durationSeconds: number | null }
 interface ShortItem { id: string; title: string; thumbnailUrl: string | null; hasVideo: boolean; youtubeVideoId: string | null; posted: boolean; productUrl: string | null }
 
@@ -363,7 +364,7 @@ export default function VerticalPowerhousePage() {
     try {
       const res = await fetch('/api/youtube/upload-short', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoUrl: publishUrl, title: (clip?.title || 'New Short').slice(0, 100), description: publishCaption }),
+        body: JSON.stringify({ videoUrl: publishUrl, title: buildYouTubeShortTitle(clip?.title || 'New Short', clip?.hashtags || []), description: publishCaption }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -475,7 +476,7 @@ export default function VerticalPowerhousePage() {
                 videoTitle={selectedVideo.title}
                 onUseClip={(c) => {
                   setClipSource('created')
-                  setClip({ url: c.url, title: c.title })
+                  setClip({ url: c.url, title: c.title, hashtags: c.hashtags })
                   // Seed a caption in case Enhance is skipped; burn overwrites it.
                   setComposedCaption([c.caption, (c.hashtags || []).join(' ')].filter(Boolean).join('\n\n').trim())
                   setSelectedVideo(null)
