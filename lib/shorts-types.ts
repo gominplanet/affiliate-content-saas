@@ -43,9 +43,9 @@ export interface ClipSuggestion {
 }
 
 /** Subtitle looks the render supports. Kept small + burned server-side. */
-export type SubtitleStyle = 'bold-white' | 'yellow-pop' | 'boxed'
+export type SubtitleStyle = 'bold-white' | 'yellow-pop' | 'boxed' | 'outline' | 'hype' | 'brand'
 
-export const SUBTITLE_STYLES: SubtitleStyle[] = ['bold-white', 'yellow-pop', 'boxed']
+export const SUBTITLE_STYLES: SubtitleStyle[] = ['bold-white', 'yellow-pop', 'boxed', 'outline', 'hype', 'brand']
 
 /** A persisted short (DB row → client), mirrors youtube_shorts. */
 export interface ShortRow {

@@ -266,10 +266,31 @@ export function getLastShortError(): string | null { return lastShortError }
 /** Per-caption visual params. Burned as time-boxed Arial-bold text layers so the
  *  words track the audio. Boxed/pop styles use a pill background (proven legible
  *  in the IG burner); bold-white leans on a drop shadow. */
-function subtitleParams(style: SubtitleStyle): { color: string; background?: string; radius?: number; effect?: string } {
+interface SubtitleLook {
+  color: string
+  background?: string
+  radius?: number
+  effect?: string
+  /** Text stroke, e.g. '5px_solid_black' — a readable outline with no box. */
+  border?: string
+  fontFamily?: string
+  fontWeight?: string
+  fontSize?: number
+  /** Render the line UPPERCASE (punchy "hype" look). */
+  upper?: boolean
+}
+
+function subtitleParams(style: SubtitleStyle): SubtitleLook {
   switch (style) {
     case 'yellow-pop': return { color: '#ffd400', background: '#111111', radius: 18 }
     case 'boxed': return { color: 'white', background: '#111111', radius: 18 }
+    // Clean white text with a thick black outline, no box — the most legible
+    // "Creator Cut" look over any footage.
+    case 'outline': return { color: 'white', border: '5px_solid_black', fontWeight: 'bold' }
+    // Big Impact uppercase, yellow with a black outline — high-energy.
+    case 'hype': return { color: '#ffd400', border: '6px_solid_black', fontFamily: 'Impact', fontWeight: 'bold', upper: true, fontSize: 66 }
+    // White text on a brand-violet pill.
+    case 'brand': return { color: 'white', background: '#7C3AED', radius: 22 }
     case 'bold-white':
     default: return { color: 'white', effect: 'shadow:60' }
   }
@@ -358,15 +379,16 @@ export async function renderVerticalShort(opts: RenderShortOpts): Promise<Render
     // 2c. One time-boxed caption layer per chunk. Clip-relative so_/eo_ track the
     //     spoken words; capped defensively so the delivery URL stays bounded.
     for (const c of (opts.captions || []).slice(0, 40)) {
-      const text = safeLayerText(c.text)
+      const text = safeLayerText(sp.upper ? c.text.toUpperCase() : c.text)
       if (!text) continue
       const so = Math.max(0, Math.min(dur, Math.round(c.startSec * 10) / 10))
       const eo = Math.max(so + 0.2, Math.min(dur, Math.round(c.endSec * 10) / 10))
       transformation.push({
-        overlay: { font_family: 'Arial', font_size: 62, font_weight: 'bold', text },
+        overlay: { font_family: sp.fontFamily ?? 'Arial', font_size: sp.fontSize ?? 62, font_weight: sp.fontWeight ?? 'bold', text },
         color: sp.color,
         ...(sp.background ? { background: sp.background, radius: sp.radius ?? 18 } : {}),
         ...(sp.effect ? { effect: sp.effect } : {}),
+        ...(sp.border ? { border: sp.border } : {}),
         width: 920, crop: 'fit',
         // Sit the running captions a little higher so they clear the bottom-corner
         // CTA box (which sits at y≈150) with clean space between them.

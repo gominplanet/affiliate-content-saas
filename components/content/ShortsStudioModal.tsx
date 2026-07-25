@@ -50,6 +50,9 @@ const STYLE_LABEL: Record<SubtitleStyle, string> = {
   'bold-white': 'Bold white',
   'yellow-pop': 'Yellow pop',
   'boxed': 'Boxed',
+  'outline': 'Outline',
+  'hype': 'Hype',
+  'brand': 'Brand',
 }
 
 // A cross-post pill. Outline + brand color when not yet posted; fills solid with
