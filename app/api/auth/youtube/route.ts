@@ -28,6 +28,12 @@ export async function GET(req: Request) {
   // channel picker on every connect so they choose the right one. `addChannel`
   // no longer changes the prompt, but we keep reading it for the state payload.
   const addChannel = new URL(req.url).searchParams.get('addChannel') === '1'
+  // Incremental authorization: `intent=upload` adds ONLY the sensitive
+  // youtube.upload scope, on demand, when a creator opts into publishing Shorts
+  // back to YouTube — so a normal YouTube connect never triggers the
+  // unverified-scope warning. include_granted_scopes merges it with what they
+  // already granted (we don't re-pick the account for an upgrade).
+  const wantUpload = new URL(req.url).searchParams.get('intent') === 'upload'
 
   // Encode user ID (+ optional return path) in state so the callback can
   // identify the user without a session cookie. JSON now; the callback still
@@ -43,15 +49,18 @@ export async function GET(req: Request) {
     'https://www.googleapis.com/auth/youtube',
     'https://www.googleapis.com/auth/youtube.force-ssl',
     // Sensitive: lets MVP publish a video TO the creator's channel (Shorts
-    // cross-post). Only requested once Google has verified the app for it —
-    // gated so we don't break every connect with an unverified-scope warning.
-    ...(youtubeUploadEnabled() ? ['https://www.googleapis.com/auth/youtube.upload'] : []),
+    // cross-post). Requested on demand via intent=upload (incremental auth), or
+    // for everyone once the flag is flipped after Google verifies the scope.
+    ...((wantUpload || youtubeUploadEnabled()) ? ['https://www.googleapis.com/auth/youtube.upload'] : []),
   ].join(' '))
   url.searchParams.set('access_type', 'offline')
+  // Merge any newly granted scope with the ones already granted (incremental).
+  url.searchParams.set('include_granted_scopes', 'true')
   // 'consent' forces a refresh token; 'select_account' shows the account/channel
-  // chooser so a creator with multiple YouTube channels picks the right one
-  // instead of silently getting their Google account's default channel.
-  url.searchParams.set('prompt', 'select_account consent')
+  // chooser so a creator with multiple YouTube channels picks the right one. For
+  // an upload-scope upgrade we skip the chooser — just add the scope to the
+  // account they're already connected with, don't make them re-pick a channel.
+  url.searchParams.set('prompt', wantUpload ? 'consent' : 'select_account consent')
   url.searchParams.set('state', state)
 
   return NextResponse.redirect(url.toString())

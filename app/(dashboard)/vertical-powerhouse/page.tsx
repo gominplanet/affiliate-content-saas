@@ -30,7 +30,6 @@ import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { dispatchCapReached } from '@/components/CapReachedBanner'
 import { errText } from '@/lib/err-text'
 import { CTA_STICKERS, ctaStickerUrl } from '@/lib/cta-stickers'
-import { youtubeUploadEnabled } from '@/lib/feature-flags'
 import type { Tier } from '@/lib/tier'
 
 const TikTokDirectModal = dynamic(
@@ -364,7 +363,16 @@ export default function VerticalPowerhousePage() {
         body: JSON.stringify({ videoUrl: publishUrl, title: (clip?.title || 'New Short').slice(0, 100), description: publishCaption }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'YouTube upload failed')
+      if (!res.ok) {
+        // No upload scope on this connection yet — kick off incremental auth to
+        // grant just youtube.upload, then the creator comes back and posts.
+        if (data.reconnectRequired) {
+          toast('One-time step: grant YouTube publishing access…')
+          window.location.href = `/api/auth/youtube?intent=upload&returnTo=${encodeURIComponent('/vertical-powerhouse')}`
+          return
+        }
+        throw new Error(data.error || 'YouTube upload failed')
+      }
       setPosted(p => ({ ...p, youtube: true }))
       toast.success('Uploaded to YouTube as a Short')
     } catch (e) { toast.error(errText(e)) }
@@ -710,7 +718,7 @@ export default function VerticalPowerhousePage() {
             <div className="flex flex-wrap items-center gap-2">
               <PostPill label="TikTok" color="#FE2C55" icon={<Music2 size={13} />} posted={!!posted.tiktok} onClick={() => setTtOpen(true)} />
               <PostPill label="Instagram" color="#E1306C" icon={<Instagram size={13} />} posted={!!posted.instagram} onClick={() => setIgOpen(true)} />
-              {youtubeUploadEnabled() && <PostPill label="YouTube" color="#FF0000" icon={<Youtube size={13} />} posted={!!posted.youtube} busy={publishingYt} onClick={postYouTube} />}
+              <PostPill label="YouTube" color="#FF0000" icon={<Youtube size={13} />} posted={!!posted.youtube} busy={publishingYt} onClick={postYouTube} />
               <a href={publishUrl} download target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-medium border border-black/10 dark:border-white/15 text-[#1d1d1f] dark:text-[#f5f5f7]"><Download size={13} /> Download</a>
             </div>
             {composedCaption && (
