@@ -142,7 +142,7 @@ function ffprobeDuration(file) {
 // Upload a LOCAL file to Supabase Storage over the REST API (service role
 // bypasses RLS). Streams straight from disk — reading the whole MP4 into a Node
 // Buffer (fs.readFileSync) is what OOM-killed the container on long videos.
-async function uploadToSupabase(key, filePath) {
+async function uploadToSupabase(key, filePath, contentType = 'video/mp4') {
   const size = fs.statSync(filePath).size
   const endpoint = `${SUPABASE_URL}/storage/v1/object/${BUCKET}/${key.split('/').map(encodeURIComponent).join('/')}`
   const res = await fetch(endpoint, {
@@ -150,7 +150,7 @@ async function uploadToSupabase(key, filePath) {
     headers: {
       Authorization: `Bearer ${SERVICE_KEY}`,
       apikey: SERVICE_KEY,
-      'Content-Type': 'video/mp4',
+      'Content-Type': contentType,
       'Content-Length': String(size),
       'x-upsert': 'true',
     },
@@ -369,29 +369,80 @@ function ffmpegRender(input, startSec, dur, vf, outPath) {
   })
 }
 
+// POST /audio — download AUDIO ONLY for transcription (tiny vs the full video),
+// the main proxy-bandwidth saver. Body: { videoId, userId } -> { url }.
+app.post('/audio', async (req, res) => {
+  if (SECRET && req.get('x-ingest-secret') !== SECRET) return res.status(401).json({ error: 'unauthorized' })
+  const videoId = String(req.body?.videoId || '').trim()
+  const userId = String(req.body?.userId || '').trim()
+  if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) return res.status(400).json({ error: 'bad videoId' })
+  const url = `https://www.youtube.com/watch?v=${videoId}`
+  const tmp = path.join(os.tmpdir(), `aud-${videoId}-${Date.now()}.m4a`)
+  try {
+    try {
+      const durOut = await ytDlp(['--no-warnings', '--print', '%(duration)s', url])
+      const dur = parseInt(String(durOut).trim(), 10)
+      if (Number.isFinite(dur) && dur > MAX_SECONDS) {
+        return res.status(413).json({ error: `Video is ${Math.round(dur / 60)}m — over the ${Math.round(MAX_SECONDS / 60)}m limit.` })
+      }
+    } catch { /* non-fatal */ }
+    await ytDlp(['-f', 'ba[ext=m4a]/ba/bestaudio', '-o', tmp, '--no-playlist', '--no-warnings', url])
+    if (!fs.existsSync(tmp)) throw new Error('audio download produced no file')
+    const key = `${userId || 'ingest'}/audio-${videoId}-${Date.now()}.m4a`
+    await uploadToSupabase(key, tmp, 'audio/mp4')
+    return res.json({ url: publicUrl(key) })
+  } catch (e) {
+    console.error('[audio] failed', videoId, e && e.message)
+    return res.status(502).json({ error: String((e && e.message) || e).slice(0, 300) })
+  } finally {
+    try { if (fs.existsSync(tmp)) fs.unlinkSync(tmp) } catch { /* ignore */ }
+  }
+})
+
 // POST /render-short — trim [startSec,endSec] + reframe to 1080x1920 + burn
-// Hormozi captions in ONE ffmpeg pass. Replaces the Cloudinary render for the
-// captioned Short. Body: { videoUrl, startSec, endSec, words[], userId }.
+// Hormozi captions in ONE ffmpeg pass. Two source modes:
+//   - youtubeVideoId: download ONLY the [start,end] section (bandwidth saver)
+//   - videoUrl: a hosted source (a creator upload) — download + seek
+// Body: { videoUrl?|youtubeVideoId?, startSec, endSec, words[], userId }.
 app.post('/render-short', async (req, res) => {
   if (SECRET && req.get('x-ingest-secret') !== SECRET) return res.status(401).json({ error: 'unauthorized' })
   const url = String(req.body?.videoUrl || '').trim()
+  const ytVid = String(req.body?.youtubeVideoId || '').trim()
   const startSec = Math.max(0, Number(req.body?.startSec) || 0)
   const endSec = Number(req.body?.endSec)
   const words = Array.isArray(req.body?.words) ? req.body.words : []
   const userId = String(req.body?.userId || '').trim()
-  if (!/^https?:\/\//i.test(url)) return res.status(400).json({ error: 'bad url' })
+  const fromYouTube = /^[A-Za-z0-9_-]{11}$/.test(ytVid)
+  if (!fromYouTube && !/^https?:\/\//i.test(url)) return res.status(400).json({ error: 'bad source' })
   if (!Number.isFinite(endSec) || endSec <= startSec) return res.status(400).json({ error: 'bad window' })
   const dur = Math.min(180, endSec - startSec)
   const srcTmp = path.join(os.tmpdir(), `rsrc-${Date.now()}.mp4`)
   const assTmp = path.join(os.tmpdir(), `rcap-${Date.now()}.ass`)
   const outTmp = path.join(os.tmpdir(), `rout-${Date.now()}.mp4`)
   try {
-    await downloadToFile(url, srcTmp)
+    // How far into srcTmp the clip starts: 0 when we download only the section
+    // (already trimmed), else startSec when we have the full hosted source.
+    let renderStart = startSec
+    if (fromYouTube) {
+      // Download ONLY the [start,end] window — ~15-30MB vs the whole video.
+      await ytDlp([
+        '-f', 'bv*[height<=720]+ba/b[height<=720]/bv*+ba/b',
+        '--download-sections', `*${startSec}-${endSec}`,
+        '--force-keyframes-at-cuts',
+        '--merge-output-format', 'mp4',
+        '-o', srcTmp, '--no-playlist', '--no-warnings',
+        `https://www.youtube.com/watch?v=${ytVid}`,
+      ])
+      renderStart = 0
+    } else {
+      await downloadToFile(url, srcTmp)
+    }
+    if (!fs.existsSync(srcTmp)) throw new Error('source download produced no file')
     const withCaptions = words.length > 0
     if (withCaptions) fs.writeFileSync(assTmp, buildAss(words))
     const reframe = 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920'
     const vf = withCaptions ? `${reframe},ass=${assTmp}` : reframe
-    await ffmpegRender(srcTmp, startSec, dur, vf, outTmp)
+    await ffmpegRender(srcTmp, renderStart, dur, vf, outTmp)
     if (!fs.existsSync(outTmp)) throw new Error('render produced no file')
     const key = `${userId || 'ingest'}/short-${Date.now()}.mp4`
     await uploadToSupabase(key, outTmp)
@@ -407,5 +458,5 @@ app.post('/render-short', async (req, res) => {
 // BUILD marker: bump this string when the service code changes so the Railway
 // deploy logs unambiguously show which build is actually running (Railway can
 // re-run an older commit).
-const BUILD = 'hormozi-captions-2026-07-25'
+const BUILD = 'audio-and-segments-2026-07-25'
 app.listen(PORT, () => console.log(`ingest-service listening on :${PORT} [build ${BUILD}]`))

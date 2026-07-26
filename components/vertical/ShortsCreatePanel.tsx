@@ -12,7 +12,7 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { Loader2, Sparkles, Download, AlertCircle, Film, Scissors, ExternalLink, ArrowRight } from 'lucide-react'
+import { Loader2, Sparkles, AlertCircle, Film, Scissors, ExternalLink, ArrowRight } from 'lucide-react'
 import { ShortVideoUpload } from '@/components/ShortVideoUpload'
 import { dispatchCapReached } from '@/components/CapReachedBanner'
 import { errText } from '@/lib/err-text'
@@ -37,10 +37,8 @@ export function ShortsCreatePanel({
 }) {
   const [loading, setLoading] = useState(true)
   const [planning, setPlanning] = useState(false)
-  const [preparing, setPreparing] = useState(false)
   const [clips, setClips] = useState<ShortRow[]>([])
   const [hasSource, setHasSource] = useState(false)
-  const [ingestEnabled, setIngestEnabled] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [styleById, setStyleById] = useState<Record<string, SubtitleStyle>>({})
   const [captionsById, setCaptionsById] = useState<Record<string, boolean>>({})
@@ -54,7 +52,6 @@ export function ShortsCreatePanel({
       if (!res.ok) throw new Error(data.error || 'Failed to load')
       setClips(data.shorts || [])
       setHasSource(!!data.hasSource)
-      setIngestEnabled(!!data.ingestEnabled)
     } catch (e) {
       setError(errText(e))
     } finally {
@@ -85,31 +82,13 @@ export function ShortsCreatePanel({
     }
   }, [videoId, youtubeVideoId])
 
-  const fetchAutomatically = useCallback(async () => {
-    setPreparing(true); setError(null)
-    try {
-      const res = await fetch('/api/youtube/shorts/ingest', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoId }),
-      })
-      const data = await res.json()
-      if (!res.ok) {
-        if (data.ingestDisabled) setIngestEnabled(false)
-        if (data.limitReached) dispatchCapReached(data.error || 'Clip Factory is a Pro feature.', { cap: data.cap || 'shorts_studio', currentTier: data.currentTier, upgrade: data.upgrade })
-        throw new Error(data.error || 'Could not fetch the video automatically.')
-      }
-      setHasSource(true)
-      toast.success('Video ready')
-      await findShorts()
-    } catch (e) {
-      setError(errText(e)); toast.error(errText(e))
-    } finally {
-      setPreparing(false)
-    }
-  }, [videoId, findShorts])
+
+  // We can render if the creator uploaded a source OR the clip has a YouTube id
+  // (we fetch just that clip's window at render time — no full download).
+  const canRender = hasSource || !!youtubeVideoId
 
   const renderClip = useCallback(async (clip: ShortRow) => {
-    if (!hasSource) { toast.error('Prepare the source video first.'); return }
+    if (!canRender) { toast.error('Prepare the source video first.'); return }
     setRenderingId(clip.id)
     try {
       const res = await fetch('/api/youtube/shorts/render', {
@@ -134,7 +113,7 @@ export function ShortsCreatePanel({
     } finally {
       setRenderingId(null)
     }
-  }, [hasSource, styleById, captionsById])
+  }, [canRender, styleById, captionsById])
 
   return (
     <div className="space-y-4">
@@ -154,36 +133,22 @@ export function ShortsCreatePanel({
         </button>
       </div>
 
-      {/* Source-video prompt — needed to transcribe (if no captions) + render */}
-      {!hasSource && (
-        <div className="rounded-xl border border-dashed border-black/10 dark:border-white/15 p-4 space-y-3">
-          {ingestEnabled && (
-            <div>
-              <button
-                onClick={fetchAutomatically}
-                disabled={preparing}
-                className="w-full inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
-                style={{ backgroundColor: PURPLE }}
-              >
-                {preparing ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
-                {preparing ? 'Preparing video…' : 'Fetch this video automatically — no upload'}
-              </button>
-              <p className="text-[10px] text-[#86868b] text-center mt-1.5">We download it for you and cut the clips. Takes a few minutes.</p>
-            </div>
-          )}
-          <div>
-            <p className="text-[12px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">
-              {ingestEnabled ? 'Or upload the video yourself' : 'Upload the full video once — we transcribe it and cut your clips from it'}
-            </p>
-            <ShortVideoUpload
-              videoId={videoId}
-              targetColumn="source_video_url"
-              extraFields={{ source_video_uploaded_at: new Date().toISOString() }}
-              label="Drop the full video (the long one) here"
-              helpText="MP4, under 300 MB. We transcribe it and cut every clip from it — it never touches YouTube."
-              onUploaded={async () => { setHasSource(true); toast.success('Video uploaded — hit Find Shorts') }}
-            />
-          </div>
+      {/* Source-video prompt — only when we can't fetch from YouTube (no id) and
+          nothing's uploaded. With a YouTube id we transcribe from audio and cut
+          each clip's window on demand, so no full upload/download is needed. */}
+      {!hasSource && !youtubeVideoId && (
+        <div className="rounded-xl border border-dashed border-black/10 dark:border-white/15 p-4">
+          <p className="text-[12px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">
+            Upload the full video once — we transcribe it and cut your clips from it
+          </p>
+          <ShortVideoUpload
+            videoId={videoId}
+            targetColumn="source_video_url"
+            extraFields={{ source_video_uploaded_at: new Date().toISOString() }}
+            label="Drop the full video (the long one) here"
+            helpText="MP4, under 300 MB. We transcribe it and cut every clip from it — it never touches YouTube."
+            onUploaded={async () => { setHasSource(true); toast.success('Video uploaded — hit Find Shorts') }}
+          />
         </div>
       )}
 

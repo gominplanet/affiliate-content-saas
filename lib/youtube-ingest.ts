@@ -103,8 +103,34 @@ export async function renderShort(
   words: Array<{ startSec: number; endSec: number; text: string }>,
   userId?: string,
 ): Promise<IngestResult | null> {
+  return renderShortReq({ videoUrl: sourceUrl }, startSec, endSec, words, userId)
+}
+
+/**
+ * Render a Short by downloading ONLY the [startSec,endSec] window from YouTube
+ * (yt-dlp --download-sections), not the whole video — the proxy-bandwidth saver
+ * for the fetch path. Same reframe + Hormozi caption burn as renderShort.
+ */
+export async function renderShortSegment(
+  youtubeVideoId: string,
+  startSec: number,
+  endSec: number,
+  words: Array<{ startSec: number; endSec: number; text: string }>,
+  userId?: string,
+): Promise<IngestResult | null> {
+  if (!/^[A-Za-z0-9_-]{11}$/.test(youtubeVideoId)) return null
+  return renderShortReq({ youtubeVideoId }, startSec, endSec, words, userId)
+}
+
+async function renderShortReq(
+  source: { videoUrl?: string; youtubeVideoId?: string },
+  startSec: number,
+  endSec: number,
+  words: Array<{ startSec: number; endSec: number; text: string }>,
+  userId?: string,
+): Promise<IngestResult | null> {
   const base = (process.env.YOUTUBE_INGEST_URL || '').replace(/\/+$/, '')
-  if (!base || !sourceUrl || !(endSec > startSec)) return null
+  if (!base || !(endSec > startSec) || (!source.videoUrl && !source.youtubeVideoId)) return null
   try {
     const res = await fetch(`${base}/render-short`, {
       method: 'POST',
@@ -112,13 +138,39 @@ export async function renderShort(
         'Content-Type': 'application/json',
         ...(process.env.YOUTUBE_INGEST_SECRET ? { 'x-ingest-secret': process.env.YOUTUBE_INGEST_SECRET } : {}),
       },
-      body: JSON.stringify({ videoUrl: sourceUrl, startSec, endSec, words: words || [], ...(userId ? { userId } : {}) }),
+      body: JSON.stringify({ ...source, startSec, endSec, words: words || [], ...(userId ? { userId } : {}) }),
       signal: AbortSignal.timeout(280_000),
     })
     if (!res.ok) return null
     const data = await res.json() as { url?: string; durationSeconds?: number }
     if (!data?.url || !/^https:\/\//i.test(data.url)) return null
     return { url: data.url, durationSeconds: Number.isFinite(Number(data.durationSeconds)) ? Number(data.durationSeconds) : (endSec - startSec) }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Download AUDIO ONLY for a YouTube video (tiny vs the full video) and return
+ * its hosted URL for transcription. The main proxy-bandwidth saver: we never
+ * pull the whole video just to read what was said. Returns null on failure.
+ */
+export async function ingestAudio(youtubeVideoId: string, userId?: string): Promise<string | null> {
+  const base = (process.env.YOUTUBE_INGEST_URL || '').replace(/\/+$/, '')
+  if (!base || !/^[A-Za-z0-9_-]{11}$/.test(youtubeVideoId)) return null
+  try {
+    const res = await fetch(`${base}/audio`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(process.env.YOUTUBE_INGEST_SECRET ? { 'x-ingest-secret': process.env.YOUTUBE_INGEST_SECRET } : {}),
+      },
+      body: JSON.stringify({ videoId: youtubeVideoId, ...(userId ? { userId } : {}) }),
+      signal: AbortSignal.timeout(280_000),
+    })
+    if (!res.ok) return null
+    const data = await res.json() as { url?: string }
+    return data?.url && /^https:\/\//i.test(data.url) ? data.url : null
   } catch {
     return null
   }
