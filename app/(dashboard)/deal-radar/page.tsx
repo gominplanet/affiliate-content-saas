@@ -11,9 +11,11 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { toast } from 'sonner'
 import {
   Radar, Search, Loader2, Star, Zap, BadgePercent, ExternalLink,
   ArrowRight, Sparkles, TrendingUp, RefreshCw, ShieldCheck, ShieldAlert,
+  Send, Check, AlertCircle, X as CloseIcon,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
@@ -71,6 +73,17 @@ const SORTS: { key: string; label: string }[] = [
   { key: 'bestseller', label: 'Best sellers' },
 ]
 
+// Link-friendly platforms for a direct "Quick post" (no IG/TikTok — captions
+// there can't carry a clickable link; no Pinterest — pins link to the blog).
+const QUICK_PLATFORMS: { key: string; label: string }[] = [
+  { key: 'twitter', label: 'X' },
+  { key: 'facebook', label: 'Facebook' },
+  { key: 'threads', label: 'Threads' },
+  { key: 'linkedin', label: 'LinkedIn' },
+  { key: 'telegram', label: 'Telegram' },
+  { key: 'bluesky', label: 'Bluesky' },
+]
+
 const money = (n: number | null) => (n == null ? null : `$${n.toFixed(2)}`)
 
 export default function DealRadarPage() {
@@ -107,6 +120,7 @@ export default function DealRadarPage() {
   const [ticker, setTicker] = useState<Deal[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [quickPostDeal, setQuickPostDeal] = useState<Deal | null>(null)
 
   const isPro = tier === 'pro' || tier === 'admin'
   const labsOk = dealRadarEnabled() || tier === 'admin'
@@ -283,14 +297,16 @@ export default function DealRadarPage() {
         </div>
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-          {deals.map((d) => <DealCard key={d.asin} deal={d} />)}
+          {deals.map((d) => <DealCard key={d.asin} deal={d} onQuickPost={setQuickPostDeal} />)}
         </div>
       )}
+
+      {quickPostDeal && <QuickPostModal deal={quickPostDeal} onClose={() => setQuickPostDeal(null)} />}
     </div>
   )
 }
 
-function DealCard({ deal: d }: { deal: Deal }) {
+function DealCard({ deal: d, onQuickPost }: { deal: Deal; onQuickPost: (d: Deal) => void }) {
   const makePost = () => {
     // Blog first — hand the ASIN to the Deals Hub generator (deep link).
     window.location.href = `/deals?asin=${encodeURIComponent(d.asin)}&from=deal-radar`
@@ -330,14 +346,22 @@ function DealCard({ deal: d }: { deal: Deal }) {
             <Sparkles size={12} /> +{d.campaign.commissionPct}% Creator Connections
           </a>
         )}
-        <div className="mt-auto pt-2 flex items-center gap-2">
-          <Button size="sm" className="flex-1" onClick={makePost}>
-            Make blog post <ArrowRight size={14} className="ml-1" />
-          </Button>
-          <a href={d.amazonUrl} target="_blank" rel="noopener noreferrer"
-             className="inline-flex items-center justify-center h-8 w-8 rounded-md border hover:bg-accent" title="View on Amazon">
-            <ExternalLink size={14} />
-          </a>
+        <div className="mt-auto pt-2 space-y-1.5">
+          <div className="flex items-center gap-2">
+            <Button size="sm" className="flex-1" onClick={makePost}>
+              Make blog post <ArrowRight size={14} className="ml-1" />
+            </Button>
+            <a href={d.amazonUrl} target="_blank" rel="noopener noreferrer"
+               className="inline-flex items-center justify-center h-8 w-8 rounded-md border hover:bg-accent" title="View on Amazon">
+              <ExternalLink size={14} />
+            </a>
+          </div>
+          <button
+            onClick={() => onQuickPost(d)}
+            className="w-full inline-flex items-center justify-center gap-1.5 text-xs font-medium rounded-md border py-1.5 hover:bg-accent"
+          >
+            <Send size={13} /> Quick post to socials
+          </button>
         </div>
       </div>
     </div>
@@ -366,4 +390,100 @@ function VerdictBadge({ verdict: v }: { verdict: DealVerdict }) {
   return <span className="inline-flex items-center gap-1 text-xs text-amber-600 w-fit" title="The list-price discount isn't below this item's typical selling price.">
     <ShieldAlert size={12} /> {v.label || 'Around usual price'}
   </span>
+}
+
+interface PostResult { platform: string; ok: boolean; url?: string; error?: string }
+
+// "Quick post" modal — fire a deal straight to the link-friendly socials with a
+// thumbnail, an auto-written price-safe caption (editable), and the user's
+// affiliate link. No IG/TikTok (no clickable caption link) or Pinterest.
+function QuickPostModal({ deal, onClose }: { deal: Deal; onClose: () => void }) {
+  const [selected, setSelected] = useState<Set<string>>(new Set(QUICK_PLATFORMS.map((p) => p.key)))
+  const [caption, setCaption] = useState('')
+  const [posting, setPosting] = useState(false)
+  const [results, setResults] = useState<PostResult[] | null>(null)
+
+  const toggle = (key: string) => setSelected((s) => {
+    const n = new Set(s); n.has(key) ? n.delete(key) : n.add(key); return n
+  })
+
+  const post = async () => {
+    if (selected.size === 0) { toast.error('Pick at least one platform.'); return }
+    setPosting(true); setResults(null)
+    try {
+      const res = await fetch('/api/deal-radar/social-post', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ asin: deal.asin, platforms: [...selected], caption: caption.trim() || undefined }),
+      })
+      const data = await res.json()
+      if (!res.ok && !Array.isArray(data.results)) { toast.error(data.error || 'Could not post.'); return }
+      setResults(data.results as PostResult[])
+      const okCount = (data.results as PostResult[]).filter((r) => r.ok).length
+      if (okCount > 0) toast.success(`Posted to ${okCount} platform${okCount > 1 ? 's' : ''}.`)
+      if (data.caption && !caption) setCaption(data.caption)
+    } catch {
+      toast.error('Could not post.')
+    } finally {
+      setPosting(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div className="bg-card rounded-xl border shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-4 border-b">
+          <div className="flex items-center gap-2 font-semibold"><Send size={16} /> Quick post to socials</div>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><CloseIcon size={18} /></button>
+        </div>
+
+        <div className="p-4 space-y-4">
+          <div className="flex gap-3">
+            {deal.imageUrl && <img src={deal.imageUrl} alt="" className="h-16 w-16 object-contain rounded border bg-white shrink-0" />}
+            <div className="text-sm font-medium line-clamp-3">{deal.title}</div>
+          </div>
+
+          <div>
+            <div className="text-xs font-semibold text-muted-foreground mb-1.5">Post to</div>
+            <div className="flex flex-wrap gap-2">
+              {QUICK_PLATFORMS.map((p) => (
+                <button key={p.key} onClick={() => toggle(p.key)}
+                  className={`text-sm rounded-lg border px-3 py-1.5 ${selected.has(p.key) ? 'bg-primary text-primary-foreground border-primary' : 'bg-background'}`}>
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <div className="text-xs font-semibold text-muted-foreground mb-1.5">Caption <span className="font-normal">(leave blank to auto-write)</span></div>
+            <textarea value={caption} onChange={(e) => setCaption(e.target.value)} rows={3}
+              placeholder="We'll write a price-safe caption for you, or type your own…"
+              className="w-full text-sm rounded-lg border bg-background p-2.5 resize-none" />
+            <p className="text-[11px] text-muted-foreground mt-1">Your affiliate link and an #ad disclosure are added automatically. We avoid quoting a specific price so the post stays accurate over time.</p>
+          </div>
+
+          {results && (
+            <div className="space-y-1.5">
+              {results.map((r) => (
+                <div key={r.platform} className="flex items-center gap-2 text-sm">
+                  {r.ok ? <Check size={15} className="text-emerald-600" /> : <AlertCircle size={15} className="text-red-600" />}
+                  <span className="capitalize font-medium">{QUICK_PLATFORMS.find((p) => p.key === r.platform)?.label || r.platform}</span>
+                  {r.ok
+                    ? (r.url ? <a href={r.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-xs">view</a> : <span className="text-xs text-muted-foreground">posted</span>)
+                    : <span className="text-xs text-red-600">{r.error}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-end gap-2 p-4 border-t">
+          <Button variant="outline" size="sm" onClick={onClose}>Close</Button>
+          <Button size="sm" onClick={post} disabled={posting || selected.size === 0}>
+            {posting ? <><Loader2 size={14} className="mr-1.5 animate-spin" /> Posting…</> : <><Send size={14} className="mr-1.5" /> Post now</>}
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
 }
