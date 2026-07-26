@@ -15,7 +15,7 @@ import { toast } from 'sonner'
 import {
   Radar, Search, Loader2, Star, Zap, BadgePercent, ExternalLink,
   ArrowRight, Sparkles, TrendingUp, RefreshCw, ShieldCheck, ShieldAlert,
-  Send, Check, AlertCircle, X as CloseIcon,
+  Send, Check, AlertCircle, X as CloseIcon, HelpCircle,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
@@ -121,6 +121,7 @@ export default function DealRadarPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [quickPostDeal, setQuickPostDeal] = useState<Deal | null>(null)
+  const [showHelp, setShowHelp] = useState(true)
 
   const isPro = tier === 'pro' || tier === 'admin'
   const labsOk = dealRadarEnabled() || tier === 'admin'
@@ -157,6 +158,12 @@ export default function DealRadarPage() {
     debounce.current = setTimeout(() => { void load() }, 300)
     return () => { if (debounce.current) clearTimeout(debounce.current) }
   }, [canView, load])
+
+  // "How it works" panel stays until the user dismisses it (remembered).
+  useEffect(() => {
+    try { if (localStorage.getItem('deal_radar_help') === 'off') setShowHelp(false) } catch { /* no-op */ }
+  }, [])
+  const dismissHelp = () => { setShowHelp(false); try { localStorage.setItem('deal_radar_help', 'off') } catch { /* no-op */ } }
 
   // ── Gating ─────────────────────────────────────────────────────────────────
   if (tier === null) {
@@ -207,10 +214,20 @@ export default function DealRadarPage() {
           </div>
           <p className="text-sm text-muted-foreground mt-1">Live Amazon deals in your niche. Turn any one into a blog post, then push it to social.</p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
-          <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          {!showHelp && (
+            <button onClick={() => setShowHelp(true)} className="text-xs text-muted-foreground underline inline-flex items-center gap-1">
+              <HelpCircle size={13} /> How it works
+            </button>
+          )}
+          <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
+            <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
+          </Button>
+        </div>
       </div>
+
+      {/* How it works */}
+      {showHelp && <HowItWorks onDismiss={dismissHelp} />}
 
       {/* Double-win ticker */}
       {ticker.length > 0 && (
@@ -290,11 +307,7 @@ export default function DealRadarPage() {
       ) : error ? (
         <div className="text-center py-16 text-sm text-muted-foreground">{error}</div>
       ) : deals.length === 0 ? (
-        <div className="text-center py-16">
-          <p className="text-sm text-muted-foreground">
-            {hasFilters ? 'No deals match those filters yet. Try widening them.' : 'No live deals cached yet — the radar refreshes every few hours. Check back shortly.'}
-          </p>
-        </div>
+        <EmptyState hasFilters={!!hasFilters} isAdmin={tier === 'admin'} onClear={clearFilters} onRefresh={() => void load()} />
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
           {deals.map((d) => <DealCard key={d.asin} deal={d} onQuickPost={setQuickPostDeal} />)}
@@ -484,6 +497,65 @@ function QuickPostModal({ deal, onClose }: { deal: Deal; onClose: () => void }) 
           </Button>
         </div>
       </div>
+    </div>
+  )
+}
+
+// Always-available explainer so the page teaches even before deals load, and
+// stays a handy reference once they do. Dismissible (remembered per browser).
+function HowItWorks({ onDismiss }: { onDismiss: () => void }) {
+  const steps = [
+    { icon: <Search size={16} />, title: 'Browse live deals', body: 'Filter by niche, discount, and rating — or search for anything.' },
+    { icon: <ShieldCheck size={16} />, title: 'Trust the badge', body: 'We check each deal’s price history. Green = a genuine low. Amber = a fake discount to skip.' },
+    { icon: <TrendingUp size={16} />, title: 'Catch double wins', body: 'The green strip up top = on sale AND paying you an elevated commission.' },
+    { icon: <Send size={16} />, title: 'Publish in one move', body: 'Make a blog post for SEO, or Quick post straight to your socials. Your affiliate link is attached for you.' },
+  ]
+  return (
+    <div className="relative rounded-xl border bg-card p-4">
+      <button onClick={onDismiss} className="absolute top-3 right-3 text-muted-foreground hover:text-foreground" title="Hide guide"><CloseIcon size={16} /></button>
+      <div className="text-sm font-semibold mb-3">How Deal Radar works</div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        {steps.map((s, i) => (
+          <div key={i} className="flex gap-2.5">
+            <div className="shrink-0 inline-flex h-8 w-8 items-center justify-center rounded-lg bg-muted">{s.icon}</div>
+            <div>
+              <div className="text-xs font-semibold">{i + 1}. {s.title}</div>
+              <div className="text-xs text-muted-foreground leading-snug mt-0.5">{s.body}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 pt-3 border-t flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+        <span className="font-semibold text-foreground">Badges:</span>
+        <span className="inline-flex items-center gap-1"><ShieldCheck size={12} className="text-emerald-700" /> All-time low / real discount</span>
+        <span className="inline-flex items-center gap-1"><ShieldAlert size={12} className="text-amber-600" /> Around usual price — likely fake</span>
+        <span className="inline-flex items-center gap-1"><Sparkles size={12} className="text-emerald-700" /> Pays a Creator Connections bounty</span>
+      </div>
+    </div>
+  )
+}
+
+// Rich empty state — teaches instead of just saying "nothing here".
+function EmptyState({ hasFilters, isAdmin, onClear, onRefresh }: { hasFilters: boolean; isAdmin: boolean; onClear: () => void; onRefresh: () => void }) {
+  if (hasFilters) {
+    return (
+      <div className="text-center py-16">
+        <p className="text-sm text-muted-foreground mb-3">No deals match those filters yet. Try widening them.</p>
+        <Button variant="outline" size="sm" onClick={onClear}>Clear filters</Button>
+      </div>
+    )
+  }
+  return (
+    <div className="max-w-md mx-auto text-center py-16">
+      <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-orange-100 text-orange-600 mb-4"><Radar size={28} /></div>
+      <h2 className="text-lg font-semibold mb-2">Your radar is warming up</h2>
+      <p className="text-sm text-muted-foreground mb-4">
+        Live Amazon deals in your niche will land here, refreshed every few hours. Once they do, you&apos;ll see which discounts are genuinely the lowest price, which ones pay you a bounty, and you can turn any deal into a blog post or a social post in one click.
+      </p>
+      {isAdmin && (
+        <p className="text-xs text-muted-foreground mb-4">Admin: deals populate once the Amazon data feed is connected and the refresh has run.</p>
+      )}
+      <Button variant="outline" size="sm" onClick={onRefresh}><RefreshCw className="h-4 w-4 mr-1.5" /> Check now</Button>
     </div>
   )
 }
