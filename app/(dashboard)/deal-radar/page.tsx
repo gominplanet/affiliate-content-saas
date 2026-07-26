@@ -5,8 +5,9 @@
 // Always-on live Amazon deals (Keepa-backed, cached server-side) with search +
 // filters, plus a "double-win" ticker of deals that ALSO carry a Creator
 // Connections bounty. Every product link is tagged with the creator's own
-// Amazon Associates tag. "Make blog post" hands the ASIN to the Deals Hub
-// generator (blog first, social pushes derive from it).
+// Amazon Associates tag. "Make blog post" generates directly through the deal
+// article engine (POST /api/deals) — Deal Radar is always-on and independent of
+// the seasonal Deals Hub page. "Quick post" fires straight to socials.
 
 'use client'
 
@@ -320,9 +321,25 @@ export default function DealRadarPage() {
 }
 
 function DealCard({ deal: d, onQuickPost }: { deal: Deal; onQuickPost: (d: Deal) => void }) {
-  const makePost = () => {
-    // Blog first — hand the ASIN to the Deals Hub generator (deep link).
-    window.location.href = `/deals?asin=${encodeURIComponent(d.asin)}&from=deal-radar`
+  // Generate the deal blog post DIRECTLY through the generation engine
+  // (POST /api/deals). Deal Radar is always-on and independent of the seasonal
+  // Deals Hub page — the pause there is a UI gate only, the engine isn't paused.
+  // occasion:'auto' → a "low price alert" article year-round when no event.
+  const [gen, setGen] = useState<'idle' | 'working' | 'done'>('idle')
+  const [postUrl, setPostUrl] = useState<string | null>(null)
+  const makePost = async () => {
+    if (gen === 'working') return
+    setGen('working')
+    try {
+      const res = await fetch('/api/deals', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ asin: d.asin, occasion: 'auto' }),
+      })
+      const data = await res.json()
+      if (!res.ok) { toast.error(data.error || 'Could not create the post.'); setGen('idle'); return }
+      setPostUrl(data.url || null); setGen('done')
+      toast.success('Deal post published.')
+    } catch { toast.error('Could not create the post.'); setGen('idle') }
   }
   return (
     <div className="rounded-xl border bg-card overflow-hidden flex flex-col">
@@ -361,9 +378,18 @@ function DealCard({ deal: d, onQuickPost }: { deal: Deal; onQuickPost: (d: Deal)
         )}
         <div className="mt-auto pt-2 space-y-1.5">
           <div className="flex items-center gap-2">
-            <Button size="sm" className="flex-1" onClick={makePost}>
-              Make blog post <ArrowRight size={14} className="ml-1" />
-            </Button>
+            {gen === 'done' && postUrl ? (
+              <a href={postUrl} target="_blank" rel="noopener noreferrer"
+                 className="flex-1 inline-flex items-center justify-center gap-1 text-xs font-medium rounded-md bg-emerald-600 text-white py-2">
+                <Check size={14} /> View post
+              </a>
+            ) : (
+              <Button size="sm" className="flex-1" onClick={makePost} disabled={gen === 'working'}>
+                {gen === 'working'
+                  ? <><Loader2 size={14} className="mr-1 animate-spin" /> Writing…</>
+                  : <>Make blog post <ArrowRight size={14} className="ml-1" /></>}
+              </Button>
+            )}
             <a href={d.amazonUrl} target="_blank" rel="noopener noreferrer"
                className="inline-flex items-center justify-center h-8 w-8 rounded-md border hover:bg-accent" title="View on Amazon">
               <ExternalLink size={14} />
