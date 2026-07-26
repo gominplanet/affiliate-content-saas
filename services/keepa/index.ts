@@ -222,3 +222,121 @@ function keepaMinutesToIso(keepaMinutes: unknown): string | null {
   const year = new Date(unixMs).getUTCFullYear()
   return year >= 2020 && year <= 2100 ? iso : null
 }
+
+// ── Price-history verification (the "is this a REAL deal?" layer) ─────────────
+//
+// Keepa's edge over a raw deals page: the full price history. We pull the
+// computed stats for a product (1 token) and judge whether the "discount" is
+// genuine (below its typical price / near an all-time low) or fake (a % off an
+// inflated list price). This is what makes a deal badge trustworthy — and the
+// same facts get baked into the generated post, honestly.
+
+/** How good a deal actually is, judged against its own price history. */
+export type DealQuality = 'excellent' | 'genuine' | 'fair' | 'weak'
+
+export interface DealAssessment {
+  currentCents: number | null
+  /** Typical recent price (90-day average). */
+  avg90Cents: number | null
+  /** All-time low Keepa has ever recorded. */
+  allTimeLowCents: number | null
+  /** How far below the 90-day average the current price sits (0–99), or null. */
+  pctBelowAvg90: number | null
+  quality: DealQuality | null
+  /** Short human badge, e.g. "All-time low" / "32% below its usual price". */
+  label: string | null
+}
+
+/**
+ * Fetch a product's computed price stats from Keepa and assess the deal.
+ * ~1 token. Returns an all-null assessment on unconfigured key or any failure
+ * (never throws) so the caller just skips verification for that ASIN.
+ */
+export async function fetchKeepaProductStats(asin: string, domainId = KEEPA_DOMAIN_US): Promise<DealAssessment> {
+  const empty: DealAssessment = { currentCents: null, avg90Cents: null, allTimeLowCents: null, pctBelowAvg90: null, quality: null, label: null }
+  const key = process.env.KEEPA_API_KEY
+  if (!key || !/^[A-Za-z0-9]{10}$/.test(asin)) return empty
+  // stats=180 → Keepa computes avg30/90/180 + all-time min/max server-side.
+  // history=0 keeps the response light (we only need the stats block).
+  const url = `${KEEPA_BASE}/product?key=${encodeURIComponent(key)}&domain=${domainId}&asin=${asin}&stats=180&history=0`
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(30_000) })
+    if (!res.ok) return empty
+    const data = await res.json() as { products?: unknown[] }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stats = (Array.isArray(data.products) ? (data.products[0] as any)?.stats : null)
+    if (!stats) return empty
+    return assessFromStats(stats)
+  } catch {
+    return empty
+  }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function assessFromStats(stats: any): DealAssessment {
+  const currentCents = statPrice(stats.current)
+  const avg90Cents = statPrice(stats.avg90) ?? statPrice(stats.avg30) ?? statPrice(stats.avg)
+  const allTimeLowCents = statMinPrice(stats.min)
+
+  let pctBelowAvg90: number | null = null
+  if (currentCents != null && avg90Cents != null && avg90Cents > 0 && currentCents < avg90Cents) {
+    pctBelowAvg90 = Math.min(99, Math.max(0, Math.round(((avg90Cents - currentCents) / avg90Cents) * 100)))
+  }
+
+  const nearAllTimeLow = currentCents != null && allTimeLowCents != null && allTimeLowCents > 0
+    && currentCents <= allTimeLowCents * 1.02
+
+  let quality: DealQuality | null = null
+  let label: string | null = null
+  if (currentCents != null && (avg90Cents != null || allTimeLowCents != null)) {
+    if (nearAllTimeLow) { quality = 'excellent'; label = 'All-time low' }
+    else if ((pctBelowAvg90 ?? 0) >= 15) { quality = 'genuine'; label = `${pctBelowAvg90}% below its usual price` }
+    else if ((pctBelowAvg90 ?? 0) >= 5) { quality = 'fair'; label = 'Below its usual price' }
+    else { quality = 'weak'; label = 'Around its usual price' }
+  }
+
+  return { currentCents, avg90Cents, allTimeLowCents, pctBelowAvg90, quality, label }
+}
+
+/** A Keepa stats price field is an int[] indexed by price type; -1 = none. */
+function statPrice(arr: unknown): number | null {
+  if (!Array.isArray(arr)) return null
+  const a = arr[PRICE_TYPE_AMAZON]
+  if (Number.isFinite(a) && (a as number) >= 0) return a as number
+  const n = arr[PRICE_TYPE_NEW]
+  if (Number.isFinite(n) && (n as number) >= 0) return n as number
+  return null
+}
+
+/** stats.min is per-type [keepaTime, priceCents]; pull the Amazon/New price. */
+function statMinPrice(min: unknown): number | null {
+  if (!Array.isArray(min)) return null
+  for (const type of [PRICE_TYPE_AMAZON, PRICE_TYPE_NEW]) {
+    const entry = min[type]
+    if (Array.isArray(entry) && Number.isFinite(entry[1]) && (entry[1] as number) >= 0) return entry[1] as number
+  }
+  return null
+}
+
+/**
+ * Turn an assessment into ONE factual, FTC-honest sentence for the generated
+ * deal post — only claims the data supports. Empty string when we have nothing
+ * to say (so the caller can drop it cleanly).
+ */
+export function buildPriceContext(a: DealAssessment): string {
+  const usd = (c: number | null) => (c == null ? null : `$${(c / 100).toFixed(2)}`)
+  const now = usd(a.currentCents)
+  const typical = usd(a.avg90Cents)
+  if (a.quality === 'excellent' && now) {
+    return typical
+      ? `At ${now}, this is the lowest price we've seen — it typically sells for around ${typical}.`
+      : `At ${now}, this is the lowest price we've seen on this item.`
+  }
+  if (a.quality === 'genuine' && now && typical && a.pctBelowAvg90 != null) {
+    return `At ${now}, it's about ${a.pctBelowAvg90}% below its usual ${typical}.`
+  }
+  if (a.quality === 'fair' && now && typical) {
+    return `At ${now}, it's running a little under its usual ${typical}.`
+  }
+  return ''
+}

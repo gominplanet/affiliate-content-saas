@@ -41,6 +41,7 @@ import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { extractAsin, fetchAmazonProduct, isValidAsin, type AmazonProduct } from '@/services/amazon'
+import { fetchKeepaProductStats, buildPriceContext } from '@/services/keepa'
 import { resolveFinalUrl } from '@/lib/product-link'
 import { composeWithNanoBanana, composeWithNanoBananaPro, rehostToFal } from '@/lib/thumbnail-generators'
 import { recordUsage } from '@/lib/ai-usage'
@@ -543,8 +544,15 @@ export async function POST(req: Request) {
   const reviewerName = await resolveReviewerName(supabase, user.id)
   const year = new Date().getUTCFullYear()
 
+  // Real price-history grounding (Keepa) — turns the post from generic hype into
+  // an honest "lowest price we've seen / X% below its usual" claim. Best-effort:
+  // empty string when Keepa is unconfigured or has no usable history, and the
+  // writer prompt drops the line cleanly. No-op cost without KEEPA_API_KEY.
+  const priceHistory = buildPriceContext(await fetchKeepaProductStats(asin))
+
   const writerPrompt = buildDealWriterPrompt({
     product,
+    priceHistory,
     occasion: occasion.slug,
     occasionLong: occasion.longLabel,
     occasionHype: occasion.hypePhrase,
@@ -947,6 +955,9 @@ interface DealWriterPromptInput {
   promoCode: string
   promoUrl: string
   year: number
+  /** One factual price-history sentence from Keepa (e.g. "the lowest price we've
+   *  seen; typically $X"). Empty when unavailable — the prompt omits the line. */
+  priceHistory?: string | null
   /** Reserved for future "this deal opens in X" hook framing when WP
    *  publishes well ahead of the deal start. Currently null because
    *  every scheduled post lands AT the deal start (WP's `status=future`
@@ -1005,7 +1016,7 @@ DEAL ENVELOPE
 - ${endLine}
 - ${occasionLine}
 - Badge text on thumbnail: ${p.badgeLabel} (don't put this exact string in the body, the thumbnail handles it)
-- ${promoLine}${renewedDisclosure}
+- ${promoLine}${p.priceHistory ? `\n- VERIFIED PRICE HISTORY (from real Keepa data — state this as fact, it's your credibility edge): ${p.priceHistory} Work this naturally into "The deal at a glance". Do NOT exaggerate beyond it.` : ''}${renewedDisclosure}
 
 ${DEAL_VOICE_RULES}
 

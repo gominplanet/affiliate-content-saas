@@ -13,7 +13,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Radar, Search, Loader2, Star, Zap, BadgePercent, ExternalLink,
-  ArrowRight, Sparkles, TrendingUp, RefreshCw,
+  ArrowRight, Sparkles, TrendingUp, RefreshCw, ShieldCheck, ShieldAlert,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
@@ -23,6 +23,7 @@ import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
 import { dealRadarEnabled } from '@/lib/feature-flags'
 
 interface DealCampaign { commissionPct: number; brand: string | null; detailsUrl: string | null }
+interface DealVerdict { quality: string; label: string | null; typical: number | null; allTimeLow: number | null }
 interface Deal {
   asin: string
   title: string
@@ -38,6 +39,7 @@ interface Deal {
   lightningEndsAt: string | null
   amazonUrl: string
   campaign: DealCampaign | null
+  verdict: DealVerdict | null
 }
 
 // Category filter options — mirror the cron's swept browse nodes.
@@ -98,6 +100,7 @@ export default function DealRadarPage() {
   const [minDiscount, setMinDiscount] = useState<number>(0)
   const [minRating, setMinRating] = useState<number>(0)
   const [hasCampaign, setHasCampaign] = useState(false)
+  const [realOnly, setRealOnly] = useState(false)
   const [sort, setSort] = useState('discount')
 
   const [deals, setDeals] = useState<Deal[]>([])
@@ -118,6 +121,7 @@ export default function DealRadarPage() {
       if (minDiscount > 0) params.set('minDiscount', String(minDiscount))
       if (minRating > 0) params.set('minRating', String(minRating))
       if (hasCampaign) params.set('hasCampaign', '1')
+      if (realOnly) params.set('real', '1')
       params.set('sort', sort)
       const res = await fetch(`/api/deal-radar?${params.toString()}`)
       const data = await res.json()
@@ -129,7 +133,7 @@ export default function DealRadarPage() {
     } finally {
       setLoading(false)
     }
-  }, [q, category, minDiscount, minRating, hasCampaign, sort])
+  }, [q, category, minDiscount, minRating, hasCampaign, realOnly, sort])
 
   // Debounced fetch on filter change (only once we know the user can view).
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -174,8 +178,8 @@ export default function DealRadarPage() {
     )
   }
 
-  const hasFilters = q.trim() || category !== '' || minDiscount > 0 || minRating > 0 || hasCampaign
-  const clearFilters = () => { setQ(''); setCategory(''); setMinDiscount(0); setMinRating(0); setHasCampaign(false); setSort('discount') }
+  const hasFilters = q.trim() || category !== '' || minDiscount > 0 || minRating > 0 || hasCampaign || realOnly
+  const clearFilters = () => { setQ(''); setCategory(''); setMinDiscount(0); setMinRating(0); setHasCampaign(false); setRealOnly(false); setSort('discount') }
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
@@ -247,6 +251,13 @@ export default function DealRadarPage() {
           <option value={4.5}>4.5★+</option>
         </select>
         <button
+          onClick={() => setRealOnly((v) => !v)}
+          title="Only deals whose price history confirms a genuine discount"
+          className={`text-sm rounded-lg border px-2.5 py-2 inline-flex items-center gap-1.5 ${realOnly ? 'bg-blue-600 text-white border-blue-600' : 'bg-background'}`}
+        >
+          <ShieldCheck size={14} /> Real deals
+        </button>
+        <button
           onClick={() => setHasCampaign((v) => !v)}
           className={`text-sm rounded-lg border px-2.5 py-2 inline-flex items-center gap-1.5 ${hasCampaign ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-background'}`}
         >
@@ -312,6 +323,7 @@ function DealCard({ deal: d }: { deal: Deal }) {
             {d.reviewCount != null && <span>({d.reviewCount.toLocaleString()})</span>}
           </div>
         )}
+        {d.verdict && <VerdictBadge verdict={d.verdict} />}
         {d.campaign && (
           <a href={d.campaign.detailsUrl || '#'} target="_blank" rel="noopener noreferrer"
              className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:underline">
@@ -330,4 +342,28 @@ function DealCard({ deal: d }: { deal: Deal }) {
       </div>
     </div>
   )
+}
+
+// Price-history verdict badge. Genuine discounts read confident (green/blue);
+// a "weak" verdict shows a muted caution so a creator can skip a fake discount.
+function VerdictBadge({ verdict: v }: { verdict: DealVerdict }) {
+  if (v.quality === 'excellent') {
+    return <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 bg-emerald-50 rounded px-1.5 py-0.5 w-fit">
+      <ShieldCheck size={12} /> {v.label || 'All-time low'}
+    </span>
+  }
+  if (v.quality === 'genuine') {
+    return <span className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700 bg-blue-50 rounded px-1.5 py-0.5 w-fit">
+      <ShieldCheck size={12} /> {v.label || 'Real discount'}
+    </span>
+  }
+  if (v.quality === 'fair') {
+    return <span className="inline-flex items-center gap-1 text-xs text-slate-600 w-fit">
+      <ShieldCheck size={12} /> {v.label || 'Below usual'}
+    </span>
+  }
+  // weak — the "discount" isn't really below the usual price.
+  return <span className="inline-flex items-center gap-1 text-xs text-amber-600 w-fit" title="The list-price discount isn't below this item's typical selling price.">
+    <ShieldAlert size={12} /> {v.label || 'Around usual price'}
+  </span>
 }
