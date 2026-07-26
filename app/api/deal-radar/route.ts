@@ -40,6 +40,10 @@ interface DealRow {
   campaign_commission_pct: number | null
   campaign_brand: string | null
   campaign_details_url: string | null
+  price_avg90_cents: number | null
+  price_low_cents: number | null
+  deal_quality: string | null
+  lowest_label: string | null
 }
 
 export async function GET(request: Request) {
@@ -77,6 +81,10 @@ export async function GET(request: Request) {
     const minRating = floatParam(url, 'minRating')
     const minCommission = floatParam(url, 'minCommission')
     const hasCampaign = url.searchParams.get('hasCampaign') === '1' || minCommission != null
+    // "Real deals only": price history confirms a genuine discount (near an
+    // all-time low or meaningfully below the typical price), filtering out fake
+    // % off an inflated list price.
+    const realOnly = url.searchParams.get('real') === '1'
     const sort = (url.searchParams.get('sort') || 'discount') as SortKey
     const page = Math.max(0, intParam(url, 'page') ?? 0)
 
@@ -92,6 +100,7 @@ export async function GET(request: Request) {
       if (minRating != null) query = query.gte('rating', minRating)
       if (hasCampaign) query = query.not('campaign_commission_pct', 'is', null)
       if (minCommission != null) query = query.gte('campaign_commission_pct', minCommission)
+      if (realOnly) query = query.in('deal_quality', ['excellent', 'genuine'])
       return applySort(query, sort)
     }
 
@@ -162,6 +171,12 @@ function toClient(r: DealRow, amazonTag: string) {
       commissionPct: Number(r.campaign_commission_pct),
       brand: r.campaign_brand,
       detailsUrl: r.campaign_details_url,
+    } : null,
+    verdict: r.deal_quality ? {
+      quality: r.deal_quality,          // excellent | genuine | fair | weak
+      label: r.lowest_label,            // "All-time low" / "32% below its usual price"
+      typical: centsToNum(r.price_avg90_cents),
+      allTimeLow: centsToNum(r.price_low_cents),
     } : null,
   }
 }

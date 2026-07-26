@@ -17,7 +17,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { fetchKeepaDeals, keepaConfigured, type KeepaDeal } from '@/services/keepa'
+import { fetchKeepaDeals, fetchKeepaProductStats, keepaConfigured, type KeepaDeal } from '@/services/keepa'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -140,7 +140,13 @@ export async function GET(req: Request) {
     if (!error) upserted += chunk.length
   }
 
-  // 4. Purge deals that fell out of the feed (not re-seen in STALE_HOURS).
+  // 4. Verify a paced batch against price history (the "real deal?" layer).
+  //    Keepa's 20-tokens/min rate is the limiter, so we cap the batch and stop
+  //    on low tokens / near the time budget; coverage grows across runs. Does
+  //    NOT touch the campaign_* columns (Creator Connections match from step 2).
+  const verified = await enrichPriceHistory(admin, lastTokensLeft)
+
+  // 5. Purge deals that fell out of the feed (not re-seen in STALE_HOURS).
   const staleBefore = new Date(Date.now() - STALE_HOURS * 3600_000).toISOString()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await (admin as any).from('deal_radar_cache').delete().lt('refreshed_at', staleBefore)
@@ -150,9 +156,61 @@ export async function GET(req: Request) {
     fetched: deals.length,
     upserted,
     withCampaign: [...ccByAsin.keys()].length,
+    verified,
     stoppedForTokens,
     tokensLeft: lastTokensLeft,
   })
+}
+
+/** Max deals to price-verify per run (env-tunable). Kept modest so one run
+ *  stays within the token rate + function timeout; the rest catch up next run. */
+const ENRICH_MAX = Math.max(0, Number(process.env.DEAL_RADAR_ENRICH_MAX) || 120)
+/** Re-verify a deal's price history at most this often. */
+const VERIFY_TTL_HOURS = 24
+
+/**
+ * Enrich the biggest-discount, not-recently-verified deals with Keepa price
+ * stats and store the verdict (quality + all-time low + "% below usual" label).
+ * Best-effort + paced: bounded by ENRICH_MAX, the token balance, and a wall
+ * deadline under maxDuration. Returns how many rows it verified.
+ */
+async function enrichPriceHistory(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  admin: any,
+  tokensLeft: number | null,
+): Promise<number> {
+  if (ENRICH_MAX === 0) return 0
+  const deadline = Date.now() + 210_000 // stay well under maxDuration (300s)
+  const staleBefore = new Date(Date.now() - VERIFY_TTL_HOURS * 3600_000).toISOString()
+  let budget = tokensLeft // null = unknown; rely on deadline + ENRICH_MAX
+
+  // Never verified, or verified > TTL ago. Biggest discounts first (most worth
+  // a badge). PostgREST `.or` with a nested lt on the timestamp.
+  const { data } = await admin
+    .from('deal_radar_cache')
+    .select('asin')
+    .or(`price_verified_at.is.null,price_verified_at.lt.${staleBefore}`)
+    .order('discount_pct', { ascending: false, nullsFirst: false })
+    .limit(ENRICH_MAX)
+
+  let done = 0
+  for (const row of (data ?? []) as Array<{ asin: string }>) {
+    if (Date.now() > deadline) break
+    if (budget != null && budget < MIN_TOKENS_TO_CONTINUE) break
+    const a = await fetchKeepaProductStats(row.asin)
+    // Stamp price_verified_at even on a null assessment so we don't re-hammer a
+    // product with no usable history every single run.
+    await admin.from('deal_radar_cache').update({
+      price_avg90_cents: a.avg90Cents,
+      price_low_cents: a.allTimeLowCents,
+      deal_quality: a.quality,
+      lowest_label: a.label,
+      price_verified_at: new Date().toISOString(),
+    }).eq('asin', row.asin)
+    if (budget != null) budget -= 1 // a product-stats call is ~1 token
+    done++
+  }
+  return done
 }
 
 interface CcMatch { campaignId: string; commissionPct: number; brand: string | null; detailsUrl: string | null }
