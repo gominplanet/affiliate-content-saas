@@ -434,9 +434,6 @@ export default function DashboardShellV2({
         // opened to ALL PAID tiers (canUseFinders = tier !== 'trial'), 2026-07-08.
         { href: '/ltk', icon: <Sparkles size={15} />, label: 'MVP x LTK', gate: canUseFinders },
         { href: '/deals', icon: <BadgePercent size={15} />, label: 'Deals Hub', gate: showDeals, badge: DEALS_HUB_PAUSED ? 'Paused' : undefined },
-        // Amazon Deal Radar (Keepa) — Labs while testing: admin-only until
-        // NEXT_PUBLIC_DEAL_RADAR_ENABLED flips it on for all Pro users.
-        { href: '/deal-radar', icon: <Radar size={15} />, label: 'Deal Radar', gate: isAdmin || (dealRadarEnabled() && canSeeNav('dealRadar', tier as Tier)), badge: 'Labs' },
         { href: '/script', icon: <PenLine size={15} />, label: 'Scriptwriter' },
         { href: '/newsletter', icon: <Mail size={15} />, label: 'Newsletter' },
         // Shop Burner — sidelined 2026-07-25: Clip Factory now covers the
@@ -536,6 +533,10 @@ export default function DashboardShellV2({
         // all Pro users (the APIs + page are already Pro-gated, capped at 50
         // finished Shorts/month).
         { href: '/clip-factory', icon: <Rocket size={15} />, label: 'Clip Factory', gate: isAdmin },
+        // Amazon Deal Radar — Keepa live-deals discovery + Creator Connections
+        // cross-check. Admin-only while tested; flip NEXT_PUBLIC_DEAL_RADAR_ENABLED
+        // to graduate it to all Pro users (the API + page are already Pro-gated).
+        { href: '/deal-radar', icon: <Radar size={15} />, label: 'Deal Radar', gate: isAdmin || (dealRadarEnabled() && canSeeNav('dealRadar', tier as Tier)) },
       ],
     },
     {
