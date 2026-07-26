@@ -546,16 +546,89 @@ function EmptyState({ hasFilters, isAdmin, onClear, onRefresh }: { hasFilters: b
     )
   }
   return (
-    <div className="max-w-md mx-auto text-center py-16">
-      <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-orange-100 text-orange-600 mb-4"><Radar size={28} /></div>
-      <h2 className="text-lg font-semibold mb-2">Your radar is warming up</h2>
-      <p className="text-sm text-muted-foreground mb-4">
-        Live Amazon deals in your niche will land here, refreshed every few hours. Once they do, you&apos;ll see which discounts are genuinely the lowest price, which ones pay you a bounty, and you can turn any deal into a blog post or a social post in one click.
-      </p>
-      {isAdmin && (
-        <p className="text-xs text-muted-foreground mb-4">Admin: deals populate once the Amazon data feed is connected and the refresh has run.</p>
-      )}
-      <Button variant="outline" size="sm" onClick={onRefresh}><RefreshCw className="h-4 w-4 mr-1.5" /> Check now</Button>
+    <div className="py-12">
+      <div className="max-w-md mx-auto text-center">
+        <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-orange-100 text-orange-600 mb-4"><Radar size={28} /></div>
+        <h2 className="text-lg font-semibold mb-2">Your radar is warming up</h2>
+        <p className="text-sm text-muted-foreground mb-4">
+          Live Amazon deals in your niche will land here, refreshed every few hours. Once they do, you&apos;ll see which discounts are genuinely the lowest price, which ones pay you a bounty, and you can turn any deal into a blog post or a social post in one click.
+        </p>
+        {isAdmin && (
+          <p className="text-xs text-muted-foreground mb-4">Admin: deals populate once the Amazon data feed is connected and the refresh has run.</p>
+        )}
+        <Button variant="outline" size="sm" onClick={onRefresh}><RefreshCw className="h-4 w-4 mr-1.5" /> Check now</Button>
+      </div>
+
+      {/* Non-interactive preview so the page shows what real deals look like. */}
+      <div className="mt-10">
+        <div className="text-center text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">
+          Example — this is what your deals will look like
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 max-w-3xl mx-auto pointer-events-none select-none opacity-90">
+          {SAMPLE_DEALS.map((s, i) => <SampleCard key={i} s={s} />)}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Static sample deals for the empty-state preview. Clearly labeled "Example"
+// and rendered inside a pointer-events-none wrapper, so nothing here is
+// clickable or postable — it exists purely to show the card layout + badges.
+interface SampleDeal {
+  title: string; brand: string; priceNow: string; priceWas: string; discountPct: number
+  rating: string; reviews: string; verdict: DealVerdict; commissionPct?: number
+}
+const SAMPLE_DEALS: SampleDeal[] = [
+  {
+    title: 'Ninja AF101 Air Fryer, 4 Qt', brand: 'Ninja', priceNow: '59.99', priceWas: '89.99',
+    discountPct: 33, rating: '4.7', reviews: '112,430',
+    verdict: { quality: 'excellent', label: 'All-time low', typical: 84.99, allTimeLow: 59.99 },
+    commissionPct: 8,
+  },
+  {
+    title: 'Orthopedic Dog Bed, Large, Washable', brand: 'Bedsure', priceNow: '34.99', priceWas: '49.99',
+    discountPct: 30, rating: '4.6', reviews: '48,207',
+    verdict: { quality: 'genuine', label: '30% below its usual price', typical: 49.99, allTimeLow: 32.99 },
+  },
+]
+
+function SampleCard({ s }: { s: SampleDeal }) {
+  return (
+    <div className="rounded-xl border bg-card overflow-hidden flex flex-col">
+      <div className="relative bg-white aspect-square p-3 flex items-center justify-center">
+        <BadgePercent size={40} className="text-muted-foreground/40" />
+        <span className="absolute top-2 left-2 text-xs font-bold bg-red-600 text-white rounded px-1.5 py-0.5">-{s.discountPct}%</span>
+        <span className="absolute top-2 right-2 text-[10px] font-bold bg-slate-900/70 text-white rounded px-1.5 py-0.5">Example</span>
+      </div>
+      <div className="p-3 flex flex-col gap-1.5 flex-1">
+        <div className="text-sm font-medium line-clamp-2 leading-snug min-h-[2.5rem]">{s.title}</div>
+        <div className="text-xs text-muted-foreground">{s.brand}</div>
+        <div className="flex items-center gap-2">
+          <span className="text-base font-bold">${s.priceNow}</span>
+          <span className="text-xs text-muted-foreground line-through">${s.priceWas}</span>
+        </div>
+        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+          <Star size={12} className="fill-amber-400 text-amber-400" /> {s.rating} <span>({s.reviews})</span>
+        </div>
+        <VerdictBadge verdict={s.verdict} />
+        {s.commissionPct != null && (
+          <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 w-fit">
+            <Sparkles size={12} /> +{s.commissionPct}% Creator Connections
+          </span>
+        )}
+        <div className="mt-auto pt-2 space-y-1.5">
+          <div className="flex items-center gap-2">
+            <span className="flex-1 inline-flex items-center justify-center gap-1 text-xs font-medium rounded-md bg-primary/60 text-primary-foreground py-1.5">
+              Make blog post <ArrowRight size={13} />
+            </span>
+            <span className="inline-flex items-center justify-center h-8 w-8 rounded-md border text-muted-foreground"><ExternalLink size={14} /></span>
+          </div>
+          <span className="w-full inline-flex items-center justify-center gap-1.5 text-xs rounded-md border py-1.5 text-muted-foreground">
+            <Send size={13} /> Quick post to socials
+          </span>
+        </div>
+      </div>
     </div>
   )
 }
