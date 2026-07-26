@@ -202,6 +202,16 @@ export default function DealsHubPage() {
     return () => { cancelled = true; window.removeEventListener(VIEW_AS_EVENT, apply) }
   }, [])
 
+  // ── Deal Radar hand-off ──────────────────────────────────────────────────
+  // Amazon Deal Radar's "Make blog post" deep-links here with ?asin=… so the
+  // creator lands with the product prefilled, ready to generate.
+  useEffect(() => {
+    try {
+      const asin = new URLSearchParams(window.location.search).get('asin')
+      if (asin && /^[A-Za-z0-9]{10}$/.test(asin)) setInput(asin.toUpperCase())
+    } catch { /* no-op */ }
+  }, [])
+
   // ── Load mode from localStorage on mount + seed the schedule field's min ─
   useEffect(() => {
     try {

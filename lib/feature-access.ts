@@ -78,6 +78,12 @@ export const NAV_ACCESS = {
     enforcedBy: 'POST /api/instagram/dm-campaign',
     extraLocks: 'Dormant until Meta approves manage_comments / manage_messages',
   },
+  dealRadar: {
+    label: 'Amazon Deal Radar',
+    tiers: PRO,
+    enforcedBy: 'GET /api/deal-radar',
+    extraLocks: 'Labs while testing: admin-only until NEXT_PUBLIC_DEAL_RADAR_ENABLED=true',
+  },
 } as const satisfies Record<string, NavAccessRule>
 
 export type FeatureKey = keyof typeof NAV_ACCESS
