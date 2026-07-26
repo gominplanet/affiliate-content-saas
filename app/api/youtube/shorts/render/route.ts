@@ -17,7 +17,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier, type Tier } from '@/lib/tier'
 import { cloudinaryConfigured, renderVerticalShort, getLastShortError } from '@/services/cloudinary'
-import { ingestConfigured, clipSegment, renderShort } from '@/lib/youtube-ingest'
+import { ingestConfigured, clipSegment, renderShort, renderShortSegment } from '@/lib/youtube-ingest'
 import { buildCaptionChunks } from '@/lib/shorts-captions'
 import { recordUsage } from '@/lib/ai-usage'
 import { rowToShort } from '@/lib/shorts-row'
@@ -83,13 +83,16 @@ export async function POST(request: Request) {
       .select('*').eq('id', shortId).eq('user_id', user.id).maybeSingle()
     if (!short) return NextResponse.json({ error: 'Clip not found.' }, { status: 404 })
 
-    // The source MP4 the creator uploaded for this video (kept distinct from a
-    // finished vertical Short in instagram_video_url).
+    // Two ways to render: (a) a source MP4 the creator uploaded, or (b) fetch
+    // ONLY this clip's window from YouTube (bandwidth-saving segment download).
     const { data: video } = await sb.from('youtube_videos')
-      .select('id,source_video_url,cloudinary_source_id')
+      .select('id,source_video_url,cloudinary_source_id,youtube_video_id')
       .eq('id', short.video_id).eq('user_id', user.id).maybeSingle()
     const sourceUrl = (video?.source_video_url as string | null) || ''
-    if (!/^https:\/\//i.test(sourceUrl)) {
+    const hasSource = /^https:\/\//i.test(sourceUrl)
+    const ytId = (short.youtube_video_id as string | null) || (video?.youtube_video_id as string | null) || ''
+    const canSegment = /^[A-Za-z0-9_-]{11}$/.test(ytId) && ingestConfigured()
+    if (!hasSource && !canSegment) {
       return NextResponse.json({
         error: 'Upload the source video first so we can cut this clip.',
         needsUpload: true, videoId: short.video_id,
@@ -107,15 +110,18 @@ export async function POST(request: Request) {
 
     // PRIMARY: FFmpeg + libass on the ingest service — trim + reframe to 9:16 +
     // burn Hormozi word-by-word captions in one pass. Cloudinary can't animate
-    // text, so this is what makes the captions look pro.
+    // text, so this is what makes the captions look pro. Uses the uploaded
+    // source when present, else downloads ONLY this clip's window from YouTube.
     if (ingestConfigured()) {
-      const r = await renderShort(sourceUrl, startSec, endSec, withCaptions ? rawCues : [], user.id)
+      const r = hasSource
+        ? await renderShort(sourceUrl, startSec, endSec, withCaptions ? rawCues : [], user.id)
+        : await renderShortSegment(ytId, startSec, endSec, withCaptions ? rawCues : [], user.id)
       if (r?.url) renderedUrl = r.url
     }
 
-    // FALLBACK: Cloudinary (static captions) if the service is unset or fails.
-    // Word-level cues are grouped into readable lines for the static burn.
-    if (!renderedUrl) {
+    // FALLBACK: Cloudinary (static captions) — only possible with a hosted
+    // source URL (no segment support). Skipped on the fetch/segment path.
+    if (!renderedUrl && hasSource) {
       engine = 'cloudinary'
       const clip = ingestConfigured() ? await clipSegment(sourceUrl, startSec, endSec, user.id) : null
       const usingClip = !!clip
@@ -151,6 +157,17 @@ export async function POST(request: Request) {
             .eq('id', short.video_id).eq('user_id', user.id)
         } catch { /* non-fatal */ }
       }
+    }
+
+    // Segment path failed and there's no Cloudinary fallback → mark failed.
+    if (!renderedUrl) {
+      const detail = getLastShortError() || 'the video fetch/render failed'
+      try {
+        await sb.from('youtube_shorts')
+          .update({ status: 'failed', render_error: detail, updated_at: new Date().toISOString() })
+          .eq('id', shortId).eq('user_id', user.id)
+      } catch { /* non-fatal */ }
+      return NextResponse.json({ error: `Couldn't render the clip: ${detail}` }, { status: 500 })
     }
 
     const { data: updated } = await sb.from('youtube_shorts')

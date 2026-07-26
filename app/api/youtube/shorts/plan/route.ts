@@ -24,6 +24,8 @@ import { getChannelOAuthToken } from '@/lib/youtube-channels'
 import { createYouTubeOAuthService, fetchYouTubeVideoSnippet } from '@/services/youtube'
 import { extractYouTubeVideoId } from '@/lib/youtube-url'
 import { extractProductLink } from '@/lib/extract-product-link'
+import { ingestConfigured, ingestAudio } from '@/lib/youtube-ingest'
+import { storagePathFromPublicUrl } from '@/lib/storage-url'
 import { transcribeToCues, transcriptionConfigured } from '@/lib/shorts-transcribe'
 import { recordUsage } from '@/lib/ai-usage'
 import { planShorts } from '@/lib/shorts-planner'
@@ -158,6 +160,21 @@ export async function POST(request: Request) {
       cues = await transcribeToCues(sourceUrl)
       if (cues.length > 0) {
         recordUsage({ userId: user.id, tier, feature: 'shorts_transcribe', model: 'fal-whisper', images: 1 })
+      }
+    }
+    // 1b. No uploaded source, but we can fetch: pull AUDIO ONLY (tiny) and
+    //     Whisper it. This avoids downloading the whole video through the
+    //     metered residential proxy just to read what was said. The audio is
+    //     deleted right after transcription.
+    if (cues.length === 0 && youtubeVideoId && ingestConfigured() && transcriptionConfigured()) {
+      const audioUrl = await ingestAudio(youtubeVideoId, user.id)
+      if (audioUrl) {
+        cues = await transcribeToCues(audioUrl)
+        if (cues.length > 0) {
+          recordUsage({ userId: user.id, tier, feature: 'shorts_transcribe', model: 'fal-whisper', images: 1 })
+        }
+        const p = storagePathFromPublicUrl(audioUrl, 'instagram-videos')
+        if (p) { try { await sb.storage.from('instagram-videos').remove([p]) } catch { /* non-fatal */ } }
       }
     }
     // 2. Client-supplied cues (browser IP scrape).
