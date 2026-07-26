@@ -35,6 +35,25 @@ import type { ShortRow, TranscriptCue } from '@/lib/shorts-types'
 // Transcription of a longer uploaded video can take a while — give it room.
 export const maxDuration = 300
 
+/** Validate + coerce the cached `transcript_cues` jsonb into TranscriptCue[].
+ *  Returns [] for anything malformed so a bad cache falls through to a fresh
+ *  transcription instead of feeding the planner garbage. */
+function normalizeCachedCues(raw: unknown): TranscriptCue[] {
+  if (!Array.isArray(raw)) return []
+  const out: TranscriptCue[] = []
+  for (const c of raw) {
+    if (!c || typeof c !== 'object') continue
+    const r = c as Record<string, unknown>
+    const start = Number(r.start)
+    const end = Number(r.end)
+    const text = typeof r.text === 'string' ? r.text : ''
+    if (Number.isFinite(start) && Number.isFinite(end) && end >= start && text.trim()) {
+      out.push({ start, end, text })
+    }
+  }
+  return out
+}
+
 export async function POST(request: Request) {
   try {
     const supabase = await createServerClient()
@@ -91,7 +110,7 @@ export async function POST(request: Request) {
 
     // Resolve the source video row (must belong to the caller).
     const q = sb.from('youtube_videos')
-      .select('id,youtube_video_id,title,transcript,channel_id,source_video_url')
+      .select('id,youtube_video_id,title,transcript,transcript_cues,channel_id,source_video_url')
       .eq('user_id', user.id)
     let { data: video } = await (videoId
       ? q.eq('id', videoId)
@@ -124,7 +143,7 @@ export async function POST(request: Request) {
         thumbnail_url: snip.thumbnailUrl || null,
         duration_seconds: snip.durationSeconds || null,
         ...(productLink ? { product_url: productLink } : {}),
-      }).select('id,youtube_video_id,title,transcript,channel_id,source_video_url').maybeSingle()
+      }).select('id,youtube_video_id,title,transcript,transcript_cues,channel_id,source_video_url').maybeSingle()
       if (createErr || !created) return NextResponse.json({ error: createErr?.message || 'Could not add that video.' }, { status: 500 })
       video = created
     }
@@ -151,14 +170,29 @@ export async function POST(request: Request) {
     //   3. youtube-transcript scraper — last resort (often IP-blocked on cloud).
     let cues: TranscriptCue[] = []
     const sourceUrl = (video.source_video_url as string | null) || ''
+    // Whether these cues came from a paid/metered path (Whisper on the audio we
+    // pulled through the proxy). Only those are worth caching — the cheap
+    // sources (client scrape / API SRT / scraper) cost nothing to re-fetch.
+    let cuesFromWhisper = false
+
+    // 0. CACHE FIRST. Word-level cues are the single most expensive artifact in
+    //    the pipeline (proxy bandwidth to pull audio + fal.ai Whisper), and
+    //    "Find Shorts" is commonly re-run (regenerate, different count). Once
+    //    we've transcribed a video we keep the structured cues and reuse them,
+    //    so a re-run never re-downloads audio or re-pays Whisper.
+    const cachedCues = normalizeCachedCues(video.transcript_cues)
+    if (cachedCues.length > 0) {
+      cues = cachedCues
+    }
 
     // 1. PREFER Whisper word-level when we have the source file. Word-accurate
     //    timings are what make captions land on the beat (the YouTube caption
     //    SRT is only phrase-level, so its lines drift). Falls through to the
     //    caption sources below if transcription isn't available or fails.
-    if (/^https:\/\//i.test(sourceUrl) && transcriptionConfigured()) {
+    if (cues.length === 0 && /^https:\/\//i.test(sourceUrl) && transcriptionConfigured()) {
       cues = await transcribeToCues(sourceUrl)
       if (cues.length > 0) {
+        cuesFromWhisper = true
         recordUsage({ userId: user.id, tier, feature: 'shorts_transcribe', model: 'fal-whisper', images: 1 })
       }
     }
@@ -171,6 +205,7 @@ export async function POST(request: Request) {
       if (audioUrl) {
         cues = await transcribeToCues(audioUrl)
         if (cues.length > 0) {
+          cuesFromWhisper = true
           recordUsage({ userId: user.id, tier, feature: 'shorts_transcribe', model: 'fal-whisper', images: 1 })
         }
         const p = storagePathFromPublicUrl(audioUrl, 'instagram-videos')
@@ -207,11 +242,25 @@ export async function POST(request: Request) {
     }
 
     // Cache the plain transcript back if the row didn't have one (helps the
-    // blog/metadata paths reuse it — same best-effort write they do).
+    // blog/metadata paths reuse it — same best-effort write they do). Also cache
+    // the WORD-LEVEL cues whenever we just paid Whisper for them, so the next
+    // "Find Shorts" run short-circuits at step 0 above (no audio re-download, no
+    // Whisper re-charge). We only persist Whisper cues — the cheap sources cost
+    // nothing to re-fetch and caching a phrase-level set would lock out a future
+    // word-level upgrade.
+    const cacheWrite: Record<string, unknown> = {}
     if (!(video.transcript as string | null)?.trim()) {
+      cacheWrite.transcript = cuesToText(cues)
+      cacheWrite.transcript_fetched_at = new Date().toISOString()
+    }
+    if (cuesFromWhisper && cachedCues.length === 0) {
+      cacheWrite.transcript_cues = cues
+      cacheWrite.transcript_cues_fetched_at = new Date().toISOString()
+    }
+    if (Object.keys(cacheWrite).length > 0) {
       try {
         await sb.from('youtube_videos')
-          .update({ transcript: cuesToText(cues), transcript_fetched_at: new Date().toISOString() })
+          .update(cacheWrite)
           .eq('id', video.id).eq('user_id', user.id)
       } catch { /* best-effort */ }
     }

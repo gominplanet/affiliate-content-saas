@@ -43,6 +43,10 @@
     {
       "path": "/api/cron/purge-shorts-sources",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/refresh-deal-radar",
+      "schedule": "0 */6 * * *"
     }
   ]
 }

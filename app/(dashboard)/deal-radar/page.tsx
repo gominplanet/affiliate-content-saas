@@ -1,0 +1,333 @@
+// © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
+//
+// Amazon Deal Radar (Pro; Labs/admin-only until NEXT_PUBLIC_DEAL_RADAR_ENABLED).
+//
+// Always-on live Amazon deals (Keepa-backed, cached server-side) with search +
+// filters, plus a "double-win" ticker of deals that ALSO carry a Creator
+// Connections bounty. Every product link is tagged with the creator's own
+// Amazon Associates tag. "Make blog post" hands the ASIN to the Deals Hub
+// generator (blog first, social pushes derive from it).
+
+'use client'
+
+import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  Radar, Search, Loader2, Star, Zap, BadgePercent, ExternalLink,
+  ArrowRight, Sparkles, TrendingUp, RefreshCw,
+} from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
+import { createBrowserClient } from '@/lib/supabase/client'
+import { type Tier } from '@/lib/tier'
+import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
+import { dealRadarEnabled } from '@/lib/feature-flags'
+
+interface DealCampaign { commissionPct: number; brand: string | null; detailsUrl: string | null }
+interface Deal {
+  asin: string
+  title: string
+  brand: string | null
+  imageUrl: string | null
+  categoryId: number | null
+  priceNow: number | null
+  priceWas: number | null
+  discountPct: number | null
+  rating: number | null
+  reviewCount: number | null
+  dealType: string
+  lightningEndsAt: string | null
+  amazonUrl: string
+  campaign: DealCampaign | null
+}
+
+// Category filter options — mirror the cron's swept browse nodes.
+const CATEGORIES: { id: number; label: string }[] = [
+  { id: 172282, label: 'Electronics' },
+  { id: 1055398, label: 'Home & Kitchen' },
+  { id: 3375251, label: 'Sports & Outdoors' },
+  { id: 3760901, label: 'Health & Household' },
+  { id: 3760911, label: 'Beauty' },
+  { id: 228013, label: 'Tools' },
+  { id: 165793011, label: 'Toys & Games' },
+  { id: 2619533011, label: 'Pet Supplies' },
+  { id: 1064954, label: 'Office' },
+  { id: 15684181, label: 'Automotive' },
+  { id: 165796011, label: 'Baby' },
+  { id: 7141123011, label: 'Clothing & Shoes' },
+  { id: 541966, label: 'Computers' },
+  { id: 2335752011, label: 'Cell Phones' },
+  { id: 16310101, label: 'Grocery' },
+  { id: 11091801, label: 'Musical Instruments' },
+  { id: 2972638011, label: 'Patio & Garden' },
+  { id: 468642, label: 'Video Games' },
+]
+
+const SORTS: { key: string; label: string }[] = [
+  { key: 'discount', label: 'Biggest discount' },
+  { key: 'commission', label: 'Highest commission' },
+  { key: 'ending', label: 'Ending soon' },
+  { key: 'bestseller', label: 'Best sellers' },
+]
+
+const money = (n: number | null) => (n == null ? null : `$${n.toFixed(2)}`)
+
+export default function DealRadarPage() {
+  // ── Tier (honors admin View-as), mirrors the Deals Hub page ───────────────
+  const [tier, setTier] = useState<Tier | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    let realTier: string = 'trial'
+    const apply = () => { if (!cancelled) setTier(effectiveTier(realTier)) }
+    ;(async () => {
+      try {
+        const supabase = createBrowserClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) { realTier = 'trial'; apply(); return }
+        const { data } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+        realTier = (data as { tier?: string } | null)?.tier ?? 'trial'
+        apply()
+      } catch { realTier = 'trial'; apply() }
+    })()
+    window.addEventListener(VIEW_AS_EVENT, apply)
+    return () => { cancelled = true; window.removeEventListener(VIEW_AS_EVENT, apply) }
+  }, [])
+
+  // ── Filters ───────────────────────────────────────────────────────────────
+  const [q, setQ] = useState('')
+  const [category, setCategory] = useState<number | ''>('')
+  const [minDiscount, setMinDiscount] = useState<number>(0)
+  const [minRating, setMinRating] = useState<number>(0)
+  const [hasCampaign, setHasCampaign] = useState(false)
+  const [sort, setSort] = useState('discount')
+
+  const [deals, setDeals] = useState<Deal[]>([])
+  const [ticker, setTicker] = useState<Deal[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const isPro = tier === 'pro' || tier === 'admin'
+  const labsOk = dealRadarEnabled() || tier === 'admin'
+  const canView = isPro && labsOk
+
+  const load = useCallback(async () => {
+    setLoading(true); setError(null)
+    try {
+      const params = new URLSearchParams()
+      if (q.trim()) params.set('q', q.trim())
+      if (category !== '') params.set('category', String(category))
+      if (minDiscount > 0) params.set('minDiscount', String(minDiscount))
+      if (minRating > 0) params.set('minRating', String(minRating))
+      if (hasCampaign) params.set('hasCampaign', '1')
+      params.set('sort', sort)
+      const res = await fetch(`/api/deal-radar?${params.toString()}`)
+      const data = await res.json()
+      if (!res.ok) { setError(data.error || 'Could not load deals.'); setDeals([]); setTicker([]); return }
+      setDeals(Array.isArray(data.deals) ? data.deals : [])
+      setTicker(Array.isArray(data.ticker) ? data.ticker : [])
+    } catch {
+      setError('Could not load deals.')
+    } finally {
+      setLoading(false)
+    }
+  }, [q, category, minDiscount, minRating, hasCampaign, sort])
+
+  // Debounced fetch on filter change (only once we know the user can view).
+  const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    if (!canView) return
+    if (debounce.current) clearTimeout(debounce.current)
+    debounce.current = setTimeout(() => { void load() }, 300)
+    return () => { if (debounce.current) clearTimeout(debounce.current) }
+  }, [canView, load])
+
+  // ── Gating ─────────────────────────────────────────────────────────────────
+  if (tier === null) {
+    return <div className="flex items-center justify-center py-32"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+  }
+  if (!isPro) {
+    return (
+      <div className="max-w-3xl mx-auto px-4 py-10">
+        <FeatureLockedCard
+          icon={<Radar size={28} />}
+          feature="Amazon Deal Radar"
+          description="An always-on feed of live Amazon deals in your niche, cross-checked against Creator Connections, Levanta, and PartnerBoost bounties — one click turns any deal into a blog post you can push to social."
+          bullets={[
+            'Live price-drop feed, searchable and filterable by category, discount, and rating',
+            'A "double-win" ticker: on sale AND paying an elevated commission',
+            'Every link carries your own Amazon Associates tag',
+          ]}
+          requiredTier="pro"
+          currentTier={tier}
+        />
+      </div>
+    )
+  }
+  if (!labsOk) {
+    return (
+      <div className="max-w-2xl mx-auto px-4 py-16 text-center">
+        <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-100 text-amber-700 mb-4">
+          <Radar size={28} />
+        </div>
+        <h1 className="text-2xl font-bold mb-2">Amazon Deal Radar is in Labs</h1>
+        <p className="text-muted-foreground">We&apos;re testing it with a small group first. It&apos;ll open to all Pro accounts soon.</p>
+      </div>
+    )
+  }
+
+  const hasFilters = q.trim() || category !== '' || minDiscount > 0 || minRating > 0 || hasCampaign
+  const clearFilters = () => { setQ(''); setCategory(''); setMinDiscount(0); setMinRating(0); setHasCampaign(false); setSort('discount') }
+
+  return (
+    <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <div className="flex items-center gap-2">
+            <div className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-orange-100 text-orange-600"><Radar size={20} /></div>
+            <h1 className="text-2xl font-bold">Amazon Deal Radar</h1>
+            <span className="text-[10px] font-semibold uppercase tracking-wide bg-amber-100 text-amber-700 rounded px-1.5 py-0.5">Labs</span>
+          </div>
+          <p className="text-sm text-muted-foreground mt-1">Live Amazon deals in your niche. Turn any one into a blog post, then push it to social.</p>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
+          <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
+        </Button>
+      </div>
+
+      {/* Double-win ticker */}
+      {ticker.length > 0 && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-800 mb-2">
+            <TrendingUp size={14} /> Double wins — on sale AND paying a bounty
+          </div>
+          <div className="flex gap-3 overflow-x-auto pb-1">
+            {ticker.map((d) => (
+              <a key={d.asin} href={d.amazonUrl} target="_blank" rel="noopener noreferrer"
+                 className="shrink-0 w-44 rounded-lg bg-white border border-emerald-100 p-2 hover:shadow-sm transition">
+                {d.imageUrl && <img src={d.imageUrl} alt="" className="h-20 w-full object-contain mb-1.5" />}
+                <div className="text-xs font-medium line-clamp-2 leading-snug">{d.title}</div>
+                <div className="flex items-center gap-1.5 mt-1">
+                  {d.discountPct != null && <span className="text-[10px] font-bold text-red-600">-{d.discountPct}%</span>}
+                  {d.campaign && <span className="text-[10px] font-bold text-emerald-700">+{d.campaign.commissionPct}% CC</span>}
+                </div>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Filter bar */}
+      <div className="rounded-xl border bg-card p-3 flex flex-wrap items-center gap-2">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <input
+            value={q} onChange={(e) => setQ(e.target.value)}
+            placeholder="Search deals (e.g. air fryer, dog bed)…"
+            className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border bg-background"
+          />
+        </div>
+        <select value={category} onChange={(e) => setCategory(e.target.value === '' ? '' : Number(e.target.value))}
+                className="text-sm rounded-lg border bg-background px-2.5 py-2">
+          <option value="">All categories</option>
+          {CATEGORIES.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+        </select>
+        <select value={minDiscount} onChange={(e) => setMinDiscount(Number(e.target.value))}
+                className="text-sm rounded-lg border bg-background px-2.5 py-2">
+          <option value={0}>Any discount</option>
+          <option value={15}>15%+ off</option>
+          <option value={25}>25%+ off</option>
+          <option value={40}>40%+ off</option>
+          <option value={50}>50%+ off</option>
+        </select>
+        <select value={minRating} onChange={(e) => setMinRating(Number(e.target.value))}
+                className="text-sm rounded-lg border bg-background px-2.5 py-2">
+          <option value={0}>Any rating</option>
+          <option value={3}>3★+</option>
+          <option value={4}>4★+</option>
+          <option value={4.5}>4.5★+</option>
+        </select>
+        <button
+          onClick={() => setHasCampaign((v) => !v)}
+          className={`text-sm rounded-lg border px-2.5 py-2 inline-flex items-center gap-1.5 ${hasCampaign ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-background'}`}
+        >
+          <Sparkles size={14} /> Has bounty
+        </button>
+        <select value={sort} onChange={(e) => setSort(e.target.value)}
+                className="text-sm rounded-lg border bg-background px-2.5 py-2 ml-auto">
+          {SORTS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+        </select>
+        {hasFilters && <button onClick={clearFilters} className="text-xs text-muted-foreground underline">Clear</button>}
+      </div>
+
+      {/* Grid */}
+      {loading ? (
+        <div className="flex items-center justify-center py-24"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+      ) : error ? (
+        <div className="text-center py-16 text-sm text-muted-foreground">{error}</div>
+      ) : deals.length === 0 ? (
+        <div className="text-center py-16">
+          <p className="text-sm text-muted-foreground">
+            {hasFilters ? 'No deals match those filters yet. Try widening them.' : 'No live deals cached yet — the radar refreshes every few hours. Check back shortly.'}
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          {deals.map((d) => <DealCard key={d.asin} deal={d} />)}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function DealCard({ deal: d }: { deal: Deal }) {
+  const makePost = () => {
+    // Blog first — hand the ASIN to the Deals Hub generator (deep link).
+    window.location.href = `/deals?asin=${encodeURIComponent(d.asin)}&from=deal-radar`
+  }
+  return (
+    <div className="rounded-xl border bg-card overflow-hidden flex flex-col">
+      <a href={d.amazonUrl} target="_blank" rel="noopener noreferrer" className="relative block bg-white aspect-square p-3">
+        {d.imageUrl
+          ? <img src={d.imageUrl} alt="" className="h-full w-full object-contain" />
+          : <div className="h-full w-full flex items-center justify-center text-muted-foreground"><BadgePercent size={28} /></div>}
+        {d.discountPct != null && (
+          <span className="absolute top-2 left-2 text-xs font-bold bg-red-600 text-white rounded px-1.5 py-0.5">-{d.discountPct}%</span>
+        )}
+        {d.dealType === 'lightning' && (
+          <span className="absolute top-2 right-2 text-[10px] font-bold bg-amber-500 text-white rounded px-1.5 py-0.5 inline-flex items-center gap-0.5"><Zap size={10} /> Lightning</span>
+        )}
+      </a>
+      <div className="p-3 flex flex-col gap-1.5 flex-1">
+        <div className="text-sm font-medium line-clamp-2 leading-snug min-h-[2.5rem]">{d.title}</div>
+        {d.brand && <div className="text-xs text-muted-foreground">{d.brand}</div>}
+        <div className="flex items-center gap-2">
+          {money(d.priceNow) && <span className="text-base font-bold">{money(d.priceNow)}</span>}
+          {money(d.priceWas) && d.priceWas! > (d.priceNow ?? 0) && (
+            <span className="text-xs text-muted-foreground line-through">{money(d.priceWas)}</span>
+          )}
+        </div>
+        {d.rating != null && (
+          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            <Star size={12} className="fill-amber-400 text-amber-400" /> {d.rating.toFixed(1)}
+            {d.reviewCount != null && <span>({d.reviewCount.toLocaleString()})</span>}
+          </div>
+        )}
+        {d.campaign && (
+          <a href={d.campaign.detailsUrl || '#'} target="_blank" rel="noopener noreferrer"
+             className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:underline">
+            <Sparkles size={12} /> +{d.campaign.commissionPct}% Creator Connections
+          </a>
+        )}
+        <div className="mt-auto pt-2 flex items-center gap-2">
+          <Button size="sm" className="flex-1" onClick={makePost}>
+            Make blog post <ArrowRight size={14} className="ml-1" />
+          </Button>
+          <a href={d.amazonUrl} target="_blank" rel="noopener noreferrer"
+             className="inline-flex items-center justify-center h-8 w-8 rounded-md border hover:bg-accent" title="View on Amazon">
+            <ExternalLink size={14} />
+          </a>
+        </div>
+      </div>
+    </div>
+  )
+}

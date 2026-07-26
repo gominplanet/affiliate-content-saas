@@ -57,6 +57,18 @@ export function igDmEnabled(): boolean {
   return process.env.NEXT_PUBLIC_IG_DM_ENABLED === 'true'
 }
 
+/**
+ * Amazon Deal Radar (Keepa-backed live deals discovery + Creator Connections /
+ * Levanta / PartnerBoost commission cross-check). "Labs while we test": OFF by
+ * default → the feature is ADMIN-ONLY (the owner can dogfood it) even though the
+ * real gate is Pro. Flip NEXT_PUBLIC_DEAL_RADAR_ENABLED=true in Vercel to
+ * graduate it to all Pro users. NEXT_PUBLIC so the client (nav visibility) and
+ * the server (route gate) read the same flag.
+ */
+export function dealRadarEnabled(): boolean {
+  return process.env.NEXT_PUBLIC_DEAL_RADAR_ENABLED === 'true'
+}
+
 export function socialEnabled(
   platform: GatedSocialPlatform,
   opts?: { tier?: string | null; email?: string | null },
