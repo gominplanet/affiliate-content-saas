@@ -132,7 +132,10 @@ export async function GET(request: Request) {
       if (hasCampaign) query = query.not('campaign_commission_pct', 'is', null)
       if (minCommission != null) query = query.gte('campaign_commission_pct', minCommission)
       if (realOnly) query = query.in('deal_quality', ['excellent', 'genuine'])
-      if (lightningOnly) query = query.eq('deal_type', 'lightning')
+      // Lightning tab shows only deals whose window is STILL LIVE. An expired
+      // lightning deal is no longer "hurry, it ends soon!" — it shouldn't fill
+      // this tab with dead "Deal ended" cards.
+      if (lightningOnly) query = query.eq('deal_type', 'lightning').gt('lightning_ends_at', new Date().toISOString())
       return applySort(query, sort)
     }
 
@@ -234,6 +237,12 @@ function toClient(r: DealRow, amazonTag: string, postedUrl: string | null = null
   const rate = bountyRate ?? (r.category_id != null ? (AMAZON_RATE_BY_CATEGORY[r.category_id] ?? DEFAULT_AMAZON_RATE) : DEFAULT_AMAZON_RATE)
   const estCommissionCents = r.price_now_cents != null ? Math.round(r.price_now_cents * (rate / 100)) : null
 
+  // A lightning deal whose window has passed is no longer a lightning deal —
+  // strip the badge + countdown so it doesn't show "Lightning / Deal ended".
+  // If its price is still good it simply lives on as a normal price-drop deal.
+  const lightningExpired = r.deal_type === 'lightning' && r.lightning_ends_at != null
+    && new Date(r.lightning_ends_at).getTime() <= Date.now()
+
   return {
     postedUrl,
     estCommissionCents,
@@ -251,8 +260,8 @@ function toClient(r: DealRow, amazonTag: string, postedUrl: string | null = null
     rating: r.rating != null ? Number(r.rating) : null,
     reviewCount: r.review_count,
     monthlySold: r.monthly_sold,
-    dealType: r.deal_type,
-    lightningEndsAt: r.lightning_ends_at,
+    dealType: lightningExpired ? 'price_drop' : r.deal_type,
+    lightningEndsAt: lightningExpired ? null : r.lightning_ends_at,
     amazonUrl,
     campaign: r.campaign_commission_pct != null ? {
       commissionPct: Number(r.campaign_commission_pct),
