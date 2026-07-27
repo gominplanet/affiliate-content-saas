@@ -238,15 +238,7 @@ export default function DealRadarPage() {
           </div>
           <div className="flex gap-3 overflow-x-auto pb-1">
             {ticker.map((d) => (
-              <a key={d.asin} href={d.amazonUrl} target="_blank" rel="noopener noreferrer"
-                 className="shrink-0 w-44 rounded-lg bg-card text-[color:var(--text)] border border-emerald-500/20 p-2 hover:shadow-sm transition">
-                {d.imageUrl && <img src={d.imageUrl} alt="" className="h-20 w-full object-contain mb-1.5 rounded bg-white" />}
-                <div className="text-xs font-medium line-clamp-2 leading-snug">{d.title}</div>
-                <div className="flex items-center gap-1.5 mt-1">
-                  {d.discountPct != null && <span className="text-[10px] font-bold text-red-500">-{d.discountPct}%</span>}
-                  {d.campaign && <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">+{d.campaign.commissionPct}% CC</span>}
-                </div>
-              </a>
+              <TickerCard key={d.asin} deal={d} onQuickPost={setQuickPostDeal} />
             ))}
           </div>
         </div>
@@ -311,7 +303,7 @@ export default function DealRadarPage() {
       ) : deals.length === 0 ? (
         <EmptyState hasFilters={!!hasFilters} isAdmin={tier === 'admin'} onClear={clearFilters} onRefresh={() => void load()} />
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
           {deals.map((d) => <DealCard key={d.asin} deal={d} onQuickPost={setQuickPostDeal} />)}
         </div>
       )}
@@ -321,11 +313,13 @@ export default function DealRadarPage() {
   )
 }
 
-function DealCard({ deal: d, onQuickPost }: { deal: Deal; onQuickPost: (d: Deal) => void }) {
-  // Generate the deal blog post DIRECTLY through the generation engine
-  // (POST /api/deals). Deal Radar is always-on and independent of the seasonal
-  // Deals Hub page — the pause there is a UI gate only, the engine isn't paused.
-  // occasion:'auto' → a "low price alert" article year-round when no event.
+// Generate the deal blog post DIRECTLY through the generation engine
+// (POST /api/deals). Deal Radar is always-on and independent of the seasonal
+// Deals Hub page — the pause there is a UI gate only, the engine isn't paused.
+// occasion:'auto' → a "low price alert" article year-round when no event.
+// Shared by the main DealCard and the double-win TickerCard so both get the
+// same "Writing… → View post" flow.
+function useMakePost(asin: string) {
   const [gen, setGen] = useState<'idle' | 'working' | 'done'>('idle')
   const [postUrl, setPostUrl] = useState<string | null>(null)
   const makePost = async () => {
@@ -334,7 +328,7 @@ function DealCard({ deal: d, onQuickPost }: { deal: Deal; onQuickPost: (d: Deal)
     try {
       const res = await fetch('/api/deals', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ asin: d.asin, occasion: 'auto' }),
+        body: JSON.stringify({ asin, occasion: 'auto' }),
       })
       const data = await res.json()
       if (!res.ok) { toast.error(data.error || 'Could not create the post.'); setGen('idle'); return }
@@ -342,6 +336,11 @@ function DealCard({ deal: d, onQuickPost }: { deal: Deal; onQuickPost: (d: Deal)
       toast.success('Deal post published.')
     } catch { toast.error('Could not create the post.'); setGen('idle') }
   }
+  return { gen, postUrl, makePost }
+}
+
+function DealCard({ deal: d, onQuickPost }: { deal: Deal; onQuickPost: (d: Deal) => void }) {
+  const { gen, postUrl, makePost } = useMakePost(d.asin)
   return (
     <div className="rounded-xl border bg-card overflow-hidden flex flex-col">
       <a href={d.amazonUrl} target="_blank" rel="noopener noreferrer" className="relative block bg-white aspect-square p-3">
@@ -403,6 +402,42 @@ function DealCard({ deal: d, onQuickPost }: { deal: Deal; onQuickPost: (d: Deal)
             <Send size={13} /> Quick post to socials
           </button>
         </div>
+      </div>
+    </div>
+  )
+}
+
+// Compact card for the "double wins" ticker. Same two actions as DealCard —
+// make a blog post (inline) or quick-post to socials (opens the modal) — plus a
+// direct Amazon link, in a small horizontal-scroll footprint.
+function TickerCard({ deal: d, onQuickPost }: { deal: Deal; onQuickPost: (d: Deal) => void }) {
+  const { gen, postUrl, makePost } = useMakePost(d.asin)
+  return (
+    <div className="shrink-0 w-48 rounded-lg bg-card text-[color:var(--text)] border border-emerald-500/20 p-2 flex flex-col">
+      <a href={d.amazonUrl} target="_blank" rel="noopener noreferrer" className="block">
+        {d.imageUrl && <img src={d.imageUrl} alt="" className="h-20 w-full object-contain mb-1.5 rounded bg-white" />}
+        <div className="text-xs font-medium line-clamp-2 leading-snug min-h-[2rem]">{d.title}</div>
+      </a>
+      <div className="flex items-center gap-1.5 mt-1 mb-2">
+        {d.discountPct != null && <span className="text-[10px] font-bold text-red-500">-{d.discountPct}%</span>}
+        {d.campaign && <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">+{d.campaign.commissionPct}% CC</span>}
+      </div>
+      <div className="mt-auto flex items-center gap-1.5">
+        {gen === 'done' && postUrl ? (
+          <a href={postUrl} target="_blank" rel="noopener noreferrer"
+             className="flex-1 inline-flex items-center justify-center gap-1 text-[11px] font-medium rounded-md bg-emerald-600 text-white py-1.5">
+            <Check size={12} /> View post
+          </a>
+        ) : (
+          <button onClick={makePost} disabled={gen === 'working'}
+             className="flex-1 inline-flex items-center justify-center gap-1 text-[11px] font-medium rounded-md bg-primary text-primary-foreground py-1.5 disabled:opacity-60">
+            {gen === 'working' ? <><Loader2 size={11} className="animate-spin" /> Writing…</> : <>Blog</>}
+          </button>
+        )}
+        <button onClick={() => onQuickPost(d)} title="Quick post to socials"
+           className="flex-1 inline-flex items-center justify-center gap-1 text-[11px] font-medium rounded-md border py-1.5 hover:bg-accent">
+          <Send size={12} /> Social
+        </button>
       </div>
     </div>
   )
