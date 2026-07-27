@@ -50,6 +50,50 @@ export async function cloudinaryPing(): Promise<{ ok: boolean; cloudName?: strin
   }
 }
 
+// Text overlays render in Arial (a Cloudinary built-in), so keep CTA/headline
+// ASCII — emoji and fancy punctuation don't render in that font.
+const asciiSafe = (s: string) => (s || '').replace(/[^\x20-\x7E]/g, ' ').replace(/\s+/g, ' ').trim()
+
+/**
+ * Compose a 1080×1920 (9:16) Instagram Story image from a product image: the
+ * product framed on a dark canvas, an optional headline up top, and a violet
+ * "LINK IN BIO" call-to-action banner along the bottom — the CTA is baked in
+ * because Stories published via the API can't carry a caption or a tappable
+ * link sticker (Meta doesn't allow it). Returns a ready-to-publish JPEG URL, or
+ * null if Cloudinary isn't configured / anything fails (caller decides).
+ */
+export async function renderStoryImage(
+  productImageUrl: string,
+  opts: { headline?: string; cta?: string } = {},
+): Promise<string | null> {
+  if (!ensureConfig()) return null
+  if (!productImageUrl || !/^https?:\/\//i.test(productImageUrl)) return null
+  try {
+    const up = await cloudinary.uploader.upload(productImageUrl, {
+      folder: 'deal-stories', resource_type: 'image', overwrite: false,
+    })
+    const publicId = up.public_id as string
+    const cta = asciiSafe(opts.cta || 'SHOP THIS  -  LINK IN BIO').toUpperCase().slice(0, 42)
+    const headline = asciiSafe(opts.headline || '').toUpperCase().slice(0, 42)
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const transformation: any[] = [
+      // Product on a white card, then the 9:16 dark canvas around it.
+      { width: 960, height: 1180, crop: 'pad', background: 'white' },
+      { width: 1080, height: 1920, crop: 'pad', background: '#0e0e11', gravity: 'center' },
+    ]
+    if (headline) {
+      transformation.push({ overlay: { font_family: 'Arial', font_size: 54, font_weight: 'bold', text: headline }, color: '#ffffff', gravity: 'north', y: 130, width: 900, crop: 'fit' })
+    }
+    transformation.push({ overlay: { font_family: 'Arial', font_size: 58, font_weight: 'bold', text: cta }, color: '#ffffff', background: '#7C3AED', gravity: 'south', y: 170 })
+
+    return cloudinary.url(publicId, { transformation, secure: true, format: 'jpg' })
+  } catch (e) {
+    lastOverlayError = e instanceof Error ? e.message : String(e)
+    return null
+  }
+}
+
 export interface OverlaidVideo { url: string; publicId: string }
 
 /**

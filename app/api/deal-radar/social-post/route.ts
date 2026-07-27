@@ -20,6 +20,7 @@ import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { scrubBanned } from '@/lib/scrub'
 import { AFFILIATE_DISCLAIMER_DEFAULT } from '@/lib/social-disclaimer'
 import { publishDealToSocials, QUICK_POST_PLATFORMS, type QuickPostPlatform } from '@/lib/deal-social-publish'
+import { publishDealStory } from '@/lib/deal-story-publish'
 import { createGeniuslinkService } from '@/services/geniuslink'
 
 export const runtime = 'nodejs'
@@ -40,12 +41,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Amazon Deal Radar is available on paid plans.', currentTier: tier }, { status: 403 })
     }
 
-    const body = await request.json().catch(() => ({})) as { asin?: string; platforms?: unknown; caption?: string; title?: string; imageUrl?: string }
+    const body = await request.json().catch(() => ({})) as { asin?: string; platforms?: unknown; caption?: string; title?: string; imageUrl?: string; story?: boolean }
     const asin = (body.asin || '').trim().toUpperCase()
     if (!/^[A-Z0-9]{10}$/.test(asin)) return NextResponse.json({ error: 'A valid ASIN is required.' }, { status: 400 })
     const platforms = (Array.isArray(body.platforms) ? body.platforms : [])
       .map((p) => String(p)) .filter((p): p is QuickPostPlatform => QUICK_POST_PLATFORMS.includes(p as QuickPostPlatform))
-    if (!platforms.length) return NextResponse.json({ error: 'Pick at least one platform.' }, { status: 400 })
+    // Instagram Story is a separate path (image + baked "link in bio" CTA — a
+    // Story published via the API can't carry a caption or a tappable link).
+    const wantStory = body.story === true
+    if (!platforms.length && !wantStory) return NextResponse.json({ error: 'Pick at least one platform.' }, { status: 400 })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sb = supabase as any
@@ -60,34 +64,40 @@ export async function POST(request: Request) {
       if (!fbTitle) return NextResponse.json({ error: 'That deal is no longer on the radar.' }, { status: 404 })
       deal = { asin, title: fbTitle, brand: null, image_url: body.imageUrl || null, discount_pct: null, deal_quality: null, lowest_label: null }
     }
+    const dealImage = (deal.image_url as string | null) || null
 
-    const tag = ((intRow as { amazon_associates_tag?: string | null } | null)?.amazon_associates_tag || '').trim()
-    if (!tag) return NextResponse.json({ error: 'Add your Amazon Associates tag in Settings first, so your links earn.' }, { status: 400 })
-    const link = `https://www.amazon.com/dp/${asin}?tag=${encodeURIComponent(tag)}`
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const results: Array<{ platform: string; ok: boolean; url?: string; error?: string }> = []
+    let baseCaption: string | null = null
+    let geniuslinkNote: string | null = null
 
-    // When Geniuslink is connected, wrap the tagged link once per platform into
-    // that platform's OWN tracking group (FACEBOOK, TWITTER, …) so the user can
-    // see which channel drove clicks in their Geniuslink dashboard. Best-effort:
-    // any platform we can't wrap keeps the bare tagged link. The affiliate tag
-    // rides through Geniuslink's redirect either way, so links always earn.
-    const gKey = ((intRow as { geniuslink_api_key?: string | null } | null)?.geniuslink_api_key || '').trim()
-    const gSecret = ((intRow as { geniuslink_api_secret?: string | null } | null)?.geniuslink_api_secret || '').trim()
-    const { links, note: geniuslinkNote } = await buildPlatformGeniuslinks(gKey, gSecret, link, deal.title as string, platforms)
+    // ── Link-friendly text platforms (X/FB/Threads/LinkedIn/Telegram/Bluesky) ──
+    if (platforms.length) {
+      const tag = ((intRow as { amazon_associates_tag?: string | null } | null)?.amazon_associates_tag || '').trim()
+      if (!tag) return NextResponse.json({ error: 'Add your Amazon Associates tag in Settings first, so your links earn.' }, { status: 400 })
+      const link = `https://www.amazon.com/dp/${asin}?tag=${encodeURIComponent(tag)}`
 
-    const { data: brand } = await sb.from('brand_profiles')
-      .select('affiliate_disclaimer').eq('user_id', user.id).maybeSingle()
-    const disclaimer = (brand?.affiliate_disclaimer as string | null)?.trim() || AFFILIATE_DISCLAIMER_DEFAULT
+      // When Geniuslink is connected, wrap the tagged link once per platform into
+      // that platform's OWN tracking group (FACEBOOK, TWITTER, …). Best-effort.
+      const gKey = ((intRow as { geniuslink_api_key?: string | null } | null)?.geniuslink_api_key || '').trim()
+      const gSecret = ((intRow as { geniuslink_api_secret?: string | null } | null)?.geniuslink_api_secret || '').trim()
+      const built = await buildPlatformGeniuslinks(gKey, gSecret, link, deal.title as string, platforms)
+      geniuslinkNote = built.note
 
-    // Base caption: user override, else a price-safe AI caption (no baked price
-    // — the post is evergreen and a dollar amount would go stale + break Amazon's
-    // price-display rule).
-    let baseCaption = (body.caption || '').trim()
-    if (!baseCaption) {
-      const anthropic = createAnthropicClient()
-      const msg = await anthropic.messages.create({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 220,
-        messages: [{ role: 'user', content: `Write a punchy social caption for this Amazon deal.
+      const { data: brand } = await sb.from('brand_profiles')
+        .select('affiliate_disclaimer').eq('user_id', user.id).maybeSingle()
+      const disclaimer = (brand?.affiliate_disclaimer as string | null)?.trim() || AFFILIATE_DISCLAIMER_DEFAULT
+
+      // Base caption: user override, else a price-safe AI caption (no baked price
+      // — the post is evergreen and a dollar amount would go stale + break Amazon's
+      // price-display rule).
+      let cap = (body.caption || '').trim()
+      if (!cap) {
+        const anthropic = createAnthropicClient()
+        const msg = await anthropic.messages.create({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 220,
+          messages: [{ role: 'user', content: `Write a punchy social caption for this Amazon deal.
 
 Product: ${deal.title}${deal.brand ? ` (${deal.brand})` : ''}
 ${deal.lowest_label ? `Price signal: ${deal.lowest_label}.` : ''}
@@ -100,18 +110,32 @@ Rules:
 - Never claim you personally tested or own the product.
 
 Return ONLY the caption text.` }],
-      })
-      baseCaption = ((msg.content[0] as { type: string; text: string }).text || '').trim()
-      recordAnthropicUsage(msg, { userId: user.id, tier, feature: 'deal_social_caption', model: 'claude-haiku-4-5-20251001' })
-    }
-    baseCaption = scrubBanned(baseCaption).slice(0, 600)
-    if (!baseCaption) return NextResponse.json({ error: 'Could not build a caption — try again or write your own.' }, { status: 500 })
+        })
+        cap = ((msg.content[0] as { type: string; text: string }).text || '').trim()
+        recordAnthropicUsage(msg, { userId: user.id, tier, feature: 'deal_social_caption', model: 'claude-haiku-4-5-20251001' })
+      }
+      cap = scrubBanned(cap).slice(0, 600)
+      if (!cap) return NextResponse.json({ error: 'Could not build a caption — try again or write your own.' }, { status: 500 })
+      baseCaption = cap
 
-    const results = await publishDealToSocials({
-      supabase, userId: user.id,
-      deal: { asin, title: deal.title as string, imageUrl: (deal.image_url as string | null) || null },
-      link, links, baseCaption, disclaimer, platforms,
-    })
+      const textResults = await publishDealToSocials({
+        supabase, userId: user.id,
+        deal: { asin, title: deal.title as string, imageUrl: dealImage },
+        link, links: built.links, baseCaption: cap, disclaimer, platforms,
+      })
+      results.push(...textResults)
+    }
+
+    // ── Instagram Story (baked-in "LINK IN BIO" CTA) ──
+    if (wantStory) {
+      const headline = deal.discount_pct ? `${deal.discount_pct}% OFF` : (deal.lowest_label ? String(deal.lowest_label) : 'ON SALE NOW')
+      const s = await publishDealStory({
+        supabase, userId: user.id,
+        deal: { asin, title: deal.title as string, imageUrl: dealImage },
+        headline,
+      })
+      results.push({ platform: 'instagram_story', ok: s.ok, url: s.ok ? 'https://www.instagram.com/' : undefined, error: s.error })
+    }
 
     const anyOk = results.some((r) => r.ok)
     return NextResponse.json({ ok: anyOk, results, caption: baseCaption, geniuslinkNote }, { status: anyOk ? 200 : 502 })
