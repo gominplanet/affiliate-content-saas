@@ -350,19 +350,19 @@ function statMinPrice(min: unknown): number | null {
  * to say (so the caller can drop it cleanly).
  */
 export function buildPriceContext(a: DealAssessment): string {
-  const usd = (c: number | null) => (c == null ? null : `$${(c / 100).toFixed(2)}`)
-  const now = usd(a.currentCents)
-  const typical = usd(a.avg90Cents)
-  if (a.quality === 'excellent' && now) {
-    return typical
-      ? `At ${now}, this is the lowest price we've seen — it typically sells for around ${typical}.`
-      : `At ${now}, this is the lowest price we've seen on this item.`
+  // Relative framing only — no exact dollar amounts (those go stale the moment
+  // the price moves and make an old post look wrong). Percentages are fine.
+  if (a.quality === 'excellent') {
+    return `Right now this is the lowest price we've tracked on this item.`
   }
-  if (a.quality === 'genuine' && now && typical && a.pctBelowAvg90 != null) {
-    return `At ${now}, it's about ${a.pctBelowAvg90}% below its usual ${typical}.`
+  if (a.quality === 'genuine' && a.pctBelowAvg90 != null) {
+    return `It's running about ${a.pctBelowAvg90}% below its usual price right now.`
   }
-  if (a.quality === 'fair' && now && typical) {
-    return `At ${now}, it's running a little under its usual ${typical}.`
+  if (a.quality === 'genuine') {
+    return `It's well below its usual price right now.`
+  }
+  if (a.quality === 'fair') {
+    return `It's running a little under its usual price right now.`
   }
   return ''
 }
@@ -380,29 +380,30 @@ export function buildPriceSnapshotHtml(a: DealAssessment): string {
   const now = a.currentCents
   const typical = a.avg90Cents
   const low = a.allTimeLowCents
-  if (now == null || (typical == null && low == null)) return ''
+  // Need enough to say something honest. No exact dollar amounts are rendered —
+  // this is a RELATIVE "how strong is this deal" visual so the post doesn't go
+  // stale when the price moves. Only the verdict + a position bar.
+  if (a.quality == null && a.pctBelowAvg90 == null) return ''
 
-  const usd = (c: number | null) => (c == null ? null : `$${(c / 100).toFixed(2)}`)
-  const cell = (label: string, val: string | null, accent = false) => val
-    ? `<div style="flex:1;min-width:90px"><div style="font-size:12px;color:#888;text-transform:uppercase;letter-spacing:.04em">${label}</div><div style="font-size:22px;font-weight:700;${accent ? 'color:#16a34a' : 'color:#18181b'}">${val}</div></div>`
-    : ''
+  const headline = a.quality === 'excellent'
+    ? 'This is the lowest price we&rsquo;ve tracked'
+    : a.pctBelowAvg90 != null && a.pctBelowAvg90 >= 5
+      ? `About ${a.pctBelowAvg90}% below its usual price`
+      : a.quality === 'genuine'
+        ? 'Well below its usual price'
+        : 'A little under its usual price'
 
-  // Bar: a track from all-time low (left) to typical (right) with a marker at
-  // "now". Only drawn when both bounds exist and form a real range.
+  // Bar from all-time low (left) to typical price (right) with a marker at where
+  // today sits. Relative only — no values shown.
   let bar = ''
-  if (low != null && typical != null && typical > low) {
+  if (now != null && low != null && typical != null && typical > low) {
     const pos = Math.max(0, Math.min(100, Math.round(((now - low) / (typical - low)) * 100)))
     bar = `<div style="margin-top:14px"><div style="position:relative;height:8px;border-radius:999px;background:linear-gradient(90deg,#16a34a,#e5e7eb)"><div style="position:absolute;top:-4px;left:${pos}%;transform:translateX(-50%);width:16px;height:16px;border-radius:999px;background:#fff;border:3px solid #16a34a;box-shadow:0 1px 3px rgba(0,0,0,.2)"></div></div><div style="display:flex;justify-content:space-between;font-size:11px;color:#999;margin-top:6px"><span>All-time low</span><span>Typical price</span></div></div>`
   }
 
-  const badge = a.label
-    ? `<div style="display:inline-block;margin-top:12px;font-size:13px;font-weight:600;color:#16a34a;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:999px;padding:4px 12px">${a.label}</div>`
-    : ''
-
   return `<div class="mvp-price-snapshot" style="border:1px solid #e5e7eb;border-radius:14px;padding:18px;margin:1.5em 0;background:#fafafa">
-<div style="font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#71717a;margin-bottom:12px">Price check</div>
-<div style="display:flex;gap:16px;flex-wrap:wrap">${cell('Right now', usd(now), true)}${cell('Typical', usd(typical))}${cell('All-time low', usd(low))}</div>
+<div style="font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#71717a;margin-bottom:6px">Deal check</div>
+<div style="font-size:18px;font-weight:700;color:#16a34a">${headline}</div>
 ${bar}
-${badge}
 </div>`
 }
