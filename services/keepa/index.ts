@@ -37,6 +37,8 @@ export const KEEPA_DOMAIN_US = 1
  *  New. We read Amazon first and fall back to New. */
 const PRICE_TYPE_AMAZON = 0
 const PRICE_TYPE_NEW = 1
+/** Keepa CSV index 8 = Lightning Deal price — the flash-sale feed. */
+export const PRICE_TYPE_LIGHTNING = 8
 /** Keepa CSV type indices inside the `current`/history arrays. */
 const KEEPA_CSV_RATING = 16        // star rating, stored as ×10 (45 = 4.5★)
 const KEEPA_CSV_REVIEW_COUNT = 17  // number of reviews
@@ -80,6 +82,10 @@ export interface KeepaDealQuery {
   page?: number
   /** Look-back window: 0=day, 1=week, 2=month, 3=90 days. Default day. */
   dateRange?: 0 | 1 | 2 | 3
+  /** Keepa CSV price types the deal is measured against. Default [0] (Amazon).
+   *  Pass [8] (LIGHTNING_DEAL) for the Lightning-deals feed. priceTypes[0]
+   *  drives which price the delta/current refer to. */
+  priceTypes?: number[]
   domainId?: number
 }
 
@@ -111,8 +117,9 @@ export async function fetchKeepaDeals(query: KeepaDealQuery = {}): Promise<Keepa
   const selection: Record<string, unknown> = {
     page: Math.max(0, query.page ?? 0),
     domainId: query.domainId ?? KEEPA_DOMAIN_US,
-    // priceTypes[0] drives which price the delta/current refer to. 0 = Amazon.
-    priceTypes: [PRICE_TYPE_AMAZON],
+    // priceTypes[0] drives which price the delta/current refer to. 0 = Amazon,
+    // 8 = Lightning Deal (the flash-sale feed).
+    priceTypes: query.priceTypes?.length ? query.priceTypes : [PRICE_TYPE_AMAZON],
     // Only surface real drops. deltaPercentRange = [min, max] percent.
     deltaPercentRange: [Math.max(1, query.minDiscountPct ?? 15), 100],
     dateRange: query.dateRange ?? 0,

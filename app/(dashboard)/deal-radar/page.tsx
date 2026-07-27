@@ -116,11 +116,15 @@ export default function DealRadarPage() {
   const [minRating, setMinRating] = useState<number>(0)
   const [hasCampaign, setHasCampaign] = useState(false)
   const [realOnly, setRealOnly] = useState(false)
+  const [lightningOnly, setLightningOnly] = useState(false)
   const [sort, setSort] = useState('discount')
 
   const [deals, setDeals] = useState<Deal[]>([])
   const [ticker, setTicker] = useState<Deal[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(false)
+  const [page, setPage] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [quickPostDeal, setQuickPostDeal] = useState<Deal | null>(null)
   const [showHelp, setShowHelp] = useState(true)
@@ -129,8 +133,11 @@ export default function DealRadarPage() {
   const labsOk = dealRadarEnabled() || tier === 'admin'
   const canView = isPro && labsOk
 
-  const load = useCallback(async () => {
-    setLoading(true); setError(null)
+  const PAGE_SIZE = 48 // matches the API
+
+  const load = useCallback(async (pageToLoad = 0, append = false) => {
+    if (append) setLoadingMore(true); else setLoading(true)
+    setError(null)
     try {
       const params = new URLSearchParams()
       if (q.trim()) params.set('q', q.trim())
@@ -139,18 +146,23 @@ export default function DealRadarPage() {
       if (minRating > 0) params.set('minRating', String(minRating))
       if (hasCampaign) params.set('hasCampaign', '1')
       if (realOnly) params.set('real', '1')
+      if (lightningOnly) params.set('lightning', '1')
       params.set('sort', sort)
+      params.set('page', String(pageToLoad))
       const res = await fetch(`/api/deal-radar?${params.toString()}`)
       const data = await res.json()
-      if (!res.ok) { setError(data.error || 'Could not load deals.'); setDeals([]); setTicker([]); return }
-      setDeals(Array.isArray(data.deals) ? data.deals : [])
-      setTicker(Array.isArray(data.ticker) ? data.ticker : [])
+      if (!res.ok) { setError(data.error || 'Could not load deals.'); if (!append) { setDeals([]); setTicker([]) }; return }
+      const incoming: Deal[] = Array.isArray(data.deals) ? data.deals : []
+      setDeals((prev) => append ? [...prev, ...incoming] : incoming)
+      setHasMore(incoming.length === PAGE_SIZE)
+      setPage(pageToLoad)
+      if (!append) setTicker(Array.isArray(data.ticker) ? data.ticker : [])
     } catch {
       setError('Could not load deals.')
     } finally {
-      setLoading(false)
+      if (append) setLoadingMore(false); else setLoading(false)
     }
-  }, [q, category, minDiscount, minRating, hasCampaign, realOnly, sort])
+  }, [q, category, minDiscount, minRating, hasCampaign, realOnly, lightningOnly, sort])
 
   // Debounced fetch on filter change (only once we know the user can view).
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -201,8 +213,8 @@ export default function DealRadarPage() {
     )
   }
 
-  const hasFilters = q.trim() || category !== '' || minDiscount > 0 || minRating > 0 || hasCampaign || realOnly
-  const clearFilters = () => { setQ(''); setCategory(''); setMinDiscount(0); setMinRating(0); setHasCampaign(false); setRealOnly(false); setSort('discount') }
+  const hasFilters = q.trim() || category !== '' || minDiscount > 0 || minRating > 0 || hasCampaign || realOnly || lightningOnly
+  const clearFilters = () => { setQ(''); setCategory(''); setMinDiscount(0); setMinRating(0); setHasCampaign(false); setRealOnly(false); setLightningOnly(false); setSort('discount') }
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
@@ -289,6 +301,13 @@ export default function DealRadarPage() {
         >
           <Sparkles size={14} /> Creator Connections
         </button>
+        <button
+          onClick={() => setLightningOnly((v) => !v)}
+          title="Only Amazon Lightning Deals — time-limited flash sales"
+          className={`text-sm rounded-lg border px-2.5 py-2 inline-flex items-center gap-1.5 ${lightningOnly ? 'bg-amber-500 text-white border-amber-500' : 'bg-background'}`}
+        >
+          <Zap size={14} /> Lightning
+        </button>
         <select value={sort} onChange={(e) => setSort(e.target.value)}
                 className="text-sm rounded-lg border bg-background px-2.5 py-2 ml-auto">
           {SORTS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
@@ -304,9 +323,22 @@ export default function DealRadarPage() {
       ) : deals.length === 0 ? (
         <EmptyState hasFilters={!!hasFilters} isAdmin={tier === 'admin'} onClear={clearFilters} onRefresh={() => void load()} />
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-          {deals.map((d) => <DealCard key={d.asin} deal={d} onQuickPost={setQuickPostDeal} />)}
-        </div>
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+            {deals.map((d) => <DealCard key={d.asin} deal={d} onQuickPost={setQuickPostDeal} />)}
+          </div>
+          {hasMore && (
+            <div className="flex justify-center pt-6">
+              <button
+                onClick={() => void load(page + 1, true)}
+                disabled={loadingMore}
+                className="inline-flex items-center gap-2 text-sm font-medium rounded-full border px-5 py-2.5 hover:bg-accent disabled:opacity-60"
+              >
+                {loadingMore ? <><Loader2 size={15} className="animate-spin" /> Loading…</> : 'Load more deals'}
+              </button>
+            </div>
+          )}
+        </>
       )}
 
       {quickPostDeal && <QuickPostModal deal={quickPostDeal} onClose={() => setQuickPostDeal(null)} />}
