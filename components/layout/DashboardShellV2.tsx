@@ -32,7 +32,6 @@ import { tierBadge } from '@/lib/tier-badge'
 import UsageChip from '@/components/dashboard/UsageChip'
 import { canUpgradeTier } from '@/lib/tier'
 import { canSeeNav } from '@/lib/feature-access'
-import { dealRadarEnabled } from '@/lib/feature-flags'
 import type { Tier } from '@/lib/tier'
 import {
   Home, Youtube, Library, Mail, Palette, Brush, TrendingUp,
@@ -425,6 +424,11 @@ export default function DashboardShellV2({
         // Jumps straight to the "Published Posts & Social Push" tab — publish or
         // schedule any existing post to every connected channel.
         { href: '/content?tab=posts', icon: <Send size={15} />, label: 'Social Push' },
+        // Amazon Deal Radar — graduated out of Labs 2026-07-27 to all paid tiers
+        // (canSeeNav('dealRadar') = creator/studio/pro/admin). Live Amazon deal
+        // discovery + Creator Connections cross-check; one click turns a deal
+        // into a blog post (counts against postsPerMonth) or a social post.
+        { href: '/deal-radar', icon: <Radar size={15} />, label: 'Deal Radar', gate: canSeeNav('dealRadar', tier as Tier) },
         // Socials connection moved to SET UP > "Connect Socials" (it's setup,
         // not a create action). YouTube has its own SET UP > "YouTube" entry.
         { href: '/comparison', icon: <Scale size={15} />, label: 'Comparisons' },
@@ -532,10 +536,8 @@ export default function DashboardShellV2({
         // all Pro users (the APIs + page are already Pro-gated, capped at 50
         // finished Shorts/month).
         { href: '/clip-factory', icon: <Rocket size={15} />, label: 'Clip Factory', gate: isAdmin },
-        // Amazon Deal Radar — Keepa live-deals discovery + Creator Connections
-        // cross-check. Admin-only while tested; flip NEXT_PUBLIC_DEAL_RADAR_ENABLED
-        // to graduate it to all Pro users (the API + page are already Pro-gated).
-        { href: '/deal-radar', icon: <Radar size={15} />, label: 'Deal Radar', gate: isAdmin || (dealRadarEnabled() && canSeeNav('dealRadar', tier as Tier)) },
+        // Deal Radar graduated out of Labs 2026-07-27 → now lives under
+        // Create > Social Push, open to all paid tiers.
       ],
     },
     {

@@ -1,6 +1,6 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// Amazon Deal Radar (Pro; Labs/admin-only until NEXT_PUBLIC_DEAL_RADAR_ENABLED).
+// Amazon Deal Radar — open to all paid tiers (graduated out of Labs 2026-07-27).
 //
 // Always-on live Amazon deals (Keepa-backed, cached server-side) with search +
 // filters, plus a "double-win" ticker of deals that ALSO carry a Creator
@@ -24,7 +24,7 @@ import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { type Tier } from '@/lib/tier'
 import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
-import { dealRadarEnabled } from '@/lib/feature-flags'
+import { canUseDealRadar } from '@/lib/feature-access'
 
 interface DealCampaign { commissionPct: number; brand: string | null; detailsUrl: string | null }
 interface DealVerdict { quality: string; label: string | null; typical: number | null; allTimeLow: number | null }
@@ -238,9 +238,9 @@ export default function DealRadarPage() {
     } catch { toast.error('Could not build the roundup.') } finally { setRoundupBusy(false) }
   }
 
-  const isPro = tier === 'pro' || tier === 'admin'
-  const labsOk = dealRadarEnabled() || tier === 'admin'
-  const canView = isPro && labsOk
+  // Open to all paid tiers (creator/studio/pro/admin) — graduated out of Labs.
+  const isPaid = canUseDealRadar(tier)
+  const canView = isPaid
 
   const PAGE_SIZE = 48 // matches the API
 
@@ -296,7 +296,7 @@ export default function DealRadarPage() {
   if (tier === null) {
     return <div className="flex items-center justify-center py-32"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
   }
-  if (!isPro) {
+  if (!isPaid) {
     return (
       <div className="max-w-3xl mx-auto px-4 py-10">
         <FeatureLockedCard
@@ -308,20 +308,9 @@ export default function DealRadarPage() {
             'A "double-win" ticker: on sale AND paying an elevated commission',
             'Every link carries your own Amazon Associates tag',
           ]}
-          requiredTier="pro"
+          requiredTier="creator"
           currentTier={tier}
         />
-      </div>
-    )
-  }
-  if (!labsOk) {
-    return (
-      <div className="max-w-2xl mx-auto px-4 py-16 text-center">
-        <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-100 text-amber-700 mb-4">
-          <Radar size={28} />
-        </div>
-        <h1 className="text-2xl font-bold mb-2">Amazon Deal Radar is in Labs</h1>
-        <p className="text-muted-foreground">We&apos;re testing it with a small group first. It&apos;ll open to all Pro accounts soon.</p>
       </div>
     )
   }
@@ -355,7 +344,6 @@ export default function DealRadarPage() {
           <div className="flex items-center gap-2 flex-wrap">
             <div className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-orange-100 text-orange-600"><Radar size={20} /></div>
             <h1 className="text-2xl font-bold">Amazon Deal Radar</h1>
-            <span className="text-[10px] font-semibold uppercase tracking-wide bg-amber-100 text-amber-700 rounded px-1.5 py-0.5">Labs</span>
             <button onClick={() => setShowGuide(true)} className="text-xs font-medium text-orange-600 dark:text-orange-400 underline inline-flex items-center gap-1">
               <HelpCircle size={13} /> Full guide
             </button>

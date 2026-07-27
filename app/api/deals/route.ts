@@ -50,7 +50,8 @@ import { recordUsage } from '@/lib/ai-usage'
 import { scrubDealHtml, DEAL_VOICE_RULES } from '@/lib/deal-scrub'
 import { scrubEmDashes } from '@/lib/html-scrub'
 import { getOccasion, detectOccasion, listOccasions, type DealOccasionSlug } from '@/lib/deal-occasion'
-import { TIERS, normalizeTier, checkGenerationLimit } from '@/lib/tier'
+import { normalizeTier, checkGenerationLimit } from '@/lib/tier'
+import { canUseDealRadar } from '@/lib/feature-access'
 import { spendGate } from '@/lib/ai-spend'
 
 export const maxDuration = 300
@@ -325,17 +326,16 @@ export async function POST(req: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  // Deals are a Studio+ feature; as of the 2026-06-15 pricing model they draw
-  // from the unified content-piece pool (postsPerMonth), not a separate deals
-  // counter. Access gate by tier first, then the shared generation cap.
+  // Deal posts are open to all PAID tiers (Deal Radar graduated out of Labs
+  // 2026-07-27). As of the 2026-06-15 pricing model they draw from the unified
+  // content-piece pool (postsPerMonth) — so a deal write-up counts against the
+  // tier's normal monthly blog-post allowance, enforced by the shared cap below.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: dealIntg } = await (supabase as any)
     .from('integrations').select('tier, amazon_associates_tag, geniuslink_api_key, geniuslink_api_secret').eq('user_id', user.id).maybeSingle()
   const tier = normalizeTier(dealIntg?.tier)
-  const dealsCap = TIERS[tier].dealsPerMonth // number | null (null = admin, unlimited)
-  const hasDealsAccess = tier === 'admin' || (typeof dealsCap === 'number' && dealsCap > 0)
-  if (!hasDealsAccess) {
-    return NextResponse.json({ error: 'Deals are a Studio & Pro feature.', code: 'tier_not_allowed', currentTier: tier }, { status: 403 })
+  if (!canUseDealRadar(tier)) {
+    return NextResponse.json({ error: 'Deal posts are available on paid plans.', code: 'tier_not_allowed', currentTier: tier }, { status: 403 })
   }
   const dealUsage = await checkGenerationLimit(supabase, user.id)
   if (!dealUsage.allowed) {

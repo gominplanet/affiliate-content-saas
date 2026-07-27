@@ -9,7 +9,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier, type Tier } from '@/lib/tier'
-import { dealRadarEnabled } from '@/lib/feature-flags'
+import { canUseDealRadar } from '@/lib/feature-access'
 import { createWordPressService } from '@/services/wordpress'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { createAnthropicClient } from '@/lib/anthropic'
@@ -35,8 +35,8 @@ export async function POST(request: Request) {
       .select('tier,amazon_associates_tag,geniuslink_api_key,geniuslink_api_secret')
       .eq('user_id', user.id).maybeSingle()
     const tier = normalizeTier(intRow?.tier) as Tier
-    if (!(tier === 'pro' || tier === 'admin') || !(dealRadarEnabled() || tier === 'admin')) {
-      return NextResponse.json({ error: 'Amazon Deal Radar is a Pro feature.' }, { status: 403 })
+    if (!canUseDealRadar(tier)) {
+      return NextResponse.json({ error: 'Amazon Deal Radar is available on paid plans.' }, { status: 403 })
     }
 
     const body = await request.json().catch(() => ({})) as { asins?: unknown }
