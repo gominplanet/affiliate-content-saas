@@ -386,24 +386,25 @@ function DealCard({ deal: d, onQuickPost }: { deal: Deal; onQuickPost: (d: Deal)
           <div className="flex items-center gap-2">
             {gen === 'done' && postUrl ? (
               <a href={postUrl} target="_blank" rel="noopener noreferrer"
-                 className="flex-1 inline-flex items-center justify-center gap-1 text-xs font-medium rounded-md bg-emerald-600 text-white py-2">
+                 className="flex-1 inline-flex items-center justify-center gap-1 text-xs font-semibold rounded-full bg-emerald-600 text-white py-2">
                 <Check size={14} /> View post
               </a>
             ) : (
-              <Button size="sm" className="flex-1" onClick={makePost} disabled={gen === 'working'}>
+              <button onClick={makePost} disabled={gen === 'working'}
+                className="flex-1 inline-flex items-center justify-center gap-1 text-xs font-semibold rounded-full bg-violet-600 hover:bg-violet-700 text-white py-2 disabled:opacity-60 transition">
                 {gen === 'working'
                   ? <><Loader2 size={14} className="mr-1 animate-spin" /> Writing…</>
                   : <>Make blog post <ArrowRight size={14} className="ml-1" /></>}
-              </Button>
+              </button>
             )}
             <a href={d.amazonUrl} target="_blank" rel="noopener noreferrer"
-               className="inline-flex items-center justify-center h-8 w-8 rounded-md border hover:bg-accent" title="View on Amazon">
+               className="inline-flex items-center justify-center h-8 w-8 rounded-full border hover:bg-accent" title="View on Amazon">
               <ExternalLink size={14} />
             </a>
           </div>
           <button
             onClick={() => onQuickPost(d)}
-            className="w-full inline-flex items-center justify-center gap-1.5 text-xs font-medium rounded-md border py-1.5 hover:bg-accent"
+            className="w-full inline-flex items-center justify-center gap-1.5 text-xs font-semibold rounded-full bg-orange-500 hover:bg-orange-600 text-white py-2 transition"
           >
             <Send size={13} /> Quick post to socials
           </button>
@@ -431,17 +432,17 @@ function TickerCard({ deal: d, onQuickPost }: { deal: Deal; onQuickPost: (d: Dea
       <div className="mt-auto flex items-center gap-1.5">
         {gen === 'done' && postUrl ? (
           <a href={postUrl} target="_blank" rel="noopener noreferrer"
-             className="flex-1 inline-flex items-center justify-center gap-1 text-[11px] font-medium rounded-md bg-emerald-600 text-white py-1.5">
+             className="flex-1 inline-flex items-center justify-center gap-1 text-[11px] font-semibold rounded-full bg-emerald-600 text-white py-1.5">
             <Check size={12} /> View post
           </a>
         ) : (
           <button onClick={makePost} disabled={gen === 'working'}
-             className="flex-1 inline-flex items-center justify-center gap-1 text-[11px] font-medium rounded-md bg-primary text-primary-foreground py-1.5 disabled:opacity-60">
+             className="flex-1 inline-flex items-center justify-center gap-1 text-[11px] font-semibold rounded-full bg-violet-600 hover:bg-violet-700 text-white py-1.5 disabled:opacity-60 transition">
             {gen === 'working' ? <><Loader2 size={11} className="animate-spin" /> Writing…</> : <>Blog</>}
           </button>
         )}
         <button onClick={() => onQuickPost(d)} title="Quick post to socials"
-           className="flex-1 inline-flex items-center justify-center gap-1 text-[11px] font-medium rounded-md border py-1.5 hover:bg-accent">
+           className="flex-1 inline-flex items-center justify-center gap-1 text-[11px] font-semibold rounded-full bg-orange-500 hover:bg-orange-600 text-white py-1.5 transition">
           <Send size={12} /> Social
         </button>
       </div>
