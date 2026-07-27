@@ -43,7 +43,7 @@ import {
   UserCog, AlertTriangle, DollarSign, Newspaper, Plug, Wrench,
   Camera, MessageCircle, Activity, BarChart3, Wand2, ShieldCheck,
   Share2, UserSquare, Lightbulb, LifeBuoy, Link2, FlaskConical, Store, Send, ShoppingBag, Megaphone,
-  Inbox, PackageSearch, Copy, Signpost, Code2, Rocket, Scissors,
+  Inbox, PackageSearch, Copy, Signpost, Code2, Rocket,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { DEALS_HUB_PAUSED } from '@/lib/deal-occasion'
@@ -523,12 +523,11 @@ export default function DashboardShellV2({
       label: 'Labs',
       items: [
         { href: '/instagram-dm', icon: <MessageCircle size={15} />, label: 'Instagram Auto-DM', gate: isPro },
-        // Shorts Studio — long video → captioned vertical Shorts. Admin-only
-        // while it's being tested; flip `isAdmin`→`isPro` to graduate it to the
-        // Pro Labs beta (the API routes are already Pro+, so admins pass today).
-        { href: '/shorts-studio', icon: <Scissors size={15} />, label: 'Shorts Studio', gate: isAdmin },
-        // Clip Factory — Shorts Studio (create) + Shop Burner (enhance +
-        // publish) merged into one Create → Enhance → Publish flow. Admin-only
+        // Clip Factory — the single video tool: Shorts Studio (create) + Shop
+        // Burner (enhance + publish) merged into one Create → Enhance → Publish
+        // flow. The standalone Shorts Studio nav entry was retired 2026-07-27
+        // (Clip Factory fully subsumes it — same create engine, plus enhance +
+        // publish); the /shorts-studio route stays live but unlinked. Admin-only
         // while it's tested; graduates by flipping isAdmin→isPro to open it to
         // all Pro users (the APIs + page are already Pro-gated, capped at 50
         // finished Shorts/month).
