@@ -216,6 +216,8 @@ export default function DealRadarPage() {
   const [error, setError] = useState<string | null>(null)
   const [quickPostDeal, setQuickPostDeal] = useState<Deal | null>(null)
   const [showHelp, setShowHelp] = useState(true)
+  // Full walkthrough modal — opens automatically the first time, reopenable from the header.
+  const [showGuide, setShowGuide] = useState(false)
   // On-demand roundup: multi-select deals → one curated post.
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [roundupBusy, setRoundupBusy] = useState(false)
@@ -280,12 +282,15 @@ export default function DealRadarPage() {
     return () => { if (debounce.current) clearTimeout(debounce.current) }
   }, [canView, load])
 
-  // "How it works" panel stays until the user dismisses it (remembered).
+  // "How it works" panel stays until the user dismisses it (remembered). The
+  // full guide modal auto-opens once, the first time this browser opens Deal Radar.
   useEffect(() => {
     try { if (localStorage.getItem('deal_radar_help') === 'off') setShowHelp(false) } catch { /* no-op */ }
+    try { if (!localStorage.getItem('deal_radar_guide_seen')) setShowGuide(true) } catch { /* no-op */ }
     try { const raw = localStorage.getItem(SAVED_KEY); if (raw) setSavedSearches(JSON.parse(raw)) } catch { /* no-op */ }
   }, [])
   const dismissHelp = () => { setShowHelp(false); try { localStorage.setItem('deal_radar_help', 'off') } catch { /* no-op */ } }
+  const closeGuide = () => { setShowGuide(false); try { localStorage.setItem('deal_radar_guide_seen', '1') } catch { /* no-op */ } }
 
   // ── Gating ─────────────────────────────────────────────────────────────────
   if (tier === null) {
@@ -351,6 +356,9 @@ export default function DealRadarPage() {
             <div className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-orange-100 text-orange-600"><Radar size={20} /></div>
             <h1 className="text-2xl font-bold">Amazon Deal Radar</h1>
             <span className="text-[10px] font-semibold uppercase tracking-wide bg-amber-100 text-amber-700 rounded px-1.5 py-0.5">Labs</span>
+            <button onClick={() => setShowGuide(true)} className="text-xs font-medium text-orange-600 dark:text-orange-400 underline inline-flex items-center gap-1">
+              <HelpCircle size={13} /> Full guide
+            </button>
             {!showHelp && (
               <button onClick={() => setShowHelp(true)} className="text-xs text-muted-foreground underline inline-flex items-center gap-1">
                 <HelpCircle size={13} /> How it works
@@ -366,6 +374,9 @@ export default function DealRadarPage() {
           </Button>
         </div>
       </div>
+
+      {/* Full walkthrough — auto-opens the first time, reopenable via "Full guide". */}
+      {showGuide && <DealRadarGuide onClose={closeGuide} />}
 
       {/* How it works */}
       {showHelp && <HowItWorks onDismiss={dismissHelp} />}
@@ -736,6 +747,120 @@ function HowItWorks({ onDismiss }: { onDismiss: () => void }) {
         <span className="inline-flex items-center gap-1"><ShieldCheck size={12} className="text-emerald-700" /> All-time low / real discount</span>
         <span className="inline-flex items-center gap-1"><ShieldAlert size={12} className="text-amber-600" /> Around usual price — likely fake</span>
         <span className="inline-flex items-center gap-1"><Sparkles size={12} className="text-emerald-700" /> Pays a Creator Connections bounty</span>
+      </div>
+    </div>
+  )
+}
+
+// The complete walkthrough. Opens automatically the first time a browser visits
+// Deal Radar (localStorage 'deal_radar_guide_seen'), and is reopenable anytime
+// from the "Full guide" link in the header. Solid background (no see-through).
+function DealRadarGuide({ onClose }: { onClose: () => void }) {
+  const sections: { icon: ReactNode; title: string; body: ReactNode }[] = [
+    {
+      icon: <Radar size={18} />,
+      title: 'What Deal Radar is',
+      body: <>Deal Radar scans Amazon for real, live price drops in your niche and refreshes every few hours. Instead of hunting for something to promote, you open the page and the deals are already waiting — each one ready to become a blog post or a social post with your affiliate link built in.</>,
+    },
+    {
+      icon: <BadgePercent size={18} />,
+      title: 'Reading a deal card',
+      body: <>Every card shows the current price, the discount, the star rating and review count, and — when we know it — how many people <strong>bought it this month</strong> (real demand) and your <strong>estimated commission per sale</strong>. The bigger the discount, the demand, and the payout, the better the opportunity.</>,
+    },
+    {
+      icon: <ShieldCheck size={18} />,
+      title: 'The trust badge (this is the important one)',
+      body: <>A “40% off” sticker means nothing if the price was quietly raised first. We check each product’s real price history and score it for you:
+        <span className="mt-2 flex flex-col gap-1.5">
+          <span className="inline-flex items-start gap-1.5"><ShieldCheck size={14} className="text-emerald-600 mt-0.5 shrink-0" /> <span><strong>Green — all-time low / genuine discount.</strong> The deal is real. Promote with confidence.</span></span>
+          <span className="inline-flex items-start gap-1.5"><ShieldAlert size={14} className="text-amber-600 mt-0.5 shrink-0" /> <span><strong>Amber — around its usual price.</strong> The “discount” is likely fake. Skip it, or wait.</span></span>
+        </span>
+        Turn on the <strong>Real deals</strong> filter to hide the fakes entirely.</>,
+    },
+    {
+      icon: <Sparkles size={18} />,
+      title: 'Double wins & Creator Connections',
+      body: <>The green strip at the top of the page is the jackpot: products that are <strong>on sale AND paying you an elevated Creator Connections bounty</strong> at the same time. A <span className="inline-flex items-center gap-0.5 font-medium text-emerald-700 dark:text-emerald-400"><Sparkles size={12} /> +% Creator Connections</span> line on any card means Amazon is paying extra to promote it right now — that rate is exact, not an estimate.</>,
+    },
+    {
+      icon: <Flame size={18} />,
+      title: '“Best opportunity” & Top pick',
+      body: <>The default sort is <strong>Best opportunity</strong> — a single score that blends discount depth, whether the deal is genuine, real monthly demand, review count, and any bounty. Cards scoring near the top get a <span className="inline-flex items-center gap-0.5 font-medium text-violet-600 dark:text-violet-400"><Flame size={12} /> Top pick</span> badge. Start there and you’re promoting the strongest deals first.</>,
+    },
+    {
+      icon: <Zap size={18} />,
+      title: 'Lightning deals',
+      body: <>A <span className="inline-flex items-center gap-0.5 font-medium text-amber-600 dark:text-amber-400"><Zap size={12} /> Lightning</span> deal only runs for a few hours — the card shows a live “Ends in Xh Ym” countdown so you can post while it’s hot. The <strong>Lightning</strong> filter shows only deals whose window is still open; once one ends it drops out automatically.</>,
+    },
+    {
+      icon: <Search size={18} />,
+      title: 'Filters, sorting & saved searches',
+      body: <>Narrow the feed by category, minimum discount, rating, <strong>Real deals</strong>, <strong>Creator Connections</strong>, or <strong>Lightning</strong> — or just search (“air fryer”, “dog bed”). Sort by best opportunity, biggest discount, best sellers, highest commission, or ending soonest. Found a combination you like? Hit <strong>Save these filters</strong> and it becomes a one-tap chip next time.</>,
+    },
+    {
+      icon: <ArrowRight size={18} />,
+      title: 'Turn a deal into a blog post',
+      body: <><strong>Make blog post</strong> writes a full, SEO-complete article for the product and publishes it to your WordPress — headline, FAQ, internal links, image alt text, and the required affiliate disclosure are all handled. Pricing is written in <strong>relative</strong> terms (“a great price right now”, “X% off”) rather than an exact dollar figure, so the post doesn’t go stale the moment the price shifts.</>,
+    },
+    {
+      icon: <Send size={18} />,
+      title: 'Quick post to socials',
+      body: <><strong>Quick post to socials</strong> pushes the deal straight to Facebook, Instagram, Threads or X in one move, with a caption and your affiliate link (and if you use Geniuslink, a properly grouped short link) attached for you. Great for lightning deals where speed matters more than a full article.</>,
+    },
+    {
+      icon: <Layers size={18} />,
+      title: 'Roundups',
+      body: <>Tap <strong>＋ Add to roundup</strong> on a few cards, then <strong>Create roundup post</strong> to bundle your hand-picked deals into one curated “best deals” article — perfect for a weekly “Top 5 in [niche]” post. Pick at least two.</>,
+    },
+    {
+      icon: <TrendingUp size={18} />,
+      title: 'Price Alerts & keeping posts fresh',
+      body: <>On your dashboard, <strong>Price Alerts</strong> tells you when a product you’ve posted about hits a genuine new all-time low (a reason to re-share) or when its price drifted from what your post implies. One tap re-posts the drop, or <strong>Refresh price</strong> quietly updates the wording in your existing post to match reality — no rewrite needed.</>,
+    },
+    {
+      icon: <Mail size={18} />,
+      title: 'Weekly digest',
+      body: <>Flip the <strong>Weekly digest</strong> toggle (top right) and we email you the best deals in your niche once a week, so you never have to remember to check.</>,
+    },
+  ]
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-0 sm:p-6" role="dialog" aria-modal="true" aria-label="Deal Radar guide">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="relative w-full sm:max-w-2xl max-h-full sm:max-h-[85vh] flex flex-col rounded-none sm:rounded-2xl border bg-white dark:bg-[#16161a] shadow-xl overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between gap-3 px-5 py-4 border-b shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-orange-100 text-orange-600"><Radar size={20} /></div>
+            <div>
+              <div className="text-base font-bold leading-tight">Your guide to Amazon Deal Radar</div>
+              <div className="text-xs text-muted-foreground">Everything it does, and how to turn a deal into content in one click.</div>
+            </div>
+          </div>
+          <button onClick={onClose} className="shrink-0 inline-flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground" title="Close"><CloseIcon size={18} /></button>
+        </div>
+
+        {/* Scrollable body */}
+        <div className="overflow-y-auto px-5 py-4 space-y-4">
+          {sections.map((s, i) => (
+            <div key={i} className="flex gap-3">
+              <div className="shrink-0 inline-flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-foreground/80">{s.icon}</div>
+              <div className="min-w-0">
+                <div className="text-sm font-semibold">{s.title}</div>
+                <div className="text-[13px] text-muted-foreground leading-relaxed mt-0.5">{s.body}</div>
+              </div>
+            </div>
+          ))}
+          <div className="rounded-lg bg-muted/60 px-3.5 py-3 text-[12px] text-muted-foreground leading-relaxed">
+            <strong className="text-foreground">Affiliate links & disclosure are automatic.</strong> Whether you make a blog post or a quick social post, your Amazon tag (or Geniuslink) is attached and the FTC affiliate disclosure is added for you — you never have to paste a link or a disclaimer by hand.
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between gap-3 px-5 py-3.5 border-t shrink-0">
+          <span className="text-xs text-muted-foreground">You can reopen this anytime from <span className="font-medium text-foreground">Full guide</span> at the top.</span>
+          <Button size="sm" onClick={onClose}>Got it — show me the deals</Button>
+        </div>
       </div>
     </div>
   )
