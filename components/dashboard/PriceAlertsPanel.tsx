@@ -10,7 +10,8 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Bell, TrendingDown, RefreshCw, ExternalLink, X as CloseIcon, Loader2 } from 'lucide-react'
+import { Bell, TrendingDown, RefreshCw, ExternalLink, X as CloseIcon, Send } from 'lucide-react'
+import QuickPostModal, { type QuickPostDeal } from '@/components/deal/QuickPostModal'
 
 interface PriceAlert {
   id: string
@@ -32,6 +33,7 @@ export default function PriceAlertsPanel() {
   const [alerts, setAlerts] = useState<PriceAlert[]>([])
   const [amazonTag, setAmazonTag] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [repost, setRepost] = useState<QuickPostDeal | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -65,7 +67,14 @@ export default function PriceAlertsPanel() {
   const amazonUrl = (asin: string) =>
     amazonTag ? `https://www.amazon.com/dp/${asin}?tag=${encodeURIComponent(amazonTag)}` : `https://www.amazon.com/dp/${asin}`
 
+  // Offer a one-tap re-share when the news is a price DROP worth posting: any
+  // new all-time low, or a stale-price alert where the price fell.
+  const canRepost = (a: PriceAlert) =>
+    a.kind === 'new_low' ||
+    (a.kind === 'stale_price' && a.price_now_cents != null && a.price_ref_cents != null && a.price_now_cents < a.price_ref_cents)
+
   return (
+    <>
     <div className="rounded-2xl border bg-card overflow-hidden">
       <div className="flex items-center justify-between px-4 py-3 border-b">
         <div className="flex items-center gap-2 font-semibold text-sm">
@@ -94,6 +103,14 @@ export default function PriceAlertsPanel() {
                 <div className="text-sm truncate">{a.title || a.asin}</div>
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
+                {canRepost(a) && (
+                  <button
+                    onClick={() => setRepost({ asin: a.asin, title: a.title || a.asin, imageUrl: a.image_url })}
+                    className="inline-flex items-center gap-1 text-xs font-semibold rounded-full bg-orange-500 hover:bg-orange-600 text-white px-3 py-1.5 transition"
+                  >
+                    <Send size={12} /> Post the drop
+                  </button>
+                )}
                 {a.kind === 'stale_price' && a.blog_post_id ? (
                   <Link href="/content" className="text-xs font-medium rounded-full border px-3 py-1.5 hover:bg-accent">Refresh post</Link>
                 ) : (
@@ -111,5 +128,7 @@ export default function PriceAlertsPanel() {
         })}
       </ul>
     </div>
+    {repost && <QuickPostModal deal={repost} onClose={() => setRepost(null)} />}
+    </>
   )
 }
