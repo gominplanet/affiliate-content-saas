@@ -67,7 +67,7 @@ export async function POST(request: Request) {
     // rides through Geniuslink's redirect either way, so links always earn.
     const gKey = ((intRow as { geniuslink_api_key?: string | null } | null)?.geniuslink_api_key || '').trim()
     const gSecret = ((intRow as { geniuslink_api_secret?: string | null } | null)?.geniuslink_api_secret || '').trim()
-    const links = await buildPlatformGeniuslinks(gKey, gSecret, link, deal.title as string, platforms)
+    const { links, note: geniuslinkNote } = await buildPlatformGeniuslinks(gKey, gSecret, link, deal.title as string, platforms)
 
     const { data: brand } = await sb.from('brand_profiles')
       .select('affiliate_disclaimer').eq('user_id', user.id).maybeSingle()
@@ -109,7 +109,7 @@ Return ONLY the caption text.` }],
     })
 
     const anyOk = results.some((r) => r.ok)
-    return NextResponse.json({ ok: anyOk, results, caption: baseCaption }, { status: anyOk ? 200 : 502 })
+    return NextResponse.json({ ok: anyOk, results, caption: baseCaption, geniuslinkNote }, { status: anyOk ? 200 : 502 })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error('[deal-radar/social-post]', msg)
@@ -134,19 +134,29 @@ async function buildPlatformGeniuslinks(
   destination: string,
   title: string,
   platforms: QuickPostPlatform[],
-): Promise<Partial<Record<QuickPostPlatform, string>>> {
+): Promise<{ links: Partial<Record<QuickPostPlatform, string>>; note: string | null }> {
   const out: Partial<Record<QuickPostPlatform, string>> = {}
-  if (!gKey || !gSecret) return out
+  // First Geniuslink error we hit — surfaced to the client so a fallback to the
+  // bare tagged link is visible ("why isn't my link a geni.us link?") instead of
+  // silent. null when Geniuslink isn't connected or everything shortened fine.
+  let note: string | null = null
+  const capture = (msg: string) => { if (!note) note = msg }
+  if (!gKey || !gSecret) return { links: out, note }
   const svc = createGeniuslinkService(gKey, gSecret)
 
   // One list-groups call, then find-or-create each platform group off the map.
-  let groupsByName: Map<string, number>
+  // If listing groups fails we DON'T give up on shortening — we proceed with an
+  // empty map, so each platform still tries to create a link (in its default
+  // group as a last resort). Only a hard createLink failure drops to the tagged
+  // link.
+  let groupsByName = new Map<string, number>()
   try {
     const groups = await svc.listGroups()
     groupsByName = new Map(groups.map((g) => [String(g.Name || '').trim().toLowerCase(), g.Id]))
   } catch (err) {
-    console.warn('[deal-radar/social-post] geniuslink listGroups failed — using tagged links:', err instanceof Error ? err.message : err)
-    return out
+    const m = err instanceof Error ? err.message : String(err)
+    console.warn('[deal-radar/social-post] geniuslink listGroups failed — will still try default-group links:', m)
+    capture(`Geniuslink: ${m}`)
   }
 
   for (const p of platforms) {
@@ -154,18 +164,30 @@ async function buildPlatformGeniuslinks(
     try {
       let groupId = groupsByName.get(name.toLowerCase()) ?? null
       if (!groupId) {
-        groupId = await svc.createGroup(name)
-        if (groupId) groupsByName.set(name.toLowerCase(), groupId)
+        try {
+          groupId = await svc.createGroup(name)
+          if (groupId) groupsByName.set(name.toLowerCase(), groupId)
+        } catch (gErr) {
+          console.warn(`[deal-radar/social-post] geniuslink createGroup(${name}) failed — using default group:`, gErr instanceof Error ? gErr.message : gErr)
+        }
       }
-      const url = await svc.createLink(
-        destination,
-        `${title} — ${name}`.slice(0, 120),
-        groupId ? { groupId, note: `Deal Radar | ${name}` } : {},
-      )
+      const label = `${title} — ${name}`.slice(0, 120)
+      // Grouped link first; if that specific call fails (e.g. a just-created
+      // group id not yet usable), retry WITHOUT a group so we still return a
+      // geni.us short link rather than a bare Amazon URL.
+      let url: string
+      try {
+        url = await svc.createLink(destination, label, groupId ? { groupId, note: `Deal Radar | ${name}` } : {})
+      } catch (linkErr) {
+        console.warn(`[deal-radar/social-post] geniuslink grouped createLink for ${p} failed — retrying in default group:`, linkErr instanceof Error ? linkErr.message : linkErr)
+        url = await svc.createLink(destination, label, {})
+      }
       if (url && /^https?:\/\//i.test(url)) out[p] = url
     } catch (err) {
-      console.warn(`[deal-radar/social-post] geniuslink wrap failed for ${p} — using tagged link:`, err instanceof Error ? err.message : err)
+      const m = err instanceof Error ? err.message : String(err)
+      console.warn(`[deal-radar/social-post] geniuslink wrap failed for ${p} — using tagged link:`, m)
+      capture(`Geniuslink: ${m}`)
     }
   }
-  return out
+  return { links: out, note }
 }

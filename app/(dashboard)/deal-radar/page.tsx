@@ -442,6 +442,7 @@ function QuickPostModal({ deal, onClose }: { deal: Deal; onClose: () => void }) 
   const [caption, setCaption] = useState('')
   const [posting, setPosting] = useState(false)
   const [results, setResults] = useState<PostResult[] | null>(null)
+  const [linkNote, setLinkNote] = useState<string | null>(null)
 
   const toggle = (key: string) => setSelected((s) => {
     const n = new Set(s); n.has(key) ? n.delete(key) : n.add(key); return n
@@ -449,7 +450,7 @@ function QuickPostModal({ deal, onClose }: { deal: Deal; onClose: () => void }) 
 
   const post = async () => {
     if (selected.size === 0) { toast.error('Pick at least one platform.'); return }
-    setPosting(true); setResults(null)
+    setPosting(true); setResults(null); setLinkNote(null)
     try {
       const res = await fetch('/api/deal-radar/social-post', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -459,14 +460,16 @@ function QuickPostModal({ deal, onClose }: { deal: Deal; onClose: () => void }) 
       if (!res.ok && !Array.isArray(data.results)) { toast.error(data.error || 'Could not post.'); return }
       const posted = data.results as PostResult[]
       setResults(posted)
+      const note = typeof data.geniuslinkNote === 'string' ? data.geniuslinkNote : null
+      setLinkNote(note)
       const okCount = posted.filter((r) => r.ok).length
       const failCount = posted.length - okCount
       if (okCount > 0) toast.success(`Posted to ${okCount} platform${okCount > 1 ? 's' : ''}.`)
       if (data.caption && !caption) setCaption(data.caption)
-      // Everything the user asked for went out — close the modal (brief beat so
-      // the green check is visible). If any platform failed, stay open so they
-      // can read the error and retry.
-      if (okCount > 0 && failCount === 0) setTimeout(onClose, 900)
+      // Everything the user asked for went out cleanly — close the modal (brief
+      // beat so the green check is visible). Stay open if any platform failed OR
+      // a Geniuslink note needs reading (e.g. link fell back to the tagged URL).
+      if (okCount > 0 && failCount === 0 && !note) setTimeout(onClose, 900)
     } catch {
       toast.error('Could not post.')
     } finally {
@@ -519,6 +522,13 @@ function QuickPostModal({ deal, onClose }: { deal: Deal; onClose: () => void }) 
                     : <span className="text-xs text-red-600">{r.error}</span>}
                 </div>
               ))}
+            </div>
+          )}
+
+          {linkNote && (
+            <div className="flex items-start gap-2 text-xs rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 text-amber-700 dark:text-amber-400">
+              <AlertCircle size={14} className="mt-0.5 shrink-0" />
+              <span>Your affiliate tag still earns, but we couldn&apos;t shorten via Geniuslink this time, so the post used your plain Amazon link. Reason: {linkNote}</span>
             </div>
           )}
         </div>
