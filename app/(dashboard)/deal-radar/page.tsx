@@ -457,10 +457,16 @@ function QuickPostModal({ deal, onClose }: { deal: Deal; onClose: () => void }) 
       })
       const data = await res.json()
       if (!res.ok && !Array.isArray(data.results)) { toast.error(data.error || 'Could not post.'); return }
-      setResults(data.results as PostResult[])
-      const okCount = (data.results as PostResult[]).filter((r) => r.ok).length
+      const posted = data.results as PostResult[]
+      setResults(posted)
+      const okCount = posted.filter((r) => r.ok).length
+      const failCount = posted.length - okCount
       if (okCount > 0) toast.success(`Posted to ${okCount} platform${okCount > 1 ? 's' : ''}.`)
       if (data.caption && !caption) setCaption(data.caption)
+      // Everything the user asked for went out — close the modal (brief beat so
+      // the green check is visible). If any platform failed, stay open so they
+      // can read the error and retry.
+      if (okCount > 0 && failCount === 0) setTimeout(onClose, 900)
     } catch {
       toast.error('Could not post.')
     } finally {
