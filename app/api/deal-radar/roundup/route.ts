@@ -15,7 +15,7 @@ import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { applyPostFixes } from '@/lib/seo-fix'
-import { resolveAffiliateUrl, generateDigestContent, nicheLabelFrom, type DigestDeal, type DigestDealRow } from '@/lib/weekly-digest'
+import { resolveAffiliateUrl, generateDigestContent, nicheLabelFrom, keywordSlug, type DigestDeal, type DigestDealRow } from '@/lib/weekly-digest'
 
 export const runtime = 'nodejs'
 export const maxDuration = 120
@@ -83,8 +83,7 @@ export async function POST(request: Request) {
     // in the site's default "Blog"/"Uncategorized" bucket.
     let categoryIds: number[] = []
     try { const id = await wpService.createCategory('Deals'); if (id) categoryIds = [id] } catch { /* leave as-is rather than fail the post */ }
-    const slugTheme = (theme || 'deals').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'deals'
-    const slug = `roundup-${slugTheme}-${Date.now().toString(36)}`
+    const slug = keywordSlug(title, theme)
     const wpPost = await wpService.createPost({
       title, slug, content: bodyHtml, excerpt,
       status: 'publish', comment_status: 'closed', ping_status: 'closed',
