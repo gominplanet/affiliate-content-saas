@@ -366,3 +366,43 @@ export function buildPriceContext(a: DealAssessment): string {
   }
   return ''
 }
+
+/**
+ * A styled, self-contained "price check" HTML block for a generated post —
+ * Now / Typical / All-time low, plus a little bar showing where today's price
+ * sits in its historical range. Pure inline CSS (WordPress-safe, no JS). Trust +
+ * SEO/AEO signal for "is this really a deal?". Never names a data source.
+ *
+ * Returns '' unless there's a current price plus at least a typical or all-time
+ * low to compare against (otherwise there's nothing honest to show).
+ */
+export function buildPriceSnapshotHtml(a: DealAssessment): string {
+  const now = a.currentCents
+  const typical = a.avg90Cents
+  const low = a.allTimeLowCents
+  if (now == null || (typical == null && low == null)) return ''
+
+  const usd = (c: number | null) => (c == null ? null : `$${(c / 100).toFixed(2)}`)
+  const cell = (label: string, val: string | null, accent = false) => val
+    ? `<div style="flex:1;min-width:90px"><div style="font-size:12px;color:#888;text-transform:uppercase;letter-spacing:.04em">${label}</div><div style="font-size:22px;font-weight:700;${accent ? 'color:#16a34a' : 'color:#18181b'}">${val}</div></div>`
+    : ''
+
+  // Bar: a track from all-time low (left) to typical (right) with a marker at
+  // "now". Only drawn when both bounds exist and form a real range.
+  let bar = ''
+  if (low != null && typical != null && typical > low) {
+    const pos = Math.max(0, Math.min(100, Math.round(((now - low) / (typical - low)) * 100)))
+    bar = `<div style="margin-top:14px"><div style="position:relative;height:8px;border-radius:999px;background:linear-gradient(90deg,#16a34a,#e5e7eb)"><div style="position:absolute;top:-4px;left:${pos}%;transform:translateX(-50%);width:16px;height:16px;border-radius:999px;background:#fff;border:3px solid #16a34a;box-shadow:0 1px 3px rgba(0,0,0,.2)"></div></div><div style="display:flex;justify-content:space-between;font-size:11px;color:#999;margin-top:6px"><span>All-time low</span><span>Typical price</span></div></div>`
+  }
+
+  const badge = a.label
+    ? `<div style="display:inline-block;margin-top:12px;font-size:13px;font-weight:600;color:#16a34a;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:999px;padding:4px 12px">${a.label}</div>`
+    : ''
+
+  return `<div class="mvp-price-snapshot" style="border:1px solid #e5e7eb;border-radius:14px;padding:18px;margin:1.5em 0;background:#fafafa">
+<div style="font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#71717a;margin-bottom:12px">Price check</div>
+<div style="display:flex;gap:16px;flex-wrap:wrap">${cell('Right now', usd(now), true)}${cell('Typical', usd(typical))}${cell('All-time low', usd(low))}</div>
+${bar}
+${badge}
+</div>`
+}

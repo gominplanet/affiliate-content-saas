@@ -42,7 +42,7 @@ import { applyPostFixes } from '@/lib/seo-fix'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { extractAsin, fetchAmazonProduct, isValidAsin, type AmazonProduct } from '@/services/amazon'
-import { fetchKeepaProductStats, buildPriceContext } from '@/services/keepa'
+import { fetchKeepaProductStats, buildPriceContext, buildPriceSnapshotHtml } from '@/services/keepa'
 import { resolveFinalUrl } from '@/lib/product-link'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { composeWithNanoBanana, composeWithNanoBananaPro, rehostToFal } from '@/lib/thumbnail-generators'
@@ -559,7 +559,11 @@ export async function POST(req: Request) {
   // an honest "lowest price we've seen / X% below its usual" claim. Best-effort:
   // empty string when Keepa is unconfigured or has no usable history, and the
   // writer prompt drops the line cleanly. No-op cost without KEEPA_API_KEY.
-  const priceHistory = buildPriceContext(await fetchKeepaProductStats(asin))
+  const priceAssessment = await fetchKeepaProductStats(asin)
+  const priceHistory = buildPriceContext(priceAssessment)
+  // Phase 3: a visual "price check" block (Now / Typical / All-time low + bar)
+  // injected into the post body — trust + AEO signal, never names a source.
+  const priceSnapshot = buildPriceSnapshotHtml(priceAssessment)
 
   // Affiliate CTA link — MVP attaches the creator's OWN Amazon tag (and wraps
   // it through Geniuslink when connected) itself. The engine used to emit a bare
@@ -769,6 +773,7 @@ export async function POST(req: Request) {
     asin: product.asin,
     affiliateUrl: dealAffiliateUrl,
     disclaimer: affiliateDisclaimer,
+    priceSnapshot,
   })
 
   // ── Title + slug ──────────────────────────────────────────────────────
@@ -1180,6 +1185,9 @@ interface InjectBodyImagesOpts {
   affiliateUrl?: string
   /** FTC affiliate disclosure — injected near the top, always present. */
   disclaimer?: string
+  /** Visual "price check" block — injected under the first H2 (the deal-at-a-
+   *  glance section). Empty when there's no usable price history. */
+  priceSnapshot?: string
 }
 
 /** Splice the WP-uploaded body images into the HTML at sensible H2
@@ -1265,6 +1273,15 @@ function injectBodyImages(opts: InjectBodyImagesOpts): string {
   if (opts.promoCode) ctaAtts.push(`code="${escapeAttr(opts.promoCode)}"`)
   if (opts.badgeLabel) ctaAtts.push(`badge="${escapeAttr(opts.badgeLabel)}"`)
   out = out + `\n\n[mvp_deal_cta ${ctaAtts.join(' ')}]\n`
+
+  // 5. Price-check visual under the first H2 (the deal-at-a-glance section).
+  //    A replacement FUNCTION, not a string, so the '$' in prices isn't treated
+  //    as a capture-group reference.
+  const snap = opts.priceSnapshot
+  if (snap) {
+    if (/<\/h2>/i.test(out)) out = out.replace(/<\/h2>/i, (m) => `${m}\n${snap}\n`)
+    else out = `${snap}\n` + out
+  }
 
   return out
 }
