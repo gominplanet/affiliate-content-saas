@@ -30,6 +30,7 @@ export default function QuickPostModal({
   deal, onClose, initialCaption = '',
 }: { deal: QuickPostDeal; onClose: () => void; initialCaption?: string }) {
   const [selected, setSelected] = useState<Set<string>>(new Set(QUICK_PLATFORMS.map((p) => p.key)))
+  const [story, setStory] = useState(false)
   const [caption, setCaption] = useState(initialCaption)
   const [posting, setPosting] = useState(false)
   const [results, setResults] = useState<PostResult[] | null>(null)
@@ -40,7 +41,7 @@ export default function QuickPostModal({
   })
 
   const post = async () => {
-    if (selected.size === 0) { toast.error('Pick at least one platform.'); return }
+    if (selected.size === 0 && !story) { toast.error('Pick at least one destination.'); return }
     setPosting(true); setResults(null); setLinkNote(null)
     try {
       const res = await fetch('/api/deal-radar/social-post', {
@@ -48,7 +49,7 @@ export default function QuickPostModal({
         // title/imageUrl are a fallback the API uses when the ASIN has rotated
         // out of the live deal cache (e.g. re-sharing an older watched product).
         body: JSON.stringify({
-          asin: deal.asin, platforms: [...selected], caption: caption.trim() || undefined,
+          asin: deal.asin, platforms: [...selected], story, caption: caption.trim() || undefined,
           title: deal.title, imageUrl: deal.imageUrl,
         }),
       })
@@ -96,6 +97,19 @@ export default function QuickPostModal({
             </div>
           </div>
 
+          {/* Instagram Story — a separate path: a 9:16 image with a baked-in
+              "LINK IN BIO" call-to-action (Stories can't carry a link/caption). */}
+          <div>
+            <button onClick={() => setStory((v) => !v)}
+              className={`w-full text-left text-sm rounded-lg border px-3 py-2.5 flex items-start gap-2.5 transition ${story ? 'border-pink-500 bg-pink-500/10' : 'bg-background hover:bg-accent'}`}>
+              <span className={`mt-0.5 inline-flex h-4 w-4 items-center justify-center rounded border shrink-0 ${story ? 'bg-pink-500 border-pink-500 text-white' : ''}`}>{story && <Check size={12} />}</span>
+              <span>
+                <span className="font-medium">Also post an Instagram Story</span>
+                <span className="block text-[11px] text-muted-foreground leading-snug mt-0.5">A 9:16 image with a “Shop this — link in bio” banner. Point your bio at your Link in Bio page so followers can shop it.</span>
+              </span>
+            </button>
+          </div>
+
           <div>
             <div className="text-xs font-semibold text-muted-foreground mb-1.5">Caption <span className="font-normal">(leave blank to auto-write)</span></div>
             <textarea value={caption} onChange={(e) => setCaption(e.target.value)} rows={3}
@@ -109,7 +123,7 @@ export default function QuickPostModal({
               {results.map((r) => (
                 <div key={r.platform} className="flex items-center gap-2 text-sm">
                   {r.ok ? <Check size={15} className="text-emerald-600" /> : <AlertCircle size={15} className="text-red-600" />}
-                  <span className="capitalize font-medium">{QUICK_PLATFORMS.find((p) => p.key === r.platform)?.label || r.platform}</span>
+                  <span className="capitalize font-medium">{r.platform === 'instagram_story' ? 'Instagram Story' : (QUICK_PLATFORMS.find((p) => p.key === r.platform)?.label || r.platform)}</span>
                   {r.ok
                     ? (r.url ? <a href={r.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-xs">view</a> : <span className="text-xs text-muted-foreground">posted</span>)
                     : <span className="text-xs text-red-600">{r.error}</span>}
@@ -128,7 +142,7 @@ export default function QuickPostModal({
 
         <div className="flex items-center justify-end gap-2 p-4 border-t">
           <Button variant="outline" size="sm" onClick={onClose}>Close</Button>
-          <Button size="sm" onClick={post} disabled={posting || selected.size === 0}>
+          <Button size="sm" onClick={post} disabled={posting || (selected.size === 0 && !story)}>
             {posting ? <><Loader2 size={14} className="mr-1.5 animate-spin" /> Posting…</> : <><Send size={14} className="mr-1.5" /> Post now</>}
           </Button>
         </div>
