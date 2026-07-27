@@ -232,19 +232,19 @@ export default function DealRadarPage() {
 
       {/* Double-win ticker */}
       {ticker.length > 0 && (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
-          <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-800 mb-2">
+        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3">
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400 mb-2">
             <TrendingUp size={14} /> Double wins — on sale AND paying a bounty
           </div>
           <div className="flex gap-3 overflow-x-auto pb-1">
             {ticker.map((d) => (
               <a key={d.asin} href={d.amazonUrl} target="_blank" rel="noopener noreferrer"
-                 className="shrink-0 w-44 rounded-lg bg-white border border-emerald-100 p-2 hover:shadow-sm transition">
-                {d.imageUrl && <img src={d.imageUrl} alt="" className="h-20 w-full object-contain mb-1.5" />}
+                 className="shrink-0 w-44 rounded-lg bg-card text-[color:var(--text)] border border-emerald-500/20 p-2 hover:shadow-sm transition">
+                {d.imageUrl && <img src={d.imageUrl} alt="" className="h-20 w-full object-contain mb-1.5 rounded bg-white" />}
                 <div className="text-xs font-medium line-clamp-2 leading-snug">{d.title}</div>
                 <div className="flex items-center gap-1.5 mt-1">
-                  {d.discountPct != null && <span className="text-[10px] font-bold text-red-600">-{d.discountPct}%</span>}
-                  {d.campaign && <span className="text-[10px] font-bold text-emerald-700">+{d.campaign.commissionPct}% CC</span>}
+                  {d.discountPct != null && <span className="text-[10px] font-bold text-red-500">-{d.discountPct}%</span>}
+                  {d.campaign && <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">+{d.campaign.commissionPct}% CC</span>}
                 </div>
               </a>
             ))}

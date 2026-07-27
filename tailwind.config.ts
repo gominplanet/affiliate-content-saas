@@ -32,11 +32,15 @@ const config: Config = {
         // transparent/unstyled. Fixes see-through modals + panels on pages that
         // use these conventions (e.g. Deal Radar). Theme-aware via the vars.
         background: 'var(--bg)',
+        foreground: 'var(--text)',
         card: 'var(--surface)',
+        'card-foreground': 'var(--text)',
         popover: 'var(--surface)',
+        'popover-foreground': 'var(--text)',
         muted: 'var(--surface-2)',
         'muted-foreground': 'var(--text-3)',
         accent: 'var(--surface-2)',
+        'accent-foreground': 'var(--text)',
         primary: 'var(--accent)',
         'primary-foreground': '#ffffff',
       },

@@ -99,37 +99,28 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: true, fetched: 0, stoppedForTokens, tokensLeft: lastTokensLeft })
   }
 
-  // 2. Precompute the Amazon Creator Connections match (shared catalog). Best
-  //    still-running, in-budget, slots-available campaign per ASIN. Best-effort:
-  //    any failure just leaves campaign fields null.
-  const ccByAsin = await matchCreatorConnections(admin, deals.map((d) => d.asin))
-
-  // 3. Upsert. first_seen_at intentionally omitted so it survives (it defaults
-  //    on insert, and upsert only writes the columns we pass).
+  // 2. Upsert. first_seen_at intentionally omitted so it survives (it defaults
+  //    on insert, and upsert only writes the columns we pass). The campaign_*
+  //    columns are NOT written here — they're stamped in step 3 by a set-based
+  //    match over the WHOLE cache (see match_deal_radar_campaigns), so deals that
+  //    accumulated across earlier runs get matched too, not just this sweep.
   const nowIso = new Date().toISOString()
-  const rows = deals.map((d) => {
-    const cc = ccByAsin.get(d.asin)
-    return {
-      asin: d.asin,
-      title: d.title.slice(0, 500),
-      brand: d.brand,
-      image_url: d.imageUrl,
-      category_id: d.categoryId,
-      price_now_cents: d.priceNowCents,
-      price_was_cents: d.priceWasCents,
-      discount_pct: d.discountPct,
-      rating: d.rating,
-      review_count: d.reviewCount,
-      sales_rank: d.salesRank,
-      deal_type: d.dealType,
-      lightning_ends_at: d.lightningEndsAt,
-      campaign_id: cc?.campaignId ?? null,
-      campaign_commission_pct: cc?.commissionPct ?? null,
-      campaign_brand: cc?.brand ?? null,
-      campaign_details_url: cc?.detailsUrl ?? null,
-      refreshed_at: nowIso,
-    }
-  })
+  const rows = deals.map((d) => ({
+    asin: d.asin,
+    title: d.title.slice(0, 500),
+    brand: d.brand,
+    image_url: d.imageUrl,
+    category_id: d.categoryId,
+    price_now_cents: d.priceNowCents,
+    price_was_cents: d.priceWasCents,
+    discount_pct: d.discountPct,
+    rating: d.rating,
+    review_count: d.reviewCount,
+    sales_rank: d.salesRank,
+    deal_type: d.dealType,
+    lightning_ends_at: d.lightningEndsAt,
+    refreshed_at: nowIso,
+  }))
 
   let upserted = 0
   // Chunk the upsert so a huge sweep can't exceed statement limits.
@@ -139,6 +130,16 @@ export async function GET(req: Request) {
     const { error } = await (admin as any).from('deal_radar_cache').upsert(chunk, { onConflict: 'asin' })
     if (!error) upserted += chunk.length
   }
+
+  // 3. Precompute the Amazon Creator Connections match over the ENTIRE cache in
+  //    one indexed pass (GIN `@>` join). Idempotent: stamps ASINs that now match
+  //    an active, in-budget campaign; clears ones that no longer do. Best-effort.
+  let campaignMatched: number | null = null
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: m } = await (admin as any).rpc('match_deal_radar_campaigns')
+    campaignMatched = typeof m === 'number' ? m : null
+  } catch { /* catalog absent / rpc missing — leave campaign fields as-is */ }
 
   // 4. Verify a paced batch against price history (the "real deal?" layer).
   //    Keepa's 20-tokens/min rate is the limiter, so we cap the batch and stop
@@ -155,7 +156,7 @@ export async function GET(req: Request) {
     ok: true,
     fetched: deals.length,
     upserted,
-    withCampaign: [...ccByAsin.keys()].length,
+    campaignMatched,
     verified,
     stoppedForTokens,
     tokensLeft: lastTokensLeft,
@@ -213,55 +214,3 @@ async function enrichPriceHistory(
   return done
 }
 
-interface CcMatch { campaignId: string; commissionPct: number; brand: string | null; detailsUrl: string | null }
-
-/**
- * For a batch of ASINs, find the best active Creator Connections campaign each
- * one belongs to, from the shared cc_campaign_catalog (GIN index on `asins`).
- * "Active" = not ended, budget left, slots left. Returns a map asin → best.
- * Best-effort: returns an empty map on any error (catalog absent, etc.).
- */
-async function matchCreatorConnections(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  admin: any,
-  asins: string[],
-): Promise<Map<string, CcMatch>> {
-  const out = new Map<string, CcMatch>()
-  if (!asins.length) return out
-  const today = new Date().toISOString().slice(0, 10)
-  const wanted = new Set(asins)
-  try {
-    // Pull catalog rows whose asins overlap the batch. Query in chunks so the
-    // overlap array stays a reasonable size.
-    for (let i = 0; i < asins.length; i += 100) {
-      const chunk = asins.slice(i, i + 100)
-      const { data } = await admin
-        .from('cc_campaign_catalog')
-        .select('campaign_id,brand_name,asins,commission_pct,ends_at,budget_remaining,available_slot')
-        .overlaps('asins', chunk)
-        .gte('ends_at', today)
-      for (const row of (data ?? []) as Array<Record<string, unknown>>) {
-        const commissionPct = Number(row.commission_pct)
-        if (!Number.isFinite(commissionPct) || commissionPct <= 0) continue
-        // Skip exhausted campaigns (null = unknown/unlimited → allowed).
-        const budget = row.budget_remaining
-        if (budget != null && Number(budget) <= 0) continue
-        const slot = row.available_slot
-        if (slot != null && Number(slot) <= 0) continue
-        const campaignId = String(row.campaign_id || '')
-        const brand = typeof row.brand_name === 'string' ? row.brand_name : null
-        const detailsUrl = campaignId ? `https://affiliate-program.amazon.com/creatorconnections/campaign/${campaignId}` : null
-        const rowAsins = Array.isArray(row.asins) ? (row.asins as string[]) : []
-        for (const a of rowAsins) {
-          const asin = String(a || '').toUpperCase()
-          if (!wanted.has(asin)) continue
-          const prev = out.get(asin)
-          if (!prev || commissionPct > prev.commissionPct) {
-            out.set(asin, { campaignId, commissionPct, brand, detailsUrl })
-          }
-        }
-      }
-    }
-  } catch { /* catalog missing / query error — no campaign data this run */ }
-  return out
-}
