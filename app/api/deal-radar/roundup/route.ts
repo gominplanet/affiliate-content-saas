@@ -1,0 +1,111 @@
+/**
+ * POST /api/deal-radar/roundup  { asins: string[] }
+ *
+ * On-demand roundup: turn a hand-picked set of Deal Radar deals into ONE
+ * curated roundup blog post, published to the creator's WordPress. Same engine
+ * as the automatic weekly digest, but manual + instant (the creator chooses the
+ * exact products). SEO-complete, with the FTC disclosure. Pro + Labs gated.
+ */
+import { NextResponse } from 'next/server'
+import { createServerClient } from '@/lib/supabase/server'
+import { normalizeTier, type Tier } from '@/lib/tier'
+import { dealRadarEnabled } from '@/lib/feature-flags'
+import { createWordPressService } from '@/services/wordpress'
+import { getWordPressCredentials } from '@/lib/wordpress-sites'
+import { createAnthropicClient } from '@/lib/anthropic'
+import { recordAnthropicUsage } from '@/lib/ai-usage'
+import { applyPostFixes } from '@/lib/seo-fix'
+import { resolveAffiliateUrl, generateDigestContent, nicheLabelFrom, type DigestDeal, type DigestDealRow } from '@/lib/weekly-digest'
+
+export const runtime = 'nodejs'
+export const maxDuration = 120
+
+const DEFAULT_DISCLOSURE = 'As an Amazon Associate I earn from qualifying purchases. This post contains affiliate links, and I may earn a commission at no extra cost to you.'
+const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+export async function POST(request: Request) {
+  try {
+    const supabase = await createServerClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sb = supabase as any
+
+    const { data: intRow } = await sb.from('integrations')
+      .select('tier,amazon_associates_tag,geniuslink_api_key,geniuslink_api_secret')
+      .eq('user_id', user.id).maybeSingle()
+    const tier = normalizeTier(intRow?.tier) as Tier
+    if (!(tier === 'pro' || tier === 'admin') || !(dealRadarEnabled() || tier === 'admin')) {
+      return NextResponse.json({ error: 'Amazon Deal Radar is a Pro feature.' }, { status: 403 })
+    }
+
+    const body = await request.json().catch(() => ({})) as { asins?: unknown }
+    const asins = (Array.isArray(body.asins) ? body.asins : [])
+      .map((a) => String(a).trim().toUpperCase())
+      .filter((a) => /^[A-Z0-9]{10}$/.test(a))
+    const unique = [...new Set(asins)].slice(0, 12)
+    if (unique.length < 2) return NextResponse.json({ error: 'Pick at least 2 deals for a roundup.' }, { status: 400 })
+
+    const { data: rows } = await sb.from('deal_radar_cache')
+      .select('asin,title,brand,image_url,price_now_cents,price_was_cents,discount_pct,deal_quality,lowest_label')
+      .in('asin', unique)
+    const dealRows = (rows ?? []) as DigestDealRow[]
+    if (dealRows.length < 2) return NextResponse.json({ error: 'Those deals are no longer on the radar.' }, { status: 404 })
+    // Preserve the caller's chosen order.
+    dealRows.sort((a, b) => unique.indexOf(a.asin) - unique.indexOf(b.asin))
+
+    const site = await getWordPressCredentials(supabase, user.id)
+    if (!site) return NextResponse.json({ error: 'Connect your WordPress site first (Connect Socials / WordPress).' }, { status: 400 })
+
+    const { data: brand } = await sb.from('brand_profiles').select('name,niches,affiliate_disclaimer').eq('user_id', user.id).maybeSingle()
+    const niches: string[] = Array.isArray(brand?.niches) ? brand.niches : []
+    const tag = (intRow?.amazon_associates_tag || '').trim() || null
+
+    const deals: DigestDeal[] = []
+    for (const r of dealRows) {
+      const affiliateUrl = await resolveAffiliateUrl(r.asin, r.title, tag, intRow?.geniuslink_api_key ?? null, intRow?.geniuslink_api_secret ?? null)
+      deals.push({ ...r, affiliateUrl })
+    }
+
+    const client = createAnthropicClient()
+    const nicheLabel = nicheLabelFrom(niches)
+    const monthYear = new Date().toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+    const { title, html, excerpt } = await generateDigestContent({
+      client, deals, reviewerName: (brand?.name as string) || 'the team', nicheLabel, monthYear,
+      recordUsage: (msg) => recordAnthropicUsage(msg, { userId: user.id, tier, feature: 'deal_roundup', model: 'claude-haiku-4-5-20251001' }),
+    })
+
+    const disc = ((brand?.affiliate_disclaimer as string | null) || '').trim() || DEFAULT_DISCLOSURE
+    const bodyHtml = `<p class="mvp-affiliate-disclosure" style="font-size:13px;color:#6b6b70;font-style:italic;margin:0 0 1.25em"><em>${esc(disc)}</em></p>\n\n${html}`
+
+    const wpService = createWordPressService(site.wordpress_url, site.wordpress_username, site.wordpress_app_password, site.wordpress_api_token || undefined)
+    const slug = `roundup-${nicheLabel.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}-${Date.now().toString(36)}`
+    const wpPost = await wpService.createPost({
+      title, slug, content: bodyHtml, excerpt,
+      status: 'publish', comment_status: 'closed', ping_status: 'closed',
+    })
+
+    const { data: saved } = await sb.from('blog_posts').insert({
+      user_id: user.id, video_id: null, title, slug, content: bodyHtml, excerpt: null,
+      wordpress_post_id: wpPost.id, wordpress_url: wpPost.link, wordpress_site_id: site.site_id,
+      status: 'published', post_type: 'deal', seo_keyword: nicheLabel,
+      published_at: new Date().toISOString(),
+    }).select('id').single()
+
+    if (saved?.id) {
+      try {
+        await applyPostFixes({
+          supabase, userId: user.id, wpService, wpBase: site.wordpress_url.replace(/\/+$/, ''), tier,
+          post: { id: saved.id as string, title, slug, content: bodyHtml, seo_keyword: nicheLabel, post_type: 'deal', wordpress_post_id: wpPost.id },
+          fixes: 'all',
+        })
+      } catch (err) { console.warn('[deal-radar/roundup] SEO fix failed (post live):', err instanceof Error ? err.message : err) }
+    }
+
+    return NextResponse.json({ ok: true, url: wpPost.link, count: deals.length })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('[deal-radar/roundup]', msg)
+    return NextResponse.json({ error: msg }, { status: 500 })
+  }
+}
