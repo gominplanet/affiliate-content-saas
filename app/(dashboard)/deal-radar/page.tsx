@@ -75,6 +75,15 @@ const CATEGORIES: { id: number; label: string }[] = [
   { id: 11091801, label: 'Musical Instruments' },
   { id: 2972638011, label: 'Patio & Garden' },
   { id: 468642, label: 'Video Games' },
+  // Added 2026-07-27 — kept in sync with the cron's DEFAULT_CATEGORIES.
+  { id: 2619525011, label: 'Appliances' },
+  { id: 2617941011, label: 'Arts, Crafts & Sewing' },
+  { id: 16310161, label: 'Industrial & Scientific' },
+  { id: 9479199011, label: 'Luggage & Travel Gear' },
+  { id: 283155, label: 'Books' },
+  { id: 2625373011, label: 'Movies & TV' },
+  { id: 3367581, label: 'Jewelry' },
+  { id: 6358539011, label: 'Watches' },
 ]
 
 const SORTS: { key: string; label: string }[] = [
