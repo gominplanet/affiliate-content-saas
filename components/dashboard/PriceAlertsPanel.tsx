@@ -10,13 +10,13 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Bell, TrendingDown, RefreshCw, ExternalLink, X as CloseIcon, Send } from 'lucide-react'
+import { Bell, TrendingDown, RefreshCw, ExternalLink, X as CloseIcon, Send, Sparkles } from 'lucide-react'
 import QuickPostModal, { type QuickPostDeal } from '@/components/deal/QuickPostModal'
 
 interface PriceAlert {
   id: string
   asin: string
-  kind: 'new_low' | 'stale_price'
+  kind: 'new_low' | 'stale_price' | 'new_niche_deal'
   title: string | null
   image_url: string | null
   price_now_cents: number | null
@@ -70,7 +70,7 @@ export default function PriceAlertsPanel() {
   // Offer a one-tap re-share when the news is a price DROP worth posting: any
   // new all-time low, or a stale-price alert where the price fell.
   const canRepost = (a: PriceAlert) =>
-    a.kind === 'new_low' ||
+    a.kind === 'new_low' || a.kind === 'new_niche_deal' ||
     (a.kind === 'stale_price' && a.price_now_cents != null && a.price_ref_cents != null && a.price_now_cents < a.price_ref_cents)
 
   return (
@@ -87,7 +87,11 @@ export default function PriceAlertsPanel() {
 
       <ul className="divide-y">
         {unseen.map((a) => {
-          const isLow = a.kind === 'new_low'
+          const head = a.kind === 'new_low'
+            ? { icon: <TrendingDown size={13} />, cls: 'text-emerald-600', label: a.label || 'All-time low' }
+            : a.kind === 'new_niche_deal'
+              ? { icon: <Sparkles size={13} />, cls: 'text-violet-600 dark:text-violet-400', label: a.label || 'New deal in your niche' }
+              : { icon: <RefreshCw size={13} />, cls: 'text-amber-600', label: a.label || 'Price changed' }
           return (
             <li key={a.id} className="flex items-center gap-3 px-4 py-3">
               {a.image_url
@@ -95,9 +99,7 @@ export default function PriceAlertsPanel() {
                 : <div className="h-12 w-12 rounded-lg bg-muted shrink-0" />}
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5 text-xs font-semibold">
-                  {isLow
-                    ? <span className="inline-flex items-center gap-1 text-emerald-600"><TrendingDown size={13} /> {a.label || 'All-time low'}</span>
-                    : <span className="inline-flex items-center gap-1 text-amber-600"><RefreshCw size={13} /> {a.label || 'Price changed'}</span>}
+                  <span className={`inline-flex items-center gap-1 ${head.cls}`}>{head.icon} {head.label}</span>
                   {money(a.price_now_cents) && <span className="text-muted-foreground">· now {money(a.price_now_cents)}</span>}
                 </div>
                 <div className="text-sm truncate">{a.title || a.asin}</div>
