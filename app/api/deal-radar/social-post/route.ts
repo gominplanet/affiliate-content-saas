@@ -42,7 +42,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Amazon Deal Radar is a Pro feature.', currentTier: tier }, { status: 403 })
     }
 
-    const body = await request.json().catch(() => ({})) as { asin?: string; platforms?: unknown; caption?: string }
+    const body = await request.json().catch(() => ({})) as { asin?: string; platforms?: unknown; caption?: string; title?: string; imageUrl?: string }
     const asin = (body.asin || '').trim().toUpperCase()
     if (!/^[A-Z0-9]{10}$/.test(asin)) return NextResponse.json({ error: 'A valid ASIN is required.' }, { status: 400 })
     const platforms = (Array.isArray(body.platforms) ? body.platforms : [])
@@ -51,10 +51,17 @@ export async function POST(request: Request) {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sb = supabase as any
-    const { data: deal } = await sb.from('deal_radar_cache')
+    let { data: deal } = await sb.from('deal_radar_cache')
       .select('asin,title,brand,image_url,discount_pct,deal_quality,lowest_label')
       .eq('asin', asin).maybeSingle()
-    if (!deal) return NextResponse.json({ error: 'That deal is no longer on the radar.' }, { status: 404 })
+    // Fallback: a watched product re-shared from the Price Alerts box may have
+    // rotated out of the live cache. If the caller supplied the title/image
+    // (they always do from the shared modal), post from that instead of 404ing.
+    if (!deal) {
+      const fbTitle = (body.title || '').trim()
+      if (!fbTitle) return NextResponse.json({ error: 'That deal is no longer on the radar.' }, { status: 404 })
+      deal = { asin, title: fbTitle, brand: null, image_url: body.imageUrl || null, discount_pct: null, deal_quality: null, lowest_label: null }
+    }
 
     const tag = ((intRow as { amazon_associates_tag?: string | null } | null)?.amazon_associates_tag || '').trim()
     if (!tag) return NextResponse.json({ error: 'Add your Amazon Associates tag in Settings first, so your links earn.' }, { status: 400 })
