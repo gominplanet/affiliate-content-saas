@@ -70,7 +70,7 @@ export async function POST(request: Request) {
     const client = createAnthropicClient()
     const nicheLabel = nicheLabelFrom(niches)
     const monthYear = new Date().toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' })
-    const { title, html, excerpt } = await generateDigestContent({
+    const { title, html, excerpt, theme } = await generateDigestContent({
       client, deals, reviewerName: (brand?.name as string) || 'the team', nicheLabel, monthYear,
       recordUsage: (msg) => recordAnthropicUsage(msg, { userId: user.id, tier, feature: 'deal_roundup', model: 'claude-haiku-4-5-20251001' }),
     })
@@ -79,16 +79,23 @@ export async function POST(request: Request) {
     const bodyHtml = `<p class="mvp-affiliate-disclosure" style="font-size:13px;color:#6b6b70;font-style:italic;margin:0 0 1.25em"><em>${esc(disc)}</em></p>\n\n${html}`
 
     const wpService = createWordPressService(site.wordpress_url, site.wordpress_username, site.wordpress_app_password, site.wordpress_api_token || undefined)
-    const slug = `roundup-${nicheLabel.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}-${Date.now().toString(36)}`
+    // File it under a real "Deals" category (create if missing) so it never lands
+    // in the site's default "Blog"/"Uncategorized" bucket.
+    let categoryIds: number[] = []
+    try { const id = await wpService.createCategory('Deals'); if (id) categoryIds = [id] } catch { /* leave as-is rather than fail the post */ }
+    const slugTheme = (theme || 'deals').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'deals'
+    const slug = `roundup-${slugTheme}-${Date.now().toString(36)}`
     const wpPost = await wpService.createPost({
       title, slug, content: bodyHtml, excerpt,
       status: 'publish', comment_status: 'closed', ping_status: 'closed',
+      ...(categoryIds.length ? { categories: categoryIds } : {}),
     })
 
+    const seoKeyword = theme || nicheLabel
     const { data: saved } = await sb.from('blog_posts').insert({
       user_id: user.id, video_id: null, title, slug, content: bodyHtml, excerpt: null,
       wordpress_post_id: wpPost.id, wordpress_url: wpPost.link, wordpress_site_id: site.site_id,
-      status: 'published', post_type: 'deal', seo_keyword: nicheLabel,
+      status: 'published', post_type: 'deal', seo_keyword: seoKeyword,
       published_at: new Date().toISOString(),
     }).select('id').single()
 
@@ -96,7 +103,7 @@ export async function POST(request: Request) {
       try {
         await applyPostFixes({
           supabase, userId: user.id, wpService, wpBase: site.wordpress_url.replace(/\/+$/, ''), tier,
-          post: { id: saved.id as string, title, slug, content: bodyHtml, seo_keyword: nicheLabel, post_type: 'deal', wordpress_post_id: wpPost.id },
+          post: { id: saved.id as string, title, slug, content: bodyHtml, seo_keyword: seoKeyword, post_type: 'deal', wordpress_post_id: wpPost.id },
           fixes: 'all',
         })
       } catch (err) { console.warn('[deal-radar/roundup] SEO fix failed (post live):', err instanceof Error ? err.message : err) }
