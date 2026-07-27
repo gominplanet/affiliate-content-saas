@@ -394,10 +394,10 @@ function DealCard({ deal: d, onQuickPost }: { deal: Deal; onQuickPost: (d: Deal)
   const { gen, postUrl, makePost } = useMakePost(d)
   return (
     <div className="rounded-xl border bg-card overflow-hidden flex flex-col">
-      <a href={d.amazonUrl} target="_blank" rel="noopener noreferrer" className="relative block bg-white aspect-square p-3">
+      <a href={d.amazonUrl} target="_blank" rel="noopener noreferrer" className="relative flex items-center justify-center bg-white h-44 p-3">
         {d.imageUrl
-          ? <img src={d.imageUrl} alt="" className="h-full w-full object-contain" />
-          : <div className="h-full w-full flex items-center justify-center text-muted-foreground"><BadgePercent size={28} /></div>}
+          ? <img src={d.imageUrl} alt="" className="max-h-full max-w-full object-contain" />
+          : <div className="flex items-center justify-center text-muted-foreground"><BadgePercent size={28} /></div>}
         {d.discountPct != null && (
           <span className="absolute top-2 left-2 text-xs font-bold bg-red-600 text-white rounded px-1.5 py-0.5">-{d.discountPct}%</span>
         )}
