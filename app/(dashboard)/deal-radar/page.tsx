@@ -87,6 +87,12 @@ const SORTS: { key: string; label: string }[] = [
 
 const money = (n: number | null) => (n == null ? null : `$${n.toFixed(2)}`)
 
+interface SavedSearch {
+  name: string
+  f: { q: string; category: number | ''; minDiscount: number; minRating: number; hasCampaign: boolean; realOnly: boolean; lightningOnly: boolean; sort: string }
+}
+const SAVED_KEY = 'deal_radar_saved_searches'
+
 // Opt-in toggle for the weekly "Top deals in your niche" auto-post digest.
 // Reads/writes integrations.notification_preferences.weekly_digest.
 function DigestToggle() {
@@ -197,6 +203,7 @@ export default function DealRadarPage() {
   // On-demand roundup: multi-select deals → one curated post.
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [roundupBusy, setRoundupBusy] = useState(false)
+  const [savedSearches, setSavedSearches] = useState<SavedSearch[]>([])
   const toggleSelect = (asin: string) => setSelected((s) => { const n = new Set(s); n.has(asin) ? n.delete(asin) : n.add(asin); return n })
   const createRoundup = async () => {
     if (selected.size < 2 || roundupBusy) return
@@ -260,6 +267,7 @@ export default function DealRadarPage() {
   // "How it works" panel stays until the user dismisses it (remembered).
   useEffect(() => {
     try { if (localStorage.getItem('deal_radar_help') === 'off') setShowHelp(false) } catch { /* no-op */ }
+    try { const raw = localStorage.getItem(SAVED_KEY); if (raw) setSavedSearches(JSON.parse(raw)) } catch { /* no-op */ }
   }, [])
   const dismissHelp = () => { setShowHelp(false); try { localStorage.setItem('deal_radar_help', 'off') } catch { /* no-op */ } }
 
@@ -299,6 +307,24 @@ export default function DealRadarPage() {
 
   const hasFilters = q.trim() || category !== '' || minDiscount > 0 || minRating > 0 || hasCampaign || realOnly || lightningOnly
   const clearFilters = () => { setQ(''); setCategory(''); setMinDiscount(0); setMinRating(0); setHasCampaign(false); setRealOnly(false); setLightningOnly(false); setSort('opportunity') }
+
+  const saveCurrentSearch = () => {
+    const name = (window.prompt('Name this search (e.g. "Home · 30%+ real deals")') || '').trim()
+    if (!name) return
+    const entry: SavedSearch = { name, f: { q, category, minDiscount, minRating, hasCampaign, realOnly, lightningOnly, sort } }
+    const next = [...savedSearches.filter((s) => s.name !== name), entry].slice(-12)
+    setSavedSearches(next)
+    try { localStorage.setItem(SAVED_KEY, JSON.stringify(next)) } catch { /* no-op */ }
+  }
+  const applySavedSearch = (s: SavedSearch) => {
+    setQ(s.f.q); setCategory(s.f.category); setMinDiscount(s.f.minDiscount); setMinRating(s.f.minRating)
+    setHasCampaign(s.f.hasCampaign); setRealOnly(s.f.realOnly); setLightningOnly(s.f.lightningOnly); setSort(s.f.sort)
+  }
+  const deleteSavedSearch = (name: string) => {
+    const next = savedSearches.filter((s) => s.name !== name)
+    setSavedSearches(next)
+    try { localStorage.setItem(SAVED_KEY, JSON.stringify(next)) } catch { /* no-op */ }
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
@@ -403,6 +429,23 @@ export default function DealRadarPage() {
           </div>
         </div>
       </div>
+
+      {/* Saved searches */}
+      {(savedSearches.length > 0 || hasFilters) && (
+        <div className="flex items-center gap-2 flex-wrap -mt-2">
+          {savedSearches.map((s) => (
+            <span key={s.name} className="inline-flex items-center gap-1 text-xs rounded-full border bg-background pl-3 pr-1.5 py-1">
+              <button onClick={() => applySavedSearch(s)} className="hover:underline">{s.name}</button>
+              <button onClick={() => deleteSavedSearch(s.name)} title="Delete" className="text-muted-foreground hover:text-foreground"><CloseIcon size={12} /></button>
+            </span>
+          ))}
+          {hasFilters && (
+            <button onClick={saveCurrentSearch} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground rounded-full border border-dashed px-3 py-1">
+              <Plus size={12} /> Save these filters
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Grid */}
       {loading ? (
