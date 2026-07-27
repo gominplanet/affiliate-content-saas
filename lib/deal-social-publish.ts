@@ -16,6 +16,7 @@
 import {
   decryptIntegrationRow, encryptIntegrationWrite,
 } from '@/lib/integration-secrets'
+import { resolveSocialAccount } from '@/lib/social-accounts'
 import { capSocialText, SOCIAL_LIMITS } from '@/lib/social-cap'
 import { createTweet, refreshAccessToken as refreshTwitter } from '@/services/twitter'
 import { createFacebookService } from '@/services/facebook'
@@ -63,7 +64,7 @@ export async function publishDealToSocials(opts: PublishOpts): Promise<PlatformR
 
   const { data: intRaw } = await supabase
     .from('integrations')
-    .select('twitter_access_token,twitter_refresh_token,twitter_expires_at,facebook_page_id,facebook_page_access_token,threads_access_token,threads_user_id,linkedin_access_token,linkedin_person_id,telegram_bot_token,telegram_channel_id,bluesky_handle,bluesky_app_password')
+    .select('twitter_access_token,twitter_refresh_token,twitter_expires_at,facebook_page_id,facebook_page_access_token,facebook_page_name,threads_access_token,threads_user_id,linkedin_access_token,linkedin_person_id,telegram_bot_token,telegram_channel_id,bluesky_handle,bluesky_app_password')
     .eq('user_id', userId).maybeSingle()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const ig = decryptIntegrationRow(intRaw as any) || {}
@@ -88,21 +89,41 @@ export async function publishDealToSocials(opts: PublishOpts): Promise<PlatformR
         results.push({ platform, ok: true, url: `https://x.com/i/web/status/${t.id}` })
 
       } else if (platform === 'facebook') {
-        const pageId = ig.facebook_page_id as string | undefined
-        const pageToken = ig.facebook_page_access_token as string | undefined
-        if (!pageId || !pageToken) throw new Error('Facebook Page is not connected.')
+        // Facebook Pages live in social_accounts (modern connect flow), with the
+        // legacy integrations columns as a zero-migration fallback — resolve the
+        // same way every other MVP post route does, or a user connected via the
+        // new flow reads as "not connected".
+        const acct = await resolveSocialAccount(supabase, userId, 'facebook', {
+          socialAccountId: null,
+          allowSelection: false,
+          legacy: {
+            externalId: ig.facebook_page_id as string | undefined,
+            accessToken: ig.facebook_page_access_token as string | undefined,
+            displayName: (ig.facebook_page_name as string | undefined) ?? null,
+          },
+        })
+        if (!acct) throw new Error('Facebook Page is not connected.')
         const caption = composeText(baseCaption, 'facebook', link, disclaimer)
-        const fb = createFacebookService(pageToken, pageId)
+        const fb = createFacebookService(acct.accessToken, acct.externalId)
         let id: string
         if (img) { const r = await fb.postPhoto({ imageUrl: img, caption }); id = r.post_id || r.id }
         else { const r = await fb.postLink({ message: caption, link }); id = r.id }
         results.push({ platform, ok: true, url: `https://www.facebook.com/${id}` })
 
       } else if (platform === 'threads') {
-        const token = ig.threads_access_token as string | undefined
-        const tuid = ig.threads_user_id as string | undefined
-        if (!token || !tuid) throw new Error('Threads is not connected.')
-        const r = await new ThreadsService(token, tuid).createPost(composeText(baseCaption, 'threads', link, disclaimer), img || undefined)
+        // Same story as Facebook — Threads profiles live in social_accounts with
+        // the legacy threads_* columns as fallback.
+        const acct = await resolveSocialAccount(supabase, userId, 'threads', {
+          socialAccountId: null,
+          allowSelection: false,
+          legacy: {
+            externalId: ig.threads_user_id as string | undefined,
+            accessToken: ig.threads_access_token as string | undefined,
+            displayName: null,
+          },
+        })
+        if (!acct) throw new Error('Threads is not connected.')
+        const r = await new ThreadsService(acct.accessToken, acct.externalId).createPost(composeText(baseCaption, 'threads', link, disclaimer), img || undefined)
         results.push({ platform, ok: true, url: r.permalink })
 
       } else if (platform === 'linkedin') {
