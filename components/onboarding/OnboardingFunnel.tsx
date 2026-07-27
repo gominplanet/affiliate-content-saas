@@ -969,12 +969,45 @@ function AffiliateStep({ done, onSaved }: { done: boolean; onSaved: () => void }
   }
 
   async function verifyGroups() {
+    if (!key.trim() || !secret.trim()) { toast.error('Enter your Geniuslink API key and secret first.'); return }
     setVerifying(true)
     try {
+      // SAVE the typed credentials FIRST. /api/geniuslink/setup reads the key +
+      // secret from the DB (not the request body), so verifying before saving
+      // silently hit an empty account — the step never completed. Persisting
+      // here means one click both saves and verifies, and marks the step done
+      // (completion = key/tag present on the integrations row).
+      const supabase = createBrowserClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { toast.error('Session expired — refresh and try again.'); return }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error: saveErr } = await (supabase as any).from('integrations').upsert({
+        user_id: user.id,
+        geniuslink_api_key: key.trim(),
+        geniuslink_api_secret: secret.trim(),
+        ...(tag.trim() ? { amazon_associates_tag: tag.trim() } : {}),
+      }, { onConflict: 'user_id' })
+      if (saveErr) { toast.error(saveErr.message || 'Could not save your Geniuslink key.'); return }
+
+      // Now verify + create groups against the just-saved credentials.
       const res = await fetch('/api/geniuslink/setup', { method: 'POST' })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) { toast.error(data.error || 'Could not reach Geniuslink — check your key + secret.'); return }
-      toast.success('Geniuslink connected — link groups are ready.')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data = await res.json().catch(() => ({})) as any
+      // The route returns 200 even on credential/list failure — inspect the body.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const failed = Array.isArray(data?.targets) ? data.targets.find((t: any) => t.status === 'error') : null
+      if (failed) {
+        // Key is saved (step will complete), but tell them it was rejected so
+        // they can fix it — don't fake success.
+        toast.error(failed.detail || 'Geniuslink rejected those credentials — double-check your API key + secret.')
+        onSaved()
+        return
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const needsManual = Array.isArray(data?.targets) && data.targets.some((t: any) => t.status === 'needs-manual-create')
+      toast.success(needsManual
+        ? 'Geniuslink connected. A link group needs a quick manual create — see Brand Profile → Affiliate Link Routing.'
+        : 'Geniuslink connected — link groups are ready.')
       onSaved()
     } catch { toast.error('Verification failed. Check your key + secret.') }
     finally { setVerifying(false) }

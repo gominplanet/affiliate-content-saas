@@ -291,9 +291,10 @@ export default function DealRadarPage() {
         </button>
         <button
           onClick={() => setHasCampaign((v) => !v)}
+          title="Only deals whose ASIN matches a campaign in your uploaded Creator Connections catalog (pays an elevated commission)"
           className={`text-sm rounded-lg border px-2.5 py-2 inline-flex items-center gap-1.5 ${hasCampaign ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-background'}`}
         >
-          <Sparkles size={14} /> Has bounty
+          <Sparkles size={14} /> Creator Connections
         </button>
         <select value={sort} onChange={(e) => setSort(e.target.value)}
                 className="text-sm rounded-lg border bg-background px-2.5 py-2 ml-auto">
@@ -468,8 +469,8 @@ function QuickPostModal({ deal, onClose }: { deal: Deal; onClose: () => void }) 
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
-      <div className="bg-card rounded-xl border shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={onClose}>
+      <div className="bg-white dark:bg-[#16161a] rounded-xl border shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between p-4 border-b">
           <div className="flex items-center gap-2 font-semibold"><Send size={16} /> Quick post to socials</div>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><CloseIcon size={18} /></button>
