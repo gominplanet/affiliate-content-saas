@@ -38,6 +38,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createWordPressService } from '@/services/wordpress'
 import { isStalePostError, WP_STALE_POST_MESSAGE } from '@/lib/wp-errors'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
+import { applyPostFixes } from '@/lib/seo-fix'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { extractAsin, fetchAmazonProduct, isValidAsin, type AmazonProduct } from '@/services/amazon'
@@ -545,6 +546,15 @@ export async function POST(req: Request) {
   const reviewerName = await resolveReviewerName(supabase, user.id)
   const year = new Date().getUTCFullYear()
 
+  // Affiliate disclosure — FTC-required, so it is ALWAYS injected into a deal
+  // post (never left to the model). Use the creator's configured disclaimer,
+  // else a compliant default.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: brandRow } = await (supabase as any)
+    .from('brand_profiles').select('affiliate_disclaimer').eq('user_id', user.id).maybeSingle()
+  const affiliateDisclaimer = ((brandRow?.affiliate_disclaimer as string | null) || '').trim()
+    || 'As an Amazon Associate I earn from qualifying purchases. This post contains affiliate links, and I may earn a commission at no extra cost to you.'
+
   // Real price-history grounding (Keepa) — turns the post from generic hype into
   // an honest "lowest price we've seen / X% below its usual" claim. Best-effort:
   // empty string when Keepa is unconfigured or has no usable history, and the
@@ -758,6 +768,7 @@ export async function POST(req: Request) {
     dealEndsAt,
     asin: product.asin,
     affiliateUrl: dealAffiliateUrl,
+    disclaimer: affiliateDisclaimer,
   })
 
   // ── Title + slug ──────────────────────────────────────────────────────
@@ -908,6 +919,31 @@ export async function POST(req: Request) {
     saved = firstInsert.data
   }
 
+  // ── SEO auto-fix ──────────────────────────────────────────────────────
+  // Run the SAME engine as the "Fix all" button so a deal post ships SEO-
+  // complete out of the gate: FAQ (AEO rich result), internal links to related
+  // reviews, primary keyword in the intro + a subhead, and title trim. The FTC
+  // disclosure is already injected above, so its fixer detects it and no-ops.
+  // Awaited so the returned post is the fixed one; best-effort — the post is
+  // already live, so a fixer hiccup must never fail the publish.
+  if (saved?.id && wpPost.id) {
+    try {
+      await applyPostFixes({
+        supabase, userId: user.id, wpService,
+        wpBase: site.wordpress_url.replace(/\/+$/, ''),
+        tier: dealIntg?.tier,
+        post: {
+          id: saved.id as string, title: wpTitle, slug, content: finalHtml,
+          seo_keyword: product.title || `deal-${asin}`, post_type: 'deal',
+          wordpress_post_id: wpPost.id,
+        },
+        fixes: 'all',
+      })
+    } catch (err) {
+      console.warn('[deals] SEO auto-fix failed (post is still live):', err instanceof Error ? err.message : err)
+    }
+  }
+
   // ── Regenerate cleanup ────────────────────────────────────────────────
   // Now that the new post is safely published + the new row is in the DB,
   // delete the old WP post + DB row. Best-effort: a stuck WP delete still
@@ -965,12 +1001,21 @@ async function resolveDealAffiliateUrl(
   const tagged = amazonTag
     ? `https://www.amazon.com/dp/${asin}?tag=${encodeURIComponent(amazonTag)}`
     : `https://www.amazon.com/dp/${asin}`
-  if (gKey && gSecret) {
+  if (!gKey || !gSecret) return tagged
+  // Geniuslink is configured, so it MUST be used when at all possible. Try twice
+  // (its API is intermittently slow) and LOG the reason on failure instead of
+  // silently degrading to the bare tagged link, so a persistent problem is
+  // diagnosable rather than invisible.
+  const genius = createGeniuslinkService(gKey, gSecret)
+  for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      const genius = createGeniuslinkService(gKey, gSecret)
       const wrapped = await genius.createLink(tagged, title || `Deal ${asin}`)
       if (wrapped && /^https?:\/\//i.test(wrapped)) return wrapped
-    } catch { /* fall back to the tagged /dp/ URL */ }
+      console.warn(`[deals] geniuslink returned no URL for ${asin} (attempt ${attempt})`)
+    } catch (err) {
+      console.warn(`[deals] geniuslink wrap failed for ${asin} (attempt ${attempt}):`, err instanceof Error ? err.message : err)
+    }
+    if (attempt < 2) await new Promise((r) => setTimeout(r, 1500))
   }
   return tagged
 }
@@ -1053,7 +1098,7 @@ DEAL ENVELOPE
 - ${endLine}
 - ${occasionLine}
 - Badge text on thumbnail: ${p.badgeLabel} (don't put this exact string in the body, the thumbnail handles it)
-- ${promoLine}${p.priceHistory ? `\n- VERIFIED PRICE HISTORY (from real Keepa data — state this as fact, it's your credibility edge): ${p.priceHistory} Work this naturally into "The deal at a glance". Do NOT exaggerate beyond it.` : ''}${renewedDisclosure}
+- ${promoLine}${p.priceHistory ? `\n- VERIFIED PRICE CONTEXT (confirmed straight from this product's live price history — state it as fact, it's your credibility edge. NEVER name a data provider, tool, service, or third party such as Keepa; present the numbers as pulled directly from the product's own price history): ${p.priceHistory} Work this naturally into "The deal at a glance". Do NOT exaggerate beyond it.` : ''}${renewedDisclosure}
 
 ${DEAL_VOICE_RULES}
 
@@ -1072,6 +1117,7 @@ VOICE / STYLE
 - ABSOLUTE BAN on em-dashes (—) and en-dashes (–). EVERYWHERE. Use a comma, a period, or parentheses.
 - Never use "honest" or any variant. Never: moreover, furthermore, additionally, in conclusion, to summarize, overall, delve, tapestry, elevate, utilize, game-changer, revolutionary, cutting-edge, genuinely, actually, it's important to.
 - HARD BAN on source-citing language. NEVER say: "based on the listing", "the listing says/claims/describes/shows/notes/is clearly aimed", "looking at the listing", "per the listing", "according to the spec sheet", "based on the spec sheet", "from the listing", "Amazon's listing", "the product page says". Just state product facts directly, the way a magazine editor would. If you catch yourself reaching for one of these phrases, REWRITE the sentence to lead with the product itself.
+- NEVER name any price-tracking data provider, tool, or third-party service — no "Keepa", "CamelCamelCamel", "price tracker", "our data", or similar. The price numbers are simply the product's own price history / what it's been selling for; present them as fact with confident language and no attribution.
 - Vary sentence openings. Don't start three paragraphs in a row the same way.
 - NEVER invent specs, prices, dates, or features. Only state what's actually known.
 - Output: VALID HTML only. No markdown fences. Open with <p>. Close with </p>. Use <h2>, <ul>, <li>, <a>, <p>, <strong>, <em>. Nothing else.`
@@ -1132,6 +1178,8 @@ interface InjectBodyImagesOpts {
   /** Resolved affiliate CTA link (tag / Geniuslink). Used for the shortcode
    *  buttons + any bare-Amazon anchor cleanup. */
   affiliateUrl?: string
+  /** FTC affiliate disclosure — injected near the top, always present. */
+  disclaimer?: string
 }
 
 /** Splice the WP-uploaded body images into the HTML at sensible H2
@@ -1199,7 +1247,14 @@ function injectBodyImages(opts: InjectBodyImagesOpts): string {
   if (opts.promoCode) bannerAtts.push(`code="${escapeAttr(opts.promoCode)}"`)
   // ALWAYS pass a URL — the banner CTA is the post's primary buy button.
   bannerAtts.push(`url="${escapeAttr(effectiveUrl)}"`)
-  out = `\n[mvp_deal_banner ${bannerAtts.join(' ')}]\n\n` + out
+  // FTC affiliate disclosure, injected right under the banner so it's visible
+  // near the top before any affiliate link — always present, never model-
+  // dependent. Escaped as text.
+  const disc = (opts.disclaimer || '').trim()
+  const disclosureHtml = disc
+    ? `<p class="mvp-affiliate-disclosure" style="font-size:13px;color:#6b6b70;font-style:italic;margin:0 0 1.25em"><em>${disc.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</em></p>\n\n`
+    : ''
+  out = `\n[mvp_deal_banner ${bannerAtts.join(' ')}]\n\n` + disclosureHtml + out
 
   // 4. Append the end-of-article CTA shortcode. This is the "proper buy
   // button at the end" — a standalone, full-width violet button that
