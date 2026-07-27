@@ -188,7 +188,9 @@ async function fetchPostedByAsin(
 ): Promise<Map<string, string>> {
   const out = new Map<string, string>()
   if (!asins.length) return out
+  const want = new Set(asins.map((a) => a.toUpperCase()))
   try {
+    // Single deal posts store one ASIN at deal_meta->>asin.
     const { data } = await sb
       .from('blog_posts')
       .select('wordpress_url, deal_meta')
@@ -198,6 +200,21 @@ async function fetchPostedByAsin(
     for (const row of (data ?? []) as Array<{ wordpress_url: string | null; deal_meta: { asin?: string } | null }>) {
       const a = (row.deal_meta?.asin || '').toUpperCase()
       if (a && row.wordpress_url && !out.has(a)) out.set(a, row.wordpress_url)
+    }
+    // Roundup posts store every included ASIN at deal_meta->asins (an array), so
+    // each product in a roundup is also flagged as already-posted.
+    const { data: rounds } = await sb
+      .from('blog_posts')
+      .select('wordpress_url, deal_meta')
+      .eq('user_id', userId)
+      .eq('post_type', 'deal')
+      .not('deal_meta->asins', 'is', null)
+    for (const row of (rounds ?? []) as Array<{ wordpress_url: string | null; deal_meta: { asins?: unknown } | null }>) {
+      const arr = Array.isArray(row.deal_meta?.asins) ? row.deal_meta!.asins as unknown[] : []
+      for (const raw of arr) {
+        const a = String(raw).toUpperCase()
+        if (want.has(a) && row.wordpress_url && !out.has(a)) out.set(a, row.wordpress_url)
+      }
     }
   } catch { /* deal_meta column absent / query error — no "posted" badges this run */ }
   return out

@@ -83,11 +83,23 @@ export async function POST(request: Request) {
     // in the site's default "Blog"/"Uncategorized" bucket.
     let categoryIds: number[] = []
     try { const id = await wpService.createCategory('Deals'); if (id) categoryIds = [id] } catch { /* leave as-is rather than fail the post */ }
+    // Featured thumbnail — a roundup spans multiple products, so use the lead
+    // deal's product image (the AI thumbnail pipeline is single-product). Gives
+    // the post a real thumbnail instead of the theme's blank fallback.
+    let featuredMediaId: number | null = null
+    const heroImage = dealRows.find((r) => r.image_url)?.image_url
+    if (heroImage) {
+      try {
+        const media = await wpService.uploadImageFromUrl(heroImage, `${(theme || 'deals').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'deals'}-roundup.jpg`)
+        featuredMediaId = (media?.id as number | undefined) ?? null
+      } catch (err) { console.warn('[deal-radar/roundup] featured image upload failed:', err instanceof Error ? err.message : err) }
+    }
     const slug = keywordSlug(title, theme)
     const wpPost = await wpService.createPost({
       title, slug, content: bodyHtml, excerpt,
       status: 'publish', comment_status: 'closed', ping_status: 'closed',
       ...(categoryIds.length ? { categories: categoryIds } : {}),
+      ...(featuredMediaId ? { featured_media: featuredMediaId } : {}),
     })
 
     const seoKeyword = theme || nicheLabel
@@ -95,6 +107,9 @@ export async function POST(request: Request) {
       user_id: user.id, video_id: null, title, slug, content: bodyHtml, excerpt: null,
       wordpress_post_id: wpPost.id, wordpress_url: wpPost.link, wordpress_site_id: site.site_id,
       status: 'published', post_type: 'deal', seo_keyword: seoKeyword,
+      // Store every ASIN in the roundup so Deal Radar can mark each of these
+      // products as already-posted (the "Posted" badge + "Post again").
+      deal_meta: { kind: 'roundup', asins: unique },
       published_at: new Date().toISOString(),
     }).select('id').single()
 
