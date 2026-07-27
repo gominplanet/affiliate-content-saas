@@ -87,27 +87,33 @@ export async function GET(req: Request) {
 
       const nicheLabel = nicheLabelFrom(niches)
       const monthYear = new Date().toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' })
-      const { title, html, excerpt } = await generateDigestContent({
+      const { title, html, excerpt, theme } = await generateDigestContent({
         client, deals, reviewerName: (brand?.name as string) || 'the team', nicheLabel, monthYear,
         recordUsage: (msg) => recordAnthropicUsage(msg, { userId: u.user_id, tier: u.tier, feature: 'weekly_digest', model: 'claude-haiku-4-5-20251001' }),
       })
+      const seoKeyword = theme || nicheLabel
 
       // FTC disclosure, always present (applyPostFixes will detect + skip it).
       const disc = ((brand?.affiliate_disclaimer as string | null) || '').trim() || DEFAULT_DISCLOSURE
       const body = `<p class="mvp-affiliate-disclosure" style="font-size:13px;color:#6b6b70;font-style:italic;margin:0 0 1.25em"><em>${esc(disc)}</em></p>\n\n${html}`
 
       const wpService = createWordPressService(site.wordpress_url, site.wordpress_username, site.wordpress_app_password, site.wordpress_api_token || undefined)
-      const slug = `weekly-${nicheLabel.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}-deals-${Date.now().toString(36)}`
+      // File under a real "Deals" category (create if missing), never "Blog".
+      let categoryIds: number[] = []
+      try { const id = await wpService.createCategory('Deals'); if (id) categoryIds = [id] } catch { /* leave as-is */ }
+      const slugTheme = (theme || 'deals').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'deals'
+      const slug = `weekly-${slugTheme}-deals-${Date.now().toString(36)}`
       const wpPost = await wpService.createPost({
         title, slug, content: body, excerpt,
         status: 'publish', comment_status: 'closed', ping_status: 'closed',
+        ...(categoryIds.length ? { categories: categoryIds } : {}),
       })
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: saved } = await (admin as any).from('blog_posts').insert({
         user_id: u.user_id, video_id: null, title, slug, content: body, excerpt: null,
         wordpress_post_id: wpPost.id, wordpress_url: wpPost.link, wordpress_site_id: site.site_id,
-        status: 'published', post_type: 'deal', seo_keyword: nicheLabel,
+        status: 'published', post_type: 'deal', seo_keyword: seoKeyword,
         published_at: new Date().toISOString(),
       }).select('id').single()
 
@@ -117,7 +123,7 @@ export async function GET(req: Request) {
           await applyPostFixes({
             supabase: admin, userId: u.user_id, wpService,
             wpBase: site.wordpress_url.replace(/\/+$/, ''), tier: u.tier,
-            post: { id: saved.id as string, title, slug, content: body, seo_keyword: nicheLabel, post_type: 'deal', wordpress_post_id: wpPost.id },
+            post: { id: saved.id as string, title, slug, content: body, seo_keyword: seoKeyword, post_type: 'deal', wordpress_post_id: wpPost.id },
             fixes: 'all',
           })
         } catch (err) { console.warn('[weekly-digest] SEO fix failed (post live):', err instanceof Error ? err.message : err) }

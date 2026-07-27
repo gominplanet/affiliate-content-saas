@@ -94,12 +94,20 @@ export async function resolveAffiliateUrl(
   return tagged
 }
 
-interface DigestModelOut { intro: string; blurbs: Record<string, string>; outro: string }
+interface DigestModelOut { title?: string; theme?: string; intro: string; blurbs: Record<string, string>; outro: string }
+
+const titleCase = (s: string) => s.replace(/\b\w/g, (c) => c.toUpperCase())
 
 /**
- * Generate the digest's prose (intro, a blurb per deal, outro) with Haiku as
- * JSON, then assemble the full post HTML deterministically so structure/links
- * are never left to the model. Returns { title, html, excerpt }.
+ * Generate the digest's title, theme, and prose (intro, a blurb per deal, outro)
+ * with Haiku as JSON, then assemble the full post HTML deterministically so
+ * structure/links are never left to the model. Returns { title, html, excerpt,
+ * theme }.
+ *
+ * The title + theme are derived from the ACTUAL products in the list (their
+ * common thread), NOT the blog's niche — a hand-picked roundup can span or
+ * differ from the creator's usual niche, so `nicheLabel` is only a soft hint.
+ * `theme` is a short category used for the slug + WordPress category.
  *
  * NEVER names a data provider (Keepa etc.) — prices are "the product's own price
  * history". The FTC disclosure + SEO polish are added by the caller via
@@ -114,9 +122,8 @@ export async function generateDigestContent(opts: {
   monthYear: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   recordUsage?: (msg: any) => void
-}): Promise<{ title: string; html: string; excerpt: string }> {
+}): Promise<{ title: string; html: string; excerpt: string; theme: string }> {
   const { client, deals, reviewerName, nicheLabel, monthYear } = opts
-  const title = scrubBanned(`${deals.length} ${nicheLabel} Deals Worth Grabbing This Week (${monthYear})`).slice(0, 65)
 
   const dealLines = deals.map((d, i) => {
     const price = money(d.price_now_cents)
@@ -129,19 +136,22 @@ export async function generateDigestContent(opts: {
   try {
     const msg = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 900,
+      max_tokens: 1000,
       messages: [{
         role: 'user',
-        content: `You are ${reviewerName}, writing a short weekly roundup of the best ${nicheLabel} deals for your affiliate review blog.
+        content: `You are ${reviewerName}, writing a hand-picked roundup of the best Amazon deals for your affiliate review blog.
+Your blog usually covers "${nicheLabel}", but only lean on that if these SPECIFIC products fit it — otherwise describe what is ACTUALLY in this list.
 
 DEALS (in order):
 ${dealLines}
 
 Return ONLY valid JSON, no markdown fence, shaped exactly:
-{"intro": "...", "blurbs": {"<ASIN>": "...", ...}, "outro": "..."}
+{"title": "...", "theme": "...", "intro": "...", "blurbs": {"<ASIN>": "...", ...}, "outro": "..."}
 
 Rules:
-- "intro": 2 sentences. Answer-first — say this is your hand-picked roundup of genuine price drops this week worth a look. First person.
+- "title": a natural, specific blog-post title for THIS exact set of products — find their common thread (e.g. kitchen upgrades, cozy home finds, pet essentials, tech accessories). Under 60 characters. Title Case. Do NOT force a category the products don't fit. No provider names, no clickbait, no em-dashes.
+- "theme": 1 to 3 plain lowercase words naming the product category these share, for the URL and site category (e.g. "kitchen", "home office", "pet supplies", "tech"). If they are a genuine mix, use "deals".
+- "intro": 2 sentences. Answer-first — say this is your hand-picked roundup of genuine price drops worth a look. First person.
 - "blurbs": one entry per ASIN above. 2 short sentences each: what it is + why THIS price is worth grabbing now. Present the price context as fact from the product's own price history. NEVER name any data provider, tool, or service (no "Keepa", "price tracker", "our data"). Never claim you personally tested it.
 - "outro": 1 sentence close, a light nudge to grab them before prices bounce back.
 - Plain text values (no HTML). No em-dashes or en-dashes anywhere. No "honest", "moreover", "furthermore", "game-changer".` }],
@@ -153,6 +163,13 @@ Rules:
   } catch (err) {
     console.warn('[weekly-digest] model content failed, using fallback prose:', err instanceof Error ? err.message : err)
   }
+
+  // Theme (for slug + WP category) and title come from the actual products.
+  const themeClean = scrubBanned((model.theme || '').trim()).replace(/[^a-z0-9 &-]/gi, '').replace(/\s+/g, ' ').trim()
+  const theme = (themeClean || nicheLabel || 'deals').slice(0, 40)
+  const modelTitle = scrubBanned((model.title || '').trim()).replace(/^["']|["']$/g, '')
+  const fallbackTitle = scrubBanned(`${deals.length} ${titleCase(theme)} Deals Worth Grabbing This Week (${monthYear})`).slice(0, 65)
+  const title = modelTitle.length >= 8 && modelTitle.length <= 70 ? modelTitle : fallbackTitle
 
   const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   const intro = scrubBanned(model.intro || `Here are the ${nicheLabel.toLowerCase()} deals I'd actually grab this week — each one checked against its price history so you're not paying a fake discount.`)
@@ -173,7 +190,7 @@ Rules:
 
   const html = `<p>${esc(intro)}</p>\n\n${sections}\n\n<p>${esc(outro)}</p>`
   const excerpt = intro.slice(0, 160)
-  return { title, html, excerpt }
+  return { title, html, excerpt, theme }
 }
 
 /** Human niche label for the title, from the creator's niches. */
