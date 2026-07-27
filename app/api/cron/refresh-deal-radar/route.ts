@@ -46,6 +46,17 @@ const DEFAULT_CATEGORIES = [
   11091801,    // Musical Instruments
   2972638011,  // Patio, Lawn & Garden
   468642,      // Video Games
+  // Added 2026-07-27 — kept in sync with the page's CATEGORIES filter. The
+  // sweep is token-paced (MIN_TOKENS_TO_CONTINUE + deadline), so extra nodes
+  // just broaden coverage over successive runs rather than blowing the budget.
+  2619525011,  // Appliances
+  2617941011,  // Arts, Crafts & Sewing
+  16310161,    // Industrial & Scientific
+  9479199011,  // Luggage & Travel Gear
+  283155,      // Books
+  2625373011,  // Movies & TV
+  3367581,     // Jewelry
+  6358539011,  // Watches
 ]
 
 /** Below this many Keepa tokens we stop early and finish next run — never run
