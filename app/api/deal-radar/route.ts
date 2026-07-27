@@ -44,6 +44,7 @@ interface DealRow {
   price_low_cents: number | null
   deal_quality: string | null
   lowest_label: string | null
+  monthly_sold: number | null
 }
 
 export async function GET(request: Request) {
@@ -164,6 +165,7 @@ function toClient(r: DealRow, amazonTag: string) {
     discountPct: r.discount_pct,
     rating: r.rating != null ? Number(r.rating) : null,
     reviewCount: r.review_count,
+    monthlySold: r.monthly_sold,
     dealType: r.deal_type,
     lightningEndsAt: r.lightning_ends_at,
     amazonUrl,

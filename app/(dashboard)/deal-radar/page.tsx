@@ -38,6 +38,7 @@ interface Deal {
   discountPct: number | null
   rating: number | null
   reviewCount: number | null
+  monthlySold: number | null
   dealType: string
   lightningEndsAt: string | null
   amazonUrl: string
@@ -367,6 +368,11 @@ function DealCard({ deal: d, onQuickPost }: { deal: Deal; onQuickPost: (d: Deal)
           <div className="flex items-center gap-1 text-xs text-muted-foreground">
             <Star size={12} className="fill-amber-400 text-amber-400" /> {d.rating.toFixed(1)}
             {d.reviewCount != null && <span>({d.reviewCount.toLocaleString()})</span>}
+          </div>
+        )}
+        {d.monthlySold != null && (
+          <div className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 dark:text-blue-400 w-fit">
+            <TrendingUp size={12} /> {d.monthlySold.toLocaleString()}+ bought/mo
           </div>
         )}
         {d.verdict && <VerdictBadge verdict={d.verdict} />}

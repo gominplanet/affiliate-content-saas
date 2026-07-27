@@ -255,6 +255,10 @@ export interface DealAssessment {
   quality: DealQuality | null
   /** Short human badge, e.g. "All-time low" / "32% below its usual price". */
   label: string | null
+  /** Amazon's "X+ bought in the past month" figure (the lower bound, e.g. 500
+   *  = "500+ bought"). Null when Amazon shows no badge for this product — which
+   *  is most of them, so treat absence as "unknown", not "zero sales". */
+  monthlySold: number | null
 }
 
 /**
@@ -263,7 +267,7 @@ export interface DealAssessment {
  * (never throws) so the caller just skips verification for that ASIN.
  */
 export async function fetchKeepaProductStats(asin: string, domainId = KEEPA_DOMAIN_US): Promise<DealAssessment> {
-  const empty: DealAssessment = { currentCents: null, avg90Cents: null, allTimeLowCents: null, pctBelowAvg90: null, quality: null, label: null }
+  const empty: DealAssessment = { currentCents: null, avg90Cents: null, allTimeLowCents: null, pctBelowAvg90: null, quality: null, label: null, monthlySold: null }
   const key = process.env.KEEPA_API_KEY
   if (!key || !/^[A-Za-z0-9]{10}$/.test(asin)) return empty
   // stats=180 → Keepa computes avg30/90/180 + all-time min/max server-side.
@@ -274,9 +278,14 @@ export async function fetchKeepaProductStats(asin: string, domainId = KEEPA_DOMA
     if (!res.ok) return empty
     const data = await res.json() as { products?: unknown[] }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const stats = (Array.isArray(data.products) ? (data.products[0] as any)?.stats : null)
-    if (!stats) return empty
-    return assessFromStats(stats)
+    const product = (Array.isArray(data.products) ? (data.products[0] as any) : null)
+    if (!product?.stats) return empty
+    const assessment = assessFromStats(product.stats)
+    // monthlySold rides on the SAME /product response (top-level, not in stats),
+    // so we get it for free. Keepa uses -1 / absent for "no badge".
+    const ms = Number(product.monthlySold)
+    assessment.monthlySold = Number.isFinite(ms) && ms > 0 ? ms : null
+    return assessment
   } catch {
     return empty
   }
@@ -305,7 +314,7 @@ function assessFromStats(stats: any): DealAssessment {
     else { quality = 'weak'; label = 'Around its usual price' }
   }
 
-  return { currentCents, avg90Cents, allTimeLowCents, pctBelowAvg90, quality, label }
+  return { currentCents, avg90Cents, allTimeLowCents, pctBelowAvg90, quality, label, monthlySold: null }
 }
 
 /** A Keepa stats price field is an int[] indexed by price type; -1 = none. */
