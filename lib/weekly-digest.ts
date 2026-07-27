@@ -198,3 +198,28 @@ export function nicheLabelFrom(niches: string[]): string {
   const first = (niches || []).map((n) => (n || '').trim()).filter(Boolean)[0]
   return first || 'Amazon'
 }
+
+// Words that add no SEO value in a slug — dropped so the URL stays keyword-first.
+const SLUG_STOPWORDS = new Set([
+  'a', 'an', 'the', 'this', 'that', 'these', 'those', 'and', 'or', 'but', 'for',
+  'to', 'of', 'in', 'on', 'at', 'by', 'with', 'your', 'you', 'my', 'our', 'we',
+  'i', 'is', 'are', 'it', 'its', 'worth', 'grabbing', 'right', 'now', 'get',
+  'week', 'weekly',
+])
+
+/**
+ * Build a clean, keyword-centric slug from the post title (never a random hash
+ * or a generic "roundup-…"/"weekly-…" prefix). Keeps the meaningful keywords,
+ * drops stopwords, caps length. WordPress de-dupes collisions with a numeric
+ * suffix, so we don't need to inject one ourselves. Falls back to the theme.
+ */
+export function keywordSlug(title: string, theme: string): string {
+  const clean = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim()
+  const words = clean(title || '').split(' ').filter(Boolean)
+  const kept = words.filter((w) => !SLUG_STOPWORDS.has(w))
+  const pick = (kept.length >= 3 ? kept : words).slice(0, 7)
+  const slug = pick.join('-')
+  if (slug.length >= 3) return slug.slice(0, 70).replace(/-+$/g, '')
+  const themeSlug = clean(theme || 'deals').replace(/\s+/g, '-')
+  return `best-${themeSlug || 'amazon'}-deals`
+}

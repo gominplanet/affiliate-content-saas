@@ -107,10 +107,14 @@ function DigestToggle() {
     const next = !enabled
     setEnabled(next); setSaving(true)
     try {
-      await fetch('/api/deal-radar/digest-pref', {
+      const res = await fetch('/api/deal-radar/digest-pref', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: next }),
       })
-      toast.success(next ? 'Weekly digest on — a "top deals in your niche" roundup will auto-post to your blog each week.' : 'Weekly digest off.')
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { setEnabled(!next); toast.error(data.error || 'Could not update.'); return }
+      // Trust the server's persisted value so the button reflects reality.
+      setEnabled(data.enabled === true)
+      toast.success(data.enabled ? 'Weekly digest on — a "top deals in your niche" roundup will auto-post to your blog each week.' : 'Weekly digest off.')
     } catch { setEnabled(!next); toast.error('Could not update.') } finally { setSaving(false) }
   }
   if (enabled === null) return null

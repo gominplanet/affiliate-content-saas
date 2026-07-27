@@ -20,7 +20,7 @@ import { createWordPressService } from '@/services/wordpress'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { applyPostFixes } from '@/lib/seo-fix'
-import { pickDigestDeals, resolveAffiliateUrl, generateDigestContent, nicheLabelFrom, type DigestDeal } from '@/lib/weekly-digest'
+import { pickDigestDeals, resolveAffiliateUrl, generateDigestContent, nicheLabelFrom, keywordSlug, type DigestDeal } from '@/lib/weekly-digest'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -101,8 +101,7 @@ export async function GET(req: Request) {
       // File under a real "Deals" category (create if missing), never "Blog".
       let categoryIds: number[] = []
       try { const id = await wpService.createCategory('Deals'); if (id) categoryIds = [id] } catch { /* leave as-is */ }
-      const slugTheme = (theme || 'deals').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'deals'
-      const slug = `weekly-${slugTheme}-deals-${Date.now().toString(36)}`
+      const slug = keywordSlug(title, theme)
       const wpPost = await wpService.createPost({
         title, slug, content: body, excerpt,
         status: 'publish', comment_status: 'closed', ping_status: 'closed',
