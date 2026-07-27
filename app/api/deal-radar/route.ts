@@ -86,6 +86,7 @@ export async function GET(request: Request) {
     // all-time low or meaningfully below the typical price), filtering out fake
     // % off an inflated list price.
     const realOnly = url.searchParams.get('real') === '1'
+    const lightningOnly = url.searchParams.get('lightning') === '1'
     const sort = (url.searchParams.get('sort') || 'discount') as SortKey
     const page = Math.max(0, intParam(url, 'page') ?? 0)
 
@@ -102,6 +103,7 @@ export async function GET(request: Request) {
       if (hasCampaign) query = query.not('campaign_commission_pct', 'is', null)
       if (minCommission != null) query = query.gte('campaign_commission_pct', minCommission)
       if (realOnly) query = query.in('deal_quality', ['excellent', 'genuine'])
+      if (lightningOnly) query = query.eq('deal_type', 'lightning')
       return applySort(query, sort)
     }
 

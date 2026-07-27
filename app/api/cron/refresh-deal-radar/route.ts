@@ -17,7 +17,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { fetchKeepaDeals, fetchKeepaProductStats, keepaConfigured, type KeepaDeal } from '@/services/keepa'
+import { fetchKeepaDeals, fetchKeepaProductStats, keepaConfigured, PRICE_TYPE_LIGHTNING, type KeepaDeal } from '@/services/keepa'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -54,6 +54,15 @@ const MIN_TOKENS_TO_CONTINUE = 40
 /** Drop cached deals we haven't re-seen in this long (fell out of the feed). */
 const STALE_HOURS = 48
 
+/** How many pages (150 deals each) to pull per category on the MAIN price-drop
+ *  sweep. Keepa sorts by biggest drop first, so page 0 = the best deals, later
+ *  pages = smaller (but still real) drops. Env-tunable to pull a wider pool
+ *  without a deploy. The token guard still stops early before draining. */
+function pagesPerCategory(): number {
+  const n = Number(process.env.DEAL_RADAR_PAGES_PER_CATEGORY)
+  return Number.isInteger(n) && n >= 1 && n <= 20 ? n : 3
+}
+
 function categories(): number[] {
   const raw = (process.env.DEAL_RADAR_CATEGORIES || '').trim()
   if (!raw) return DEFAULT_CATEGORIES
@@ -75,25 +84,58 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: true, skipped: 'keepa_unconfigured' })
   }
 
+  const startedAt = Date.now()
   const admin = createAdminClient()
   const cats = categories()
   const minPct = minDiscount()
 
-  // 1. Sweep each category (one page each), stopping early on low tokens. We
-  //    dedupe by ASIN across categories, keeping the biggest discount.
+  // 1. Sweep for deals. We dedupe by ASIN across categories/pages/feeds, keeping
+  //    the biggest discount — but a Lightning hit always wins the deal_type so
+  //    the ⚡ badge sticks. Two feeds: the MAIN price-drop feed (several pages per
+  //    category) and a LIGHTNING flash-sale feed (one page per category). The
+  //    token guard stops any sweep early before the balance runs dry; whatever
+  //    we miss is picked up next run.
   const byAsin = new Map<string, KeepaDeal>()
-  let stoppedForTokens = false
-  let lastTokensLeft: number | null = null
-  for (const categoryId of cats) {
-    const page = await fetchKeepaDeals({ includeCategories: [categoryId], minDiscountPct: minPct })
-    for (const d of page.deals) {
+  const budget = { stopped: false, tokensLeft: null as number | null }
+
+  const absorb = (incoming: KeepaDeal[]) => {
+    for (const d of incoming) {
       const prev = byAsin.get(d.asin)
-      if (!prev || (d.discountPct ?? 0) > (prev.discountPct ?? 0)) byAsin.set(d.asin, d)
+      if (!prev) { byAsin.set(d.asin, d); continue }
+      // Keep the bigger discount, but never lose a lightning flag.
+      const keep = (d.discountPct ?? 0) > (prev.discountPct ?? 0) ? d : prev
+      if (prev.dealType === 'lightning' || d.dealType === 'lightning') {
+        keep.dealType = 'lightning'
+        keep.lightningEndsAt = prev.lightningEndsAt || d.lightningEndsAt
+      }
+      byAsin.set(d.asin, keep)
     }
-    lastTokensLeft = page.tokensLeft ?? lastTokensLeft
-    if (page.tokensLeft != null && page.tokensLeft < MIN_TOKENS_TO_CONTINUE) { stoppedForTokens = true; break }
   }
 
+  const runSweep = async (opts: { priceTypes?: number[]; pages: number }) => {
+    outer:
+    for (const categoryId of cats) {
+      for (let p = 0; p < opts.pages; p++) {
+        const page = await fetchKeepaDeals({
+          includeCategories: [categoryId], minDiscountPct: minPct, page: p, priceTypes: opts.priceTypes,
+        })
+        absorb(page.deals)
+        budget.tokensLeft = page.tokensLeft ?? budget.tokensLeft
+        // A short page means the category has no more deals — skip to the next.
+        if (page.deals.length < 150) break
+        if (page.tokensLeft != null && page.tokensLeft < MIN_TOKENS_TO_CONTINUE) { budget.stopped = true; break outer }
+      }
+    }
+  }
+
+  // MAIN price-drop feed — several pages deep per category.
+  await runSweep({ pages: pagesPerCategory() })
+  // LIGHTNING flash-sale feed — one page per category (unless we already stopped
+  // for tokens). Cheap, high-urgency, and flagged for the ⚡ badge.
+  if (!budget.stopped) await runSweep({ priceTypes: [PRICE_TYPE_LIGHTNING], pages: 1 })
+
+  const stoppedForTokens = budget.stopped
+  const lastTokensLeft = budget.tokensLeft
   const deals = [...byAsin.values()]
   if (deals.length === 0) {
     return NextResponse.json({ ok: true, fetched: 0, stoppedForTokens, tokensLeft: lastTokensLeft })
@@ -145,7 +187,7 @@ export async function GET(req: Request) {
   //    Keepa's 20-tokens/min rate is the limiter, so we cap the batch and stop
   //    on low tokens / near the time budget; coverage grows across runs. Does
   //    NOT touch the campaign_* columns (Creator Connections match from step 2).
-  const verified = await enrichPriceHistory(admin, lastTokensLeft)
+  const verified = await enrichPriceHistory(admin, lastTokensLeft, startedAt + 260_000)
 
   // 5. Purge deals that fell out of the feed (not re-seen in STALE_HOURS).
   const staleBefore = new Date(Date.now() - STALE_HOURS * 3600_000).toISOString()
@@ -179,9 +221,12 @@ async function enrichPriceHistory(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   admin: any,
   tokensLeft: number | null,
+  hardDeadline: number,
 ): Promise<number> {
   if (ENRICH_MAX === 0) return 0
-  const deadline = Date.now() + 210_000 // stay well under maxDuration (300s)
+  // Stay under maxDuration (300s): the earlier of "210s from now" and the run's
+  // hard deadline (so a longer sweep can't push enrichment past the timeout).
+  const deadline = Math.min(Date.now() + 210_000, hardDeadline)
   const staleBefore = new Date(Date.now() - VERIFY_TTL_HOURS * 3600_000).toISOString()
   let budget = tokensLeft // null = unknown; rely on deadline + ENRICH_MAX
 
