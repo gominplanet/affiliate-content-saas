@@ -16,7 +16,7 @@ import { toast } from 'sonner'
 import {
   Radar, Search, Loader2, Star, Zap, BadgePercent, ExternalLink,
   ArrowRight, Sparkles, TrendingUp, RefreshCw, ShieldCheck, ShieldAlert,
-  Send, Check, AlertCircle, X as CloseIcon, HelpCircle, Mail, Info,
+  Send, Check, AlertCircle, X as CloseIcon, HelpCircle, Mail, Info, Coins, Flame,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import QuickPostModal from '@/components/deal/QuickPostModal'
@@ -47,6 +47,12 @@ interface Deal {
   verdict: DealVerdict | null
   /** If the user already turned this ASIN into a deal post, its URL. */
   postedUrl: string | null
+  /** Estimated commission per sale (cents) + the rate used. `isBounty` = the
+   *  rate is a Creator Connections bounty (exact), else a rough Amazon est. */
+  estCommissionCents: number | null
+  commissionRatePct: number
+  commissionIsBounty: boolean
+  opportunityScore: number | null
 }
 
 // Category filter options — mirror the cron's swept browse nodes.
@@ -72,6 +78,7 @@ const CATEGORIES: { id: number; label: string }[] = [
 ]
 
 const SORTS: { key: string; label: string }[] = [
+  { key: 'opportunity', label: 'Best opportunity' },
   { key: 'discount', label: 'Biggest discount' },
   { key: 'commission', label: 'Highest commission' },
   { key: 'ending', label: 'Ending soon' },
@@ -176,7 +183,7 @@ export default function DealRadarPage() {
   const [hasCampaign, setHasCampaign] = useState(false)
   const [realOnly, setRealOnly] = useState(false)
   const [lightningOnly, setLightningOnly] = useState(false)
-  const [sort, setSort] = useState('discount')
+  const [sort, setSort] = useState('opportunity')
 
   const [deals, setDeals] = useState<Deal[]>([])
   const [ticker, setTicker] = useState<Deal[]>([])
@@ -273,7 +280,7 @@ export default function DealRadarPage() {
   }
 
   const hasFilters = q.trim() || category !== '' || minDiscount > 0 || minRating > 0 || hasCampaign || realOnly || lightningOnly
-  const clearFilters = () => { setQ(''); setCategory(''); setMinDiscount(0); setMinRating(0); setHasCampaign(false); setRealOnly(false); setLightningOnly(false); setSort('discount') }
+  const clearFilters = () => { setQ(''); setCategory(''); setMinDiscount(0); setMinRating(0); setHasCampaign(false); setRealOnly(false); setLightningOnly(false); setSort('opportunity') }
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
@@ -462,6 +469,9 @@ function DealCard({ deal: d, onQuickPost }: { deal: Deal; onQuickPost: (d: Deal)
         {d.postedUrl && (
           <span className="absolute bottom-2 left-2 text-[10px] font-bold bg-emerald-600 text-white rounded px-1.5 py-0.5 inline-flex items-center gap-0.5"><Check size={10} /> Posted</span>
         )}
+        {d.opportunityScore != null && d.opportunityScore >= 55 && (
+          <span className="absolute bottom-2 right-2 text-[10px] font-bold bg-violet-600 text-white rounded px-1.5 py-0.5 inline-flex items-center gap-0.5" title="High opportunity: strong discount, real deal, in demand"><Flame size={10} /> Top pick</span>
+        )}
       </a>
       <div className="p-3 flex flex-col gap-1.5 flex-1">
         <div className="text-sm font-medium line-clamp-2 leading-snug min-h-[2.5rem]">{d.title}</div>
@@ -481,6 +491,13 @@ function DealCard({ deal: d, onQuickPost }: { deal: Deal; onQuickPost: (d: Deal)
         {d.monthlySold != null && (
           <div className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 dark:text-blue-400 w-fit">
             <TrendingUp size={12} /> {d.monthlySold.toLocaleString()}+ bought/mo
+          </div>
+        )}
+        {d.estCommissionCents != null && d.estCommissionCents > 0 && (
+          <div className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400 w-fit"
+               title={d.commissionIsBounty ? 'Creator Connections bounty rate' : 'Estimated Amazon commission (category rate)'}>
+            <Coins size={12} /> ≈ {money((d.estCommissionCents) / 100)}/sale
+            <span className="font-normal text-muted-foreground">· {d.commissionIsBounty ? `${d.commissionRatePct}% bounty` : `${d.commissionRatePct}% est`}</span>
           </div>
         )}
         {d.verdict && <VerdictBadge verdict={d.verdict} />}
