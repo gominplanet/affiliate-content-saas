@@ -206,6 +206,7 @@ async function enrichPriceHistory(
       price_low_cents: a.allTimeLowCents,
       deal_quality: a.quality,
       lowest_label: a.label,
+      monthly_sold: a.monthlySold,
       price_verified_at: new Date().toISOString(),
     }).eq('asin', row.asin)
     if (budget != null) budget -= 1 // a product-stats call is ~1 token
