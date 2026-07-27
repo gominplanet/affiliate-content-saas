@@ -39,28 +39,37 @@ interface PublishOpts {
   supabase: any
   userId: string
   deal: DealForPost
-  /** The tagged affiliate URL (…/dp/ASIN?tag=…). */
+  /** Fallback tagged affiliate URL (…/dp/ASIN?tag=…), used when a platform has
+   *  no per-platform link. */
   link: string
+  /** Per-platform affiliate links — a Geniuslink short URL wrapped into that
+   *  platform's own tracking group (FACEBOOK, TWITTER, …). Missing entries fall
+   *  back to `link`. */
+  links?: Partial<Record<QuickPostPlatform, string>>
   /** Price-safe base caption — no link, no disclosure (composed per platform). */
   baseCaption: string
   disclaimer: string
   platforms: QuickPostPlatform[]
 }
 
-/** Compose the final text for a platform: base caption trimmed to the platform
- *  limit, then the affiliate link + disclosure appended. */
+/** Compose the final text for a platform: the affiliate link leads (a shopper
+ *  can buy without reading), then the caption, then the disclosure — all capped
+ *  to the platform's limit. */
 function composeText(base: string, platform: QuickPostPlatform, link: string, disclaimer: string): string {
-  if (platform === 'twitter') return capSocialText(base, SOCIAL_LIMITS.twitter, ` ${link} #ad`)
-  if (platform === 'bluesky') return capSocialText(base, SOCIAL_LIMITS.bluesky, `\n\n${link}\n#ad`)
+  if (platform === 'twitter') return capSocialText(base, SOCIAL_LIMITS.twitter, ` #ad`, `🛒 ${link}\n\n`)
+  if (platform === 'bluesky') return capSocialText(base, SOCIAL_LIMITS.bluesky, `\n#ad`, `🛒 ${link}\n\n`)
   const limit = (SOCIAL_LIMITS as Record<string, number>)[platform] ?? 1000
-  return capSocialText(base, limit, `\n\n👉 ${link}\n\n${disclaimer}`)
+  return capSocialText(base, limit, `\n\n${disclaimer}`, `🛒 Grab it on Amazon 👉 ${link}\n\n`)
 }
 
 export async function publishDealToSocials(opts: PublishOpts): Promise<PlatformResult[]> {
-  const { supabase, userId, deal, link, baseCaption, disclaimer } = opts
+  const { supabase, userId, deal, baseCaption, disclaimer } = opts
   const platforms = opts.platforms.filter((p) => QUICK_POST_PLATFORMS.includes(p))
   const results: PlatformResult[] = []
   if (!platforms.length) return results
+  // The affiliate link for a platform: its own Geniuslink (per-platform group)
+  // when we built one, else the shared tagged fallback.
+  const linkFor = (p: QuickPostPlatform) => opts.links?.[p] || opts.link
 
   const { data: intRaw } = await supabase
     .from('integrations')
@@ -72,6 +81,7 @@ export async function publishDealToSocials(opts: PublishOpts): Promise<PlatformR
 
   for (const platform of platforms) {
     try {
+      const link = linkFor(platform)
       if (platform === 'twitter') {
         let token = ig.twitter_access_token as string | undefined
         if (!token) throw new Error('X is not connected.')
@@ -141,9 +151,10 @@ export async function publishDealToSocials(opts: PublishOpts): Promise<PlatformR
         const channel = ig.telegram_channel_id as string | undefined
         if (!token || !channel) throw new Error('Telegram is not connected.')
         // MarkdownV2: escape the body + disclosure; the link rides in a link span
-        // (dp URLs contain no ')' so the destination is safe unescaped).
+        // (dp + geni.us URLs contain no ')' so the destination is safe unescaped).
+        // Link leads so a shopper can buy without reading.
         const body = escapeMarkdownV2(capSocialText(baseCaption, 700))
-        const caption = `${body}\n\n[Grab it on Amazon](${link})\n\n${escapeMarkdownV2(disclaimer)}`
+        const caption = `🛒 [Grab it on Amazon](${link})\n\n${body}\n\n${escapeMarkdownV2(disclaimer)}`
         if (img) await sendPhoto(token, channel, img, caption)
         else await sendMessage(token, channel, caption)
         results.push({ platform, ok: true })
