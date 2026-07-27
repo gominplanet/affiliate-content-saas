@@ -11,18 +11,21 @@
  *
  * If `suffix` is provided, room is reserved for it and the suffix is
  * appended after the trim — useful for "(... text)\n\n#ad disclaimer".
+ * If `prefix` is provided, room is likewise reserved and it's prepended —
+ * useful for leading with a CTA + affiliate link ("👉 {link}\n\n{body}").
  */
-export function capSocialText(raw: string, maxChars: number, suffix = ''): string {
-  const reserve = suffix.length
+export function capSocialText(raw: string, maxChars: number, suffix = '', prefix = ''): string {
+  const reserve = suffix.length + prefix.length
   const maxBody = Math.max(20, maxChars - reserve)
   const text = (raw ?? '').trim()
-  if (text.length <= maxBody) {
-    return suffix ? `${text}${suffix}` : text
-  }
-  const cut = text.slice(0, maxBody - 1) // leave room for an ellipsis
-  const lastSpace = cut.lastIndexOf(' ')
-  const trimmed = (lastSpace > maxBody * 0.6 ? cut.slice(0, lastSpace) : cut) + '…'
-  return suffix ? `${trimmed}${suffix}` : trimmed
+  const body = text.length <= maxBody
+    ? text
+    : (() => {
+        const cut = text.slice(0, maxBody - 1) // leave room for an ellipsis
+        const lastSpace = cut.lastIndexOf(' ')
+        return (lastSpace > maxBody * 0.6 ? cut.slice(0, lastSpace) : cut) + '…'
+      })()
+  return `${prefix}${body}${suffix}`
 }
 
 /** Per-platform body caps (chars). Source: each platform's public API docs. */
