@@ -16,7 +16,7 @@ import { toast } from 'sonner'
 import {
   Radar, Search, Loader2, Star, Zap, BadgePercent, ExternalLink,
   ArrowRight, Sparkles, TrendingUp, RefreshCw, ShieldCheck, ShieldAlert,
-  Send, Check, AlertCircle, X as CloseIcon, HelpCircle, Mail,
+  Send, Check, AlertCircle, X as CloseIcon, HelpCircle, Mail, Info,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import QuickPostModal from '@/components/deal/QuickPostModal'
@@ -85,6 +85,7 @@ const money = (n: number | null) => (n == null ? null : `$${n.toFixed(2)}`)
 function DigestToggle() {
   const [enabled, setEnabled] = useState<boolean | null>(null)
   const [saving, setSaving] = useState(false)
+  const [showInfo, setShowInfo] = useState(false)
   useEffect(() => {
     fetch('/api/deal-radar/digest-pref').then((r) => r.json()).then((d) => setEnabled(!!d.enabled)).catch(() => setEnabled(false))
   }, [])
@@ -101,11 +102,35 @@ function DigestToggle() {
   }
   if (enabled === null) return null
   return (
-    <button onClick={toggle} disabled={saving}
-      title="Auto-publish a weekly 'Top deals in your niche' roundup to your blog"
-      className={`text-xs rounded-lg border px-2.5 py-2 inline-flex items-center gap-1.5 transition ${enabled ? 'bg-violet-600 text-white border-violet-600' : 'bg-background hover:bg-accent'}`}>
-      <Mail size={13} /> Weekly digest{enabled ? ': On' : ''}
-    </button>
+    <div className="relative inline-flex items-center gap-1">
+      <button onClick={toggle} disabled={saving}
+        className={`text-xs rounded-lg border px-2.5 py-2 inline-flex items-center gap-1.5 transition ${enabled ? 'bg-violet-600 text-white border-violet-600' : 'bg-background hover:bg-accent'}`}>
+        <Mail size={13} /> Weekly digest{enabled ? ': On' : ''}
+      </button>
+      <button onClick={() => setShowInfo((v) => !v)} title="What does this do?"
+        className="text-muted-foreground hover:text-foreground p-1"><Info size={14} /></button>
+      {showInfo && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setShowInfo(false)} />
+          <div className="absolute right-0 top-full mt-2 z-50 w-80 rounded-xl border bg-card shadow-xl p-4 text-left">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-sm font-semibold inline-flex items-center gap-1.5"><Mail size={14} /> Weekly digest</div>
+              <button onClick={() => setShowInfo(false)} className="text-muted-foreground hover:text-foreground"><CloseIcon size={14} /></button>
+            </div>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Turn this on and MVP <strong className="text-foreground">automatically publishes a &ldquo;Top deals in your niche&rdquo; roundup to your blog about once a week</strong> — completely hands-off.
+            </p>
+            <ul className="mt-2 space-y-1 text-xs text-muted-foreground leading-relaxed list-disc pl-4">
+              <li>Picks the best <strong className="text-foreground">price-verified</strong> deals in your niche (no fake markdowns).</li>
+              <li>Wraps every product in <strong className="text-foreground">your affiliate link</strong>.</li>
+              <li>Publishes a full post to your site with the affiliate disclosure + SEO built in.</li>
+              <li>It only posts to your <strong className="text-foreground">blog</strong> — nothing goes to your socials.</li>
+            </ul>
+            <p className="text-[11px] text-muted-foreground mt-2">Toggle off anytime; nothing already published is removed.</p>
+          </div>
+        </>
+      )}
+    </div>
   )
 }
 
