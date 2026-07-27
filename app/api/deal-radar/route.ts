@@ -145,7 +145,14 @@ function applySort(query: any, sort: SortKey) {
   switch (sort) {
     case 'commission': return query.order('campaign_commission_pct', { ascending: false, nullsFirst: false })
     case 'ending':     return query.order('lightning_ends_at', { ascending: true, nullsFirst: false })
-    case 'bestseller': return query.order('sales_rank', { ascending: true, nullsFirst: false })
+    // "Best sellers" = real popularity. sales_rank is CATEGORY-relative (a #100
+    // in a tiny niche outranks a #5000 in Electronics that sells 100× more), so
+    // it surfaced niche junk. Use absolute, cross-category signals instead:
+    // Amazon's monthly units-sold first (sparse but authoritative), then total
+    // review count (dense proxy for popularity) as the tiebreak.
+    case 'bestseller': return query
+      .order('monthly_sold', { ascending: false, nullsFirst: false })
+      .order('review_count', { ascending: false, nullsFirst: false })
     case 'discount':
     default:           return query.order('discount_pct', { ascending: false, nullsFirst: false })
   }
