@@ -101,11 +101,21 @@ export async function GET(req: Request) {
       // File under a real "Deals" category (create if missing), never "Blog".
       let categoryIds: number[] = []
       try { const id = await wpService.createCategory('Deals'); if (id) categoryIds = [id] } catch { /* leave as-is */ }
+      // Featured thumbnail — lead deal's product image (roundup spans products).
+      let featuredMediaId: number | null = null
+      const heroImage = deals.find((d) => d.image_url)?.image_url
+      if (heroImage) {
+        try {
+          const media = await wpService.uploadImageFromUrl(heroImage, `${(theme || 'deals').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'deals'}-weekly.jpg`)
+          featuredMediaId = (media?.id as number | undefined) ?? null
+        } catch (err) { console.warn('[weekly-digest] featured image upload failed:', err instanceof Error ? err.message : err) }
+      }
       const slug = keywordSlug(title, theme)
       const wpPost = await wpService.createPost({
         title, slug, content: body, excerpt,
         status: 'publish', comment_status: 'closed', ping_status: 'closed',
         ...(categoryIds.length ? { categories: categoryIds } : {}),
+        ...(featuredMediaId ? { featured_media: featuredMediaId } : {}),
       })
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -113,6 +123,7 @@ export async function GET(req: Request) {
         user_id: u.user_id, video_id: null, title, slug, content: body, excerpt: null,
         wordpress_post_id: wpPost.id, wordpress_url: wpPost.link, wordpress_site_id: site.site_id,
         status: 'published', post_type: 'deal', seo_keyword: seoKeyword,
+        deal_meta: { kind: 'roundup', asins: deals.map((d) => d.asin) },
         published_at: new Date().toISOString(),
       }).select('id').single()
 
