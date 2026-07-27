@@ -9,8 +9,8 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import Link from 'next/link'
-import { Bell, TrendingDown, RefreshCw, ExternalLink, X as CloseIcon, Send, Sparkles } from 'lucide-react'
+import { toast } from 'sonner'
+import { Bell, TrendingDown, RefreshCw, ExternalLink, X as CloseIcon, Send, Sparkles, Loader2 } from 'lucide-react'
 import QuickPostModal, { type QuickPostDeal } from '@/components/deal/QuickPostModal'
 
 interface PriceAlert {
@@ -34,6 +34,7 @@ export default function PriceAlertsPanel() {
   const [amazonTag, setAmazonTag] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [repost, setRepost] = useState<QuickPostDeal | null>(null)
+  const [refreshingId, setRefreshingId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -53,6 +54,19 @@ export default function PriceAlertsPanel() {
   const dismiss = async (id: string) => {
     setAlerts((a) => a.filter((x) => x.id !== id)) // optimistic
     try { await fetch('/api/price-watch/seen', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: [id] }) }) } catch { /* no-op */ }
+  }
+  const refreshPrice = async (a: PriceAlert) => {
+    if (refreshingId) return
+    setRefreshingId(a.id)
+    try {
+      const res = await fetch('/api/deals/refresh-price', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ asin: a.asin }),
+      })
+      const data = await res.json()
+      if (!res.ok) { toast.error(data.error || 'Could not refresh the post.'); return }
+      toast.success('Post pricing refreshed to match the current price.')
+      void dismiss(a.id)
+    } catch { toast.error('Could not refresh the post.') } finally { setRefreshingId(null) }
   }
   const dismissAll = async () => {
     setAlerts([])
@@ -113,8 +127,12 @@ export default function PriceAlertsPanel() {
                     <Send size={12} /> Post the drop
                   </button>
                 )}
-                {a.kind === 'stale_price' && a.blog_post_id ? (
-                  <Link href="/content" className="text-xs font-medium rounded-full border px-3 py-1.5 hover:bg-accent">Refresh post</Link>
+                {a.kind === 'stale_price' ? (
+                  <button onClick={() => refreshPrice(a)} disabled={refreshingId === a.id}
+                    title="Auto-update the pricing language in your post to match the current price"
+                    className="inline-flex items-center gap-1 text-xs font-medium rounded-full border px-3 py-1.5 hover:bg-accent disabled:opacity-60">
+                    {refreshingId === a.id ? <><Loader2 size={12} className="animate-spin" /> Refreshing…</> : <><RefreshCw size={12} /> Refresh price</>}
+                  </button>
                 ) : (
                   <a href={amazonUrl(a.asin)} target="_blank" rel="noopener noreferrer"
                      className="inline-flex items-center gap-1 text-xs font-medium rounded-full border px-3 py-1.5 hover:bg-accent">

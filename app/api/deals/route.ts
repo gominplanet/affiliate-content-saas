@@ -1056,11 +1056,12 @@ interface DealWriterPromptInput {
 
 function buildDealWriterPrompt(p: DealWriterPromptInput): string {
   const bulletsSummary = p.product.bullets.slice(0, 6).map(b => `- ${b}`).join('\n') || '(none scraped)'
+  // Feed the DISCOUNT (a percentage / relative framing) but NOT exact dollar
+  // amounts — exact prices go stale the moment the price moves and make an old
+  // post read wrong. The writer is told to stay relative below.
   const dealLine = p.savingsLine
-    ? `The discount: ${p.savingsLine}.${p.product.priceWas ? ` Listing shows was ${p.product.priceWas}, now ${p.product.priceSale || p.product.price || '?'}.` : ''}`
-    : p.product.price
-      ? `No explicit "was" price on the listing — write this as a low-price-alert / good-time-to-buy piece. Current price: ${p.product.price}.`
-      : 'No price detected at all. Write conservatively, point readers to the listing for the live number.'
+    ? `The discount: ${p.savingsLine}. Frame this in RELATIVE terms only ("about X% off today", "a genuine price drop right now"). Do NOT state any exact dollar price.`
+    : 'No explicit discount figure — write this as a "great price right now / good time to buy" piece in relative terms. Do NOT state any exact dollar price.'
 
   const endLine = p.dealEndsAt
     ? `Deal expiration: ${p.dealEndsAt}. Mention this prominently early in the article.`
@@ -1109,7 +1110,7 @@ ${DEAL_VOICE_RULES}
 
 STRUCTURE (target ~800 words):
 1. <p> Punchy opening hook. State the deal up front: what's discounted, by how much (if known), and why it matters TODAY. If the occasion is set, lean into it ("Prime Day delivered a real one this year:"). Two sentences max for the hook.
-2. <h2>The deal at a glance</h2> — One <p> with the price story (was vs. now if known, ${p.savingsLine ? 'savings: ' + p.savingsLine : 'no explicit discount, frame as "this price is the floor I\'ve seen recently"'}), then the expiration note if any, then a one-line CTA. Wrap the CTA anchor as <a href="${ctaHref}" rel="nofollow sponsored">${p.promoCode ? `Apply code ${p.promoCode} on Amazon` : 'See the deal on Amazon'}</a>.
+2. <h2>The deal at a glance</h2> — One <p> with the deal story in RELATIVE terms only (${p.savingsLine ? 'the discount: ' + p.savingsLine + ', framed as "about X% off today" / "a genuine price drop"' : 'frame as "one of the best prices this has hit recently"'} — NO exact dollar amounts), then the expiration note if any, then a one-line CTA. Wrap the CTA anchor as <a href="${ctaHref}" rel="nofollow sponsored">${p.promoCode ? `Apply code ${p.promoCode} on Amazon` : 'See the deal on Amazon'}</a>.
 3. <h2>Why this deal is worth your attention</h2> — 2-3 paragraphs. Confident, direct product commentary. Use the spec bullets above as known facts about the product, not as something you're citing ("The 6500 RPM motor handles X" — NOT "the listing claims a 6500 RPM motor"). Talk about who this fits and who it doesn't. Never claim hands-on time. Never cite the listing as a source.
 4. <h2>What you're actually getting</h2> — Bullet list <ul><li> of 4-6 concrete specs / features. Concise. State them directly. No marketing fluff. No "the listing says" framing.
 5. <h2>Before you buy</h2> — One <p> of grounded caveats: shipping windows for the occasion, return policy considerations, the kinds of buyer this would NOT fit. Keep it real.
@@ -1123,6 +1124,7 @@ VOICE / STYLE
 - Never use "honest" or any variant. Never: moreover, furthermore, additionally, in conclusion, to summarize, overall, delve, tapestry, elevate, utilize, game-changer, revolutionary, cutting-edge, genuinely, actually, it's important to.
 - HARD BAN on source-citing language. NEVER say: "based on the listing", "the listing says/claims/describes/shows/notes/is clearly aimed", "looking at the listing", "per the listing", "according to the spec sheet", "based on the spec sheet", "from the listing", "Amazon's listing", "the product page says". Just state product facts directly, the way a magazine editor would. If you catch yourself reaching for one of these phrases, REWRITE the sentence to lead with the product itself.
 - NEVER name any price-tracking data provider, tool, or third-party service — no "Keepa", "CamelCamelCamel", "price tracker", "our data", or similar. The price numbers are simply the product's own price history / what it's been selling for; present them as fact with confident language and no attribution.
+- NEVER state an exact dollar price anywhere ($49.99, "$83", "under $100", etc.). Exact prices go stale the moment the price changes and make the post read wrong later. Speak ONLY in relative + percentage terms: "a great price right now", "about 50% off today", "well below its usual price", "near the lowest it's been". Percentages are fine; specific dollar amounts are banned.
 - Vary sentence openings. Don't start three paragraphs in a row the same way.
 - NEVER invent specs, prices, dates, or features. Only state what's actually known.
 - Output: VALID HTML only. No markdown fences. Open with <p>. Close with </p>. Use <h2>, <ul>, <li>, <a>, <p>, <strong>, <em>. Nothing else.`
