@@ -429,6 +429,9 @@ export default function DashboardShellV2({
         // discovery + Creator Connections cross-check; one click turns a deal
         // into a blog post (counts against postsPerMonth) or a social post.
         { href: '/deal-radar', icon: <Radar size={15} />, label: 'Deal Radar', gate: canSeeNav('dealRadar', tier as Tier) },
+        // Link in Bio — a shoppable affiliate "Shop Grid" page at /s/<handle>,
+        // auto-filled from posted products. All paid tiers (same gate as Deal Radar).
+        { href: '/link-in-bio', icon: <Link2 size={15} />, label: 'Link in Bio', gate: canSeeNav('dealRadar', tier as Tier) },
         // Socials connection moved to SET UP > "Connect Socials" (it's setup,
         // not a create action). YouTube has its own SET UP > "YouTube" entry.
         { href: '/comparison', icon: <Scale size={15} />, label: 'Comparisons' },
