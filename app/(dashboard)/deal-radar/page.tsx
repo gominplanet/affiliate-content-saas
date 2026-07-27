@@ -16,7 +16,7 @@ import { toast } from 'sonner'
 import {
   Radar, Search, Loader2, Star, Zap, BadgePercent, ExternalLink,
   ArrowRight, Sparkles, TrendingUp, RefreshCw, ShieldCheck, ShieldAlert,
-  Send, Check, AlertCircle, X as CloseIcon, HelpCircle,
+  Send, Check, AlertCircle, X as CloseIcon, HelpCircle, Mail,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import QuickPostModal from '@/components/deal/QuickPostModal'
@@ -79,6 +79,35 @@ const SORTS: { key: string; label: string }[] = [
 ]
 
 const money = (n: number | null) => (n == null ? null : `$${n.toFixed(2)}`)
+
+// Opt-in toggle for the weekly "Top deals in your niche" auto-post digest.
+// Reads/writes integrations.notification_preferences.weekly_digest.
+function DigestToggle() {
+  const [enabled, setEnabled] = useState<boolean | null>(null)
+  const [saving, setSaving] = useState(false)
+  useEffect(() => {
+    fetch('/api/deal-radar/digest-pref').then((r) => r.json()).then((d) => setEnabled(!!d.enabled)).catch(() => setEnabled(false))
+  }, [])
+  const toggle = async () => {
+    if (enabled === null || saving) return
+    const next = !enabled
+    setEnabled(next); setSaving(true)
+    try {
+      await fetch('/api/deal-radar/digest-pref', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: next }),
+      })
+      toast.success(next ? 'Weekly digest on — a "top deals in your niche" roundup will auto-post to your blog each week.' : 'Weekly digest off.')
+    } catch { setEnabled(!next); toast.error('Could not update.') } finally { setSaving(false) }
+  }
+  if (enabled === null) return null
+  return (
+    <button onClick={toggle} disabled={saving}
+      title="Auto-publish a weekly 'Top deals in your niche' roundup to your blog"
+      className={`text-xs rounded-lg border px-2.5 py-2 inline-flex items-center gap-1.5 transition ${enabled ? 'bg-violet-600 text-white border-violet-600' : 'bg-background hover:bg-accent'}`}>
+      <Mail size={13} /> Weekly digest{enabled ? ': On' : ''}
+    </button>
+  )
+}
 
 // Consistent on/off filter pill for the filter bar. Ghost when inactive, filled
 // with its accent when active — so the toggles read as one family.
@@ -234,6 +263,7 @@ export default function DealRadarPage() {
           <p className="text-sm text-muted-foreground mt-1">Live Amazon deals in your niche. Turn any one into a blog post, then push it to social.</p>
         </div>
         <div className="flex items-center gap-2">
+          <DigestToggle />
           {!showHelp && (
             <button onClick={() => setShowHelp(true)} className="text-xs text-muted-foreground underline inline-flex items-center gap-1">
               <HelpCircle size={13} /> How it works
