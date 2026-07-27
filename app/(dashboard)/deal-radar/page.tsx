@@ -45,6 +45,8 @@ interface Deal {
   amazonUrl: string
   campaign: DealCampaign | null
   verdict: DealVerdict | null
+  /** If the user already turned this ASIN into a deal post, its URL. */
+  postedUrl: string | null
 }
 
 // Category filter options — mirror the cron's swept browse nodes.
@@ -402,6 +404,9 @@ function DealCard({ deal: d, onQuickPost }: { deal: Deal; onQuickPost: (d: Deal)
         {d.dealType === 'lightning' && (
           <span className="absolute top-2 right-2 text-[10px] font-bold bg-amber-500 text-white rounded px-1.5 py-0.5 inline-flex items-center gap-0.5"><Zap size={10} /> Lightning</span>
         )}
+        {d.postedUrl && (
+          <span className="absolute bottom-2 left-2 text-[10px] font-bold bg-emerald-600 text-white rounded px-1.5 py-0.5 inline-flex items-center gap-0.5"><Check size={10} /> Posted</span>
+        )}
       </a>
       <div className="p-3 flex flex-col gap-1.5 flex-1">
         <div className="text-sm font-medium line-clamp-2 leading-snug min-h-[2.5rem]">{d.title}</div>
@@ -431,6 +436,12 @@ function DealCard({ deal: d, onQuickPost }: { deal: Deal; onQuickPost: (d: Deal)
           </a>
         )}
         <div className="mt-auto pt-2 space-y-1.5">
+          {d.postedUrl && gen !== 'done' && (
+            <a href={d.postedUrl} target="_blank" rel="noopener noreferrer"
+               className="flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400 hover:underline">
+              <Check size={12} /> You&apos;ve posted this — view it
+            </a>
+          )}
           <div className="flex items-center gap-2">
             {gen === 'done' && postUrl ? (
               <a href={postUrl} target="_blank" rel="noopener noreferrer"
@@ -442,7 +453,9 @@ function DealCard({ deal: d, onQuickPost }: { deal: Deal; onQuickPost: (d: Deal)
                 className="flex-1 inline-flex items-center justify-center gap-1 text-xs font-semibold rounded-full bg-violet-600 hover:bg-violet-700 text-white py-2 disabled:opacity-60 transition">
                 {gen === 'working'
                   ? <><Loader2 size={14} className="mr-1 animate-spin" /> Writing…</>
-                  : <>Make blog post <ArrowRight size={14} className="ml-1" /></>}
+                  : d.postedUrl
+                    ? <>Post again <ArrowRight size={14} className="ml-1" /></>
+                    : <>Make blog post <ArrowRight size={14} className="ml-1" /></>}
               </button>
             )}
             <a href={d.amazonUrl} target="_blank" rel="noopener noreferrer"
@@ -476,6 +489,7 @@ function TickerCard({ deal: d, onQuickPost }: { deal: Deal; onQuickPost: (d: Dea
       <div className="flex items-center gap-1.5 mt-1 mb-2">
         {d.discountPct != null && <span className="text-[10px] font-bold text-red-500">-{d.discountPct}%</span>}
         {d.campaign && <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">+{d.campaign.commissionPct}% CC</span>}
+        {d.postedUrl && <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 inline-flex items-center gap-0.5"><Check size={9} /> Posted</span>}
       </div>
       <div className="mt-auto flex items-center gap-1.5">
         {gen === 'done' && postUrl ? (
