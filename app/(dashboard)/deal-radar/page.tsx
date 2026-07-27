@@ -16,7 +16,7 @@ import { toast } from 'sonner'
 import {
   Radar, Search, Loader2, Star, Zap, BadgePercent, ExternalLink,
   ArrowRight, Sparkles, TrendingUp, RefreshCw, ShieldCheck, ShieldAlert,
-  Send, Check, AlertCircle, X as CloseIcon, HelpCircle, Mail, Info, Coins, Flame,
+  Send, Check, AlertCircle, X as CloseIcon, HelpCircle, Mail, Info, Coins, Flame, Plus, Layers,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import QuickPostModal from '@/components/deal/QuickPostModal'
@@ -194,6 +194,24 @@ export default function DealRadarPage() {
   const [error, setError] = useState<string | null>(null)
   const [quickPostDeal, setQuickPostDeal] = useState<Deal | null>(null)
   const [showHelp, setShowHelp] = useState(true)
+  // On-demand roundup: multi-select deals → one curated post.
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [roundupBusy, setRoundupBusy] = useState(false)
+  const toggleSelect = (asin: string) => setSelected((s) => { const n = new Set(s); n.has(asin) ? n.delete(asin) : n.add(asin); return n })
+  const createRoundup = async () => {
+    if (selected.size < 2 || roundupBusy) return
+    setRoundupBusy(true)
+    try {
+      const res = await fetch('/api/deal-radar/roundup', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ asins: [...selected] }),
+      })
+      const data = await res.json()
+      if (!res.ok) { toast.error(data.error || 'Could not build the roundup.'); return }
+      toast.success(`Roundup post published — ${data.count} deals.`)
+      setSelected(new Set())
+      if (data.url) window.open(data.url, '_blank')
+    } catch { toast.error('Could not build the roundup.') } finally { setRoundupBusy(false) }
+  }
 
   const isPro = tier === 'pro' || tier === 'admin'
   const labsOk = dealRadarEnabled() || tier === 'admin'
@@ -396,7 +414,7 @@ export default function DealRadarPage() {
       ) : (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-            {deals.map((d) => <DealCard key={d.asin} deal={d} onQuickPost={setQuickPostDeal} />)}
+            {deals.map((d) => <DealCard key={d.asin} deal={d} onQuickPost={setQuickPostDeal} selected={selected.has(d.asin)} onToggleSelect={toggleSelect} />)}
           </div>
           {hasMore && (
             <div className="flex justify-center pt-6">
@@ -413,6 +431,19 @@ export default function DealRadarPage() {
       )}
 
       {quickPostDeal && <QuickPostModal deal={quickPostDeal} onClose={() => setQuickPostDeal(null)} />}
+
+      {/* Floating roundup bar — appears once a deal is selected. */}
+      {selected.size >= 1 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 rounded-full border bg-white dark:bg-[#16161a] shadow-2xl px-4 py-2.5">
+          <span className="text-sm font-medium inline-flex items-center gap-1.5"><Layers size={15} /> {selected.size} selected</span>
+          <button onClick={createRoundup} disabled={selected.size < 2 || roundupBusy}
+            title={selected.size < 2 ? 'Pick at least 2 deals' : 'Publish a curated roundup post of these deals'}
+            className="text-sm font-semibold rounded-full bg-violet-600 hover:bg-violet-700 text-white px-4 py-1.5 disabled:opacity-60 inline-flex items-center gap-1.5">
+            {roundupBusy ? <><Loader2 size={14} className="animate-spin" /> Building…</> : 'Create roundup post'}
+          </button>
+          <button onClick={() => setSelected(new Set())} className="text-xs text-muted-foreground hover:text-foreground">Clear</button>
+        </div>
+      )}
     </div>
   )
 }
@@ -452,7 +483,7 @@ function useMakePost(d: Deal) {
   return { gen, postUrl, makePost }
 }
 
-function DealCard({ deal: d, onQuickPost }: { deal: Deal; onQuickPost: (d: Deal) => void }) {
+function DealCard({ deal: d, onQuickPost, selected = false, onToggleSelect }: { deal: Deal; onQuickPost: (d: Deal) => void; selected?: boolean; onToggleSelect?: (asin: string) => void }) {
   const { gen, postUrl, makePost } = useMakePost(d)
   return (
     <div className="rounded-xl border bg-card overflow-hidden flex flex-col">
@@ -515,6 +546,12 @@ function DealCard({ deal: d, onQuickPost }: { deal: Deal; onQuickPost: (d: Deal)
             </a>
           )}
           <div className="flex items-center gap-2">
+            {onToggleSelect && (
+              <button onClick={() => onToggleSelect(d.asin)} title={selected ? 'Remove from roundup' : 'Add to a roundup post'}
+                className={`inline-flex items-center justify-center h-8 w-8 rounded-full border shrink-0 transition ${selected ? 'bg-violet-600 text-white border-violet-600' : 'hover:bg-accent'}`}>
+                {selected ? <Check size={14} /> : <Plus size={14} />}
+              </button>
+            )}
             {gen === 'done' && postUrl ? (
               <a href={postUrl} target="_blank" rel="noopener noreferrer"
                  className="flex-1 inline-flex items-center justify-center gap-1 text-xs font-semibold rounded-full bg-emerald-600 text-white py-2">
