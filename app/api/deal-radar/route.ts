@@ -123,23 +123,56 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    const deals = (data ?? []).map((r: DealRow) => toClient(r, amazonTag))
+    const rows = (data ?? []) as DealRow[]
 
     // Ticker (page 0 only): the double-wins — has a bounty, best commission first.
-    let ticker: ReturnType<typeof toClient>[] = []
+    let tickerRows: DealRow[] = []
     if (page === 0) {
       const { data: tk } = await sb.from('deal_radar_cache').select('*')
         .not('campaign_commission_pct', 'is', null)
         .order('campaign_commission_pct', { ascending: false, nullsFirst: false })
         .limit(TICKER_SIZE)
-      ticker = (tk ?? []).map((r: DealRow) => toClient(r, amazonTag))
+      tickerRows = (tk ?? []) as DealRow[]
     }
+
+    // Which of these ASINs has this user ALREADY turned into a deal blog post?
+    // (blog_posts.deal_meta->>'asin'). We annotate each card with its post URL so
+    // the UI can show "Posted" + a link, rather than tempting a duplicate.
+    const asins = [...new Set([...rows, ...tickerRows].map((r) => r.asin))]
+    const postedByAsin = await fetchPostedByAsin(sb, user.id, asins)
+
+    const deals = rows.map((r) => toClient(r, amazonTag, postedByAsin.get(r.asin) || null))
+    const ticker = tickerRows.map((r) => toClient(r, amazonTag, postedByAsin.get(r.asin) || null))
 
     return NextResponse.json({ ok: true, page, deals, ticker })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     return NextResponse.json({ error: msg }, { status: 500 })
   }
+}
+
+/** Map ASIN → the user's existing deal-post URL, for the ASINs on this page.
+ *  Sourced from blog_posts.deal_meta->>'asin' (deal posts store the ASIN there).
+ *  Best-effort: returns an empty map on any error so the feed never breaks. */
+async function fetchPostedByAsin(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  sb: any, userId: string, asins: string[],
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>()
+  if (!asins.length) return out
+  try {
+    const { data } = await sb
+      .from('blog_posts')
+      .select('wordpress_url, deal_meta')
+      .eq('user_id', userId)
+      .eq('post_type', 'deal')
+      .in('deal_meta->>asin', asins)
+    for (const row of (data ?? []) as Array<{ wordpress_url: string | null; deal_meta: { asin?: string } | null }>) {
+      const a = (row.deal_meta?.asin || '').toUpperCase()
+      if (a && row.wordpress_url && !out.has(a)) out.set(a, row.wordpress_url)
+    }
+  } catch { /* deal_meta column absent / query error — no "posted" badges this run */ }
+  return out
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -160,10 +193,11 @@ function applySort(query: any, sort: SortKey) {
   }
 }
 
-function toClient(r: DealRow, amazonTag: string) {
+function toClient(r: DealRow, amazonTag: string, postedUrl: string | null = null) {
   const base = `https://www.amazon.com/dp/${r.asin}`
   const amazonUrl = amazonTag ? `${base}?tag=${encodeURIComponent(amazonTag)}` : base
   return {
+    postedUrl,
     asin: r.asin,
     title: r.title,
     brand: r.brand,
