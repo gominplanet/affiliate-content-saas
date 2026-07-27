@@ -11,7 +11,7 @@
 
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import {
   Radar, Search, Loader2, Star, Zap, BadgePercent, ExternalLink,
@@ -77,6 +77,19 @@ const SORTS: { key: string; label: string }[] = [
 ]
 
 const money = (n: number | null) => (n == null ? null : `$${n.toFixed(2)}`)
+
+// Consistent on/off filter pill for the filter bar. Ghost when inactive, filled
+// with its accent when active — so the toggles read as one family.
+function FilterToggle({ active, onClick, icon, activeClass, title, children }: {
+  active: boolean; onClick: () => void; icon: ReactNode; activeClass: string; title?: string; children: ReactNode
+}) {
+  return (
+    <button onClick={onClick} title={title}
+      className={`h-9 text-sm rounded-lg border px-3 inline-flex items-center gap-1.5 transition ${active ? activeClass : 'bg-background hover:bg-accent'}`}>
+      {icon} {children}
+    </button>
+  )
+}
 
 export default function DealRadarPage() {
   // ── Tier (honors admin View-as), mirrors the Deals Hub page ───────────────
@@ -247,62 +260,66 @@ export default function DealRadarPage() {
         </div>
       )}
 
-      {/* Filter bar */}
-      <div className="rounded-xl border bg-card p-3 flex flex-wrap items-center gap-2">
-        <div className="relative flex-1 min-w-[200px]">
+      {/* Filter bar — search on its own row, then one tidy row of filters with
+          sort pinned right. Consistent h-9 controls; a divider separates the
+          dropdown filters from the on/off toggles. */}
+      <div className="rounded-xl border bg-card p-3 space-y-2.5">
+        {/* Search */}
+        <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <input
             value={q} onChange={(e) => setQ(e.target.value)}
             placeholder="Search deals (e.g. air fryer, dog bed)…"
-            className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border bg-background"
+            className="w-full h-9 pl-9 pr-3 text-sm rounded-lg border bg-background"
           />
         </div>
-        <select value={category} onChange={(e) => setCategory(e.target.value === '' ? '' : Number(e.target.value))}
-                className="text-sm rounded-lg border bg-background px-2.5 py-2">
-          <option value="">All categories</option>
-          {CATEGORIES.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
-        </select>
-        <select value={minDiscount} onChange={(e) => setMinDiscount(Number(e.target.value))}
-                className="text-sm rounded-lg border bg-background px-2.5 py-2">
-          <option value={0}>Any discount</option>
-          <option value={15}>15%+ off</option>
-          <option value={25}>25%+ off</option>
-          <option value={40}>40%+ off</option>
-          <option value={50}>50%+ off</option>
-        </select>
-        <select value={minRating} onChange={(e) => setMinRating(Number(e.target.value))}
-                className="text-sm rounded-lg border bg-background px-2.5 py-2">
-          <option value={0}>Any rating</option>
-          <option value={3}>3★+</option>
-          <option value={4}>4★+</option>
-          <option value={4.5}>4.5★+</option>
-        </select>
-        <button
-          onClick={() => setRealOnly((v) => !v)}
-          title="Only deals whose price history confirms a genuine discount"
-          className={`text-sm rounded-lg border px-2.5 py-2 inline-flex items-center gap-1.5 ${realOnly ? 'bg-blue-600 text-white border-blue-600' : 'bg-background'}`}
-        >
-          <ShieldCheck size={14} /> Real deals
-        </button>
-        <button
-          onClick={() => setHasCampaign((v) => !v)}
-          title="Only deals whose ASIN matches a campaign in your uploaded Creator Connections catalog (pays an elevated commission)"
-          className={`text-sm rounded-lg border px-2.5 py-2 inline-flex items-center gap-1.5 ${hasCampaign ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-background'}`}
-        >
-          <Sparkles size={14} /> Creator Connections
-        </button>
-        <button
-          onClick={() => setLightningOnly((v) => !v)}
-          title="Only Amazon Lightning Deals — time-limited flash sales"
-          className={`text-sm rounded-lg border px-2.5 py-2 inline-flex items-center gap-1.5 ${lightningOnly ? 'bg-amber-500 text-white border-amber-500' : 'bg-background'}`}
-        >
-          <Zap size={14} /> Lightning
-        </button>
-        <select value={sort} onChange={(e) => setSort(e.target.value)}
-                className="text-sm rounded-lg border bg-background px-2.5 py-2 ml-auto">
-          {SORTS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
-        </select>
-        {hasFilters && <button onClick={clearFilters} className="text-xs text-muted-foreground underline">Clear</button>}
+
+        {/* Filters + sort */}
+        <div className="flex flex-wrap items-center gap-2">
+          <select value={category} onChange={(e) => setCategory(e.target.value === '' ? '' : Number(e.target.value))}
+                  className="h-9 text-sm rounded-lg border bg-background px-2.5">
+            <option value="">All categories</option>
+            {CATEGORIES.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+          </select>
+          <select value={minDiscount} onChange={(e) => setMinDiscount(Number(e.target.value))}
+                  className="h-9 text-sm rounded-lg border bg-background px-2.5">
+            <option value={0}>Any discount</option>
+            <option value={15}>15%+ off</option>
+            <option value={25}>25%+ off</option>
+            <option value={40}>40%+ off</option>
+            <option value={50}>50%+ off</option>
+          </select>
+          <select value={minRating} onChange={(e) => setMinRating(Number(e.target.value))}
+                  className="h-9 text-sm rounded-lg border bg-background px-2.5">
+            <option value={0}>Any rating</option>
+            <option value={3}>3★+</option>
+            <option value={4}>4★+</option>
+            <option value={4.5}>4.5★+</option>
+          </select>
+
+          <span className="hidden sm:block w-px h-6 bg-border mx-0.5" aria-hidden />
+
+          <FilterToggle active={realOnly} onClick={() => setRealOnly((v) => !v)} icon={<ShieldCheck size={14} />}
+            activeClass="bg-blue-600 text-white border-blue-600"
+            title="Only deals whose price history confirms a genuine discount">Real deals</FilterToggle>
+          <FilterToggle active={hasCampaign} onClick={() => setHasCampaign((v) => !v)} icon={<Sparkles size={14} />}
+            activeClass="bg-emerald-600 text-white border-emerald-600"
+            title="Only deals whose ASIN matches a campaign in your uploaded Creator Connections catalog (pays an elevated commission)">Creator Connections</FilterToggle>
+          <FilterToggle active={lightningOnly} onClick={() => setLightningOnly((v) => !v)} icon={<Zap size={14} />}
+            activeClass="bg-amber-500 text-white border-amber-500"
+            title="Only Amazon Lightning Deals — time-limited flash sales">Lightning</FilterToggle>
+
+          <div className="ml-auto flex items-center gap-2">
+            {hasFilters && <button onClick={clearFilters} className="text-xs text-muted-foreground hover:text-foreground">Clear all</button>}
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              Sort
+              <select value={sort} onChange={(e) => setSort(e.target.value)}
+                      className="h-9 text-sm rounded-lg border bg-background px-2.5 text-foreground">
+                {SORTS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+              </select>
+            </label>
+          </div>
+        </div>
       </div>
 
       {/* Grid */}
