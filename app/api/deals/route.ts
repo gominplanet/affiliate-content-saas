@@ -43,6 +43,7 @@ import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { extractAsin, fetchAmazonProduct, isValidAsin, type AmazonProduct } from '@/services/amazon'
 import { fetchKeepaProductStats, buildPriceContext } from '@/services/keepa'
 import { resolveFinalUrl } from '@/lib/product-link'
+import { createGeniuslinkService } from '@/services/geniuslink'
 import { composeWithNanoBanana, composeWithNanoBananaPro, rehostToFal } from '@/lib/thumbnail-generators'
 import { recordUsage } from '@/lib/ai-usage'
 import { scrubDealHtml, DEAL_VOICE_RULES } from '@/lib/deal-scrub'
@@ -328,7 +329,7 @@ export async function POST(req: Request) {
   // counter. Access gate by tier first, then the shared generation cap.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: dealIntg } = await (supabase as any)
-    .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+    .from('integrations').select('tier, amazon_associates_tag, geniuslink_api_key, geniuslink_api_secret').eq('user_id', user.id).maybeSingle()
   const tier = normalizeTier(dealIntg?.tier)
   const dealsCap = TIERS[tier].dealsPerMonth // number | null (null = admin, unlimited)
   const hasDealsAccess = tier === 'admin' || (typeof dealsCap === 'number' && dealsCap > 0)
@@ -550,8 +551,20 @@ export async function POST(req: Request) {
   // writer prompt drops the line cleanly. No-op cost without KEEPA_API_KEY.
   const priceHistory = buildPriceContext(await fetchKeepaProductStats(asin))
 
+  // Affiliate CTA link — MVP attaches the creator's OWN Amazon tag (and wraps
+  // it through Geniuslink when connected) itself. The engine used to emit a bare
+  // /dp/ link and assume a WordPress plugin would wrap it; on sites without one
+  // (or without geniuslink), those clicks earned nothing.
+  const dealAffiliateUrl = await resolveDealAffiliateUrl(
+    product.asin, product.title || '',
+    dealIntg?.amazon_associates_tag ?? null,
+    dealIntg?.geniuslink_api_key ?? null,
+    dealIntg?.geniuslink_api_secret ?? null,
+  )
+
   const writerPrompt = buildDealWriterPrompt({
     product,
+    affiliateUrl: dealAffiliateUrl,
     priceHistory,
     occasion: occasion.slug,
     occasionLong: occasion.longLabel,
@@ -744,6 +757,7 @@ export async function POST(req: Request) {
     promoUrl,
     dealEndsAt,
     asin: product.asin,
+    affiliateUrl: dealAffiliateUrl,
   })
 
   // ── Title + slug ──────────────────────────────────────────────────────
@@ -940,10 +954,33 @@ export async function POST(req: Request) {
   })
 }
 
+/** Build the affiliate CTA link for a deal: the creator's own Amazon tag, wrapped
+ *  through Geniuslink when connected. MVP attaches it directly rather than relying
+ *  on a WP plugin to wrap a bare /dp/ link (which earned nothing on sites without
+ *  one). Falls back to a tagged /dp/ URL, then a bare /dp/ URL. Never throws. */
+async function resolveDealAffiliateUrl(
+  asin: string, title: string,
+  amazonTag: string | null, gKey: string | null, gSecret: string | null,
+): Promise<string> {
+  const tagged = amazonTag
+    ? `https://www.amazon.com/dp/${asin}?tag=${encodeURIComponent(amazonTag)}`
+    : `https://www.amazon.com/dp/${asin}`
+  if (gKey && gSecret) {
+    try {
+      const genius = createGeniuslinkService(gKey, gSecret)
+      const wrapped = await genius.createLink(tagged, title || `Deal ${asin}`)
+      if (wrapped && /^https?:\/\//i.test(wrapped)) return wrapped
+    } catch { /* fall back to the tagged /dp/ URL */ }
+  }
+  return tagged
+}
+
 // ─── Prompt builders ───────────────────────────────────────────────────────
 
 interface DealWriterPromptInput {
   product: AmazonProduct
+  /** Resolved affiliate CTA link (tag / Geniuslink). Used on every anchor. */
+  affiliateUrl?: string
   occasion: DealOccasionSlug
   occasionLong: string
   occasionHype: string
@@ -991,7 +1028,7 @@ function buildDealWriterPrompt(p: DealWriterPromptInput): string {
     ? `\nMANDATORY RENEWED DISCLOSURE: This is an Amazon Renewed listing — the unit is professionally inspected and refurbished, NOT brand-new. The article MUST surface this fact:\n  - In the opening hook (one short sentence acknowledging refurbished status, e.g. "It's the Renewed version, professionally inspected and refurbished, not new — and that's exactly why it costs less.")\n  - In "Before you buy" (a sentence explaining the Amazon Renewed 90-day guarantee + what "refurbished" actually means here)\nDo NOT frame this like a regular deal. Buyers should know what they're getting before they click.`
     : ''
 
-  const fallbackUrl = `https://www.amazon.com/dp/${p.product.asin}`
+  const fallbackUrl = p.affiliateUrl || `https://www.amazon.com/dp/${p.product.asin}`
   const promoLine = (() => {
     const lines: string[] = []
     if (p.promoCode) lines.push(`Promo code: ${p.promoCode}. Use this in the deal-box CTA copy.`)
@@ -1092,6 +1129,9 @@ interface InjectBodyImagesOpts {
   promoUrl: string
   dealEndsAt: string | null
   asin: string
+  /** Resolved affiliate CTA link (tag / Geniuslink). Used for the shortcode
+   *  buttons + any bare-Amazon anchor cleanup. */
+  affiliateUrl?: string
 }
 
 /** Splice the WP-uploaded body images into the HTML at sensible H2
@@ -1106,7 +1146,7 @@ interface InjectBodyImagesOpts {
  *  out, so affiliate tracking still works without code changes. */
 function injectBodyImages(opts: InjectBodyImagesOpts): string {
   let out = opts.html
-  const fallbackUrl = `https://www.amazon.com/dp/${opts.asin}`
+  const fallbackUrl = opts.affiliateUrl || `https://www.amazon.com/dp/${opts.asin}`
   const effectiveUrl = opts.promoUrl || fallbackUrl
 
   // 1. Substitute any leftover placeholder anchors with the resolved URL.
