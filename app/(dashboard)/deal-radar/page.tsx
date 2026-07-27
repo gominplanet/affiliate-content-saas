@@ -280,20 +280,20 @@ export default function DealRadarPage() {
       {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <div className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-orange-100 text-orange-600"><Radar size={20} /></div>
             <h1 className="text-2xl font-bold">Amazon Deal Radar</h1>
             <span className="text-[10px] font-semibold uppercase tracking-wide bg-amber-100 text-amber-700 rounded px-1.5 py-0.5">Labs</span>
+            {!showHelp && (
+              <button onClick={() => setShowHelp(true)} className="text-xs text-muted-foreground underline inline-flex items-center gap-1">
+                <HelpCircle size={13} /> How it works
+              </button>
+            )}
           </div>
           <p className="text-sm text-muted-foreground mt-1">Live Amazon deals in your niche. Turn any one into a blog post, then push it to social.</p>
         </div>
         <div className="flex items-center gap-2">
           <DigestToggle />
-          {!showHelp && (
-            <button onClick={() => setShowHelp(true)} className="text-xs text-muted-foreground underline inline-flex items-center gap-1">
-              <HelpCircle size={13} /> How it works
-            </button>
-          )}
           <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
           </Button>
