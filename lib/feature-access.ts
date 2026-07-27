@@ -80,11 +80,21 @@ export const NAV_ACCESS = {
   },
   dealRadar: {
     label: 'Amazon Deal Radar',
-    tiers: PRO,
-    enforcedBy: 'GET /api/deal-radar',
-    extraLocks: 'Labs while testing: admin-only until NEXT_PUBLIC_DEAL_RADAR_ENABLED=true',
+    tiers: PAID,
+    enforcedBy: 'GET /api/deal-radar (+ social-post / roundup / deals) via canUseDealRadar()',
+    // Graduated out of Labs 2026-07-27 → all paid tiers. Making a blog post from
+    // a deal still draws from the tier's normal monthly blog-post allowance
+    // (postsPerMonth via checkGenerationLimit). To dial back later, change
+    // `tiers` here (e.g. to PRO or STUDIO_UP) — every gate reads this list.
+    extraLocks: 'Deal → blog post counts against postsPerMonth like any post',
   },
 } as const satisfies Record<string, NavAccessRule>
+
+/** Can this tier use Amazon Deal Radar (browse, quick-post, roundup, and make a
+ *  deal blog post)? Single source of truth — all four routes call this. */
+export function canUseDealRadar(tier: Tier | null | undefined): boolean {
+  return canSeeNav('dealRadar', tier)
+}
 
 export type FeatureKey = keyof typeof NAV_ACCESS
 

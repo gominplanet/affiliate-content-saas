@@ -59,14 +59,16 @@ export function igDmEnabled(): boolean {
 
 /**
  * Amazon Deal Radar (Keepa-backed live deals discovery + Creator Connections /
- * Levanta / PartnerBoost commission cross-check). "Labs while we test": OFF by
- * default → the feature is ADMIN-ONLY (the owner can dogfood it) even though the
- * real gate is Pro. Flip NEXT_PUBLIC_DEAL_RADAR_ENABLED=true in Vercel to
- * graduate it to all Pro users. NEXT_PUBLIC so the client (nav visibility) and
- * the server (route gate) read the same flag.
+ * Levanta / PartnerBoost commission cross-check). GRADUATED out of Labs on
+ * 2026-07-27 → now always on, open to all PAID tiers (the tier list lives in
+ * lib/feature-access `dealRadar`, and every route gates on canUseDealRadar()).
+ * (Historical: it was keyed off NEXT_PUBLIC_DEAL_RADAR_ENABLED with an admin-
+ * only exception while we dogfooded it; that env var is now ignored and can be
+ * deleted from the environment.)
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function dealRadarEnabled(): boolean {
-  return process.env.NEXT_PUBLIC_DEAL_RADAR_ENABLED === 'true'
+  return true
 }
 
 export function socialEnabled(

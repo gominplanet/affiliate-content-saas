@@ -13,7 +13,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier, type Tier } from '@/lib/tier'
-import { dealRadarEnabled } from '@/lib/feature-flags'
+import { canUseDealRadar } from '@/lib/feature-access'
 
 export const runtime = 'nodejs'
 
@@ -88,14 +88,10 @@ export async function GET(request: Request) {
       .eq('user_id', user.id).maybeSingle()
     const tier = normalizeTier(intRow?.tier) as Tier
 
-    // Pro-only, with the Labs gate: off ⇒ admin-only, on ⇒ all Pro.
-    const tierOk = tier === 'pro' || tier === 'admin'
-    const labsOk = dealRadarEnabled() || tier === 'admin'
-    if (!tierOk || !labsOk) {
+    // Open to all paid tiers (creator/studio/pro/admin). Single source of truth.
+    if (!canUseDealRadar(tier)) {
       return NextResponse.json({
-        error: dealRadarEnabled()
-          ? 'Amazon Deal Radar is a Pro feature.'
-          : 'Amazon Deal Radar is in Labs (admin preview) right now.',
+        error: 'Amazon Deal Radar is available on paid plans.',
         limitReached: true, currentTier: tier,
       }, { status: 403 })
     }
