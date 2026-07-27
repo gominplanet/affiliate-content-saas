@@ -60,7 +60,7 @@ const STALE_HOURS = 48
  *  without a deploy. The token guard still stops early before draining. */
 function pagesPerCategory(): number {
   const n = Number(process.env.DEAL_RADAR_PAGES_PER_CATEGORY)
-  return Number.isInteger(n) && n >= 1 && n <= 20 ? n : 3
+  return Number.isInteger(n) && n >= 1 && n <= 20 ? n : 5
 }
 
 function categories(): number[] {
