@@ -742,9 +742,9 @@ export default function SeoPage() {
                 <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3 leading-relaxed">
                   Your SEO scores below are live. Connect Search Console (read-only) to also see whether Google has indexed each post, its ranking, and the searches people use to find it.
                 </p>
-                <Link href="/setup?tab=integrations" className="inline-flex items-center gap-1.5 text-xs font-semibold text-white px-3 py-1.5 rounded-lg bg-[#4285F4] hover:opacity-90 transition-opacity">
+                <a href="/api/auth/gsc?returnTo=/seo" className="inline-flex items-center gap-1.5 text-xs font-semibold text-white px-3 py-1.5 rounded-lg bg-[#4285F4] hover:opacity-90 transition-opacity">
                   Connect Search Console
-                </Link>
+                </a>
               </div>
             </div>
           )}
