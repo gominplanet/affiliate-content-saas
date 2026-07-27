@@ -26,6 +26,19 @@ const config: Config = {
           orange: '#ff9500',
           yellow: '#ffcc00',
         },
+        // Semantic tokens mapped to the CSS vars in globals.css, so shadcn-style
+        // utility classes (bg-card, bg-background, bg-muted, text-muted-foreground,
+        // bg-primary, …) resolve to the real theme instead of rendering
+        // transparent/unstyled. Fixes see-through modals + panels on pages that
+        // use these conventions (e.g. Deal Radar). Theme-aware via the vars.
+        background: 'var(--bg)',
+        card: 'var(--surface)',
+        popover: 'var(--surface)',
+        muted: 'var(--surface-2)',
+        'muted-foreground': 'var(--text-3)',
+        accent: 'var(--surface-2)',
+        primary: 'var(--accent)',
+        'primary-foreground': '#ffffff',
       },
       fontFamily: {
         // Inter Variable + Geist Mono are loaded via next/font in app/layout.tsx
