@@ -20,7 +20,35 @@ export const runtime = 'nodejs'
 const PAGE_SIZE = 48
 const TICKER_SIZE = 15
 
-type SortKey = 'discount' | 'commission' | 'ending' | 'bestseller'
+type SortKey = 'opportunity' | 'discount' | 'commission' | 'ending' | 'bestseller'
+
+/**
+ * Rough Amazon Associates category commission rates (US), keyed by the Keepa
+ * root browse-node ids we sweep. Rates change + vary by sub-category, so this is
+ * a labelled ESTIMATE only. Creator Connections deals override this with the
+ * campaign's actual bounty rate. Default 3% for anything unmapped.
+ */
+const AMAZON_RATE_BY_CATEGORY: Record<number, number> = {
+  172282: 2,      // Electronics
+  1055398: 3,     // Home & Kitchen
+  3375251: 3,     // Sports & Outdoors
+  3760901: 2,     // Health & Household
+  3760911: 3,     // Beauty
+  228013: 5,      // Tools & Home Improvement
+  165793011: 3,   // Toys & Games
+  2619533011: 3,  // Pet Supplies
+  1064954: 3,     // Office
+  15684181: 4.5,  // Automotive
+  165796011: 3,   // Baby
+  7141123011: 4,  // Clothing, Shoes & Jewelry
+  541966: 2.5,    // Computers
+  2335752011: 3,  // Cell Phones
+  16310101: 1,    // Grocery
+  11091801: 3,    // Musical Instruments
+  2972638011: 3,  // Patio, Lawn & Garden
+  468642: 1,      // Video Games
+}
+const DEFAULT_AMAZON_RATE = 3
 
 interface DealRow {
   asin: string
@@ -45,6 +73,7 @@ interface DealRow {
   deal_quality: string | null
   lowest_label: string | null
   monthly_sold: number | null
+  opportunity_score: number | null
 }
 
 export async function GET(request: Request) {
@@ -87,7 +116,7 @@ export async function GET(request: Request) {
     // % off an inflated list price.
     const realOnly = url.searchParams.get('real') === '1'
     const lightningOnly = url.searchParams.get('lightning') === '1'
-    const sort = (url.searchParams.get('sort') || 'discount') as SortKey
+    const sort = (url.searchParams.get('sort') || 'opportunity') as SortKey
     const page = Math.max(0, intParam(url, 'page') ?? 0)
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -178,6 +207,7 @@ async function fetchPostedByAsin(
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function applySort(query: any, sort: SortKey) {
   switch (sort) {
+    case 'opportunity': return query.order('opportunity_score', { ascending: false, nullsFirst: false })
     case 'commission': return query.order('campaign_commission_pct', { ascending: false, nullsFirst: false })
     case 'ending':     return query.order('lightning_ends_at', { ascending: true, nullsFirst: false })
     // "Best sellers" = real popularity. sales_rank is CATEGORY-relative (a #100
@@ -196,8 +226,20 @@ function applySort(query: any, sort: SortKey) {
 function toClient(r: DealRow, amazonTag: string, postedUrl: string | null = null) {
   const base = `https://www.amazon.com/dp/${r.asin}`
   const amazonUrl = amazonTag ? `${base}?tag=${encodeURIComponent(amazonTag)}` : base
+
+  // Estimated commission per sale. A Creator Connections bounty (when present) is
+  // the real rate; otherwise a rough Amazon category rate. Labelled "est" client-
+  // side. Null when we have no price to base it on.
+  const bountyRate = r.campaign_commission_pct != null ? Number(r.campaign_commission_pct) : null
+  const rate = bountyRate ?? (r.category_id != null ? (AMAZON_RATE_BY_CATEGORY[r.category_id] ?? DEFAULT_AMAZON_RATE) : DEFAULT_AMAZON_RATE)
+  const estCommissionCents = r.price_now_cents != null ? Math.round(r.price_now_cents * (rate / 100)) : null
+
   return {
     postedUrl,
+    estCommissionCents,
+    commissionRatePct: rate,
+    commissionIsBounty: bountyRate != null,
+    opportunityScore: r.opportunity_score != null ? Number(r.opportunity_score) : null,
     asin: r.asin,
     title: r.title,
     brand: r.brand,
