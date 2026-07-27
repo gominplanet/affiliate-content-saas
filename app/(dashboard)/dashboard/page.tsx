@@ -37,6 +37,7 @@ import AmazonSitesReminder from '@/components/dashboard/AmazonSitesReminder'
 import ProTourBanner from '@/components/dashboard/ProTourBanner'
 import RecommendedToolsCard from '@/components/dashboard/RecommendedToolsCard'
 import MetaLiveBanner from '@/components/dashboard/MetaLiveBanner'
+import DealRadarLaunchBanner from '@/components/dashboard/DealRadarLaunchBanner'
 import { DashboardLiveCards } from '@/components/dashboard/DashboardLiveCards'
 import PriceAlertsPanel from '@/components/dashboard/PriceAlertsPanel'
 import {
@@ -47,6 +48,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { TIERS, billingWindow, type Tier } from '@/lib/tier'
+import { canUseDealRadar } from '@/lib/feature-access'
 import { FACEBOOK_GROUP_URL } from '@/lib/community'
 
 export const metadata: Metadata = { title: 'Dashboard' }
@@ -377,6 +379,10 @@ export default async function DashboardPage() {
 
         {/* Pro capabilities tour now lives top-right of the greeting (compact,
             non-Pro users only) — see the hero section above. */}
+
+        {/* Amazon Deal Radar just graduated out of Labs to all paid tiers —
+            announce it. Dismissible (localStorage). */}
+        {canUseDealRadar(tier) && <DealRadarLaunchBanner />}
 
         {/* Meta (FB/IG/Threads) just went live — nudge paid users who haven't
             connected a Meta account yet. Dismissible (localStorage). */}
