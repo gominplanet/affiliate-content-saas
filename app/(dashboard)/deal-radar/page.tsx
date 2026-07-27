@@ -147,6 +147,22 @@ function DigestToggle() {
   )
 }
 
+// Live "Ends in …" countdown for Lightning deals. Ticks each minute; shows a
+// muted "Deal ended" once it lapses.
+function Countdown({ endsAt }: { endsAt: string }) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 60_000); return () => clearInterval(t) }, [])
+  const ms = new Date(endsAt).getTime() - now
+  if (Number.isNaN(ms)) return null
+  if (ms <= 0) return <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-muted-foreground"><Zap size={11} /> Deal ended</span>
+  const totalMin = Math.floor(ms / 60_000)
+  const days = Math.floor(totalMin / 1440)
+  const hrs = Math.floor((totalMin % 1440) / 60)
+  const mins = totalMin % 60
+  const label = days >= 1 ? `${days}d ${hrs}h` : hrs >= 1 ? `${hrs}h ${mins}m` : `${mins}m`
+  return <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-600 dark:text-amber-400"><Zap size={11} /> Ends in {label}</span>
+}
+
 // Consistent on/off filter pill for the filter bar. Ghost when inactive, filled
 // with its accent when active — so the toggles read as one family.
 function FilterToggle({ active, onClick, icon, activeClass, title, children }: {
@@ -556,6 +572,7 @@ function DealCard({ deal: d, onQuickPost, selected = false, onToggleSelect }: { 
             <span className="text-xs text-muted-foreground line-through">{money(d.priceWas)}</span>
           )}
         </div>
+        {d.dealType === 'lightning' && d.lightningEndsAt && <Countdown endsAt={d.lightningEndsAt} />}
         {d.rating != null && (
           <div className="flex items-center gap-1 text-xs text-muted-foreground">
             <Star size={12} className="fill-amber-400 text-amber-400" /> {d.rating.toFixed(1)}
@@ -588,39 +605,41 @@ function DealCard({ deal: d, onQuickPost, selected = false, onToggleSelect }: { 
               <Check size={12} /> You&apos;ve posted this — view it
             </a>
           )}
-          <div className="flex items-center gap-2">
-            {onToggleSelect && (
-              <button onClick={() => onToggleSelect(d.asin)} title={selected ? 'Remove from roundup' : 'Add to a roundup post'}
-                className={`inline-flex items-center justify-center h-8 w-8 rounded-full border shrink-0 transition ${selected ? 'bg-violet-600 text-white border-violet-600' : 'hover:bg-accent'}`}>
-                {selected ? <Check size={14} /> : <Plus size={14} />}
-              </button>
-            )}
-            {gen === 'done' && postUrl ? (
-              <a href={postUrl} target="_blank" rel="noopener noreferrer"
-                 className="flex-1 inline-flex items-center justify-center gap-1 text-xs font-semibold rounded-full bg-emerald-600 text-white py-2">
-                <Check size={14} /> View post
-              </a>
-            ) : (
-              <button onClick={makePost} disabled={gen === 'working'}
-                className="flex-1 inline-flex items-center justify-center gap-1 text-xs font-semibold rounded-full bg-violet-600 hover:bg-violet-700 text-white py-2 disabled:opacity-60 transition">
-                {gen === 'working'
-                  ? <><Loader2 size={14} className="mr-1 animate-spin" /> Writing…</>
-                  : d.postedUrl
-                    ? <>Post again <ArrowRight size={14} className="ml-1" /></>
-                    : <>Make blog post <ArrowRight size={14} className="ml-1" /></>}
-              </button>
-            )}
-            <a href={d.amazonUrl} target="_blank" rel="noopener noreferrer"
-               className="inline-flex items-center justify-center h-8 w-8 rounded-full border hover:bg-accent" title="View on Amazon">
-              <ExternalLink size={14} />
+          {/* Primary actions — each full-width so labels never wrap. */}
+          {gen === 'done' && postUrl ? (
+            <a href={postUrl} target="_blank" rel="noopener noreferrer"
+               className="w-full inline-flex items-center justify-center gap-1 text-xs font-semibold rounded-full bg-emerald-600 text-white py-2">
+              <Check size={14} /> View post
             </a>
-          </div>
+          ) : (
+            <button onClick={makePost} disabled={gen === 'working'}
+              className="w-full inline-flex items-center justify-center gap-1 text-xs font-semibold rounded-full bg-violet-600 hover:bg-violet-700 text-white py-2 disabled:opacity-60 transition">
+              {gen === 'working'
+                ? <><Loader2 size={14} className="mr-1 animate-spin" /> Writing…</>
+                : d.postedUrl
+                  ? <>Post again <ArrowRight size={14} className="ml-1" /></>
+                  : <>Make blog post <ArrowRight size={14} className="ml-1" /></>}
+            </button>
+          )}
           <button
             onClick={() => onQuickPost(d)}
             className="w-full inline-flex items-center justify-center gap-1.5 text-xs font-semibold rounded-full bg-orange-500 hover:bg-orange-600 text-white py-2 transition"
           >
             <Send size={13} /> Quick post to socials
           </button>
+          {/* Secondary row — quiet: roundup toggle on the left, Amazon on the right. */}
+          <div className="flex items-center justify-between pt-0.5">
+            {onToggleSelect ? (
+              <button onClick={() => onToggleSelect(d.asin)} title={selected ? 'Remove from roundup' : 'Add to a roundup post'}
+                className={`inline-flex items-center gap-1 text-[11px] font-medium rounded-full px-2 py-1 transition ${selected ? 'bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300' : 'text-muted-foreground hover:bg-accent'}`}>
+                {selected ? <><Check size={12} /> In roundup</> : <><Plus size={12} /> Add to roundup</>}
+              </button>
+            ) : <span />}
+            <a href={d.amazonUrl} target="_blank" rel="noopener noreferrer"
+               className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground" title="View on Amazon">
+              View on Amazon <ExternalLink size={12} />
+            </a>
+          </div>
         </div>
       </div>
     </div>
