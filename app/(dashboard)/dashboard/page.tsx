@@ -278,6 +278,10 @@ export default async function DashboardPage() {
       </section>
 
       <div className="px-6 sm:px-8 py-8 flex flex-col gap-8">
+        {/* Amazon Deal Radar launch — pinned to the very top of the body, above
+            "What do you want to do?", so paid users see it first. Dismissible. */}
+        {canUseDealRadar(tier) && <DealRadarLaunchBanner />}
+
         {/* Price Alerts — Keepa-detected new lows / stale-price nudges on watched
             products. Self-hides when there's nothing to show. */}
         <PriceAlertsPanel />
@@ -379,10 +383,6 @@ export default async function DashboardPage() {
 
         {/* Pro capabilities tour now lives top-right of the greeting (compact,
             non-Pro users only) — see the hero section above. */}
-
-        {/* Amazon Deal Radar just graduated out of Labs to all paid tiers —
-            announce it. Dismissible (localStorage). */}
-        {canUseDealRadar(tier) && <DealRadarLaunchBanner />}
 
         {/* Meta (FB/IG/Threads) just went live — nudge paid users who haven't
             connected a Meta account yet. Dismissible (localStorage). */}
