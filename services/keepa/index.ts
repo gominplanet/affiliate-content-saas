@@ -37,6 +37,9 @@ export const KEEPA_DOMAIN_US = 1
  *  New. We read Amazon first and fall back to New. */
 const PRICE_TYPE_AMAZON = 0
 const PRICE_TYPE_NEW = 1
+/** Keepa CSV type indices inside the `current`/history arrays. */
+const KEEPA_CSV_RATING = 16        // star rating, stored as ×10 (45 = 4.5★)
+const KEEPA_CSV_REVIEW_COUNT = 17  // number of reviews
 
 export function keepaConfigured(): boolean {
   return !!process.env.KEEPA_API_KEY
@@ -154,6 +157,13 @@ function normalizeDeal(raw: any): KeepaDeal | null {
   const priceWasCents = pickPrice(raw.avg) // trailing average = the "was" reference
   const discountPct = computeDiscount(priceNowCents, priceWasCents, raw.deltaPercent)
 
+  // Keepa keeps rating + review count INSIDE the `current` array (CSV type
+  // indices 16 = RATING as ×10, 17 = COUNT_REVIEWS), NOT as top-level fields —
+  // reading raw.rating gave null on every deal. -1 means "no data".
+  const cur = Array.isArray(raw.current) ? raw.current : []
+  const ratingRaw = Number(cur[KEEPA_CSV_RATING])
+  const reviewsRaw = Number(cur[KEEPA_CSV_REVIEW_COUNT])
+
   const lightningEndsAt = keepaMinutesToIso(raw.lightningEnd)
   return {
     asin,
@@ -164,8 +174,8 @@ function normalizeDeal(raw: any): KeepaDeal | null {
     priceNowCents,
     priceWasCents,
     discountPct,
-    rating: Number.isFinite(raw.rating) && raw.rating >= 0 ? Math.round((raw.rating as number)) / 10 : null,
-    reviewCount: Number.isFinite(raw.reviewCount) && raw.reviewCount >= 0 ? Number(raw.reviewCount) : (Number.isFinite(raw.totalRatings) ? Number(raw.totalRatings) : null),
+    rating: Number.isFinite(ratingRaw) && ratingRaw > 0 ? Math.min(5, Math.round(ratingRaw) / 10) : null,
+    reviewCount: Number.isFinite(reviewsRaw) && reviewsRaw >= 0 ? reviewsRaw : null,
     salesRank: Number.isFinite(raw.salesRankReference) && raw.salesRankReference > 0 ? Number(raw.salesRankReference) : null,
     dealType: lightningEndsAt ? 'lightning' : 'price_drop',
     lightningEndsAt,
