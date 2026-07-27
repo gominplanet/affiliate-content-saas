@@ -112,7 +112,7 @@ function DigestToggle() {
       {showInfo && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setShowInfo(false)} />
-          <div className="absolute right-0 top-full mt-2 z-50 w-80 rounded-xl border bg-card shadow-xl p-4 text-left">
+          <div className="absolute right-0 top-full mt-2 z-50 w-80 rounded-xl border bg-white dark:bg-[#16161a] shadow-xl p-4 text-left">
             <div className="flex items-center justify-between mb-2">
               <div className="text-sm font-semibold inline-flex items-center gap-1.5"><Mail size={14} /> Weekly digest</div>
               <button onClick={() => setShowInfo(false)} className="text-muted-foreground hover:text-foreground"><CloseIcon size={14} /></button>
