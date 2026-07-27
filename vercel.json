@@ -47,6 +47,10 @@
     {
       "path": "/api/cron/refresh-deal-radar",
       "schedule": "0 */6 * * *"
+    },
+    {
+      "path": "/api/cron/check-price-watches",
+      "schedule": "30 */6 * * *"
     }
   ]
 }

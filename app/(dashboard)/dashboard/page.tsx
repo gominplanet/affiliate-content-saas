@@ -38,6 +38,7 @@ import ProTourBanner from '@/components/dashboard/ProTourBanner'
 import RecommendedToolsCard from '@/components/dashboard/RecommendedToolsCard'
 import MetaLiveBanner from '@/components/dashboard/MetaLiveBanner'
 import { DashboardLiveCards } from '@/components/dashboard/DashboardLiveCards'
+import PriceAlertsPanel from '@/components/dashboard/PriceAlertsPanel'
 import {
   PlaySquare, ArrowRight, FileText, Layers, Gauge,
   Facebook, Sparkles, Image as ImageIcon,
@@ -275,6 +276,10 @@ export default async function DashboardPage() {
       </section>
 
       <div className="px-6 sm:px-8 py-8 flex flex-col gap-8">
+        {/* Price Alerts — Keepa-detected new lows / stale-price nudges on watched
+            products. Self-hides when there's nothing to show. */}
+        <PriceAlertsPanel />
+
         {/* Primary actions. Big, clearly-labelled buttons — one per core
             workflow — so a user (especially a first-timer fresh off the
             YouTube + social setup) knows exactly where to go for each task.

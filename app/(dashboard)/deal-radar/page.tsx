@@ -352,7 +352,7 @@ export default function DealRadarPage() {
 // occasion:'auto' → a "low price alert" article year-round when no event.
 // Shared by the main DealCard and the double-win TickerCard so both get the
 // same "Writing… → View post" flow.
-function useMakePost(asin: string) {
+function useMakePost(d: Deal) {
   const [gen, setGen] = useState<'idle' | 'working' | 'done'>('idle')
   const [postUrl, setPostUrl] = useState<string | null>(null)
   const makePost = async () => {
@@ -361,19 +361,28 @@ function useMakePost(asin: string) {
     try {
       const res = await fetch('/api/deals', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ asin, occasion: 'auto' }),
+        body: JSON.stringify({ asin: d.asin, occasion: 'auto' }),
       })
       const data = await res.json()
       if (!res.ok) { toast.error(data.error || 'Could not create the post.'); setGen('idle'); return }
       setPostUrl(data.url || null); setGen('done')
       toast.success('Deal post published.')
+      // Auto-watch the product so we can alert if it hits a new low or the price
+      // drifts away from what this post claims (Price Alerts on the dashboard).
+      void fetch('/api/price-watch', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          asin: d.asin, deal: true, title: d.title, imageUrl: d.imageUrl,
+          priceCents: d.priceNow != null ? Math.round(d.priceNow * 100) : undefined,
+        }),
+      }).catch(() => {})
     } catch { toast.error('Could not create the post.'); setGen('idle') }
   }
   return { gen, postUrl, makePost }
 }
 
 function DealCard({ deal: d, onQuickPost }: { deal: Deal; onQuickPost: (d: Deal) => void }) {
-  const { gen, postUrl, makePost } = useMakePost(d.asin)
+  const { gen, postUrl, makePost } = useMakePost(d)
   return (
     <div className="rounded-xl border bg-card overflow-hidden flex flex-col">
       <a href={d.amazonUrl} target="_blank" rel="noopener noreferrer" className="relative block bg-white aspect-square p-3">
@@ -450,7 +459,7 @@ function DealCard({ deal: d, onQuickPost }: { deal: Deal; onQuickPost: (d: Deal)
 // make a blog post (inline) or quick-post to socials (opens the modal) — plus a
 // direct Amazon link, in a small horizontal-scroll footprint.
 function TickerCard({ deal: d, onQuickPost }: { deal: Deal; onQuickPost: (d: Deal) => void }) {
-  const { gen, postUrl, makePost } = useMakePost(d.asin)
+  const { gen, postUrl, makePost } = useMakePost(d)
   return (
     <div className="shrink-0 w-48 rounded-lg bg-card text-[color:var(--text)] border border-emerald-500/20 p-2 flex flex-col">
       <a href={d.amazonUrl} target="_blank" rel="noopener noreferrer" className="block">
