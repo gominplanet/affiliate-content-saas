@@ -200,3 +200,42 @@
 ::-webkit-scrollbar-thumb:hover { background: #86868b; }
 .dark ::-webkit-scrollbar-thumb { background: #3a3a3c; }
 .dark ::-webkit-scrollbar-thumb:hover { background: #636366; }
+
+/* Landing-page hub animation keyframes (moved from app/page.tsx's styled-jsx
+   so the landing page can be a Server Component). Namespaced mvp-* — no
+   collision with app styles. */
+@keyframes mvp-center-in {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(0.85); }
+  to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+@keyframes mvp-spoke-in {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(0.7); }
+  to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+@keyframes mvp-line-draw {
+  from { stroke-dashoffset: 380; }
+  to   { stroke-dashoffset: 0; }
+}
+@keyframes mvp-line-pulse {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 0.95; }
+}
+@keyframes mvp-ring-pulse {
+  0%, 100% { opacity: 0.4; transform: translate(-50%, -50%) scale(1); }
+  50%      { opacity: 0.0; transform: translate(-50%, -50%) scale(1.25); }
+}
+@keyframes mvp-play-pulse {
+  0%   { transform: scale(1);    opacity: 0.5; }
+  70%  { transform: scale(1.6);  opacity: 0;   }
+  100% { transform: scale(1.6);  opacity: 0;   }
+}
+
+html { scroll-behavior: smooth; }
+
+/* Hover accents for landing-page cards/links — CSS replacements for former
+   inline onMouseEnter/onMouseLeave handlers, so their host components can be
+   Server Components. !important beats the inline base border/color on hover. */
+.mvp-hover-border { transition: border-color .2s ease; }
+.mvp-hover-border:hover { border-color: rgba(124,58,237,0.35) !important; }
+.mvp-hover-text { transition: color .2s ease; }
+.mvp-hover-text:hover { color: var(--text) !important; }

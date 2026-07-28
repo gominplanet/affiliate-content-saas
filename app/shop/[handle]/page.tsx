@@ -51,7 +51,11 @@ function ProductGrid({ items, accent }: { items: LinkPageItem[]; accent: string 
 }
 
 export const runtime = 'nodejs'
-export const dynamic = 'force-dynamic'
+// ISR: cache each handle's rendered page and refresh at most once a minute.
+// This is a phone-first page tapped from bios (bursty traffic) whose content
+// changes rarely — serving from cache eliminates 2 DB round-trips per hit.
+// Edits/publish changes go live within ~60s. (Was force-dynamic = uncached.)
+export const revalidate = 60
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function loadPage(handle: string): Promise<{ page: LinkPage; items: LinkPageItem[] } | null> {
