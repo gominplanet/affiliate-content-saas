@@ -82,7 +82,14 @@ export async function POST(request: Request) {
       // that platform's OWN tracking group (FACEBOOK, TWITTER, …). Best-effort.
       const gKey = ((intRow as { geniuslink_api_key?: string | null } | null)?.geniuslink_api_key || '').trim()
       const gSecret = ((intRow as { geniuslink_api_secret?: string | null } | null)?.geniuslink_api_secret || '').trim()
-      const built = await buildPlatformGeniuslinks(gKey, gSecret, link, deal.title as string, platforms)
+      // Geniuslink wrapping is OPTIONAL — a failure here must never block the
+      // post (the bare tagged link still earns). Degrade instead of throwing.
+      let built: { links: Partial<Record<QuickPostPlatform, string>>; note: string | null } = { links: {}, note: null }
+      try {
+        built = await buildPlatformGeniuslinks(gKey, gSecret, link, deal.title as string, platforms)
+      } catch (glErr) {
+        console.warn('[deal-radar/social-post] geniuslink step failed — using bare tagged links:', glErr instanceof Error ? glErr.message : glErr)
+      }
       geniuslinkNote = built.note
 
       const { data: brand } = await sb.from('brand_profiles')
@@ -94,11 +101,14 @@ export async function POST(request: Request) {
       // price-display rule).
       let cap = (body.caption || '').trim()
       if (!cap) {
-        const anthropic = createAnthropicClient()
-        const msg = await anthropic.messages.create({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 220,
-          messages: [{ role: 'user', content: `Write a punchy social caption for this Amazon deal.
+        // AI caption is OPTIONAL — if it hiccups, fall back to a simple
+        // price-safe caption rather than failing the whole post.
+        try {
+          const anthropic = createAnthropicClient()
+          const msg = await anthropic.messages.create({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 220,
+            messages: [{ role: 'user', content: `Write a punchy social caption for this Amazon deal.
 
 Product: ${deal.title}${deal.brand ? ` (${deal.brand})` : ''}
 ${deal.lowest_label ? `Price signal: ${deal.lowest_label}.` : ''}
@@ -111,12 +121,17 @@ Rules:
 - Never claim you personally tested or own the product.
 
 Return ONLY the caption text.` }],
-        })
-        cap = ((msg.content[0] as { type: string; text: string }).text || '').trim()
-        recordAnthropicUsage(msg, { userId: user.id, tier, feature: 'deal_social_caption', model: 'claude-haiku-4-5-20251001' })
+          })
+          cap = ((msg.content[0] as { type: string; text: string }).text || '').trim()
+          recordAnthropicUsage(msg, { userId: user.id, tier, feature: 'deal_social_caption', model: 'claude-haiku-4-5-20251001' })
+        } catch (capErr) {
+          console.warn('[deal-radar/social-post] caption generation failed — using a simple fallback:', capErr instanceof Error ? capErr.message : capErr)
+        }
       }
       cap = scrubBanned(cap).slice(0, 600)
-      if (!cap) return NextResponse.json({ error: 'Could not build a caption — try again or write your own.' }, { status: 500 })
+      // Never let the optional caption step block the post — fall back to the
+      // product title so the affiliate link still goes out.
+      if (!cap) cap = (deal.title as string).slice(0, 200)
       baseCaption = cap
 
       const textResults = await publishDealToSocials({
