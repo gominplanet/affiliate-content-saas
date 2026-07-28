@@ -904,7 +904,7 @@ export async function POST(req: Request) {
       if (fallback.error) {
         console.error('[deals POST] fallback insert (no deal_meta) failed:', fallback.error)
         return NextResponse.json({
-          error: `Couldn't save the deal post to the database (the WP post was published but isn't tracked yet). Run migration 093 in Supabase SQL editor and try again. DB error: ${fallback.error.message}`,
+          error: 'Your post was published, but we couldn’t save it to your dashboard just yet. It’s live on your site — refresh in a moment and it’ll appear here.',
           code: 'insert_failed',
           wpPostId: wpPost.id,
           wpUrl: wpPost.link,

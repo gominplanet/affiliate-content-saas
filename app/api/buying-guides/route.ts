@@ -30,6 +30,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createWordPressService } from '@/services/wordpress'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { createAnthropicClient } from '@/lib/anthropic'
+import { toUserMessage } from '@/lib/friendly-error'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { spendGate } from '@/lib/ai-spend'
 import { checkGenerationLimit } from '@/lib/tier'
@@ -635,7 +636,8 @@ Rules:
           .filter(Boolean) as Array<{ review: ReviewRow; label: string }>
       }
     } catch (err) {
-      return NextResponse.json({ error: `Picker failed: ${err instanceof Error ? err.message : 'unknown'}` }, { status: 500 })
+      console.error('[buying-guides] picker', err instanceof Error ? err.message : err)
+      return NextResponse.json({ error: toUserMessage(err, 'Couldn’t pick the products just now. Please try again in a moment.') }, { status: 500 })
     }
 
     if (picks.length < 3) {
@@ -809,7 +811,8 @@ VOICE / STYLE RULES:
     //      that the prompt repeats but models still ignore.
     html = scrubAiHtml(raw)
   } catch (err) {
-    return NextResponse.json({ error: `Writer failed: ${err instanceof Error ? err.message : 'unknown'}` }, { status: 500 })
+    console.error('[buying-guides] writer', err instanceof Error ? err.message : err)
+    return NextResponse.json({ error: toUserMessage(err, 'Couldn’t write the guide just now. Please try again in a moment.') }, { status: 500 })
   }
   if (!html || html.length < 500) {
     return NextResponse.json({ error: 'Generation returned empty body' }, { status: 500 })
@@ -832,7 +835,8 @@ VOICE / STYLE RULES:
       ping_status: 'closed',
     })
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'WordPress publish failed' }, { status: 500 })
+    console.error('[buying-guides] wp publish', err instanceof Error ? err.message : err)
+    return NextResponse.json({ error: toUserMessage(err, 'Couldn’t publish to WordPress just now. Please check your site connection and try again.') }, { status: 500 })
   }
 
   // ── 4. Save row ──────────────────────────────────────────────────────────

@@ -14,6 +14,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { YoutubeTranscript } from 'youtube-transcript'
 import { createAnthropicClient } from '@/lib/anthropic'
+import { toUserMessage } from '@/lib/friendly-error'
 import { createClaudeService } from '@/services/claude'
 import { createWordPressService } from '@/services/wordpress'
 import { resolveFinalUrl } from '@/lib/product-link'
@@ -606,7 +607,8 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
     parsed.title = fixYearToCurrent(parsed.title, currentYear)
     if (parsed.meta_description) parsed.meta_description = fixYearToCurrent(parsed.meta_description, currentYear)
   } catch (err) {
-    return NextResponse.json({ error: `Writing failed: ${err instanceof Error ? err.message : 'unknown'}` }, { status: 502 })
+    console.error('[blog/comparison] writing', err instanceof Error ? err.message : err)
+    return NextResponse.json({ error: toUserMessage(err, 'Couldn’t write the comparison just now. Please try again in a moment.') }, { status: 502 })
   }
 
   // ── Assemble the WordPress (Gutenberg) HTML ─────────────────────────────────
@@ -843,7 +845,8 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
       })
     }
   } catch (err) {
-    return NextResponse.json({ error: `WordPress ${rebuildWpPostId ? 'rebuild' : 'publish'} failed: ${err instanceof Error ? err.message : 'unknown'}` }, { status: 502 })
+    console.error('[blog/comparison] wp publish', err instanceof Error ? err.message : err)
+    return NextResponse.json({ error: toUserMessage(err, 'Couldn’t publish to WordPress just now. Please check your site connection and try again.') }, { status: 502 })
   }
 
   // Fire IndexNow (Bing / Copilot / Yandex) — best-effort, non-blocking.

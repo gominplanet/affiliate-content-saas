@@ -19,6 +19,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAnthropicClient } from '@/lib/anthropic'
+import { toUserMessage } from '@/lib/friendly-error'
 import { createClaudeService } from '@/services/claude'
 import { createWordPressService } from '@/services/wordpress'
 import { resolveFinalUrl } from '@/lib/product-link'
@@ -315,7 +316,8 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
     const j = raw.match(/\{[\s\S]*\}/)
     parsed = JSON.parse(j?.[0] ?? raw)
   } catch (err) {
-    return NextResponse.json({ error: `Writing failed: ${err instanceof Error ? err.message : 'unknown'}` }, { status: 502 })
+    console.error('[blog/from-link] writing', err instanceof Error ? err.message : err)
+    return NextResponse.json({ error: toUserMessage(err, 'Couldn’t write the post just now. Please try again in a moment.') }, { status: 502 })
   }
 
   // Weave the affiliate link inline through the prose — at least 3 contextual
@@ -444,7 +446,8 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
       meta: { mvp_meta_description: scrub(parsed.meta_description), mvp_jsonld: jsonld },
     })
   } catch (err) {
-    return NextResponse.json({ error: `WordPress publish failed: ${err instanceof Error ? err.message : 'unknown'}` }, { status: 502 })
+    console.error('[blog/from-link] wp publish', err instanceof Error ? err.message : err)
+    return NextResponse.json({ error: toUserMessage(err, 'Couldn’t publish to WordPress just now. Please check your site connection and try again.') }, { status: 502 })
   }
 
   void pingIndexNowForUrl(supabase, ownerId, wpPost.link, siteId).catch(() => {})

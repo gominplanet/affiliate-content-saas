@@ -14,6 +14,7 @@ import { spendGate } from '@/lib/ai-spend'
 import { learnProfileToPrompt } from '@/lib/learn'
 import { scrubBanned, BANNED_RULE } from '@/lib/scrub'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
+import { toUserMessage } from '@/lib/friendly-error'
 import { LAUNCH_PLATFORMS, type LaunchPlatform, type SocialKit } from '@/lib/social-launch-kit'
 import { tierAllowsFinders, type Tier } from '@/lib/tier'
 
@@ -105,7 +106,8 @@ Everything must be specific to THIS brand and niche.`
     raw = msg.content.filter(c => c.type === 'text').map(c => (c as Anthropic.TextBlock).text).join('')
     recordAnthropicUsage(msg, { userId: user.id, tier, feature: 'social-launch-kit', model: 'claude-opus-4-8' })
   } catch (e) {
-    return NextResponse.json({ error: `Generation failed: ${e instanceof Error ? e.message : 'unknown'}` }, { status: 502 })
+    console.error('[social-launch-kit/generate]', e instanceof Error ? e.message : e)
+    return NextResponse.json({ error: toUserMessage(e, 'Couldn’t generate that just now. Please try again in a moment.') }, { status: 502 })
   }
 
   // Parse the JSON object — slice from the first { to the last } as a fallback.
