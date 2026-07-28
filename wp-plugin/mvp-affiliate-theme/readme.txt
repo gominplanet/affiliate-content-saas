@@ -39,6 +39,10 @@ everything from your MVP Affiliate dashboard.
 
 == Changelog ==
 
+= 1.4.32 =
+* Header & footer background colors are now customizable from the dashboard
+  Brand page. Text and icons auto-adjust for readability on any chosen color.
+
 = 1.4.31 =
 * Softer footer + About band background (charcoal instead of near-black) for a
   gentler, less harsh look.

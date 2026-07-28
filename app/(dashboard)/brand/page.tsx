@@ -192,6 +192,10 @@ interface BrandData {
   affiliate_disclaimer: string
   primary_color: string
   secondary_color: string
+  // Blog header/footer background colors ('' = use theme default). The theme
+  // auto-picks a readable text color from whatever background is chosen.
+  header_bg_color: string
+  footer_bg_color: string
   // Writing Style / About You / Target Reader / Words to Avoid now
   // live on the LEARN page (single editing surface for voice).
   gear_sections: GearSection[]
@@ -287,6 +291,8 @@ const DEFAULT: BrandData = {
   affiliate_disclaimer: 'This post contains affiliate links. I may earn a commission at no extra cost to you.',
   primary_color: '#7C3AED',
   secondary_color: '#34c759',
+  header_bg_color: '',
+  footer_bg_color: '',
   gear_sections: [],
   facebook_groups: [],
   logo_url: '',
@@ -565,6 +571,10 @@ export default function BrandPage() {
         affiliate_disclaimer: row.affiliate_disclaimer ?? DEFAULT.affiliate_disclaimer,
         primary_color: row.primary_color ?? '#7C3AED',
         secondary_color: row.secondary_color ?? '#34c759',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        header_bg_color: (row as any).header_bg_color ?? '',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        footer_bg_color: (row as any).footer_bg_color ?? '',
         // gear_sections + facebook_groups are JSONB; we always write the
         // typed shape but the schema returns Json. Narrow at the read.
         gear_sections: (row.gear_sections ?? []) as unknown as GearSection[],
@@ -629,12 +639,15 @@ export default function BrandPage() {
     setData(normalized)
 
     // ── 1. Save to Supabase ─────────────────────────────────────────────────
+    // header/footer chrome colors go in a SEPARATE tolerant update below so a
+    // site whose DB hasn't run migration 193 yet can still save everything else.
+    const { header_bg_color, footer_bg_color, ...mainBody } = normalized
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error: dbError } = await supabase.from('brand_profiles').upsert(
       // BrandData carries typed JSONB sub-shapes (GearSection[], FacebookGroup[])
       // that don't structurally satisfy the schema's Json union; narrow at the
       // insert boundary — payload is schema-correct at runtime.
-      { ...normalized, user_id: user.id } as never,
+      { ...mainBody, user_id: user.id } as never,
       { onConflict: 'user_id' },
     )
     if (dbError) {
@@ -642,6 +655,10 @@ export default function BrandPage() {
       setSaveError(`Save failed: ${dbError.message}`)
       return
     }
+    // Best-effort: persist the chrome colors. Swallow a missing-column error
+    // (migration 193 not run) so it never blocks the rest of the save.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await supabase.from('brand_profiles').update({ header_bg_color, footer_bg_color } as never).eq('user_id', user.id)
 
     // ── 1b. Save Geniuslink + Amazon-tag to `integrations` ────────────────
     // These live on `integrations` (not `brand_profiles`) because they're
@@ -682,6 +699,8 @@ export default function BrandPage() {
           authorBio:      normalized.author_bio,
           primaryColor:   normalized.primary_color,
           secondaryColor: normalized.secondary_color,
+          headerBg:       normalized.header_bg_color,
+          footerBg:       normalized.footer_bg_color,
           fontTheme:      normalized.font_theme,
           logoUrl:        normalized.logo_url,
           headerBannerUrl: normalized.header_banner_url,
@@ -1826,6 +1845,39 @@ export default function BrandPage() {
                 value={data.secondary_color}
                 onChange={(c) => set('secondary_color', c)}
               />
+
+              <div className="pt-4 border-t border-gray-100 dark:border-white/10">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <h3 className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Blog header &amp; footer</h3>
+                  <InfoTip>Set the background of your blog&apos;s top header bar and its footer. Leave on default, or pick any color — the text and icons adjust automatically to stay readable on whatever color you choose.</InfoTip>
+                </div>
+                <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mb-4">Optional. Default is a clean light header and a soft-charcoal footer.</p>
+
+                <div className="flex flex-col gap-5">
+                  <div>
+                    <ColorPicker
+                      label={`Header background${data.header_bg_color ? '' : ' (default)'}`}
+                      value={data.header_bg_color || '#ffffff'}
+                      onChange={(c) => set('header_bg_color', c)}
+                    />
+                    {data.header_bg_color && (
+                      <button type="button" onClick={() => set('header_bg_color', '')}
+                        className="text-[11px] text-[#7C3AED] hover:underline">Reset to default</button>
+                    )}
+                  </div>
+                  <div>
+                    <ColorPicker
+                      label={`Footer background${data.footer_bg_color ? '' : ' (default)'}`}
+                      value={data.footer_bg_color || '#1a1a1e'}
+                      onChange={(c) => set('footer_bg_color', c)}
+                    />
+                    {data.footer_bg_color && (
+                      <button type="button" onClick={() => set('footer_bg_color', '')}
+                        className="text-[11px] text-[#7C3AED] hover:underline">Reset to default</button>
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 

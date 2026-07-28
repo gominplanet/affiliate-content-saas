@@ -28,6 +28,8 @@ export async function POST(request: Request) {
     authorBio?: string
     primaryColor?: string
     secondaryColor?: string
+    headerBg?: string
+    footerBg?: string
     fontTheme?: string
     logoUrl?: string
     headerBannerUrl?: string
@@ -48,7 +50,7 @@ export async function POST(request: Request) {
   }
   const {
     authorName, brandName, tagline, authorBio,
-    primaryColor, secondaryColor, fontTheme, logoUrl,
+    primaryColor, secondaryColor, headerBg, footerBg, fontTheme, logoUrl,
     headerBannerUrl, headshotUrl,
     youtubeUrl, instagramUrl, tiktokUrl, twitterUrl,
     pinterestUrl, facebookUrl, threadsUrl, contactEmail,
@@ -146,6 +148,11 @@ export async function POST(request: Request) {
         ...(primaryColor   ? { accentColor:    primaryColor   } : {}),
         ...(primaryColor   ? { primaryColor:   primaryColor   } : {}),
         ...(secondaryColor ? { secondaryColor: secondaryColor } : {}),
+        // header/footer bg: write even when '' so a "reset to default" clears
+        // the stored value; skip only when the field wasn't sent at all
+        // (e.g. an image-only sync) so it isn't wiped by accident.
+        ...(headerBg !== undefined ? { headerBg } : {}),
+        ...(footerBg !== undefined ? { footerBg } : {}),
         ...(fontTheme      ? { fontTheme:      fontTheme      } : {}),
         // Social URLs — moved from blog_customizations.footer.socials to brand profile
         ...(youtubeUrl     ? { youtubeUrl }   : {}),
