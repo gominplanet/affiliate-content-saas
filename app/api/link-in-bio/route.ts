@@ -29,14 +29,28 @@ export async function GET(request: Request) {
     const { data } = await sb.from('link_page_items').select('*').eq('page_id', page.id).order('position', { ascending: true })
     items = data ?? []
   }
-  // Brand logo/headshot + name so the editor can offer a one-tap "use my logo"
-  // instead of pasting a URL, plus the blog URL to prefill a "My blog" link.
-  const { data: brand } = await sb.from('brand_profiles').select('name,logo_url,headshot_url').eq('user_id', user.id).maybeSingle()
-  const { data: intg } = await sb.from('integrations').select('wordpress_url').eq('user_id', user.id).maybeSingle()
+  // Brand logo/headshot/name + every public profile URL MVP already knows, so
+  // the editor can PORT a link with one tap instead of pasting it.
+  const { data: brand } = await sb.from('brand_profiles').select('name,logo_url,headshot_url,youtube_channel_url').eq('user_id', user.id).maybeSingle()
+  const { data: intg } = await sb.from('integrations')
+    .select('wordpress_url,instagram_username,tiktok_username,twitter_handle,threads_username,facebook_page_id')
+    .eq('user_id', user.id).maybeSingle()
+
+  const at = (h: unknown) => String(h || '').trim().replace(/^@+/, '')
+  const knownLinks: Record<string, string> = {}
+  if (brand?.youtube_channel_url) knownLinks.youtube = String(brand.youtube_channel_url)
+  if (intg?.instagram_username) knownLinks.instagram = `https://instagram.com/${at(intg.instagram_username)}`
+  if (intg?.tiktok_username) knownLinks.tiktok = `https://tiktok.com/@${at(intg.tiktok_username)}`
+  if (intg?.twitter_handle) knownLinks.x = `https://x.com/${at(intg.twitter_handle)}`
+  if (intg?.threads_username) knownLinks.threads = `https://threads.net/@${at(intg.threads_username)}`
+  if (intg?.facebook_page_id) knownLinks.facebook = `https://facebook.com/${String(intg.facebook_page_id).trim()}`
+  if (intg?.wordpress_url) knownLinks.website = String(intg.wordpress_url)
+
   return NextResponse.json({
     ok: true, page: page ?? null, items, origin: new URL(request.url).origin,
     brand: { name: brand?.name ?? null, logoUrl: brand?.logo_url ?? null, headshotUrl: brand?.headshot_url ?? null },
     blogUrl: (intg?.wordpress_url as string | null) || null,
+    knownLinks,
   })
 }
 
