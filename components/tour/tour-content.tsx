@@ -16,6 +16,7 @@ import Link from 'next/link'
 import {
   FileText, Youtube, Search, Mail, Handshake, Lightbulb,
   Layers, Users, Plug, MessageSquare, Code, Sparkles, Share2,
+  Radar, ShoppingBag,
   ArrowRight, CheckCircle2, ArrowUpRight,
 } from 'lucide-react'
 
@@ -28,6 +29,8 @@ const SECTIONS: Array<{ id: string; label: string }> = [
   { id: 'engine',       label: 'The blog content engine' },
   { id: 'copilot',      label: 'YouTube Co-Pilot' },
   { id: 'social',       label: 'Social auto-posting' },
+  { id: 'deal-radar',   label: 'Amazon Deal Radar ⚡ new' },
+  { id: 'linkbio',      label: 'Link in Bio — Shop page ⚡ new' },
   { id: 'seo',          label: 'SEO that moves rank' },
   { id: 'newsletter',   label: 'Newsletter' },
   { id: 'collabs',      label: 'Brand outreach' },
@@ -236,6 +239,90 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
           {isApp && <SectionCta href="/connect-socials" label="Connect your channels" />}
         </Section>
 
+        {/* ── 2c. Amazon Deal Radar ────────────────────────────────── */}
+        <Section id="deal-radar" icon={<Radar size={18} />} title="Amazon Deal Radar — live, price-verified deals on tap">
+          <p>
+            The hardest part of deal-posting used to be <em>finding</em> the deal. Deal Radar does it for you: it
+            continuously scans Amazon and surfaces the deals actually worth posting — sorted by opportunity, filtered to
+            your niche, and <strong>verified against real price history</strong> so you never promote a fake markdown.
+            It&apos;s included on <strong>every paid plan</strong>.
+          </p>
+          <ul>
+            <li>
+              <strong>Price-history verified (no fake &quot;sales&quot;).</strong> The &quot;Real deals&quot; filter shows only products
+              whose price history confirms a genuine discount, with lowest-price-of-year labels. If the &quot;40% off&quot; is
+              just the price being quietly raised then crossed out, Deal Radar catches it and you don&apos;t post it.
+            </li>
+            <li>
+              <strong>Lightning deals with a live countdown.</strong> A dedicated Lightning view lists the time-limited
+              flash sales with an &quot;Ends in…&quot; timer ticking down, so you jump on the ones with runway and skip the ones
+              about to expire.
+            </li>
+            <li>
+              <strong>Filter to what converts.</strong> Slice by category (electronics, home, kitchen, beauty, and more),
+              minimum discount, minimum rating, whether the brand runs an Amazon Creator Connections campaign, and sort by
+              MVP&apos;s opportunity score.
+            </li>
+            <li>
+              <strong>Two clicks from deal to content.</strong> <em>Make blog post</em> runs any deal straight through
+              the content engine into a full, fact-grounded deal post on your blog. <em>Quick post</em> fires it directly
+              to your connected socials with a caption tuned per channel. Posted products get a badge so you never
+              double-cover the same deal.
+            </li>
+            <li>
+              <strong>Curated roundups in one shot.</strong> Tick 2–12 deals and MVP writes a single SEO round-up post —
+              &quot;Best [niche] deals this week&quot; — with a featured thumbnail, filed under a real Deals category on your site,
+              and marks every product in it as covered.
+            </li>
+            <li>
+              <strong>Hands-off weekly digest.</strong> Flip one toggle and MVP auto-publishes a &quot;Top deals in your
+              niche&quot; roundup to your blog about once a week — price-verified picks only, completely automatic.
+            </li>
+            <li>
+              <strong>Auto Instagram Stories.</strong> Turn any deal into a 9:16 Story with a baked-in &quot;link in bio&quot;
+              call-to-action image that drives followers straight to your shoppable Shop page (next section). Stories
+              can&apos;t carry links for most accounts — so we bake the CTA into the image and route it through your bio.
+            </li>
+          </ul>
+          {isApp && <SectionCta href="/deal-radar" label="Open Deal Radar" />}
+        </Section>
+
+        {/* ── 2d. Link in Bio — Shop page ──────────────────────────── */}
+        <Section id="linkbio" icon={<ShoppingBag size={18} />} title="Link in Bio — your own shoppable Shop page">
+          <p>
+            One clean, branded page at <code>/shop/your-handle</code> that turns your bio link into a storefront. It&apos;s
+            the destination your Instagram Stories, TikTok, and every other &quot;link in bio&quot; points to — a Linktree that
+            actually sells. Included on <strong>every paid plan</strong>.
+          </p>
+          <ul>
+            <li>
+              <strong>Shoppable product tiles.</strong> Every product tile links out through Geniuslink automatically —
+              always your commissionable link, never a bare Amazon URL. Import products straight from the posts you&apos;ve
+              already published.
+            </li>
+            <li>
+              <strong>Two live sections, split by shelf life.</strong> A <em>Current Deals</em> row (the ones paired with
+              your 24-hour Stories) sits above an <em>Other Sales I found</em> shelf — so followers see what&apos;s hot right
+              now separately from your evergreen picks.
+            </li>
+            <li>
+              <strong>Build Stories from the page.</strong> Tick which deals are live in your Instagram / TikTok Stories,
+              hit <em>Create IG Stories</em> and MVP composes and posts them; <em>Clear all</em> resets the shelf when the
+              24 hours are up.
+            </li>
+            <li>
+              <strong>Your brand, ported automatically.</strong> Your logo/avatar imports from your blog, your connected
+              social accounts show up as a tidy row of centered icon pills, and your other brand links (YouTube channel,
+              newsletter, site) sit right under the header.
+            </li>
+            <li>
+              <strong>Publish + track.</strong> Toggle the page live, share the one link everywhere, and watch the clicks
+              roll up per tile.
+            </li>
+          </ul>
+          {isApp && <SectionCta href="/link-in-bio" label="Build your Shop page" />}
+        </Section>
+
         {/* ── 3. SEO ───────────────────────────────────────────────── */}
         <Section id="seo" icon={<Search size={18} />} title="SEO that actually moves rank">
           <p>
@@ -376,8 +463,9 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
         {/* ── 6. Deals Hub ─────────────────────────────────────────── */}
         <Section id="deals" icon={<Sparkles size={18} />} title="Deals Hub — timely deal posts">
           <p>
-            Cash in on deal moments. Paste any Amazon link, Geniuslink, or short link and MVP writes a timely deal post
-            with a baked deal-badge thumbnail and your promo code wired into every CTA.
+            The manual companion to Deal Radar: when you already have a specific deal in hand, paste any Amazon link,
+            Geniuslink, or short link and MVP writes a timely deal post with a baked deal-badge thumbnail and your promo
+            code wired into every CTA. (Deal Radar finds the deals for you; Deals Hub is for the one you bring.)
           </p>
           <ul>
             <li>
