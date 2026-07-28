@@ -45,38 +45,47 @@ $disclaimer = trim($profile['affiliateDisclaimer'] ?? '');
 </section>
 <?php endif; ?>
 
+<?php
+// Footer categories: pull the most-used categories, DEDUPE by name (some sites
+// carry two categories with the same display name, which looked broken as a
+// repeated list), drop Uncategorized, and cap the list so the footer stays
+// compact. Rendered as a 2-column grid so ~12 items stay short, not a tall
+// single stack.
+$uncat_id = (int) get_option('default_category', 0);
+$cats_raw = get_categories([
+    'number'     => 30,
+    'orderby'    => 'count',
+    'order'      => 'DESC',
+    'hide_empty' => true,
+    'exclude'    => $uncat_id ? [$uncat_id] : [],
+]);
+$cats = [];
+$seen_cat = [];
+foreach ($cats_raw as $c) {
+    $key = strtolower(trim($c->name));
+    if ($key === '' || isset($seen_cat[$key])) continue;
+    $seen_cat[$key] = true;
+    $cats[] = $c;
+    if (count($cats) >= 12) break;
+}
+$has_links = (!empty($links) || has_nav_menu('footer'));
+$tagline = trim(get_bloginfo('description'));
+?>
 <footer class="mvp-footer">
-  <div class="mvp-container mvp-footer-grid">
+  <div class="mvp-container mvp-footer-grid<?php echo $has_links ? ' mvp-footer--haslinks' : ''; ?>">
 
-    <?php
-    // 2026-06-09: bumped from 6 → 15, added hide_empty + exclude
-    // Uncategorized. The hard cap of 6 was cutting off legitimate
-    // categories the top nav was already showing (e.g. Travel &
-    // Luggage). 15 covers any realistic niche set without sprawling
-    // the footer visually; the list flexes vertically if a site
-    // genuinely has more categories.
-    $uncat_id = (int) get_option('default_category', 0);
-    $cats = get_categories([
-        'number'     => 15,
-        'orderby'    => 'count',
-        'order'      => 'DESC',
-        'hide_empty' => true,
-        'exclude'    => $uncat_id ? [$uncat_id] : [],
-    ]);
-    if (!empty($cats)): ?>
-    <div class="mvp-footer-col">
-      <h3 class="mvp-footer-heading">Categories</h3>
-      <ul class="mvp-footer-list">
-        <?php foreach ($cats as $cat): ?>
-        <li><a href="<?php echo esc_url(get_category_link($cat->term_id)); ?>"><?php echo esc_html($cat->name); ?></a></li>
-        <?php endforeach; ?>
-      </ul>
-    </div>
-    <?php endif; ?>
-
-    <?php if (!empty($socials)): ?>
-    <div class="mvp-footer-col">
-      <h3 class="mvp-footer-heading">Follow</h3>
+    <div class="mvp-footer-brand">
+      <?php if ($logo_url): ?>
+      <a href="<?php echo esc_url(home_url('/')); ?>" class="mvp-footer-brand-logo-link" aria-label="<?php echo esc_attr($brand); ?>">
+        <img src="<?php echo esc_url($logo_url); ?>" alt="<?php echo esc_attr($brand); ?>" class="mvp-footer-brand-logo" loading="lazy" />
+      </a>
+      <?php else: ?>
+      <a href="<?php echo esc_url(home_url('/')); ?>" class="mvp-footer-brand-name"><?php echo esc_html($brand); ?></a>
+      <?php endif; ?>
+      <?php if ($tagline): ?>
+      <p class="mvp-footer-brand-tagline"><?php echo esc_html($tagline); ?></p>
+      <?php endif; ?>
+      <?php if (!empty($socials)): ?>
       <div class="mvp-footer-socials">
         <?php foreach ($socials as $key => $url):
           $svg = mvp_affiliate_social_svg($key);
@@ -89,12 +98,23 @@ $disclaimer = trim($profile['affiliateDisclaimer'] ?? '');
         </a>
         <?php endforeach; ?>
       </div>
+      <?php endif; ?>
+    </div>
+
+    <?php if (!empty($cats)): ?>
+    <div class="mvp-footer-col mvp-footer-col--cats">
+      <h3 class="mvp-footer-heading">Browse reviews</h3>
+      <ul class="mvp-footer-list mvp-footer-list--cats">
+        <?php foreach ($cats as $cat): ?>
+        <li><a href="<?php echo esc_url(get_category_link($cat->term_id)); ?>"><?php echo esc_html($cat->name); ?></a></li>
+        <?php endforeach; ?>
+      </ul>
     </div>
     <?php endif; ?>
 
-    <?php if (!empty($links) || has_nav_menu('footer')): ?>
+    <?php if ($has_links): ?>
     <div class="mvp-footer-col">
-      <h3 class="mvp-footer-heading">Links</h3>
+      <h3 class="mvp-footer-heading">More</h3>
       <ul class="mvp-footer-list">
         <?php if (has_nav_menu('footer')) {
             wp_nav_menu([
@@ -116,22 +136,12 @@ $disclaimer = trim($profile['affiliateDisclaimer'] ?? '');
 
   </div>
 
-  <?php if ($disclaimer): ?>
-  <div class="mvp-footer-disclaimer">
-    <div class="mvp-container">
-      <p><?php echo esc_html($disclaimer); ?></p>
-    </div>
-  </div>
-  <?php endif; ?>
-
   <div class="mvp-footer-bottom">
     <div class="mvp-container mvp-footer-bottom-inner">
-      <?php if ($logo_url): ?>
-      <a href="<?php echo esc_url(home_url('/')); ?>" class="mvp-footer-logo-link" aria-label="<?php echo esc_attr($brand); ?>">
-        <img src="<?php echo esc_url($logo_url); ?>" alt="<?php echo esc_attr($brand); ?>" class="mvp-footer-logo" loading="lazy" />
-      </a>
-      <?php endif; ?>
       <p class="mvp-footer-copyright">© <?php echo esc_html(date('Y')); ?> <?php echo esc_html($brand); ?>. All rights reserved.</p>
+      <?php if ($disclaimer): ?>
+      <p class="mvp-footer-disclosure"><?php echo esc_html($disclaimer); ?></p>
+      <?php endif; ?>
     </div>
   </div>
 </footer>
