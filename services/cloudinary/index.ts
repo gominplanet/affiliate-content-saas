@@ -54,17 +54,41 @@ export async function cloudinaryPing(): Promise<{ ok: boolean; cloudName?: strin
 // ASCII — emoji and fancy punctuation don't render in that font.
 const asciiSafe = (s: string) => (s || '').replace(/[^\x20-\x7E]/g, ' ').replace(/\s+/g, ' ').trim()
 
+// The "LINK IN BIO" sticker, drawn as one SVG (white rounded pill + a real
+// chain-link icon + bold label) so it looks exactly like Instagram's native
+// link sticker. Uploaded once to Cloudinary and reused as an image overlay; if
+// the upload/rasterization ever fails, renderStoryImage falls back to a plain
+// text pill. Cached per process.
+const LINK_STICKER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="520" height="150" viewBox="0 0 520 150">
+<rect x="5" y="5" width="510" height="140" rx="36" fill="#ffffff"/>
+<g transform="translate(40,45) scale(2.6)" fill="none" stroke="#111114" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+<path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/>
+</g>
+<text x="138" y="97" font-family="Arial, Helvetica, sans-serif" font-size="50" font-weight="700" letter-spacing="2" fill="#111114">LINK IN BIO</text>
+</svg>`
+let _stickerId: string | null | undefined
+async function ensureLinkSticker(): Promise<string | null> {
+  if (_stickerId !== undefined) return _stickerId
+  try {
+    const dataUri = `data:image/svg+xml;base64,${Buffer.from(LINK_STICKER_SVG).toString('base64')}`
+    const up = await cloudinary.uploader.upload(dataUri, { public_id: 'deal-stories/link-sticker', overwrite: true, resource_type: 'image' })
+    _stickerId = up.public_id as string
+  } catch { _stickerId = null }
+  return _stickerId
+}
+
 /**
  * Compose a 1080×1920 (9:16) Instagram Story image from a product image: the
- * product framed on a dark canvas, an optional headline up top, and a violet
- * "LINK IN BIO" call-to-action banner along the bottom — the CTA is baked in
- * because Stories published via the API can't carry a caption or a tappable
- * link sticker (Meta doesn't allow it). Returns a ready-to-publish JPEG URL, or
- * null if Cloudinary isn't configured / anything fails (caller decides).
+ * creator's logo + handle up top, an optional deal headline, the product framed
+ * on a dark canvas, and an Instagram-style "LINK IN BIO" sticker in the lower
+ * third — all baked in, because Stories published via the API can't carry a
+ * caption or a tappable link sticker (Meta doesn't allow it). Returns a
+ * ready-to-publish JPEG URL, or null if Cloudinary isn't configured / anything
+ * fails (caller decides).
  */
 export async function renderStoryImage(
   productImageUrl: string,
-  opts: { headline?: string; cta?: string } = {},
+  opts: { headline?: string; handle?: string; logoUrl?: string } = {},
 ): Promise<string | null> {
   if (!ensureConfig()) return null
   if (!productImageUrl || !/^https?:\/\//i.test(productImageUrl)) return null
@@ -73,27 +97,33 @@ export async function renderStoryImage(
       folder: 'deal-stories', resource_type: 'image', overwrite: false,
     })
     const publicId = up.public_id as string
-    // Short label for the sticker (a long line breaks the pill look).
-    const cta = asciiSafe(opts.cta || 'LINK IN BIO').toUpperCase().slice(0, 22)
     const headline = asciiSafe(opts.headline || '').toUpperCase().slice(0, 42)
+    const handle = asciiSafe(opts.handle || '').slice(0, 30)
+
+    // Optional brand logo (best-effort — skip on any failure).
+    let logoId: string | null = null
+    if (opts.logoUrl && /^https?:\/\//i.test(opts.logoUrl)) {
+      try {
+        const l = await cloudinary.uploader.upload(opts.logoUrl, { folder: 'deal-stories/logos', resource_type: 'image', overwrite: false })
+        logoId = l.public_id as string
+      } catch { /* no logo this time */ }
+    }
+    const stickerId = await ensureLinkSticker()
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const transformation: any[] = [
-      // Product on a white card, then the 9:16 dark canvas around it.
-      { width: 960, height: 1180, crop: 'pad', background: 'white' },
+      { width: 960, height: 1120, crop: 'pad', background: 'white' },
       { width: 1080, height: 1920, crop: 'pad', background: '#0e0e11', gravity: 'center' },
     ]
-    if (headline) {
-      transformation.push({ overlay: { font_family: 'Arial', font_size: 54, font_weight: 'bold', text: headline }, color: '#ffffff', gravity: 'north', y: 130, width: 900, crop: 'fit' })
-    }
-    // Instagram-style "link" sticker: a white rounded pill with a small link
-    // glyph + bold label, dropped into the lower third with a slight tilt like a
-    // placed sticker. (It's burned in — a real tappable link sticker can't be
-    // added via the API — but it reads like the native one and cues the bio.)
-    transformation.push({
-      overlay: { font_family: 'Arial', font_size: 48, font_weight: 'bold', letter_spacing: 2, text: cta },
-      color: '#111114', background: '#ffffff', radius: 30, gravity: 'south', y: 300, angle: -5,
-    })
+
+    // Top brand row: logo (round) then handle.
+    if (logoId) transformation.push({ overlay: { public_id: logoId }, width: 104, height: 104, crop: 'thumb', radius: 'max', gravity: 'north', y: 80 })
+    if (handle) transformation.push({ overlay: { font_family: 'Arial', font_size: 40, font_weight: 'bold', text: handle }, color: '#ffffff', gravity: 'north', y: logoId ? 205 : 96 })
+    if (headline) transformation.push({ overlay: { font_family: 'Arial', font_size: 56, font_weight: 'bold', text: headline }, color: '#ffffff', background: '#7C3AED', gravity: 'north', y: logoId ? 270 : (handle ? 150 : 96), radius: 12 })
+
+    // Link sticker (image if available, else a text-pill fallback).
+    if (stickerId) transformation.push({ overlay: { public_id: stickerId }, width: 520, gravity: 'south', y: 300, angle: -5 })
+    else transformation.push({ overlay: { font_family: 'Arial', font_size: 48, font_weight: 'bold', letter_spacing: 2, text: 'LINK IN BIO' }, color: '#111114', background: '#ffffff', radius: 30, gravity: 'south', y: 300, angle: -5 })
 
     return cloudinary.url(publicId, { transformation, secure: true, format: 'jpg' })
   } catch (e) {
