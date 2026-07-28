@@ -89,7 +89,6 @@ export default async function BioPage({ params }: { params: Promise<{ handle: st
   const products = items.filter((it) => it.kind !== 'link')
   const currentDeals = products.filter((it) => it.in_story)
   const moreDeals = products.filter((it) => !it.in_story)
-  const onLight = page.theme === 'light'
   const headingStyle: React.CSSProperties = { textAlign: 'center', fontSize: 12, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: t.sub, margin: '0 0 14px' }
 
   return (
@@ -100,7 +99,10 @@ export default async function BioPage({ params }: { params: Promise<{ handle: st
           {page.avatar_url
             ? <img src={page.avatar_url} alt="" style={{ width: 100, height: 100, borderRadius: '9999px', objectFit: 'cover', margin: '0 auto 14px', border: '3px solid rgba(255,255,255,0.9)', boxShadow: '0 8px 28px rgba(0,0,0,0.22)' }} />
             : <div style={{ width: 100, height: 100, borderRadius: '9999px', margin: '0 auto 14px', background: 'rgba(255,255,255,0.18)', border: '3px solid rgba(255,255,255,0.9)', boxShadow: '0 8px 28px rgba(0,0,0,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 38, fontWeight: 800 }}>{initial}</div>}
-          <h1 style={{ fontSize: 24, fontWeight: 800, margin: 0, letterSpacing: '-0.01em' }}>{title}</h1>
+          {/* Explicit color — a global `h1 { color: var(--text) }` rule would
+              otherwise override the theme's inherited text color and make the
+              title invisible (e.g. light text on the light theme). */}
+          <h1 style={{ fontSize: 24, fontWeight: 800, margin: 0, letterSpacing: '-0.01em', color: t.text }}>{title}</h1>
           {page.bio && <p style={{ fontSize: 15, color: t.sub, margin: '10px auto 0', maxWidth: 440, lineHeight: 1.55 }}>{page.bio}</p>}
         </header>
 
@@ -115,7 +117,11 @@ export default async function BioPage({ params }: { params: Promise<{ handle: st
                 rel="nofollow noopener"
                 title={it.title}
                 aria-label={it.title}
-                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 48, height: 48, borderRadius: '9999px', background: onLight ? '#ffffff' : 'rgba(255,255,255,0.16)', color: presetFor(it.icon).color, border: `1px solid ${onLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.28)'}`, boxShadow: onLight ? '0 3px 12px rgba(0,0,0,0.08)' : '0 2px 10px rgba(0,0,0,0.12)', textDecoration: 'none' }}
+                // Always a solid white pill so the brand-color icon stays
+                // visible on any theme — dark brand marks (X, TikTok, Threads =
+                // #111114) would disappear on a translucent pill over a dark or
+                // colored background.
+                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 48, height: 48, borderRadius: '9999px', background: '#ffffff', color: presetFor(it.icon).color, border: '1px solid rgba(0,0,0,0.08)', boxShadow: '0 3px 12px rgba(0,0,0,0.14)', textDecoration: 'none' }}
               >
                 <Glyph slug={it.icon} size={21} />
               </a>
