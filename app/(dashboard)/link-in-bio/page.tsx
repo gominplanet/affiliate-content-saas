@@ -171,6 +171,7 @@ export default function LinkInBioPage() {
     if (!targets.length) { toast.error('Tick the imported deals that are in your story first.'); return }
     setCreatingStories(true)
     let ok = 0, fail = 0
+    let firstError = ''
     for (const t of targets) {
       try {
         const res = await fetch('/api/deal-radar/social-post', {
@@ -178,13 +179,13 @@ export default function LinkInBioPage() {
           body: JSON.stringify({ asin: t.asin, story: true, title: t.title, imageUrl: t.image_url }),
         })
         const d = await res.json().catch(() => ({}))
-        const s = Array.isArray(d.results) ? d.results.find((r: { platform: string; ok: boolean }) => r.platform === 'instagram_story') : null
-        if (res.ok && s?.ok) ok++; else fail++
-      } catch { fail++ }
+        const s = Array.isArray(d.results) ? d.results.find((r: { platform: string; ok: boolean; error?: string }) => r.platform === 'instagram_story') : null
+        if (res.ok && s?.ok) { ok++ } else { fail++; if (!firstError) firstError = s?.error || d.error || 'Unknown error' }
+      } catch { fail++; if (!firstError) firstError = 'Network error' }
     }
     setCreatingStories(false)
     if (ok) toast.success(`Posted ${ok} IG stor${ok === 1 ? 'y' : 'ies'}${fail ? ` · ${fail} failed` : ''}.`)
-    else toast.error('Could not post stories — make sure Instagram is connected.')
+    else toast.error(`Story failed: ${firstError}`)
   }
   const clearStory = async () => {
     setItems((x) => x.map((it) => (it.kind !== 'link' && it.in_story ? { ...it, in_story: false } : it))) // optimistic
