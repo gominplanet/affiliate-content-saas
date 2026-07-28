@@ -62,7 +62,7 @@ export async function publishDealStory(opts: {
   // Compose the 9:16 story image with the baked-in CTA.
   const storyImage = await renderStoryImage(deal.imageUrl, {
     headline: opts.headline,
-    cta: 'SHOP THIS  -  LINK IN BIO',
+    cta: 'LINK IN BIO',
   })
   if (!storyImage) return { ok: false, error: "Couldn't build the Story image — try again shortly." }
 

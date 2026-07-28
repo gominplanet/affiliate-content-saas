@@ -73,7 +73,8 @@ export async function renderStoryImage(
       folder: 'deal-stories', resource_type: 'image', overwrite: false,
     })
     const publicId = up.public_id as string
-    const cta = asciiSafe(opts.cta || 'SHOP THIS  -  LINK IN BIO').toUpperCase().slice(0, 42)
+    // Short label for the sticker (a long line breaks the pill look).
+    const cta = asciiSafe(opts.cta || 'LINK IN BIO').toUpperCase().slice(0, 22)
     const headline = asciiSafe(opts.headline || '').toUpperCase().slice(0, 42)
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -85,7 +86,14 @@ export async function renderStoryImage(
     if (headline) {
       transformation.push({ overlay: { font_family: 'Arial', font_size: 54, font_weight: 'bold', text: headline }, color: '#ffffff', gravity: 'north', y: 130, width: 900, crop: 'fit' })
     }
-    transformation.push({ overlay: { font_family: 'Arial', font_size: 58, font_weight: 'bold', text: cta }, color: '#ffffff', background: '#7C3AED', gravity: 'south', y: 170 })
+    // Instagram-style "link" sticker: a white rounded pill with a small link
+    // glyph + bold label, dropped into the lower third with a slight tilt like a
+    // placed sticker. (It's burned in — a real tappable link sticker can't be
+    // added via the API — but it reads like the native one and cues the bio.)
+    transformation.push({
+      overlay: { font_family: 'Arial', font_size: 48, font_weight: 'bold', letter_spacing: 2, text: cta },
+      color: '#111114', background: '#ffffff', radius: 30, gravity: 'south', y: 300, angle: -5,
+    })
 
     return cloudinary.url(publicId, { transformation, secure: true, format: 'jpg' })
   } catch (e) {

@@ -105,7 +105,7 @@ export default function QuickPostModal({
               <span className={`mt-0.5 inline-flex h-4 w-4 items-center justify-center rounded border shrink-0 ${story ? 'bg-pink-500 border-pink-500 text-white' : ''}`}>{story && <Check size={12} />}</span>
               <span>
                 <span className="font-medium">Also post an Instagram Story</span>
-                <span className="block text-[11px] text-muted-foreground leading-snug mt-0.5">A 9:16 image with a “Shop this — link in bio” banner. Point your bio at your Link in Bio page so followers can shop it.</span>
+                <span className="block text-[11px] text-muted-foreground leading-snug mt-0.5">A 9:16 image with a “link in bio” sticker burned on. Point your bio at your Link in Bio page so followers can shop it.</span>
               </span>
             </button>
           </div>
