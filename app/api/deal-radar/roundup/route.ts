@@ -62,11 +62,16 @@ export async function POST(request: Request) {
     const niches: string[] = Array.isArray(brand?.niches) ? brand.niches : []
     const tag = (intRow?.amazon_associates_tag || '').trim() || null
 
-    const deals: DigestDeal[] = []
-    for (const r of dealRows) {
-      const affiliateUrl = await resolveAffiliateUrl(r.asin, r.title, tag, intRow?.geniuslink_api_key ?? null, intRow?.geniuslink_api_secret ?? null)
-      deals.push({ ...r, affiliateUrl })
-    }
+    // Resolve every affiliate URL concurrently (was a serial loop — up to 12
+    // independent Geniuslink calls awaited one-by-one, ~4-10s of dead latency
+    // on a user-facing action). Capped at 12 deals, so plain Promise.all is
+    // safe; order is preserved by map.
+    const deals: DigestDeal[] = await Promise.all(
+      dealRows.map(async (r) => ({
+        ...r,
+        affiliateUrl: await resolveAffiliateUrl(r.asin, r.title, tag, intRow?.geniuslink_api_key ?? null, intRow?.geniuslink_api_secret ?? null),
+      })),
+    )
 
     const client = createAnthropicClient()
     const nicheLabel = nicheLabelFrom(niches)
