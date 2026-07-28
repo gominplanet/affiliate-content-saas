@@ -16,6 +16,7 @@ import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { applyPostFixes } from '@/lib/seo-fix'
 import { resolveAffiliateUrl, generateDigestContent, nicheLabelFrom, keywordSlug, type DigestDeal, type DigestDealRow } from '@/lib/weekly-digest'
+import { toUserMessage } from '@/lib/friendly-error'
 
 export const runtime = 'nodejs'
 export const maxDuration = 120
@@ -125,8 +126,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ ok: true, url: wpPost.link, count: deals.length })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    console.error('[deal-radar/roundup]', msg)
-    return NextResponse.json({ error: msg }, { status: 500 })
+    console.error('[deal-radar/roundup]', err instanceof Error ? err.message : err)
+    return NextResponse.json({ error: toUserMessage(err, "Couldn't build the roundup just now. Please try again in a moment.") }, { status: 500 })
   }
 }

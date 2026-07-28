@@ -52,6 +52,7 @@ import { scrubEmDashes } from '@/lib/html-scrub'
 import { getOccasion, detectOccasion, listOccasions, type DealOccasionSlug } from '@/lib/deal-occasion'
 import { normalizeTier, checkGenerationLimit } from '@/lib/tier'
 import { canUseDealRadar } from '@/lib/feature-access'
+import { toUserMessage } from '@/lib/friendly-error'
 import { spendGate } from '@/lib/ai-spend'
 
 export const maxDuration = 300
@@ -483,7 +484,7 @@ export async function POST(req: Request) {
     product = await fetchAmazonProduct(asin)
   } catch (err) {
     return NextResponse.json({
-      error: `Couldn't read the Amazon listing: ${err instanceof Error ? err.message : 'unknown error'}. Try a different product or try again in a minute (Amazon sometimes throttles).`,
+      error: `Couldn't read that Amazon listing right now. Try a different product, or try again in a minute (Amazon sometimes throttles).`,
       code: 'amazon_block',
     }, { status: 502 })
   }
@@ -805,7 +806,8 @@ export async function POST(req: Request) {
       ping_status: 'closed',
     })
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'WordPress publish failed' }, { status: 500 })
+    console.error('[deals] publish failed:', err instanceof Error ? err.message : err)
+    return NextResponse.json({ error: toUserMessage(err, "Couldn't publish to your site just now. Please try again in a moment.") }, { status: 500 })
   }
 
   // ── Save row ──────────────────────────────────────────────────────────
@@ -1394,7 +1396,7 @@ async function refreshDealPrice(
     product = await fetchAmazonProduct(asin)
   } catch (err) {
     return NextResponse.json({
-      error: `Couldn't read the Amazon listing: ${err instanceof Error ? err.message : 'unknown error'}. Try again in a minute.`,
+      error: `Couldn't read that Amazon listing right now. Try again in a minute.`,
       code: 'amazon_block',
     }, { status: 502 })
   }
@@ -1482,7 +1484,8 @@ OUTPUT: VALID HTML only. No markdown fences. Same structure as the input — jus
     const raw = (msg.content[0] as { type: string; text: string })?.text || ''
     newBody = scrubDealHtml(raw)
   } catch (err) {
-    return NextResponse.json({ error: `Refresh failed: ${err instanceof Error ? err.message : 'unknown'}` }, { status: 500 })
+    console.error('[deals] refresh failed:', err instanceof Error ? err.message : err)
+    return NextResponse.json({ error: toUserMessage(err, "Couldn't refresh that post just now. Please try again in a moment.") }, { status: 500 })
   }
   if (!newBody || newBody.length < 400) {
     return NextResponse.json({ error: 'Refresh returned empty body.' }, { status: 500 })
@@ -1527,7 +1530,8 @@ OUTPUT: VALID HTML only. No markdown fences. Same structure as the input — jus
     })
   } catch (err) {
     if (isStalePostError(err)) return NextResponse.json({ error: WP_STALE_POST_MESSAGE, code: 'wp_post_deleted' }, { status: 410 })
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'WordPress update failed' }, { status: 500 })
+    console.error('[deals] update failed:', err instanceof Error ? err.message : err)
+    return NextResponse.json({ error: toUserMessage(err, "Couldn't update that post just now. Please try again in a moment.") }, { status: 500 })
   }
 
   // 8. Update the DB row. content + a fresh deal_meta with new prices.
