@@ -178,15 +178,24 @@ function Countdown({ endsAt }: { endsAt: string }) {
   return <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-600 dark:text-amber-400"><Zap size={11} /> Ends in {label}</span>
 }
 
-// Consistent on/off filter pill for the filter bar. Ghost when inactive, filled
-// with its accent when active — so the toggles read as one family.
-function FilterToggle({ active, onClick, icon, activeClass, title, children }: {
-  active: boolean; onClick: () => void; icon: ReactNode; activeClass: string; title?: string; children: ReactNode
+// Color tones for the filter pills — each toggle keeps a consistent accent so
+// the bar reads as one family. Inactive pills already tint their icon (so the
+// color is a hint, not a surprise) and warm toward the accent on hover; active
+// pills fill solid with a soft matching glow so on/off is unmistakable.
+const TOGGLE_TONES: Record<string, { active: string; icon: string; hover: string }> = {
+  blue:    { active: 'bg-blue-600 text-white border-blue-600 shadow-sm shadow-blue-600/30',       icon: 'text-blue-500',    hover: 'hover:border-blue-400/60 hover:bg-blue-50 dark:hover:bg-blue-500/10' },
+  emerald: { active: 'bg-emerald-600 text-white border-emerald-600 shadow-sm shadow-emerald-600/30', icon: 'text-emerald-500', hover: 'hover:border-emerald-400/60 hover:bg-emerald-50 dark:hover:bg-emerald-500/10' },
+  amber:   { active: 'bg-amber-500 text-white border-amber-500 shadow-sm shadow-amber-500/30',     icon: 'text-amber-500',   hover: 'hover:border-amber-400/60 hover:bg-amber-50 dark:hover:bg-amber-500/10' },
+  fuchsia: { active: 'bg-fuchsia-600 text-white border-fuchsia-600 shadow-sm shadow-fuchsia-600/30', icon: 'text-fuchsia-500', hover: 'hover:border-fuchsia-400/60 hover:bg-fuchsia-50 dark:hover:bg-fuchsia-500/10' },
+}
+function FilterToggle({ active, onClick, icon, tone, title, children }: {
+  active: boolean; onClick: () => void; icon: ReactNode; tone: keyof typeof TOGGLE_TONES; title?: string; children: ReactNode
 }) {
+  const t = TOGGLE_TONES[tone]
   return (
-    <button onClick={onClick} title={title}
-      className={`h-9 text-sm rounded-lg border px-3 inline-flex items-center gap-1.5 transition ${active ? activeClass : 'bg-background hover:bg-accent'}`}>
-      {icon} {children}
+    <button onClick={onClick} title={title} aria-pressed={active}
+      className={`h-9 text-sm font-medium rounded-full border px-3.5 inline-flex items-center gap-1.5 transition-all active:scale-[0.97] ${active ? t.active : `bg-background border-border ${t.hover}`}`}>
+      <span className={`inline-flex ${active ? '' : t.icon}`}>{icon}</span> {children}
     </button>
   )
 }
@@ -397,64 +406,73 @@ export default function DealRadarPage() {
         </div>
       )}
 
-      {/* Filter bar — search on its own row, then one tidy row of filters with
-          sort pinned right. Consistent h-9 controls; a divider separates the
-          dropdown filters from the on/off toggles. */}
-      <div className="rounded-xl border bg-card p-3 space-y-2.5">
-        {/* Search */}
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+      {/* Filter bar — a prominent search field, then one tidy row of filters
+          with sort pinned right. Dropdowns are grouped as a soft-filled cluster;
+          the on/off toggles are color-toned pills that read as one family. */}
+      <div className="rounded-2xl border bg-card p-3.5 space-y-3 shadow-sm">
+        {/* Search — the hero of the bar: taller, with a violet focus ring. */}
+        <div className="group relative">
+          <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-[18px] w-[18px] text-muted-foreground transition-colors group-focus-within:text-violet-500" />
           <input
             value={q} onChange={(e) => setQ(e.target.value)}
             placeholder="Search deals (e.g. air fryer, dog bed)…"
-            className="w-full h-9 pl-9 pr-3 text-sm rounded-lg border bg-background"
+            className="w-full h-11 pl-11 pr-3.5 text-sm rounded-xl border bg-background outline-none transition-shadow focus:border-violet-500 focus:ring-2 focus:ring-violet-500/30"
           />
         </div>
 
         {/* Filters + sort */}
         <div className="flex flex-wrap items-center gap-2">
-          <select value={category} onChange={(e) => setCategory(e.target.value === '' ? '' : Number(e.target.value))}
-                  className="h-9 text-sm rounded-lg border bg-background px-2.5">
-            <option value="">All categories</option>
-            {CATEGORIES.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
-          </select>
-          <select value={minDiscount} onChange={(e) => setMinDiscount(Number(e.target.value))}
-                  className="h-9 text-sm rounded-lg border bg-background px-2.5">
-            <option value={0}>Any discount</option>
-            <option value={15}>15%+ off</option>
-            <option value={25}>25%+ off</option>
-            <option value={40}>40%+ off</option>
-            <option value={50}>50%+ off</option>
-          </select>
-          <select value={minRating} onChange={(e) => setMinRating(Number(e.target.value))}
-                  className="h-9 text-sm rounded-lg border bg-background px-2.5">
-            <option value={0}>Any rating</option>
-            <option value={3}>3★+</option>
-            <option value={4}>4★+</option>
-            <option value={4.5}>4.5★+</option>
-          </select>
+          {/* Dropdown cluster — grouped in a soft pill so the three selects read
+              as one "narrow it down" control. */}
+          <div className="flex flex-wrap items-center gap-1 rounded-full bg-muted/50 p-1">
+            <select value={category} onChange={(e) => setCategory(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="h-8 text-sm rounded-full bg-transparent px-2.5 outline-none cursor-pointer hover:bg-background/80 transition-colors">
+              <option value="">All categories</option>
+              {CATEGORIES.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+            </select>
+            <select value={minDiscount} onChange={(e) => setMinDiscount(Number(e.target.value))}
+                    className="h-8 text-sm rounded-full bg-transparent px-2.5 outline-none cursor-pointer hover:bg-background/80 transition-colors">
+              <option value={0}>Any discount</option>
+              <option value={15}>15%+ off</option>
+              <option value={25}>25%+ off</option>
+              <option value={40}>40%+ off</option>
+              <option value={50}>50%+ off</option>
+            </select>
+            <select value={minRating} onChange={(e) => setMinRating(Number(e.target.value))}
+                    className="h-8 text-sm rounded-full bg-transparent px-2.5 outline-none cursor-pointer hover:bg-background/80 transition-colors">
+              <option value={0}>Any rating</option>
+              <option value={3}>3★+</option>
+              <option value={4}>4★+</option>
+              <option value={4.5}>4.5★+</option>
+            </select>
+          </div>
 
           <span className="hidden sm:block w-px h-6 bg-border mx-0.5" aria-hidden />
 
           <FilterToggle active={realOnly} onClick={() => setRealOnly((v) => !v)} icon={<ShieldCheck size={14} />}
-            activeClass="bg-blue-600 text-white border-blue-600"
+            tone="blue"
             title="Only deals whose price history confirms a genuine discount">Real deals</FilterToggle>
           <FilterToggle active={hasCampaign} onClick={() => setHasCampaign((v) => !v)} icon={<Sparkles size={14} />}
-            activeClass="bg-emerald-600 text-white border-emerald-600"
+            tone="emerald"
             title="Only deals whose ASIN matches a campaign in your uploaded Creator Connections catalog (pays an elevated commission)">Creator Connections</FilterToggle>
           <FilterToggle active={lightningOnly} onClick={() => setLightningOnly((v) => !v)} icon={<Zap size={14} />}
-            activeClass="bg-amber-500 text-white border-amber-500"
+            tone="amber"
             title="Only Amazon Lightning Deals — time-limited flash sales">Lightning</FilterToggle>
           <FilterToggle active={videoOnly} onClick={() => setVideoOnly((v) => !v)} icon={<Video size={14} />}
-            activeClass="bg-fuchsia-600 text-white border-fuchsia-600"
+            tone="fuchsia"
             title="Only listings with a product-carousel video — better conversion, and ready-made b-roll for a Short or Reel">Has video</FilterToggle>
 
           <div className="ml-auto flex items-center gap-2">
-            {hasFilters && <button onClick={clearFilters} className="text-xs text-muted-foreground hover:text-foreground">Clear all</button>}
-            <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            {hasFilters && (
+              <button onClick={clearFilters}
+                className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground rounded-full px-2.5 h-8 hover:bg-accent transition-colors">
+                <CloseIcon size={13} /> Clear
+              </button>
+            )}
+            <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
               Sort
               <select value={sort} onChange={(e) => setSort(e.target.value)}
-                      className="h-9 text-sm rounded-lg border bg-background px-2.5 text-foreground">
+                      className="h-9 text-sm rounded-full border bg-background px-3 text-foreground outline-none cursor-pointer hover:bg-accent focus:border-violet-500 focus:ring-2 focus:ring-violet-500/30 transition">
                 {SORTS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
               </select>
             </label>
