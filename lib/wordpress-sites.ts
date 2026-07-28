@@ -50,6 +50,9 @@ export interface WordPressSite {
   /** How the in-article affiliate CTA renders: a styled MVP button, or a
    *  plain themed text link that inherits the creator's own theme. */
   ctaStyle: 'button' | 'link'
+  /** Optional creator-chosen Geniuslink group name for this blog's links.
+   *  Null → MVP derives the group name from the domain. */
+  geniuslinkGroupName?: string | null
 }
 
 /** Per-tier site cap. Reads from `lib/tier.ts` so future tier changes
@@ -86,13 +89,13 @@ export async function listSites(
 ): Promise<WordPressSite[]> {
   const { data, error } = await supabase
     .from('wordpress_sites')
-    .select('id, label, url, username, app_password, api_token, is_default, display_order, content_only, cta_style')
+    .select('id, label, url, username, app_password, api_token, is_default, display_order, content_only, cta_style, geniuslink_group_name')
     .eq('user_id', userId)
     .order('is_default', { ascending: false })
     .order('display_order', { ascending: true })
     .order('created_at', { ascending: true })
   if (error || !data) return []
-  return (data).map(rowToSite)
+  return (data as unknown as WordPressSiteRow[]).map(rowToSite)
 }
 
 /** Default site for the user — what generations + publish actions target
@@ -109,23 +112,23 @@ export async function getDefaultSite(
   // 1. Prefer the new table — that's the post-migration source of truth.
   const { data } = await supabase
     .from('wordpress_sites')
-    .select('id, label, url, username, app_password, api_token, is_default, display_order, content_only, cta_style')
+    .select('id, label, url, username, app_password, api_token, is_default, display_order, content_only, cta_style, geniuslink_group_name')
     .eq('user_id', userId)
     .eq('is_default', true)
     .maybeSingle()
-  if (data) return rowToSite(data)
+  if (data) return rowToSite(data as unknown as WordPressSiteRow)
 
   // 2. No default? Take whatever ONE site they have — handles the edge case
   //    where a user has sites but none is_default (shouldn't happen because
   //    backfill marks one true, but a partial restore could).
   const { data: any1 } = await supabase
     .from('wordpress_sites')
-    .select('id, label, url, username, app_password, api_token, is_default, display_order, content_only, cta_style')
+    .select('id, label, url, username, app_password, api_token, is_default, display_order, content_only, cta_style, geniuslink_group_name')
     .eq('user_id', userId)
     .order('created_at', { ascending: true })
     .limit(1)
     .maybeSingle()
-  if (any1) return rowToSite(any1)
+  if (any1) return rowToSite(any1 as unknown as WordPressSiteRow)
 
   // 3. Bridge: read from legacy integrations columns. Lets Phase 1 ship
   //    without breaking every WP route for users whose backfill somehow
@@ -222,11 +225,11 @@ export async function getSite(
   }
   const { data } = await supabase
     .from('wordpress_sites')
-    .select('id, label, url, username, app_password, api_token, is_default, display_order, content_only, cta_style')
+    .select('id, label, url, username, app_password, api_token, is_default, display_order, content_only, cta_style, geniuslink_group_name')
     .eq('user_id', userId)
     .eq('id', siteId)
     .maybeSingle()
-  return data ? rowToSite(data) : null
+  return data ? rowToSite(data as unknown as WordPressSiteRow) : null
 }
 
 /** Mark a site as default. Atomic: clears the previous default in the
@@ -334,10 +337,10 @@ export async function addSite(
       content_only: input.contentOnly ?? false,
       cta_style: input.ctaStyle === 'link' ? 'link' : 'button',
     } as never)
-    .select('id, label, url, username, app_password, api_token, is_default, display_order, content_only, cta_style')
+    .select('id, label, url, username, app_password, api_token, is_default, display_order, content_only, cta_style, geniuslink_group_name')
     .single()
   if (error || !data) return { ok: false, error: error?.message || 'Insert failed', code: 'db_error' }
-  return { ok: true, site: rowToSite(data) }
+  return { ok: true, site: rowToSite(data as unknown as WordPressSiteRow) }
 }
 
 /** Remove a site. Refuses to delete the last site (forces the user to
@@ -404,6 +407,7 @@ interface WordPressSiteRow {
   display_order: number
   content_only?: boolean | null
   cta_style?: string | null
+  geniuslink_group_name?: string | null
 }
 
 function rowToSite(r: WordPressSiteRow): WordPressSite {
@@ -422,5 +426,6 @@ function rowToSite(r: WordPressSiteRow): WordPressSite {
     isDefault: r.is_default,
     contentOnly: r.content_only ?? false,
     ctaStyle: r.cta_style === 'link' ? 'link' : 'button',
+    geniuslinkGroupName: r.geniuslink_group_name ?? null,
   }
 }

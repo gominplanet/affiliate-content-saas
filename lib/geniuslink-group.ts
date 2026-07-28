@@ -63,6 +63,16 @@ export function groupNameForSiteUrl(siteUrl: string): string | null {
   }
 }
 
+/** Clean a user-chosen Geniuslink group name to what Geniuslink accepts:
+ *  no spaces/dots/special chars (→ hyphens/stripped), max 20 chars. Returns
+ *  null when nothing usable remains. Mirrors groupNameForSiteUrl's rules so a
+ *  custom name and an auto name are validated identically. */
+export function sanitizeGeniuslinkGroupName(raw: string | null | undefined): string | null {
+  if (!raw) return null
+  const safe = raw.trim().replace(/\s+/g, '-').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 20)
+  return safe || null
+}
+
 interface ResolveOpts {
   supabase: Client
   /** WordPress site row id (PK on wordpress_sites). */
@@ -93,12 +103,14 @@ export async function resolveGeniuslinkGroupId(opts: ResolveOpts): Promise<numbe
   // migration (geniuslink_group_id was just added in migration 112).
   const { data: row } = await supabase
     .from('wordpress_sites')
-    .select('geniuslink_group_id')
+    .select('geniuslink_group_id, geniuslink_group_name')
     .eq('id', siteId)
-    .maybeSingle() as unknown as { data: { geniuslink_group_id: number | null } | null }
+    .maybeSingle() as unknown as { data: { geniuslink_group_id: number | null; geniuslink_group_name: string | null } | null }
   if (row?.geniuslink_group_id) return row.geniuslink_group_id
 
-  const groupName = groupNameForSiteUrl(siteUrl)
+  // Prefer the creator's own group name for this blog when they've set one;
+  // otherwise derive it from the domain (the default convention).
+  const groupName = sanitizeGeniuslinkGroupName(row?.geniuslink_group_name) || groupNameForSiteUrl(siteUrl)
   if (!groupName) return null
 
   // Step 2 + 3 — find an existing match, then auto-create on miss.

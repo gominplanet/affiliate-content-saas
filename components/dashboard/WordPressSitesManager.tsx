@@ -42,6 +42,7 @@ interface Site {
   isDefault: boolean
   contentOnly: boolean
   ctaStyle: 'button' | 'link'
+  geniuslinkGroupName?: string | null
 }
 
 interface SitesPayload {
@@ -225,6 +226,27 @@ function SiteRow({
   const [saving, setSaving] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [savingSettings, setSavingSettings] = useState(false)
+  const [glName, setGlName] = useState(site.geniuslinkGroupName ?? '')
+  const [savingGl, setSavingGl] = useState(false)
+
+  // Save this blog's custom Geniuslink group name (blank = default domain name).
+  async function saveGroupName() {
+    setSavingGl(true)
+    try {
+      const res = await fetch(`/api/wordpress/sites/${site.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ geniuslinkGroupName: glName.trim() }),
+      })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) { toast.error(j.error || 'Could not save.'); return }
+      setGlName(j.geniuslinkGroupName ?? '')
+      toast.success(j.geniuslinkGroupName
+        ? `New links for this blog will use the “${j.geniuslinkGroupName}” Geniuslink group.`
+        : 'Using the default (domain-named) Geniuslink group.')
+      await onReload()
+    } catch { toast.error('Could not save.') } finally { setSavingGl(false) }
+  }
 
   // Persist a content-only / CTA-style change for this site. Optimistic-ish:
   // we await the PATCH then reload so the toggle reflects the saved value.
@@ -422,6 +444,31 @@ function SiteRow({
                 <Loader2 size={10} className="animate-spin" /> Saving…
               </p>
             )}
+          </div>
+
+          {/* Custom Geniuslink group name for this blog's links. */}
+          <div>
+            <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">
+              Geniuslink group name
+            </p>
+            <p className="text-[11px] text-[#86868b] leading-relaxed mb-1.5">
+              Links MVP creates for this blog land in their own Geniuslink group so you can tell each blog&rsquo;s clicks apart. Leave blank to auto-name it after your domain, or type your own (letters, numbers, hyphens; up to 20 chars).
+            </p>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={glName}
+                onChange={e => setGlName(e.target.value)}
+                disabled={savingGl}
+                maxLength={20}
+                placeholder="e.g. gominreviews"
+                className="flex-1 rounded-lg border border-[var(--border-2)] bg-[var(--surface)] px-2.5 py-1.5 text-xs text-[#1d1d1f] dark:text-[#f5f5f7]"
+              />
+              <Button variant="secondary" size="sm" onClick={saveGroupName} loading={savingGl} disabled={glName.trim() === (site.geniuslinkGroupName ?? '')}>
+                Save
+              </Button>
+            </div>
+            <p className="text-[11px] text-[#86868b] mt-1">Applies to links created after you save; existing links keep their current group.</p>
           </div>
         </div>
       )}
