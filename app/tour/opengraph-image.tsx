@@ -120,7 +120,7 @@ export default async function Image() {
                 display: 'flex',
               }}
             >
-              One review video → blog posts that rank, comparisons, thumbnails, newsletter, brand pitches. Fact-grounded in your real video.
+              Blog posts that rank, comparisons, thumbnails, newsletter, brand pitches — plus Amazon Deal Radar & a shoppable Shop page. Fact-grounded, every time.
             </div>
 
             {/* CTA row */}
