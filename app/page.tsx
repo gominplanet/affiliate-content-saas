@@ -88,60 +88,6 @@ const LIGHT_VARS: React.CSSProperties = {
   ['--accent-text' as string]: '#7C3AED',
 }
 
-/** Hub diagram constants. Computed once so the SVG and the absolutely
- *  positioned spoke nodes share the same geometry. 18 spokes (full
- *  live-channel coverage — Meta + Pinterest + LinkedIn added 2026-06-16).
- *  The ring is a slight ELLIPSE (RX > RY): with 18 wide pills, a true circle
- *  crowds the top/bottom poles (consecutive 20° steps barely separate them
- *  vertically). Spreading horizontally clears the only axis that collides
- *  while keeping the diagram's height inside the box. */
-const CX = 400
-const CY = 300
-const RX = 332
-const RY = 246
-const VIEW_W = 800
-const VIEW_H = 600
-
-interface Spoke {
-  /** Angle in degrees, 0 = right, 90 = down, -90 = up. */
-  angle: number
-  label: string
-  icon: React.ReactNode
-}
-
-/** 18 spokes total, 20° apart. Flows clockwise from top: the content outputs +
- *  outcomes on the top/right + bottom arc, then the 8 LIVE publish channels up
- *  the left arc. Labels kept short so pills don't overlap at the equator.
- *  WordPress isn't a separate spoke — "Blog post" is the WordPress output. */
-const SPOKES: Spoke[] = [
-  { angle:  -90, label: 'Blog post',       icon: <FileText size={13} /> },
-  { angle:  -70, label: 'Comparison',      icon: <Scale size={13} /> },
-  { angle:  -50, label: 'Buying guide',    icon: <Bookmark size={13} /> },
-  { angle:  -30, label: 'Thumbnail',       icon: <ImageIcon size={13} /> },
-  { angle:  -10, label: 'Newsletter',      icon: <Mail size={13} /> },
-  { angle:   10, label: 'Script',          icon: <PenLine size={13} /> },
-  { angle:   30, label: 'Brand pitch',     icon: <HeartHandshake size={13} /> },
-  { angle:   50, label: 'Ranks on Google', icon: <TrendingUp size={13} /> },
-  { angle:   70, label: 'Cited by AI',     icon: <Sparkles size={13} /> },
-  { angle:   90, label: 'Scheduled',       icon: <Calendar size={13} /> },
-  { angle:  110, label: 'Pinterest',       icon: <Pin size={13} /> },
-  { angle:  130, label: 'Instagram',       icon: <Instagram size={13} /> },
-  { angle:  150, label: 'Threads',         icon: <AtSign size={13} /> },
-  { angle:  170, label: 'Facebook',        icon: <Facebook size={13} /> },
-  { angle:  190, label: 'X',               icon: <Twitter size={13} /> },
-  { angle:  210, label: 'LinkedIn',        icon: <Linkedin size={13} /> },
-  { angle:  230, label: 'Bluesky',         icon: <Cloud size={13} /> },
-  { angle:  250, label: 'Telegram',        icon: <Send size={13} /> },
-]
-
-/** Convert an angle to {x,y} on the spoke circle. */
-function spokePos(angleDeg: number) {
-  const rad = (angleDeg * Math.PI) / 180
-  return {
-    x: CX + RX * Math.cos(rad),
-    y: CY + RY * Math.sin(rad),
-  }
-}
 
 export default function LandingPreview() {
   // Light mode only — bright, high-contrast sales page. Sections that need
@@ -1861,7 +1807,7 @@ function Hero() {
         }}
       />
 
-      <div className="relative max-w-7xl mx-auto px-5 sm:px-8 pt-12 sm:pt-20 pb-16 sm:pb-28 grid lg:grid-cols-[1fr_760px] gap-8 lg:gap-12 items-center">
+      <div className="relative max-w-7xl mx-auto px-5 sm:px-8 pt-12 sm:pt-20 pb-16 sm:pb-28 grid lg:grid-cols-[1fr_minmax(0,560px)] gap-10 lg:gap-14 items-center">
         {/* ── Left: copy + CTAs ────────────────────────────────────── */}
         <div>
           {/* Pill */}
@@ -1889,8 +1835,10 @@ function Hero() {
             className="text-[38px] sm:text-[52px] lg:text-[64px] font-semibold tracking-[-0.02em] leading-[1.05] sm:leading-[1.02]"
             style={{ color: 'var(--text)' }}
           >
-            Your reviews, everywhere —<br />
-            not just on YouTube.
+            Your reviews, everywhere.<br />
+            <span style={{ background: 'linear-gradient(120deg, #F97316 0%, #C026D3 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
+              Not just YouTube.
+            </span>
           </h1>
           <p
             className="mt-4 text-[20px] font-medium tracking-tight"
@@ -1970,8 +1918,8 @@ function Hero() {
           </div>
         </div>
 
-        {/* ── Right: animated hub diagram ───────────────────────────── */}
-        <HubDiagram />
+        {/* ── Right: product mock in a browser frame ────────────────── */}
+        <ProductMock />
       </div>
     </section>
   )
@@ -1987,124 +1935,107 @@ function Hero() {
  *    - HTML (z-20): the center video node, drawn last so it covers line
  *                   endpoints
  */
-function HubDiagram() {
+/** Hero visual — a stylized mock of the product inside a browser frame:
+ *  one YouTube review card at the top, then the outputs MVP publishes from it,
+ *  each ticked "done". Bounded + padded so nothing crowds the edge (the old
+ *  radial hub did), with a soft gradient glow and two floating feature chips
+ *  for depth. Pure markup (no client JS) so it stays in the Server Component. */
+function ProductMock() {
+  const outputs: Array<{ icon: React.ReactNode; label: string }> = [
+    { icon: <FileText size={13} />, label: 'Blog post' },
+    { icon: <Scale size={13} />, label: 'Comparison' },
+    { icon: <Bookmark size={13} />, label: 'Buying guide' },
+    { icon: <ImageIcon size={13} />, label: 'Thumbnail' },
+    { icon: <Mail size={13} />, label: 'Newsletter' },
+    { icon: <Instagram size={13} />, label: 'Instagram' },
+    { icon: <Facebook size={13} />, label: 'Facebook' },
+    { icon: <Pin size={13} />, label: 'Pinterest' },
+  ]
+  const chip = (bg: string, border: string, color: string) => ({
+    backgroundColor: bg, border: `1px solid ${border}`, color,
+  })
   return (
-    <div className="relative w-full mx-auto aspect-[4/3] hidden md:block" style={{ maxWidth: VIEW_W }}>
-      <svg
-        viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
-        className="absolute inset-0 w-full h-full pointer-events-none"
-        aria-hidden="true"
-      >
-        {/* Lines from center to each spoke. Drawn from a long dasharray
-            offset down to 0 (the "drawing" effect). Each line gets a
-            stagger via animation-delay; once drawn, pulse forever. */}
-        {SPOKES.map((s, i) => {
-          const { x, y } = spokePos(s.angle)
-          const drawDelay = 0.2 + i * 0.08
-          const pulseDelay = drawDelay + 0.4
-          return (
-            <line
-              key={i}
-              x1={CX}
-              y1={CY}
-              x2={x}
-              y2={y}
-              stroke="var(--line-color)"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              style={{
-                strokeDasharray: 380,
-                strokeDashoffset: 380,
-                animation: `
-                  mvp-line-draw 0.45s ease-out ${drawDelay}s forwards,
-                  mvp-line-pulse 3s ease-in-out ${pulseDelay}s infinite
-                `,
-                filter: 'drop-shadow(0 0 4px var(--line-glow))',
-              }}
-            />
-          )
-        })}
-
-        {/* Subtle expanding rings under the center node — adds "energy
-            radiating from the source" feeling without being loud. */}
-        <circle cx={CX} cy={CY} r={50} fill="rgba(124,58,237,0.12)" style={{ animation: 'mvp-ring-pulse 4s ease-out infinite' }} />
-        <circle cx={CX} cy={CY} r={50} fill="rgba(124,58,237,0.08)" style={{ animation: 'mvp-ring-pulse 4s ease-out 2s infinite' }} />
-      </svg>
-
-      {/* Spoke nodes, positioned absolutely at the calculated coords.
-          Fade in after their connecting line completes drawing. */}
-      {SPOKES.map((s, i) => {
-        const { x, y } = spokePos(s.angle)
-        const fadeDelay = 0.2 + i * 0.08 + 0.5
-        return (
-          <div
-            key={i}
-            className="absolute"
-            style={{
-              // Percentage of the (now fluid, 4:3) box so the HTML nodes track
-              // the SVG lines at any width — fixed px coords broke on mobile.
-              left: `${(x / VIEW_W) * 100}%`,
-              top: `${(y / VIEW_H) * 100}%`,
-              opacity: 0,
-              animation: `mvp-spoke-in 0.4s ease-out ${fadeDelay}s forwards`,
-            }}
-          >
-            <SpokeNode icon={s.icon} label={s.label} />
-          </div>
-        )
-      })}
-
-      {/* Center node — the "Your review video" card. Drawn last (highest
-          z) so it sits cleanly on top of the line endpoints. */}
+    <div className="relative mx-auto w-full max-w-[540px]">
+      {/* Soft glow behind the frame */}
       <div
-        className="absolute"
-        style={{
-          left: '50%',
-          top: '50%',
-          opacity: 0,
-          animation: 'mvp-center-in 0.5s ease-out forwards',
-        }}
+        aria-hidden
+        className="absolute -inset-8 pointer-events-none"
+        style={{ background: 'radial-gradient(55% 55% at 60% 35%, rgba(124,58,237,0.28), transparent 70%)', filter: 'blur(24px)' }}
+      />
+
+      {/* Browser frame */}
+      <div
+        className="relative rounded-2xl border overflow-hidden"
+        style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', boxShadow: '0 34px 64px -22px rgba(24,24,40,0.4)' }}
       >
-        <CenterNode />
-      </div>
-    </div>
-  )
-}
+        {/* Chrome bar */}
+        <div className="flex items-center gap-2 px-4 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
+          <span className="flex gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-full" style={{ background: '#FF5F57' }} />
+            <span className="w-2.5 h-2.5 rounded-full" style={{ background: '#FEBC2E' }} />
+            <span className="w-2.5 h-2.5 rounded-full" style={{ background: '#28C840' }} />
+          </span>
+          <div className="flex-1 ml-2 text-center text-[11px] rounded-md py-1" style={{ background: 'var(--bg)', color: 'var(--text-faint)' }}>
+            app.mvpaffiliate.io/library
+          </div>
+        </div>
 
-function CenterNode() {
-  return (
-    <div
-      className="rounded-2xl px-5 py-4 flex items-center gap-3 text-white"
-      style={{
-        background: 'var(--center-bg)',
-        boxShadow: '0 12px 32px rgba(124,58,237,0.35), inset 0 1px 0 rgba(255,255,255,0.12)',
-        minWidth: 220,
-      }}
-    >
-      <div className="w-10 h-10 rounded-lg bg-white/15 flex items-center justify-center backdrop-blur-sm">
-        <Play size={16} fill="currentColor" className="ml-0.5" />
-      </div>
-      <div className="flex-1">
-        <p className="text-[10px] uppercase tracking-[0.16em] font-medium opacity-75">Your video</p>
-        <p className="text-[13px] font-semibold leading-tight mt-0.5">YouTube review</p>
-      </div>
-    </div>
-  )
-}
+        {/* Body */}
+        <div className="p-4 sm:p-5" style={{ background: 'var(--bg)' }}>
+          {/* Source review card */}
+          <div className="flex items-center gap-3 rounded-xl border p-3" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}>
+            <span className="w-16 h-11 rounded-lg flex items-center justify-center flex-shrink-0 text-white" style={{ background: 'linear-gradient(135deg,#7C3AED,#C026D3)' }}>
+              <Play size={16} fill="currentColor" className="ml-0.5" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-[13px] font-semibold truncate" style={{ color: 'var(--text)' }}>Best Robot Vacuums (2026)</p>
+              <p className="text-[11px]" style={{ color: 'var(--text-faint)' }}>YouTube review · 12:04</p>
+            </div>
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full inline-flex items-center gap-1 flex-shrink-0" style={chip('rgba(16,185,129,0.12)', 'transparent', '#10B981')}>
+              <Check size={10} /> Published
+            </span>
+          </div>
 
-function SpokeNode({ icon, label }: { icon: React.ReactNode; label: string }) {
-  return (
-    <div
-      className="rounded-xl px-3 py-2 border text-[12px] font-medium flex items-center gap-2 whitespace-nowrap"
-      style={{
-        backgroundColor: 'var(--surface)',
-        borderColor: 'var(--border)',
-        color: 'var(--text)',
-        boxShadow: 'var(--card-shadow)',
-      }}
-    >
-      <span className="text-[#7C3AED]">{icon}</span>
-      {label}
+          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] mt-4 mb-2" style={{ color: 'var(--text-faint)' }}>
+            Auto-published to 9 places
+          </p>
+
+          {/* Output grid */}
+          <div className="grid grid-cols-2 gap-2">
+            {outputs.map((o, i) => (
+              <div key={i} className="flex items-center gap-2 rounded-lg border px-2.5 py-2" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}>
+                <span className="inline-flex items-center justify-center w-6 h-6 rounded-md flex-shrink-0" style={{ background: 'rgba(124,58,237,0.12)', color: '#7C3AED' }}>{o.icon}</span>
+                <span className="text-[12px] font-medium flex-1 truncate" style={{ color: 'var(--text)' }}>{o.label}</span>
+                <Check size={13} style={{ color: '#10B981' }} />
+              </div>
+            ))}
+          </div>
+
+          {/* Footer stat row */}
+          <div className="flex items-center gap-2 mt-3">
+            <span className="text-[11px] font-medium px-2 py-1 rounded-lg inline-flex items-center gap-1.5" style={chip('rgba(59,130,246,0.1)', 'transparent', '#3B82F6')}>
+              <TrendingUp size={12} /> SEO score 94
+            </span>
+            <span className="text-[11px] font-medium px-2 py-1 rounded-lg inline-flex items-center gap-1.5" style={chip('rgba(124,58,237,0.12)', 'transparent', '#7C3AED')}>
+              <Sparkles size={12} /> Cited by AI
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Floating feature chips for depth */}
+      <div
+        className="hidden sm:flex absolute -top-3 -right-3 items-center gap-1.5 rounded-xl px-3 py-2 text-[12px] font-semibold text-white"
+        style={{ background: 'linear-gradient(135deg,#F97316,#C026D3)', boxShadow: '0 12px 26px -8px rgba(192,38,211,0.5)' }}
+      >
+        <Zap size={13} /> Deal Radar
+      </div>
+      <div
+        className="hidden sm:flex absolute -bottom-3 -left-3 items-center gap-1.5 rounded-xl px-3 py-2 text-[12px] font-semibold"
+        style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)', boxShadow: '0 12px 26px -10px rgba(24,24,40,0.3)' }}
+      >
+        <Calendar size={13} style={{ color: '#7C3AED' }} /> Scheduled
+      </div>
     </div>
   )
 }
