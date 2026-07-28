@@ -16,7 +16,7 @@ import { toast } from 'sonner'
 import {
   Radar, Search, Loader2, Star, Zap, BadgePercent, ExternalLink,
   ArrowRight, Sparkles, TrendingUp, RefreshCw, ShieldCheck, ShieldAlert,
-  Send, Check, AlertCircle, X as CloseIcon, HelpCircle, Mail, Info, Coins, Flame, Plus, Layers, Video,
+  Send, Check, AlertCircle, X as CloseIcon, HelpCircle, Mail, Info, Coins, Flame, Plus, Layers, Video, ChevronDown,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import QuickPostModal from '@/components/deal/QuickPostModal'
@@ -197,6 +197,23 @@ function FilterToggle({ active, onClick, icon, tone, title, children }: {
       className={`h-9 text-sm font-medium rounded-full border px-3.5 inline-flex items-center gap-1.5 transition-all active:scale-[0.97] ${active ? t.active : `bg-background border-border ${t.hover}`}`}>
       <span className={`inline-flex ${active ? '' : t.icon}`}>{icon}</span> {children}
     </button>
+  )
+}
+
+// A native <select> dressed as a rounded pill with a consistent custom chevron,
+// so the dropdowns match the toggle pills in both light and dark themes (the
+// browser's default select arrow renders differently per-OS/theme).
+function SelectPill({ value, onChange, children }: {
+  value: string | number; onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void; children: ReactNode
+}) {
+  return (
+    <div className="relative">
+      <select value={value} onChange={onChange}
+        className="h-9 text-sm font-medium rounded-full border bg-background pl-3.5 pr-8 outline-none cursor-pointer appearance-none hover:bg-accent focus:border-violet-500 focus:ring-2 focus:ring-violet-500/30 transition">
+        {children}
+      </select>
+      <ChevronDown size={14} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+    </div>
   )
 }
 
@@ -420,32 +437,27 @@ export default function DealRadarPage() {
           />
         </div>
 
-        {/* Filters + sort */}
+        {/* Filters + sort — every control is the same rounded-full pill so the
+            row reads as one family: neutral pills for the dropdowns, color-toned
+            pills for the on/off toggles, divided by a thin rule. */}
         <div className="flex flex-wrap items-center gap-2">
-          {/* Dropdown cluster — grouped in a soft pill so the three selects read
-              as one "narrow it down" control. */}
-          <div className="flex flex-wrap items-center gap-1 rounded-full bg-muted/50 p-1">
-            <select value={category} onChange={(e) => setCategory(e.target.value === '' ? '' : Number(e.target.value))}
-                    className="h-8 text-sm rounded-full bg-transparent px-2.5 outline-none cursor-pointer hover:bg-background/80 transition-colors">
-              <option value="">All categories</option>
-              {CATEGORIES.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
-            </select>
-            <select value={minDiscount} onChange={(e) => setMinDiscount(Number(e.target.value))}
-                    className="h-8 text-sm rounded-full bg-transparent px-2.5 outline-none cursor-pointer hover:bg-background/80 transition-colors">
-              <option value={0}>Any discount</option>
-              <option value={15}>15%+ off</option>
-              <option value={25}>25%+ off</option>
-              <option value={40}>40%+ off</option>
-              <option value={50}>50%+ off</option>
-            </select>
-            <select value={minRating} onChange={(e) => setMinRating(Number(e.target.value))}
-                    className="h-8 text-sm rounded-full bg-transparent px-2.5 outline-none cursor-pointer hover:bg-background/80 transition-colors">
-              <option value={0}>Any rating</option>
-              <option value={3}>3★+</option>
-              <option value={4}>4★+</option>
-              <option value={4.5}>4.5★+</option>
-            </select>
-          </div>
+          <SelectPill value={category} onChange={(e) => setCategory(e.target.value === '' ? '' : Number(e.target.value))}>
+            <option value="">All categories</option>
+            {CATEGORIES.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+          </SelectPill>
+          <SelectPill value={minDiscount} onChange={(e) => setMinDiscount(Number(e.target.value))}>
+            <option value={0}>Any discount</option>
+            <option value={15}>15%+ off</option>
+            <option value={25}>25%+ off</option>
+            <option value={40}>40%+ off</option>
+            <option value={50}>50%+ off</option>
+          </SelectPill>
+          <SelectPill value={minRating} onChange={(e) => setMinRating(Number(e.target.value))}>
+            <option value={0}>Any rating</option>
+            <option value={3}>3★+</option>
+            <option value={4}>4★+</option>
+            <option value={4.5}>4.5★+</option>
+          </SelectPill>
 
           <span className="hidden sm:block w-px h-6 bg-border mx-0.5" aria-hidden />
 
@@ -471,10 +483,9 @@ export default function DealRadarPage() {
             )}
             <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
               Sort
-              <select value={sort} onChange={(e) => setSort(e.target.value)}
-                      className="h-9 text-sm rounded-full border bg-background px-3 text-foreground outline-none cursor-pointer hover:bg-accent focus:border-violet-500 focus:ring-2 focus:ring-violet-500/30 transition">
+              <SelectPill value={sort} onChange={(e) => setSort(e.target.value)}>
                 {SORTS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
-              </select>
+              </SelectPill>
             </label>
           </div>
         </div>
