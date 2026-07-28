@@ -8,6 +8,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { removeSite, setDefaultSite } from '@/lib/wordpress-sites'
 import { getAuthAndOwner } from '@/lib/agency-auth'
+import { sanitizeGeniuslinkGroupName } from '@/lib/geniuslink-group'
 
 interface RouteCtx {
   params: Promise<{ id: string }>
@@ -26,6 +27,22 @@ export async function PATCH(req: Request, ctx: RouteCtx) {
     makeDefault?: boolean
     contentOnly?: boolean
     ctaStyle?: 'button' | 'link'
+    geniuslinkGroupName?: string
+  }
+
+  // Custom Geniuslink group name for this blog. Sanitize to what Geniuslink
+  // accepts, and clear the cached group id so the next generation re-resolves
+  // to the new name's group (create-or-match). Empty string clears the override.
+  if (typeof body.geniuslinkGroupName === 'string') {
+    const name = sanitizeGeniuslinkGroupName(body.geniuslinkGroupName)
+    const { error } = await supabase
+      .from('wordpress_sites')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .update({ geniuslink_group_name: name, geniuslink_group_id: null } as any)
+      .eq('user_id', ownerId)
+      .eq('id', id)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ ok: true, geniuslinkGroupName: name })
   }
 
   // makeDefault wins over label change when both are sent — the user
