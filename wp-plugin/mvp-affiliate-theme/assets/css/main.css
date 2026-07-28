@@ -207,8 +207,8 @@ html, body { overflow-x: clip; }
   position: sticky;
   top: 0;
   z-index: 40;
-  background: rgba(255,255,255,0.98);
-  border-bottom: 1px solid var(--mvp-border);
+  background: var(--mvp-header-bg, rgba(255,255,255,0.98));
+  border-bottom: 1px solid var(--mvp-header-border, var(--mvp-border));
   backdrop-filter: saturate(180%) blur(10px);
   -webkit-backdrop-filter: saturate(180%) blur(10px);
   transition: box-shadow .2s ease;
@@ -224,7 +224,7 @@ html, body { overflow-x: clip; }
   display: flex;
   flex-direction: column;
   gap: 2px;
-  color: var(--mvp-text);
+  color: var(--mvp-header-fg, var(--mvp-text));
 }
 .mvp-header-brand:hover { opacity: 1; }
 .mvp-header-title {
@@ -232,11 +232,11 @@ html, body { overflow-x: clip; }
   font-size: 22px;
   font-weight: 800;
   letter-spacing: -0.015em;
-  color: var(--mvp-text);
+  color: var(--mvp-header-fg, var(--mvp-text));
 }
 .mvp-header-tagline {
   font-size: 11px;
-  color: var(--mvp-text-muted);
+  color: var(--mvp-header-muted, var(--mvp-text-muted));
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
@@ -252,13 +252,13 @@ html, body { overflow-x: clip; }
 .mvp-nav-menu a {
   display: inline-block;
   padding: 8px 14px;
-  color: var(--mvp-text);
+  color: var(--mvp-header-fg, var(--mvp-text));
   font-size: 14px;
   font-weight: 500;
   border-radius: var(--mvp-radius-sm);
   text-decoration: none;
 }
-.mvp-nav-menu a:hover { background: var(--mvp-bg-soft); opacity: 1; color: var(--mvp-primary); }
+.mvp-nav-menu a:hover { background: color-mix(in srgb, var(--mvp-header-fg, #000) 8%, transparent); opacity: 1; color: var(--mvp-primary); }
 .mvp-nav-menu .current-menu-item > a,
 .mvp-nav-menu .current_page_item > a { color: var(--mvp-primary); font-weight: 600; }
 
@@ -1049,8 +1049,8 @@ a.mvp-ad-slot-filled:hover {
 /* ─── Footer ─────────────────────────────────────────────────────────────── */
 .mvp-footer {
   margin-top: 0;
-  background: #1a1a1e;
-  color: #fff;
+  background: var(--mvp-footer-bg, #1a1a1e);
+  color: var(--mvp-footer-fg, #fff);
   font-size: 14px;
 }
 .mvp-footer-grid {
@@ -1077,7 +1077,7 @@ a.mvp-ad-slot-filled:hover {
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: rgba(255,255,255,0.5);
+  color: var(--mvp-footer-faint, rgba(255,255,255,0.5));
   margin: 0 0 16px;
 }
 
@@ -1090,10 +1090,10 @@ a.mvp-ad-slot-filled:hover {
 .mvp-footer-brand-name {
   font-family: var(--mvp-font-serif);
   font-size: 22px; font-weight: 700;
-  color: #fff; text-decoration: none;
+  color: var(--mvp-footer-fg, #fff); text-decoration: none;
 }
 .mvp-footer-brand-tagline {
-  color: rgba(255,255,255,0.5);
+  color: var(--mvp-footer-faint, rgba(255,255,255,0.5));
   font-size: 12px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1101,8 +1101,8 @@ a.mvp-ad-slot-filled:hover {
 }
 
 .mvp-footer-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
-.mvp-footer-list a { color: rgba(255,255,255,0.75); text-decoration: none; }
-.mvp-footer-list a:hover { color: #fff; opacity: 1; }
+.mvp-footer-list a { color: var(--mvp-footer-muted, rgba(255,255,255,0.75)); text-decoration: none; }
+.mvp-footer-list a:hover { color: var(--mvp-footer-fg, #fff); opacity: 1; }
 /* Categories in a balanced 2-column grid so the list stays short. */
 .mvp-footer-list--cats {
   display: grid;
@@ -1118,15 +1118,15 @@ a.mvp-ad-slot-filled:hover {
   display: inline-flex; align-items: center; justify-content: center;
   width: 36px; height: 36px;
   border-radius: 8px;
-  background: rgba(255,255,255,0.1);
-  color: #fff;
+  background: color-mix(in srgb, var(--mvp-footer-fg, #fff) 12%, transparent);
+  color: var(--mvp-footer-fg, #fff);
 }
-.mvp-footer-social:hover { background: var(--mvp-primary); opacity: 1; }
+.mvp-footer-social:hover { background: var(--mvp-primary); color: #fff; opacity: 1; }
 
 /* Slim bottom bar — copyright left, FTC disclosure right, on one row. */
 .mvp-footer-bottom {
   padding: 18px 0;
-  border-top: 1px solid rgba(255,255,255,0.08);
+  border-top: 1px solid var(--mvp-footer-border, rgba(255,255,255,0.08));
 }
 .mvp-footer-bottom-inner {
   display: flex; justify-content: space-between; align-items: center; gap: 12px 32px;
@@ -1135,12 +1135,12 @@ a.mvp-ad-slot-filled:hover {
 .mvp-footer-copyright {
   margin: 0;
   font-size: 12px;
-  color: rgba(255,255,255,0.5);
+  color: var(--mvp-footer-faint, rgba(255,255,255,0.5));
 }
 .mvp-footer-disclosure {
   margin: 0;
   font-size: 12px;
-  color: rgba(255,255,255,0.4);
+  color: var(--mvp-footer-faint, rgba(255,255,255,0.4));
   max-width: 62ch;
 }
 

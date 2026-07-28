@@ -9,7 +9,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MVP_AFFILIATE_THEME_VERSION', '1.4.31');
+define('MVP_AFFILIATE_THEME_VERSION', '1.4.32');
 
 // ── Theme support ───────────────────────────────────────────────────────────
 add_action('after_setup_theme', function () {
@@ -107,6 +107,27 @@ add_action('wp_enqueue_scripts', function () {
     $font_theme = trim($profile['fontTheme'] ?? 'editorial');
     $fonts = mvp_affiliate_font_theme_config($font_theme);
 
+    // Optional user-set header/footer background colors. Empty = theme default.
+    // When set, we auto-pick a readable text color from the background so the
+    // header nav / footer links never end up invisible on the chosen color.
+    $header_bg = trim($profile['headerBg'] ?? '');
+    $footer_bg = trim($profile['footerBg'] ?? '');
+    $chrome_css = '';
+    if ($header_bg !== '') {
+        $fg = mvp_affiliate_readable_fg($header_bg);
+        $chrome_css .= sprintf(
+            '--mvp-header-bg:%s;--mvp-header-fg:%s;--mvp-header-muted:color-mix(in srgb, %s 60%%, transparent);--mvp-header-border:color-mix(in srgb, %s 14%%, transparent);',
+            esc_html($header_bg), $fg, $fg, $fg
+        );
+    }
+    if ($footer_bg !== '') {
+        $fg = mvp_affiliate_readable_fg($footer_bg);
+        $chrome_css .= sprintf(
+            '--mvp-footer-bg:%s;--mvp-footer-fg:%s;--mvp-footer-muted:color-mix(in srgb, %s 58%%, transparent);--mvp-footer-faint:color-mix(in srgb, %s 42%%, transparent);--mvp-footer-border:color-mix(in srgb, %s 10%%, transparent);',
+            esc_html($footer_bg), $fg, $fg, $fg, $fg
+        );
+    }
+
     // Google Fonts (if needed) — load BEFORE main.css so font-family is available
     if (!empty($fonts['google'])) {
         wp_enqueue_style(
@@ -119,14 +140,31 @@ add_action('wp_enqueue_scripts', function () {
 
     // Inline CSS variable overrides
     $css = sprintf(
-        ':root {--mvp-primary:%s;--mvp-secondary:%s;--mvp-font-serif:%s;--mvp-font-sans:%s;}',
+        ':root {--mvp-primary:%s;--mvp-secondary:%s;--mvp-font-serif:%s;--mvp-font-sans:%s;%s}',
         esc_html($primary),
         esc_html($secondary),
         $fonts['heading'],
-        $fonts['body']
+        $fonts['body'],
+        $chrome_css
     );
     wp_add_inline_style('mvp-affiliate-main', $css);
 });
+
+// Pick a readable text color (near-black or white) for a given background hex,
+// based on its relative luminance. Keeps header nav / footer links legible
+// whatever background the creator chooses. Falls back to white on a bad value.
+if (!function_exists('mvp_affiliate_readable_fg')) {
+    function mvp_affiliate_readable_fg(string $hex, string $light = '#ffffff', string $dark = '#1a1a1e'): string {
+        $hex = ltrim(trim($hex), '#');
+        if (strlen($hex) === 3) $hex = $hex[0].$hex[0].$hex[1].$hex[1].$hex[2].$hex[2];
+        if (strlen($hex) !== 6 || !ctype_xdigit($hex)) return $light;
+        $lin = function ($c) { $c /= 255; return $c <= 0.03928 ? $c / 12.92 : pow(($c + 0.055) / 1.055, 2.4); };
+        $L = 0.2126 * $lin(hexdec(substr($hex, 0, 2)))
+           + 0.7152 * $lin(hexdec(substr($hex, 2, 2)))
+           + 0.0722 * $lin(hexdec(substr($hex, 4, 2)));
+        return $L > 0.42 ? $dark : $light;
+    }
+}
 
 // ── Customizations data helper ─────────────────────────────────────────────
 // Returns the affiliateos_customizations option as a normalized array.
