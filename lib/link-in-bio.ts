@@ -83,7 +83,7 @@ export function normalizeHandle(raw: string): string {
 
 // Reserved so a bio handle can never shadow an app route under /s/… or leak a
 // confusing URL.
-const RESERVED_HANDLES = new Set(['api', 'admin', 'app', 's', 'new', 'edit', 'settings', 'null', 'undefined'])
+const RESERVED_HANDLES = new Set(['api', 'admin', 'app', 's', 'shop', 'new', 'edit', 'settings', 'null', 'undefined'])
 
 /** Is this a usable handle? (length + charset + not reserved) */
 export function isValidHandle(handle: string): boolean {

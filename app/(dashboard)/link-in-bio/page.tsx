@@ -108,8 +108,14 @@ export default function LinkInBioPage() {
       const res = await fetch('/api/link-in-bio/sync', { method: 'POST' })
       const data = await res.json()
       if (!res.ok) { toast.error(data.error || 'Import failed.'); return }
-      if (data.added > 0) { toast.success(`Added ${data.added} product${data.added === 1 ? '' : 's'}.`); await load() }
-      else toast.message(data.message || 'Nothing new to import — your posted products are already here.')
+      const added = data.added || 0, relinked = data.relinked || 0
+      if (added || relinked) {
+        await load()
+        const parts: string[] = []
+        if (added) parts.push(`added ${added} product${added === 1 ? '' : 's'}`)
+        if (relinked) parts.push(`re-linked ${relinked} to Geniuslink`)
+        toast.success(parts.join(' · '))
+      } else toast.message(data.message || 'Nothing new — your products are already here (and already Geniuslinked).')
     } catch { toast.error('Import failed.') } finally { setImporting(false) }
   }
 
@@ -203,7 +209,7 @@ export default function LinkInBioPage() {
     </li>
   )
 
-  const publicUrl = page ? `${origin}/s/${page.handle}` : ''
+  const publicUrl = page ? `${origin}/shop/${page.handle}` : ''
   const copyUrl = () => { navigator.clipboard?.writeText(publicUrl); toast.success('Link copied — paste it in your bio.') }
 
   if (tier === null || loading) {
@@ -252,7 +258,7 @@ export default function LinkInBioPage() {
         /* Claim a handle */
         <div className="rounded-2xl border bg-card p-6">
           <div className="text-base font-semibold mb-1">Claim your link</div>
-          <p className="text-sm text-muted-foreground mb-4">Pick a handle. Your page will live at <span className="font-mono">{origin}/s/<span className="text-foreground font-semibold">your-handle</span></span>.</p>
+          <p className="text-sm text-muted-foreground mb-4">Pick a handle. Your page will live at <span className="font-mono">{origin}/shop/<span className="text-foreground font-semibold">your-handle</span></span>.</p>
           <div className="flex items-center gap-2 max-w-md">
             <div className="flex items-center flex-1 rounded-lg border overflow-hidden">
               <span className="px-2.5 py-2 text-sm text-muted-foreground bg-muted whitespace-nowrap">/s/</span>
