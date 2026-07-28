@@ -17,7 +17,7 @@
 import { useState, useEffect } from 'react'
 import {
   FileText, Image as ImageIcon, Mail, Scale, Calendar,
-  Play, Sun, Moon, Sparkles, ArrowRight, Bookmark,
+  Play, Sparkles, ArrowRight, Bookmark,
   Twitter, Cloud, Send, Linkedin, Facebook, Instagram, AtSign,
   Compass, HeartHandshake, PenLine, Share2, Globe, TrendingUp, Wand2,
   Youtube, ShieldCheck, Zap, Upload, X as XIcon, Check, Quote,
@@ -26,23 +26,6 @@ import {
   ShoppingBag, Store, ShoppingCart, Search,
   Radar, Coins,
 } from 'lucide-react'
-
-const DARK_VARS: React.CSSProperties = {
-  ['--bg' as string]: '#0E0E11',
-  ['--surface' as string]: 'rgba(255,255,255,0.04)',
-  ['--surface-bright' as string]: 'rgba(255,255,255,0.08)',
-  ['--border' as string]: 'rgba(255,255,255,0.08)',
-  ['--text' as string]: '#F5F5F7',
-  ['--text-muted' as string]: 'rgba(255,255,255,0.85)',
-  ['--text-soft' as string]: 'rgba(255,255,255,0.65)',
-  ['--text-subtle' as string]: 'rgba(255,255,255,0.50)',
-  ['--text-faint' as string]: 'rgba(255,255,255,0.38)',
-  ['--card-shadow' as string]: 'inset 0 1px 0 rgba(255,255,255,0.06), 0 2px 8px rgba(0,0,0,0.3)',
-  ['--hero-opacity' as string]: '0.55',
-  ['--line-color' as string]: 'rgba(124,58,237,0.55)',
-  ['--line-glow' as string]: 'rgba(124,58,237,0.35)',
-  ['--center-bg' as string]: 'linear-gradient(135deg, #7C3AED, #C026D3)',
-}
 
 const LIGHT_VARS: React.CSSProperties = {
   ['--bg' as string]: '#FAFAF8',
@@ -117,20 +100,13 @@ function spokePos(angleDeg: number) {
 }
 
 export default function LandingPreview() {
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark')
-
-  useEffect(() => {
-    const saved = sessionStorage.getItem('mvp-landing-theme')
-    if (saved === 'light' || saved === 'dark') setTheme(saved)
-  }, [])
-  useEffect(() => {
-    sessionStorage.setItem('mvp-landing-theme', theme)
-  }, [theme])
-
+  // Light mode only — bright, high-contrast sales page. Sections that need
+  // emphasis darken their OWN background locally (see DarkBand), rather than a
+  // global dark theme.
   return (
     <div
       style={{
-        ...(theme === 'dark' ? DARK_VARS : LIGHT_VARS),
+        ...LIGHT_VARS,
         backgroundColor: 'var(--bg)',
         color: 'var(--text)',
       }}
@@ -167,7 +143,7 @@ export default function LandingPreview() {
         html { scroll-behavior: smooth; }
       `}</style>
 
-      <Nav theme={theme} onToggle={() => setTheme(theme === 'dark' ? 'light' : 'dark')} />
+      <Nav />
       <Hero />
       <PlatformBar />
       <DemoVideoSection />
@@ -2137,12 +2113,12 @@ function FinalCTASection() {
 /** Top nav — minimal: logo + sign in + theme toggle. Sticky so it stays
  *  accessible while scrolling. Will gain Pricing/Demo links when those
  *  sections exist further down the page. */
-function Nav({ theme, onToggle }: { theme: 'dark' | 'light'; onToggle: () => void }) {
+function Nav() {
   return (
     <nav
       className="sticky top-0 z-20 backdrop-blur-md px-4 sm:px-8 py-4 flex items-center justify-between relative"
       style={{
-        backgroundColor: theme === 'dark' ? 'rgba(14,14,17,0.7)' : 'rgba(250,250,248,0.7)',
+        backgroundColor: 'rgba(250,250,248,0.75)',
         borderBottom: '1px solid var(--border)',
       }}
     >
@@ -2172,14 +2148,6 @@ function Nav({ theme, onToggle }: { theme: 'dark' | 'light'; onToggle: () => voi
       </div>
 
       <div className="flex items-center gap-1.5 sm:gap-2">
-        <button
-          onClick={onToggle}
-          className="p-2 rounded-lg transition-colors"
-          style={{ color: 'var(--text-soft)' }}
-          title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
-        >
-          {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
-        </button>
         <a
           href="/login"
           className="px-2.5 sm:px-3 py-1.5 rounded-lg text-[13px] transition-colors"
