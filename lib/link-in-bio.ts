@@ -1,7 +1,7 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
 // Shared types + helpers for the Link in Bio ("Shop Grid") feature: a public,
-// hosted affiliate storefront page at /s/<handle>.
+// hosted affiliate storefront page at /shop/<handle>.
 
 export interface LinkPage {
   id: string

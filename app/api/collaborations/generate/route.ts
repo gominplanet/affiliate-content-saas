@@ -11,6 +11,7 @@ import { generateCollabEmail, type CollabInput } from '@/lib/collab'
 import { extractAsin, fetchAmazonProduct } from '@/services/amazon'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { spendGate } from '@/lib/ai-spend'
+import { toUserMessage } from '@/lib/friendly-error'
 
 export const maxDuration = 120
 
@@ -178,7 +179,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ ok: true, id: row?.id ?? null, subject, body: emailBody, email, citations })
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err)
-    return NextResponse.json({ error: msg }, { status: 500 })
+    console.error('[collaborations/generate]', err instanceof Error ? err.message : err)
+    return NextResponse.json({ error: toUserMessage(err, 'Couldn’t generate that pitch just now. Please try again in a moment.') }, { status: 500 })
   }
 }

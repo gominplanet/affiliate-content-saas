@@ -1,4 +1,4 @@
-// Public affiliate "Shop Grid" / link-in-bio page at /s/<handle>. Rendered
+// Public affiliate "Shop Grid" / link-in-bio page at /shop/<handle>. Rendered
 // server-side with the service-role client (only PUBLISHED pages are shown).
 // Phone-first: this is what someone taps from an Instagram/TikTok bio.
 

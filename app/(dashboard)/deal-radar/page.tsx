@@ -821,7 +821,7 @@ function DealRadarGuide({ onClose }: { onClose: () => void }) {
     {
       icon: <Mail size={18} />,
       title: 'Weekly digest',
-      body: <>Flip the <strong>Weekly digest</strong> toggle (top right) and we email you the best deals in your niche once a week, so you never have to remember to check.</>,
+      body: <>Flip the <strong>Weekly digest</strong> toggle (top right) and MVP automatically publishes a &ldquo;Top deals in your niche&rdquo; roundup to your blog about once a week — price-verified picks, your affiliate links, hands-off. It posts to your blog only; nothing goes to your socials.</>,
     },
   ]
 

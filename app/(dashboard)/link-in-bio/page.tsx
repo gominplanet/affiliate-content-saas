@@ -1,6 +1,6 @@
 // Link in Bio editor — claim a handle, pick a theme, import your posted
 // products as tiles (+ add manual links), reorder/hide/delete, and publish. The
-// public page lives at /s/<handle>. Open to all paid tiers.
+// public page lives at /shop/<handle>. Open to all paid tiers.
 
 'use client'
 
@@ -311,7 +311,7 @@ export default function LinkInBioPage() {
           <p className="text-sm text-muted-foreground mb-4">Pick a handle. Your page will live at <span className="font-mono">{origin}/shop/<span className="text-foreground font-semibold">your-handle</span></span>.</p>
           <div className="flex items-center gap-2 max-w-md">
             <div className="flex items-center flex-1 rounded-lg border overflow-hidden">
-              <span className="px-2.5 py-2 text-sm text-muted-foreground bg-muted whitespace-nowrap">/s/</span>
+              <span className="px-2.5 py-2 text-sm text-muted-foreground bg-muted whitespace-nowrap">/shop/</span>
               <input value={handleInput} onChange={(e) => setHandleInput(e.target.value)} placeholder="your-brand"
                 className="flex-1 px-2.5 py-2 text-sm bg-transparent outline-none" />
             </div>

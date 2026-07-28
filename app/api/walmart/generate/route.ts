@@ -30,6 +30,7 @@ import { pickProductReferenceImage } from '@/lib/product-image'
 import { scrubBanned } from '@/lib/scrub'
 import { spendGate } from '@/lib/ai-spend'
 import { tierAllowsFinders, type Tier } from '@/lib/tier'
+import { toUserMessage } from '@/lib/friendly-error'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -315,6 +316,7 @@ export async function POST(request: NextRequest) {
       title,
     })
   } catch (e) {
-    return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : 'Unexpected error' }, { status: 500 })
+    console.error('[walmart/generate]', e instanceof Error ? e.message : e)
+    return NextResponse.json({ ok: false, error: toUserMessage(e, 'Couldn’t generate that just now. Please try again in a moment.') }, { status: 500 })
   }
 }

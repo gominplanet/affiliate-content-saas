@@ -40,6 +40,7 @@ import { recordUsage } from '@/lib/ai-usage'
 import { pingIndexNowForUrl } from '@/lib/seo-on-publish'
 import { SHOT_PERSPECTIVES, sectionHeadings, generateBodyImagePrompts } from '@/lib/blog-image-prompts'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
+import { toUserMessage } from '@/lib/friendly-error'
 
 /** Distinct camera perspectives cycled across a post's in-body images so
  *  no two shots look alike — each Kontext/flux call gets a different angle
@@ -139,7 +140,8 @@ export async function POST(request: Request) {
   try {
     return await handleGenerate(request)
   } catch (err: unknown) {
-    return NextResponse.json({ error: errToMessage(err) }, { status: 500 })
+    console.error('[blog/generate]', errToMessage(err))
+    return NextResponse.json({ error: toUserMessage(err, 'Couldn’t generate the post just now. Please try again in a moment.') }, { status: 500 })
   }
 }
 
@@ -1064,18 +1066,16 @@ async function handleGenerate(request: Request) {
       persistentFeedback,
     )
   } catch (err: unknown) {
-    const rawMsg = err instanceof Error ? err.message : (errToMessage(err) || 'Claude generation failed')
+    const rawMsg = err instanceof Error ? err.message : (errToMessage(err) || 'generation failed')
     await logFailure(supabase, user.id, videoId, 'blog_generation', rawMsg)
-    // Translate low-level stream/network errors (undici "terminated",
-    // "fetch failed", socket resets, timeouts) into something a user can
-    // act on instead of a cryptic one-word error. Also catches bare
-    // "Internal Server Error" / HTTP 500 surfaces from upstream APIs
-    // (Amazon scraper, WP REST, etc.) — those are almost always transient
-    // and a retry usually works.
+    // The raw cause is kept in logs (logFailure above) only — never returned to
+    // the user. A transient network/timeout gets a retry-friendly nudge; every
+    // other error maps through toUserMessage so no provider/billing/internal
+    // detail can ever surface.
     const transient = /terminated|fetch failed|socket|ECONNRESET|aborted|network|timeout|overloaded|internal server error|^\s*5\d{2}\s*$|52\d|50[023]/i.test(rawMsg)
     const msg = transient
-      ? 'A network step in generation timed out or returned an error (usually Amazon scrape, Claude, or WordPress). This is almost always temporary — hit Retry. Raw: ' + rawMsg.slice(0, 120)
-      : rawMsg
+      ? 'That timed out partway through. It’s almost always temporary — please hit Retry.'
+      : toUserMessage(err, 'Couldn’t generate the post just now. Please try again in a moment.')
     return NextResponse.json({ error: msg }, { status: 500 })
   }
     // Fresh generation succeeded → checkpoint the writer output NOW, before the

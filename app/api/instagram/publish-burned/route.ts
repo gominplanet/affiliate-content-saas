@@ -17,6 +17,7 @@ import { normalizeTier, tierAllowsSocial, type Tier } from '@/lib/tier'
 import { resolveSocialAccount } from '@/lib/social-accounts'
 import { publishMedia, subscribeToComments } from '@/services/instagram'
 import { metaEnabledForUser } from '@/lib/feature-flags'
+import { toUserMessage } from '@/lib/friendly-error'
 
 export const maxDuration = 300
 
@@ -100,13 +101,11 @@ export async function POST(request: Request) {
 
       return NextResponse.json({ ok: true, published: true, mediaId, autoDm })
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      console.error('[instagram/publish-burned] publish failed:', msg)
-      return NextResponse.json({ ok: false, published: false, error: msg }, { status: 502 })
+      console.error('[instagram/publish-burned] publish failed:', e instanceof Error ? e.message : e)
+      return NextResponse.json({ ok: false, published: false, error: toUserMessage(e, 'Instagram couldn’t accept the post — please try again in a moment.') }, { status: 502 })
     }
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    console.error('[instagram/publish-burned] error:', msg)
-    return NextResponse.json({ error: msg }, { status: 500 })
+    console.error('[instagram/publish-burned] error:', err instanceof Error ? err.message : err)
+    return NextResponse.json({ error: toUserMessage(err, 'Something went wrong publishing to Instagram. Please try again in a moment.') }, { status: 500 })
   }
 }

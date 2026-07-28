@@ -33,14 +33,15 @@ export async function GET() {
       authorBio: brand?.author_bio ?? '',
       logoUrl: brand?.logo_url ?? '',
       headshotUrl: brand?.headshot_url ?? '',
-      // notification_preferences was added to the UI before the schema; the
-      // column doesn't exist on `integrations` yet. Return defaults until
-      // a migration adds it.
+      // Return the persisted preferences (migration 004 added the column) so
+      // saved settings — including the weekly-digest toggle — survive a reload.
+      // Fall back to defaults only when the row/column is empty.
       notifications: {
         new_video: true,
         post_published: true,
         job_failures: true,
         weekly_digest: false,
+        ...((integration as unknown as { notification_preferences?: Record<string, boolean> | null } | null)?.notification_preferences ?? {}),
       },
     })
   } catch (err) {

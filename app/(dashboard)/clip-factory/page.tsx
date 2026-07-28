@@ -260,7 +260,7 @@ export default function ClipFactoryPage() {
         })
         const data = await res.json()
         if (!res.ok || !data.videoUrl) {
-          if (data.ingestDisabled) throw new Error("Automatic fetch isn't set up on this deployment yet.")
+          if (data.ingestDisabled) throw new Error("Automatic fetch isn’t available right now — please upload the clip instead.")
           if (data.limitReached) dispatchCapReached(data.error || 'Clip Factory is a Pro feature.', { cap: data.cap || 'shorts_studio', currentTier: data.currentTier, upgrade: data.upgrade })
           throw new Error(data.error || "We couldn't fetch this Short automatically.")
         }
