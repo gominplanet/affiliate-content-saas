@@ -24,6 +24,7 @@ import { TIERS, normalizeTier, type Tier } from '@/lib/tier'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 import { getAssistantMemory, saveAssistantMemory, mergeAssistantMemory } from '@/lib/assistant-memory'
 import { MVP_FEATURES_DOC } from '@/lib/assistant-features-doc'
+import { toUserMessage } from '@/lib/friendly-error'
 
 export const maxDuration = 60
 
@@ -172,8 +173,8 @@ export async function POST(request: Request) {
         const finalMsg = await stream.finalMessage()
         recordAnthropicUsage(finalMsg, { userId: user.id, tier, feature: 'assistant_message', model: MODEL })
       } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Assistant error'
-        if (!full) controller.enqueue(encoder.encode(`Sorry — I hit an error: ${msg}`))
+        console.error('[assistant/chat]', err instanceof Error ? err.message : err)
+        if (!full) controller.enqueue(encoder.encode(toUserMessage(err, "I couldn't answer that just now — please try again in a moment.")))
       } finally {
         // Persist the assistant reply (best-effort).
         if (full.trim()) {

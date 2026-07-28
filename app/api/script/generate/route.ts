@@ -35,6 +35,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAnthropicClient } from '@/lib/anthropic'
+import { toUserMessage } from '@/lib/friendly-error'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
 import { resolveProductReference } from '@/lib/resolve-product-reference'
@@ -353,8 +354,9 @@ Return ONLY a single JSON object with NO prose around it, NO markdown fences. Sh
     if (jsonStart < 0 || jsonEnd <= jsonStart) throw new Error('Model returned no JSON')
     parsed = JSON.parse(raw.slice(jsonStart, jsonEnd + 1)) as ScriptPayload
   } catch (err) {
+    console.error('[script/generate]', err instanceof Error ? err.message : err)
     return NextResponse.json({
-      error: err instanceof Error ? `Couldn't generate the script: ${err.message}` : 'Generation failed.',
+      error: toUserMessage(err, 'Couldn’t generate the script just now. Please try again in a moment.'),
     }, { status: 500 })
   }
 
