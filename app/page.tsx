@@ -347,7 +347,7 @@ const DEAL_RADAR_POINTS: Array<{ icon: React.ReactNode; title: string; body: str
   { icon: <Radar size={18} />, title: 'Live deals, verified real', body: 'Amazon price drops in your niche, refreshed around the clock. We check each deal’s real price history — so you only promote a genuine low, never a fake markdown.' },
   { icon: <Coins size={18} />, title: 'Spot the double wins', body: 'Every deal is cross-checked against Creator Connections, Levanta & PartnerBoost — instantly see the ones paying you an elevated bounty on top of the sale.' },
   { icon: <Zap size={18} />, title: 'One click → content', body: 'Turn any deal into a full SEO blog post or a native post across your socials — your affiliate link (Geniuslink-wrapped) attached and the disclosure handled for you.' },
-  { icon: <ShoppingBag size={18} />, title: 'Shoppable bio + Stories', body: 'A shoppable link-in-bio page auto-filled from your picks, plus one-tap Instagram Stories with a “link in bio” sticker — the whole discover → post → shop loop, closed.' },
+  { icon: <ShoppingBag size={18} />, title: 'Stories, without the hassle', body: 'Post Instagram Stories straight from your desktop — no phone, no copy-paste — each with a built-in “link in bio” call-to-action. It points to your shoppable Shop page, auto-filled from your picks. The whole discover → post → shop loop, closed.' },
 ]
 
 function DealRadarSection() {
@@ -370,7 +370,7 @@ function DealRadarSection() {
             </span>
           </h2>
           <p className="text-[16px] sm:text-[17px] leading-relaxed max-w-2xl mx-auto" style={{ color: 'var(--text-soft)' }}>
-            Deal Radar surfaces real, verified Amazon price drops in your niche and hands them to you ready to publish. Turn any one into an SEO post or a social post in a click — then your shoppable link-in-bio page and auto-generated Instagram Stories drive the sale.
+            Deal Radar surfaces real, verified Amazon price drops in your niche and hands them to you ready to publish. Turn any one into an SEO post or a social post in a click — then your shoppable Shop page and Instagram Stories you post right from your desktop (no phone, no copy-paste) drive the sale.
           </p>
         </div>
 
