@@ -27,6 +27,31 @@ import {
   Radar, Coins,
 } from 'lucide-react'
 
+// Local CSS-var override for a DARK emphasis band inside the otherwise-light
+// page. Any section wrapped in <DarkBand> flips its text/surface tokens so
+// var(--text)/var(--surface)/etc. read correctly on a dark background.
+const DARK_SECTION_VARS: React.CSSProperties = {
+  ['--surface' as string]: 'rgba(255,255,255,0.06)',
+  ['--surface-bright' as string]: 'rgba(255,255,255,0.10)',
+  ['--border' as string]: 'rgba(255,255,255,0.14)',
+  ['--text' as string]: '#F8F8FB',
+  ['--text-muted' as string]: 'rgba(255,255,255,0.90)',
+  ['--text-soft' as string]: 'rgba(255,255,255,0.70)',
+  ['--text-subtle' as string]: 'rgba(255,255,255,0.55)',
+  ['--text-faint' as string]: 'rgba(255,255,255,0.42)',
+  ['--card-shadow' as string]: 'inset 0 1px 0 rgba(255,255,255,0.08), 0 8px 30px rgba(0,0,0,0.35)',
+}
+
+/** Wrap a section to give it a bold dark (or gradient) background — used to
+ *  break up the bright page and make key sections punch. */
+function DarkBand({ children, bg }: { children: React.ReactNode; bg?: string }) {
+  return (
+    <div style={{ ...DARK_SECTION_VARS, background: bg ?? '#0D0D11', color: 'var(--text)' }} className="relative overflow-hidden">
+      {children}
+    </div>
+  )
+}
+
 const LIGHT_VARS: React.CSSProperties = {
   ['--bg' as string]: '#FAFAF8',
   ['--surface' as string]: '#FFFFFF',
@@ -149,18 +174,24 @@ export default function LandingPreview() {
       <DemoVideoSection />
       <RolesSection />
       <WorkflowSection />
-      <DealRadarSection />
+      <DarkBand bg="linear-gradient(160deg, #1A0B2E 0%, #2A0E3A 45%, #3A0E22 100%)">
+        <DealRadarSection />
+      </DarkBand>
       <AsinSection />
       <BeforeAfterSection />
       <GroundedSection />
-      <DiscoverabilitySection />
+      <DarkBand bg="linear-gradient(160deg, #120A2E 0%, #1E0E3E 100%)">
+        <DiscoverabilitySection />
+      </DarkBand>
       <BrandedSiteSection />
       <BusinessLayerSection />
       <PartnerNetworksSection />
       <PricingSection />
       <ProofSection />
       <FAQSection />
-      <FinalCTASection />
+      <DarkBand bg="linear-gradient(160deg, #16091E 0%, #2A0E3A 55%, #3A0E22 100%)">
+        <FinalCTASection />
+      </DarkBand>
       <Footer />
       <StickyBottomBar />
     </div>
@@ -2288,6 +2319,27 @@ function Hero() {
               <span className="w-1 h-1 rounded-full bg-[#10B981]" />
               Keep your WordPress site forever.
             </p>
+
+            {/* New-feature ribbon — vibrant strip that ties the hero to the
+                flagship Deal Radar section below. */}
+            <a
+              href="#deal-radar"
+              className="mt-6 inline-flex items-center gap-2.5 rounded-2xl px-4 py-3 text-[13px] font-medium transition-transform hover:-translate-y-0.5"
+              style={{
+                background: 'linear-gradient(135deg, rgba(249,115,22,0.14), rgba(192,38,211,0.14))',
+                border: '1px solid rgba(249,115,22,0.3)',
+                color: 'var(--text)',
+              }}
+            >
+              <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg flex-shrink-0" style={{ background: 'linear-gradient(135deg, #F97316, #C026D3)', color: '#fff' }}>
+                <Zap size={14} />
+              </span>
+              <span>
+                <span className="font-semibold">New — Amazon Deal Radar.</span>{' '}
+                <span style={{ color: 'var(--text-soft)' }}>Now MVP finds live, verified deals for you — and turns them into posts + a shoppable bio.</span>
+              </span>
+              <ArrowRight size={14} className="flex-shrink-0" style={{ color: '#F97316' }} />
+            </a>
           </div>
         </div>
 

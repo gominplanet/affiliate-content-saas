@@ -63,6 +63,7 @@ const plans: PlanExt[] = [
     limit: '20 posts / month',
     description: 'For creators shipping a few reviews a week across the lower-friction socials, with a taste of the Pro brand-pitch workflow.',
     features: [
+      '⚡ Amazon Deal Radar: live, price-history-verified deals + shoppable Link-in-Bio page + auto Instagram Stories',
       '20 full reviews per month (blog + thumbnail + metadata bundle)',
       'Auto-post to Facebook, Threads, LinkedIn & Bluesky',
       'Affiliate networks: connect Levanta + PartnerBoost for commissionable posts beyond your Amazon tag',
@@ -86,6 +87,7 @@ const plans: PlanExt[] = [
     limit: '45 posts / month',
     description: 'For the solo creator going full-time — everything in Creator plus the tools that turn a blog into a real publication: Deals Hub, topic hubs, video scripts, and a weekly newsletter on schedule.',
     features: [
+      '⚡ Amazon Deal Radar: live, price-history-verified deals + shoppable Link-in-Bio page + auto Instagram Stories',
       '45 full reviews per month (blog + thumbnail + metadata bundle)',
       'Adds Pinterest, Instagram & Telegram auto-post on top of Creator',
       'Affiliate networks: connect Levanta + PartnerBoost for commissionable posts beyond your Amazon tag',
@@ -111,6 +113,7 @@ const plans: PlanExt[] = [
     limit: '100 posts / month',
     description: 'Become the creator brands want. Comparisons, Buying Guides, Rebuild-from-video, multi-account social, VA seats, and 10 WordPress sites.',
     features: [
+      '⚡ Amazon Deal Radar: live, price-history-verified deals + shoppable Link-in-Bio page + auto Instagram Stories',
       '100 full reviews per month (blog + thumbnail + metadata bundle)',
       'Adds X (Twitter) auto-post on top of Studio',
       'Affiliate networks: connect Levanta + PartnerBoost for commissionable posts beyond your Amazon tag',
