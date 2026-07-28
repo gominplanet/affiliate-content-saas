@@ -117,13 +117,10 @@ function pickBadgeLabel(opts: {
   discountPct: number | null
 }): string {
   if (opts.occasionSlug !== 'none') return getOccasion(opts.occasionSlug).badgeLabel
-  const was = dollarsToNum(opts.priceWas)
-  const sale = dollarsToNum(opts.priceSale)
-  if (was && sale && sale < was) {
-    const diff = Math.round(was - sale)
-    if (diff >= 1) return `$${diff} OFF`
-  }
-  if (opts.discountPct && opts.discountPct > 0) return `${opts.discountPct}% OFF`
+  // EVERGREEN ONLY — no "$X OFF" / "N% OFF". The badge is baked into the thumbnail
+  // image, which we never regenerate on an automatic price refresh, so a specific
+  // savings number would go stale (and wrongly overstate the deal) the moment the
+  // price moves. Keep it a timeless "this is a deal" mark instead.
   return 'DEAL'
 }
 
