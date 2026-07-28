@@ -30,21 +30,28 @@ export async function GET(request: Request) {
     items = data ?? []
   }
   // Brand logo/headshot/name + every public profile URL MVP already knows, so
-  // the editor can PORT a link with one tap instead of pasting it.
-  const { data: brand } = await sb.from('brand_profiles').select('name,logo_url,headshot_url,youtube_channel_url').eq('user_id', user.id).maybeSingle()
+  // the editor can PORT a link with one tap instead of pasting it. brand_profiles
+  // holds the URLs the creator typed themselves (the source of truth); the
+  // integrations handle columns are a fallback when a brand URL is blank.
+  const { data: brand } = await sb.from('brand_profiles')
+    .select('name,logo_url,headshot_url,youtube_channel_url,instagram_url,tiktok_url,twitter_url,pinterest_url,facebook_url,threads_url')
+    .eq('user_id', user.id).maybeSingle()
   const { data: intg } = await sb.from('integrations')
     .select('wordpress_url,instagram_username,tiktok_username,twitter_handle,threads_username,facebook_page_id')
     .eq('user_id', user.id).maybeSingle()
 
   const at = (h: unknown) => String(h || '').trim().replace(/^@+/, '')
+  const trimOr = (v: unknown, fb?: string): string | undefined => { const s = v == null ? '' : String(v).trim(); return s || fb || undefined }
   const knownLinks: Record<string, string> = {}
-  if (brand?.youtube_channel_url) knownLinks.youtube = String(brand.youtube_channel_url)
-  if (intg?.instagram_username) knownLinks.instagram = `https://instagram.com/${at(intg.instagram_username)}`
-  if (intg?.tiktok_username) knownLinks.tiktok = `https://tiktok.com/@${at(intg.tiktok_username)}`
-  if (intg?.twitter_handle) knownLinks.x = `https://x.com/${at(intg.twitter_handle)}`
-  if (intg?.threads_username) knownLinks.threads = `https://threads.net/@${at(intg.threads_username)}`
-  if (intg?.facebook_page_id) knownLinks.facebook = `https://facebook.com/${String(intg.facebook_page_id).trim()}`
-  if (intg?.wordpress_url) knownLinks.website = String(intg.wordpress_url)
+  const add = (k: string, v?: string) => { if (v) knownLinks[k] = v }
+  add('youtube', trimOr(brand?.youtube_channel_url))
+  add('instagram', trimOr(brand?.instagram_url, intg?.instagram_username ? `https://instagram.com/${at(intg.instagram_username)}` : undefined))
+  add('tiktok', trimOr(brand?.tiktok_url, intg?.tiktok_username ? `https://tiktok.com/@${at(intg.tiktok_username)}` : undefined))
+  add('x', trimOr(brand?.twitter_url, intg?.twitter_handle ? `https://x.com/${at(intg.twitter_handle)}` : undefined))
+  add('facebook', trimOr(brand?.facebook_url, intg?.facebook_page_id ? `https://facebook.com/${String(intg.facebook_page_id).trim()}` : undefined))
+  add('threads', trimOr(brand?.threads_url, intg?.threads_username ? `https://threads.net/@${at(intg.threads_username)}` : undefined))
+  add('pinterest', trimOr(brand?.pinterest_url))
+  add('website', trimOr(intg?.wordpress_url))
 
   return NextResponse.json({
     ok: true, page: page ?? null, items, origin: new URL(request.url).origin,
