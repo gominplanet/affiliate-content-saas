@@ -24,7 +24,7 @@ import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { type Tier } from '@/lib/tier'
 import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
-import { canUseDealRadar } from '@/lib/feature-access'
+import { canUseDealRadar, canBrowseDealRadar } from '@/lib/feature-access'
 
 interface DealCampaign { commissionPct: number; brand: string | null; detailsUrl: string | null }
 interface DealVerdict { quality: string; label: string | null; typical: number | null; allTimeLow: number | null }
@@ -253,7 +253,7 @@ export default function DealRadarPage() {
 
   // Open to all paid tiers (creator/studio/pro/admin) — graduated out of Labs.
   const isPaid = canUseDealRadar(tier)
-  const canView = isPaid
+  const canView = canBrowseDealRadar(tier)
 
   const PAGE_SIZE = 48 // matches the API
 
@@ -309,24 +309,9 @@ export default function DealRadarPage() {
   if (tier === null) {
     return <div className="flex items-center justify-center py-32"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
   }
-  if (!isPaid) {
-    return (
-      <div className="max-w-3xl mx-auto px-4 py-10">
-        <FeatureLockedCard
-          icon={<Radar size={28} />}
-          feature="Amazon Deal Radar"
-          description="An always-on feed of live Amazon deals in your niche, cross-checked against Creator Connections, Levanta, and PartnerBoost bounties — one click turns any deal into a blog post you can push to social."
-          bullets={[
-            'Live price-drop feed, searchable and filterable by category, discount, and rating',
-            'A "double-win" ticker: on sale AND paying an elevated commission',
-            'Every link carries your own Amazon Associates tag',
-          ]}
-          requiredTier="creator"
-          currentTier={tier}
-        />
-      </div>
-    )
-  }
+  // Note: BROWSING is open to every plan (incl. free) — the feed is the
+  // discovery magnet. Posting a deal is paid, so when !isPaid we still render
+  // the full feed but swap every action for an upgrade prompt (see `locked`).
 
   const hasFilters = q.trim() || category !== '' || minDiscount > 0 || minRating > 0 || hasCampaign || realOnly || lightningOnly
   const clearFilters = () => { setQ(''); setCategory(''); setMinDiscount(0); setMinRating(0); setHasCampaign(false); setRealOnly(false); setLightningOnly(false); setSort('opportunity') }
@@ -369,12 +354,24 @@ export default function DealRadarPage() {
           <p className="text-sm text-muted-foreground mt-1">Live Amazon deals in your niche. Turn any one into a blog post, then push it to social.</p>
         </div>
         <div className="flex items-center gap-2">
-          <DigestToggle />
+          {isPaid && <DigestToggle />}
           <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
           </Button>
         </div>
       </div>
+
+      {/* Free plan: browsing is open; posting is paid. */}
+      {!isPaid && (
+        <a href="/billing" className="flex items-center gap-2.5 rounded-xl border border-violet-500/30 bg-violet-500/10 px-4 py-3 text-sm transition hover:bg-violet-500/15">
+          <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-violet-600 text-white flex-shrink-0"><Sparkles size={14} /></span>
+          <span className="text-foreground">
+            <strong>You&apos;re on the free plan — browse every deal.</strong>{' '}
+            <span className="text-muted-foreground">Upgrade to turn any deal into a blog post or social post in one click.</span>
+          </span>
+          <ArrowRight size={15} className="ml-auto flex-shrink-0 text-violet-600" />
+        </a>
+      )}
 
       {/* Full walkthrough — auto-opens the first time, reopenable via "Full guide". */}
       {showGuide && <DealRadarGuide onClose={closeGuide} />}
@@ -390,7 +387,7 @@ export default function DealRadarPage() {
           </div>
           <div className="flex gap-3 overflow-x-auto pb-1">
             {ticker.map((d) => (
-              <TickerCard key={d.asin} deal={d} onQuickPost={setQuickPostDeal} />
+              <TickerCard key={d.asin} deal={d} onQuickPost={setQuickPostDeal} locked={!isPaid} />
             ))}
           </div>
         </div>
@@ -485,7 +482,7 @@ export default function DealRadarPage() {
       ) : (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-            {deals.map((d) => <DealCard key={d.asin} deal={d} onQuickPost={setQuickPostDeal} selected={selected.has(d.asin)} onToggleSelect={toggleSelect} />)}
+            {deals.map((d) => <DealCard key={d.asin} deal={d} onQuickPost={setQuickPostDeal} selected={selected.has(d.asin)} onToggleSelect={isPaid ? toggleSelect : undefined} locked={!isPaid} />)}
           </div>
           {hasMore && (
             <div className="flex justify-center pt-6">
@@ -503,8 +500,8 @@ export default function DealRadarPage() {
 
       {quickPostDeal && <QuickPostModal deal={quickPostDeal} onClose={() => setQuickPostDeal(null)} />}
 
-      {/* Floating roundup bar — appears once a deal is selected. */}
-      {selected.size >= 1 && (
+      {/* Floating roundup bar — appears once a deal is selected. Paid only. */}
+      {isPaid && selected.size >= 1 && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 rounded-full border bg-white dark:bg-[#16161a] shadow-2xl px-4 py-2.5">
           <span className="text-sm font-medium inline-flex items-center gap-1.5"><Layers size={15} /> {selected.size} selected</span>
           <button onClick={createRoundup} disabled={selected.size < 2 || roundupBusy}
@@ -554,7 +551,7 @@ function useMakePost(d: Deal) {
   return { gen, postUrl, makePost }
 }
 
-function DealCard({ deal: d, onQuickPost, selected = false, onToggleSelect }: { deal: Deal; onQuickPost: (d: Deal) => void; selected?: boolean; onToggleSelect?: (asin: string) => void }) {
+function DealCard({ deal: d, onQuickPost, selected = false, onToggleSelect, locked = false }: { deal: Deal; onQuickPost: (d: Deal) => void; selected?: boolean; onToggleSelect?: (asin: string) => void; locked?: boolean }) {
   const { gen, postUrl, makePost } = useMakePost(d)
   return (
     <div className="rounded-xl border bg-card overflow-hidden flex flex-col">
@@ -617,6 +614,22 @@ function DealCard({ deal: d, onQuickPost, selected = false, onToggleSelect }: { 
               <Check size={12} /> You&apos;ve posted this — view it
             </a>
           )}
+          {locked ? (
+            /* Free plan: browse only. Posting a deal is a paid action. */
+            <>
+              <a href="/billing"
+                className="w-full inline-flex items-center justify-center gap-1.5 text-xs font-semibold rounded-full bg-violet-600 hover:bg-violet-700 text-white py-2 transition">
+                <Sparkles size={13} /> Upgrade to post this deal
+              </a>
+              <div className="flex items-center justify-end pt-0.5">
+                <a href={d.amazonUrl} target="_blank" rel="noopener noreferrer"
+                   className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground" title="View on Amazon">
+                  View on Amazon <ExternalLink size={12} />
+                </a>
+              </div>
+            </>
+          ) : (
+          <>
           {/* Primary actions — each full-width so labels never wrap. */}
           {gen === 'done' && postUrl ? (
             <a href={postUrl} target="_blank" rel="noopener noreferrer"
@@ -652,6 +665,8 @@ function DealCard({ deal: d, onQuickPost, selected = false, onToggleSelect }: { 
               View on Amazon <ExternalLink size={12} />
             </a>
           </div>
+          </>
+          )}
         </div>
       </div>
     </div>
@@ -661,7 +676,7 @@ function DealCard({ deal: d, onQuickPost, selected = false, onToggleSelect }: { 
 // Compact card for the "double wins" ticker. Same two actions as DealCard —
 // make a blog post (inline) or quick-post to socials (opens the modal) — plus a
 // direct Amazon link, in a small horizontal-scroll footprint.
-function TickerCard({ deal: d, onQuickPost }: { deal: Deal; onQuickPost: (d: Deal) => void }) {
+function TickerCard({ deal: d, onQuickPost, locked = false }: { deal: Deal; onQuickPost: (d: Deal) => void; locked?: boolean }) {
   const { gen, postUrl, makePost } = useMakePost(d)
   return (
     <div className="shrink-0 w-48 rounded-lg bg-card text-[color:var(--text)] border border-emerald-500/20 p-2 flex flex-col">
@@ -675,21 +690,30 @@ function TickerCard({ deal: d, onQuickPost }: { deal: Deal; onQuickPost: (d: Dea
         {d.postedUrl && <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 inline-flex items-center gap-0.5"><Check size={9} /> Posted</span>}
       </div>
       <div className="mt-auto flex items-center gap-1.5">
-        {gen === 'done' && postUrl ? (
-          <a href={postUrl} target="_blank" rel="noopener noreferrer"
-             className="flex-1 inline-flex items-center justify-center gap-1 text-[11px] font-semibold rounded-full bg-emerald-600 text-white py-1.5">
-            <Check size={12} /> View post
+        {locked ? (
+          <a href="/billing"
+             className="flex-1 inline-flex items-center justify-center gap-1 text-[11px] font-semibold rounded-full bg-violet-600 hover:bg-violet-700 text-white py-1.5 transition">
+            <Sparkles size={11} /> Upgrade to post
           </a>
         ) : (
-          <button onClick={makePost} disabled={gen === 'working'}
-             className="flex-1 inline-flex items-center justify-center gap-1 text-[11px] font-semibold rounded-full bg-violet-600 hover:bg-violet-700 text-white py-1.5 disabled:opacity-60 transition">
-            {gen === 'working' ? <><Loader2 size={11} className="animate-spin" /> Writing…</> : <>Blog</>}
-          </button>
+          <>
+            {gen === 'done' && postUrl ? (
+              <a href={postUrl} target="_blank" rel="noopener noreferrer"
+                 className="flex-1 inline-flex items-center justify-center gap-1 text-[11px] font-semibold rounded-full bg-emerald-600 text-white py-1.5">
+                <Check size={12} /> View post
+              </a>
+            ) : (
+              <button onClick={makePost} disabled={gen === 'working'}
+                 className="flex-1 inline-flex items-center justify-center gap-1 text-[11px] font-semibold rounded-full bg-violet-600 hover:bg-violet-700 text-white py-1.5 disabled:opacity-60 transition">
+                {gen === 'working' ? <><Loader2 size={11} className="animate-spin" /> Writing…</> : <>Blog</>}
+              </button>
+            )}
+            <button onClick={() => onQuickPost(d)} title="Quick post to socials"
+               className="flex-1 inline-flex items-center justify-center gap-1 text-[11px] font-semibold rounded-full bg-orange-500 hover:bg-orange-600 text-white py-1.5 transition">
+              <Send size={12} /> Social
+            </button>
+          </>
         )}
-        <button onClick={() => onQuickPost(d)} title="Quick post to socials"
-           className="flex-1 inline-flex items-center justify-center gap-1 text-[11px] font-semibold rounded-full bg-orange-500 hover:bg-orange-600 text-white py-1.5 transition">
-          <Send size={12} /> Social
-        </button>
       </div>
     </div>
   )

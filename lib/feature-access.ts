@@ -90,10 +90,18 @@ export const NAV_ACCESS = {
   },
 } as const satisfies Record<string, NavAccessRule>
 
-/** Can this tier use Amazon Deal Radar (browse, quick-post, roundup, and make a
- *  deal blog post)? Single source of truth — all four routes call this. */
+/** Can this tier ACT on Deal Radar — quick-post, roundup, make a deal blog post,
+ *  weekly digest? Paid only. Single source of truth; the action routes call this. */
 export function canUseDealRadar(tier: Tier | null | undefined): boolean {
   return canSeeNav('dealRadar', tier)
+}
+
+/** Can this tier BROWSE the Deal Radar feed? Every signed-in plan, including the
+ *  free 'trial' plan — read-only discovery is the free-tier magnet and costs
+ *  ~nothing to serve (a shared, cron-refreshed cache). Acting on a deal still
+ *  requires canUseDealRadar() (paid). Gates GET /api/deal-radar + the page. */
+export function canBrowseDealRadar(tier: Tier | null | undefined): boolean {
+  return !!tier
 }
 
 export type FeatureKey = keyof typeof NAV_ACCESS

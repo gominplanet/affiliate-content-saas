@@ -41,6 +41,7 @@ import { pingIndexNowForUrl } from '@/lib/seo-on-publish'
 import { SHOT_PERSPECTIVES, sectionHeadings, generateBodyImagePrompts } from '@/lib/blog-image-prompts'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { toUserMessage } from '@/lib/friendly-error'
+import { freeTierGenerationBlock } from '@/lib/free-tier-gate'
 
 /** Distinct camera perspectives cycled across a post's in-body images so
  *  no two shots look alike — each Kontext/flux call gets a different angle
@@ -424,6 +425,11 @@ async function handleGenerate(request: Request) {
   // Function-scope tier (the rewrite gate above has its own narrow copy).
   // Drives the per-tier in-body image ceiling via allowedBlogImages.
   const tier = normalizeTier(wp?.tier)
+
+  // Free plan: require a connected YouTube channel + WordPress site before any
+  // AI spend (qualification bar / abuse control). Paid tiers pass instantly.
+  const freeBlock = await freeTierGenerationBlock(supabase, ownerId, tier)
+  if (freeBlock) return NextResponse.json({ error: freeBlock, code: 'connect_required', currentTier: tier }, { status: 403 })
   // Multi-site: resolve which WordPress site this generation publishes to.
   // Priority order:
   //   1. body.siteId — caller explicitly picked a site (UI dropdown).

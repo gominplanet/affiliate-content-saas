@@ -13,7 +13,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier, type Tier } from '@/lib/tier'
-import { canUseDealRadar } from '@/lib/feature-access'
+import { canBrowseDealRadar } from '@/lib/feature-access'
 
 export const runtime = 'nodejs'
 
@@ -88,10 +88,13 @@ export async function GET(request: Request) {
       .eq('user_id', user.id).maybeSingle()
     const tier = normalizeTier(intRow?.tier) as Tier
 
-    // Open to all paid tiers (creator/studio/pro/admin). Single source of truth.
-    if (!canUseDealRadar(tier)) {
+    // BROWSING the feed is open to every signed-in plan (incl. the free tier) —
+    // read-only discovery costs ~nothing (shared cron cache). ACTING on a deal
+    // (quick-post / roundup / make a blog post / digest) stays paid, gated in
+    // those routes via canUseDealRadar().
+    if (!canBrowseDealRadar(tier)) {
       return NextResponse.json({
-        error: 'Amazon Deal Radar is available on paid plans.',
+        error: 'Please sign in to browse Amazon Deal Radar.',
         limitReached: true, currentTier: tier,
       }, { status: 403 })
     }

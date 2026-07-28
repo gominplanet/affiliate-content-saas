@@ -55,7 +55,7 @@ export type Social = 'facebook' | 'threads' | 'linkedin' | 'pinterest' | 'twitte
 
 export const TIERS = {
   trial:   {
-    label: 'Free Trial',
+    label: 'Free',
     price: 0,
     regularPrice: 0,
     /** Hard monthly AI-spend ceiling (USD of real ai_usage cost). When an
