@@ -39,5 +39,10 @@ everything from your MVP Affiliate dashboard.
 
 == Changelog ==
 
+= 1.4.30 =
+* Cleaner, more compact footer: brand column with logo + tagline + socials,
+  categories in a balanced 2-column grid (deduped + capped), links column only
+  when it has content, and a slim single-row bottom bar (copyright + disclosure).
+
 = 1.0.0 =
 * Initial release
