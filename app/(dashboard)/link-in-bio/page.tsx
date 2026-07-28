@@ -9,6 +9,7 @@ import { toast } from 'sonner'
 import {
   Link2, Loader2, ExternalLink, Copy, Plus, Trash2, Eye, EyeOff,
   ArrowUp, ArrowDown, Sparkles, Check, Globe,
+  Youtube, Instagram, Facebook, Twitter, Music2, AtSign, ShoppingBag,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
@@ -16,7 +17,17 @@ import { createBrowserClient } from '@/lib/supabase/client'
 import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
 import { type Tier } from '@/lib/tier'
 import { canUseDealRadar } from '@/lib/feature-access'
-import { LINK_THEMES, type LinkPage, type LinkPageItem } from '@/lib/link-in-bio'
+import { LINK_THEMES, LINK_PRESETS, presetFor, type LinkPage, type LinkPageItem } from '@/lib/link-in-bio'
+
+// Brand glyph for a link icon slug — used in the editor list + preset chips.
+function LinkGlyph({ slug, size = 15 }: { slug: string | null; size?: number }) {
+  const map: Record<string, React.ReactNode> = {
+    youtube: <Youtube size={size} />, instagram: <Instagram size={size} />, facebook: <Facebook size={size} />,
+    x: <Twitter size={size} />, tiktok: <Music2 size={size} />, threads: <AtSign size={size} />,
+    pinterest: <Globe size={size} />, website: <Globe size={size} />,
+  }
+  return <>{map[slug || ''] || <Link2 size={size} />}</>
+}
 
 export default function LinkInBioPage() {
   const [tier, setTier] = useState<Tier | null>(null)
@@ -50,6 +61,11 @@ export default function LinkInBioPage() {
   const [newTitle, setNewTitle] = useState('')
   const [newUrl, setNewUrl] = useState('')
   const [newImg, setNewImg] = useState('')
+  const [blogUrl, setBlogUrl] = useState<string | null>(null)
+  // Add-a-link (Linktree-style brand link) draft.
+  const [linkIcon, setLinkIcon] = useState('link')
+  const [linkTitle, setLinkTitle] = useState('')
+  const [linkUrl, setLinkUrl] = useState('')
 
   const load = useCallback(async () => {
     try {
@@ -61,6 +77,7 @@ export default function LinkInBioPage() {
         setOrigin(data.origin || (typeof window !== 'undefined' ? window.location.origin : ''))
         setAvatarUrl(data.page?.avatar_url || '')
         if (data.brand) setBrand(data.brand)
+        setBlogUrl(data.blogUrl || null)
       }
     } catch { /* leave empty */ } finally { setLoading(false) }
   }, [])
@@ -106,6 +123,26 @@ export default function LinkInBioPage() {
     } catch { toast.error('Could not add.') } finally { setBusy(false) }
   }
 
+  const pickPreset = (slug: string) => {
+    const p = presetFor(slug)
+    setLinkIcon(p.slug); setLinkTitle(p.label)
+    if (p.slug === 'website' && blogUrl && !linkUrl) setLinkUrl(blogUrl)
+  }
+  const addLink = async () => {
+    if (!linkTitle.trim() || !linkUrl.trim()) { toast.error('Pick a platform and paste its link.'); return }
+    setBusy(true)
+    try {
+      const res = await fetch('/api/link-in-bio/items', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: 'link', icon: linkIcon, title: linkTitle, url: linkUrl }),
+      })
+      const data = await res.json()
+      if (!res.ok) { toast.error(data.error || 'Could not add.'); return }
+      setItems((x) => [...x, data.item]); setLinkTitle(''); setLinkUrl(''); setLinkIcon('link')
+      toast.success('Link added.')
+    } catch { toast.error('Could not add.') } finally { setBusy(false) }
+  }
+
   const patchItem = async (id: string, patch: Partial<LinkPageItem>) => {
     setItems((x) => x.map((it) => (it.id === id ? { ...it, ...patch } : it))) // optimistic
     try { await fetch('/api/link-in-bio/items', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, ...patch }) }) } catch { /* revert on reload */ }
@@ -114,14 +151,42 @@ export default function LinkInBioPage() {
     setItems((x) => x.filter((it) => it.id !== id))
     try { await fetch('/api/link-in-bio/items', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) }) } catch { /* no-op */ }
   }
-  const move = async (idx: number, dir: -1 | 1) => {
-    const next = [...items]
+  // Reorder within a kind (links reorder among links, products among products).
+  const move = async (item: LinkPageItem, dir: -1 | 1) => {
+    const isLink = item.kind === 'link'
+    const same = items.filter((x) => (x.kind === 'link') === isLink)
+    const idx = same.findIndex((x) => x.id === item.id)
     const j = idx + dir
-    if (j < 0 || j >= next.length) return
-    ;[next[idx], next[j]] = [next[j], next[idx]]
+    if (j < 0 || j >= same.length) return
+    const s = [...same]; ;[s[idx], s[j]] = [s[j], s[idx]]
+    const others = items.filter((x) => (x.kind === 'link') !== isLink)
+    const next = [...s, ...others]
     setItems(next)
     try { await fetch('/api/link-in-bio/items', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ order: next.map((it) => it.id) }) }) } catch { /* no-op */ }
   }
+
+  const renderItem = (it: LinkPageItem, i: number, list: LinkPageItem[]) => (
+    <li key={it.id} className={`flex items-center gap-3 py-2.5 ${it.hidden ? 'opacity-50' : ''}`}>
+      <div className="flex flex-col">
+        <button onClick={() => move(it, -1)} disabled={i === 0} className="text-muted-foreground hover:text-foreground disabled:opacity-30"><ArrowUp size={14} /></button>
+        <button onClick={() => move(it, 1)} disabled={i === list.length - 1} className="text-muted-foreground hover:text-foreground disabled:opacity-30"><ArrowDown size={14} /></button>
+      </div>
+      {it.kind === 'link'
+        ? <span className="h-11 w-11 rounded-lg border shrink-0 flex items-center justify-center" style={{ color: presetFor(it.icon).color }}><LinkGlyph slug={it.icon} size={18} /></span>
+        : (it.image_url
+            ? <img src={it.image_url} alt="" className="h-11 w-11 rounded-lg object-contain bg-white border shrink-0" />
+            : <div className="h-11 w-11 rounded-lg bg-muted border shrink-0 flex items-center justify-center text-muted-foreground"><ShoppingBag size={16} /></div>)}
+      <div className="min-w-0 flex-1">
+        <div className="text-sm font-medium truncate">{it.title}</div>
+        <div className="text-xs text-muted-foreground truncate">{it.url}</div>
+      </div>
+      {it.clicks > 0 && <span className="text-[11px] text-muted-foreground shrink-0">{it.clicks} clicks</span>}
+      <button onClick={() => patchItem(it.id, { hidden: !it.hidden })} title={it.hidden ? 'Show' : 'Hide'} className="text-muted-foreground hover:text-foreground shrink-0">
+        {it.hidden ? <EyeOff size={15} /> : <Eye size={15} />}
+      </button>
+      <button onClick={() => deleteItem(it.id)} title="Delete" className="text-muted-foreground hover:text-red-500 shrink-0"><Trash2 size={15} /></button>
+    </li>
+  )
 
   const publicUrl = page ? `${origin}/s/${page.handle}` : ''
   const copyUrl = () => { navigator.clipboard?.writeText(publicUrl); toast.success('Link copied — paste it in your bio.') }
@@ -234,21 +299,48 @@ export default function LinkInBioPage() {
             </div>
           </div>
 
-          {/* Tiles */}
+          {/* Brand links (Linktree-style) */}
+          <div className="rounded-2xl border bg-card p-5 space-y-3">
+            <div className="text-sm font-semibold">Brand links <span className="text-muted-foreground font-normal">· your socials, channel & blog</span></div>
+            <div className="flex flex-wrap gap-1.5">
+              {LINK_PRESETS.map((p) => (
+                <button key={p.slug} type="button" onClick={() => pickPreset(p.slug)}
+                  className={`inline-flex items-center gap-1.5 text-xs rounded-full border px-2.5 py-1.5 transition ${linkIcon === p.slug ? 'border-foreground/40 bg-accent' : 'hover:bg-accent'}`}>
+                  <span style={{ color: p.color }}><LinkGlyph slug={p.slug} size={13} /></span> {p.label}
+                </button>
+              ))}
+            </div>
+            <div className="grid sm:grid-cols-[1fr_1.4fr_auto] gap-2 items-end">
+              <label className="text-[11px] font-medium text-muted-foreground">Label
+                <input value={linkTitle} onChange={(e) => setLinkTitle(e.target.value)} placeholder="e.g. YouTube" className="mt-1 w-full px-2.5 py-1.5 text-sm rounded-lg border bg-background" />
+              </label>
+              <label className="text-[11px] font-medium text-muted-foreground">URL
+                <input value={linkUrl} onChange={(e) => setLinkUrl(e.target.value)} placeholder={presetFor(linkIcon).placeholder} className="mt-1 w-full px-2.5 py-1.5 text-sm rounded-lg border bg-background" />
+              </label>
+              <Button size="sm" onClick={addLink} disabled={busy}><Plus className="h-4 w-4 mr-1" /> Add link</Button>
+            </div>
+            {items.filter((it) => it.kind === 'link').length > 0 && (
+              <ul className="divide-y">
+                {items.filter((it) => it.kind === 'link').map((it, i, list) => renderItem(it, i, list))}
+              </ul>
+            )}
+          </div>
+
+          {/* Products */}
           <div className="rounded-2xl border bg-card p-5 space-y-4">
             <div className="flex items-center justify-between gap-2 flex-wrap">
-              <div className="text-sm font-semibold">Your picks <span className="text-muted-foreground font-normal">· {items.length}</span></div>
+              <div className="text-sm font-semibold">Products <span className="text-muted-foreground font-normal">· {items.filter((it) => it.kind !== 'link').length}</span></div>
               <Button size="sm" variant="outline" onClick={importProducts} disabled={importing}>
                 {importing ? <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> Importing…</> : <><Sparkles className="h-4 w-4 mr-1.5" /> Import my posted products</>}
               </Button>
             </div>
 
-            {/* Add manual link */}
+            {/* Add a product manually */}
             <div className="rounded-xl border bg-background p-3 grid sm:grid-cols-[1fr_1fr_auto] gap-2 items-end">
               <label className="text-[11px] font-medium text-muted-foreground">Title
                 <input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="Product name" className="mt-1 w-full px-2.5 py-1.5 text-sm rounded-lg border bg-background" />
               </label>
-              <label className="text-[11px] font-medium text-muted-foreground">Link (any URL — paste your Geniuslink here)
+              <label className="text-[11px] font-medium text-muted-foreground">Link (paste your Geniuslink here)
                 <input value={newUrl} onChange={(e) => setNewUrl(e.target.value)} placeholder="https://…" className="mt-1 w-full px-2.5 py-1.5 text-sm rounded-lg border bg-background" />
               </label>
               <Button size="sm" onClick={addManual} disabled={busy}><Plus className="h-4 w-4 mr-1" /> Add</Button>
@@ -257,30 +349,11 @@ export default function LinkInBioPage() {
               </label>
             </div>
 
-            {items.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-6">No picks yet. Import your posted products, or add a link above.</p>
+            {items.filter((it) => it.kind !== 'link').length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-6">No products yet. Import your posted products, or add one above.</p>
             ) : (
               <ul className="divide-y">
-                {items.map((it, i) => (
-                  <li key={it.id} className={`flex items-center gap-3 py-2.5 ${it.hidden ? 'opacity-50' : ''}`}>
-                    <div className="flex flex-col">
-                      <button onClick={() => move(i, -1)} disabled={i === 0} className="text-muted-foreground hover:text-foreground disabled:opacity-30"><ArrowUp size={14} /></button>
-                      <button onClick={() => move(i, 1)} disabled={i === items.length - 1} className="text-muted-foreground hover:text-foreground disabled:opacity-30"><ArrowDown size={14} /></button>
-                    </div>
-                    {it.image_url
-                      ? <img src={it.image_url} alt="" className="h-11 w-11 rounded-lg object-contain bg-white border shrink-0" />
-                      : <div className="h-11 w-11 rounded-lg bg-muted border shrink-0" />}
-                    <div className="min-w-0 flex-1">
-                      <div className="text-sm font-medium truncate">{it.title}</div>
-                      <div className="text-xs text-muted-foreground truncate">{it.url}</div>
-                    </div>
-                    {it.clicks > 0 && <span className="text-[11px] text-muted-foreground shrink-0">{it.clicks} clicks</span>}
-                    <button onClick={() => patchItem(it.id, { hidden: !it.hidden })} title={it.hidden ? 'Show' : 'Hide'} className="text-muted-foreground hover:text-foreground shrink-0">
-                      {it.hidden ? <EyeOff size={15} /> : <Eye size={15} />}
-                    </button>
-                    <button onClick={() => deleteItem(it.id)} title="Delete" className="text-muted-foreground hover:text-red-500 shrink-0"><Trash2 size={15} /></button>
-                  </li>
-                ))}
+                {items.filter((it) => it.kind !== 'link').map((it, i, list) => renderItem(it, i, list))}
               </ul>
             )}
           </div>

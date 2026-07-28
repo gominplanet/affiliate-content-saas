@@ -30,11 +30,13 @@ export async function GET(request: Request) {
     items = data ?? []
   }
   // Brand logo/headshot + name so the editor can offer a one-tap "use my logo"
-  // instead of pasting a URL.
+  // instead of pasting a URL, plus the blog URL to prefill a "My blog" link.
   const { data: brand } = await sb.from('brand_profiles').select('name,logo_url,headshot_url').eq('user_id', user.id).maybeSingle()
+  const { data: intg } = await sb.from('integrations').select('wordpress_url').eq('user_id', user.id).maybeSingle()
   return NextResponse.json({
     ok: true, page: page ?? null, items, origin: new URL(request.url).origin,
     brand: { name: brand?.name ?? null, logoUrl: brand?.logo_url ?? null, headshotUrl: brand?.headshot_url ?? null },
+    blogUrl: (intg?.wordpress_url as string | null) || null,
   })
 }
 

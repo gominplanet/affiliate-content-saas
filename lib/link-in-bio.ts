@@ -18,7 +18,10 @@ export interface LinkPage {
 export interface LinkPageItem {
   id: string
   page_id: string
+  kind: string           // 'product' (grid tile) | 'link' (full-width button)
   title: string
+  subtitle: string | null
+  icon: string | null    // platform slug for links (see LINK_ICONS)
   image_url: string | null
   url: string
   asin: string | null
@@ -26,6 +29,24 @@ export interface LinkPageItem {
   position: number
   hidden: boolean
   clicks: number
+}
+
+// Brand-link presets: the platforms creators most want on a link-in-bio page.
+// `color` tints the icon/button accent; `label` is the default button text; the
+// icon glyph is mapped to a lucide component in the UI (keyed by `slug`).
+export interface LinkPreset { slug: string; label: string; color: string; placeholder: string }
+export const LINK_PRESETS: LinkPreset[] = [
+  { slug: 'youtube',   label: 'YouTube',   color: '#FF0000', placeholder: 'https://youtube.com/@yourchannel' },
+  { slug: 'instagram', label: 'Instagram', color: '#E4405F', placeholder: 'https://instagram.com/yourhandle' },
+  { slug: 'tiktok',    label: 'TikTok',    color: '#111114', placeholder: 'https://tiktok.com/@yourhandle' },
+  { slug: 'website',   label: 'My blog',   color: '#0EA5E9', placeholder: 'https://yourblog.com' },
+  { slug: 'x',         label: 'X',         color: '#111114', placeholder: 'https://x.com/yourhandle' },
+  { slug: 'facebook',  label: 'Facebook',  color: '#1877F2', placeholder: 'https://facebook.com/yourpage' },
+  { slug: 'pinterest', label: 'Pinterest', color: '#E60023', placeholder: 'https://pinterest.com/yourhandle' },
+  { slug: 'threads',   label: 'Threads',   color: '#111114', placeholder: 'https://threads.net/@yourhandle' },
+]
+export function presetFor(slug: string | null | undefined): LinkPreset {
+  return LINK_PRESETS.find((p) => p.slug === slug) || { slug: 'link', label: 'Link', color: '#7C3AED', placeholder: 'https://…' }
 }
 
 // Theme presets — page background + card + text, tuned for a phone-first bio
