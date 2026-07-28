@@ -27,6 +27,22 @@ import {
   Radar, Coins,
 } from 'lucide-react'
 
+// Per-section accent presets. Card icon badges + header pills read from
+// --accent-soft / --accent-text, so wrapping a section in <Accent vars={…}>
+// recolors its cards without touching markup. Default (purple) lives in the
+// palettes below.
+const A_ORANGE = { ['--accent-soft' as string]: 'rgba(249,115,22,0.14)', ['--accent-text' as string]: '#F97316' }
+const A_TEAL = { ['--accent-soft' as string]: 'rgba(34,211,238,0.16)', ['--accent-text' as string]: '#22D3EE' }
+const A_GREEN = { ['--accent-soft' as string]: 'rgba(16,185,129,0.14)', ['--accent-text' as string]: '#10B981' }
+const A_BLUE = { ['--accent-soft' as string]: 'rgba(59,130,246,0.14)', ['--accent-text' as string]: '#3B82F6' }
+const A_PINK = { ['--accent-soft' as string]: 'rgba(236,72,153,0.14)', ['--accent-text' as string]: '#EC4899' }
+const A_AMBER = { ['--accent-soft' as string]: 'rgba(245,158,11,0.14)', ['--accent-text' as string]: '#F59E0B' }
+
+/** Recolor a section's card accents (icon badges + header pills). */
+function Accent({ vars, children }: { vars: React.CSSProperties; children: React.ReactNode }) {
+  return <div style={vars}>{children}</div>
+}
+
 // Local CSS-var override for a DARK emphasis band inside the otherwise-light
 // page. Any section wrapped in <DarkBand> flips its text/surface tokens so
 // var(--text)/var(--surface)/etc. read correctly on a dark background.
@@ -40,13 +56,16 @@ const DARK_SECTION_VARS: React.CSSProperties = {
   ['--text-subtle' as string]: 'rgba(255,255,255,0.55)',
   ['--text-faint' as string]: 'rgba(255,255,255,0.42)',
   ['--card-shadow' as string]: 'inset 0 1px 0 rgba(255,255,255,0.08), 0 8px 30px rgba(0,0,0,0.35)',
+  ['--accent-soft' as string]: 'rgba(124,58,237,0.18)',
+  ['--accent-text' as string]: '#C4B5FD',
 }
 
 /** Wrap a section to give it a bold dark (or gradient) background — used to
- *  break up the bright page and make key sections punch. */
-function DarkBand({ children, bg }: { children: React.ReactNode; bg?: string }) {
+ *  break up the bright page and make key sections punch. Pass `accent` to also
+ *  recolor its card accents. */
+function DarkBand({ children, bg, accent }: { children: React.ReactNode; bg?: string; accent?: React.CSSProperties }) {
   return (
-    <div style={{ ...DARK_SECTION_VARS, background: bg ?? '#0D0D11', color: 'var(--text)' }} className="relative overflow-hidden">
+    <div style={{ ...DARK_SECTION_VARS, ...accent, background: bg ?? '#0D0D11', color: 'var(--text)' }} className="relative overflow-hidden">
       {children}
     </div>
   )
@@ -67,6 +86,8 @@ const LIGHT_VARS: React.CSSProperties = {
   ['--line-color' as string]: 'rgba(124,58,237,0.55)',
   ['--line-glow' as string]: 'rgba(124,58,237,0.18)',
   ['--center-bg' as string]: 'linear-gradient(135deg, #7C3AED, #C026D3)',
+  ['--accent-soft' as string]: 'rgba(124,58,237,0.12)',
+  ['--accent-text' as string]: '#7C3AED',
 }
 
 /** Hub diagram constants. Computed once so the SVG and the absolutely
@@ -174,22 +195,22 @@ export default function LandingPreview() {
       <DemoVideoSection />
       <RolesSection />
       <WorkflowSection />
-      <DarkBand bg="linear-gradient(160deg, #1A0B2E 0%, #2A0E3A 45%, #3A0E22 100%)">
+      <DarkBand bg="linear-gradient(160deg, #1A0B2E 0%, #2A0E3A 45%, #3A0E22 100%)" accent={A_ORANGE}>
         <DealRadarSection />
       </DarkBand>
       <AsinSection />
-      <BeforeAfterSection />
+      <Accent vars={A_AMBER}><BeforeAfterSection /></Accent>
       <GroundedSection />
-      <DarkBand bg="linear-gradient(160deg, #120A2E 0%, #1E0E3E 100%)">
+      <DarkBand bg="linear-gradient(160deg, #120A2E 0%, #1E0E3E 100%)" accent={A_TEAL}>
         <DiscoverabilitySection />
       </DarkBand>
-      <BrandedSiteSection />
-      <BusinessLayerSection />
-      <PartnerNetworksSection />
+      <Accent vars={A_BLUE}><BrandedSiteSection /></Accent>
+      <Accent vars={A_GREEN}><BusinessLayerSection /></Accent>
+      <Accent vars={A_PINK}><PartnerNetworksSection /></Accent>
       <PricingSection />
       <ProofSection />
       <FAQSection />
-      <DarkBand bg="linear-gradient(160deg, #16091E 0%, #2A0E3A 55%, #3A0E22 100%)">
+      <DarkBand bg="linear-gradient(160deg, #16091E 0%, #2A0E3A 55%, #3A0E22 100%)" accent={A_PINK}>
         <FinalCTASection />
       </DarkBand>
       <Footer />
@@ -526,7 +547,7 @@ function BusinessLayerSection() {
         <div className="text-center max-w-3xl mx-auto mb-14">
           <span
             className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-medium uppercase tracking-[0.18em] mb-5"
-            style={{ backgroundColor: 'rgba(124,58,237,0.12)', color: '#9D6BFF', border: '1px solid rgba(124,58,237,0.25)' }}
+            style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent-text)', border: '1px solid rgba(124,58,237,0.25)' }}
           >
             <BadgePercent size={10} />
             The business layer
@@ -547,11 +568,11 @@ function BusinessLayerSection() {
           {BUSINESS_CARDS.map((c) => (
             <div key={c.title} className="rounded-2xl border p-6" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}>
               <div className="flex items-center gap-2 mb-3">
-                <span className="inline-flex items-center justify-center w-9 h-9 rounded-xl" style={{ backgroundColor: 'rgba(124,58,237,0.12)', color: '#9D6BFF' }}>
+                <span className="inline-flex items-center justify-center w-9 h-9 rounded-xl" style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent-text)' }}>
                   {c.icon}
                 </span>
                 {c.pro && (
-                  <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(124,58,237,0.12)', color: '#9D6BFF' }}>
+                  <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full" style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent-text)' }}>
                     Pro
                   </span>
                 )}
@@ -652,7 +673,7 @@ function DiscoverabilitySection() {
         <div className="text-center max-w-3xl mx-auto mb-14">
           <span
             className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-medium uppercase tracking-[0.18em] mb-5"
-            style={{ backgroundColor: 'rgba(124,58,237,0.12)', color: '#9D6BFF', border: '1px solid rgba(124,58,237,0.25)' }}
+            style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent-text)', border: '1px solid rgba(124,58,237,0.25)' }}
           >
             <Sparkles size={10} />
             Found by Google and AI
@@ -671,7 +692,7 @@ function DiscoverabilitySection() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
           {AEO_POINTS.map((p) => (
             <div key={p.title} className="rounded-2xl border p-6" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}>
-              <span className="inline-flex items-center justify-center w-9 h-9 rounded-xl mb-3" style={{ backgroundColor: 'rgba(124,58,237,0.12)', color: '#9D6BFF' }}>
+              <span className="inline-flex items-center justify-center w-9 h-9 rounded-xl mb-3" style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent-text)' }}>
                 {p.icon}
               </span>
               <h3 className="text-[15px] font-semibold mb-1.5" style={{ color: 'var(--text)' }}>{p.title}</h3>
@@ -799,7 +820,7 @@ function AsinSection() {
         <div className="text-center max-w-3xl mx-auto mb-14">
           <span
             className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-medium uppercase tracking-[0.18em] mb-5"
-            style={{ backgroundColor: 'rgba(124,58,237,0.12)', color: '#9D6BFF', border: '1px solid rgba(124,58,237,0.25)' }}
+            style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent-text)', border: '1px solid rgba(124,58,237,0.25)' }}
           >
             <Bookmark size={10} />
             No channel? No problem
@@ -817,7 +838,7 @@ function AsinSection() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           {ASIN_OUTPUTS.map((o) => (
             <div key={o.title} className="rounded-2xl border p-6 flex flex-col" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}>
-              <span className="inline-flex items-center justify-center w-9 h-9 rounded-xl mb-3" style={{ backgroundColor: 'rgba(124,58,237,0.12)', color: '#9D6BFF' }}>
+              <span className="inline-flex items-center justify-center w-9 h-9 rounded-xl mb-3" style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent-text)' }}>
                 {o.icon}
               </span>
               <h3 className="text-[15px] font-semibold mb-1.5" style={{ color: 'var(--text)' }}>{o.title}</h3>
@@ -851,7 +872,7 @@ function PartnerNetworksSection() {
         <div className="text-center max-w-3xl mx-auto mb-14">
           <span
             className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-medium uppercase tracking-[0.18em] mb-5"
-            style={{ backgroundColor: 'rgba(124,58,237,0.12)', color: '#9D6BFF', border: '1px solid rgba(124,58,237,0.25)' }}
+            style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent-text)', border: '1px solid rgba(124,58,237,0.25)' }}
           >
             <Sparkles size={10} />
             Multi-network affiliate
@@ -869,7 +890,7 @@ function PartnerNetworksSection() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           {networks.map((o) => (
             <div key={o.title} className="rounded-2xl border p-6 flex flex-col" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}>
-              <span className="inline-flex items-center justify-center w-9 h-9 rounded-xl mb-3" style={{ backgroundColor: 'rgba(124,58,237,0.12)', color: '#9D6BFF' }}>
+              <span className="inline-flex items-center justify-center w-9 h-9 rounded-xl mb-3" style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent-text)' }}>
                 {o.icon}
               </span>
               <h3 className="text-[15px] font-semibold mb-1.5" style={{ color: 'var(--text)' }}>{o.title}</h3>
