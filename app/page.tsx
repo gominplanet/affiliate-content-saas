@@ -309,15 +309,43 @@ function DealRadarSection() {
             New — Amazon Deal Radar
           </span>
           <h2 className="text-[40px] sm:text-[52px] font-semibold tracking-tight leading-[1.05] mb-5" style={{ color: 'var(--text)' }}>
-            Stop hunting for deals.
+            You’re leaving commissions on the table.
             <br />
             <span style={{ background: 'linear-gradient(135deg, #F97316 0%, #C026D3 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
-              MVP finds them — and sells them.
+              MVP finds them for you.
             </span>
           </h2>
           <p className="text-[16px] sm:text-[17px] leading-relaxed max-w-2xl mx-auto" style={{ color: 'var(--text-soft)' }}>
-            Deal Radar surfaces real, verified Amazon price drops in your niche and hands them to you ready to publish. Turn any one into an SEO post or a social post in a click — then your shoppable Shop page and Instagram Stories you post right from your desktop (no phone, no copy-paste) drive the sale.
+            Right now there are price-verified deals — and elevated-bounty campaigns — live in your niche that you’re just not promoting, because finding them is the grind. Deal Radar scans every program you’re in, <span style={{ color: 'var(--text)' }}>scores each opportunity 0–100</span>, and hands you the winners ready to publish. One click turns any into an SEO post or a native social post; your Shop page and auto Instagram Stories close the sale.
           </p>
+        </div>
+
+        {/* Signature showcase — a real-looking deal card led by the Opportunity
+            Score, next to the "found money" pitch. */}
+        <div className="grid lg:grid-cols-2 gap-10 lg:gap-14 items-center mb-16">
+          <DealRadarCardMock />
+          <div>
+            <h3 className="text-[22px] sm:text-[26px] font-semibold tracking-tight mb-4" style={{ color: 'var(--text)' }}>
+              One number tells you what to promote.
+            </h3>
+            <p className="text-[15px] leading-relaxed mb-5" style={{ color: 'var(--text-soft)' }}>
+              Every deal gets an <strong style={{ color: 'var(--text)' }}>Opportunity Score</strong> — a single 0–100 read that blends discount depth, whether the drop is genuine, real monthly demand, review count and your payout. Start at the top and you’re always promoting the strongest deal first, not guessing.
+            </p>
+            <ul className="space-y-3">
+              {[
+                { icon: <ShieldCheck size={15} />, t: 'Verified real', d: 'Checked against real price history — never a fake “40% off.”' },
+                { icon: <Coins size={15} />, t: 'Double wins', d: 'Deals that are on sale AND paying an elevated Creator Connections, Levanta or PartnerBoost bounty at once.' },
+                { icon: <Zap size={15} />, t: 'One click to content', d: 'Turn any pick into an SEO post or a native social post — link + disclosure handled.' },
+              ].map((r) => (
+                <li key={r.t} className="flex gap-3">
+                  <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg flex-shrink-0" style={{ backgroundColor: 'rgba(249,115,22,0.14)', color: '#F97316' }}>{r.icon}</span>
+                  <p className="text-[14px] leading-snug" style={{ color: 'var(--text-soft)' }}>
+                    <strong style={{ color: 'var(--text)' }}>{r.t}.</strong> {r.d}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
 
         {/* Discover → Post → Shop flow */}
@@ -349,6 +377,49 @@ function DealRadarSection() {
         </div>
       </div>
     </section>
+  )
+}
+
+/** A stylized Deal Radar card for the landing — led by the Opportunity Score
+ *  (the signature metric), with the verified-real check and a double-win
+ *  bounty. Pure markup; theme-aware. */
+function DealRadarCardMock() {
+  return (
+    <div className="relative mx-auto w-full max-w-[420px]">
+      <div aria-hidden className="absolute -inset-6 pointer-events-none" style={{ background: 'radial-gradient(55% 55% at 50% 40%, rgba(249,115,22,0.22), transparent 70%)', filter: 'blur(22px)' }} />
+      <div className="relative rounded-2xl border overflow-hidden" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', boxShadow: '0 30px 60px -22px rgba(24,24,40,0.4)' }}>
+        {/* Product image area + score badge */}
+        <div className="relative h-40 flex items-center justify-center" style={{ background: 'linear-gradient(135deg, rgba(249,115,22,0.12), rgba(192,38,211,0.12))' }}>
+          <ShoppingCart size={40} style={{ color: 'var(--text-faint)' }} />
+          <span className="absolute top-3 left-3 text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-lg inline-flex items-center gap-1 text-white" style={{ background: 'linear-gradient(135deg, #F97316, #C026D3)' }}>
+            <Zap size={11} /> Top pick
+          </span>
+          <div className="absolute top-3 right-3 flex flex-col items-center justify-center w-14 h-14 rounded-2xl text-white" style={{ background: 'linear-gradient(135deg, #10B981, #059669)', boxShadow: '0 8px 20px -6px rgba(16,185,129,0.6)' }}>
+            <span className="text-[20px] font-bold leading-none">92</span>
+            <span className="text-[8px] font-semibold uppercase tracking-wider opacity-90">score</span>
+          </div>
+        </div>
+        {/* Body */}
+        <div className="p-4">
+          <p className="text-[14px] font-semibold leading-snug mb-2" style={{ color: 'var(--text)' }}>Ninja Air Fryer Pro 6-Qt</p>
+          <div className="flex items-baseline gap-2 mb-2">
+            <span className="text-[20px] font-bold" style={{ color: 'var(--text)' }}>$89.99</span>
+            <span className="text-[13px] line-through" style={{ color: 'var(--text-faint)' }}>$159.99</span>
+            <span className="text-[11px] font-bold px-1.5 py-0.5 rounded" style={{ background: 'rgba(249,115,22,0.15)', color: '#F97316' }}>44% off</span>
+          </div>
+          <div className="flex items-center gap-1.5 text-[12px] font-medium mb-1.5" style={{ color: '#10B981' }}>
+            <ShieldCheck size={13} /> Lowest price in 12 months — verified
+          </div>
+          <div className="flex items-center gap-1.5 text-[12px] font-medium mb-3" style={{ color: '#7C3AED' }}>
+            <Coins size={13} /> +8% Creator Connections bounty
+          </div>
+          <div className="flex gap-2">
+            <span className="flex-1 text-center text-[12px] font-semibold py-2 rounded-lg text-white" style={{ background: '#7C3AED' }}>Make blog post</span>
+            <span className="flex-1 text-center text-[12px] font-semibold py-2 rounded-lg border" style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>Quick post</span>
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
 
