@@ -914,30 +914,11 @@ export async function POST(request: Request) {
         .map(m => ({ id: m.id, name: m.name, source_images: m.source_images }))
       // Only one face on file → no need to match, just use it.
       if (autoFaceModels.length === 1) { faceModel = autoFaceModels[0]; autoFaceModels = [] }
-      // When multiple models exist, promote the STARRED photo to source_images[0]
-      // so matchFaceModelToFrame uses the best/clearest shot of each person.
-      // Without this, source_images[0] is arbitrary and can mislead the match.
       if (autoFaceModels.length > 1) {
-        const autoIds = autoFaceModels.map(m => m.id)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data: starredRows } = await (supabase as any)
-          .from('face_model_photos')
-          .select('face_model_id,storage_path')
-          .in('face_model_id', autoIds)
-          .eq('user_id', user.id)
-          .eq('starred', true)
-        const typedStarred = (starredRows as Array<{ face_model_id: string; storage_path: string }> | null) ?? []
-        if (typedStarred.length > 0) {
-          const starredByModel = new Map(typedStarred.map(r => [r.face_model_id, r.storage_path]))
-          autoFaceModels = autoFaceModels.map(m => {
-            const starred = starredByModel.get(m.id)
-            if (!starred) return m
-            return { ...m, source_images: [starred, ...m.source_images.filter((s: string) => s !== starred)] }
-          })
-        }
         // Random mode: pick one at random rather than auto-matching from the frame.
-        // Starred photos are already promoted to source_images[0] above, so the
-        // picked model's best reference photo is already in position.
+        // (Best-reference selection for each model is handled downstream by
+        // getStarredPhotobooth refs — the earlier face_model_photos lookup here
+        // queried a table that doesn't exist, so it only ever no-op'd.)
         if (isRandomFace) {
           faceModel = autoFaceModels[Math.floor(Math.random() * autoFaceModels.length)]
           autoFaceModels = []

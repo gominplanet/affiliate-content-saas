@@ -30,8 +30,8 @@
 //
 //   DELETE /api/deals  body: { id }  (mirrors buying-guides DELETE shape)
 //
-// Tier gate: tier === 'studio' || 'pro' || 'admin'. Trial/Creator → 403
-// code: 'tier_not_allowed'.
+// Tier gate: canUseDealRadar(tier) — all PAID tiers (creator/studio/pro/admin),
+// since Deal Radar posts through this endpoint. Trial → 403 'tier_not_allowed'.
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'

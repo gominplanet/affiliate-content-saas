@@ -423,7 +423,13 @@ export default function ClipFactoryPage() {
     setClip(null); setBurnedUrl(null); setComposedCaption(''); setPosted({}); setStage('create')
   }, [])
 
-  if (gateLoaded && !isPro) {
+  // Hold the UI until the tier gate resolves — otherwise a non-Pro user gets a
+  // flash of the full paid tool before the locked card renders.
+  if (!gateLoaded) {
+    return <div className="flex items-center justify-center py-32"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+  }
+
+  if (!isPro) {
     return (
       <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
         <FeatureLockedCard
