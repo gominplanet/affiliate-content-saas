@@ -33,18 +33,22 @@ export async function POST(request: Request) {
   const pageId = await ownPage(sb, user.id)
   if (!pageId) return NextResponse.json({ error: 'Create your page first.' }, { status: 400 })
 
-  const body = await request.json().catch(() => ({})) as { title?: string; url?: string; image_url?: string }
+  const body = await request.json().catch(() => ({})) as { title?: string; url?: string; image_url?: string; kind?: string; icon?: string; subtitle?: string }
   const title = (body.title || '').trim().slice(0, 120)
   const url = cleanUrl(body.url || '')
   if (!title || !url) return NextResponse.json({ error: 'A title and a link are required.' }, { status: 400 })
+  const kind = body.kind === 'link' ? 'link' : 'product'
 
   const { data: last } = await sb.from('link_page_items').select('position').eq('page_id', pageId)
     .order('position', { ascending: false }).limit(1).maybeSingle()
   const position = (last?.position ?? -1) + 1
 
   const { data, error } = await sb.from('link_page_items').insert({
-    page_id: pageId, user_id: user.id, title, url,
-    image_url: (body.image_url || '').trim() || null, source: 'manual', position,
+    page_id: pageId, user_id: user.id, kind, title, url,
+    image_url: (body.image_url || '').trim() || null,
+    icon: kind === 'link' ? ((body.icon || '').trim() || 'link') : null,
+    subtitle: (body.subtitle || '').trim() || null,
+    source: 'manual', position,
   }).select('*').single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ ok: true, item: data })
