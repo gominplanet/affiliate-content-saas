@@ -109,6 +109,9 @@ export default function DuplicatesPage() {
       />
 
       <div className="max-w-4xl">
+        <DuplicateCategoriesCard />
+
+        <h2 className="text-[15px] font-semibold mb-3" style={{ color: 'var(--text)' }}>Duplicate posts</h2>
         <div className="flex items-center gap-3 mb-4 flex-wrap">
           <Link href="/seo" className="inline-flex items-center gap-1 text-sm text-[#86868b] hover:text-[#7C3AED]">
             <ChevronLeft size={15} /> SEO
@@ -219,5 +222,102 @@ export default function DuplicatesPage() {
         )}
       </div>
     </>
+  )
+}
+
+// ── Duplicate categories cleanup ──────────────────────────────────────────
+// Some sites carry two category terms with the same name (e.g. two "Home &
+// Kitchen"), which splits posts across buckets and looks broken in menus/footer.
+// Preview shows what would merge; Apply reassigns posts onto the keeper (the
+// term with the most posts) and deletes the empty duplicate terms. Posts are
+// never deleted.
+interface CatGroup { name: string; keep: { id: number; count: number }; remove: { id: number; count: number }[]; totalPosts: number }
+
+function DuplicateCategoriesCard() {
+  const [scanning, setScanning] = useState(false)
+  const [ran, setRan] = useState(false)
+  const [groups, setGroups] = useState<CatGroup[]>([])
+  const [applying, setApplying] = useState(false)
+  const [confirm, setConfirm] = useState(false)
+
+  async function scan() {
+    setScanning(true); setConfirm(false)
+    try {
+      const res = await fetch('/api/wordpress/merge-duplicate-categories', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ apply: false }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { toast.error(data.error || 'Couldn’t scan categories.'); return }
+      setGroups((data.groups as CatGroup[]) ?? [])
+      setRan(true)
+    } catch { toast.error('Couldn’t scan categories.') } finally { setScanning(false) }
+  }
+
+  async function apply() {
+    setApplying(true)
+    try {
+      const res = await fetch('/api/wordpress/merge-duplicate-categories', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ apply: true }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { toast.error(data.error || 'Couldn’t merge categories.'); return }
+      toast.success(`Merged ${data.groupsMerged} group${data.groupsMerged === 1 ? '' : 's'} — ${data.postsReassigned} post${data.postsReassigned === 1 ? '' : 's'} moved, ${data.categoriesRemoved} duplicate categor${data.categoriesRemoved === 1 ? 'y' : 'ies'} removed.`)
+      setGroups([]); setConfirm(false)
+    } catch { toast.error('Couldn’t merge categories.') } finally { setApplying(false) }
+  }
+
+  const totalDupes = groups.reduce((n, g) => n + g.remove.length, 0)
+
+  return (
+    <div className="card p-5 mb-8">
+      <h2 className="text-[15px] font-semibold mb-1" style={{ color: 'var(--text)' }}>Duplicate categories</h2>
+      <p className="text-[13px] mb-4" style={{ color: 'var(--text-faint)' }}>
+        Two categories with the same name (e.g. two &ldquo;Home &amp; Kitchen&rdquo;) split your posts and clutter your menus and footer. This keeps the one with the most posts, moves every post onto it, and deletes the empty duplicate. Your posts are never deleted.
+      </p>
+
+      <div className="flex items-center gap-3 flex-wrap">
+        <button onClick={scan} disabled={scanning || applying}
+          className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white bg-[#7C3AED] hover:bg-[#6d28d9] disabled:opacity-60">
+          {scanning ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
+          {scanning ? 'Scanning categories…' : ran ? 'Re-scan' : 'Scan for duplicate categories'}
+        </button>
+
+        {groups.length > 0 && !scanning && (
+          confirm ? (
+            <button onClick={apply} disabled={applying}
+              className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white bg-[#ff3b30] hover:bg-[#e0352b] disabled:opacity-60">
+              {applying ? <Loader2 size={15} className="animate-spin" /> : <GitMerge size={15} />}
+              Confirm — merge {groups.length} group{groups.length === 1 ? '' : 's'}
+            </button>
+          ) : (
+            <button onClick={() => setConfirm(true)} disabled={applying}
+              className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold border disabled:opacity-60"
+              style={{ color: '#7C3AED', borderColor: '#d6c6fb' }}>
+              <GitMerge size={15} /> Merge {totalDupes} duplicate{totalDupes === 1 ? '' : 's'}
+            </button>
+          )
+        )}
+      </div>
+
+      {ran && groups.length === 0 && !scanning && (
+        <div className="flex items-center gap-2 text-[13px] mt-4" style={{ color: 'var(--text-faint)' }}>
+          <CheckCircle2 size={16} className="text-[#34c759]" /> No duplicate categories — your categories are clean.
+        </div>
+      )}
+
+      {groups.length > 0 && (
+        <div className="mt-4 space-y-2">
+          {groups.map((g) => (
+            <div key={g.keep.id} className="flex items-start gap-2 text-[13px] p-3 rounded-lg" style={{ background: 'rgba(124,58,237,0.06)', color: 'var(--text-2)' }}>
+              <Info size={14} className="mt-0.5 flex-shrink-0 text-[#7C3AED]" />
+              <div>
+                Keep <span className="font-semibold text-[#248a3d]">{g.name}</span> ({g.keep.count} post{g.keep.count === 1 ? '' : 's'}) · remove {g.remove.length} duplicate{g.remove.length === 1 ? '' : 's'}
+                {g.totalPosts > 0 && <> — {g.totalPosts} post{g.totalPosts === 1 ? '' : 's'} will move to the keeper</>}.
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
