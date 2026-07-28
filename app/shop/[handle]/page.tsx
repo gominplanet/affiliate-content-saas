@@ -4,7 +4,7 @@
 
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
-import { Youtube, Instagram, Facebook, Twitter, Music2, AtSign, Globe, Link2, ArrowUpRight } from 'lucide-react'
+import { Youtube, Instagram, Facebook, Twitter, Music2, AtSign, Globe, Link2 } from 'lucide-react'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { themeFor, presetFor, type LinkPage, type LinkPageItem } from '@/lib/link-in-bio'
 
@@ -69,23 +69,20 @@ export default async function BioPage({ params }: { params: Promise<{ handle: st
           {page.bio && <p style={{ fontSize: 15, color: t.sub, margin: '10px auto 0', maxWidth: 440, lineHeight: 1.55 }}>{page.bio}</p>}
         </header>
 
-        {/* Brand links — full-width buttons (socials, channel, blog). */}
+        {/* Brand links — a compact centered row of icon pills under the header. */}
         {links.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: products.length ? 30 : 0 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 12, marginBottom: products.length ? 34 : 0 }}>
             {links.map((it) => (
               <a
                 key={it.id}
                 href={`/api/link-click?i=${it.id}`}
                 target="_blank"
                 rel="nofollow noopener"
-                style={{ display: 'flex', alignItems: 'center', gap: 12, background: onLight ? '#ffffff' : 'rgba(255,255,255,0.14)', color: onLight ? '#111114' : '#ffffff', border: `1px solid ${onLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.22)'}`, borderRadius: 14, padding: '14px 16px', textDecoration: 'none', boxShadow: onLight ? '0 4px 14px rgba(0,0,0,0.06)' : 'none', backdropFilter: 'blur(6px)' }}
+                title={it.title}
+                aria-label={it.title}
+                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 48, height: 48, borderRadius: '9999px', background: onLight ? '#ffffff' : 'rgba(255,255,255,0.16)', color: presetFor(it.icon).color, border: `1px solid ${onLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.28)'}`, boxShadow: onLight ? '0 3px 12px rgba(0,0,0,0.08)' : '0 2px 10px rgba(0,0,0,0.12)', textDecoration: 'none' }}
               >
-                <span style={{ color: presetFor(it.icon).color, display: 'inline-flex' }}><Glyph slug={it.icon} /></span>
-                <span style={{ flex: 1, minWidth: 0 }}>
-                  <span style={{ display: 'block', fontSize: 15, fontWeight: 700, lineHeight: 1.2 }}>{it.title}</span>
-                  {it.subtitle && <span style={{ display: 'block', fontSize: 12, opacity: 0.7, marginTop: 2 }}>{it.subtitle}</span>}
-                </span>
-                <ArrowUpRight size={17} style={{ opacity: 0.5 }} />
+                <Glyph slug={it.icon} size={21} />
               </a>
             ))}
           </div>
