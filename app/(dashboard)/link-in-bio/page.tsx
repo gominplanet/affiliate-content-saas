@@ -42,6 +42,8 @@ export default function LinkInBioPage() {
   const [page, setPage] = useState<LinkPage | null>(null)
   const [items, setItems] = useState<LinkPageItem[]>([])
   const [origin, setOrigin] = useState('')
+  const [brand, setBrand] = useState<{ name: string | null; logoUrl: string | null; headshotUrl: string | null }>({ name: null, logoUrl: null, headshotUrl: null })
+  const [avatarUrl, setAvatarUrl] = useState('')
   const [handleInput, setHandleInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [importing, setImporting] = useState(false)
@@ -57,6 +59,8 @@ export default function LinkInBioPage() {
         setPage(data.page || null)
         setItems(Array.isArray(data.items) ? data.items : [])
         setOrigin(data.origin || (typeof window !== 'undefined' ? window.location.origin : ''))
+        setAvatarUrl(data.page?.avatar_url || '')
+        if (data.brand) setBrand(data.brand)
       }
     } catch { /* leave empty */ } finally { setLoading(false) }
   }, [])
@@ -199,10 +203,20 @@ export default function LinkInBioPage() {
                 <input defaultValue={page.title || ''} onBlur={(e) => e.target.value !== (page.title || '') && savePage({ title: e.target.value })}
                   placeholder="Your name or brand" className="mt-1 w-full px-2.5 py-2 text-sm rounded-lg border bg-background text-foreground" />
               </label>
-              <label className="text-xs font-medium text-muted-foreground">Avatar image URL
-                <input defaultValue={page.avatar_url || ''} onBlur={(e) => e.target.value !== (page.avatar_url || '') && savePage({ avatar_url: e.target.value })}
-                  placeholder="https://…" className="mt-1 w-full px-2.5 py-2 text-sm rounded-lg border bg-background text-foreground" />
-              </label>
+              <div className="text-xs font-medium text-muted-foreground">
+                <div className="flex items-center justify-between gap-2">
+                  <span>Avatar / logo</span>
+                  <span className="flex items-center gap-1.5">
+                    {brand.logoUrl && <button type="button" onClick={() => { setAvatarUrl(brand.logoUrl!); savePage({ avatar_url: brand.logoUrl! }) }} className="text-[11px] font-semibold text-violet-600 dark:text-violet-400 hover:underline">Use my logo</button>}
+                    {brand.headshotUrl && <button type="button" onClick={() => { setAvatarUrl(brand.headshotUrl!); savePage({ avatar_url: brand.headshotUrl! }) }} className="text-[11px] font-semibold text-violet-600 dark:text-violet-400 hover:underline">Use headshot</button>}
+                  </span>
+                </div>
+                <div className="mt-1 flex items-center gap-2">
+                  {avatarUrl && <img src={avatarUrl} alt="" className="h-9 w-9 rounded-full object-cover border shrink-0" />}
+                  <input value={avatarUrl} onChange={(e) => setAvatarUrl(e.target.value)} onBlur={() => avatarUrl !== (page.avatar_url || '') && savePage({ avatar_url: avatarUrl })}
+                    placeholder="https://… or use your logo →" className="flex-1 px-2.5 py-2 text-sm rounded-lg border bg-background text-foreground" />
+                </div>
+              </div>
             </div>
             <label className="text-xs font-medium text-muted-foreground block">Bio
               <textarea defaultValue={page.bio || ''} onBlur={(e) => e.target.value !== (page.bio || '') && savePage({ bio: e.target.value })}

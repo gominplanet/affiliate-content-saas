@@ -29,7 +29,13 @@ export async function GET(request: Request) {
     const { data } = await sb.from('link_page_items').select('*').eq('page_id', page.id).order('position', { ascending: true })
     items = data ?? []
   }
-  return NextResponse.json({ ok: true, page: page ?? null, items, origin: new URL(request.url).origin })
+  // Brand logo/headshot + name so the editor can offer a one-tap "use my logo"
+  // instead of pasting a URL.
+  const { data: brand } = await sb.from('brand_profiles').select('name,logo_url,headshot_url').eq('user_id', user.id).maybeSingle()
+  return NextResponse.json({
+    ok: true, page: page ?? null, items, origin: new URL(request.url).origin,
+    brand: { name: brand?.name ?? null, logoUrl: brand?.logo_url ?? null, headshotUrl: brand?.headshot_url ?? null },
+  })
 }
 
 export async function POST(request: Request) {

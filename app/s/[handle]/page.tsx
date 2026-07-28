@@ -41,39 +41,46 @@ export default async function BioPage({ params }: { params: Promise<{ handle: st
   const { page, items } = data
   const t = themeFor(page.theme)
   const title = page.title || `@${page.handle}`
+  const initial = title.replace(/^@/, '').charAt(0).toUpperCase()
 
   return (
-    <main style={{ background: t.bg, color: t.text, minHeight: '100vh' }}>
-      <div style={{ maxWidth: 560, margin: '0 auto', padding: '40px 18px 64px' }}>
+    <main style={{ background: t.bg, color: t.text, minHeight: '100vh', backgroundAttachment: 'fixed' }}>
+      <div style={{ maxWidth: 640, margin: '0 auto', padding: '48px 20px 72px' }}>
         {/* Header */}
-        <header style={{ textAlign: 'center', marginBottom: 26 }}>
+        <header style={{ textAlign: 'center', marginBottom: 30 }}>
           {page.avatar_url
-            ? <img src={page.avatar_url} alt="" style={{ width: 84, height: 84, borderRadius: '9999px', objectFit: 'cover', margin: '0 auto 12px', border: `2px solid ${t.border}` }} />
-            : <div style={{ width: 84, height: 84, borderRadius: '9999px', margin: '0 auto 12px', background: t.card, border: `1px solid ${t.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 30, fontWeight: 700 }}>{title.replace(/^@/, '').charAt(0).toUpperCase()}</div>}
-          <h1 style={{ fontSize: 21, fontWeight: 800, margin: 0 }}>{title}</h1>
-          {page.bio && <p style={{ fontSize: 14, color: t.sub, margin: '8px auto 0', maxWidth: 420, lineHeight: 1.5 }}>{page.bio}</p>}
+            ? <img src={page.avatar_url} alt="" style={{ width: 100, height: 100, borderRadius: '9999px', objectFit: 'cover', margin: '0 auto 14px', border: '3px solid rgba(255,255,255,0.9)', boxShadow: '0 8px 28px rgba(0,0,0,0.22)' }} />
+            : <div style={{ width: 100, height: 100, borderRadius: '9999px', margin: '0 auto 14px', background: 'rgba(255,255,255,0.18)', border: '3px solid rgba(255,255,255,0.9)', boxShadow: '0 8px 28px rgba(0,0,0,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 38, fontWeight: 800 }}>{initial}</div>}
+          <h1 style={{ fontSize: 24, fontWeight: 800, margin: 0, letterSpacing: '-0.01em' }}>{title}</h1>
+          {page.bio && <p style={{ fontSize: 15, color: t.sub, margin: '10px auto 0', maxWidth: 440, lineHeight: 1.55 }}>{page.bio}</p>}
         </header>
 
-        {/* Grid */}
+        {/* Grid — solid white product cards for clarity on any theme. */}
         {items.length === 0 ? (
           <p style={{ textAlign: 'center', color: t.sub, fontSize: 14, marginTop: 40 }}>No picks yet — check back soon.</p>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 16 }}>
             {items.map((it) => (
               <a
                 key={it.id}
                 href={`/api/link-click?i=${it.id}`}
                 target="_blank"
                 rel="nofollow sponsored noopener"
-                style={{ display: 'flex', flexDirection: 'column', background: t.card, border: `1px solid ${t.border}`, borderRadius: 16, overflow: 'hidden', textDecoration: 'none', color: 'inherit' }}
+                style={{ display: 'flex', flexDirection: 'column', background: '#ffffff', borderRadius: 18, overflow: 'hidden', textDecoration: 'none', color: '#111114', boxShadow: '0 10px 30px rgba(0,0,0,0.18)' }}
               >
-                <div style={{ aspectRatio: '1 / 1', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 10 }}>
+                <div style={{ aspectRatio: '1 / 1', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
                   {it.image_url
                     ? <img src={it.image_url} alt="" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
-                    : <span style={{ color: '#9ca3af', fontSize: 12 }}>Shop</span>}
+                    : <span style={{ color: '#9ca3af', fontSize: 13, fontWeight: 600 }}>Shop</span>}
                 </div>
-                <div style={{ padding: '10px 12px 12px', fontSize: 13, fontWeight: 600, lineHeight: 1.35, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                  {it.title}
+                <div style={{ padding: '12px 14px 14px', display: 'flex', flexDirection: 'column', gap: 10, flex: 1 }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 600, lineHeight: 1.35, color: '#1d1d1f', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', minHeight: '2.7em' }}>
+                    {it.title}
+                  </div>
+                  <span style={{ marginTop: 'auto', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: t.accent, color: '#fff', fontSize: 13, fontWeight: 700, borderRadius: 10, padding: '9px 12px' }}>
+                    Shop now
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M7 17 17 7M8 7h9v9"/></svg>
+                  </span>
                 </div>
               </a>
             ))}
@@ -81,7 +88,7 @@ export default async function BioPage({ params }: { params: Promise<{ handle: st
         )}
 
         {/* Footer disclosure — affiliate transparency (FTC). */}
-        <p style={{ textAlign: 'center', color: t.sub, fontSize: 11, marginTop: 34, lineHeight: 1.5 }}>
+        <p style={{ textAlign: 'center', color: t.sub, fontSize: 11.5, marginTop: 40, lineHeight: 1.5, opacity: 0.9 }}>
           As an Amazon Associate, {title.replace(/^@/, '')} earns from qualifying purchases.
         </p>
       </div>
