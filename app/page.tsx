@@ -1617,12 +1617,13 @@ interface PricingTier {
 const PRICING_TIERS: PricingTier[] = [
   {
     name: 'Creator',
-    tagline: 'For one channel, one niche.',
+    tagline: 'Best for one channel in one niche, getting started.',
     price: 49,
     regularPrice: 99,
     highlight: false,
     icon: <Sparkles size={16} />,
     features: [
+      '⚡ Amazon Deal Radar + shoppable Link-in-Bio + auto IG Stories',
       '20 posts / month (blog + thumbnail + metadata bundle)',
       'Auto-post to Facebook, Threads, LinkedIn & Bluesky',
       '1 face + 1 LoRA retrain / month, 10 Photobooth headshots',
@@ -1636,12 +1637,13 @@ const PRICING_TIERS: PricingTier[] = [
   },
   {
     name: 'Studio',
-    tagline: 'For the all-in solo review creator.',
+    tagline: 'Best for the all-in solo review creator. Most popular.',
     price: 99,
     regularPrice: 199,
     highlight: true,
     icon: <Crown size={16} />,
     features: [
+      '⚡ Amazon Deal Radar + shoppable Link-in-Bio + auto IG Stories',
       '45 posts / month (blog + thumbnail + metadata bundle)',
       'Adds Pinterest, Instagram & Telegram auto-post on top of Creator',
       'Deals Hub: 5 deal posts / month + Amazon CSV bulk import',
@@ -1656,12 +1658,13 @@ const PRICING_TIERS: PricingTier[] = [
   },
   {
     name: 'Pro',
-    tagline: 'For operators running a portfolio.',
+    tagline: 'Best for operators running a portfolio of sites.',
     price: 199,
     regularPrice: 499,
     highlight: false,
     icon: <Rocket size={16} />,
     features: [
+      '⚡ Amazon Deal Radar + shoppable Link-in-Bio + auto IG Stories',
       '100 posts / month + Comparisons + Buying Guides',
       'Adds X (Twitter) auto-post on top of Studio',
       'Rebuild-from-video on any legacy WP post',
