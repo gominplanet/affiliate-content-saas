@@ -16,7 +16,7 @@ import Link from 'next/link'
 import {
   FileText, Youtube, Search, Mail, Handshake, Lightbulb,
   Layers, Users, Plug, MessageSquare, Code, Sparkles, Share2,
-  Radar, ShoppingBag,
+  Radar, ShoppingBag, Scissors, FlaskConical,
   ArrowRight, CheckCircle2, ArrowUpRight,
 } from 'lucide-react'
 
@@ -31,6 +31,7 @@ const SECTIONS: Array<{ id: string; label: string }> = [
   { id: 'social',       label: 'Social auto-posting' },
   { id: 'deal-radar',   label: 'Amazon Deal Radar ⚡ new' },
   { id: 'linkbio',      label: 'Link in Bio — Shop page ⚡ new' },
+  { id: 'clips',        label: 'Clip Factory — Shorts 🧪 Labs' },
   { id: 'seo',          label: 'SEO that moves rank' },
   { id: 'newsletter',   label: 'Newsletter' },
   { id: 'collabs',      label: 'Brand outreach' },
@@ -321,6 +322,49 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
             </li>
           </ul>
           {isApp && <SectionCta href="/link-in-bio" label="Build your Shop page" />}
+        </Section>
+
+        {/* ── 2e. Clip Factory (Labs) ──────────────────────────────── */}
+        <Section
+          id="clips"
+          icon={<Scissors size={18} />}
+          title="Clip Factory — long video into ready-to-post Shorts"
+          badge={
+            <span
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider"
+              style={{ background: 'rgba(124, 58, 237, 0.14)', color: '#7C3AED' }}
+            >
+              <FlaskConical size={11} /> Labs
+            </span>
+          }
+        >
+          <p>
+            Clip Factory turns one long review video into vertical Shorts you can post to Instagram, TikTok, and YouTube —
+            in three stages: <strong>create</strong> the clip, <strong>enhance</strong> it with a shoppable CTA, then{' '}
+            <strong>publish</strong>. It&apos;s in <strong>Labs</strong> — live and usable today, still being refined, so the
+            experience may change as we polish it.
+          </p>
+          <ul>
+            <li>
+              <strong>Finds the moments for you.</strong> Point it at a long video and MVP reads the transcript, picks the
+              punchy 15–30 second moments, and cuts them to a 9:16 vertical clip. Or upload / pick an existing Short to
+              skip straight to enhancing.
+            </li>
+            <li>
+              <strong>Word-for-word captions.</strong> Running subtitles are burned in from what you actually said —
+              timed to the real words, never invented — with a style toggle per clip.
+            </li>
+            <li>
+              <strong>Enhance into a storefront clip.</strong> Burn a call-to-action overlay, attach a product link, and
+              wire up an auto-DM so a comment triggers the link in DMs — the same Shop Burner engine, built in.
+            </li>
+            <li>
+              <strong>Publish or download.</strong> Push the finished Short straight to Instagram or YouTube — or just
+              download it — with a caption and hashtags carried over from the clip. (TikTok publishing switches on the
+              moment our platform review is approved.)
+            </li>
+          </ul>
+          {isApp && <SectionCta href="/clip-factory" label="Open Clip Factory" />}
         </Section>
 
         {/* ── 3. SEO ───────────────────────────────────────────────── */}
@@ -752,16 +796,17 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
 // Wraps each capability section so headings, icon, anchor, and body prose
 // styling stay consistent without copy-pasting a header per section.
 function Section({
-  id, icon, title, children,
+  id, icon, title, badge, children,
 }: {
   id: string
   icon: React.ReactNode
   title: string
+  badge?: React.ReactNode
   children: React.ReactNode
 }) {
   return (
     <section id={id} className="scroll-mt-24">
-      <div className="flex items-center gap-3 mb-4">
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
         <div
           className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
           style={{ background: 'rgba(124, 58, 237, 0.12)', color: '#7C3AED' }}
@@ -771,6 +816,7 @@ function Section({
         <h2 className="text-xl font-bold tracking-tight" style={{ color: 'var(--text)' }}>
           {title}
         </h2>
+        {badge}
       </div>
       <div className="prose-tour space-y-4 text-[14.5px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
         {children}
