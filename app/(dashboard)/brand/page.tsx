@@ -6,6 +6,7 @@ import PageHero from '@/components/layout/PageHero'
 import { Save, Check, Plus, Trash2, GripVertical, Upload, X, RefreshCw, Loader2, AlertCircle } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { InfoTip } from '@/components/ui/InfoTip'
+import GeniuslinkGroupsPanel from '@/components/brand/GeniuslinkGroupsPanel'
 
 async function uploadBrandImage(
   file: File,
@@ -1149,6 +1150,8 @@ export default function BrandPage() {
                   )}
                 </div>
               )}
+
+              {geniuslinkKey && geniuslinkSecret && <GeniuslinkGroupsPanel />}
             </div>
 
             {/* Amazon Associates fallback */}
