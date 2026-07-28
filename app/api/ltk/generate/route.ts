@@ -24,6 +24,7 @@ import { buildCampaignHero } from '@/lib/hero-image'
 import { scrubBanned } from '@/lib/scrub'
 import { spendGate } from '@/lib/ai-spend'
 import { tierAllowsFinders, type Tier } from '@/lib/tier'
+import { toUserMessage } from '@/lib/friendly-error'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -212,6 +213,7 @@ export async function POST(request: NextRequest) {
     const editUrl = `${wpCreds.wordpress_url.replace(/\/+$/, '')}/wp-admin/post.php?post=${wpPost.id}&action=edit`
     return NextResponse.json({ ok: true, wordpressUrl: wpPost.link, editUrl, draft: status === 'draft', title })
   } catch (e) {
-    return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : 'Unexpected error' }, { status: 500 })
+    console.error('[ltk/generate]', e instanceof Error ? e.message : e)
+    return NextResponse.json({ ok: false, error: toUserMessage(e, 'Couldn’t generate that just now. Please try again in a moment.') }, { status: 500 })
   }
 }

@@ -11,6 +11,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { recordUsage } from '@/lib/ai-usage'
 import { scrubBanned } from '@/lib/scrub'
+import { toUserMessage } from '@/lib/friendly-error'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -79,8 +80,7 @@ ${message.slice(0, 4000)}
 
     return NextResponse.json({ message: out, polished: true })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    console.error('[brand-recap/polish]', msg)
-    return NextResponse.json({ error: msg }, { status: 500 })
+    console.error('[brand-recap/polish]', err instanceof Error ? err.message : err)
+    return NextResponse.json({ error: toUserMessage(err, 'Couldn’t polish that just now. Please try again in a moment.') }, { status: 500 })
   }
 }

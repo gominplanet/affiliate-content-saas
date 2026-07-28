@@ -256,7 +256,9 @@ export default function OnboardingFunnel({
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between mb-1">
-                <h3 className="text-base font-semibold flex items-center gap-2">
+                {/* Explicit light color — the global `h1..h6 { color: var(--text) }`
+                    rule would otherwise paint this dark on the dark modal. */}
+                <h3 className="text-base font-semibold flex items-center gap-2" style={{ color: '#f5f5f7' }}>
                   <LifeBuoy size={16} style={{ color: ACCENT }} /> Need a hand?
                 </h3>
                 <button onClick={() => setHelpOpen(false)} className="text-[#a1a1a6] hover:text-white" aria-label="Close"><X size={18} /></button>
