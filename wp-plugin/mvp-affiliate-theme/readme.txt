@@ -39,6 +39,10 @@ everything from your MVP Affiliate dashboard.
 
 == Changelog ==
 
+= 1.4.31 =
+* Softer footer + About band background (charcoal instead of near-black) for a
+  gentler, less harsh look.
+
 = 1.4.30 =
 * Cleaner, more compact footer: brand column with logo + tagline + socials,
   categories in a balanced 2-column grid (deduped + capped), links column only

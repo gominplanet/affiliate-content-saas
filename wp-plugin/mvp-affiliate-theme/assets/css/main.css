@@ -978,7 +978,7 @@ a.mvp-ad-slot-filled:hover {
 /* ─── About Us band (sits just above the footer) ─────────────────────────── */
 .mvp-about-band {
   margin-top: 80px;
-  background: #161616;
+  background: #1f1f23;
   border-top: 1px solid rgba(255,255,255,0.06);
   border-bottom: 1px solid rgba(255,255,255,0.06);
   color: #fff;
@@ -1049,7 +1049,7 @@ a.mvp-ad-slot-filled:hover {
 /* ─── Footer ─────────────────────────────────────────────────────────────── */
 .mvp-footer {
   margin-top: 0;
-  background: #111;
+  background: #1a1a1e;
   color: #fff;
   font-size: 14px;
 }
