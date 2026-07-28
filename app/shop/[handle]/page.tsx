@@ -18,6 +18,38 @@ function Glyph({ slug, size = 18 }: { slug: string | null; size?: number }) {
   return <>{m[slug || ''] || <Link2 size={size} />}</>
 }
 
+// A grid of white product cards.
+function ProductGrid({ items, accent }: { items: LinkPageItem[]; accent: string }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 16 }}>
+      {items.map((it) => (
+        <a
+          key={it.id}
+          href={`/api/link-click?i=${it.id}`}
+          target="_blank"
+          rel="nofollow sponsored noopener"
+          style={{ display: 'flex', flexDirection: 'column', background: '#ffffff', borderRadius: 18, overflow: 'hidden', textDecoration: 'none', color: '#111114', boxShadow: '0 10px 30px rgba(0,0,0,0.18)' }}
+        >
+          <div style={{ aspectRatio: '1 / 1', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
+            {it.image_url
+              ? <img src={it.image_url} alt="" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+              : <span style={{ color: '#9ca3af', fontSize: 13, fontWeight: 600 }}>Shop</span>}
+          </div>
+          <div style={{ padding: '12px 14px 14px', display: 'flex', flexDirection: 'column', gap: 10, flex: 1 }}>
+            <div style={{ fontSize: 13.5, fontWeight: 600, lineHeight: 1.35, color: '#1d1d1f', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', minHeight: '2.7em' }}>
+              {it.title}
+            </div>
+            <span style={{ marginTop: 'auto', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: accent, color: '#fff', fontSize: 13, fontWeight: 700, borderRadius: 10, padding: '9px 12px' }}>
+              Shop now
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M7 17 17 7M8 7h9v9"/></svg>
+            </span>
+          </div>
+        </a>
+      ))}
+    </div>
+  )
+}
+
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
@@ -55,7 +87,10 @@ export default async function BioPage({ params }: { params: Promise<{ handle: st
   const initial = title.replace(/^@/, '').charAt(0).toUpperCase()
   const links = items.filter((it) => it.kind === 'link')
   const products = items.filter((it) => it.kind !== 'link')
+  const currentDeals = products.filter((it) => it.in_story)
+  const moreDeals = products.filter((it) => !it.in_story)
   const onLight = page.theme === 'light'
+  const headingStyle: React.CSSProperties = { textAlign: 'center', fontSize: 12, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: t.sub, margin: '0 0 14px' }
 
   return (
     <main style={{ background: t.bg, color: t.text, minHeight: '100vh', backgroundAttachment: 'fixed' }}>
@@ -88,42 +123,23 @@ export default async function BioPage({ params }: { params: Promise<{ handle: st
           </div>
         )}
 
-        {/* Shop heading */}
-        {products.length > 0 && (
-          <div style={{ textAlign: 'center', fontSize: 12, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: t.sub, marginBottom: 14 }}>
-            Shop my picks
+        {items.length === 0 && (
+          <p style={{ textAlign: 'center', color: t.sub, fontSize: 14, marginTop: 40 }}>No picks yet — check back soon.</p>
+        )}
+
+        {/* Current deals — live in the creator's story right now (24h). */}
+        {currentDeals.length > 0 && (
+          <div style={{ marginBottom: moreDeals.length ? 34 : 0 }}>
+            <div style={headingStyle}>🔥 In my story right now</div>
+            <ProductGrid items={currentDeals} accent={t.accent} />
           </div>
         )}
 
-        {/* Grid — solid white product cards for clarity on any theme. */}
-        {items.length === 0 ? (
-          <p style={{ textAlign: 'center', color: t.sub, fontSize: 14, marginTop: 40 }}>No picks yet — check back soon.</p>
-        ) : products.length === 0 ? null : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 16 }}>
-            {products.map((it) => (
-              <a
-                key={it.id}
-                href={`/api/link-click?i=${it.id}`}
-                target="_blank"
-                rel="nofollow sponsored noopener"
-                style={{ display: 'flex', flexDirection: 'column', background: '#ffffff', borderRadius: 18, overflow: 'hidden', textDecoration: 'none', color: '#111114', boxShadow: '0 10px 30px rgba(0,0,0,0.18)' }}
-              >
-                <div style={{ aspectRatio: '1 / 1', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
-                  {it.image_url
-                    ? <img src={it.image_url} alt="" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
-                    : <span style={{ color: '#9ca3af', fontSize: 13, fontWeight: 600 }}>Shop</span>}
-                </div>
-                <div style={{ padding: '12px 14px 14px', display: 'flex', flexDirection: 'column', gap: 10, flex: 1 }}>
-                  <div style={{ fontSize: 13.5, fontWeight: 600, lineHeight: 1.35, color: '#1d1d1f', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', minHeight: '2.7em' }}>
-                    {it.title}
-                  </div>
-                  <span style={{ marginTop: 'auto', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: t.accent, color: '#fff', fontSize: 13, fontWeight: 700, borderRadius: 10, padding: '9px 12px' }}>
-                    Shop now
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M7 17 17 7M8 7h9v9"/></svg>
-                  </span>
-                </div>
-              </a>
-            ))}
+        {/* Everything else the creator has found. */}
+        {moreDeals.length > 0 && (
+          <div>
+            <div style={headingStyle}>{currentDeals.length ? 'More sales I found' : 'Shop my picks'}</div>
+            <ProductGrid items={moreDeals} accent={t.accent} />
           </div>
         )}
 

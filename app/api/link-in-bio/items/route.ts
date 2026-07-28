@@ -62,7 +62,7 @@ export async function PATCH(request: Request) {
   const sb = supabase as any
 
   const body = await request.json().catch(() => ({})) as {
-    order?: string[]; id?: string; hidden?: boolean; title?: string; url?: string; image_url?: string
+    order?: string[]; id?: string; hidden?: boolean; in_story?: boolean; title?: string; url?: string; image_url?: string
   }
 
   // Reorder: write new positions in the given order.
@@ -77,6 +77,7 @@ export async function PATCH(request: Request) {
   if (!body.id) return NextResponse.json({ error: 'id required' }, { status: 400 })
   const patch: Record<string, unknown> = {}
   if (body.hidden !== undefined) patch.hidden = !!body.hidden
+  if (body.in_story !== undefined) patch.in_story = !!body.in_story
   if (body.title !== undefined) patch.title = (body.title || '').trim().slice(0, 120)
   if (body.url !== undefined) { const u = cleanUrl(body.url); if (u) patch.url = u }
   if (body.image_url !== undefined) patch.image_url = (body.image_url || '').trim() || null

@@ -8,7 +8,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import {
   Link2, Loader2, ExternalLink, Copy, Plus, Trash2, Eye, EyeOff,
-  ArrowUp, ArrowDown, Sparkles, Check, Globe,
+  ArrowUp, ArrowDown, Sparkles, Check, Globe, Zap, Send,
   Youtube, Instagram, Facebook, Twitter, Music2, AtSign, ShoppingBag,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -164,6 +164,29 @@ export default function LinkInBioPage() {
     if (ok) { setLinkTitle(''); setLinkUrl(''); setLinkIcon('link'); toast.success('Link added.') }
   }
 
+  // Post an IG Story for each "current deal" (ticked product with an ASIN).
+  const [creatingStories, setCreatingStories] = useState(false)
+  const createStories = async () => {
+    const targets = items.filter((it) => it.kind !== 'link' && it.in_story && it.asin)
+    if (!targets.length) { toast.error('Tick the imported deals that are in your story first.'); return }
+    setCreatingStories(true)
+    let ok = 0, fail = 0
+    for (const t of targets) {
+      try {
+        const res = await fetch('/api/deal-radar/social-post', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ asin: t.asin, story: true, title: t.title, imageUrl: t.image_url }),
+        })
+        const d = await res.json().catch(() => ({}))
+        const s = Array.isArray(d.results) ? d.results.find((r: { platform: string; ok: boolean }) => r.platform === 'instagram_story') : null
+        if (res.ok && s?.ok) ok++; else fail++
+      } catch { fail++ }
+    }
+    setCreatingStories(false)
+    if (ok) toast.success(`Posted ${ok} IG stor${ok === 1 ? 'y' : 'ies'}${fail ? ` · ${fail} failed` : ''}.`)
+    else toast.error('Could not post stories — make sure Instagram is connected.')
+  }
+
   const patchItem = async (id: string, patch: Partial<LinkPageItem>) => {
     setItems((x) => x.map((it) => (it.id === id ? { ...it, ...patch } : it))) // optimistic
     try { await fetch('/api/link-in-bio/items', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, ...patch }) }) } catch { /* revert on reload */ }
@@ -192,6 +215,13 @@ export default function LinkInBioPage() {
         <button onClick={() => move(it, -1)} disabled={i === 0} className="text-muted-foreground hover:text-foreground disabled:opacity-30"><ArrowUp size={14} /></button>
         <button onClick={() => move(it, 1)} disabled={i === list.length - 1} className="text-muted-foreground hover:text-foreground disabled:opacity-30"><ArrowDown size={14} /></button>
       </div>
+      {it.kind !== 'link' && (
+        <button onClick={() => patchItem(it.id, { in_story: !it.in_story })}
+          title={it.in_story ? 'In your story right now — untick to move to “More sales”' : 'Tick if this deal is live in your IG/TikTok story'}
+          className={`shrink-0 inline-flex h-5 w-5 items-center justify-center rounded border transition ${it.in_story ? 'bg-orange-500 border-orange-500 text-white' : 'hover:bg-accent'}`}>
+          {it.in_story && <Check size={12} />}
+        </button>
+      )}
       {it.kind === 'link'
         ? <span className="h-11 w-11 rounded-lg border shrink-0 flex items-center justify-center" style={{ color: presetFor(it.icon).color }}><LinkGlyph slug={it.icon} size={18} /></span>
         : (it.image_url
@@ -375,13 +405,32 @@ export default function LinkInBioPage() {
               </label>
             </div>
 
-            {items.filter((it) => it.kind !== 'link').length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-6">No products yet. Import your posted products, or add one above.</p>
-            ) : (
-              <ul className="divide-y">
-                {items.filter((it) => it.kind !== 'link').map((it, i, list) => renderItem(it, i, list))}
-              </ul>
+            {/* Current deals — live in the creator's story (24h). */}
+            {items.filter((it) => it.kind !== 'link' && it.in_story).length > 0 && (
+              <div className="rounded-xl border border-orange-500/30 bg-orange-500/5 p-3 space-y-2">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="text-xs font-semibold text-orange-600 dark:text-orange-400 inline-flex items-center gap-1"><Zap size={13} /> Current deals · live in your story</div>
+                  <Button size="sm" onClick={createStories} disabled={creatingStories}>
+                    {creatingStories ? <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> Posting…</> : <><Send className="h-4 w-4 mr-1.5" /> Create IG Stories</>}
+                  </Button>
+                </div>
+                <ul className="divide-y">
+                  {items.filter((it) => it.kind !== 'link' && it.in_story).map((it, i, list) => renderItem(it, i, list))}
+                </ul>
+              </div>
             )}
+
+            {/* Everything else. */}
+            <div>
+              <div className="text-xs font-semibold text-muted-foreground mb-1">More sales I found <span className="font-normal">· tick the ones that are in your story</span></div>
+              {items.filter((it) => it.kind !== 'link' && !it.in_story).length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-6">No products here. Import your posted products, or add one above.</p>
+              ) : (
+                <ul className="divide-y">
+                  {items.filter((it) => it.kind !== 'link' && !it.in_story).map((it, i, list) => renderItem(it, i, list))}
+                </ul>
+              )}
+            </div>
           </div>
         </>
       )}

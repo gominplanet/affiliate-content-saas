@@ -28,6 +28,7 @@ export interface LinkPageItem {
   source: string
   position: number
   hidden: boolean
+  in_story: boolean      // product tile is "live in my story right now"
   clicks: number
 }
 
