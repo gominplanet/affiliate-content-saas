@@ -21,6 +21,7 @@ import { scrubBanned } from '@/lib/scrub'
 import { AFFILIATE_DISCLAIMER_DEFAULT } from '@/lib/social-disclaimer'
 import { publishDealToSocials, QUICK_POST_PLATFORMS, type QuickPostPlatform } from '@/lib/deal-social-publish'
 import { publishDealStory } from '@/lib/deal-story-publish'
+import { toUserMessage } from '@/lib/friendly-error'
 import { createGeniuslinkService } from '@/services/geniuslink'
 
 export const runtime = 'nodejs'
@@ -128,7 +129,9 @@ Return ONLY the caption text.` }],
 
     // ── Instagram Story (baked-in "LINK IN BIO" CTA) ──
     if (wantStory) {
-      const headline = deal.discount_pct ? `${deal.discount_pct}% OFF` : (deal.lowest_label ? String(deal.lowest_label) : 'ON SALE NOW')
+      // Evergreen headline only — no % / price on the image (it can't be
+      // regenerated when the price moves, and % breaks Cloudinary text overlays).
+      const headline = deal.deal_quality === 'excellent' ? 'HOT DEAL' : 'ON SALE NOW'
       const s = await publishDealStory({
         supabase, userId: user.id,
         deal: { asin, title: deal.title as string, imageUrl: dealImage },
@@ -140,9 +143,8 @@ Return ONLY the caption text.` }],
     const anyOk = results.some((r) => r.ok)
     return NextResponse.json({ ok: anyOk, results, caption: baseCaption, geniuslinkNote }, { status: anyOk ? 200 : 502 })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    console.error('[deal-radar/social-post]', msg)
-    return NextResponse.json({ error: msg }, { status: 500 })
+    console.error('[deal-radar/social-post]', err instanceof Error ? err.message : err)
+    return NextResponse.json({ error: toUserMessage(err, "Couldn't post just now. Please try again in a moment.") }, { status: 500 })
   }
 }
 

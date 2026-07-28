@@ -23,8 +23,8 @@ export async function publishDealStory(opts: {
 }): Promise<StoryResult> {
   const { supabase, userId, deal } = opts
 
-  if (!deal.imageUrl) return { ok: false, error: 'No product image to build a Story from.' }
-  if (!cloudinaryConfigured()) return { ok: false, error: 'Story images need Cloudinary — not configured yet.' }
+  if (!deal.imageUrl) return { ok: false, error: 'This product has no image to build a Story from.' }
+  if (!cloudinaryConfigured()) return { ok: false, error: 'Story images aren’t available right now — please try again later.' }
 
   // Instagram creds — the canonical IG resolution (matches /instagram/publish-
   // burned): social_accounts first (the modern connect flow mirrors the IG
@@ -73,12 +73,13 @@ export async function publishDealStory(opts: {
     handle,
     logoUrl: (brand?.logo_url as string | undefined) || undefined,
   })
-  if (!storyImage) return { ok: false, error: "Couldn't build the Story image — try again shortly." }
+  if (!storyImage) return { ok: false, error: "Couldn't build the Story image — please try again shortly." }
 
   try {
     const storyId = await publishMedia({ userId: igUserId, accessToken, mediaType: 'STORIES', imageUrl: storyImage })
     return { ok: true, storyId }
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    console.error('[deal-story-publish] IG publish failed:', err instanceof Error ? err.message : err)
+    return { ok: false, error: 'Instagram couldn’t accept the Story — please try again in a moment.' }
   }
 }

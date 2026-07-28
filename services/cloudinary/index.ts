@@ -86,6 +86,20 @@ async function ensureLinkSticker(): Promise<string | null> {
  * ready-to-publish JPEG URL, or null if Cloudinary isn't configured / anything
  * fails (caller decides).
  */
+// Cloudinary text overlays can't contain %, comma, or slash (they're layer
+// delimiters and under-encode). Strip them so a headline never breaks the URL.
+const overlayText = (s?: string) => asciiSafe(s || '').replace(/[%,/\\]/g, ' ').replace(/\s+/g, ' ').trim()
+
+/** GET the URL and confirm Cloudinary actually served an image (not a 400/error
+ *  page) — so we never hand Instagram a broken URL ("Only photo or video can be
+ *  accepted as media type"). */
+async function urlIsImage(url: string): Promise<boolean> {
+  try {
+    const res = await fetch(url, { method: 'GET' })
+    return res.ok && (res.headers.get('content-type') || '').startsWith('image/')
+  } catch { return false }
+}
+
 export async function renderStoryImage(
   productImageUrl: string,
   opts: { headline?: string; handle?: string; logoUrl?: string } = {},
@@ -97,35 +111,49 @@ export async function renderStoryImage(
       folder: 'deal-stories', resource_type: 'image', overwrite: false,
     })
     const publicId = up.public_id as string
-    const headline = asciiSafe(opts.headline || '').toUpperCase().slice(0, 42)
-    const handle = asciiSafe(opts.handle || '').slice(0, 30)
+    const headline = overlayText(opts.headline).toUpperCase().slice(0, 40)
+    const handle = overlayText(opts.handle).slice(0, 30)
 
-    // Optional brand logo (best-effort — skip on any failure).
+    // Brand logo — best-effort. FLAT folder so the overlay ref is a single
+    // `folder:name` (a nested folder produced a broken `l_a:b/c` layer that
+    // failed the whole render).
     let logoId: string | null = null
     if (opts.logoUrl && /^https?:\/\//i.test(opts.logoUrl)) {
       try {
-        const l = await cloudinary.uploader.upload(opts.logoUrl, { folder: 'deal-stories/logos', resource_type: 'image', overwrite: false })
+        const l = await cloudinary.uploader.upload(opts.logoUrl, { folder: 'deal-stories', resource_type: 'image', overwrite: false })
         logoId = l.public_id as string
       } catch { /* no logo this time */ }
     }
     const stickerId = await ensureLinkSticker()
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const transformation: any[] = [
+    const base: any[] = [
       { width: 960, height: 1120, crop: 'pad', background: 'white' },
       { width: 1080, height: 1920, crop: 'pad', background: '#0e0e11', gravity: 'center' },
     ]
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const headlineLayer = (y: number): any[] => headline ? [{ overlay: { font_family: 'Arial', font_size: 54, font_weight: 'bold', text: headline }, color: '#ffffff', background: '#7C3AED', gravity: 'north', y, radius: 12 }] : []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const handleLayer = (y: number): any[] => handle ? [{ overlay: { font_family: 'Arial', font_size: 40, font_weight: 'bold', text: handle }, color: '#ffffff', gravity: 'north', y }] : []
+    const textPill = { overlay: { font_family: 'Arial', font_size: 48, font_weight: 'bold', letter_spacing: 2, text: 'LINK IN BIO' }, color: '#111114', background: '#ffffff', radius: 30, gravity: 'south', y: 300, angle: -5 }
 
-    // Top brand row: logo (round) then handle.
-    if (logoId) transformation.push({ overlay: { public_id: logoId }, width: 104, height: 104, crop: 'thumb', radius: 'max', gravity: 'north', y: 80 })
-    if (handle) transformation.push({ overlay: { font_family: 'Arial', font_size: 40, font_weight: 'bold', text: handle }, color: '#ffffff', gravity: 'north', y: logoId ? 205 : 96 })
-    if (headline) transformation.push({ overlay: { font_family: 'Arial', font_size: 56, font_weight: 'bold', text: headline }, color: '#ffffff', background: '#7C3AED', gravity: 'north', y: logoId ? 270 : (handle ? 150 : 96), radius: 12 })
+    // RICH: logo + handle + headline + SVG link sticker.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rich: any[] = [...base]
+    if (logoId) rich.push({ overlay: { public_id: logoId }, width: 104, height: 104, crop: 'thumb', radius: 'max', gravity: 'north', y: 80 })
+    rich.push(...handleLayer(logoId ? 205 : 96))
+    rich.push(...headlineLayer(logoId ? 270 : (handle ? 150 : 96)))
+    rich.push(stickerId ? { overlay: { public_id: stickerId }, width: 520, gravity: 'south', y: 300, angle: -5 } : textPill)
+    const richUrl = cloudinary.url(publicId, { transformation: rich, secure: true, format: 'jpg' })
+    if (await urlIsImage(richUrl)) return richUrl
 
-    // Link sticker (image if available, else a text-pill fallback).
-    if (stickerId) transformation.push({ overlay: { public_id: stickerId }, width: 520, gravity: 'south', y: 300, angle: -5 })
-    else transformation.push({ overlay: { font_family: 'Arial', font_size: 48, font_weight: 'bold', letter_spacing: 2, text: 'LINK IN BIO' }, color: '#111114', background: '#ffffff', radius: 30, gravity: 'south', y: 300, angle: -5 })
+    // SIMPLE fallback: text-only overlays (no logo/SVG) — maximally reliable.
+    const simple = [...base, ...handleLayer(96), ...headlineLayer(handle ? 152 : 96), textPill]
+    const simpleUrl = cloudinary.url(publicId, { transformation: simple, secure: true, format: 'jpg' })
+    if (await urlIsImage(simpleUrl)) return simpleUrl
 
-    return cloudinary.url(publicId, { transformation, secure: true, format: 'jpg' })
+    lastOverlayError = 'Cloudinary did not return a valid story image'
+    return null
   } catch (e) {
     lastOverlayError = e instanceof Error ? e.message : String(e)
     return null

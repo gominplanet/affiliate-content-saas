@@ -15,6 +15,7 @@ import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { fetchKeepaProductStats, buildPriceSnapshotHtml } from '@/services/keepa'
 import { scrubBanned } from '@/lib/scrub'
+import { toUserMessage } from '@/lib/friendly-error'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -106,8 +107,7 @@ ${oldContent}`,
 
     return NextResponse.json({ ok: true })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    console.error('[deals/refresh-price]', msg)
-    return NextResponse.json({ error: msg }, { status: 500 })
+    console.error('[deals/refresh-price]', err instanceof Error ? err.message : err)
+    return NextResponse.json({ error: toUserMessage(err, "Couldn't refresh the price just now. Please try again in a moment.") }, { status: 500 })
   }
 }
