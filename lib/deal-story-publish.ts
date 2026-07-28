@@ -59,10 +59,17 @@ export async function publishDealStory(opts: {
     } catch { /* keep the existing token */ }
   }
 
+  // Brand logo + handle for the top of the story. Prefer the creator's Link in
+  // Bio handle (that's where the "link in bio" points), else the brand name.
+  const { data: brand } = await supabase.from('brand_profiles').select('name,logo_url').eq('user_id', userId).maybeSingle()
+  const { data: lp } = await supabase.from('link_pages').select('handle').eq('user_id', userId).maybeSingle()
+  const handle = lp?.handle ? `@${lp.handle}` : ((brand?.name as string | undefined) || undefined)
+
   // Compose the 9:16 story image with the baked-in CTA.
   const storyImage = await renderStoryImage(deal.imageUrl, {
     headline: opts.headline,
-    cta: 'LINK IN BIO',
+    handle,
+    logoUrl: (brand?.logo_url as string | undefined) || undefined,
   })
   if (!storyImage) return { ok: false, error: "Couldn't build the Story image — try again shortly." }
 
