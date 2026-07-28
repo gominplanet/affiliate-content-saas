@@ -35,6 +35,7 @@ import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { spendGate } from '@/lib/ai-spend'
+import { freeTierGenerationBlock } from '@/lib/free-tier-gate'
 import { fal } from '@fal-ai/client'
 
 export const runtime = 'nodejs'
@@ -131,6 +132,11 @@ export async function POST(req: Request) {
     .eq('user_id', ownerId)
     .maybeSingle()
   const tier = normalizeTier(wp?.tier)
+
+  // Free plan: require a connected YouTube channel + WordPress site before any
+  // generation (qualification bar / abuse control). Paid tiers pass instantly.
+  const freeBlock = await freeTierGenerationBlock(supabase, ownerId, tier)
+  if (freeBlock) return NextResponse.json({ error: freeBlock, code: 'connect_required', currentTier: tier }, { status: 403 })
 
   // Spend circuit breaker (Sonnet writer + hero image).
   const spendBlocked = await spendGate(ownerId, tier)

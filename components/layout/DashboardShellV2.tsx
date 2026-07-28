@@ -31,7 +31,7 @@ import { getViewAsTier, setViewAsTier } from '@/lib/view-as'
 import { tierBadge } from '@/lib/tier-badge'
 import UsageChip from '@/components/dashboard/UsageChip'
 import { canUpgradeTier } from '@/lib/tier'
-import { canSeeNav } from '@/lib/feature-access'
+import { canSeeNav, canBrowseDealRadar } from '@/lib/feature-access'
 import type { Tier } from '@/lib/tier'
 import {
   Home, Youtube, Library, Mail, Palette, Brush, TrendingUp,
@@ -428,7 +428,9 @@ export default function DashboardShellV2({
         // (canSeeNav('dealRadar') = creator/studio/pro/admin). Live Amazon deal
         // discovery + Creator Connections cross-check; one click turns a deal
         // into a blog post (counts against postsPerMonth) or a social post.
-        { href: '/deal-radar', icon: <Radar size={15} />, label: 'Deal Radar', gate: canSeeNav('dealRadar', tier as Tier) },
+        // Browsing the feed is open to every plan (incl. free) — the discovery
+        // magnet. Posting a deal is paid, gated in-page + at the routes.
+        { href: '/deal-radar', icon: <Radar size={15} />, label: 'Deal Radar', gate: canBrowseDealRadar(tier as Tier) },
         // Link in Bio — a shoppable affiliate "Shop Grid" page at /s/<handle>,
         // auto-filled from posted products. All paid tiers (same gate as Deal Radar).
         { href: '/link-in-bio', icon: <Link2 size={15} />, label: 'Link in Bio', gate: canSeeNav('dealRadar', tier as Tier) },
