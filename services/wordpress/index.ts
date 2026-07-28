@@ -1167,6 +1167,47 @@ export class WordPressService {
     }
   }
 
+  /** All categories on the site (paged), newest-count first. */
+  async listCategories(): Promise<Array<{ id: number; name: string; slug: string; count: number; parent: number }>> {
+    const out: Array<{ id: number; name: string; slug: string; count: number; parent: number }> = []
+    for (let page = 1; page <= 10; page++) {
+      let rows: Array<{ id: number; name: string; slug: string; count: number; parent: number }> = []
+      try {
+        rows = await this.request(`/categories?per_page=100&page=${page}&orderby=count&order=desc&_fields=id,name,slug,count,parent`)
+      } catch { break }
+      if (!rows.length) break
+      out.push(...rows)
+      if (rows.length < 100) break
+    }
+    return out
+  }
+
+  /** Every post id assigned to a category (any status), paged. */
+  async getPostIdsInCategory(catId: number): Promise<number[]> {
+    const ids: number[] = []
+    for (let page = 1; page <= 50; page++) {
+      let rows: Array<{ id: number }> = []
+      try {
+        rows = await this.request(`/posts?categories=${catId}&per_page=100&page=${page}&status=publish,draft,pending,future,private&_fields=id`)
+      } catch { break }
+      if (!rows.length) break
+      ids.push(...rows.map(r => r.id))
+      if (rows.length < 100) break
+    }
+    return ids
+  }
+
+  /** Current category ids on a single post. */
+  async getPostCategoryIds(postId: number): Promise<number[]> {
+    const row = await this.request<{ categories?: number[] }>(`/posts/${postId}?_fields=categories`)
+    return Array.isArray(row.categories) ? row.categories : []
+  }
+
+  /** Delete a category term (posts are NOT deleted — only the term). */
+  async deleteCategory(id: number): Promise<void> {
+    await this.request(`/categories/${id}?force=true`, { method: 'DELETE' })
+  }
+
   async createPage(title: string, content: string): Promise<{ id: number; link: string }> {
     if (content.includes('<!,')) content = repairCorruptedBlocks(content) // self-heal, same gate as healBlocks
     return this.request<{ id: number; link: string }>('/pages', {
