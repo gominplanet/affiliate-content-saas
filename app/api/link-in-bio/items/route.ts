@@ -62,7 +62,13 @@ export async function PATCH(request: Request) {
   const sb = supabase as any
 
   const body = await request.json().catch(() => ({})) as {
-    order?: string[]; id?: string; hidden?: boolean; in_story?: boolean; title?: string; url?: string; image_url?: string
+    order?: string[]; id?: string; hidden?: boolean; in_story?: boolean; clearStory?: boolean; title?: string; url?: string; image_url?: string
+  }
+
+  // Bulk: clear the whole "in my story" section (e.g. after 24h stories expire).
+  if (body.clearStory) {
+    await sb.from('link_page_items').update({ in_story: false }).eq('user_id', user.id).eq('in_story', true)
+    return NextResponse.json({ ok: true })
   }
 
   // Reorder: write new positions in the given order.

@@ -186,6 +186,11 @@ export default function LinkInBioPage() {
     if (ok) toast.success(`Posted ${ok} IG stor${ok === 1 ? 'y' : 'ies'}${fail ? ` · ${fail} failed` : ''}.`)
     else toast.error('Could not post stories — make sure Instagram is connected.')
   }
+  const clearStory = async () => {
+    setItems((x) => x.map((it) => (it.kind !== 'link' && it.in_story ? { ...it, in_story: false } : it))) // optimistic
+    try { await fetch('/api/link-in-bio/items', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ clearStory: true }) }) } catch { /* no-op */ }
+    toast.success('Story section cleared.')
+  }
 
   const patchItem = async (id: string, patch: Partial<LinkPageItem>) => {
     setItems((x) => x.map((it) => (it.id === id ? { ...it, ...patch } : it))) // optimistic
@@ -410,9 +415,12 @@ export default function LinkInBioPage() {
               <div className="rounded-xl border border-orange-500/30 bg-orange-500/5 p-3 space-y-2">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <div className="text-xs font-semibold text-orange-600 dark:text-orange-400 inline-flex items-center gap-1"><Zap size={13} /> Current deals · live in your story</div>
-                  <Button size="sm" onClick={createStories} disabled={creatingStories}>
-                    {creatingStories ? <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> Posting…</> : <><Send className="h-4 w-4 mr-1.5" /> Create IG Stories</>}
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <button onClick={clearStory} className="text-xs font-medium text-muted-foreground hover:text-foreground underline">Clear all</button>
+                    <Button size="sm" onClick={createStories} disabled={creatingStories}>
+                      {creatingStories ? <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> Posting…</> : <><Send className="h-4 w-4 mr-1.5" /> Create IG Stories</>}
+                    </Button>
+                  </div>
                 </div>
                 <ul className="divide-y">
                   {items.filter((it) => it.kind !== 'link' && it.in_story).map((it, i, list) => renderItem(it, i, list))}
