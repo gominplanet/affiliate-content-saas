@@ -24,6 +24,7 @@ import {
   Crown, Rocket, Plus, Minus,
   LayoutTemplate, BadgePercent, Pin,
   ShoppingBag, Store, ShoppingCart, Search,
+  Radar, Coins,
 } from 'lucide-react'
 
 const DARK_VARS: React.CSSProperties = {
@@ -172,6 +173,7 @@ export default function LandingPreview() {
       <DemoVideoSection />
       <RolesSection />
       <WorkflowSection />
+      <DealRadarSection />
       <AsinSection />
       <BeforeAfterSection />
       <GroundedSection />
@@ -568,6 +570,73 @@ const AEO_POINTS: Array<{ icon: React.ReactNode; title: string; body: string }> 
   { icon: <Quote size={18} />, title: 'Grounded = citable', body: 'Real specs and real experience from your video. Engines quote sources they can trust, not generic AI filler.' },
   { icon: <TrendingUp size={18} />, title: 'Auto-indexed', body: 'Submitted to Google the moment it publishes, so it gets discovered — and cited — fast.' },
 ]
+
+/** Amazon Deal Radar + the discover → post → shop loop — the flagship 2026
+ *  additions. Punchy, benefit-first, mapping to shipped features: Deal Radar,
+ *  Creator Connections cross-check, one-click blog/social posts, the shoppable
+ *  Link-in-Bio page, and auto Instagram Stories. */
+const DEAL_RADAR_POINTS: Array<{ icon: React.ReactNode; title: string; body: string }> = [
+  { icon: <Radar size={18} />, title: 'Live deals, verified real', body: 'Amazon price drops in your niche, refreshed around the clock. We check each deal’s real price history — so you only promote a genuine low, never a fake markdown.' },
+  { icon: <Coins size={18} />, title: 'Spot the double wins', body: 'Every deal is cross-checked against Creator Connections, Levanta & PartnerBoost — instantly see the ones paying you an elevated bounty on top of the sale.' },
+  { icon: <Zap size={18} />, title: 'One click → content', body: 'Turn any deal into a full SEO blog post or a native post across your socials — your affiliate link (Geniuslink-wrapped) attached and the disclosure handled for you.' },
+  { icon: <ShoppingBag size={18} />, title: 'Shoppable bio + Stories', body: 'A shoppable link-in-bio page auto-filled from your picks, plus one-tap Instagram Stories with a “link in bio” sticker — the whole discover → post → shop loop, closed.' },
+]
+
+function DealRadarSection() {
+  return (
+    <section id="deal-radar" className="px-6 lg:px-8 pt-16 sm:pt-24 pb-16 sm:pb-28 relative">
+      <div className="max-w-6xl mx-auto">
+        <div className="text-center max-w-3xl mx-auto mb-14">
+          <span
+            className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-medium uppercase tracking-[0.18em] mb-5"
+            style={{ backgroundColor: 'rgba(249,115,22,0.14)', color: '#FDBA74', border: '1px solid rgba(249,115,22,0.3)' }}
+          >
+            <Zap size={10} />
+            New — Amazon Deal Radar
+          </span>
+          <h2 className="text-[40px] sm:text-[52px] font-semibold tracking-tight leading-[1.05] mb-5" style={{ color: 'var(--text)' }}>
+            Stop hunting for deals.
+            <br />
+            <span style={{ background: 'linear-gradient(135deg, #F97316 0%, #C026D3 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
+              MVP finds them — and sells them.
+            </span>
+          </h2>
+          <p className="text-[16px] sm:text-[17px] leading-relaxed max-w-2xl mx-auto" style={{ color: 'var(--text-soft)' }}>
+            Deal Radar surfaces real, verified Amazon price drops in your niche and hands them to you ready to publish. Turn any one into an SEO post or a social post in a click — then your shoppable link-in-bio page and auto-generated Instagram Stories drive the sale.
+          </p>
+        </div>
+
+        {/* Discover → Post → Shop flow */}
+        <div className="flex items-center justify-center gap-2 sm:gap-3 mb-10 text-[12px] sm:text-[13px] font-semibold" style={{ color: 'var(--text-soft)' }}>
+          <span className="inline-flex items-center gap-1.5"><Search size={14} style={{ color: '#FDBA74' }} /> Discover</span>
+          <ArrowRight size={13} style={{ color: 'var(--text-faint)' }} />
+          <span className="inline-flex items-center gap-1.5"><Send size={14} style={{ color: '#9D6BFF' }} /> Post</span>
+          <ArrowRight size={13} style={{ color: 'var(--text-faint)' }} />
+          <span className="inline-flex items-center gap-1.5"><ShoppingBag size={14} style={{ color: '#F472B6' }} /> Shop</span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+          {DEAL_RADAR_POINTS.map((p) => (
+            <div key={p.title} className="rounded-2xl border p-6" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}>
+              <span className="inline-flex items-center justify-center w-9 h-9 rounded-xl mb-3" style={{ backgroundColor: 'rgba(249,115,22,0.14)', color: '#FDBA74' }}>
+                {p.icon}
+              </span>
+              <h3 className="text-[15px] font-semibold mb-1.5" style={{ color: 'var(--text)' }}>{p.title}</h3>
+              <p className="text-[13.5px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>{p.body}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="text-center mt-10">
+          <a href="/signup" className="px-5 py-3 rounded-xl bg-[#7C3AED] hover:bg-[#6D28D9] text-[14px] font-semibold text-white inline-flex items-center gap-2 transition-colors shadow-[0_4px_16px_rgba(124,58,237,0.3)]">
+            Start finding deals
+            <ArrowRight size={14} />
+          </a>
+        </div>
+      </div>
+    </section>
+  )
+}
 
 function DiscoverabilitySection() {
   return (
