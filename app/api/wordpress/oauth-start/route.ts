@@ -18,6 +18,7 @@ import {
   MVP_WP_APP_ID,
   MVP_WP_APP_NAME,
 } from '@/lib/wp-oauth'
+import { assertPublicHttpUrl, SsrfBlocked } from '@/lib/ssrf-guard'
 
 export async function GET(request: Request) {
   const supabase = await createServerClient()
@@ -33,6 +34,16 @@ export async function GET(request: Request) {
     return NextResponse.json({
       error: 'Enter a valid WordPress site URL (e.g. https://yoursite.com).',
     }, { status: 400 })
+  }
+  // Block internal/reserved hosts (SSRF) — the callback fetches this URL with an
+  // auth header. Matches the guard the other WordPress-connect routes apply.
+  try {
+    assertPublicHttpUrl(siteUrl)
+  } catch (e) {
+    if (e instanceof SsrfBlocked) {
+      return NextResponse.json({ error: 'That site URL can’t be reached. Enter your public WordPress site address.' }, { status: 400 })
+    }
+    throw e
   }
 
   // Sign state so the callback can verify it really came from us and recover

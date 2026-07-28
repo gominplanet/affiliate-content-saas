@@ -227,8 +227,8 @@ export default function LinkInBioPage() {
   const renderItem = (it: LinkPageItem, i: number, list: LinkPageItem[]) => (
     <li key={it.id} className={`flex items-center gap-3 py-2.5 ${it.hidden ? 'opacity-50' : ''}`}>
       <div className="flex flex-col">
-        <button onClick={() => move(it, -1)} disabled={i === 0} className="text-muted-foreground hover:text-foreground disabled:opacity-30"><ArrowUp size={14} /></button>
-        <button onClick={() => move(it, 1)} disabled={i === list.length - 1} className="text-muted-foreground hover:text-foreground disabled:opacity-30"><ArrowDown size={14} /></button>
+        <button onClick={() => move(it, -1)} disabled={i === 0} aria-label="Move up" title="Move up" className="text-muted-foreground hover:text-foreground disabled:opacity-30"><ArrowUp size={14} /></button>
+        <button onClick={() => move(it, 1)} disabled={i === list.length - 1} aria-label="Move down" title="Move down" className="text-muted-foreground hover:text-foreground disabled:opacity-30"><ArrowDown size={14} /></button>
       </div>
       {it.kind !== 'link' && (
         <button onClick={() => patchItem(it.id, { in_story: !it.in_story })}
@@ -255,7 +255,15 @@ export default function LinkInBioPage() {
   )
 
   const publicUrl = page ? `${origin}/shop/${page.handle}` : ''
-  const copyUrl = () => { navigator.clipboard?.writeText(publicUrl); toast.success('Link copied — paste it in your bio.') }
+  const copyUrl = async () => {
+    if (!navigator.clipboard) { toast.error('Couldn’t copy automatically — select and copy the link manually.'); return }
+    try {
+      await navigator.clipboard.writeText(publicUrl)
+      toast.success('Link copied — paste it in your bio.')
+    } catch {
+      toast.error('Couldn’t copy automatically — select and copy the link manually.')
+    }
+  }
 
   if (tier === null || loading) {
     return <div className="flex items-center justify-center py-32"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
