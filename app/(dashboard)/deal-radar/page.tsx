@@ -16,7 +16,7 @@ import { toast } from 'sonner'
 import {
   Radar, Search, Loader2, Star, Zap, BadgePercent, ExternalLink,
   ArrowRight, Sparkles, TrendingUp, RefreshCw, ShieldCheck, ShieldAlert,
-  Send, Check, AlertCircle, X as CloseIcon, HelpCircle, Mail, Info, Coins, Flame, Plus, Layers,
+  Send, Check, AlertCircle, X as CloseIcon, HelpCircle, Mail, Info, Coins, Flame, Plus, Layers, Video,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import QuickPostModal from '@/components/deal/QuickPostModal'
@@ -53,6 +53,8 @@ interface Deal {
   commissionRatePct: number
   commissionIsBounty: boolean
   opportunityScore: number | null
+  /** Listing has a brand/merchant video in its image carousel. */
+  hasVideo: boolean
 }
 
 // Category filter options — mirror the cron's swept browse nodes.
@@ -98,7 +100,7 @@ const money = (n: number | null) => (n == null ? null : `$${n.toFixed(2)}`)
 
 interface SavedSearch {
   name: string
-  f: { q: string; category: number | ''; minDiscount: number; minRating: number; hasCampaign: boolean; realOnly: boolean; lightningOnly: boolean; sort: string }
+  f: { q: string; category: number | ''; minDiscount: number; minRating: number; hasCampaign: boolean; realOnly: boolean; lightningOnly: boolean; videoOnly?: boolean; sort: string }
 }
 const SAVED_KEY = 'deal_radar_saved_searches'
 
@@ -218,6 +220,7 @@ export default function DealRadarPage() {
   const [hasCampaign, setHasCampaign] = useState(false)
   const [realOnly, setRealOnly] = useState(false)
   const [lightningOnly, setLightningOnly] = useState(false)
+  const [videoOnly, setVideoOnly] = useState(false)
   const [sort, setSort] = useState('opportunity')
 
   const [deals, setDeals] = useState<Deal[]>([])
@@ -269,6 +272,7 @@ export default function DealRadarPage() {
       if (hasCampaign) params.set('hasCampaign', '1')
       if (realOnly) params.set('real', '1')
       if (lightningOnly) params.set('lightning', '1')
+      if (videoOnly) params.set('video', '1')
       params.set('sort', sort)
       params.set('page', String(pageToLoad))
       const res = await fetch(`/api/deal-radar?${params.toString()}`)
@@ -284,7 +288,7 @@ export default function DealRadarPage() {
     } finally {
       if (append) setLoadingMore(false); else setLoading(false)
     }
-  }, [q, category, minDiscount, minRating, hasCampaign, realOnly, lightningOnly, sort])
+  }, [q, category, minDiscount, minRating, hasCampaign, realOnly, lightningOnly, videoOnly, sort])
 
   // Debounced fetch on filter change (only once we know the user can view).
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -313,20 +317,20 @@ export default function DealRadarPage() {
   // discovery magnet. Posting a deal is paid, so when !isPaid we still render
   // the full feed but swap every action for an upgrade prompt (see `locked`).
 
-  const hasFilters = q.trim() || category !== '' || minDiscount > 0 || minRating > 0 || hasCampaign || realOnly || lightningOnly
-  const clearFilters = () => { setQ(''); setCategory(''); setMinDiscount(0); setMinRating(0); setHasCampaign(false); setRealOnly(false); setLightningOnly(false); setSort('opportunity') }
+  const hasFilters = q.trim() || category !== '' || minDiscount > 0 || minRating > 0 || hasCampaign || realOnly || lightningOnly || videoOnly
+  const clearFilters = () => { setQ(''); setCategory(''); setMinDiscount(0); setMinRating(0); setHasCampaign(false); setRealOnly(false); setLightningOnly(false); setVideoOnly(false); setSort('opportunity') }
 
   const saveCurrentSearch = () => {
     const name = (window.prompt('Name this search (e.g. "Home · 30%+ real deals")') || '').trim()
     if (!name) return
-    const entry: SavedSearch = { name, f: { q, category, minDiscount, minRating, hasCampaign, realOnly, lightningOnly, sort } }
+    const entry: SavedSearch = { name, f: { q, category, minDiscount, minRating, hasCampaign, realOnly, lightningOnly, videoOnly, sort } }
     const next = [...savedSearches.filter((s) => s.name !== name), entry].slice(-12)
     setSavedSearches(next)
     try { localStorage.setItem(SAVED_KEY, JSON.stringify(next)) } catch { /* no-op */ }
   }
   const applySavedSearch = (s: SavedSearch) => {
     setQ(s.f.q); setCategory(s.f.category); setMinDiscount(s.f.minDiscount); setMinRating(s.f.minRating)
-    setHasCampaign(s.f.hasCampaign); setRealOnly(s.f.realOnly); setLightningOnly(s.f.lightningOnly); setSort(s.f.sort)
+    setHasCampaign(s.f.hasCampaign); setRealOnly(s.f.realOnly); setLightningOnly(s.f.lightningOnly); setVideoOnly(!!s.f.videoOnly); setSort(s.f.sort)
   }
   const deleteSavedSearch = (name: string) => {
     const next = savedSearches.filter((s) => s.name !== name)
@@ -441,6 +445,9 @@ export default function DealRadarPage() {
           <FilterToggle active={lightningOnly} onClick={() => setLightningOnly((v) => !v)} icon={<Zap size={14} />}
             activeClass="bg-amber-500 text-white border-amber-500"
             title="Only Amazon Lightning Deals — time-limited flash sales">Lightning</FilterToggle>
+          <FilterToggle active={videoOnly} onClick={() => setVideoOnly((v) => !v)} icon={<Video size={14} />}
+            activeClass="bg-fuchsia-600 text-white border-fuchsia-600"
+            title="Only listings with a product-carousel video — better conversion, and ready-made b-roll for a Short or Reel">Has video</FilterToggle>
 
           <div className="ml-auto flex items-center gap-2">
             {hasFilters && <button onClick={clearFilters} className="text-xs text-muted-foreground hover:text-foreground">Clear all</button>}
@@ -591,6 +598,12 @@ function DealCard({ deal: d, onQuickPost, selected = false, onToggleSelect, lock
         {d.monthlySold != null && (
           <div className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 dark:text-blue-400 w-fit">
             <TrendingUp size={12} /> {d.monthlySold.toLocaleString()}+ bought/mo
+          </div>
+        )}
+        {d.hasVideo && (
+          <div className="inline-flex items-center gap-1 text-xs font-medium text-fuchsia-600 dark:text-fuchsia-400 w-fit"
+               title="This listing has a product-carousel video — great for a Short or Reel">
+            <Video size={12} /> Has video
           </div>
         )}
         {d.estCommissionCents != null && d.estCommissionCents > 0 && (
@@ -820,7 +833,7 @@ function DealRadarGuide({ onClose }: { onClose: () => void }) {
     {
       icon: <Search size={18} />,
       title: 'Filters, sorting & saved searches',
-      body: <>Narrow the feed by category, minimum discount, rating, <strong>Real deals</strong>, <strong>Creator Connections</strong>, or <strong>Lightning</strong> — or just search (“air fryer”, “dog bed”). Sort by best opportunity, biggest discount, best sellers, highest commission, or ending soonest. Found a combination you like? Hit <strong>Save these filters</strong> and it becomes a one-tap chip next time.</>,
+      body: <>Narrow the feed by category, minimum discount, rating, <strong>Real deals</strong>, <strong>Creator Connections</strong>, <strong>Lightning</strong>, or <strong>Has video</strong> (listings with a product-carousel video — better conversion, and ready-made b-roll for a Short or Reel) — or just search (“air fryer”, “dog bed”). Sort by best opportunity, biggest discount, best sellers, highest commission, or ending soonest. Found a combination you like? Hit <strong>Save these filters</strong> and it becomes a one-tap chip next time.</>,
     },
     {
       icon: <ArrowRight size={18} />,

@@ -266,6 +266,10 @@ export interface DealAssessment {
    *  = "500+ bought"). Null when Amazon shows no badge for this product — which
    *  is most of them, so treat absence as "unknown", not "zero sales". */
   monthlySold: number | null
+  /** Whether the listing carries a brand/merchant video in its image carousel.
+   *  TRI-STATE: true = confirmed, false = checked & none, null = Keepa returned
+   *  no `videos` data this call (unknown — don't overwrite a prior known value). */
+  hasCarouselVideo: boolean | null
 }
 
 /**
@@ -274,12 +278,15 @@ export interface DealAssessment {
  * (never throws) so the caller just skips verification for that ASIN.
  */
 export async function fetchKeepaProductStats(asin: string, domainId = KEEPA_DOMAIN_US): Promise<DealAssessment> {
-  const empty: DealAssessment = { currentCents: null, avg90Cents: null, allTimeLowCents: null, pctBelowAvg90: null, quality: null, label: null, monthlySold: null }
+  const empty: DealAssessment = { currentCents: null, avg90Cents: null, allTimeLowCents: null, pctBelowAvg90: null, quality: null, label: null, monthlySold: null, hasCarouselVideo: null }
   const key = process.env.KEEPA_API_KEY
   if (!key || !/^[A-Za-z0-9]{10}$/.test(asin)) return empty
   // stats=180 → Keepa computes avg30/90/180 + all-time min/max server-side.
   // history=0 keeps the response light (we only need the stats block).
-  const url = `${KEEPA_BASE}/product?key=${encodeURIComponent(key)}&domain=${domainId}&asin=${asin}&stats=180&history=0`
+  // videos=1 → include the listing's video metadata (CACHED — we deliberately
+  // do NOT pass `offers`, which would force a live, multi-token refresh). This
+  // rides on the same call we're already making, so it costs ~nothing extra.
+  const url = `${KEEPA_BASE}/product?key=${encodeURIComponent(key)}&domain=${domainId}&asin=${asin}&stats=180&history=0&videos=1`
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(30_000) })
     if (!res.ok) return empty
@@ -292,10 +299,43 @@ export async function fetchKeepaProductStats(asin: string, domainId = KEEPA_DOMA
     // so we get it for free. Keepa uses -1 / absent for "no badge".
     const ms = Number(product.monthlySold)
     assessment.monthlySold = Number.isFinite(ms) && ms > 0 ? ms : null
+    // Carousel-video flag rides on the same response too (top-level `videos`).
+    assessment.hasCarouselVideo = detectCarouselVideo(product.videos)
     return assessment
   } catch {
     return empty
   }
+}
+
+/**
+ * Keepa's `videos` array holds BOTH image-carousel videos and community/customer
+ * videos from the listing's "Videos" section. We only want the carousel ones —
+ * the brand/merchant clips a creator can trust and reuse. Each video has a
+ * `creator` (Keepa `VideoCreatorType`), serialized as either a string name or a
+ * numeric ordinal; community sources are Customer / Influencer / ThirdParty.
+ *
+ * Returns: true = ≥1 carousel video, false = `videos` present but none qualify,
+ * null = no `videos` field on the response (unknown — Keepa returned nothing to
+ * judge, so the caller must NOT overwrite a previously-known value).
+ */
+// VideoCreatorType ordinals (declaration order in Keepa's enum). Community =
+// user/third-party contributed; everything else is a listing/brand video.
+const COMMUNITY_CREATORS = new Set(['customer', 'influencer', 'thirdparty'])
+const COMMUNITY_CREATOR_ORDINALS = new Set([1, 3, 5]) // Customer=1, Influencer=3, ThirdParty=5
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function detectCarouselVideo(videos: any): boolean | null {
+  if (!Array.isArray(videos)) return null // field absent → unknown
+  if (videos.length === 0) return false
+  for (const v of videos) {
+    if (!v || typeof v !== 'object') continue
+    const c = (v as { creator?: unknown }).creator
+    let community: boolean
+    if (typeof c === 'number') community = COMMUNITY_CREATOR_ORDINALS.has(c)
+    else if (typeof c === 'string') community = COMMUNITY_CREATORS.has(c.trim().toLowerCase())
+    else community = false // unknown/missing creator → treat as a listing video
+    if (!community) return true
+  }
+  return false
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -321,7 +361,7 @@ function assessFromStats(stats: any): DealAssessment {
     else { quality = 'weak'; label = 'Around its usual price' }
   }
 
-  return { currentCents, avg90Cents, allTimeLowCents, pctBelowAvg90, quality, label, monthlySold: null }
+  return { currentCents, avg90Cents, allTimeLowCents, pctBelowAvg90, quality, label, monthlySold: null, hasCarouselVideo: null }
 }
 
 /** A Keepa stats price field is an int[] indexed by price type; -1 = none. */

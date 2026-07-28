@@ -263,6 +263,9 @@ async function enrichPriceHistory(
       deal_quality: a.quality,
       lowest_label: a.label,
       monthly_sold: a.monthlySold,
+      // Only write has_video when Keepa actually returned video data (non-null);
+      // a null means "unknown this run" and must NOT clobber a known flag.
+      ...(a.hasCarouselVideo != null ? { has_video: a.hasCarouselVideo } : {}),
       price_verified_at: new Date().toISOString(),
     }).eq('asin', row.asin)
     if (budget != null) budget -= 1 // a product-stats call is ~1 token
