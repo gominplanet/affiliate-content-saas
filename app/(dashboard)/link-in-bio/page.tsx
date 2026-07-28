@@ -62,6 +62,7 @@ export default function LinkInBioPage() {
   const [newUrl, setNewUrl] = useState('')
   const [newImg, setNewImg] = useState('')
   const [blogUrl, setBlogUrl] = useState<string | null>(null)
+  const [knownLinks, setKnownLinks] = useState<Record<string, string>>({})
   // Add-a-link (Linktree-style brand link) draft.
   const [linkIcon, setLinkIcon] = useState('link')
   const [linkTitle, setLinkTitle] = useState('')
@@ -78,6 +79,7 @@ export default function LinkInBioPage() {
         setAvatarUrl(data.page?.avatar_url || '')
         if (data.brand) setBrand(data.brand)
         setBlogUrl(data.blogUrl || null)
+        setKnownLinks(data.knownLinks || {})
       }
     } catch { /* leave empty */ } finally { setLoading(false) }
   }, [])
@@ -106,8 +108,14 @@ export default function LinkInBioPage() {
       const res = await fetch('/api/link-in-bio/sync', { method: 'POST' })
       const data = await res.json()
       if (!res.ok) { toast.error(data.error || 'Import failed.'); return }
-      if (data.added > 0) { toast.success(`Added ${data.added} product${data.added === 1 ? '' : 's'}.`); await load() }
-      else toast.message(data.message || 'Nothing new to import — your posted products are already here.')
+      const added = data.added || 0, relinked = data.relinked || 0
+      if (added || relinked) {
+        await load()
+        const parts: string[] = []
+        if (added) parts.push(`added ${added} product${added === 1 ? '' : 's'}`)
+        if (relinked) parts.push(`re-linked ${relinked} to Geniuslink`)
+        toast.success(parts.join(' · '))
+      } else toast.message(data.message || 'Nothing new — your products are already here (and already Geniuslinked).')
     } catch { toast.error('Import failed.') } finally { setImporting(false) }
   }
 
@@ -123,24 +131,37 @@ export default function LinkInBioPage() {
     } catch { toast.error('Could not add.') } finally { setBusy(false) }
   }
 
-  const pickPreset = (slug: string) => {
-    const p = presetFor(slug)
-    setLinkIcon(p.slug); setLinkTitle(p.label)
-    if (p.slug === 'website' && blogUrl && !linkUrl) setLinkUrl(blogUrl)
-  }
-  const addLink = async () => {
-    if (!linkTitle.trim() || !linkUrl.trim()) { toast.error('Pick a platform and paste its link.'); return }
+  const postLink = async (icon: string, title: string, url: string): Promise<boolean> => {
+    if (!title.trim() || !url.trim()) { toast.error('Pick a platform and paste its link.'); return false }
     setBusy(true)
     try {
       const res = await fetch('/api/link-in-bio/items', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind: 'link', icon: linkIcon, title: linkTitle, url: linkUrl }),
+        body: JSON.stringify({ kind: 'link', icon, title, url }),
       })
       const data = await res.json()
-      if (!res.ok) { toast.error(data.error || 'Could not add.'); return }
-      setItems((x) => [...x, data.item]); setLinkTitle(''); setLinkUrl(''); setLinkIcon('link')
-      toast.success('Link added.')
-    } catch { toast.error('Could not add.') } finally { setBusy(false) }
+      if (!res.ok) { toast.error(data.error || 'Could not add.'); return false }
+      setItems((x) => [...x, data.item]); return true
+    } catch { toast.error('Could not add.'); return false } finally { setBusy(false) }
+  }
+  // Click a platform: if MVP already knows that profile URL, PORT it in one tap;
+  // otherwise prefill the form so they can paste it.
+  const pickPreset = async (slug: string) => {
+    const p = presetFor(slug)
+    const known = knownLinks[slug]
+    const already = items.some((it) => it.kind === 'link' && it.icon === slug)
+    if (already) { toast.message(`${p.label} is already on your page.`); return }
+    if (known) {
+      const ok = await postLink(slug, p.label, known)
+      if (ok) toast.success(`Ported your ${p.label}.`)
+      return
+    }
+    setLinkIcon(p.slug); setLinkTitle(p.label)
+    setLinkUrl(slug === 'website' && blogUrl ? blogUrl : '')
+  }
+  const addLink = async () => {
+    const ok = await postLink(linkIcon, linkTitle, linkUrl)
+    if (ok) { setLinkTitle(''); setLinkUrl(''); setLinkIcon('link'); toast.success('Link added.') }
   }
 
   const patchItem = async (id: string, patch: Partial<LinkPageItem>) => {
@@ -188,7 +209,7 @@ export default function LinkInBioPage() {
     </li>
   )
 
-  const publicUrl = page ? `${origin}/s/${page.handle}` : ''
+  const publicUrl = page ? `${origin}/shop/${page.handle}` : ''
   const copyUrl = () => { navigator.clipboard?.writeText(publicUrl); toast.success('Link copied — paste it in your bio.') }
 
   if (tier === null || loading) {
@@ -237,7 +258,7 @@ export default function LinkInBioPage() {
         /* Claim a handle */
         <div className="rounded-2xl border bg-card p-6">
           <div className="text-base font-semibold mb-1">Claim your link</div>
-          <p className="text-sm text-muted-foreground mb-4">Pick a handle. Your page will live at <span className="font-mono">{origin}/s/<span className="text-foreground font-semibold">your-handle</span></span>.</p>
+          <p className="text-sm text-muted-foreground mb-4">Pick a handle. Your page will live at <span className="font-mono">{origin}/shop/<span className="text-foreground font-semibold">your-handle</span></span>.</p>
           <div className="flex items-center gap-2 max-w-md">
             <div className="flex items-center flex-1 rounded-lg border overflow-hidden">
               <span className="px-2.5 py-2 text-sm text-muted-foreground bg-muted whitespace-nowrap">/s/</span>
@@ -301,14 +322,19 @@ export default function LinkInBioPage() {
 
           {/* Brand links (Linktree-style) */}
           <div className="rounded-2xl border bg-card p-5 space-y-3">
-            <div className="text-sm font-semibold">Brand links <span className="text-muted-foreground font-normal">· your socials, channel & blog</span></div>
+            <div className="text-sm font-semibold">Brand links <span className="text-muted-foreground font-normal">· tap a platform to port your link, or add your own below</span></div>
             <div className="flex flex-wrap gap-1.5">
-              {LINK_PRESETS.map((p) => (
-                <button key={p.slug} type="button" onClick={() => pickPreset(p.slug)}
-                  className={`inline-flex items-center gap-1.5 text-xs rounded-full border px-2.5 py-1.5 transition ${linkIcon === p.slug ? 'border-foreground/40 bg-accent' : 'hover:bg-accent'}`}>
-                  <span style={{ color: p.color }}><LinkGlyph slug={p.slug} size={13} /></span> {p.label}
-                </button>
-              ))}
+              {LINK_PRESETS.map((p) => {
+                const portable = !!knownLinks[p.slug] && !items.some((it) => it.kind === 'link' && it.icon === p.slug)
+                return (
+                  <button key={p.slug} type="button" onClick={() => pickPreset(p.slug)} disabled={busy}
+                    title={portable ? `Add your ${p.label} (we have it on file)` : `Add a ${p.label} link`}
+                    className={`inline-flex items-center gap-1.5 text-xs rounded-full border px-2.5 py-1.5 transition disabled:opacity-60 ${linkIcon === p.slug ? 'border-foreground/40 bg-accent' : portable ? 'border-emerald-500/40 hover:bg-accent' : 'hover:bg-accent'}`}>
+                    <span style={{ color: p.color }}><LinkGlyph slug={p.slug} size={13} /></span> {p.label}
+                    {portable && <Check size={11} className="text-emerald-500" />}
+                  </button>
+                )
+              })}
             </div>
             <div className="grid sm:grid-cols-[1fr_1.4fr_auto] gap-2 items-end">
               <label className="text-[11px] font-medium text-muted-foreground">Label

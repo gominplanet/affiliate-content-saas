@@ -49,16 +49,36 @@ export async function POST() {
     .order('position', { ascending: false }).limit(1).maybeSingle()
   const position = (last?.position ?? -1) + 1
 
-  // Products already on the page — skip them (so we never re-wrap a Geniuslink
-  // for a tile that already exists).
-  const { data: existing } = await sb.from('link_page_items').select('asin').eq('page_id', page.id).not('asin', 'is', null)
-  const have = new Set(((existing ?? []) as Array<{ asin: string | null }>).map((e) => (e.asin || '').toUpperCase()))
+  // Product tiles already on the page (id + url so we can HEAL bare-tagged ones).
+  const { data: existing } = await sb.from('link_page_items')
+    .select('id,asin,url,title').eq('page_id', page.id).eq('kind', 'product').not('asin', 'is', null)
+  const existingRows = ((existing ?? []) as Array<{ id: string; asin: string | null; url: string; title: string | null }>)
+  const have = new Set(existingRows.map((e) => (e.asin || '').toUpperCase()))
 
-  // Build each tile's link. ALWAYS wrap through Geniuslink when the creator has
-  // it configured (resolveAffiliateUrl falls back to the tagged link on failure),
-  // so a publicly-shared tile carries their Geniuslink — never a bare tag. If we
-  // run low on time on a big import, the remainder uses the tagged link.
   const started = Date.now()
+  const isGeni = (u: string) => /geni\.us/i.test(u)
+  const isTaggedAmazon = (u: string) => /amazon\./i.test(u)
+
+  // HEAL existing tiles: re-wrap any that still carry a bare Amazon link into a
+  // Geniuslink (pages imported before wrapping existed keep their old links, and
+  // the "skip existing" logic never touched them). Only replace when wrapping
+  // actually produced a geni.us URL — so a failing wrap never rewrites a good link.
+  let relinked = 0
+  if (gKey && gSecret) {
+    for (const e of existingRows) {
+      if (Date.now() - started > 40_000) break
+      const asinU = (e.asin || '').toUpperCase()
+      if (!/^[A-Z0-9]{10}$/.test(asinU)) continue
+      if (!e.url || isGeni(e.url) || !isTaggedAmazon(e.url)) continue
+      const wrapped = await resolveAffiliateUrl(asinU, e.title || asinU, tag, gKey, gSecret)
+      if (wrapped && isGeni(wrapped) && wrapped !== e.url) {
+        await sb.from('link_page_items').update({ url: wrapped }).eq('id', e.id)
+        relinked++
+      }
+    }
+  }
+
+  // Build each NEW tile's link. ALWAYS wrap through Geniuslink when configured.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const tiles: any[] = []
   let position2 = position
@@ -75,12 +95,15 @@ export async function POST() {
     }
     tiles.push({ page_id: page.id, user_id: user.id, kind: 'product', title, image_url: r.image_url || null, url, asin: asinU, source: 'deal', position: position2++ })
   }
-  if (!tiles.length) return NextResponse.json({ ok: true, added: 0, message: 'Your posted products are already here.' })
 
-  const { data: added, error } = await sb.from('link_page_items')
-    .upsert(tiles, { onConflict: 'page_id,asin', ignoreDuplicates: true })
-    .select('id')
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  let added = 0
+  if (tiles.length) {
+    const { data: ins, error } = await sb.from('link_page_items')
+      .upsert(tiles, { onConflict: 'page_id,asin', ignoreDuplicates: true })
+      .select('id')
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    added = (ins ?? []).length
+  }
 
-  return NextResponse.json({ ok: true, added: (added ?? []).length })
+  return NextResponse.json({ ok: true, added, relinked })
 }
