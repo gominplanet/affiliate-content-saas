@@ -10,6 +10,7 @@ import {
   Link2, Loader2, ExternalLink, Copy, Plus, Trash2, Eye, EyeOff,
   ArrowUp, ArrowDown, Sparkles, Check, Globe, Zap, Send,
   Youtube, Instagram, Facebook, Twitter, Music2, AtSign, ShoppingBag,
+  HelpCircle, X as CloseIcon, Palette, MousePointerClick,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
@@ -48,6 +49,14 @@ export default function LinkInBioPage() {
     window.addEventListener(VIEW_AS_EVENT, apply)
     return () => { cancelled = true; window.removeEventListener(VIEW_AS_EVENT, apply) }
   }, [])
+
+  // First-time walkthrough — opens automatically the first visit (localStorage
+  // 'link_in_bio_guide_seen'), reopenable anytime from the "Guide" link.
+  const [showGuide, setShowGuide] = useState(false)
+  useEffect(() => {
+    try { if (!localStorage.getItem('link_in_bio_guide_seen')) setShowGuide(true) } catch { /* no-op */ }
+  }, [])
+  const closeGuide = () => { setShowGuide(false); try { localStorage.setItem('link_in_bio_guide_seen', '1') } catch { /* no-op */ } }
 
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState<LinkPage | null>(null)
@@ -280,6 +289,9 @@ export default function LinkInBioPage() {
             <h1 className="text-2xl font-bold">Link in Bio</h1>
           </div>
           <p className="text-sm text-muted-foreground mt-1">A shoppable grid of your product picks — one link for your Instagram / TikTok bio.</p>
+          <button onClick={() => setShowGuide(true)} className="mt-1.5 text-xs font-medium text-violet-600 dark:text-violet-400 underline inline-flex items-center gap-1">
+            <HelpCircle size={13} /> How the Shop page works
+          </button>
         </div>
         {page && (
           <div className="flex items-center gap-2">
@@ -289,6 +301,8 @@ export default function LinkInBioPage() {
           </div>
         )}
       </div>
+
+      {showGuide && <ShopPageGuide onClose={closeGuide} />}
 
       {!page ? (
         /* Claim a handle */
@@ -443,6 +457,90 @@ export default function LinkInBioPage() {
           </div>
         </>
       )}
+    </div>
+  )
+}
+
+// First-time walkthrough for the shoppable Shop page. Opens automatically the
+// first visit (localStorage 'link_in_bio_guide_seen') and is reopenable anytime
+// from "How the Shop page works" in the header. Mirrors the Deal Radar guide.
+function ShopPageGuide({ onClose }: { onClose: () => void }) {
+  const sections: { icon: React.ReactNode; title: string; body: React.ReactNode }[] = [
+    {
+      icon: <ShoppingBag size={18} />,
+      title: 'What your Shop page is',
+      body: <>It’s one clean, branded page at <span className="font-mono">/shop/your-handle</span> — the single link you put in your Instagram, TikTok, and every other bio. Think Linktree, but every tile is <strong>shoppable</strong> and carries your affiliate link. It’s where your Stories, posts, and profile all send people to buy.</>,
+    },
+    {
+      icon: <Check size={18} />,
+      title: 'Claim your handle & go live',
+      body: <>Pick a handle once (that’s your permanent URL), then flip <strong>Publish</strong> when you’re ready. Until then it stays a private draft. Hit <strong>Copy link</strong> and paste it into your bios — the same link works everywhere and never changes.</>,
+    },
+    {
+      icon: <Palette size={18} />,
+      title: 'Make it yours',
+      body: <>Your <strong>logo or headshot imports straight from your blog</strong> — no re-uploading. Pick a theme, add a short bio line, and your connected social accounts show up automatically as a tidy row of icon pills under your name. Your other brand links (YouTube, newsletter, site) sit right below.</>,
+    },
+    {
+      icon: <Link2 size={18} />,
+      title: 'Product tiles carry your link automatically',
+      body: <>Import the products you’ve already posted with one tap, or add tiles by hand. Every tile links out through <strong>Geniuslink</strong> when you use it (your Amazon tag otherwise) — so you never paste a raw link, and every click is properly attributed to you.</>,
+    },
+    {
+      icon: <Zap size={18} />,
+      title: 'Two shelves: Current Deals vs. Other Sales',
+      body: <>Because Stories only last 24 hours, your page splits in two. Tick a product’s <strong>“in my story”</strong> box and it jumps into the <strong>Current Deals</strong> row at the top — matching what’s live in your Stories right now. Everything else sits under <strong>Other Sales I found</strong> as your evergreen picks.</>,
+    },
+    {
+      icon: <Instagram size={18} />,
+      title: 'Build Instagram Stories from here',
+      body: <>Tick the deals that are live in your Stories, hit <strong>Create IG Stories</strong>, and we compose and post them for you — each with a “link in bio” call-to-action that points back to this page. When the 24 hours are up, <strong>Clear all</strong> resets the shelf in one tap.</>,
+    },
+    {
+      icon: <MousePointerClick size={18} />,
+      title: 'Share it & watch the clicks',
+      body: <>One link in every bio, every Story, every caption. Your page tracks clicks per tile so you can see what your audience actually taps — and double down on the picks that convert.</>,
+    },
+  ]
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-0 sm:p-6" role="dialog" aria-modal="true" aria-label="Shop page guide">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="relative w-full sm:max-w-2xl max-h-full sm:max-h-[85vh] flex flex-col rounded-none sm:rounded-2xl border bg-white dark:bg-[#16161a] shadow-xl overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between gap-3 px-5 py-4 border-b shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-violet-100 text-violet-600"><ShoppingBag size={20} /></div>
+            <div>
+              <div className="text-base font-bold leading-tight">Your shoppable Shop page</div>
+              <div className="text-xs text-muted-foreground">One link for every bio — a storefront that turns followers into buyers.</div>
+            </div>
+          </div>
+          <button onClick={onClose} className="shrink-0 inline-flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground" title="Close"><CloseIcon size={18} /></button>
+        </div>
+
+        {/* Scrollable body */}
+        <div className="overflow-y-auto px-5 py-4 space-y-4">
+          {sections.map((s, i) => (
+            <div key={i} className="flex gap-3">
+              <div className="shrink-0 inline-flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-foreground/80">{s.icon}</div>
+              <div className="min-w-0">
+                <div className="text-sm font-semibold">{s.title}</div>
+                <div className="text-[13px] text-muted-foreground leading-relaxed mt-0.5">{s.body}</div>
+              </div>
+            </div>
+          ))}
+          <div className="rounded-lg bg-muted/60 px-3.5 py-3 text-[12px] text-muted-foreground leading-relaxed">
+            <strong className="text-foreground">Pairs with Amazon Deal Radar.</strong> Post a deal from Deal Radar and it can flow straight onto this page and into your Stories — find the deal, post it, drive traffic here, convert. The whole loop in one place.
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between gap-3 px-5 py-3.5 border-t shrink-0">
+          <span className="text-xs text-muted-foreground">Reopen this anytime from <span className="font-medium text-foreground">How the Shop page works</span> at the top.</span>
+          <Button size="sm" onClick={onClose}>Got it — let’s build it</Button>
+        </div>
+      </div>
     </div>
   )
 }
