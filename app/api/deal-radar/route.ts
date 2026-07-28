@@ -14,6 +14,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier, type Tier } from '@/lib/tier'
 import { canBrowseDealRadar } from '@/lib/feature-access'
+import { toUserMessage } from '@/lib/friendly-error'
 
 export const runtime = 'nodejs'
 
@@ -74,6 +75,7 @@ interface DealRow {
   lowest_label: string | null
   monthly_sold: number | null
   opportunity_score: number | null
+  has_video: boolean | null
 }
 
 export async function GET(request: Request) {
@@ -115,6 +117,9 @@ export async function GET(request: Request) {
     // % off an inflated list price.
     const realOnly = url.searchParams.get('real') === '1'
     const lightningOnly = url.searchParams.get('lightning') === '1'
+    // "Has video": only listings with a confirmed image-carousel (brand) video.
+    // has_video is tri-state (true/false/NULL=unchecked); we match true only.
+    const videoOnly = url.searchParams.get('video') === '1'
     const sort = (url.searchParams.get('sort') || 'opportunity') as SortKey
     const page = Math.max(0, intParam(url, 'page') ?? 0)
 
@@ -131,6 +136,7 @@ export async function GET(request: Request) {
       if (hasCampaign) query = query.not('campaign_commission_pct', 'is', null)
       if (minCommission != null) query = query.gte('campaign_commission_pct', minCommission)
       if (realOnly) query = query.in('deal_quality', ['excellent', 'genuine'])
+      if (videoOnly) query = query.eq('has_video', true)
       // Lightning tab shows only deals whose window is STILL LIVE. An expired
       // lightning deal is no longer "hurry, it ends soon!" — it shouldn't fill
       // this tab with dead "Deal ended" cards.
@@ -148,10 +154,12 @@ export async function GET(request: Request) {
         if (category != null) fb = fb.eq('category_id', category)
         if (minDiscount != null) fb = fb.gte('discount_pct', minDiscount)
         if (hasCampaign) fb = fb.not('campaign_commission_pct', 'is', null)
+        if (videoOnly) fb = fb.eq('has_video', true)
         const { data: fbData } = await applySort(fb, sort).range(from, from + PAGE_SIZE - 1)
         return NextResponse.json({ ok: true, deals: (fbData ?? []).map((r: DealRow) => toClient(r, amazonTag)), ticker: [] })
       }
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      console.error('[deal-radar GET]', error.message)
+      return NextResponse.json({ error: toUserMessage(error, 'Could not load deals just now. Please try again in a moment.') }, { status: 500 })
     }
 
     const rows = (data ?? []) as DealRow[]
@@ -177,8 +185,8 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ ok: true, page, deals, ticker })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    return NextResponse.json({ error: msg }, { status: 500 })
+    console.error('[deal-radar GET]', err instanceof Error ? err.message : err)
+    return NextResponse.json({ error: toUserMessage(err, 'Could not load deals just now. Please try again in a moment.') }, { status: 500 })
   }
 }
 
@@ -265,6 +273,7 @@ function toClient(r: DealRow, amazonTag: string, postedUrl: string | null = null
     commissionRatePct: rate,
     commissionIsBounty: bountyRate != null,
     opportunityScore: r.opportunity_score != null ? Number(r.opportunity_score) : null,
+    hasVideo: r.has_video === true,
     asin: r.asin,
     title: r.title,
     brand: r.brand,
