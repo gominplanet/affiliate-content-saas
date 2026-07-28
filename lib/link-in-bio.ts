@@ -34,18 +34,17 @@ export interface LinkTheme {
   key: string
   label: string
   bg: string        // page background (CSS)
-  card: string      // tile background
-  text: string      // primary text
-  sub: string       // secondary text
-  border: string    // tile border
+  text: string      // header text on the page background
+  sub: string       // secondary header text
+  accent: string    // "Shop now" button + accents (product tiles are always white)
 }
 
 export const LINK_THEMES: LinkTheme[] = [
-  { key: 'light',  label: 'Light',  bg: '#f5f5f7', card: '#ffffff', text: '#111114', sub: '#6b6b70', border: 'rgba(0,0,0,0.08)' },
-  { key: 'dark',   label: 'Dark',   bg: '#0e0e11', card: '#1a1a1f', text: '#f5f5f7', sub: '#a1a1aa', border: 'rgba(255,255,255,0.10)' },
-  { key: 'sunset', label: 'Sunset', bg: 'linear-gradient(160deg,#F97316 0%,#DB2777 100%)', card: 'rgba(255,255,255,0.14)', text: '#ffffff', sub: 'rgba(255,255,255,0.82)', border: 'rgba(255,255,255,0.22)' },
-  { key: 'forest', label: 'Forest', bg: 'linear-gradient(160deg,#065f46 0%,#064e3b 100%)', card: 'rgba(255,255,255,0.12)', text: '#ffffff', sub: 'rgba(255,255,255,0.82)', border: 'rgba(255,255,255,0.20)' },
-  { key: 'ocean',  label: 'Ocean',  bg: 'linear-gradient(160deg,#0ea5e9 0%,#4f46e5 100%)', card: 'rgba(255,255,255,0.14)', text: '#ffffff', sub: 'rgba(255,255,255,0.85)', border: 'rgba(255,255,255,0.22)' },
+  { key: 'light',  label: 'Light',  bg: 'linear-gradient(180deg,#f4f4f7 0%,#e9e9ee 100%)', text: '#111114', sub: '#6b6b70', accent: '#7C3AED' },
+  { key: 'dark',   label: 'Dark',   bg: 'linear-gradient(180deg,#141418 0%,#0b0b0e 100%)', text: '#f5f5f7', sub: '#a1a1aa', accent: '#8b5cf6' },
+  { key: 'sunset', label: 'Sunset', bg: 'linear-gradient(160deg,#F97316 0%,#DB2777 100%)', text: '#ffffff', sub: 'rgba(255,255,255,0.85)', accent: '#DB2777' },
+  { key: 'forest', label: 'Forest', bg: 'linear-gradient(160deg,#059669 0%,#064e3b 100%)', text: '#ffffff', sub: 'rgba(255,255,255,0.85)', accent: '#059669' },
+  { key: 'ocean',  label: 'Ocean',  bg: 'linear-gradient(160deg,#0ea5e9 0%,#4f46e5 100%)', text: '#ffffff', sub: 'rgba(255,255,255,0.9)', accent: '#4F46E5' },
 ]
 
 export function themeFor(key: string | null | undefined): LinkTheme {
