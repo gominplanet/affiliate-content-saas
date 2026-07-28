@@ -1,19 +1,23 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// Amazon Deal Radar launch announcement on the dashboard (graduated out of Labs
-// 2026-07-27, now open to all paid tiers). The server page decides ELIGIBILITY
-// (paid tier via canUseDealRadar) and renders this; the client component only
-// handles "don't show again" dismissal via localStorage — same pattern as
-// MetaLiveBanner / ProTourBanner (null guard avoids the SSR/CSR flicker).
+// New-features launch announcement on the dashboard: Amazon Deal Radar
+// (graduated out of Labs 2026-07-27, now open to all paid tiers) PLUS the
+// shoppable Link-in-Bio Shop page and auto Instagram Stories that pair with it.
+// The server page decides ELIGIBILITY (paid tier via canUseDealRadar) and
+// renders this; the client component only handles "don't show again" dismissal
+// via localStorage — same pattern as MetaLiveBanner / ProTourBanner (null guard
+// avoids the SSR/CSR flicker).
 
 'use client'
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Radar, ArrowRight, X, ShieldCheck, Zap, Sparkles } from 'lucide-react'
+import { Radar, ArrowRight, X, ShieldCheck, Instagram, ShoppingBag } from 'lucide-react'
 
 // Bump the version to re-surface the banner after a major change.
-const STORAGE_KEY = 'mvp.dealRadarLaunch.dismissed.v1'
+// v2: broadened from Deal-Radar-only to the full launch trio (Deal Radar +
+// Shop page + auto IG Stories).
+const STORAGE_KEY = 'mvp.dealRadarLaunch.dismissed.v2'
 
 export default function DealRadarLaunchBanner() {
   const [dismissed, setDismissed] = useState<boolean | null>(null)
@@ -69,15 +73,16 @@ export default function DealRadarLaunchBanner() {
               New · now on your plan
             </span>
           </div>
-          <p className="text-[16px] sm:text-[17px] font-bold text-white">Amazon Deal Radar is live 🎯</p>
+          <p className="text-[16px] sm:text-[17px] font-bold text-white">3 big new features are live 🎯</p>
           <p className="text-[13px] mt-1 text-white/90">
-            Live Amazon deals in your niche — <strong>verified real discounts</strong>, no fakes. Turn any deal
-            into a blog post or a social post in one click, with your affiliate link attached.
+            <strong>Amazon Deal Radar</strong> finds real, price-verified deals in your niche — post them in one
+            click, auto-generate <strong>Instagram Stories</strong>, and send followers to your new shoppable{' '}
+            <strong>Shop page</strong>. All on your plan, no extra cost.
           </p>
           <div className="hidden sm:flex items-center gap-3 mt-2 text-[12px] font-medium text-white/85">
             <span className="inline-flex items-center gap-1"><ShieldCheck size={13} /> Real deals only</span>
-            <span className="inline-flex items-center gap-1"><Sparkles size={13} /> Double-win bounties</span>
-            <span className="inline-flex items-center gap-1"><Zap size={13} /> Lightning deals</span>
+            <span className="inline-flex items-center gap-1"><Instagram size={13} /> Auto IG Stories</span>
+            <span className="inline-flex items-center gap-1"><ShoppingBag size={13} /> Shoppable Shop page</span>
           </div>
         </div>
         <span className="hidden sm:inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-[13px] font-semibold bg-white text-[#EA580C] flex-shrink-0">
