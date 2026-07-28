@@ -6,7 +6,6 @@
 // bio link — ideally their Link in Bio page — to shop. Pairs with the Link in
 // Bio feature: Story drives attention, the bio page holds the shoppable grid.
 
-import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { resolveSocialAccount } from '@/lib/social-accounts'
 import { publishMedia, refreshLongLivedToken } from '@/services/instagram'
 import { renderStoryImage, cloudinaryConfigured } from '@/services/cloudinary'
@@ -26,30 +25,28 @@ export async function publishDealStory(opts: {
   if (!deal.imageUrl) return { ok: false, error: 'No product image to build a Story from.' }
   if (!cloudinaryConfigured()) return { ok: false, error: 'Story images need Cloudinary — not configured yet.' }
 
-  // Instagram creds: social_accounts first (modern flow), legacy integrations
-  // columns as fallback — same resolution every other IG route uses.
-  const { data: intRaw } = await supabase
+  // Instagram creds — mirror the PROVEN IG publish path (lib/instagram-publish):
+  // read the integrations columns RAW. The IG token is stored/used un-wrapped
+  // there; running it through decryptIntegrationRow can null a perfectly valid
+  // token (that was the "Instagram is not connected" bug). Fall back to
+  // social_accounts (modern multi-account flow) only when the columns are empty.
+  const { data: integ } = await supabase
     .from('integrations')
     .select('instagram_user_id,instagram_access_token,instagram_token_expiry')
     .eq('user_id', userId).maybeSingle()
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const ig = decryptIntegrationRow(intRaw as any) || {}
-  const acct = await resolveSocialAccount(supabase, userId, 'instagram', {
-    socialAccountId: null,
-    allowSelection: false,
-    legacy: {
-      externalId: ig.instagram_user_id as string | undefined,
-      accessToken: ig.instagram_access_token as string | undefined,
-      displayName: null,
-    },
-  })
-  if (!acct) return { ok: false, error: 'Instagram is not connected.' }
+  let igUserId = (integ?.instagram_user_id as string | undefined) || undefined
+  let accessToken = (integ?.instagram_access_token as string | undefined) || undefined
+  const fromLegacy = !!(igUserId && accessToken)
 
-  let accessToken = acct.accessToken
-  // Refresh a legacy long-lived token if it's near expiry (social_accounts rows
-  // are refreshed by their own flow; legacy integrations rows aren't).
-  const expiry = Number(ig.instagram_token_expiry || 0)
-  if (!acct.id && expiry && Date.now() > expiry - 24 * 60 * 60 * 1000) {
+  if (!igUserId || !accessToken) {
+    const acct = await resolveSocialAccount(supabase, userId, 'instagram', { socialAccountId: null, allowSelection: false })
+    if (acct?.externalId && acct?.accessToken) { igUserId = acct.externalId; accessToken = acct.accessToken }
+  }
+  if (!igUserId || !accessToken) return { ok: false, error: 'Instagram is not connected.' }
+
+  // Refresh a legacy long-lived token if it's near expiry.
+  const expiry = Number(integ?.instagram_token_expiry || 0)
+  if (fromLegacy && expiry && Date.now() > expiry - 24 * 60 * 60 * 1000) {
     try {
       const r = await refreshLongLivedToken(accessToken)
       accessToken = r.accessToken
@@ -74,7 +71,7 @@ export async function publishDealStory(opts: {
   if (!storyImage) return { ok: false, error: "Couldn't build the Story image — try again shortly." }
 
   try {
-    const storyId = await publishMedia({ userId: acct.externalId, accessToken, mediaType: 'STORIES', imageUrl: storyImage })
+    const storyId = await publishMedia({ userId: igUserId, accessToken, mediaType: 'STORIES', imageUrl: storyImage })
     return { ok: true, storyId }
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) }
