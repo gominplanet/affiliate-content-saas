@@ -44,7 +44,7 @@ export default function MessageBrandFlow({ target, onClose }: { target: MessageB
   if (phase === 'checking') {
     return (
       <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.55)' }} onClick={onClose}>
-        <div className="rounded-2xl px-6 py-5 flex items-center gap-3" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }} onClick={e => e.stopPropagation()}>
+        <div className="rounded-2xl px-6 py-5 flex items-center gap-3 bg-white dark:bg-[#111113]" style={{ border: '1px solid var(--border)' }} onClick={e => e.stopPropagation()}>
           <Loader2 size={18} className="animate-spin text-[#7C3AED]" />
           <span className="text-[13px]" style={{ color: 'var(--text-soft)' }}>Checking for an Affiliate+ campaign…</span>
         </div>

@@ -63,7 +63,7 @@ export default function NetworkOutreachModal({ target, onClose }: { target: Netw
 
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.55)' }} onClick={onClose}>
-      <div className="w-full max-w-lg rounded-2xl overflow-hidden flex flex-col max-h-[92vh]" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }} onClick={(e) => e.stopPropagation()}>
+      <div className="w-full max-w-lg rounded-2xl overflow-hidden flex flex-col max-h-[92vh] bg-white dark:bg-[#111113]" style={{ border: '1px solid var(--border)' }} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between gap-3 p-5 pb-3">
           <div className="min-w-0">
             <h2 className="text-[17px] font-bold flex items-center gap-2" style={{ color: 'var(--text)' }}>
