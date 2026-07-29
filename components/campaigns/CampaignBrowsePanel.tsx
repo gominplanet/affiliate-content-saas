@@ -16,7 +16,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
   Loader2, Search, Bookmark, BookmarkCheck, MessageCircle, ShoppingCart,
-  PenLine, Check, ArrowRight, Coins, Users, Wallet, Clock, SlidersHorizontal,
+  PenLine, Check, ArrowRight, Coins, Users, Wallet, Clock, Video, Star, TrendingUp,
 } from 'lucide-react'
 import type { MessageBrandCampaign } from '@/components/campaigns/MessageBrandModal'
 
@@ -36,10 +36,22 @@ interface Campaign {
   budget: number | null
   budgetRemaining: number | null
   budgetPct: number | null
+  // Product signals — null until the enrichment cron has reached this product.
+  imageUrl: string | null
+  priceNow: number | null
+  priceWas: number | null
+  discountPct: number | null
+  rating: number | null
+  reviewCount: number | null
+  monthlySold: number | null
+  videoCount: number | null
+  hasVideo: boolean
 }
 
 const SORTS: { key: string; label: string }[] = [
   { key: 'commission', label: 'Highest commission' },
+  { key: 'recentSales', label: 'Recent sales' },
+  { key: 'rating', label: 'Highest rating' },
   { key: 'endingSoon', label: 'Ending soon' },
   { key: 'mostRunway', label: 'Most days left' },
   { key: 'slots', label: 'Most slots open' },
@@ -63,6 +75,9 @@ export default function CampaignBrowsePanel({
   const [minCommission, setMinCommission] = useState(0)
   const [minDaysLeft, setMinDaysLeft] = useState(0)
   const [openSlotsOnly, setOpenSlotsOnly] = useState(false)
+  const [minRating, setMinRating] = useState(0)
+  const [minRecentSales, setMinRecentSales] = useState(0)
+  const [videoOnly, setVideoOnly] = useState(false)
 
   const [rows, setRows] = useState<Campaign[]>([])
   const [loading, setLoading] = useState(true)
@@ -89,6 +104,9 @@ export default function CampaignBrowsePanel({
       if (minCommission > 0) params.set('minCommission', String(minCommission))
       if (minDaysLeft > 0) params.set('minDaysLeft', String(minDaysLeft))
       if (openSlotsOnly) params.set('openSlots', '1')
+      if (minRating > 0) params.set('minRating', String(minRating))
+      if (minRecentSales > 0) params.set('minRecentSales', String(minRecentSales))
+      if (videoOnly) params.set('video', '1')
       params.set('sort', sort)
       params.set('page', String(pageToLoad))
       const res = await fetch(`/api/campaigns/browse?${params.toString()}`)
@@ -103,7 +121,7 @@ export default function CampaignBrowsePanel({
     } finally {
       if (append) setLoadingMore(false); else setLoading(false)
     }
-  }, [q, sort, minCommission, minDaysLeft, openSlotsOnly])
+  }, [q, sort, minCommission, minDaysLeft, openSlotsOnly, minRating, minRecentSales, videoOnly])
 
   // Debounced reload on any filter change.
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -133,8 +151,8 @@ export default function CampaignBrowsePanel({
     }
   }
 
-  const hasFilters = q.trim() || minCommission > 0 || minDaysLeft > 0 || openSlotsOnly
-  const clearFilters = () => { setQ(''); setMinCommission(0); setMinDaysLeft(0); setOpenSlotsOnly(false); setSort('commission') }
+  const hasFilters = q.trim() || minCommission > 0 || minDaysLeft > 0 || openSlotsOnly || minRating > 0 || minRecentSales > 0 || videoOnly
+  const clearFilters = () => { setQ(''); setMinCommission(0); setMinDaysLeft(0); setOpenSlotsOnly(false); setMinRating(0); setMinRecentSales(0); setVideoOnly(false); setSort('commission') }
 
   return (
     <div className="card mb-5 overflow-hidden" style={{ borderWidth: 2, borderColor: 'rgba(124,58,237,0.30)' }}>
@@ -157,6 +175,12 @@ export default function CampaignBrowsePanel({
           <Select value={String(minDaysLeft)} onChange={v => setMinDaysLeft(Number(v))} options={[
             { v: '0', l: 'Any runway' }, { v: '7', l: '7+ days left' }, { v: '14', l: '14+ days' }, { v: '30', l: '30+ days' },
           ]} />
+          <Select value={String(minRating)} onChange={v => setMinRating(Number(v))} options={[
+            { v: '0', l: 'Any rating' }, { v: '3', l: '3★+' }, { v: '4', l: '4★+' }, { v: '4.5', l: '4.5★+' },
+          ]} />
+          <Select value={String(minRecentSales)} onChange={v => setMinRecentSales(Number(v))} options={[
+            { v: '0', l: 'Any sales' }, { v: '100', l: '100+ sold/mo' }, { v: '500', l: '500+ sold/mo' }, { v: '1000', l: '1k+ sold/mo' },
+          ]} />
           <button
             onClick={() => setOpenSlotsOnly(v => !v)}
             className="h-9 text-sm font-medium rounded-full border px-3.5 inline-flex items-center gap-1.5 transition-all active:scale-[0.97]"
@@ -164,6 +188,14 @@ export default function CampaignBrowsePanel({
               ? { background: '#7C3AED', color: '#fff', borderColor: '#7C3AED' }
               : { background: 'var(--surface)', color: 'var(--text-soft)', borderColor: 'var(--border)' }}>
             <Users size={14} /> Open slots
+          </button>
+          <button
+            onClick={() => setVideoOnly(v => !v)}
+            className="h-9 text-sm font-medium rounded-full border px-3.5 inline-flex items-center gap-1.5 transition-all active:scale-[0.97]"
+            style={videoOnly
+              ? { background: '#c026d3', color: '#fff', borderColor: '#c026d3' }
+              : { background: 'var(--surface)', color: 'var(--text-soft)', borderColor: 'var(--border)' }}>
+            <Video size={14} /> Has video
           </button>
           {hasFilters && (
             <button onClick={clearFilters} className="ml-auto text-xs font-medium inline-flex items-center gap-1 h-8 px-2.5" style={{ color: 'var(--text-faint)' }}>
@@ -256,29 +288,59 @@ function BrowseCard({ c, saved, covered, onToggleSave, onMessageBrand }: {
   return (
     <div className="rounded-xl border flex flex-col overflow-hidden" style={{ borderColor: 'var(--border-2)', background: 'var(--surface)' }}>
       <div className="p-3 flex flex-col gap-2 flex-1">
-        {/* Brand + days left */}
-        <div className="flex items-start justify-between gap-2">
-          <span className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: 'var(--text-faint)' }}>{c.brand || 'Brand'}</span>
-          {dl != null && (
-            <span className="inline-flex items-center gap-1 text-[11px] font-bold flex-shrink-0" style={{ color: dlColor }}>
-              <Clock size={11} /> {dl}d left
+        {/* Thumbnail + brand + name */}
+        <div className="flex gap-2.5">
+          {c.imageUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={c.imageUrl} alt="" className="w-14 h-14 rounded-lg object-contain flex-shrink-0 bg-white border" style={{ borderColor: 'var(--border)' }} />
+          ) : (
+            <div className="w-14 h-14 rounded-lg flex-shrink-0 grid place-items-center" style={{ background: 'rgba(124,58,237,0.06)' }}>
+              <Coins size={18} style={{ color: 'rgba(124,58,237,0.4)' }} />
+            </div>
+          )}
+          <div className="min-w-0 flex-1">
+            <div className="flex items-start justify-between gap-2">
+              <span className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: 'var(--text-faint)' }}>{c.brand || 'Brand'}</span>
+              {dl != null && (
+                <span className="inline-flex items-center gap-1 text-[11px] font-bold flex-shrink-0" style={{ color: dlColor }}>
+                  <Clock size={11} /> {dl}d left
+                </span>
+              )}
+            </div>
+            <p className="text-[12.5px] font-semibold leading-snug line-clamp-2" style={{ color: 'var(--text)' }}>
+              {c.campaignName}
+              {c.asinCount > 1 && <span className="font-normal" style={{ color: 'var(--text-faint)' }}> · {c.asinCount} products</span>}
+            </p>
+          </div>
+        </div>
+
+        {/* Commission + price */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="inline-flex items-center gap-1 text-lg font-extrabold" style={{ color: '#7C3AED' }}>
+            <Coins size={15} /> +{c.commissionPct}%
+          </span>
+          {c.priceNow != null && (
+            <span className="inline-flex items-baseline gap-1.5 text-[12px]" style={{ color: 'var(--text)' }}>
+              <span className="font-semibold">${c.priceNow.toFixed(2)}</span>
+              {c.discountPct != null && c.discountPct > 0 && <span className="font-bold" style={{ color: '#e11d48' }}>-{c.discountPct}%</span>}
             </span>
           )}
         </div>
 
-        {/* Product / campaign name */}
-        <p className="text-[13px] font-semibold leading-snug line-clamp-2 min-h-[2.4rem]" style={{ color: 'var(--text)' }}>
-          {c.campaignName}
-          {c.asinCount > 1 && <span className="font-normal" style={{ color: 'var(--text-faint)' }}> · {c.asinCount} products</span>}
-        </p>
-
-        {/* Commission — the headline number */}
-        <div className="flex items-baseline gap-1.5">
-          <span className="inline-flex items-center gap-1 text-lg font-extrabold" style={{ color: '#7C3AED' }}>
-            <Coins size={15} /> +{c.commissionPct}%
-          </span>
-          <span className="text-[11px]" style={{ color: 'var(--text-faint)' }}>commission</span>
-        </div>
+        {/* Product signals (fill in as the enrichment cron reaches each product) */}
+        {(c.rating != null || c.monthlySold != null || c.hasVideo) && (
+          <div className="flex items-center gap-2.5 flex-wrap text-[11px]" style={{ color: 'var(--text-soft)' }}>
+            {c.rating != null && (
+              <span className="inline-flex items-center gap-1"><Star size={11} style={{ color: '#f59e0b', fill: '#f59e0b' }} /> {c.rating.toFixed(1)}{c.reviewCount != null ? ` (${c.reviewCount.toLocaleString()})` : ''}</span>
+            )}
+            {c.monthlySold != null && (
+              <span className="inline-flex items-center gap-1" style={{ color: '#2563eb' }}><TrendingUp size={11} /> {c.monthlySold.toLocaleString()}+/mo</span>
+            )}
+            {c.hasVideo && (
+              <span className="inline-flex items-center gap-1" style={{ color: '#c026d3' }}><Video size={11} /> video{c.videoCount && c.videoCount > 1 ? ` ×${c.videoCount}` : ''}</span>
+            )}
+          </div>
+        )}
 
         {/* Budget bar */}
         {c.budgetPct != null && (
