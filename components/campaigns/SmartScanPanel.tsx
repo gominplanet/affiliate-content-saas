@@ -32,6 +32,19 @@ const COUNTS = [10, 20, 50] as const
 const MAX_WAVES = 6
 const PER_WAVE = 12 // deep-check passers requested per SCOUT call (throttle-safe)
 
+// Pre-warm the message-link cache with every campaign the scan already resolved
+// a details URL for, so "Message brand" on any of them skips the slow live grid
+// search and sends instantly. Fire-and-forget; never blocks the scan.
+function cacheResolvedLinks(matches: ScoredMatch[]) {
+  const links = matches
+    .filter(m => m.asin && m.detailsUrl)
+    .map(m => ({ asin: m.asin as string, campaignId: m.campaignId ?? null, detailsUrl: m.detailsUrl as string }))
+  if (!links.length) return
+  void fetch('/api/campaigns/message-link', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ links }),
+  }).catch(() => {})
+}
+
 export default function SmartScanPanel({
   coveredAsins,
   onMessageBrand,
@@ -182,6 +195,7 @@ export default function SmartScanPanel({
         const scored = (ver.results ?? [])
           .filter(m => passesGates(m, RULES))
           .map(m => scoreMatch(m, RULES))
+        cacheResolvedLinks(scored) // pre-warm so messaging these is instant
         // Accumulate across pages (dedup by asin), keep best-scored first.
         setMatches(prev => {
           const merged = paging ? [...(prev ?? []), ...scored] : scored
@@ -227,6 +241,7 @@ export default function SmartScanPanel({
       .map(m => scoreMatch(m, RULES))
       .sort((a, b) => b.score - a.score)
     setMatches(scored)
+    cacheResolvedLinks(scored) // pre-warm so messaging these is instant
     const s = res.stats
     const dl = dropLine(s?.drops)
     if (s?.blocked) setNote(`Amazon asked for a pause partway through — these results are partial. Wait ~15 minutes before scanning again.${dl}`)

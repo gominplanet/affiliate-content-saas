@@ -169,6 +169,11 @@ export default function MessageBrandModal({ campaign, onClose, onSent, onFindCam
         setLiveDetailsUrl(r.detailsUrl)
         const brand = (r.brand || '').trim()
         if (brand && brand.toLowerCase() !== effectiveBrand.toLowerCase()) { setLiveBrand(brand) }
+        // Cache the resolved URL so the next message to this campaign is instant.
+        void fetch('/api/campaigns/message-link', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ asin: campaign.asin, campaignId: r.campaignId ?? null, detailsUrl: r.detailsUrl }),
+        }).catch(() => {})
         toast.success(`Found a Creator Connections campaign${brand ? ` from ${brand}` : ''} — you can auto-send now.`)
       } else if (r.ok) {
         setFindMiss(`No live campaign matched${typeof r.scanned === 'number' ? ` (checked ${r.scanned})` : ''}. You can still copy the pitch.`)
@@ -200,7 +205,16 @@ export default function MessageBrandModal({ campaign, onClose, onSent, onFindCam
     if (campaign.detailsUrl || !onFindCampaign) return
     if (!/^[A-Za-z0-9]{10}$/.test(campaign.asin || '')) return
     autoFound.current = true
-    runFind({ silent: true })
+    ;(async () => {
+      // Cache first: if we've resolved this campaign's message URL before (from a
+      // previous message OR a Smart Scan), use it and skip the slow grid search.
+      try {
+        const res = await fetch(`/api/campaigns/message-link?asin=${encodeURIComponent(campaign.asin)}`)
+        const d = await res.json().catch(() => ({}))
+        if (d?.detailsUrl) { setLiveDetailsUrl(d.detailsUrl); return }
+      } catch { /* fall through to the live find */ }
+      runFind({ silent: true })
+    })()
     /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, [])
 
@@ -254,6 +268,9 @@ export default function MessageBrandModal({ campaign, onClose, onSent, onFindCam
         onClose()
       } else if (r.error === 'not-installed') toast.error('Install/enable SCOUT to message brands.')
       else {
+        // A send failure may mean the cached message URL went stale — drop it so
+        // the next attempt re-resolves from Amazon instead of reusing a bad link.
+        void fetch(`/api/campaigns/message-link?asin=${encodeURIComponent(campaign.asin)}`, { method: 'DELETE' }).catch(() => {})
         // Full diag (incl. the Send-button candidates SCOUT saw) → console.
         // eslint-disable-next-line no-console
         console.warn('[MVP] send-brand failed — full diagnostic:', r)
