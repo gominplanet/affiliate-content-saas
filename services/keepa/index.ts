@@ -338,6 +338,97 @@ function detectCarouselVideo(videos: any): boolean | null {
   return false
 }
 
+// ── Product "card" for the AMZ Finder Browse view ────────────────────────────
+//
+// A compact, presentation-ready snapshot of a single product — image, price +
+// discount, rating, review count, recent monthly sales, and carousel-video
+// count — for the Creator Connections catalog's representative products. One
+// cached /product call (stats + rating + videos, no `offers`), same cheap path
+// as fetchKeepaProductStats. Returns all-null (never throws) on any failure.
+
+export interface KeepaProductCard {
+  imageUrl: string | null
+  priceNowCents: number | null
+  priceWasCents: number | null
+  discountPct: number | null
+  /** 0–5 stars. */
+  rating: number | null
+  reviewCount: number | null
+  monthlySold: number | null
+  /** Number of brand/carousel (non-community) videos on the listing. */
+  videoCount: number
+  hasCarouselVideo: boolean | null
+  /** Keepa token balance from this response, for the cron to pace on. */
+  tokensLeft: number | null
+}
+
+export async function fetchKeepaProductCard(asin: string, domainId = KEEPA_DOMAIN_US): Promise<KeepaProductCard> {
+  const empty: KeepaProductCard = { imageUrl: null, priceNowCents: null, priceWasCents: null, discountPct: null, rating: null, reviewCount: null, monthlySold: null, videoCount: 0, hasCarouselVideo: null, tokensLeft: null }
+  const key = process.env.KEEPA_API_KEY
+  if (!key || !/^[A-Za-z0-9]{10}$/.test(asin)) return empty
+  // stats=90 (current + 90-day avg for a discount read), rating=1 (current stars
+  // + review count), videos=1 (carousel count). history=0 keeps it light. No
+  // `offers` — cached data, ~cheap.
+  const url = `${KEEPA_BASE}/product?key=${encodeURIComponent(key)}&domain=${domainId}&asin=${asin}&stats=90&history=0&rating=1&videos=1`
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(30_000) })
+    if (!res.ok) return empty
+    const data = await res.json() as { products?: unknown[]; tokensLeft?: number }
+    const tokensLeft = Number.isFinite(data.tokensLeft as number) ? (data.tokensLeft as number) : null
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const p = (Array.isArray(data.products) ? (data.products[0] as any) : null)
+    if (!p) return { ...empty, tokensLeft }
+    const stats = p.stats || {}
+    const priceNowCents = statPrice(stats.current)
+    const priceWasCents = statPrice(stats.avg90) ?? statPrice(stats.avg30)
+    const discountPct = (priceNowCents != null && priceWasCents != null && priceWasCents > priceNowCents && priceWasCents > 0)
+      ? Math.min(99, Math.max(1, Math.round(((priceWasCents - priceNowCents) / priceWasCents) * 100))) : null
+    // Rating (×10) + review count live in the stats.current CSV array.
+    const cur = Array.isArray(stats.current) ? stats.current : []
+    const ratingRaw = Number(cur[KEEPA_CSV_RATING])
+    const reviewsRaw = Number(cur[KEEPA_CSV_REVIEW_COUNT])
+    const rating = Number.isFinite(ratingRaw) && ratingRaw > 0 ? Math.min(5, Math.round(ratingRaw) / 10) : null
+    const reviewCount = Number.isFinite(reviewsRaw) && reviewsRaw >= 0 ? reviewsRaw : null
+    const ms = Number(p.monthlySold)
+    const monthlySold = Number.isFinite(ms) && ms > 0 ? ms : null
+    const { count, has } = countCarouselVideos(p.videos)
+    return { imageUrl: keepaProductImageUrl(p.images), priceNowCents, priceWasCents, discountPct, rating, reviewCount, monthlySold, videoCount: count, hasCarouselVideo: has, tokensLeft }
+  } catch {
+    return empty
+  }
+}
+
+/** Like detectCarouselVideo but returns the COUNT of brand/carousel videos. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function countCarouselVideos(videos: any): { count: number; has: boolean | null } {
+  if (!Array.isArray(videos)) return { count: 0, has: null } // unknown
+  let count = 0
+  for (const v of videos) {
+    if (!v || typeof v !== 'object') continue
+    const c = (v as { creator?: unknown }).creator
+    let community: boolean
+    if (typeof c === 'number') community = COMMUNITY_CREATOR_ORDINALS.has(c)
+    else if (typeof c === 'string') community = COMMUNITY_CREATORS.has(c.trim().toLowerCase())
+    else community = false
+    if (!community) count++
+  }
+  return { count, has: videos.length === 0 ? false : count > 0 }
+}
+
+/** Keepa product images are an Image[] with a large (`l`) filename token. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function keepaProductImageUrl(images: any): string | null {
+  if (!Array.isArray(images) || images.length === 0) return null
+  const first = images[0]
+  let name = ''
+  if (first && typeof first === 'object') name = String(first.l || first.m || '')
+  else if (typeof first === 'string') name = first
+  name = name.trim()
+  if (!name) return null
+  if (/^https?:\/\//i.test(name)) return name
+  return `https://m.media-amazon.com/images/I/${name}`
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function assessFromStats(stats: any): DealAssessment {
   const currentCents = statPrice(stats.current)

@@ -20,7 +20,7 @@ import { toUserMessage } from '@/lib/friendly-error'
 
 export const dynamic = 'force-dynamic'
 
-type SortKey = 'commission' | 'endingSoon' | 'mostRunway' | 'slots' | 'budget'
+type SortKey = 'commission' | 'endingSoon' | 'mostRunway' | 'slots' | 'budget' | 'recentSales' | 'rating'
 const PAGE_SIZE = 40
 
 export async function GET(request: Request) {
@@ -41,6 +41,9 @@ export async function GET(request: Request) {
     const minCommission = numParam(url, 'minCommission') ?? 0
     const minDaysLeft = Math.max(0, numParam(url, 'minDaysLeft') ?? 0)
     const openSlotsOnly = url.searchParams.get('openSlots') === '1'
+    const minRating = numParam(url, 'minRating')
+    const minRecentSales = intParam(url, 'minRecentSales')
+    const videoOnly = url.searchParams.get('video') === '1'
     const sort = (url.searchParams.get('sort') || 'commission') as SortKey
     const page = Math.max(0, intParam(url, 'page') ?? 0)
 
@@ -49,28 +52,41 @@ export async function GET(request: Request) {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sb = supabase as any
-    const build = () => {
+    const BASE_COLS = 'campaign_id, campaign_name, brand_name, asins, commission_pct, starts_at, ends_at, budget, budget_remaining, available_slot, total_slot'
+    const SIGNAL_COLS = 'image_url, price_now_cents, price_was_cents, discount_pct, rating, review_count, monthly_sold, video_count'
+    const SIGNAL_SORTS = new Set<SortKey>(['recentSales', 'rating'])
+
+    // `signals` on ⇒ select/filter/sort the enriched product columns (migration
+    // 197). Falls back to base-only if those columns don't exist yet, so a deploy
+    // that lands before the migration never breaks the live Browse view.
+    // `keyword`: 'fts' = indexed search_vec, 'ilike' = pre-162 fallback, 'none'.
+    const build = (signals: boolean, keyword: 'fts' | 'ilike' | 'none') => {
       let query = sb.from('cc_campaign_catalog')
-        .select('campaign_id, campaign_name, brand_name, asins, commission_pct, starts_at, ends_at, budget, budget_remaining, available_slot, total_slot')
+        .select(signals ? `${BASE_COLS}, ${SIGNAL_COLS}` : BASE_COLS)
         .gte('ends_at', runwayCutoff)
       if (minCommission > 0) query = query.gte('commission_pct', minCommission)
       if (openSlotsOnly) query = query.gt('available_slot', 0)
-      if (q) query = query.textSearch('search_vec', q, { type: 'websearch' })
-      return applySort(query, sort)
+      if (signals) {
+        // Product-signal filters only match ENRICHED rows (null = not yet checked).
+        if (minRating != null) query = query.gte('rating', minRating)
+        if (minRecentSales != null) query = query.gte('monthly_sold', minRecentSales)
+        if (videoOnly) query = query.gt('video_count', 0)
+      }
+      if (keyword === 'fts') query = query.textSearch('search_vec', q, { type: 'websearch' })
+      else if (keyword === 'ilike') query = query.ilike('campaign_name', `%${q}%`)
+      const effSort: SortKey = (!signals && SIGNAL_SORTS.has(sort)) ? 'commission' : sort
+      return applySort(query, effSort)
     }
 
-    const from = page * PAGE_SIZE
-    let { data, error } = await build().range(from, from + PAGE_SIZE - 1)
-    // search_vec absent (migration 162 not run) or another keyword hiccup — retry
-    // once without the keyword so browse still works.
+    const lo = page * PAGE_SIZE, hi = lo + PAGE_SIZE - 1
+    let { data, error } = await build(true, q ? 'fts' : 'none').range(lo, hi)
+    // Enriched columns absent (migration 197 not run yet) → retry base-only.
+    if (error && /column|does not exist|schema cache/i.test(error.message || '')) {
+      ;({ data, error } = await build(false, q ? 'fts' : 'none').range(lo, hi))
+    }
+    // search_vec absent (migration 162) or another keyword hiccup → ILIKE, base-safe.
     if (error && q) {
-      let fb = sb.from('cc_campaign_catalog')
-        .select('campaign_id, campaign_name, brand_name, asins, commission_pct, starts_at, ends_at, budget, budget_remaining, available_slot, total_slot')
-        .gte('ends_at', runwayCutoff)
-      if (minCommission > 0) fb = fb.gte('commission_pct', minCommission)
-      if (openSlotsOnly) fb = fb.gt('available_slot', 0)
-      fb = fb.ilike('campaign_name', `%${q}%`)
-      ;({ data, error } = await applySort(fb, sort).range(from, from + PAGE_SIZE - 1))
+      ;({ data, error } = await build(false, 'ilike').range(lo, hi))
     }
     if (error) {
       console.error('[campaigns/browse]', error.message)
@@ -99,6 +115,8 @@ function applySort(query: any, sort: SortKey) {
     case 'mostRunway':  return query.order('ends_at', { ascending: false }).order('campaign_id', { ascending: true })
     case 'slots':       return query.order('available_slot', { ascending: false, nullsFirst: false }).order('campaign_id', { ascending: true })
     case 'budget':      return query.order('budget_remaining', { ascending: false, nullsFirst: false }).order('campaign_id', { ascending: true })
+    case 'recentSales': return query.order('monthly_sold', { ascending: false, nullsFirst: false }).order('commission_pct', { ascending: false })
+    case 'rating':      return query.order('rating', { ascending: false, nullsFirst: false }).order('review_count', { ascending: false, nullsFirst: false })
     case 'commission':
     default:            return query.order('commission_pct', { ascending: false }).order('ends_at', { ascending: true }).order('campaign_id', { ascending: true })
   }
@@ -131,6 +149,16 @@ function toClient(r: any) {
     budget,
     budgetRemaining,
     budgetPct,
+    // Product signals (null until the enrichment cron has reached this product).
+    imageUrl: r.image_url ?? null,
+    priceNow: r.price_now_cents != null ? Math.round(r.price_now_cents) / 100 : null,
+    priceWas: r.price_was_cents != null ? Math.round(r.price_was_cents) / 100 : null,
+    discountPct: r.discount_pct ?? null,
+    rating: r.rating != null ? Number(r.rating) : null,
+    reviewCount: r.review_count ?? null,
+    monthlySold: r.monthly_sold ?? null,
+    videoCount: r.video_count ?? null,
+    hasVideo: typeof r.video_count === 'number' && r.video_count > 0,
   }
 }
 
