@@ -27,6 +27,7 @@ import { toast } from 'sonner'
 import { getScoutInstallKind, requestFindCampaign } from '@/lib/extension-frame'
 import MessageBrandModal, { type MessageBrandCampaign } from '@/components/campaigns/MessageBrandModal'
 import SmartScanPanel from '@/components/campaigns/SmartScanPanel'
+import CampaignBrowsePanel from '@/components/campaigns/CampaignBrowsePanel'
 import SavedFinds from '@/components/campaigns/SavedFinds'
 import { SCOUT_STORE_LISTING_URL } from '@/lib/scout-version'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
@@ -55,6 +56,9 @@ export default function EpcScoutPage() {
   const [msgModal, setMsgModal] = useState<MessageBrandCampaign | null>(null)
   // Bumped when the Finder saves/unsaves a find → SavedFinds reloads.
   const [savedReloadKey, setSavedReloadKey] = useState(0)
+  // Finder mode: instant "Browse all" over the catalog (default — works even
+  // before SCOUT is connected) vs the SCOUT-verified, MVP-approved Smart Scan.
+  const [finderMode, setFinderMode] = useState<'browse' | 'scan'>('browse')
   // Which SCOUT is installed (via MVP_PING) → drives the "move to the Web Store"
   // nudge for legacy sideloaders. null = not yet checked; store installs
   // auto-update so they get no banner at all.
@@ -270,20 +274,43 @@ export default function EpcScoutPage() {
         </div>
       )}
 
-      {/* ── Step 3 · Search — MVP's opinionated one-click finder ──────────── */}
+      {/* ── Step 3 · Search — Browse all (instant) or Smart Scan (MVP-approved) ── */}
       <div ref={finderRef} className="scroll-mt-24">
-        <div className="flex items-center gap-2 mb-2">
+        <div className="flex items-center gap-2 mb-2 flex-wrap">
           <span className="grid place-items-center w-5 h-5 rounded-full text-[11px] font-bold text-white flex-shrink-0" style={{ background: '#7C3AED' }}>3</span>
-          <p className="text-[13px] font-bold uppercase tracking-wide" style={{ color: '#7C3AED' }}>Search the MVP Finder</p>
-          <span className="text-[11px] font-medium" style={{ color: 'var(--text-faint)' }}>— run your searches here</span>
+          <p className="text-[13px] font-bold uppercase tracking-wide" style={{ color: '#7C3AED' }}>The MVP Finder</p>
+          {/* Mode toggle */}
+          <div className="inline-flex items-center gap-1 p-1 rounded-xl" style={{ background: 'rgba(124,58,237,0.06)' }}>
+            <button onClick={() => setFinderMode('browse')}
+              className="px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors"
+              style={finderMode === 'browse' ? { background: '#7C3AED', color: '#fff' } : { color: '#7C3AED' }}>
+              Browse all
+            </button>
+            <button onClick={() => setFinderMode('scan')}
+              className="px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors"
+              style={finderMode === 'scan' ? { background: '#7C3AED', color: '#fff' } : { color: '#7C3AED' }}>
+              Smart Scan
+            </button>
+          </div>
+          <span className="text-[11px] font-medium" style={{ color: 'var(--text-faint)' }}>
+            {finderMode === 'browse' ? '— every live campaign, instantly. Sort & filter, then act.' : '— SCOUT-verified, MVP-approved picks.'}
+          </span>
         </div>
-        <SmartScanPanel
-          coveredAsins={covered.map(c => c.asin)}
-          onMessageBrand={(c) => setMsgModal(c)}
-          onSavedChange={() => setSavedReloadKey(k => k + 1)}
-        />
+        {finderMode === 'browse' ? (
+          <CampaignBrowsePanel
+            coveredAsins={covered.map(c => c.asin)}
+            onMessageBrand={(c) => setMsgModal(c)}
+            onSavedChange={() => setSavedReloadKey(k => k + 1)}
+          />
+        ) : (
+          <SmartScanPanel
+            coveredAsins={covered.map(c => c.asin)}
+            onMessageBrand={(c) => setMsgModal(c)}
+            onSavedChange={() => setSavedReloadKey(k => k + 1)}
+          />
+        )}
         <p className="text-[11px] leading-relaxed mt-2 px-1" style={{ color: 'var(--text-faint)' }}>
-          MVP does not guarantee commissions or any type of return. The MVP Finder is simply a focused search through Amazon affiliate campaigns using criteria that have been fruitful for influencers over the past 4 years — actual results depend on the product, your content, and your audience.
+          MVP does not guarantee commissions or any type of return. The MVP Finder is a focused way to browse and search Amazon affiliate campaigns using criteria that have been fruitful for influencers over the past 4 years — actual results depend on the product, your content, and your audience.
         </p>
       </div>
 
