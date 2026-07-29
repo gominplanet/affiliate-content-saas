@@ -43,7 +43,9 @@ export async function GET(request: Request) {
     const openSlotsOnly = url.searchParams.get('openSlots') === '1'
     const minRating = numParam(url, 'minRating')
     const minRecentSales = intParam(url, 'minRecentSales')
-    const videoOnly = url.searchParams.get('video') === '1'
+    // Carousel-video saturation: '0' = untapped (zero videos), '2'/'5' = at most
+    // N videos (low competition). Empty = no filter.
+    const maxVideos = url.searchParams.get('maxVideos') || ''
     const sort = (url.searchParams.get('sort') || 'commission') as SortKey
     const page = Math.max(0, intParam(url, 'page') ?? 0)
 
@@ -70,7 +72,8 @@ export async function GET(request: Request) {
         // Product-signal filters only match ENRICHED rows (null = not yet checked).
         if (minRating != null) query = query.gte('rating', minRating)
         if (minRecentSales != null) query = query.gte('monthly_sold', minRecentSales)
-        if (videoOnly) query = query.gt('video_count', 0)
+        if (maxVideos === '0') query = query.eq('video_count', 0)
+        else if (maxVideos && Number(maxVideos) > 0) query = query.lte('video_count', Number(maxVideos))
       }
       if (keyword === 'fts') query = query.textSearch('search_vec', q, { type: 'websearch' })
       else if (keyword === 'ilike') query = query.ilike('campaign_name', `%${q}%`)
