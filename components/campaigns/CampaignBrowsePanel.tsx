@@ -16,7 +16,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
   Loader2, Search, Bookmark, BookmarkCheck, MessageCircle, ShoppingCart,
-  PenLine, Check, ArrowRight, Coins, Users, Wallet, Clock, Video, Star, TrendingUp,
+  PenLine, Check, ArrowRight, Coins, Users, Video,
 } from 'lucide-react'
 import type { MessageBrandCampaign } from '@/components/campaigns/MessageBrandModal'
 
@@ -77,7 +77,7 @@ export default function CampaignBrowsePanel({
   const [openSlotsOnly, setOpenSlotsOnly] = useState(false)
   const [minRating, setMinRating] = useState(0)
   const [minRecentSales, setMinRecentSales] = useState(0)
-  const [videoOnly, setVideoOnly] = useState(false)
+  const [maxVideos, setMaxVideos] = useState('') // '' off · '5'/'2' ≤N · '0' untapped
 
   const [rows, setRows] = useState<Campaign[]>([])
   const [loading, setLoading] = useState(true)
@@ -106,7 +106,7 @@ export default function CampaignBrowsePanel({
       if (openSlotsOnly) params.set('openSlots', '1')
       if (minRating > 0) params.set('minRating', String(minRating))
       if (minRecentSales > 0) params.set('minRecentSales', String(minRecentSales))
-      if (videoOnly) params.set('video', '1')
+      if (maxVideos) params.set('maxVideos', maxVideos)
       params.set('sort', sort)
       params.set('page', String(pageToLoad))
       const res = await fetch(`/api/campaigns/browse?${params.toString()}`)
@@ -121,7 +121,7 @@ export default function CampaignBrowsePanel({
     } finally {
       if (append) setLoadingMore(false); else setLoading(false)
     }
-  }, [q, sort, minCommission, minDaysLeft, openSlotsOnly, minRating, minRecentSales, videoOnly])
+  }, [q, sort, minCommission, minDaysLeft, openSlotsOnly, minRating, minRecentSales, maxVideos])
 
   // Debounced reload on any filter change.
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -151,8 +151,8 @@ export default function CampaignBrowsePanel({
     }
   }
 
-  const hasFilters = q.trim() || minCommission > 0 || minDaysLeft > 0 || openSlotsOnly || minRating > 0 || minRecentSales > 0 || videoOnly
-  const clearFilters = () => { setQ(''); setMinCommission(0); setMinDaysLeft(0); setOpenSlotsOnly(false); setMinRating(0); setMinRecentSales(0); setVideoOnly(false); setSort('commission') }
+  const hasFilters = q.trim() || minCommission > 0 || minDaysLeft > 0 || openSlotsOnly || minRating > 0 || minRecentSales > 0 || !!maxVideos
+  const clearFilters = () => { setQ(''); setMinCommission(0); setMinDaysLeft(0); setOpenSlotsOnly(false); setMinRating(0); setMinRecentSales(0); setMaxVideos(''); setSort('commission') }
 
   return (
     <div className="card mb-5 overflow-hidden" style={{ borderWidth: 2, borderColor: 'rgba(124,58,237,0.30)' }}>
@@ -189,14 +189,12 @@ export default function CampaignBrowsePanel({
               : { background: 'var(--surface)', color: 'var(--text-soft)', borderColor: 'var(--border)' }}>
             <Users size={14} /> Open slots
           </button>
-          <button
-            onClick={() => setVideoOnly(v => !v)}
-            className="h-9 text-sm font-medium rounded-full border px-3.5 inline-flex items-center gap-1.5 transition-all active:scale-[0.97]"
-            style={videoOnly
-              ? { background: '#c026d3', color: '#fff', borderColor: '#c026d3' }
-              : { background: 'var(--surface)', color: 'var(--text-soft)', borderColor: 'var(--border)' }}>
-            <Video size={14} /> Has video
-          </button>
+          <Select value={maxVideos} onChange={setMaxVideos} options={[
+            { v: '', l: 'Any videos' }, { v: '5', l: '≤ 5 carousel videos' }, { v: '2', l: '≤ 2 videos' }, { v: '0', l: '0 videos — untapped' },
+          ]} />
+          <span className="text-[11px] hidden lg:inline" style={{ color: 'var(--text-faint)' }} title="Fewer carousel videos = less competition, easier to stand out">
+            <Video size={11} className="inline -mt-0.5" /> = product-carousel videos
+          </span>
           {hasFilters && (
             <button onClick={clearFilters} className="ml-auto text-xs font-medium inline-flex items-center gap-1 h-8 px-2.5" style={{ color: 'var(--text-faint)' }}>
               Clear
@@ -281,76 +279,78 @@ function BrowseCard({ c, saved, covered, onToggleSave, onMessageBrand }: {
     } catch { toast.error('Could not write the review.'); setGen('idle') }
   }
 
-  // Days-left urgency colour.
   const dl = c.daysLeft
-  const dlColor = dl == null ? 'var(--text-faint)' : dl <= 7 ? '#ff3b30' : dl <= 14 ? '#f59e0b' : '#34c759'
+  const dlColor = dl == null ? 'var(--text)' : dl <= 7 ? '#ff3b30' : dl <= 14 ? '#f59e0b' : '#34c759'
+  const endsDate = (() => { try { return new Date(c.endsAt).toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', year: '2-digit' }) } catch { return '' } })()
+  const amazonUrl = `https://www.amazon.com/dp/${c.asin}`
 
   return (
     <div className="rounded-xl border flex flex-col overflow-hidden" style={{ borderColor: 'var(--border-2)', background: 'var(--surface)' }}>
-      <div className="p-3 flex flex-col gap-2 flex-1">
-        {/* Thumbnail + brand + name */}
-        <div className="flex gap-2.5">
-          {c.imageUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={c.imageUrl} alt="" className="w-14 h-14 rounded-lg object-contain flex-shrink-0 bg-white border" style={{ borderColor: 'var(--border)' }} />
-          ) : (
-            <div className="w-14 h-14 rounded-lg flex-shrink-0 grid place-items-center" style={{ background: 'rgba(124,58,237,0.06)' }}>
-              <Coins size={18} style={{ color: 'rgba(124,58,237,0.4)' }} />
+      {/* Product image — the hero */}
+      <a href={amazonUrl} target="_blank" rel="noopener noreferrer" className="relative block aspect-square bg-white">
+        {c.imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={c.imageUrl} alt="" className="w-full h-full object-contain p-3" />
+        ) : (
+          <div className="w-full h-full grid place-items-center" style={{ background: 'rgba(124,58,237,0.04)' }}>
+            <div className="flex flex-col items-center gap-1" style={{ color: 'rgba(124,58,237,0.35)' }}>
+              <Coins size={26} /><span className="text-[10px] font-medium">image loading…</span>
             </div>
-          )}
-          <div className="min-w-0 flex-1">
-            <div className="flex items-start justify-between gap-2">
-              <span className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: 'var(--text-faint)' }}>{c.brand || 'Brand'}</span>
-              {dl != null && (
-                <span className="inline-flex items-center gap-1 text-[11px] font-bold flex-shrink-0" style={{ color: dlColor }}>
-                  <Clock size={11} /> {dl}d left
-                </span>
-              )}
-            </div>
-            <p className="text-[12.5px] font-semibold leading-snug line-clamp-2" style={{ color: 'var(--text)' }}>
-              {c.campaignName}
-              {c.asinCount > 1 && <span className="font-normal" style={{ color: 'var(--text-faint)' }}> · {c.asinCount} products</span>}
-            </p>
           </div>
-        </div>
-
-        {/* Commission + price */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="inline-flex items-center gap-1 text-lg font-extrabold" style={{ color: '#7C3AED' }}>
-            <Coins size={15} /> +{c.commissionPct}%
+        )}
+        {c.discountPct != null && c.discountPct > 0 && (
+          <span className="absolute top-2 left-2 text-[11px] font-bold text-white rounded px-1.5 py-0.5" style={{ background: '#e11d48' }}>-{c.discountPct}%</span>
+        )}
+        {c.asinCount > 1 && (
+          <span className="absolute bottom-2 left-2 inline-flex items-center gap-1 text-[10px] font-semibold rounded-full px-2 py-1"
+            style={{ background: 'rgba(52,199,89,0.14)', color: '#1f8a3a' }}>
+            {c.asinCount} products <ArrowRight size={9} />
           </span>
-          {c.priceNow != null && (
-            <span className="inline-flex items-baseline gap-1.5 text-[12px]" style={{ color: 'var(--text)' }}>
-              <span className="font-semibold">${c.priceNow.toFixed(2)}</span>
-              {c.discountPct != null && c.discountPct > 0 && <span className="font-bold" style={{ color: '#e11d48' }}>-{c.discountPct}%</span>}
-            </span>
-          )}
+        )}
+      </a>
+
+      <div className="p-3 flex flex-col gap-2 flex-1">
+        {/* Brand + ASIN */}
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[11px] font-semibold rounded-md px-2 py-0.5 truncate" style={{ background: 'var(--surface-2)', color: 'var(--text-soft)' }}>{c.brand || 'Brand'}</span>
+          <span className="text-[10px] font-mono flex-shrink-0" style={{ color: 'var(--text-faint)' }}>{c.asin}</span>
         </div>
 
-        {/* Product signals (fill in as the enrichment cron reaches each product) */}
-        {(c.rating != null || c.monthlySold != null || c.hasVideo) && (
-          <div className="flex items-center gap-2.5 flex-wrap text-[11px]" style={{ color: 'var(--text-soft)' }}>
-            {c.rating != null && (
-              <span className="inline-flex items-center gap-1"><Star size={11} style={{ color: '#f59e0b', fill: '#f59e0b' }} /> {c.rating.toFixed(1)}{c.reviewCount != null ? ` (${c.reviewCount.toLocaleString()})` : ''}</span>
-            )}
-            {c.monthlySold != null && (
-              <span className="inline-flex items-center gap-1" style={{ color: '#2563eb' }}><TrendingUp size={11} /> {c.monthlySold.toLocaleString()}+/mo</span>
-            )}
-            {c.hasVideo && (
-              <span className="inline-flex items-center gap-1" style={{ color: '#c026d3' }}><Video size={11} /> video{c.videoCount && c.videoCount > 1 ? ` ×${c.videoCount}` : ''}</span>
-            )}
-          </div>
-        )}
+        {/* Title */}
+        <p className="text-[12.5px] font-semibold leading-snug line-clamp-2 min-h-[2.3rem]" style={{ color: 'var(--text)' }}>{c.campaignName}</p>
 
-        {/* Budget bar */}
-        {c.budgetPct != null && (
-          <Meter icon={<Wallet size={11} />} label={`${money(c.budgetRemaining)} left`}
-            sub={c.budget != null ? `of ${money(c.budget)}` : ''} pct={c.budgetPct} color="#34c759" />
-        )}
-        {/* Slots bar */}
+        {/* Price */}
+        {c.priceNow != null ? (
+          <div className="flex items-baseline gap-1.5">
+            {c.priceWas != null && c.priceWas > c.priceNow && <span className="text-[12px] line-through" style={{ color: 'var(--text-faint)' }}>${c.priceWas.toFixed(2)}</span>}
+            <span className="text-[15px] font-extrabold" style={{ color: '#16a34a' }}>${c.priceNow.toFixed(2)}</span>
+            {c.discountPct != null && c.discountPct > 0 && <span className="text-[12px] font-bold" style={{ color: '#e11d48' }}>{c.discountPct}% off</span>}
+          </div>
+        ) : <div className="h-[1.1rem]" />}
+
+        {/* Stat strip 1 — product signals */}
+        <StatRow cells={[
+          { label: 'Rating', value: c.rating != null ? `${c.rating.toFixed(1)}★` : '—' },
+          { label: 'Bought', value: c.monthlySold != null ? c.monthlySold.toLocaleString() : '—' },
+          { label: 'Videos', value: c.videoCount != null ? String(c.videoCount) : '—' },
+        ]} />
+        {/* Stat strip 2 — campaign economics */}
+        <StatRow cells={[
+          { label: 'Rate', value: `${c.commissionPct}%`, accent: '#7C3AED' },
+          { label: 'Budget', value: c.budgetRemaining != null ? (money(c.budgetRemaining) as string) : '—', sub: c.budget != null ? `of ${money(c.budget)}` : undefined },
+          { label: 'Ends', value: dl != null ? `${dl}d` : '—', sub: endsDate || undefined, accent: dlColor },
+        ]} />
+
+        {/* Slots claimed */}
         {c.totalSlot != null && c.slotsClaimed != null && (
-          <Meter icon={<Users size={11} />} label={`${c.slotsClaimed} of ${c.totalSlot} claimed`}
-            sub={c.slotsOpen != null ? `${c.slotsOpen} open` : ''} pct={Math.round((c.slotsClaimed / c.totalSlot) * 100)} color="#f59e0b" />
+          <div>
+            <div className="flex items-center justify-between text-[10px] uppercase tracking-wide mb-1" style={{ color: 'var(--text-faint)' }}>
+              <span>Slots claimed</span><span className="font-semibold" style={{ color: 'var(--text-soft)' }}>{c.slotsClaimed}<span style={{ color: 'var(--text-faint)' }}> / {c.totalSlot}</span></span>
+            </div>
+            <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--surface-2)' }}>
+              <div className="h-full rounded-full" style={{ width: `${Math.max(0, Math.min(100, Math.round((c.slotsClaimed / c.totalSlot) * 100)))}%`, background: c.slotsClaimed / c.totalSlot >= 0.9 ? '#f59e0b' : '#34c759' }} />
+            </div>
+          </div>
         )}
 
         {covered && (
@@ -360,7 +360,7 @@ function BrowseCard({ c, saved, covered, onToggleSave, onMessageBrand }: {
         )}
 
         {/* Actions */}
-        <div className="mt-auto pt-2 space-y-1.5">
+        <div className="mt-auto pt-1.5 space-y-1.5">
           {gen === 'done' && postUrl ? (
             <a href={postUrl} target="_blank" rel="noopener noreferrer"
               className="w-full inline-flex items-center justify-center gap-1.5 text-xs font-semibold rounded-full py-2 text-white" style={{ background: '#34c759' }}>
@@ -384,7 +384,7 @@ function BrowseCard({ c, saved, covered, onToggleSave, onMessageBrand }: {
               style={{ borderColor: 'rgba(124,58,237,0.4)', color: '#7C3AED' }}>
               <MessageCircle size={12} /> Message
             </button>
-            <a href={`https://www.amazon.com/dp/${c.asin}`} target="_blank" rel="noopener noreferrer" title="Buy to review on Amazon"
+            <a href={amazonUrl} target="_blank" rel="noopener noreferrer" title="Buy to review on Amazon"
               className="inline-flex items-center justify-center gap-1 text-[11px] font-semibold rounded-full px-2.5 py-1.5 text-white flex-shrink-0" style={{ background: '#34c759' }}>
               <ShoppingCart size={12} />
             </a>
@@ -395,17 +395,18 @@ function BrowseCard({ c, saved, covered, onToggleSave, onMessageBrand }: {
   )
 }
 
-function Meter({ icon, label, sub, pct, color }: { icon: React.ReactNode; label: string; sub?: string; pct: number; color: string }) {
-  const clamped = Math.max(0, Math.min(100, pct))
+// A CreatorKit-style 3-cell stat strip: value (+ optional sub) over a tiny
+// uppercase label, cells divided by hairlines.
+function StatRow({ cells }: { cells: { label: string; value: string; sub?: string; accent?: string }[] }) {
   return (
-    <div>
-      <div className="flex items-center justify-between text-[11px] mb-0.5" style={{ color: 'var(--text-soft)' }}>
-        <span className="inline-flex items-center gap-1 font-medium">{icon} {label}</span>
-        {sub && <span style={{ color: 'var(--text-faint)' }}>{sub}</span>}
-      </div>
-      <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--surface-2)' }}>
-        <div className="h-full rounded-full" style={{ width: `${clamped}%`, background: color }} />
-      </div>
+    <div className="grid grid-cols-3 rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border-2)' }}>
+      {cells.map((cell, i) => (
+        <div key={i} className="px-1 py-1.5 text-center min-w-0" style={i > 0 ? { borderLeft: '1px solid var(--border-2)' } : undefined}>
+          <div className="text-[13px] font-bold leading-tight truncate" style={{ color: cell.accent || 'var(--text)' }}>{cell.value}</div>
+          {cell.sub ? <div className="text-[9px] leading-tight truncate" style={{ color: 'var(--text-faint)' }}>{cell.sub}</div> : null}
+          <div className="text-[9px] uppercase tracking-wide mt-0.5 truncate" style={{ color: 'var(--text-faint)' }}>{cell.label}</div>
+        </div>
+      ))}
     </div>
   )
 }
