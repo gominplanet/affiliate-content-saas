@@ -16,7 +16,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
   Loader2, Search, Bookmark, BookmarkCheck, MessageCircle, ShoppingCart,
-  PenLine, Check, ArrowRight, Coins, Users, Video, BarChart3,
+  PenLine, Check, ArrowRight, Coins, Users, Video, BarChart3, ImageOff,
 } from 'lucide-react'
 import type { MessageBrandCampaign } from '@/components/campaigns/MessageBrandModal'
 import ProductDeepDiveModal from '@/components/product/ProductDeepDiveModal'
@@ -299,10 +299,8 @@ function BrowseCard({ c, saved, covered, onToggleSave, onMessageBrand, onDeepDiv
           // eslint-disable-next-line @next/next/no-img-element
           <img src={c.imageUrl} alt="" className="w-full h-full object-contain p-3" />
         ) : (
-          <div className="w-full h-full grid place-items-center" style={{ background: 'rgba(124,58,237,0.04)' }}>
-            <div className="flex flex-col items-center gap-1" style={{ color: 'rgba(124,58,237,0.35)' }}>
-              <Coins size={26} /><span className="text-[10px] font-medium">image loading…</span>
-            </div>
+          <div className="w-full h-full grid place-items-center" style={{ background: 'rgba(124,58,237,0.04)' }} title="Preview appears once this product is scanned (Smart Scan)">
+            <ImageOff size={24} style={{ color: 'rgba(124,58,237,0.3)' }} />
           </div>
         )}
         {c.discountPct != null && c.discountPct > 0 && (
