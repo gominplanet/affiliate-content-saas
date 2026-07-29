@@ -16,9 +16,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
   Loader2, Search, Bookmark, BookmarkCheck, MessageCircle, ShoppingCart,
-  PenLine, Check, ArrowRight, Coins, Users, Video,
+  PenLine, Check, ArrowRight, Coins, Users, Video, BarChart3,
 } from 'lucide-react'
 import type { MessageBrandCampaign } from '@/components/campaigns/MessageBrandModal'
+import ProductDeepDiveModal from '@/components/product/ProductDeepDiveModal'
 
 interface Campaign {
   campaignId: string
@@ -86,6 +87,7 @@ export default function CampaignBrowsePanel({
   const [page, setPage] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [savedAsins, setSavedAsins] = useState<Set<string>>(new Set())
+  const [deepDive, setDeepDive] = useState<{ asin: string; title: string; imageUrl: string | null } | null>(null)
 
   const covered = new Set(coveredAsins.map(a => a.toUpperCase()))
 
@@ -226,6 +228,7 @@ export default function CampaignBrowsePanel({
                   product: c.campaignName || c.asin, asin: c.asin,
                   commissionPct: c.commissionPct, detailsUrl: '', brandLabel: c.brand || undefined,
                 })}
+                onDeepDive={() => setDeepDive({ asin: c.asin, title: c.campaignName, imageUrl: c.imageUrl })}
               />
             ))}
           </div>
@@ -239,6 +242,10 @@ export default function CampaignBrowsePanel({
             </div>
           )}
         </div>
+      )}
+
+      {deepDive && (
+        <ProductDeepDiveModal asin={deepDive.asin} title={deepDive.title} imageUrl={deepDive.imageUrl} onClose={() => setDeepDive(null)} />
       )}
     </div>
   )
@@ -258,8 +265,8 @@ function Select({ value, onChange, options }: { value: string; onChange: (v: str
   )
 }
 
-function BrowseCard({ c, saved, covered, onToggleSave, onMessageBrand }: {
-  c: Campaign; saved: boolean; covered: boolean; onToggleSave: () => void; onMessageBrand: () => void
+function BrowseCard({ c, saved, covered, onToggleSave, onMessageBrand, onDeepDive }: {
+  c: Campaign; saved: boolean; covered: boolean; onToggleSave: () => void; onMessageBrand: () => void; onDeepDive: () => void
 }) {
   const [gen, setGen] = useState<'idle' | 'working' | 'done'>('idle')
   const [postUrl, setPostUrl] = useState<string | null>(null)
@@ -307,6 +314,13 @@ function BrowseCard({ c, saved, covered, onToggleSave, onMessageBrand }: {
             {c.asinCount} products <ArrowRight size={9} />
           </span>
         )}
+        {/* Deep-dive: price history + product data (opens over the card). */}
+        <button
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDeepDive() }}
+          title="Price history & product data"
+          className="absolute top-2 right-2 inline-flex items-center gap-1 text-[10px] font-semibold rounded-full px-2 py-1 bg-black/55 text-white hover:bg-black/75 backdrop-blur-sm transition-colors">
+          <BarChart3 size={10} /> Data
+        </button>
       </a>
 
       <div className="p-3 flex flex-col gap-2 flex-1">
