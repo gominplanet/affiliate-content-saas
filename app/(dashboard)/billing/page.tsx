@@ -24,6 +24,9 @@ export default function BillingPage() {
   const [portalLoading, setPortalLoading] = useState(false)
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null)
   const [promoCode, setPromoCode] = useState('')
+  // Upgrade-cost preview (shown BEFORE we bill, so the charge is never a surprise).
+  const [previewLoading, setPreviewLoading] = useState<string | null>(null)
+  const [preview, setPreview] = useState<{ tier: string; kind: string; chargeNow: number | null; nextPrice: number | null } | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -117,6 +120,24 @@ export default function BillingPage() {
       window.location.href = url
     } catch { toast.error('Something went wrong. Please try again.') }
     finally { setPortalLoading(false) }
+  }
+
+  // Step 1 of a plan change: preview what it costs today, then show a confirm
+  // box. New subscribers skip straight to Checkout (Stripe shows the price there).
+  async function selectPlan(t: string) {
+    setPreview(null)
+    setPreviewLoading(t)
+    try {
+      const res = await fetch('/api/stripe/preview-upgrade', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tier: t }),
+      })
+      const data = await res.json()
+      if (data.error) { toast.error(data.error); return }
+      if (data.kind === 'new') { void upgrade(t); return }
+      if (data.kind === 'same') { toast.success("You're already on this plan."); return }
+      setPreview({ tier: t, kind: data.kind, chargeNow: data.chargeNow ?? null, nextPrice: data.nextPrice ?? null })
+    } catch { toast.error('Something went wrong. Please try again.') }
+    finally { setPreviewLoading(null) }
   }
 
   async function upgrade(t: string) {
@@ -328,24 +349,61 @@ export default function BillingPage() {
               </h2>
               <div className="flex flex-col gap-3">
                 {planDetails.filter(p => p.tier !== tier).map((plan) => (
-                  <div key={plan.tier} className="flex items-center justify-between p-4 rounded-xl border border-gray-200 dark:border-white/10 hover:border-[#7C3AED]/40 transition-colors">
-                    <div>
-                      <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{TIERS[plan.tier].label}</p>
-                      <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">
-                        {plan.limit} ·{' '}
-                        <span className="line-through text-[#86868b]">${plan.regularPrice}</span>{' '}
-                        <span className="text-[#34c759] font-semibold">${plan.price}/month</span>
-                      </p>
+                  <div key={plan.tier} className="rounded-xl border border-gray-200 dark:border-white/10 hover:border-[#7C3AED]/40 transition-colors overflow-hidden">
+                    <div className="flex items-center justify-between p-4">
+                      <div>
+                        <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{TIERS[plan.tier].label}</p>
+                        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">
+                          {plan.limit} ·{' '}
+                          <span className="line-through text-[#86868b]">${plan.regularPrice}</span>{' '}
+                          <span className="text-[#34c759] font-semibold">${plan.price}/month</span>
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => selectPlan(plan.tier)}
+                        disabled={previewLoading === plan.tier || checkoutLoading === plan.tier}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold bg-[#7C3AED] text-white hover:bg-[#6D28D9] disabled:opacity-60 transition-colors"
+                      >
+                        {previewLoading === plan.tier
+                          ? <><Loader2 size={11} className="animate-spin" /> Checking…</>
+                          : <><CheckCircle size={11} /> Select</>}
+                      </button>
                     </div>
-                    <button
-                      onClick={() => upgrade(plan.tier)}
-                      disabled={checkoutLoading === plan.tier}
-                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold bg-[#7C3AED] text-white hover:bg-[#6D28D9] disabled:opacity-60 transition-colors"
-                    >
-                      {checkoutLoading === plan.tier
-                        ? <><Loader2 size={11} className="animate-spin" /> Redirecting…</>
-                        : <><CheckCircle size={11} /> Select</>}
-                    </button>
+
+                    {/* Preview + confirm — shows the cost BEFORE billing. */}
+                    {preview?.tier === plan.tier && (
+                      <div className="px-4 pb-4 pt-3 border-t border-gray-100 dark:border-white/10 bg-[#7C3AED]/[0.035]">
+                        <p className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7] leading-relaxed">
+                          {preview.kind === 'upgrade' ? (
+                            preview.chargeNow != null ? (
+                              <>You&apos;ll be charged <strong>about ${preview.chargeNow.toFixed(2)} today</strong> — the prorated difference for the rest of your current billing period plus your first month of <strong>{TIERS[plan.tier].label}</strong>. After that it&apos;s <strong>${preview.nextPrice}/month</strong>.</>
+                            ) : (
+                              <>You&apos;ll be charged the <strong>prorated difference</strong> for upgrading today, then <strong>${preview.nextPrice}/month</strong>.</>
+                            )
+                          ) : (
+                            <>Your plan changes to <strong>{TIERS[plan.tier].label}</strong> (<strong>${preview.nextPrice}/month</strong>). <strong>No charge today</strong> — your unused time is credited toward your next invoice.</>
+                          )}
+                        </p>
+                        <div className="flex items-center gap-2 mt-3">
+                          <button
+                            onClick={() => upgrade(plan.tier)}
+                            disabled={checkoutLoading === plan.tier}
+                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold bg-[#7C3AED] text-white hover:bg-[#6D28D9] disabled:opacity-60 transition-colors"
+                          >
+                            {checkoutLoading === plan.tier
+                              ? <><Loader2 size={11} className="animate-spin" /> Processing…</>
+                              : preview.kind === 'upgrade' ? <><CheckCircle size={11} /> Confirm &amp; pay</> : <><CheckCircle size={11} /> Confirm change</>}
+                          </button>
+                          <button
+                            onClick={() => setPreview(null)}
+                            disabled={checkoutLoading === plan.tier}
+                            className="px-3 py-2 rounded-lg text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] hover:bg-gray-100 dark:hover:bg-white/5 disabled:opacity-60"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
