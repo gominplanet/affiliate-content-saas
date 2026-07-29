@@ -59,10 +59,6 @@
     {
       "path": "/api/cron/discover-niche-deals",
       "schedule": "0 13 * * *"
-    },
-    {
-      "path": "/api/cron/enrich-cc-catalog",
-      "schedule": "45 */6 * * *"
     }
   ]
 }

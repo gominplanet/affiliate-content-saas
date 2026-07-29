@@ -45,6 +45,19 @@ function cacheResolvedLinks(matches: ScoredMatch[]) {
   }).catch(() => {})
 }
 
+// Cache the product signals SCOUT already resolved (image, price, rating, sales,
+// carousel-video presence) onto the shared catalog, so the Browse view shows
+// these campaigns image-rich — sourced from SCOUT, not Keepa. Fire-and-forget.
+function cacheProductSignals(matches: ScoredMatch[]) {
+  const signals = matches
+    .filter(m => m.asin && (m.image || m.price != null || m.rating != null || m.monthlySales != null))
+    .map(m => ({ asin: m.asin as string, image: m.image ?? null, price: m.price ?? null, rating: m.rating ?? null, monthlySales: m.monthlySales ?? null, hasVideo: m.hasVideo }))
+  if (!signals.length) return
+  void fetch('/api/campaigns/product-signals', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ signals }),
+  }).catch(() => {})
+}
+
 export default function SmartScanPanel({
   coveredAsins,
   onMessageBrand,
@@ -195,7 +208,7 @@ export default function SmartScanPanel({
         const scored = (ver.results ?? [])
           .filter(m => passesGates(m, RULES))
           .map(m => scoreMatch(m, RULES))
-        cacheResolvedLinks(scored) // pre-warm so messaging these is instant
+        cacheResolvedLinks(scored); cacheProductSignals(scored) // pre-warm: instant messaging + image-rich Browse
         // Accumulate across pages (dedup by asin), keep best-scored first.
         setMatches(prev => {
           const merged = paging ? [...(prev ?? []), ...scored] : scored
@@ -241,7 +254,7 @@ export default function SmartScanPanel({
       .map(m => scoreMatch(m, RULES))
       .sort((a, b) => b.score - a.score)
     setMatches(scored)
-    cacheResolvedLinks(scored) // pre-warm so messaging these is instant
+    cacheResolvedLinks(scored); cacheProductSignals(scored) // pre-warm: instant messaging + image-rich Browse
     const s = res.stats
     const dl = dropLine(s?.drops)
     if (s?.blocked) setNote(`Amazon asked for a pause partway through — these results are partial. Wait ~15 minutes before scanning again.${dl}`)
