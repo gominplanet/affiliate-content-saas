@@ -133,6 +133,31 @@ export default function CampaignBrowsePanel({
     return () => { if (debounce.current) clearTimeout(debounce.current) }
   }, [load])
 
+  // Fill product images on demand for whatever's on screen (Amazon Creators API,
+  // operator key). Only asins still missing an image, each tried once per
+  // session; results merge into the cards in place. No-op if the API isn't
+  // configured (the endpoint returns {} and SCOUT still covers scanned items).
+  const enrichTried = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    const need = rows.filter(r => !r.imageUrl && !enrichTried.current.has(r.asin)).map(r => r.asin)
+    if (!need.length) return
+    need.forEach(a => enrichTried.current.add(a))
+    ;(async () => {
+      try {
+        const res = await fetch('/api/campaigns/enrich-visible', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ asins: need.slice(0, 40) }),
+        })
+        const data = await res.json().catch(() => ({}))
+        const signals = data?.signals as Record<string, { imageUrl?: string | null; priceNow?: number | null }> | undefined
+        if (!signals || !Object.keys(signals).length) return
+        setRows(prev => prev.map(r => signals[r.asin]
+          ? { ...r, imageUrl: signals[r.asin].imageUrl ?? r.imageUrl, priceNow: signals[r.asin].priceNow ?? r.priceNow }
+          : r))
+      } catch { /* best-effort */ }
+    })()
+  }, [rows])
+
   async function toggleSave(c: Campaign) {
     const asin = c.asin.toUpperCase()
     const wasSaved = savedAsins.has(asin)
