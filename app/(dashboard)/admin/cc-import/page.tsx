@@ -20,6 +20,7 @@ export default function AdminCcImportPage() {
   const [counts, setCounts] = useState<Counts | null>(null)
   const [loading, setLoading] = useState(true)
   const [merging, setMerging] = useState(false)
+  const [remaining, setRemaining] = useState<number | null>(null)
   const [result, setResult] = useState<{ upserted: number; purged: number; staged: number } | null>(null)
   const [err, setErr] = useState<string | null>(null)
 
@@ -37,25 +38,40 @@ export default function AdminCcImportPage() {
 
   useEffect(() => { loadCounts() }, [loadCounts])
 
-  const merge = useCallback(async (confirm = false) => {
+  const merge = useCallback(async () => {
     if (merging) return
-    setMerging(true); setResult(null); setErr(null)
+    setMerging(true); setResult(null); setErr(null); setRemaining(null)
+    let confirm = false
+    let totalUpserted = 0
     try {
-      const r = await fetch('/api/admin/import-cc-catalog', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm }),
-      })
-      const d = await r.json()
-      // Safety prompt: staging is far smaller than live — likely a partial upload.
-      if (r.status === 409 && d?.needsConfirm) {
-        setMerging(false)
-        const ok = window.confirm(`${d.error}\n\nMerge anyway and remove ~${Number(d.wouldPurgeApprox).toLocaleString()} campaigns?`)
-        if (ok) void merge(true)
-        return
+      // Auto-resume loop: the endpoint does a bounded chunk per call and reports
+      // done:false + remaining while work is left. We keep calling until done, so
+      // the admin clicks Merge ONCE and just watches the countdown.
+      for (let guard = 0; guard < 100; guard++) {
+        const r = await fetch('/api/admin/import-cc-catalog', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm }),
+        })
+        const d = await r.json()
+        // Safety prompt: staging far smaller than live — likely a partial upload.
+        if (r.status === 409 && d?.needsConfirm) {
+          const ok = window.confirm(`${d.error}\n\nMerge anyway and remove ~${Number(d.wouldPurgeApprox).toLocaleString()} campaigns?`)
+          if (!ok) { setMerging(false); return }
+          confirm = true
+          continue
+        }
+        if (!r.ok) throw new Error(d.error || 'Merge failed')
+        confirm = true
+        totalUpserted += Number(d.upserted ?? 0)
+        if (d.done) {
+          setRemaining(null)
+          setResult({ upserted: totalUpserted, purged: Number(d.purged ?? 0), staged: Number(d.staged ?? 0) })
+          toast.success(`Merged ${totalUpserted.toLocaleString()} campaigns · purged ${Number(d.purged ?? 0).toLocaleString()}`)
+          void loadCounts()
+          return
+        }
+        setRemaining(Number(d.remaining ?? 0)) // progress; loop continues
       }
-      if (!r.ok) throw new Error(d.error || 'Merge failed')
-      setResult({ upserted: d.upserted, purged: d.purged, staged: d.staged })
-      toast.success(`Merged ${d.upserted.toLocaleString()} campaigns · purged ${d.purged.toLocaleString()}`)
-      void loadCounts()
+      throw new Error('Merge is taking unusually long — click Merge again to continue.')
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Merge failed'
       setErr(msg); toast.error(msg)
@@ -114,7 +130,9 @@ export default function AdminCcImportPage() {
           disabled={!canMerge || merging}
           className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-[14px] font-semibold text-white disabled:opacity-50"
           style={{ background: '#7C3AED' }}>
-          {merging ? <><Loader2 size={16} className="animate-spin" /> Merging…</> : <>Merge into live catalog <ArrowRight size={16} /></>}
+          {merging
+            ? <><Loader2 size={16} className="animate-spin" /> Merging{remaining != null ? ` — ${remaining.toLocaleString()} left` : '…'}</>
+            : <>Merge into live catalog <ArrowRight size={16} /></>}
         </button>
         <button onClick={loadCounts} disabled={loading || merging}
           className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-[13px] font-medium border disabled:opacity-50"

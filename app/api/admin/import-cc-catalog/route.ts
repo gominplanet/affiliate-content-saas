@@ -90,12 +90,17 @@ export async function POST(request: Request) {
       }, { status: 409 })
     }
 
-    // Chunked, resumable merge (migration 202): upsert in bounded batches so no
-    // single statement/HTTP call times out, then purge fall-outs. If this
-    // endpoint is cut off mid-loop, the _merged marker lets a re-click resume.
-    const BATCH = 20000
+    // Chunked, resumable merge (migration 202). Small batches so no single RPC
+    // times out; loop only until a soft wall-clock deadline (well under this
+    // function's maxDuration), then return done:false with how many rows remain
+    // — the CLIENT auto-calls again to continue. The _merged marker means each
+    // call resumes exactly where the last stopped. The purge runs on the final
+    // call, once every staged row is merged.
+    const BATCH = 2000
+    const deadline = Date.now() + 240_000
     let upserted = 0
-    for (let i = 0; i < 500; i++) {
+    let n = BATCH
+    while (n >= BATCH && Date.now() < deadline) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data, error } = await (admin as any).rpc('merge_cc_catalog_step', { p_limit: BATCH })
       if (error) {
@@ -105,10 +110,19 @@ export async function POST(request: Request) {
           detail: error.message?.slice(0, 200), upsertedSoFar: upserted,
         }, { status: 500 })
       }
-      const n = Number(data ?? 0)
+      n = Number(data ?? 0)
       upserted += n
-      if (n < BATCH) break // last (partial) batch processed
     }
+
+    // More staged rows still to merge? Tell the client to call us again.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { count: remaining } = await (admin as any)
+      .from('cc_campaign_catalog_import').select('campaign_id', { count: 'exact', head: true }).eq('_merged', false)
+    if ((remaining ?? 0) > 0) {
+      return NextResponse.json({ ok: true, done: false, staged: count, upserted, remaining: remaining ?? 0 })
+    }
+
+    // Everything merged → purge fall-outs and finish.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: purgedData, error: purgeErr } = await (admin as any).rpc('merge_cc_catalog_purge')
     if (purgeErr) {
@@ -117,6 +131,7 @@ export async function POST(request: Request) {
     }
     return NextResponse.json({
       ok: true,
+      done: true,
       staged: count,
       upserted,
       purged: Number(purgedData ?? 0),
