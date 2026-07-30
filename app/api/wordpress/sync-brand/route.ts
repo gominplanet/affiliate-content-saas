@@ -154,15 +154,20 @@ export async function POST(request: Request) {
         ...(headerBg !== undefined ? { headerBg } : {}),
         ...(footerBg !== undefined ? { footerBg } : {}),
         ...(fontTheme      ? { fontTheme:      fontTheme      } : {}),
-        // Social URLs — moved from blog_customizations.footer.socials to brand profile
-        ...(youtubeUrl     ? { youtubeUrl }   : {}),
-        ...(instagramUrl   ? { instagramUrl } : {}),
-        ...(tiktokUrl      ? { tiktokUrl }    : {}),
-        ...(twitterUrl     ? { twitterUrl }   : {}),
-        ...(pinterestUrl   ? { pinterestUrl } : {}),
-        ...(facebookUrl    ? { facebookUrl }  : {}),
-        ...(threadsUrl     ? { threadsUrl }   : {}),
-        ...(contactEmail   ? { contactEmail } : {}),
+        // Social URLs + contact email — moved from blog_customizations.footer.socials
+        // to brand profile. Sent whenever the field is PRESENT (even empty ''), so
+        // CLEARING one in Brand Profile pushes '' and the theme drops that icon.
+        // (`? {} : {}` omitted empties, which made a cleared social/email impossible
+        // to remove from the live site — it stayed stuck forever.) `undefined` = a
+        // partial caller that didn't send the field, so we leave WP's value alone.
+        ...(youtubeUrl     !== undefined ? { youtubeUrl }   : {}),
+        ...(instagramUrl   !== undefined ? { instagramUrl } : {}),
+        ...(tiktokUrl      !== undefined ? { tiktokUrl }    : {}),
+        ...(twitterUrl     !== undefined ? { twitterUrl }   : {}),
+        ...(pinterestUrl   !== undefined ? { pinterestUrl } : {}),
+        ...(facebookUrl    !== undefined ? { facebookUrl }  : {}),
+        ...(threadsUrl     !== undefined ? { threadsUrl }   : {}),
+        ...(contactEmail   !== undefined ? { contactEmail } : {}),
         // Round About-Us photo (theme reads profile.headshotUrl).
         ...(headshotUrl    ? { headshotUrl } : {}),
       },
