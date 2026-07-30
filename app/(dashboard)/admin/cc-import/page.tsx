@@ -1,0 +1,137 @@
+'use client'
+
+// © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
+//
+// Admin: weekly Creator Connections catalog import. The heavy CSV is loaded into
+// the STAGING table by your existing process (or SQL COPY / dashboard import),
+// then this page MERGES it into the live catalog — upserting campaign economics
+// while PRESERVING the enriched product signals, and purging fallen-out
+// campaigns. No CSV bytes pass through this page, so file size is irrelevant here.
+
+import { useState, useEffect, useCallback } from 'react'
+import PageHero from '@/components/layout/PageHero'
+import { Loader2, RefreshCw, Database, ArrowRight, CheckCircle2, AlertTriangle } from 'lucide-react'
+import { toast } from 'sonner'
+
+interface Counts { staged: number | null; live: number | null; enriched: number | null }
+
+export default function AdminCcImportPage() {
+  const [counts, setCounts] = useState<Counts | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [merging, setMerging] = useState(false)
+  const [result, setResult] = useState<{ upserted: number; purged: number; staged: number } | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+
+  const loadCounts = useCallback(async () => {
+    setLoading(true); setErr(null)
+    try {
+      const r = await fetch('/api/admin/import-cc-catalog')
+      const d = await r.json()
+      if (!r.ok) throw new Error(d.error || 'Failed to load')
+      setCounts({ staged: d.staged, live: d.live, enriched: d.enriched })
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Failed to load')
+    } finally { setLoading(false) }
+  }, [])
+
+  useEffect(() => { loadCounts() }, [loadCounts])
+
+  const merge = useCallback(async () => {
+    if (merging) return
+    setMerging(true); setResult(null); setErr(null)
+    try {
+      const r = await fetch('/api/admin/import-cc-catalog', { method: 'POST' })
+      const d = await r.json()
+      if (!r.ok) throw new Error(d.error || 'Merge failed')
+      setResult({ upserted: d.upserted, purged: d.purged, staged: d.staged })
+      toast.success(`Merged ${d.upserted.toLocaleString()} campaigns · purged ${d.purged.toLocaleString()}`)
+      void loadCounts()
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Merge failed'
+      setErr(msg); toast.error(msg)
+    } finally { setMerging(false) }
+  }, [merging, loadCounts])
+
+  const num = (n: number | null | undefined) => (n == null ? '—' : n.toLocaleString())
+  const staged = counts?.staged ?? 0
+  const canMerge = !loading && staged > 0
+  const enrichedPct = counts?.live && counts?.enriched != null && counts.live > 0
+    ? Math.round((counts.enriched / counts.live) * 100) : null
+
+  return (
+    <>
+      <PageHero
+        title="CC Catalog Import"
+        subtitle="Merge the weekly Creator Connections CSV into the live catalog, safely : campaign economics update, enriched product signals are preserved, and campaigns that fell out of the CSV are purged."
+      />
+
+      {/* Steps */}
+      <div className="card p-5 mb-5">
+        <p className="text-[13px] font-semibold mb-3" style={{ color: 'var(--text)' }}>Weekly steps</p>
+        <ol className="text-[13px] leading-relaxed list-decimal pl-5 space-y-1.5" style={{ color: 'var(--text-soft)' }}>
+          <li>Load this week&rsquo;s CSV into the staging table <code className="px-1.5 py-0.5 rounded text-[12px]" style={{ background: 'var(--surface-2)' }}>cc_campaign_catalog_import</code> (your existing load, pointed at that table). Replace it freely : it holds nothing precious.</li>
+          <li>Confirm the staged count below looks right (tens of thousands).</li>
+          <li>Click <b>Merge into live catalog</b>. Enriched images/sales/ratings survive; fall-outs are purged.</li>
+        </ol>
+      </div>
+
+      {/* Counts */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
+        <StatCard label="Staged (ready to merge)" value={num(counts?.staged)} icon={<Database size={16} />} accent="#7C3AED" />
+        <StatCard label="Live catalog" value={num(counts?.live)} icon={<CheckCircle2 size={16} />} accent="#34c759" />
+        <StatCard
+          label="Enriched (signals)"
+          value={counts?.enriched == null ? '—' : `${num(counts.enriched)}${enrichedPct != null ? ` · ${enrichedPct}%` : ''}`}
+          icon={<RefreshCw size={16} />} accent="#0a84ff"
+        />
+      </div>
+
+      {staged === 0 && !loading && (
+        <div className="card p-4 mb-5 flex items-start gap-2.5" style={{ borderColor: 'rgba(245,158,11,0.4)' }}>
+          <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" style={{ color: '#f59e0b' }} />
+          <p className="text-[13px]" style={{ color: 'var(--text-soft)' }}>
+            Staging is empty : load your CSV into <code>cc_campaign_catalog_import</code> first. Merge is disabled so it can&rsquo;t purge the live catalog against an empty import.
+          </p>
+        </div>
+      )}
+
+      <div className="flex items-center gap-3 mb-5">
+        <button
+          onClick={merge}
+          disabled={!canMerge || merging}
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-[14px] font-semibold text-white disabled:opacity-50"
+          style={{ background: '#7C3AED' }}>
+          {merging ? <><Loader2 size={16} className="animate-spin" /> Merging…</> : <>Merge into live catalog <ArrowRight size={16} /></>}
+        </button>
+        <button onClick={loadCounts} disabled={loading || merging}
+          className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-[13px] font-medium border disabled:opacity-50"
+          style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
+          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
+        </button>
+      </div>
+
+      {result && (
+        <div className="card p-4 mb-5" style={{ borderColor: 'rgba(52,199,89,0.4)' }}>
+          <p className="text-[13px] font-semibold mb-1" style={{ color: '#1f8a3a' }}>
+            <CheckCircle2 size={14} className="inline -mt-0.5 mr-1" /> Import merged
+          </p>
+          <p className="text-[13px]" style={{ color: 'var(--text-soft)' }}>
+            Staged <b>{result.staged.toLocaleString()}</b> · upserted <b>{result.upserted.toLocaleString()}</b> · purged (fell out) <b>{result.purged.toLocaleString()}</b>.
+            New campaigns will enrich over the next runs of the background cron; survivors kept their signals.
+          </p>
+        </div>
+      )}
+
+      {err && <div className="text-[13px] mb-5" style={{ color: '#ff3b30' }}>{err}</div>}
+    </>
+  )
+}
+
+function StatCard({ label, value, icon, accent }: { label: string; value: string; icon: React.ReactNode; accent: string }) {
+  return (
+    <div className="card p-4">
+      <div className="flex items-center gap-2 mb-1.5" style={{ color: accent }}>{icon}<span className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-faint)' }}>{label}</span></div>
+      <p className="text-[22px] font-extrabold" style={{ color: 'var(--text)' }}>{value}</p>
+    </div>
+  )
+}

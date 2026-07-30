@@ -42,7 +42,7 @@ import {
   UserCog, AlertTriangle, DollarSign, Newspaper, Plug, Wrench,
   Camera, MessageCircle, Activity, BarChart3, Wand2, ShieldCheck,
   Share2, UserSquare, Lightbulb, LifeBuoy, Link2, FlaskConical, Store, Send, ShoppingBag, Megaphone,
-  Inbox, PackageSearch, Copy, Signpost, Code2, Rocket,
+  Inbox, PackageSearch, Copy, Signpost, Code2, Rocket, Database,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { DEALS_HUB_PAUSED } from '@/lib/deal-occasion'
@@ -591,6 +591,7 @@ export default function DashboardShellV2({
         { href: '/admin/announcement', icon: <Newspaper size={15} />, label: 'News banner (admin)' },
         { href: '/admin/broadcast', icon: <Megaphone size={15} />, label: 'Broadcast email (admin)' },
         { href: '/admin/encrypt-secrets', icon: <ShieldCheck size={15} />, label: 'Encrypt Secrets' },
+        { href: '/admin/cc-import', icon: <Database size={15} />, label: 'CC Catalog Import' },
       ],
     }] : []),
   ]

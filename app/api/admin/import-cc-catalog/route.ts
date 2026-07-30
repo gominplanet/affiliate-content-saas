@@ -23,6 +23,34 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
+// GET → row counts for the admin page (live catalog + what's staged, and how
+// much of the live catalog is enriched so far).
+export async function GET() {
+  const supabase = await createServerClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const { data: intRow } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+  if (normalizeTier(intRow?.tier) !== 'admin') return NextResponse.json({ error: 'Admin only' }, { status: 403 })
+
+  const admin = createAdminClient()
+  const countOf = async (table: string, mod?: (q: any) => any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let q = (admin as any).from(table).select('campaign_id', { count: 'exact', head: true })
+      if (mod) q = mod(q)
+      const { count } = await q
+      return count ?? 0
+    } catch { return null }
+  }
+  const [staged, live, enriched] = await Promise.all([
+    countOf('cc_campaign_catalog_import'),
+    countOf('cc_campaign_catalog'),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    countOf('cc_campaign_catalog', (q: any) => q.not('product_verified_at', 'is', null)),
+  ])
+  return NextResponse.json({ ok: true, staged, live, enriched })
+}
+
 export async function POST() {
   try {
     const supabase = await createServerClient()
