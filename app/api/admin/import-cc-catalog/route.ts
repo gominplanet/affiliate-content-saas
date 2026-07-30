@@ -38,8 +38,12 @@ export async function GET() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let q = (admin as any).from(table).select('campaign_id', { count: 'exact', head: true })
       if (mod) q = mod(q)
-      const { count } = await q
-      return count ?? 0
+      const { count, error } = await q
+      // Return null (→ shown as "—") on any failure or a nullish count. NEVER
+      // coerce to 0: a false 0 on the Live Catalog card reads as "the whole
+      // shared catalog was wiped" and is needlessly alarming.
+      if (error || count == null) return null
+      return count
     } catch { return null }
   }
   const [staged, live, enriched] = await Promise.all([

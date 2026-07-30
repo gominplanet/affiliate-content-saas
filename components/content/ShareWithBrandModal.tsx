@@ -366,20 +366,28 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
               />
             </div>
 
-            {/* Actions */}
+            {/* Actions.
+                Two copy paths, kept visually distinct so nobody sends the CC
+                format to an email by mistake:
+                  · "Copy message"  = the clean text above, no markers. For
+                    email, a DM, or anywhere that is NOT Amazon CC.
+                  · "Copy for Creator Connections" = the SAME message split into
+                    Amazon's "message group" blocks, so it carries the
+                    ---- Add to Message Group ---- separators. ONLY paste this
+                    into Amazon's CC composer. */}
             <div className="flex items-center gap-2 flex-wrap">
-              <button onClick={copyMessage} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-[#7C3AED] text-white hover:bg-[#6D28D9]">
-                {copied ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy message</>}
-              </button>
-              <button
-                onClick={copyCcMessage}
-                title="Copy the message formatted for Amazon Creator Connections (split into message groups)"
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border border-[#FFC200] bg-[#FFF7DB] text-[#1d1d1f] hover:bg-[#FFEFB0]"
-              >
-                {copiedCc ? <><Check size={13} /> Copied for CC</> : <><Copy size={13} /> Copy for Creator Connections</>}
+              <button onClick={copyMessage} title="Clean text with no markers. Use this for email or DMs." className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-[#7C3AED] text-white hover:bg-[#6D28D9]">
+                {copied ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy message <span className="font-normal opacity-80">· email / DM</span></>}
               </button>
               <button onClick={emailMessage} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border border-[var(--border-2,#e5e5e7)] text-[#1d1d1f] dark:text-[#f5f5f7] hover:bg-[var(--surface-hover,#f5f5f7)]">
                 <Mail size={13} /> Email
+              </button>
+              <button
+                onClick={copyCcMessage}
+                title="Only for Amazon Creator Connections. Splits the message into CC 'message group' blocks (adds ---- Add to Message Group ---- separators). Do not use this for email."
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border border-[#FFC200] bg-[#FFF7DB] text-[#1d1d1f] hover:bg-[#FFEFB0]"
+              >
+                {copiedCc ? <><Check size={13} /> Copied for CC</> : <><Copy size={13} /> Copy for Creator Connections <span className="font-normal opacity-70">· CC composer only</span></>}
               </button>
               {productUrl && (
                 <a
@@ -391,8 +399,8 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
                 </a>
               )}
             </div>
-            <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] -mt-1">
-              Tip: on the product page you can message the brand directly through Amazon Creator Connections (e.g. with the Oink extension).
+            <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] -mt-1 leading-relaxed">
+              <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Emailing the brand?</strong> Use <strong>Copy message</strong> (or <strong>Email</strong>): clean text, no markers. Only use <strong>Copy for Creator Connections</strong> when you are pasting into Amazon&rsquo;s CC message composer; it adds the &ldquo;Add to Message Group&rdquo; separators that tell CC where each block starts.
             </p>
           </div>
         )}
