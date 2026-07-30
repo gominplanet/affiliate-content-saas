@@ -37,12 +37,21 @@ export default function AdminCcImportPage() {
 
   useEffect(() => { loadCounts() }, [loadCounts])
 
-  const merge = useCallback(async () => {
+  const merge = useCallback(async (confirm = false) => {
     if (merging) return
     setMerging(true); setResult(null); setErr(null)
     try {
-      const r = await fetch('/api/admin/import-cc-catalog', { method: 'POST' })
+      const r = await fetch('/api/admin/import-cc-catalog', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm }),
+      })
       const d = await r.json()
+      // Safety prompt: staging is far smaller than live — likely a partial upload.
+      if (r.status === 409 && d?.needsConfirm) {
+        setMerging(false)
+        const ok = window.confirm(`${d.error}\n\nMerge anyway and remove ~${Number(d.wouldPurgeApprox).toLocaleString()} campaigns?`)
+        if (ok) void merge(true)
+        return
+      }
       if (!r.ok) throw new Error(d.error || 'Merge failed')
       setResult({ upserted: d.upserted, purged: d.purged, staged: d.staged })
       toast.success(`Merged ${d.upserted.toLocaleString()} campaigns · purged ${d.purged.toLocaleString()}`)
@@ -101,7 +110,7 @@ export default function AdminCcImportPage() {
 
       <div className="flex items-center gap-3 mb-5">
         <button
-          onClick={merge}
+          onClick={() => merge()}
           disabled={!canMerge || merging}
           className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-[14px] font-semibold text-white disabled:opacity-50"
           style={{ background: '#7C3AED' }}>
