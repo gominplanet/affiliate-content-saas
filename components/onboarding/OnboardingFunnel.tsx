@@ -66,7 +66,7 @@ interface StepDef {
   title: string
   icon: React.ReactNode
   done: (s: Status) => boolean
-  /** Hard requirement — can't advance past until done. Only WordPress. */
+  /** Hard requirement — can't advance past until done. Only YouTube. */
   required?: boolean
   /** Manual-completion steps the funnel can't auto-detect (Customize Blog). */
   manual?: boolean
@@ -74,12 +74,14 @@ interface StepDef {
 
 const STEPS: StepDef[] = [
   { n: 0, key: 'intro', title: 'Watch intro', icon: <Play size={16} />, done: () => false },
-  { n: 1, key: 'wp', title: 'Connect WordPress', icon: <Wrench size={16} />, done: (s) => s.wpConnected, required: true },
-  // YouTube is OPTIONAL — MVP is content-first, so a non-YouTuber affiliate
-  // blogger must be able to skip this and still finish setup. WordPress is the
-  // only hard gate (see finish()). Leaving this required trapped any user
-  // without a Google/YouTube account in onboarding with no way out.
-  { n: 2, key: 'yt', title: 'Connect YouTube', icon: <Youtube size={16} />, done: (s) => s.ytConnected },
+  // YouTube is now the ONE hard step (2026-07-30): connect it and you're into
+  // the app to explore and get teased. WordPress moved to an optional step —
+  // it's only actually required later, when you go to spend one of your 5 free
+  // posts (enforced at generation time, not here).
+  { n: 1, key: 'yt', title: 'Connect YouTube', icon: <Youtube size={16} />, done: (s) => s.ytConnected, required: true },
+  // WordPress is OPTIONAL to finish onboarding. A creator can explore the whole
+  // app first; we ask for WordPress when they publish their first post.
+  { n: 2, key: 'wp', title: 'Connect WordPress', icon: <Wrench size={16} />, done: (s) => s.wpConnected },
   { n: 3, key: 'aff', title: 'Affiliate Links', icon: <Link2 size={16} />, done: (s) => s.affiliateConnected },
   { n: 4, key: 'brand', title: 'Brand Profile', icon: <Palette size={16} />, done: (s) => s.brandStarted },
   { n: 5, key: 'voice', title: 'Voice Training', icon: <Sparkles size={16} />, done: (s) => s.voiceStarted },
@@ -90,14 +92,14 @@ const STEPS: StepDef[] = [
 const ACCENT = '#7C3AED'
 
 /**
- * Navigation lock: WordPress (1) is the ONLY hard gate. Step 1 is always open;
- * every later step unlocks once WordPress is connected. YouTube (2) is optional
+ * Navigation lock: YouTube (1) is the ONLY hard gate. Step 1 is always open;
+ * every later step unlocks once YouTube is connected. WordPress (2) is optional
  * and never blocks progress. Drives both the rail (click) and the Save & next
  * button.
  */
 function stepUnlocked(n: number, s: Status): boolean {
   if (n <= 1) return true
-  return s.wpConnected
+  return s.ytConnected
 }
 
 export default function OnboardingFunnel({
@@ -186,8 +188,8 @@ export default function OnboardingFunnel({
 
   const next = useCallback(() => {
     if (current.required && !current.done(status)) {
-      // WordPress is the only required step.
-      toast.error('Connect your WordPress site to continue — everything starts here.')
+      // YouTube is the only required step now.
+      toast.error('Connect your YouTube channel to continue — it’s the one step we need to get you in.')
       return
     }
     if (step >= STEPS.length) return
@@ -195,10 +197,10 @@ export default function OnboardingFunnel({
   }, [current, status, step, goToStep])
 
   const finish = useCallback(async () => {
-    // WordPress is the hard gate — never let a user "finish" without it, or
-    // they'd land on a dashboard the layout would just bounce back here.
-    if (!status.wpConnected) {
-      toast.error('Connect your WordPress site first — it’s the one required step.')
+    // YouTube is the hard gate — never let a user "finish" without it, or they'd
+    // land on a dashboard the layout would just bounce back here.
+    if (!status.ytConnected) {
+      toast.error('Connect your YouTube channel first — it’s the one required step.')
       return
     }
     setSaving(true)
@@ -209,7 +211,7 @@ export default function OnboardingFunnel({
       setSaving(false)
       toast.error('Could not finish setup. Try again.')
     }
-  }, [router, status.wpConnected])
+  }, [router, status.ytConnected])
 
   // Step 0 (intro video) is not a "setup" step — exclude from the setup counter.
   const setupSteps = STEPS.filter((s) => s.n > 0)
@@ -231,7 +233,7 @@ export default function OnboardingFunnel({
             >
               <LifeBuoy size={13} /> Need help?
             </button>
-            {status.wpConnected && (
+            {(status.ytConnected || status.wpConnected) && (
               <button
                 onClick={() => router.push('/dashboard')}
                 className="text-xs text-[#a1a1a6] hover:text-white transition-colors"
@@ -309,7 +311,7 @@ export default function OnboardingFunnel({
                 return (
                   <li key={s.key}>
                     <button
-                      onClick={() => { if (locked) { toast.error('Connect WordPress first.'); return } goToStep(s.n) }}
+                      onClick={() => { if (locked) { toast.error('Connect YouTube first.'); return } goToStep(s.n) }}
                       aria-disabled={locked}
                       className="w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors"
                       style={{ background: active ? 'rgba(124,58,237,0.16)' : 'transparent', cursor: locked ? 'not-allowed' : 'pointer', opacity: locked ? 0.4 : 1 }}

@@ -1,9 +1,12 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
 // Free ('trial') plan qualification gate. The free plan includes 5 lifetime
-// posts, but a creator must connect a YouTube channel AND a WordPress site
-// before generation unlocks — the bar that keeps free AI for real creators,
-// not signup-and-farm bots. Paid tiers always pass. Enforce BEFORE any AI spend.
+// posts. A creator gets INTO the app after connecting just a YouTube channel
+// (the onboarding hard step) so they can explore and get teased; publishing
+// their first post additionally needs a WordPress site. This gate enforces both
+// at generation time — the bar that keeps free AI for real creators, not
+// signup-and-farm bots. Paid tiers always pass. Enforce BEFORE any AI spend AND
+// before quota is consumed (see app/api/blog/generate/route.ts).
 
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import type { Tier } from '@/lib/tier'
