@@ -79,6 +79,35 @@ function deriveProductUrl(video: Record<string, unknown> | null): string | null 
   return asin ? `https://www.amazon.com/dp/${asin}` : null
 }
 
+/** Fallback product-URL source for posts made from a LINK (no linked video):
+ *  the post's own deal_meta.asin, then the first product/affiliate link inside
+ *  the published body. MVP put that link there when it wrote the post, so a
+ *  review post always has a resolvable product even without a video row. */
+function deriveProductUrlFromPost(post: Record<string, unknown> | null): string | null {
+  if (!post) return null
+  const clean = (u: string) => u.replace(/[.,;:)\]>"']+$/, '')
+  // Deal posts carry the ASIN in the structured deal envelope.
+  const dm = (post.deal_meta && typeof post.deal_meta === 'object') ? post.deal_meta as Record<string, unknown> : null
+  const dealAsin = (typeof dm?.asin === 'string') ? dm.asin.toUpperCase() : null
+  if (dealAsin && /^[A-Z0-9]{10}$/.test(dealAsin)) return `https://www.amazon.com/dp/${dealAsin}`
+  // Otherwise scan the post body for the product/affiliate link MVP embedded.
+  const content = (post.content as string) || ''
+  const patterns = [
+    /https?:\/\/(?:www\.)?amazon\.[a-z.]+\/(?:dp|gp\/product)\/[A-Z0-9]{10}[^\s)>\]"']*/i,
+    /https?:\/\/(?:www\.)?amzn\.to\/[^\s)>\]"']+/i,
+    /https?:\/\/(?:www\.)?geni\.us\/[^\s)>\]"']+/i,
+  ]
+  for (const re of patterns) {
+    const m = content.match(re)
+    if (m) return clean(m[0])
+  }
+  const asin =
+    content.toUpperCase().match(/\/(?:DP|GP\/PRODUCT)\/([A-Z0-9]{10})/)?.[1] ||
+    content.toUpperCase().match(/\b(B0[A-Z0-9]{8})\b/)?.[1] ||
+    null
+  return asin ? `https://www.amazon.com/dp/${asin}` : null
+}
+
 export async function GET(request: Request, { params }: { params: Promise<{ postId: string }> }) {
   try {
     const supabase = await createServerClient()
@@ -97,8 +126,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ post
     // killing the whole Share-with-brand feature with a misleading message.
     // Drop the optional columns and retry on a "column does not exist" error
     // (same resilience pattern as app/api/campaigns/list/route.ts).
-    const CORE_COLS = 'id, title, video_id, wordpress_url, tiktok_share_url, pinterest_pin_id, twitter_post_id, facebook_post_id, linkedin_post_id'
-    const OPT_COLS = ['amazon_video_url', 'social_permalinks']
+    const CORE_COLS = 'id, title, content, video_id, wordpress_url, tiktok_share_url, pinterest_pin_id, twitter_post_id, facebook_post_id, linkedin_post_id'
+    const OPT_COLS = ['amazon_video_url', 'social_permalinks', 'deal_meta']
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const loadPost = async (cols: string) => (supabase as any)
       .from('blog_posts').select(cols).eq('user_id', ownerId).eq('id', id).maybeSingle()
@@ -122,7 +151,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ post
     const youtubeUrl = video?.youtube_video_id
       ? `https://www.youtube.com/watch?v=${video.youtube_video_id}`
       : null
-    const productUrl = deriveProductUrl(video)
+    // Prefer the linked video's product link; fall back to the post's own
+    // deal_meta / embedded affiliate link for posts made straight from a link
+    // (no video). Either way we end up with a URL we can resolve to an ASIN, so
+    // the modal can hand it to SCOUT to search Creator Connections.
+    const productUrl = deriveProductUrl(video) || deriveProductUrlFromPost(post)
 
     // Brand profile → settings + sign-off defaults.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -166,7 +199,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ post
     // would otherwise show raw in the recap message.
     const titleFallback = decodeHtmlEntities((video?.title as string) || (post.title as string) || '')
     const productName = real?.name || titleFallback
-    const brandGuess = real?.brand ?? (productUrl ? '' : guessBrandName(titleFallback))
+    // Prefer the real listing's brand; if that couldn't be resolved (e.g. the
+    // Amazon fetch timed out), fall back to the title guess rather than leaving
+    // the field blank — the field stays editable either way.
+    const brandGuess = real?.brand || guessBrandName(titleFallback)
 
     const message = fillRecapMessage(settings.template, {
       brand: brandGuess,
