@@ -78,7 +78,10 @@ export default function AdminCcImportPage() {
     } finally { setMerging(false) }
   }, [merging, loadCounts])
 
-  const num = (n: number | null | undefined) => (n == null ? '—' : n.toLocaleString())
+  // While counts are still loading, show a dash, never a bare "0" — a transient
+  // zero on the Live Catalog card reads like the whole shared catalog was wiped
+  // and is genuinely alarming. Only show a real number once loaded.
+  const num = (n: number | null | undefined) => (loading || n == null ? '—' : n.toLocaleString())
   const staged = counts?.staged ?? 0
   const canMerge = !loading && staged > 0
   const enrichedPct = counts?.live && counts?.enriched != null && counts.live > 0
