@@ -604,6 +604,9 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
   const [borderIndex, setBorderIndex] = useState<number | null>(null) // null = keep borders varied
   const [accentColor, setAccentColor] = useState<string>('#FFE034')   // title emphasis colour
   const [selectedFaceModelId, setSelectedFaceModelId] = useState<string | null>(null)
+  // Hide the green ✓ checkmark decoration. Prefilled from the saved style (via
+  // the hidden BrandStylePanel), persisted on toggle, enforced by generate-thumbnail.
+  const [noCheck, setNoCheck] = useState(false)
   // 'auto' = vision-match from all ready models; 'no-human' = product-only; any other string = specific model id
   const [scoutFaceSelection, setScoutFaceSelection] = useState<'auto' | 'no-human' | string>('auto')
   /** Which thumbnail mode card is active. Drives the 4-card picker UI.
@@ -2362,6 +2365,28 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                     </select>
                   </div>
 
+                  {/* Hide the green ✓ checkmark decoration — persists per-user,
+                      enforced server-side on every generation. */}
+                  <label className="flex items-center gap-2 cursor-pointer mt-2" title="Turn off the green ✓ badge MVP adds to some thumbnails">
+                    <input
+                      type="checkbox"
+                      checked={noCheck}
+                      disabled={generatingThumbnail}
+                      onChange={async (e) => {
+                        const v = e.target.checked
+                        setNoCheck(v)
+                        try {
+                          await fetch('/api/youtube/thumbnail-style', {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ patchNoCheck: v }),
+                          })
+                        } catch { /* best-effort */ }
+                      }}
+                      className="accent-[#7C3AED]"
+                    />
+                    <span className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Hide the green ✓ checkmark on my thumbnails</span>
+                  </label>
+
                   {/* BrandStylePanel mounted hidden — fires its saved-defaults useEffect on mount */}
                   <div className="hidden">
                     <BrandStylePanel
@@ -2372,6 +2397,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                       setBorderIndex={setBorderIndex}
                       accentColor={accentColor}
                       setAccentColor={setAccentColor}
+                      setNoCheck={setNoCheck}
                       disabled={generatingThumbnail}
                     />
                   </div>

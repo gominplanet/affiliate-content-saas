@@ -43,6 +43,7 @@ export default function BrandStylePanel({
   setBorderIndex,
   accentColor,
   setAccentColor,
+  setNoCheck: setParentNoCheck,
   disabled,
 }: {
   faceModels: Array<{ id: string; name: string }>
@@ -52,6 +53,9 @@ export default function BrandStylePanel({
   setBorderIndex: (v: number | null) => void
   accentColor: string
   setAccentColor: (v: string) => void
+  /** Optional: mirror the saved hide-checkmark flag up to a parent that renders
+   *  its own visible toggle (the co-pilot page mounts this panel hidden). */
+  setNoCheck?: (v: boolean) => void
   disabled?: boolean
 }) {
   const [hasSaved, setHasSaved] = useState(false)
@@ -72,7 +76,7 @@ export default function BrandStylePanel({
           if (typeof d.style.borderStyleIndex === 'number') setBorderIndex(d.style.borderStyleIndex)
           if (d.style.accentColor) setAccentColor(d.style.accentColor)
           if (d.style.face) setSelectedFaceModelId(savedToFace(d.style.face))
-          if (typeof d.style.noCheck === 'boolean') setNoCheck(d.style.noCheck)
+          if (typeof d.style.noCheck === 'boolean') { setNoCheck(d.style.noCheck); setParentNoCheck?.(d.style.noCheck) }
         }
       } catch { /* ignore — block just keeps its defaults */ }
     })()
