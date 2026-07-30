@@ -50,8 +50,6 @@ const CATEGORIES = [
   { v: '1000', l: 'Books' },
 ]
 
-const PAGE_SIZE = 24
-
 export default function AmazonResearchPanel({ onSavedChange }: { onSavedChange?: () => void }) {
   const [q, setQ] = useState('')
   const [sort, setSort] = useState('salesRank')
