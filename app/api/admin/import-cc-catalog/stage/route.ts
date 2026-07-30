@@ -112,7 +112,15 @@ function normalizeRow(r: InRow): StageRow | null {
   }
 }
 
-function str(v: unknown): string | null { const s = (v == null ? '' : String(v)).trim(); return s || null }
+// Strip NUL + C0 control chars (keeps tab/newline/CR). Postgres text can't store
+// NUL and rejects the whole batch with "unsupported Unicode escape sequence".
+// Amazon CSV exports carry them. Built via RegExp() so the SOURCE stays ASCII.
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARS = new RegExp('[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F]', 'g')
+function str(v: unknown): string | null {
+  const s = (v == null ? '' : String(v)).replace(CONTROL_CHARS, '').trim()
+  return s || null
+}
 function num(v: unknown): number | null {
   if (v == null || v === '') return null
   const n = Number(String(v).replace(/[$,%\s]/g, '')); return Number.isFinite(n) ? n : null
