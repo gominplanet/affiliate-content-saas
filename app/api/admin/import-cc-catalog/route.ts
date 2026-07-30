@@ -90,18 +90,36 @@ export async function POST(request: Request) {
       }, { status: 409 })
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data, error } = await (admin as any).rpc('merge_cc_catalog_import')
-    if (error) {
-      console.error('[import-cc-catalog]', error.message)
-      return NextResponse.json({ error: toUserMessage(error, 'Import merge failed. Please try again.') }, { status: 500 })
+    // Chunked, resumable merge (migration 202): upsert in bounded batches so no
+    // single statement/HTTP call times out, then purge fall-outs. If this
+    // endpoint is cut off mid-loop, the _merged marker lets a re-click resume.
+    const BATCH = 20000
+    let upserted = 0
+    for (let i = 0; i < 500; i++) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await (admin as any).rpc('merge_cc_catalog_step', { p_limit: BATCH })
+      if (error) {
+        console.error('[import-cc-catalog step]', error.message)
+        return NextResponse.json({
+          error: toUserMessage(error, 'Merge stopped partway. Click Merge again to resume where it left off.'),
+          detail: error.message?.slice(0, 200), upsertedSoFar: upserted,
+        }, { status: 500 })
+      }
+      const n = Number(data ?? 0)
+      upserted += n
+      if (n < BATCH) break // last (partial) batch processed
     }
-    const row = Array.isArray(data) ? data[0] : data
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: purgedData, error: purgeErr } = await (admin as any).rpc('merge_cc_catalog_purge')
+    if (purgeErr) {
+      console.error('[import-cc-catalog purge]', purgeErr.message)
+      return NextResponse.json({ error: toUserMessage(purgeErr, 'Upsert done but the purge failed. Click Merge again.'), upserted }, { status: 500 })
+    }
     return NextResponse.json({
       ok: true,
       staged: count,
-      upserted: Number(row?.upserted ?? 0),
-      purged: Number(row?.purged ?? 0),
+      upserted,
+      purged: Number(purgedData ?? 0),
     })
   } catch (err) {
     console.error('[import-cc-catalog]', err instanceof Error ? err.message : err)
