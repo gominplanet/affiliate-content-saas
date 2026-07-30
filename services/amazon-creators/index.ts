@@ -113,17 +113,22 @@ export async function getItemsByAsin(asins: string[]): Promise<Map<string, Creat
       const res = await fetch(GETITEMS_URL, { method: 'POST', headers, body: JSON.stringify(body), signal: AbortSignal.timeout(20_000) })
       if (res.status === 429) { console.warn('[creators-api getItems] 429 rate-limited'); break } // back off; caller retries later
       if (!res.ok) { console.error('[creators-api getItems]', res.status); continue }
-      const data = await res.json() as { itemResults?: { items?: unknown[] } }
+      // The live response key is `itemsResult` (confirmed against the API), not
+      // `itemResults`; keep the old key as a defensive fallback. Item + field
+      // casings are read defensively (asin/ASIN, offersV2/offers).
+      const data = await res.json() as { itemsResult?: { items?: unknown[] }; itemResults?: { items?: unknown[] } }
+      const items = (data.itemsResult?.items ?? data.itemResults?.items ?? []) as unknown[]
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      for (const raw of (data.itemResults?.items ?? []) as any[]) {
-        const asin = String(raw?.asin || '').toUpperCase()
+      for (const raw of items as any[]) {
+        const asin = String(raw?.asin || raw?.ASIN || '').toUpperCase()
         if (!/^[A-Z0-9]{10}$/.test(asin)) continue
+        const primary = raw?.images?.primary
         out.set(asin, {
           asin,
-          imageUrl: raw?.images?.primary?.large?.url || raw?.images?.primary?.medium?.url || raw?.images?.primary?.small?.url || null,
-          title: raw?.itemInfo?.title?.displayValue || null,
-          priceCents: parsePriceCents(raw?.offersV2?.listings?.[0]?.price),
-          detailPageUrl: raw?.detailPageURL || null,
+          imageUrl: primary?.large?.url || primary?.medium?.url || primary?.small?.url || null,
+          title: raw?.itemInfo?.title?.displayValue || raw?.itemInfo?.title?.value || null,
+          priceCents: parsePriceCents(raw?.offersV2?.listings?.[0]?.price ?? raw?.offers?.listings?.[0]?.price),
+          detailPageUrl: raw?.detailPageURL || raw?.detailPageUrl || null,
         })
       }
     } catch (e) {

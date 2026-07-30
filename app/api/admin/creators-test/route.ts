@@ -73,13 +73,15 @@ export async function GET(request: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let parsed: any = {}
     try { parsed = JSON.parse(bodyText) } catch { /* keep raw */ }
-    const item = parsed?.itemResults?.items?.[0] ?? null
+    const item = parsed?.itemsResult?.items?.[0] ?? parsed?.itemResults?.items?.[0] ?? null
     report.getItems = {
       status: res.status, ok: res.ok, asin,
       itemFound: !!item,
       imageUrl: item?.images?.primary?.large?.url ?? null,
-      title: item?.itemInfo?.title?.displayValue ?? null,
+      title: item?.itemInfo?.title?.displayValue ?? item?.itemInfo?.title?.value ?? null,
       errors: parsed?.errors ?? null,
+      // Redacted raw item so we can confirm exact field paths on a live hit.
+      rawItem: item ? JSON.stringify(item).slice(0, 900) : null,
       sample: item ? null : bodyText.slice(0, 500),
     }
     report.verdict = res.ok && item?.images?.primary?.large?.url ? '✅ Working — images will populate.' : '⚠️ Token OK but GetItems/image failed — see getItems.sample/errors.'
