@@ -245,8 +245,10 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
       <div
-        className="card w-full max-w-lg max-h-[88vh] overflow-y-auto p-5"
-        style={{ background: 'var(--surface, #fff)' }}
+        // Explicit SOLID background in both themes. --surface resolves to a
+        // translucent/glassy value in dark mode, which let the page bleed
+        // through the modal; force an opaque surface so it's always readable.
+        className="card w-full max-w-lg max-h-[88vh] overflow-y-auto p-5 !bg-white dark:!bg-[#16161a]"
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-start justify-between mb-1">
