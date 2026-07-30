@@ -334,7 +334,7 @@ export default function CampaignBrowsePanel({
         </div>
       ) : (
         <div className="p-3 border-t" style={{ borderColor: 'var(--border)' }}>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 items-stretch [grid-auto-rows:1fr]">
             {rows.map(c => (
               <BrowseCard
                 key={c.campaignId}
@@ -410,7 +410,7 @@ function BrowseCard({ c, saved, covered, onToggleSave, onMessageBrand, onDeepDiv
   const amazonUrl = `https://www.amazon.com/dp/${c.asin}`
 
   return (
-    <div className="rounded-xl border flex flex-col overflow-hidden" style={{ borderColor: 'var(--border-2)', background: 'var(--surface)' }}>
+    <div className="rounded-xl border flex flex-col overflow-hidden h-full" style={{ borderColor: 'var(--border-2)', background: 'var(--surface)' }}>
       {/* Product image — the hero */}
       <a href={amazonUrl} target="_blank" rel="noopener noreferrer" className="relative block aspect-square bg-white">
         {c.imageUrl ? (
