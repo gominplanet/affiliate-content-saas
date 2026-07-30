@@ -366,11 +366,23 @@ async function handleGenerate(request: Request) {
       }, { status: 403 })
     }
   } else {
-    // Fresh generation — gate against the unified Generations cap that
-    // bundles blog + thumbnail + metadata into one bucket per billing
-    // period (migration 101). Trial users still hit the lifetime gate
-    // first via checkUsageLimit; paid tiers go straight through the
-    // unified RPC.
+    // Fresh generation.
+    // Connect-gate BEFORE consuming quota. A free user only needs a connected
+    // YouTube channel to be in the app, but publishing their first post needs a
+    // WordPress site — so we require it here, at the moment they spend a post.
+    // This MUST run before checkUsageLimit (which atomically CONSUMES one of the
+    // 5 lifetime posts): otherwise a not-yet-connected free user's blocked
+    // attempt would silently burn a free post. (freeTierGenerationBlock is a
+    // no-op for paid tiers.)
+    const { data: cgRow } = await supabase.from('integrations').select('tier').eq('user_id', ownerId).maybeSingle()
+    const cgTier = normalizeTier(cgRow?.tier)
+    const preBlock = await freeTierGenerationBlock(supabase, ownerId, cgTier)
+    if (preBlock) return NextResponse.json({ error: preBlock, code: 'connect_required', currentTier: cgTier }, { status: 403 })
+
+    // Gate against the unified Generations cap that bundles blog + thumbnail +
+    // metadata into one bucket per billing period (migration 101). Trial users
+    // still hit the lifetime gate first via checkUsageLimit; paid tiers go
+    // straight through the unified RPC.
     const trialUsage = await checkUsageLimit(supabase, user.id)
     if (!trialUsage.allowed) {
       return NextResponse.json({

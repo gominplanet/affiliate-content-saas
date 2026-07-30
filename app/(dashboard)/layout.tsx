@@ -19,7 +19,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     // wp_post_count / wp_post_count_updated_at dropped 2026-07-20: the
     // Buying Guides nav no longer depends on post volume, and nothing
     // else in this layout reads them.
-    .select('wordpress_url, tier, onboarding_completed, content_only')
+    .select('wordpress_url, tier, onboarding_completed, content_only, youtube_oauth_access_token, youtube_channel_id')
     .eq('user_id', user.id)
     .maybeSingle()
 
@@ -31,18 +31,20 @@ export default async function DashboardLayout({ children }: { children: React.Re
   // users with a mix of modes keep the full nav.
   const contentOnly = (intRow as { content_only?: boolean } | null)?.content_only === true
 
-  // ── Onboarding funnel hard gate (epic Phase 2) ──────────────────────────────
-  // A brand-new user has no connected WordPress site — nothing in the app works
-  // without it, so route them into the guided /onboarding funnel instead of a
-  // dashboard full of dead options. The gate is WordPress-only: once a site is
-  // connected the user can reach the dashboard freely even mid-funnel ("Skip
-  // for now" on the optional steps). onboarding_completed lets an existing user
-  // who has since disconnected WP avoid being re-funneled. /onboarding lives
-  // OUTSIDE this layout, so there's no redirect loop.
-  // `as any`: onboarding_completed ships in migration 125, not yet in the
-  // generated DB types (treat a missing column as not-completed → safe).
+  // ── Onboarding funnel hard gate ─────────────────────────────────────────────
+  // The hard requirement to enter the app is now a connected YOUTUBE channel, NOT
+  // WordPress (2026-07-30). A free user who's made an account and connected
+  // YouTube can explore the whole app and get teased by what each tier unlocks;
+  // WordPress is only demanded later, when they actually go to spend one of their
+  // 5 free posts (enforced at generation time — see lib/free-tier-gate.ts). This
+  // lets the value land before we ask for the heavier WordPress setup.
+  // onboarding_completed lets an existing user who finished the funnel through
+  // (or connected WP the old way) skip the gate. /onboarding lives OUTSIDE this
+  // layout, so there's no redirect loop.
+  const ytConnected = !!(intRow as { youtube_oauth_access_token?: string | null; youtube_channel_id?: string | null } | null)?.youtube_oauth_access_token
+    || !!(intRow as { youtube_channel_id?: string | null } | null)?.youtube_channel_id
   const onboardingCompleted = (intRow as { onboarding_completed?: boolean } | null)?.onboarding_completed === true
-  if (!wpSiteUrl && !onboardingCompleted) {
+  if (!ytConnected && !wpSiteUrl && !onboardingCompleted) {
     redirect('/onboarding')
   }
 
