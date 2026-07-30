@@ -34,20 +34,35 @@ const SORTS = [
   { v: 'priceHigh', l: 'Price: high to low' },
 ]
 
+// VERIFIED Keepa rootCategory ids — MUST match the /api/amazon-research list.
 const CATEGORIES = [
   { v: '0', l: 'All categories' },
-  { v: '1055398', l: 'Home & Kitchen' },
-  { v: '3760901', l: 'Beauty & Personal Care' },
-  { v: '3375251', l: 'Sports & Outdoors' },
-  { v: '2619525011', l: 'Tools & Home Improvement' },
-  { v: '165793011', l: 'Toys & Games' },
   { v: '172282', l: 'Electronics' },
-  { v: '7141123011', l: 'Clothing, Shoes & Jewelry' },
-  { v: '3760911', l: 'Health & Household' },
-  { v: '2972638011', l: 'Grocery & Gourmet Food' },
+  { v: '1055398', l: 'Home & Kitchen' },
+  { v: '3375251', l: 'Sports & Outdoors' },
+  { v: '3760901', l: 'Health & Household' },
+  { v: '3760911', l: 'Beauty & Personal Care' },
+  { v: '228013', l: 'Tools & Home Improvement' },
+  { v: '165793011', l: 'Toys & Games' },
   { v: '2619533011', l: 'Pet Supplies' },
-  { v: '1064954', l: 'Baby' },
-  { v: '1000', l: 'Books' },
+  { v: '1064954', l: 'Office Products' },
+  { v: '15684181', l: 'Automotive' },
+  { v: '165796011', l: 'Baby' },
+  { v: '7141123011', l: 'Clothing, Shoes & Jewelry' },
+  { v: '541966', l: 'Computers' },
+  { v: '2335752011', l: 'Cell Phones & Accessories' },
+  { v: '16310101', l: 'Grocery & Gourmet Food' },
+  { v: '11091801', l: 'Musical Instruments' },
+  { v: '2972638011', l: 'Patio, Lawn & Garden' },
+  { v: '468642', l: 'Video Games' },
+  { v: '2619525011', l: 'Appliances' },
+  { v: '2617941011', l: 'Arts, Crafts & Sewing' },
+  { v: '16310161', l: 'Industrial & Scientific' },
+  { v: '9479199011', l: 'Luggage & Travel Gear' },
+  { v: '283155', l: 'Books' },
+  { v: '2625373011', l: 'Movies & TV' },
+  { v: '3367581', l: 'Jewelry' },
+  { v: '6358539011', l: 'Watches' },
 ]
 
 export default function AmazonResearchPanel({ onSavedChange }: { onSavedChange?: () => void }) {
@@ -318,7 +333,10 @@ function ProductCard({ p, saved, onToggleSave, onDeepDive }: {
               style={saved ? { borderColor: '#f59e0b', background: 'rgba(245,158,11,0.10)', color: '#b26a00' } : { borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
               {saved ? <BookmarkCheck size={12} /> : <Bookmark size={12} />} {saved ? 'Saved' : 'Save'}
             </button>
-            <a href={p.productUrl} target="_blank" rel="noopener noreferrer" title="Buy to review on Amazon"
+            {/* Buy to review = the creator purchasing for themselves, so this is
+               a PLAIN Amazon link with NO affiliate tag (you can't tag your own
+               purchase). The tagged link is only for the content they publish. */}
+            <a href={`https://www.amazon.com/dp/${p.asin}`} target="_blank" rel="noopener noreferrer" title="Buy to review on Amazon"
               className="inline-flex items-center justify-center gap-1 text-[11px] font-semibold rounded-full px-2.5 py-1.5 text-white flex-shrink-0" style={{ background: '#34c759' }}>
               <ShoppingCart size={12} />
             </a>
