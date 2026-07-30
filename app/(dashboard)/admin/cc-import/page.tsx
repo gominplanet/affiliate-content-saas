@@ -59,7 +59,7 @@ export default function AdminCcImportPage() {
           confirm = true
           continue
         }
-        if (!r.ok) throw new Error(d.error || 'Merge failed')
+        if (!r.ok) throw new Error(d.detail ? `${d.error || 'Merge failed'} — ${d.detail}` : (d.error || 'Merge failed'))
         confirm = true
         totalUpserted += Number(d.upserted ?? 0)
         if (d.done) {
