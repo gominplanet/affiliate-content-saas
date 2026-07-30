@@ -1,0 +1,324 @@
+'use client'
+
+// © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
+//
+// "Amazon Product Research" — a filterable browse of the WHOLE Amazon catalogue
+// (GET /api/amazon-research), NOT deals and NOT Creator Connections campaigns.
+// Search by keyword, price, rating, reviews, best-sellers and category; the
+// Keepa Product Finder returns matching ASINs and the Creators API hydrates the
+// image / title / price. Every product link carries the creator's own Associates
+// tag. From a card the creator can buy-to-review, write a review straight into
+// the content engine, save it, or open the price-history deep-dive.
+
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { toast } from 'sonner'
+import {
+  Loader2, Search, Bookmark, BookmarkCheck, ShoppingCart, PenLine, Check,
+  ArrowRight, BarChart3, ImageOff, SlidersHorizontal,
+} from 'lucide-react'
+import ProductDeepDiveModal from '@/components/product/ProductDeepDiveModal'
+
+interface Product {
+  asin: string
+  title: string | null
+  imageUrl: string | null
+  priceNow: number | null
+  productUrl: string
+}
+
+const SORTS = [
+  { v: 'salesRank', l: 'Best sellers' },
+  { v: 'reviews', l: 'Most reviews' },
+  { v: 'rating', l: 'Highest rating' },
+  { v: 'priceLow', l: 'Price: low to high' },
+  { v: 'priceHigh', l: 'Price: high to low' },
+]
+
+const CATEGORIES = [
+  { v: '0', l: 'All categories' },
+  { v: '1055398', l: 'Home & Kitchen' },
+  { v: '3760901', l: 'Beauty & Personal Care' },
+  { v: '3375251', l: 'Sports & Outdoors' },
+  { v: '2619525011', l: 'Tools & Home Improvement' },
+  { v: '165793011', l: 'Toys & Games' },
+  { v: '172282', l: 'Electronics' },
+  { v: '7141123011', l: 'Clothing, Shoes & Jewelry' },
+  { v: '3760911', l: 'Health & Household' },
+  { v: '2972638011', l: 'Grocery & Gourmet Food' },
+  { v: '2619533011', l: 'Pet Supplies' },
+  { v: '1064954', l: 'Baby' },
+  { v: '1000', l: 'Books' },
+]
+
+const PAGE_SIZE = 24
+
+export default function AmazonResearchPanel({ onSavedChange }: { onSavedChange?: () => void }) {
+  const [q, setQ] = useState('')
+  const [sort, setSort] = useState('salesRank')
+  const [category, setCategory] = useState('0')
+  const [minPrice, setMinPrice] = useState('')
+  const [maxPrice, setMaxPrice] = useState('')
+  const [minRating, setMinRating] = useState('0')
+  const [minReviews, setMinReviews] = useState('0')
+  const [maxSalesRank, setMaxSalesRank] = useState('0')
+
+  const [rows, setRows] = useState<Product[]>([])
+  const [loading, setLoading] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(false)
+  const [page, setPage] = useState(0)
+  const [error, setError] = useState<string | null>(null)
+  const [needsFilter, setNeedsFilter] = useState(true)
+  const [savedAsins, setSavedAsins] = useState<Set<string>>(new Set())
+  const [deepDive, setDeepDive] = useState<{ asin: string; title: string | null; imageUrl: string | null } | null>(null)
+
+  useEffect(() => {
+    fetch('/api/campaigns/saved').then(r => r.json()).then(d => {
+      if (d?.ok && Array.isArray(d.saved)) setSavedAsins(new Set(d.saved.map((s: { asin: string }) => s.asin.toUpperCase())))
+    }).catch(() => {})
+  }, [])
+
+  const buildParams = useCallback((pageToLoad: number) => {
+    const params = new URLSearchParams()
+    if (q.trim()) params.set('q', q.trim())
+    if (category !== '0') params.set('category', category)
+    if (minPrice.trim() && Number(minPrice) > 0) params.set('minPrice', String(Number(minPrice)))
+    if (maxPrice.trim() && Number(maxPrice) > 0) params.set('maxPrice', String(Number(maxPrice)))
+    if (minRating !== '0') params.set('minRating', minRating)
+    if (minReviews !== '0') params.set('minReviews', minReviews)
+    if (maxSalesRank !== '0') params.set('maxSalesRank', maxSalesRank)
+    params.set('sort', sort)
+    params.set('page', String(pageToLoad))
+    return params
+  }, [q, category, minPrice, maxPrice, minRating, minReviews, maxSalesRank, sort])
+
+  const load = useCallback(async (pageToLoad = 0, append = false) => {
+    if (append) setLoadingMore(true); else setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/amazon-research?${buildParams(pageToLoad).toString()}`)
+      const data = await res.json()
+      if (!res.ok) { setError(data.error || 'Could not search Amazon.'); if (!append) setRows([]); return }
+      setNeedsFilter(!!data.needsFilter)
+      const incoming: Product[] = Array.isArray(data.products) ? data.products : []
+      setRows(prev => append ? [...prev, ...incoming] : incoming)
+      setHasMore(!!data.hasMore)
+      setPage(pageToLoad)
+    } catch {
+      setError('Could not search Amazon.')
+    } finally {
+      if (append) setLoadingMore(false); else setLoading(false)
+    }
+  }, [buildParams])
+
+  // Debounced reload on any filter change (skips the wide-open no-filter state).
+  const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const hasFilters = q.trim() || category !== '0' || (minPrice.trim() && Number(minPrice) > 0)
+    || (maxPrice.trim() && Number(maxPrice) > 0) || minRating !== '0' || minReviews !== '0' || maxSalesRank !== '0'
+  useEffect(() => {
+    if (debounce.current) clearTimeout(debounce.current)
+    if (!hasFilters) { setRows([]); setNeedsFilter(true); setLoading(false); return }
+    debounce.current = setTimeout(() => { void load() }, 400)
+    return () => { if (debounce.current) clearTimeout(debounce.current) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [load, hasFilters])
+
+  async function toggleSave(p: Product) {
+    const asin = p.asin.toUpperCase()
+    const wasSaved = savedAsins.has(asin)
+    setSavedAsins(prev => { const n = new Set(prev); if (wasSaved) n.delete(asin); else n.add(asin); return n })
+    try {
+      if (wasSaved) await fetch(`/api/campaigns/saved?asin=${asin}`, { method: 'DELETE' })
+      else await fetch('/api/campaigns/saved', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ asin: p.asin, source: 'onsite', title: p.title, imageUrl: p.imageUrl, price: p.priceNow }),
+      })
+      onSavedChange?.()
+    } catch {
+      setSavedAsins(prev => { const n = new Set(prev); if (wasSaved) n.add(asin); else n.delete(asin); return n })
+      toast.error('Could not update your saved list.')
+    }
+  }
+
+  const clearFilters = () => {
+    setQ(''); setCategory('0'); setMinPrice(''); setMaxPrice(''); setMinRating('0'); setMinReviews('0'); setMaxSalesRank('0'); setSort('salesRank')
+  }
+
+  return (
+    <div className="card mb-5 overflow-hidden" style={{ borderWidth: 2, borderColor: 'rgba(124,58,237,0.30)' }}>
+      {/* Filter bar */}
+      <div className="px-3.5 py-3 space-y-2.5" style={{ background: 'linear-gradient(180deg, rgba(124,58,237,0.06), transparent 85%)' }}>
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-[18px] w-[18px]" style={{ color: 'var(--text-faint)' }} />
+          <input
+            value={q} onChange={e => setQ(e.target.value)}
+            placeholder="Search Amazon products (keyword)…"
+            className="w-full h-11 pl-11 pr-3.5 text-sm rounded-xl border bg-white dark:bg-[#1c1c1e] outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-violet-500/30 transition-shadow"
+            style={{ borderColor: 'var(--border)', color: 'var(--text)' }}
+          />
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Select value={sort} onChange={setSort} options={SORTS} />
+          <Select value={category} onChange={setCategory} options={CATEGORIES} />
+          <Select value={minRating} onChange={setMinRating} options={[
+            { v: '0', l: 'Any rating' }, { v: '3', l: '3★+' }, { v: '4', l: '4★+' }, { v: '4.5', l: '4.5★+' },
+          ]} />
+          <Select value={minReviews} onChange={setMinReviews} options={[
+            { v: '0', l: 'Any reviews' }, { v: '50', l: '50+ reviews' }, { v: '250', l: '250+ reviews' }, { v: '1000', l: '1k+ reviews' },
+          ]} />
+          <Select value={maxSalesRank} onChange={setMaxSalesRank} options={[
+            { v: '0', l: 'Any rank' }, { v: '5000', l: 'Top 5k sellers' }, { v: '20000', l: 'Top 20k' }, { v: '100000', l: 'Top 100k' },
+          ]} />
+          <div className="inline-flex items-center gap-1.5 h-9 rounded-full border px-3" style={{ borderColor: 'var(--border)', background: 'white' }}>
+            <span className="text-[12px]" style={{ color: 'var(--text-faint)' }}>$</span>
+            <input value={minPrice} onChange={e => setMinPrice(e.target.value.replace(/[^0-9.]/g, ''))} inputMode="decimal" placeholder="min"
+              className="w-12 text-sm bg-transparent outline-none" style={{ color: 'var(--text)' }} />
+            <span className="text-[12px]" style={{ color: 'var(--text-faint)' }}>–</span>
+            <input value={maxPrice} onChange={e => setMaxPrice(e.target.value.replace(/[^0-9.]/g, ''))} inputMode="decimal" placeholder="max"
+              className="w-12 text-sm bg-transparent outline-none" style={{ color: 'var(--text)' }} />
+          </div>
+          {hasFilters && (
+            <button onClick={clearFilters} className="ml-auto text-xs font-medium inline-flex items-center gap-1 h-8 px-2.5" style={{ color: 'var(--text-faint)' }}>
+              Clear
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Results */}
+      {loading ? (
+        <div className="flex items-center justify-center py-16"><Loader2 className="h-6 w-6 animate-spin" style={{ color: 'var(--text-faint)' }} /></div>
+      ) : error ? (
+        <div className="text-center py-12 text-sm" style={{ color: 'var(--text-faint)' }}>{error}</div>
+      ) : needsFilter && rows.length === 0 ? (
+        <div className="text-center py-14 px-6" style={{ color: 'var(--text-faint)' }}>
+          <SlidersHorizontal size={26} className="mx-auto mb-3" style={{ color: 'rgba(124,58,237,0.4)' }} />
+          <p className="text-sm font-medium" style={{ color: 'var(--text-soft)' }}>Search the whole Amazon catalogue</p>
+          <p className="text-[12px] mt-1 max-w-sm mx-auto leading-relaxed">Type a keyword or pick a category, rating, review or best-seller filter above and results appear here — every product links with your own Associates tag.</p>
+        </div>
+      ) : rows.length === 0 ? (
+        <div className="text-center py-12 text-sm" style={{ color: 'var(--text-faint)' }}>
+          No products match those filters — try widening them.
+        </div>
+      ) : (
+        <div className="p-3 border-t" style={{ borderColor: 'var(--border)' }}>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            {rows.map(p => (
+              <ProductCard
+                key={p.asin}
+                p={p}
+                saved={savedAsins.has(p.asin.toUpperCase())}
+                onToggleSave={() => toggleSave(p)}
+                onDeepDive={() => setDeepDive({ asin: p.asin, title: p.title, imageUrl: p.imageUrl })}
+              />
+            ))}
+          </div>
+          {hasMore && (
+            <div className="flex justify-center pt-4">
+              <button onClick={() => void load(page + 1, true)} disabled={loadingMore}
+                className="inline-flex items-center gap-2 text-sm font-medium rounded-full border px-5 py-2.5 disabled:opacity-60"
+                style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
+                {loadingMore ? <><Loader2 size={15} className="animate-spin" /> Loading…</> : 'Load more products'}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {deepDive && (
+        <ProductDeepDiveModal asin={deepDive.asin} title={deepDive.title} imageUrl={deepDive.imageUrl} onClose={() => setDeepDive(null)} />
+      )}
+    </div>
+  )
+}
+
+function Select({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: { v: string; l: string }[] }) {
+  return (
+    <div className="relative">
+      <select value={value} onChange={e => onChange(e.target.value)}
+        className="h-9 text-sm font-medium rounded-full border bg-white dark:bg-[#1c1c1e] pl-3.5 pr-8 outline-none cursor-pointer appearance-none focus:border-[#7C3AED] focus:ring-2 focus:ring-violet-500/30 transition"
+        style={{ borderColor: 'var(--border)', color: 'var(--text)' }}>
+        {options.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
+      </select>
+      <svg className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: 'var(--text-faint)' }}><path d="M6 9l6 6 6-6" /></svg>
+    </div>
+  )
+}
+
+function ProductCard({ p, saved, onToggleSave, onDeepDive }: {
+  p: Product; saved: boolean; onToggleSave: () => void; onDeepDive: () => void
+}) {
+  const [gen, setGen] = useState<'idle' | 'working' | 'done'>('idle')
+  const [postUrl, setPostUrl] = useState<string | null>(null)
+
+  const writeReview = async () => {
+    if (gen === 'working') return
+    setGen('working')
+    try {
+      const res = await fetch('/api/blog/from-link', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ link: p.productUrl, productName: p.title || undefined }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { toast.error(data.error || 'Could not write the review.'); setGen('idle'); return }
+      setPostUrl(data.url || null); setGen('done')
+      toast.success('Review published to your blog.')
+    } catch { toast.error('Could not write the review.'); setGen('idle') }
+  }
+
+  return (
+    <div className="rounded-xl border flex flex-col overflow-hidden" style={{ borderColor: 'var(--border-2)', background: 'var(--surface)' }}>
+      <a href={p.productUrl} target="_blank" rel="noopener noreferrer" className="relative block aspect-square bg-white">
+        {p.imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={p.imageUrl} alt="" className="w-full h-full object-contain p-3" />
+        ) : (
+          <div className="w-full h-full grid place-items-center" style={{ background: 'rgba(124,58,237,0.04)' }}>
+            <ImageOff size={22} style={{ color: 'rgba(124,58,237,0.3)' }} />
+          </div>
+        )}
+        <button
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDeepDive() }}
+          title="Price history & product data"
+          className="absolute top-2 right-2 inline-flex items-center gap-1 text-[10px] font-semibold rounded-full px-2 py-1 bg-black/55 text-white hover:bg-black/75 backdrop-blur-sm transition-colors">
+          <BarChart3 size={10} /> Data
+        </button>
+      </a>
+
+      <div className="p-2.5 flex flex-col gap-2 flex-1">
+        <p className="text-[12px] font-semibold leading-snug line-clamp-2 min-h-[2.1rem]" style={{ color: 'var(--text)' }}>
+          {p.title || <span className="font-mono text-[11px]" style={{ color: 'var(--text-faint)' }}>{p.asin}</span>}
+        </p>
+        {p.priceNow != null ? (
+          <span className="text-[15px] font-extrabold" style={{ color: '#16a34a' }}>${p.priceNow.toFixed(2)}</span>
+        ) : <div className="h-[1.1rem]" />}
+
+        <div className="mt-auto pt-1 space-y-1.5">
+          {gen === 'done' && postUrl ? (
+            <a href={postUrl} target="_blank" rel="noopener noreferrer"
+              className="w-full inline-flex items-center justify-center gap-1.5 text-xs font-semibold rounded-full py-2 text-white" style={{ background: '#34c759' }}>
+              <Check size={14} /> View review
+            </a>
+          ) : (
+            <button onClick={writeReview} disabled={gen === 'working'}
+              className="w-full inline-flex items-center justify-center gap-1.5 text-xs font-semibold rounded-full py-2 text-white disabled:opacity-60 transition"
+              style={{ background: '#7C3AED' }}>
+              {gen === 'working' ? <><Loader2 size={13} className="animate-spin" /> Writing…</> : <><PenLine size={13} /> Write review <ArrowRight size={13} /></>}
+            </button>
+          )}
+          <div className="flex items-center gap-1.5">
+            <button onClick={onToggleSave} title={saved ? 'Saved — click to remove' : 'Save for later'}
+              className="inline-flex items-center justify-center gap-1 text-[11px] font-semibold rounded-full px-2.5 py-1.5 border flex-1"
+              style={saved ? { borderColor: '#f59e0b', background: 'rgba(245,158,11,0.10)', color: '#b26a00' } : { borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
+              {saved ? <BookmarkCheck size={12} /> : <Bookmark size={12} />} {saved ? 'Saved' : 'Save'}
+            </button>
+            <a href={p.productUrl} target="_blank" rel="noopener noreferrer" title="Buy to review on Amazon"
+              className="inline-flex items-center justify-center gap-1 text-[11px] font-semibold rounded-full px-2.5 py-1.5 text-white flex-shrink-0" style={{ background: '#34c759' }}>
+              <ShoppingCart size={12} />
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}

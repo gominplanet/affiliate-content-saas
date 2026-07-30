@@ -480,6 +480,114 @@ function statMinPrice(min: unknown): number | null {
  * deal post — only claims the data supports. Empty string when we have nothing
  * to say (so the caller can drop it cleanly).
  */
+// ── Product Finder (Keepa /query) — the whole-catalogue search engine ─────────
+//
+// The /deal endpoint above only surfaces items that are CURRENTLY discounting.
+// Product Finder is different: it searches the ENTIRE Amazon catalogue by any
+// combination of attribute filters (price, rating, review count, sales rank,
+// category, title keywords) and returns matching ASINs — deal or not. This is
+// what powers "Amazon Product Research": a regular filterable catalogue browse,
+// not a deals feed. It returns ASINs only (no product cards); the caller
+// hydrates images/titles/prices separately (Creators API / product card).
+//
+// Docs: https://keepa.com/#!discuss/t/product-finder/407
+
+export interface KeepaFinderFilters {
+  /** Free-text match against the product title (Keepa does a contains match). */
+  title?: string
+  /** [minCents, maxCents] current Amazon/New price window (cents). */
+  priceRangeCents?: [number | null, number | null]
+  /** Minimum star rating, 0–5 (sent to Keepa as ×10). */
+  minRating?: number
+  /** Minimum number of reviews. */
+  minReviews?: number
+  /** Sales-rank ceiling — lower rank = better seller. e.g. 50000 = top sellers. */
+  maxSalesRank?: number
+  /** Keepa rootCategory id (top-level browse node) to constrain to. */
+  rootCategory?: number
+  /** How to order results. */
+  sort?: 'salesRank' | 'reviews' | 'rating' | 'priceLow' | 'priceHigh'
+  /** 0-based page. Keepa returns up to `perPage` ASINs per page. */
+  page?: number
+  perPage?: number
+  domainId?: number
+}
+
+export interface KeepaFinderResult {
+  asins: string[]
+  tokensLeft: number | null
+  /** Total matches Keepa reports for the selection, when present. */
+  totalResults: number | null
+}
+
+const KEEPA_FINDER_SORT: Record<NonNullable<KeepaFinderFilters['sort']>, [string, 'asc' | 'desc']> = {
+  salesRank: ['current_SALES', 'asc'],   // lowest rank first = best sellers
+  reviews:   ['current_COUNT_REVIEWS', 'desc'],
+  rating:    ['current_RATING', 'desc'],
+  priceLow:  ['current_NEW', 'asc'],
+  priceHigh: ['current_NEW', 'desc'],
+}
+
+/**
+ * Search the whole Amazon catalogue by attribute filters. Returns matching
+ * ASINs (up to `perPage`). Env-gated and fully defensive: with no key, a bad
+ * response, or a thrown error it returns an empty result — never throws.
+ */
+export async function keepaProductFinder(filters: KeepaFinderFilters = {}): Promise<KeepaFinderResult> {
+  const empty: KeepaFinderResult = { asins: [], tokensLeft: null, totalResults: null }
+  const key = process.env.KEEPA_API_KEY
+  if (!key) return empty
+
+  const domainId = filters.domainId ?? KEEPA_DOMAIN_US
+  const perPage = Math.min(50, Math.max(1, Math.floor(filters.perPage ?? 40)))
+  const page = Math.max(0, Math.floor(filters.page ?? 0))
+
+  // Keepa /query "selection" object. Every field is optional; omitting one drops
+  // that constraint. Prices are cents; RATING is ×10 (45 = 4.5★).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const selection: Record<string, any> = { page, perPage, productType: [0, 1] }
+
+  const title = (filters.title || '').trim()
+  if (title) selection.title = title
+
+  if (filters.priceRangeCents) {
+    const [lo, hi] = filters.priceRangeCents
+    if (lo != null && Number.isFinite(lo) && lo > 0) selection.current_NEW_gte = Math.round(lo)
+    if (hi != null && Number.isFinite(hi) && hi > 0) selection.current_NEW_lte = Math.round(hi)
+  }
+  if (filters.minRating != null && filters.minRating > 0) {
+    selection.current_RATING_gte = Math.round(Math.min(5, filters.minRating) * 10)
+  }
+  if (filters.minReviews != null && filters.minReviews > 0) {
+    selection.current_COUNT_REVIEWS_gte = Math.round(filters.minReviews)
+  }
+  if (filters.maxSalesRank != null && filters.maxSalesRank > 0) {
+    // Exclude rank 0 (= no rank / unranked) so "top sellers" doesn't pull junk.
+    selection.current_SALES_gte = 1
+    selection.current_SALES_lte = Math.round(filters.maxSalesRank)
+  }
+  if (filters.rootCategory != null && filters.rootCategory > 0) {
+    selection.rootCategory = Math.round(filters.rootCategory)
+  }
+  const sort = KEEPA_FINDER_SORT[filters.sort ?? 'salesRank']
+  selection.sort = [sort]
+
+  const url = `${KEEPA_BASE}/query?key=${encodeURIComponent(key)}&domain=${domainId}&selection=${encodeURIComponent(JSON.stringify(selection))}`
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(30_000) })
+    if (!res.ok) return empty
+    const data = await res.json() as { asinList?: unknown; totalResults?: number; tokensLeft?: number }
+    const tokensLeft = Number.isFinite(data.tokensLeft as number) ? (data.tokensLeft as number) : null
+    const totalResults = Number.isFinite(data.totalResults as number) ? (data.totalResults as number) : null
+    const asins = Array.isArray(data.asinList)
+      ? (data.asinList as unknown[]).map(a => String(a || '').toUpperCase()).filter(a => /^[A-Z0-9]{10}$/.test(a))
+      : []
+    return { asins, tokensLeft, totalResults }
+  } catch {
+    return empty
+  }
+}
+
 export function buildPriceContext(a: DealAssessment): string {
   // Relative framing only — no exact dollar amounts (those go stale the moment
   // the price moves and make an old post look wrong). Percentages are fine.

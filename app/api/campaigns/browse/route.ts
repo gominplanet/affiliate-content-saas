@@ -23,6 +23,15 @@ export const dynamic = 'force-dynamic'
 type SortKey = 'commission' | 'endingSoon' | 'mostRunway' | 'slots' | 'budget' | 'recentSales' | 'rating'
 const PAGE_SIZE = 40
 
+// CC-access proof lasts this long before SCOUT must re-confirm the grid. Kept in
+// step with VERIFY_TTL_DAYS in /api/campaigns/cc-verify.
+const CC_VERIFY_TTL_MS = 180 * 86_400_000
+function ccVerifyFresh(ts: string | null | undefined): boolean {
+  if (!ts) return false
+  const age = Date.now() - new Date(ts).getTime()
+  return Number.isFinite(age) && age >= 0 && age < CC_VERIFY_TTL_MS
+}
+
 export async function GET(request: Request) {
   try {
     const supabase = await createServerClient()
@@ -31,9 +40,19 @@ export async function GET(request: Request) {
 
     // Same gate as the rest of the finder (paid tiers). Flipping the BROWSE view
     // to free later is a one-line change here — the read costs ~nothing.
-    const { data: intRow } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: intRow } = await (supabase as any)
+      .from('integrations').select('tier, cc_verified_at').eq('user_id', user.id).maybeSingle()
     if (!tierAllowsFinders((intRow?.tier as Tier) ?? 'trial')) {
       return NextResponse.json({ error: 'The AMZ Product Finder requires a paid plan.' }, { status: 403 })
+    }
+    // Confidentiality gate: the shared Creator Connections catalog is Amazon
+    // reference data for INVITED creators only. Browse stays locked until SCOUT
+    // has confirmed the user's own CC grid renders for them (cc_verified_at,
+    // stamped by a live grid scan). Smart Scan is self-gating (it reads the
+    // user's own grid), so it needs no gate.
+    if (!ccVerifyFresh(intRow?.cc_verified_at)) {
+      return NextResponse.json({ needsCcVerify: true, error: 'Verify your Creator Connections access to browse the campaign catalog.' }, { status: 403 })
     }
 
     const url = new URL(request.url)

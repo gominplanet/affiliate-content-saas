@@ -16,10 +16,12 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
   Loader2, Search, Bookmark, BookmarkCheck, MessageCircle, ShoppingCart,
-  PenLine, Check, ArrowRight, Coins, Users, Video, BarChart3, ImageOff,
+  PenLine, Check, ArrowRight, Coins, Users, Video, BarChart3, ImageOff, Lock, ShieldCheck,
 } from 'lucide-react'
 import type { MessageBrandCampaign } from '@/components/campaigns/MessageBrandModal'
 import ProductDeepDiveModal from '@/components/product/ProductDeepDiveModal'
+import { requestCcSmartScan } from '@/lib/extension-frame'
+import { campaignRules } from '@/lib/cc-smart-rules'
 
 interface Campaign {
   campaignId: string
@@ -88,6 +90,11 @@ export default function CampaignBrowsePanel({
   const [error, setError] = useState<string | null>(null)
   const [savedAsins, setSavedAsins] = useState<Set<string>>(new Set())
   const [deepDive, setDeepDive] = useState<{ asin: string; title: string; imageUrl: string | null } | null>(null)
+  // CC-access confidentiality gate: Browse stays locked until SCOUT confirms the
+  // user's own Creator Connections grid renders. null = unknown/allowed.
+  const [locked, setLocked] = useState(false)
+  const [verifying, setVerifying] = useState(false)
+  const [verifyMsg, setVerifyMsg] = useState<string | null>(null)
 
   const covered = new Set(coveredAsins.map(a => a.toUpperCase()))
 
@@ -113,7 +120,9 @@ export default function CampaignBrowsePanel({
       params.set('page', String(pageToLoad))
       const res = await fetch(`/api/campaigns/browse?${params.toString()}`)
       const data = await res.json()
+      if (res.status === 403 && data?.needsCcVerify) { setLocked(true); if (!append) setRows([]); return }
       if (!res.ok) { setError(data.error || 'Could not load campaigns.'); if (!append) setRows([]); return }
+      setLocked(false)
       const incoming: Campaign[] = Array.isArray(data.campaigns) ? data.campaigns : []
       setRows(prev => append ? [...prev, ...incoming] : incoming)
       setHasMore(incoming.length === PAGE_SIZE)
@@ -178,8 +187,73 @@ export default function CampaignBrowsePanel({
     }
   }
 
+  // "Verify my CC access" — SCOUT opens the user's own Creator Connections grid
+  // and scans it. Getting real campaigns back proves they're an invited creator;
+  // we stamp that proof server-side, which unlocks Browse. A non-CC user's grid
+  // returns nothing, so it can't unlock the shared catalog for them.
+  async function verifyCcAccess() {
+    if (verifying) return
+    setVerifying(true); setVerifyMsg('SCOUT is opening your Creator Connections grid to confirm your access — this can take a minute…')
+    try {
+      const res = await requestCcSmartScan(campaignRules('wide'))
+      if (!res.ok) {
+        setVerifyMsg(
+          res.error === 'not-installed'
+            ? 'SCOUT isn’t connected — install and connect it (see "Connect" above), then try again.'
+            : res.error === 'timeout'
+              ? 'That ran long and timed out — try again in a moment.'
+              : 'We couldn’t confirm a Creator Connections grid for your account. Open your Creator Connections tab once, then try again.',
+        )
+        return
+      }
+      if (!(res.matches && res.matches.length > 0)) {
+        setVerifyMsg('Your Creator Connections grid opened but had no live campaigns to confirm against right now. Try again when opportunities are showing.')
+        return
+      }
+      const stamp = await fetch('/api/campaigns/cc-verify', { method: 'POST' }).then(r => r.json()).catch(() => null)
+      if (stamp?.verified) {
+        setLocked(false); setVerifyMsg(null)
+        toast.success('Creator Connections access confirmed — Browse all is unlocked.')
+        void load()
+      } else {
+        setVerifyMsg('Verified your grid, but couldn’t save it just now. Please try again.')
+      }
+    } catch {
+      setVerifyMsg('Verification failed unexpectedly — reload the page and try again.')
+    } finally {
+      setVerifying(false)
+    }
+  }
+
   const hasFilters = q.trim() || minCommission > 0 || minDaysLeft > 0 || openSlotsOnly || minRating > 0 || minRecentSales > 0 || !!maxVideos
   const clearFilters = () => { setQ(''); setMinCommission(0); setMinDaysLeft(0); setOpenSlotsOnly(false); setMinRating(0); setMinRecentSales(0); setMaxVideos(''); setSort('commission') }
+
+  if (locked) {
+    return (
+      <div className="card mb-5 overflow-hidden" style={{ borderWidth: 2, borderColor: 'rgba(124,58,237,0.30)' }}>
+        <div className="px-6 py-12 text-center max-w-lg mx-auto">
+          <span className="grid place-items-center w-14 h-14 rounded-2xl mx-auto mb-4" style={{ background: 'rgba(124,58,237,0.10)' }}>
+            <Lock size={26} style={{ color: '#7C3AED' }} />
+          </span>
+          <h3 className="text-[16px] font-bold mb-2" style={{ color: 'var(--text)' }}>Creator Connections access required</h3>
+          <p className="text-[13px] leading-relaxed mb-1" style={{ color: 'var(--text-soft)' }}>
+            The shared campaign catalog is Amazon Creator Connections data, kept private to invited creators. Confirm your own Creator Connections access once and Browse all unlocks for you.
+          </p>
+          <p className="text-[12px] leading-relaxed mb-5" style={{ color: 'var(--text-faint)' }}>
+            SCOUT opens your Creator Connections grid and confirms it renders for your account; nothing is shared. Smart Scan works without this : it already reads your own grid.
+          </p>
+          <button
+            onClick={verifyCcAccess}
+            disabled={verifying}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] font-semibold text-white disabled:opacity-70"
+            style={{ background: '#7C3AED' }}>
+            {verifying ? <><Loader2 size={15} className="animate-spin" /> Verifying…</> : <><ShieldCheck size={15} /> Verify my CC access</>}
+          </button>
+          {verifyMsg && <p className="text-[12px] leading-relaxed mt-4" style={{ color: 'var(--text-faint)' }}>{verifyMsg}</p>}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="card mb-5 overflow-hidden" style={{ borderWidth: 2, borderColor: 'rgba(124,58,237,0.30)' }}>
