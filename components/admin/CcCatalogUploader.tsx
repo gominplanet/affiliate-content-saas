@@ -55,6 +55,10 @@ export default function CcCatalogUploader({ onDone }: { onDone?: () => void }) {
   const [inserted, setInserted] = useState(0)
   const [err, setErr] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
+  // ON (default): this upload clears staging first (a fresh weekly import).
+  // OFF: append these files to what's already staged (add more files one batch
+  // at a time without wiping the earlier ones).
+  const [clearFirst, setClearFirst] = useState(true)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const totalBytes = files.reduce((s, f) => s + f.size, 0)
@@ -98,7 +102,7 @@ export default function CcCatalogUploader({ onDone }: { onDone?: () => void }) {
       if (!rows.length) return
       const res = await fetch('/api/admin/import-cc-catalog/stage', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rows, reset: firstBatch }),
+        body: JSON.stringify({ rows, reset: firstBatch && clearFirst }),
       })
       firstBatch = false
       const data = await res.json().catch(() => ({}))
@@ -149,7 +153,7 @@ export default function CcCatalogUploader({ onDone }: { onDone?: () => void }) {
       const msg = e instanceof Error ? e.message : 'Upload failed'
       setErr(msg); setPhase('error'); toast.error(msg)
     }
-  }, [files, mapping, missingReq, totalBytes, onDone])
+  }, [files, mapping, missingReq, totalBytes, onDone, clearFirst])
 
   const reset = () => { setFiles([]); setHeaders([]); setMapping({}); setPhase('idle'); setPct(0); setInserted(0); setErr(null) }
 
@@ -212,6 +216,15 @@ export default function CcCatalogUploader({ onDone }: { onDone?: () => void }) {
             ))}
           </div>
         </div>
+      )}
+
+      {/* Clear-vs-append choice */}
+      {files.length > 0 && phase !== 'done' && (
+        <label className="mt-3 flex items-center gap-2 text-[12px] cursor-pointer" style={{ color: 'var(--text-soft)' }}
+          title="ON = fresh weekly import (clears staging first). OFF = add these files to what's already staged.">
+          <input type="checkbox" checked={clearFirst} onChange={e => setClearFirst(e.target.checked)} disabled={phase === 'uploading'} className="accent-[#7C3AED]" />
+          Clear staging first (start a fresh import). <span style={{ color: 'var(--text-faint)' }}>Uncheck to <b>add</b> these files to what&rsquo;s already staged.</span>
+        </label>
       )}
 
       {/* Progress / actions */}
