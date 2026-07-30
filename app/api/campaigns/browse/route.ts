@@ -99,14 +99,15 @@ export async function GET(request: Request) {
       if (minCommission > 0) query = query.gte('commission_pct', minCommission)
       if (openSlotsOnly) query = query.gt('available_slot', 0)
       if (signals) {
-        // Product-signal filters are NULL-INCLUSIVE: a not-yet-enriched row
-        // (null signal) passes rather than being excluded. Enrichment is sparse,
-        // so a strict filter would nuke the whole catalog to 0 results. Once a
-        // product is enriched its real value is honoured; unknowns still show.
-        if (minRating != null) query = query.or(`rating.is.null,rating.gte.${minRating}`)
-        if (minRecentSales != null) query = query.or(`monthly_sold.is.null,monthly_sold.gte.${minRecentSales}`)
-        if (maxVideos === '0') query = query.or('video_count.is.null,video_count.eq.0')
-        else if (maxVideos && Number(maxVideos) > 0) query = query.or(`video_count.is.null,video_count.lte.${Number(maxVideos)}`)
+        // Product-signal filters are STRICT: a filter must mean what it says.
+        // "500+ sold/mo" only matches rows we KNOW sold 500+ — a product with no
+        // sales history does NOT pass. Same for rating and carousel-video count.
+        // Unenriched rows (null signal) are excluded from a signal-filtered view;
+        // they reappear the moment enrichment fills their data.
+        if (minRating != null) query = query.gte('rating', minRating)
+        if (minRecentSales != null) query = query.gte('monthly_sold', minRecentSales)
+        if (maxVideos === '0') query = query.eq('video_count', 0)
+        else if (maxVideos && Number(maxVideos) > 0) query = query.lte('video_count', Number(maxVideos))
       }
       if (keyword === 'fts') query = query.textSearch('search_vec', q, { type: 'websearch' })
       else if (keyword === 'ilike') query = query.ilike('campaign_name', `%${q}%`)
