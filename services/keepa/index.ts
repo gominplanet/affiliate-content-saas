@@ -520,6 +520,9 @@ export interface KeepaFinderResult {
   totalResults: number | null
   /** HTTP status of the /query call (0 = network/exception). Safe to surface. */
   status: number
+  /** Keepa's error text on a non-OK response, truncated. Admin-diagnostic only —
+   *  Product Finder 400s are query-validation messages, never billing. */
+  error: string | null
 }
 
 const KEEPA_FINDER_SORT: Record<NonNullable<KeepaFinderFilters['sort']>, [string, 'asc' | 'desc']> = {
@@ -536,7 +539,7 @@ const KEEPA_FINDER_SORT: Record<NonNullable<KeepaFinderFilters['sort']>, [string
  * response, or a thrown error it returns an empty result — never throws.
  */
 export async function keepaProductFinder(filters: KeepaFinderFilters = {}): Promise<KeepaFinderResult> {
-  const empty: KeepaFinderResult = { asins: [], tokensLeft: null, totalResults: null, status: 0 }
+  const empty: KeepaFinderResult = { asins: [], tokensLeft: null, totalResults: null, status: 0, error: null }
   const key = process.env.KEEPA_API_KEY
   if (!key) return empty
 
@@ -576,34 +579,30 @@ export async function keepaProductFinder(filters: KeepaFinderFilters = {}): Prom
   const sort = KEEPA_FINDER_SORT[filters.sort ?? 'salesRank']
   selection.sort = [sort]
 
-  // Product Finder is a POST endpoint: the selection travels in the body. (The
-  // /deal feed takes a GET selection param, but /query expects a POST.)
-  const url = `${KEEPA_BASE}/query?key=${encodeURIComponent(key)}&domain=${domainId}`
+  // Product Finder takes the selection as a URL-encoded GET param — the same
+  // transport as the /deal feed that already works with this key. (A POST body
+  // was rejected with 400.)
+  const url = `${KEEPA_BASE}/query?key=${encodeURIComponent(key)}&domain=${domainId}&selection=${encodeURIComponent(JSON.stringify(selection))}`
   try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(selection),
-      signal: AbortSignal.timeout(30_000),
-    })
+    const res = await fetch(url, { signal: AbortSignal.timeout(30_000) })
     const data = await res.json().catch(() => ({})) as {
       asinList?: unknown; totalResults?: number; tokensLeft?: number; error?: unknown
     }
     const tokensLeft = Number.isFinite(data.tokensLeft as number) ? (data.tokensLeft as number) : null
     const totalResults = Number.isFinite(data.totalResults as number) ? (data.totalResults as number) : null
     if (!res.ok || data.error) {
-      // Log the raw reason server-side only (may carry plan/billing wording that
-      // must never reach a user), and surface just the numeric status.
-      console.error('[keepa/query]', res.status, JSON.stringify(data.error ?? '').slice(0, 300))
-      return { ...empty, status: res.status, tokensLeft, totalResults }
+      const errText = JSON.stringify(data.error ?? '').slice(0, 300)
+      // Log server-side; Product Finder errors are query-validation, not billing.
+      console.error('[keepa/query]', res.status, errText)
+      return { ...empty, status: res.status, tokensLeft, totalResults, error: errText || null }
     }
     const asins = Array.isArray(data.asinList)
       ? (data.asinList as unknown[]).map(a => String(a || '').toUpperCase()).filter(a => /^[A-Z0-9]{10}$/.test(a))
       : []
-    return { asins, tokensLeft, totalResults, status: res.status }
+    return { asins, tokensLeft, totalResults, status: res.status, error: null }
   } catch (e) {
     console.error('[keepa/query]', e instanceof Error ? e.message : e)
-    return empty
+    return { ...empty, error: e instanceof Error ? e.message.slice(0, 200) : 'exception' }
   }
 }
 
