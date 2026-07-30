@@ -158,11 +158,30 @@ export default function CampaignBrowsePanel({
           body: JSON.stringify({ asins: need.slice(0, 40) }),
         })
         const data = await res.json().catch(() => ({}))
-        const signals = data?.signals as Record<string, { imageUrl?: string | null; priceNow?: number | null }> | undefined
+        const signals = data?.signals as Record<string, {
+          imageUrl?: string | null; priceNow?: number | null; priceWas?: number | null
+          discountPct?: number | null; rating?: number | null; reviewCount?: number | null
+          monthlySold?: number | null; videoCount?: number | null
+        }> | undefined
         if (!signals || !Object.keys(signals).length) return
-        setRows(prev => prev.map(r => signals[r.asin]
-          ? { ...r, imageUrl: signals[r.asin].imageUrl ?? r.imageUrl, priceNow: signals[r.asin].priceNow ?? r.priceNow }
-          : r))
+        // Merge every signal the enrich pass returned (Creators = image+price;
+        // Keepa fallback also brings rating/sales/videos), so cards fill fully.
+        setRows(prev => prev.map(r => {
+          const s = signals[r.asin]
+          if (!s) return r
+          return {
+            ...r,
+            imageUrl: s.imageUrl ?? r.imageUrl,
+            priceNow: s.priceNow ?? r.priceNow,
+            priceWas: s.priceWas ?? r.priceWas,
+            discountPct: s.discountPct ?? r.discountPct,
+            rating: s.rating ?? r.rating,
+            reviewCount: s.reviewCount ?? r.reviewCount,
+            monthlySold: s.monthlySold ?? r.monthlySold,
+            videoCount: s.videoCount ?? r.videoCount,
+            hasVideo: typeof s.videoCount === 'number' ? s.videoCount > 0 : r.hasVideo,
+          }
+        }))
       } catch { /* best-effort */ }
     })()
   }, [rows])

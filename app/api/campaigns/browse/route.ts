@@ -99,11 +99,14 @@ export async function GET(request: Request) {
       if (minCommission > 0) query = query.gte('commission_pct', minCommission)
       if (openSlotsOnly) query = query.gt('available_slot', 0)
       if (signals) {
-        // Product-signal filters only match ENRICHED rows (null = not yet checked).
-        if (minRating != null) query = query.gte('rating', minRating)
-        if (minRecentSales != null) query = query.gte('monthly_sold', minRecentSales)
-        if (maxVideos === '0') query = query.eq('video_count', 0)
-        else if (maxVideos && Number(maxVideos) > 0) query = query.lte('video_count', Number(maxVideos))
+        // Product-signal filters are NULL-INCLUSIVE: a not-yet-enriched row
+        // (null signal) passes rather than being excluded. Enrichment is sparse,
+        // so a strict filter would nuke the whole catalog to 0 results. Once a
+        // product is enriched its real value is honoured; unknowns still show.
+        if (minRating != null) query = query.or(`rating.is.null,rating.gte.${minRating}`)
+        if (minRecentSales != null) query = query.or(`monthly_sold.is.null,monthly_sold.gte.${minRecentSales}`)
+        if (maxVideos === '0') query = query.or('video_count.is.null,video_count.eq.0')
+        else if (maxVideos && Number(maxVideos) > 0) query = query.or(`video_count.is.null,video_count.lte.${Number(maxVideos)}`)
       }
       if (keyword === 'fts') query = query.textSearch('search_vec', q, { type: 'websearch' })
       else if (keyword === 'ilike') query = query.ilike('campaign_name', `%${q}%`)
@@ -113,8 +116,11 @@ export async function GET(request: Request) {
 
     const lo = page * PAGE_SIZE, hi = lo + PAGE_SIZE - 1
     let { data, error } = await build(true, q ? 'fts' : 'none').range(lo, hi)
-    // Enriched columns absent (migration 197 not run yet) → retry base-only.
-    if (error && /column|does not exist|schema cache/i.test(error.message || '')) {
+    // Signal path failed for ANY reason (columns absent pre-197, an .or() hiccup,
+    // etc.) → retry base-only. Broad on purpose: a signal-query error must never
+    // 500 the whole Browse and wipe the results — it just drops the enriched
+    // filters and returns the campaign economics.
+    if (error) {
       ;({ data, error } = await build(false, q ? 'fts' : 'none').range(lo, hi))
     }
     // search_vec absent (migration 162) or another keyword hiccup → ILIKE, base-safe.
