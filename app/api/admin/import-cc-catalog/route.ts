@@ -105,8 +105,12 @@ export async function POST(request: Request) {
       const { data, error } = await (admin as any).rpc('merge_cc_catalog_step', { p_limit: BATCH })
       if (error) {
         console.error('[import-cc-catalog step]', error.message)
+        // Most common cause: migration 202 (the step/purge functions) not applied.
+        const missingFn = /could not find the function|does not exist|schema cache|PGRST202/i.test(error.message || '')
         return NextResponse.json({
-          error: toUserMessage(error, 'Merge stopped partway. Click Merge again to resume where it left off.'),
+          error: missingFn
+            ? 'The merge database functions are missing — run migration 202 in Supabase, then click Merge again.'
+            : toUserMessage(error, 'Merge stopped partway. Click Merge again to resume where it left off.'),
           detail: error.message?.slice(0, 200), upsertedSoFar: upserted,
         }, { status: 500 })
       }
