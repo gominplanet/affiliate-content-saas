@@ -69,7 +69,7 @@ export default function AmazonResearchPanel({ onSavedChange }: { onSavedChange?:
   const [page, setPage] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [needsFilter, setNeedsFilter] = useState(true)
-  const [debug, setDebug] = useState<Record<string, number | null> | null>(null)
+  const [debug, setDebug] = useState<Record<string, number | string | null> | null>(null)
   const [savedAsins, setSavedAsins] = useState<Set<string>>(new Set())
   const [deepDive, setDeepDive] = useState<{ asin: string; title: string | null; imageUrl: string | null } | null>(null)
 
@@ -202,8 +202,9 @@ export default function AmazonResearchPanel({ onSavedChange }: { onSavedChange?:
         <div className="text-center py-12 text-sm" style={{ color: 'var(--text-faint)' }}>
           No products match those filters : try widening them.
           {debug && (
-            <div className="mt-3 text-[11px] font-mono" style={{ color: 'var(--text-faint)' }}>
-              diagnostic · status {debug.status} · tokens {debug.tokensLeft ?? '—'} · total {debug.totalResults ?? '—'} · matched {debug.matched}
+            <div className="mt-3 text-[11px] font-mono break-all max-w-2xl mx-auto" style={{ color: 'var(--text-faint)' }}>
+              <div>diagnostic · status {debug.status} · tokens {debug.tokensLeft ?? '—'} · total {debug.totalResults ?? '—'} · matched {debug.matched}</div>
+              {debug.error ? <div className="mt-1" style={{ color: '#e11d48' }}>keepa: {String(debug.error)}</div> : null}
             </div>
           )}
         </div>

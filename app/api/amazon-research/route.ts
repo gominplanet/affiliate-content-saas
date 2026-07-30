@@ -100,7 +100,7 @@ export async function GET(request: Request) {
     // in the empty state so a "no results" is explainable (bad status / no tokens
     // / genuinely zero matches) instead of a silent dead end.
     const debug = isAdmin
-      ? { status: found.status, tokensLeft: found.tokensLeft, totalResults: found.totalResults, matched: found.asins.length }
+      ? { status: found.status, tokensLeft: found.tokensLeft, totalResults: found.totalResults, matched: found.asins.length, error: found.error }
       : undefined
     if (!found.asins.length) {
       return NextResponse.json({ ok: true, page, products: [], hasMore: false, debug })
