@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { toast } from 'sonner'
 import { createBrowserClient } from '@/lib/supabase/client'
 import PageHero from '@/components/layout/PageHero'
+import { CoPilotGuide } from '@/components/guide/tool-guides'
 import HeroVideo from '@/components/layout/HeroVideo'
 import { CapReachedBanner } from '@/components/CapReachedBanner'
 import { useConfirm } from '@/components/ui/useConfirm'
@@ -3345,6 +3346,7 @@ export default function StudioPage() {
   return (
     <div>
       <PageHero
+        guide={<CoPilotGuide />}
         title="YouTube Co-Pilot"
         subtitle="Generate titles, descriptions, tags, hashtags and thumbnails for any video, then push it all back to YouTube in one click."
         media={<HeroVideo videoId={WALKTHROUGH_ID} title="YouTube Co-Pilot walkthrough" />}

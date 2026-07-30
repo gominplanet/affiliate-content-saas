@@ -11,6 +11,7 @@
 
 import { useState } from 'react'
 import PageHero from '@/components/layout/PageHero'
+import { LtkGuide } from '@/components/guide/tool-guides'
 import { Loader2, ExternalLink, CheckCircle2, XCircle, Sparkles, Lock } from 'lucide-react'
 
 const PINK = 'rgba(236,72,153,0.30)' // LTK skews fashion/lifestyle — warmer accent
@@ -96,6 +97,7 @@ export default function LtkPage() {
   return (
     <div className="max-w-3xl mx-auto px-5 lg:px-8 py-6">
       <PageHero
+        guide={<LtkGuide />}
         title="MVP x LTK"
         subtitle={'Paste an LTK product link and MVP writes a Google-ready blog post in your voice — with your LTK link as the "Shop" button. A new way for shoppers to find your picks and click straight through to your LTK shop.'}
         accent={PINK}

@@ -15,6 +15,7 @@ import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { createBrowserClient } from '@/lib/supabase/client'
 import PageHero from '@/components/layout/PageHero'
+import { FaceModelsGuide } from '@/components/guide/tool-guides'
 import { useConfirm } from '@/components/ui/useConfirm'
 import { effectiveTier } from '@/lib/view-as'
 import {
@@ -304,6 +305,7 @@ export default function PhotoboothPage() {
   return (
     <>
       <PageHero
+        guide={<FaceModelsGuide />}
         title="Face Models"
         subtitle="Teach MVP your face once — then put the real you in every thumbnail, post, and studio-quality headshot."
       />

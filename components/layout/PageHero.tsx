@@ -27,14 +27,21 @@ interface PageHeroProps {
    *  full-width subtitle, so `media` switches the header to a grid. Stacks
    *  below the text on narrow screens. */
   media?: ReactNode
+  /** Optional per-tool guide trigger (a <ToolGuide/>), pinned to the very
+   *  top-right of the hero so it never competes with the title, subtitle, or
+   *  actions row. This is where the "Full guide" link lives, one per tool. */
+  guide?: ReactNode
 }
 
-export default function PageHero({ title, subtitle, actions, accent, media }: PageHeroProps) {
+export default function PageHero({ title, subtitle, actions, accent, media, guide }: PageHeroProps) {
   return (
     <div
       className="-mx-4 sm:-mx-6 lg:-mx-8 -mt-6 mb-8 relative overflow-hidden border-b"
       style={{ borderColor: 'var(--border)' }}
     >
+      {guide && (
+        <div className="absolute top-3 right-4 sm:right-6 z-10">{guide}</div>
+      )}
       <div
         className="absolute inset-0 pointer-events-none"
         style={{

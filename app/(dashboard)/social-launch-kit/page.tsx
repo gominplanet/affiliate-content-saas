@@ -9,6 +9,7 @@
 import { useState, useRef, useEffect, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
+import { SocialLaunchKitGuide } from '@/components/guide/tool-guides'
 import { Button } from '@/components/ui/button'
 import {
   Rocket, Sparkles, Copy, Check, Download, ExternalLink, ListChecks, Image as ImageIcon, Lock, Upload, X,
@@ -138,6 +139,7 @@ export default function SocialLaunchKitPage() {
   return (
     <div className="max-w-4xl mx-auto px-4 py-6">
       <PageHero
+        guide={<SocialLaunchKitGuide />}
         title="Social Launch Kit"
         subtitle="No time to figure out Facebook, Pinterest, X, Threads, Bluesky or LinkedIn? Pick a platform and MVP hands you everything — name, bio, banner, avatar, and a step-by-step setup, ready to paste."
         media={<HeroVideo videoId={WALKTHROUGH_ID} title="Social Launch Kit walkthrough" />}

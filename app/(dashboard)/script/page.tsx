@@ -24,6 +24,7 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import PageHero from '@/components/layout/PageHero'
+import { ScriptwriterGuide } from '@/components/guide/tool-guides'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { useConfirm } from '@/components/ui/useConfirm'
 import { createBrowserClient } from '@/lib/supabase/client'
@@ -278,6 +279,7 @@ export default function ScriptPage() {
   return (
     <>
       <PageHero
+        guide={<ScriptwriterGuide />}
         title="Video Script & Shot List"
         subtitle={subtitle}
       />

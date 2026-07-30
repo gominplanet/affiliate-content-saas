@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
+import { BrandProfileGuide } from '@/components/guide/tool-guides'
 import { Save, Check, Plus, Trash2, GripVertical, Upload, X, RefreshCw, Loader2, AlertCircle } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { InfoTip } from '@/components/ui/InfoTip'
@@ -816,6 +817,7 @@ export default function BrandPage() {
   return (
     <>
       <PageHero
+        guide={<BrandProfileGuide />}
         title="Brand Profile"
         subtitle="The single source of truth for every review you generate. The agent team reads this before writing — so your reviews actually sound like you."
         actions={

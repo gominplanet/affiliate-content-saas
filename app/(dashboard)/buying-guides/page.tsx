@@ -19,6 +19,7 @@ import Link from 'next/link'
 import { BookOpen, Sparkles, ExternalLink, Loader2, ArrowRight, Lock, Zap, Eye, X, CheckCircle2, Trash2, Library, ListChecks, Plus, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useConfirm } from '@/components/ui/useConfirm'
+import { BuyingGuidesGuide } from '@/components/guide/tool-guides'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { type Tier } from '@/lib/tier'
@@ -477,7 +478,10 @@ export default function BuyingGuidesPage() {
           <div className="flex-1">
             <div className="flex items-start justify-between gap-3 flex-wrap">
               <div>
-                <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--fg)' }}>Buying Guides</h1>
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--fg)' }}>Buying Guides</h1>
+                  <BuyingGuidesGuide />
+                </div>
                 <p className="text-sm mt-1.5" style={{ color: 'var(--fg-muted)' }}>
                   {source === 'catalogue' ? (
                     <>

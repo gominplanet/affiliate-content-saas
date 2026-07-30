@@ -8,6 +8,7 @@ import { useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { createBrowserClient } from '@/lib/supabase/client'
 import PageHero from '@/components/layout/PageHero'
+import { ContentGuide } from '@/components/guide/tool-guides'
 import { useConfirm } from '@/components/ui/useConfirm'
 import { useModalA11y } from '@/components/ui/useModalA11y'
 import { CapBannerHost, dispatchCapReached } from '@/components/CapReachedBanner'
@@ -3419,6 +3420,7 @@ export default function ContentPage() {
   return (
     <>
       <PageHero
+        guide={<ContentGuide />}
         title="Blog Post Generator"
         subtitle={
           loading ? 'Loading…' :

@@ -14,6 +14,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import PageHero from '@/components/layout/PageHero'
+import { PartnerBoostGuide } from '@/components/guide/tool-guides'
 import ExternalKeyConnect from '@/components/integrations/ExternalKeyConnect'
 import PartnerBoostFinder from '@/components/partnerboost/PartnerBoostFinder'
 import PartnerBoostSaved from '@/components/partnerboost/PartnerBoostSaved'
@@ -202,6 +203,7 @@ export default function WalmartPBPage() {
       </div>
 
       <PageHero
+        guide={<PartnerBoostGuide />}
         title="MVP x PartnerBoost"
         subtitle="Your live brands across every network you've joined — commission, your join status, and the deep-link base for each. Pick a network, browse a Joined brand's products, and turn any one into a post with a cloaked affiliate link."
         accent="rgba(34,211,238,0.32)"
