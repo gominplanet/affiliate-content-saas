@@ -12,6 +12,7 @@ import { useState, useEffect, useCallback } from 'react'
 import PageHero from '@/components/layout/PageHero'
 import { Loader2, RefreshCw, Database, ArrowRight, CheckCircle2, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
+import CcCatalogUploader from '@/components/admin/CcCatalogUploader'
 
 interface Counts { staged: number | null; live: number | null; enriched: number | null }
 
@@ -69,11 +70,14 @@ export default function AdminCcImportPage() {
       <div className="card p-5 mb-5">
         <p className="text-[13px] font-semibold mb-3" style={{ color: 'var(--text)' }}>Weekly steps</p>
         <ol className="text-[13px] leading-relaxed list-decimal pl-5 space-y-1.5" style={{ color: 'var(--text-soft)' }}>
-          <li>Load this week&rsquo;s CSV into the staging table <code className="px-1.5 py-0.5 rounded text-[12px]" style={{ background: 'var(--surface-2)' }}>cc_campaign_catalog_import</code> (your existing load, pointed at that table). Replace it freely : it holds nothing precious.</li>
-          <li>Confirm the staged count below looks right (tens of thousands).</li>
-          <li>Click <b>Merge into live catalog</b>. Enriched images/sales/ratings survive; fall-outs are purged.</li>
+          <li><b>Drag your CSV file(s)</b> into the upload box below and click <b>Upload to staging</b>. Multiple files are fine : they combine automatically.</li>
+          <li>Confirm the <b>Staged</b> count looks right (tens of thousands).</li>
+          <li>Click <b>Merge into live catalog</b>. Enriched images/sales/ratings survive; campaigns that fell out are purged.</li>
         </ol>
       </div>
+
+      {/* Uploader — parses the CSV in the browser and streams it to staging. */}
+      <CcCatalogUploader onDone={loadCounts} />
 
       {/* Counts */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
