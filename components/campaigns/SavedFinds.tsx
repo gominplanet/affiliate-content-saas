@@ -9,6 +9,7 @@
 // Message-brand modal + exposes a ref-like refresh via the `reloadKey` prop.
 
 import { useEffect, useState, useCallback } from 'react'
+import { toast } from 'sonner'
 import { Bookmark, MessageCircle, ShoppingCart, X, Loader2, Star } from 'lucide-react'
 import type { MessageBrandCampaign } from '@/components/campaigns/MessageBrandModal'
 
@@ -49,10 +50,20 @@ export default function SavedFinds({
   useEffect(() => { load() }, [load, reloadKey])
 
   async function remove(id: string) {
+    const snapshot = items
     setRemoving(prev => new Set(prev).add(id))
     setItems(prev => (prev ?? []).filter(i => i.id !== id)) // optimistic
-    try { await fetch(`/api/campaigns/saved?id=${id}`, { method: 'DELETE' }) }
-    finally { setRemoving(prev => { const n = new Set(prev); n.delete(id); return n }) }
+    try {
+      const res = await fetch(`/api/campaigns/saved?id=${id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('delete failed')
+    } catch {
+      // Put it back and say so — an optimistic remove that silently fails is
+      // exactly why "I can't delete saved items" happens.
+      setItems(snapshot)
+      toast.error('Could not remove that item. Please try again.')
+    } finally {
+      setRemoving(prev => { const n = new Set(prev); n.delete(id); return n })
+    }
   }
 
   const host = (m: string | null) => ({ ca: 'www.amazon.ca', uk: 'www.amazon.co.uk', au: 'www.amazon.com.au' }[m || 'us'] || 'www.amazon.com')

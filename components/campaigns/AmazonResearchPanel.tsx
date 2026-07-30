@@ -69,6 +69,7 @@ export default function AmazonResearchPanel({ onSavedChange }: { onSavedChange?:
   const [page, setPage] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [needsFilter, setNeedsFilter] = useState(true)
+  const [debug, setDebug] = useState<Record<string, number | null> | null>(null)
   const [savedAsins, setSavedAsins] = useState<Set<string>>(new Set())
   const [deepDive, setDeepDive] = useState<{ asin: string; title: string | null; imageUrl: string | null } | null>(null)
 
@@ -100,6 +101,7 @@ export default function AmazonResearchPanel({ onSavedChange }: { onSavedChange?:
       const data = await res.json()
       if (!res.ok) { setError(data.error || 'Could not search Amazon.'); if (!append) setRows([]); return }
       setNeedsFilter(!!data.needsFilter)
+      setDebug(data.debug ?? null)
       const incoming: Product[] = Array.isArray(data.products) ? data.products : []
       setRows(prev => append ? [...prev, ...incoming] : incoming)
       setHasMore(!!data.hasMore)
@@ -169,13 +171,13 @@ export default function AmazonResearchPanel({ onSavedChange }: { onSavedChange?:
           <Select value={maxSalesRank} onChange={setMaxSalesRank} options={[
             { v: '0', l: 'Any rank' }, { v: '5000', l: 'Top 5k sellers' }, { v: '20000', l: 'Top 20k' }, { v: '100000', l: 'Top 100k' },
           ]} />
-          <div className="inline-flex items-center gap-1.5 h-9 rounded-full border px-3" style={{ borderColor: 'var(--border)', background: 'white' }}>
+          <div className="inline-flex items-center gap-1 h-9 rounded-full border px-3 bg-white dark:bg-[#1c1c1e]" style={{ borderColor: 'var(--border)' }}>
             <span className="text-[12px]" style={{ color: 'var(--text-faint)' }}>$</span>
             <input value={minPrice} onChange={e => setMinPrice(e.target.value.replace(/[^0-9.]/g, ''))} inputMode="decimal" placeholder="min"
-              className="w-12 text-sm bg-transparent outline-none" style={{ color: 'var(--text)' }} />
-            <span className="text-[12px]" style={{ color: 'var(--text-faint)' }}>–</span>
+              className="w-11 text-sm bg-transparent outline-none placeholder:text-[color:var(--text-faint)]" style={{ color: 'var(--text)' }} />
+            <span className="text-[12px]" style={{ color: 'var(--text-faint)' }}>to</span>
             <input value={maxPrice} onChange={e => setMaxPrice(e.target.value.replace(/[^0-9.]/g, ''))} inputMode="decimal" placeholder="max"
-              className="w-12 text-sm bg-transparent outline-none" style={{ color: 'var(--text)' }} />
+              className="w-11 text-sm bg-transparent outline-none placeholder:text-[color:var(--text-faint)]" style={{ color: 'var(--text)' }} />
           </div>
           {hasFilters && (
             <button onClick={clearFilters} className="ml-auto text-xs font-medium inline-flex items-center gap-1 h-8 px-2.5" style={{ color: 'var(--text-faint)' }}>
@@ -198,7 +200,12 @@ export default function AmazonResearchPanel({ onSavedChange }: { onSavedChange?:
         </div>
       ) : rows.length === 0 ? (
         <div className="text-center py-12 text-sm" style={{ color: 'var(--text-faint)' }}>
-          No products match those filters — try widening them.
+          No products match those filters : try widening them.
+          {debug && (
+            <div className="mt-3 text-[11px] font-mono" style={{ color: 'var(--text-faint)' }}>
+              diagnostic · status {debug.status} · tokens {debug.tokensLeft ?? '—'} · total {debug.totalResults ?? '—'} · matched {debug.matched}
+            </div>
+          )}
         </div>
       ) : (
         <div className="p-3 border-t" style={{ borderColor: 'var(--border)' }}>

@@ -50,9 +50,11 @@ export async function GET(request: Request) {
     // Same paid gate as the rest of the finder.
     const { data: intRow } = await supabase
       .from('integrations').select('tier, amazon_associates_tag').eq('user_id', user.id).maybeSingle()
-    if (!tierAllowsFinders((intRow?.tier as Tier) ?? 'trial')) {
+    const tier = (intRow?.tier as Tier) ?? 'trial'
+    if (!tierAllowsFinders(tier)) {
       return NextResponse.json({ error: 'The AMZ Product Finder requires a paid plan.' }, { status: 403 })
     }
+    const isAdmin = tier === 'admin'
 
     if (!keepaConfigured()) {
       return NextResponse.json({ error: 'Amazon Product Research is warming up. Please try again shortly.' }, { status: 503 })
@@ -94,8 +96,14 @@ export async function GET(request: Request) {
     }
 
     const found = await keepaProductFinder(filters)
+    // Safe, numbers-only diagnostic (never raw provider text) — shown to admins
+    // in the empty state so a "no results" is explainable (bad status / no tokens
+    // / genuinely zero matches) instead of a silent dead end.
+    const debug = isAdmin
+      ? { status: found.status, tokensLeft: found.tokensLeft, totalResults: found.totalResults, matched: found.asins.length }
+      : undefined
     if (!found.asins.length) {
-      return NextResponse.json({ ok: true, page, products: [], hasMore: false })
+      return NextResponse.json({ ok: true, page, products: [], hasMore: false, debug })
     }
 
     // Hydrate image / title / price for this page of ASINs via the Creators API
