@@ -12,7 +12,7 @@ export const BORDER_NAMES = [
 // Common title-accent colours. First = the current default (yellow).
 const ACCENT_SWATCHES = ['#FFE034', '#FFFFFF', '#FF3B3B', '#39FF14', '#33B5FF', '#FF8A00', '#A020F0']
 
-interface SavedStyle { borderStyleIndex: number | null; accentColor: string | null; face: string | null }
+interface SavedStyle { borderStyleIndex: number | null; accentColor: string | null; face: string | null; noCheck?: boolean }
 
 // The parent's selectedFaceModelId uses null(off) | 'no-human'(product) | <uuid>.
 // The saved API uses                    'off'      | 'product'          | <uuid>.
@@ -56,6 +56,9 @@ export default function BrandStylePanel({
 }) {
   const [hasSaved, setHasSaved] = useState(false)
   const [busy, setBusy] = useState(false)
+  // Hide the green ✓ checkmark decoration on generated thumbnails. Persisted
+  // with the brand style and enforced server-side by generate-thumbnail.
+  const [noCheck, setNoCheck] = useState(false)
 
   // Prefill the block from the saved default once on mount.
   useEffect(() => {
@@ -69,6 +72,7 @@ export default function BrandStylePanel({
           if (typeof d.style.borderStyleIndex === 'number') setBorderIndex(d.style.borderStyleIndex)
           if (d.style.accentColor) setAccentColor(d.style.accentColor)
           if (d.style.face) setSelectedFaceModelId(savedToFace(d.style.face))
+          if (typeof d.style.noCheck === 'boolean') setNoCheck(d.style.noCheck)
         }
       } catch { /* ignore — block just keeps its defaults */ }
     })()
@@ -82,7 +86,7 @@ export default function BrandStylePanel({
       const r = await fetch('/api/youtube/thumbnail-style', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ borderStyleIndex: borderIndex, accentColor, face: faceToSaved(selectedFaceModelId) }),
+        body: JSON.stringify({ borderStyleIndex: borderIndex, accentColor, face: faceToSaved(selectedFaceModelId), noCheck }),
       })
       if (!r.ok) {
         const e = await r.json().catch(() => ({})) as { error?: string }
@@ -190,6 +194,11 @@ export default function BrandStylePanel({
             ))}
           </div>
         </div>
+
+        <label className="flex items-center gap-1.5 cursor-pointer" title="Never draw the green ✓ checkmark badge on your generated thumbnails">
+          <input type="checkbox" checked={noCheck} onChange={e => setNoCheck(e.target.checked)} disabled={disabled} className="accent-[#7C3AED]" />
+          <span className="text-[11px] text-[#86868b]">Hide ✓ checkmark</span>
+        </label>
       </div>
     </div>
   )

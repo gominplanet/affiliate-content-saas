@@ -271,7 +271,7 @@ export const TIERS = {
     /** Pro: 30 deal posts/mo (revised down from 90 → 60 → 30 for COGS). */
     dealsPerMonth: 30 as number | null,
     photoboothPerMonth: 20 as number | null,
-    maxFaces: 2 as number | null,
+    maxFaces: 3 as number | null,
     blogImagesPerPost: 4,
     assistantMessagesPerMonth: 2500 as number | null,
     /** Pro: 3 LoRA retrains/mo (lowered from 5 — 2026-06-10 COGS tune). */
