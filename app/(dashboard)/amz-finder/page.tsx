@@ -20,14 +20,15 @@
  * tierAllowsFinders on the /api/campaigns/* routes. Graduated out of Labs 2026-07-07.
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
 import PageHero from '@/components/layout/PageHero'
-import { CheckCircle2, Download, Copy, RefreshCw, KeyRound, ChevronDown, ChevronRight, Search } from 'lucide-react'
+import { CheckCircle2, Download, Copy, RefreshCw, KeyRound, ChevronDown, ChevronRight, Search, ShoppingBag, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 import { getScoutInstallKind, requestFindCampaign } from '@/lib/extension-frame'
 import MessageBrandModal, { type MessageBrandCampaign } from '@/components/campaigns/MessageBrandModal'
 import SmartScanPanel from '@/components/campaigns/SmartScanPanel'
 import CampaignBrowsePanel from '@/components/campaigns/CampaignBrowsePanel'
+import AmazonResearchPanel from '@/components/campaigns/AmazonResearchPanel'
 import SavedFinds from '@/components/campaigns/SavedFinds'
 import { SCOUT_STORE_LISTING_URL } from '@/lib/scout-version'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
@@ -59,6 +60,17 @@ export default function EpcScoutPage() {
   // Finder mode: instant "Browse all" over the catalog (default — works even
   // before SCOUT is connected) vs the SCOUT-verified, MVP-approved Smart Scan.
   const [finderMode, setFinderMode] = useState<'browse' | 'scan'>('browse')
+  // Top-level research area — the FIRST choice a user makes: search the regular
+  // Amazon catalogue, or the Affiliate+ (Creator Connections) programs. null =
+  // nothing picked yet (the two big choice cards show). Persisted so the page
+  // reopens where the creator left off.
+  const [researchArea, setResearchArea] = useState<'amazon' | 'affiliate' | null>(null)
+  useEffect(() => {
+    try { const s = localStorage.getItem('amz_research_area'); if (s === 'amazon' || s === 'affiliate') setResearchArea(s) } catch { /* ignore */ }
+  }, [])
+  const pickArea = useCallback((a: 'amazon' | 'affiliate') => {
+    setResearchArea(a); try { localStorage.setItem('amz_research_area', a) } catch { /* ignore */ }
+  }, [])
   // Which SCOUT is installed (via MVP_PING) → drives the "move to the Web Store"
   // nudge for legacy sideloaders. null = not yet checked; store installs
   // auto-update so they get no banner at all.
@@ -139,7 +151,7 @@ export default function EpcScoutPage() {
     <>
       <PageHero
         title="AMZ Product Finder"
-        subtitle="A proven way to accelerate your Amazon commissions — Onsite + Affiliate+ (Creator Connections). One search, MVP-approved results: campaigns worth accepting, and products worth buying to review."
+        subtitle="Two ways to research: the whole Amazon catalogue, or Affiliate+ (Creator Connections) campaigns. Pick one to start; find products worth buying to review and campaigns worth accepting."
       />
 
       {tier !== null && !canUseFinder && (
@@ -160,6 +172,51 @@ export default function EpcScoutPage() {
       )}
 
       {(tier === null || canUseFinder) && (
+      <>
+      {/* ── The first choice: which catalogue to research. Two big toggle cards;
+             a user picks one before anything else loads. Amazon Product Research
+             = the regular Amazon catalogue (Keepa + Creators API, no SCOUT).
+             Affiliate+ = Creator Connections campaigns (Browse + Smart Scan). ── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">
+        <AreaCard
+          active={researchArea === 'amazon'}
+          onClick={() => pickArea('amazon')}
+          icon={<ShoppingBag size={20} />}
+          title="Amazon Product Research"
+          desc="Search the whole Amazon catalogue with MVP filters — keyword, price, rating, reviews, best-sellers. Every link carries your own Associates tag."
+        />
+        <AreaCard
+          active={researchArea === 'affiliate'}
+          onClick={() => pickArea('affiliate')}
+          icon={<Sparkles size={20} />}
+          title="Affiliate+ (Creator Connections)"
+          desc="Browse and Smart-Scan live Creator Connections campaigns — extra commission per sale. Requires your own Amazon Creator Connections access."
+        />
+      </div>
+
+      {researchArea === null && (
+        <p className="text-center text-[12px] py-6" style={{ color: 'var(--text-faint)' }}>
+          Pick one above to start researching.
+        </p>
+      )}
+
+      {/* ── Amazon Product Research — the regular catalogue browse. ── */}
+      {researchArea === 'amazon' && (
+        <div className="mb-2">
+          <div className="flex items-center gap-2 mb-2 flex-wrap">
+            <ShoppingBag size={16} style={{ color: '#7C3AED' }} />
+            <p className="text-[13px] font-bold uppercase tracking-wide" style={{ color: '#7C3AED' }}>Amazon Product Research</p>
+            <span className="text-[11px] font-medium" style={{ color: 'var(--text-faint)' }}>— the whole catalogue, filterable. Buy to review or write a review in one click.</span>
+          </div>
+          <AmazonResearchPanel onSavedChange={() => setSavedReloadKey(k => k + 1)} />
+          <p className="text-[11px] leading-relaxed mt-1 mb-4 px-1" style={{ color: 'var(--text-faint)' }}>
+            Product data is sourced from licensed catalogue providers; prices and availability update on Amazon. Links carry your own Associates tag when you&rsquo;ve set one in Settings.
+          </p>
+        </div>
+      )}
+
+      {/* ── Affiliate+ (Creator Connections) — SCOUT setup + Browse / Smart Scan. ── */}
+      {researchArea === 'affiliate' && (
       <>
       {/* ── Numbered setup steps — Connect → Update → Search. Steps 1 & 2 are
              expand-on-click pills; step 3 points at the MVP Finder below. Each
@@ -313,10 +370,15 @@ export default function EpcScoutPage() {
           MVP does not guarantee commissions or any type of return. The MVP Finder is a focused way to browse and search Amazon affiliate campaigns using criteria that have been fruitful for influencers over the past 4 years — actual results depend on the product, your content, and your audience.
         </p>
       </div>
+      </>
+      )}
 
       {/* ── Saved for later — the buy-to-review shortlist (replaced the old
-             Campaign queue 2026-07-06). Fed by the Finder's Save button. ── */}
-      <SavedFinds reloadKey={savedReloadKey} onMessageBrand={(c) => setMsgModal(c)} />
+             Campaign queue 2026-07-06). Fed by the Finder's Save button. Shown
+             for either research area once one's been chosen. ── */}
+      {researchArea !== null && (
+        <SavedFinds reloadKey={savedReloadKey} onMessageBrand={(c) => setMsgModal(c)} />
+      )}
 
       {msgModal && (
         <MessageBrandModal
@@ -334,5 +396,30 @@ export default function EpcScoutPage() {
       </>
       )}
     </>
+  )
+}
+
+// One of the two top-level "which catalogue" choice cards. Active = filled
+// violet; idle = outlined and hover-lifts.
+function AreaCard({ active, onClick, icon, title, desc }: {
+  active: boolean; onClick: () => void; icon: ReactNode; title: string; desc: string
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="text-left rounded-2xl border p-4 transition-all active:scale-[0.99]"
+      style={active
+        ? { borderColor: '#7C3AED', borderWidth: 2, background: 'linear-gradient(180deg, rgba(124,58,237,0.10), rgba(124,58,237,0.03))', boxShadow: '0 4px 20px rgba(124,58,237,0.12)' }
+        : { borderColor: 'var(--border)', borderWidth: 2, background: 'var(--surface)' }}>
+      <div className="flex items-center gap-2.5 mb-1.5">
+        <span className="grid place-items-center w-9 h-9 rounded-xl flex-shrink-0"
+          style={active ? { background: '#7C3AED', color: '#fff' } : { background: 'rgba(124,58,237,0.10)', color: '#7C3AED' }}>
+          {icon}
+        </span>
+        <span className="text-[14px] font-bold leading-tight" style={{ color: 'var(--text)' }}>{title}</span>
+        {active && <CheckCircle2 size={16} className="ml-auto flex-shrink-0" style={{ color: '#7C3AED' }} />}
+      </div>
+      <p className="text-[12px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>{desc}</p>
+    </button>
   )
 }

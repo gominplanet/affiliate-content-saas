@@ -110,7 +110,8 @@ const SECTION_ACCENTS: Record<string, { dark: string; light: string }> = {
   'Set up':            { dark: '#60A5FA', light: '#1D4ED8' }, // blue      — foundational
   'Create':            { dark: '#FACC15', light: '#A16207' }, // yellow    — creative core
   'Grow':              { dark: '#C084FC', light: '#7E22CE' }, // purple    — growth
-  'Source & Earn':     { dark: '#A3E635', light: '#4D7C0F' }, // green     — find & monetize
+  'Research':          { dark: '#A3E635', light: '#4D7C0F' }, // green     — find products & campaigns
+  'Source & Earn':     { dark: '#A3E635', light: '#4D7C0F' }, // green     — find & monetize (legacy key)
   'Site Tools':        { dark: '#FB923C', light: '#C2410C' }, // orange    — post-publish fixes
   'Collaborate':       { dark: '#F472B6', light: '#BE185D' }, // pink      — deals / people
   'Labs':              { dark: '#F87171', light: '#DC2626' }, // red       — experimental
@@ -124,6 +125,7 @@ const SECTION_ACCENTS: Record<string, { dark: string; light: string }> = {
 const SECTION_ICONS: Record<string, React.ReactNode> = {
   'Set up': <Plug size={12} />,
   'Create': <Sparkles size={12} />,
+  'Research': <PackageSearch size={12} />,
   'Source & Earn': <DollarSign size={12} />,
   'Grow': <BarChart3 size={12} />,
   'Site Tools': <Wrench size={12} />,
@@ -424,13 +426,8 @@ export default function DashboardShellV2({
         // Jumps straight to the "Published Posts & Social Push" tab — publish or
         // schedule any existing post to every connected channel.
         { href: '/content?tab=posts', icon: <Send size={15} />, label: 'Social Push' },
-        // Amazon Deal Radar — graduated out of Labs 2026-07-27 to all paid tiers
-        // (canSeeNav('dealRadar') = creator/studio/pro/admin). Live Amazon deal
-        // discovery + Creator Connections cross-check; one click turns a deal
-        // into a blog post (counts against postsPerMonth) or a social post.
-        // Browsing the feed is open to every plan (incl. free) — the discovery
-        // magnet. Posting a deal is paid, gated in-page + at the routes.
-        { href: '/deal-radar', icon: <Radar size={15} />, label: 'Deal Radar', gate: canBrowseDealRadar(tier as Tier) },
+        // Deal Radar moved to the RESEARCH section (2026-07-30) — it's a
+        // product-discovery tool, so it lives with the other research finders.
         // Link in Bio — a shoppable affiliate "Shop Grid" page at /s/<handle>,
         // auto-filled from posted products. All paid tiers (same gate as Deal Radar).
         { href: '/link-in-bio', icon: <Link2 size={15} />, label: 'Link in Bio', gate: canSeeNav('dealRadar', tier as Tier) },
@@ -453,17 +450,18 @@ export default function DashboardShellV2({
       ],
     },
     {
-      // SOURCE & EARN — the three product/campaign FINDERS (Amazon Creator
-      // Connections + onsite, Levanta, PartnerBoost). Each scans an affiliate
-      // program for products worth reviewing, then generates content or messages
-      // the brand. All PAID tiers (canUseFinders = tier !== trial). AMZ Product Finder
-      // graduated out of Labs into here 2026-07-07. Each page has an inline
-      // "connect your API key" panel at the top. Placed ABOVE Grow. Its green
-      // card comes from the shared SECTION_ACCENTS wash (every section is now
-      // colour-coded), keyed off this label.
-      label: 'Source & Earn',
+      // RESEARCH — where a creator goes to FIND products & campaigns worth
+      // making content about (2026-07-30, renamed from "Source & Earn" and
+      // folded in Deal Radar). AMZ Product Research = the whole Amazon catalogue
+      // + Affiliate+ (Creator Connections). Deal Radar = live Amazon deals.
+      // Levanta / PartnerBoost = external affiliate-program finders. Placed right
+      // under Create. Deal Radar keeps its own browse-open gate; the finders are
+      // paid (canUseFinders = tier !== trial). Section colour comes from the
+      // shared SECTION_ACCENTS wash keyed off this label.
+      label: 'Research',
       items: [
-        { href: '/amz-finder', icon: <PackageSearch size={15} />, label: 'AMZ Product Finder', gate: canUseFinders },
+        { href: '/amz-finder', icon: <PackageSearch size={15} />, label: 'AMZ Product Research', gate: canUseFinders },
+        { href: '/deal-radar', icon: <Radar size={15} />, label: 'Deal Radar', gate: canBrowseDealRadar(tier as Tier) },
         { href: '/levanta', icon: <ShoppingBag size={15} />, label: 'MVP x Levanta', gate: canUseFinders },
         { href: '/partnerboost', icon: <Store size={15} />, label: 'MVP x PartnerBoost', gate: canUseFinders },
       ],
