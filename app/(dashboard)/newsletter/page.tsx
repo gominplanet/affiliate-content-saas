@@ -21,6 +21,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import PageHero from '@/components/layout/PageHero'
+import { NewsletterGuide } from '@/components/guide/tool-guides'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { LegacyCapsNotice } from '@/components/newsletter/LegacyCapsNotice'
 import { useConfirm } from '@/components/ui/useConfirm'
@@ -591,6 +592,7 @@ export default function NewsletterPage() {
   return (
     <>
       <PageHero
+        guide={<NewsletterGuide />}
         title="Newsletter"
         subtitle="Capture emails on your blog, then send curated issues that link back to your reviews."
       />

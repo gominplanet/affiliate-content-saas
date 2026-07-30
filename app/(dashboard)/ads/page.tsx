@@ -10,6 +10,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
+import { AdsGuide } from '@/components/guide/tool-guides'
 import { createBrowserClient } from '@/lib/supabase/client'
 import {
   Plus, Trash2, Save, Loader2, ToggleLeft, ToggleRight,
@@ -374,6 +375,7 @@ export default function AdsPage() {
     <div className="max-w-3xl mx-auto px-6 sm:px-8 py-8">
       <div className="flex items-start justify-between gap-4 mb-6">
         <PageHero
+          guide={<AdsGuide />}
           title="Ads"
           subtitle="Everything that earns on your blog — Google AdSense plus your affiliate banners. Changes push straight to your site."
         />

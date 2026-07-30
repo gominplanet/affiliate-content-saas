@@ -12,6 +12,7 @@ import { generateBlogRequest } from '@/lib/blog-generate-client'
 import OpportunitiesPanel from '@/components/seo/OpportunitiesPanel'
 import Link from 'next/link'
 import PageHero from '@/components/layout/PageHero'
+import { SeoGuide } from '@/components/guide/tool-guides'
 import { Gauge, Loader2, RefreshCw, ExternalLink, CheckCircle, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight, Wand2, X, Zap, Youtube, DollarSign, ImageOff } from 'lucide-react'
 import { toast } from 'sonner'
 import { createBrowserClient } from '@/lib/supabase/client'
@@ -667,6 +668,7 @@ export default function SeoPage() {
   return (
     <>
       <PageHero
+        guide={<SeoGuide />}
         title="SEO & Indexing"
         accent="rgba(16, 185, 129, 0.30)"
         subtitle={

@@ -12,6 +12,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import PageHero from '@/components/layout/PageHero'
+import { LevantaGuide } from '@/components/guide/tool-guides'
 import ExternalKeyConnect from '@/components/integrations/ExternalKeyConnect'
 import LevantaFinder from '@/components/levanta/LevantaFinder'
 import LevantaSaved from '@/components/levanta/LevantaSaved'
@@ -148,6 +149,7 @@ export default function LevantaPage() {
       </div>
 
       <PageHero
+        guide={<LevantaGuide />}
         title="MVP x Levanta"
         subtitle="Browse your Levanta brands and turn any Amazon product into a published review — with a real commissionable Levanta tracking link, written in your voice."
         accent="rgba(34,211,238,0.32)"

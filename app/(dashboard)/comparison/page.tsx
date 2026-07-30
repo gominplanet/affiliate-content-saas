@@ -12,6 +12,7 @@
  */
 import { useState, useEffect } from 'react'
 import PageHero from '@/components/layout/PageHero'
+import { ComparisonGuide } from '@/components/guide/tool-guides'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { Scale, Plus, X, Loader2, ExternalLink } from 'lucide-react'
@@ -103,6 +104,7 @@ export default function ComparisonPage() {
   return (
     <>
       <PageHero
+        guide={<ComparisonGuide />}
         title="Compare products"
         subtitle="Paste the YouTube videos for the products you've reviewed — get a ranked head-to-head comparison with a named winner, published straight to your blog."
       />

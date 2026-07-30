@@ -22,6 +22,7 @@
 
 import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
 import PageHero from '@/components/layout/PageHero'
+import { AmzFinderGuide } from '@/components/guide/tool-guides'
 import { CheckCircle2, Download, Copy, RefreshCw, KeyRound, ChevronDown, ChevronRight, Search, ShoppingBag, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 import { getScoutInstallKind, requestFindCampaign } from '@/lib/extension-frame'
@@ -150,6 +151,7 @@ export default function EpcScoutPage() {
   return (
     <>
       <PageHero
+        guide={<AmzFinderGuide />}
         title="AMZ Product Finder"
         subtitle="Two ways to research: the whole Amazon catalogue, or Affiliate+ (Creator Connections) campaigns. Pick one to start; find products worth buying to review and campaigns worth accepting."
       />
