@@ -17,9 +17,9 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { toast } from 'sonner'
-import { X, Copy, Mail, ExternalLink, Loader2, Sparkles, Check, RotateCcw, Video } from 'lucide-react'
-import { fillRecapMessage, buildCcRecapMessage, type RecapLink, type BrandRecapSettings } from '@/lib/brand-recap'
-import { requestAmazonVideoForAsin } from '@/lib/extension-frame'
+import { X, Copy, Mail, ExternalLink, Loader2, Sparkles, Check, RotateCcw, Video, Send } from 'lucide-react'
+import { fillRecapMessage, CC_GROUP_BREAK, type RecapLink, type BrandRecapSettings } from '@/lib/brand-recap'
+import { requestAmazonVideoForAsin, requestFindCampaign, requestSendBrand } from '@/lib/extension-frame'
 
 /** MVP's OINK affiliate link (same as the sidebar Recommended Tools row). */
 const OINK_AFFILIATE_URL = 'https://geni.us/2y5sBo'
@@ -47,7 +47,11 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
   const [edited, setEdited] = useState(false)
   const [polishing, setPolishing] = useState(false)
   const [copied, setCopied] = useState(false)
-  const [copiedCc, setCopiedCc] = useState(false)
+  // Creator Connections auto-send state. 'idle' → resolve the brand's CC chat
+  // for this product's ASIN → 'sending' → 'done' | a fallback state that tells
+  // the user why auto-send is not possible (no ASIN / no campaign / no SCOUT).
+  const [ccPhase, setCcPhase] = useState<'idle' | 'resolving' | 'sending' | 'done'>('idle')
+  const [ccNote, setCcNote] = useState<{ kind: 'info' | 'error' | 'ok'; text: string } | null>(null)
   const [findingVideo, setFindingVideo] = useState(false)
   const [showPaste, setShowPaste] = useState(false)
   const [pasteUrl, setPasteUrl] = useState('')
@@ -118,23 +122,76 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
     }
   }
 
-  // Amazon Creator Connections variant — the same links/brand, but split into
-  // the "message group" blocks CC's composer expects. Built fresh from the
-  // structured pieces (not the free-text box) so it always maps onto CC's
-  // group boxes; honors the brand field + the link toggles.
-  async function copyCcMessage() {
-    if (!data) return
-    const active = data.links.filter(l => enabled[l.platform])
-    const ccText = buildCcRecapMessage({
-      brand, product: data.product.name, links: active,
-      name: data.settings.senderName, site: data.settings.siteUrl,
-    })
+  // Send this recap to the brand THROUGH Amazon Creator Connections, to the
+  // RIGHT brand automatically: resolve this product's ASIN to its CC campaign
+  // chat (cache first, then a live SCOUT lookup), then hand the message to
+  // SCOUT, which opens that campaign in the background and sends it — splitting
+  // the message-group blocks itself, so nothing is ever hand-pasted. Falls back
+  // with a clear reason when there's no ASIN, no live campaign, or no SCOUT.
+  async function sendOnCc() {
+    if (!data || ccPhase === 'resolving' || ccPhase === 'sending') return
+    const asin = (data.product.asin || '').toUpperCase()
+    if (!/^[A-Z0-9]{10}$/.test(asin)) {
+      setCcNote({ kind: 'info', text: 'This product has no Amazon ASIN, so there is no Creator Connections chat to send through. Use Copy message or Email instead.' })
+      return
+    }
+
+    setCcPhase('resolving'); setCcNote(null)
     try {
-      await navigator.clipboard.writeText(ccText)
-      setCopiedCc(true); setTimeout(() => setCopiedCc(false), 1800)
-      toast.success('Creator Connections message copied — paste it into the CC composer')
-    } catch {
-      toast.error('Couldn’t copy — try the regular copy button')
+      // 1) Resolve the brand's CC message URL for this ASIN. Cache first (from a
+      //    prior message or a Smart Scan), then a live SCOUT grid lookup.
+      let detailsUrl = ''
+      let campaignId: string | null = null
+      try {
+        const r = await fetch(`/api/campaigns/message-link?asin=${encodeURIComponent(asin)}`)
+        const d = await r.json().catch(() => ({}))
+        if (d?.detailsUrl) detailsUrl = d.detailsUrl
+      } catch { /* fall through to live find */ }
+
+      if (!detailsUrl) {
+        const find = await requestFindCampaign('', asin)
+        if (find.error === 'not-installed') {
+          setCcPhase('idle')
+          setCcNote({ kind: 'info', text: 'Auto-send needs the SCOUT extension (it sends inside your own Amazon session). Without it, use Copy message or Email, or message the brand from the product page.' })
+          return
+        }
+        if (find.ok && find.found && find.detailsUrl) {
+          detailsUrl = find.detailsUrl
+          campaignId = find.campaignId ?? null
+          // Cache the resolved URL so the next send to this brand is instant.
+          void fetch('/api/campaigns/message-link', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ asin, campaignId, detailsUrl }),
+          }).catch(() => {})
+        } else {
+          setCcPhase('idle')
+          setCcNote({ kind: 'info', text: 'No live Creator Connections campaign matched this product, so Amazon has no brand chat to auto-send through. Use Copy message or Email, or message the brand from the product page.' })
+          return
+        }
+      }
+
+      // 2) Split the message the user sees into CC "message group" blocks (on
+      //    blank lines) so each is sent as its own message, and hand it to SCOUT.
+      const groups = message.split(/\n\s*\n+/).map(s => s.trim()).filter(Boolean)
+      const ccText = groups.length > 1 ? groups.join(`\n\n${CC_GROUP_BREAK}\n\n`) : message
+      setCcPhase('sending')
+      const res = await requestSendBrand(detailsUrl, ccText)
+      if (res.ok) {
+        setCcPhase('done')
+        setCcNote({ kind: 'ok', text: `Sent to the brand on Creator Connections${res.groups && res.groups > 1 ? ` (${res.groups} messages)` : ''}.` })
+        toast.success('Sent to the brand on Creator Connections ✓')
+      } else if (res.error === 'not-installed') {
+        setCcPhase('idle')
+        setCcNote({ kind: 'info', text: 'Auto-send needs the SCOUT extension. Without it, use Copy message or Email.' })
+      } else {
+        // The cached URL may have gone stale — drop it so the next try re-resolves.
+        void fetch(`/api/campaigns/message-link?asin=${encodeURIComponent(asin)}`, { method: 'DELETE' }).catch(() => {})
+        setCcPhase('idle')
+        setCcNote({ kind: 'error', text: `Could not send through Creator Connections (${res.reason || res.error || 'unknown'}). Use Copy message or Email instead.` })
+      }
+    } catch (e) {
+      setCcPhase('idle')
+      setCcNote({ kind: 'error', text: e instanceof Error ? e.message : 'Could not send through Creator Connections.' })
     }
   }
 
@@ -369,14 +426,12 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
             </div>
 
             {/* Actions.
-                Two copy paths, kept visually distinct so nobody sends the CC
-                format to an email by mistake:
-                  · "Copy message"  = the clean text above, no markers. For
-                    email, a DM, or anywhere that is NOT Amazon CC.
-                  · "Copy for Creator Connections" = the SAME message split into
-                    Amazon's "message group" blocks, so it carries the
-                    ---- Add to Message Group ---- separators. ONLY paste this
-                    into Amazon's CC composer. */}
+                Two clear paths:
+                  · Email / DM  → "Copy message" (clean text) or "Email".
+                  · Creator Connections → "Send on Creator Connections", which
+                    resolves THIS product's brand chat and has SCOUT send it to
+                    the right brand automatically (it splits the message-group
+                    blocks itself, so nobody ever pastes a marker). */}
             <div className="flex items-center gap-2 flex-wrap">
               <button onClick={copyMessage} title="Clean text with no markers. Use this for email or DMs." className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-[#7C3AED] text-white hover:bg-[#6D28D9]">
                 {copied ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy message <span className="font-normal opacity-80">· email / DM</span></>}
@@ -385,11 +440,18 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
                 <Mail size={13} /> Email
               </button>
               <button
-                onClick={copyCcMessage}
-                title="Only for Amazon Creator Connections. Splits the message into CC 'message group' blocks (adds ---- Add to Message Group ---- separators). Do not use this for email."
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border border-[#FFC200] bg-[#FFF7DB] text-[#1d1d1f] hover:bg-[#FFEFB0]"
+                onClick={sendOnCc}
+                disabled={ccPhase === 'resolving' || ccPhase === 'sending'}
+                title="Sends this recap to the right brand automatically through Amazon Creator Connections, in the background (needs the SCOUT extension)."
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border border-[#FFC200] bg-[#FFF7DB] text-[#1d1d1f] hover:bg-[#FFEFB0] disabled:opacity-60"
               >
-                {copiedCc ? <><Check size={13} /> Copied for CC</> : <><Copy size={13} /> Copy for Creator Connections <span className="font-normal opacity-70">· CC composer only</span></>}
+                {ccPhase === 'resolving'
+                  ? <><Loader2 size={13} className="animate-spin" /> Finding the brand…</>
+                  : ccPhase === 'sending'
+                  ? <><Loader2 size={13} className="animate-spin" /> Sending…</>
+                  : ccPhase === 'done'
+                  ? <><Check size={13} /> Sent on CC</>
+                  : <><Send size={13} /> Send on Creator Connections</>}
               </button>
               {productUrl && (
                 <a
@@ -401,8 +463,13 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
                 </a>
               )}
             </div>
+            {ccNote && (
+              <p className="text-[11px] -mt-1 leading-relaxed" style={{ color: ccNote.kind === 'error' ? '#ff3b30' : ccNote.kind === 'ok' ? '#1f8a3a' : '#86868b' }}>
+                {ccNote.text}
+              </p>
+            )}
             <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] -mt-1 leading-relaxed">
-              <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Emailing the brand?</strong> Use <strong>Copy message</strong> (or <strong>Email</strong>): clean text, no markers. Only use <strong>Copy for Creator Connections</strong> when you are pasting into Amazon&rsquo;s CC message composer; it adds the &ldquo;Add to Message Group&rdquo; separators that tell CC where each block starts.
+              <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Emailing the brand?</strong> Use <strong>Copy message</strong> or <strong>Email</strong>: clean text, ready to send. <strong>Send on Creator Connections</strong> delivers this same recap to the right brand automatically through Amazon (it needs the SCOUT extension and a live campaign for this product).
             </p>
           </div>
         )}
