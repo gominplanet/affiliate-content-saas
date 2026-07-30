@@ -460,7 +460,7 @@ export default function DashboardShellV2({
       // shared SECTION_ACCENTS wash keyed off this label.
       label: 'Research',
       items: [
-        { href: '/amz-finder', icon: <PackageSearch size={15} />, label: 'AMZ Product Research', gate: canUseFinders },
+        { href: '/amz-finder', icon: <PackageSearch size={15} />, label: 'AMZ Research', gate: canUseFinders },
         { href: '/deal-radar', icon: <Radar size={15} />, label: 'Deal Radar', gate: canBrowseDealRadar(tier as Tier) },
         { href: '/levanta', icon: <ShoppingBag size={15} />, label: 'MVP x Levanta', gate: canUseFinders },
         { href: '/partnerboost', icon: <Store size={15} />, label: 'MVP x PartnerBoost', gate: canUseFinders },

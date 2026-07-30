@@ -518,6 +518,8 @@ export interface KeepaFinderResult {
   tokensLeft: number | null
   /** Total matches Keepa reports for the selection, when present. */
   totalResults: number | null
+  /** HTTP status of the /query call (0 = network/exception). Safe to surface. */
+  status: number
 }
 
 const KEEPA_FINDER_SORT: Record<NonNullable<KeepaFinderFilters['sort']>, [string, 'asc' | 'desc']> = {
@@ -534,7 +536,7 @@ const KEEPA_FINDER_SORT: Record<NonNullable<KeepaFinderFilters['sort']>, [string
  * response, or a thrown error it returns an empty result — never throws.
  */
 export async function keepaProductFinder(filters: KeepaFinderFilters = {}): Promise<KeepaFinderResult> {
-  const empty: KeepaFinderResult = { asins: [], tokensLeft: null, totalResults: null }
+  const empty: KeepaFinderResult = { asins: [], tokensLeft: null, totalResults: null, status: 0 }
   const key = process.env.KEEPA_API_KEY
   if (!key) return empty
 
@@ -543,9 +545,11 @@ export async function keepaProductFinder(filters: KeepaFinderFilters = {}): Prom
   const page = Math.max(0, Math.floor(filters.page ?? 0))
 
   // Keepa /query "selection" object. Every field is optional; omitting one drops
-  // that constraint. Prices are cents; RATING is ×10 (45 = 4.5★).
+  // that constraint. Prices are cents; RATING is ×10 (45 = 4.5★). We deliberately
+  // do NOT constrain productType — an over-tight type list silently zeroed out
+  // otherwise-valid searches.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const selection: Record<string, any> = { page, perPage, productType: [0, 1] }
+  const selection: Record<string, any> = { page, perPage }
 
   const title = (filters.title || '').trim()
   if (title) selection.title = title
@@ -572,18 +576,33 @@ export async function keepaProductFinder(filters: KeepaFinderFilters = {}): Prom
   const sort = KEEPA_FINDER_SORT[filters.sort ?? 'salesRank']
   selection.sort = [sort]
 
-  const url = `${KEEPA_BASE}/query?key=${encodeURIComponent(key)}&domain=${domainId}&selection=${encodeURIComponent(JSON.stringify(selection))}`
+  // Product Finder is a POST endpoint: the selection travels in the body. (The
+  // /deal feed takes a GET selection param, but /query expects a POST.)
+  const url = `${KEEPA_BASE}/query?key=${encodeURIComponent(key)}&domain=${domainId}`
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(30_000) })
-    if (!res.ok) return empty
-    const data = await res.json() as { asinList?: unknown; totalResults?: number; tokensLeft?: number }
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(selection),
+      signal: AbortSignal.timeout(30_000),
+    })
+    const data = await res.json().catch(() => ({})) as {
+      asinList?: unknown; totalResults?: number; tokensLeft?: number; error?: unknown
+    }
     const tokensLeft = Number.isFinite(data.tokensLeft as number) ? (data.tokensLeft as number) : null
     const totalResults = Number.isFinite(data.totalResults as number) ? (data.totalResults as number) : null
+    if (!res.ok || data.error) {
+      // Log the raw reason server-side only (may carry plan/billing wording that
+      // must never reach a user), and surface just the numeric status.
+      console.error('[keepa/query]', res.status, JSON.stringify(data.error ?? '').slice(0, 300))
+      return { ...empty, status: res.status, tokensLeft, totalResults }
+    }
     const asins = Array.isArray(data.asinList)
       ? (data.asinList as unknown[]).map(a => String(a || '').toUpperCase()).filter(a => /^[A-Z0-9]{10}$/.test(a))
       : []
-    return { asins, tokensLeft, totalResults }
-  } catch {
+    return { asins, tokensLeft, totalResults, status: res.status }
+  } catch (e) {
+    console.error('[keepa/query]', e instanceof Error ? e.message : e)
     return empty
   }
 }
