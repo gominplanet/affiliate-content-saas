@@ -22,6 +22,8 @@ interface BrandThumbStyle {
   // 'auto' = vision-match a likeness · 'off' = no face lock · 'product' = product-only
   // (no human) · or a face_models.id for a specific likeness.
   face: string | null
+  // When true, the generator never draws the green ✓ checkmark decoration.
+  noCheck?: boolean
 }
 
 const HEX_RE = /^#[0-9a-fA-F]{6}$/
@@ -52,6 +54,7 @@ export async function POST(request: Request) {
     borderStyleIndex?: number | null
     accentColor?: string | null
     face?: string | null
+    noCheck?: boolean
     clear?: boolean
   }
 
@@ -104,7 +107,7 @@ export async function POST(request: Request) {
     }
   }
 
-  const style: BrandThumbStyle = { borderStyleIndex, accentColor, face }
+  const style: BrandThumbStyle = { borderStyleIndex, accentColor, face, noCheck: !!body.noCheck }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (supabase as any)
     .from('brand_profiles')

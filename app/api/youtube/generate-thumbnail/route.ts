@@ -695,6 +695,17 @@ export async function POST(request: Request) {
     const tier = normalizeTier(tierRow?.tier)
     TELEMETRY = { userId: user.id, tier }
 
+    // Per-user "hide the green ✓ checkmark decoration" preference (Thumbnail
+    // style → Save as my default). Enforced in the decoration loop below, so a
+    // saved opt-out can't be bypassed by what the client sends.
+    let noCheckDecoration = false
+    try {
+      const { data: bp } = await supabase
+        .from('brand_profiles').select('thumbnail_brand_style').eq('user_id', user.id).maybeSingle()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      noCheckDecoration = !!((bp as any)?.thumbnail_brand_style?.noCheck)
+    } catch { /* default: decorations on */ }
+
     // Monthly AI-spend circuit breaker — thumbnails generate nano-banana-pro
     // images ($0.13 each), an unbounded vector for admin (no thumbnail cap).
     const spendBlocked = await spendGate(user.id, tier)
@@ -1433,11 +1444,15 @@ export async function POST(request: Request) {
           // variety — the 4-angle rotation produces 4 different defaults).
           const usedDecorations = new Set<ThumbDecoration>()
           const copyVariants: ThumbCopy[] = rawVariants.map((c) => {
-            const preferred = c.decoration ?? ANGLE_DECORATION[c.angle]
+            let preferred = c.decoration ?? ANGLE_DECORATION[c.angle]
+            // User opted out of the green ✓ — never let 'check' through.
+            if (noCheckDecoration && preferred === 'check') preferred = 'none'
             let decoration: ThumbDecoration = preferred
             if (preferred !== 'none' && usedDecorations.has(preferred)) {
               // This decoration was already used this batch — pick the next fresh one.
-              const ALL_DECORATIONS: ThumbDecoration[] = ['check', 'arrow', 'stars', 'speedlines', 'none']
+              const ALL_DECORATIONS: ThumbDecoration[] = noCheckDecoration
+                ? ['arrow', 'stars', 'speedlines', 'none']
+                : ['check', 'arrow', 'stars', 'speedlines', 'none']
               decoration = ALL_DECORATIONS.find(d => !usedDecorations.has(d)) ?? preferred
             }
             usedDecorations.add(decoration)
