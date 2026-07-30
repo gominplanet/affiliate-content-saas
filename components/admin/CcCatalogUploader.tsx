@@ -44,7 +44,8 @@ const GUESS: Record<FieldKey, RegExp> = {
   total_slot: /total.?slot|slot.?total|max.?slot|^slots$/i,
 }
 
-const BATCH = 2000
+const BATCH = 1000
+const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms))
 
 export default function CcCatalogUploader({ onDone }: { onDone?: () => void }) {
   const [files, setFiles] = useState<File[]>([])
@@ -93,22 +94,61 @@ export default function CcCatalogUploader({ onDone }: { onDone?: () => void }) {
   const start = useCallback(async () => {
     if (missingReq.length) { toast.error(`Map the required columns: ${missingReq.join(', ')}`); return }
     setPhase('uploading'); setErr(null); setPct(0); setInserted(0)
-    let firstBatch = true
     let totalInserted = 0
     let bytesBase = 0 // bytes fully processed in prior files
     const buffer: Record<string, unknown>[] = []
 
-    const flush = async (rows: Record<string, unknown>[]) => {
-      if (!rows.length) return
-      const res = await fetch('/api/admin/import-cc-catalog/stage', {
+    // Clearing (a fresh import) is done ONCE up front, on its own, so it can
+    // never race with — or be re-sent by — the adaptive batch splitting below.
+    if (clearFirst) {
+      const r = await fetch('/api/admin/import-cc-catalog/stage', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rows, reset: firstBatch && clearFirst }),
+        body: JSON.stringify({ rows: [], reset: true }),
       })
-      firstBatch = false
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data.detail || data.error || 'Upload failed')
-      totalInserted += data.inserted ?? 0
-      setInserted(totalInserted)
+      if (!r.ok) {
+        const d = await r.json().catch(() => null)
+        throw new Error(d?.detail || d?.error || `Could not clear staging (HTTP ${r.status})`)
+      }
+    }
+
+    // Send one batch. Resilient by design:
+    //  · transient network / 5xx / 429 → retry with backoff (up to 4 tries);
+    //  · body-too-large (413) or a persistent gateway error on a big batch →
+    //    split in half and send each half, down to a small floor. That way a
+    //    few fat rows (long names, big ASIN lists) can't fail the whole run.
+    // Only when a SMALL batch still fails do we surface the real HTTP status.
+    const flush = async (rows: Record<string, unknown>[], depth = 0): Promise<void> => {
+      if (!rows.length) return
+      let res: Response
+      try {
+        res = await fetch('/api/admin/import-cc-catalog/stage', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rows }),
+        })
+      } catch {
+        // Network drop: back off and retry the same rows a few times.
+        if (depth < 4) { await sleep(1000 * (depth + 1)); return flush(rows, depth + 1) }
+        throw new Error('Upload failed: the connection dropped. Check your network and try again.')
+      }
+      if (res.ok) {
+        const data = await res.json().catch(() => ({}))
+        totalInserted += data.inserted ?? 0
+        setInserted(totalInserted)
+        return
+      }
+      const data = await res.json().catch(() => null)
+      // A big batch the edge rejects (413) or a gateway error: halve and retry.
+      if ((res.status === 413 || res.status === 429 || res.status >= 500) && rows.length > 250) {
+        const mid = Math.floor(rows.length / 2)
+        await flush(rows.slice(0, mid), 0)
+        await flush(rows.slice(mid), 0)
+        return
+      }
+      // Small batch, transient status: back off and retry a few times.
+      if ((res.status === 429 || res.status >= 500) && depth < 4) {
+        await sleep(1000 * (depth + 1)); return flush(rows, depth + 1)
+      }
+      throw new Error(data?.detail || data?.error || `Upload failed (HTTP ${res.status})`)
     }
 
     const mapRow = (row: Record<string, string>) => {
