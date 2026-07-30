@@ -38,21 +38,32 @@ export async function GET(request: Request) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    // Same gate as the rest of the finder (paid tiers). Flipping the BROWSE view
-    // to free later is a one-line change here — the read costs ~nothing.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: intRow } = await (supabase as any)
-      .from('integrations').select('tier, cc_verified_at').eq('user_id', user.id).maybeSingle()
-    if (!tierAllowsFinders((intRow?.tier as Tier) ?? 'trial')) {
+    // Tier gate (paid plans). Read `tier` ALONE — it always exists — so a
+    // missing cc_verified_at column (migration 199 not yet applied) can never
+    // error this read and falsely downgrade the user to trial.
+    const { data: tierRow } = await supabase
+      .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+    const tier = (tierRow?.tier as Tier) ?? 'trial'
+    if (!tierAllowsFinders(tier)) {
       return NextResponse.json({ error: 'The AMZ Product Finder requires a paid plan.' }, { status: 403 })
     }
+
     // Confidentiality gate: the shared Creator Connections catalog is Amazon
     // reference data for INVITED creators only. Browse stays locked until SCOUT
     // has confirmed the user's own CC grid renders for them (cc_verified_at,
-    // stamped by a live grid scan). Smart Scan is self-gating (it reads the
-    // user's own grid), so it needs no gate.
-    if (!ccVerifyFresh(intRow?.cc_verified_at)) {
-      return NextResponse.json({ needsCcVerify: true, error: 'Verify your Creator Connections access to browse the campaign catalog.' }, { status: 403 })
+    // stamped by a live grid scan). Smart Scan is self-gating, so it needs none.
+    // - Admin is the operator: exempt.
+    // - If cc_verified_at doesn't exist yet (migration 199 not applied), FAIL
+    //   OPEN (allow browse) rather than locking everyone out of a stamp they
+    //   can't write — the gate simply activates once the column lands.
+    if (tier !== 'admin') {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: ccRow, error: ccErr } = await (supabase as any)
+        .from('integrations').select('cc_verified_at').eq('user_id', user.id).maybeSingle()
+      const columnMissing = !!ccErr && /column|does not exist|schema cache/i.test(ccErr.message || '')
+      if (!columnMissing && !ccVerifyFresh(ccRow?.cc_verified_at)) {
+        return NextResponse.json({ needsCcVerify: true, error: 'Verify your Creator Connections access to browse the campaign catalog.' }, { status: 403 })
+      }
     }
 
     const url = new URL(request.url)

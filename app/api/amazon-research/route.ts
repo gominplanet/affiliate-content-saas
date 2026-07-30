@@ -22,22 +22,36 @@ import { getItemsByAsin, creatorsApiConfigured } from '@/services/amazon-creator
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
 
-// Top-level Keepa rootCategory ids (amazon.com). Enough to niche the browse
-// without shipping the full browse-node tree. Empty label = all categories.
+// Keepa rootCategory ids (= Amazon US browse nodes). VERIFIED — kept in sync
+// with Deal Radar's swept nodes (app/api/cron/refresh-deal-radar). id 0 = all.
 const CATEGORIES: Array<{ id: number; label: string }> = [
   { id: 0, label: 'All categories' },
-  { id: 1055398, label: 'Home & Kitchen' },
-  { id: 3760901, label: 'Beauty & Personal Care' },
-  { id: 3375251, label: 'Sports & Outdoors' },
-  { id: 2619525011, label: 'Tools & Home Improvement' },
-  { id: 165793011, label: 'Toys & Games' },
   { id: 172282, label: 'Electronics' },
-  { id: 7141123011, label: 'Clothing, Shoes & Jewelry' },
-  { id: 3760911, label: 'Health & Household' },
-  { id: 2972638011, label: 'Grocery & Gourmet Food' },
+  { id: 1055398, label: 'Home & Kitchen' },
+  { id: 3375251, label: 'Sports & Outdoors' },
+  { id: 3760901, label: 'Health & Household' },
+  { id: 3760911, label: 'Beauty & Personal Care' },
+  { id: 228013, label: 'Tools & Home Improvement' },
+  { id: 165793011, label: 'Toys & Games' },
   { id: 2619533011, label: 'Pet Supplies' },
-  { id: 1064954, label: 'Baby' },
-  { id: 1000, label: 'Books' },
+  { id: 1064954, label: 'Office Products' },
+  { id: 15684181, label: 'Automotive' },
+  { id: 165796011, label: 'Baby' },
+  { id: 7141123011, label: 'Clothing, Shoes & Jewelry' },
+  { id: 541966, label: 'Computers' },
+  { id: 2335752011, label: 'Cell Phones & Accessories' },
+  { id: 16310101, label: 'Grocery & Gourmet Food' },
+  { id: 11091801, label: 'Musical Instruments' },
+  { id: 2972638011, label: 'Patio, Lawn & Garden' },
+  { id: 468642, label: 'Video Games' },
+  { id: 2619525011, label: 'Appliances' },
+  { id: 2617941011, label: 'Arts, Crafts & Sewing' },
+  { id: 16310161, label: 'Industrial & Scientific' },
+  { id: 9479199011, label: 'Luggage & Travel Gear' },
+  { id: 283155, label: 'Books' },
+  { id: 2625373011, label: 'Movies & TV' },
+  { id: 3367581, label: 'Jewelry' },
+  { id: 6358539011, label: 'Watches' },
 ]
 const VALID_CATEGORY = new Set(CATEGORIES.map(c => c.id))
 
