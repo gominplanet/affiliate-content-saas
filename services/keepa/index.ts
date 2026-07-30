@@ -544,7 +544,9 @@ export async function keepaProductFinder(filters: KeepaFinderFilters = {}): Prom
   if (!key) return empty
 
   const domainId = filters.domainId ?? KEEPA_DOMAIN_US
-  const perPage = Math.min(50, Math.max(1, Math.floor(filters.perPage ?? 40)))
+  // Keepa Product Finder requires perPage in [50, 10000] — anything smaller is
+  // rejected with invalidParameter ("perPage … too small"). 50 is the floor.
+  const perPage = Math.min(10_000, Math.max(50, Math.floor(filters.perPage ?? 50)))
   const page = Math.max(0, Math.floor(filters.page ?? 0))
 
   // Keepa /query "selection" object. Every field is optional; omitting one drops

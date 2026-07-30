@@ -71,7 +71,8 @@ export async function GET(request: Request) {
     const rootCategory = catParam != null && VALID_CATEGORY.has(catParam) && catParam > 0 ? catParam : undefined
     const sort = normalizeSort(url.searchParams.get('sort'))
     const page = Math.max(0, intParam(url, 'page') ?? 0)
-    const PER_PAGE = 24
+    // Keepa Product Finder's minimum perPage is 50 — smaller is rejected.
+    const PER_PAGE = 50
 
     // Require at least one real filter so we never fire a wide-open scan that
     // burns Keepa tokens on a random slice of 240M products.
