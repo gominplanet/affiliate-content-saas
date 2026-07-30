@@ -96,8 +96,10 @@ export async function POST(request: Request) {
     // — the CLIENT auto-calls again to continue. The _merged marker means each
     // call resumes exactly where the last stopped. The purge runs on the final
     // call, once every staged row is merged.
+    // Short per-call window so the client gets a fresh "N left" countdown every
+    // ~40s (it auto-resumes until done), instead of one long silent 4-min call.
     const BATCH = 2000
-    const deadline = Date.now() + 240_000
+    const deadline = Date.now() + 40_000
     let upserted = 0
     let n = BATCH
     while (n >= BATCH && Date.now() < deadline) {
