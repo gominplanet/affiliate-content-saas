@@ -223,7 +223,7 @@ export default function AmazonResearchPanel({ onSavedChange }: { onSavedChange?:
         </div>
       ) : (
         <div className="p-3 border-t" style={{ borderColor: 'var(--border)' }}>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 items-stretch [grid-auto-rows:1fr]">
             {rows.map(p => (
               <ProductCard
                 key={p.asin}
@@ -288,7 +288,7 @@ function ProductCard({ p, saved, onToggleSave, onDeepDive }: {
   }
 
   return (
-    <div className="rounded-xl border flex flex-col overflow-hidden" style={{ borderColor: 'var(--border-2)', background: 'var(--surface)' }}>
+    <div className="rounded-xl border flex flex-col overflow-hidden h-full" style={{ borderColor: 'var(--border-2)', background: 'var(--surface)' }}>
       <a href={p.productUrl} target="_blank" rel="noopener noreferrer" className="relative block aspect-square bg-white">
         {p.imageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
