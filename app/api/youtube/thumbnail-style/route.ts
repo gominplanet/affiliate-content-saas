@@ -55,7 +55,25 @@ export async function POST(request: Request) {
     accentColor?: string | null
     face?: string | null
     noCheck?: boolean
+    /** Flip ONLY the hide-checkmark flag, preserving the rest of the saved
+     *  style (so the co-pilot toggle can't wipe border/accent/face). */
+    patchNoCheck?: boolean
     clear?: boolean
+  }
+
+  // Partial update: just the hide-checkmark flag, merged into the existing style.
+  if (typeof body.patchNoCheck === 'boolean') {
+    const { data: cur } = await supabase
+      .from('brand_profiles').select('thumbnail_brand_style').eq('user_id', user.id).maybeSingle()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const existing = ((cur as any)?.thumbnail_brand_style as BrandThumbStyle | null)
+      ?? { borderStyleIndex: null, accentColor: null, face: null }
+    const merged: BrandThumbStyle = { ...existing, noCheck: body.patchNoCheck }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (supabase as any)
+      .from('brand_profiles').update({ thumbnail_brand_style: merged }).eq('user_id', user.id)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ ok: true, style: merged })
   }
 
   // Clearing → null the column (back to varied borders + default yellow accent).
