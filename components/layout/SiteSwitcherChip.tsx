@@ -134,8 +134,10 @@ export default function SiteSwitcherChip({ currentHostname }: { currentHostname:
 
       {open && (
         <div
-          className="absolute left-0 top-full mt-1.5 z-50 min-w-[240px] rounded-xl border shadow-xl overflow-hidden"
-          style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
+          // Explicit SOLID background: --surface is translucent in dark mode,
+          // which let the page bleed through the menu. Force an opaque surface.
+          className="absolute left-0 top-full mt-1.5 z-50 min-w-[240px] rounded-xl border shadow-xl overflow-hidden bg-white dark:bg-[#16161a]"
+          style={{ borderColor: 'var(--border)' }}
           role="listbox"
         >
           <div className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-faint)' }}>
