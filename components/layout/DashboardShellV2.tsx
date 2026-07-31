@@ -53,6 +53,7 @@ import WpConnectionDoctorButton from './WpConnectionDoctorButton'
 import PurgeCacheTopbarButton from './PurgeCacheTopbarButton'
 import ScoutTopbarButton from './ScoutTopbarButton'
 import SocialHealthTopbarButton from './SocialHealthTopbarButton'
+import SiteSwitcherChip from './SiteSwitcherChip'
 import { HelpDeskButton } from '@/components/HelpDeskSidebar'
 
 // Wrapper to handle context safely
@@ -906,24 +907,11 @@ export default function DashboardShellV2({
             backgroundColor: isDark ? 'rgba(14,14,17,0.85)' : 'rgba(250,250,248,0.85)',
           }}
         >
-          {/* Site chip — shows the connected WordPress hostname. Click opens
-              the WordPress setup / multi-site manager (where Pro users add
-              more sites). Was /setup?tab=integrations (now retired/redirected). */}
-          <Link
-            href="/setup"
-            className="flex items-center gap-2 px-3 py-2 rounded-lg border text-[13px] font-medium transition-colors"
-            style={{
-              backgroundColor: 'var(--surface)',
-              borderColor: 'var(--border)',
-              color: 'var(--text)',
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--surface-hover)')}
-            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'var(--surface)')}
-          >
-            <span className="w-1.5 h-1.5 rounded-full bg-[#7C3AED]" />
-            {wpHostname || 'No WordPress yet'}
-            <ChevronDown size={12} style={{ color: 'var(--text-faint)' }} />
-          </Link>
+          {/* Site chip — shows the connected WordPress hostname. For single-site
+              users it links to /setup (the multi-site manager). For Pro users
+              with 2+ connected sites it becomes a real switcher: picking a blog
+              sets it as the default, which the whole app follows. */}
+          <SiteSwitcherChip currentHostname={wpHostname} />
 
           {/* Search MVP — jump to any page or section (Geniuslink, upload
               brand logo, AdSense…). ⌘K focuses it from anywhere. */}
