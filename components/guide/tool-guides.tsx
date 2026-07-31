@@ -13,6 +13,7 @@ import {
   Youtube, Image as ImageIcon, Type, FileText, Layers, Send, Mail, Link2, Scale,
   BookOpen, Palette, Mic, UserSquare, Rocket, TrendingUp, Store, Megaphone, Video,
   Lightbulb, BarChart3, MessageCircle, Handshake, Wrench, MousePointerClick,
+  Zap, Scissors, Users, Inbox, Clock, KeyRound, Instagram,
 } from 'lucide-react'
 
 // ── AMZ Product Finder ───────────────────────────────────────────────────────
@@ -418,6 +419,112 @@ export function CustomizeGuide() {
         { icon: <Wrench size={18} />, title: 'Fine-tune your site', body: <>Set your Pick of the Day, place in-content ad slots, and edit footer links: the smaller site touches that live outside Brand Profile.</> },
         { icon: <Palette size={18} />, title: 'Brand Profile still leads', body: <>Your name, logo, colours, socials and Associates tag live in Brand Profile. This page is for everything else on the site.</> },
         { icon: <ShieldCheck size={18} />, title: 'Changes push live', body: <>Saving here updates your live WordPress site, so what you set is what visitors see.</> },
+      ]}
+    />
+  )
+}
+
+// ── Deals Hub ────────────────────────────────────────────────────────────────
+export function DealsHubGuide() {
+  return (
+    <ToolGuide
+      guideKey="deals-hub"
+      accent="#f43f5e"
+      icon={<Zap size={20} />}
+      title="Your guide to the Deals Hub"
+      subtitle="Drop a link, get a timely deal post that converts."
+      sections={[
+        { icon: <Zap size={18} />, title: 'One link in, a deal post out', body: <>Paste any Amazon URL, Geniuslink, or ASIN and MVP writes a timely deal post: the savings, why it is worth it, and your affiliate link, published to your blog.</> },
+        { icon: <Clock size={18} />, title: 'Baked-in urgency', body: <>Each deal post gets a thumbnail with the discount on it and a live countdown, so readers feel the clock ticking and act.</> },
+        { icon: <Tag size={18} />, title: 'Your promo code, everywhere', body: <>If the deal has a coupon or promo code, MVP wires it into every call to action so readers never miss the discount.</> },
+        { icon: <TrendingUp size={18} />, title: 'Great for social', body: <>Deal posts are perfect to push to Deal Radar and your social channels; timely savings are some of the most clicked content you can post.</> },
+      ]}
+    />
+  )
+}
+
+// ── Shorts Studio ────────────────────────────────────────────────────────────
+export function ShortsStudioGuide() {
+  return (
+    <ToolGuide
+      guideKey="shorts-studio"
+      icon={<Scissors size={20} />}
+      title="Your guide to Shorts Studio"
+      subtitle="One long video becomes a batch of subtitled vertical Shorts."
+      sections={[
+        { icon: <Scissors size={18} />, title: 'Long video to many Shorts', body: <>Point it at one long video and it cuts a batch of 15 to 30 second vertical clips from the best moments; no editing timeline needed.</> },
+        { icon: <Type size={18} />, title: 'Word-for-word captions', body: <>Every Short gets burned-in subtitles synced to the audio, which is what makes short-form watchable with the sound off.</> },
+        { icon: <Send size={18} />, title: 'Feed every platform', body: <>Use the clips for YouTube Shorts, Reels, and TikTok; more short-form surfaces mean more traffic back to your reviews and links.</> },
+      ]}
+    />
+  )
+}
+
+// ── Clip Factory ─────────────────────────────────────────────────────────────
+export function ClipFactoryGuide() {
+  return (
+    <ToolGuide
+      guideKey="clip-factory"
+      icon={<Video size={20} />}
+      title="Your guide to Clip Factory"
+      subtitle="Make a shoppable vertical short from a long video."
+      sections={[
+        { icon: <Video size={18} />, title: 'Vertical from horizontal', body: <>Turn a long video into a single vertical short built for Reels, TikTok, and YouTube Shorts.</> },
+        { icon: <Tag size={18} />, title: 'Make it shoppable', body: <>Add a call to action and a product link right on the clip, so the video does not just get views, it sends people to buy.</> },
+        { icon: <Send size={18} />, title: 'Publish where you are', body: <>Push the finished short straight to Instagram, TikTok, or YouTube from here.</> },
+      ]}
+    />
+  )
+}
+
+// ── Instagram Auto-DM ────────────────────────────────────────────────────────
+export function InstagramDmGuide() {
+  return (
+    <ToolGuide
+      guideKey="instagram-dm"
+      accent="#E1306C"
+      icon={<Instagram size={20} />}
+      title="Your guide to Instagram Auto-DM"
+      subtitle="A keyword comment triggers an automatic DM with your link."
+      sections={[
+        { icon: <MessageCircle size={18} />, title: 'Comment to unlock', body: <>Pick a keyword (like &ldquo;LINK&rdquo;). When someone comments it on your Instagram or Facebook post, MVP automatically sends them a DM with the right affiliate link.</> },
+        { icon: <Zap size={18} />, title: 'Why it works', body: <>&ldquo;Comment LINK and I will send it&rdquo; drives a flood of comments (which boosts the post) and delivers your link privately, where people actually click.</> },
+        { icon: <Link2 size={18} />, title: 'Set it and forget it', body: <>Once it is set up for a post, the DMs go out on their own around the clock; no sitting there replying by hand.</> },
+      ]}
+    />
+  )
+}
+
+// ── Brand Inquiries ──────────────────────────────────────────────────────────
+export function BrandInquiriesGuide() {
+  return (
+    <ToolGuide
+      guideKey="brand-inquiries"
+      accent="#60A5FA"
+      icon={<Inbox size={20} />}
+      title="Your guide to Brand Inquiries"
+      subtitle="Where brand messages from your blog land."
+      sections={[
+        { icon: <Inbox size={18} />, title: 'Your inbound deals', body: <>When a brand reaches out through the &ldquo;Work with brands&rdquo; banner on your blog, their message shows up here so you never miss an opportunity.</> },
+        { icon: <Handshake size={18} />, title: 'Turn interest into deals', body: <>These are warm leads: brands that found you and want to work with you. Reply, agree on terms, and cover their product.</> },
+        { icon: <Palette size={18} />, title: 'Make the banner shine', body: <>The more your blog looks professional (Brand Profile, real reviews), the more brands trust the banner and reach out.</> },
+      ]}
+    />
+  )
+}
+
+// ── Virtual Assistants (Agency) ──────────────────────────────────────────────
+export function VirtualAssistantsGuide() {
+  return (
+    <ToolGuide
+      guideKey="virtual-assistants"
+      icon={<Users size={20} />}
+      title="Your guide to Virtual Assistants"
+      subtitle="Give a VA their own login without sharing yours."
+      sections={[
+        { icon: <Users size={18} />, title: 'Delegate safely', body: <>Invite a VA or contractor to help run your blog. They get their own login on your single Pro subscription; no sharing your password.</> },
+        { icon: <KeyRound size={18} />, title: 'Scoped permissions', body: <>Decide what each person can do, so a VA can generate and publish content without touching billing or settings you want to keep private.</> },
+        { icon: <TrendingUp size={18} />, title: 'Scale your output', body: <>With help on the repetitive work (generating posts, scheduling socials), you can run far more content than you could alone.</> },
       ]}
     />
   )

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import { BrandInquiriesGuide } from '@/components/guide/tool-guides'
 import { toast } from 'sonner'
 import { Handshake, Mail, Archive, Loader2, Inbox } from 'lucide-react'
 import BrandCtaSettings from '@/components/brand/BrandCtaSettings'
@@ -61,6 +62,7 @@ export default function BrandInquiriesPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <Handshake size={22} className="text-[#7C3AED]" /> Brand Inquiries
+          <BrandInquiriesGuide />
         </h1>
         <p className="text-sm text-[var(--text-3)] mt-1">
           Messages brands sent through the &quot;Work with brands&quot; banner on your blog. Set the banner up on the right.

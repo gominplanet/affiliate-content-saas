@@ -11,6 +11,7 @@
 // approves the messaging permissions (Phase 2). See project_ig_comment_to_dm.
 
 import { useEffect, useState } from 'react'
+import { InstagramDmGuide } from '@/components/guide/tool-guides'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { Instagram, MessageCircle, Loader2, Info, FlaskConical, Trash2, Flame } from 'lucide-react'
@@ -97,6 +98,7 @@ export default function InstagramDmPage() {
       <div className="flex items-center gap-2 flex-wrap">
         <Instagram size={20} className="text-[#E1306C]" />
         <h1 className="text-lg font-semibold" style={{ color: 'var(--text)' }}>Instagram Auto-DM</h1>
+        <InstagramDmGuide />
         <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full"
           style={{ background: 'rgba(220,38,38,0.12)', color: '#DC2626' }}>
           <FlaskConical size={11} /> Labs

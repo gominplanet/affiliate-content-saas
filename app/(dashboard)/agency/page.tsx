@@ -19,6 +19,7 @@
  */
 
 import { useEffect, useState } from 'react'
+import { VirtualAssistantsGuide } from '@/components/guide/tool-guides'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { Users, Lock, Plus, Mail, Trash2, Clock, Shield, User as UserIcon, Check, X as XIcon } from 'lucide-react'
@@ -281,6 +282,7 @@ export default function AgencyPage() {
       <div>
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <Users size={22} /> Virtual Assistants
+          <VirtualAssistantsGuide />
         </h1>
         <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">
           Invite VAs or contractors with scoped permissions. They get their own login on your
