@@ -247,12 +247,27 @@ async function parseCampaigns() {
 // via the native value setter + an input event, then wait for the grid to
 // re-render before the caller scrapes. No-ops (and reports why) if there's no
 // search box or the query is already applied.
+// Find the Affiliate+ CAMPAIGNS search box specifically — the one whose
+// placeholder is "Search brand, keyword, or ASIN" — and NOT the global Amazon
+// nav search or the Sponsored Products (SPC) box, which also match a generic
+// "search" selector and would leave the campaign grid unfiltered (forcing a
+// slow full-grid scroll). Prefer an input that mentions ASIN / brand+keyword.
+function findCampaignSearchBox() {
+  const inputs = [...document.querySelectorAll('input')]
+  const hint = (i) => `${i.placeholder || ''} ${i.getAttribute('aria-label') || ''}`.toLowerCase()
+  // 1) The exact CC campaigns box: placeholder names ASIN (and usually brand/keyword).
+  const byAsin = inputs.find((i) => /\basin\b/.test(hint(i)))
+  if (byAsin) return byAsin
+  const byBrandKw = inputs.find((i) => /brand.*keyword|keyword.*brand/.test(hint(i)))
+  if (byBrandKw) return byBrandKw
+  // 2) Fallback: the first generic search input (previous behaviour).
+  return document.querySelector('input[type="search"], input[placeholder*="search" i], input[aria-label*="search" i]')
+}
+
 async function applyAmazonSearch(keyword) {
   const kw = (keyword || '').trim()
   if (!kw) return { searched: false }
-  const input = document.querySelector(
-    'input[type="search"], input[placeholder*="search" i], input[aria-label*="search" i]',
-  )
+  const input = findCampaignSearchBox()
   if (!input) return { searched: false, reason: 'no-search-box' }
   if ((input.value || '').trim().toLowerCase() === kw.toLowerCase()) {
     return { searched: true, already: true }
