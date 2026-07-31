@@ -148,6 +148,25 @@ export async function requestSendBrand(detailsUrl: string, message: string): Pro
   return { ok: !!resp.ok, error: resp.error, reason: resp.reason, steps: resp.steps, diag: resp.diag, groups: resp.groups }
 }
 
+/**
+ * ONE-tab "accept-if-needed, then send" for Send on Creator Connections. SCOUT
+ * opens the campaign in a single background tab, accepts it when it's an
+ * un-accepted opportunity (Amazon only opens the brand chat after acceptance),
+ * then sends the message on the SAME tab — no cross-tab teardown race (which was
+ * the "Frame with ID 0 was removed" failure). Best-effort: resolves, never throws.
+ */
+export async function requestAcceptAndSendBrand(detailsUrl: string, message: string): Promise<MessageBrandResult & { accepted?: boolean }> {
+  if (!detailsUrl) return { ok: false, error: 'no-url' }
+  if (!message.trim()) return { ok: false, error: 'no-message' }
+  if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
+  const resp = await sendToExtension<{ ok?: boolean; error?: string; reason?: string; groups?: number; accepted?: boolean }>(
+    { type: 'MVP_CC_ACCEPT_AND_SEND', detailsUrl, message },
+    185000,
+  )
+  if (!resp) return { ok: false, error: 'timeout' }
+  return { ok: !!resp.ok, error: resp.error, reason: resp.reason, groups: resp.groups, accepted: resp.accepted }
+}
+
 export interface AcceptCampaignResult { ok: boolean; accepted?: boolean; already?: boolean; error?: string; reason?: string }
 
 /**

@@ -2554,6 +2554,18 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async response — keep the channel open
   }
+  if (msg.type === 'MVP_CC_ACCEPT_AND_SEND') {
+    // One-tab flow for "Send on Creator Connections": accept the campaign if it
+    // isn't already, then send the message — all in a single background tab so
+    // there's no cross-tab teardown race. Accept (~up to 90s) + send (~75s) →
+    // allow 3 minutes.
+    const callerTabId = sender && sender.tab ? sender.tab.id : null
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 180000)
+    acceptAndSendBrand(msg.detailsUrl, msg.message || '', callerTabId)
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true // async response — keep the channel open
+  }
   if (msg.type === 'MVP_SCRAPE_URL') {
     // "Post from a link" for non-Amazon stores. MVP's server can't scrape
     // Walmart/Target/etc. (datacenter IPs are blocked), so SCOUT opens the page
@@ -2904,6 +2916,76 @@ function ensureOffsiteStoreInPage() {
 // (only paint is throttled) and every step reads/writes the DOM, so no visible
 // layout is needed. If the campaign page is blocked by an onsite store-id, we
 // auto-switch to the offsite store (still in the background) and re-open it.
+// Combined "accept-if-needed, then send" in ONE background tab. This is the
+// reliable path for MVP's "Send on Creator Connections": doing accept and send
+// as two separate tab operations (each opens + closes its own tab) raced and
+// threw "Frame with ID 0 was removed". Here a single tab is opened on the
+// campaign, we accept it when an Accept button is present (an un-accepted
+// opportunity has no brand chat until you accept), then send on the SAME tab.
+async function acceptAndSendBrand(detailsUrl, message, callerTabId) {
+  if (!detailsUrl) return { ok: false, error: 'no-url' }
+  if (!message || !message.trim()) return { ok: false, error: 'no-message' }
+  let tabId = null
+  const runAccept = async () => {
+    for (let i = 0; i < 4; i++) {
+      const ar = await chrome.scripting.executeScript({ target: { tabId }, func: acceptCampaignInPage })
+      const r = ar && ar[0] && ar[0].result
+      if (r && r.ok) return true
+      await _sleep(700)
+    }
+    return false
+  }
+  const runSend = async () => {
+    for (let i = 0; i < 2; i++) {
+      const res = await chrome.scripting.executeScript({ target: { tabId }, func: sendBrandMessageInPage, args: [message] })
+      const r = res && res[0] && res[0].result
+      if (r && r.ok) return r
+      await _sleep(1600)
+    }
+    return null
+  }
+  const reload = async () => {
+    try { await chrome.tabs.update(tabId, { url: detailsUrl }); await waitForTabLoad(tabId, 25000); await _sleep(2500) } catch (e) {}
+  }
+  try {
+    const tab = await chrome.tabs.create({ url: detailsUrl, active: false })
+    tabId = tab.id
+    await waitForTabLoad(tabId, 25000)
+    await _sleep(2500)
+    // Offsite store fix (CC is blocked on an onsite store id).
+    try {
+      const sres = await chrome.scripting.executeScript({ target: { tabId }, func: ensureOffsiteStoreInPage })
+      const sw = sres && sres[0] && sres[0].result
+      if (sw && sw.switched) { await _sleep(1500); await reload() }
+    } catch (e) {}
+
+    // Accept if there's an Accept button (un-accepted opportunity). Not finding
+    // one means it's already accepted — fine, go straight to send.
+    let accepted = await runAccept()
+    if (accepted) await reload() // let the brand chat open after accepting
+
+    // Send on the same tab.
+    let sr = await runSend()
+    // If the send failed the way an un-accepted campaign does (no chat), the
+    // Accept button may just not have rendered headless — bring the tab forward
+    // once, accept, reload, and resend. Then restore the user's tab.
+    if (!sr && !accepted) {
+      try {
+        await chrome.tabs.update(tabId, { active: true }); await _sleep(2500)
+        accepted = await runAccept()
+      } catch (e) {}
+      finally { if (callerTabId != null) { try { await chrome.tabs.update(callerTabId, { active: true }) } catch (e) {} } }
+      if (accepted) { await reload(); sr = await runSend() }
+    }
+    if (sr && sr.ok) return { ...sr, accepted }
+    return sr || { ok: false, reason: 'send-failed', accepted }
+  } catch (e) {
+    return { ok: false, error: e && e.message ? e.message : 'exception' }
+  } finally {
+    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+  }
+}
+
 async function sendBrandMessage(detailsUrl, message, callerTabId) {
   if (!detailsUrl) return { ok: false, error: 'no-url' }
   if (!message || !message.trim()) return { ok: false, error: 'no-message' }

@@ -19,7 +19,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { toast } from 'sonner'
 import { X, Copy, Mail, ExternalLink, Loader2, Sparkles, Check, RotateCcw, Video, Send } from 'lucide-react'
 import { fillRecapMessage, CC_GROUP_BREAK, type RecapLink, type BrandRecapSettings } from '@/lib/brand-recap'
-import { requestAmazonVideoForAsin, requestFindCampaign, requestSendBrand, requestAcceptCampaign } from '@/lib/extension-frame'
+import { requestAmazonVideoForAsin, requestFindCampaign, requestAcceptAndSendBrand } from '@/lib/extension-frame'
 
 /** MVP's OINK affiliate link (same as the sidebar Recommended Tools row). */
 const OINK_AFFILIATE_URL = 'https://geni.us/2y5sBo'
@@ -208,27 +208,16 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
     }
   }
 
-  // Accept-if-needed, then send. Retries once through an auto-accept when the
-  // send fails in the way an un-accepted campaign does (no message box / the
-  // send tab times out waiting for a chat that isn't there).
-  async function deliverToCc(asin: string, detailsUrl: string, knownAccepted: boolean, retried: boolean) {
-    // Accept first when we don't already know it's accepted.
-    if (!knownAccepted && !retried) {
-      setCcPhase('accepting'); setCcNote({ kind: 'info', text: 'Making sure the campaign is accepted on Amazon…' })
-      const acc = await requestAcceptCampaign(detailsUrl)
-      if (acc.error === 'not-installed') {
-        setCcPhase('idle')
-        setCcNote({ kind: 'info', text: 'Auto-send needs the SCOUT extension. Without it, use Copy message or Email.' })
-        return
-      }
-      // ok/accepted/already → proceed. If accept couldn't confirm, we still try
-      // the send (it may already be accepted); the send failure path handles it.
-    }
-
+  // Accept-if-needed AND send, in ONE SCOUT tab. SCOUT opens the campaign once,
+  // accepts it when it's an un-accepted opportunity, then sends on the same tab —
+  // no cross-tab teardown race (the old "Frame with ID 0 was removed" failure).
+  async function deliverToCc(asin: string, detailsUrl: string, knownAccepted: boolean, _retried: boolean) {
     const groups = message.split(/\n\s*\n+/).map(s => s.trim()).filter(Boolean)
     const ccText = groups.length > 1 ? groups.join(`\n\n${CC_GROUP_BREAK}\n\n`) : message
-    setCcPhase('sending'); setCcNote({ kind: 'info', text: 'Sending your message to the brand…' })
-    const res = await requestSendBrand(detailsUrl, ccText)
+    // Copy reflects that it may accept first when we don't already know it's active.
+    setCcPhase(knownAccepted ? 'sending' : 'accepting')
+    setCcNote({ kind: 'info', text: knownAccepted ? 'Sending your message to the brand…' : 'Accepting the campaign, then sending your message…' })
+    const res = await requestAcceptAndSendBrand(detailsUrl, ccText)
     if (res.ok) {
       setCcPhase('done')
       setCcNote({ kind: 'ok', text: `Sent to the brand on Creator Connections${res.groups && res.groups > 1 ? ` (${res.groups} messages)` : ''}.` })
@@ -239,17 +228,6 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
       setCcPhase('idle')
       setCcNote({ kind: 'info', text: 'Auto-send needs the SCOUT extension. Without it, use Copy message or Email.' })
       return
-    }
-    // A missing message box (or a timeout waiting for one) usually means the
-    // campaign wasn't accepted after all — accept and retry the send ONCE,
-    // still without asking the user.
-    const looksNotAccepted = /no-message|box-never|not-accepted|accept|timeout/i.test(`${res.reason || ''} ${res.error || ''}`)
-    if (looksNotAccepted && !retried) {
-      setCcPhase('accepting'); setCcNote({ kind: 'info', text: 'Accepting the campaign on Amazon, then retrying…' })
-      const acc = await requestAcceptCampaign(detailsUrl)
-      if (acc.ok && (acc.accepted || acc.already)) {
-        return deliverToCc(asin, detailsUrl, true, true)
-      }
     }
     // Give up: drop any stale cached URL so the next attempt re-resolves.
     void fetch(`/api/campaigns/message-link?asin=${encodeURIComponent(asin)}`, { method: 'DELETE' }).catch(() => {})
