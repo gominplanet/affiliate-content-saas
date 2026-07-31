@@ -509,6 +509,18 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
                   <ExternalLink size={13} /> {productBtnLabel}
                 </a>
               )}
+              {/* Jump straight to the Creator Connections campaigns dashboard
+                  (New Opportunities, Affiliate+), so you can find/accept/message
+                  by hand if you'd rather. Amazon fills in your creator id from
+                  your session. */}
+              <a
+                href="https://affiliate-program.amazon.com/p/connect/requests?status=opportunity&type=affiliate-plus"
+                target="_blank" rel="noopener noreferrer"
+                title="Open your Creator Connections campaigns (New Opportunities) on Amazon"
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border border-[#FFC200] text-[#1d1d1f] dark:text-[#f5f5f7] hover:bg-[#FFF7DB]"
+              >
+                <ExternalLink size={13} /> Open Campaigns
+              </a>
             </div>
             {ccNote && (
               <p className="text-[11px] -mt-1 leading-relaxed" style={{ color: ccNote.kind === 'error' ? '#ff3b30' : ccNote.kind === 'ok' ? '#1f8a3a' : '#86868b' }}>
