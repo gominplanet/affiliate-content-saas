@@ -46,13 +46,28 @@ export async function GET() {
       return count
     } catch { return null }
   }
-  const [staged, live, enriched] = await Promise.all([
+  // Whether staging has ANY rows — a cheap existence check (limit 1) that does
+  // NOT time out like an exact COUNT over 800k rows. The UI uses THIS (not the
+  // flaky count) to decide "is staging empty / can I merge", so a slow count
+  // can never falsely disable Merge or show "Staging is empty".
+  //   true  = has rows, false = genuinely empty, null = couldn't tell (treat as
+  //   "maybe" → don't block; the merge endpoint has its own existence guard).
+  const hasStagedCheck = async (): Promise<boolean | null> => {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await (admin as any).from('cc_campaign_catalog_import').select('campaign_id').limit(1)
+      if (error) return null
+      return (data?.length ?? 0) > 0
+    } catch { return null }
+  }
+  const [staged, live, enriched, hasStaged] = await Promise.all([
     countOf('cc_campaign_catalog_import'),
     countOf('cc_campaign_catalog'),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     countOf('cc_campaign_catalog', (q: any) => q.not('product_verified_at', 'is', null)),
+    hasStagedCheck(),
   ])
-  return NextResponse.json({ ok: true, staged, live, enriched })
+  return NextResponse.json({ ok: true, staged, live, enriched, hasStaged })
 }
 
 export async function POST(request: Request) {
