@@ -292,10 +292,13 @@ function ProductCard({ p, saved, onToggleSave, onDeepDive }: {
 
   return (
     <div className="rounded-xl border flex flex-col overflow-hidden h-full" style={{ borderColor: 'var(--border-2)', background: 'var(--surface)' }}>
-      <a href={p.productUrl} target="_blank" rel="noopener noreferrer" className="relative block aspect-square bg-white">
+      <a href={p.productUrl} target="_blank" rel="noopener noreferrer" className="relative block aspect-square bg-white overflow-hidden">
         {p.imageUrl ? (
+          // Absolutely filling the square so a tall/odd source photo can NEVER
+          // stretch the card taller than the rest — object-contain still shows
+          // the whole product, just letterboxed inside the fixed square.
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={p.imageUrl} alt="" className="w-full h-full object-contain p-3" />
+          <img src={p.imageUrl} alt="" className="absolute inset-0 w-full h-full object-contain p-3" />
         ) : (
           <div className="w-full h-full grid place-items-center" style={{ background: 'rgba(124,58,237,0.04)' }}>
             <ImageOff size={22} style={{ color: 'rgba(124,58,237,0.3)' }} />
