@@ -1,13 +1,34 @@
-# SCOUT — Chrome Web Store submission
+# SCOUT — Chrome Web Store
 
 The store build is `public/mvp-cc-scout-store.zip` (served at
 `https://www.mvpaffiliate.io/mvp-cc-scout-store.zip`). It is the normal
 extension MINUS the `key` field (CWS forbids it) and with the manifest
 `description` trimmed to ≤132 chars. The unpacked build
-(`public/mvp-cc-scout.zip`) still keeps the `key` for existing load-unpacked
-users until the store version is live.
+(`public/mvp-cc-scout.zip`) keeps the `key` for load-unpacked users.
 
-## Upload
+The item is **LIVE** (id `blpmlneliggaekangckpgknphpacapkg`, first approved
+2026-07-02), so new releases are UPDATES, not first submissions.
+
+## Publishing a new version (the normal path now)
+On every SCOUT change: bump `extension/manifest.json` "version" AND
+`lib/scout-version.ts` `SCOUT_LATEST_VERSION` in lockstep, then rebuild both
+zips (`bash scripts/zip-extension.sh && bash scripts/zip-extension-store.sh`)
+and commit them. Then upload the store build:
+
+1. Download `https://www.mvpaffiliate.io/mvp-cc-scout-store.zip` (after deploy).
+2. Developer Dashboard (https://chrome.google.com/webstore/devconsole) → open
+   **SCOUT — MVP Affiliate** → **Package** → **Upload new package** → drop the
+   zip → **Submit for review**.
+3. The version must be higher than the live one; the listing/screenshots/privacy
+   fields carry over. The extension **id does not change** on an update, so no
+   env changes are needed. Chrome auto-updates store users once approved.
+
+Latest release: **1.11.70** — SCOUT now types the ASIN into the Affiliate+
+"Search brand, keyword, or ASIN" box specifically (not the global/SPC search),
+so Send-on-Creator-Connections filters straight to the campaign instead of
+scrolling the whole grid.
+
+## First-time submission (historical — kept for reference)
 Developer Dashboard → **Add new item** → drop `mvp-cc-scout-store.zip`. The two
 earlier errors (key not allowed, description too long) are fixed in this build.
 
@@ -67,16 +88,11 @@ back to the user's own MVP Affiliate dashboard only. No analytics, no selling.
 **Screenshots:** at least one 1280×800 (or 640×400) PNG. Easiest: a screenshot
 of the YouTube Co-Pilot generating a thumbnail, or the SCOUT popup.
 
-## ⚠️ After it's published — the extension ID changes
-The store assigns a NEW extension ID (different from the current unpacked
-`inpklaogoifhgaimbnlgmijnnjkopnlc`, because CWS ignores our `key`). Once the
-item exists, copy its ID from the dashboard and tell me. Then we:
-1. Set `NEXT_PUBLIC_SCOUT_EXTENSION_ID` (Vercel env) to the published ID.
-2. Point the in-app install/update UI at the Web Store URL instead of the zip.
-3. (Transition) optionally have the MVP↔SCOUT bridge try BOTH the old unpacked
-   ID and the new store ID so existing unpacked users keep working until they
-   reinstall from the store.
-
-Do NOT flip `NEXT_PUBLIC_SCOUT_EXTENSION_ID` before the store item is live and
-you've reinstalled SCOUT from the store — doing it early breaks the bridge to
-your current unpacked copy.
+## Store extension ID (DONE — historical)
+On first publish CWS assigned the store id `blpmlneliggaekangckpgknphpacapkg`
+(different from the unpacked `inpklaogoifhgaimbnlgmijnnjkopnlc`, because CWS
+ignores our `key`). This is already wired: `lib/extension-frame.ts` messages
+BOTH the store id and the sideload id, so store users and load-unpacked users
+both work. **Updates keep this same id** — the id only changes on first publish,
+never on a version update, so there is nothing to reconfigure when releasing a
+new version.
