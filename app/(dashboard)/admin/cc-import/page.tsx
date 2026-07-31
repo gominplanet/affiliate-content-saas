@@ -14,7 +14,8 @@ import { Loader2, RefreshCw, Database, ArrowRight, CheckCircle2, AlertTriangle }
 import { toast } from 'sonner'
 import CcCatalogUploader from '@/components/admin/CcCatalogUploader'
 
-interface Counts { staged: number | null; live: number | null; enriched: number | null; hasStaged: boolean | null }
+interface KeepaStatus { tokensLeft: number | null; refillRate: number | null; refillIn: number | null }
+interface Counts { staged: number | null; live: number | null; enriched: number | null; hasStaged: boolean | null; keepa: KeepaStatus | null }
 
 export default function AdminCcImportPage() {
   const [counts, setCounts] = useState<Counts | null>(null)
@@ -30,7 +31,7 @@ export default function AdminCcImportPage() {
       const r = await fetch('/api/admin/import-cc-catalog')
       const d = await r.json()
       if (!r.ok) throw new Error(d.error || 'Failed to load')
-      setCounts({ staged: d.staged, live: d.live, enriched: d.enriched, hasStaged: d.hasStaged ?? null })
+      setCounts({ staged: d.staged, live: d.live, enriched: d.enriched, hasStaged: d.hasStaged ?? null, keepa: d.keepa ?? null })
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed to load')
     } finally { setLoading(false) }
@@ -122,6 +123,26 @@ export default function AdminCcImportPage() {
           icon={<RefreshCw size={16} />} accent="#0a84ff"
         />
       </div>
+
+      {/* Keepa token headroom — the shared budget that enrichment, Deal Radar,
+          and the AMZ Product Finder all draw from. The enrichment cron backs off
+          below ~60 so the others are never starved; this is the live readout. */}
+      {counts?.keepa && counts.keepa.tokensLeft != null && (
+        <div className="card p-4 mb-5 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2" style={{ color: '#0a84ff' }}>
+            <RefreshCw size={16} />
+            <span className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-faint)' }}>Keepa tokens (shared budget)</span>
+          </div>
+          <div className="text-right">
+            <span className="text-[18px] font-extrabold" style={{ color: counts.keepa.tokensLeft < 200 ? '#f59e0b' : 'var(--text)' }}>
+              {counts.keepa.tokensLeft.toLocaleString()}
+            </span>
+            {counts.keepa.refillRate != null && (
+              <span className="text-[12px] ml-2" style={{ color: 'var(--text-soft)' }}>+{counts.keepa.refillRate}/min</span>
+            )}
+          </div>
+        </div>
+      )}
 
       {stagingEmpty && !loading && (
         <div className="card p-4 mb-5 flex items-start gap-2.5" style={{ borderColor: 'rgba(245,158,11,0.4)' }}>

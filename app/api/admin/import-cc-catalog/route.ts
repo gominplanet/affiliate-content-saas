@@ -18,6 +18,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { normalizeTier } from '@/lib/tier'
 import { toUserMessage } from '@/lib/friendly-error'
+import { fetchKeepaTokenStatus } from '@/services/keepa'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -60,14 +61,17 @@ export async function GET() {
       return (data?.length ?? 0) > 0
     } catch { return null }
   }
-  const [staged, live, enriched, hasStaged] = await Promise.all([
+  const [staged, live, enriched, hasStaged, keepa] = await Promise.all([
     countOf('cc_campaign_catalog_import'),
     countOf('cc_campaign_catalog'),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     countOf('cc_campaign_catalog', (q: any) => q.not('product_verified_at', 'is', null)),
     hasStagedCheck(),
+    // Live Keepa token balance — the shared budget enrichment / Deal Radar /
+    // the Product Finder all draw from. /token doesn't cost product tokens.
+    fetchKeepaTokenStatus(),
   ])
-  return NextResponse.json({ ok: true, staged, live, enriched, hasStaged })
+  return NextResponse.json({ ok: true, staged, live, enriched, hasStaged, keepa })
 }
 
 export async function POST(request: Request) {
