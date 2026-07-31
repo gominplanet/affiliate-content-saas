@@ -11,6 +11,7 @@ import { useState, useEffect, useCallback, useRef, type CSSProperties } from 're
 import Link from 'next/link'
 import { createBrowserClient } from '@/lib/supabase/client'
 import PageHero from '@/components/layout/PageHero'
+import { ShopBurnerGuide } from '@/components/guide/tool-guides'
 import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
 import { metaEnabled } from '@/lib/feature-flags'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
@@ -555,6 +556,7 @@ export default function InstagramBurnerPage() {
   return (
     <>
       <PageHero
+        guide={<ShopBurnerGuide />}
         title="Shop Burner"
         subtitle="Turn a YouTube Short into an Instagram Reel or TikTok — burn on a CTA, set up an auto-DM link, and publish."
       />

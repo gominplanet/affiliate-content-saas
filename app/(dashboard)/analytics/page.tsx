@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import PageHero from '@/components/layout/PageHero'
+import { AnalyticsGuide } from '@/components/guide/tool-guides'
 import Link from 'next/link'
 import { TrendingUp, MousePointerClick, Eye, ExternalLink, Loader2, AlertCircle, Link2, Youtube, Globe } from 'lucide-react'
 
@@ -155,6 +156,7 @@ export default function AnalyticsPage() {
   return (
     <>
       <PageHero
+        guide={<AnalyticsGuide />}
         title="Analytics"
         subtitle="Last 30 days, human clicks only (bot/junk filtered to match Geniuslink's default). Only shortcodes tied to MVP-generated posts — your Geniuslink dashboard total will include codes from outside MVP."
         actions={

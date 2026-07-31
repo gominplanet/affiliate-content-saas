@@ -12,6 +12,7 @@ import {
   ShoppingBag, Sparkles, Search, Tag, ShoppingCart, PenLine, Bookmark, ShieldCheck,
   Youtube, Image as ImageIcon, Type, FileText, Layers, Send, Mail, Link2, Scale,
   BookOpen, Palette, Mic, UserSquare, Rocket, TrendingUp, Store, Megaphone, Video,
+  Lightbulb, BarChart3, MessageCircle, Handshake, Wrench, MousePointerClick,
 } from 'lucide-react'
 
 // ── AMZ Product Finder ───────────────────────────────────────────────────────
@@ -311,6 +312,112 @@ export function AdsGuide() {
         { icon: <Megaphone size={18} />, title: 'A second income stream', body: <>Affiliate links pay when someone buys; display ads pay for the visit itself. Running both means the same traffic earns two ways.</> },
         { icon: <ShieldCheck size={18} />, title: 'Set it up here', body: <>Connect your ad account and MVP places the ad slots on your site for you, including on your review posts.</> },
         { icon: <TrendingUp size={18} />, title: 'Balance is key', body: <>Keep ads tasteful so they do not bury your product links or slow the page; a clean site converts affiliate clicks better.</> },
+      ]}
+    />
+  )
+}
+
+// ── Brainstorm ───────────────────────────────────────────────────────────────
+export function BrainstormGuide() {
+  return (
+    <ToolGuide
+      guideKey="brainstorm"
+      icon={<Lightbulb size={20} />}
+      title="Your guide to Brainstorm"
+      subtitle="See what is actually working, then decide what to make next."
+      sections={[
+        { icon: <BarChart3 size={18} />, title: 'Grounded in your data', body: <>This reads your last 90 days: which posts and products earned clicks, which topics pulled traffic. It is not random ideas; it is what your own audience responds to.</> },
+        { icon: <Lightbulb size={18} />, title: 'What to make next', body: <>It turns those patterns into concrete next posts: more of a winning angle, a comparison your readers are clearly shopping for, a roundup around a product that is converting.</> },
+        { icon: <PenLine size={18} />, title: 'Act on it', body: <>Take an idea straight into the Blog Post Generator, Comparisons, or Buying Guides and publish it.</> },
+      ]}
+    />
+  )
+}
+
+// ── Analytics ────────────────────────────────────────────────────────────────
+export function AnalyticsGuide() {
+  return (
+    <ToolGuide
+      guideKey="analytics"
+      accent="#0a84ff"
+      icon={<BarChart3 size={20} />}
+      title="Your guide to Analytics"
+      subtitle="Real affiliate-link clicks on your posts, last 30 days."
+      sections={[
+        { icon: <MousePointerClick size={18} />, title: 'Clicks that count', body: <>This shows human clicks on the affiliate links inside your MVP-generated posts over the last 30 days; bots are filtered out, so the numbers reflect real shopping intent.</> },
+        { icon: <TrendingUp size={18} />, title: 'Find your winners', body: <>Spot which posts and products actually get clicked, then double down: make more content around what earns and refresh what does not.</> },
+        { icon: <FileText size={18} />, title: 'Clicks, then sales', body: <>Clicks are the leading signal; your Amazon and network dashboards show the sales those clicks turn into. Use both together.</> },
+      ]}
+    />
+  )
+}
+
+// ── MVP Help Desk (Assistant) ────────────────────────────────────────────────
+export function AssistantGuide() {
+  return (
+    <ToolGuide
+      guideKey="assistant"
+      icon={<MessageCircle size={20} />}
+      title="Your guide to the MVP Help Desk"
+      subtitle="Ask how to do anything in MVP, or get affiliate strategy advice."
+      sections={[
+        { icon: <MessageCircle size={18} />, title: 'Two jobs in one', body: <>Ask it how any part of MVP works (where a feature is, how to connect a site), and ask it strategy (what niche to chase, how to structure a review). It knows the product and the playbook.</> },
+        { icon: <Search size={18} />, title: 'Skip the hunting', body: <>Instead of digging through menus, just describe what you want to do and it points you to the exact tool and steps.</> },
+        { icon: <TrendingUp size={18} />, title: 'Coaching on tap', body: <>Stuck on what to post or how to grow? Ask. It gives concrete, affiliate-specific advice, not generic filler.</> },
+      ]}
+    />
+  )
+}
+
+// ── Brand Deals (Collaborations) ─────────────────────────────────────────────
+export function CollaborationsGuide() {
+  return (
+    <ToolGuide
+      guideKey="collaborations"
+      accent="#60A5FA"
+      icon={<Handshake size={20} />}
+      title="Your guide to Brand Deals"
+      subtitle="We research the brand and write a pitch that sells your work."
+      sections={[
+        { icon: <FileText size={18} />, title: 'Fill it out once', body: <>Tell MVP the brand and the product you want to work with. It researches the brand and drafts a pitch email built around your real content and audience.</> },
+        { icon: <Mail size={18} />, title: 'Ready to send', body: <>You get a polished outreach email you can send as-is or tweak; no staring at a blank page trying to sound professional.</> },
+        { icon: <Handshake size={18} />, title: 'Build real partnerships', body: <>Direct brand deals pay more than standard commissions and can become repeat work. This is how you start that conversation.</> },
+      ]}
+    />
+  )
+}
+
+// ── Shop Burner (Instagram Burner) ───────────────────────────────────────────
+export function ShopBurnerGuide() {
+  return (
+    <ToolGuide
+      guideKey="shop-burner"
+      accent="#E1306C"
+      icon={<Video size={20} />}
+      title="Your guide to Shop Burner"
+      subtitle="Turn a YouTube Short into a shoppable IG Reel or TikTok."
+      sections={[
+        { icon: <Video size={18} />, title: 'Reuse your Shorts', body: <>Take a YouTube Short you already made and turn it into an Instagram Reel or TikTok, so one video works across every platform.</> },
+        { icon: <Tag size={18} />, title: 'Burn on a CTA', body: <>It adds a call-to-action onto the video and sets up an auto-DM link, so viewers who comment get sent straight to your product.</> },
+        { icon: <Send size={18} />, title: 'Publish and grow', body: <>Post it to your connected accounts from here. More surfaces for the same content means more clicks on your links.</> },
+      ]}
+    />
+  )
+}
+
+// ── Customize Blog ───────────────────────────────────────────────────────────
+export function CustomizeGuide() {
+  return (
+    <ToolGuide
+      guideKey="customize"
+      accent="#60A5FA"
+      icon={<Wrench size={20} />}
+      title="Your guide to Customize Blog"
+      subtitle="The site bits Brand Profile does not cover."
+      sections={[
+        { icon: <Wrench size={18} />, title: 'Fine-tune your site', body: <>Set your Pick of the Day, place in-content ad slots, and edit footer links: the smaller site touches that live outside Brand Profile.</> },
+        { icon: <Palette size={18} />, title: 'Brand Profile still leads', body: <>Your name, logo, colours, socials and Associates tag live in Brand Profile. This page is for everything else on the site.</> },
+        { icon: <ShieldCheck size={18} />, title: 'Changes push live', body: <>Saving here updates your live WordPress site, so what you set is what visitors see.</> },
       ]}
     />
   )
