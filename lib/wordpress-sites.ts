@@ -379,6 +379,80 @@ export async function removeSite(
   return { ok: true }
 }
 
+/**
+ * Make sure the user's ACTIVE blog (the one in the legacy integrations.wordpress_*
+ * columns) is represented in the wordpress_sites table, and that the table's
+ * `is_default` flag points at it.
+ *
+ * WHY: most users connected their FIRST blog through the legacy path
+ * (connect-token / app-password writes integrations.wordpress_*, NOT
+ * wordpress_sites — see migration 144). When they later add a SECOND blog via
+ * the manager, only that second blog lands in wordpress_sites. The result: the
+ * site list (and the topbar switcher) shows just the second blog, and its
+ * `is_default` is stale relative to the truly-active site. This backfills the
+ * missing primary and aligns the default so the switcher lists EVERY blog and
+ * marks the right one active.
+ *
+ * Idempotent + self-correcting: safe to call on every list read. Credentials
+ * are raw-copied (readers run maybeDecrypt), so encryption format is preserved.
+ * Best-effort: never throws — a failure just leaves the list as-is.
+ */
+export async function ensureLegacySiteInTable(
+  supabase: Client,
+  userId: string,
+): Promise<void> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: legacy } = await (supabase as any)
+      .from('integrations')
+      .select('wordpress_url, wordpress_username, wordpress_app_password, wordpress_api_token, content_only, cta_style')
+      .eq('user_id', userId)
+      .maybeSingle()
+    const url = (legacy?.wordpress_url as string | null)?.trim()
+    if (!url || !legacy?.wordpress_username || !legacy?.wordpress_app_password) return
+    const target = normalizeUrl(url)
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: rows } = await (supabase as any)
+      .from('wordpress_sites').select('id, url, is_default').eq('user_id', userId)
+    const list = (rows ?? []) as { id: string; url: string; is_default: boolean }[]
+    const match = list.find(r => normalizeUrl(r.url) === target)
+
+    if (match) {
+      // Present already — just make sure the active site is the default.
+      if (!match.is_default) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (supabase as any).from('wordpress_sites').update({ is_default: false }).eq('user_id', userId).eq('is_default', true)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (supabase as any).from('wordpress_sites').update({ is_default: true }).eq('user_id', userId).eq('id', match.id)
+      }
+      return
+    }
+
+    // Missing → insert the active blog and make it the default (clearing any
+    // existing default first, so the partial unique index is never violated).
+    if (list.some(r => r.is_default)) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase as any).from('wordpress_sites').update({ is_default: false }).eq('user_id', userId).eq('is_default', true)
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any).from('wordpress_sites').insert({
+      user_id: userId,
+      label: target.replace(/^https?:\/\//, '') || 'Main',
+      url: target,
+      username: legacy.wordpress_username,
+      app_password: legacy.wordpress_app_password, // raw copy; readers maybeDecrypt
+      api_token: legacy.wordpress_api_token ?? null,
+      is_default: true,
+      display_order: list.length,
+      content_only: legacy.content_only ?? false,
+      cta_style: legacy.cta_style === 'link' ? 'link' : 'button',
+    })
+  } catch {
+    // Best-effort backfill — never block the list read.
+  }
+}
+
 // ─── internals ─────────────────────────────────────────────────────────────
 
 /** Trim trailing slash + lowercase host so two writes of the same site
