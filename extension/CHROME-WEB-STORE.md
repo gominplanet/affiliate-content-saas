@@ -23,10 +23,12 @@ and commit them. Then upload the store build:
    fields carry over. The extension **id does not change** on an update, so no
    env changes are needed. Chrome auto-updates store users once approved.
 
-Latest release: **1.11.70** — SCOUT now types the ASIN into the Affiliate+
-"Search brand, keyword, or ASIN" box specifically (not the global/SPC search),
-so Send-on-Creator-Connections filters straight to the campaign instead of
-scrolling the whole grid.
+Latest release: **1.11.71** — Send-on-Creator-Connections now (a) types the ASIN
+into the Affiliate+ "Search brand, keyword, or ASIN" box specifically (not the
+global/SPC search), so it filters straight to the campaign instead of scrolling
+the whole grid, and (b) accepts + sends in ONE background tab (new
+MVP_CC_ACCEPT_AND_SEND flow) so there's no cross-tab teardown race (the "Frame
+with ID 0 was removed" error).
 
 ## First-time submission (historical — kept for reference)
 Developer Dashboard → **Add new item** → drop `mvp-cc-scout-store.zip`. The two
