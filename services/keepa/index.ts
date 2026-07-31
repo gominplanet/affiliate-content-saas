@@ -47,6 +47,33 @@ export function keepaConfigured(): boolean {
   return !!process.env.KEEPA_API_KEY
 }
 
+/** Live Keepa token balance for the operator key — the shared budget that Deal
+ *  Radar, CC enrichment, and the AMZ Product Finder all draw from. Hits Keepa's
+ *  /token endpoint, which does NOT consume product tokens, so it's safe to poll
+ *  for a monitoring readout. Returns nulls when unconfigured or on any error. */
+export interface KeepaTokenStatus {
+  tokensLeft: number | null
+  /** Tokens refilled per minute (Keepa refills continuously). */
+  refillRate: number | null
+  /** Ms until the next refill tick. */
+  refillIn: number | null
+}
+export async function fetchKeepaTokenStatus(): Promise<KeepaTokenStatus> {
+  const empty: KeepaTokenStatus = { tokensLeft: null, refillRate: null, refillIn: null }
+  const key = process.env.KEEPA_API_KEY
+  if (!key) return empty
+  try {
+    const res = await fetch(`${KEEPA_BASE}/token?key=${encodeURIComponent(key)}`, { signal: AbortSignal.timeout(10_000) })
+    if (!res.ok) return empty
+    const d = await res.json() as { tokensLeft?: number; refillRate?: number; refillIn?: number }
+    return {
+      tokensLeft: Number.isFinite(d.tokensLeft as number) ? (d.tokensLeft as number) : null,
+      refillRate: Number.isFinite(d.refillRate as number) ? (d.refillRate as number) : null,
+      refillIn: Number.isFinite(d.refillIn as number) ? (d.refillIn as number) : null,
+    }
+  } catch { return empty }
+}
+
 /** Our normalized deal — exactly what deal_radar_cache stores. Prices in CENTS
  *  (integers) so the DB and filters never touch floats. */
 export interface KeepaDeal {
