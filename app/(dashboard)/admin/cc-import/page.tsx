@@ -14,7 +14,7 @@ import { Loader2, RefreshCw, Database, ArrowRight, CheckCircle2, AlertTriangle }
 import { toast } from 'sonner'
 import CcCatalogUploader from '@/components/admin/CcCatalogUploader'
 
-interface Counts { staged: number | null; live: number | null; enriched: number | null }
+interface Counts { staged: number | null; live: number | null; enriched: number | null; hasStaged: boolean | null }
 
 export default function AdminCcImportPage() {
   const [counts, setCounts] = useState<Counts | null>(null)
@@ -30,7 +30,7 @@ export default function AdminCcImportPage() {
       const r = await fetch('/api/admin/import-cc-catalog')
       const d = await r.json()
       if (!r.ok) throw new Error(d.error || 'Failed to load')
-      setCounts({ staged: d.staged, live: d.live, enriched: d.enriched })
+      setCounts({ staged: d.staged, live: d.live, enriched: d.enriched, hasStaged: d.hasStaged ?? null })
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed to load')
     } finally { setLoading(false) }
@@ -82,8 +82,13 @@ export default function AdminCcImportPage() {
   // zero on the Live Catalog card reads like the whole shared catalog was wiped
   // and is genuinely alarming. Only show a real number once loaded.
   const num = (n: number | null | undefined) => (loading || n == null ? '—' : n.toLocaleString())
-  const staged = counts?.staged ?? 0
-  const canMerge = !loading && staged > 0
+  // "Can I merge?" and "is staging empty?" come from the cheap existence check
+  // (hasStaged), NOT the exact staged count — that count can time out on a huge
+  // table and come back null, which must NOT read as empty. Only a definitive
+  // hasStaged === false disables merge / shows the empty warning; null (unknown)
+  // stays enabled (the merge endpoint re-checks existence before doing anything).
+  const stagingEmpty = counts?.hasStaged === false
+  const canMerge = !loading && !stagingEmpty
   const enrichedPct = counts?.live && counts?.enriched != null && counts.live > 0
     ? Math.round((counts.enriched / counts.live) * 100) : null
 
@@ -118,7 +123,7 @@ export default function AdminCcImportPage() {
         />
       </div>
 
-      {staged === 0 && !loading && (
+      {stagingEmpty && !loading && (
         <div className="card p-4 mb-5 flex items-start gap-2.5" style={{ borderColor: 'rgba(245,158,11,0.4)' }}>
           <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" style={{ color: '#f59e0b' }} />
           <p className="text-[13px]" style={{ color: 'var(--text-soft)' }}>
