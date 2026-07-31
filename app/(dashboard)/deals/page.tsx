@@ -15,6 +15,7 @@
 'use client'
 
 import { useEffect, useState, FormEvent } from 'react'
+import { DealsHubGuide } from '@/components/guide/tool-guides'
 import { toast } from 'sonner'
 import Link from 'next/link'
 import {
@@ -575,6 +576,7 @@ export default function DealsHubPage() {
             <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2" style={{ color: 'var(--fg)' }}>
               <BadgePercent className="w-7 h-7" style={{ color: '#7C3AED' }} />
               Deals Hub
+              <DealsHubGuide />
             </h1>
             <p className="text-sm mt-1" style={{ color: 'var(--fg-muted)' }}>
               Drop any Amazon URL, Geniuslink, amzn.to short link, or a bare ASIN. The agent writes a timely deal post with a baked thumbnail, end-date countdown, and your promo code or special link wired into every CTA.

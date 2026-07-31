@@ -16,6 +16,7 @@
 // existing API routes — no new engines.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ClipFactoryGuide } from '@/components/guide/tool-guides'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { toast } from 'sonner'
@@ -456,6 +457,7 @@ export default function ClipFactoryPage() {
       <div className="flex items-center gap-2 mb-1">
         <Rocket size={20} style={{ color: PURPLE }} />
         <h1 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Clip Factory</h1>
+        <ClipFactoryGuide />
         <span className="inline-flex items-center gap-1 text-[10px] font-semibold rounded-full px-2 py-0.5 text-white bg-[#DC2626]">
           <FlaskConical size={10} /> Labs
         </span>

@@ -12,6 +12,7 @@
 // lists the creator's long-form videos and opens the studio for the one chosen.
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { ShortsStudioGuide } from '@/components/guide/tool-guides'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { FlaskConical, Scissors, Loader2, Search, Youtube, Link2, Sparkles } from 'lucide-react'
@@ -119,6 +120,7 @@ export default function ShortsStudioPage() {
       <div className="flex items-center gap-2 mb-1">
         <Scissors size={20} style={{ color: PURPLE }} />
         <h1 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Shorts Studio</h1>
+        <ShortsStudioGuide />
         <span className="inline-flex items-center gap-1 text-[10px] font-semibold rounded-full px-2 py-0.5 text-white bg-[#DC2626]">
           <FlaskConical size={10} /> Labs
         </span>
