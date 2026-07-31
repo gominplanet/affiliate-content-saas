@@ -415,10 +415,13 @@ function BrowseCard({ c, saved, covered, onToggleSave, onMessageBrand, onDeepDiv
   return (
     <div className="rounded-xl border flex flex-col overflow-hidden h-full" style={{ borderColor: 'var(--border-2)', background: 'var(--surface)' }}>
       {/* Product image — the hero */}
-      <a href={amazonUrl} target="_blank" rel="noopener noreferrer" className="relative block aspect-square bg-white">
+      <a href={amazonUrl} target="_blank" rel="noopener noreferrer" className="relative block aspect-square bg-white overflow-hidden">
         {c.imageUrl ? (
+          // Absolutely filling the square so a tall/odd source photo can never
+          // stretch the card taller than the rest (object-contain still shows
+          // the whole product, letterboxed inside the fixed square).
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={c.imageUrl} alt="" className="w-full h-full object-contain p-3" />
+          <img src={c.imageUrl} alt="" className="absolute inset-0 w-full h-full object-contain p-3" />
         ) : (
           <div className="w-full h-full grid place-items-center" style={{ background: 'rgba(124,58,237,0.04)' }} title="Preview appears once this product is scanned (Smart Scan)">
             <ImageOff size={24} style={{ color: 'rgba(124,58,237,0.3)' }} />
