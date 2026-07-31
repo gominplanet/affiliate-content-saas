@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
+import { CollaborationsGuide } from '@/components/guide/tool-guides'
 import { CapReachedBanner } from '@/components/CapReachedBanner'
 import { useConfirm } from '@/components/ui/useConfirm'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
@@ -282,6 +283,7 @@ export default function CollaborationsPage() {
   return (
     <>
       <PageHero
+        guide={<CollaborationsGuide />}
         title="Brand Deals"
         subtitle="Fill this out and we'll research the brand and write a pitch email that sells your work, ready to copy and send."
       />

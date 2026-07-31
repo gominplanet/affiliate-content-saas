@@ -22,6 +22,7 @@
 import { useEffect, useState } from 'react'
 import { Lightbulb, Youtube, FileText, Loader2, Sparkles, ExternalLink, AlertCircle } from 'lucide-react'
 import PageHero from '@/components/layout/PageHero'
+import { BrainstormGuide } from '@/components/guide/tool-guides'
 import { MessageMarkdown } from '@/components/assistant/MessageMarkdown'
 
 interface YouTubeVideo {
@@ -203,6 +204,7 @@ export default function BrainstormPage() {
   return (
     <>
       <PageHero
+        guide={<BrainstormGuide />}
         title="Brainstorm"
         subtitle="What's actually working over the last 90 days — and what to make next based on the data."
       />

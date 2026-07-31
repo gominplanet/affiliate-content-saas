@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
+import { CustomizeGuide } from '@/components/guide/tool-guides'
 import { createBrowserClient } from '@/lib/supabase/client'
 import {
   Plus, Trash2, Save, Loader2, ToggleLeft, ToggleRight,
@@ -430,6 +431,7 @@ export default function CustomizePage() {
   return (
     <>
       <PageHero
+        guide={<CustomizeGuide />}
         title="Customize Blog"
         subtitle="Edit the bits of your site that aren't covered by Brand Profile — Pick of the Day, in-content ad slots, footer links."
         actions={

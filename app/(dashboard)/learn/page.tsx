@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import PageHero from '@/components/layout/PageHero'
+import { VoiceTrainingGuide } from '@/components/guide/tool-guides'
 import { Save, Check, Loader2, Sparkles } from 'lucide-react'
 import {
   VOICE_QUESTIONS, STYLE_AXES, SPEECH_PATTERNS, THOUGHT_PROCESS,
@@ -137,6 +138,7 @@ export default function LearnPage() {
   return (
     <>
       <PageHero
+        guide={<VoiceTrainingGuide />}
         title="Voice Training"
         subtitle="Train the blog writer in your voice. Every field here is read by MVP on every post — be specific."
       />
