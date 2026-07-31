@@ -15,6 +15,7 @@ import {
   listSites,
   addSite,
   canAddSite,
+  ensureLegacySiteInTable,
 } from '@/lib/wordpress-sites'
 import { normalizeTier } from '@/lib/tier'
 import { getAuthAndOwner } from '@/lib/agency-auth'
@@ -35,6 +36,10 @@ export async function GET() {
     .eq('user_id', ownerId)
     .maybeSingle()
   const tier = normalizeTier(integ?.tier)
+  // Make sure the active (legacy) blog is represented + the default is aligned,
+  // so multi-site users see EVERY blog in the picker/switcher (most primaries
+  // live in the legacy integrations columns, not this table yet).
+  await ensureLegacySiteInTable(supabase, ownerId)
   const sites = await listSites(supabase, ownerId)
   const cap = await canAddSite(supabase, ownerId, tier)
 
