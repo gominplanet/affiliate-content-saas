@@ -53,6 +53,10 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
   // One-click flow: resolve → auto-accept if needed → send. No extra input.
   const [ccPhase, setCcPhase] = useState<'idle' | 'resolving' | 'accepting' | 'sending' | 'done'>('idle')
   const [ccNote, setCcNote] = useState<{ kind: 'info' | 'error' | 'ok'; text: string } | null>(null)
+  // The resolved Creator Connections page for THIS product's campaign (cached
+  // per ASIN once resolved by a send or a Smart Scan). When present, "Open
+  // Campaigns" jumps straight to this campaign instead of the whole dashboard.
+  const [ccDetailsUrl, setCcDetailsUrl] = useState<string | null>(null)
   const [findingVideo, setFindingVideo] = useState(false)
   const [showPaste, setShowPaste] = useState(false)
   const [pasteUrl, setPasteUrl] = useState('')
@@ -113,6 +117,18 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [brand, enabled])
 
+  // Look up this product's already-resolved CC campaign URL (cached per ASIN)
+  // so "Open Campaigns" can jump straight to the campaign when we know it.
+  useEffect(() => {
+    const asin = (data?.product.asin || '').toUpperCase()
+    if (!/^[A-Z0-9]{10}$/.test(asin)) { setCcDetailsUrl(null); return }
+    let cancelled = false
+    fetch(`/api/campaigns/message-link?asin=${encodeURIComponent(asin)}`)
+      .then(r => r.json()).then(d => { if (!cancelled && d?.detailsUrl) setCcDetailsUrl(d.detailsUrl) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [data?.product.asin])
+
   async function copyMessage() {
     try {
       await navigator.clipboard.writeText(message)
@@ -150,7 +166,7 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
       try {
         const r = await fetch(`/api/campaigns/message-link?asin=${encodeURIComponent(asin)}`)
         const d = await r.json().catch(() => ({}))
-        if (d?.detailsUrl) detailsUrl = d.detailsUrl
+        if (d?.detailsUrl) { detailsUrl = d.detailsUrl; setCcDetailsUrl(d.detailsUrl) }
       } catch { /* fall through to live find */ }
 
       if (!detailsUrl) {
@@ -163,6 +179,7 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
         if (find.ok && find.found && find.detailsUrl) {
           detailsUrl = find.detailsUrl
           status = find.status ?? null
+          setCcDetailsUrl(find.detailsUrl)
           void fetch('/api/campaigns/message-link', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ asin, campaignId: find.campaignId ?? null, detailsUrl }),
@@ -509,17 +526,17 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
                   <ExternalLink size={13} /> {productBtnLabel}
                 </a>
               )}
-              {/* Jump straight to the Creator Connections campaigns dashboard
-                  (New Opportunities, Affiliate+), so you can find/accept/message
-                  by hand if you'd rather. Amazon fills in your creator id from
-                  your session. */}
+              {/* Open THIS product's Creator Connections campaign page directly
+                  when we've resolved it (from a send or Smart Scan); otherwise
+                  fall back to the campaigns dashboard filtered to New
+                  Opportunities. Amazon fills in your creator id from the session. */}
               <a
-                href="https://affiliate-program.amazon.com/p/connect/requests?status=opportunity&type=affiliate-plus"
+                href={ccDetailsUrl || 'https://affiliate-program.amazon.com/p/connect/requests?status=opportunity&type=affiliate-plus'}
                 target="_blank" rel="noopener noreferrer"
-                title="Open your Creator Connections campaigns (New Opportunities) on Amazon"
+                title={ccDetailsUrl ? 'Open this product’s Creator Connections campaign on Amazon' : 'Open your Creator Connections campaigns (New Opportunities) on Amazon'}
                 className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border border-[#FFC200] text-[#1d1d1f] dark:text-[#f5f5f7] hover:bg-[#FFF7DB]"
               >
-                <ExternalLink size={13} /> Open Campaigns
+                <ExternalLink size={13} /> {ccDetailsUrl ? 'Open this campaign' : 'Open Campaigns'}
               </a>
             </div>
             {ccNote && (
