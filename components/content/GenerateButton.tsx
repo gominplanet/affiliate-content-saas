@@ -66,9 +66,13 @@ const GENERATE_ABORT_MS = 840_000 // 14 min (> MAX_POLL_MS 13 min)
 
 export function GenerateButton({
   videoId, existingPost, userTier, blogImagePref, onDone,
-  includeImages: includeImagesProp, onIncludeImagesChange,
+  includeImages: includeImagesProp, onIncludeImagesChange, siteId,
 }: {
   videoId: string
+  /** Multi-site (Pro): the blog this generation targets. Passed into the
+   *  generate request so a fresh post lands on the chosen site. Omitted/null
+   *  falls back to the user's default site server-side. */
+  siteId?: string | null
   /** YouTube native id — historically used for extension-side frame
    *  capture; kept on the call-site signature for backwards compat
    *  but no longer read here (storyboards path handles it server-side). */
@@ -245,6 +249,7 @@ export function GenerateButton({
           const r = await generateBlogRequest({
             videoId,
             includeImages,
+            ...(siteId ? { siteId } : {}),
             ...(includeImages && userImages.length > 0 ? { userImageUrls: userImages } : {}),
             ...(opts?.rewriteFeedback ? { rewriteFeedback: opts.rewriteFeedback } : {}),
             ...(allowEmptyTranscript ? { allowEmptyTranscript: true } : {}),

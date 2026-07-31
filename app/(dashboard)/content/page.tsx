@@ -23,6 +23,7 @@ import { RewriteFeedbackModal } from '@/components/content/RewriteFeedbackModal'
 import { errText } from '@/lib/err-text'
 import { generateBlogRequest } from '@/lib/blog-generate-client'
 import { GenerateButton } from '@/components/content/GenerateButton'
+import { SitePicker } from '@/components/SitePicker'
 import { InstagramPublishModal } from '@/components/content/InstagramPublishModal'
 import ShareWithBrandModal from '@/components/content/ShareWithBrandModal'
 import BrandRecapSettingsModal from '@/components/content/BrandRecapSettingsModal'
@@ -757,7 +758,7 @@ function BrandTagsInput({ videoId, initial }: { videoId: string; initial: string
 // to every card. A card now only re-renders when ITS OWN props change.
 // Big snappiness win on the 20-card paginated Posts tab. 2026-06-07.
 const VideoCard = memo(function VideoCardImpl({
-  video, post, wpSiteUrl, fbConnected, pinterestConnected, threadsConnected, linkedInConnected, twitterConnected, blueskyConnected, telegramConnected, instagramConnected, tiktokConnected, fbAccounts, igAccounts, userTier, brandNiches, customCategories, brandDisclaimer, brandFacebookGroups, blogImagePref, failedSchedulePlatforms, onCustomCategoryAdded,
+  video, post, wpSiteUrl, fbConnected, pinterestConnected, threadsConnected, linkedInConnected, twitterConnected, blueskyConnected, telegramConnected, instagramConnected, tiktokConnected, fbAccounts, igAccounts, userTier, brandNiches, customCategories, brandDisclaimer, brandFacebookGroups, blogImagePref, siteId, failedSchedulePlatforms, onCustomCategoryAdded,
   onGenerated, onDismiss, onDelete, onPinPreview, hidden,
 }: {
   video: Record<string, unknown>
@@ -786,6 +787,9 @@ const VideoCard = memo(function VideoCardImpl({
   /** Saved Brand Profile "Images per article" pref — seeds the per-post
    *  "Include photos" checkbox in GenerateButton. null = Default/auto. */
   blogImagePref: number | null
+  /** Multi-site (Pro): the blog fresh posts from this card publish to. Threaded
+   *  into generate + schedule so a new/scheduled post lands on the chosen site. */
+  siteId: string | null
   onCustomCategoryAdded: (next: string[]) => void
   onGenerated: (videoId: string, url: string, title: string, postId: string) => void
   onDismiss: () => void
@@ -926,7 +930,7 @@ const VideoCard = memo(function VideoCardImpl({
     if (!currentPostId) {
       setPublishAllStep('Generating blog post…')
       try {
-        const res = await generateBlogRequest({ videoId: id })
+        const res = await generateBlogRequest({ videoId: id, ...(siteId ? { siteId } : {}) })
         const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
         if (!res.ok) {
           if (data.limitReached) {
@@ -1308,7 +1312,7 @@ const VideoCard = memo(function VideoCardImpl({
                 don't apply when there's no blog post in this flow. */}
           {video.is_vertical !== true && (
           <div className="flex items-center gap-x-4 gap-y-1.5 flex-wrap">
-            <GenerateButton videoId={id} youtubeVideoId={(video.youtube_video_id as string) || undefined} existingPost={post} userTier={userTier} blogImagePref={blogImagePref} includeImages={includeImages} onIncludeImagesChange={setIncludeImages} onDone={(url, t, pid) => onGenerated(id, url, t, pid)} />
+            <GenerateButton videoId={id} youtubeVideoId={(video.youtube_video_id as string) || undefined} existingPost={post} userTier={userTier} blogImagePref={blogImagePref} siteId={siteId} includeImages={includeImages} onIncludeImagesChange={setIncludeImages} onDone={(url, t, pid) => onGenerated(id, url, t, pid)} />
             {/* Optional custom blog hero (else the YT thumbnail is the hero).
                 Only meaningful before a post exists — the featured image is
                 set at generation time. */}
@@ -1686,6 +1690,7 @@ const VideoCard = memo(function VideoCardImpl({
         connectedChannels={connectedChannels}
         userTier={userTier}
         existingPostId={post?.postId ?? null}
+        siteId={siteId}
         includeImages={includeImages}
         open={scheduleOpen}
         onClose={() => setScheduleOpen(false)}
@@ -2069,6 +2074,10 @@ export default function ContentPage() {
   const [affPreviewLoading, setAffPreviewLoading] = useState(false)
   const [affApplying, setAffApplying] = useState(false)
   const [activeTab, setActiveTab] = useState<'horizontal' | 'vertical' | 'posts' | 'scheduled'>('horizontal')
+  // Multi-site (Pro): the blog fresh generations + scheduled posts target.
+  // SitePicker auto-selects the default for 2+ site users; null (single-site)
+  // falls back to the default server-side.
+  const [siteId, setSiteId] = useState<string | null>(null)
 
   // Deep-link: /content?tab=posts (sidebar "Social Push") opens the Blog-to-Social
   // tab; ?new=link opens the from-link modal. Applied by <TabQueryWatcher> below —
@@ -3436,6 +3445,11 @@ export default function ContentPage() {
         }
         actions={
           <div className="flex items-center gap-2">
+            {/* Multi-site (Pro): which blog fresh posts publish to. Renders
+                nothing for single-site users. Threaded into generate + schedule
+                so a new/scheduled post lands on the chosen blog, not just the
+                current default. */}
+            <SitePicker value={siteId} onChange={setSiteId} compact />
             <Button
               variant="primary"
               size="sm"
@@ -3824,6 +3838,7 @@ export default function ContentPage() {
                     brandDisclaimer={brandDisclaimer}
                     brandFacebookGroups={brandFacebookGroups}
                     blogImagePref={blogImagePref}
+                    siteId={siteId}
                     failedSchedulePlatforms={posts[video.id as string]?.postId ? failedSchedules[posts[video.id as string]!.postId!] : undefined}
                     onCustomCategoryAdded={setCustomCategories}
                     onGenerated={(vid, url, title, postId) => setPosts((prev) => ({ ...prev, [vid]: { url, title, postId } }))}
@@ -4236,6 +4251,7 @@ export default function ContentPage() {
                     brandDisclaimer={brandDisclaimer}
                     brandFacebookGroups={brandFacebookGroups}
                     blogImagePref={blogImagePref}
+                    siteId={siteId}
                     failedSchedulePlatforms={posts[video.id as string]?.postId ? failedSchedules[posts[video.id as string]!.postId!] : undefined}
                     onCustomCategoryAdded={setCustomCategories}
                     onGenerated={(vid, url, title, postId) => setPosts((prev) => ({ ...prev, [vid]: { url, title, postId } }))}
