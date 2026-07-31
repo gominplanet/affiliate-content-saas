@@ -19,7 +19,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { toast } from 'sonner'
 import { X, Copy, Mail, ExternalLink, Loader2, Sparkles, Check, RotateCcw, Video, Send } from 'lucide-react'
 import { fillRecapMessage, CC_GROUP_BREAK, type RecapLink, type BrandRecapSettings } from '@/lib/brand-recap'
-import { requestAmazonVideoForAsin, requestFindCampaign, requestSendBrand } from '@/lib/extension-frame'
+import { requestAmazonVideoForAsin, requestFindCampaign, requestSendBrand, requestAcceptCampaign } from '@/lib/extension-frame'
 
 /** MVP's OINK affiliate link (same as the sidebar Recommended Tools row). */
 const OINK_AFFILIATE_URL = 'https://geni.us/2y5sBo'
@@ -52,6 +52,11 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
   // the user why auto-send is not possible (no ASIN / no campaign / no SCOUT).
   const [ccPhase, setCcPhase] = useState<'idle' | 'resolving' | 'sending' | 'done'>('idle')
   const [ccNote, setCcNote] = useState<{ kind: 'info' | 'error' | 'ok'; text: string } | null>(null)
+  // Set when the product's CC campaign is a NEW OPPORTUNITY you haven't accepted
+  // yet: Amazon has no brand chat until you accept, so we surface an "Accept on
+  // Amazon" action (the details URL to accept through) instead of a dead end.
+  const [ccAcceptUrl, setCcAcceptUrl] = useState<string | null>(null)
+  const [accepting, setAccepting] = useState(false)
   const [findingVideo, setFindingVideo] = useState(false)
   const [showPaste, setShowPaste] = useState(false)
   const [pasteUrl, setPasteUrl] = useState('')
@@ -136,7 +141,7 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
       return
     }
 
-    setCcPhase('resolving'); setCcNote(null)
+    setCcPhase('resolving'); setCcNote(null); setCcAcceptUrl(null)
     try {
       // 1) Resolve the brand's CC message URL for this ASIN. Cache first (from a
       //    prior message or a Smart Scan), then a live SCOUT grid lookup.
@@ -163,6 +168,18 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ asin, campaignId, detailsUrl }),
           }).catch(() => {})
+          // You can only message a brand through an ACCEPTED campaign's chat. A
+          // NEW OPPORTUNITY (or completed one) has no chat yet — so instead of a
+          // dead end, offer to accept it, then send.
+          if (find.status && find.status !== 'active') {
+            setCcPhase('idle')
+            setCcAcceptUrl(detailsUrl)
+            setCcNote({ kind: 'info', text: find.status === 'completed'
+              ? 'This Creator Connections campaign has ended, so there is no brand chat. Use Copy message or Email instead.'
+              : 'This product has a Creator Connections campaign, but you have not accepted it yet — Amazon only opens the brand chat after you accept. Accept it below, then it will send.' })
+            if (find.status === 'completed') setCcAcceptUrl(null)
+            return
+          }
         } else {
           setCcPhase('idle')
           setCcNote({ kind: 'info', text: 'No live Creator Connections campaign matched this product, so Amazon has no brand chat to auto-send through. Use Copy message or Email, or message the brand from the product page.' })
@@ -172,26 +189,68 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
 
       // 2) Split the message the user sees into CC "message group" blocks (on
       //    blank lines) so each is sent as its own message, and hand it to SCOUT.
-      const groups = message.split(/\n\s*\n+/).map(s => s.trim()).filter(Boolean)
-      const ccText = groups.length > 1 ? groups.join(`\n\n${CC_GROUP_BREAK}\n\n`) : message
-      setCcPhase('sending')
-      const res = await requestSendBrand(detailsUrl, ccText)
-      if (res.ok) {
-        setCcPhase('done')
-        setCcNote({ kind: 'ok', text: `Sent to the brand on Creator Connections${res.groups && res.groups > 1 ? ` (${res.groups} messages)` : ''}.` })
-        toast.success('Sent to the brand on Creator Connections ✓')
-      } else if (res.error === 'not-installed') {
-        setCcPhase('idle')
-        setCcNote({ kind: 'info', text: 'Auto-send needs the SCOUT extension. Without it, use Copy message or Email.' })
-      } else {
-        // The cached URL may have gone stale — drop it so the next try re-resolves.
-        void fetch(`/api/campaigns/message-link?asin=${encodeURIComponent(asin)}`, { method: 'DELETE' }).catch(() => {})
-        setCcPhase('idle')
-        setCcNote({ kind: 'error', text: `Could not send through Creator Connections (${res.reason || res.error || 'unknown'}). Use Copy message or Email instead.` })
-      }
+      await deliverToCc(asin, detailsUrl)
     } catch (e) {
       setCcPhase('idle')
       setCcNote({ kind: 'error', text: e instanceof Error ? e.message : 'Could not send through Creator Connections.' })
+    }
+  }
+
+  // Hand the recap to SCOUT for a resolved (accepted) campaign chat. Detects the
+  // "no brand chat / not accepted yet" failure and surfaces the Accept action.
+  async function deliverToCc(asin: string, detailsUrl: string) {
+    const groups = message.split(/\n\s*\n+/).map(s => s.trim()).filter(Boolean)
+    const ccText = groups.length > 1 ? groups.join(`\n\n${CC_GROUP_BREAK}\n\n`) : message
+    setCcPhase('sending')
+    const res = await requestSendBrand(detailsUrl, ccText)
+    if (res.ok) {
+      setCcPhase('done')
+      setCcNote({ kind: 'ok', text: `Sent to the brand on Creator Connections${res.groups && res.groups > 1 ? ` (${res.groups} messages)` : ''}.` })
+      toast.success('Sent to the brand on Creator Connections ✓')
+      return
+    }
+    if (res.error === 'not-installed') {
+      setCcPhase('idle')
+      setCcNote({ kind: 'info', text: 'Auto-send needs the SCOUT extension. Without it, use Copy message or Email.' })
+      return
+    }
+    setCcPhase('idle')
+    // No message box on the page usually means the campaign isn't accepted yet
+    // (an un-accepted opportunity shows Accept, not a chat) — offer to accept.
+    const notAccepted = /no-message|box-never|not-accepted|accept/i.test(`${res.reason || ''} ${res.error || ''}`)
+    if (notAccepted) {
+      setCcAcceptUrl(detailsUrl)
+      setCcNote({ kind: 'info', text: 'There is no brand chat for this campaign yet, which usually means it is not accepted. Accept it below, then it will send.' })
+    } else {
+      // The cached URL may have gone stale — drop it so the next try re-resolves.
+      void fetch(`/api/campaigns/message-link?asin=${encodeURIComponent(asin)}`, { method: 'DELETE' }).catch(() => {})
+      setCcNote({ kind: 'error', text: `Could not send through Creator Connections (${res.reason || res.error || 'unknown'}). Use Copy message or Email instead.` })
+    }
+  }
+
+  // "Accept on Amazon" — SCOUT accepts the campaign in the user's session, which
+  // opens the brand chat; on success we immediately send the recap.
+  async function acceptAndSend() {
+    if (!ccAcceptUrl || accepting || !data) return
+    const asin = (data.product.asin || '').toUpperCase()
+    const url = ccAcceptUrl
+    setAccepting(true); setCcNote({ kind: 'info', text: 'Accepting the campaign on Amazon…' })
+    try {
+      const r = await requestAcceptCampaign(url)
+      if (r.ok && (r.accepted || r.already)) {
+        setCcAcceptUrl(null); setAccepting(false)
+        setCcNote({ kind: 'ok', text: 'Campaign accepted. Sending your message…' })
+        await deliverToCc(asin, url)
+      } else if (r.error === 'not-installed') {
+        setAccepting(false)
+        setCcNote({ kind: 'info', text: 'Accepting needs the SCOUT extension. Accept the campaign in Creator Connections, then click Send again.' })
+      } else {
+        setAccepting(false)
+        setCcNote({ kind: 'error', text: `Could not accept automatically (${r.reason || r.error || 'unknown'}). Accept it in Creator Connections, then Send again.` })
+      }
+    } catch (e) {
+      setAccepting(false)
+      setCcNote({ kind: 'error', text: e instanceof Error ? e.message : 'Could not accept the campaign.' })
     }
   }
 
@@ -467,6 +526,15 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
               <p className="text-[11px] -mt-1 leading-relaxed" style={{ color: ccNote.kind === 'error' ? '#ff3b30' : ccNote.kind === 'ok' ? '#1f8a3a' : '#86868b' }}>
                 {ccNote.text}
               </p>
+            )}
+            {ccAcceptUrl && (
+              <button
+                onClick={acceptAndSend}
+                disabled={accepting}
+                className="self-start -mt-1 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold text-[#1d1d1f] bg-[#FFC200] hover:bg-[#FFD000] disabled:opacity-60"
+              >
+                {accepting ? <><Loader2 size={13} className="animate-spin" /> Accepting…</> : <><Check size={13} /> Accept on Amazon &amp; send</>}
+              </button>
             )}
             <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] -mt-1 leading-relaxed">
               <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Emailing the brand?</strong> Use <strong>Copy message</strong> or <strong>Email</strong>: clean text, ready to send. <strong>Send on Creator Connections</strong> delivers this same recap to the right brand automatically through Amazon (it needs the SCOUT extension and a live campaign for this product).
