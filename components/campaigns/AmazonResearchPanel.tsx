@@ -223,7 +223,10 @@ export default function AmazonResearchPanel({ onSavedChange }: { onSavedChange?:
         </div>
       ) : (
         <div className="p-3 border-t" style={{ borderColor: 'var(--border)' }}>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 items-stretch [grid-auto-rows:1fr]">
+          {/* items-stretch (grid default) keeps cards in a row the same height
+              WITHOUT [grid-auto-rows:1fr], which stretched a single row to fill
+              the whole column and left big empty gaps below each card. */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 items-stretch">
             {rows.map(p => (
               <ProductCard
                 key={p.asin}

@@ -334,7 +334,10 @@ export default function CampaignBrowsePanel({
         </div>
       ) : (
         <div className="p-3 border-t" style={{ borderColor: 'var(--border)' }}>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 items-stretch [grid-auto-rows:1fr]">
+          {/* items-stretch keeps a row's cards equal height; [grid-auto-rows:1fr]
+              is dropped because it stretched a single row to the full column
+              height, leaving large empty gaps below each card. */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 items-stretch">
             {rows.map(c => (
               <BrowseCard
                 key={c.campaignId}
