@@ -65,32 +65,53 @@ export async function POST(request: Request) {
 
     const body = await request.json().catch(() => ({})) as { confirm?: boolean }
     const admin = createAdminClient()
-    // Guard 1: refuse to merge an empty staging table (that would purge the whole
-    // live catalog). A real weekly import always has tens of thousands of rows.
+
+    // Best-effort EXACT count that never throws and returns null on failure. An
+    // exact COUNT over a 700k–800k row table can hit the statement timeout and
+    // come back null; callers must treat null as "unknown", NEVER as 0.
+    const exactCount = async (table: string, mod?: (q: any) => any): Promise<number | null> => { // eslint-disable-line @typescript-eslint/no-explicit-any
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let q = (admin as any).from(table).select('campaign_id', { count: 'exact', head: true })
+        if (mod) q = mod(q)
+        const { count, error } = await q
+        return error || count == null ? null : count
+      } catch { return null }
+    }
+
+    // Guard 1: refuse to merge an EMPTY staging table (that would purge the whole
+    // live catalog). Use a CHEAP existence check (limit 1), not an exact count —
+    // an exact count over a huge staging table can time out and return null,
+    // which previously read as "empty" and falsely blocked a real 800k import.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { count } = await (admin as any)
-      .from('cc_campaign_catalog_import').select('campaign_id', { count: 'exact', head: true })
-    if (!count || count < 1) {
+    const { data: sampleRows, error: sampleErr } = await (admin as any)
+      .from('cc_campaign_catalog_import').select('campaign_id').limit(1)
+    if (sampleErr) {
+      return NextResponse.json({ error: toUserMessage(sampleErr, 'Could not read the staging table. Try again in a moment.') }, { status: 500 })
+    }
+    if (!sampleRows || sampleRows.length === 0) {
       return NextResponse.json({
         error: 'Staging table cc_campaign_catalog_import is empty. Load your CSV into it first, then run this.',
       }, { status: 400 })
     }
 
     // Guard 2: a merge PURGES every live row not in staging. If staging is far
-    // smaller than the live catalog, this is almost certainly a PARTIAL upload
-    // (only some of the weekly files loaded) — refuse and make the admin confirm,
-    // rather than silently deleting the rest of the catalog.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { count: liveCount } = await (admin as any)
-      .from('cc_campaign_catalog').select('campaign_id', { count: 'exact', head: true })
-    const live = liveCount ?? 0
-    if (!body.confirm && live > 0 && count < live * 0.6) {
+    // smaller than the live catalog, this is almost certainly a PARTIAL upload —
+    // refuse and make the admin confirm. Best-effort: only enforce this when BOTH
+    // counts are known. If a count timed out (null), skip the prompt rather than
+    // block a legitimate merge — Guard 1 already proved staging isn't empty, and
+    // the merge itself is chunked + resumable.
+    const [stagedCount, liveCount] = await Promise.all([
+      exactCount('cc_campaign_catalog_import'),
+      exactCount('cc_campaign_catalog'),
+    ])
+    if (!body.confirm && stagedCount != null && liveCount != null && liveCount > 0 && stagedCount < liveCount * 0.6) {
       return NextResponse.json({
         needsConfirm: true,
-        staged: count,
-        live,
-        wouldPurgeApprox: Math.max(0, live - count),
-        error: `Only ${count.toLocaleString()} campaigns are staged, but the live catalog has ${live.toLocaleString()}. Merging now would remove roughly ${Math.max(0, live - count).toLocaleString()} campaigns. If you haven't uploaded ALL your CSV files yet, upload the rest first.`,
+        staged: stagedCount,
+        live: liveCount,
+        wouldPurgeApprox: Math.max(0, liveCount - stagedCount),
+        error: `Only ${stagedCount.toLocaleString()} campaigns are staged, but the live catalog has ${liveCount.toLocaleString()}. Merging now would remove roughly ${Math.max(0, liveCount - stagedCount).toLocaleString()} campaigns. If you haven't uploaded ALL your CSV files yet, upload the rest first.`,
       }, { status: 409 })
     }
 
@@ -124,12 +145,17 @@ export async function POST(request: Request) {
       upserted += n
     }
 
-    // More staged rows still to merge? Tell the client to call us again.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { count: remaining } = await (admin as any)
-      .from('cc_campaign_catalog_import').select('campaign_id', { count: 'exact', head: true }).eq('_merged', false)
-    if ((remaining ?? 0) > 0) {
-      return NextResponse.json({ ok: true, done: false, staged: count, upserted, remaining: remaining ?? 0 })
+    // Are we done? Derive it from the STEP's own result, NOT a separate count:
+    // the last step returning fewer than a full batch means no unmerged rows are
+    // left. Relying on a COUNT here was dangerous — if that count timed out and
+    // returned null, the old code treated it as 0 and ran the PURGE before every
+    // row had merged, deleting rows that were about to be re-inserted.
+    const drained = n < BATCH
+    if (!drained) {
+      // Still more to merge; the client auto-calls again. Report a best-effort
+      // remaining for the countdown (null → the client just shows "Merging…").
+      const remaining = await exactCount('cc_campaign_catalog_import', (q: any) => q.eq('_merged', false)) // eslint-disable-line @typescript-eslint/no-explicit-any
+      return NextResponse.json({ ok: true, done: false, staged: stagedCount ?? undefined, upserted, remaining: remaining ?? null })
     }
 
     // Everything merged → purge fall-outs and finish.
@@ -142,7 +168,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       ok: true,
       done: true,
-      staged: count,
+      staged: stagedCount ?? undefined,
       upserted,
       purged: Number(purgedData ?? 0),
     })

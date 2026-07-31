@@ -69,7 +69,7 @@ export default function AdminCcImportPage() {
           void loadCounts()
           return
         }
-        setRemaining(Number(d.remaining ?? 0)) // progress; loop continues
+        setRemaining(d.remaining == null ? null : Number(d.remaining)) // progress; loop continues (null → "Merging…")
       }
       throw new Error('Merge is taking unusually long — click Merge again to continue.')
     } catch (e) {
