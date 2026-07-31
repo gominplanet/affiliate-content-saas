@@ -294,6 +294,7 @@ export default function CampaignBrowsePanel({
           ]} />
           <Select value={String(minDaysLeft)} onChange={v => setMinDaysLeft(Number(v))} options={[
             { v: '0', l: 'Any runway' }, { v: '7', l: '7+ days left' }, { v: '14', l: '14+ days' }, { v: '30', l: '30+ days' },
+            { v: '90', l: '90+ days' }, { v: '180', l: '180+ days' }, { v: '365', l: '365+ days' },
           ]} />
           <Select value={String(minRating)} onChange={v => setMinRating(Number(v))} options={[
             { v: '0', l: 'Any rating' }, { v: '3', l: '3★+' }, { v: '4', l: '4★+' }, { v: '4.5', l: '4.5★+' },
