@@ -30,14 +30,32 @@ export default function SiteSwitcherChip({ currentHostname }: { currentHostname:
   const [switchingId, setSwitchingId] = useState<string | null>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    let cancelled = false
-    fetch('/api/wordpress/sites')
-      .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then((d: { sites?: Site[] }) => { if (!cancelled) setSites(Array.isArray(d?.sites) ? d.sites : []) })
-      .catch(() => { if (!cancelled) setSites([]) })
-    return () => { cancelled = true }
+  // Load (and reload) the site list. The topbar mounts once and persists across
+  // client-side navigation, so a site added on /setup wouldn't show up without
+  // this: we re-fetch whenever the tab regains focus / becomes visible, so the
+  // switcher self-heals after you connect a blog without a hard reload.
+  const load = useCallback(async () => {
+    try {
+      const r = await fetch('/api/wordpress/sites', { cache: 'no-store' })
+      if (!r.ok) throw new Error(String(r.status))
+      const d = (await r.json()) as { sites?: Site[] }
+      setSites(Array.isArray(d?.sites) ? d.sites : [])
+    } catch {
+      setSites(prev => prev ?? [])
+    }
   }, [])
+
+  useEffect(() => {
+    load()
+    const onFocus = () => load()
+    const onVisible = () => { if (document.visibilityState === 'visible') load() }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [load])
 
   // Close the menu on any outside click.
   useEffect(() => {
