@@ -169,11 +169,13 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
       let inCatalog: boolean | null = null
       let catBrand: string | null = null
       let catCampaignIds: string[] = []
+      let catBrandCampaignIds: string[] = []
       try {
         const c = await fetch(`/api/campaigns/catalog-by-asin?asin=${encodeURIComponent(asin)}`).then(r => r.json())
         inCatalog = c?.inCatalog ?? null
         catBrand = c?.brand ?? null
         catCampaignIds = Array.isArray(c?.campaignIds) ? c.campaignIds : []
+        catBrandCampaignIds = Array.isArray(c?.brandCampaignIds) ? c.brandCampaignIds : []
       } catch { /* unknown — proceed to SCOUT */ }
       if (inCatalog === false) {
         setCcPhase('idle')
@@ -185,12 +187,15 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
       // exact campaign_id(s), so deep-link STRAIGHT to the campaign and send — no
       // grid search, and never a stale cached link that could time out. SCOUT
       // verifies the ASIN on the page before typing.
-      if (catCampaignIds.length) {
+      if (catCampaignIds.length || catBrandCampaignIds.length) {
         const groups = message.split(/\n\s*\n+/).map(s => s.trim()).filter(Boolean)
         const ccText = groups.length > 1 ? groups.join(`\n\n${CC_GROUP_BREAK}\n\n`) : message
         setCcPhase('sending')
         setCcNote({ kind: 'info', text: 'Opening the campaign and sending your message…' })
-        const direct = await requestSendByCampaign(catCampaignIds, ccText, asin)
+        // Try the product's own campaign(s) first (ASIN-verified); if those have
+        // ended, fall back to any LIVE campaign from the same brand — CC messaging
+        // is per-brand, so it lands in the same chat.
+        const direct = await requestSendByCampaign(catCampaignIds, ccText, asin, catBrandCampaignIds)
         if (direct.ok) {
           if (direct.detailsUrl) setCcDetailsUrl(direct.detailsUrl)
           setCcPhase('done')

@@ -162,13 +162,14 @@ export async function requestSendBrand(detailsUrl: string, message: string): Pro
  * same accept-if-needed + send, verifying the ASIN on the page first. This is
  * the reliable path (no grid scroll, no wrong-brand, no find timeout).
  */
-export async function requestSendByCampaign(campaignIds: string[], message: string, asin?: string | null): Promise<MessageBrandResult & { detailsUrl?: string | null }> {
+export async function requestSendByCampaign(campaignIds: string[], message: string, asin?: string | null, fallbackCampaignIds?: string[]): Promise<MessageBrandResult & { detailsUrl?: string | null }> {
   const ids = [...new Set((campaignIds || []).filter(Boolean))]
-  if (!ids.length) return { ok: false, error: 'no-campaign' }
+  const fbids = [...new Set((fallbackCampaignIds || []).filter(Boolean))]
+  if (!ids.length && !fbids.length) return { ok: false, error: 'no-campaign' }
   if (!message.trim()) return { ok: false, error: 'no-message' }
   if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
   const resp = await sendToExtension<{ ok?: boolean; error?: string; reason?: string; groups?: number; detailsUrl?: string | null }>(
-    { type: 'MVP_CC_SEND_BY_CAMPAIGN', campaignIds: ids, message, asin: (asin || '').toUpperCase() || undefined },
+    { type: 'MVP_CC_SEND_BY_CAMPAIGN', campaignIds: ids, fallbackCampaignIds: fbids, message, asin: (asin || '').toUpperCase() || undefined },
     185000,
   )
   if (!resp) return { ok: false, error: 'timeout' }
