@@ -178,10 +178,12 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
         // here and point to email — no SCOUT, no waiting.
         let inCatalog: boolean | null = null
         let catBrand: string | null = null
+        let catCampaignIds: string[] = []
         try {
           const c = await fetch(`/api/campaigns/catalog-by-asin?asin=${encodeURIComponent(asin)}`).then(r => r.json())
           inCatalog = c?.inCatalog ?? null
           catBrand = c?.brand ?? null
+          catCampaignIds = Array.isArray(c?.campaignIds) ? c.campaignIds : []
         } catch { /* unknown — proceed to SCOUT */ }
         if (inCatalog === false) {
           setCcPhase('idle')
@@ -193,7 +195,7 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
         // SCOUT (fast ASIN search). Pass the catalog's brand so SCOUT can VERIFY
         // it opened the right campaign cheaply (no flaky details-page ASIN read),
         // and it also gives us the accept status.
-        const find = await requestFindCampaign('', asin, catBrand)
+        const find = await requestFindCampaign('', asin, catBrand, catCampaignIds)
         if (find.error === 'not-installed') {
           setCcPhase('idle')
           setCcNote({ kind: 'info', text: 'Auto-send needs the SCOUT extension (it sends inside your own Amazon session). Without it, use Copy message or Email, or message the brand from the product page.' })

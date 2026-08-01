@@ -571,7 +571,7 @@ export interface FindCampaignDiag {
  * Finder's "Check CC" / Message flow. Best-effort: resolves, never throws.
  * (The `query` param is unused now — kept for call-site compatibility.)
  */
-export async function requestFindCampaign(query: string, asin: string, brand?: string | null): Promise<FindCampaignResult> {
+export async function requestFindCampaign(query: string, asin: string, brand?: string | null, campaignIds?: string[] | null): Promise<FindCampaignResult> {
   if (!/^[A-Za-z0-9]{10}$/.test(asin || '')) return { ok: false, error: 'no-asin' }
   if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
   const resp = await sendToExtension<{
@@ -579,8 +579,8 @@ export async function requestFindCampaign(query: string, asin: string, brand?: s
     campaignId?: string | null; detailsUrl?: string | null; campaignName?: string | null
     brand?: string | null; commissionPct?: number | null; endsAt?: string | null
     scanned?: number; total?: number; error?: string; diag?: FindCampaignDiag | null
-    // brand from our catalog lets SCOUT verify the right campaign cheaply
-  }>({ type: 'MVP_CC_FIND', query: query || '', asin, brand: brand || null }, 240000)
+    // brand + campaignIds from our catalog let SCOUT match the exact campaign
+  }>({ type: 'MVP_CC_FIND', query: query || '', asin, brand: brand || null, campaignIds: campaignIds || null }, 240000)
   if (!resp) return { ok: false, error: 'timeout' }
   if (resp.ok) {
     return {

@@ -379,6 +379,10 @@ if (!window.__ccScoutListener) {
           // no details-page ASIN read needed. Normalize both sides (case/spacing).
           const normBrand = (b) => String(b || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
           const wantBrand = normBrand(msg.brand)
+          // The exact campaign ids our catalog says carry this ASIN — the STRONGEST
+          // signal: match a card's id directly, no ambiguity even when the brand
+          // runs 40 campaigns. (Cheap, no details-page reads.)
+          const wantIds = new Set((Array.isArray(msg.campaignIds) ? msg.campaignIds : []).filter(Boolean))
           // Sweep tabs in priority order: New Opportunities (actionable — you can
           // accept + auto-send) FIRST, then Active (already accepted) and Completed
           // so we can say "you already have this one" live. re=null means "the tab
@@ -413,13 +417,17 @@ if (!window.__ccScoutListener) {
             //     is one of its products — only then is it a match.
             void total   // never gate on the "Campaigns (N)" header — it's the
                          // tab's WHOLE catalog count (704k / 144k), not the matches.
-            // (1) On-card ASIN is the strongest cheap signal.
-            let hit = rows.find((r) => r.asin === want) || null
-            // (2) Brand match from our catalog — cheap and reliable. One branded
-            //     card → trust it; several → confirm the ASIN on them, else fall
-            //     back to a branded card (still the RIGHT brand's chat).
+            // (0) EXACT campaign-id match from our catalog — the reliable path when
+            //     the brand runs many campaigns for one ASIN (40 GarveeHome cards).
+            let hit = wantIds.size ? (rows.find((r) => r.campaignId && wantIds.has(r.campaignId)) || null) : null
+            // (1) On-card ASIN.
+            if (!hit) hit = rows.find((r) => r.asin === want) || null
+            // (2) Brand match from our catalog — cheap and reliable. Among branded
+            //     cards, prefer one whose ASIN we can confirm; else the first
+            //     branded card (still the RIGHT brand's chat). No row-count gate:
+            //     the brand IS the verification.
             if (!hit && wantBrand) {
-              const branded = rows.filter((r) => normBrand(r.brand) === wantBrand)
+              const branded = rows.filter((r) => normBrand(r.brand) === wantBrand || normBrand(r.campaignName).includes(wantBrand))
               if (branded.length === 1) hit = branded[0]
               else if (branded.length > 1) {
                 for (const r of branded) {
@@ -432,10 +440,10 @@ if (!window.__ccScoutListener) {
                 if (!hit) hit = branded[0]
               }
             }
-            // (3) No brand to check against → confirm the ASIN via the details
+            // (3) No brand/id to check against → confirm the ASIN via the details
             //     page (bounded), only when the result set is focused. Never
             //     fall back to rows[0] — that's the wrong-brand bug.
-            if (!hit && !wantBrand && rows.length > 0 && rows.length <= 20) {
+            if (!hit && !wantBrand && !wantIds.size && rows.length > 0 && rows.length <= 20) {
               for (const r of rows) {
                 if (resolveBudget <= 0) break
                 if (r.asin && r.asin !== want) continue
@@ -741,6 +749,9 @@ function extractNewCard(cont) {
   // for campaigns the user actually accepts, via a background tab.
   const detailsEl = cont.querySelector('[data-testid$="campaign-card-view-details-link"], [data-testid*="view-details"], [data-testid*="view_details"]')
   const detailsUrl = detailsEl ? (detailsEl.href || detailsEl.getAttribute('href') || null) : null
+  // Accepted (Active/Completed) cards have NO Accept button, so the id above is
+  // null — recover it from the "View details" URL, which carries amzn1.campaign.…
+  if (!campaignId && detailsUrl) { const m = detailsUrl.match(/amzn1\.campaign\.[A-Za-z0-9._-]+/); if (m) campaignId = m[0] }
   // Cheap on-card ASIN, when Amazon leaves one exposed: a /dp/<ASIN> link or a
   // data-asin attribute. The 2026 redesign usually HIDES it (then we resolve via
   // the details page), but when it's here we can verify a search hit for free —

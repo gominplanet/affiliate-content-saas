@@ -26,21 +26,25 @@ export async function GET(request: Request) {
   const admin = createAdminClient()
   const today = new Date().toISOString().slice(0, 10)
   try {
+    // Pull EVERY live campaign that carries this ASIN (a popular product can be in
+    // many). We hand the campaign_ids to SCOUT so it can match the exact campaign
+    // card among the brand's dozens — no guessing, no slow ASIN resolution.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data } = await (admin as any)
       .from('cc_campaign_catalog')
-      .select('campaign_name, brand_name, commission_pct, ends_at')
+      .select('campaign_id, campaign_name, brand_name, commission_pct, ends_at')
       .contains('asins', [asin])
       .gte('ends_at', today)
-      .limit(1)
-      .maybeSingle()
-    if (!data) return NextResponse.json({ ok: true, inCatalog: false })
+      .limit(50)
+    const rows = (data ?? []) as Array<{ campaign_id: string | null; campaign_name: string | null; brand_name: string | null; commission_pct: number | null }>
+    if (!rows.length) return NextResponse.json({ ok: true, inCatalog: false })
     return NextResponse.json({
       ok: true,
       inCatalog: true,
-      brand: data.brand_name ?? null,
-      campaignName: data.campaign_name ?? null,
-      commissionPct: data.commission_pct ?? null,
+      brand: rows[0].brand_name ?? null,
+      campaignName: rows[0].campaign_name ?? null,
+      commissionPct: rows[0].commission_pct ?? null,
+      campaignIds: [...new Set(rows.map(r => r.campaign_id).filter(Boolean))],
     })
   } catch {
     // Unknown (query failed) — treat as "can't tell", not "not in catalog".
