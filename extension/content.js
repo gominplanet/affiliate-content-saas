@@ -28,6 +28,30 @@
   if (window.__mvpCcScoutLoaded) return
   window.__mvpCcScoutLoaded = true
 
+  // ── SCOUT network hook wiring ────────────────────────────────────────────────
+  // Inject net-hook.js into the PAGE'S OWN JS context (MAIN world) so it can see
+  // the page's fetch/XHR — a content script (this file) runs in an isolated world
+  // and cannot. The hook posts any Creator Connections message-send request back
+  // via window.postMessage; we relay it to the background worker, which learns the
+  // send "recipe" and replays it for future sends (no DOM clicking). Best-effort:
+  // wrapped so a CSP that blocks the injected script never breaks the scanner.
+  try {
+    const s = document.createElement('script')
+    s.src = chrome.runtime.getURL('net-hook.js')
+    s.async = false
+    ;(document.head || document.documentElement).appendChild(s)
+    s.onload = () => { try { s.remove() } catch (e) {} }
+  } catch (e) {}
+  window.addEventListener('message', (ev) => {
+    try {
+      if (ev.source !== window) return
+      const d = ev.data
+      if (!d || d.__mvpNet !== true || d.kind !== 'send-capture' || !d.rec) return
+      const p = chrome.runtime.sendMessage({ type: 'MVP_CC_NET_CAPTURE', rec: d.rec })
+      if (p && p.catch) p.catch(() => {})
+    } catch (e) {}
+  })
+
 const ASIN_RE = /^B0[A-Z0-9]{8}$/
 const PRICE_RE = /\$\s?\d[\d.,]*/
 const RATING_RE = /^\d(?:\.\d)?\s*(?:out of|★|stars)/i

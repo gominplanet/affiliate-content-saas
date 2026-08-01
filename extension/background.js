@@ -388,6 +388,124 @@ function ccCampaignUrl(campaignId, type) {
   return `${CC_REQUEST_BASE}?${creator}campaignId=${encodeURIComponent(cid)}&type=${encodeURIComponent(t)}&status=opportunity`
 }
 
+// ── LEARN-AND-REPLAY the Creator Connections send request ─────────────────────
+// The net-hook (MAIN world) forwards every message-send-looking POST the page
+// makes; we keep a short ring of them, and turn the FIRST one that carried a
+// message we placed into a reusable RECIPE (url/headers/body with the message,
+// campaignId and creatorId swapped for placeholders). Replay then rebuilds that
+// request for any target brand — no DOM, no Send button, no popup. The recipe is
+// persisted so it survives worker restarts and is learned ONCE per account.
+const CAMPAIGN_RE = /amzn1\.campaign\.[A-Za-z0-9]+/g
+const CREATOR_RE = /amzn1\.creator\.[A-Za-z0-9-]+/g
+const MSG_PLACEHOLDER = '__MVP_MSG__'
+const CAMPAIGN_PLACEHOLDER = '__MVP_CAMPAIGN__'
+let _ccNetRing = []           // recent captured POSTs (in-memory, this worker)
+let _ccSendRecipe = null      // the learned, parameterized recipe (persisted)
+try { chrome.storage.local.get(['ccSendRecipe'], (o) => { if (o && o.ccSendRecipe) _ccSendRecipe = o.ccSendRecipe }) } catch (e) {}
+
+function recordNetCapture(rec) {
+  if (!rec || !rec.url) return
+  _ccNetRing.push(rec)
+  if (_ccNetRing.length > 12) _ccNetRing.shift()
+}
+
+// Escape a plain string the way it appears inside a JSON body (the send body is
+// almost always JSON), so we can find/replace the message precisely.
+function jsonInner(s) { try { const j = JSON.stringify(String(s == null ? '' : s)); return j.slice(1, -1) } catch (e) { return String(s || '') } }
+
+// Turn a captured request that carried `placedText` into a parameterized recipe.
+// Returns true if a matching capture was found and stored.
+function learnRecipeFrom(placedText, capturedList) {
+  const text = String(placedText || '').trim()
+  if (text.length < 8) return false
+  const needleJson = jsonInner(text)
+  const chunk = needleJson.length > 40 ? needleJson.slice(0, 40) : needleJson
+  const rawChunk = text.length > 40 ? text.slice(0, 40) : text
+  const list = (capturedList || _ccNetRing).slice().reverse() // newest first
+  for (const rec of list) {
+    const body = typeof rec.body === 'string' ? rec.body : ''
+    if (!body) continue
+    const hasJson = body.includes(chunk)
+    const hasRaw = body.includes(rawChunk)
+    if (!hasJson && !hasRaw) continue
+    // Parameterize: message → placeholder, campaignId → placeholder. Keep the
+    // creatorId as-is (it's the same creator for every send).
+    let bodyT = body
+    if (hasJson) bodyT = bodyT.split(needleJson).join(MSG_PLACEHOLDER)
+    else bodyT = bodyT.split(text).join(MSG_PLACEHOLDER)
+    const camp = (body.match(CAMPAIGN_RE) || [])[0] || (rec.url.match(CAMPAIGN_RE) || [])[0] || null
+    let urlT = rec.url
+    if (camp) { bodyT = bodyT.split(camp).join(CAMPAIGN_PLACEHOLDER); urlT = urlT.split(camp).join(CAMPAIGN_PLACEHOLDER) }
+    _ccSendRecipe = {
+      via: rec.via, url: urlT, method: rec.method || 'POST', headers: rec.headers || {},
+      bodyTemplate: bodyT, msgIsJson: hasJson, origCampaign: camp,
+      creator: (body.match(CREATOR_RE) || [])[0] || _ccCreatorId || null,
+      learnedAt: Date.now(),
+    }
+    try { chrome.storage.local.set({ ccSendRecipe: _ccSendRecipe }) } catch (e) {}
+    return true
+  }
+  return false
+}
+
+// Runs IN the page (MAIN world) — rebuilds the learned request for `message` +
+// `campaignId` and fires it in the user's session. Reads a fresh anti-CSRF token
+// from the page when the recipe's stored one looks stale. Returns { ok, status }.
+function replaySendInPage(recipe, message, campaignId, msgPlaceholder, campPlaceholder) {
+  return (async () => {
+    try {
+      if (!recipe || !recipe.bodyTemplate) return { ok: false, reason: 'no-recipe' }
+      const jinner = (s) => { try { return JSON.stringify(String(s == null ? '' : s)).slice(1, -1) } catch (e) { return String(s || '') } }
+      let body = recipe.bodyTemplate
+      body = body.split(msgPlaceholder).join(recipe.msgIsJson ? jinner(message) : String(message))
+      if (campaignId) body = body.split(campPlaceholder).join(campaignId)
+      let url = String(recipe.url || '').split(campPlaceholder).join(campaignId || recipe.origCampaign || '')
+      const headers = Object.assign({}, recipe.headers || {})
+      if (!headers['content-type'] && !headers['Content-Type']) headers['Content-Type'] = 'application/json'
+      // Refresh the anti-CSRF token from the page if we can find a fresher one —
+      // Amazon rotates these and a stale token 403s.
+      try {
+        const metaTok = document.querySelector('meta[name="anti-csrftoken-a2z"]')
+        const freshTok = (metaTok && metaTok.getAttribute('content')) || (window.ue_t0 && null) || null
+        for (const k of Object.keys(headers)) {
+          if (/csrf/i.test(k) && freshTok) headers[k] = freshTok
+        }
+      } catch (e) {}
+      const resp = await fetch(url, { method: recipe.method || 'POST', headers, body, credentials: 'include' })
+      let txt = ''
+      try { txt = (await resp.text()).slice(0, 300) } catch (e) {}
+      return { ok: resp.ok && !/error|not authorized|forbidden/i.test(txt), status: resp.status, sample: txt }
+    } catch (e) {
+      return { ok: false, reason: 'exception', error: e && e.message ? e.message : String(e) }
+    }
+  })()
+}
+
+// Try the learned recipe against a tab that's already on affiliate-program.amazon
+// (same origin as the send endpoint, so cookies + token apply). Sends each message
+// GROUP as its own request, mirroring "one send per message". Best-effort.
+async function tryReplaySend(tabId, message, campaignId) {
+  if (!_ccSendRecipe || tabId == null) return { ok: false, reason: 'no-recipe' }
+  const parts = String(message || '').split(/\s*-{2,}\s*add to message group\s*-{2,}\s*/i).map((s) => s.trim()).filter(Boolean)
+  const segs = parts.length ? parts : [String(message || '')]
+  let okCount = 0, lastStatus = null, lastReason = null
+  for (const seg of segs) {
+    try {
+      const res = await chrome.scripting.executeScript({
+        target: { tabId }, world: 'MAIN', func: replaySendInPage,
+        args: [_ccSendRecipe, seg, campaignId || null, MSG_PLACEHOLDER, CAMPAIGN_PLACEHOLDER],
+      })
+      const r = (res && res[0] && res[0].result) || { ok: false, reason: 'no-result' }
+      lastStatus = r.status != null ? r.status : lastStatus
+      lastReason = r.reason || lastReason
+      if (r.ok) okCount++
+      else break // stop on first failure (stale token / wrong target) — DOM fallback takes over
+    } catch (e) { lastReason = 'exec-failed'; break }
+    await _sleep(600)
+  }
+  return { ok: okCount > 0 && okCount === segs.length, groups: okCount, status: lastStatus, reason: lastReason }
+}
+
 const _sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 function waitForTabLoad(tabId, ms) {
@@ -678,6 +796,23 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       _ccCreatorId = msg.creatorId
       try { chrome.storage.local.set({ ccCreatorId: msg.creatorId }) } catch (e) {}
     }
+    sendResponse({ ok: true })
+    return false
+  }
+  // The net-hook (MAIN world) forwarded a message-send request the CC page made.
+  // Ring-buffer it so learnRecipeFrom() can turn the one carrying our placed text
+  // into a reusable send recipe. If we don't have a recipe yet, also learn PASSIVELY
+  // from the user's own manual sends (any capture with a real text body).
+  if (msg && msg.type === 'MVP_CC_NET_CAPTURE' && msg.rec) {
+    try {
+      recordNetCapture(msg.rec)
+      // Passive learning: no recipe yet + this capture carries a message-ish body →
+      // learn from whatever long text it contains, so one manual send teaches SCOUT.
+      if (!_ccSendRecipe && typeof msg.rec.body === 'string') {
+        const m = msg.rec.body.match(/"(?:message|body|content|text)"\s*:\s*"([^"]{12,})"/i)
+        if (m && m[1]) learnRecipeFrom(m[1].replace(/\\n/g, '\n'), [msg.rec])
+      }
+    } catch (e) {}
     sendResponse({ ok: true })
     return false
   }
@@ -3176,12 +3311,22 @@ async function sendByCampaignIds(campaignIds, message, asin, callerTabId, fallba
           if (r && r.ok) { accepted = true; await load(url); break }
           await _sleep(600)
         }
+        // BEST PATH — REPLAY the learned send request directly (no DOM). Only fires
+        // if SCOUT has already learned Amazon's send from a prior send; otherwise it
+        // returns no-recipe and we fall through to the DOM flow (which teaches it).
+        const rep = await tryReplaySend(tabId, message, c.id)
+        if (rep.ok) return { ok: true, groups: rep.groups, campaignId: c.id, detailsUrl: url, accepted, viaReplay: true, leftOpen: true }
         // Fill + auto-send in the FOREGROUND, where the button actually enables.
         // Short box-poll (~8s) so a page with no message box is reported fast.
         const sres2 = await chrome.scripting.executeScript({ target: { tabId }, func: sendBrandMessageInPage, args: [message, 24] })
         const sr = (sres2 && sres2[0] && sres2[0].result) || null
         last = sr
-        if (sr && sr.ok) return { ...sr, campaignId: c.id, detailsUrl: url, accepted, leftOpen: true }
+        if (sr && sr.ok) {
+          // The DOM send worked — LEARN the request it just fired (the net-hook put
+          // it in the ring), so every future send is a direct replay, no DOM.
+          try { learnRecipeFrom(message, _ccNetRing) } catch (e) {}
+          return { ...sr, campaignId: c.id, detailsUrl: url, accepted, leftOpen: true }
+        }
         // Box never opened → the other type view might be the right one. ASIN
         // mismatch already `continue`d above. Anything else (typed but Send not
         // found / not enabled) → stop here and leave the filled box for a manual
