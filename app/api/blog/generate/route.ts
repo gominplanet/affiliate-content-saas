@@ -734,9 +734,14 @@ async function handleGenerate(request: Request) {
       ? `https://www.amazon.com/dp/${effectiveAsin}?tag=${wp.amazon_associates_tag}`
       : `https://www.amazon.com/dp/${effectiveAsin}`
   }
-  if (productUrl) {
+  if (productUrl || effectiveAsin) {
+    // Persist product_url AND the resolved ASIN (migration 204) so the CC-campaign
+    // badge works even when the visible link is a geni.us short link.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await supabase.from('youtube_videos').update({ product_url: productUrl }).eq('id', videoId)
+    await supabase.from('youtube_videos').update({
+      ...(productUrl ? { product_url: productUrl } : {}),
+      ...(effectiveAsin ? { asin: effectiveAsin } : {}),
+    } as any).eq('id', videoId)
   }
 
   // ── 5.2. Review-worthiness gate ────────────────────────────────────────────
