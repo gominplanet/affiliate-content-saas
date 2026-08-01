@@ -47,6 +47,11 @@ export async function POST(request: Request) {
 
     const body = await request.json() as {
       videoUrl?: string; caption?: string
+      // Optional: the Reel COVER frame, ms into the burned render. Passed straight
+      // to publishMedia as thumb_offset so the Reel goes out with the chosen still
+      // (the burned URL IS what's published, so the offset can't point at a wrong
+      // render). Omitted = Instagram's default first frame.
+      thumbOffsetMs?: number
       // Optional: attach a comment→DM campaign to this Reel. When present + valid,
       // commenting `keyword` on the published Reel auto-DMs `link` (lib/ig-dm.ts).
       autoDm?: { link?: string; keyword?: string; productName?: string }
@@ -56,6 +61,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'No burned video to publish — burn the caption first.' }, { status: 400 })
     }
     const caption = (body.caption || 'LINK IN BIO').toString().slice(0, 2200)
+    const thumbOffsetMs = Number.isFinite(body.thumbOffsetMs) && (body.thumbOffsetMs as number) >= 0
+      ? Math.round(body.thumbOffsetMs as number) : undefined
 
     const igAccount = await resolveSocialAccount(supabase, user.id, 'instagram', {
       allowSelection: true,
@@ -73,6 +80,7 @@ export async function POST(request: Request) {
         videoUrl,
         caption,
         shareToFeed: true,
+        thumbOffsetMs,
       })
 
       // Optional: attach a comment→DM campaign to the just-published Reel. Keyed

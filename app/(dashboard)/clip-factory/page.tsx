@@ -23,7 +23,7 @@ import { toast } from 'sonner'
 import {
   Rocket, Scissors, Flame, Send, FlaskConical, Loader2, Search, Youtube, Link2,
   Sparkles, UploadCloud, Video, Check, Download, Instagram, Music2, ArrowRight, ArrowLeft,
-  Trash2, Wand2, Package, ExternalLink,
+  Trash2, Wand2, Package, ExternalLink, ImageIcon,
 } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { ShortsCreatePanel } from '@/components/vertical/ShortsCreatePanel'
@@ -43,6 +43,9 @@ const InstagramBurnedModal = dynamic(
   () => import('@/components/InstagramBurnedModal').then(m => ({ default: m.InstagramBurnedModal })),
   { ssr: false },
 )
+// Reel cover-frame picker for the burned clip — client-only, callback-based (no DB;
+// the offset is threaded straight to publish as thumb_offset).
+const ReelCoverPicker = dynamic(() => import('@/components/content/ReelCoverPicker'), { ssr: false })
 
 const PURPLE = '#7C3AED'
 // Legible-in-both-themes styling for an UNSELECTED pill/chip. The old inline
@@ -161,6 +164,10 @@ export default function ClipFactoryPage() {
   // ---- Publish ----
   const [ttOpen, setTtOpen] = useState(false)
   const [igOpen, setIgOpen] = useState(false)
+  // Reel cover frame (ms into the burned clip) + its picker. Threaded to the IG
+  // burned publish as thumb_offset. Reset whenever the render changes (below).
+  const [coverOffsetMs, setCoverOffsetMs] = useState<number | null>(null)
+  const [coverPickerOpen, setCoverPickerOpen] = useState(false)
   const [publishingYt, setPublishingYt] = useState(false)
   const [posted, setPosted] = useState<{ tiktok?: boolean; instagram?: boolean; youtube?: boolean }>({})
   // The uploaded YouTube video id, so we can link the creator straight to it
@@ -421,8 +428,13 @@ export default function ClipFactoryPage() {
   }, [publishUrl, publishCaption, clip])
 
   const restart = useCallback(() => {
-    setClip(null); setBurnedUrl(null); setComposedCaption(''); setPosted({}); setStage('create')
+    setClip(null); setBurnedUrl(null); setComposedCaption(''); setPosted({}); setCoverOffsetMs(null); setStage('create')
   }, [])
+
+  // A new render (raw clip changed, or Enhance re-burned) invalidates any cover
+  // frame the user picked against the old bytes — clear it so the offset can never
+  // point at a stale render.
+  useEffect(() => { setCoverOffsetMs(null) }, [publishUrl])
 
   // Hold the UI until the tier gate resolves — otherwise a non-Pro user gets a
   // flash of the full paid tool before the locked card renders.
@@ -781,6 +793,15 @@ export default function ClipFactoryPage() {
               <PostPill label="YouTube" color="#FF0000" icon={<Youtube size={13} />} posted={!!posted.youtube} busy={publishingYt} onClick={postYouTube} />
               <a href={publishUrl} download target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-medium border border-black/10 dark:border-white/15 text-[#1d1d1f] dark:text-[#f5f5f7]"><Download size={13} /> Download</a>
             </div>
+            {/* Reel COVER frame for the Instagram Reel — pick the still IG shows as
+                the cover so you never scrub for it in the IG app after posting. */}
+            <button
+              onClick={() => setCoverPickerOpen(true)}
+              className="inline-flex items-center gap-1.5 self-start rounded-full px-3 py-1.5 text-[13px] font-medium border border-[#E1306C]/40 text-[#E1306C] hover:bg-[#E1306C]/10"
+              title="Choose the still frame Instagram shows as your Reel cover"
+            >
+              <ImageIcon size={13} /> {coverOffsetMs != null ? `Reel cover · ${(coverOffsetMs / 1000).toFixed(1)}s` : 'Choose Reel cover'}
+            </button>
             {ytVideoId && (
               <div className="rounded-lg border border-[#FF0000]/25 bg-[#FF0000]/5 p-3 text-[12px] text-[#4b4b4f] dark:text-[#d2d2d7]">
                 <p className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Uploaded to YouTube. A Short can take a few minutes to process before it shows publicly.</p>
@@ -837,8 +858,19 @@ export default function ClipFactoryPage() {
           burnedVideoUrl={publishUrl}
           initialCaption={publishCaption}
           defaultDmLink={product.trim()}
+          coverOffsetMs={coverOffsetMs}
           onClose={() => setIgOpen(false)}
           onPosted={() => { setPosted(p => ({ ...p, instagram: true })); toast.success('Posted to Instagram') }}
+        />
+      )}
+
+      {/* Reel cover-frame picker for the burned clip (scrub → thumb_offset) */}
+      {coverPickerOpen && publishUrl && (
+        <ReelCoverPicker
+          videoUrl={publishUrl}
+          initialOffsetMs={coverOffsetMs}
+          onPick={(ms) => setCoverOffsetMs(ms)}
+          onClose={() => setCoverPickerOpen(false)}
         />
       )}
     </div>
