@@ -816,6 +816,27 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     sendResponse({ ok: true })
     return false
   }
+  // DIAGNOSTIC: report what the net-hook has captured and whether a send recipe
+  // has been learned. This is how we SEE Amazon's real request (blind otherwise)
+  // so the replay can be tuned to it. Returns the recent captures (url, method,
+  // header keys, truncated body) + the learned recipe summary.
+  if (msg && msg.type === 'MVP_CC_DEBUG') {
+    try {
+      const trunc = (s, n) => { const t = typeof s === 'string' ? s : ''; return t.length > n ? t.slice(0, n) + `…(+${t.length - n})` : t }
+      const ring = (_ccNetRing || []).map((r) => ({
+        via: r.via, method: r.method, url: trunc(r.url, 220),
+        headerKeys: Object.keys(r.headers || {}), body: trunc(r.body, 900), ts: r.ts,
+      }))
+      const recipe = _ccSendRecipe ? {
+        via: _ccSendRecipe.via, method: _ccSendRecipe.method, url: trunc(_ccSendRecipe.url, 220),
+        headerKeys: Object.keys(_ccSendRecipe.headers || {}), msgIsJson: _ccSendRecipe.msgIsJson,
+        origCampaign: _ccSendRecipe.origCampaign, bodyTemplate: trunc(_ccSendRecipe.bodyTemplate, 900),
+        learnedAt: _ccSendRecipe.learnedAt,
+      } : null
+      sendResponse({ ok: true, hasRecipe: !!_ccSendRecipe, recipe, ringCount: ring.length, ring, creatorId: _ccCreatorId })
+    } catch (e) { sendResponse({ ok: false, error: e && e.message ? e.message : 'debug-failed' }) }
+    return false
+  }
   return false
 })
 

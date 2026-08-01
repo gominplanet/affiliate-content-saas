@@ -19,7 +19,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { toast } from 'sonner'
 import { X, Copy, Mail, ExternalLink, Loader2, Sparkles, Check, RotateCcw, Video, Send } from 'lucide-react'
 import { fillRecapMessage, CC_GROUP_BREAK, type RecapLink, type BrandRecapSettings } from '@/lib/brand-recap'
-import { requestAmazonVideoForAsin, requestFindCampaign, requestAcceptAndSendBrand, requestSendByCampaign } from '@/lib/extension-frame'
+import { requestAmazonVideoForAsin, requestFindCampaign, requestAcceptAndSendBrand, requestSendByCampaign, requestCcSendDebug } from '@/lib/extension-frame'
 
 /** MVP's OINK affiliate link (same as the sidebar Recommended Tools row). */
 const OINK_AFFILIATE_URL = 'https://geni.us/2y5sBo'
@@ -630,6 +630,24 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
                 {ccDiag}
               </p>
             )}
+            {/* SCOUT capture diagnostic — surfaces exactly what the network hook
+                recorded on Creator Connections (and whether a send recipe was
+                learned), so a failed send can be tuned against Amazon's REAL
+                request instead of guessing. Copies the raw JSON for sharing. */}
+            <button
+              type="button"
+              onClick={async () => {
+                setCcDiag('Checking what SCOUT captured…')
+                const dbg = await requestCcSendDebug()
+                if (!dbg.ok) { setCcDiag(`SCOUT diagnostic unavailable (${dbg.error || 'no response'}). Is SCOUT 1.11.87+ loaded?`); return }
+                const summary = `SCOUT: recipe ${dbg.hasRecipe ? 'LEARNED ✓' : 'not learned yet'} · ${dbg.ringCount || 0} send-request(s) captured`
+                try { await navigator.clipboard.writeText(JSON.stringify(dbg, null, 2)); setCcDiag(`${summary} — full capture copied to clipboard, paste it to Seb.`) }
+                catch { setCcDiag(summary) }
+              }}
+              className="self-start text-[10px] underline text-[#86868b] dark:text-[#8e8e93] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]"
+            >
+              Diagnose SCOUT capture
+            </button>
             <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] -mt-1 leading-relaxed">
               <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Emailing the brand?</strong> Use <strong>Copy message</strong> or <strong>Email</strong>: clean text, ready to send. <strong>Send on Creator Connections</strong> delivers this same recap to the right brand automatically through Amazon (it needs the SCOUT extension and a live campaign for this product).
             </p>
