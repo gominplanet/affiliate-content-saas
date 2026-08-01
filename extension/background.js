@@ -404,7 +404,8 @@ const _sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const MSG_PLACEHOLDER = '__MVP_MSG__'
 const CTX_PLACEHOLDER = '__MVP_CTX__'
 const CAMPAIGN_PLACEHOLDER = '__MVP_CAMPAIGN__'
-let _ccNetRing = []           // recent captured POSTs (in-memory, this worker)
+let _ccNetRing = []           // recent captured request POSTs (in-memory)
+let _ccRespRing = []          // recent captured RESPONSES (in-memory, for diag)
 let _ccSendRecipe = null      // /chat/message/send template (persisted)
 let _ccSearchRecipe = null    // /chat/search template (persisted)
 try {
@@ -422,6 +423,12 @@ function recordNetCapture(rec) {
   if (!rec || !rec.url) return
   _ccNetRing.push(rec)
   if (_ccNetRing.length > 12) _ccNetRing.shift()
+}
+
+function recordNetResponse(rec) {
+  if (!rec || !rec.url) return
+  _ccRespRing.push(rec)
+  if (_ccRespRing.length > 10) _ccRespRing.shift()
 }
 
 // Replace the STRING value of a top-level-ish JSON key with a placeholder, leaving
@@ -835,9 +842,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   // to the learners: /chat/message/send teaches the send recipe, /chat/search the
   // search recipe. The user's own manual sends teach both automatically.
   if (msg && msg.type === 'MVP_CC_NET_CAPTURE' && msg.rec) {
-    // Route to the right learner: /chat/message/send → send recipe, /chat/search →
-    // search recipe. The user's own manual sends teach both automatically.
-    try { learnFromCapture(msg.rec) } catch (e) {}
+    // Route: request captures → learners; response captures → the response ring
+    // (so we can SEE chat/search's reply and confirm the contextToken field).
+    try {
+      if (msg.kind === 'send-response') recordNetResponse(msg.rec)
+      else learnFromCapture(msg.rec)
+    } catch (e) {}
     sendResponse({ ok: true })
     return false
   }
@@ -2652,11 +2662,12 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
         headerKeys: Object.keys(r.headers || {}), body: trunc(r.body, 900), ts: r.ts,
       }))
       const summ = (r) => r ? { method: r.method, url: trunc(r.url, 220), headerKeys: Object.keys(r.headers || {}), bodyTemplate: trunc(r.bodyTemplate, 900), learnedAt: r.learnedAt } : null
+      const responses = (_ccRespRing || []).map((r) => ({ url: trunc(r.url, 160), status: r.status, body: trunc(r.body, 900), ts: r.ts }))
       sendResponse({
         ok: true,
         hasRecipe: !!(_ccSendRecipe && _ccSearchRecipe),
         recipe: summ(_ccSendRecipe), searchRecipe: summ(_ccSearchRecipe),
-        ringCount: ring.length, ring, creatorId: _ccCreatorId,
+        ringCount: ring.length, ring, responses, creatorId: _ccCreatorId,
       })
     } catch (e) { sendResponse({ ok: false, error: e && e.message ? e.message : 'debug-failed' }) }
     return false
