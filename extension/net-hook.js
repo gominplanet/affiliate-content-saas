@@ -91,7 +91,7 @@
       try {
         const m = this.__mvp
         if (m && looksLikeSend(m.url, m.method, body)) {
-          emit({ via: 'xhr', url: m.url, method: m.method, headers: m.headers, body: typeof body === 'string' ? body : null, ts: Date.now() })
+          emit('send-capture', { via: 'xhr', url: m.url, method: m.method, headers: m.headers, body: typeof body === 'string' ? body : null, ts: Date.now() })
         }
       } catch (e) {}
       return XS.apply(this, arguments)
