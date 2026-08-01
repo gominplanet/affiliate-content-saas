@@ -3091,67 +3091,96 @@ function stopKeepAlive(token) {
   try { if (token != null) clearInterval(token) } catch (e) {}
 }
 
-// DIRECT SEND by catalog campaign id(s) — the reliable path that skips the grid
-// search entirely. The app looks the product's ASIN up in the shared catalog,
-// gets the campaign_id(s), and hands them here; we deep-link straight to each
-// campaign's page (ccCampaignUrl) and run the same accept-if-needed + send. The
-// ASIN guard inside acceptAndSendBrand confirms the page really sells the ASIN,
-// so if a brand has several campaigns we can try the next id on a mismatch —
-// but we STOP on any other failure (e.g. a slow send) so we don't open a pile of
-// tabs. `affiliate-plus` first, then `spcc` for the same id, since a campaign is
-// one or the other and the type just picks the view.
+// DIRECT SEND by catalog campaign id(s) — VISIBLE-TAB approach.
+//
+// The old invisible/background-tab automation kept dying as "timeout": Amazon's
+// Creator Connections chat is React-heavy, and Chrome THROTTLES timers + rendering
+// in background tabs, so the Send button often never enabled and the MV3 worker
+// got reclaimed mid-send. No amount of budget tuning fixes that — a background tab
+// simply isn't a reliable place to drive that UI.
+//
+// New way: open the campaign chat in ONE REAL, FOCUSED tab (visible tabs render
+// normally, so Send actually enables and clicks), walk the candidate campaigns in
+// that same tab, pre-fill the recap and auto-send. If auto-send can't complete, we
+// LEAVE THE TAB OPEN with the message already typed in, so the user finishes with a
+// single click — never a silent timeout. The app looks the ASIN up in the shared
+// catalog and hands us the campaign_id(s); we deep-link straight to each.
 async function sendByCampaignIds(campaignIds, message, asin, callerTabId, fallbackCampaignIds) {
   const uniq = (a) => [...new Set((a || []).map((c) => String(c || '').trim()).filter(Boolean))]
   const ids = uniq(campaignIds).slice(0, 2)
   const fbids = uniq(fallbackCampaignIds).filter((id) => !ids.includes(id)).slice(0, 3)
   if (!ids.length && !fbids.length) return { ok: false, error: 'no-campaign' }
   if (!message || !message.trim()) return { ok: false, error: 'no-message' }
-  // Budget = 150s, comfortably under the app's 185s hard cap. A single attempt can
-  // take ~60s (tab open + box-open poll + send/settle), so we only START a new one
-  // while ONE_ATTEMPT of budget remains — that guarantees the extension RETURNS the
-  // last attempt's real reason (send-button-not-found / box-never-opened / asin-
-  // mismatch) before the app gives up and shows a useless "timeout".
+  // Candidates: the product's OWN campaign(s) first (ASIN-guarded so we never
+  // message the wrong brand), then BRAND-fallback campaigns (CC messaging is per
+  // brand — any live campaign from the same brand reaches the same chat — so no
+  // ASIN guard). We drive them all through ONE tab, so no tab spam.
+  const candidates = [
+    ...ids.map((id) => ({ id, wantAsin: asin })),
+    ...fbids.map((id) => ({ id, wantAsin: null })),
+  ]
   const startedAt = Date.now()
   const timeLeft = () => 150000 - (Date.now() - startedAt)
-  const ONE_ATTEMPT = 65000
-  // Hold the MV3 service worker awake for the whole send — Chrome reclaims an idle
-  // worker after ~30s, and a reclaim mid-send kills the reply so the app times out.
   const keepAlive = startKeepAlive()
+  const want = (a) => String(a || '').toUpperCase()
+  const wantValid = (a) => /^[A-Z0-9]{10}$/.test(want(a))
+  let tabId = null
   let last = null
-  // Open ONE campaign id (trying both program-type views), verifying the ASIN on
-  // the page only when wantAsin is set. Returns the ok-result or null.
-  const tryOne = async (id, wantAsin) => {
-    for (const type of ['affiliate-plus', 'spcc']) {
-      const url = ccCampaignUrl(id, type)
-      const r = await acceptAndSendBrand(url, message, callerTabId, wantAsin, true)
-      if (r && r.ok) return { ...r, campaignId: id, detailsUrl: url }
-      last = r
-      // asin-mismatch (wrong product / wrong type view) → try the other type, but
-      // ONLY if a full attempt still fits the budget. Any other failure (no chat,
-      // send-failed) → stop this id (retrying burns budget).
-      if (!(r && r.reason === 'asin-mismatch')) return null
-      if (timeLeft() < ONE_ATTEMPT) return null
-    }
-    return null
-  }
+  const load = async (url) => { await chrome.tabs.update(tabId, { url, active: true }); await waitForTabLoad(tabId, 20000); await _sleep(1500) }
   try {
-    // 1) The product's OWN campaign(s) — verify the page really sells the ASIN.
-    for (const id of ids) {
-      if (timeLeft() < ONE_ATTEMPT) break
-      const r = await tryOne(id, asin)
-      if (r) return r
+    // ONE visible, focused tab for the whole flow.
+    const tab = await chrome.tabs.create({ url: 'about:blank', active: true })
+    tabId = tab.id
+    for (const c of candidates) {
+      // A campaign is either affiliate-plus or spcc; the type just picks the view.
+      // Try affiliate-plus, then spcc for the SAME id only if the box never opened
+      // (or the ASIN didn't match) — a real send failure returns straight away with
+      // the tab left open for a manual click.
+      for (const type of ['affiliate-plus', 'spcc']) {
+        if (timeLeft() < 25000) return last || { ok: false, reason: 'send-failed', leftOpen: tabId != null }
+        const url = ccCampaignUrl(c.id, type)
+        try { await load(url) } catch (e) { last = { ok: false, error: 'nav' }; continue }
+        // Offsite-store fix (CC is blocked on an onsite store id).
+        try {
+          const sres = await chrome.scripting.executeScript({ target: { tabId }, func: ensureOffsiteStoreInPage })
+          const sw = sres && sres[0] && sres[0].result
+          if (sw && sw.switched) { await _sleep(1500); await load(url) }
+        } catch (e) {}
+        // WRONG-BRAND GUARD — only for the product's own campaign(s).
+        if (wantValid(c.wantAsin)) {
+          try {
+            const ar = await chrome.scripting.executeScript({ target: { tabId }, func: harvestAsinsInPage })
+            const r = (ar && ar[0] && ar[0].result) || { asins: [], blocked: false }
+            const onPage = (r.asins || []).map((a) => want(a))
+            if (!r.blocked && onPage.length > 0 && !onPage.includes(want(c.wantAsin))) { last = { ok: false, reason: 'asin-mismatch' }; continue }
+          } catch (e) {}
+        }
+        // Accept the opportunity if there's an Accept button (no chat until accepted).
+        for (let i = 0; i < 4; i++) {
+          const ar = await chrome.scripting.executeScript({ target: { tabId }, func: acceptCampaignInPage })
+          const r = ar && ar[0] && ar[0].result
+          if (r && r.ok) { await load(url); break }
+          await _sleep(700)
+        }
+        // Fill + auto-send in the FOREGROUND, where the button actually enables.
+        const sres2 = await chrome.scripting.executeScript({ target: { tabId }, func: sendBrandMessageInPage, args: [message] })
+        const sr = (sres2 && sres2[0] && sres2[0].result) || null
+        last = sr
+        if (sr && sr.ok) return { ...sr, campaignId: c.id, detailsUrl: url, leftOpen: true }
+        // Box never opened → the other type view might be the right one. ASIN
+        // mismatch already `continue`d above. Anything else (typed but Send not
+        // found / not enabled) → stop here and leave the filled box for a manual
+        // click; trying the other type would open a second empty chat.
+        if (sr && (sr.reason === 'box-never-opened' || sr.reason === 'no-message-button')) continue
+        return { ok: false, reason: (sr && sr.reason) || 'send-failed', campaignId: c.id, detailsUrl: url, leftOpen: true }
+      }
     }
-    // 2) BRAND fallback — Creator Connections messaging is per-BRAND (one chat per
-    //    brand), so ANY live campaign from the same brand reaches the same thread.
-    //    These ids already came from our catalog filtered by this brand, so we send
-    //    WITHOUT the ASIN guard (the campaign is a different product, same brand).
-    for (const id of fbids) {
-      if (timeLeft() < ONE_ATTEMPT) break
-      const r = await tryOne(id, null)
-      if (r) return { ...r, viaBrand: true }
-    }
-    return last || { ok: false, reason: 'send-failed' }
+    return { ...(last || { ok: false, reason: 'send-failed' }), leftOpen: tabId != null }
+  } catch (e) {
+    return { ok: false, error: e && e.message ? e.message : 'exception', leftOpen: tabId != null }
   } finally {
+    // Intentionally DO NOT close the tab — on success it shows the sent message; on
+    // failure it holds the pre-filled chat so the user can click Send themselves.
     stopKeepAlive(keepAlive)
   }
 }

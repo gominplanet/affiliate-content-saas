@@ -124,7 +124,7 @@ function sendToExtension<T>(message: unknown, timeoutMs: number): Promise<T | nu
   })()
 }
 
-export interface MessageBrandResult { ok: boolean; error?: string; reason?: string; steps?: Record<string, boolean>; diag?: Record<string, unknown>; groups?: number }
+export interface MessageBrandResult { ok: boolean; error?: string; reason?: string; steps?: Record<string, boolean>; diag?: Record<string, unknown>; groups?: number; leftOpen?: boolean }
 
 /**
  * Compose-and-send from the MVP modal: the user reviewed the exact message and
@@ -168,12 +168,12 @@ export async function requestSendByCampaign(campaignIds: string[], message: stri
   if (!ids.length && !fbids.length) return { ok: false, error: 'no-campaign' }
   if (!message.trim()) return { ok: false, error: 'no-message' }
   if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
-  const resp = await sendToExtension<{ ok?: boolean; error?: string; reason?: string; groups?: number; detailsUrl?: string | null }>(
+  const resp = await sendToExtension<{ ok?: boolean; error?: string; reason?: string; groups?: number; detailsUrl?: string | null; leftOpen?: boolean }>(
     { type: 'MVP_CC_SEND_BY_CAMPAIGN', campaignIds: ids, fallbackCampaignIds: fbids, message, asin: (asin || '').toUpperCase() || undefined },
     185000,
   )
   if (!resp) return { ok: false, error: 'timeout' }
-  return { ok: !!resp.ok, error: resp.error, reason: resp.reason, groups: resp.groups, detailsUrl: resp.detailsUrl }
+  return { ok: !!resp.ok, error: resp.error, reason: resp.reason, groups: resp.groups, detailsUrl: resp.detailsUrl, leftOpen: resp.leftOpen }
 }
 
 export async function requestAcceptAndSendBrand(detailsUrl: string, message: string, asin?: string | null): Promise<MessageBrandResult & { accepted?: boolean }> {
