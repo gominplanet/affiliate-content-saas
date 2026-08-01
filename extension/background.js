@@ -3073,6 +3073,24 @@ async function acceptAndSendBrand(detailsUrl, message, callerTabId, wantAsin, fa
   }
 }
 
+// Keep the MV3 service worker alive during a long operation. Chrome reclaims an
+// idle worker after ~30s; every extension-API call resets that timer, so we ping
+// a cheap one every 20s. Returns a token to pass back to stopKeepAlive. Bridges
+// any quiet stretch between the send's own chrome.* calls so a reclaim can't kill
+// the in-flight reply (which the app would then see as a bare "timeout").
+function startKeepAlive() {
+  let timer = null
+  try {
+    timer = setInterval(() => {
+      try { chrome.runtime.getPlatformInfo(() => { void chrome.runtime.lastError }) } catch (e) {}
+    }, 20000)
+  } catch (e) {}
+  return timer
+}
+function stopKeepAlive(token) {
+  try { if (token != null) clearInterval(token) } catch (e) {}
+}
+
 // DIRECT SEND by catalog campaign id(s) — the reliable path that skips the grid
 // search entirely. The app looks the product's ASIN up in the shared catalog,
 // gets the campaign_id(s), and hands them here; we deep-link straight to each
@@ -3088,11 +3106,17 @@ async function sendByCampaignIds(campaignIds, message, asin, callerTabId, fallba
   const fbids = uniq(fallbackCampaignIds).filter((id) => !ids.includes(id)).slice(0, 3)
   if (!ids.length && !fbids.length) return { ok: false, error: 'no-campaign' }
   if (!message || !message.trim()) return { ok: false, error: 'no-message' }
-  // Stop opening more campaigns ~25s before the handler's 180s hard timeout, so we
-  // RETURN the last attempt's real reason (send-button-not-found / box-never-opened
-  // / asin-mismatch) instead of a useless "timeout".
+  // Budget = 150s, comfortably under the app's 185s hard cap. A single attempt can
+  // take ~60s (tab open + box-open poll + send/settle), so we only START a new one
+  // while ONE_ATTEMPT of budget remains — that guarantees the extension RETURNS the
+  // last attempt's real reason (send-button-not-found / box-never-opened / asin-
+  // mismatch) before the app gives up and shows a useless "timeout".
   const startedAt = Date.now()
-  const timeLeft = () => 155000 - (Date.now() - startedAt)
+  const timeLeft = () => 150000 - (Date.now() - startedAt)
+  const ONE_ATTEMPT = 65000
+  // Hold the MV3 service worker awake for the whole send — Chrome reclaims an idle
+  // worker after ~30s, and a reclaim mid-send kills the reply so the app times out.
+  const keepAlive = startKeepAlive()
   let last = null
   // Open ONE campaign id (trying both program-type views), verifying the ASIN on
   // the page only when wantAsin is set. Returns the ok-result or null.
@@ -3102,30 +3126,34 @@ async function sendByCampaignIds(campaignIds, message, asin, callerTabId, fallba
       const r = await acceptAndSendBrand(url, message, callerTabId, wantAsin, true)
       if (r && r.ok) return { ...r, campaignId: id, detailsUrl: url }
       last = r
-      // asin-mismatch (wrong product / wrong type view) → try the other type. Any
-      // other failure (timeout, no chat) → stop this id (retrying burns budget).
+      // asin-mismatch (wrong product / wrong type view) → try the other type, but
+      // ONLY if a full attempt still fits the budget. Any other failure (no chat,
+      // send-failed) → stop this id (retrying burns budget).
       if (!(r && r.reason === 'asin-mismatch')) return null
+      if (timeLeft() < ONE_ATTEMPT) return null
     }
     return null
   }
-  // 1) The product's OWN campaign(s) — verify the page really sells the ASIN.
-  //    Each acceptAndSendBrand can take ~25-30s, so stop opening new ids once the
-  //    budget is nearly spent and RETURN the last real reason.
-  for (const id of ids) {
-    if (timeLeft() < 30000) break
-    const r = await tryOne(id, asin)
-    if (r) return r
+  try {
+    // 1) The product's OWN campaign(s) — verify the page really sells the ASIN.
+    for (const id of ids) {
+      if (timeLeft() < ONE_ATTEMPT) break
+      const r = await tryOne(id, asin)
+      if (r) return r
+    }
+    // 2) BRAND fallback — Creator Connections messaging is per-BRAND (one chat per
+    //    brand), so ANY live campaign from the same brand reaches the same thread.
+    //    These ids already came from our catalog filtered by this brand, so we send
+    //    WITHOUT the ASIN guard (the campaign is a different product, same brand).
+    for (const id of fbids) {
+      if (timeLeft() < ONE_ATTEMPT) break
+      const r = await tryOne(id, null)
+      if (r) return { ...r, viaBrand: true }
+    }
+    return last || { ok: false, reason: 'send-failed' }
+  } finally {
+    stopKeepAlive(keepAlive)
   }
-  // 2) BRAND fallback — Creator Connections messaging is per-BRAND (one chat per
-  //    brand), so ANY live campaign from the same brand reaches the same thread.
-  //    These ids already came from our catalog filtered by this brand, so we send
-  //    WITHOUT the ASIN guard (the campaign is a different product, same brand).
-  for (const id of fbids) {
-    if (timeLeft() < 30000) break
-    const r = await tryOne(id, null)
-    if (r) return { ...r, viaBrand: true }
-  }
-  return last || { ok: false, reason: 'send-failed' }
 }
 
 async function sendBrandMessage(detailsUrl, message, callerTabId) {
