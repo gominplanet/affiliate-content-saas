@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import PageHero from '@/components/layout/PageHero'
 import { Search, Loader2, CheckCircle, AlertCircle, User as UserIcon, ChevronLeft, ChevronRight, Users as UsersIcon, Mail, Send } from 'lucide-react'
 
-type Tier = 'trial' | 'creator' | 'pro' | 'admin'
+type Tier = 'trial' | 'creator' | 'studio' | 'pro' | 'admin'
 
 interface TargetUser {
   id: string
@@ -31,9 +31,10 @@ interface ListUser {
 
 const TIER_BADGE: Record<Tier, string> = {
   trial:   'bg-gray-100 text-[#6e6e73]',
-  creator: 'bg-[#7C3AED]/10 text-[#7C3AED]',
-  pro:     'bg-[#34c759]/10 text-[#34c759]',
-  admin:   'bg-[#ff9500]/10 text-[#ff9500]',
+  creator: 'bg-[#ff3b30]/10 text-[#ff3b30]',   // red
+  studio:  'bg-[#007aff]/10 text-[#007aff]',   // blue
+  pro:     'bg-[#34c759]/10 text-[#34c759]',   // green
+  admin:   'bg-[#ff9500]/10 text-[#ff9500]',   // orange
 }
 
 export default function AdminUsersPage() {
@@ -319,6 +320,7 @@ export default function AdminUsersPage() {
               >
                 <option value="trial">Free Trial</option>
                 <option value="creator">Creator — $49/mo</option>
+                <option value="studio">Studio — $99/mo</option>
                 <option value="pro">Pro — $199/mo</option>
                 <option value="admin">Admin (god mode)</option>
               </select>
