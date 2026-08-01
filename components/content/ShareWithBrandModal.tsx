@@ -209,8 +209,20 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
           setCcNote({ kind: 'info', text: 'Auto-send needs the SCOUT extension. Without it, use Copy message or Email.' })
           return
         }
-        // Direct path didn't complete → remember WHY (surfaced in the UI below,
-        // no console needed) and fall through to the grid find.
+        // VISIBLE-TAB path: SCOUT opened the brand chat in a real tab and pre-filled
+        // your message. It couldn't confirm the auto-click went through, so rather
+        // than open MORE tabs via the grid fallback, hand it to the user — the chat
+        // is right there with the message typed in, one click from sent.
+        if (direct.leftOpen) {
+          if (direct.detailsUrl) setCcDetailsUrl(direct.detailsUrl)
+          setCcPhase('idle')
+          setCcDiag(direct.reason ? `SCOUT stopped at: ${direct.reason}` : null)
+          setCcNote({ kind: 'info', text: 'SCOUT opened the brand chat in a new tab with your message ready. Switch to that tab and click Send to finish (if a “sharing personal information” box appears, click OK). It may already have gone through — check the chat.' })
+          toast('Finish in the Amazon tab SCOUT just opened', { icon: '➡️' })
+          return
+        }
+        // No tab was left open (e.g. couldn't open any campaign) → remember WHY and
+        // fall through to the grid find as a last resort.
         directReason = `${direct.reason || direct.error || 'unknown'}${direct.groups ? ` (sent ${direct.groups})` : ''}`
         setCcDiag(`Direct send stopped at: ${directReason}`)
         setCcPhase('resolving')
