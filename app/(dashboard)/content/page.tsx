@@ -1545,8 +1545,10 @@ const VideoCard = memo(function VideoCardImpl({
               )}
               {/* Reel COVER-frame picker — pick the still IG uses as the Reel
                   cover, so the creator never has to scrub for it in the IG app
-                  after posting. Only meaningful for a 9:16 render. */}
-              {instagramConnected && video.is_vertical === true && (
+                  after posting. Shows whenever a 9:16 render exists to scrub
+                  (Reels come from HORIZONTAL posts' vertical render, not only
+                  from is_vertical rows — that gate hid it for everyone). */}
+              {instagramConnected && !!(video as unknown as { instagram_video_url?: string | null }).instagram_video_url && (
                 <button
                   onClick={() => setIgCoverOpen(true)}
                   title="Pick the still frame Instagram shows as your Reel cover — no need to edit it in the IG app after posting"
