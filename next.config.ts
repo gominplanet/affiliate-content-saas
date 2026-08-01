@@ -1,6 +1,6 @@
 import type { NextConfig } from 'next'
 
-// Cache-bust marker (2026-08 build-cache-bust-1): webpack keys its persistent
+// Cache-bust marker (2026-08 build-cache-bust-2): webpack keys its persistent
 // filesystem cache on this config file via buildDependencies, so changing this
 // file forces Vercel to fully invalidate the restored .next/cache and rebuild
 // from scratch — the git equivalent of a no-cache redeploy. Added to clear a
