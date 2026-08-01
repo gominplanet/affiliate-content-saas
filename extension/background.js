@@ -2827,10 +2827,12 @@ async function sendBrandMessageInPage(message) {
     // pick the affirmative action inside it — explicit confirm word, else the
     // Amazon primary button, else the sole non-dismiss action. Dismiss buttons
     // (Cancel / Edit / Go back) are always excluded so we never abort the send.
-    // Only REAL modal/popover overlays — never plain div/section/form, which is
-    // how the static compose advisory (always on the page) sneaked in and got its
-    // Send button re-clicked. A genuine confirm pops in one of these containers.
-    const roots = [...document.querySelectorAll('[role="dialog"],[role="alertdialog"],[aria-modal="true"],.a-modal,.a-modal-scroller,.a-popover,.a-popover-wrapper,[data-a-modal],[data-a-popover]')]
+    // Scan modal/popover overlays AND generic containers — the personal-info
+    // confirm sometimes renders as a plain div, not a role=dialog. This is safe
+    // because looksLikePiModal EXCLUDES the always-present static advisory (via
+    // isStaticAdvisory), so the compose area — which holds the real Send button —
+    // is never matched, and its Send is never re-clicked (the old duplicate bug).
+    const roots = [...document.querySelectorAll('[role="dialog"],[role="alertdialog"],[aria-modal="true"],.a-modal,.a-modal-scroller,.a-popover,.a-popover-wrapper,[data-a-modal],[data-a-popover],div,section,form')]
       .filter(looksLikePiModal)
     // Innermost first (tightest wrapper around the warning, not document.body).
     roots.sort((a, z) => norm(a.textContent).length - norm(z.textContent).length)
