@@ -63,6 +63,14 @@ const InstagramDirectModal = dynamic(
   () => import('@/components/InstagramDirectModal').then(m => ({ default: m.InstagramDirectModal })),
   { ssr: false },
 )
+// Reel COVER-frame picker (Alejandro's ask) — scrub the 9:16 render, pick a still,
+// saved as ig_cover_offset_ms and passed as thumb_offset at publish. Client-only
+// via next/dynamic so it stays out of the server bundle (a static import of this
+// client component previously broke the /content page's Vercel packaging).
+const InstagramCoverModal = dynamic(
+  () => import('@/components/content/InstagramCoverModal'),
+  { ssr: false },
+)
 // Interaction-gated modals are code-split (next/dynamic, client-only) so they
 // stay out of the heavy content-page initial bundle and only load when opened.
 const PinterestPreviewModal = dynamic(
@@ -889,6 +897,7 @@ const VideoCard = memo(function VideoCardImpl({
   const [tgPosting, setTgPosting] = useState(false)
   const [tgPosted, setTgPosted] = useState(!!post?.telegramMessageId)
   const [igModalOpen, setIgModalOpen] = useState(false)
+  const [igCoverOpen, setIgCoverOpen] = useState(false)
   const [igPosting, setIgPosting] = useState(false)
   const [igReelPosted, setIgReelPosted] = useState(!!post?.instagramReelId)
   const [igStoryPosted, setIgStoryPosted] = useState(!!post?.instagramStoryId)
@@ -1534,6 +1543,18 @@ const VideoCard = memo(function VideoCardImpl({
                   locked={!tierAllowsSocial(userTier, 'instagram')}
                 />
               )}
+              {/* Reel COVER-frame picker — pick the still IG uses as the Reel
+                  cover, so the creator never has to scrub for it in the IG app
+                  after posting. Only meaningful for a 9:16 render. */}
+              {instagramConnected && video.is_vertical === true && (
+                <button
+                  onClick={() => setIgCoverOpen(true)}
+                  title="Pick the still frame Instagram shows as your Reel cover — no need to edit it in the IG app after posting"
+                  className="inline-flex items-center gap-1 px-2.5 py-2 rounded-full text-[11px] font-semibold border border-[#E1306C]/40 text-[#E1306C] hover:bg-[#E1306C]/10"
+                >
+                  <ImagePlus size={12} /> Reel cover
+                </button>
+              )}
               {/* TikTok pill — clicking opens the dedicated /tiktok-publish
                   screen in a new tab. The screen handles every TikTok-mandated
                   control (live privacy dropdown, Music Usage Confirmation,
@@ -1645,6 +1666,14 @@ const VideoCard = memo(function VideoCardImpl({
               videoId={id}
               onClose={() => setIgDirectModalOpen(false)}
               onPosted={() => setIgDirectPosted(true)}
+            />
+          )}
+
+          {/* Reel cover-frame picker (loaded client-only via next/dynamic) */}
+          {igCoverOpen && (
+            <InstagramCoverModal
+              videoDbId={id}
+              onClose={() => setIgCoverOpen(false)}
             />
           )}
 
