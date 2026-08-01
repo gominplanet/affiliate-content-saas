@@ -2732,7 +2732,7 @@ async function openAndPlaceBrandMessage(detailsUrl, message) {
 // click, contenteditable fallback, long polling), fill the message, VERIFY the
 // full text is in, then click Send. Returns { ok, steps, reason } so failures
 // are diagnosable. Only submits when our exact text is present — never a partial.
-async function sendBrandMessageInPage(message) {
+async function sendBrandMessageInPage(message, maxOpenTries) {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const norm = (s) => (s || '').replace(/\s+/g, ' ').trim()
   const textOf = (el) => norm(el && (el.innerText || el.textContent))
@@ -2744,6 +2744,11 @@ async function sendBrandMessageInPage(message) {
     const c = [...document.querySelectorAll('button,a,[role="button"]')]
     return c.find((e) => /message brand|message the brand/i.test(textOf(e)))
       || c.find((e) => /message/i.test(textOf(e)) && /brand/i.test(textOf(e)))
+      // Accepted campaigns sometimes label the chat opener just "Message" (or
+      // "Send a message"). Accept a SHORT bare-message label, but only on a real
+      // BUTTON/role=button (never an <a> nav link, which would navigate away).
+      || c.find((e) => (e.tagName === 'BUTTON' || e.getAttribute('role') === 'button')
+        && /^(message|send a message|message seller|contact brand)$/i.test(textOf(e)))
   }
   // NO visibility check — a just-loaded / background tab may not lay out
   // (getBoundingClientRect is 0×0), yet the box's textarea exists in the DOM
@@ -2858,8 +2863,11 @@ async function sendBrandMessageInPage(message) {
   const steps = { opened: false, filled: false, sent: false }
 
   // Open the message box (poll: React may render the box a beat after the click).
+  // maxOpenTries lets the direct/visible path use a SHORTER poll (~8s vs ~21s) so
+  // a page with no message box is reported quickly instead of stalling per attempt.
+  const openTries = Math.max(6, maxOpenTries || 60)
   let input = findInput()
-  for (let t = 0; t < 60 && !input; t++) {
+  for (let t = 0; t < openTries && !input; t++) {
     const b = findMsgBtn(); if (b) { realClick(b); steps.opened = true }
     await sleep(350)
     input = findInput()
@@ -3108,25 +3116,30 @@ function stopKeepAlive(token) {
 async function sendByCampaignIds(campaignIds, message, asin, callerTabId, fallbackCampaignIds) {
   const uniq = (a) => [...new Set((a || []).map((c) => String(c || '').trim()).filter(Boolean))]
   const ids = uniq(campaignIds).slice(0, 2)
-  const fbids = uniq(fallbackCampaignIds).filter((id) => !ids.includes(id)).slice(0, 3)
+  // Keep the fan-out SMALL and FAST: at most the product's own campaign(s) + ONE
+  // brand-fallback. Walking every brand campaign with a 20s load each is what made
+  // this take ~5 minutes for nothing.
+  const fbids = uniq(fallbackCampaignIds).filter((id) => !ids.includes(id)).slice(0, 1)
   if (!ids.length && !fbids.length) return { ok: false, error: 'no-campaign' }
   if (!message || !message.trim()) return { ok: false, error: 'no-message' }
   // Candidates: the product's OWN campaign(s) first (ASIN-guarded so we never
-  // message the wrong brand), then BRAND-fallback campaigns (CC messaging is per
-  // brand — any live campaign from the same brand reaches the same chat — so no
-  // ASIN guard). We drive them all through ONE tab, so no tab spam.
+  // message the wrong brand), then ONE BRAND-fallback (CC messaging is per brand —
+  // any live campaign from the same brand reaches the same chat — so no ASIN
+  // guard). All driven through ONE tab, so no tab spam.
   const candidates = [
     ...ids.map((id) => ({ id, wantAsin: asin })),
     ...fbids.map((id) => ({ id, wantAsin: null })),
   ]
+  // Hard ~80s budget with short per-step waits so we hand off quickly instead of
+  // grinding. Better to leave a filled tab for a one-click finish than to march.
   const startedAt = Date.now()
-  const timeLeft = () => 150000 - (Date.now() - startedAt)
+  const timeLeft = () => 80000 - (Date.now() - startedAt)
   const keepAlive = startKeepAlive()
   const want = (a) => String(a || '').toUpperCase()
   const wantValid = (a) => /^[A-Z0-9]{10}$/.test(want(a))
   let tabId = null
   let last = null
-  const load = async (url) => { await chrome.tabs.update(tabId, { url, active: true }); await waitForTabLoad(tabId, 20000); await _sleep(1500) }
+  const load = async (url) => { await chrome.tabs.update(tabId, { url, active: true }); await waitForTabLoad(tabId, 12000); await _sleep(1200) }
   try {
     // ONE visible, focused tab for the whole flow.
     const tab = await chrome.tabs.create({ url: 'about:blank', active: true })
@@ -3137,14 +3150,14 @@ async function sendByCampaignIds(campaignIds, message, asin, callerTabId, fallba
       // (or the ASIN didn't match) — a real send failure returns straight away with
       // the tab left open for a manual click.
       for (const type of ['affiliate-plus', 'spcc']) {
-        if (timeLeft() < 25000) return last || { ok: false, reason: 'send-failed', leftOpen: tabId != null }
+        if (timeLeft() < 18000) return { ...(last || { ok: false, reason: 'send-failed' }), leftOpen: tabId != null }
         const url = ccCampaignUrl(c.id, type)
         try { await load(url) } catch (e) { last = { ok: false, error: 'nav' }; continue }
         // Offsite-store fix (CC is blocked on an onsite store id).
         try {
           const sres = await chrome.scripting.executeScript({ target: { tabId }, func: ensureOffsiteStoreInPage })
           const sw = sres && sres[0] && sres[0].result
-          if (sw && sw.switched) { await _sleep(1500); await load(url) }
+          if (sw && sw.switched) { await _sleep(1200); await load(url) }
         } catch (e) {}
         // WRONG-BRAND GUARD — only for the product's own campaign(s).
         if (wantValid(c.wantAsin)) {
@@ -3156,23 +3169,25 @@ async function sendByCampaignIds(campaignIds, message, asin, callerTabId, fallba
           } catch (e) {}
         }
         // Accept the opportunity if there's an Accept button (no chat until accepted).
-        for (let i = 0; i < 4; i++) {
+        let accepted = false
+        for (let i = 0; i < 3; i++) {
           const ar = await chrome.scripting.executeScript({ target: { tabId }, func: acceptCampaignInPage })
           const r = ar && ar[0] && ar[0].result
-          if (r && r.ok) { await load(url); break }
-          await _sleep(700)
+          if (r && r.ok) { accepted = true; await load(url); break }
+          await _sleep(600)
         }
         // Fill + auto-send in the FOREGROUND, where the button actually enables.
-        const sres2 = await chrome.scripting.executeScript({ target: { tabId }, func: sendBrandMessageInPage, args: [message] })
+        // Short box-poll (~8s) so a page with no message box is reported fast.
+        const sres2 = await chrome.scripting.executeScript({ target: { tabId }, func: sendBrandMessageInPage, args: [message, 24] })
         const sr = (sres2 && sres2[0] && sres2[0].result) || null
         last = sr
-        if (sr && sr.ok) return { ...sr, campaignId: c.id, detailsUrl: url, leftOpen: true }
+        if (sr && sr.ok) return { ...sr, campaignId: c.id, detailsUrl: url, accepted, leftOpen: true }
         // Box never opened → the other type view might be the right one. ASIN
         // mismatch already `continue`d above. Anything else (typed but Send not
         // found / not enabled) → stop here and leave the filled box for a manual
         // click; trying the other type would open a second empty chat.
         if (sr && (sr.reason === 'box-never-opened' || sr.reason === 'no-message-button')) continue
-        return { ok: false, reason: (sr && sr.reason) || 'send-failed', campaignId: c.id, detailsUrl: url, leftOpen: true }
+        return { ok: false, reason: (sr && sr.reason) || 'send-failed', campaignId: c.id, detailsUrl: url, accepted, leftOpen: true }
       }
     }
     return { ...(last || { ok: false, reason: 'send-failed' }), leftOpen: tabId != null }
@@ -3180,7 +3195,8 @@ async function sendByCampaignIds(campaignIds, message, asin, callerTabId, fallba
     return { ok: false, error: e && e.message ? e.message : 'exception', leftOpen: tabId != null }
   } finally {
     // Intentionally DO NOT close the tab — on success it shows the sent message; on
-    // failure it holds the pre-filled chat so the user can click Send themselves.
+    // failure it holds the pre-filled chat (or the campaign page to Accept) so the
+    // user can finish by hand.
     stopKeepAlive(keepAlive)
   }
 }
