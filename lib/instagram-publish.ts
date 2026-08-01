@@ -63,6 +63,19 @@ export async function publishInstagramForTarget(
     videoDbId = (ytRow?.id as string | undefined) || (post.video_id as string | undefined) || null
     videoUrl = ytRow?.instagram_video_url as string | undefined
   }
+
+  // The Reel COVER frame the creator picked in MVP (ms), fetched SEPARATELY and
+  // best-effort: if migration 205 hasn't run yet, selecting the column errors —
+  // we swallow it so publishing still works (just without a custom cover). Once
+  // the column exists, covers apply. null = IG default (frame 0).
+  let coverOffsetMs: number | null = null
+  if (videoDbId) {
+    try {
+      const { data: c, error: cErr } = await sb
+        .from('youtube_videos').select('ig_cover_offset_ms').eq('id', videoDbId).maybeSingle()
+      if (!cErr && c) coverOffsetMs = (c.ig_cover_offset_ms as number | null) ?? null
+    } catch { /* column not present yet — publish without a custom cover */ }
+  }
   if (!videoUrl || !/^https:\/\//.test(videoUrl)) {
     throw new Error('No vertical MP4 for this — add a 9:16 render before it can post.')
   }
@@ -76,7 +89,7 @@ export async function publishInstagramForTarget(
 
   if (wantReel) {
     try {
-      reelId = await publishMedia({ userId: igUserId, accessToken: accessToken!, mediaType: 'REELS', videoUrl, caption: cap, shareToFeed: true })
+      reelId = await publishMedia({ userId: igUserId, accessToken: accessToken!, mediaType: 'REELS', videoUrl, caption: cap, shareToFeed: true, thumbOffsetMs: coverOffsetMs ?? undefined })
     } catch (e) { errors.push(`Reel: ${e instanceof Error ? e.message : 'failed'}`) }
   }
   if (wantStory) {

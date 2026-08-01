@@ -53,6 +53,9 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
   // One-click flow: resolve → auto-accept if needed → send. No extra input.
   const [ccPhase, setCcPhase] = useState<'idle' | 'resolving' | 'accepting' | 'sending' | 'done'>('idle')
   const [ccNote, setCcNote] = useState<{ kind: 'info' | 'error' | 'ok'; text: string } | null>(null)
+  // A compact "what SCOUT saw" line shown under the note on a find miss, so a
+  // failure is diagnosable at a glance (which tabs, card counts, brands).
+  const [ccDiag, setCcDiag] = useState<string | null>(null)
   // The resolved Creator Connections page for THIS product's campaign (cached
   // per ASIN once resolved by a send or a Smart Scan). When present, "Open
   // Campaigns" jumps straight to this campaign instead of the whole dashboard.
@@ -156,7 +159,7 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
       return
     }
 
-    setCcPhase('resolving'); setCcNote(null)
+    setCcPhase('resolving'); setCcNote(null); setCcDiag(null)
     try {
       // Resolve the brand's CC campaign URL for this ASIN. Cache first (from a
       // prior message or a Smart Scan), then a live SCOUT grid lookup that also
@@ -175,10 +178,12 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
         // here and point to email — no SCOUT, no waiting.
         let inCatalog: boolean | null = null
         let catBrand: string | null = null
+        let catCampaignIds: string[] = []
         try {
           const c = await fetch(`/api/campaigns/catalog-by-asin?asin=${encodeURIComponent(asin)}`).then(r => r.json())
           inCatalog = c?.inCatalog ?? null
           catBrand = c?.brand ?? null
+          catCampaignIds = Array.isArray(c?.campaignIds) ? c.campaignIds : []
         } catch { /* unknown — proceed to SCOUT */ }
         if (inCatalog === false) {
           setCcPhase('idle')
@@ -187,8 +192,10 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
         }
 
         // In the catalog (or couldn't tell) → resolve the campaign live with
-        // SCOUT (fast ASIN search), which also gives us its accept status.
-        const find = await requestFindCampaign('', asin)
+        // SCOUT (fast ASIN search). Pass the catalog's brand so SCOUT can VERIFY
+        // it opened the right campaign cheaply (no flaky details-page ASIN read),
+        // and it also gives us the accept status.
+        const find = await requestFindCampaign('', asin, catBrand, catCampaignIds)
         if (find.error === 'not-installed') {
           setCcPhase('idle')
           setCcNote({ kind: 'info', text: 'Auto-send needs the SCOUT extension (it sends inside your own Amazon session). Without it, use Copy message or Email, or message the brand from the product page.' })
@@ -204,8 +211,17 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
           }).catch(() => {})
         } else {
           // We know a campaign exists (it's in our catalog) but SCOUT couldn't
-          // open it live — point them to accept it by hand.
+          // open it live — point them to accept it by hand. Surface what SCOUT saw
+          // so a miss is diagnosable (which tabs, how many cards, which brands).
           setCcPhase('idle')
+          const d = find.diag
+          if (d?.tabs?.length) {
+            const parts = d.tabs.map(t => {
+              const b = t.brands?.length ? ` (${t.brands.slice(0, 4).join(', ')})` : ''
+              return `${t.status}: ${t.cards} card${t.cards === 1 ? '' : 's'}${b}${t.matched ? ' ✓' : ''}`
+            })
+            setCcDiag(`SCOUT looked for “${d.wantBrand || catBrand || asin}” → ${parts.join(' · ')}`)
+          }
           if (inCatalog === true) {
             setCcNote({ kind: 'info', text: `This product does have a Creator Connections campaign${catBrand ? ` from ${catBrand}` : ''}, but SCOUT couldn’t open it automatically just now. Click Open Campaigns to accept it on Amazon, then Send again — or use Copy message / Email.` })
           } else {
@@ -241,7 +257,7 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
     // Copy reflects that it may accept first when we don't already know it's active.
     setCcPhase(knownAccepted ? 'sending' : 'accepting')
     setCcNote({ kind: 'info', text: knownAccepted ? 'Sending your message to the brand…' : 'Accepting the campaign, then sending your message…' })
-    const res = await requestAcceptAndSendBrand(detailsUrl, ccText)
+    const res = await requestAcceptAndSendBrand(detailsUrl, ccText, asin)
     if (res.ok) {
       setCcPhase('done')
       setCcNote({ kind: 'ok', text: `Sent to the brand on Creator Connections${res.groups && res.groups > 1 ? ` (${res.groups} messages)` : ''}.` })
@@ -256,6 +272,13 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
     // Give up: drop any stale cached URL so the next attempt re-resolves.
     void fetch(`/api/campaigns/message-link?asin=${encodeURIComponent(asin)}`, { method: 'DELETE' }).catch(() => {})
     setCcPhase('idle')
+    // asin-mismatch = SCOUT opened a campaign that doesn't sell this product (a
+    // stale link). We just cleared the cache; a second Send re-resolves fresh.
+    if (res.reason === 'asin-mismatch') {
+      setCcNote({ kind: 'error', text: 'The saved campaign link pointed to a different product, so nothing was sent (we’ve cleared it). Click Send again to look it up fresh, or use Copy message / Email.' })
+      setCcDetailsUrl(null)
+      return
+    }
     setCcNote({ kind: 'error', text: `Could not send through Creator Connections (${res.reason || res.error || 'unknown'}). Use Copy message or Email, or Open on Amazon to do it by hand.` })
   }
 
@@ -544,6 +567,11 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
             {ccNote && (
               <p className="text-[11px] -mt-1 leading-relaxed" style={{ color: ccNote.kind === 'error' ? '#ff3b30' : ccNote.kind === 'ok' ? '#1f8a3a' : '#86868b' }}>
                 {ccNote.text}
+              </p>
+            )}
+            {ccDiag && (
+              <p className="text-[10px] -mt-1 font-mono leading-snug text-[#86868b] dark:text-[#8e8e93] break-words">
+                {ccDiag}
               </p>
             )}
             <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] -mt-1 leading-relaxed">

@@ -155,12 +155,15 @@ export async function requestSendBrand(detailsUrl: string, message: string): Pro
  * then sends the message on the SAME tab — no cross-tab teardown race (which was
  * the "Frame with ID 0 was removed" failure). Best-effort: resolves, never throws.
  */
-export async function requestAcceptAndSendBrand(detailsUrl: string, message: string): Promise<MessageBrandResult & { accepted?: boolean }> {
+export async function requestAcceptAndSendBrand(detailsUrl: string, message: string, asin?: string | null): Promise<MessageBrandResult & { accepted?: boolean }> {
   if (!detailsUrl) return { ok: false, error: 'no-url' }
   if (!message.trim()) return { ok: false, error: 'no-message' }
   if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
+  // Pass the ASIN so SCOUT can VERIFY the campaign it opened really sells this
+  // product before sending — the last line of defence against a stale cached URL
+  // delivering the recap to the wrong brand.
   const resp = await sendToExtension<{ ok?: boolean; error?: string; reason?: string; groups?: number; accepted?: boolean }>(
-    { type: 'MVP_CC_ACCEPT_AND_SEND', detailsUrl, message },
+    { type: 'MVP_CC_ACCEPT_AND_SEND', detailsUrl, message, asin: (asin || '').toUpperCase() || undefined },
     185000,
   )
   if (!resp) return { ok: false, error: 'timeout' }
@@ -548,6 +551,15 @@ export interface FindCampaignResult {
   scanned?: number    // how many result cards the ASIN search rendered
   total?: number      // how many campaigns Amazon's search returned
   error?: string
+  // What SCOUT saw per tab (cards seen, brands, whether it matched) — surfaced in
+  // the UI so a miss is diagnosable instead of a silent "couldn't find it".
+  diag?: FindCampaignDiag | null
+}
+
+export interface FindCampaignDiag {
+  wantBrand?: string | null
+  program?: string | null
+  tabs?: Array<{ status: string; cards: number; searched?: boolean; brands?: string[]; matched?: boolean }>
 }
 
 /**
@@ -559,15 +571,16 @@ export interface FindCampaignResult {
  * Finder's "Check CC" / Message flow. Best-effort: resolves, never throws.
  * (The `query` param is unused now — kept for call-site compatibility.)
  */
-export async function requestFindCampaign(query: string, asin: string): Promise<FindCampaignResult> {
+export async function requestFindCampaign(query: string, asin: string, brand?: string | null, campaignIds?: string[] | null): Promise<FindCampaignResult> {
   if (!/^[A-Za-z0-9]{10}$/.test(asin || '')) return { ok: false, error: 'no-asin' }
   if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
   const resp = await sendToExtension<{
     ok?: boolean; found?: boolean; status?: 'opportunity' | 'active' | 'completed' | null
     campaignId?: string | null; detailsUrl?: string | null; campaignName?: string | null
     brand?: string | null; commissionPct?: number | null; endsAt?: string | null
-    scanned?: number; total?: number; error?: string
-  }>({ type: 'MVP_CC_FIND', query: query || '', asin }, 240000)
+    scanned?: number; total?: number; error?: string; diag?: FindCampaignDiag | null
+    // brand + campaignIds from our catalog let SCOUT match the exact campaign
+  }>({ type: 'MVP_CC_FIND', query: query || '', asin, brand: brand || null, campaignIds: campaignIds || null }, 240000)
   if (!resp) return { ok: false, error: 'timeout' }
   if (resp.ok) {
     return {
@@ -580,9 +593,10 @@ export async function requestFindCampaign(query: string, asin: string): Promise<
       commissionPct: resp.commissionPct ?? null,
       endsAt: resp.endsAt ?? null,
       scanned: resp.scanned, total: resp.total,
+      diag: resp.diag ?? null,
     }
   }
-  return { ok: false, error: resp.error || 'find-failed' }
+  return { ok: false, error: resp.error || 'find-failed', diag: resp.diag ?? null }
 }
 
 export interface CampaignMatch {

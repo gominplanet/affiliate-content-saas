@@ -1811,15 +1811,22 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
     <div id={`copilot-vid-${video.youtubeVideoId}`} className="card overflow-hidden scroll-mt-24 transition-shadow">
       {/* Video header */}
       <div className="flex gap-4 p-5">
-        {video.thumbnailUrl ? (
-          <div className="w-32 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100" style={{ height: '72px' }}>
-            <img src={video.thumbnailUrl} alt={video.title} className="w-full h-full object-cover" />
-          </div>
-        ) : (
-          <div className="w-32 flex-shrink-0 rounded-lg bg-gray-100 flex items-center justify-center" style={{ height: '72px' }}>
-            <Youtube size={20} className="text-[#86868b] dark:text-[#8e8e93]" />
-          </div>
-        )}
+        {/* Icon placeholder sits BEHIND the thumbnail. PRIVATE YouTube videos
+            don't serve a public thumbnail, so i.ytimg.com 404s — the img then
+            hides itself (onError) and this icon shows through instead of a blank
+            box. Same fallback when there's no thumbnail URL at all. */}
+        <div className="w-32 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100 relative flex items-center justify-center" style={{ height: '72px' }}>
+          <Youtube size={20} className="text-[#86868b] dark:text-[#8e8e93]" />
+          {video.thumbnailUrl && (
+            <img
+              src={video.thumbnailUrl}
+              alt={video.title}
+              loading="lazy"
+              className="absolute inset-0 w-full h-full object-cover"
+              onError={(e) => { e.currentTarget.style.display = 'none' }}
+            />
+          )}
+        </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
             {/* Visibility chip — spells out the YouTube state in words so creators

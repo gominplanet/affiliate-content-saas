@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { getStripe, PRICE_IDS } from '@/lib/stripe'
+import { getStripe, PRICE_IDS, isValidPriceId } from '@/lib/stripe'
 import type { Tier } from '@/lib/tier'
 import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
+import { alertOps } from '@/lib/ops-alert'
 
 export async function POST(request: NextRequest) {
   // Hard stop: bulletproof gate that runs no matter how the user got
@@ -26,6 +27,18 @@ export async function POST(request: NextRequest) {
   }
   const priceId = PRICE_IDS[tier as keyof typeof PRICE_IDS]
   if (!priceId) return NextResponse.json({ error: 'Invalid tier' }, { status: 400 })
+  // FAIL FAST on a misconfigured price env. If STRIPE_PRICE_<TIER> isn't a
+  // "price_…" id (mis-pasted secret key / product id / blank), don't proceed —
+  // starting checkout with a bad price either 500s at Stripe or, worse, falls
+  // through to the metadata.tier path and grants the tier at the wrong price.
+  // Refuse with a clear message and page ops so it gets fixed in Vercel.
+  if (!isValidPriceId(priceId)) {
+    void alertOps(
+      'Stripe price env misconfigured — checkout blocked',
+      `Tier "${tier}" resolved to a non-price value ("${String(priceId).slice(0, 10)}…"). STRIPE_PRICE_* must be a price_… id. Fix it in Vercel and redeploy.`,
+    )
+    return NextResponse.json({ error: 'Billing for this plan is temporarily unavailable. Our team has been alerted — please try again shortly or contact support.' }, { status: 503 })
+  }
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL!
 

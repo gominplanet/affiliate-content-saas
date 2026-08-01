@@ -269,12 +269,21 @@ async function applyAmazonSearch(keyword) {
   if (!kw) return { searched: false }
   const input = findCampaignSearchBox()
   if (!input) return { searched: false, reason: 'no-search-box' }
-  if ((input.value || '').trim().toLowerCase() === kw.toLowerCase()) {
-    return { searched: true, already: true }
+  const setNativeValue = (el, v) => {
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+    if (setter) setter.call(el, v); else el.value = v
+    el.dispatchEvent(new Event('input', { bubbles: true }))
   }
-  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
-  if (setter) setter.call(input, kw); else input.value = kw
-  input.dispatchEvent(new Event('input', { bubbles: true }))
+  // ALWAYS clear then re-type — never short-circuit on "value already matches".
+  // A throttled BACKGROUND pass often sets the ASIN in the box WITHOUT the grid
+  // ever filtering; on the foreground retry the value already equals the ASIN, so
+  // re-setting the same value won't refire React's onChange and the filter would
+  // never run — the grid stays on the stale default cards and the find loops
+  // forever. Clearing to '' first forces a real change event every time.
+  try { input.focus() } catch (e) {}
+  setNativeValue(input, '')
+  await sleep(150)
+  setNativeValue(input, kw)
   input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }))
   input.dispatchEvent(new Event('change', { bubbles: true }))
 
@@ -283,15 +292,23 @@ async function applyAmazonSearch(keyword) {
   // wait for the results to actually POPULATE and SETTLE — ASIN cells present
   // and their (virtualized) count stable across several polls — before the
   // caller scrapes. Bails after ~16s (treated as a genuinely empty result set).
+  // Count BOTH card layouts: the old ASIN-cell grid AND the 2026 redesign's
+  // [data-testid="campaign-card-container"] cards. The old counter only saw the
+  // ASIN cells, which the redesign dropped — so it always read 0 and every search
+  // just timed out (~16s) instead of settling when the filtered results landed.
+  const countCards = () => {
+    const nu = document.querySelectorAll('[data-testid="campaign-card-container"]').length
+    if (nu) return nu
+    const g = findGrid(); return g ? cellsIn(g).length : 0
+  }
   await sleep(900)            // let the debounced fetch kick off
   let last = -1
   let stable = 0
-  for (let i = 0; i < 50; i++) {
+  for (let i = 0; i < 40; i++) {
     await sleep(300)
-    const g = findGrid()
-    const n = g ? cellsIn(g).length : 0
+    const n = countCards()
     if (n > 0 && n === last) {
-      if (++stable >= 3) { await sleep(500); return { searched: true, count: n } } // populated + steady
+      if (++stable >= 3) { await sleep(400); return { searched: true, count: n } } // populated + steady
     } else {
       stable = 0
       last = n
@@ -366,6 +383,15 @@ if (!window.__ccScoutListener) {
         try {
           const want = String(msg.asin || '').toUpperCase()
           if (!/^[A-Z0-9]{10}$/.test(want)) { sendResponse({ ok: false, error: 'no-asin' }); return }
+          // The brand our shared catalog says owns this ASIN — the CHEAP, reliable
+          // verifier: a rendered card whose brand matches is the right campaign,
+          // no details-page ASIN read needed. Normalize both sides (case/spacing).
+          const normBrand = (b) => String(b || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+          const wantBrand = normBrand(msg.brand)
+          // The exact campaign ids our catalog says carry this ASIN — the STRONGEST
+          // signal: match a card's id directly, no ambiguity even when the brand
+          // runs 40 campaigns. (Cheap, no details-page reads.)
+          const wantIds = new Set((Array.isArray(msg.campaignIds) ? msg.campaignIds : []).filter(Boolean))
           // Sweep tabs in priority order: New Opportunities (actionable — you can
           // accept + auto-send) FIRST, then Active (already accepted) and Completed
           // so we can say "you already have this one" live. re=null means "the tab
@@ -375,14 +401,78 @@ if (!window.__ccScoutListener) {
           if (msg.sweep !== false) tabs.push({ re: /^(active|accepted)$/i, status: 'active' }, { re: /^completed$/i, status: 'completed' })
           let rendered = false
           let found = null
+          // Diagnostics surfaced back to MVP so a miss is explainable (what tabs we
+          // checked, how many cards, which brands) instead of a silent failure.
+          const diag = { wantBrand: wantBrand || null, tabs: [] }
+          // A REUSED CC tab can be parked on the "Sponsored Products for Creators"
+          // program — a different grid/search than Affiliate+ campaigns. Force the
+          // Affiliate+ program tab first (harmless no-op when already there), or we
+          // search the wrong program and never find the campaign.
+          try { await clickCcTab(/affiliate\+\s*campaigns/i) } catch (e) {}
+          // How many card details-pages we may open to verify an ASIN, TOTAL
+          // across all tabs — bounds latency while still confirming the match.
+          let resolveBudget = Math.max(1, msg.maxResolve || 8)
           for (let t = 0; t < tabs.length && !found; t++) {
             const tab = tabs[t]
-            if (tab.re) { const ok = await clickCcTab(tab.re); if (!ok) continue }
+            if (tab.re) { const ok = await clickCcTab(tab.re); if (!ok) { diag.tabs.push({ status: tab.status, cards: 0, searched: false, note: 'tab-not-found' }); continue } }
             let rows = [], total = null
             try { const r = await scoutRunSearch({ asin: want, maxCards: msg.maxCards || 40 }); rows = r.rows || []; total = r.total } catch (e) {}
             if (total != null || rows.length > 0) rendered = true
-            const hit = rows.find((r) => r.campaignId) || rows[0] || null
+            // VERIFY, never guess. Amazon's ASIN search can silently fall back to
+            // an unfiltered grid (or the box may not have taken), so rows[0] is
+            // often an UNRELATED brand — sending there is the "wrong brand" bug.
+            // (1) trust a card that carries the ASIN on itself; else
+            // (2) open the campaign's details page and confirm the ASIN we want
+            //     is one of its products — only then is it a match.
+            void total   // never gate on the "Campaigns (N)" header — it's the
+                         // tab's WHOLE catalog count (704k / 144k), not the matches.
+            // (0) EXACT campaign-id match from our catalog — the reliable path when
+            //     the brand runs many campaigns for one ASIN (40 GarveeHome cards).
+            let hit = wantIds.size ? (rows.find((r) => r.campaignId && wantIds.has(r.campaignId)) || null) : null
+            // (1) On-card ASIN.
+            if (!hit) hit = rows.find((r) => r.asin === want) || null
+            // (2) Brand match from our catalog — cheap and reliable. Among branded
+            //     cards, prefer one whose ASIN we can confirm; else the first
+            //     branded card (still the RIGHT brand's chat). No row-count gate:
+            //     the brand IS the verification.
+            if (!hit && wantBrand) {
+              const branded = rows.filter((r) => normBrand(r.brand) === wantBrand || normBrand(r.campaignName).includes(wantBrand))
+              if (branded.length === 1) hit = branded[0]
+              else if (branded.length > 1) {
+                for (const r of branded) {
+                  if (resolveBudget <= 0) break
+                  if (!r.detailsUrl) continue
+                  resolveBudget--
+                  const asins = await resolveCampaignAsins(r.detailsUrl)
+                  if (asins.includes(want)) { hit = r; break }
+                }
+                if (!hit) hit = branded[0]
+              }
+            }
+            // (3) No brand/id to check against → confirm the ASIN via the details
+            //     page (bounded), only when the result set is focused. Never
+            //     fall back to rows[0] — that's the wrong-brand bug.
+            if (!hit && !wantBrand && !wantIds.size && rows.length > 0 && rows.length <= 20) {
+              for (const r of rows) {
+                if (resolveBudget <= 0) break
+                if (r.asin && r.asin !== want) continue
+                if (!r.detailsUrl) continue
+                resolveBudget--
+                const asins = await resolveCampaignAsins(r.detailsUrl)
+                if (asins.includes(want)) { hit = r; break }
+              }
+            }
+            // A hit's status tells the sender whether to accept first: an
+            // 'opportunity' card isn't accepted yet (accept → then message);
+            // an 'active' card is already accepted (message straight away).
             if (hit) found = { hit, status: tab.status }
+            diag.tabs.push({
+              status: tab.status,
+              cards: rows.length,
+              searched: true,
+              brands: [...new Set(rows.map((r) => r.brand).filter(Boolean))].slice(0, 6),
+              matched: !!hit,
+            })
           }
           // Never leave a user's own CC tab parked on Active/Completed — restore it.
           if (msg.sweep !== false) { try { await clickCcTab(/^(new opportunities|opportunities)$/i) } catch (e) {} }
@@ -396,13 +486,18 @@ if (!window.__ccScoutListener) {
               brand: h.brand || null,
               commissionPct: h.commissionPct != null ? h.commissionPct : null,
               endsAt: h.endsAt || null,
+              diag,
             })
             return
           }
-          // No card in any tab. `scanned` distinguishes a REAL miss (a grid rendered
-          // → scanned≥1, trust it) from a non-render (nothing rendered → scanned 0 →
-          // background retries in a foreground pass).
-          sendResponse({ ok: true, found: false, scanned: rendered ? 1 : 0 })
+          // No VERIFIED card in any tab. In a BACKGROUND tab Amazon often won't
+          // re-filter the virtualized grid, so the stale default cards linger and
+          // we can't confirm a match — that's not a real miss. Report scanned:0 so
+          // the orchestrator escalates to a FOREGROUND pass (where the search
+          // actually filters). On the foreground pass itself (msg.foreground), a
+          // miss IS real → scanned:1, no further retry.
+          void rendered
+          sendResponse({ ok: true, found: false, scanned: msg.foreground ? 1 : 0, diag })
         } catch (e) {
           sendResponse({ ok: false, error: (e && e.message) || 'cc-find-failed' })
         }
@@ -430,7 +525,23 @@ if (!window.__ccScoutListener) {
             try { const r = await scoutRunSearch({ asin, maxCards: msg.maxCards || 30 }); rows = r.rows || []; total = r.total } catch (e) {}
             if (total != null || rows.length > 0) rendered = true
             scanned++
-            const hit = rows.find((r) => r.campaignId) || rows[0] || null
+            // Verify the card is really THIS asin (see CC_FIND): trust an on-card
+            // ASIN match, else confirm via the details page (one resolve per asin
+            // so a big batch stays fast). Never fall back to rows[0] — a wrong
+            // match here would badge the wrong product as a live campaign.
+            let hit = rows.find((r) => r.asin === asin) || null
+            // Gate on rendered card count, NOT the "Campaigns (N)" header (that's
+            // the tab's whole catalog count, not the search matches).
+            void total
+            if (!hit && rows.length > 0 && rows.length <= 20) {
+              for (const r of rows) {
+                if (r.asin && r.asin !== asin) continue
+                if (!r.detailsUrl) continue
+                const asins = await resolveCampaignAsins(r.detailsUrl)
+                if (asins.includes(asin)) { hit = r; break }
+                break // one resolve per asin — keep the batch scan responsive
+              }
+            }
             if (hit) {
               matches.push({
                 asin,
@@ -647,7 +758,18 @@ function extractNewCard(cont) {
   // for campaigns the user actually accepts, via a background tab.
   const detailsEl = cont.querySelector('[data-testid$="campaign-card-view-details-link"], [data-testid*="view-details"], [data-testid*="view_details"]')
   const detailsUrl = detailsEl ? (detailsEl.href || detailsEl.getAttribute('href') || null) : null
-  return { key: campaignId || campaignName, campaignId, campaignName, brand, commissionPct, budget, startsAt, endsAt, image, detailsUrl }
+  // Accepted (Active/Completed) cards have NO Accept button, so the id above is
+  // null — recover it from the "View details" URL, which carries amzn1.campaign.…
+  if (!campaignId && detailsUrl) { const m = detailsUrl.match(/amzn1\.campaign\.[A-Za-z0-9._-]+/); if (m) campaignId = m[0] }
+  // Cheap on-card ASIN, when Amazon leaves one exposed: a /dp/<ASIN> link or a
+  // data-asin attribute. The 2026 redesign usually HIDES it (then we resolve via
+  // the details page), but when it's here we can verify a search hit for free —
+  // never trust a card whose ASIN we can't confirm matches the one we searched.
+  let asin = null
+  const dpEl = cont.querySelector('a[href*="/dp/"], a[href*="/gp/product/"]')
+  if (dpEl) { const m = (dpEl.getAttribute('href') || '').toUpperCase().match(/\/(?:DP|GP\/PRODUCT)\/([A-Z0-9]{10})/); if (m) asin = m[1] }
+  if (!asin) { const da = cont.querySelector('[data-asin]'); const v = da && (da.getAttribute('data-asin') || '').toUpperCase(); if (v && /^[A-Z0-9]{10}$/.test(v)) asin = v }
+  return { key: campaignId || campaignName, campaignId, campaignName, brand, asin, commissionPct, budget, startsAt, endsAt, image, detailsUrl }
 }
 // Amazon's Creator Connections list is INFINITE-SCROLL: it renders ~60 cards,
 // then lazy-loads the next batch only when you scroll near the bottom. The old
@@ -743,6 +865,18 @@ async function resolveCampaignAsin(detailsUrl) {
     const r = await chrome.runtime.sendMessage({ type: 'SCOUT_RESOLVE_ASIN', detailsUrl })
     return (r && r.ok && r.asins && r.asins[0]) || null
   } catch (e) { return null }
+}
+
+// Full ASIN LIST for a campaign (its details page can list several products).
+// Used to VERIFY a search hit: only accept a card when the ASIN we searched is
+// actually one of the campaign's products — never send to a brand we haven't
+// confirmed owns the ASIN.
+async function resolveCampaignAsins(detailsUrl) {
+  if (!detailsUrl) return []
+  try {
+    const r = await chrome.runtime.sendMessage({ type: 'SCOUT_RESOLVE_ASIN', detailsUrl })
+    return (r && r.ok && Array.isArray(r.asins)) ? r.asins.map((a) => String(a || '').toUpperCase()) : []
+  } catch (e) { return [] }
 }
 
 // POST one accepted campaign into the MVP Creator Campaigns inbox. The row lands

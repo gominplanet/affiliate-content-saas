@@ -41,6 +41,32 @@ const PRICE_TO_TIER: Record<string, Tier> = Object.fromEntries(
   ).filter(([id]) => !!id) as Array<[string, Tier]>,
 )
 
+// Sanity floors per paid tier (cents). A price BELOW its tier's floor means a
+// paid tier is being granted for far less than intended — the exact failure that
+// let a $49 price hand out Pro. Coupons don't matter here: we check the price's
+// LIST amount (unit_amount), which discounts never change. Set below the real
+// list prices ($49 / $99 / $199) so normal prices never trip it, only a price
+// that's cheaper than the tier BENEATH it.
+const TIER_MIN_CENTS: Partial<Record<Tier, number>> = { creator: 4000, studio: 8000, pro: 15000 }
+
+/** Best-effort alert when a paid tier is granted from a suspiciously cheap price
+ *  (e.g. Pro on a $49 price). Never throws — a guard here must not fail the
+ *  webhook or block the tier write. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function alertIfTierPriceTooCheap(stripe: any, tier: Tier, priceId: string | undefined, unitAmount: number | null | undefined, customer: string | null | undefined): Promise<void> {
+  try {
+    const min = TIER_MIN_CENTS[tier]
+    if (!min || !priceId) return
+    let amount = unitAmount ?? null
+    if (amount == null) { const p = await stripe.prices.retrieve(priceId); amount = p?.unit_amount ?? null }
+    if (amount == null || amount >= min) return
+    await alertOps(
+      `Paid tier "${tier}" granted from a too-cheap price ($${(amount / 100).toFixed(2)})`,
+      `Price ${priceId} lists at $${(amount / 100).toFixed(2)}, but "${tier}" expects at least $${(min / 100).toFixed(0)}. This grants ${tier} for less than intended — check STRIPE_PRICE_* in Vercel and the Stripe product prices (a duplicate/mispriced tier). Customer: ${customer || 'unknown'}.`,
+    )
+  } catch { /* alerting is best-effort */ }
+}
+
 /** Resolve a Supabase auth user_id from an email. Used as a LAST-RESORT link
  *  when a subscription/checkout carries no user_id metadata and we have no
  *  stripe_customer_id on file yet (e.g. a subscription created via a Stripe
@@ -158,6 +184,9 @@ export async function POST(request: NextRequest) {
       await alertOps('Stripe checkout completed but tier could not be resolved', `customer ${session.customer}, price ${priceId} not in STRIPE_PRICE_* env map. Set their tier manually in /admin/users and add the price ID to the env mapping.`)
       return NextResponse.json({ received: true, unresolvedTier: true })
     }
+    // Catch a paid tier granted from a too-cheap price (e.g. Pro on $49). The
+    // event doesn't expand line-item amounts, so the helper fetches the price.
+    void alertIfTierPriceTooCheap(stripe, tier, priceId, null, session.customer)
     // Resolve the user: metadata (MVP checkout) → else the checkout's email
     // (Payment Link / dashboard-created session that carries no user_id).
     let user_id = session.metadata?.user_id || null
@@ -191,7 +220,7 @@ export async function POST(request: NextRequest) {
     const sub = event.data.object as {
       id: string
       customer: string
-      items: { data: { price: { id: string } }[] }
+      items: { data: { price: { id: string; unit_amount?: number | null } }[] }
       status: string
       cancel_at_period_end?: boolean
       current_period_start?: number
@@ -213,6 +242,8 @@ export async function POST(request: NextRequest) {
       userId = await findUserIdByEmail(admin, await stripeCustomerEmail(stripe, sub.customer))
     }
     if (tier) {
+      // Catch a paid tier granted from a too-cheap price (e.g. Pro on $49).
+      void alertIfTierPriceTooCheap(stripe, tier, priceId, sub.items.data[0]?.price?.unit_amount, sub.customer)
       const fields = {
         tier,
         stripe_customer_id: sub.customer,
