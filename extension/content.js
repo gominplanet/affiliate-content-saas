@@ -283,15 +283,23 @@ async function applyAmazonSearch(keyword) {
   // wait for the results to actually POPULATE and SETTLE — ASIN cells present
   // and their (virtualized) count stable across several polls — before the
   // caller scrapes. Bails after ~16s (treated as a genuinely empty result set).
+  // Count BOTH card layouts: the old ASIN-cell grid AND the 2026 redesign's
+  // [data-testid="campaign-card-container"] cards. The old counter only saw the
+  // ASIN cells, which the redesign dropped — so it always read 0 and every search
+  // just timed out (~16s) instead of settling when the filtered results landed.
+  const countCards = () => {
+    const nu = document.querySelectorAll('[data-testid="campaign-card-container"]').length
+    if (nu) return nu
+    const g = findGrid(); return g ? cellsIn(g).length : 0
+  }
   await sleep(900)            // let the debounced fetch kick off
   let last = -1
   let stable = 0
-  for (let i = 0; i < 50; i++) {
+  for (let i = 0; i < 40; i++) {
     await sleep(300)
-    const g = findGrid()
-    const n = g ? cellsIn(g).length : 0
+    const n = countCards()
     if (n > 0 && n === last) {
-      if (++stable >= 3) { await sleep(500); return { searched: true, count: n } } // populated + steady
+      if (++stable >= 3) { await sleep(400); return { searched: true, count: n } } // populated + steady
     } else {
       stable = 0
       last = n
@@ -366,6 +374,11 @@ if (!window.__ccScoutListener) {
         try {
           const want = String(msg.asin || '').toUpperCase()
           if (!/^[A-Z0-9]{10}$/.test(want)) { sendResponse({ ok: false, error: 'no-asin' }); return }
+          // The brand our shared catalog says owns this ASIN — the CHEAP, reliable
+          // verifier: a rendered card whose brand matches is the right campaign,
+          // no details-page ASIN read needed. Normalize both sides (case/spacing).
+          const normBrand = (b) => String(b || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+          const wantBrand = normBrand(msg.brand)
           // Sweep tabs in priority order: New Opportunities (actionable — you can
           // accept + auto-send) FIRST, then Active (already accepted) and Completed
           // so we can say "you already have this one" live. re=null means "the tab
@@ -390,24 +403,38 @@ if (!window.__ccScoutListener) {
             // (1) trust a card that carries the ASIN on itself; else
             // (2) open the campaign's details page and confirm the ASIN we want
             //     is one of its products — only then is it a match.
+            void total   // never gate on the "Campaigns (N)" header — it's the
+                         // tab's WHOLE catalog count (704k / 144k), not the matches.
+            // (1) On-card ASIN is the strongest cheap signal.
             let hit = rows.find((r) => r.asin === want) || null
-            if (!hit) {
-              // Only spend resolves when the result set is FOCUSED (a real ASIN
-              // search returns a handful of cards). A BIG set means the search box
-              // didn't filter — don't burn tabs guessing through unrelated
-              // campaigns. Gate on how many cards RENDERED, never on the
-              // "Campaigns (N)" header: that shows the tab's WHOLE catalog count
-              // (e.g. 704,601 New Opportunities / 144,124 Active), not the matches.
-              void total
-              if (rows.length > 0 && rows.length <= 20) {
-                for (const r of rows) {
+            // (2) Brand match from our catalog — cheap and reliable. One branded
+            //     card → trust it; several → confirm the ASIN on them, else fall
+            //     back to a branded card (still the RIGHT brand's chat).
+            if (!hit && wantBrand) {
+              const branded = rows.filter((r) => normBrand(r.brand) === wantBrand)
+              if (branded.length === 1) hit = branded[0]
+              else if (branded.length > 1) {
+                for (const r of branded) {
                   if (resolveBudget <= 0) break
-                  if (r.asin && r.asin !== want) continue      // card says a different ASIN — skip
                   if (!r.detailsUrl) continue
                   resolveBudget--
                   const asins = await resolveCampaignAsins(r.detailsUrl)
                   if (asins.includes(want)) { hit = r; break }
                 }
+                if (!hit) hit = branded[0]
+              }
+            }
+            // (3) No brand to check against → confirm the ASIN via the details
+            //     page (bounded), only when the result set is focused. Never
+            //     fall back to rows[0] — that's the wrong-brand bug.
+            if (!hit && !wantBrand && rows.length > 0 && rows.length <= 20) {
+              for (const r of rows) {
+                if (resolveBudget <= 0) break
+                if (r.asin && r.asin !== want) continue
+                if (!r.detailsUrl) continue
+                resolveBudget--
+                const asins = await resolveCampaignAsins(r.detailsUrl)
+                if (asins.includes(want)) { hit = r; break }
               }
             }
             // A hit's status tells the sender whether to accept first: an
@@ -430,10 +457,14 @@ if (!window.__ccScoutListener) {
             })
             return
           }
-          // No card in any tab. `scanned` distinguishes a REAL miss (a grid rendered
-          // → scanned≥1, trust it) from a non-render (nothing rendered → scanned 0 →
-          // background retries in a foreground pass).
-          sendResponse({ ok: true, found: false, scanned: rendered ? 1 : 0 })
+          // No VERIFIED card in any tab. In a BACKGROUND tab Amazon often won't
+          // re-filter the virtualized grid, so the stale default cards linger and
+          // we can't confirm a match — that's not a real miss. Report scanned:0 so
+          // the orchestrator escalates to a FOREGROUND pass (where the search
+          // actually filters). On the foreground pass itself (msg.foreground), a
+          // miss IS real → scanned:1, no further retry.
+          void rendered
+          sendResponse({ ok: true, found: false, scanned: msg.foreground ? 1 : 0 })
         } catch (e) {
           sendResponse({ ok: false, error: (e && e.message) || 'cc-find-failed' })
         }

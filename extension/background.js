@@ -733,8 +733,8 @@ async function scanCreatorConnections(callerTabId) {
 // background pass returns zero candidates, ccFindCampaign escalates to a brief
 // FOREGROUND pass and hands focus straight back — the only reliable way to read
 // the grid, matching the existing Campaign Search scan.
-async function findCampaignOnTab(tabId, query, asin) {
-  const ask = () => chrome.tabs.sendMessage(tabId, { type: 'CC_FIND', query, asin, maxResolve: 12, maxCards: 120 })
+async function findCampaignOnTab(tabId, query, asin, brand, foreground) {
+  const ask = () => chrome.tabs.sendMessage(tabId, { type: 'CC_FIND', query, asin, brand: brand || null, foreground: !!foreground, maxResolve: 12, maxCards: 120 })
   try {
     return await ask()
   } catch (e) {
@@ -750,7 +750,7 @@ function ccFoundNothingToCheck(res) {
   return !!(res && res.ok && !res.found && !res.scanned)
 }
 
-async function ccFindCampaign(query, asin, callerTabId) {
+async function ccFindCampaign(query, asin, callerTabId, brand) {
   const want = String(asin || '').toUpperCase()
   if (!/^[A-Z0-9]{10}$/.test(want)) return { ok: false, error: 'no-asin' }
   const open = await chrome.tabs.query({
@@ -776,15 +776,16 @@ async function ccFindCampaign(query, asin, callerTabId) {
       if (sw && sw.switched) { await _sleep(1500); await waitForTabLoad(tab.id, 25000); await _sleep(2500) }
     } catch (e) {}
 
-    let res = await findCampaignOnTab(tab.id, query, want)
+    let res = await findCampaignOnTab(tab.id, query, want, brand, false)
 
-    // Background yielded no cards to check → the hidden grid didn't render.
-    // Escalate to a short foreground pass, then hand focus back to MVP.
+    // Background couldn't VERIFY a match → often the hidden grid never re-filtered
+    // (stale default cards linger). Escalate to a short foreground pass, where the
+    // ASIN search actually filters, then hand focus back to MVP.
     if (ccFoundNothingToCheck(res)) {
       try {
         await chrome.tabs.update(tab.id, { active: true })
         await _sleep(2800) // let the now-visible grid paint + settle
-        const fg = await findCampaignOnTab(tab.id, query, want)
+        const fg = await findCampaignOnTab(tab.id, query, want, brand, true)
         if (fg) { res = fg; res.foreground = true }
       } catch (e) { /* keep the background result */ }
       finally {
@@ -2586,7 +2587,7 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     // search plus up to ~15 background ASIN resolves — allow up to 3 minutes.
     const callerTabId = sender && sender.tab ? sender.tab.id : null
     const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 180000)
-    ccFindCampaign(msg.query || '', msg.asin || '', callerTabId)
+    ccFindCampaign(msg.query || '', msg.asin || '', callerTabId, msg.brand || null)
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async response — keep the channel open

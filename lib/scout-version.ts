@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.11.72'
+export const SCOUT_LATEST_VERSION = '1.11.73'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Send on Creator Connections now verifies the campaign really sells your product before sending (no more messaging the wrong brand), sends each message-group block exactly once (no duplicates), and ignores the static "personal information" notice so the send never stalls.'
+  'Send on Creator Connections now reliably finds the campaign: it verifies by the brand we already know, actually filters the ASIN search (the settle check now sees the new card layout), and falls back to a foreground pass when the hidden grid won’t filter — plus exactly-once sending, brand verification, and ignoring the static "personal information" notice.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar

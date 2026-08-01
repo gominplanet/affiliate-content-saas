@@ -187,8 +187,10 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
         }
 
         // In the catalog (or couldn't tell) → resolve the campaign live with
-        // SCOUT (fast ASIN search), which also gives us its accept status.
-        const find = await requestFindCampaign('', asin)
+        // SCOUT (fast ASIN search). Pass the catalog's brand so SCOUT can VERIFY
+        // it opened the right campaign cheaply (no flaky details-page ASIN read),
+        // and it also gives us the accept status.
+        const find = await requestFindCampaign('', asin, catBrand)
         if (find.error === 'not-installed') {
           setCcPhase('idle')
           setCcNote({ kind: 'info', text: 'Auto-send needs the SCOUT extension (it sends inside your own Amazon session). Without it, use Copy message or Email, or message the brand from the product page.' })
