@@ -2885,7 +2885,12 @@ async function sendBrandMessageInPage(message) {
       if (!send) await sleep(250)
     }
     if (!send) { segLog.push({ seg: i + 1, sent: false, reason: 'send-never-enabled' }); break }
-    realClick(send); sent++; steps.sent = true
+    // Amazon's Send responds to a NATIVE click (a synthetic realClick fills the
+    // box fine but never actually submits — that was "types but never sends").
+    // ONE native click; the duplicate we had before came from the settle loop
+    // re-clicking the static advisory, which is now excluded.
+    try { send.click() } catch (e) { realClick(send) }
+    sent++; steps.sent = true
     // SETTLE. Amazon may pop a "sharing personal information" confirm (address /
     // email / phone messages). Keep clicking Continue and waiting until the box
     // CLEARS (= message actually posted) or the window elapses — RETRYING the
@@ -2896,7 +2901,7 @@ async function sendBrandMessageInPage(message) {
     let dismissed = false, cleared = false, quiet = 0
     for (let k = 0; k < 30; k++) {                   // hard ceiling ~11s per message
       const ok = findConfirmOk()
-      if (ok) { realClick(ok); dismissed = true; quiet = 0; await sleep(450); continue }
+      if (ok) { try { ok.click() } catch (e) { realClick(ok) } dismissed = true; quiet = 0; await sleep(450); continue }
       if (boxEmpty(inp)) { cleared = true; break }
       // Once the PI popup has been dismissed and stays gone for a few ticks, the
       // message has posted even if the box text lingers — don't burn the budget.
