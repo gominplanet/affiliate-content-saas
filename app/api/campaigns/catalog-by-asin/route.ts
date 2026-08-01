@@ -29,6 +29,7 @@ export async function GET(request: Request) {
   // today" filter dropped a campaign that ended yesterday, so Send-on-CC couldn't
   // find it in the catalog and fell back to the slow grid search. Use a grace
   // window so recently-ended campaigns still resolve.
+  const today = new Date().toISOString().slice(0, 10)
   const grace = new Date()
   grace.setDate(grace.getDate() - 60)
   const graceDate = grace.toISOString().slice(0, 10)
@@ -46,13 +47,40 @@ export async function GET(request: Request) {
       .limit(50)
     const rows = (data ?? []) as Array<{ campaign_id: string | null; campaign_name: string | null; brand_name: string | null; commission_pct: number | null }>
     if (!rows.length) return NextResponse.json({ ok: true, inCatalog: false })
+
+    const brand = rows[0].brand_name ?? null
+    const campaignIds = [...new Set(rows.map(r => r.campaign_id).filter(Boolean))]
+
+    // BRAND FALLBACK: Creator Connections messaging is per-BRAND (one chat thread
+    // per brand), so we can reach the brand through ANY of its currently-LIVE
+    // campaigns if this product's own campaign has ended. Pull a few other live
+    // campaign_ids for the same brand (mig 206 indexes brand_name for this).
+    let brandCampaignIds: string[] = []
+    if (brand) {
+      try {
+        const asinSet = new Set(campaignIds)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: bd } = await (admin as any)
+          .from('cc_campaign_catalog')
+          .select('campaign_id')
+          .eq('brand_name', brand)
+          .gte('ends_at', today)
+          .order('ends_at', { ascending: false })
+          .limit(12)
+        brandCampaignIds = [...new Set(((bd ?? []) as Array<{ campaign_id: string | null }>).map(r => r.campaign_id).filter(Boolean) as string[])]
+          .filter(id => !asinSet.has(id))
+          .slice(0, 8)
+      } catch { /* brand fallback is best-effort */ }
+    }
+
     return NextResponse.json({
       ok: true,
       inCatalog: true,
-      brand: rows[0].brand_name ?? null,
+      brand,
       campaignName: rows[0].campaign_name ?? null,
       commissionPct: rows[0].commission_pct ?? null,
-      campaignIds: [...new Set(rows.map(r => r.campaign_id).filter(Boolean))],
+      campaignIds,
+      brandCampaignIds,
     })
   } catch {
     // Unknown (query failed) — treat as "can't tell", not "not in catalog".

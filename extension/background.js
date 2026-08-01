@@ -2594,7 +2594,7 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     // and accept+send — no grid search. Same ~3 minute budget as accept+send.
     const callerTabId = sender && sender.tab ? sender.tab.id : null
     const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 180000)
-    sendByCampaignIds(msg.campaignIds || [], msg.message || '', msg.asin || null, callerTabId)
+    sendByCampaignIds(msg.campaignIds || [], msg.message || '', msg.asin || null, callerTabId, msg.fallbackCampaignIds || [])
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async response — keep the channel open
@@ -3077,24 +3077,35 @@ async function acceptAndSendBrand(detailsUrl, message, callerTabId, wantAsin, fa
 // but we STOP on any other failure (e.g. a slow send) so we don't open a pile of
 // tabs. `affiliate-plus` first, then `spcc` for the same id, since a campaign is
 // one or the other and the type just picks the view.
-async function sendByCampaignIds(campaignIds, message, asin, callerTabId) {
-  const ids = [...new Set((campaignIds || []).map((c) => String(c || '').trim()).filter(Boolean))].slice(0, 4)
-  if (!ids.length) return { ok: false, error: 'no-campaign' }
+async function sendByCampaignIds(campaignIds, message, asin, callerTabId, fallbackCampaignIds) {
+  const uniq = (a) => [...new Set((a || []).map((c) => String(c || '').trim()).filter(Boolean))]
+  const ids = uniq(campaignIds).slice(0, 4)
+  const fbids = uniq(fallbackCampaignIds).filter((id) => !ids.includes(id)).slice(0, 6)
+  if (!ids.length && !fbids.length) return { ok: false, error: 'no-campaign' }
   if (!message || !message.trim()) return { ok: false, error: 'no-message' }
   let last = null
-  for (const id of ids) {
+  // Open ONE campaign id (trying both program-type views), verifying the ASIN on
+  // the page only when wantAsin is set. Returns the ok-result or null.
+  const tryOne = async (id, wantAsin) => {
     for (const type of ['affiliate-plus', 'spcc']) {
       const url = ccCampaignUrl(id, type)
-      const r = await acceptAndSendBrand(url, message, callerTabId, asin, true)
+      const r = await acceptAndSendBrand(url, message, callerTabId, wantAsin, true)
       if (r && r.ok) return { ...r, campaignId: id, detailsUrl: url }
       last = r
-      // asin-mismatch = right page loaded but wrong product (or wrong type view)
-      // → worth trying the other type / next id. Anything else (timeout, no chat)
-      // → stop; retrying just burns tabs and the budget.
-      if (!(r && r.reason === 'asin-mismatch')) return last || { ok: false, reason: 'send-failed', campaignId: id, detailsUrl: url }
+      // asin-mismatch (wrong product / wrong type view) → try the other type. Any
+      // other failure (timeout, no chat) → stop this id (retrying burns budget).
+      if (!(r && r.reason === 'asin-mismatch')) return null
     }
+    return null
   }
-  return last || { ok: false, reason: 'asin-mismatch' }
+  // 1) The product's OWN campaign(s) — verify the page really sells the ASIN.
+  for (const id of ids) { const r = await tryOne(id, asin); if (r) return r }
+  // 2) BRAND fallback — Creator Connections messaging is per-BRAND (one chat per
+  //    brand), so ANY live campaign from the same brand reaches the same thread.
+  //    These ids already came from our catalog filtered by this brand, so we send
+  //    WITHOUT the ASIN guard (the campaign is a different product, same brand).
+  for (const id of fbids) { const r = await tryOne(id, null); if (r) return { ...r, viaBrand: true } }
+  return last || { ok: false, reason: 'send-failed' }
 }
 
 async function sendBrandMessage(detailsUrl, message, callerTabId) {
