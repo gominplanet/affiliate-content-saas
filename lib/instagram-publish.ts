@@ -46,26 +46,35 @@ export async function publishInstagramForTarget(
     } catch { /* fall through with the existing token */ }
   }
 
-  // Resolve the video row + its 9:16 render. ig_cover_offset_ms is the frame the
-  // creator picked in MVP as the Reel cover (null = let IG default to frame 0).
+  // Resolve the video row + its 9:16 render.
   let videoDbId = videoId0
   let videoUrl: string | undefined
-  let coverOffsetMs: number | null = null
   if (videoId0) {
     const { data: v } = await sb
-      .from('youtube_videos').select('id,instagram_video_url,ig_cover_offset_ms').eq('id', videoId0).eq('user_id', userId).maybeSingle()
+      .from('youtube_videos').select('id,instagram_video_url').eq('id', videoId0).eq('user_id', userId).maybeSingle()
     if (!v) throw new Error('Video not found.')
     videoUrl = v.instagram_video_url as string | undefined
-    coverOffsetMs = (v.ig_cover_offset_ms as number | null) ?? null
   } else {
     const { data: post } = await sb
-      .from('blog_posts').select('video_id,youtube_videos(id,instagram_video_url,ig_cover_offset_ms)').eq('id', blogPostId).eq('user_id', userId).maybeSingle()
+      .from('blog_posts').select('video_id,youtube_videos(id,instagram_video_url)').eq('id', blogPostId).eq('user_id', userId).maybeSingle()
     if (!post) throw new Error('Post not found.')
     const yt = post.youtube_videos
     const ytRow = Array.isArray(yt) ? yt[0] : yt
     videoDbId = (ytRow?.id as string | undefined) || (post.video_id as string | undefined) || null
     videoUrl = ytRow?.instagram_video_url as string | undefined
-    coverOffsetMs = (ytRow?.ig_cover_offset_ms as number | null) ?? null
+  }
+
+  // The Reel COVER frame the creator picked in MVP (ms), fetched SEPARATELY and
+  // best-effort: if migration 205 hasn't run yet, selecting the column errors —
+  // we swallow it so publishing still works (just without a custom cover). Once
+  // the column exists, covers apply. null = IG default (frame 0).
+  let coverOffsetMs: number | null = null
+  if (videoDbId) {
+    try {
+      const { data: c, error: cErr } = await sb
+        .from('youtube_videos').select('ig_cover_offset_ms').eq('id', videoDbId).maybeSingle()
+      if (!cErr && c) coverOffsetMs = (c.ig_cover_offset_ms as number | null) ?? null
+    } catch { /* column not present yet — publish without a custom cover */ }
   }
   if (!videoUrl || !/^https:\/\//.test(videoUrl)) {
     throw new Error('No vertical MP4 for this — add a 9:16 render before it can post.')
