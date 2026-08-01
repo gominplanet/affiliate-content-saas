@@ -202,14 +202,20 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
         return
       }
       // Not sent via the API (SCOUT hasn't learned the send yet, or this brand isn't
-      // in your ACCEPTED campaigns) — note why and fall through to the catalog /
-      // visible-tab paths (which can accept an opportunity first).
+      // in your ACCEPTED campaigns) — surface WHY (so a failure is diagnosable) and
+      // fall through to the catalog / visible-tab paths (which can accept first).
       const asinReason = byAsin.reason || byAsin.error || ''
-      if (asinReason && asinReason !== 'not-learned') setCcDiag(`Background send: ${asinReason}`)
+      if (asinReason) setCcDiag(`Background send: ${asinReason}`)
 
       if (inCatalog === false && !(catCampaignIds.length || catBrandCampaignIds.length)) {
         setCcPhase('idle')
-        setCcNote({ kind: 'info', text: 'This product isn’t in Creator Connections, so there’s no brand chat to send through. Email the brand instead (use Copy message or Email), or reach them from the product page.' })
+        // The background resolver only sees ACCEPTED campaigns. no-campaign-for-asin
+        // means SCOUT found no accepted campaign for this product — it may still be
+        // an open opportunity you haven't accepted (accept it, then Send lands in the
+        // chat), or the brand genuinely isn't on Creator Connections.
+        setCcNote({ kind: 'info', text: asinReason === 'no-campaign-for-asin'
+          ? 'SCOUT didn’t find an accepted Creator Connections campaign for this product. If the brand has an open opportunity, click Open Campaigns to accept it, then Send again — otherwise email the brand (Copy message / Email).'
+          : 'This product isn’t in Creator Connections, so there’s no brand chat to send through. Email the brand instead (use Copy message or Email), or reach them from the product page.' })
         return
       }
 

@@ -419,6 +419,20 @@ try {
   })
 } catch (e) {}
 
+// Ensure the persisted recipes are loaded into memory before a send checks them —
+// on a cold MV3 worker the storage.get above is still in flight, so an immediate
+// send could wrongly see null and report "not-learned". Reads storage on demand.
+async function ensureRecipesLoaded() {
+  if (_ccSendRecipe && _ccSearchRecipe) return
+  try {
+    const o = await chrome.storage.local.get(['ccSendRecipe', 'ccSearchRecipe'])
+    if (o) {
+      if (!_ccSendRecipe && o.ccSendRecipe && typeof o.ccSendRecipe.bodyTemplate === 'string' && o.ccSendRecipe.bodyTemplate.includes(CTX_PLACEHOLDER)) _ccSendRecipe = o.ccSendRecipe
+      if (!_ccSearchRecipe && o.ccSearchRecipe) _ccSearchRecipe = o.ccSearchRecipe
+    }
+  } catch (e) {}
+}
+
 function recordNetCapture(rec) {
   if (!rec || !rec.url) return
   _ccNetRing.push(rec)
@@ -635,6 +649,7 @@ function ccResolveSendInPage(opts) {
 // the ASIN-resolved ones. Needs the learned send + search recipes.
 async function sendByAsinApi(asin, message, campaignIdsHint) {
   if (!message || !message.trim()) return { ok: false, error: 'no-message' }
+  await ensureRecipesLoaded()
   if (!_ccSendRecipe || !_ccSearchRecipe) return { ok: false, reason: 'not-learned' }
   const keepAlive = startKeepAlive()
   let tabId = null
@@ -3452,6 +3467,7 @@ async function sendByCampaignIds(campaignIds, message, asin, callerTabId, fallba
   // Try each candidate campaignId; the first that resolves a contextToken (an
   // accepted brand chat) and posts wins. Falls through to the visible DOM flow if
   // no recipe yet, or the brand isn't accepted (no contextToken), or a call fails.
+  await ensureRecipesLoaded()
   if (_ccSendRecipe && _ccSearchRecipe) {
     const kaFast = startKeepAlive()
     let apiTab = null
