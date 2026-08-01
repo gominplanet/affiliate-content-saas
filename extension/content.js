@@ -46,8 +46,8 @@
     try {
       if (ev.source !== window) return
       const d = ev.data
-      if (!d || d.__mvpNet !== true || d.kind !== 'send-capture' || !d.rec) return
-      const p = chrome.runtime.sendMessage({ type: 'MVP_CC_NET_CAPTURE', rec: d.rec })
+      if (!d || d.__mvpNet !== true || !d.rec || (d.kind !== 'send-capture' && d.kind !== 'send-response')) return
+      const p = chrome.runtime.sendMessage({ type: 'MVP_CC_NET_CAPTURE', kind: d.kind, rec: d.rec })
       if (p && p.catch) p.catch(() => {})
     } catch (e) {}
   })

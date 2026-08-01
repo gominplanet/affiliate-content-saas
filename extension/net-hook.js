@@ -47,23 +47,36 @@
     return o
   }
 
-  const emit = (rec) => {
-    try { window.postMessage({ __mvpNet: true, kind: 'send-capture', rec }, location.origin) } catch (e) {}
+  const emit = (kind, rec) => {
+    try { window.postMessage({ __mvpNet: true, kind, rec }, location.origin) } catch (e) {}
   }
+  // Endpoints whose RESPONSE we want to see (not just the request): chat/search
+  // carries the contextToken we need to extract, and accept/opt-in confirms a
+  // brand chat now exists. Capturing responses lets us verify + tune the replay.
+  const wantResponse = (url) => { try { return /\/connect\/api\/(chat\/(search|message\/send)|campaign\/accept|.*(accept|opt-?in))/i.test(new URL(url, location.href).pathname) } catch (e) { return false } }
 
   // ── fetch ──────────────────────────────────────────────────────────────────
   const origFetch = window.fetch
   if (typeof origFetch === 'function') {
     window.fetch = function (input, init) {
+      let url = '', method = 'GET'
       try {
-        const url = typeof input === 'string' ? input : (input && input.url) || ''
-        const method = (init && init.method) || (input && input.method) || 'GET'
+        url = typeof input === 'string' ? input : (input && input.url) || ''
+        method = (init && init.method) || (input && input.method) || 'GET'
         const body = init && init.body
         if (looksLikeSend(url, method, body)) {
-          emit({ via: 'fetch', url, method, headers: headersToObj(init && init.headers), body: typeof body === 'string' ? body : null, ts: Date.now() })
+          emit('send-capture', { via: 'fetch', url, method, headers: headersToObj(init && init.headers), body: typeof body === 'string' ? body : null, ts: Date.now() })
         }
       } catch (e) {}
-      return origFetch.apply(this, arguments)
+      const p = origFetch.apply(this, arguments)
+      try {
+        if (/^post$/i.test(String(method)) && wantResponse(url)) {
+          p.then((resp) => {
+            try { resp.clone().text().then((t) => emit('send-response', { url, status: resp.status, body: (t || '').slice(0, 1800), ts: Date.now() })).catch(() => {}) } catch (e) {}
+          }).catch(() => {})
+        }
+      } catch (e) {}
+      return p
     }
   }
 

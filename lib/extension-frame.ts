@@ -183,6 +183,7 @@ export interface CcSendDebug {
   searchRecipe?: Record<string, unknown> | null
   ringCount?: number
   ring?: Array<Record<string, unknown>>
+  responses?: Array<Record<string, unknown>>
   creatorId?: string | null
   error?: string
 }
