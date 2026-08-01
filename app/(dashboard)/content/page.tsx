@@ -282,6 +282,14 @@ function deriveProductUrl(video: Record<string, unknown>): string | null {
   return asin ? `https://www.amazon.com/dp/${asin}` : null
 }
 
+/** Best-effort ASIN for a video, from its stored product_url / description /
+ *  title (amazon /dp/ link or a bare B0… id). Powers the "has a CC campaign?"
+ *  badge — geni.us/amzn.to links that need resolving are skipped (no badge). */
+function asinFromVideo(video: Record<string, unknown>): string | null {
+  const hay = `${(video.product_url as string) || ''}\n${(video.description as string) || ''}\n${(video.title as string) || ''}`.toUpperCase()
+  return hay.match(/\/(?:DP|GP\/PRODUCT)\/([A-Z0-9]{10})/)?.[1] || hay.match(/\b(B0[A-Z0-9]{8})\b/)?.[1] || null
+}
+
 /**
  * Optional per-video product reference photo. When set, the blog in-body
  * image generator (and IG image, later) uses it as the Kontext reference
@@ -758,7 +766,7 @@ function BrandTagsInput({ videoId, initial }: { videoId: string; initial: string
 // to every card. A card now only re-renders when ITS OWN props change.
 // Big snappiness win on the 20-card paginated Posts tab. 2026-06-07.
 const VideoCard = memo(function VideoCardImpl({
-  video, post, wpSiteUrl, fbConnected, pinterestConnected, threadsConnected, linkedInConnected, twitterConnected, blueskyConnected, telegramConnected, instagramConnected, tiktokConnected, fbAccounts, igAccounts, userTier, brandNiches, customCategories, brandDisclaimer, brandFacebookGroups, blogImagePref, siteId, failedSchedulePlatforms, onCustomCategoryAdded,
+  video, post, wpSiteUrl, fbConnected, pinterestConnected, threadsConnected, linkedInConnected, twitterConnected, blueskyConnected, telegramConnected, instagramConnected, tiktokConnected, fbAccounts, igAccounts, userTier, brandNiches, customCategories, brandDisclaimer, brandFacebookGroups, blogImagePref, siteId, hasCampaign, failedSchedulePlatforms, onCustomCategoryAdded,
   onGenerated, onDismiss, onDelete, onPinPreview, hidden,
 }: {
   video: Record<string, unknown>
@@ -790,6 +798,9 @@ const VideoCard = memo(function VideoCardImpl({
   /** Multi-site (Pro): the blog fresh posts from this card publish to. Threaded
    *  into generate + schedule so a new/scheduled post lands on the chosen site. */
   siteId: string | null
+  /** True when this product's ASIN has a live Creator Connections campaign
+   *  (from the shared catalog) — shows a small "CC" badge on the card. */
+  hasCampaign?: boolean
   onCustomCategoryAdded: (next: string[]) => void
   onGenerated: (videoId: string, url: string, title: string, postId: string) => void
   onDismiss: () => void
@@ -1196,6 +1207,18 @@ const VideoCard = memo(function VideoCardImpl({
         <div className="flex items-center gap-3 text-xs text-[#86868b] dark:text-[#8e8e93] mb-3 flex-wrap">
           {views != null && <span>{views.toLocaleString()} views</span>}
           <span>{new Date(publishedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+          {/* CC campaign badge — this product's ASIN has a live Creator
+              Connections campaign in the catalog, so Share with brand can
+              accept + message the brand. */}
+          {hasCampaign && (
+            <span
+              className="inline-flex items-center gap-1 text-[10px] font-bold rounded-full px-2 py-0.5"
+              style={{ background: 'rgba(52,199,89,0.15)', color: '#1f8a3a', border: '1px solid rgba(52,199,89,0.4)' }}
+              title="This product has a live Amazon Creator Connections campaign. Open Share with brand to accept it and message the brand."
+            >
+              ✓ CC campaign
+            </span>
+          )}
           {/* Scheduled pill — purple-tinted "Scheduled · Sat Jun 6 at
               10:20 AM" badge. Renders only when the post has been queued
               via /api/blog/schedule-publish AND the scheduled time
@@ -2010,6 +2033,10 @@ export default function ContentPage() {
   const supabase = createBrowserClient()
   const { confirm, ConfirmHost } = useConfirm()
   const [videos, setVideos] = useState<Record<string, unknown>[]>([])
+  // ASINs (of these posts' products) that have a LIVE Creator Connections
+  // campaign — drives the small "CC" badge on each card. Filled by a batched
+  // catalog check keyed on the loaded videos.
+  const [ccAsinSet, setCcAsinSet] = useState<Set<string>>(new Set())
   const [posts, setPosts] = useState<Record<string, { url: string; title: string; postId?: string; wpPostId?: number; indexed?: boolean | null; coverage?: string | null; bodyImagesCount?: number | null; scheduledFor?: string | null; scheduleMode?: string | null; /** Real WP/DB publish timestamp — used to sort the Recent section by blog publish date instead of video publish date. 2026-06-07. */ publishedAt?: string | null; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string; instagramReelId?: string; instagramStoryId?: string }>>({})
   // Per-post map of platforms whose MOST RECENT scheduled push failed.
   // Drives the ⚠ warning next to the social pill in VideoCard. Filled
@@ -3267,6 +3294,31 @@ export default function ContentPage() {
     ),
     [videos, showHidden, dismissed, channelFilter],
   )
+
+  // Batch "which of these products have a live Creator Connections campaign?"
+  // (one GIN-indexed catalog query per ~120 ASINs) so each card can show a CC
+  // badge. Best-effort, no SCOUT; re-runs when the loaded videos change.
+  useEffect(() => {
+    const asins = [...new Set(videos.map(asinFromVideo).filter(Boolean) as string[])].slice(0, 300)
+    if (!asins.length) { setCcAsinSet(new Set()); return }
+    let cancelled = false
+    ;(async () => {
+      const matched = new Set<string>()
+      for (let i = 0; i < asins.length && !cancelled; i += 120) {
+        try {
+          const r = await fetch('/api/campaigns/cc-badges', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ asins: asins.slice(i, i + 120) }),
+          })
+          const d = await r.json().catch(() => ({}))
+          for (const a of (d.matched ?? [])) matched.add(String(a).toUpperCase())
+        } catch { /* best-effort */ }
+      }
+      if (!cancelled) setCcAsinSet(matched)
+    })()
+    return () => { cancelled = true }
+  }, [videos])
+
   // Split videos by orientation. is_vertical comes from YouTube sync (duration
   // ≤ 180s OR #Shorts in title). For backwards-compat rows where is_vertical
   // is null, default to horizontal (the existing behavior pre-migration).
@@ -3819,6 +3871,7 @@ export default function ContentPage() {
                   <VideoCard
                     key={video.id as string}
                     video={video}
+                    hasCampaign={ccAsinSet.has(asinFromVideo(video) || '')}
                     post={posts[video.id as string] || null}
                     wpSiteUrl={wpSiteUrl}
                     fbConnected={fbConnected}
@@ -4232,6 +4285,7 @@ export default function ContentPage() {
                 <div className="flex-1 min-w-0">
                   <VideoCard
                     video={video}
+                    hasCampaign={ccAsinSet.has(asinFromVideo(video) || '')}
                     post={posts[video.id as string] || null}
                     wpSiteUrl={wpSiteUrl}
                     fbConnected={fbConnected}
