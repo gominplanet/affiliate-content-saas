@@ -282,14 +282,6 @@ function deriveProductUrl(video: Record<string, unknown>): string | null {
   return asin ? `https://www.amazon.com/dp/${asin}` : null
 }
 
-/** Best-effort ASIN for a video, from its stored product_url / description /
- *  title (amazon /dp/ link or a bare B0… id). Powers the "has a CC campaign?"
- *  badge — geni.us/amzn.to links that need resolving are skipped (no badge). */
-function asinFromVideo(video: Record<string, unknown>): string | null {
-  const hay = `${(video.product_url as string) || ''}\n${(video.description as string) || ''}\n${(video.title as string) || ''}`.toUpperCase()
-  return hay.match(/\/(?:DP|GP\/PRODUCT)\/([A-Z0-9]{10})/)?.[1] || hay.match(/\b(B0[A-Z0-9]{8})\b/)?.[1] || null
-}
-
 /**
  * Optional per-video product reference photo. When set, the blog in-body
  * image generator (and IG image, later) uses it as the Kontext reference
@@ -2033,10 +2025,10 @@ export default function ContentPage() {
   const supabase = createBrowserClient()
   const { confirm, ConfirmHost } = useConfirm()
   const [videos, setVideos] = useState<Record<string, unknown>[]>([])
-  // ASINs (of these posts' products) that have a LIVE Creator Connections
-  // campaign — drives the small "CC" badge on each card. Filled by a batched
-  // catalog check keyed on the loaded videos.
-  const [ccAsinSet, setCcAsinSet] = useState<Set<string>>(new Set())
+  // Video IDs whose product has a LIVE Creator Connections campaign — drives the
+  // "CC campaign" badge. Filled by a batched, server-side check that resolves
+  // each video's ASIN (stored, direct link, or by resolving its geni.us).
+  const [ccVideoSet, setCcVideoSet] = useState<Set<string>>(new Set())
   const [posts, setPosts] = useState<Record<string, { url: string; title: string; postId?: string; wpPostId?: number; indexed?: boolean | null; coverage?: string | null; bodyImagesCount?: number | null; scheduledFor?: string | null; scheduleMode?: string | null; /** Real WP/DB publish timestamp — used to sort the Recent section by blog publish date instead of video publish date. 2026-06-07. */ publishedAt?: string | null; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string; instagramReelId?: string; instagramStoryId?: string }>>({})
   // Per-post map of platforms whose MOST RECENT scheduled push failed.
   // Drives the ⚠ warning next to the social pill in VideoCard. Filled
@@ -3295,26 +3287,31 @@ export default function ContentPage() {
     [videos, showHidden, dismissed, channelFilter],
   )
 
-  // Batch "which of these products have a live Creator Connections campaign?"
-  // (one GIN-indexed catalog query per ~120 ASINs) so each card can show a CC
-  // badge. Best-effort, no SCOUT; re-runs when the loaded videos change.
+  // Batch "which of these posts' products have a live Creator Connections
+  // campaign?" The server resolves each video's ASIN (stored, direct link, or by
+  // resolving its geni.us short link — most creators use Geniuslink) and checks
+  // the shared catalog. We only send videos that reference a product. No SCOUT.
   useEffect(() => {
-    const asins = [...new Set(videos.map(asinFromVideo).filter(Boolean) as string[])].slice(0, 300)
-    if (!asins.length) { setCcAsinSet(new Set()); return }
+    const ids = videos
+      .filter(v => /geni\.us|amzn\.to|amazon\.[a-z.]+\/(?:dp|gp\/product)|\bB0[A-Z0-9]{8}\b/i.test(
+        `${(v.product_url as string) || ''} ${(v.description as string) || ''} ${(v.title as string) || ''}`))
+      .map(v => v.id as string)
+      .slice(0, 200)
+    if (!ids.length) { setCcVideoSet(new Set()); return }
     let cancelled = false
     ;(async () => {
       const matched = new Set<string>()
-      for (let i = 0; i < asins.length && !cancelled; i += 120) {
+      for (let i = 0; i < ids.length && !cancelled; i += 150) {
         try {
           const r = await fetch('/api/campaigns/cc-badges', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ asins: asins.slice(i, i + 120) }),
+            body: JSON.stringify({ videoIds: ids.slice(i, i + 150) }),
           })
           const d = await r.json().catch(() => ({}))
-          for (const a of (d.matched ?? [])) matched.add(String(a).toUpperCase())
+          for (const id of (d.matched ?? [])) matched.add(String(id))
         } catch { /* best-effort */ }
       }
-      if (!cancelled) setCcAsinSet(matched)
+      if (!cancelled) setCcVideoSet(matched)
     })()
     return () => { cancelled = true }
   }, [videos])
@@ -3871,7 +3868,7 @@ export default function ContentPage() {
                   <VideoCard
                     key={video.id as string}
                     video={video}
-                    hasCampaign={ccAsinSet.has(asinFromVideo(video) || '')}
+                    hasCampaign={ccVideoSet.has(video.id as string)}
                     post={posts[video.id as string] || null}
                     wpSiteUrl={wpSiteUrl}
                     fbConnected={fbConnected}
@@ -4285,7 +4282,7 @@ export default function ContentPage() {
                 <div className="flex-1 min-w-0">
                   <VideoCard
                     video={video}
-                    hasCampaign={ccAsinSet.has(asinFromVideo(video) || '')}
+                    hasCampaign={ccVideoSet.has(video.id as string)}
                     post={posts[video.id as string] || null}
                     wpSiteUrl={wpSiteUrl}
                     fbConnected={fbConnected}
