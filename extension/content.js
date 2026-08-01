@@ -388,12 +388,20 @@ if (!window.__ccScoutListener) {
           if (msg.sweep !== false) tabs.push({ re: /^(active|accepted)$/i, status: 'active' }, { re: /^completed$/i, status: 'completed' })
           let rendered = false
           let found = null
+          // Diagnostics surfaced back to MVP so a miss is explainable (what tabs we
+          // checked, how many cards, which brands) instead of a silent failure.
+          const diag = { wantBrand: wantBrand || null, tabs: [] }
+          // A REUSED CC tab can be parked on the "Sponsored Products for Creators"
+          // program — a different grid/search than Affiliate+ campaigns. Force the
+          // Affiliate+ program tab first (harmless no-op when already there), or we
+          // search the wrong program and never find the campaign.
+          try { await clickCcTab(/affiliate\+\s*campaigns/i) } catch (e) {}
           // How many card details-pages we may open to verify an ASIN, TOTAL
           // across all tabs — bounds latency while still confirming the match.
           let resolveBudget = Math.max(1, msg.maxResolve || 8)
           for (let t = 0; t < tabs.length && !found; t++) {
             const tab = tabs[t]
-            if (tab.re) { const ok = await clickCcTab(tab.re); if (!ok) continue }
+            if (tab.re) { const ok = await clickCcTab(tab.re); if (!ok) { diag.tabs.push({ status: tab.status, cards: 0, searched: false, note: 'tab-not-found' }); continue } }
             let rows = [], total = null
             try { const r = await scoutRunSearch({ asin: want, maxCards: msg.maxCards || 40 }); rows = r.rows || []; total = r.total } catch (e) {}
             if (total != null || rows.length > 0) rendered = true
@@ -441,6 +449,13 @@ if (!window.__ccScoutListener) {
             // 'opportunity' card isn't accepted yet (accept → then message);
             // an 'active' card is already accepted (message straight away).
             if (hit) found = { hit, status: tab.status }
+            diag.tabs.push({
+              status: tab.status,
+              cards: rows.length,
+              searched: true,
+              brands: [...new Set(rows.map((r) => r.brand).filter(Boolean))].slice(0, 6),
+              matched: !!hit,
+            })
           }
           // Never leave a user's own CC tab parked on Active/Completed — restore it.
           if (msg.sweep !== false) { try { await clickCcTab(/^(new opportunities|opportunities)$/i) } catch (e) {} }
@@ -454,6 +469,7 @@ if (!window.__ccScoutListener) {
               brand: h.brand || null,
               commissionPct: h.commissionPct != null ? h.commissionPct : null,
               endsAt: h.endsAt || null,
+              diag,
             })
             return
           }
@@ -464,7 +480,7 @@ if (!window.__ccScoutListener) {
           // actually filters). On the foreground pass itself (msg.foreground), a
           // miss IS real → scanned:1, no further retry.
           void rendered
-          sendResponse({ ok: true, found: false, scanned: msg.foreground ? 1 : 0 })
+          sendResponse({ ok: true, found: false, scanned: msg.foreground ? 1 : 0, diag })
         } catch (e) {
           sendResponse({ ok: false, error: (e && e.message) || 'cc-find-failed' })
         }

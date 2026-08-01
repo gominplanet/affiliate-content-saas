@@ -53,6 +53,9 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
   // One-click flow: resolve → auto-accept if needed → send. No extra input.
   const [ccPhase, setCcPhase] = useState<'idle' | 'resolving' | 'accepting' | 'sending' | 'done'>('idle')
   const [ccNote, setCcNote] = useState<{ kind: 'info' | 'error' | 'ok'; text: string } | null>(null)
+  // A compact "what SCOUT saw" line shown under the note on a find miss, so a
+  // failure is diagnosable at a glance (which tabs, card counts, brands).
+  const [ccDiag, setCcDiag] = useState<string | null>(null)
   // The resolved Creator Connections page for THIS product's campaign (cached
   // per ASIN once resolved by a send or a Smart Scan). When present, "Open
   // Campaigns" jumps straight to this campaign instead of the whole dashboard.
@@ -156,7 +159,7 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
       return
     }
 
-    setCcPhase('resolving'); setCcNote(null)
+    setCcPhase('resolving'); setCcNote(null); setCcDiag(null)
     try {
       // Resolve the brand's CC campaign URL for this ASIN. Cache first (from a
       // prior message or a Smart Scan), then a live SCOUT grid lookup that also
@@ -206,8 +209,17 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
           }).catch(() => {})
         } else {
           // We know a campaign exists (it's in our catalog) but SCOUT couldn't
-          // open it live — point them to accept it by hand.
+          // open it live — point them to accept it by hand. Surface what SCOUT saw
+          // so a miss is diagnosable (which tabs, how many cards, which brands).
           setCcPhase('idle')
+          const d = find.diag
+          if (d?.tabs?.length) {
+            const parts = d.tabs.map(t => {
+              const b = t.brands?.length ? ` (${t.brands.slice(0, 4).join(', ')})` : ''
+              return `${t.status}: ${t.cards} card${t.cards === 1 ? '' : 's'}${b}${t.matched ? ' ✓' : ''}`
+            })
+            setCcDiag(`SCOUT looked for “${d.wantBrand || catBrand || asin}” → ${parts.join(' · ')}`)
+          }
           if (inCatalog === true) {
             setCcNote({ kind: 'info', text: `This product does have a Creator Connections campaign${catBrand ? ` from ${catBrand}` : ''}, but SCOUT couldn’t open it automatically just now. Click Open Campaigns to accept it on Amazon, then Send again — or use Copy message / Email.` })
           } else {
@@ -553,6 +565,11 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
             {ccNote && (
               <p className="text-[11px] -mt-1 leading-relaxed" style={{ color: ccNote.kind === 'error' ? '#ff3b30' : ccNote.kind === 'ok' ? '#1f8a3a' : '#86868b' }}>
                 {ccNote.text}
+              </p>
+            )}
+            {ccDiag && (
+              <p className="text-[10px] -mt-1 font-mono leading-snug text-[#86868b] dark:text-[#8e8e93] break-words">
+                {ccDiag}
               </p>
             )}
             <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] -mt-1 leading-relaxed">

@@ -551,6 +551,15 @@ export interface FindCampaignResult {
   scanned?: number    // how many result cards the ASIN search rendered
   total?: number      // how many campaigns Amazon's search returned
   error?: string
+  // What SCOUT saw per tab (cards seen, brands, whether it matched) — surfaced in
+  // the UI so a miss is diagnosable instead of a silent "couldn't find it".
+  diag?: FindCampaignDiag | null
+}
+
+export interface FindCampaignDiag {
+  wantBrand?: string | null
+  program?: string | null
+  tabs?: Array<{ status: string; cards: number; searched?: boolean; brands?: string[]; matched?: boolean }>
 }
 
 /**
@@ -569,7 +578,7 @@ export async function requestFindCampaign(query: string, asin: string, brand?: s
     ok?: boolean; found?: boolean; status?: 'opportunity' | 'active' | 'completed' | null
     campaignId?: string | null; detailsUrl?: string | null; campaignName?: string | null
     brand?: string | null; commissionPct?: number | null; endsAt?: string | null
-    scanned?: number; total?: number; error?: string
+    scanned?: number; total?: number; error?: string; diag?: FindCampaignDiag | null
     // brand from our catalog lets SCOUT verify the right campaign cheaply
   }>({ type: 'MVP_CC_FIND', query: query || '', asin, brand: brand || null }, 240000)
   if (!resp) return { ok: false, error: 'timeout' }
@@ -584,9 +593,10 @@ export async function requestFindCampaign(query: string, asin: string, brand?: s
       commissionPct: resp.commissionPct ?? null,
       endsAt: resp.endsAt ?? null,
       scanned: resp.scanned, total: resp.total,
+      diag: resp.diag ?? null,
     }
   }
-  return { ok: false, error: resp.error || 'find-failed' }
+  return { ok: false, error: resp.error || 'find-failed', diag: resp.diag ?? null }
 }
 
 export interface CampaignMatch {
