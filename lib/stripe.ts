@@ -22,3 +22,13 @@ export const PRICE_IDS = {
   studio:  process.env.STRIPE_PRICE_STUDIO!,
   pro:     process.env.STRIPE_PRICE_PRO!,
 } as const
+
+// A Stripe price id looks like "price_…". Guard against a mis-pasted env value —
+// e.g. a `sk_live_…` secret key or a `prod_…` product id ending up in a
+// STRIPE_PRICE_* slot, which would either break checkout or (with the metadata
+// fallback) silently grant a tier at the wrong price. Real 2026-07 incident:
+// STRIPE_PRICE_PRO held the secret key, so "Pro" was only ever granted via a $49
+// Payment Link's metadata. Checkout now refuses to start on an invalid price.
+export function isValidPriceId(v: string | null | undefined): v is string {
+  return typeof v === 'string' && /^price_[A-Za-z0-9]+$/.test(v.trim())
+}
