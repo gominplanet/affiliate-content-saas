@@ -19,7 +19,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { toast } from 'sonner'
 import { X, Copy, Mail, ExternalLink, Loader2, Sparkles, Check, RotateCcw, Video, Send } from 'lucide-react'
 import { fillRecapMessage, CC_GROUP_BREAK, type RecapLink, type BrandRecapSettings } from '@/lib/brand-recap'
-import { requestAmazonVideoForAsin, requestFindCampaign, requestAcceptAndSendBrand } from '@/lib/extension-frame'
+import { requestAmazonVideoForAsin, requestFindCampaign, requestAcceptAndSendBrand, requestSendByCampaign } from '@/lib/extension-frame'
 
 /** MVP's OINK affiliate link (same as the sidebar Recommended Tools row). */
 const OINK_AFFILIATE_URL = 'https://geni.us/2y5sBo'
@@ -189,6 +189,33 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
           setCcPhase('idle')
           setCcNote({ kind: 'info', text: 'This product isn’t in Creator Connections, so there’s no brand chat to send through. Email the brand instead (use Copy message or Email), or reach them from the product page.' })
           return
+        }
+
+        // FAST PATH: the catalog gave us the exact campaign_id(s) for this ASIN, so
+        // deep-link STRAIGHT to the campaign and send — no grid search (that's the
+        // slow, flaky, timeout-prone part). SCOUT verifies the ASIN on the page
+        // before typing. Falls through to the grid-search find only if this can't
+        // complete (e.g. SCOUT can't build the URL without a cached creator id).
+        if (catCampaignIds.length) {
+          const groups = message.split(/\n\s*\n+/).map(s => s.trim()).filter(Boolean)
+          const ccText = groups.length > 1 ? groups.join(`\n\n${CC_GROUP_BREAK}\n\n`) : message
+          setCcPhase('sending')
+          setCcNote({ kind: 'info', text: 'Opening the campaign and sending your message…' })
+          const direct = await requestSendByCampaign(catCampaignIds, ccText, asin)
+          if (direct.ok) {
+            if (direct.detailsUrl) setCcDetailsUrl(direct.detailsUrl)
+            setCcPhase('done')
+            setCcNote({ kind: 'ok', text: `Sent to the brand on Creator Connections${direct.groups && direct.groups > 1 ? ` (${direct.groups} messages)` : ''}.` })
+            toast.success('Sent to the brand on Creator Connections ✓')
+            return
+          }
+          if (direct.error === 'not-installed') {
+            setCcPhase('idle')
+            setCcNote({ kind: 'info', text: 'Auto-send needs the SCOUT extension. Without it, use Copy message or Email.' })
+            return
+          }
+          // Direct path didn't complete → try the grid-search find below as backup.
+          setCcPhase('resolving')
         }
 
         // In the catalog (or couldn't tell) → resolve the campaign live with

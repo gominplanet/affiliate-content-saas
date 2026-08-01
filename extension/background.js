@@ -374,6 +374,20 @@ function ccOpportunitiesUrl() {
   return `${CC_BASE}?${q}status=opportunity&type=affiliate-plus`
 }
 
+// Deep-link straight to ONE campaign's page by its id — the reliable path that
+// skips the whole grid search. Mirrors a real campaign link:
+//   /p/connect/request?creatorId=…&campaignId=amzn1.campaign.…&type=…&status=…
+// creatorId is filled from the session when omitted; type/status just set the
+// initial view — the campaignId is what loads the specific campaign. We build it
+// straight from the catalog's campaign_id (ASIN → campaign_id → this URL).
+const CC_REQUEST_BASE = 'https://affiliate-program.amazon.com/p/connect/request'
+function ccCampaignUrl(campaignId, type) {
+  const cid = String(campaignId || '').trim()
+  const creator = _ccCreatorId ? `creatorId=${encodeURIComponent(_ccCreatorId)}&` : ''
+  const t = type || 'affiliate-plus'
+  return `${CC_REQUEST_BASE}?${creator}campaignId=${encodeURIComponent(cid)}&type=${encodeURIComponent(t)}&status=opportunity`
+}
+
 const _sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 function waitForTabLoad(tabId, ms) {
@@ -2574,6 +2588,17 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async response — keep the channel open
   }
+  if (msg.type === 'MVP_CC_SEND_BY_CAMPAIGN') {
+    // DIRECT path: the app resolved the product's ASIN to campaign_id(s) in the
+    // shared catalog and hands them here. We deep-link straight to the campaign
+    // and accept+send — no grid search. Same ~3 minute budget as accept+send.
+    const callerTabId = sender && sender.tab ? sender.tab.id : null
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 180000)
+    sendByCampaignIds(msg.campaignIds || [], msg.message || '', msg.asin || null, callerTabId)
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true // async response — keep the channel open
+  }
   if (msg.type === 'MVP_SCRAPE_URL') {
     // "Post from a link" for non-Amazon stores. MVP's server can't scrape
     // Walmart/Target/etc. (datacenter IPs are blocked), so SCOUT opens the page
@@ -3025,6 +3050,35 @@ async function acceptAndSendBrand(detailsUrl, message, callerTabId, wantAsin) {
   } finally {
     if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
   }
+}
+
+// DIRECT SEND by catalog campaign id(s) — the reliable path that skips the grid
+// search entirely. The app looks the product's ASIN up in the shared catalog,
+// gets the campaign_id(s), and hands them here; we deep-link straight to each
+// campaign's page (ccCampaignUrl) and run the same accept-if-needed + send. The
+// ASIN guard inside acceptAndSendBrand confirms the page really sells the ASIN,
+// so if a brand has several campaigns we can try the next id on a mismatch —
+// but we STOP on any other failure (e.g. a slow send) so we don't open a pile of
+// tabs. `affiliate-plus` first, then `spcc` for the same id, since a campaign is
+// one or the other and the type just picks the view.
+async function sendByCampaignIds(campaignIds, message, asin, callerTabId) {
+  const ids = [...new Set((campaignIds || []).map((c) => String(c || '').trim()).filter(Boolean))].slice(0, 4)
+  if (!ids.length) return { ok: false, error: 'no-campaign' }
+  if (!message || !message.trim()) return { ok: false, error: 'no-message' }
+  let last = null
+  for (const id of ids) {
+    for (const type of ['affiliate-plus', 'spcc']) {
+      const url = ccCampaignUrl(id, type)
+      const r = await acceptAndSendBrand(url, message, callerTabId, asin)
+      if (r && r.ok) return { ...r, campaignId: id, detailsUrl: url }
+      last = r
+      // asin-mismatch = right page loaded but wrong product (or wrong type view)
+      // → worth trying the other type / next id. Anything else (timeout, no chat)
+      // → stop; retrying just burns tabs and the budget.
+      if (!(r && r.reason === 'asin-mismatch')) return last || { ok: false, reason: 'send-failed', campaignId: id, detailsUrl: url }
+    }
+  }
+  return last || { ok: false, reason: 'asin-mismatch' }
 }
 
 async function sendBrandMessage(detailsUrl, message, callerTabId) {

@@ -155,6 +155,26 @@ export async function requestSendBrand(detailsUrl: string, message: string): Pro
  * then sends the message on the SAME tab — no cross-tab teardown race (which was
  * the "Frame with ID 0 was removed" failure). Best-effort: resolves, never throws.
  */
+/**
+ * DIRECT send by catalog campaign id(s) — skips SCOUT's grid search entirely.
+ * The app resolves the product's ASIN to campaign_id(s) in the shared catalog
+ * and hands them here; SCOUT deep-links straight to the campaign and runs the
+ * same accept-if-needed + send, verifying the ASIN on the page first. This is
+ * the reliable path (no grid scroll, no wrong-brand, no find timeout).
+ */
+export async function requestSendByCampaign(campaignIds: string[], message: string, asin?: string | null): Promise<MessageBrandResult & { detailsUrl?: string | null }> {
+  const ids = [...new Set((campaignIds || []).filter(Boolean))]
+  if (!ids.length) return { ok: false, error: 'no-campaign' }
+  if (!message.trim()) return { ok: false, error: 'no-message' }
+  if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
+  const resp = await sendToExtension<{ ok?: boolean; error?: string; reason?: string; groups?: number; detailsUrl?: string | null }>(
+    { type: 'MVP_CC_SEND_BY_CAMPAIGN', campaignIds: ids, message, asin: (asin || '').toUpperCase() || undefined },
+    185000,
+  )
+  if (!resp) return { ok: false, error: 'timeout' }
+  return { ok: !!resp.ok, error: resp.error, reason: resp.reason, groups: resp.groups, detailsUrl: resp.detailsUrl }
+}
+
 export async function requestAcceptAndSendBrand(detailsUrl: string, message: string, asin?: string | null): Promise<MessageBrandResult & { accepted?: boolean }> {
   if (!detailsUrl) return { ok: false, error: 'no-url' }
   if (!message.trim()) return { ok: false, error: 'no-message' }
