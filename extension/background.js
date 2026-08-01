@@ -816,27 +816,6 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     sendResponse({ ok: true })
     return false
   }
-  // DIAGNOSTIC: report what the net-hook has captured and whether a send recipe
-  // has been learned. This is how we SEE Amazon's real request (blind otherwise)
-  // so the replay can be tuned to it. Returns the recent captures (url, method,
-  // header keys, truncated body) + the learned recipe summary.
-  if (msg && msg.type === 'MVP_CC_DEBUG') {
-    try {
-      const trunc = (s, n) => { const t = typeof s === 'string' ? s : ''; return t.length > n ? t.slice(0, n) + `…(+${t.length - n})` : t }
-      const ring = (_ccNetRing || []).map((r) => ({
-        via: r.via, method: r.method, url: trunc(r.url, 220),
-        headerKeys: Object.keys(r.headers || {}), body: trunc(r.body, 900), ts: r.ts,
-      }))
-      const recipe = _ccSendRecipe ? {
-        via: _ccSendRecipe.via, method: _ccSendRecipe.method, url: trunc(_ccSendRecipe.url, 220),
-        headerKeys: Object.keys(_ccSendRecipe.headers || {}), msgIsJson: _ccSendRecipe.msgIsJson,
-        origCampaign: _ccSendRecipe.origCampaign, bodyTemplate: trunc(_ccSendRecipe.bodyTemplate, 900),
-        learnedAt: _ccSendRecipe.learnedAt,
-      } : null
-      sendResponse({ ok: true, hasRecipe: !!_ccSendRecipe, recipe, ringCount: ring.length, ring, creatorId: _ccCreatorId })
-    } catch (e) { sendResponse({ ok: false, error: e && e.message ? e.message : 'debug-failed' }) }
-    return false
-  }
   return false
 })
 
@@ -2637,6 +2616,26 @@ async function scanStudioFinish(videoId, opts, callerTabId) {
 // ── Messages from the MVP dashboard (externally_connectable) ────────────────
 chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   if (!msg || typeof msg.type !== 'string') return
+  // DIAGNOSTIC (from the MVP app): report what the net-hook captured on Creator
+  // Connections and whether a send recipe was learned — so a failed send can be
+  // tuned against Amazon's REAL request instead of guessing. Synchronous.
+  if (msg.type === 'MVP_CC_DEBUG') {
+    try {
+      const trunc = (s, n) => { const t = typeof s === 'string' ? s : ''; return t.length > n ? t.slice(0, n) + `…(+${t.length - n})` : t }
+      const ring = (_ccNetRing || []).map((r) => ({
+        via: r.via, method: r.method, url: trunc(r.url, 220),
+        headerKeys: Object.keys(r.headers || {}), body: trunc(r.body, 900), ts: r.ts,
+      }))
+      const recipe = _ccSendRecipe ? {
+        via: _ccSendRecipe.via, method: _ccSendRecipe.method, url: trunc(_ccSendRecipe.url, 220),
+        headerKeys: Object.keys(_ccSendRecipe.headers || {}), msgIsJson: _ccSendRecipe.msgIsJson,
+        origCampaign: _ccSendRecipe.origCampaign, bodyTemplate: trunc(_ccSendRecipe.bodyTemplate, 900),
+        learnedAt: _ccSendRecipe.learnedAt,
+      } : null
+      sendResponse({ ok: true, hasRecipe: !!_ccSendRecipe, recipe, ringCount: ring.length, ring, creatorId: _ccCreatorId })
+    } catch (e) { sendResponse({ ok: false, error: e && e.message ? e.message : 'debug-failed' }) }
+    return false
+  }
   if (msg.type === 'MVP_STUDIO_SCHEDULE') {
     // Scraping Studio + paginating the internal API can take a bit; allow 2 min.
     const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 120000)
