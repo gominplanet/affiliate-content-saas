@@ -2659,10 +2659,10 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
       const trunc = (s, n) => { const t = typeof s === 'string' ? s : ''; return t.length > n ? t.slice(0, n) + `…(+${t.length - n})` : t }
       const ring = (_ccNetRing || []).map((r) => ({
         via: r.via, method: r.method, url: trunc(r.url, 220),
-        headerKeys: Object.keys(r.headers || {}), body: trunc(r.body, 900), ts: r.ts,
+        headerKeys: Object.keys(r.headers || {}), body: trunc(r.body, 4000), ts: r.ts,
       }))
       const summ = (r) => r ? { method: r.method, url: trunc(r.url, 220), headerKeys: Object.keys(r.headers || {}), bodyTemplate: trunc(r.bodyTemplate, 900), learnedAt: r.learnedAt } : null
-      const responses = (_ccRespRing || []).map((r) => ({ url: trunc(r.url, 160), status: r.status, body: trunc(r.body, 900), ts: r.ts }))
+      const responses = (_ccRespRing || []).map((r) => ({ url: trunc(r.url, 160), status: r.status, body: trunc(r.body, 6000), ts: r.ts }))
       sendResponse({
         ok: true,
         hasRecipe: !!(_ccSendRecipe && _ccSearchRecipe),

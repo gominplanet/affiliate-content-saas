@@ -51,9 +51,9 @@
     try { window.postMessage({ __mvpNet: true, kind, rec }, location.origin) } catch (e) {}
   }
   // Endpoints whose RESPONSE we want to see (not just the request): chat/search
-  // carries the contextToken we need to extract, and accept/opt-in confirms a
-  // brand chat now exists. Capturing responses lets us verify + tune the replay.
-  const wantResponse = (url) => { try { return /\/connect\/api\/(chat\/(search|message\/send)|campaign\/accept|.*(accept|opt-?in))/i.test(new URL(url, location.href).pathname) } catch (e) { return false } }
+  // carries the contextToken; collaboration/campaign/spcc search resolve an ASIN /
+  // brand → the campaignId; accept/opt-in confirms a brand chat now exists.
+  const wantResponse = (url) => { try { return /\/connect\/api\/(chat\/(search|message\/send)|collaboration\/search|campaign\/search|spcc\/search|.*(accept|opt-?in))/i.test(new URL(url, location.href).pathname) } catch (e) { return false } }
 
   // ── fetch ──────────────────────────────────────────────────────────────────
   const origFetch = window.fetch
@@ -72,7 +72,7 @@
       try {
         if (/^post$/i.test(String(method)) && wantResponse(url)) {
           p.then((resp) => {
-            try { resp.clone().text().then((t) => emit('send-response', { url, status: resp.status, body: (t || '').slice(0, 1800), ts: Date.now() })).catch(() => {}) } catch (e) {}
+            try { resp.clone().text().then((t) => emit('send-response', { url, status: resp.status, body: (t || '').slice(0, 8000), ts: Date.now() })).catch(() => {}) } catch (e) {}
           }).catch(() => {})
         }
       } catch (e) {}
