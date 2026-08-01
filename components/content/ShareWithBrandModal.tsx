@@ -191,6 +191,9 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
       setCcNote({ kind: 'info', text: 'Messaging the brand on Creator Connections…' })
       const byAsin = await requestSendByAsin(asin, ccTextPrimary, [...catCampaignIds, ...catBrandCampaignIds])
       if (byAsin.ok) {
+        // Deep-link "Open this campaign" to the exact campaign we just messaged
+        // (the resolver returns its id) instead of the generic CC dashboard.
+        if (byAsin.campaignId) setCcDetailsUrl(`https://affiliate-program.amazon.com/p/connect/request?campaignId=${encodeURIComponent(byAsin.campaignId)}&type=affiliate-plus&status=opportunity`)
         setCcPhase('done')
         setCcNote({ kind: 'ok', text: `Sent to ${byAsin.brand || 'the brand'} on Creator Connections${byAsin.groups && byAsin.groups > 1 ? ` (${byAsin.groups} messages)` : ''}.` })
         toast.success('Sent on Creator Connections ✓')
