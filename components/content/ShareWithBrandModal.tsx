@@ -224,8 +224,10 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
             ? 'SCOUT opened this brand’s campaign in a new tab. You haven’t accepted it yet, so there’s no chat to send into: click Accept in that tab, then the “Message brand” box appears — your recap is already on your clipboard (Copy message), so paste and Send.'
             : 'SCOUT opened the brand chat in a new tab with your message ready. Switch to that tab and click Send to finish (if a “sharing personal information” box appears, click OK). It may already have gone through — check the chat.' })
           toast('Finish in the Amazon tab SCOUT just opened', { icon: '➡️' })
-          // Put the recap on the clipboard so the accept-then-paste path is one paste.
-          try { await navigator.clipboard.writeText(ccText) } catch { /* clipboard may be blocked; Copy message still works */ }
+          // Put the CLEAN recap on the clipboard (never `ccText` — that carries the
+          // ---- Add to Message Group ---- markers, which must never be pasted into
+          // Amazon). `message` is the plain version, groups separated by blank lines.
+          try { await navigator.clipboard.writeText(message) } catch { /* clipboard may be blocked; Copy message still works */ }
           return
         }
         // No tab was left open (e.g. couldn't open any campaign) → remember WHY and
