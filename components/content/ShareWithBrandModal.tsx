@@ -241,7 +241,7 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
     // Copy reflects that it may accept first when we don't already know it's active.
     setCcPhase(knownAccepted ? 'sending' : 'accepting')
     setCcNote({ kind: 'info', text: knownAccepted ? 'Sending your message to the brand…' : 'Accepting the campaign, then sending your message…' })
-    const res = await requestAcceptAndSendBrand(detailsUrl, ccText)
+    const res = await requestAcceptAndSendBrand(detailsUrl, ccText, asin)
     if (res.ok) {
       setCcPhase('done')
       setCcNote({ kind: 'ok', text: `Sent to the brand on Creator Connections${res.groups && res.groups > 1 ? ` (${res.groups} messages)` : ''}.` })
@@ -256,6 +256,13 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
     // Give up: drop any stale cached URL so the next attempt re-resolves.
     void fetch(`/api/campaigns/message-link?asin=${encodeURIComponent(asin)}`, { method: 'DELETE' }).catch(() => {})
     setCcPhase('idle')
+    // asin-mismatch = SCOUT opened a campaign that doesn't sell this product (a
+    // stale link). We just cleared the cache; a second Send re-resolves fresh.
+    if (res.reason === 'asin-mismatch') {
+      setCcNote({ kind: 'error', text: 'The saved campaign link pointed to a different product, so nothing was sent (we’ve cleared it). Click Send again to look it up fresh, or use Copy message / Email.' })
+      setCcDetailsUrl(null)
+      return
+    }
     setCcNote({ kind: 'error', text: `Could not send through Creator Connections (${res.reason || res.error || 'unknown'}). Use Copy message or Email, or Open on Amazon to do it by hand.` })
   }
 

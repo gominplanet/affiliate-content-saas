@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.11.71'
+export const SCOUT_LATEST_VERSION = '1.11.72'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Send on Creator Connections now searches by ASIN in the Affiliate+ box (no more grid-scrolling) and accepts + sends in one background tab, fixing the "Frame was removed" error and the long delays.'
+  'Send on Creator Connections now verifies the campaign really sells your product before sending (no more messaging the wrong brand), sends each message-group block exactly once (no duplicates), and ignores the static "personal information" notice so the send never stalls.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar

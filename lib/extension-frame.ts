@@ -155,12 +155,15 @@ export async function requestSendBrand(detailsUrl: string, message: string): Pro
  * then sends the message on the SAME tab — no cross-tab teardown race (which was
  * the "Frame with ID 0 was removed" failure). Best-effort: resolves, never throws.
  */
-export async function requestAcceptAndSendBrand(detailsUrl: string, message: string): Promise<MessageBrandResult & { accepted?: boolean }> {
+export async function requestAcceptAndSendBrand(detailsUrl: string, message: string, asin?: string | null): Promise<MessageBrandResult & { accepted?: boolean }> {
   if (!detailsUrl) return { ok: false, error: 'no-url' }
   if (!message.trim()) return { ok: false, error: 'no-message' }
   if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
+  // Pass the ASIN so SCOUT can VERIFY the campaign it opened really sells this
+  // product before sending — the last line of defence against a stale cached URL
+  // delivering the recap to the wrong brand.
   const resp = await sendToExtension<{ ok?: boolean; error?: string; reason?: string; groups?: number; accepted?: boolean }>(
-    { type: 'MVP_CC_ACCEPT_AND_SEND', detailsUrl, message },
+    { type: 'MVP_CC_ACCEPT_AND_SEND', detailsUrl, message, asin: (asin || '').toUpperCase() || undefined },
     185000,
   )
   if (!resp) return { ok: false, error: 'timeout' }

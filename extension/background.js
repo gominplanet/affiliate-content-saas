@@ -453,7 +453,10 @@ function harvestAsinsInPage() {
     if (b) { const p = b.querySelector('#mvp-scout-cc-panel'); if (p) p.remove(); html = b.innerHTML }
   } catch (e) { html = document.body ? document.body.innerHTML : '' }
   push(html)
-  return Array.from(set)
+  // Object shape { asins, blocked } — the blocked path above returns the same,
+  // and every caller reads r.asins / r.blocked. (Returning a bare array here
+  // silently made resolveCampaignAsin + the /dp reader see zero ASINs.)
+  return { asins: Array.from(set), blocked: false }
 }
 
 async function resolveCampaignAsin(detailsUrl) {
@@ -2561,7 +2564,7 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     // allow 3 minutes.
     const callerTabId = sender && sender.tab ? sender.tab.id : null
     const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 180000)
-    acceptAndSendBrand(msg.detailsUrl, msg.message || '', callerTabId)
+    acceptAndSendBrand(msg.detailsUrl, msg.message || '', callerTabId, msg.asin || null)
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async response — keep the channel open
@@ -2771,9 +2774,17 @@ async function sendBrandMessageInPage(message) {
   // back). NO visibility check — a background tab has no layout.
   const isConfirmText = (t) => /^(continue|ok|okay|yes|yes,?\s*(continue|send)?|send|send message|send it|send anyway|send now|i understand|understood|got it|proceed|agree|i agree|accept|acknowledge|confirm|share|share anyway)$/i.test(t)
   const isDismissText = (t) => /^(cancel|go back|back|edit|edit message|no|no,?\s*thanks|close|dismiss|review|keep editing|return)$/i.test(t)
+  // The CC compose box ALWAYS shows a static advisory under it: "If you choose to
+  // share personal information such as your address, email address or phone
+  // number in messages, please be aware that subsequent use of this information
+  // will not be monitored." That is NOT the confirm popup — matching it made us
+  // re-click Send (→ duplicate messages). Exclude it explicitly, and require the
+  // text to read like an actual are-you-sure prompt.
+  const isStaticAdvisory = (tx) => /if you choose to share|will not be monitored|subsequent use of this information/i.test(tx)
   const looksLikePiModal = (el) => {
     const tx = norm(el && (el.textContent || ''))
     if (!tx || tx.length > 2500) return false
+    if (isStaticAdvisory(tx)) return false
     return /personal information|share (personal|sensitive|your (address|contact))|sharing (personal|sensitive|your)|about to share|contains (personal|sensitive)|sensitive information|your (address|phone|email)( |,|\.|\swill)/i.test(tx)
   }
   let lastPiText = ''
@@ -2783,7 +2794,10 @@ async function sendBrandMessageInPage(message) {
     // pick the affirmative action inside it — explicit confirm word, else the
     // Amazon primary button, else the sole non-dismiss action. Dismiss buttons
     // (Cancel / Edit / Go back) are always excluded so we never abort the send.
-    const roots = [...document.querySelectorAll('[role="dialog"],[role="alertdialog"],[aria-modal="true"],.a-modal,.a-popover,[data-a-modal],div,section,form')]
+    // Only REAL modal/popover overlays — never plain div/section/form, which is
+    // how the static compose advisory (always on the page) sneaked in and got its
+    // Send button re-clicked. A genuine confirm pops in one of these containers.
+    const roots = [...document.querySelectorAll('[role="dialog"],[role="alertdialog"],[aria-modal="true"],.a-modal,.a-modal-scroller,.a-popover,.a-popover-wrapper,[data-a-modal],[data-a-popover]')]
       .filter(looksLikePiModal)
     // Innermost first (tightest wrapper around the warning, not document.body).
     roots.sort((a, z) => norm(a.textContent).length - norm(z.textContent).length)
@@ -2825,7 +2839,9 @@ async function sendBrandMessageInPage(message) {
   // → the box clears → fill the next → Send again. ONE Send per marker.
   void readInput
   const boxEmpty = (inp) => { try { return norm(readInput(inp)).length === 0 } catch (e) { return false } }
-  const clickHard = (el) => { realClick(el); try { el.click() } catch (e) {} }
+  // Exactly ONE click gesture. realClick already dispatches a full
+  // pointerdown→…→click sequence (one submit). The old clickHard also called
+  // el.click() on top → TWO submits → every message posted twice. Never again.
   const segments = splitSegments(message)
   let sent = 0
   const segLog = []
@@ -2839,7 +2855,7 @@ async function sendBrandMessageInPage(message) {
       if (!send) await sleep(250)
     }
     if (!send) { segLog.push({ seg: i + 1, sent: false, reason: 'send-never-enabled' }); break }
-    clickHard(send); sent++; steps.sent = true
+    realClick(send); sent++; steps.sent = true
     // SETTLE. Amazon may pop a "sharing personal information" confirm (address /
     // email / phone messages). Keep clicking Continue and waiting until the box
     // CLEARS (= message actually posted) or the window elapses — RETRYING the
@@ -2850,7 +2866,7 @@ async function sendBrandMessageInPage(message) {
     let dismissed = false, cleared = false, quiet = 0
     for (let k = 0; k < 30; k++) {                   // hard ceiling ~11s per message
       const ok = findConfirmOk()
-      if (ok) { clickHard(ok); dismissed = true; quiet = 0; await sleep(450); continue }
+      if (ok) { realClick(ok); dismissed = true; quiet = 0; await sleep(450); continue }
       if (boxEmpty(inp)) { cleared = true; break }
       // Once the PI popup has been dismissed and stays gone for a few ticks, the
       // message has posted even if the box text lingers — don't burn the budget.
@@ -2922,9 +2938,11 @@ function ensureOffsiteStoreInPage() {
 // threw "Frame with ID 0 was removed". Here a single tab is opened on the
 // campaign, we accept it when an Accept button is present (an un-accepted
 // opportunity has no brand chat until you accept), then send on the SAME tab.
-async function acceptAndSendBrand(detailsUrl, message, callerTabId) {
+async function acceptAndSendBrand(detailsUrl, message, callerTabId, wantAsin) {
   if (!detailsUrl) return { ok: false, error: 'no-url' }
   if (!message || !message.trim()) return { ok: false, error: 'no-message' }
+  const want = String(wantAsin || '').toUpperCase()
+  const wantValid = /^[A-Z0-9]{10}$/.test(want)
   let tabId = null
   const runAccept = async () => {
     for (let i = 0; i < 4; i++) {
@@ -2935,14 +2953,13 @@ async function acceptAndSendBrand(detailsUrl, message, callerTabId) {
     }
     return false
   }
+  // ONE send attempt — never a blind retry. sendBrandMessageInPage posts each
+  // message-group segment as it goes, so re-running it re-posts everything (the
+  // duplicate-message bug). Return whatever it reports (ok or not) so the caller
+  // can decide from `groups` whether anything actually went out.
   const runSend = async () => {
-    for (let i = 0; i < 2; i++) {
-      const res = await chrome.scripting.executeScript({ target: { tabId }, func: sendBrandMessageInPage, args: [message] })
-      const r = res && res[0] && res[0].result
-      if (r && r.ok) return r
-      await _sleep(1600)
-    }
-    return null
+    const res = await chrome.scripting.executeScript({ target: { tabId }, func: sendBrandMessageInPage, args: [message] })
+    return (res && res[0] && res[0].result) || null
   }
   const reload = async () => {
     try { await chrome.tabs.update(tabId, { url: detailsUrl }); await waitForTabLoad(tabId, 25000); await _sleep(2500) } catch (e) {}
@@ -2959,6 +2976,23 @@ async function acceptAndSendBrand(detailsUrl, message, callerTabId) {
       if (sw && sw.switched) { await _sleep(1500); await reload() }
     } catch (e) {}
 
+    // WRONG-BRAND GUARD. Before we type a single character, confirm the campaign
+    // we opened actually sells the ASIN we meant to message about. A stale/mis-
+    // keyed cached detailsUrl (or a bad find) would otherwise send the recap to a
+    // completely different brand. Read the page's ASINs: if we can read some and
+    // ours ISN'T among them, abort. If we can't read any (page didn't expose
+    // them), proceed — never block on inability to read, only on a real mismatch.
+    if (wantValid) {
+      try {
+        const ar = await chrome.scripting.executeScript({ target: { tabId }, func: harvestAsinsInPage })
+        const r = (ar && ar[0] && ar[0].result) || { asins: [], blocked: false }
+        const onPage = (r.asins || []).map((a) => String(a || '').toUpperCase())
+        if (!r.blocked && onPage.length > 0 && !onPage.includes(want)) {
+          return { ok: false, reason: 'asin-mismatch', diag: { want, onPage: onPage.slice(0, 8) } }
+        }
+      } catch (e) { /* couldn't read — don't block the send */ }
+    }
+
     // Accept if there's an Accept button (un-accepted opportunity). Not finding
     // one means it's already accepted — fine, go straight to send.
     let accepted = await runAccept()
@@ -2966,10 +3000,12 @@ async function acceptAndSendBrand(detailsUrl, message, callerTabId) {
 
     // Send on the same tab.
     let sr = await runSend()
-    // If the send failed the way an un-accepted campaign does (no chat), the
-    // Accept button may just not have rendered headless — bring the tab forward
-    // once, accept, reload, and resend. Then restore the user's tab.
-    if (!sr && !accepted) {
+    // Only RE-SEND when nothing at all went out (groups falsy) AND the box never
+    // opened — the signature of an un-accepted campaign whose Accept button
+    // didn't render headless. If any segment posted, we do NOT resend (that would
+    // duplicate). Bring the tab forward once, accept, reload, resend, restore.
+    const nothingSent = !sr || (!sr.ok && !(sr.groups > 0))
+    if (nothingSent && !accepted) {
       try {
         await chrome.tabs.update(tabId, { active: true }); await _sleep(2500)
         accepted = await runAccept()

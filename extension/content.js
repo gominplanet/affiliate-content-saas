@@ -375,13 +375,44 @@ if (!window.__ccScoutListener) {
           if (msg.sweep !== false) tabs.push({ re: /^(active|accepted)$/i, status: 'active' }, { re: /^completed$/i, status: 'completed' })
           let rendered = false
           let found = null
+          // How many card details-pages we may open to verify an ASIN, TOTAL
+          // across all tabs — bounds latency while still confirming the match.
+          let resolveBudget = Math.max(1, msg.maxResolve || 8)
           for (let t = 0; t < tabs.length && !found; t++) {
             const tab = tabs[t]
             if (tab.re) { const ok = await clickCcTab(tab.re); if (!ok) continue }
             let rows = [], total = null
             try { const r = await scoutRunSearch({ asin: want, maxCards: msg.maxCards || 40 }); rows = r.rows || []; total = r.total } catch (e) {}
             if (total != null || rows.length > 0) rendered = true
-            const hit = rows.find((r) => r.campaignId) || rows[0] || null
+            // VERIFY, never guess. Amazon's ASIN search can silently fall back to
+            // an unfiltered grid (or the box may not have taken), so rows[0] is
+            // often an UNRELATED brand — sending there is the "wrong brand" bug.
+            // (1) trust a card that carries the ASIN on itself; else
+            // (2) open the campaign's details page and confirm the ASIN we want
+            //     is one of its products — only then is it a match.
+            let hit = rows.find((r) => r.asin === want) || null
+            if (!hit) {
+              // Only spend resolves when the result set is FOCUSED (a real ASIN
+              // search returns a handful of cards). A BIG set means the search box
+              // didn't filter — don't burn tabs guessing through unrelated
+              // campaigns. Gate on how many cards RENDERED, never on the
+              // "Campaigns (N)" header: that shows the tab's WHOLE catalog count
+              // (e.g. 704,601 New Opportunities / 144,124 Active), not the matches.
+              void total
+              if (rows.length > 0 && rows.length <= 20) {
+                for (const r of rows) {
+                  if (resolveBudget <= 0) break
+                  if (r.asin && r.asin !== want) continue      // card says a different ASIN — skip
+                  if (!r.detailsUrl) continue
+                  resolveBudget--
+                  const asins = await resolveCampaignAsins(r.detailsUrl)
+                  if (asins.includes(want)) { hit = r; break }
+                }
+              }
+            }
+            // A hit's status tells the sender whether to accept first: an
+            // 'opportunity' card isn't accepted yet (accept → then message);
+            // an 'active' card is already accepted (message straight away).
             if (hit) found = { hit, status: tab.status }
           }
           // Never leave a user's own CC tab parked on Active/Completed — restore it.
@@ -430,7 +461,23 @@ if (!window.__ccScoutListener) {
             try { const r = await scoutRunSearch({ asin, maxCards: msg.maxCards || 30 }); rows = r.rows || []; total = r.total } catch (e) {}
             if (total != null || rows.length > 0) rendered = true
             scanned++
-            const hit = rows.find((r) => r.campaignId) || rows[0] || null
+            // Verify the card is really THIS asin (see CC_FIND): trust an on-card
+            // ASIN match, else confirm via the details page (one resolve per asin
+            // so a big batch stays fast). Never fall back to rows[0] — a wrong
+            // match here would badge the wrong product as a live campaign.
+            let hit = rows.find((r) => r.asin === asin) || null
+            // Gate on rendered card count, NOT the "Campaigns (N)" header (that's
+            // the tab's whole catalog count, not the search matches).
+            void total
+            if (!hit && rows.length > 0 && rows.length <= 20) {
+              for (const r of rows) {
+                if (r.asin && r.asin !== asin) continue
+                if (!r.detailsUrl) continue
+                const asins = await resolveCampaignAsins(r.detailsUrl)
+                if (asins.includes(asin)) { hit = r; break }
+                break // one resolve per asin — keep the batch scan responsive
+              }
+            }
             if (hit) {
               matches.push({
                 asin,
@@ -647,7 +694,15 @@ function extractNewCard(cont) {
   // for campaigns the user actually accepts, via a background tab.
   const detailsEl = cont.querySelector('[data-testid$="campaign-card-view-details-link"], [data-testid*="view-details"], [data-testid*="view_details"]')
   const detailsUrl = detailsEl ? (detailsEl.href || detailsEl.getAttribute('href') || null) : null
-  return { key: campaignId || campaignName, campaignId, campaignName, brand, commissionPct, budget, startsAt, endsAt, image, detailsUrl }
+  // Cheap on-card ASIN, when Amazon leaves one exposed: a /dp/<ASIN> link or a
+  // data-asin attribute. The 2026 redesign usually HIDES it (then we resolve via
+  // the details page), but when it's here we can verify a search hit for free —
+  // never trust a card whose ASIN we can't confirm matches the one we searched.
+  let asin = null
+  const dpEl = cont.querySelector('a[href*="/dp/"], a[href*="/gp/product/"]')
+  if (dpEl) { const m = (dpEl.getAttribute('href') || '').toUpperCase().match(/\/(?:DP|GP\/PRODUCT)\/([A-Z0-9]{10})/); if (m) asin = m[1] }
+  if (!asin) { const da = cont.querySelector('[data-asin]'); const v = da && (da.getAttribute('data-asin') || '').toUpperCase(); if (v && /^[A-Z0-9]{10}$/.test(v)) asin = v }
+  return { key: campaignId || campaignName, campaignId, campaignName, brand, asin, commissionPct, budget, startsAt, endsAt, image, detailsUrl }
 }
 // Amazon's Creator Connections list is INFINITE-SCROLL: it renders ~60 cards,
 // then lazy-loads the next batch only when you scroll near the bottom. The old
@@ -743,6 +798,18 @@ async function resolveCampaignAsin(detailsUrl) {
     const r = await chrome.runtime.sendMessage({ type: 'SCOUT_RESOLVE_ASIN', detailsUrl })
     return (r && r.ok && r.asins && r.asins[0]) || null
   } catch (e) { return null }
+}
+
+// Full ASIN LIST for a campaign (its details page can list several products).
+// Used to VERIFY a search hit: only accept a card when the ASIN we searched is
+// actually one of the campaign's products — never send to a brand we haven't
+// confirmed owns the ASIN.
+async function resolveCampaignAsins(detailsUrl) {
+  if (!detailsUrl) return []
+  try {
+    const r = await chrome.runtime.sendMessage({ type: 'SCOUT_RESOLVE_ASIN', detailsUrl })
+    return (r && r.ok && Array.isArray(r.asins)) ? r.asins.map((a) => String(a || '').toUpperCase()) : []
+  } catch (e) { return [] }
 }
 
 // POST one accepted campaign into the MVP Creator Campaigns inbox. The row lands
