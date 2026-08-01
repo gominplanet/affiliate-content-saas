@@ -176,6 +176,27 @@ export async function requestSendByCampaign(campaignIds: string[], message: stri
   return { ok: !!resp.ok, error: resp.error, reason: resp.reason, groups: resp.groups, detailsUrl: resp.detailsUrl, leftOpen: resp.leftOpen }
 }
 
+/**
+ * FULLY BACKGROUND send by ASIN — the catalog-free path. SCOUT resolves the ASIN
+ * to the creator's accepted campaign through Amazon's own API (collaboration/
+ * search), looks up the brand chat token (chat/search) and posts the recap
+ * (chat/message/send), all in a hidden tab in the user's session. campaignIds are
+ * optional hints from our catalog. Needs SCOUT to have learned the send API from a
+ * prior real send. Best-effort: resolves, never throws.
+ */
+export async function requestSendByAsin(asin: string, message: string, campaignIds?: string[]): Promise<MessageBrandResult & { campaignId?: string; brand?: string | null }> {
+  const a = (asin || '').toUpperCase()
+  if (!/^[A-Z0-9]{10}$/.test(a)) return { ok: false, error: 'no-asin' }
+  if (!message.trim()) return { ok: false, error: 'no-message' }
+  if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
+  const resp = await sendToExtension<{ ok?: boolean; error?: string; reason?: string; groups?: number; campaignId?: string; brand?: string | null }>(
+    { type: 'MVP_CC_SEND_BY_ASIN', asin: a, message, campaignIds: [...new Set((campaignIds || []).filter(Boolean))] },
+    125000,
+  )
+  if (!resp) return { ok: false, error: 'timeout' }
+  return { ok: !!resp.ok, error: resp.error, reason: resp.reason, groups: resp.groups, campaignId: resp.campaignId, brand: resp.brand }
+}
+
 export interface CcSendDebug {
   ok: boolean
   hasRecipe?: boolean
