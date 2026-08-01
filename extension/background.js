@@ -733,8 +733,8 @@ async function scanCreatorConnections(callerTabId) {
 // background pass returns zero candidates, ccFindCampaign escalates to a brief
 // FOREGROUND pass and hands focus straight back — the only reliable way to read
 // the grid, matching the existing Campaign Search scan.
-async function findCampaignOnTab(tabId, query, asin, brand, foreground, campaignIds) {
-  const ask = () => chrome.tabs.sendMessage(tabId, { type: 'CC_FIND', query, asin, brand: brand || null, campaignIds: campaignIds || null, foreground: !!foreground, maxResolve: 12, maxCards: 120 })
+async function findCampaignOnTab(tabId, query, asin, brand, foreground, campaignIds, sweep) {
+  const ask = () => chrome.tabs.sendMessage(tabId, { type: 'CC_FIND', query, asin, brand: brand || null, campaignIds: campaignIds || null, foreground: !!foreground, sweep: sweep !== false, maxResolve: 12, maxCards: 120 })
   try {
     return await ask()
   } catch (e) {
@@ -776,16 +776,20 @@ async function ccFindCampaign(query, asin, callerTabId, brand, campaignIds) {
       if (sw && sw.switched) { await _sleep(1500); await waitForTabLoad(tab.id, 25000); await _sleep(2500) }
     } catch (e) {}
 
-    let res = await findCampaignOnTab(tab.id, query, want, brand, false, campaignIds)
+    // Quick BACKGROUND attempt on Opportunities only (sweep=false) — fast, and it
+    // catches the common un-accepted case without a slow hidden 3-tab sweep. A
+    // background tab usually can't re-filter its virtualized grid, so most real
+    // hits come from the foreground pass below.
+    let res = await findCampaignOnTab(tab.id, query, want, brand, false, campaignIds, false)
 
-    // Background couldn't VERIFY a match → often the hidden grid never re-filtered
-    // (stale default cards linger). Escalate to a short foreground pass, where the
-    // ASIN search actually filters, then hand focus back to MVP.
+    // Not verified in the background → do the RELIABLE foreground pass, which
+    // actually filters the grid, and sweeps all status tabs (an accepted campaign
+    // lives in Active, not Opportunities). Then hand focus back to MVP.
     if (ccFoundNothingToCheck(res)) {
       try {
         await chrome.tabs.update(tab.id, { active: true })
         await _sleep(2800) // let the now-visible grid paint + settle
-        const fg = await findCampaignOnTab(tab.id, query, want, brand, true, campaignIds)
+        const fg = await findCampaignOnTab(tab.id, query, want, brand, true, campaignIds, true)
         if (fg) { res = fg; res.foreground = true }
       } catch (e) { /* keep the background result */ }
       finally {

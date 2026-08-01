@@ -269,12 +269,21 @@ async function applyAmazonSearch(keyword) {
   if (!kw) return { searched: false }
   const input = findCampaignSearchBox()
   if (!input) return { searched: false, reason: 'no-search-box' }
-  if ((input.value || '').trim().toLowerCase() === kw.toLowerCase()) {
-    return { searched: true, already: true }
+  const setNativeValue = (el, v) => {
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+    if (setter) setter.call(el, v); else el.value = v
+    el.dispatchEvent(new Event('input', { bubbles: true }))
   }
-  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
-  if (setter) setter.call(input, kw); else input.value = kw
-  input.dispatchEvent(new Event('input', { bubbles: true }))
+  // ALWAYS clear then re-type — never short-circuit on "value already matches".
+  // A throttled BACKGROUND pass often sets the ASIN in the box WITHOUT the grid
+  // ever filtering; on the foreground retry the value already equals the ASIN, so
+  // re-setting the same value won't refire React's onChange and the filter would
+  // never run — the grid stays on the stale default cards and the find loops
+  // forever. Clearing to '' first forces a real change event every time.
+  try { input.focus() } catch (e) {}
+  setNativeValue(input, '')
+  await sleep(150)
+  setNativeValue(input, kw)
   input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }))
   input.dispatchEvent(new Event('change', { bubbles: true }))
 
