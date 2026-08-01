@@ -414,7 +414,7 @@ try {
     // Only accept a NEW-format send recipe (parameterizes contextToken). A recipe
     // learned by an older build lacks that and would message the wrong brand — drop
     // it so the next real send re-teaches it correctly.
-    if (o.ccSendRecipe && typeof o.ccSendRecipe.bodyTemplate === 'string' && o.ccSendRecipe.bodyTemplate.includes(CTX_PLACEHOLDER)) _ccSendRecipe = o.ccSendRecipe
+    if (o.ccSendRecipe && typeof o.ccSendRecipe.bodyTemplate === 'string' && o.ccSendRecipe.bodyTemplate.includes(CTX_PLACEHOLDER) && o.ccSendRecipe.bodyTemplate.includes(MSG_PLACEHOLDER)) _ccSendRecipe = o.ccSendRecipe
     if (o.ccSearchRecipe) _ccSearchRecipe = o.ccSearchRecipe
   })
 } catch (e) {}
@@ -427,7 +427,7 @@ async function ensureRecipesLoaded() {
   try {
     const o = await chrome.storage.local.get(['ccSendRecipe', 'ccSearchRecipe'])
     if (o) {
-      if (!_ccSendRecipe && o.ccSendRecipe && typeof o.ccSendRecipe.bodyTemplate === 'string' && o.ccSendRecipe.bodyTemplate.includes(CTX_PLACEHOLDER)) _ccSendRecipe = o.ccSendRecipe
+      if (!_ccSendRecipe && o.ccSendRecipe && typeof o.ccSendRecipe.bodyTemplate === 'string' && o.ccSendRecipe.bodyTemplate.includes(CTX_PLACEHOLDER) && o.ccSendRecipe.bodyTemplate.includes(MSG_PLACEHOLDER)) _ccSendRecipe = o.ccSendRecipe
       if (!_ccSearchRecipe && o.ccSearchRecipe) _ccSearchRecipe = o.ccSearchRecipe
     }
   } catch (e) {}
@@ -462,6 +462,10 @@ function learnSendRecipe(rec) {
   if (!body || !/"content"\s*:/.test(body)) return false
   let t = paramJsonStr(body, 'content', MSG_PLACEHOLDER)
   t = paramJsonStr(t, 'contextToken', CTX_PLACEHOLDER)
+  // Reject a template that didn't parameterize BOTH the message and the token —
+  // otherwise replay would resend the captured message verbatim (message
+  // placeholder missing) or to a fixed brand (token placeholder missing).
+  if (!t.includes(MSG_PLACEHOLDER) || !t.includes(CTX_PLACEHOLDER)) return false
   _ccSendRecipe = { url: rec.url, method: rec.method || 'POST', headers: rec.headers || {}, bodyTemplate: t, learnedAt: Date.now() }
   try { chrome.storage.local.set({ ccSendRecipe: _ccSendRecipe }) } catch (e) {}
   return true
@@ -525,18 +529,19 @@ function ccApiSendInPage(sendRecipe, searchRecipe, segments, campaignId, MSG, CT
       // 2) send each group. Amazon replies { responses:[{ status:"SUCCESS", … }] }.
       let groups = 0, lastStatus = null, lastSample = ''
       for (const seg of segments) {
-        const body = sendRecipe.bodyTemplate.split(MSG).join(jinner(seg)).split(CTX).join(jinner(contextToken))
+        // Token first, message last (so a message can't clobber a placeholder).
+        const body = sendRecipe.bodyTemplate.split(CTX).join(jinner(contextToken)).split(MSG).join(jinner(seg))
         const mResp = await fetch(sendRecipe.url, { method: sendRecipe.method || 'POST', headers: hdr(sendRecipe.headers), body, credentials: 'include' })
         lastStatus = mResp.status
         let txt = ''
         try { txt = (await mResp.text()).slice(0, 300) } catch (e) {}
         lastSample = txt
+        // Only an explicit SUCCESS counts as a delivered group.
         if (mResp.ok && /"status"\s*:\s*"SUCCESS"/i.test(txt)) groups++
-        else if (mResp.ok && !/"error"|not authorized|forbidden|invalid|violation/i.test(txt)) groups++
         else break
         await new Promise((r) => setTimeout(r, 500))
       }
-      return { ok: groups > 0 && groups === segments.length, groups, status: lastStatus, sample: lastSample }
+      return { ok: groups > 0 && groups === segments.length, groups, partial: groups > 0 && groups < segments.length, status: lastStatus, sample: lastSample }
     } catch (e) {
       return { ok: false, reason: 'exception', error: e && e.message ? e.message : String(e) }
     }
@@ -582,27 +587,32 @@ function ccResolveSendInPage(opts) {
       const A = String(asin || '').toUpperCase()
       const campaignIds = Array.isArray(campaignIdsHint) ? campaignIdsHint.filter(Boolean).slice() : []
       let brand = null
+      let resolveErr = null
 
-      // 1) Resolve ASIN → accepted campaign(s).
-      if (A) {
+      // 1) Resolve ASIN → accepted campaign(s). Requires the creatorId to scope the
+      //    search; without it collaboration/search returns nothing, so skip it (we
+      //    can still try any catalog campaignId hints below).
+      if (A && creatorId) {
         try {
           const body = JSON.stringify({
             campaignId: null, brandId: null,
             filterOptions: { campaignType: 'BOUNTY_BOARD', availableSlotsOnly: null, interestTags: null, providingSamplesOnly: null, statuses: ['SCHEDULED', 'DELIVERING'], commissionPercentageFilters: null, dateRange: null, campaignBrowseNodes: null, earlyAccessOnly: null, gcorIdList: null, campaignQualifiers: null, contentTypes: null, adId: null, storeIds: null, creatorIds: null, flatFeeRanges: null, rangeFilters: null, socialChannels: null, premiumCreator: null, contractStatus: null, ratingStar: null, reviewCount: null, priceRange: null, budgetAvailabilityScoreList: null, dealMetadata: null },
             sortOptions: [{ name: 'CAMPAIGN_TITLE', order: 'ASCENDING' }],
-            nextToken: null, pageNumber: 1, pageSize: 30, creatorId: creatorId || null,
+            nextToken: null, pageNumber: 1, pageSize: 30, creatorId,
             searchOptions: [{ fieldName: 'brandName', searchString: A }, { fieldName: 'campaignName', searchString: A }, { fieldName: 'asin', searchString: A }],
           })
           const r = await fetch('/connect/api/collaboration/search', { method: 'POST', headers: hdr(), body, credentials: 'include' })
           const j = await r.json().catch(() => null)
           const ads = (j && j.responses && j.responses[0] && j.responses[0].ads) || []
           const hasAsin = (a) => Array.isArray(a.campaignAsins) && a.campaignAsins.map((x) => String(x).toUpperCase()).includes(A)
-          const pick = ads.filter(hasAsin)
-          const chosen = pick.length ? pick : ads
+          // WRONG-BRAND GUARD: only take ads whose campaignAsins actually contain the
+          // target ASIN. NEVER fall back to every returned ad — a fuzzy brand/name
+          // match would message a brand that doesn't sell this product.
+          const chosen = ads.filter(hasAsin)
           for (const a of chosen) { if (a.campaignId && !campaignIds.includes(a.campaignId)) campaignIds.push(a.campaignId); if (!brand && a.brandName) brand = a.brandName }
-        } catch (e) {}
+        } catch (e) { resolveErr = e && e.message ? e.message : String(e) }
       }
-      if (!campaignIds.length) return { ok: false, reason: 'no-campaign-for-asin' }
+      if (!campaignIds.length) return { ok: false, reason: (A && !creatorId) ? 'no-creator-id' : 'no-campaign-for-asin', error: resolveErr || undefined }
 
       // token finder (contextValidatorToken in the reply, or contextToken).
       const findToken = (j) => {
@@ -624,19 +634,24 @@ function ccResolveSendInPage(opts) {
           if (!token) { lastReason = 'no-context-token'; continue }
           let groups = 0
           for (const seg of segments) {
-            const mBody = sendTemplate.split(MSG).join(jinner(seg)).split(CTX).join(jinner(token))
+            // Substitute the token FIRST, then the message LAST — so a message that
+            // happens to contain a placeholder token can't corrupt the body.
+            const mBody = sendTemplate.split(CTX).join(jinner(token)).split(MSG).join(jinner(seg))
             const mr = await fetch('/connect/api/chat/message/send', { method: 'POST', headers: hdr(), body: mBody, credentials: 'include' })
             let txt = ''
             try { txt = (await mr.text()).slice(0, 300) } catch (e) {}
+            // Only an explicit SUCCESS counts — a 2xx interstitial / throttle page
+            // must NOT be read as delivered.
             if (mr.ok && /"status"\s*:\s*"SUCCESS"/i.test(txt)) groups++
-            else if (mr.ok && !/"error"|not authorized|forbidden|invalid|violation/i.test(txt)) groups++
             else { lastReason = 'send-rejected'; break }
             await new Promise((r) => setTimeout(r, 400))
           }
-          if (groups > 0 && groups === segments.length) return { ok: true, groups, campaignId: cid, brand }
+          // Once ANY group has been delivered to this brand, STOP — never fan out to
+          // another candidate (the next is often the same brand chat → duplicates).
+          if (groups > 0) return { ok: groups === segments.length, reason: groups === segments.length ? undefined : 'partial', groups, campaignId: cid, brand }
         } catch (e) { lastReason = 'exception' }
       }
-      return { ok: false, reason: lastReason, campaignIds, brand }
+      return { ok: false, reason: lastReason, campaignIds, brand, error: resolveErr || undefined }
     } catch (e) {
       return { ok: false, reason: 'exception', error: e && e.message ? e.message : String(e) }
     }
@@ -3477,7 +3492,9 @@ async function sendByCampaignIds(campaignIds, message, asin, callerTabId, fallba
       await _sleep(800)
       for (const c of candidates) {
         const r = await ccApiReplayOne(apiTab.id, message, c.id)
-        if (r && r.ok) return { ok: true, groups: r.groups, campaignId: c.id, viaReplay: true }
+        // Stop on ANY delivery (ok OR partial) — never re-send to another candidate
+        // (often the same brand chat), which would duplicate messages.
+        if (r && (r.ok || r.groups > 0)) return { ok: !!r.ok, partial: !r.ok && r.groups > 0, reason: r.ok ? undefined : 'partial', groups: r.groups, campaignId: c.id, viaReplay: true }
       }
     } catch (e) { /* fall through to the visible DOM flow */ }
     finally { if (apiTab != null) { try { await chrome.tabs.remove(apiTab.id) } catch (e) {} } stopKeepAlive(kaFast) }
@@ -3534,7 +3551,8 @@ async function sendByCampaignIds(campaignIds, message, asin, callerTabId, fallba
         // replay once more on THIS tab before falling back to DOM clicking.
         if (_ccSendRecipe && _ccSearchRecipe) {
           const r = await ccApiReplayOne(tabId, message, c.id)
-          if (r && r.ok) return { ok: true, groups: r.groups, campaignId: c.id, detailsUrl: url, accepted, viaReplay: true }
+          // Stop on ANY delivery (ok OR partial) — don't also DOM-send (duplicate).
+          if (r && (r.ok || r.groups > 0)) return { ok: !!r.ok, partial: !r.ok && r.groups > 0, groups: r.groups, campaignId: c.id, detailsUrl: url, accepted, viaReplay: true }
         }
         // Fill + auto-send in the FOREGROUND, where the button actually enables.
         // Short box-poll (~8s) so a page with no message box is reported fast. This

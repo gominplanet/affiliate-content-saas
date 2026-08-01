@@ -204,6 +204,17 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
         setCcNote({ kind: 'info', text: 'Auto-send needs the SCOUT extension. Without it, use Copy message or Email.' })
         return
       }
+      // PARTIAL delivery — some message groups already reached the brand. Do NOT
+      // fall through to the other send paths (they'd re-send the delivered groups
+      // and the brand gets duplicates). Stop here and tell the user what to finish.
+      if ((byAsin.groups || 0) > 0) {
+        setCcPhase('idle')
+        setCcDiag(byAsin.reason ? `Background send: ${byAsin.reason}` : null)
+        setCcNote({ kind: 'info', text: `Sent ${byAsin.groups} of your message${byAsin.groups === 1 ? '' : 's'} to ${byAsin.brand || 'the brand'} on Creator Connections, but the rest didn’t go through. Open the chat (Open this campaign) and send the remaining part, or use Copy message.` })
+        if (byAsin.campaignId) setCcDetailsUrl(`https://affiliate-program.amazon.com/p/connect/request?campaignId=${encodeURIComponent(byAsin.campaignId)}&type=affiliate-plus&status=opportunity`)
+        toast('Partly sent — finish the last message in the chat', { icon: '⚠️' })
+        return
+      }
       // Not sent via the API (SCOUT hasn't learned the send yet, or this brand isn't
       // in your ACCEPTED campaigns) — surface WHY (so a failure is diagnosable) and
       // fall through to the catalog / visible-tab paths (which can accept first).
