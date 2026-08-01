@@ -14,7 +14,12 @@
 
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
-import { CheckCircle, Loader2, RefreshCw, Wand2, X, Flame, MessageCircle } from 'lucide-react'
+import dynamic from 'next/dynamic'
+import { CheckCircle, Loader2, RefreshCw, Wand2, X, Flame, MessageCircle, ImagePlus } from 'lucide-react'
+
+// Reel COVER-frame picker (Alejandro's ask) — client-only so it never lands in
+// any server bundle. Opened from the "Video ready" step below.
+const InstagramCoverModal = dynamic(() => import('@/components/content/InstagramCoverModal'), { ssr: false })
 import { toast } from 'sonner'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { useModalA11y } from '@/components/ui/useModalA11y'
@@ -64,6 +69,7 @@ export function InstagramPublishModal({
   })
   // Media-ready URL — instagram_video_url for vertical, instagram_image_url for horizontal
   const [existingUrl, setExistingUrl] = useState<string | null>(null)
+  const [coverOpen, setCoverOpen] = useState(false)
   // Real YouTube video id — deep-links to Studio to download the source MP4.
   const [ytVideoId, setYtVideoId] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
@@ -410,6 +416,7 @@ export function InstagramPublishModal({
   }
 
   return (
+    <>
     <InstagramPublishModalShell onClose={onClose}>
         <div className="p-6">
           <div className="flex items-center justify-between mb-4">
@@ -538,13 +545,24 @@ export function InstagramPublishModal({
                   </div>
                 </div>
               ) : (
-                <div className="flex items-center justify-between p-3 rounded-lg bg-[#34c759]/5 border border-[#34c759]/30">
+                <div className="flex items-center justify-between p-3 rounded-lg bg-[#34c759]/5 border border-[#34c759]/30 flex-wrap gap-2">
                   <p className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7] flex items-center gap-1.5">
                     <CheckCircle size={12} className="text-[#34c759]" /> Video ready
                   </p>
-                  <button onClick={() => { setExistingUrl(null); resetPreview() }} className="text-[11px] text-[#7C3AED] hover:underline">
-                    Replace
-                  </button>
+                  <div className="flex items-center gap-3">
+                    {/* Pick the still frame Instagram uses as the Reel COVER, so
+                        you never have to scrub for it in the IG app after posting. */}
+                    <button
+                      onClick={() => setCoverOpen(true)}
+                      className="text-[11px] text-[#E1306C] hover:underline inline-flex items-center gap-1 font-semibold"
+                      title="Choose the still frame shown as your Reel cover"
+                    >
+                      <ImagePlus size={11} /> Choose Reel cover
+                    </button>
+                    <button onClick={() => { setExistingUrl(null); resetPreview() }} className="text-[11px] text-[#7C3AED] hover:underline">
+                      Replace
+                    </button>
+                  </div>
                 </div>
               )
             ) : videoKind === 'horizontal' ? (
@@ -810,6 +828,10 @@ export function InstagramPublishModal({
           {publishError && <p className="text-[11px] text-[#ff3b30] mt-3 break-all">{publishError}</p>}
         </div>
     </InstagramPublishModalShell>
+    {coverOpen && existingUrl && (
+      <InstagramCoverModal videoDbId={videoDbId} videoUrl={existingUrl} onClose={() => setCoverOpen(false)} />
+    )}
+    </>
   )
 }
 
