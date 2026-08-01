@@ -2736,7 +2736,10 @@ async function sendBrandMessageInPage(message) {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const norm = (s) => (s || '').replace(/\s+/g, ' ').trim()
   const textOf = (el) => norm(el && (el.innerText || el.textContent))
-  const attrText = (el) => norm((el.innerText || el.textContent || '') + ' ' + (el.getAttribute('aria-label') || '') + ' ' + (el.getAttribute('title') || ''))
+  // Include el.value so an <input type="submit" value="Send"> is matchable — its
+  // label is in .value, not innerText/textContent, so without this findSend
+  // couldn't see the Send button on the brand-chat page (typed but never sent).
+  const attrText = (el) => norm((el.innerText || el.textContent || el.value || '') + ' ' + (el.getAttribute('aria-label') || '') + ' ' + (el.getAttribute('title') || ''))
   const findMsgBtn = () => {
     const c = [...document.querySelectorAll('button,a,[role="button"]')]
     return c.find((e) => /message brand|message the brand/i.test(textOf(e)))
