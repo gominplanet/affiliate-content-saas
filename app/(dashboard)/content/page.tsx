@@ -1,4 +1,7 @@
 'use client'
+// Cache-bust: force Vercel to re-emit this page's client-reference manifest
+// entry after a new client component entered its import graph (a stale build
+// cache dropped content/page.tsx#default from the manifest → RSC render error).
 
 import { useState, useEffect, useCallback, useRef, useMemo, memo, Suspense } from 'react'
 import { toast } from 'sonner'
