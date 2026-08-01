@@ -19,7 +19,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { toast } from 'sonner'
 import { X, Copy, Mail, ExternalLink, Loader2, Sparkles, Check, RotateCcw, Video, Send } from 'lucide-react'
 import { fillRecapMessage, CC_GROUP_BREAK, type RecapLink, type BrandRecapSettings } from '@/lib/brand-recap'
-import { requestAmazonVideoForAsin, requestFindCampaign, requestAcceptAndSendBrand, requestSendByCampaign, requestCcSendDebug } from '@/lib/extension-frame'
+import { requestAmazonVideoForAsin, requestFindCampaign, requestAcceptAndSendBrand, requestSendByCampaign, requestSendByAsin, requestCcSendDebug } from '@/lib/extension-frame'
 
 /** MVP's OINK affiliate link (same as the sidebar Recommended Tools row). */
 const OINK_AFFILIATE_URL = 'https://geni.us/2y5sBo'
@@ -177,7 +177,37 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
         catCampaignIds = Array.isArray(c?.campaignIds) ? c.campaignIds : []
         catBrandCampaignIds = Array.isArray(c?.brandCampaignIds) ? c.brandCampaignIds : []
       } catch { /* unknown — proceed to SCOUT */ }
-      if (inCatalog === false) {
+
+      // Build the CC message text (groups separated by the marker SCOUT splits on
+      // to send each as its own chat message).
+      const ccGroups0 = message.split(/\n\s*\n+/).map(s => s.trim()).filter(Boolean)
+      const ccTextPrimary = ccGroups0.length > 1 ? ccGroups0.join(`\n\n${CC_GROUP_BREAK}\n\n`) : message
+
+      // PRIMARY — fully background, catalog-free: SCOUT resolves the ASIN to your
+      // ACCEPTED campaign through Amazon's own API (collaboration/search) and posts
+      // the recap in a hidden tab (chat/search → message/send). Works even when our
+      // catalog doesn't have the product. Catalog campaign_ids (if any) go as hints.
+      setCcPhase('sending')
+      setCcNote({ kind: 'info', text: 'Messaging the brand on Creator Connections…' })
+      const byAsin = await requestSendByAsin(asin, ccTextPrimary, [...catCampaignIds, ...catBrandCampaignIds])
+      if (byAsin.ok) {
+        setCcPhase('done')
+        setCcNote({ kind: 'ok', text: `Sent to ${byAsin.brand || 'the brand'} on Creator Connections${byAsin.groups && byAsin.groups > 1 ? ` (${byAsin.groups} messages)` : ''}.` })
+        toast.success('Sent on Creator Connections ✓')
+        return
+      }
+      if (byAsin.error === 'not-installed') {
+        setCcPhase('idle')
+        setCcNote({ kind: 'info', text: 'Auto-send needs the SCOUT extension. Without it, use Copy message or Email.' })
+        return
+      }
+      // Not sent via the API (SCOUT hasn't learned the send yet, or this brand isn't
+      // in your ACCEPTED campaigns) — note why and fall through to the catalog /
+      // visible-tab paths (which can accept an opportunity first).
+      const asinReason = byAsin.reason || byAsin.error || ''
+      if (asinReason && asinReason !== 'not-learned') setCcDiag(`Background send: ${asinReason}`)
+
+      if (inCatalog === false && !(catCampaignIds.length || catBrandCampaignIds.length)) {
         setCcPhase('idle')
         setCcNote({ kind: 'info', text: 'This product isn’t in Creator Connections, so there’s no brand chat to send through. Email the brand instead (use Copy message or Email), or reach them from the product page.' })
         return

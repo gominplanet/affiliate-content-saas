@@ -490,7 +490,9 @@ function ccApiSendInPage(sendRecipe, searchRecipe, segments, campaignId, MSG, CT
           if (!o || typeof o !== 'object') return null
           for (const k of Object.keys(o)) {
             const v = o[k]
-            if (typeof v === 'string' && /context.?token/i.test(k) && v.length > 20) return v
+            // The token field in chat/search's reply is "contextValidatorToken"
+            // (the send body calls it "contextToken") — match both.
+            if (typeof v === 'string' && /context\w*token/i.test(k) && v.length > 20) return v
             if (v && typeof v === 'object') seen.push(v)
           }
           return null
@@ -506,16 +508,17 @@ function ccApiSendInPage(sendRecipe, searchRecipe, segments, campaignId, MSG, CT
       try { sJson = await sResp.json() } catch (e) {}
       const contextToken = deepToken(sJson)
       if (!contextToken) return { ok: false, reason: 'no-context-token', status: sResp.status }
-      // 2) send each group.
+      // 2) send each group. Amazon replies { responses:[{ status:"SUCCESS", … }] }.
       let groups = 0, lastStatus = null, lastSample = ''
       for (const seg of segments) {
         const body = sendRecipe.bodyTemplate.split(MSG).join(jinner(seg)).split(CTX).join(jinner(contextToken))
         const mResp = await fetch(sendRecipe.url, { method: sendRecipe.method || 'POST', headers: hdr(sendRecipe.headers), body, credentials: 'include' })
         lastStatus = mResp.status
         let txt = ''
-        try { txt = (await mResp.text()).slice(0, 200) } catch (e) {}
+        try { txt = (await mResp.text()).slice(0, 300) } catch (e) {}
         lastSample = txt
-        if (mResp.ok && !/"error"|not authorized|forbidden|invalid/i.test(txt)) groups++
+        if (mResp.ok && /"status"\s*:\s*"SUCCESS"/i.test(txt)) groups++
+        else if (mResp.ok && !/"error"|not authorized|forbidden|invalid|violation/i.test(txt)) groups++
         else break
         await new Promise((r) => setTimeout(r, 500))
       }
@@ -544,6 +547,117 @@ async function ccApiReplayOne(tabId, message, campaignId) {
     return (res && res[0] && res[0].result) || { ok: false, reason: 'no-result' }
   } catch (e) {
     return { ok: false, reason: 'exec-failed', error: e && e.message ? e.message : String(e) }
+  }
+}
+
+// Runs IN the page (MAIN world): the FULL background pipeline, learned from the
+// live capture — resolve the ASIN to the creator's accepted campaign, look up the
+// brand chat's token, and post each message group. No catalog, no DOM. Steps:
+//   1) POST /connect/api/collaboration/search {searchOptions:[asin…], creatorId,
+//      statuses:[SCHEDULED,DELIVERING]} → responses[0].ads[] (accepted campaigns);
+//      pick the ad whose campaignAsins include the ASIN → campaignId (+ brand).
+//   2) POST /connect/api/chat/search {searchOption:{campaignId}} →
+//      responses[0].addressBook[0].contextValidatorToken.
+//   3) POST /connect/api/chat/message/send {actorName, contextToken, content}.
+function ccResolveSendInPage(opts) {
+  return (async () => {
+    try {
+      const { asin, segments, campaignIdsHint, creatorId, headers, sendTemplate, searchTemplate, MSG, CTX, CAMP } = opts
+      const hdr = () => { const o = Object.assign({}, headers || {}); if (!o['Content-Type'] && !o['content-type']) o['Content-Type'] = 'application/json'; if (!o['Accept'] && !o['accept']) o['Accept'] = 'application/json'; return o }
+      const jinner = (s) => { try { return JSON.stringify(String(s == null ? '' : s)).slice(1, -1) } catch (e) { return String(s || '') } }
+      const A = String(asin || '').toUpperCase()
+      const campaignIds = Array.isArray(campaignIdsHint) ? campaignIdsHint.filter(Boolean).slice() : []
+      let brand = null
+
+      // 1) Resolve ASIN → accepted campaign(s).
+      if (A) {
+        try {
+          const body = JSON.stringify({
+            campaignId: null, brandId: null,
+            filterOptions: { campaignType: 'BOUNTY_BOARD', availableSlotsOnly: null, interestTags: null, providingSamplesOnly: null, statuses: ['SCHEDULED', 'DELIVERING'], commissionPercentageFilters: null, dateRange: null, campaignBrowseNodes: null, earlyAccessOnly: null, gcorIdList: null, campaignQualifiers: null, contentTypes: null, adId: null, storeIds: null, creatorIds: null, flatFeeRanges: null, rangeFilters: null, socialChannels: null, premiumCreator: null, contractStatus: null, ratingStar: null, reviewCount: null, priceRange: null, budgetAvailabilityScoreList: null, dealMetadata: null },
+            sortOptions: [{ name: 'CAMPAIGN_TITLE', order: 'ASCENDING' }],
+            nextToken: null, pageNumber: 1, pageSize: 30, creatorId: creatorId || null,
+            searchOptions: [{ fieldName: 'brandName', searchString: A }, { fieldName: 'campaignName', searchString: A }, { fieldName: 'asin', searchString: A }],
+          })
+          const r = await fetch('/connect/api/collaboration/search', { method: 'POST', headers: hdr(), body, credentials: 'include' })
+          const j = await r.json().catch(() => null)
+          const ads = (j && j.responses && j.responses[0] && j.responses[0].ads) || []
+          const hasAsin = (a) => Array.isArray(a.campaignAsins) && a.campaignAsins.map((x) => String(x).toUpperCase()).includes(A)
+          const pick = ads.filter(hasAsin)
+          const chosen = pick.length ? pick : ads
+          for (const a of chosen) { if (a.campaignId && !campaignIds.includes(a.campaignId)) campaignIds.push(a.campaignId); if (!brand && a.brandName) brand = a.brandName }
+        } catch (e) {}
+      }
+      if (!campaignIds.length) return { ok: false, reason: 'no-campaign-for-asin' }
+
+      // token finder (contextValidatorToken in the reply, or contextToken).
+      const findToken = (j) => {
+        try {
+          const abs = (j && j.responses && j.responses[0] && j.responses[0].addressBook) || []
+          for (const e of abs) { const t = e.contextValidatorToken || e.contextToken; if (t && t.length > 20) return t }
+        } catch (e) {}
+        return null
+      }
+
+      // 2+3) For each candidate: chat/search → token → send each group.
+      let lastReason = 'no-context-token'
+      for (const cid of campaignIds) {
+        try {
+          const sBody = searchTemplate.split(CAMP).join(cid)
+          const sr = await fetch('/connect/api/chat/search', { method: 'POST', headers: hdr(), body: sBody, credentials: 'include' })
+          const sj = await sr.json().catch(() => null)
+          const token = findToken(sj)
+          if (!token) { lastReason = 'no-context-token'; continue }
+          let groups = 0
+          for (const seg of segments) {
+            const mBody = sendTemplate.split(MSG).join(jinner(seg)).split(CTX).join(jinner(token))
+            const mr = await fetch('/connect/api/chat/message/send', { method: 'POST', headers: hdr(), body: mBody, credentials: 'include' })
+            let txt = ''
+            try { txt = (await mr.text()).slice(0, 300) } catch (e) {}
+            if (mr.ok && /"status"\s*:\s*"SUCCESS"/i.test(txt)) groups++
+            else if (mr.ok && !/"error"|not authorized|forbidden|invalid|violation/i.test(txt)) groups++
+            else { lastReason = 'send-rejected'; break }
+            await new Promise((r) => setTimeout(r, 400))
+          }
+          if (groups > 0 && groups === segments.length) return { ok: true, groups, campaignId: cid, brand }
+        } catch (e) { lastReason = 'exception' }
+      }
+      return { ok: false, reason: lastReason, campaignIds, brand }
+    } catch (e) {
+      return { ok: false, reason: 'exception', error: e && e.message ? e.message : String(e) }
+    }
+  })()
+}
+
+// Full background send by ASIN: open a hidden affiliate-program tab and run the
+// resolve → chat-lookup → send pipeline in the user's own session. No catalog,
+// no visible tab. campaignIdsHint (from our catalog, if any) is tried alongside
+// the ASIN-resolved ones. Needs the learned send + search recipes.
+async function sendByAsinApi(asin, message, campaignIdsHint) {
+  if (!message || !message.trim()) return { ok: false, error: 'no-message' }
+  if (!_ccSendRecipe || !_ccSearchRecipe) return { ok: false, reason: 'not-learned' }
+  const keepAlive = startKeepAlive()
+  let tabId = null
+  try {
+    const tab = await chrome.tabs.create({ url: 'https://affiliate-program.amazon.com/p/connect/requests?status=opportunity&type=affiliate-plus', active: false })
+    tabId = tab.id
+    await waitForTabLoad(tabId, 15000)
+    await _sleep(800)
+    const res = await chrome.scripting.executeScript({
+      target: { tabId }, world: 'MAIN', func: ccResolveSendInPage,
+      args: [{
+        asin: asin || '', segments: splitCcGroups(message), campaignIdsHint: campaignIdsHint || [],
+        creatorId: _ccCreatorId, headers: _ccSendRecipe.headers || {},
+        sendTemplate: _ccSendRecipe.bodyTemplate, searchTemplate: _ccSearchRecipe.bodyTemplate,
+        MSG: MSG_PLACEHOLDER, CTX: CTX_PLACEHOLDER, CAMP: CAMPAIGN_PLACEHOLDER,
+      }],
+    })
+    return (res && res[0] && res[0].result) || { ok: false, reason: 'no-result' }
+  } catch (e) {
+    return { ok: false, error: e && e.message ? e.message : 'exception' }
+  } finally {
+    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+    stopKeepAlive(keepAlive)
   }
 }
 
@@ -2778,6 +2892,16 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async response — keep the channel open
+  }
+  if (msg.type === 'MVP_CC_SEND_BY_ASIN') {
+    // FULLY BACKGROUND, catalog-free: SCOUT resolves the ASIN to the creator's
+    // accepted campaign via Amazon's own API, looks up the brand chat token, and
+    // posts the recap — all in a hidden tab. campaignIds are optional catalog hints.
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 120000)
+    sendByAsinApi(msg.asin || '', msg.message || '', msg.campaignIds || [])
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true
   }
   if (msg.type === 'MVP_CC_SEND_BY_CAMPAIGN') {
     // DIRECT path: the app resolved the product's ASIN to campaign_id(s) in the
