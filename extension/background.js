@@ -2968,11 +2968,14 @@ function ensureOffsiteStoreInPage() {
 // threw "Frame with ID 0 was removed". Here a single tab is opened on the
 // campaign, we accept it when an Accept button is present (an un-accepted
 // opportunity has no brand chat until you accept), then send on the SAME tab.
-async function acceptAndSendBrand(detailsUrl, message, callerTabId, wantAsin) {
+async function acceptAndSendBrand(detailsUrl, message, callerTabId, wantAsin, fast) {
   if (!detailsUrl) return { ok: false, error: 'no-url' }
   if (!message || !message.trim()) return { ok: false, error: 'no-message' }
   const want = String(wantAsin || '').toUpperCase()
   const wantValid = /^[A-Z0-9]{10}$/.test(want)
+  // Step log so a stall is diagnosable in the SCOUT background console.
+  const t0 = Date.now()
+  const step = (s) => { try { console.debug('[MVP SCOUT] send-step', s, `${Date.now() - t0}ms`, detailsUrl.slice(0, 90)) } catch (e) {} }
   let tabId = null
   const runAccept = async () => {
     for (let i = 0; i < 4; i++) {
@@ -2992,13 +2995,15 @@ async function acceptAndSendBrand(detailsUrl, message, callerTabId, wantAsin) {
     return (res && res[0] && res[0].result) || null
   }
   const reload = async () => {
-    try { await chrome.tabs.update(tabId, { url: detailsUrl }); await waitForTabLoad(tabId, 25000); await _sleep(2500) } catch (e) {}
+    try { await chrome.tabs.update(tabId, { url: detailsUrl }); await waitForTabLoad(tabId, 14000); await _sleep(1200) } catch (e) {}
   }
   try {
+    step('open')
     const tab = await chrome.tabs.create({ url: detailsUrl, active: false })
     tabId = tab.id
-    await waitForTabLoad(tabId, 25000)
-    await _sleep(2500)
+    await waitForTabLoad(tabId, 14000)
+    await _sleep(1200)
+    step('loaded')
     // Offsite store fix (CC is blocked on an onsite store id).
     try {
       const sres = await chrome.scripting.executeScript({ target: { tabId }, func: ensureOffsiteStoreInPage })
@@ -3025,19 +3030,25 @@ async function acceptAndSendBrand(detailsUrl, message, callerTabId, wantAsin) {
 
     // Accept if there's an Accept button (un-accepted opportunity). Not finding
     // one means it's already accepted — fine, go straight to send.
+    step('accept')
     let accepted = await runAccept()
     if (accepted) await reload() // let the brand chat open after accepting
 
     // Send on the same tab.
+    step('send')
     let sr = await runSend()
+    step('sent:' + (sr && sr.ok ? 'ok' : (sr && sr.reason) || 'no'))
     // Only RE-SEND when nothing at all went out (groups falsy) AND the box never
     // opened — the signature of an un-accepted campaign whose Accept button
     // didn't render headless. If any segment posted, we do NOT resend (that would
-    // duplicate). Bring the tab forward once, accept, reload, resend, restore.
+    // duplicate). The `fast` path (direct-by-campaign) SKIPS this expensive
+    // foreground fallback — it eats ~60s and pushes the whole thing past the
+    // timeout; a direct-URL miss is better reported quickly than retried.
     const nothingSent = !sr || (!sr.ok && !(sr.groups > 0))
-    if (nothingSent && !accepted) {
+    if (nothingSent && !accepted && !fast) {
+      step('fallback-fg')
       try {
-        await chrome.tabs.update(tabId, { active: true }); await _sleep(2500)
+        await chrome.tabs.update(tabId, { active: true }); await _sleep(1500)
         accepted = await runAccept()
       } catch (e) {}
       finally { if (callerTabId != null) { try { await chrome.tabs.update(callerTabId, { active: true }) } catch (e) {} } }
@@ -3069,7 +3080,7 @@ async function sendByCampaignIds(campaignIds, message, asin, callerTabId) {
   for (const id of ids) {
     for (const type of ['affiliate-plus', 'spcc']) {
       const url = ccCampaignUrl(id, type)
-      const r = await acceptAndSendBrand(url, message, callerTabId, asin)
+      const r = await acceptAndSendBrand(url, message, callerTabId, asin, true)
       if (r && r.ok) return { ...r, campaignId: id, detailsUrl: url }
       last = r
       // asin-mismatch = right page loaded but wrong product (or wrong type view)

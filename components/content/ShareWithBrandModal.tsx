@@ -164,6 +164,50 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
       // Resolve the brand's CC campaign URL for this ASIN. Cache first (from a
       // prior message or a Smart Scan), then a live SCOUT grid lookup that also
       // tells us the campaign's status (opportunity / active / completed).
+      // Look this ASIN up in OUR catalog FIRST — instant, and it gives us the
+      // exact campaign_id(s) + brand with zero Amazon traffic.
+      let inCatalog: boolean | null = null
+      let catBrand: string | null = null
+      let catCampaignIds: string[] = []
+      try {
+        const c = await fetch(`/api/campaigns/catalog-by-asin?asin=${encodeURIComponent(asin)}`).then(r => r.json())
+        inCatalog = c?.inCatalog ?? null
+        catBrand = c?.brand ?? null
+        catCampaignIds = Array.isArray(c?.campaignIds) ? c.campaignIds : []
+      } catch { /* unknown — proceed to SCOUT */ }
+      if (inCatalog === false) {
+        setCcPhase('idle')
+        setCcNote({ kind: 'info', text: 'This product isn’t in Creator Connections, so there’s no brand chat to send through. Email the brand instead (use Copy message or Email), or reach them from the product page.' })
+        return
+      }
+
+      // FAST PATH (preferred — BEFORE any cached URL): the catalog gave us the
+      // exact campaign_id(s), so deep-link STRAIGHT to the campaign and send — no
+      // grid search, and never a stale cached link that could time out. SCOUT
+      // verifies the ASIN on the page before typing.
+      if (catCampaignIds.length) {
+        const groups = message.split(/\n\s*\n+/).map(s => s.trim()).filter(Boolean)
+        const ccText = groups.length > 1 ? groups.join(`\n\n${CC_GROUP_BREAK}\n\n`) : message
+        setCcPhase('sending')
+        setCcNote({ kind: 'info', text: 'Opening the campaign and sending your message…' })
+        const direct = await requestSendByCampaign(catCampaignIds, ccText, asin)
+        if (direct.ok) {
+          if (direct.detailsUrl) setCcDetailsUrl(direct.detailsUrl)
+          setCcPhase('done')
+          setCcNote({ kind: 'ok', text: `Sent to the brand on Creator Connections${direct.groups && direct.groups > 1 ? ` (${direct.groups} messages)` : ''}.` })
+          toast.success('Sent to the brand on Creator Connections ✓')
+          return
+        }
+        if (direct.error === 'not-installed') {
+          setCcPhase('idle')
+          setCcNote({ kind: 'info', text: 'Auto-send needs the SCOUT extension. Without it, use Copy message or Email.' })
+          return
+        }
+        // Direct path didn't complete → fall through to the cache / grid find below.
+        setCcPhase('resolving')
+      }
+
+      // FALLBACK: a previously-resolved URL (cache), then a live grid find.
       let detailsUrl = ''
       let status: 'opportunity' | 'active' | 'completed' | null = null
       try {
@@ -173,51 +217,6 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
       } catch { /* fall through to live find */ }
 
       if (!detailsUrl) {
-        // Check OUR catalog FIRST (instant, free) before spending SCOUT on a
-        // grid search. If the product isn't in Creator Connections at all, stop
-        // here and point to email — no SCOUT, no waiting.
-        let inCatalog: boolean | null = null
-        let catBrand: string | null = null
-        let catCampaignIds: string[] = []
-        try {
-          const c = await fetch(`/api/campaigns/catalog-by-asin?asin=${encodeURIComponent(asin)}`).then(r => r.json())
-          inCatalog = c?.inCatalog ?? null
-          catBrand = c?.brand ?? null
-          catCampaignIds = Array.isArray(c?.campaignIds) ? c.campaignIds : []
-        } catch { /* unknown — proceed to SCOUT */ }
-        if (inCatalog === false) {
-          setCcPhase('idle')
-          setCcNote({ kind: 'info', text: 'This product isn’t in Creator Connections, so there’s no brand chat to send through. Email the brand instead (use Copy message or Email), or reach them from the product page.' })
-          return
-        }
-
-        // FAST PATH: the catalog gave us the exact campaign_id(s) for this ASIN, so
-        // deep-link STRAIGHT to the campaign and send — no grid search (that's the
-        // slow, flaky, timeout-prone part). SCOUT verifies the ASIN on the page
-        // before typing. Falls through to the grid-search find only if this can't
-        // complete (e.g. SCOUT can't build the URL without a cached creator id).
-        if (catCampaignIds.length) {
-          const groups = message.split(/\n\s*\n+/).map(s => s.trim()).filter(Boolean)
-          const ccText = groups.length > 1 ? groups.join(`\n\n${CC_GROUP_BREAK}\n\n`) : message
-          setCcPhase('sending')
-          setCcNote({ kind: 'info', text: 'Opening the campaign and sending your message…' })
-          const direct = await requestSendByCampaign(catCampaignIds, ccText, asin)
-          if (direct.ok) {
-            if (direct.detailsUrl) setCcDetailsUrl(direct.detailsUrl)
-            setCcPhase('done')
-            setCcNote({ kind: 'ok', text: `Sent to the brand on Creator Connections${direct.groups && direct.groups > 1 ? ` (${direct.groups} messages)` : ''}.` })
-            toast.success('Sent to the brand on Creator Connections ✓')
-            return
-          }
-          if (direct.error === 'not-installed') {
-            setCcPhase('idle')
-            setCcNote({ kind: 'info', text: 'Auto-send needs the SCOUT extension. Without it, use Copy message or Email.' })
-            return
-          }
-          // Direct path didn't complete → try the grid-search find below as backup.
-          setCcPhase('resolving')
-        }
-
         // In the catalog (or couldn't tell) → resolve the campaign live with
         // SCOUT (fast ASIN search). Pass the catalog's brand so SCOUT can VERIFY
         // it opened the right campaign cheaply (no flaky details-page ASIN read),
