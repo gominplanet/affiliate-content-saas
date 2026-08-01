@@ -180,6 +180,7 @@ export interface CcSendDebug {
   ok: boolean
   hasRecipe?: boolean
   recipe?: Record<string, unknown> | null
+  searchRecipe?: Record<string, unknown> | null
   ringCount?: number
   ring?: Array<Record<string, unknown>>
   creatorId?: string | null
