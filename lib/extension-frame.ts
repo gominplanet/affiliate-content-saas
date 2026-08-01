@@ -176,6 +176,29 @@ export async function requestSendByCampaign(campaignIds: string[], message: stri
   return { ok: !!resp.ok, error: resp.error, reason: resp.reason, groups: resp.groups, detailsUrl: resp.detailsUrl, leftOpen: resp.leftOpen }
 }
 
+export interface CcSendDebug {
+  ok: boolean
+  hasRecipe?: boolean
+  recipe?: Record<string, unknown> | null
+  ringCount?: number
+  ring?: Array<Record<string, unknown>>
+  creatorId?: string | null
+  error?: string
+}
+
+/**
+ * DIAGNOSTIC — ask SCOUT what its network hook has captured on Creator Connections
+ * and whether it has learned a send "recipe". This is how we SEE Amazon's real
+ * send request (the endpoint/headers/body) so replay can be tuned to it, instead
+ * of debugging blind. Best-effort: resolves, never throws.
+ */
+export async function requestCcSendDebug(): Promise<CcSendDebug> {
+  if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
+  const resp = await sendToExtension<CcSendDebug>({ type: 'MVP_CC_DEBUG' }, 8000)
+  if (!resp) return { ok: false, error: 'timeout' }
+  return resp
+}
+
 export async function requestAcceptAndSendBrand(detailsUrl: string, message: string, asin?: string | null): Promise<MessageBrandResult & { accepted?: boolean }> {
   if (!detailsUrl) return { ok: false, error: 'no-url' }
   if (!message.trim()) return { ok: false, error: 'no-message' }
