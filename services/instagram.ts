@@ -185,6 +185,9 @@ export async function createMediaContainer(opts: {
   caption?: string
   /** Reels only — also share to feed (recommended for reach). */
   shareToFeed?: boolean
+  /** Reels only — the frame to use as the COVER, in milliseconds into the video.
+   *  Lets the creator pick the still in MVP instead of fixing it in the IG app. */
+  thumbOffsetMs?: number
 }): Promise<string> {
   const body = new URLSearchParams({
     media_type: opts.mediaType,
@@ -200,6 +203,10 @@ export async function createMediaContainer(opts: {
   if (opts.mediaType === 'REELS') {
     if (opts.caption) body.set('caption', opts.caption.slice(0, 2200))
     if (opts.shareToFeed !== false) body.set('share_to_feed', 'true')
+    // Cover frame chosen in MVP → IG uses this frame as the Reel thumbnail.
+    if (typeof opts.thumbOffsetMs === 'number' && opts.thumbOffsetMs >= 0) {
+      body.set('thumb_offset', String(Math.round(opts.thumbOffsetMs)))
+    }
   } else if (opts.mediaType === 'IMAGE') {
     if (opts.caption) body.set('caption', opts.caption.slice(0, 2200))
   }
@@ -283,6 +290,7 @@ export async function publishMedia(opts: {
   imageUrl?: string
   caption?: string
   shareToFeed?: boolean
+  thumbOffsetMs?: number
 }): Promise<string> {
   const containerId = await createMediaContainer(opts)
   await waitForContainer({ containerId, accessToken: opts.accessToken })

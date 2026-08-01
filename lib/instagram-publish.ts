@@ -46,22 +46,26 @@ export async function publishInstagramForTarget(
     } catch { /* fall through with the existing token */ }
   }
 
-  // Resolve the video row + its 9:16 render.
+  // Resolve the video row + its 9:16 render. ig_cover_offset_ms is the frame the
+  // creator picked in MVP as the Reel cover (null = let IG default to frame 0).
   let videoDbId = videoId0
   let videoUrl: string | undefined
+  let coverOffsetMs: number | null = null
   if (videoId0) {
     const { data: v } = await sb
-      .from('youtube_videos').select('id,instagram_video_url').eq('id', videoId0).eq('user_id', userId).maybeSingle()
+      .from('youtube_videos').select('id,instagram_video_url,ig_cover_offset_ms').eq('id', videoId0).eq('user_id', userId).maybeSingle()
     if (!v) throw new Error('Video not found.')
     videoUrl = v.instagram_video_url as string | undefined
+    coverOffsetMs = (v.ig_cover_offset_ms as number | null) ?? null
   } else {
     const { data: post } = await sb
-      .from('blog_posts').select('video_id,youtube_videos(id,instagram_video_url)').eq('id', blogPostId).eq('user_id', userId).maybeSingle()
+      .from('blog_posts').select('video_id,youtube_videos(id,instagram_video_url,ig_cover_offset_ms)').eq('id', blogPostId).eq('user_id', userId).maybeSingle()
     if (!post) throw new Error('Post not found.')
     const yt = post.youtube_videos
     const ytRow = Array.isArray(yt) ? yt[0] : yt
     videoDbId = (ytRow?.id as string | undefined) || (post.video_id as string | undefined) || null
     videoUrl = ytRow?.instagram_video_url as string | undefined
+    coverOffsetMs = (ytRow?.ig_cover_offset_ms as number | null) ?? null
   }
   if (!videoUrl || !/^https:\/\//.test(videoUrl)) {
     throw new Error('No vertical MP4 for this — add a 9:16 render before it can post.')
@@ -76,7 +80,7 @@ export async function publishInstagramForTarget(
 
   if (wantReel) {
     try {
-      reelId = await publishMedia({ userId: igUserId, accessToken: accessToken!, mediaType: 'REELS', videoUrl, caption: cap, shareToFeed: true })
+      reelId = await publishMedia({ userId: igUserId, accessToken: accessToken!, mediaType: 'REELS', videoUrl, caption: cap, shareToFeed: true, thumbOffsetMs: coverOffsetMs ?? undefined })
     } catch (e) { errors.push(`Reel: ${e instanceof Error ? e.message : 'failed'}`) }
   }
   if (wantStory) {

@@ -14,7 +14,8 @@
 
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
-import { CheckCircle, Loader2, RefreshCw, Wand2, X, Flame, MessageCircle } from 'lucide-react'
+import { CheckCircle, Loader2, RefreshCw, Wand2, X, Flame, MessageCircle, ImageIcon } from 'lucide-react'
+import InstagramCoverModal from '@/components/content/InstagramCoverModal'
 import { toast } from 'sonner'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { useModalA11y } from '@/components/ui/useModalA11y'
@@ -108,6 +109,10 @@ export function InstagramPublishModal({
   // resolves the link from the blog post's stored media id). Null until loaded.
   const [dmEnabled, setDmEnabled] = useState<boolean | null>(null)
   const [dmKeyword, setDmKeyword] = useState('LINK')
+  // Reel cover-frame picker (vertical only). Lets the creator pick the still
+  // that becomes the Reel cover, so they never fix it in the IG app.
+  const [showCoverPicker, setShowCoverPicker] = useState(false)
+  const [coverChosen, setCoverChosen] = useState(false)
 
   useEffect(() => {
     fetch('/api/instagram/dm-settings')
@@ -680,6 +685,17 @@ export function InstagramPublishModal({
                 AND on TikTok afterwards). */}
             {videoKind === 'vertical' && !uploading && (
               <div className="mt-2 flex flex-col gap-1.5">
+                {existingUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setShowCoverPicker(true)}
+                    title="Pick which frame of the video becomes the Reel cover — no need to fix it in Instagram afterward."
+                    className="self-start inline-flex items-center gap-1.5 text-xs font-medium text-[#7C3AED] hover:underline"
+                  >
+                    <ImageIcon size={14} />
+                    {coverChosen ? 'Cover frame chosen — change it' : 'Choose the Reel cover frame'}
+                  </button>
+                )}
                 <a
                   href={`/clip-factory?videoId=${encodeURIComponent(videoDbId)}&from=instagram`}
                   className="inline-flex items-center gap-1.5 text-xs font-medium text-[#7C3AED] hover:underline"
@@ -809,6 +825,14 @@ export function InstagramPublishModal({
           </div>
           {publishError && <p className="text-[11px] text-[#ff3b30] mt-3 break-all">{publishError}</p>}
         </div>
+        {showCoverPicker && (
+          <InstagramCoverModal
+            videoDbId={videoDbId}
+            videoUrl={existingUrl}
+            onClose={() => setShowCoverPicker(false)}
+            onSaved={(off) => setCoverChosen(off != null)}
+          />
+        )}
     </InstagramPublishModalShell>
   )
 }
