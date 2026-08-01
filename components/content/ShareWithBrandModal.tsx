@@ -170,6 +170,24 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
       } catch { /* fall through to live find */ }
 
       if (!detailsUrl) {
+        // Check OUR catalog FIRST (instant, free) before spending SCOUT on a
+        // grid search. If the product isn't in Creator Connections at all, stop
+        // here and point to email — no SCOUT, no waiting.
+        let inCatalog: boolean | null = null
+        let catBrand: string | null = null
+        try {
+          const c = await fetch(`/api/campaigns/catalog-by-asin?asin=${encodeURIComponent(asin)}`).then(r => r.json())
+          inCatalog = c?.inCatalog ?? null
+          catBrand = c?.brand ?? null
+        } catch { /* unknown — proceed to SCOUT */ }
+        if (inCatalog === false) {
+          setCcPhase('idle')
+          setCcNote({ kind: 'info', text: 'This product isn’t in Creator Connections, so there’s no brand chat to send through. Email the brand instead (use Copy message or Email), or reach them from the product page.' })
+          return
+        }
+
+        // In the catalog (or couldn't tell) → resolve the campaign live with
+        // SCOUT (fast ASIN search), which also gives us its accept status.
         const find = await requestFindCampaign('', asin)
         if (find.error === 'not-installed') {
           setCcPhase('idle')
@@ -185,25 +203,11 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
             body: JSON.stringify({ asin, campaignId: find.campaignId ?? null, detailsUrl }),
           }).catch(() => {})
         } else {
-          // SCOUT found nothing live. That could mean the product genuinely
-          // isn't in Creator Connections, OR SCOUT just missed it (search glitch,
-          // not signed in, grid didn't render). Check our imported catalog to
-          // tell them apart and give the RIGHT next step.
-          let inCatalog: boolean | null = null
-          let catBrand: string | null = null
-          try {
-            const c = await fetch(`/api/campaigns/catalog-by-asin?asin=${encodeURIComponent(asin)}`).then(r => r.json())
-            inCatalog = c?.inCatalog ?? null
-            catBrand = c?.brand ?? null
-          } catch { /* unknown */ }
+          // We know a campaign exists (it's in our catalog) but SCOUT couldn't
+          // open it live — point them to accept it by hand.
           setCcPhase('idle')
           if (inCatalog === true) {
-            // A campaign exists; SCOUT couldn't open it. Point them to open it by hand.
-            setCcDetailsUrl(null)
             setCcNote({ kind: 'info', text: `This product does have a Creator Connections campaign${catBrand ? ` from ${catBrand}` : ''}, but SCOUT couldn’t open it automatically just now. Click Open Campaigns to accept it on Amazon, then Send again — or use Copy message / Email.` })
-          } else if (inCatalog === false) {
-            // Genuinely not in CC — email is the honest fallback.
-            setCcNote({ kind: 'info', text: 'This product isn’t in Creator Connections, so there’s no brand chat to send through. Email the brand instead (use Copy message or Email), or reach them from the product page.' })
           } else {
             setCcNote({ kind: 'info', text: 'Couldn’t confirm a Creator Connections campaign for this product right now. Use Copy message or Email, or try Open Campaigns to check on Amazon.' })
           }
