@@ -187,6 +187,7 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
       // exact campaign_id(s), so deep-link STRAIGHT to the campaign and send — no
       // grid search, and never a stale cached link that could time out. SCOUT
       // verifies the ASIN on the page before typing.
+      let directReason = ''
       if (catCampaignIds.length || catBrandCampaignIds.length) {
         const groups = message.split(/\n\s*\n+/).map(s => s.trim()).filter(Boolean)
         const ccText = groups.length > 1 ? groups.join(`\n\n${CC_GROUP_BREAK}\n\n`) : message
@@ -208,7 +209,10 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
           setCcNote({ kind: 'info', text: 'Auto-send needs the SCOUT extension. Without it, use Copy message or Email.' })
           return
         }
-        // Direct path didn't complete → fall through to the cache / grid find below.
+        // Direct path didn't complete → remember WHY (surfaced in the UI below,
+        // no console needed) and fall through to the grid find.
+        directReason = `${direct.reason || direct.error || 'unknown'}${direct.groups ? ` (sent ${direct.groups})` : ''}`
+        setCcDiag(`Direct send stopped at: ${directReason}`)
         setCcPhase('resolving')
       }
 
@@ -251,7 +255,7 @@ export default function ShareWithBrandModal({ postId, wpUrl, onClose }: {
               const b = t.brands?.length ? ` (${t.brands.slice(0, 4).join(', ')})` : ''
               return `${t.status}: ${t.cards} card${t.cards === 1 ? '' : 's'}${b}${t.matched ? ' ✓' : ''}`
             })
-            setCcDiag(`SCOUT looked for “${d.wantBrand || catBrand || asin}” → ${parts.join(' · ')}`)
+            setCcDiag(`${directReason ? `Direct: ${directReason} · ` : ''}SCOUT looked for “${d.wantBrand || catBrand || asin}” → ${parts.join(' · ')}`)
           }
           if (inCatalog === true) {
             setCcNote({ kind: 'info', text: `This product does have a Creator Connections campaign${catBrand ? ` from ${catBrand}` : ''}, but SCOUT couldn’t open it automatically just now. Click Open Campaigns to accept it on Amazon, then Send again — or use Copy message / Email.` })
