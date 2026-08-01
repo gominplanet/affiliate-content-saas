@@ -49,13 +49,29 @@ export async function POST(request: Request) {
   const videoIds = [...new Set((body.videoIds ?? []).filter(v => typeof v === 'string'))].slice(0, 150)
   if (!videoIds.length) return NextResponse.json({ ok: true, matched: [] })
 
+  // Read the videos. The stored `asin` column (migration 204) is an optional
+  // fast-path — if it hasn't been applied yet, selecting it errors and would
+  // drop EVERY badge, so we fall back to selecting without it and resolve the
+  // ASIN from the product link instead. Badges work either way.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: rows } = await (supabase as any)
+  const withAsin = await (supabase as any)
     .from('youtube_videos')
     .select('id, asin, product_url, description, title')
     .eq('user_id', ownerId)
     .in('id', videoIds)
-  const vids = (rows ?? []) as Array<{ id: string; asin: string | null; product_url: string | null; description: string | null; title: string | null }>
+  let vids: Array<{ id: string; asin: string | null; product_url: string | null; description: string | null; title: string | null }>
+  if (!withAsin.error && withAsin.data) {
+    vids = withAsin.data
+  } else {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const noAsin = await (supabase as any)
+      .from('youtube_videos')
+      .select('id, product_url, description, title')
+      .eq('user_id', ownerId)
+      .in('id', videoIds)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    vids = ((noAsin.data ?? []) as any[]).map((v) => ({ ...v, asin: null }))
+  }
 
   const idToAsin = new Map<string, string>()
   const needResolve: Array<{ id: string; link: string }> = []
