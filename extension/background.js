@@ -3084,10 +3084,15 @@ async function acceptAndSendBrand(detailsUrl, message, callerTabId, wantAsin, fa
 // one or the other and the type just picks the view.
 async function sendByCampaignIds(campaignIds, message, asin, callerTabId, fallbackCampaignIds) {
   const uniq = (a) => [...new Set((a || []).map((c) => String(c || '').trim()).filter(Boolean))]
-  const ids = uniq(campaignIds).slice(0, 4)
-  const fbids = uniq(fallbackCampaignIds).filter((id) => !ids.includes(id)).slice(0, 6)
+  const ids = uniq(campaignIds).slice(0, 2)
+  const fbids = uniq(fallbackCampaignIds).filter((id) => !ids.includes(id)).slice(0, 3)
   if (!ids.length && !fbids.length) return { ok: false, error: 'no-campaign' }
   if (!message || !message.trim()) return { ok: false, error: 'no-message' }
+  // Stop opening more campaigns ~25s before the handler's 180s hard timeout, so we
+  // RETURN the last attempt's real reason (send-button-not-found / box-never-opened
+  // / asin-mismatch) instead of a useless "timeout".
+  const startedAt = Date.now()
+  const timeLeft = () => 155000 - (Date.now() - startedAt)
   let last = null
   // Open ONE campaign id (trying both program-type views), verifying the ASIN on
   // the page only when wantAsin is set. Returns the ok-result or null.
@@ -3104,12 +3109,22 @@ async function sendByCampaignIds(campaignIds, message, asin, callerTabId, fallba
     return null
   }
   // 1) The product's OWN campaign(s) — verify the page really sells the ASIN.
-  for (const id of ids) { const r = await tryOne(id, asin); if (r) return r }
+  //    Each acceptAndSendBrand can take ~25-30s, so stop opening new ids once the
+  //    budget is nearly spent and RETURN the last real reason.
+  for (const id of ids) {
+    if (timeLeft() < 30000) break
+    const r = await tryOne(id, asin)
+    if (r) return r
+  }
   // 2) BRAND fallback — Creator Connections messaging is per-BRAND (one chat per
   //    brand), so ANY live campaign from the same brand reaches the same thread.
   //    These ids already came from our catalog filtered by this brand, so we send
   //    WITHOUT the ASIN guard (the campaign is a different product, same brand).
-  for (const id of fbids) { const r = await tryOne(id, null); if (r) return { ...r, viaBrand: true } }
+  for (const id of fbids) {
+    if (timeLeft() < 30000) break
+    const r = await tryOne(id, null)
+    if (r) return { ...r, viaBrand: true }
+  }
   return last || { ok: false, reason: 'send-failed' }
 }
 
