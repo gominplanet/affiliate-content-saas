@@ -157,6 +157,39 @@ export async function GET(request: Request, { params }: { params: Promise<{ post
     // the modal can hand it to SCOUT to search Creator Connections.
     const productUrl = deriveProductUrl(video) || deriveProductUrlFromPost(post)
 
+    // The ASIN the "Send on Creator Connections" flow needs. Resolve it from the
+    // RELIABLE sources FIRST — the ASIN we stored on the video (mig 204), a
+    // direct /dp/ link, the deal envelope, a bare B0… in the text — and only
+    // fall back to the flaky live geni.us resolution below. Previously the ASIN
+    // came ONLY from resolveProductIdentity (a 5s live redirect resolve), so a
+    // slow/blocked geni.us link surfaced "no ASIN" and made the send impossible
+    // even when we already knew the product (e.g. the Garvee bamboo board).
+    let reliableAsin: string | null = null
+    if (post.video_id) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: a } = await (supabase as any)
+          .from('youtube_videos').select('asin').eq('id', post.video_id).maybeSingle()
+        const s = String(a?.asin || '').toUpperCase()
+        if (/^[A-Z0-9]{10}$/.test(s)) reliableAsin = s
+      } catch { /* mig 204 not applied yet — fall through to the parsers below */ }
+    }
+    if (!reliableAsin) {
+      const up = (s: string | null | undefined) => String(s || '').toUpperCase()
+      const fromText = (s: string | null | undefined) =>
+        up(s).match(/\/(?:DP|GP\/PRODUCT)\/([A-Z0-9]{10})/)?.[1] || up(s).match(/\b(B0[A-Z0-9]{8})\b/)?.[1] || null
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const dm = (post as any).deal_meta
+      const dealAsin = dm && typeof dm.asin === 'string' && /^[A-Z0-9]{10}$/i.test(dm.asin) ? up(dm.asin) : null
+      reliableAsin =
+        asinFromAmazonUrl(productUrl || '') ||
+        extractAsin(productUrl || '') ||
+        dealAsin ||
+        fromText(video?.description as string) ||
+        fromText(video?.title as string) ||
+        null
+    }
+
     // Brand profile → settings + sign-off defaults.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: brand } = await (supabase as any)
@@ -216,7 +249,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ post
 
     return NextResponse.json({
       brandGuess,
-      product: { name: productName, url: productUrl, isAmazon: isAmazonUrl(productUrl), asin: real?.asin || null },
+      product: { name: productName, url: productUrl, isAmazon: isAmazonUrl(productUrl), asin: reliableAsin || real?.asin || null },
       amazonVideoUrl,
       links,
       settings,
