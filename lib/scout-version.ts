@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.11.89'
+export const SCOUT_LATEST_VERSION = '1.11.90'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Send on Creator Connections now LEARNS Amazon’s own send request the first time a message goes out, then REPLAYS it directly for every future send — right brand, new text, no button-clicking, no popups, no DOM. The visible-tab flow stays as a fallback while it learns.'
+  'Send on Creator Connections now sends through Amazon’s real chat API — it looks up the brand’s chat by campaign, then posts your recap directly (no button-clicking, no popups, no DOM, invisible). Learned automatically from your own sends; the visible-tab flow stays as a fallback.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
