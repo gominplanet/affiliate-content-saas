@@ -34,17 +34,27 @@ export async function GET(request: Request) {
   grace.setDate(grace.getDate() - 60)
   const graceDate = grace.toISOString().slice(0, 10)
   try {
-    // Pull every campaign that carries this ASIN and hasn't ended long ago (a
-    // popular product can be in many). We hand the campaign_ids to SCOUT so it can
-    // deep-link the exact campaign — no guessing, no slow ASIN resolution.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data } = await (admin as any)
-      .from('cc_campaign_catalog')
-      .select('campaign_id, campaign_name, brand_name, commission_pct, ends_at')
-      .contains('asins', [asin])
-      .gte('ends_at', graceDate)
-      .order('ends_at', { ascending: false })
-      .limit(50)
+    // Pull every campaign that carries this ASIN (a popular product can be in many).
+    // We hand the campaign_ids to SCOUT so it can deep-link / API-message the exact
+    // campaign. We DO NOT gate the ASIN lookup on ends_at: a campaign you've
+    // ACCEPTED keeps its brand chat open long after it ends (Amazon's Active tab),
+    // so an end-date filter here produced false "not in Creator Connections" for
+    // brands the creator can still message. The send itself (SCOUT's chat/search)
+    // is the real arbiter of whether a live chat exists — order by ends_at so the
+    // freshest campaign is first, but never exclude on it.
+    const runAsinQuery = (withGrace: boolean) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let q = (admin as any)
+        .from('cc_campaign_catalog')
+        .select('campaign_id, campaign_name, brand_name, commission_pct, ends_at')
+        .contains('asins', [asin])
+      if (withGrace) q = q.gte('ends_at', graceDate)
+      return q.order('ends_at', { ascending: false }).limit(50)
+    }
+    // Prefer recent campaigns; if none in the grace window, fall back to ANY
+    // campaign carrying the ASIN (still messageable if the brand was accepted).
+    let { data } = await runAsinQuery(true)
+    if (!((data ?? []) as unknown[]).length) { ({ data } = await runAsinQuery(false)) }
     const rows = (data ?? []) as Array<{ campaign_id: string | null; campaign_name: string | null; brand_name: string | null; commission_pct: number | null }>
     if (!rows.length) return NextResponse.json({ ok: true, inCatalog: false })
 
