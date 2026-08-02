@@ -61,7 +61,9 @@ export async function GET(req: Request) {
     .select('rep_asin, product_verified_at')
     .gte('ends_at', today)
     .not('rep_asin', 'is', null)
-    .or(`product_verified_at.is.null,product_verified_at.lt.${staleCutoff}`)
+    // Unverified, stale, OR priced with the old model (priced_v2 false) — the
+    // last case lets the cron work through pre-Buy-Box rows at its paced rate.
+    .or(`product_verified_at.is.null,product_verified_at.lt.${staleCutoff},priced_v2.eq.false`)
     .order('product_verified_at', { ascending: true, nullsFirst: true })
     .limit(cap * 4)
   if (error) {
@@ -93,7 +95,7 @@ export async function GET(req: Request) {
 
     // Even a card with no image is a verified check — stamp it so we don't keep
     // re-hitting a product Keepa has nothing for. Write whatever signals exist.
-    const patch: Record<string, unknown> = { product_verified_at: nowIso }
+    const patch: Record<string, unknown> = { product_verified_at: nowIso, priced_v2: true }
     if (card.imageUrl) patch.image_url = card.imageUrl
     if (card.priceNowCents != null) patch.price_now_cents = card.priceNowCents
     if (card.priceWasCents != null) patch.price_was_cents = card.priceWasCents

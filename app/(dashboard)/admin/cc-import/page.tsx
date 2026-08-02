@@ -24,9 +24,6 @@ export default function AdminCcImportPage() {
   const [remaining, setRemaining] = useState<number | null>(null)
   const [result, setResult] = useState<{ upserted: number; purged: number; staged: number } | null>(null)
   const [err, setErr] = useState<string | null>(null)
-  const [reverifying, setReverifying] = useState(false)
-  const [reverifyQueued, setReverifyQueued] = useState<number | null>(null)
-  const [reverifyDone, setReverifyDone] = useState(false)
   const [probeQ, setProbeQ] = useState('solar')
   const [probing, setProbing] = useState(false)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -85,36 +82,6 @@ export default function AdminCcImportPage() {
       setErr(msg); toast.error(msg)
     } finally { setMerging(false) }
   }, [merging, loadCounts])
-
-  const reverify = useCallback(async () => {
-    if (reverifying) return
-    if (!window.confirm('Requeue every LIVE catalog product for price re-verification?\n\nThis clears their "last checked" stamp (not the data) so the enrich cron re-prices them with the corrected Buy Box logic over the next runs. It spends no Keepa tokens now; the re-pricing rides the cron’s normal paced budget.')) return
-    setReverifying(true); setReverifyDone(false); setReverifyQueued(null); setErr(null)
-    let after: string | undefined
-    let total = 0
-    try {
-      for (let guard = 0; guard < 400; guard++) {
-        const r = await fetch('/api/admin/reverify-cc-prices', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ after }),
-        })
-        const d = await r.json()
-        if (!r.ok) throw new Error(d.detail ? `${d.error || 'Re-verify failed'} — ${d.detail}` : (d.error || 'Re-verify failed'))
-        after = d.after
-        total += Number(d.queued ?? 0)
-        setReverifyQueued(total)
-        if (d.done) {
-          setReverifyDone(true)
-          toast.success(`Requeued ${total.toLocaleString()} products for re-pricing`)
-          void loadCounts()
-          return
-        }
-      }
-      throw new Error('Re-verify is taking unusually long — click again to continue.')
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Re-verify failed'
-      setErr(msg); toast.error(msg)
-    } finally { setReverifying(false) }
-  }, [reverifying, loadCounts])
 
   const probe = useCallback(async () => {
     if (probing) return
@@ -233,32 +200,19 @@ export default function AdminCcImportPage() {
         </div>
       )}
 
-      {/* Re-verify prices — requeue live rows so the cron re-prices them with the
-          Buy Box logic. Separate from the weekly merge; safe to run any time. */}
+      {/* Prices self-heal to the Buy Box model — no manual requeue. On-demand
+          enrichment refreshes visible rows the moment they show in a scan, and
+          the paced cron works through the rest. A mass update isn't used: nulling
+          the indexed verified stamp churns the GIN indexes and hit the DB
+          statement timeout, so the flag-driven refresh replaces it. */}
       <div className="card p-5 mb-5">
         <div className="flex items-center gap-2 mb-1.5" style={{ color: '#0a84ff' }}>
           <Tag size={16} />
-          <span className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-faint)' }}>Re-verify prices</span>
+          <span className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-faint)' }}>Price model (Buy Box)</span>
         </div>
-        <p className="text-[13px] mb-3" style={{ color: 'var(--text-soft)' }}>
-          Requeue every live product so the background cron re-prices it using the corrected Buy Box price (the real add-to-cart amount, not the cheapest 3rd-party offer). This only clears the &ldquo;last checked&rdquo; stamp : the existing image/price/rating stay put until each row refreshes, and no Keepa tokens are spent now. Re-pricing runs on the cron&rsquo;s normal paced budget over the next runs.
+        <p className="text-[13px]" style={{ color: 'var(--text-soft)' }}>
+          Prices now use the Buy Box amount (what a shopper actually pays), not the cheapest 3rd-party offer. Rows refresh to it automatically : a product self-heals the moment it appears in a scan (on-demand enrichment), and the background cron works through the rest on its paced budget. Use the probe below to check any row&rsquo;s stored price against the live Keepa fields.
         </p>
-        <div className="flex items-center gap-3 flex-wrap">
-          <button
-            onClick={() => reverify()}
-            disabled={reverifying || loading || merging}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-semibold text-white disabled:opacity-50"
-            style={{ background: '#0a84ff' }}>
-            {reverifying
-              ? <><Loader2 size={15} className="animate-spin" /> Requeuing{reverifyQueued != null ? ` — ${reverifyQueued.toLocaleString()}` : '…'}</>
-              : <><Tag size={15} /> Re-verify all live prices</>}
-          </button>
-          {reverifyDone && reverifyQueued != null && (
-            <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold" style={{ color: '#1f8a3a' }}>
-              <CheckCircle2 size={15} /> Requeued {reverifyQueued.toLocaleString()} products. The cron will re-price them over the next runs.
-            </span>
-          )}
-        </div>
       </div>
 
       {/* Price probe — read-only diagnostic: stored price vs live raw Keepa
