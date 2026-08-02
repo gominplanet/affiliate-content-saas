@@ -196,7 +196,7 @@ export function ShortsStudioModal({
       })
       const data = await res.json()
       if (!res.ok) {
-        if (data.needsUpload) { setHasSource(false); throw new Error('Upload the source video first.') }
+        if (data.needsUpload) { setHasSource(false); throw new Error(data.error || 'Upload the source video first.') }
         if (data.limitReached) dispatchCapReached(data.error || 'Rendering Shorts is a Pro feature.', { cap: data.cap || 'shorts_studio', currentTier: data.currentTier, upgrade: data.upgrade })
         throw new Error(data.error || 'Render failed')
       }

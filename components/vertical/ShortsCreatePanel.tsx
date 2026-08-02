@@ -101,7 +101,7 @@ export function ShortsCreatePanel({
       })
       const data = await res.json()
       if (!res.ok) {
-        if (data.needsUpload) { setHasSource(false); throw new Error('Prepare the source video first.') }
+        if (data.needsUpload) { setHasSource(false); throw new Error(data.error || 'Prepare the source video first.') }
         if (data.limitReached) dispatchCapReached(data.error || 'Rendering is a Pro feature.', { cap: data.cap || 'shorts_studio', currentTier: data.currentTier, upgrade: data.upgrade })
         throw new Error(data.error || 'Render failed')
       }

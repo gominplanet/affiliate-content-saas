@@ -22,6 +22,14 @@ export function ingestConfigured(): boolean {
   return !!process.env.YOUTUBE_INGEST_URL
 }
 
+// Last ingest-service failure reason (status + trimmed body / exception), so a
+// caller can surface WHY a fetch/render failed instead of a blank "it failed".
+// YouTube blocks most server-side downloads, so the segment path fails a lot;
+// this is what tells us (and the user) it was a download block vs a real bug.
+let _lastIngestError: string | null = null
+export function getLastIngestError(): string | null { return _lastIngestError }
+function setIngestError(e: string | null) { _lastIngestError = e }
+
 export interface IngestResult {
   url: string
   durationSeconds: number | null
@@ -131,6 +139,8 @@ async function renderShortReq(
 ): Promise<IngestResult | null> {
   const base = (process.env.YOUTUBE_INGEST_URL || '').replace(/\/+$/, '')
   if (!base || !(endSec > startSec) || (!source.videoUrl && !source.youtubeVideoId)) return null
+  setIngestError(null)
+  const fromYouTube = !!source.youtubeVideoId && !source.videoUrl
   try {
     const res = await fetch(`${base}/render-short`, {
       method: 'POST',
@@ -141,11 +151,21 @@ async function renderShortReq(
       body: JSON.stringify({ ...source, startSec, endSec, words: words || [], ...(userId ? { userId } : {}) }),
       signal: AbortSignal.timeout(280_000),
     })
-    if (!res.ok) return null
+    if (!res.ok) {
+      let body = ''
+      try { body = (await res.text()).slice(0, 200) } catch { /* ignore */ }
+      // A YouTube fetch that 4xx/5xx is almost always YouTube blocking the
+      // server-side download (bot check / sign-in wall), not our bug.
+      setIngestError(fromYouTube && res.status >= 400
+        ? `YouTube blocked the automatic download (${res.status})`
+        : `render service ${res.status}${body ? `: ${body}` : ''}`)
+      return null
+    }
     const data = await res.json() as { url?: string; durationSeconds?: number }
-    if (!data?.url || !/^https:\/\//i.test(data.url)) return null
+    if (!data?.url || !/^https:\/\//i.test(data.url)) { setIngestError('render service returned no video url'); return null }
     return { url: data.url, durationSeconds: Number.isFinite(Number(data.durationSeconds)) ? Number(data.durationSeconds) : (endSec - startSec) }
-  } catch {
+  } catch (e) {
+    setIngestError(e instanceof Error && e.name === 'TimeoutError' ? 'the render timed out' : (e instanceof Error ? e.message : 'render request failed'))
     return null
   }
 }
