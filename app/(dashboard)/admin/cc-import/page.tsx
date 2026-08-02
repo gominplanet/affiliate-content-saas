@@ -223,7 +223,7 @@ export default function AdminCcImportPage() {
           <span className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-faint)' }}>Price probe (diagnostic)</span>
         </div>
         <p className="text-[13px] mb-3" style={{ color: 'var(--text-soft)' }}>
-          Type a keyword to see, for the top catalog rows, what price is <b>stored</b> vs what Keepa returns live for Amazon / New / Buy Box. This is how we tell if a wrong price is stale, a missing Buy Box, or the wrong ASIN.
+          Type a keyword to see, for the top catalog rows, what price is <b>stored</b> vs what Keepa returns live for Amazon / New / Buy Box. It also <b>fixes those rows in place</b> to the Buy Box price (bounded to a handful, no timeout), so the stored price matches right away. The <b>Fixed</b> column shows what it wrote.
         </p>
         <div className="flex items-center gap-2 mb-3 flex-wrap">
           <input value={probeQ} onChange={e => setProbeQ(e.target.value)} placeholder="e.g. solar"
@@ -232,7 +232,7 @@ export default function AdminCcImportPage() {
           <button onClick={() => probe()} disabled={probing || !probeQ.trim()}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-semibold text-white disabled:opacity-50"
             style={{ background: '#f59e0b' }}>
-            {probing ? <><Loader2 size={15} className="animate-spin" /> Probing…</> : 'Probe prices'}
+            {probing ? <><Loader2 size={15} className="animate-spin" /> Probing…</> : 'Probe &amp; fix prices'}
           </button>
         </div>
         {probeRows && probeRows.length > 0 && (
@@ -247,6 +247,7 @@ export default function AdminCcImportPage() {
                   <th className="py-1.5 pr-3 font-semibold">New</th>
                   <th className="py-1.5 pr-3 font-semibold">Buy Box</th>
                   <th className="py-1.5 pr-3 font-semibold">BB field</th>
+                  <th className="py-1.5 pr-3 font-semibold">Fixed</th>
                   <th className="py-1.5 pr-3 font-semibold">Verified</th>
                 </tr>
               </thead>
@@ -264,6 +265,7 @@ export default function AdminCcImportPage() {
                       <td className="py-1.5 pr-3">{usd(k.newCents)}</td>
                       <td className="py-1.5 pr-3 font-semibold" style={{ color: '#0a84ff' }}>{usd(k.buyBoxCurrentCents)}</td>
                       <td className="py-1.5 pr-3">{usd(k.buyBoxPriceField)}</td>
+                      <td className="py-1.5 pr-3 font-semibold" style={{ color: r.fixedToCents != null ? '#1f8a3a' : 'var(--text-faint)' }}>{r.fixedToCents != null ? usd(r.fixedToCents) : '—'}</td>
                       <td className="py-1.5 pr-3">{r.verifiedAt ? String(r.verifiedAt).slice(0, 10) : '—'}{r.error ? ` · ${r.error}` : ''}</td>
                     </tr>
                   )

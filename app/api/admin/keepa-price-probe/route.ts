@@ -83,15 +83,30 @@ export async function GET(request: Request) {
       const p = (Array.isArray(data.products) ? (data.products[0] as any) : null)
       const stats = p?.stats || {}
       const cur = Array.isArray(stats.current) ? stats.current : []
+      const amazonCents = cents(cur[0])
+      const newCents = cents(cur[1])
+      const buyBoxCurrentCents = cents(cur[18])
+      const buyBoxPriceField = cents(stats.buyBoxPrice)
+      // Same preference as statPriceBuyBox: Buy Box field → Buy Box current →
+      // Amazon → New. This is the corrected "what you pay" price.
+      const correctedCents = buyBoxPriceField ?? buyBoxCurrentCents ?? amazonCents ?? newCents
+      // Fix the row in place: probing top rows doubles as a bounded, no-timeout
+      // manual refresh (≤8 rows) so the stored price matches the Buy Box amount
+      // immediately, and priced_v2=true keeps the cron from redoing it.
+      let fixedToCents: number | null = null
+      if (correctedCents != null && r.rep_asin) {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          await (admin as any).from('cc_campaign_catalog')
+            .update({ price_now_cents: correctedCents, priced_v2: true, product_verified_at: new Date().toISOString() })
+            .eq('rep_asin', r.rep_asin)
+          fixedToCents = correctedCents
+        } catch { /* leave as diagnostic-only if the write fails */ }
+      }
       return {
         ...base,
-        keepa: {
-          amazonCents: cents(cur[0]),
-          newCents: cents(cur[1]),
-          buyBoxCurrentCents: cents(cur[18]),
-          buyBoxPriceField: cents(stats.buyBoxPrice),
-          avg90BuyBoxCents: Array.isArray(stats.avg90) ? cents(stats.avg90[18]) : null,
-        },
+        fixedToCents,
+        keepa: { amazonCents, newCents, buyBoxCurrentCents, buyBoxPriceField, avg90BuyBoxCents: Array.isArray(stats.avg90) ? cents(stats.avg90[18]) : null },
       }
     } catch (e) {
       return { ...base, error: e instanceof Error ? e.message.slice(0, 120) : 'exception' }
