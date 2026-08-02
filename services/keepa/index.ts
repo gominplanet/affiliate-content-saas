@@ -39,6 +39,14 @@ const PRICE_TYPE_AMAZON = 0
 const PRICE_TYPE_NEW = 1
 /** Keepa CSV index 8 = Lightning Deal price — the flash-sale feed. */
 export const PRICE_TYPE_LIGHTNING = 8
+/** Keepa CSV type index 18 = Buy Box price (incl. shipping) — the price in the
+ *  "Add to Cart" box, i.e. what a shopper ACTUALLY pays on the page. For items
+ *  Amazon doesn't sell itself (3rd-party sold), Amazon(0) is absent and New(1)
+ *  is the cheapest marketplace offer, which is often NOT the Buy Box winner
+ *  (Amazon weighs shipping / Prime / seller rating). Reading New(1) is why a
+ *  catalog price could show lower than the real page price. Requires &buybox=1
+ *  on the /product request for the Buy Box stats to be present. */
+const PRICE_TYPE_BUY_BOX = 18
 /** Keepa CSV type indices inside the `current`/history arrays. */
 const KEEPA_CSV_RATING = 16        // star rating, stored as ×10 (45 = 4.5★)
 const KEEPA_CSV_REVIEW_COUNT = 17  // number of reviews
@@ -394,9 +402,10 @@ export async function fetchKeepaProductCard(asin: string, domainId = KEEPA_DOMAI
   const key = process.env.KEEPA_API_KEY
   if (!key || !/^[A-Za-z0-9]{10}$/.test(asin)) return empty
   // stats=90 (current + 90-day avg for a discount read), rating=1 (current stars
-  // + review count), videos=1 (carousel count). history=0 keeps it light. No
-  // `offers` — cached data, ~cheap.
-  const url = `${KEEPA_BASE}/product?key=${encodeURIComponent(key)}&domain=${domainId}&asin=${asin}&stats=90&history=0&rating=1&videos=1`
+  // + review count), videos=1 (carousel count), buybox=1 (the real "what you pay"
+  // price — see PRICE_TYPE_BUY_BOX). history=0 keeps it light. No `offers` —
+  // cached data, ~cheap.
+  const url = `${KEEPA_BASE}/product?key=${encodeURIComponent(key)}&domain=${domainId}&asin=${asin}&stats=90&history=0&rating=1&videos=1&buybox=1`
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(30_000) })
     if (!res.ok) return empty
@@ -406,8 +415,10 @@ export async function fetchKeepaProductCard(asin: string, domainId = KEEPA_DOMAI
     const p = (Array.isArray(data.products) ? (data.products[0] as any) : null)
     if (!p) return { ...empty, tokensLeft }
     const stats = p.stats || {}
-    const priceNowCents = statPrice(stats.current)
-    const priceWasCents = statPrice(stats.avg90) ?? statPrice(stats.avg30)
+    // Buy Box first (what the shopper actually pays), then Amazon/New. This is the
+    // fix for catalog prices reading lower than the live page on 3rd-party items.
+    const priceNowCents = statPriceBuyBox(stats)
+    const priceWasCents = statPriceBuyBox(stats, 'avg90') ?? statPriceBuyBox(stats, 'avg30')
     const discountPct = (priceNowCents != null && priceWasCents != null && priceWasCents > priceNowCents && priceWasCents > 0)
       ? Math.min(99, Math.max(1, Math.round(((priceWasCents - priceNowCents) / priceWasCents) * 100))) : null
     // Rating (×10) + review count live in the stats.current CSV array.
@@ -490,6 +501,31 @@ function statPrice(arr: unknown): number | null {
   const n = arr[PRICE_TYPE_NEW]
   if (Number.isFinite(n) && (n as number) >= 0) return n as number
   return null
+}
+
+/**
+ * The price a shopper actually pays: Buy Box first, then Amazon, then New.
+ *
+ * `which` picks the stats block — 'current' (default), 'avg90', 'avg30'. For
+ * 'current' we also honor the top-level `stats.buyBoxPrice` field (Keepa exposes
+ * the live Buy Box there when &buybox=1 is requested); for the averages we read
+ * the Buy Box slot (index 18) out of the price array. Falls back to statPrice()
+ * (Amazon → New) whenever no Buy Box price is available, so this is strictly an
+ * improvement over reading the lowest New offer.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function statPriceBuyBox(stats: any, which: 'current' | 'avg90' | 'avg30' = 'current'): number | null {
+  if (!stats || typeof stats !== 'object') return null
+  if (which === 'current') {
+    const bbDirect = Number(stats.buyBoxPrice)
+    if (Number.isFinite(bbDirect) && bbDirect >= 0) return bbDirect
+  }
+  const arr = stats[which]
+  if (Array.isArray(arr)) {
+    const bb = arr[PRICE_TYPE_BUY_BOX]
+    if (Number.isFinite(bb) && (bb as number) >= 0) return bb as number
+  }
+  return statPrice(arr)
 }
 
 /** stats.min is per-type [keepaTime, priceCents]; pull the Amazon/New price. */
