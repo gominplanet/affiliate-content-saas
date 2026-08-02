@@ -239,3 +239,19 @@ html { scroll-behavior: smooth; }
 .mvp-hover-border:hover { border-color: rgba(124,58,237,0.35) !important; }
 .mvp-hover-text { transition: color .2s ease; }
 .mvp-hover-text:hover { color: var(--text) !important; }
+
+/* Guardrail: a popup dialog must NEVER be see-through. Some pages (landing/tour
+   glass themes) override --surface to a translucent rgba, which would bleed the
+   page through any .card-based modal panel. Force a solid surface on the panel
+   inside a full-screen centered overlay — the modal pattern used app-wide.
+   Unlayered + !important so it beats both the @layer components .card rule and a
+   translucent --surface. New modals inherit this automatically; no per-modal
+   discipline required. */
+.fixed.inset-0 > .card,
+.fixed.inset-0 > * > .card {
+  background-color: #ffffff !important;
+}
+.dark .fixed.inset-0 > .card,
+.dark .fixed.inset-0 > * > .card {
+  background-color: #18181b !important;
+}

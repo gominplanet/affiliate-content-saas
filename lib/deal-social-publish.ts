@@ -19,6 +19,7 @@ import {
 import { resolveSocialAccount } from '@/lib/social-accounts'
 import { capSocialText, SOCIAL_LIMITS } from '@/lib/social-cap'
 import { createTweet, refreshAccessToken as refreshTwitter } from '@/services/twitter'
+import { checkXPostCap, recordXPost, xCapMessage } from '@/lib/x-cap'
 import { createFacebookService } from '@/services/facebook'
 import { ThreadsService } from '@/services/threads'
 import { createLinkedInService } from '@/services/linkedin'
@@ -91,6 +92,9 @@ export async function publishDealToSocials(opts: PublishOpts): Promise<PlatformR
       if (platform === 'twitter') {
         let token = ig.twitter_access_token as string | undefined
         if (!token) throw new Error('X is not connected.')
+        // X is the only paid-per-post channel — enforce the monthly cap.
+        const xcap = await checkXPostCap(supabase, userId)
+        if (xcap.exceeded) throw new Error(xCapMessage(xcap.resetLabel))
         const expiry = ig.twitter_expires_at ? new Date(ig.twitter_expires_at).getTime() : 0
         if (expiry && Date.now() > expiry - 60_000 && ig.twitter_refresh_token) {
           const r = await refreshTwitter(ig.twitter_refresh_token as string)
@@ -102,6 +106,7 @@ export async function publishDealToSocials(opts: PublishOpts): Promise<PlatformR
           })).eq('user_id', userId)
         }
         const t = await createTweet(token!, composeText(baseCaption, 'twitter', link, disclaimer))
+        recordXPost(userId, xcap.tier)
         results.push({ platform, ok: true, url: `https://x.com/i/web/status/${t.id}` })
 
       } else if (platform === 'facebook') {
