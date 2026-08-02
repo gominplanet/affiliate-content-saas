@@ -1314,10 +1314,13 @@ const VideoCard = memo(function VideoCardImpl({
               })()}
               {/* Pink — upload the exact product photo the AI uses as a
                   visual reference so in-body images match the real product. */}
-              <ProductPhotoUpload
-                videoId={id}
-                initialUrl={(video.product_image_url as string | null) ?? null}
-              />
+              <span className="inline-flex items-center gap-1">
+                <ProductPhotoUpload
+                  videoId={id}
+                  initialUrl={(video.product_image_url as string | null) ?? null}
+                />
+                <InfoTip>Upload the exact product photo so the AI&rsquo;s in-article images match the real product instead of guessing at it.</InfoTip>
+              </span>
               {publishAllError && (
                 <span className="text-xs text-[#ff3b30] line-clamp-1">{publishAllError}</span>
               )}
@@ -1351,15 +1354,21 @@ const VideoCard = memo(function VideoCardImpl({
                 initialUrl={(video.blog_thumbnail_url as string | null) ?? null}
               />
             )}
-            <CategoryPicker
-              videoId={id}
-              initial={(video.selected_category as string | null) ?? null}
-              brandNiches={brandNiches}
-              customCategories={customCategories}
-              onCustomCategoryAdded={onCustomCategoryAdded}
-              hasPublishedPost={!!post}
-            />
-            <BrandTagsInput videoId={id} initial={(video.brand_tags as string | null) ?? null} />
+            <span className="inline-flex items-center gap-1">
+              <CategoryPicker
+                videoId={id}
+                initial={(video.selected_category as string | null) ?? null}
+                brandNiches={brandNiches}
+                customCategories={customCategories}
+                onCustomCategoryAdded={onCustomCategoryAdded}
+                hasPublishedPost={!!post}
+              />
+              <InfoTip>Which blog category this post files under. Leave it and MVP picks the best fit from your brand&rsquo;s niches.</InfoTip>
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <BrandTagsInput videoId={id} initial={(video.brand_tags as string | null) ?? null} />
+              <InfoTip>Extra keywords/brands to weave into this post for SEO. Optional, comma-separated.</InfoTip>
+            </span>
             {/* Ignore moved under the card's thumbnail (2026-07-06) — it was
                 easy to misread as part of the tags/category row here. */}
             {post && (
