@@ -17,7 +17,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier, type Tier } from '@/lib/tier'
 import { cloudinaryConfigured, renderVerticalShort, getLastShortError } from '@/services/cloudinary'
-import { ingestConfigured, clipSegment, renderShort, renderShortSegment } from '@/lib/youtube-ingest'
+import { ingestConfigured, clipSegment, renderShort, renderShortSegment, getLastIngestError } from '@/lib/youtube-ingest'
 import { buildCaptionChunks } from '@/lib/shorts-captions'
 import { recordUsage } from '@/lib/ai-usage'
 import { rowToShort } from '@/lib/shorts-row'
@@ -159,14 +159,23 @@ export async function POST(request: Request) {
       }
     }
 
-    // Segment path failed and there's no Cloudinary fallback → mark failed.
+    // Both engines failed → mark failed and surface the REAL reason.
     if (!renderedUrl) {
-      const detail = getLastShortError() || 'the video fetch/render failed'
+      const detail = getLastIngestError() || getLastShortError() || 'the video fetch/render failed'
       try {
         await sb.from('youtube_shorts')
           .update({ status: 'failed', render_error: detail, updated_at: new Date().toISOString() })
           .eq('id', shortId).eq('user_id', user.id)
       } catch { /* non-fatal */ }
+      // The only path here was the YouTube segment fetch (no uploaded source), and
+      // YouTube frequently blocks server-side downloads. Point the user at the
+      // reliable fix (upload the source) instead of a dead-end error.
+      if (!hasSource) {
+        return NextResponse.json({
+          error: `We couldn't pull this clip from YouTube automatically (${detail}). Upload the source video and render again.`,
+          needsUpload: true, videoId: short.video_id,
+        }, { status: 412 })
+      }
       return NextResponse.json({ error: `Couldn't render the clip: ${detail}` }, { status: 500 })
     }
 
