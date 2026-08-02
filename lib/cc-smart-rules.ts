@@ -43,12 +43,14 @@ export interface CcSmartRules {
 export const CC_SMART_RULES: CcSmartRules = {
   minCommissionPct: 15,
   minDaysLeft: 90,
-  minPrice: 30,
+  // Floor lowered 30→20 (2026-08) — $30 cut too many viable niches (e.g. solar
+  // lights). hardFloorPrice matches so the effective gate is a clean $20.
+  minPrice: 20,
   maxPrice: 800,
   minMonthlySales: 100,
   minRating: 3,
   minEpc: 0.25,
-  hardFloorPrice: 25,
+  hardFloorPrice: 20,
   requireCarousel: true,
   deepCheckCap: 40,
   // never: supplements, food, pharmacy, clothing
