@@ -27,6 +27,7 @@ import { errText } from '@/lib/err-text'
 import { generateBlogRequest } from '@/lib/blog-generate-client'
 import { GenerateButton } from '@/components/content/GenerateButton'
 import { SitePicker } from '@/components/SitePicker'
+import { InfoTip } from '@/components/ui/InfoTip'
 import { InstagramPublishModal } from '@/components/content/InstagramPublishModal'
 import ShareWithBrandModal from '@/components/content/ShareWithBrandModal'
 import BrandRecapSettingsModal from '@/components/content/BrandRecapSettingsModal'
@@ -496,14 +497,14 @@ function BlogThumbUpload({ videoId, initialUrl }: { videoId: string; initialUrl:
           Upload My Own Blog Thumbnail
         </button>
       )}
-      {/* Always-visible note so creators understand how the hero image is
-          chosen and why the YouTube thumbnail isn't duplicated in-article. */}
-      <span className="basis-full text-[11px]" style={{ color: 'var(--text-faint)' }}>
-        <span className="font-semibold" style={{ color: 'var(--text-soft)' }}>Blog thumbnail — </span>
+      {/* Explainer lives in a hover "i" now (2026 redesign) so the card stays
+          clean instead of carrying a full-width paragraph. */}
+      <InfoTip>
+        <span className="font-semibold">Blog thumbnail.</span>{' '}
         {url
-          ? 'your uploaded image is this post’s hero. The YouTube video stays embedded inside the article.'
-          : 'optional. If you don’t upload one, the YouTube video’s image is used as this post’s hero (hero only — never repeated inside the article, since the video is already embedded there).'}
-      </span>
+          ? 'Your uploaded image is this post’s hero. The YouTube video stays embedded inside the article.'
+          : 'Optional. If you don’t upload one, the YouTube video’s image is used as this post’s hero — hero only, never repeated inside the article, since the video is already embedded there.'}
+      </InfoTip>
       {err && <span className="basis-full text-[10px] text-[#ff3b30]">{err}</span>}
     </>
   )
