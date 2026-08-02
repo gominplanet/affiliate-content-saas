@@ -23,7 +23,7 @@
 import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
 import PageHero from '@/components/layout/PageHero'
 import { AmzFinderGuide } from '@/components/guide/tool-guides'
-import { CheckCircle2, Download, Copy, RefreshCw, KeyRound, ChevronDown, ChevronRight, Search, ShoppingBag, Sparkles } from 'lucide-react'
+import { CheckCircle2, Download, Copy, RefreshCw, KeyRound, ChevronDown, ChevronRight, ShoppingBag, Sparkles, Lock } from 'lucide-react'
 import { toast } from 'sonner'
 import { getScoutInstallKind, requestFindCampaign } from '@/lib/extension-frame'
 import MessageBrandModal, { type MessageBrandCampaign } from '@/components/campaigns/MessageBrandModal'
@@ -32,9 +32,7 @@ import CampaignBrowsePanel from '@/components/campaigns/CampaignBrowsePanel'
 import AmazonResearchPanel from '@/components/campaigns/AmazonResearchPanel'
 import SavedFinds from '@/components/campaigns/SavedFinds'
 import { SCOUT_STORE_LISTING_URL } from '@/lib/scout-version'
-import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { createBrowserClient } from '@/lib/supabase/client'
-import { normalizeTier } from '@/lib/tier'
 import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
 
 // The REAL Creator Connections app (Amazon's 2026 redesign). The legacy
@@ -101,7 +99,15 @@ export default function EpcScoutPage() {
     window.addEventListener(VIEW_AS_EVENT, apply)
     return () => { cancelled = true; window.removeEventListener(VIEW_AS_EVENT, apply) }
   }, [])
-  const canUseFinder = tier !== 'trial' // all PAID tiers; Trial sees the upsell
+  const canUseFinder = tier !== 'trial' // all PAID tiers
+  // Amazon Product Research (onsite catalogue) is FREE for every tier — actions
+  // stay paid (gated on their routes + via canAct below).
+  // Affiliate+ (Creator Connections) for FREE users unlocks ONLY when they've
+  // connected SCOUT + an ingest token. That self-limits to creators who actually
+  // have the Amazon Creator Connections invite (no invite → ingest returns no
+  // campaigns anyway). Paid tiers get the CC finder unconditionally.
+  const scoutInstalled = !!scout && scout.kind !== 'none'
+  const ccAllowed = canUseFinder || (scoutInstalled && !!token)
 
   const loadList = useCallback(async () => {
     try {
@@ -156,24 +162,10 @@ export default function EpcScoutPage() {
         subtitle="Two ways to research: the whole Amazon catalogue, or Affiliate+ (Creator Connections) campaigns. Pick one to start; find products worth buying to review and campaigns worth accepting."
       />
 
-      {tier !== null && !canUseFinder && (
-        <FeatureLockedCard
-          icon={<Search size={28} strokeWidth={1.8} />}
-          feature="AMZ Product Finder"
-          description="MVP's one-click finder scans Amazon Creator Connections (Affiliate+) and onsite products against proprietary profitability criteria, then hands you the campaigns worth accepting and the products worth buying to review — no more digging brand-by-brand."
-          bullets={[
-            'One search → MVP-approved Affiliate+ campaigns and onsite products',
-            'Focus / Wide criteria tuned from 4 years of what actually converts',
-            'Save winners to a buy-to-review shortlist',
-            'Message the brand — auto-send through SCOUT or a drafted outreach',
-            'Also unlocks the Levanta and PartnerBoost finders in Source & Earn',
-          ]}
-          requiredTier="creator"
-          currentTier={normalizeTier(tier)}
-        />
-      )}
-
-      {(tier === null || canUseFinder) && (
+      {/* Amazon Product Research (onsite catalogue) is FREE for every tier — the
+          read-only conversion magnet. Affiliate+ (Creator Connections) and every
+          action (Save / Write review / Deep-dive) stay paid, gated below. */}
+      {tier !== undefined && (
       <>
       {/* ── The first choice: which catalogue to research. Two big toggle cards;
              a user picks one before anything else loads. Amazon Product Research
@@ -210,7 +202,7 @@ export default function EpcScoutPage() {
             <p className="text-[13px] font-bold uppercase tracking-wide" style={{ color: '#7C3AED' }}>Amazon Product Research</p>
             <span className="text-[11px] font-medium" style={{ color: 'var(--text-faint)' }}>— the whole catalogue, filterable. Buy to review or write a review in one click.</span>
           </div>
-          <AmazonResearchPanel onSavedChange={() => setSavedReloadKey(k => k + 1)} />
+          <AmazonResearchPanel canAct={canUseFinder} onSavedChange={() => setSavedReloadKey(k => k + 1)} />
           <p className="text-[11px] leading-relaxed mt-1 mb-4 px-1" style={{ color: 'var(--text-faint)' }}>
             Product data is sourced from licensed catalogue providers; prices and availability update on Amazon. Links carry your own Associates tag when you&rsquo;ve set one in Settings.
           </p>
@@ -333,7 +325,20 @@ export default function EpcScoutPage() {
         </div>
       )}
 
-      {/* ── Step 3 · Search — Browse all (instant) or Smart Scan (MVP-approved) ── */}
+      {/* ── Step 3 · Search — Browse all (instant) or Smart Scan (MVP-approved).
+             Free users must connect SCOUT + an ingest token first (ccAllowed);
+             the setup steps above stay visible so they can do exactly that. ── */}
+      {!ccAllowed ? (
+        <div ref={finderRef} className="scroll-mt-24 card p-5 flex items-start gap-3">
+          <span className="grid place-items-center w-9 h-9 rounded-xl flex-shrink-0" style={{ background: 'rgba(124,58,237,0.10)', color: '#7C3AED' }}><Lock size={18} /></span>
+          <div>
+            <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>Connect SCOUT to browse Creator Connections</p>
+            <p className="text-[12px] mt-1 leading-relaxed" style={{ color: 'var(--text-soft)' }}>
+              Install SCOUT (step 1) and paste your ingest token into it. Once connected, your live Affiliate+ campaigns show up here. This only works if your Amazon Associates account has the Creator Connections invite — most creators don&rsquo;t yet. No invite? Use <span className="font-medium">Amazon Product Research</span> above instead.
+            </p>
+          </div>
+        </div>
+      ) : (
       <div ref={finderRef} className="scroll-mt-24">
         <div className="flex items-center gap-2 mb-2 flex-wrap">
           <span className="grid place-items-center w-5 h-5 rounded-full text-[11px] font-bold text-white flex-shrink-0" style={{ background: '#7C3AED' }}>3</span>
@@ -372,6 +377,7 @@ export default function EpcScoutPage() {
           MVP does not guarantee commissions or any type of return. The MVP Finder is a focused way to browse and search Amazon affiliate campaigns using criteria that have been fruitful for influencers over the past 4 years — actual results depend on the product, your content, and your audience.
         </p>
       </div>
+      )}
       </>
       )}
 

@@ -65,7 +65,7 @@ const CATEGORIES = [
   { v: '6358539011', l: 'Watches' },
 ]
 
-export default function AmazonResearchPanel({ onSavedChange }: { onSavedChange?: () => void }) {
+export default function AmazonResearchPanel({ canAct = true, onSavedChange }: { canAct?: boolean; onSavedChange?: () => void }) {
   const [q, setQ] = useState('')
   const [sort, setSort] = useState('salesRank')
   const [category, setCategory] = useState('0')
@@ -131,14 +131,19 @@ export default function AmazonResearchPanel({ onSavedChange }: { onSavedChange?:
   const hasFilters = q.trim() || category !== '0' || (minPrice.trim() && Number(minPrice) > 0)
     || (maxPrice.trim() && Number(maxPrice) > 0) || minRating !== '0' || minReviews !== '0' || maxSalesRank !== '0'
   useEffect(() => {
+    // Free/trial users search MANUALLY (a Search button) so filter-fiddling
+    // doesn't silently burn their daily search cap. Paid users get instant
+    // live-search on every filter change.
+    if (!canAct) return
     if (debounce.current) clearTimeout(debounce.current)
     if (!hasFilters) { setRows([]); setNeedsFilter(true); setLoading(false); return }
     debounce.current = setTimeout(() => { void load() }, 400)
     return () => { if (debounce.current) clearTimeout(debounce.current) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [load, hasFilters])
+  }, [load, hasFilters, canAct])
 
   async function toggleSave(p: Product) {
+    if (!canAct) { toast.error('Saving finds to your shortlist is a paid feature. Upgrade to save and act on products.'); return }
     const asin = p.asin.toUpperCase()
     const wasSaved = savedAsins.has(asin)
     setSavedAsins(prev => { const n = new Set(prev); if (wasSaved) n.delete(asin); else n.add(asin); return n })
@@ -192,8 +197,17 @@ export default function AmazonResearchPanel({ onSavedChange }: { onSavedChange?:
             <input value={maxPrice} onChange={e => setMaxPrice(e.target.value.replace(/[^0-9.]/g, ''))} inputMode="decimal" placeholder="max"
               className="w-11 text-sm bg-transparent outline-none placeholder:text-[color:var(--text-faint)]" style={{ color: 'var(--text)' }} />
           </div>
+          {/* Free/trial: an explicit Search button (each search counts toward the
+              daily free cap). Paid users search live, so they don't need it. */}
+          {!canAct && (
+            <button onClick={() => void load(0)} disabled={loading || !hasFilters}
+              className="ml-auto inline-flex items-center gap-1.5 h-9 px-4 rounded-full text-sm font-semibold text-white disabled:opacity-50"
+              style={{ background: '#7C3AED' }}>
+              {loading ? <><Loader2 size={14} className="animate-spin" /> Searching…</> : <><Search size={14} /> Search</>}
+            </button>
+          )}
           {hasFilters && (
-            <button onClick={clearFilters} className="ml-auto text-xs font-medium inline-flex items-center gap-1 h-8 px-2.5" style={{ color: 'var(--text-faint)' }}>
+            <button onClick={clearFilters} className={`${canAct ? 'ml-auto' : ''} text-xs font-medium inline-flex items-center gap-1 h-8 px-2.5`} style={{ color: 'var(--text-faint)' }}>
               Clear
             </button>
           )}
@@ -231,9 +245,10 @@ export default function AmazonResearchPanel({ onSavedChange }: { onSavedChange?:
               <ProductCard
                 key={p.asin}
                 p={p}
+                canAct={canAct}
                 saved={savedAsins.has(p.asin.toUpperCase())}
                 onToggleSave={() => toggleSave(p)}
-                onDeepDive={() => setDeepDive({ asin: p.asin, title: p.title, imageUrl: p.imageUrl })}
+                onDeepDive={() => { if (!canAct) { toast.error('The price-history deep-dive is a paid feature. Upgrade to unlock it.'); return } setDeepDive({ asin: p.asin, title: p.title, imageUrl: p.imageUrl }) }}
               />
             ))}
           </div>
@@ -269,13 +284,14 @@ function Select({ value, onChange, options }: { value: string; onChange: (v: str
   )
 }
 
-function ProductCard({ p, saved, onToggleSave, onDeepDive }: {
-  p: Product; saved: boolean; onToggleSave: () => void; onDeepDive: () => void
+function ProductCard({ p, canAct, saved, onToggleSave, onDeepDive }: {
+  p: Product; canAct: boolean; saved: boolean; onToggleSave: () => void; onDeepDive: () => void
 }) {
   const [gen, setGen] = useState<'idle' | 'working' | 'done'>('idle')
   const [postUrl, setPostUrl] = useState<string | null>(null)
 
   const writeReview = async () => {
+    if (!canAct) { toast.error('Writing a review is a paid feature. Upgrade to turn a find into a post.'); return }
     if (gen === 'working') return
     setGen('working')
     try {

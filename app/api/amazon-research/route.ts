@@ -14,13 +14,19 @@
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { tierAllowsFinders, type Tier } from '@/lib/tier'
+import { type Tier } from '@/lib/tier'
 import { toUserMessage } from '@/lib/friendly-error'
 import { keepaProductFinder, keepaConfigured, type KeepaFinderFilters } from '@/services/keepa'
 import { getItemsByAsin, creatorsApiConfigured } from '@/services/amazon-creators'
+import { recordUsage } from '@/lib/ai-usage'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
+
+// Free/trial users get this many Amazon Product Research searches per day (each
+// ≈ 10 Keepa tokens). Insurance against a scraper draining the shared token
+// pool; paid tiers are uncapped. Bump freely — it's a single number.
+const FREE_SEARCHES_PER_DAY = 50
 
 // Keepa rootCategory ids (= Amazon US browse nodes). VERIFIED — kept in sync
 // with Deal Radar's swept nodes (app/api/cron/refresh-deal-radar). id 0 = all.
@@ -61,14 +67,28 @@ export async function GET(request: Request) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    // Same paid gate as the rest of the finder.
+    // Amazon Product Research SEARCH is free for every signed-in tier — it's the
+    // read-only conversion magnet (like Deal Radar browse). Acting on a result
+    // (Save / Write review / Deep-dive) still requires a paid plan, enforced on
+    // those routes. Free/trial gets a daily search cap so a scraper can't drain
+    // the shared Keepa token pool (each search ≈ 10 tokens).
     const { data: intRow } = await supabase
       .from('integrations').select('tier, amazon_associates_tag').eq('user_id', user.id).maybeSingle()
     const tier = (intRow?.tier as Tier) ?? 'trial'
-    if (!tierAllowsFinders(tier)) {
-      return NextResponse.json({ error: 'The AMZ Product Finder requires a paid plan.' }, { status: 403 })
-    }
     const isAdmin = tier === 'admin'
+    if (tier === 'trial') {
+      const startOfDay = new Date(); startOfDay.setUTCHours(0, 0, 0, 0)
+      const { count } = await supabase
+        .from('ai_usage').select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id).eq('feature', 'amazon_research')
+        .gte('created_at', startOfDay.toISOString())
+      if ((count ?? 0) >= FREE_SEARCHES_PER_DAY) {
+        return NextResponse.json({
+          error: `You've used all ${FREE_SEARCHES_PER_DAY} free Amazon searches for today. Upgrade for unlimited research, or come back tomorrow.`,
+          limitReached: true, currentTier: tier,
+        }, { status: 429 })
+      }
+    }
 
     if (!keepaConfigured()) {
       return NextResponse.json({ error: 'Amazon Product Research is warming up. Please try again shortly.' }, { status: 503 })
@@ -111,6 +131,9 @@ export async function GET(request: Request) {
     }
 
     const found = await keepaProductFinder(filters)
+    // Count this search against the free daily cap (a Keepa token was spent the
+    // moment the query fired, results or not). Trial only; paid is uncapped.
+    if (tier === 'trial') recordUsage({ userId: user.id, tier, feature: 'amazon_research', model: 'keepa-finder' })
     // Safe, numbers-only diagnostic (never raw provider text) — shown to admins
     // in the empty state so a "no results" is explainable (bad status / no tokens
     // / genuinely zero matches) instead of a silent dead end.
