@@ -36,8 +36,13 @@ export async function GET() {
   const admin = createAdminClient()
   const countOf = async (table: string, mod?: (q: any) => any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
     try {
+      // ESTIMATED count (query-planner reltuples), NOT exact: an exact COUNT over
+      // the ~240k-row catalog scans every row and hits Postgres's statement
+      // timeout, returning null → the card shows a bare "—" even though the
+      // catalog is full. Estimated is instant and plenty accurate for "is it in
+      // the tens of thousands" — PostgREST still returns exact for small tables.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let q = (admin as any).from(table).select('campaign_id', { count: 'exact', head: true })
+      let q = (admin as any).from(table).select('campaign_id', { count: 'estimated', head: true })
       if (mod) q = mod(q)
       const { count, error } = await q
       // Return null (→ shown as "—") on any failure or a nullish count. NEVER
