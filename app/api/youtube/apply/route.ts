@@ -32,6 +32,24 @@ import { bustYouTubeCache } from '@/app/api/youtube/drafts/route'
 
 export const maxDuration = 60
 
+// Turn YouTube's raw 403 JSON into a plain instruction the user can act on. The
+// two common secondary-channel failures look scary but each has a one-step fix:
+//   - thumbnail 403 "can't be set / not authorized" = the channel isn't verified
+//     for custom thumbnails (metadata still applies fine).
+//   - video-edit 403 "Forbidden" = the connection is authorized to a DIFFERENT
+//     YouTube channel than the one that owns the video (wrong channel picked at
+//     Google's chooser, common with Brand Accounts).
+function explainYouTubeError(raw: string): string {
+  const m = String(raw || '')
+  if (/thumbnail can'?t be set|custom thumbnail|set.*thumbnail.*(forbidden|authoriz)/i.test(m)) {
+    return 'Thumbnail not applied: YouTube only allows custom thumbnails on a verified channel. Verify this channel at youtube.com/verify (phone verification), then re-publish. Your title, description and tags are not affected by this.'
+  }
+  if (/\b403\b|forbidden/i.test(m)) {
+    return 'YouTube refused edits to this video (403 Forbidden). The YouTube connection for this channel is authorized to a different channel than the one that owns this video. Fix it in Set Up > YouTube: disconnect this channel, reconnect, and at Google’s "choose a channel" step pick the exact channel these videos are on (leave every permission checked). If it is a Brand Account, confirm your Google login has Owner or Manager access to it.'
+  }
+  return m
+}
+
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createServerClient()
@@ -147,13 +165,13 @@ export async function POST(request: NextRequest) {
     if (results[0].status === 'fulfilled') {
       for (const r of (results[0] as PromiseFulfilledResult<PromiseSettledResult<void>[]>).value) {
         if (r.status === 'rejected') {
-          warnings.push(r.reason instanceof Error ? r.reason.message : String(r.reason))
+          warnings.push(explainYouTubeError(r.reason instanceof Error ? r.reason.message : String(r.reason)))
         }
       }
     } else {
-      warnings.push((results[0] as PromiseRejectedResult).reason instanceof Error
+      warnings.push(explainYouTubeError((results[0] as PromiseRejectedResult).reason instanceof Error
         ? ((results[0] as PromiseRejectedResult).reason as Error).message
-        : String((results[0] as PromiseRejectedResult).reason))
+        : String((results[0] as PromiseRejectedResult).reason)))
     }
     if (results[1].status === 'rejected') {
       warnings.push('Status update failed: ' + (results[1].reason instanceof Error ? results[1].reason.message : String(results[1].reason)))

@@ -197,7 +197,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(dest('youtube_error=same_channel'))
     }
 
-    return NextResponse.redirect(dest('youtube_oauth_connected=1'))
+    // Pass the connected channel's name back so the UI can show WHICH channel was
+    // connected. Lets a user spot immediately if Google handed back the wrong one
+    // (the root of most "second channel won't publish" confusion).
+    const chParam = channelTitle ? `&yt_ch=${encodeURIComponent(channelTitle)}` : ''
+    return NextResponse.redirect(dest(`youtube_oauth_connected=1${chParam}`))
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     // eslint-disable-next-line no-console
