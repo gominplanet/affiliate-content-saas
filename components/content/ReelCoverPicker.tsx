@@ -10,7 +10,7 @@
  */
 
 import { useRef, useState } from 'react'
-import { X, Check, ImageIcon, RotateCcw } from 'lucide-react'
+import { X, Check, ImageIcon, RotateCcw, Loader2 } from 'lucide-react'
 
 export default function ReelCoverPicker({
   videoUrl,
@@ -27,6 +27,29 @@ export default function ReelCoverPicker({
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const [duration, setDuration] = useState(0)
   const [posSec, setPosSec] = useState(initialOffsetMs != null ? initialOffsetMs / 1000 : 0)
+
+  // Our rendered MP4s (ffmpeg) often report only a partial duration on
+  // `loadedmetadata` — the browser doesn't know the true length until the file
+  // buffers, so the slider was capping at ~1s until you hit play. Force the real
+  // duration WITHOUT playing by seeking way past the end: the browser then fires
+  // `durationchange` with the correct value, which we capture and reset from.
+  function resolveDuration() {
+    const v = videoRef.current
+    if (!v) return
+    const d = v.duration
+    if (Number.isFinite(d) && d > 1.5) { setDuration(d); try { v.currentTime = posSec } catch { /* ignore */ }; return }
+    // Unreliable/short/Infinite — scrub to the end to force a real measurement.
+    const onDur = () => {
+      const dd = v.duration
+      if (Number.isFinite(dd) && dd > 0 && dd < 36000) {
+        setDuration(dd)
+        v.removeEventListener('durationchange', onDur)
+        try { v.currentTime = Math.min(posSec, dd) } catch { /* ignore */ }
+      }
+    }
+    v.addEventListener('durationchange', onDur)
+    try { v.currentTime = 1e7 } catch { /* ignore */ }
+  }
 
   function onScrub(sec: number) {
     setPosSec(sec)
@@ -58,12 +81,14 @@ export default function ReelCoverPicker({
               src={videoUrl}
               muted
               playsInline
-              preload="metadata"
+              preload="auto"
               className="absolute inset-0 w-full h-full object-cover"
-              onLoadedMetadata={e => {
+              onLoadedMetadata={resolveDuration}
+              onDurationChange={e => {
+                // Some browsers only expose the final duration here (not on
+                // loadedmetadata). Keep the slider max in sync when it grows.
                 const d = e.currentTarget.duration
-                if (Number.isFinite(d)) setDuration(d)
-                try { e.currentTarget.currentTime = posSec } catch { /* ignore */ }
+                if (Number.isFinite(d) && d > duration) setDuration(d)
               }}
             />
           </div>
@@ -81,7 +106,7 @@ export default function ReelCoverPicker({
             />
             <div className="flex items-center justify-between text-[11px] text-[#86868b] mt-0.5">
               <span>Frame at <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">{fmt(posSec)}</strong></span>
-              <span>{fmt(duration)}</span>
+              {duration ? <span>{fmt(duration)}</span> : <span className="inline-flex items-center gap-1"><Loader2 size={11} className="animate-spin" /> loading…</span>}
             </div>
           </div>
 
