@@ -1247,7 +1247,7 @@ const VideoCard = memo(function VideoCardImpl({
           {video.is_vertical !== true && (
             <div className="flex items-center gap-2 flex-wrap">
               {showPublishAll && (publishingAll ? (
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold bg-gradient-to-r from-[#7C3AED] to-[#5856d6] text-white opacity-80">
+                <div className="inline-flex items-center gap-2 h-8 px-3 rounded-lg text-xs font-semibold bg-gradient-to-r from-[#7C3AED] to-[#5856d6] text-white opacity-80">
                   <Loader2 size={12} className="animate-spin" />
                   {publishAllStep || 'Working…'}
                 </div>
@@ -1288,8 +1288,7 @@ const VideoCard = memo(function VideoCardImpl({
                   title={post
                     ? 'Schedule a social cascade for this already-live post'
                     : 'Generate now, publish later — pick a date/time and which socials to push'}
-                  className="inline-flex items-center gap-2 h-8 px-3 text-xs font-medium rounded-lg whitespace-nowrap border transition-colors hover:bg-[rgba(124,58,237,0.10)]"
-                  style={{ borderColor: 'var(--border-bright, rgba(255,255,255,0.14))', color: 'var(--text, #F5F5F7)' }}
+                  className="inline-flex items-center gap-2 h-8 px-3 text-xs font-medium rounded-lg whitespace-nowrap border border-[var(--border-2)] bg-[var(--surface)] text-[var(--text)] hover:bg-[var(--surface-2)] transition-colors"
                 >
                   <Calendar size={12} /> {post ? 'Schedule socials' : 'Schedule'}
                 </button>
@@ -1591,8 +1590,7 @@ const VideoCard = memo(function VideoCardImpl({
               <button
                 onClick={() => setShareBrandOpen(true)}
                 title="Send the brand a recap of everywhere this content is live"
-                className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-lg whitespace-nowrap border transition-colors hover:bg-[rgba(124,58,237,0.10)]"
-                style={{ borderColor: 'var(--border-bright, rgba(0,0,0,0.12))', color: 'var(--text, #1d1d1f)' }}
+                className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-lg whitespace-nowrap border border-[var(--border-2)] bg-[var(--surface)] text-[var(--text)] hover:bg-[var(--surface-2)] transition-colors"
               >
                 <Handshake size={12} /> Share with brand
               </button>
