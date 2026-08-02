@@ -9,6 +9,7 @@ import {
   refreshAccessToken,
 } from '@/services/twitter'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
+import { checkXPostCap, recordXPost, xCapMessage } from '@/lib/x-cap'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } from '@/lib/social-cap'
 import { resolveBlogPostId } from '@/lib/resolve-post-id'
@@ -96,6 +97,12 @@ export async function POST(request: NextRequest) {
     const integration = decryptIntegrationRow(intRow as any)
     if (!integration?.twitter_access_token) {
       return NextResponse.json({ error: 'X (Twitter) not connected' }, { status: 400 })
+    }
+
+    // ── 3b. Monthly X post cap (X is the only paid-per-post channel) ────────
+    const xcap = await checkXPostCap(supabase, user.id)
+    if (xcap.exceeded) {
+      return NextResponse.json({ error: xCapMessage(xcap.resetLabel), limitReached: true }, { status: 429 })
     }
 
     // ── 3a. Refresh the access token if it's expired or expiring soon ─────
@@ -193,6 +200,7 @@ Return ONLY the tweet text.`,
 
     // ── 5. Post the tweet ──────────────────────────────────────────────────
     const tweet = await createTweet(accessToken, finalText)
+    recordXPost(user.id, xcap.tier)
 
     // ── 6. Save tweet id on the post ───────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

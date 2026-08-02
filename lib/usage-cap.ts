@@ -37,10 +37,19 @@ export const PRIMARY_FEATURE = {
   /** Clip Factory — one row per FINISHED Short (the render step). Counting it =
    *  total Shorts rendered this period. Planning / finding clips is free. */
   short: ['shorts_render'] as string[],
+  /** X / Twitter — one row per successfully published tweet. X is the only
+   *  channel with a real per-post cost to us ($0.20 on the Pay Per Use plan),
+   *  so it's the only social with its own cap. Counting it = tweets this period. */
+  x: ['x_post'] as string[],
 }
 
 /** Finished Shorts a Pro user can render per billing period (admin = unlimited). */
 export const SHORTS_MONTHLY_CAP = 50
+
+/** X posts a Pro user can publish per billing period (admin = unlimited). X is
+ *  Pro-only, and each post costs us $0.20, so this bounds our exposure at ~$20
+ *  per Pro user per month. */
+export const X_MONTHLY_CAP = 100
 
 interface CapCheck {
   used: number

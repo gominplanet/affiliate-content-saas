@@ -21,6 +21,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createSession as createBlueskySession, createPost as createBlueskyPost } from '@/services/bluesky'
 import { createTweet, refreshAccessToken as refreshTwitterToken } from '@/services/twitter'
+import { checkXPostCap, recordXPost, xCapMessage } from '@/lib/x-cap'
 import { ThreadsService } from '@/services/threads'
 import { recordSocialPermalink } from '@/lib/social-permalink'
 import { socialPermalink } from '@/lib/brand-recap'
@@ -414,6 +415,11 @@ async function publishOne(
         catch (e) { throw new Error(`X token refresh failed: ${e instanceof Error ? e.message : String(e)}`) }
       }
 
+      // Monthly X post cap (X is the only paid-per-post channel). Over cap →
+      // fail this scheduled post with a clear reason rather than spend a credit.
+      const xcap = await checkXPostCap(admin, row.user_id)
+      if (xcap.exceeded) throw new Error(xCapMessage(xcap.resetLabel))
+
       const finalText = `${row.body_text} ${url}`
       let result
       try {
@@ -430,6 +436,7 @@ async function publishOne(
           throw e
         }
       }
+      recordXPost(row.user_id, xcap.tier)
       await admin.from('blog_posts').update({ twitter_post_id: result.id }).eq('id', row.blog_post_id)
       await recordSocialPermalink(admin, row.blog_post_id, 'x', socialPermalink.x(result.id))
       return { externalId: result.id }
