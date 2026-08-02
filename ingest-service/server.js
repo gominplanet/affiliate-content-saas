@@ -28,6 +28,7 @@ const { execFile } = require('child_process')
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
+const zlib = require('zlib')
 const { pipeline } = require('stream/promises')
 const { Readable } = require('stream')
 
@@ -49,16 +50,74 @@ if (!SUPABASE_URL || !SERVICE_KEY) {
 // Supply them base64-encoded (a Netscape cookies.txt) via YOUTUBE_COOKIES_B64
 // — base64 avoids newline mangling in the Railway/Vercel env UI. Optional:
 // without it the service still works for videos that don't need auth.
-let COOKIES_FILE = null
-if (process.env.YOUTUBE_COOKIES_B64) {
-  try {
-    COOKIES_FILE = path.join(os.tmpdir(), 'yt-cookies.txt')
-    fs.writeFileSync(COOKIES_FILE, Buffer.from(process.env.YOUTUBE_COOKIES_B64, 'base64').toString('utf8'))
-    console.log('yt-dlp cookies loaded')
-  } catch (e) {
-    console.error('YOUTUBE_COOKIES_B64 invalid:', e && e.message)
-    COOKIES_FILE = null
+//
+// Railway/Vercel cap a single env var at 32768 chars. A full browser cookie
+// export blows past that, so we take the value three ways and use whichever is
+// set (all optional, tried in this order):
+//   1. YOUTUBE_COOKIES_URL   — download the cookies.txt from a URL at boot (no
+//                              size limit; the cleanest option for big files).
+//   2. YOUTUBE_COOKIES_B64   — base64 of the cookies.txt, optionally gzipped
+//      (+ _2, _3, …)           first (auto-detected). Split across numbered vars
+//                              to stay under the 32768 cap; they're concatenated
+//                              in order before decoding.
+// Best practice regardless: export ONLY youtube.com + google.com cookies, not
+// your whole browser jar. yt-dlp doesn't use the rest, and the trimmed file
+// fits in a single var.
+const COOKIES_FILE = path.join(os.tmpdir(), 'yt-cookies.txt')
+let cookiesReady = false
+
+// Decode a base64 (optionally gzip-compressed) blob to utf8 text. gzip is
+// auto-detected from its magic bytes (0x1f 0x8b), so a plain OR gzipped base64
+// both work with no flag.
+function decodeCookieBlob(b64) {
+  const buf = Buffer.from(b64, 'base64')
+  if (buf.length >= 2 && buf[0] === 0x1f && buf[1] === 0x8b) {
+    return zlib.gunzipSync(buf).toString('utf8')
   }
+  return buf.toString('utf8')
+}
+
+// Concatenate YOUTUBE_COOKIES_B64 + YOUTUBE_COOKIES_B64_2 + _3 … (in numeric
+// order) so a big cookies file can be split across the 32768-char env cap.
+function joinedCookieB64() {
+  const parts = []
+  if (process.env.YOUTUBE_COOKIES_B64) parts.push(process.env.YOUTUBE_COOKIES_B64.trim())
+  for (let i = 2; process.env[`YOUTUBE_COOKIES_B64_${i}`]; i++) {
+    parts.push(process.env[`YOUTUBE_COOKIES_B64_${i}`].trim())
+  }
+  return parts.join('')
+}
+
+async function loadCookies() {
+  const url = (process.env.YOUTUBE_COOKIES_URL || '').trim()
+  if (url) {
+    try {
+      const res = await fetch(url)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const buf = Buffer.from(await res.arrayBuffer())
+      const text = (buf.length >= 2 && buf[0] === 0x1f && buf[1] === 0x8b)
+        ? zlib.gunzipSync(buf).toString('utf8') : buf.toString('utf8')
+      fs.writeFileSync(COOKIES_FILE, text)
+      cookiesReady = true
+      console.log(`yt-dlp cookies loaded from URL (${text.split('\n').filter(Boolean).length} lines)`)
+      return
+    } catch (e) {
+      console.error('YOUTUBE_COOKIES_URL fetch failed:', e && e.message)
+    }
+  }
+  const b64 = joinedCookieB64()
+  if (b64) {
+    try {
+      const text = decodeCookieBlob(b64)
+      fs.writeFileSync(COOKIES_FILE, text)
+      cookiesReady = true
+      console.log(`yt-dlp cookies loaded (${text.split('\n').filter(Boolean).length} lines)`)
+      return
+    } catch (e) {
+      console.error('YOUTUBE_COOKIES_B64 invalid:', e && e.message)
+    }
+  }
+  if (!cookiesReady) console.log('no yt-dlp cookies set — auth-gated videos may hit the bot wall')
 }
 // Optional extra yt-dlp args (space-separated) for advanced tweaks.
 const EXTRA_ARGS = (process.env.YT_DLP_EXTRA || '').trim().split(/\s+/).filter(Boolean)
@@ -73,14 +132,14 @@ const PLAYER_CLIENTS = (process.env.YT_DLP_PLAYER_CLIENTS || 'default,web_safari
 const app = express()
 app.use(express.json())
 
-app.get('/health', (_req, res) => res.json({ ok: true }))
+app.get('/health', (_req, res) => res.json({ ok: true, cookies: cookiesReady, build: BUILD }))
 
 function ytDlp(args) {
   // Every yt-dlp call gets: proxy (if set) + cookies (if set) + alternate
   // player clients + retries, to beat YouTube's bot check as best we can.
   const full = [
     ...(PROXY ? ['--proxy', PROXY] : []),
-    ...(COOKIES_FILE ? ['--cookies', COOKIES_FILE] : []),
+    ...(cookiesReady ? ['--cookies', COOKIES_FILE] : []),
     '--extractor-args', `youtube:player_client=${PLAYER_CLIENTS}`,
     '--extractor-retries', '3',
     ...EXTRA_ARGS,
@@ -458,5 +517,7 @@ app.post('/render-short', async (req, res) => {
 // BUILD marker: bump this string when the service code changes so the Railway
 // deploy logs unambiguously show which build is actually running (Railway can
 // re-run an older commit).
-const BUILD = 'audio-and-segments-2026-07-25'
-app.listen(PORT, () => console.log(`ingest-service listening on :${PORT} [build ${BUILD}]`))
+const BUILD = 'cookies-gzip-multipart-2026-08-02'
+loadCookies().finally(() => {
+  app.listen(PORT, () => console.log(`ingest-service listening on :${PORT} [build ${BUILD}]`))
+})
