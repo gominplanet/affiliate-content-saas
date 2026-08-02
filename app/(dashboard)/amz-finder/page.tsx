@@ -177,7 +177,8 @@ export default function EpcScoutPage() {
           onClick={() => pickArea('amazon')}
           icon={<ShoppingBag size={20} />}
           title="Amazon Product Research"
-          desc="Search the whole Amazon catalogue with MVP filters — keyword, price, rating, reviews, best-sellers. Every link carries your own Associates tag."
+          badge="Free on every plan"
+          desc="Search the whole Amazon catalogue with MVP filters — keyword, price, rating, reviews, best-sellers. Every link carries your own Associates tag. Free to research; upgrade to save finds and turn them into posts."
         />
         <AreaCard
           active={researchArea === 'affiliate'}
@@ -409,8 +410,8 @@ export default function EpcScoutPage() {
 
 // One of the two top-level "which catalogue" choice cards. Active = filled
 // violet; idle = outlined and hover-lifts.
-function AreaCard({ active, onClick, icon, title, desc }: {
-  active: boolean; onClick: () => void; icon: ReactNode; title: string; desc: string
+function AreaCard({ active, onClick, icon, title, desc, badge }: {
+  active: boolean; onClick: () => void; icon: ReactNode; title: string; desc: string; badge?: string
 }) {
   return (
     <button
@@ -425,6 +426,12 @@ function AreaCard({ active, onClick, icon, title, desc }: {
           {icon}
         </span>
         <span className="text-[14px] font-bold leading-tight" style={{ color: 'var(--text)' }}>{title}</span>
+        {badge && (
+          <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full"
+            style={{ background: 'rgba(52,199,89,0.15)', color: '#1f8a3a', border: '1px solid rgba(52,199,89,0.4)' }}>
+            {badge}
+          </span>
+        )}
         {active && <CheckCircle2 size={16} className="ml-auto flex-shrink-0" style={{ color: '#7C3AED' }} />}
       </div>
       <p className="text-[12px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>{desc}</p>
