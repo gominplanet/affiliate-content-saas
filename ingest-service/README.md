@@ -55,11 +55,33 @@ session:
    **"Get cookies.txt LOCALLY"**.
 2. Open `youtube.com`, click the extension → **Export** → you get a
    `cookies.txt` (Netscape format).
-3. Base64-encode it so it survives the env-var UI (one line, no newline issues):
-   - macOS: `base64 -i cookies.txt | pbcopy`
-   - Linux: `base64 -w0 cookies.txt`
-4. Add it to the **Railway** service as `YOUTUBE_COOKIES_B64` (paste the base64).
-5. Redeploy. The logs will show `yt-dlp cookies loaded`.
+3. **Trim it to YouTube + Google cookies only.** The extension can export your
+   *entire* browser cookie jar (every site you've visited), which is often 1MB+
+   and blows past the env-var size cap. yt-dlp only needs `youtube.com` and
+   `google.com` cookies. Keep just those lines (plus the `# Netscape…` header):
+   ```bash
+   { head -1 cookies.txt; grep -E '(^|\.)(youtube|google)\.com\b' cookies.txt; } > yt.txt
+   ```
+   That trimmed file is a few KB.
+4. Base64-encode it so it survives the env-var UI (one line, no newline issues):
+   - macOS: `base64 -i yt.txt | pbcopy`
+   - Linux: `base64 -w0 yt.txt`
+5. Add it to the **Railway** service as `YOUTUBE_COOKIES_B64` (paste the base64).
+6. Redeploy. `GET /health` returns `{ "cookies": true }` and the logs show
+   `yt-dlp cookies loaded (N lines)`.
+
+### If the value is still over 32768 chars
+
+Railway/Vercel cap one env var at 32768 characters. The trimmed file above
+fits easily, but if yours is still too big you have two options:
+
+- **Gzip it** (auto-detected on load — no flag needed):
+  `gzip -9 -c yt.txt | base64 -w0` → paste into `YOUTUBE_COOKIES_B64`.
+- **Split it** across `YOUTUBE_COOKIES_B64`, `YOUTUBE_COOKIES_B64_2`,
+  `YOUTUBE_COOKIES_B64_3`, … The service concatenates them in order before
+  decoding, so break the base64 into ≤32000-char chunks.
+- **Host it** anywhere reachable and set `YOUTUBE_COOKIES_URL` to the raw file
+  (plain or gzipped). The service downloads it at boot. No size limit.
 
 ⚠️ **Account safety:** YouTube can rotate/invalidate cookies, and heavy use can
 flag the account. Use a **burner Google account** you don't care about, exported
