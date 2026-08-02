@@ -307,7 +307,7 @@ function ProductCard({ p, canAct, saved, onToggleSave, onDeepDive }: {
   }
 
   return (
-    <div className="rounded-xl border flex flex-col overflow-hidden h-full" style={{ borderColor: 'var(--border-2)', background: 'var(--surface)' }}>
+    <div className="rounded-xl border flex flex-col overflow-hidden h-full transition-shadow hover:shadow-md" style={{ borderColor: 'var(--border-2)', background: 'var(--surface)' }}>
       <a href={p.productUrl} target="_blank" rel="noopener noreferrer" className="relative block aspect-square bg-white overflow-hidden">
         {p.imageUrl ? (
           // Absolutely filling the square so a tall/odd source photo can NEVER

@@ -590,7 +590,7 @@ function useMakePost(d: Deal) {
 function DealCard({ deal: d, onQuickPost, selected = false, onToggleSelect, locked = false }: { deal: Deal; onQuickPost: (d: Deal) => void; selected?: boolean; onToggleSelect?: (asin: string) => void; locked?: boolean }) {
   const { gen, postUrl, makePost } = useMakePost(d)
   return (
-    <div className="rounded-xl border bg-card overflow-hidden flex flex-col">
+    <div className="rounded-xl border bg-card overflow-hidden flex flex-col transition-shadow hover:shadow-md">
       <a href={d.amazonUrl} target="_blank" rel="noopener noreferrer" className="relative flex items-center justify-center bg-white h-44 p-3">
         {d.imageUrl
           ? <img src={d.imageUrl} alt="" className="max-h-full max-w-full object-contain" />
