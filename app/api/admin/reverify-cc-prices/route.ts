@@ -35,35 +35,40 @@ export async function POST(request: Request) {
     const { data: intRow } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
     if (normalizeTier(intRow?.tier) !== 'admin') return NextResponse.json({ error: 'Admin only' }, { status: 403 })
 
-    const body = await request.json().catch(() => ({})) as { before?: string }
-    // Capture the cutoff once (first call), echo it back on every resume so the
-    // cron's fresh re-verifications (verified_at >= before) are never re-nulled.
-    const before = (typeof body.before === 'string' && body.before) ? body.before : new Date().toISOString()
+    const body = await request.json().catch(() => ({})) as { after?: string }
+    // Cursor: campaign_id we've paged up to. Empty on the first call; echoed back
+    // each resume so we page forward through the table exactly once.
+    let after = typeof body.after === 'string' ? body.after : ''
 
     const admin = createAdminClient()
     const BATCH = 5000
     const deadline = Date.now() + 40_000
     let queued = 0
-    let n = BATCH
-    while (n >= BATCH && Date.now() < deadline) {
+    let scanned = BATCH
+    while (scanned >= BATCH && Date.now() < deadline) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data, error } = await (admin as any).rpc('reverify_cc_prices_step', { p_before: before, p_limit: BATCH })
+      const { data, error } = await (admin as any).rpc('reverify_cc_prices_step', { p_after: after, p_limit: BATCH })
       if (error) {
         console.error('[reverify-cc-prices step]', error.message)
         const missingFn = /could not find the function|does not exist|schema cache|PGRST202/i.test(error.message || '')
         return NextResponse.json({
           error: missingFn
-            ? 'The re-verify database function is missing — run migration 207 in Supabase, then click again.'
+            ? 'The re-verify database function is missing — run migration 208 in Supabase, then click again.'
             : toUserMessage(error, 'Re-verify stopped partway. Click again to resume.'),
           detail: error.message?.slice(0, 200), queuedSoFar: queued,
         }, { status: 500 })
       }
-      n = Number(data ?? 0)
-      queued += n
+      // RETURNS TABLE → data is an array of one row.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const row = (Array.isArray(data) ? data[0] : data) as { last_id: string | null; scanned: number; updated: number } | null
+      scanned = Number(row?.scanned ?? 0)
+      queued += Number(row?.updated ?? 0)
+      if (!row?.last_id) break // no rows left in the page → end of table
+      after = row.last_id
     }
 
-    const done = n < BATCH
-    return NextResponse.json({ ok: true, done, queued, before })
+    const done = scanned < BATCH
+    return NextResponse.json({ ok: true, done, queued, after })
   } catch (err) {
     console.error('[reverify-cc-prices]', err instanceof Error ? err.message : err)
     return NextResponse.json({ error: toUserMessage(err, 'Re-verify failed. Please try again.') }, { status: 500 })

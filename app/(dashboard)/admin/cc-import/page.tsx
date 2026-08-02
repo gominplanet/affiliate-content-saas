@@ -90,16 +90,16 @@ export default function AdminCcImportPage() {
     if (reverifying) return
     if (!window.confirm('Requeue every LIVE catalog product for price re-verification?\n\nThis clears their "last checked" stamp (not the data) so the enrich cron re-prices them with the corrected Buy Box logic over the next runs. It spends no Keepa tokens now; the re-pricing rides the cron’s normal paced budget.')) return
     setReverifying(true); setReverifyDone(false); setReverifyQueued(null); setErr(null)
-    let before: string | undefined
+    let after: string | undefined
     let total = 0
     try {
       for (let guard = 0; guard < 400; guard++) {
         const r = await fetch('/api/admin/reverify-cc-prices', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ before }),
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ after }),
         })
         const d = await r.json()
         if (!r.ok) throw new Error(d.detail ? `${d.error || 'Re-verify failed'} — ${d.detail}` : (d.error || 'Re-verify failed'))
-        before = d.before
+        after = d.after
         total += Number(d.queued ?? 0)
         setReverifyQueued(total)
         if (d.done) {
