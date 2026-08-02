@@ -41,12 +41,16 @@ export async function GET(req: NextRequest) {
   const targetUser = new URL(req.url).searchParams.get('userId') || user.id
   const admin = createAdminClient()
 
-  // integrations secret columns
+  // integrations secret columns. Use select('*') NOT an explicit column list:
+  // if any listed column doesn't exist in the live schema, Postgres rejects the
+  // whole query and every token reads as "absent" — a false negative. '*' never
+  // fails on missing columns (the row just won't have that key).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: intRow } = await (admin as any)
+  const { data: intRow, error: intErr } = await (admin as any)
     .from('integrations')
-    .select(INTEGRATION_SECRET_COLUMNS.join(','))
+    .select('*')
     .eq('user_id', targetUser).maybeSingle()
+  if (intErr) return NextResponse.json({ ok: false, error: `integrations read failed: ${intErr.message}` }, { status: 500 })
 
   const integrations: Record<string, ReturnType<typeof probe>> = {}
   let encTotal = 0, encFail = 0
