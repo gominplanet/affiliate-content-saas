@@ -15,7 +15,8 @@
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { tierAllowsFinders, type Tier } from '@/lib/tier'
+import { type Tier } from '@/lib/tier'
+import { ccAccessOk } from '@/lib/cc-access'
 import { toUserMessage } from '@/lib/friendly-error'
 
 export const dynamic = 'force-dynamic'
@@ -23,30 +24,18 @@ export const dynamic = 'force-dynamic'
 type SortKey = 'commission' | 'endingSoon' | 'mostRunway' | 'slots' | 'budget' | 'recentSales' | 'rating'
 const PAGE_SIZE = 40
 
-// CC-access proof lasts this long before SCOUT must re-confirm the grid. Kept in
-// step with VERIFY_TTL_DAYS in /api/campaigns/cc-verify.
-const CC_VERIFY_TTL_MS = 180 * 86_400_000
-function ccVerifyFresh(ts: string | null | undefined): boolean {
-  if (!ts) return false
-  const age = Date.now() - new Date(ts).getTime()
-  return Number.isFinite(age) && age >= 0 && age < CC_VERIFY_TTL_MS
-}
-
 export async function GET(request: Request) {
   try {
     const supabase = await createServerClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    // Tier gate (paid plans). Read `tier` ALONE — it always exists — so a
-    // missing cc_verified_at column (migration 199 not yet applied) can never
-    // error this read and falsely downgrade the user to trial.
+    // CC is NOT a paid-tier feature — it's access-gated by proof you actually
+    // have Creator Connections (the cc_verified_at gate below). Read `tier` ALONE
+    // (it always exists) only to exempt admin from the verification gate.
     const { data: tierRow } = await supabase
       .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
     const tier = (tierRow?.tier as Tier) ?? 'trial'
-    if (!tierAllowsFinders(tier)) {
-      return NextResponse.json({ error: 'The AMZ Product Finder requires a paid plan.' }, { status: 403 })
-    }
 
     // Confidentiality gate: the shared Creator Connections catalog is Amazon
     // reference data for INVITED creators only. Browse stays locked until SCOUT
@@ -56,14 +45,8 @@ export async function GET(request: Request) {
     // - If cc_verified_at doesn't exist yet (migration 199 not applied), FAIL
     //   OPEN (allow browse) rather than locking everyone out of a stamp they
     //   can't write — the gate simply activates once the column lands.
-    if (tier !== 'admin') {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: ccRow, error: ccErr } = await (supabase as any)
-        .from('integrations').select('cc_verified_at').eq('user_id', user.id).maybeSingle()
-      const columnMissing = !!ccErr && /column|does not exist|schema cache/i.test(ccErr.message || '')
-      if (!columnMissing && !ccVerifyFresh(ccRow?.cc_verified_at)) {
-        return NextResponse.json({ needsCcVerify: true, error: 'Verify your Creator Connections access to browse the campaign catalog.' }, { status: 403 })
-      }
+    if (!(await ccAccessOk(supabase, user.id, tier))) {
+      return NextResponse.json({ needsCcVerify: true, error: 'Verify your Creator Connections access to browse the campaign catalog.' }, { status: 403 })
     }
 
     const url = new URL(request.url)

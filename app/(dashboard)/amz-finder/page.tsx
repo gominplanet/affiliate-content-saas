@@ -99,15 +99,16 @@ export default function EpcScoutPage() {
     window.addEventListener(VIEW_AS_EVENT, apply)
     return () => { cancelled = true; window.removeEventListener(VIEW_AS_EVENT, apply) }
   }, [])
-  const canUseFinder = tier !== 'trial' // all PAID tiers
-  // Amazon Product Research (onsite catalogue) is FREE for every tier — actions
-  // stay paid (gated on their routes + via canAct below).
-  // Affiliate+ (Creator Connections) for FREE users unlocks ONLY when they've
-  // connected SCOUT + an ingest token. That self-limits to creators who actually
-  // have the Amazon Creator Connections invite (no invite → ingest returns no
-  // campaigns anyway). Paid tiers get the CC finder unconditionally.
+  const canUseFinder = tier !== 'trial' // used only to gate PAID actions (canAct)
+  // Amazon Product Research (onsite catalogue) is FREE for every tier — only the
+  // paid actions (save / write / deep-dive) are gated, via canAct below.
+  // Affiliate+ (Creator Connections) is NOT paid-tier gated either: the backend
+  // gates the catalog by CC-verification (proof you have CC access). Here we only
+  // pre-check that SCOUT is installed so we can show a helpful "install SCOUT"
+  // nudge instead of dropping an unverified user straight into the finder; the
+  // real access check happens server-side (needsCcVerify) for every tier.
   const scoutInstalled = !!scout && scout.kind !== 'none'
-  const ccAllowed = canUseFinder || (scoutInstalled && !!token)
+  const ccAllowed = scoutInstalled && !!token
 
   const loadList = useCallback(async () => {
     try {
@@ -327,8 +328,8 @@ export default function EpcScoutPage() {
       )}
 
       {/* ── Step 3 · Search — Browse all (instant) or Smart Scan (MVP-approved).
-             Free users must connect SCOUT + an ingest token first (ccAllowed);
-             the setup steps above stay visible so they can do exactly that. ── */}
+             CC is open to any tier; the backend gates the catalog by
+             CC-verification. We just nudge users to install SCOUT first. ── */}
       {!ccAllowed ? (
         <div ref={finderRef} className="scroll-mt-24 card p-5 flex items-start gap-3">
           <span className="grid place-items-center w-9 h-9 rounded-xl flex-shrink-0" style={{ background: 'rgba(124,58,237,0.10)', color: '#7C3AED' }}><Lock size={18} /></span>
