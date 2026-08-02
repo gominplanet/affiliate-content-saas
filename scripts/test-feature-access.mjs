@@ -117,8 +117,11 @@ for (const [key, { tiers, enforcedBy }] of Object.entries(table)) {
     }
     const body = readFileSync(file, 'utf8')
 
-    // 2. Does the route gate on tier at all?
-    const gates = /tierAllows|normalizeTier|tier !== |tier ===|checkGenerationLimit|spendGate|tier_not_allowed/.test(body)
+    // 2. Does the route gate access at all? Tier/quota checks, OR the CC
+    //    verification gate (ccAccessOk) — Creator Connections is access-gated by
+    //    proof-of-CC (cc_verified_at), not by paid tier, but it's still a
+    //    server-side gate that satisfies "a nav-gated feature must enforce it".
+    const gates = /tierAllows|normalizeTier|tier !== |tier ===|checkGenerationLimit|spendGate|tier_not_allowed|ccAccessOk/.test(body)
     if (!gates) {
       fail(`${key}: ${p} has NO tier/quota check — a nav-gated feature must enforce server-side`)
       continue
