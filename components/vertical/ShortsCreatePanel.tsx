@@ -14,6 +14,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Loader2, Sparkles, AlertCircle, Film, Scissors, ExternalLink, ArrowRight } from 'lucide-react'
 import { ShortVideoUpload } from '@/components/ShortVideoUpload'
+import { InfoTip } from '@/components/ui/InfoTip'
 import { dispatchCapReached } from '@/components/CapReachedBanner'
 import { errText } from '@/lib/err-text'
 import { SUBTITLE_STYLES, type SubtitleStyle, type ShortRow } from '@/lib/shorts-types'
@@ -169,7 +170,7 @@ export function ShortsCreatePanel({
             const rendering = renderingId === clip.id
             const ytLink = clip.youtubeVideoId ? `https://youtu.be/${clip.youtubeVideoId}?t=${Math.floor(clip.startSec)}` : null
             return (
-              <div key={clip.id} className="rounded-xl border border-black/5 dark:border-white/10 p-4">
+              <div key={clip.id} className="rounded-xl border border-black/5 dark:border-white/10 p-4 transition-shadow hover:shadow-md">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -181,11 +182,12 @@ export function ShortsCreatePanel({
                   </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2 mt-3">
+                <div className="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-black/[0.06] dark:border-white/[0.07]">
                   <label className="inline-flex items-center gap-1.5 text-[11px] text-[#4b4b4f] dark:text-[#b0b0b5] cursor-pointer select-none">
                     <input type="checkbox" checked={captionsOn} onChange={e => setCaptionsById(prev => ({ ...prev, [clip.id]: e.target.checked }))} disabled={rendering} className="accent-[#7C3AED]" />
                     Captions
                   </label>
+                  <InfoTip>On: burn word-by-word captions onto the Short (readable with sound off). Off: a clean clip, no text. Pick the caption look from the style dropdown.</InfoTip>
                   <select
                     value={style}
                     onChange={e => setStyleById(prev => ({ ...prev, [clip.id]: e.target.value as SubtitleStyle }))}
@@ -218,7 +220,7 @@ export function ShortsCreatePanel({
                 </div>
 
                 {clip.status === 'rendered' && clip.renderedUrl && (
-                  <div className="mt-3 flex items-center gap-3">
+                  <div className="mt-3 pt-3 border-t border-black/[0.06] dark:border-white/[0.07] flex items-center gap-3">
                     <div className="rounded-lg overflow-hidden bg-black aspect-[9/16] w-[90px] shrink-0">
                       {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
                       <video src={clip.renderedUrl} controls playsInline className="w-full h-full" />
