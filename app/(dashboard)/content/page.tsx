@@ -3546,6 +3546,8 @@ export default function ContentPage() {
             >
               New post from a link
             </Button>
+            {/* Divider: primary action | maintenance tools (2026 redesign) */}
+            <span className="hidden sm:block w-px h-5 self-center bg-black/10 dark:bg-white/12 mx-0.5" aria-hidden="true" />
             <Button
               variant="secondary"
               size="sm"
@@ -3584,6 +3586,8 @@ export default function ContentPage() {
             >
               <Handshake size={14} /> Brand message
             </Button>
+            {/* Divider: maintenance tools | sync & refresh (2026 redesign) */}
+            <span className="hidden sm:block w-px h-5 self-center bg-black/10 dark:bg-white/12 mx-0.5" aria-hidden="true" />
             {(activeTab === 'horizontal' || activeTab === 'vertical') && (
               <>
                 {/* Pro multi-channel: pull videos from a specific connected
