@@ -20,7 +20,7 @@
 import { useState } from 'react'
 import { useEffect } from 'react'
 import { Sparkles, Loader2, ExternalLink, MessageCircle, ShoppingCart, Play, Star, Bookmark, BookmarkCheck, SlidersHorizontal } from 'lucide-react'
-import { requestCcSmartScan, requestCcVerify, requestProductSearch, type FinderProduct, type CatalogCandidate } from '@/lib/extension-frame'
+import { requestCcSmartScan, requestProductSearch, type FinderProduct } from '@/lib/extension-frame'
 import {
   ONSITE_RULES, AMZ_MARKETPLACES, type AmzMarketplace,
   campaignRules, type CampaignRuleMode,
@@ -214,45 +214,22 @@ export default function SmartScanPanel({
         setNote(`Found ${freshMatches.length} MVP-approved campaign${freshMatches.length === 1 ? '' : 's'} from the catalog, instantly.${dl}${more}`)
         return
       }
-      if (data?.ok && Array.isArray(data.candidates) && data.candidates.length) {
+      // Catalog answered but nothing cleared MVP's bar in this batch. With
+      // on-demand enrichment in the route, un-enriched campaigns are already
+      // Keepa-checked server-side, so reaching here means they genuinely failed
+      // the rules (or Keepa was tapped out) — either way we do NOT open Amazon
+      // tabs. Advance + note; the user can scan again or widen.
+      if (data?.ok) {
         usedCatalog = true
-        setProgress(`SCOUT is live-verifying ${data.candidates.length} campaigns from the catalog on Amazon…`)
-        const fresh = (data.candidates as CatalogCandidate[]).filter(c => {
-          const a = (c.asin || '').toUpperCase()
-          return a && !covered.has(a) && !alreadyShown.has(a) && !savedAsins.has(a)
-        })
-        setSkippedCovered(prev => prev + (data.candidates.length - fresh.length))
-        const ver = await requestCcVerify(fresh.slice(0, 25), { ...RULES, wantPassers: 15 })
         setProgress(null)
-        if (!ver.ok) {
-          setError(ver.error === 'not-installed'
-            ? 'SCOUT isn’t connected — install it (see "How it works" above), then scan again.'
-            : `Verification failed (${ver.error || 'unknown'}). Try again.`)
-          return
-        }
-        const scored = (ver.results ?? [])
-          .filter(m => passesGates(m, RULES))
-          .map(m => scoreMatch(m, RULES))
-        cacheResolvedLinks(scored); cacheProductSignals(scored) // pre-warm: instant messaging + image-rich Browse
-        // Accumulate across pages (dedup by asin), keep best-scored first.
-        setMatches(prev => {
-          const merged = paging ? [...(prev ?? []), ...scored] : scored
-          const seen = new Set<string>()
-          return merged
-            .filter(m => { const k = (m.asin || m.campaignName || '').toUpperCase(); if (seen.has(k)) return false; seen.add(k); return true })
-            .sort((a, b) => b.score - a.score)
-        })
-        // Advance so the NEXT scan digs deeper; remember if more remain.
         setScanOffset(typeof data.nextOffset === 'number' ? data.nextOffset : scanOffset + 75)
         setHasMore(!!data.hasMore)
-        const dl = dropLine(ver.drops)
-        const more = data.hasMore ? ' Scan again for the next batch — it digs deeper each time.' : ' That’s the full catalog for this search.'
-        if (ver.blocked) setNote(`Amazon asked for a pause partway through — results are partial. Wait ~15 minutes.${dl}`)
-        else setNote(`Verified ${ver.deepChecked ?? 0} candidates.${dl}${more}`)
+        const dl = dropLine(data.drops)
+        setNote(paging
+          ? `No more MVP-approved campaigns in this batch.${dl}${data.hasMore ? ' Scan again to dig deeper.' : ' That’s the full catalog for this search.'}`
+          : `No campaigns cleared MVP’s bar for “${focus}” in this batch.${dl} Try Wide mode, a broader keyword, or scan again.`)
         return
       }
-      // Catalog returned nothing new — either exhausted (paging) or unavailable.
-      if (paging && data?.ok) { setHasMore(false); setNote('That’s every MVP-approved campaign in the catalog for this search.'); return }
     } catch { /* fall through to the live scan */ }
 
     // Fallback: live SCOUT grid scan (catalog not loaded yet).

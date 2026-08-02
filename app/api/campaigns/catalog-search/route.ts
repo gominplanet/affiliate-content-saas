@@ -12,9 +12,21 @@
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { campaignRules, passesGates, scoreMatch, type CampaignRuleMode, type SmartScanMatch } from '@/lib/cc-smart-rules'
 import { type Tier } from '@/lib/tier'
 import { ccAccessOk } from '@/lib/cc-access'
+import { fetchKeepaProductCard, fetchKeepaTokenStatus, keepaConfigured } from '@/services/keepa'
+
+export const maxDuration = 60
+
+// On-demand enrichment: when a scan surfaces campaigns the catalog hasn't
+// enriched yet, fetch their price/sales/rating from Keepa right here (seconds,
+// no SCOUT tabs) so the scan is instant AND every future scan of that niche is
+// already warm. Bounded per scan + gated by a token floor so it never starves
+// Deal Radar (shared operator key).
+const ONDEMAND_ENRICH_CAP = 12   // products fetched per scan (~2 Keepa tokens each)
+const KEEPA_TOKEN_FLOOR = 300    // never spend the pool below this
 
 export const dynamic = 'force-dynamic'
 
@@ -104,6 +116,50 @@ export async function GET(request: Request) {
       if (picked.length >= limit) break
     }
   }
+  // ── On-demand enrichment ──────────────────────────────────────────────────
+  // Fetch Keepa signals for the picked campaigns the catalog hasn't enriched yet,
+  // so this scan can vet them server-side (no SCOUT tabs). Writes back to the
+  // shared catalog (by rep_asin) so it warms every sibling campaign + future scan.
+  const needEnrich = picked.filter(r => (r.product_verified_at == null || r.price_now_cents == null) && (r.rep_asin || r.asins[0]))
+  if (keepaConfigured() && needEnrich.length) {
+    let budget = 0
+    try { budget = (await fetchKeepaTokenStatus()).tokensLeft ?? 0 } catch { budget = 0 }
+    // Spend only what keeps the pool above the floor (≈2 tokens/product).
+    const canDo = Math.min(ONDEMAND_ENRICH_CAP, needEnrich.length, Math.max(0, Math.floor((budget - KEEPA_TOKEN_FLOOR) / 2)))
+    if (canDo > 0) {
+      const admin = createAdminClient()
+      const nowIso = new Date().toISOString()
+      await Promise.all(needEnrich.slice(0, canDo).map(async r => {
+        const asin = (r.rep_asin || r.asins[0] || '').toUpperCase()
+        if (!asin) return
+        try {
+          const card = await fetchKeepaProductCard(asin)
+          // Patch the in-memory row so the vetting below sees the fresh signals.
+          r.product_verified_at = nowIso
+          if (card.priceNowCents != null) r.price_now_cents = card.priceNowCents
+          if (card.rating != null) r.rating = card.rating
+          if (card.reviewCount != null) r.review_count = card.reviewCount
+          if (card.monthlySold != null) r.monthly_sold = card.monthlySold
+          if (Number.isFinite(card.videoCount)) r.video_count = card.videoCount
+          if (card.imageUrl) r.image_url = card.imageUrl
+          // Persist (best-effort) so future scans are instant. Admin write —
+          // the catalog is service-role-only, same as the enrich cron.
+          const patch: Record<string, unknown> = { product_verified_at: nowIso }
+          if (card.imageUrl) patch.image_url = card.imageUrl
+          if (card.priceNowCents != null) patch.price_now_cents = card.priceNowCents
+          if (card.priceWasCents != null) patch.price_was_cents = card.priceWasCents
+          if (card.discountPct != null) patch.discount_pct = card.discountPct
+          if (card.rating != null) patch.rating = card.rating
+          if (card.reviewCount != null) patch.review_count = card.reviewCount
+          if (card.monthlySold != null) patch.monthly_sold = card.monthlySold
+          if (Number.isFinite(card.videoCount)) patch.video_count = card.videoCount
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          await (admin as any).from('cc_campaign_catalog').update(patch).eq('rep_asin', asin)
+        } catch { /* skip this product; it just won't be vetted this scan */ }
+      }))
+    }
+  }
+
   const daysLeftOf = (endsAt: string): number | null => {
     try { return Math.max(0, Math.ceil((new Date(endsAt).getTime() - Date.now()) / 86400000)) } catch { return null }
   }
