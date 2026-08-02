@@ -68,7 +68,7 @@ export async function GET(request: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let query = (supabase as any)
     .from('cc_campaign_catalog')
-    .select('campaign_id, campaign_name, brand_name, asins, commission_pct, ends_at, available_slot, total_slot, rep_asin, image_url, price_now_cents, rating, review_count, monthly_sold, video_count, product_verified_at')
+    .select('campaign_id, campaign_name, brand_name, asins, commission_pct, ends_at, available_slot, total_slot, rep_asin, image_url, price_now_cents, rating, review_count, monthly_sold, video_count, product_verified_at, priced_v2')
     .gte('commission_pct', RULES.minCommissionPct)  // ≥ active-mode floor
     .gte('ends_at', runwayCutoff)                    // still running ≥ minDaysLeft
     .order('commission_pct', { ascending: false })
@@ -91,7 +91,7 @@ export async function GET(request: Request) {
     // Enriched product signals (paced enrich-cc-catalog cron). Null until verified.
     rep_asin: string | null; image_url: string | null; price_now_cents: number | null
     rating: number | null; review_count: number | null; monthly_sold: number | null
-    video_count: number | null; product_verified_at: string | null
+    video_count: number | null; product_verified_at: string | null; priced_v2: boolean | null
   }
   const rows = (data ?? []) as Row[]
   const hitsAvoid = (r: Row) => {
@@ -120,7 +120,10 @@ export async function GET(request: Request) {
   // Fetch Keepa signals for the picked campaigns the catalog hasn't enriched yet,
   // so this scan can vet them server-side (no SCOUT tabs). Writes back to the
   // shared catalog (by rep_asin) so it warms every sibling campaign + future scan.
-  const needEnrich = picked.filter(r => (r.product_verified_at == null || r.price_now_cents == null) && (r.rep_asin || r.asins[0]))
+  // Refresh a row if it's never been enriched, has no price, OR was priced with
+  // the OLD model (priced_v2 false) — the last case is how stale pre-Buy-Box
+  // rows self-heal the moment they show up in a scan.
+  const needEnrich = picked.filter(r => (r.product_verified_at == null || r.price_now_cents == null || !r.priced_v2) && (r.rep_asin || r.asins[0]))
   if (keepaConfigured() && needEnrich.length) {
     let budget = 0
     try { budget = (await fetchKeepaTokenStatus()).tokensLeft ?? 0 } catch { budget = 0 }
@@ -136,6 +139,7 @@ export async function GET(request: Request) {
           const card = await fetchKeepaProductCard(asin)
           // Patch the in-memory row so the vetting below sees the fresh signals.
           r.product_verified_at = nowIso
+          r.priced_v2 = true // priced with the Buy Box model now
           if (card.priceNowCents != null) r.price_now_cents = card.priceNowCents
           if (card.rating != null) r.rating = card.rating
           if (card.reviewCount != null) r.review_count = card.reviewCount
@@ -144,7 +148,7 @@ export async function GET(request: Request) {
           if (card.imageUrl) r.image_url = card.imageUrl
           // Persist (best-effort) so future scans are instant. Admin write —
           // the catalog is service-role-only, same as the enrich cron.
-          const patch: Record<string, unknown> = { product_verified_at: nowIso }
+          const patch: Record<string, unknown> = { product_verified_at: nowIso, priced_v2: true }
           if (card.imageUrl) patch.image_url = card.imageUrl
           if (card.priceNowCents != null) patch.price_now_cents = card.priceNowCents
           if (card.priceWasCents != null) patch.price_was_cents = card.priceWasCents
