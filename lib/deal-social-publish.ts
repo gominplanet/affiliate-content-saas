@@ -71,10 +71,16 @@ export async function publishDealToSocials(opts: PublishOpts): Promise<PlatformR
   // when we built one, else the shared tagged fallback.
   const linkFor = (p: QuickPostPlatform) => opts.links?.[p] || opts.link
 
-  const { data: intRaw } = await supabase
+  // Read the FULL row, not an explicit column list: if any named column is
+  // absent from the live schema, Postgres rejects the whole SELECT, intRaw comes
+  // back null, and every platform that reads from it throws "not connected" even
+  // though the tokens are there. '*' can't hit that. Surface a real read error
+  // instead of silently degrading to "not connected".
+  const { data: intRaw, error: intErr } = await supabase
     .from('integrations')
-    .select('twitter_access_token,twitter_refresh_token,twitter_expires_at,facebook_page_id,facebook_page_access_token,facebook_page_name,threads_access_token,threads_user_id,linkedin_access_token,linkedin_person_id,telegram_bot_token,telegram_channel_id,bluesky_handle,bluesky_app_password')
+    .select('*')
     .eq('user_id', userId).maybeSingle()
+  if (intErr) console.error('[deal-social-publish] integrations read failed:', intErr.message)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const ig = decryptIntegrationRow(intRaw as any) || {}
   const img = deal.imageUrl || null
