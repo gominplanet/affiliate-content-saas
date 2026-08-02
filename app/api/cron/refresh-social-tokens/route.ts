@@ -23,7 +23,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { maybeDecrypt } from '@/lib/secrets'
+import { maybeDecrypt, maybeEncrypt } from '@/lib/secrets'
 import { encryptIntegrationWrite } from '@/lib/integration-secrets'
 import { refreshThreadsToken } from '@/services/threads'
 import { refreshLongLivedToken as refreshInstagramToken } from '@/services/instagram'
@@ -64,6 +64,7 @@ export async function GET(request: Request) {
     threads: { refreshed: 0, skipped: 0, failed: 0 },
     instagram: { refreshed: 0, skipped: 0, failed: 0 },
     pinterest: { refreshed: 0, skipped: 0, failed: 0 },
+    social_accounts: { refreshed: 0, skipped: 0, failed: 0 },
   }
 
   for (const row of rows) {
@@ -123,6 +124,47 @@ export async function GET(request: Request) {
       } catch {
         tally.pinterest.failed++
       }
+    }
+  }
+
+  // ── social_accounts (the multi-account table) ──────────────────────────────
+  // Instagram/Threads (and Facebook) connections live here, NOT in the legacy
+  // integrations columns above — and nothing was refreshing them, so their 60-day
+  // Meta tokens quietly aged out and forced creators to reconnect. Refresh the
+  // Meta long-lived tokens here the same way (they self-refresh from the token
+  // itself; no separate refresh_token needed). token_expiry lives in `extra`.
+  const META_REFRESH_WINDOW_MS = 20 * 24 * 60 * 60 * 1000 // refresh once inside 20d of expiry
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: saData } = await (admin as any)
+    .from('social_accounts')
+    .select('id,platform,access_token,extra')
+    .in('platform', ['instagram', 'threads'])
+    .not('access_token', 'is', null)
+    .limit(5000)
+
+  for (const acc of (saData ?? []) as Array<{ id: string; platform: string; access_token: string | null; extra: Record<string, unknown> | null }>) {
+    const tok = maybeDecrypt(acc.access_token)
+    if (!tok) { tally.social_accounts.skipped++; continue }
+    const extra = (acc.extra && typeof acc.extra === 'object') ? acc.extra : {}
+    const exp = Number((extra as { token_expiry?: number }).token_expiry || 0)
+    // Only refresh when nearing expiry (a Meta token must be >24h old to refresh;
+    // this window keeps us clear of that and avoids needless daily churn). Unknown
+    // expiry → refresh, so pre-existing rows that never stored one get healed once.
+    if (exp && exp - Date.now() > META_REFRESH_WINDOW_MS) { tally.social_accounts.skipped++; continue }
+    try {
+      const r = acc.platform === 'threads' ? await refreshThreadsToken(tok) : await refreshInstagramToken(tok)
+      await admin.from('social_accounts')
+        .update({ access_token: maybeEncrypt(r.accessToken), extra: { ...extra, token_expiry: r.expiresAt } })
+        .eq('id', acc.id)
+      tally.social_accounts.refreshed++
+    } catch (e) {
+      // <24h-old or revoked token — leave the row untouched (never wipe a token
+      // that might still work); log so a permanently-dead one is visible.
+      console.error('[cron/refresh-social-tokens] social_accounts refresh failed', {
+        id: acc.id, platform: acc.platform,
+        error: e instanceof Error ? e.message : String(e),
+      })
+      tally.social_accounts.failed++
     }
   }
 
