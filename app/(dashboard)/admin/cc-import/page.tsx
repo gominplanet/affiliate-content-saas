@@ -10,7 +10,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import PageHero from '@/components/layout/PageHero'
-import { Loader2, RefreshCw, Database, ArrowRight, CheckCircle2, AlertTriangle } from 'lucide-react'
+import { Loader2, RefreshCw, Database, ArrowRight, CheckCircle2, AlertTriangle, Tag } from 'lucide-react'
 import { toast } from 'sonner'
 import CcCatalogUploader from '@/components/admin/CcCatalogUploader'
 
@@ -24,6 +24,13 @@ export default function AdminCcImportPage() {
   const [remaining, setRemaining] = useState<number | null>(null)
   const [result, setResult] = useState<{ upserted: number; purged: number; staged: number } | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const [reverifying, setReverifying] = useState(false)
+  const [reverifyQueued, setReverifyQueued] = useState<number | null>(null)
+  const [reverifyDone, setReverifyDone] = useState(false)
+  const [probeQ, setProbeQ] = useState('solar')
+  const [probing, setProbing] = useState(false)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [probeRows, setProbeRows] = useState<any[] | null>(null)
 
   const loadCounts = useCallback(async () => {
     setLoading(true); setErr(null)
@@ -78,6 +85,50 @@ export default function AdminCcImportPage() {
       setErr(msg); toast.error(msg)
     } finally { setMerging(false) }
   }, [merging, loadCounts])
+
+  const reverify = useCallback(async () => {
+    if (reverifying) return
+    if (!window.confirm('Requeue every LIVE catalog product for price re-verification?\n\nThis clears their "last checked" stamp (not the data) so the enrich cron re-prices them with the corrected Buy Box logic over the next runs. It spends no Keepa tokens now; the re-pricing rides the cron’s normal paced budget.')) return
+    setReverifying(true); setReverifyDone(false); setReverifyQueued(null); setErr(null)
+    let before: string | undefined
+    let total = 0
+    try {
+      for (let guard = 0; guard < 400; guard++) {
+        const r = await fetch('/api/admin/reverify-cc-prices', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ before }),
+        })
+        const d = await r.json()
+        if (!r.ok) throw new Error(d.detail ? `${d.error || 'Re-verify failed'} — ${d.detail}` : (d.error || 'Re-verify failed'))
+        before = d.before
+        total += Number(d.queued ?? 0)
+        setReverifyQueued(total)
+        if (d.done) {
+          setReverifyDone(true)
+          toast.success(`Requeued ${total.toLocaleString()} products for re-pricing`)
+          void loadCounts()
+          return
+        }
+      }
+      throw new Error('Re-verify is taking unusually long — click again to continue.')
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Re-verify failed'
+      setErr(msg); toast.error(msg)
+    } finally { setReverifying(false) }
+  }, [reverifying, loadCounts])
+
+  const probe = useCallback(async () => {
+    if (probing) return
+    setProbing(true); setProbeRows(null); setErr(null)
+    try {
+      const r = await fetch(`/api/admin/keepa-price-probe?q=${encodeURIComponent(probeQ.trim())}`)
+      const d = await r.json()
+      if (!r.ok) throw new Error(d.error || 'Probe failed')
+      setProbeRows(d.results || [])
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Probe failed'
+      setErr(msg); toast.error(msg)
+    } finally { setProbing(false) }
+  }, [probing, probeQ])
 
   // While counts are still loading, show a dash, never a bare "0" — a transient
   // zero on the Live Catalog card reads like the whole shared catalog was wiped
@@ -181,6 +232,96 @@ export default function AdminCcImportPage() {
           </p>
         </div>
       )}
+
+      {/* Re-verify prices — requeue live rows so the cron re-prices them with the
+          Buy Box logic. Separate from the weekly merge; safe to run any time. */}
+      <div className="card p-5 mb-5">
+        <div className="flex items-center gap-2 mb-1.5" style={{ color: '#0a84ff' }}>
+          <Tag size={16} />
+          <span className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-faint)' }}>Re-verify prices</span>
+        </div>
+        <p className="text-[13px] mb-3" style={{ color: 'var(--text-soft)' }}>
+          Requeue every live product so the background cron re-prices it using the corrected Buy Box price (the real add-to-cart amount, not the cheapest 3rd-party offer). This only clears the &ldquo;last checked&rdquo; stamp : the existing image/price/rating stay put until each row refreshes, and no Keepa tokens are spent now. Re-pricing runs on the cron&rsquo;s normal paced budget over the next runs.
+        </p>
+        <div className="flex items-center gap-3 flex-wrap">
+          <button
+            onClick={() => reverify()}
+            disabled={reverifying || loading || merging}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-semibold text-white disabled:opacity-50"
+            style={{ background: '#0a84ff' }}>
+            {reverifying
+              ? <><Loader2 size={15} className="animate-spin" /> Requeuing{reverifyQueued != null ? ` — ${reverifyQueued.toLocaleString()}` : '…'}</>
+              : <><Tag size={15} /> Re-verify all live prices</>}
+          </button>
+          {reverifyDone && reverifyQueued != null && (
+            <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold" style={{ color: '#1f8a3a' }}>
+              <CheckCircle2 size={15} /> Requeued {reverifyQueued.toLocaleString()} products. The cron will re-price them over the next runs.
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Price probe — read-only diagnostic: stored price vs live raw Keepa
+          fields (Amazon / New / Buy Box) for a keyword's top catalog rows. */}
+      <div className="card p-5 mb-5">
+        <div className="flex items-center gap-2 mb-1.5" style={{ color: '#f59e0b' }}>
+          <AlertTriangle size={16} />
+          <span className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-faint)' }}>Price probe (diagnostic)</span>
+        </div>
+        <p className="text-[13px] mb-3" style={{ color: 'var(--text-soft)' }}>
+          Type a keyword to see, for the top catalog rows, what price is <b>stored</b> vs what Keepa returns live for Amazon / New / Buy Box. This is how we tell if a wrong price is stale, a missing Buy Box, or the wrong ASIN.
+        </p>
+        <div className="flex items-center gap-2 mb-3 flex-wrap">
+          <input value={probeQ} onChange={e => setProbeQ(e.target.value)} placeholder="e.g. solar"
+            className="h-9 text-[13px] rounded-lg border bg-white dark:bg-[#1c1c1e] px-3 min-w-0"
+            style={{ borderColor: 'var(--border)', color: 'var(--text)' }} />
+          <button onClick={() => probe()} disabled={probing || !probeQ.trim()}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-semibold text-white disabled:opacity-50"
+            style={{ background: '#f59e0b' }}>
+            {probing ? <><Loader2 size={15} className="animate-spin" /> Probing…</> : 'Probe prices'}
+          </button>
+        </div>
+        {probeRows && probeRows.length > 0 && (
+          <div className="overflow-x-auto">
+            <table className="w-full text-[12px]" style={{ color: 'var(--text-soft)' }}>
+              <thead>
+                <tr style={{ color: 'var(--text-faint)' }} className="text-left">
+                  <th className="py-1.5 pr-3 font-semibold">Campaign</th>
+                  <th className="py-1.5 pr-3 font-semibold">rep ASIN</th>
+                  <th className="py-1.5 pr-3 font-semibold">Stored</th>
+                  <th className="py-1.5 pr-3 font-semibold">Amazon</th>
+                  <th className="py-1.5 pr-3 font-semibold">New</th>
+                  <th className="py-1.5 pr-3 font-semibold">Buy Box</th>
+                  <th className="py-1.5 pr-3 font-semibold">BB field</th>
+                  <th className="py-1.5 pr-3 font-semibold">Verified</th>
+                </tr>
+              </thead>
+              <tbody>
+                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                {probeRows.map((r: any, i: number) => {
+                  const usd = (c: number | null | undefined) => (c == null ? '—' : `$${(c / 100).toFixed(2)}`)
+                  const k = r.keepa || {}
+                  return (
+                    <tr key={i} style={{ borderTop: '1px solid var(--border)' }}>
+                      <td className="py-1.5 pr-3" style={{ color: 'var(--text)' }}>{r.campaignName}{r.brand ? ` · ${r.brand}` : ''}</td>
+                      <td className="py-1.5 pr-3 font-mono">{r.asinPriced || '—'}</td>
+                      <td className="py-1.5 pr-3 font-semibold" style={{ color: 'var(--text)' }}>{usd(r.storedCents)}</td>
+                      <td className="py-1.5 pr-3">{usd(k.amazonCents)}</td>
+                      <td className="py-1.5 pr-3">{usd(k.newCents)}</td>
+                      <td className="py-1.5 pr-3 font-semibold" style={{ color: '#0a84ff' }}>{usd(k.buyBoxCurrentCents)}</td>
+                      <td className="py-1.5 pr-3">{usd(k.buyBoxPriceField)}</td>
+                      <td className="py-1.5 pr-3">{r.verifiedAt ? String(r.verifiedAt).slice(0, 10) : '—'}{r.error ? ` · ${r.error}` : ''}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {probeRows && probeRows.length === 0 && (
+          <p className="text-[12px]" style={{ color: 'var(--text-faint)' }}>No catalog rows matched that keyword.</p>
+        )}
+      </div>
 
       {err && <div className="text-[13px] mb-5" style={{ color: '#ff3b30' }}>{err}</div>}
     </>
