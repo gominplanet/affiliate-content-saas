@@ -1166,7 +1166,7 @@ const VideoCard = memo(function VideoCardImpl({
   }
 
   return (
-    <div className={`card p-4 flex gap-4 items-start ${hidden ? 'opacity-60' : ''}`}>
+    <div className={`card p-4 flex gap-4 items-start transition-shadow hover:shadow-md ${hidden ? 'opacity-60' : ''}`}>
       {(thumb || (!post && video.is_vertical !== true)) && (
         <div className="w-28 flex-shrink-0 flex flex-col items-center gap-1.5">
           {thumb && (
@@ -1338,6 +1338,8 @@ const VideoCard = memo(function VideoCardImpl({
                 actions (Generate, Rewrite, Edit in WP, Delete the WP post)
                 don't apply when there's no blog post in this flow. */}
           {video.is_vertical !== true && (
+          <div className="pt-3 mt-1 border-t border-black/[0.06] dark:border-white/[0.07]">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#86868b] dark:text-[#8e8e93] mb-2">Post settings &amp; tools</p>
           <div className="flex items-center gap-x-4 gap-y-1.5 flex-wrap">
             <GenerateButton videoId={id} youtubeVideoId={(video.youtube_video_id as string) || undefined} existingPost={post} userTier={userTier} blogImagePref={blogImagePref} siteId={siteId} includeImages={includeImages} onIncludeImagesChange={setIncludeImages} onDone={(url, t, pid) => onGenerated(id, url, t, pid)} />
             {/* Optional custom blog hero (else the YT thumbnail is the hero).
@@ -1370,6 +1372,7 @@ const VideoCard = memo(function VideoCardImpl({
                 </button>
               </>
             )}
+          </div>
           </div>
           )}
 
@@ -1445,8 +1448,8 @@ const VideoCard = memo(function VideoCardImpl({
           {/* Original horizontal pill block — only renders when not vertical
               AND a post exists AND at least one social is connected. */}
           {video.is_vertical !== true && post && (fbConnected || pinterestConnected || threadsConnected || linkedInConnected || twitterConnected || blueskyConnected || telegramConnected) && (
-            <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-[#86868b] dark:text-[#8e8e93] mr-1">Publish to</span>
+            <div className="flex items-center gap-1.5 flex-wrap pt-3 mt-1 border-t border-black/[0.06] dark:border-white/[0.07]">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-[#86868b] dark:text-[#8e8e93] mr-1 w-full">Publish to</span>
               {fbConnected && (
                 <SocialPill
                   brand="#1877F2"
