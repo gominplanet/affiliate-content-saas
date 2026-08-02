@@ -189,6 +189,31 @@ export default function SmartScanPanel({
       // skipped between scans.
       const r = await fetch(`/api/campaigns/catalog-search?q=${encodeURIComponent(focus)}&limit=25&mode=${ruleMode}&offset=${scanOffset}`)
       const data = await r.json().catch(() => ({}))
+      // FAST PATH — campaigns the catalog already enriched are vetted + scored
+      // server-side, so we render them instantly with NO SCOUT / no Amazon tabs.
+      if (data?.ok && Array.isArray(data.matches) && data.matches.length) {
+        usedCatalog = true
+        const freshMatches = (data.matches as ScoredMatch[]).filter(m => {
+          const a = (m.asin || '').toUpperCase()
+          return a && !covered.has(a) && !alreadyShown.has(a) && !savedAsins.has(a)
+        })
+        setSkippedCovered(prev => prev + (data.matches.length - freshMatches.length))
+        cacheResolvedLinks(freshMatches); cacheProductSignals(freshMatches)
+        setMatches(prev => {
+          const merged = paging ? [...(prev ?? []), ...freshMatches] : freshMatches
+          const seen = new Set<string>()
+          return merged
+            .filter(m => { const k = (m.asin || m.campaignName || '').toUpperCase(); if (seen.has(k)) return false; seen.add(k); return true })
+            .sort((a, b) => b.score - a.score)
+        })
+        setScanOffset(typeof data.nextOffset === 'number' ? data.nextOffset : scanOffset + 75)
+        setHasMore(!!data.hasMore)
+        setProgress(null)
+        const dl = dropLine(data.drops)
+        const more = data.hasMore ? ' Scan again for more — the catalog digs deeper each time.' : ' That’s the full catalog for this search.'
+        setNote(`Found ${freshMatches.length} MVP-approved campaign${freshMatches.length === 1 ? '' : 's'} from the catalog, instantly.${dl}${more}`)
+        return
+      }
       if (data?.ok && Array.isArray(data.candidates) && data.candidates.length) {
         usedCatalog = true
         setProgress(`SCOUT is live-verifying ${data.candidates.length} campaigns from the catalog on Amazon…`)
