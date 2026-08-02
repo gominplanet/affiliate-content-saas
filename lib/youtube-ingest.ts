@@ -154,9 +154,12 @@ async function renderShortReq(
     if (!res.ok) {
       let body = ''
       try { body = (await res.text()).slice(0, 200) } catch { /* ignore */ }
-      // A YouTube fetch that 4xx/5xx is almost always YouTube blocking the
-      // server-side download (bot check / sign-in wall), not our bug.
-      setIngestError(fromYouTube && res.status >= 400
+      // Only call it a YouTube block when the body actually looks like one (bot
+      // check / sign-in wall / 403). Other failures (e.g. the render step running
+      // out of memory and getting SIGKILL'd) were being mislabelled as a YouTube
+      // block, which sent users down the wrong path — surface the real reason.
+      const looksBlocked = /confirm you|not a bot|sign in|403|429|consent|login/i.test(body)
+      setIngestError(fromYouTube && looksBlocked
         ? `YouTube blocked the automatic download (${res.status})`
         : `render service ${res.status}${body ? `: ${body}` : ''}`)
       return null

@@ -420,6 +420,10 @@ function ffmpegRender(input, startSec, dur, vf, outPath) {
       '-ss', String(startSec), '-i', input, '-t', String(dur),
       '-vf', vf,
       '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p',
+      // Keep the encoder's memory footprint small so a low-RAM container (Railway)
+      // doesn't OOM-kill ffmpeg mid-render: no B-frames, single ref frame, and no
+      // lookahead buffers. Negligible quality hit for a short clip.
+      '-x264-params', 'bframes=0:ref=1:rc-lookahead=10:sync-lookahead=0',
       '-c:a', 'aac', '-movflags', '+faststart', '-y', outPath,
     ], { maxBuffer: 1024 * 1024 * 64 }, (err, _so, se) => {
       if (err) reject(new Error('ffmpeg: ' + (((se && se.trim()) || err.message || 'failed') + (err.signal ? ` [signal ${err.signal}]` : '')).slice(0, 400)))
@@ -499,7 +503,15 @@ app.post('/render-short', async (req, res) => {
     if (!fs.existsSync(srcTmp)) throw new Error('source download produced no file')
     const withCaptions = words.length > 0
     if (withCaptions) fs.writeFileSync(assTmp, buildAss(words))
-    const reframe = 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920'
+    // Output at 720x1280 (9:16). The source is already capped at ≤720p, so this
+    // avoids a wasteful upscale to 1080 — and, critically, halves the pixels the
+    // x264 encoder has to buffer, which is what was OOM-killing ffmpeg on
+    // Railway's small container. libass scales the 1080-designed captions down to
+    // fit automatically (they're positioned via PlayResX/Y), so they look
+    // identical, just at 720p. Override with RENDER_HEIGHT if you have more RAM.
+    const H = Math.max(640, Math.min(1920, Number(process.env.RENDER_HEIGHT || 1280)))
+    const W = Math.round(H * 9 / 16 / 2) * 2 // keep 9:16, even width for yuv420p
+    const reframe = `scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}`
     const vf = withCaptions ? `${reframe},ass=${assTmp}` : reframe
     await ffmpegRender(srcTmp, renderStart, dur, vf, outTmp)
     if (!fs.existsSync(outTmp)) throw new Error('render produced no file')
@@ -517,7 +529,7 @@ app.post('/render-short', async (req, res) => {
 // BUILD marker: bump this string when the service code changes so the Railway
 // deploy logs unambiguously show which build is actually running (Railway can
 // re-run an older commit).
-const BUILD = 'cookies-gzip-multipart-2026-08-02'
+const BUILD = 'render-720p-lowmem-2026-08-02'
 loadCookies().finally(() => {
   app.listen(PORT, () => console.log(`ingest-service listening on :${PORT} [build ${BUILD}]`))
 })
