@@ -41,8 +41,15 @@ export async function POST(request: Request) {
     let after = typeof body.after === 'string' ? body.after : ''
 
     const admin = createAdminClient()
-    const BATCH = 5000
-    const deadline = Date.now() + 40_000
+    // Small page on purpose: product_verified_at is indexed, so nulling it is a
+    // non-HOT update that re-inserts each row into the search_vec + asins GIN
+    // indexes. GIN inserts are slow, so a big batch (5000) blows the DB
+    // statement timeout — and SET LOCAL statement_timeout doesn't override it
+    // under the API role. 400 rows/statement stays comfortably under the limit;
+    // the server loops many pages per call and the client auto-resumes, so the
+    // whole sweep still finishes, just in more, smaller steps.
+    const BATCH = 400
+    const deadline = Date.now() + 45_000
     let queued = 0
     let scanned = BATCH
     while (scanned >= BATCH && Date.now() < deadline) {
