@@ -10,7 +10,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import PageHero from '@/components/layout/PageHero'
-import { Loader2, RefreshCw, Database, ArrowRight, CheckCircle2, AlertTriangle } from 'lucide-react'
+import { Loader2, RefreshCw, Database, ArrowRight, CheckCircle2, AlertTriangle, Tag } from 'lucide-react'
 import { toast } from 'sonner'
 import CcCatalogUploader from '@/components/admin/CcCatalogUploader'
 
@@ -24,6 +24,9 @@ export default function AdminCcImportPage() {
   const [remaining, setRemaining] = useState<number | null>(null)
   const [result, setResult] = useState<{ upserted: number; purged: number; staged: number } | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const [reverifying, setReverifying] = useState(false)
+  const [reverifyQueued, setReverifyQueued] = useState<number | null>(null)
+  const [reverifyDone, setReverifyDone] = useState(false)
 
   const loadCounts = useCallback(async () => {
     setLoading(true); setErr(null)
@@ -78,6 +81,36 @@ export default function AdminCcImportPage() {
       setErr(msg); toast.error(msg)
     } finally { setMerging(false) }
   }, [merging, loadCounts])
+
+  const reverify = useCallback(async () => {
+    if (reverifying) return
+    if (!window.confirm('Requeue every LIVE catalog product for price re-verification?\n\nThis clears their "last checked" stamp (not the data) so the enrich cron re-prices them with the corrected Buy Box logic over the next runs. It spends no Keepa tokens now; the re-pricing rides the cron’s normal paced budget.')) return
+    setReverifying(true); setReverifyDone(false); setReverifyQueued(null); setErr(null)
+    let before: string | undefined
+    let total = 0
+    try {
+      for (let guard = 0; guard < 400; guard++) {
+        const r = await fetch('/api/admin/reverify-cc-prices', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ before }),
+        })
+        const d = await r.json()
+        if (!r.ok) throw new Error(d.detail ? `${d.error || 'Re-verify failed'} — ${d.detail}` : (d.error || 'Re-verify failed'))
+        before = d.before
+        total += Number(d.queued ?? 0)
+        setReverifyQueued(total)
+        if (d.done) {
+          setReverifyDone(true)
+          toast.success(`Requeued ${total.toLocaleString()} products for re-pricing`)
+          void loadCounts()
+          return
+        }
+      }
+      throw new Error('Re-verify is taking unusually long — click again to continue.')
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Re-verify failed'
+      setErr(msg); toast.error(msg)
+    } finally { setReverifying(false) }
+  }, [reverifying, loadCounts])
 
   // While counts are still loading, show a dash, never a bare "0" — a transient
   // zero on the Live Catalog card reads like the whole shared catalog was wiped
@@ -181,6 +214,34 @@ export default function AdminCcImportPage() {
           </p>
         </div>
       )}
+
+      {/* Re-verify prices — requeue live rows so the cron re-prices them with the
+          Buy Box logic. Separate from the weekly merge; safe to run any time. */}
+      <div className="card p-5 mb-5">
+        <div className="flex items-center gap-2 mb-1.5" style={{ color: '#0a84ff' }}>
+          <Tag size={16} />
+          <span className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-faint)' }}>Re-verify prices</span>
+        </div>
+        <p className="text-[13px] mb-3" style={{ color: 'var(--text-soft)' }}>
+          Requeue every live product so the background cron re-prices it using the corrected Buy Box price (the real add-to-cart amount, not the cheapest 3rd-party offer). This only clears the &ldquo;last checked&rdquo; stamp : the existing image/price/rating stay put until each row refreshes, and no Keepa tokens are spent now. Re-pricing runs on the cron&rsquo;s normal paced budget over the next runs.
+        </p>
+        <div className="flex items-center gap-3 flex-wrap">
+          <button
+            onClick={() => reverify()}
+            disabled={reverifying || loading || merging}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-semibold text-white disabled:opacity-50"
+            style={{ background: '#0a84ff' }}>
+            {reverifying
+              ? <><Loader2 size={15} className="animate-spin" /> Requeuing{reverifyQueued != null ? ` — ${reverifyQueued.toLocaleString()}` : '…'}</>
+              : <><Tag size={15} /> Re-verify all live prices</>}
+          </button>
+          {reverifyDone && reverifyQueued != null && (
+            <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold" style={{ color: '#1f8a3a' }}>
+              <CheckCircle2 size={15} /> Requeued {reverifyQueued.toLocaleString()} products. The cron will re-price them over the next runs.
+            </span>
+          )}
+        </div>
+      </div>
 
       {err && <div className="text-[13px] mb-5" style={{ color: '#ff3b30' }}>{err}</div>}
     </>
