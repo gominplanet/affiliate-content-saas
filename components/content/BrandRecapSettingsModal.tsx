@@ -58,7 +58,7 @@ export default function BrandRecapSettingsModal({ onClose }: { onClose: () => vo
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
-      <div className="card w-full max-w-lg max-h-[88vh] overflow-y-auto p-5" style={{ background: 'var(--surface, #fff)' }} onClick={e => e.stopPropagation()}>
+      <div className="card w-full max-w-lg max-h-[88vh] overflow-y-auto p-5 bg-white dark:bg-[#18181b]" onClick={e => e.stopPropagation()}>
         <div className="flex items-start justify-between mb-3">
           <div>
             <h3 className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Brand message settings</h3>
