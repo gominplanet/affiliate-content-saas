@@ -47,7 +47,13 @@ export default function ConnectYouTubePage() {
     const ok = sp.get('youtube_oauth_connected')
     const err = sp.get('youtube_error')
     if (!ok && !err) return
-    if (ok) { toast.success('YouTube connected.'); void load() }
+    if (ok) {
+      // Show WHICH channel connected so a wrong pick (Brand Account mixup) is
+      // obvious right away instead of only surfacing as a 403 at publish time.
+      const ch = sp.get('yt_ch')
+      toast.success(ch ? `Connected: ${ch}. If that isn’t the channel your videos are on, disconnect and reconnect, picking the right one.` : 'YouTube connected.', { duration: ch ? 9000 : 4000 })
+      void load()
+    }
     else if (err) {
       const decoded = decodeURIComponent(err)
       if (decoded === 'multi_channel_is_pro') {
@@ -66,6 +72,7 @@ export default function ConnectYouTubePage() {
     const url = new URL(window.location.href)
     url.searchParams.delete('youtube_oauth_connected')
     url.searchParams.delete('youtube_error')
+    url.searchParams.delete('yt_ch')
     window.history.replaceState({}, '', url.pathname)
   }, [load])
 
