@@ -28,6 +28,10 @@ export default function AdminCcImportPage() {
   const [probing, setProbing] = useState(false)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [probeRows, setProbeRows] = useState<any[] | null>(null)
+  const [covQ, setCovQ] = useState('humidifier')
+  const [covLoading, setCovLoading] = useState(false)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [covData, setCovData] = useState<any | null>(null)
 
   const loadCounts = useCallback(async () => {
     setLoading(true); setErr(null)
@@ -96,6 +100,20 @@ export default function AdminCcImportPage() {
       setErr(msg); toast.error(msg)
     } finally { setProbing(false) }
   }, [probing, probeQ])
+
+  const runCoverage = useCallback(async () => {
+    if (covLoading) return
+    setCovLoading(true); setCovData(null); setErr(null)
+    try {
+      const r = await fetch(`/api/admin/catalog-coverage?q=${encodeURIComponent(covQ.trim())}`)
+      const d = await r.json()
+      if (!r.ok) throw new Error(d.error || 'Coverage check failed')
+      setCovData(d)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Coverage check failed'
+      setErr(msg); toast.error(msg)
+    } finally { setCovLoading(false) }
+  }, [covLoading, covQ])
 
   // While counts are still loading, show a dash, never a bare "0" — a transient
   // zero on the Live Catalog card reads like the whole shared catalog was wiped
@@ -276,6 +294,66 @@ export default function AdminCcImportPage() {
         )}
         {probeRows && probeRows.length === 0 && (
           <p className="text-[12px]" style={{ color: 'var(--text-faint)' }}>No catalog rows matched that keyword.</p>
+        )}
+      </div>
+
+      {/* Catalog coverage — why does Amazon CC show 1000+ for a keyword but
+          Browse shows a handful? Data gap vs search-scope gap. */}
+      <div className="card p-5 mb-5">
+        <div className="flex items-center gap-2 mb-1.5" style={{ color: '#0a84ff' }}>
+          <Database size={16} />
+          <span className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-faint)' }}>Catalog coverage (diagnostic)</span>
+        </div>
+        <p className="text-[13px] mb-3" style={{ color: 'var(--text-soft)' }}>
+          For a keyword, how many catalog rows match our name+brand search (what Browse uses) vs a plain name contains-match, plus when they were imported. Tells us if a low count is a <b>stale/partial import</b> or a <b>search-scope</b> gap (Amazon matches the product; we match the campaign name).
+        </p>
+        <div className="flex items-center gap-2 mb-3 flex-wrap">
+          <input value={covQ} onChange={e => setCovQ(e.target.value)} placeholder="e.g. humidifier"
+            className="h-9 text-[13px] rounded-lg border bg-white dark:bg-[#1c1c1e] px-3 min-w-0"
+            style={{ borderColor: 'var(--border)', color: 'var(--text)' }} />
+          <button onClick={() => runCoverage()} disabled={covLoading || !covQ.trim()}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-semibold text-white disabled:opacity-50"
+            style={{ background: '#0a84ff' }}>
+            {covLoading ? <><Loader2 size={15} className="animate-spin" /> Checking…</> : 'Check coverage'}
+          </button>
+        </div>
+        {covData && (
+          <div className="text-[13px] space-y-2" style={{ color: 'var(--text-soft)' }}>
+            <div className="flex flex-wrap gap-x-6 gap-y-1">
+              <span>Catalog total: <b style={{ color: 'var(--text)' }}>{covData.total?.toLocaleString?.() ?? '—'}</b></span>
+              <span>Matches (Browse search): <b style={{ color: '#0a84ff' }}>{covData.ftsCount?.toLocaleString?.() ?? '—'}</b></span>
+              <span>…live only: <b style={{ color: 'var(--text)' }}>{covData.ftsLiveCount?.toLocaleString?.() ?? '—'}</b></span>
+              <span>Name contains &ldquo;{covData.q}&rdquo;: <b style={{ color: 'var(--text)' }}>{covData.nameIlikeCount?.toLocaleString?.() ?? '—'}</b></span>
+              <span>Newest import: <b style={{ color: 'var(--text)' }}>{covData.latestImportedAt ? String(covData.latestImportedAt).slice(0, 10) : '—'}</b></span>
+            </div>
+            {Array.isArray(covData.sample) && covData.sample.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-[12px]" style={{ color: 'var(--text-soft)' }}>
+                  <thead>
+                    <tr style={{ color: 'var(--text-faint)' }} className="text-left">
+                      <th className="py-1 pr-3 font-semibold">Campaign</th>
+                      <th className="py-1 pr-3 font-semibold">Brand</th>
+                      <th className="py-1 pr-3 font-semibold">Imported</th>
+                      <th className="py-1 pr-3 font-semibold">Ends</th>
+                      <th className="py-1 pr-3 font-semibold">Enriched</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                    {covData.sample.map((r: any, i: number) => (
+                      <tr key={i} style={{ borderTop: '1px solid var(--border)' }}>
+                        <td className="py-1 pr-3" style={{ color: 'var(--text)' }}>{r.name}</td>
+                        <td className="py-1 pr-3">{r.brand || '—'}</td>
+                        <td className="py-1 pr-3">{r.importedAt ? String(r.importedAt).slice(0, 10) : '—'}</td>
+                        <td className="py-1 pr-3">{r.endsAt ? String(r.endsAt).slice(0, 10) : '—'}</td>
+                        <td className="py-1 pr-3">{r.enriched ? 'yes' : 'no'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         )}
       </div>
 
