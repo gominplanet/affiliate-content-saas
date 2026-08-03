@@ -147,7 +147,10 @@ export async function POST(request: Request) {
     // call, once every staged row is merged.
     // Short per-call window so the client gets a fresh "N left" countdown every
     // ~40s (it auto-resumes until done), instead of one long silent 4-min call.
-    const BATCH = 2000
+    // Smaller batches (500, was 2000): the upsert touches two GIN indexes
+    // (search_vec + asins) per row, so a big chunk can exceed the DB statement
+    // timeout. 500 stays under it; the client auto-resumes until done.
+    const BATCH = 500
     const deadline = Date.now() + 40_000
     let upserted = 0
     let n = BATCH
@@ -182,19 +185,39 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, done: false, staged: stagedCount ?? undefined, upserted, remaining: remaining ?? null })
     }
 
-    // Everything merged → purge fall-outs and finish.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: purgedData, error: purgeErr } = await (admin as any).rpc('merge_cc_catalog_purge')
-    if (purgeErr) {
-      console.error('[import-cc-catalog purge]', purgeErr.message)
-      return NextResponse.json({ error: toUserMessage(purgeErr, 'Upsert done but the purge failed. Click Merge again.'), upserted }, { status: 500 })
+    // Everything merged → purge fall-outs in CHUNKS (a single anti-join DELETE
+    // over ~800k rows can time out). Loop bounded batches until the deadline;
+    // if there's still more to delete, return done:false so the client resumes
+    // (the upsert is drained, so the next call goes straight back to purging).
+    let purged = 0
+    let pn = BATCH
+    while (Date.now() < deadline) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await (admin as any).rpc('merge_cc_catalog_purge_step', { p_limit: BATCH })
+      if (error) {
+        console.error('[import-cc-catalog purge]', error.message)
+        const missingFn = /could not find the function|does not exist|schema cache|PGRST202/i.test(error.message || '')
+        return NextResponse.json({
+          error: missingFn
+            ? 'The chunked-purge function is missing — run migration 213 in Supabase, then click Merge again.'
+            : toUserMessage(error, 'Upsert done but the purge stalled. Click Merge again to resume.'),
+          detail: error.message?.slice(0, 200), upserted, purgedSoFar: purged,
+        }, { status: 500 })
+      }
+      pn = Number(data ?? 0)
+      purged += pn
+      if (pn < BATCH) break // a short batch means no fall-outs remain
+    }
+    if (pn >= BATCH) {
+      // More to purge; client auto-resumes.
+      return NextResponse.json({ ok: true, done: false, staged: stagedCount ?? undefined, upserted, purging: true, purged })
     }
     return NextResponse.json({
       ok: true,
       done: true,
       staged: stagedCount ?? undefined,
       upserted,
-      purged: Number(purgedData ?? 0),
+      purged,
     })
   } catch (err) {
     console.error('[import-cc-catalog]', err instanceof Error ? err.message : err)
