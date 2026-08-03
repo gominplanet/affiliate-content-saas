@@ -174,19 +174,27 @@ export async function POST(request: Request) {
     const deadline = Date.now() + 40_000
     let upserted = 0
     let n = BATCH
+    let transientStop = false
     while (n >= BATCH && Date.now() < deadline) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data, error } = await (admin as any).rpc('merge_cc_catalog_step', { p_limit: BATCH })
       if (error) {
-        console.error('[import-cc-catalog step]', error.message)
-        // Most common cause: migration 202 (the step/purge functions) not applied.
+        // Migration 202 (the step/purge functions) not applied is the one NON-
+        // resumable cause — surface it so the admin runs the migration.
         const missingFn = /could not find the function|does not exist|schema cache|PGRST202/i.test(error.message || '')
-        return NextResponse.json({
-          error: missingFn
-            ? 'The merge database functions are missing — run migration 202 in Supabase, then click Merge again.'
-            : toUserMessage(error, 'Merge stopped partway. Click Merge again to resume where it left off.'),
-          detail: error.message?.slice(0, 200), upsertedSoFar: upserted,
-        }, { status: 500 })
+        if (missingFn) {
+          return NextResponse.json({
+            error: 'The merge database functions are missing — run migration 202 in Supabase, then click Merge again.',
+            detail: error.message?.slice(0, 200), upsertedSoFar: upserted,
+          }, { status: 500 })
+        }
+        // Anything else (statement/lock/HTTP timeout on a chunk) is RESUMABLE:
+        // the marked-merged rows committed per RPC, so the next call picks up
+        // where this left off. Don't fail the whole import — stop this call and
+        // let the not-drained return below tell the client to auto-resume.
+        console.error('[import-cc-catalog step transient]', error.message)
+        transientStop = true
+        break
       }
       n = Number(data ?? 0)
       upserted += n
@@ -197,7 +205,7 @@ export async function POST(request: Request) {
     // left. Relying on a COUNT here was dangerous — if that count timed out and
     // returned null, the old code treated it as 0 and ran the PURGE before every
     // row had merged, deleting rows that were about to be re-inserted.
-    const drained = n < BATCH
+    const drained = !transientStop && n < BATCH
     if (!drained) {
       // Still more to merge; the client auto-calls again. Report a best-effort
       // remaining for the countdown (null → the client just shows "Merging…").
@@ -211,25 +219,30 @@ export async function POST(request: Request) {
     // (the upsert is drained, so the next call goes straight back to purging).
     let purged = 0
     let pn = PURGE_BATCH
+    let purgeTransient = false
     while (Date.now() < deadline) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data, error } = await (admin as any).rpc('merge_cc_catalog_purge_step', { p_limit: PURGE_BATCH })
       if (error) {
-        console.error('[import-cc-catalog purge]', error.message)
         const missingFn = /could not find the function|does not exist|schema cache|PGRST202/i.test(error.message || '')
-        return NextResponse.json({
-          error: missingFn
-            ? 'The chunked-purge function is missing — run migration 213 in Supabase, then click Merge again.'
-            : toUserMessage(error, 'Upsert done but the purge stalled. Click Merge again to resume.'),
-          detail: error.message?.slice(0, 200), upserted, purgedSoFar: purged,
-        }, { status: 500 })
+        if (missingFn) {
+          return NextResponse.json({
+            error: 'The chunked-purge function is missing — run migration 213 in Supabase, then click Merge again.',
+            detail: error.message?.slice(0, 200), upserted, purgedSoFar: purged,
+          }, { status: 500 })
+        }
+        // Resumable (timeout/lock on a purge chunk) — stop this call and let the
+        // client auto-resume; the next call keeps purging.
+        console.error('[import-cc-catalog purge transient]', error.message)
+        purgeTransient = true
+        break
       }
       pn = Number(data ?? 0)
       purged += pn
       if (pn < PURGE_BATCH) break // a short batch means no fall-outs remain
     }
-    if (pn >= PURGE_BATCH) {
-      // More to purge; client auto-resumes.
+    if (purgeTransient || pn >= PURGE_BATCH) {
+      // More to purge (or a chunk timed out); client auto-resumes.
       return NextResponse.json({ ok: true, done: false, staged: stagedCount ?? undefined, upserted, purging: true, purged })
     }
     // Import finished — let the enrichment cron resume immediately (don't wait
