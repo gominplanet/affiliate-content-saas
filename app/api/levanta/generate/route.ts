@@ -28,7 +28,8 @@ import { buildCampaignHero } from '@/lib/hero-image'
 import { pickProductReferenceImage } from '@/lib/product-image'
 import { scrubBanned } from '@/lib/scrub'
 import { spendGate } from '@/lib/ai-spend'
-import { tierAllowsFinders, type Tier } from '@/lib/tier'
+import { type Tier } from '@/lib/tier'
+import { freeTierGenerationBlock } from '@/lib/free-tier-gate'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -59,8 +60,13 @@ export async function POST(request: NextRequest) {
       .eq('user_id', user.id)
       .maybeSingle()
     const tier = (intRow?.tier as Tier) ?? 'trial'
-    if (!tierAllowsFinders(tier)) {
-      return NextResponse.json({ ok: false, error: 'MVP x Levanta requires a paid plan.' }, { status: 403 })
+    // The Levanta FINDER is open to every tier, but turning a find into a
+    // published post is content generation — so it follows the same rule as all
+    // content: paid tiers pass; Free Trial must have WordPress + YouTube connected
+    // first. (WordPress is also re-checked below, since publishing needs it.)
+    const contentBlock = await freeTierGenerationBlock(supabase, user.id, tier)
+    if (contentBlock) {
+      return NextResponse.json({ ok: false, error: contentBlock }, { status: 403 })
     }
 
     // Monthly AI-spend circuit breaker.
