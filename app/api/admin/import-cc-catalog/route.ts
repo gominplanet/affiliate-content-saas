@@ -90,19 +90,6 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({})) as { confirm?: boolean }
     const admin = createAdminClient()
 
-    // Best-effort EXACT count that never throws and returns null on failure. An
-    // exact COUNT over a 700k–800k row table can hit the statement timeout and
-    // come back null; callers must treat null as "unknown", NEVER as 0.
-    const exactCount = async (table: string, mod?: (q: any) => any): Promise<number | null> => { // eslint-disable-line @typescript-eslint/no-explicit-any
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        let q = (admin as any).from(table).select('campaign_id', { count: 'exact', head: true })
-        if (mod) q = mod(q)
-        const { count, error } = await q
-        return error || count == null ? null : count
-      } catch { return null }
-    }
-
     // Guard 1: refuse to merge an EMPTY staging table (that would purge the whole
     // live catalog). Use a CHEAP existence check (limit 1), not an exact count —
     // an exact count over a huge staging table can time out and return null,
@@ -119,17 +106,11 @@ export async function POST(request: Request) {
       }, { status: 400 })
     }
 
-    // Guard 2: a merge PURGES every live row not in staging. If staging is far
-    // smaller than the live catalog, this is almost certainly a PARTIAL upload —
-    // refuse and make the admin confirm. Best-effort: only enforce this when BOTH
-    // counts are known. If a count timed out (null), skip the prompt rather than
-    // block a legitimate merge — Guard 1 already proved staging isn't empty, and
-    // the merge itself is chunked + resumable.
-    // Estimated (reltuples) counts are instant and never time out — use them as a
-    // fallback so this guard runs even when the exact COUNT over ~850k rows blows
-    // the statement timeout (in which case exactCount returns null and the guard
-    // would otherwise silently skip, exactly the hole that let a partial upload
-    // purge live campaigns).
+    // Guard 2 (below) uses ESTIMATED (reltuples) counts. They're instant, never
+    // time out, and cost effectively zero Disk IO — unlike an exact COUNT over
+    // ~850k bloated rows, which is a full sequential scan that stacked up across
+    // auto-resumes and exhausted the Disk IO budget. Estimated is plenty accurate
+    // for the 0.85 partial-upload ratio check.
     const estCount = async (table: string): Promise<number | null> => {
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -137,24 +118,39 @@ export async function POST(request: Request) {
         return error || count == null ? null : Number(count)
       } catch { return null }
     }
-    const [stagedExact, liveExact] = await Promise.all([
-      exactCount('cc_campaign_catalog_import'),
-      exactCount('cc_campaign_catalog'),
-    ])
-    const stagedCount = stagedExact ?? (await estCount('cc_campaign_catalog_import'))
-    const liveCount = liveExact ?? (await estCount('cc_campaign_catalog'))
-    // Prompt before purging when staging is under 85% of the live catalog — that
-    // gap is almost always a PARTIAL upload, and the purge would delete the
-    // difference (including still-live campaigns). 0.6 was far too lenient (a 78%
-    // partial slipped through and removed ~186k real campaigns).
-    if (!body.confirm && stagedCount != null && liveCount != null && liveCount > 0 && stagedCount < liveCount * 0.85) {
-      return NextResponse.json({
-        needsConfirm: true,
-        staged: stagedCount,
-        live: liveCount,
-        wouldPurgeApprox: Math.max(0, liveCount - stagedCount),
-        error: `Only ${stagedCount.toLocaleString()} campaigns are staged, but the live catalog has ${liveCount.toLocaleString()}. Merging now would remove roughly ${Math.max(0, liveCount - stagedCount).toLocaleString()} campaigns — including still-live ones if this isn't your complete CSV. Upload ALL your CSV files first, then merge. Only confirm if you're sure staging holds every current campaign.`,
-      }, { status: 409 })
+    // Partial-upload guard — runs ONLY on the first (unconfirmed) call, and uses
+    // ESTIMATED (reltuples) counts, never an exact COUNT(*). Both details matter:
+    //   • Gated on !body.confirm: once the client has confirmed (it sets
+    //     confirm=true after the first successful call), every auto-resume skips
+    //     this block. The guard is a one-time partial-upload check, not per-chunk.
+    //   • Estimated, not exact: an exact COUNT over ~850k bloated rows is a full
+    //     sequential scan — 60s+ and heavy Disk IO. The FIRST call only sets
+    //     confirm=true AFTER it succeeds, so an exact-count guard that timed out
+    //     would fail the call, the client would retry with confirm STILL false,
+    //     and those full-scan counts would STACK every ~40s until the Disk IO
+    //     budget was exhausted and the whole merge crawled (a 57k-row purge took
+    //     45+ min). Estimated is instant, zero-IO, and plenty accurate for a 0.85
+    //     ratio sanity check. Only fires when BOTH estimates are known; an unknown
+    //     estimate never blocks (Guard 1 already proved staging is non-empty, and
+    //     the merge is chunked + resumable).
+    let stagedCount: number | null = null
+    let liveCount: number | null = null
+    if (!body.confirm) {
+      const [stagedEst, liveEst] = await Promise.all([
+        estCount('cc_campaign_catalog_import'),
+        estCount('cc_campaign_catalog'),
+      ])
+      stagedCount = stagedEst
+      liveCount = liveEst
+      if (stagedCount != null && liveCount != null && liveCount > 0 && stagedCount < liveCount * 0.85) {
+        return NextResponse.json({
+          needsConfirm: true,
+          staged: stagedCount,
+          live: liveCount,
+          wouldPurgeApprox: Math.max(0, liveCount - stagedCount),
+          error: `Only ~${stagedCount.toLocaleString()} campaigns are staged, but the live catalog has ~${liveCount.toLocaleString()}. Merging now would remove roughly ${Math.max(0, liveCount - stagedCount).toLocaleString()} campaigns — including still-live ones if this isn't your complete CSV. Upload ALL your CSV files first, then merge. Only confirm if you're sure staging holds every current campaign.`,
+        }, { status: 409 })
+      }
     }
 
     // Chunked, resumable merge (migration 202). Small batches so no single RPC
@@ -229,10 +225,13 @@ export async function POST(request: Request) {
     // row had merged, deleting rows that were about to be re-inserted.
     const drained = !transientStop && n < BATCH
     if (!drained) {
-      // Still more to merge; the client auto-calls again. Report a best-effort
-      // remaining for the countdown (null → the client just shows "Merging…").
-      const remaining = await exactCount('cc_campaign_catalog_import', (q: any) => q.eq('_merged', false)) // eslint-disable-line @typescript-eslint/no-explicit-any
-      return NextResponse.json({ ok: true, done: false, staged: stagedCount ?? undefined, upserted, remaining: remaining ?? null })
+      // Still more to merge; the client auto-calls again. We deliberately do NOT
+      // run a remaining-count here: an exact COUNT over the ~800k staging table
+      // (filtered on _merged=false) is a full sequential scan that would run on
+      // every ~40s resume and was a top Disk-IO hog. The client shows "Merging…"
+      // when remaining is null, which is fine — correct, fast, and IO-cheap beats
+      // a live countdown.
+      return NextResponse.json({ ok: true, done: false, staged: stagedCount ?? undefined, upserted, remaining: null })
     }
 
     // Everything merged → purge fall-outs in CHUNKS (a single anti-join DELETE
