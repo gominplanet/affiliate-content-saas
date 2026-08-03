@@ -3534,77 +3534,65 @@ export default function ContentPage() {
                 ? `Your videos to blog posts + Instagram image posts. Click Generate Post to start. ${horizontalVideos.length} video${horizontalVideos.length !== 1 ? 's' : ''} · ${generatedCount} published.`
                 : 'Hit Sync to pull every YouTube video into your generation queue.'
         }
-        actions={
-          <div className="flex flex-wrap items-center gap-2 justify-end max-w-full">
-            {/* Multi-site (Pro): which blog fresh posts publish to. Renders
-                nothing for single-site users. */}
-            <SitePicker value={siteId} onChange={setSiteId} compact />
-
-            {/* Hero create action — the one thing most people came to do. */}
-            <button
-              onClick={() => setFromLinkOpen(true)}
-              title="No video? Create a post from a product link or ASIN — MVP researches, writes and publishes it."
-              className="inline-flex items-center gap-2.5 rounded-xl pl-2 pr-3.5 py-2 text-left text-white transition-all hover:shadow-md active:scale-[0.98]"
-              style={{ background: 'linear-gradient(135deg, #7C3AED, #5856d6)' }}
-            >
-              <span className="grid place-items-center w-8 h-8 rounded-lg bg-white/20 flex-shrink-0"><Sparkles size={16} /></span>
-              <span className="flex flex-col leading-tight">
-                <span className="text-[12.5px] font-bold whitespace-nowrap">New post from a link</span>
-                <span className="text-[10.5px] text-white/80 whitespace-nowrap">Product link or ASIN → live post</span>
-              </span>
-            </button>
-
-            {/* Maintenance / fix tools (amber + rose) */}
-            <ToolButton tint="amber" icon={<Tags size={16} />} label="Fix Categories"
-              desc={catPreviewLoading ? 'Loading preview…' : 'Auto-assign each post'}
-              onClick={previewFixCategories} loading={catPreviewLoading} disabled={catPreviewLoading || fixingCategories}
-              title="Preview which category each post will be assigned to before applying" />
-            <ToolButton tint="rose" icon={<Wrench size={16} />} label="Fix Affiliate Links"
-              desc={affPreviewLoading && affMode === 'broken' ? 'Scanning links…' : 'Find & repair broken'}
-              onClick={() => previewFixAffiliate('broken')} loading={affPreviewLoading && affMode === 'broken'} disabled={affPreviewLoading || affApplying}
-              title="Scan published posts for broken affiliate links and repair them" />
-            <ToolButton tint="rose" icon={<Shuffle size={16} />} label="Re-route Geniuslinks"
-              desc={affPreviewLoading && affMode === 'regroup' ? 'Scanning links…' : "Route via this site's group"}
-              onClick={() => previewFixAffiliate('regroup')} loading={affPreviewLoading && affMode === 'regroup'} disabled={affPreviewLoading || affApplying}
-              title="Re-wrap every geni.us link in your published posts so it routes through the per-site Geniuslink group (e.g. gominreviews) instead of MVP-YOUTUBE. Use this once after the per-site group routing fix to clean up legacy links." />
-
-            {/* Settings (blue + violet) */}
-            <ToolButton tint="blue" icon={<Handshake size={16} />} label="Brand message" desc="Edit the recap you send"
-              onClick={() => setBrandSettingsOpen(true)}
-              title="Customize the recap message the &ldquo;Share with brand&rdquo; button sends — tone, sign-off, and template" />
-            <ToolButton tint="violet" icon={<Link2 size={16} />} label="Link settings" desc="Blog / affiliate / both"
-              onClick={() => setLinkModeOpen(true)}
-              title="Choose where posted links point — blog, affiliate, or both — for Facebook, LinkedIn, and Bluesky" />
-
-            {/* Sync (video tabs only) + Refresh (green + slate) */}
-            {(activeTab === 'horizontal' || activeTab === 'vertical') && (
-              <>
-                {ytChannels.length > 1 && (
-                  <select
-                    defaultValue=""
-                    disabled={syncing}
-                    onChange={(e) => { const id = e.target.value; if (id) { void syncVideos(id); e.currentTarget.value = '' } }}
-                    title="Pull videos from one of your connected channels"
-                    className="h-[46px] text-xs px-2.5 rounded-xl bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] focus:border-[#7C3AED] focus:outline-none max-w-[190px]"
-                  >
-                    <option value="">Sync a channel…</option>
-                    {ytChannels.map(c => (
-                      <option key={c.id} value={c.channelId}>{c.channelTitle}{c.isDefault ? ' (default)' : ''}</option>
-                    ))}
-                  </select>
-                )}
-                <ToolButton tint="green" icon={<RefreshCw size={16} />} label="Sync videos"
-                  desc={syncing ? `Pulling${syncProgress ? ` ${syncProgress.pulled}` : ''}…` : 'Pull new from YouTube'}
-                  onClick={() => syncVideos()} loading={syncing} disabled={syncing} title="Pull your latest YouTube videos into this blog" />
-              </>
-            )}
-            <ToolButton tint="slate" icon={<RefreshCw size={16} />} label="Refresh"
-              desc={(loading || postsLoading || scheduledLoading) ? 'Reloading…' : 'Reload this tab'}
-              onClick={() => refreshActiveTabRef.current()} loading={loading || postsLoading || scheduledLoading} disabled={loading || postsLoading || scheduledLoading}
-              title="Reload the active tab from the database / WordPress" />
-          </div>
-        }
+        actions={<SitePicker value={siteId} onChange={setSiteId} compact />}
       />
+
+      {/* Toolbar — colour-coded action tiles. A full-width row BELOW the hero so
+          it wraps cleanly onto a second line instead of clipping off the hero's
+          right edge. Same actions/handlers as before, grouped by colour:
+          create (violet), fix (amber/rose), settings (blue/violet), data
+          (green/slate). */}
+      <div className="flex flex-wrap items-center gap-2 mb-6">
+        <ToolButton tint="violet" icon={<Sparkles size={16} />} label="New post from a link" desc="Product link or ASIN → live post"
+          onClick={() => setFromLinkOpen(true)}
+          title="No video? Create a post from a product link or ASIN — MVP researches, writes and publishes it." />
+
+        <ToolButton tint="amber" icon={<Tags size={16} />} label="Fix Categories"
+          desc={catPreviewLoading ? 'Loading preview…' : 'Auto-assign each post'}
+          onClick={previewFixCategories} loading={catPreviewLoading} disabled={catPreviewLoading || fixingCategories}
+          title="Preview which category each post will be assigned to before applying" />
+        <ToolButton tint="rose" icon={<Wrench size={16} />} label="Fix Affiliate Links"
+          desc={affPreviewLoading && affMode === 'broken' ? 'Scanning links…' : 'Find & repair broken'}
+          onClick={() => previewFixAffiliate('broken')} loading={affPreviewLoading && affMode === 'broken'} disabled={affPreviewLoading || affApplying}
+          title="Scan published posts for broken affiliate links and repair them" />
+        <ToolButton tint="rose" icon={<Shuffle size={16} />} label="Re-route Geniuslinks"
+          desc={affPreviewLoading && affMode === 'regroup' ? 'Scanning links…' : "Route via this site's group"}
+          onClick={() => previewFixAffiliate('regroup')} loading={affPreviewLoading && affMode === 'regroup'} disabled={affPreviewLoading || affApplying}
+          title="Re-wrap every geni.us link in your published posts so it routes through the per-site Geniuslink group (e.g. gominreviews) instead of MVP-YOUTUBE. Use this once after the per-site group routing fix to clean up legacy links." />
+
+        <ToolButton tint="blue" icon={<Handshake size={16} />} label="Brand message" desc="Edit the recap you send"
+          onClick={() => setBrandSettingsOpen(true)}
+          title="Customize the recap message the &ldquo;Share with brand&rdquo; button sends — tone, sign-off, and template" />
+        <ToolButton tint="violet" icon={<Link2 size={16} />} label="Link settings" desc="Blog / affiliate / both"
+          onClick={() => setLinkModeOpen(true)}
+          title="Choose where posted links point — blog, affiliate, or both — for Facebook, LinkedIn, and Bluesky" />
+
+        {(activeTab === 'horizontal' || activeTab === 'vertical') && (
+          <>
+            {ytChannels.length > 1 && (
+              <select
+                defaultValue=""
+                disabled={syncing}
+                onChange={(e) => { const id = e.target.value; if (id) { void syncVideos(id); e.currentTarget.value = '' } }}
+                title="Pull videos from one of your connected channels"
+                className="h-[46px] text-xs px-2.5 rounded-xl bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] focus:border-[#7C3AED] focus:outline-none max-w-[190px]"
+              >
+                <option value="">Sync a channel…</option>
+                {ytChannels.map(c => (
+                  <option key={c.id} value={c.channelId}>{c.channelTitle}{c.isDefault ? ' (default)' : ''}</option>
+                ))}
+              </select>
+            )}
+            <ToolButton tint="green" icon={<RefreshCw size={16} />} label="Sync videos"
+              desc={syncing ? `Pulling${syncProgress ? ` ${syncProgress.pulled}` : ''}…` : 'Pull new from YouTube'}
+              onClick={() => syncVideos()} loading={syncing} disabled={syncing} title="Pull your latest YouTube videos into this blog" />
+          </>
+        )}
+        <ToolButton tint="slate" icon={<RefreshCw size={16} />} label="Refresh"
+          desc={(loading || postsLoading || scheduledLoading) ? 'Reloading…' : 'Reload this tab'}
+          onClick={() => refreshActiveTabRef.current()} loading={loading || postsLoading || scheduledLoading} disabled={loading || postsLoading || scheduledLoading}
+          title="Reload the active tab from the database / WordPress" />
+      </div>
 
       <CapBannerHost />
 
