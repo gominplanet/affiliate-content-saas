@@ -275,14 +275,34 @@ export default function DashboardShellV2({
   }, [adminOpen])
 
   const isAdmin = tier === 'admin'
+
+  // Admin "view as tier" — sourced from localStorage. This now re-gates the
+  // SIDEBAR itself (not just the badge): previewing as Free Trial shows exactly
+  // the nav a real trial user gets, so what's hidden/locked can be trusted. It
+  // stays a VISUAL preview — the real account keeps its access and every route
+  // still enforces the real tier; this only changes which nav entries render.
+  const [viewAs, setViewAs] = useState<Tier>('admin')
+  useEffect(() => { setViewAs(getViewAsTier() ?? 'admin') }, [])
+
+  // The tier the SIDEBAR is drawn for: the previewed tier when an admin is
+  // "viewing as", the real tier for everyone else. isAdmin deliberately stays on
+  // the REAL tier so the admin tools + the view-as dropdown never vanish while
+  // previewing (you'd have no way back).
+  const effectiveTier: Tier = isAdmin && viewAs !== 'admin' ? viewAs : (tier as Tier)
+
   // Paid = any non-trial plan (Creator, Studio, Pro, admin). Not a feature
   // gate on its own — used for generic paid-vs-trial UI copy.
-  const isPaid = tier !== 'trial'
+  const isPaid = effectiveTier !== 'trial'
   // Feature nav gates come from lib/feature-access.ts so the sidebar and
   // the enforcing routes are described in one place. See that file: the
   // nav is a hint, the route is the law.
-  const isPro = canSeeNav('labs', tier as Tier)
-  const canUseFinders = canSeeNav('finders', tier as Tier)
+  const isPro = canSeeNav('labs', effectiveTier)
+  const canUseFinders = canSeeNav('finders', effectiveTier)
+  // Server passes showBuyingGuides/showDeals for the REAL tier; recompute from
+  // effectiveTier so the preview is accurate. Identical to the props when not
+  // previewing (effectiveTier === tier then), so real users are unaffected.
+  const showBuyingGuidesEff = isAdmin ? canSeeNav('buyingGuides', effectiveTier) : showBuyingGuides
+  const showDealsEff = isAdmin ? canSeeNav('deals', effectiveTier) : showDeals
 
   // Admin-only: count of OPEN support tickets (not yet answered/closed). Drives
   // the red "Support" alert in the topbar so the founder catches new tickets
@@ -326,11 +346,6 @@ export default function DashboardShellV2({
     const t = setInterval(load, 60_000)
     return () => { cancelled = true; clearInterval(t) }
   }, [pathname])
-
-  // Admin "view as tier" dropdown state. Sourced from localStorage so the
-  // sidebar reflects whichever tier the admin is currently previewing.
-  const [viewAs, setViewAs] = useState<Tier>('admin')
-  useEffect(() => { setViewAs(getViewAsTier() ?? 'admin') }, [])
 
   // Sidebar brand badge. Every tier has its own square lockup (the art already
   // contains the "MVP Affiliate" wordmark, so it replaces the mark AND title).
@@ -431,16 +446,16 @@ export default function DashboardShellV2({
         // product-discovery tool, so it lives with the other research finders.
         // Link in Bio — a shoppable affiliate "Shop Grid" page at /s/<handle>,
         // auto-filled from posted products. All paid tiers (same gate as Deal Radar).
-        { href: '/link-in-bio', icon: <Link2 size={15} />, label: 'Link in Bio', gate: canSeeNav('dealRadar', tier as Tier) },
+        { href: '/link-in-bio', icon: <Link2 size={15} />, label: 'Link in Bio', gate: canSeeNav('dealRadar', effectiveTier) },
         // Socials connection moved to SET UP > "Connect Socials" (it's setup,
         // not a create action). YouTube has its own SET UP > "YouTube" entry.
         { href: '/comparison', icon: <Scale size={15} />, label: 'Comparisons' },
-        { href: '/buying-guides', icon: <BookOpen size={15} />, label: 'Buying Guides', gate: showBuyingGuides },
+        { href: '/buying-guides', icon: <BookOpen size={15} />, label: 'Buying Guides', gate: showBuyingGuidesEff },
         // MVP x LTK — paste an LTK link → SEO blog post with the LTK link as the
         // CTA. Graduated OUT of Labs into Create (right under Buying Guides) and
         // opened to ALL PAID tiers (canUseFinders = tier !== 'trial'), 2026-07-08.
         { href: '/ltk', icon: <Sparkles size={15} />, label: 'MVP x LTK', gate: canUseFinders },
-        { href: '/deals', icon: <BadgePercent size={15} />, label: 'Deals Hub', gate: showDeals, badge: DEALS_HUB_PAUSED ? 'Paused' : undefined },
+        { href: '/deals', icon: <BadgePercent size={15} />, label: 'Deals Hub', gate: showDealsEff, badge: DEALS_HUB_PAUSED ? 'Paused' : undefined },
         { href: '/script', icon: <PenLine size={15} />, label: 'Scriptwriter' },
         { href: '/newsletter', icon: <Mail size={15} />, label: 'Newsletter' },
         // Shop Burner — sidelined 2026-07-25: Clip Factory now covers the
@@ -462,7 +477,7 @@ export default function DashboardShellV2({
       label: 'Research',
       items: [
         { href: '/amz-finder', icon: <PackageSearch size={15} />, label: 'AMZ Research', gate: canUseFinders },
-        { href: '/deal-radar', icon: <Radar size={15} />, label: 'Deal Radar', gate: canBrowseDealRadar(tier as Tier) },
+        { href: '/deal-radar', icon: <Radar size={15} />, label: 'Deal Radar', gate: canBrowseDealRadar(effectiveTier) },
         { href: '/levanta', icon: <ShoppingBag size={15} />, label: 'MVP x Levanta', gate: canUseFinders },
         { href: '/partnerboost', icon: <Store size={15} />, label: 'MVP x PartnerBoost', gate: canUseFinders },
       ],
@@ -550,7 +565,7 @@ export default function DashboardShellV2({
       // nav entry is added then.
       label: 'Help & Community',
       items: [
-        { href: '/brainstorm', icon: <Lightbulb size={15} />, label: 'Brainstorm' },
+        { href: '/brainstorm', icon: <Lightbulb size={15} />, label: 'Brainstorm', gate: isPaid },
         { href: '/assistant', icon: <Bot size={15} />, label: 'MVP Help Desk' },
         { href: '/support', icon: <LifeBuoy size={15} />, label: 'Create a Help Ticket' },
         { href: '/community', icon: <MessageCircle size={15} />, label: 'Community' },
@@ -844,7 +859,7 @@ export default function DashboardShellV2({
                   borderColor: 'var(--border)',
                   color: 'var(--text)',
                 }}
-                title="Preview the UI as each tier sees it. Visual only, your real admin access is unchanged."
+                title="Preview the UI as each tier sees it. Re-gates the sidebar so you see exactly what that tier sees; your real admin access is unchanged."
               >
                 <option value="admin">My view (Admin)</option>
                 <option value="pro">Pro</option>
@@ -854,7 +869,7 @@ export default function DashboardShellV2({
               </select>
               {viewAs !== 'admin' && (
                 <p className="mt-1 text-[10px]" style={{ color: '#FF9500' }}>
-                  Previewing as {viewAs} · visual only
+                  Previewing as {viewAs} · sidebar re-gated, your access unchanged
                 </p>
               )}
             </div>

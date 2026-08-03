@@ -16,6 +16,8 @@ import {
 } from 'lucide-react'
 import HeroVideo from '@/components/layout/HeroVideo'
 import { LAUNCH_PLATFORM_LIST, type LaunchPlatform, type PlatformSpec, type SocialKit } from '@/lib/social-launch-kit'
+import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
+import { useEffectiveTier } from '@/lib/useEffectiveTier'
 
 const EMOJI: Record<LaunchPlatform, string> = {
   facebook: '📘', pinterest: '📌', twitter: '🐦', threads: '🧵', bluesky: '🦋', linkedin: '💼',
@@ -32,6 +34,7 @@ export default function SocialLaunchKitPage() {
   const [busyImg, setBusyImg] = useState<string | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
   const [locked, setLocked] = useState(false)   // set if the API 403s (non-Pro deep-link)
+  const gateTier = useEffectiveTier()
   // Only admins may regenerate; everyone else gets one generation per slot.
   const [isAdmin, setIsAdmin] = useState(false)
   // Optional per-image inspiration the user uploads, keyed by `${platform}:${kind}`.
@@ -135,6 +138,26 @@ export default function SocialLaunchKitPage() {
     } catch { toast.error('Could not read that image.') }
   }
   function clearRef(key: string) { setRefImages(prev => { const n = { ...prev }; delete n[key]; return n }) }
+
+  // ── Tier gate ────────────────────────────────────────────────────
+  // Social Launch Kit is a paid feature. Trial users get the upsell card.
+  if (gateTier !== null && gateTier === 'trial') {
+    return (
+      <FeatureLockedCard
+        icon={<Rocket size={28} strokeWidth={1.8} />}
+        feature="Social Launch Kit"
+        description="Stand up a whole social presence in about five minutes. Pick a platform — Facebook, Pinterest, X, Threads, Bluesky, LinkedIn — and MVP hands you the name, @handle, bios, category, keywords and first post, plus an on-brand banner and avatar, all ready to paste."
+        bullets={[
+          'Ready-to-paste name, @handle, bios, category and keywords per platform',
+          'On-brand banner + avatar generated from your Brand Profile',
+          'A written-in-your-voice first post to launch with',
+          'Step-by-step setup with deep links — then connect it for auto-posting',
+        ]}
+        requiredTier="creator"
+        currentTier={gateTier}
+      />
+    )
+  }
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-6">

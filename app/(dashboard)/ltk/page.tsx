@@ -13,6 +13,8 @@ import { useState } from 'react'
 import PageHero from '@/components/layout/PageHero'
 import { LtkGuide } from '@/components/guide/tool-guides'
 import { Loader2, ExternalLink, CheckCircle2, XCircle, Sparkles, Lock } from 'lucide-react'
+import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
+import { useEffectiveTier } from '@/lib/useEffectiveTier'
 
 const PINK = 'rgba(236,72,153,0.30)' // LTK skews fashion/lifestyle — warmer accent
 
@@ -29,6 +31,7 @@ export default function LtkPage() {
   const [peeking, setPeeking] = useState(false)
   const [peeked, setPeeked] = useState('')        // the URL we last auto-filled from (dedupe)
   const [prefillNote, setPrefillNote] = useState<string | null>(null)
+  const gateTier = useEffectiveTier()
 
   // Need a product name + at least one shoppable source: the LTK link or the widget code.
   const hasLink = /^https?:\/\//i.test(ltkUrl.trim())
@@ -93,6 +96,26 @@ export default function LtkPage() {
 
   const input = 'w-full rounded-lg px-3 py-2.5 text-[14px] outline-none'
   const inputStyle = { background: 'var(--surface-bright)', border: '1px solid var(--border)', color: 'var(--text)' } as const
+
+  // ── Tier gate ────────────────────────────────────────────────────
+  // MVP x LTK is a paid finder feature. Trial users get the upsell card.
+  if (gateTier !== null && gateTier === 'trial') {
+    return (
+      <FeatureLockedCard
+        icon={<Sparkles size={28} strokeWidth={1.8} />}
+        feature="MVP x LTK"
+        description="Paste one LTK product link and MVP writes a Google-ready blog post in your voice — with your LTK link as the “Shop it on LTK” button. Owned content that ranks on Google and funnels shoppers straight to your LTK shop."
+        bullets={[
+          'Turns one LTK link into a full, SEO-friendly review post',
+          'Your LTK link stays the CTA — clicks and commission stay yours',
+          'Auto-fills the product name + image from your link when it can',
+          'Builds a hero image and publishes to your WordPress (draft or live)',
+        ]}
+        requiredTier="creator"
+        currentTier={gateTier}
+      />
+    )
+  }
 
   return (
     <div className="max-w-3xl mx-auto px-5 lg:px-8 py-6">
