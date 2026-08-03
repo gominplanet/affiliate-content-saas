@@ -12,7 +12,7 @@
  */
 
 import type { Metadata } from 'next'
-import { CheckCircle, Zap } from 'lucide-react'
+import { CheckCircle, Zap, PackageSearch, Radar, ShoppingBag, Store } from 'lucide-react'
 import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
 import { CheckoutButton } from './CheckoutButton'
 
@@ -162,6 +162,48 @@ export default function PricingPage() {
           🔒 Early access pricing, locked in for life on the tier you subscribe to.
         </p>
       </div>
+
+      {/* ───────────────────────────────────────────────────────────────────
+          Free research showcase — the real hook. Everything in this block is
+          free on every plan, no card, no setup. Sits directly under the hero so
+          it's the first thing a cold prospect reads.
+          ─────────────────────────────────────────────────────────────── */}
+      <section className="w-full max-w-6xl mb-14">
+        <div className="rounded-3xl p-6 sm:p-9" style={{ background: 'linear-gradient(180deg, rgba(124,58,237,0.10), rgba(124,58,237,0.03))', border: '1px solid rgba(124,58,237,0.25)' }}>
+          <div className="text-center mb-7">
+            <p className="text-xs font-semibold uppercase tracking-widest mb-2 text-[#7C3AED]">Free · no card · no setup</p>
+            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#1d1d1f] dark:text-[#f5f5f7]">
+              The product research most tools charge for. Free.
+            </h2>
+            <p className="mt-3 text-[15px] text-[#6e6e73] dark:text-[#ebebf0] max-w-2xl mx-auto">
+              Sign up and start finding products worth reviewing in minutes. No WordPress, no YouTube,
+              no credit card. Publishing is where the paid plans come in. The research is yours.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {[
+              { icon: <PackageSearch size={20} />, title: 'Amazon Product Research', desc: 'Filter the whole Amazon catalogue by sales volume, rating, price, review-to-sales ratio and video competition. The exact signals that separate a product worth reviewing from a dud.' },
+              { icon: <Radar size={20} />, title: 'Deal Radar', desc: 'Live, price-history-verified Amazon deals. See what genuinely dropped, not fake "was" prices, with the real high and low behind every discount.' },
+              { icon: <ShoppingBag size={20} />, title: 'Levanta + PartnerBoost finders', desc: 'Scout your own connected Levanta and PartnerBoost campaigns for the products worth promoting, above your standard Amazon tag.' },
+              { icon: <Store size={20} />, title: 'Creator Connections search', desc: 'Already have CC access? Search the full campaign catalogue in one place (the free Scout extension verifies your access).' },
+            ].map((t) => (
+              <div key={t.title} className="rounded-2xl bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 p-5">
+                <div className="w-10 h-10 rounded-xl grid place-items-center mb-3" style={{ background: 'rgba(124,58,237,0.12)', color: '#7C3AED' }}>{t.icon}</div>
+                <p className="font-semibold text-[15px] mb-1 text-[#1d1d1f] dark:text-[#f5f5f7]">{t.title}</p>
+                <p className="text-[13px] leading-relaxed text-[#6e6e73] dark:text-[#ebebf0]">{t.desc}</p>
+              </div>
+            ))}
+          </div>
+          <div className="mt-7 flex flex-col sm:flex-row items-center justify-center gap-3">
+            <div className="w-full sm:w-auto sm:min-w-[220px]">
+              <CheckoutButton tier="trial" highlight={false} salesPaused={SALES_PAUSED} ctaLabel="Start free, no card" />
+            </div>
+            <p className="text-[13px] text-[#86868b] dark:text-[#8e8e93] text-center sm:text-left">
+              The free tier also includes 5 full published reviews to try the content engine.
+            </p>
+          </div>
+        </div>
+      </section>
 
       {SALES_PAUSED && (
         <div className="w-full max-w-3xl mb-8 rounded-2xl bg-[#ff9500]/10 border border-[#ff9500]/30 p-5 text-center">
