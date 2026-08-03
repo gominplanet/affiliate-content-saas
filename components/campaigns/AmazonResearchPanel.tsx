@@ -178,14 +178,33 @@ export default function AmazonResearchPanel({ canAct = true, onSavedChange }: { 
     <div className="card mb-5 overflow-hidden" style={{ borderWidth: 2, borderColor: 'rgba(124,58,237,0.30)' }}>
       {/* Filter bar */}
       <div className="px-3.5 py-3 space-y-2.5" style={{ background: 'linear-gradient(180deg, rgba(124,58,237,0.06), transparent 85%)' }}>
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-[18px] w-[18px]" style={{ color: 'var(--text-faint)' }} />
-          <input
-            value={q} onChange={e => setQ(e.target.value)}
-            placeholder="Search Amazon products (keyword)…"
-            className="w-full h-11 pl-11 pr-3.5 text-sm rounded-xl border bg-white dark:bg-[#1c1c1e] outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-violet-500/30 transition-shadow"
-            style={{ borderColor: 'var(--border)', color: 'var(--text)' }}
-          />
+        {/* Search row — the input is only as wide as it needs to be, with Search
+            and Clear right beside it (reads more like a search box). */}
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1 min-w-0">
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-[18px] w-[18px]" style={{ color: 'var(--text-faint)' }} />
+            <input
+              value={q} onChange={e => setQ(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && hasFilters) void load(0) }}
+              placeholder="Search Amazon products (keyword)…"
+              className="w-full h-11 pl-11 pr-3.5 text-sm rounded-xl border bg-white dark:bg-[#1c1c1e] outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-violet-500/30 transition-shadow"
+              style={{ borderColor: 'var(--border)', color: 'var(--text)' }}
+            />
+          </div>
+          {/* Free/trial: an explicit Search button (each search counts toward the
+              daily free cap). Paid users search live, so they don't need it. */}
+          {!canAct && (
+            <button onClick={() => void load(0)} disabled={loading || !hasFilters}
+              className="shrink-0 inline-flex items-center gap-1.5 h-11 px-4 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
+              style={{ background: '#7C3AED' }}>
+              {loading ? <><Loader2 size={14} className="animate-spin" /> Searching…</> : <><Search size={14} /> Search</>}
+            </button>
+          )}
+          {hasFilters && (
+            <button onClick={clearFilters} className="shrink-0 inline-flex items-center gap-1 h-11 px-3.5 rounded-xl border text-sm font-medium" style={{ color: 'var(--text-faint)', borderColor: 'var(--border)' }}>
+              Clear
+            </button>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {/* MVP picks — MVP's onsite buy-to-review rulebook (carousel-verified). */}
@@ -220,21 +239,14 @@ export default function AmazonResearchPanel({ canAct = true, onSavedChange }: { 
             <input value={maxPrice} onChange={e => setMaxPrice(e.target.value.replace(/[^0-9.]/g, ''))} inputMode="decimal" placeholder="max"
               className="w-11 text-sm bg-transparent outline-none placeholder:text-[color:var(--text-faint)]" style={{ color: 'var(--text)' }} />
           </div>
-          {/* Free/trial: an explicit Search button (each search counts toward the
-              daily free cap). Paid users search live, so they don't need it. */}
-          {!canAct && (
-            <button onClick={() => void load(0)} disabled={loading || !hasFilters}
-              className="ml-auto inline-flex items-center gap-1.5 h-9 px-4 rounded-full text-sm font-semibold text-white disabled:opacity-50"
-              style={{ background: '#7C3AED' }}>
-              {loading ? <><Loader2 size={14} className="animate-spin" /> Searching…</> : <><Search size={14} /> Search</>}
-            </button>
-          )}
-          {hasFilters && (
-            <button onClick={clearFilters} className={`${canAct ? 'ml-auto' : ''} text-xs font-medium inline-flex items-center gap-1 h-8 px-2.5`} style={{ color: 'var(--text-faint)' }}>
-              Clear
-            </button>
-          )}
         </div>
+        {/* Manual-search reminder — free/trial applies filters only when Search is
+            hit (paid searches live), so make that explicit. */}
+        {!canAct && (
+          <p className="text-[11px]" style={{ color: 'var(--text-faint)' }}>
+            Changed a filter or keyword? Hit <span className="font-semibold" style={{ color: 'var(--text-soft)' }}>Search</span> to apply it.
+          </p>
+        )}
       </div>
 
       {/* Results */}
