@@ -13,8 +13,10 @@ import { resolveBlogPostId } from '@/lib/resolve-post-id'
 import { recordSocialPermalink } from '@/lib/social-permalink'
 import { socialPermalink } from '@/lib/brand-recap'
 import { fetchOgImage, stripLinkPlaceholders } from '@/lib/og-image'
-import { ensureDisclaimer } from '@/lib/social-disclaimer'
+import { AFFILIATE_DISCLAIMER_DEFAULT } from '@/lib/social-disclaimer'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
+import { resolvePostAffiliateLink } from '@/lib/ig-dm'
+import { parseLinkModes, linkModeFor, composeCaption, effectiveMode } from '@/lib/social-link-mode'
 
 export const maxDuration = 60
 
@@ -52,7 +54,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: postRow } = await supabase
       .from('blog_posts')
-      .select('id,title,excerpt,content,wordpress_url,video_id,social_publish_counts')
+      .select('id,title,excerpt,content,wordpress_url,video_id,social_publish_counts,geniuslink_code')
       .eq('id', postId)
       .eq('user_id', user.id)
       .single()
@@ -95,7 +97,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: brandRow } = await supabase
       .from('brand_profiles')
-      .select('name,voice_summary,learn_profile')
+      .select('name,voice_summary,learn_profile,affiliate_disclaimer')
       .eq('user_id', user.id)
       .maybeSingle()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -105,7 +107,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: intRow } = await supabase
       .from('integrations')
-      .select('linkedin_access_token,linkedin_person_id,linkedin_person_name')
+      .select('linkedin_access_token,linkedin_person_id,linkedin_person_name,social_link_modes')
       .eq('user_id', user.id)
       .single()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -158,19 +160,23 @@ Return ONLY the post text, no extra commentary.`,
       })
     }
 
-    // Strip any "link in comments" / bracketed placeholder the model may have
-    // invented — the link is the article card (ARTICLE share) or appended below
-    // (IMAGE share), never a comment.
-    // Guarantee the FTC affiliate disclosure — the writer prompt intentionally
-    // omits it, and LinkedIn has ample room. Idempotent (won't double up).
-    const cleaned = ensureDisclaimer(scrubBanned(stripLinkPlaceholders(rawText)))
-    // For an IMAGE post the link must live in the caption (no card); for the
-    // ARTICLE fallback the card carries it, so don't duplicate it.
-    const withLink = (imageUrl && !cleaned.includes(post.wordpress_url))
-      ? `${cleaned}\n\n🔗 Read the full review: ${post.wordpress_url}`
-      : cleaned
+    // Compose the caption per the user's LinkedIn link mode (blog / affiliate /
+    // both). composeCaption places the affiliate + blog links and the FTC
+    // disclosure in the right order; the write-up itself carries no links.
+    const affiliateLink = resolvePostAffiliateLink(post)
+    const liMode = linkModeFor(parseLinkModes(integration?.social_link_modes), 'linkedin')
+    const disclaimer = brand?.affiliate_disclaimer || AFFILIATE_DISCLAIMER_DEFAULT
+    const cleaned = scrubBanned(stripLinkPlaceholders(rawText))
+    const composed = composeCaption({
+      mode: liMode, writeUp: cleaned, blogUrl: post.wordpress_url,
+      affiliateLink, disclaimer, blogLabel: 'Read the full review',
+    })
     // LinkedIn's UGC API allows up to 3000 chars per post — defensive cap.
-    const postText = capSocialText(withLink, SOCIAL_LIMITS.linkedin)
+    const postText = capSocialText(composed, SOCIAL_LIMITS.linkedin)
+    // The ARTICLE-card fallback (no image) can carry one URL — point it at the
+    // product in affiliate mode, else the blog.
+    const cardUrl = (effectiveMode(liMode, affiliateLink) === 'affiliate' && affiliateLink)
+      ? affiliateLink : post.wordpress_url
 
     if (dryRun) {
       return NextResponse.json({ ok: true, dryRun: true, text: postText, finalText: postText })
@@ -186,7 +192,7 @@ Return ONLY the post text, no extra commentary.`,
     // ARTICLE link-card share if there's no image or the upload fails.
     let result: { id: string }
     const articleArgs = {
-      articleUrl: post.wordpress_url,
+      articleUrl: cardUrl,
       articleTitle: post.title,
       articleDescription: post.excerpt || plainContent.slice(0, 200),
     }

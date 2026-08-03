@@ -803,6 +803,7 @@ export type Database = {
           amazon_associates_tag: string | null
           anthropic_api_key: string | null
           blog_customizations: Json | null
+          social_link_modes: Json | null
           bluesky_app_password: string | null
           bluesky_did: string | null
           bluesky_handle: string | null

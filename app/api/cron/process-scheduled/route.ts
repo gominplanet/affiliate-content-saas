@@ -42,6 +42,7 @@ import { publishInstagramForTarget, type IgMode } from '@/lib/instagram-publish'
 import { publishPinForPost } from '@/lib/pin-publish'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
 import { resolvePostAffiliateLink } from '@/lib/ig-dm'
+import { parseLinkModes, linkModeFor, effectiveMode, composeCaption } from '@/lib/social-link-mode'
 import { buildPinAssets, composePinDescription } from '@/lib/pin-assets'
 import { ensureDisclaimer, AFFILIATE_DISCLAIMER_DEFAULT } from '@/lib/social-disclaimer'
 
@@ -363,6 +364,12 @@ async function publishOne(
 
   const url = post.wordpress_url ?? ''
 
+  // Per-user link mode (blog / affiliate / both) for FB / LinkedIn / Bluesky.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const linkModes = parseLinkModes((integration as any).social_link_modes)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const schedAffiliateLink = resolvePostAffiliateLink(post as any)
+
   switch (row.platform) {
     // ─────────────────────────── BLUESKY ──────────────────────────────────
     case 'bluesky': {
@@ -371,12 +378,19 @@ async function publishOne(
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let bsImage = (post as any).youtube_videos?.thumbnail_url as string | undefined
-      if (!bsImage) bsImage = (await fetchOgImage(url)) || undefined
+      if (!bsImage) bsImage = (await fetchOgImage(url)) || undefined // blog og:image (reliable)
       const session = await createBlueskySession(integration.bluesky_handle, integration.bluesky_app_password)
-      const finalText = `${stripLinkPlaceholders(row.body_text)}\n\n${url}`
+      const bsMode = effectiveMode(linkModeFor(linkModes, 'bluesky'), schedAffiliateLink)
+      const bsCard = (bsMode === 'affiliate' || bsMode === 'both') ? (schedAffiliateLink as string) : url
+      const bsBody = stripLinkPlaceholders(row.body_text)
+      const finalText = bsMode === 'both'
+        ? `${bsBody}\n\n🛒 ${schedAffiliateLink}\n🔗 ${url} #ad`
+        : bsMode === 'affiliate'
+          ? `${bsBody}\n\n${bsCard} #ad`
+          : `${bsBody}\n\n${url}`
       const result = await createBlueskyPost(session, {
-        text: finalText, linkUrl: url, linkText: url,
-        embed: { url, title: post.title ?? '', description: (row.body_text || '').slice(0, 200), imageUrl: bsImage },
+        text: finalText, linkUrl: bsCard, linkText: bsCard,
+        embed: { url: bsCard, title: post.title ?? '', description: (row.body_text || '').slice(0, 200), imageUrl: bsImage },
       })
       // Persist post URI on the blog row to match the manual flow.
       await admin.from('blog_posts').update({ bluesky_post_uri: result.uri }).eq('id', row.blog_post_id)
@@ -479,13 +493,15 @@ async function publishOne(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         : ((post as any).youtube_videos?.thumbnail_url || '')
       if (!liImage) liImage = (await fetchOgImage(url)) || ''
-      const liClean = ensureDisclaimer(stripLinkPlaceholders(row.body_text), AFFILIATE_DISCLAIMER_DEFAULT)
-      const postText = capSocialText(
-        liImage && !liClean.includes(url) ? `${liClean}\n\n🔗 Read the full review: ${url}` : liClean,
-        SOCIAL_LIMITS.linkedin,
-      )
+      const liMode = linkModeFor(linkModes, 'linkedin')
+      const liComposed = composeCaption({
+        mode: liMode, writeUp: stripLinkPlaceholders(row.body_text), blogUrl: url,
+        affiliateLink: schedAffiliateLink, disclaimer: AFFILIATE_DISCLAIMER_DEFAULT, blogLabel: 'Read the full review',
+      })
+      const postText = capSocialText(liComposed, SOCIAL_LIMITS.linkedin)
+      const liCardUrl = (effectiveMode(liMode, schedAffiliateLink) === 'affiliate' && schedAffiliateLink) ? schedAffiliateLink : url
       const linkedin = createLinkedInService(integration.linkedin_access_token, integration.linkedin_person_id)
-      const liArticle = { articleUrl: url, articleTitle: post.title ?? '', articleDescription: row.body_text.slice(0, 200) }
+      const liArticle = { articleUrl: liCardUrl, articleTitle: post.title ?? '', articleDescription: row.body_text.slice(0, 200) }
       let result: { id: string }
       if (liImage) {
         try {
@@ -555,10 +571,14 @@ async function publishOne(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         fbIncludeAffiliate = !!((fbOpt?.options as any)?.includeAffiliateCta)
       } catch { /* options column absent on an old DB — flag can't exist there */ }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const fbAffiliateLink = fbIncludeAffiliate ? resolvePostAffiliateLink(post as any) : null
-      const fbAffiliateHeader = fbAffiliateLink ? `⚡ No need to read more — grab it right here 👉 ${fbAffiliateLink}\n${disclaimer}\n\n` : ''
-      const caption = `${fbAffiliateHeader}${row.body_text}\n\n🔗 Read the full post: ${url}\n\n${disclaimer}`
+      // Link mode drives the layout; legacy includeAffiliateCta=true forces
+      // 'both' when the user hasn't set a Facebook mode.
+      const fbMode = linkModes.facebook ?? (fbIncludeAffiliate ? 'both' : 'blog')
+      const caption = composeCaption({
+        mode: fbMode, writeUp: row.body_text, blogUrl: url,
+        affiliateLink: schedAffiliateLink, disclaimer, blogLabel: 'Read the full post',
+      })
+      const fbFallbackLink = (effectiveMode(fbMode, schedAffiliateLink) === 'affiliate' && schedAffiliateLink) ? schedAffiliateLink : url
       const fb = createFacebookService(fbPageToken, fbPageId)
       // Store the PAGE-POST id (a /photos post returns { id: <photo id>,
       // post_id: <PAGEID_POSTID> }; a /feed post returns the page-post id as
@@ -571,11 +591,11 @@ async function publishOne(
           const r = await fb.postPhoto({ imageUrl, caption })
           fbPostId = (r as { id: string; post_id?: string }).post_id || r.id
         } catch {
-          const r = await fb.postLink({ message: caption, link: url })
+          const r = await fb.postLink({ message: caption, link: fbFallbackLink })
           fbPostId = r.id
         }
       } else {
-        const r = await fb.postLink({ message: caption, link: url })
+        const r = await fb.postLink({ message: caption, link: fbFallbackLink })
         fbPostId = r.id
       }
       await admin.from('blog_posts').update({ facebook_post_id: fbPostId }).eq('id', row.blog_post_id)
