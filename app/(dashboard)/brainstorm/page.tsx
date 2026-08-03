@@ -24,6 +24,8 @@ import { Lightbulb, Youtube, FileText, Loader2, Sparkles, ExternalLink, AlertCir
 import PageHero from '@/components/layout/PageHero'
 import { BrainstormGuide } from '@/components/guide/tool-guides'
 import { MessageMarkdown } from '@/components/assistant/MessageMarkdown'
+import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
+import { useEffectiveTier } from '@/lib/useEffectiveTier'
 
 interface YouTubeVideo {
   youtube_video_id: string
@@ -138,6 +140,7 @@ export default function BrainstormPage() {
   const [brainstorming, setBrainstorming] = useState(false)
   const [brainstormText, setBrainstormText] = useState('')
   const [brainstormError, setBrainstormError] = useState<string | null>(null)
+  const gateTier = useEffectiveTier()
 
   useEffect(() => {
     let cancelled = false
@@ -199,6 +202,27 @@ export default function BrainstormPage() {
     } finally {
       setBrainstorming(false)
     }
+  }
+
+  // ── Tier gate ────────────────────────────────────────────────────
+  // Brainstorm reads your 90-day performance to suggest what to make next — a
+  // paid growth tool. Trial users get the upsell card instead of the tool.
+  if (gateTier !== null && gateTier === 'trial') {
+    return (
+      <FeatureLockedCard
+        icon={<Lightbulb size={28} strokeWidth={1.8} />}
+        feature="Brainstorm"
+        description="MVP reads your last 90 days — top and bottom YouTube videos, best and low-CTR posts, niche performance, and brand-profile coverage gaps — then suggests 5-7 specific next videos or posts grounded in what's actually working for you."
+        bullets={[
+          'Top + underperforming YouTube videos, side by side',
+          'Best and low-CTR blog posts, and the gap between them',
+          'Which of your niches convert — and which you claim but haven’t published for',
+          'One click: 5-7 concrete next-content ideas built from your own data',
+        ]}
+        requiredTier="creator"
+        currentTier={gateTier}
+      />
+    )
   }
 
   return (
