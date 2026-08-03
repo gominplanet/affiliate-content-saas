@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation'
+import { headers } from 'next/headers'
 import { createServerClient } from '@/lib/supabase/server'
 import { canSeeNav } from '@/lib/feature-access'
 import type { Tier } from '@/lib/tier'
@@ -6,6 +7,22 @@ import DashboardShellV2 from '@/components/layout/DashboardShellV2'
 import { Toaster } from '@/components/ui/toaster'
 import MigrationDriftBanner from '@/components/admin/MigrationDriftBanner'
 import { HelpDeskProvider, HelpDeskPanel } from '@/components/HelpDeskSidebar'
+
+// Content-creation features that need WordPress + YouTube. An un-onboarded user
+// (nothing connected) who navigates to one of these is sent to /onboarding to
+// connect first; everything else — the RESEARCH finders, Deal Radar, setup,
+// billing, help, the dashboard home — stays open so cold prospects can explore
+// the free tools. Missing one here is harmless: generation is still blocked at
+// the API by lib/free-tier-gate.ts. Prefix match (route or a sub-path).
+const CONTENT_ROUTES = [
+  '/content', '/co-pilot', '/script', '/comparison', '/buying-guides', '/ltk',
+  '/deals', '/newsletter', '/social-launch-kit', '/link-in-bio', '/clip-factory',
+  '/shorts-studio', '/customize', '/photobooth', '/instagram-burner',
+  '/instagram-dm', '/tiktok-publish', '/walmart-pb', '/brainstorm',
+]
+function isContentRoute(pathname: string): boolean {
+  return CONTENT_ROUTES.some((r) => pathname === r || pathname.startsWith(r + '/'))
+}
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createServerClient()
@@ -44,8 +61,18 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const ytConnected = !!(intRow as { youtube_oauth_access_token?: string | null; youtube_channel_id?: string | null } | null)?.youtube_oauth_access_token
     || !!(intRow as { youtube_channel_id?: string | null } | null)?.youtube_channel_id
   const onboardingCompleted = (intRow as { onboarding_completed?: boolean } | null)?.onboarding_completed === true
-  if (!ytConnected && !wpSiteUrl && !onboardingCompleted) {
-    redirect('/onboarding')
+  const onboarded = ytConnected || !!wpSiteUrl || onboardingCompleted
+
+  // A brand-new user who hasn't connected anything can still come straight into
+  // the dashboard to use the FREE research tools (the "Skip / browse the free
+  // tools" button on /onboarding lands them here). They only get sent to the
+  // funnel when they reach a CONTENT feature, which needs WordPress + YouTube.
+  // So the hard redirect now fires only for content routes, not the whole app.
+  if (!onboarded) {
+    const pathname = (await headers()).get('x-pathname') || ''
+    if (isContentRoute(pathname)) {
+      redirect('/onboarding')
+    }
   }
 
   // Sidebar visibility. Every rule lives in lib/feature-access.ts: tier
