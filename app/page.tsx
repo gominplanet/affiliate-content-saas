@@ -107,7 +107,9 @@ export default function LandingPreview() {
       <Nav />
       <Hero />
       <PlatformBar />
-      <FreeResearchSection />
+      <DarkBand bg="linear-gradient(160deg, #1A0B2E 0%, #2D0F4A 50%, #17082B 100%)" accent={A_TEAL}>
+        <FreeResearchSection />
+      </DarkBand>
       <DemoVideoSection />
       <RolesSection />
       <WorkflowSection />
