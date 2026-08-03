@@ -125,17 +125,35 @@ export async function POST(request: Request) {
     // counts are known. If a count timed out (null), skip the prompt rather than
     // block a legitimate merge — Guard 1 already proved staging isn't empty, and
     // the merge itself is chunked + resumable.
-    const [stagedCount, liveCount] = await Promise.all([
+    // Estimated (reltuples) counts are instant and never time out — use them as a
+    // fallback so this guard runs even when the exact COUNT over ~850k rows blows
+    // the statement timeout (in which case exactCount returns null and the guard
+    // would otherwise silently skip, exactly the hole that let a partial upload
+    // purge live campaigns).
+    const estCount = async (table: string): Promise<number | null> => {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { count, error } = await (admin as any).from(table).select('campaign_id', { count: 'estimated', head: true })
+        return error || count == null ? null : Number(count)
+      } catch { return null }
+    }
+    const [stagedExact, liveExact] = await Promise.all([
       exactCount('cc_campaign_catalog_import'),
       exactCount('cc_campaign_catalog'),
     ])
-    if (!body.confirm && stagedCount != null && liveCount != null && liveCount > 0 && stagedCount < liveCount * 0.6) {
+    const stagedCount = stagedExact ?? (await estCount('cc_campaign_catalog_import'))
+    const liveCount = liveExact ?? (await estCount('cc_campaign_catalog'))
+    // Prompt before purging when staging is under 85% of the live catalog — that
+    // gap is almost always a PARTIAL upload, and the purge would delete the
+    // difference (including still-live campaigns). 0.6 was far too lenient (a 78%
+    // partial slipped through and removed ~186k real campaigns).
+    if (!body.confirm && stagedCount != null && liveCount != null && liveCount > 0 && stagedCount < liveCount * 0.85) {
       return NextResponse.json({
         needsConfirm: true,
         staged: stagedCount,
         live: liveCount,
         wouldPurgeApprox: Math.max(0, liveCount - stagedCount),
-        error: `Only ${stagedCount.toLocaleString()} campaigns are staged, but the live catalog has ${liveCount.toLocaleString()}. Merging now would remove roughly ${Math.max(0, liveCount - stagedCount).toLocaleString()} campaigns. If you haven't uploaded ALL your CSV files yet, upload the rest first.`,
+        error: `Only ${stagedCount.toLocaleString()} campaigns are staged, but the live catalog has ${liveCount.toLocaleString()}. Merging now would remove roughly ${Math.max(0, liveCount - stagedCount).toLocaleString()} campaigns — including still-live ones if this isn't your complete CSV. Upload ALL your CSV files first, then merge. Only confirm if you're sure staging holds every current campaign.`,
       }, { status: 409 })
     }
 
@@ -170,7 +188,11 @@ export async function POST(request: Request) {
     } catch { /* pre-216 DB — proceed without the pause flag */ }
 
     const BATCH = 500
-    const PURGE_BATCH = 2000
+    // Purge is an anti-join (find catalog rows not in staging) — on a bloated
+    // catalog it reads a lot of pages to find each victim, so a big batch can run
+    // past the ~60s Supabase HTTP window and get orphaned. Keep it small so each
+    // purge_step finishes inside the window; the client auto-resumes.
+    const PURGE_BATCH = 400
     const deadline = Date.now() + 40_000
     let upserted = 0
     let n = BATCH
