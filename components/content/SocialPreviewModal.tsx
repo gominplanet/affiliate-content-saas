@@ -120,24 +120,10 @@ export function SocialPreviewModal({
   // "buy it now" second CTA. Only offered on Facebook, and only when the post
   // actually has an affiliate link (the server reports it via affiliateAvailable).
   const isFacebook = platformKey === 'facebook'
-  const [includeAffiliate, setIncludeAffiliate] = useState(false)
+  // Whether the post has an affiliate link at all (drives the Link-settings note).
+  // The blog/affiliate/both choice itself now lives in Link settings, applied
+  // server-side, so there's no per-post affiliate toggle here anymore.
   const [affiliateAvailable, setAffiliateAvailable] = useState(false)
-  const affiliateExtra = isFacebook ? { includeAffiliateCta: includeAffiliate } : {}
-
-  // Flip the affiliate CTA and re-preview WITH the current text (so it re-assembles
-  // the caption without regenerating the AI body or losing edits).
-  async function toggleAffiliate(next: boolean) {
-    setIncludeAffiliate(next)
-    try {
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ postId, dryRun: true, text, ...extraBody, includeAffiliateCta: next }),
-      })
-      const data = await res.json().catch(() => ({}))
-      if (res.ok) setFinalText(data.finalText || data.text || '')
-    } catch { /* keep the last preview on failure */ }
-  }
 
   // Assembled copy-paste block for manual Group sharing: the (edited) post
   // text + hashtags + URL + FTC disclaimer. Reactive to textarea edits.
@@ -150,7 +136,7 @@ export function SocialPreviewModal({
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ postId, dryRun: true, ...extraBody, ...affiliateExtra }),
+        body: JSON.stringify({ postId, dryRun: true, ...extraBody }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || 'Preview failed')
@@ -186,7 +172,7 @@ export function SocialPreviewModal({
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ postId, text, ...effectiveExtraBody, ...affiliateExtra }),
+        body: JSON.stringify({ postId, text, ...effectiveExtraBody }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || 'Publish failed')
@@ -221,7 +207,6 @@ export function SocialPreviewModal({
           scheduledAt: when.toISOString(),
           text,
           ...effectiveExtraBody,
-          ...affiliateExtra,
         }),
       })
       const data = await res.json().catch(() => ({}))
@@ -313,27 +298,12 @@ export function SocialPreviewModal({
                 </details>
               )}
 
-              {/* Facebook opt-in: add a second "buy it now" CTA with the direct
-                  affiliate link (+ disclaimer). Only when the post has one. */}
+              {/* Where the link points (blog / affiliate / both) is set once in
+                  Link settings, at the top of the page — not per post. */}
               {isFacebook && affiliateAvailable && (
-                <label className="flex items-start gap-2.5 mb-3 p-2.5 rounded-lg border cursor-pointer select-none"
-                  style={{ borderColor: 'var(--border, #e5e5e7)' }}>
-                  <input
-                    type="checkbox"
-                    checked={includeAffiliate}
-                    onChange={(e) => toggleAffiliate(e.target.checked)}
-                    className="mt-0.5 w-4 h-4 rounded accent-[#7C3AED] flex-shrink-0"
-                  />
-                  <span>
-                    <span className="block text-[13px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Also add my affiliate link</span>
-                    <span className="block text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
-                      Adds a second CTA — &ldquo;grab it right here 👉 [your link]&rdquo; — with the disclaimer, for readers who want to buy without reading the blog.
-                    </span>
-                    <span className="block text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">
-                      ✓ Allowed on your own Page (add it to your Amazon Associates account). Just never <strong className="font-semibold">boost or run paid ads</strong> on posts with the link.
-                    </span>
-                  </span>
-                </label>
+                <p className="mb-3 text-[11px] text-[#86868b] dark:text-[#8e8e93]">
+                  The link destination (blog, affiliate, or both) is set in <strong className="font-semibold">Link settings</strong> at the top of the page.
+                </p>
               )}
 
               {/* Facebook manual-share: copy block + saved Groups. Only shown

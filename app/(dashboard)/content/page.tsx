@@ -928,7 +928,6 @@ const VideoCard = memo(function VideoCardImpl({
   // Pre-publish options modal: pick which platforms go out + the Facebook
   // "add my affiliate link" opt-in, instead of firing the cascade blind.
   const [publishAllOptionsOpen, setPublishAllOptionsOpen] = useState(false)
-  const [paIncludeAffiliate, setPaIncludeAffiliate] = useState(false)
   const [paDisabled, setPaDisabled] = useState<Set<string>>(new Set())
   const togglePaPlatform = (key: string) => setPaDisabled(prev => {
     const next = new Set(prev)
@@ -1045,7 +1044,7 @@ const VideoCard = memo(function VideoCardImpl({
       )
     }
 
-    addTask(fbConnected && !fbPosted && !disabled.has('facebook'), 'Facebook', '/api/blog/facebook-post', () => setFbPosted(true), 'facebookPostId', { socialAccountId: effectiveFbAccountId ?? undefined, includeAffiliateCta: opts.includeAffiliateCta || undefined })
+    addTask(fbConnected && !fbPosted && !disabled.has('facebook'), 'Facebook', '/api/blog/facebook-post', () => setFbPosted(true), 'facebookPostId', { socialAccountId: effectiveFbAccountId ?? undefined })
     addTask(linkedInConnected && !liPosted && !disabled.has('linkedin'), 'LinkedIn', '/api/blog/linkedin-post', () => setLiPosted(true), 'linkedInPostId')
     addTask(threadsConnected && !thPosted && !disabled.has('threads'), 'Threads', '/api/blog/threads-post', () => setThPosted(true), 'threadsPostId')
     addTask(twitterConnected && !twPosted && !disabled.has('twitter'), 'X', '/api/blog/twitter-post', () => setTwPosted(true), 'twitterPostId')
@@ -1256,7 +1255,7 @@ const VideoCard = memo(function VideoCardImpl({
                 <Button
                   variant="primary"
                   size="sm"
-                  onClick={() => { setPaIncludeAffiliate(false); setPaDisabled(new Set()); setPublishAllOptionsOpen(true) }}
+                  onClick={() => { setPaDisabled(new Set()); setPublishAllOptionsOpen(true) }}
                   leftIcon={<Sparkles size={12} />}
                   title={post ? 'Post to all connected platforms that haven\'t been posted yet' : 'Generate blog post and publish to all connected platforms'}
                 >
@@ -1811,19 +1810,15 @@ const VideoCard = memo(function VideoCardImpl({
                 ))}
               </div>
               {affiliateEligible && (
-                <label className="flex items-start gap-2.5 p-2.5 rounded-lg bg-[#7C3AED]/5 border border-[#7C3AED]/20 cursor-pointer mb-3">
-                  <input type="checkbox" checked={paIncludeAffiliate} onChange={e => setPaIncludeAffiliate(e.target.checked)} className="w-4 h-4 rounded accent-[#7C3AED] mt-0.5" />
-                  <span>
-                    <span className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Also add my affiliate link to Facebook</span>
-                    <span className="block text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-0.5">Leads the caption with your product link + disclaimer so shoppers can buy without reading. Only added when the post has a product link.</span>
-                  </span>
-                </label>
+                <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mb-3 px-0.5">
+                  Where links point (blog, affiliate, or both) is set in <strong className="font-semibold">Link settings</strong> at the top of the page, per platform.
+                </p>
               )}
               <div className="flex items-center justify-end gap-2 mt-1">
                 <button onClick={() => setPublishAllOptionsOpen(false)} className="px-3 py-2 rounded-lg text-sm font-medium text-[#6e6e73] dark:text-[#ebebf0] hover:bg-black/5 dark:hover:bg-white/5">Cancel</button>
                 <button
                   disabled={!anySelected}
-                  onClick={() => { setPublishAllOptionsOpen(false); void handlePublishAll({ includeAffiliateCta: paIncludeAffiliate, disabled: paDisabled }) }}
+                  onClick={() => { setPublishAllOptionsOpen(false); void handlePublishAll({ disabled: paDisabled }) }}
                   className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-[#7C3AED] to-[#5856d6] disabled:opacity-50"
                 >
                   {post ? 'Publish now' : 'Generate & publish'}
