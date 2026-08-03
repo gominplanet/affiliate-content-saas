@@ -471,15 +471,19 @@ export default function DashboardShellV2({
       // folded in Deal Radar). AMZ Product Research = the whole Amazon catalogue
       // + Affiliate+ (Creator Connections). Deal Radar = live Amazon deals.
       // Levanta / PartnerBoost = external affiliate-program finders. Placed right
-      // under Create. Deal Radar keeps its own browse-open gate; the finders are
-      // paid (canUseFinders = tier !== trial). Section colour comes from the
-      // shared SECTION_ACCENTS wash keyed off this label.
+      // under Create. RESEARCH is the FREE-discovery magnet — every signed-in
+      // tier (incl. Free Trial) sees ALL the finders here, so cold prospects can
+      // explore what MVP surfaces. AMZ Research is genuinely free (search is open
+      // to every tier; the page only gates paid ACTIONS). Deal Radar browse is
+      // open. Levanta / PartnerBoost stay visible but their pages show the
+      // upgrade card on trial (paid external-network finders). Section colour
+      // comes from the shared SECTION_ACCENTS wash keyed off this label.
       label: 'Research',
       items: [
-        { href: '/amz-finder', icon: <PackageSearch size={15} />, label: 'AMZ Research', gate: canUseFinders },
+        { href: '/amz-finder', icon: <PackageSearch size={15} />, label: 'AMZ Research' },
         { href: '/deal-radar', icon: <Radar size={15} />, label: 'Deal Radar', gate: canBrowseDealRadar(effectiveTier) },
-        { href: '/levanta', icon: <ShoppingBag size={15} />, label: 'MVP x Levanta', gate: canUseFinders },
-        { href: '/partnerboost', icon: <Store size={15} />, label: 'MVP x PartnerBoost', gate: canUseFinders },
+        { href: '/levanta', icon: <ShoppingBag size={15} />, label: 'MVP x Levanta' },
+        { href: '/partnerboost', icon: <Store size={15} />, label: 'MVP x PartnerBoost' },
       ],
     },
     {
