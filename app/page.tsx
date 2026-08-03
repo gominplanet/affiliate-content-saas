@@ -2506,11 +2506,11 @@ function Footer() {
               { label: 'FAQ', href: '#faq' },
             ]}
           />
+          {/* About / Contact / Cookie policy hidden until those public pages
+              exist — they'd otherwise bounce a logged-out visitor to /login. */}
           <FooterCol
             title="Company"
             links={[
-              { label: 'About', href: '/about' },
-              { label: 'Contact', href: '/contact' },
               { label: 'Affiliates', href: '/affiliates' },
             ]}
           />
@@ -2519,7 +2519,6 @@ function Footer() {
             links={[
               { label: 'Privacy', href: '/privacy' },
               { label: 'Terms', href: '/terms' },
-              { label: 'Cookie policy', href: '/cookies' },
             ]}
           />
         </div>
