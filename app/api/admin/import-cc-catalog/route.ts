@@ -148,18 +148,17 @@ export async function POST(request: Request) {
     // Short per-call window so the client gets a fresh "N left" countdown every
     // ~40s (it auto-resumes until done), instead of one long silent 4-min call.
     //
-    // Batch sizing is the ONLY reliable lever here. Each merged row does TWO GIN
-    // index inserts (the STORED search_vec tsvector + the asins array), and the
-    // step marks _merged=true in the SAME statement as the insert — so if that
-    // statement hits the DB statement timeout, the whole thing rolls back and
-    // ZERO rows advance. Every retry then re-hits the exact same first batch and
-    // fails identically (what "same error after 4 tries" looks like). SET LOCAL
-    // statement_timeout=0 does NOT override the outer PostgREST timeout, so the
-    // fix is a batch small enough that one statement finishes under it. 500 was
-    // still too big on a loaded DB; 150 completes and the client auto-resumes.
-    // The purge (a plain ctid DELETE, no GIN churn) can stay larger.
-    const BATCH = 150
-    const PURGE_BATCH = 500
+    // Each merged row does TWO GIN index inserts (the STORED search_vec tsvector
+    // + the asins array), and the step marks _merged=true in the SAME statement
+    // as the insert — so a statement that hits the DB statement timeout rolls the
+    // whole batch back and ZERO rows advance (what "same error every time" looks
+    // like). The durable fix is NOT a tiny batch — it's migration 215, which
+    // raises the service_role statement_timeout to 180s so a batch can finish
+    // even while waiting out a lock held by the enrichment cron. With that
+    // headroom we run larger batches for speed; the loop still commits each batch
+    // (separate RPC calls) and the client auto-resumes until done.
+    const BATCH = 1000
+    const PURGE_BATCH = 2000
     const deadline = Date.now() + 40_000
     let upserted = 0
     let n = BATCH
