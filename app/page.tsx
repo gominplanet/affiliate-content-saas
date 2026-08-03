@@ -107,6 +107,7 @@ export default function LandingPreview() {
       <Nav />
       <Hero />
       <PlatformBar />
+      <FreeResearchSection />
       <DemoVideoSection />
       <RolesSection />
       <WorkflowSection />
@@ -131,6 +132,65 @@ export default function LandingPreview() {
       <Footer />
       <StickyBottomBar />
     </div>
+  )
+}
+
+/** Free research showcase — the top-of-funnel hook, placed right after the hero.
+ *  Everything here is free on every plan, no card, no setup: finding products is
+ *  free, publishing them is what the paid plans add. */
+const FREE_TOOLS = [
+  { icon: <Search size={18} />, label: 'Amazon Product Research', line: 'Filter the whole Amazon catalogue by sales volume, rating, price, review-to-sales ratio and video competition. The signals that separate a product worth reviewing from a dud.' },
+  { icon: <Radar size={18} />, label: 'Deal Radar', line: 'Live, price-history-verified Amazon deals. See what genuinely dropped, not fake "was" prices, with the real high and low behind every discount.' },
+  { icon: <ShoppingBag size={18} />, label: 'Levanta + PartnerBoost', line: 'Scout your own connected Levanta and PartnerBoost campaigns for the products worth promoting, above your standard Amazon tag.' },
+  { icon: <Store size={18} />, label: 'Creator Connections', line: 'Already have CC access? Search the full campaign catalogue in one place, with our free Scout extension.' },
+]
+
+function FreeResearchSection() {
+  return (
+    <section id="free-research" className="px-6 lg:px-8 pt-16 sm:pt-24 pb-16 sm:pb-28 relative">
+      <div className="max-w-6xl mx-auto">
+        <div className="text-center max-w-3xl mx-auto mb-14">
+          <span
+            className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-medium uppercase tracking-[0.18em] mb-5"
+            style={{ backgroundColor: 'rgba(52,199,89,0.12)', color: '#34c759', border: '1px solid rgba(52,199,89,0.28)' }}
+          >
+            <Sparkles size={10} /> Free · no card · no setup
+          </span>
+          <h2 className="text-[40px] sm:text-[52px] font-semibold tracking-tight leading-[1.05] mb-5" style={{ color: 'var(--text)' }}>
+            The product research most tools charge for.
+            <br />
+            <span
+              style={{
+                background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                backgroundClip: 'text',
+              }}
+            >
+              Free.
+            </span>
+          </h2>
+          <p className="text-[16px] sm:text-[17px] leading-relaxed max-w-2xl mx-auto" style={{ color: 'var(--text-soft)' }}>
+            Sign up and start finding products worth reviewing in minutes. No WordPress, no YouTube,
+            no credit card. Publishing is where the paid plans come in. The research is yours.
+          </p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {FREE_TOOLS.map((t) => (
+            <RoleCard key={t.label} icon={t.icon} label={t.label} line={t.line} />
+          ))}
+        </div>
+        <div className="text-center mt-12">
+          <a
+            href="/signup"
+            className="inline-flex items-center gap-2 px-6 py-3 rounded-full text-[15px] font-semibold text-white transition-transform hover:-translate-y-0.5"
+            style={{ background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)' }}
+          >
+            Start free, no card <ArrowRight size={16} />
+          </a>
+        </div>
+      </div>
+    </section>
   )
 }
 
