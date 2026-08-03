@@ -32,7 +32,10 @@ export const maxDuration = 300
 const MIN_TOKENS_TO_CONTINUE = 60
 const STALE_DAYS = () => {
   const n = Number(process.env.CC_ENRICH_STALE_DAYS)
-  return Number.isFinite(n) && n >= 1 ? n : 30
+  // Default 45 (was 30): re-verify each enriched product every 45 days instead
+  // of monthly — ~33% less recurring token load, prices age up to 45d. Override
+  // with CC_ENRICH_STALE_DAYS.
+  return Number.isFinite(n) && n >= 1 ? n : 45
 }
 const MAX_PER_RUN = () => {
   const n = Number(process.env.CC_ENRICH_MAX_PER_RUN)
