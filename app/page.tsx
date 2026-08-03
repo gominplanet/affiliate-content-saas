@@ -180,7 +180,18 @@ function FreeResearchSection() {
             <RoleCard key={t.label} icon={t.icon} label={t.label} line={t.line} />
           ))}
         </div>
-        <div className="text-center mt-12">
+        {/* Hard number — what this research stack costs everywhere else vs $0 here. */}
+        <div className="mt-9 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-[14px]" style={{ color: 'var(--text-soft)' }}>
+          <span>Everywhere else you&apos;d pay</span>
+          <span className="line-through">Jungle Scout $49</span>
+          <span aria-hidden>·</span>
+          <span className="line-through">Helium 10 $79</span>
+          <span aria-hidden>·</span>
+          <span className="line-through">Keepa $19</span>
+          <span className="font-semibold" style={{ color: 'var(--text)' }}>= ~$147/mo.</span>
+          <span className="font-bold" style={{ color: '#34c759' }}>Here it&apos;s free.</span>
+        </div>
+        <div className="text-center mt-10">
           <a
             href="/signup"
             className="inline-flex items-center gap-2 px-6 py-3 rounded-full text-[15px] font-semibold text-white transition-transform hover:-translate-y-0.5"
@@ -1445,6 +1456,15 @@ function PricingSection() {
           ))}
         </div>
 
+        {/* Link to the full pricing page (all four tiers, the bundle math and the
+            free-research breakdown). */}
+        <div className="mt-6 text-center">
+          <a href="/pricing" className="inline-flex items-center gap-1.5 text-[14px] font-semibold" style={{ color: '#9D6BFF' }}>
+            See the full breakdown, plus what MVP replaces
+            <ArrowRight size={15} />
+          </a>
+        </div>
+
         {/* Trust strip below the cards. */}
         <div className="mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-[12px]" style={{ color: 'var(--text-soft)' }}>
           <span className="inline-flex items-center gap-1.5">
@@ -1912,7 +1932,7 @@ const NAV_ANCHORS = [
   // Full public product tour — a standalone page (/tour), not an in-page
   // anchor. Sits before Pricing so prospects can see what it does, then price.
   { label: 'Tour', href: '/tour' },
-  { label: 'Pricing', href: '#pricing' },
+  { label: 'Pricing', href: '/pricing' },
   { label: 'FAQ', href: '#faq' },
   // /affiliates is a full page, not an in-page anchor — added here so the
   // top nav surfaces the program for prospects who'd otherwise only see
@@ -2467,7 +2487,7 @@ function Footer() {
               { label: 'Roles', href: '#roles' },
               { label: 'Workflow', href: '#how-it-works' },
               { label: 'Product tour', href: '/tour' },
-              { label: 'Pricing', href: '#pricing' },
+              { label: 'Pricing', href: '/pricing' },
               { label: 'FAQ', href: '#faq' },
               { label: 'Watch intro', href: '#demo' },
             ]}
