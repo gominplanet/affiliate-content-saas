@@ -11,7 +11,7 @@ import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } from '@/lib/social-cap'
 import { resolveBlogPostId } from '@/lib/resolve-post-id'
 import { resolvePostAffiliateLink } from '@/lib/ig-dm'
-import { parseLinkModes, linkModeFor, effectiveMode } from '@/lib/social-link-mode'
+import { parseLinkPrefs, linkPrefFor, primaryCardUrl, youtubeWatchUrl } from '@/lib/social-link-mode'
 
 export const maxDuration = 60
 
@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: postRow } = await supabase
       .from('blog_posts')
-      .select('id,title,excerpt,content,wordpress_url,social_publish_counts,geniuslink_code,youtube_videos(thumbnail_url)')
+      .select('id,title,excerpt,content,wordpress_url,social_publish_counts,geniuslink_code,youtube_videos(thumbnail_url,youtube_video_id)')
       .eq('id', postId)
       .eq('user_id', user.id)
       .single()
@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: intRow } = await supabase
       .from('integrations')
-      .select('bluesky_handle,bluesky_app_password,bluesky_did,social_link_modes')
+      .select('bluesky_handle,bluesky_app_password,bluesky_did,social_link_modes,amazon_associates_tag')
       .eq('user_id', user.id)
       .single()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -97,16 +97,16 @@ export async function POST(request: NextRequest) {
     }
 
     // ── 4. Resolve post copy — user override or fresh AI gen ───────────────
-    // Link mode (blog / affiliate / both). Bluesky's card carries ONE clickable
-    // link, so: blog → blog card, affiliate → product card, both → product card
-    // (the buy action) with the blog link added as text below.
+    // Bluesky's card carries ONE clickable link (300-char cap), so we show the
+    // PRIMARY link there — the affiliate product when the affiliate is on, else
+    // the chosen content link (review video or blog).
     const affiliateLink = resolvePostAffiliateLink(post)
-    const bsMode = effectiveMode(linkModeFor(parseLinkModes(integration?.social_link_modes), 'bluesky'), affiliateLink)
-    const cardUrl = (bsMode === 'affiliate' || bsMode === 'both') ? (affiliateLink as string) : (post.wordpress_url as string)
-    // Bluesky max 300 chars. Reserve room for the link(s) + a compact #ad tag —
-    // more when 'both' has to fit two URLs.
-    const reserve = bsMode === 'both' ? 150 : (bsMode === 'affiliate' ? 95 : 80)
-    const generationBudget = POST_CHAR_LIMIT - reserve
+    const pref = linkPrefFor(parseLinkPrefs(integration?.social_link_modes), 'bluesky')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const videoUrl = youtubeWatchUrl((post as any).youtube_videos?.youtube_video_id)
+    const cardUrl = primaryCardUrl(pref, affiliateLink, post.wordpress_url as string, videoUrl) ?? (post.wordpress_url as string)
+    // Reserve room for the card URL + a compact #ad tag when the affiliate is on.
+    const generationBudget = POST_CHAR_LIMIT - (pref.product ? 95 : 80)
 
     let postText: string
     if (overrideText) {
@@ -162,17 +162,10 @@ Return ONLY the post text.`,
       postText = postText.slice(0, generationBudget - 1).replace(/\s+\S*$/, '') + '…'
     }
 
-    // The card link (url) + text per mode. Affiliate/both carry a compact #ad
-    // disclosure since there's no room for the full line.
+    // The card link (url) + compact #ad when the affiliate link is on (no room
+    // for the full disclosure line on Bluesky).
     const url = cardUrl
-    let finalText: string
-    if (bsMode === 'both') {
-      finalText = `${postText}\n\n🛒 ${affiliateLink}\n🔗 ${post.wordpress_url} #ad`
-    } else if (bsMode === 'affiliate') {
-      finalText = `${postText}\n\n${url} #ad`
-    } else {
-      finalText = `${postText}\n\n${url}`
-    }
+    const finalText = `${postText}${pref.product && affiliateLink ? ' #ad' : ''}\n\n${url}`
 
     // Dry-run: return the generated text without publishing
     if (dryRun) {

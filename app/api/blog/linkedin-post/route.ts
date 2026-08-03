@@ -16,7 +16,7 @@ import { fetchOgImage, stripLinkPlaceholders } from '@/lib/og-image'
 import { AFFILIATE_DISCLAIMER_DEFAULT } from '@/lib/social-disclaimer'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
 import { resolvePostAffiliateLink } from '@/lib/ig-dm'
-import { parseLinkModes, linkModeFor, composeCaption, effectiveMode } from '@/lib/social-link-mode'
+import { parseLinkPrefs, linkPrefFor, composeCaption, primaryCardUrl, effectiveDisclosure, youtubeWatchUrl } from '@/lib/social-link-mode'
 
 export const maxDuration = 60
 
@@ -77,6 +77,7 @@ export async function POST(request: NextRequest) {
     // Video posts → YouTube / stored thumbnail; video-less posts (campaigns,
     // guides, comparisons) → the article's og:image (the featured image).
     let imageUrl = ''
+    let ytVideoId: string | null = null
     if (post.video_id) {
       const { data: vid } = await supabase
         .from('youtube_videos')
@@ -84,6 +85,7 @@ export async function POST(request: NextRequest) {
         .eq('id', post.video_id)
         .eq('user_id', user.id)
         .maybeSingle()
+      ytVideoId = vid?.youtube_video_id ?? null
       imageUrl = vid?.youtube_video_id
         // maxresdefault 404s for non-HD uploads → LinkedIn's image upload
         // (which fetches the bytes server-side) fails. resolveBestThumbnail
@@ -107,7 +109,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: intRow } = await supabase
       .from('integrations')
-      .select('linkedin_access_token,linkedin_person_id,linkedin_person_name,social_link_modes')
+      .select('linkedin_access_token,linkedin_person_id,linkedin_person_name,social_link_modes,amazon_associates_tag')
       .eq('user_id', user.id)
       .single()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -164,19 +166,18 @@ Return ONLY the post text, no extra commentary.`,
     // both). composeCaption places the affiliate + blog links and the FTC
     // disclosure in the right order; the write-up itself carries no links.
     const affiliateLink = resolvePostAffiliateLink(post)
-    const liMode = linkModeFor(parseLinkModes(integration?.social_link_modes), 'linkedin')
-    const disclaimer = brand?.affiliate_disclaimer || AFFILIATE_DISCLAIMER_DEFAULT
+    const pref = linkPrefFor(parseLinkPrefs(integration?.social_link_modes), 'linkedin')
+    const videoUrl = youtubeWatchUrl(ytVideoId)
+    const disclosure = effectiveDisclosure(brand?.affiliate_disclaimer || AFFILIATE_DISCLAIMER_DEFAULT, affiliateLink, !!integration?.amazon_associates_tag)
     const cleaned = scrubBanned(stripLinkPlaceholders(rawText))
     const composed = composeCaption({
-      mode: liMode, writeUp: cleaned, blogUrl: post.wordpress_url,
-      affiliateLink, disclaimer, blogLabel: 'Read the full review',
+      product: pref.product, content: pref.content, writeUp: cleaned,
+      blogUrl: post.wordpress_url, videoUrl, affiliateLink, disclosure, blogLabel: 'Read the full review',
     })
     // LinkedIn's UGC API allows up to 3000 chars per post — defensive cap.
     const postText = capSocialText(composed, SOCIAL_LIMITS.linkedin)
-    // The ARTICLE-card fallback (no image) can carry one URL — point it at the
-    // product in affiliate mode, else the blog.
-    const cardUrl = (effectiveMode(liMode, affiliateLink) === 'affiliate' && affiliateLink)
-      ? affiliateLink : post.wordpress_url
+    // The ARTICLE-card fallback (no image) carries one URL — the primary link.
+    const cardUrl = primaryCardUrl(pref, affiliateLink, post.wordpress_url, videoUrl) ?? post.wordpress_url
 
     if (dryRun) {
       return NextResponse.json({ ok: true, dryRun: true, text: postText, finalText: postText })

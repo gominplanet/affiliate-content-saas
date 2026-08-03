@@ -16,7 +16,7 @@ import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { maybeDecrypt } from '@/lib/secrets'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
 import { resolvePostAffiliateLink } from '@/lib/ig-dm'
-import { parseLinkModes, composeCaption, effectiveMode } from '@/lib/social-link-mode'
+import { parseLinkPrefs, linkPrefFor, composeCaption, primaryCardUrl, effectiveDisclosure, youtubeWatchUrl } from '@/lib/social-link-mode'
 
 export const maxDuration = 60
 
@@ -94,7 +94,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: intRow } = await supabase
       .from('integrations')
-      .select('facebook_page_id,facebook_page_access_token,tier,social_link_modes')
+      .select('facebook_page_id,facebook_page_access_token,tier,social_link_modes,amazon_associates_tag')
       .eq('user_id', user.id)
       .single()
     // Decrypt secret columns transparently (2026-06-02 rollout).
@@ -169,22 +169,20 @@ Return ONLY the post text, nothing else.`,
     // disclaimer repeats at the very end. Never falls back to the blog URL, so it
     // only appears when the post has a real product link.
     const affiliateLink = resolvePostAffiliateLink(post)
-    // Per-user link mode (blog / affiliate / both) drives where the link points.
-    // Legacy: an explicit includeAffiliateCta=true still forces 'both' when the
-    // user hasn't set a Facebook mode, so old callers keep working.
-    const storedMode = parseLinkModes(integration?.social_link_modes).facebook
-    const fbMode = storedMode ?? (includeAffiliateCta ? 'both' : 'blog')
-    // Scrub BEFORE composing, so the dry-run preview returns exactly what
-    // gets published.
+    // Per-platform link pref: affiliate on/off × content (blog / video / none).
+    const pref = linkPrefFor(parseLinkPrefs(integration?.social_link_modes), 'facebook')
+    const videoUrl = youtubeWatchUrl(video?.youtube_video_id)
+    // Disclosure: brand line, plus the Amazon-Associate line when Amazon is in
+    // play (an Amazon link or the creator's Amazon tag). Retailer-accurate.
+    const disclosure = effectiveDisclosure(disclaimer, affiliateLink, !!integration?.amazon_associates_tag)
+    // Scrub BEFORE composing, so the dry-run preview returns exactly what posts.
     reviewText = scrubBanned(reviewText)
     const caption = composeCaption({
-      mode: fbMode, writeUp: reviewText, blogUrl: post.wordpress_url,
-      affiliateLink, disclaimer, blogLabel: 'Read the full post',
+      product: pref.product, content: pref.content, writeUp: reviewText,
+      blogUrl: post.wordpress_url, videoUrl, affiliateLink, disclosure, blogLabel: 'Read the full post',
     })
-    // For the link-post fallback (no image), point the card at the affiliate
-    // product in affiliate mode, else the blog.
-    const fallbackLink = (effectiveMode(fbMode, affiliateLink) === 'affiliate' && affiliateLink)
-      ? affiliateLink : post.wordpress_url
+    // The link-post fallback (no image) points at whichever link is primary.
+    const fallbackLink = primaryCardUrl(pref, affiliateLink, post.wordpress_url, videoUrl) ?? post.wordpress_url
 
     if (dryRun) {
       // Generate 3 SPECIFIC, niche hashtags that fit this exact product/topic
