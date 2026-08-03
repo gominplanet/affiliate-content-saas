@@ -55,25 +55,55 @@ export default function AdminCcImportPage() {
     setMerging(true); setResult(null); setErr(null); setRemaining(null)
     let confirm = false
     let totalUpserted = 0
+    // Self-driving loop: the endpoint does a bounded, RESUMABLE chunk per call
+    // and reports done:false + remaining while work is left. We keep calling
+    // until done — and on a transient hiccup (a network blip, a chunk that timed
+    // out, a no-progress cycle) we wait and retry the SAME resumable call instead
+    // of stopping. So the admin clicks Merge ONCE and it grinds a full import to
+    // completion, on this page, no matter how large — no re-clicking, no SQL.
+    // Only a real, non-resumable error (auth, empty staging, a missing DB
+    // function) or many stalls in a row surfaces as a failure.
+    const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms))
+    let stalls = 0
+    const MAX_STALLS = 40 // ~consecutive no-progress calls before giving up
     try {
-      // Auto-resume loop: the endpoint does a bounded chunk per call and reports
-      // done:false + remaining while work is left. We keep calling until done, so
-      // the admin clicks Merge ONCE and just watches the countdown.
-      for (let guard = 0; guard < 100; guard++) {
-        const r = await fetch('/api/admin/import-cc-catalog', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm }),
-        })
-        const d = await r.json()
-        // Safety prompt: staging far smaller than live — likely a partial upload.
-        if (r.status === 409 && d?.needsConfirm) {
-          const ok = window.confirm(`${d.error}\n\nMerge anyway and remove ~${Number(d.wouldPurgeApprox).toLocaleString()} campaigns?`)
-          if (!ok) { setMerging(false); return }
-          confirm = true
+      // 100k is a runaway backstop, not a real limit — a normal import ends via
+      // done:true long before this.
+      for (let guard = 0; guard < 100_000; guard++) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let d: any = {}
+        try {
+          const r = await fetch('/api/admin/import-cc-catalog', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm }),
+          })
+          d = await r.json().catch(() => ({}))
+          // Safety prompt: staging far smaller than live — likely a partial upload.
+          if (r.status === 409 && d?.needsConfirm) {
+            const ok = window.confirm(`${d.error}\n\nMerge anyway and remove ~${Number(d.wouldPurgeApprox).toLocaleString()} campaigns?`)
+            if (!ok) { setMerging(false); return }
+            confirm = true
+            continue
+          }
+          // 4xx (not 409) = a real, non-resumable problem: auth, empty staging, or
+          // a missing migration. Surface it and stop.
+          if (r.status >= 400 && r.status < 500) {
+            throw new Error(d.detail ? `${d.error || 'Merge failed'} — ${d.detail}` : (d.error || 'Merge failed'))
+          }
+          // 5xx now only happens for a missing DB function (non-resumable). Everything
+          // else the endpoint reports as done:false so we just resume.
+          if (!r.ok) {
+            throw new Error(d.detail ? `${d.error || 'Merge failed'} — ${d.detail}` : (d.error || 'Merge failed'))
+          }
+        } catch (netErr) {
+          // Network blip (fetch threw) — back off and retry the resumable call.
+          stalls++
+          if (stalls > MAX_STALLS) throw netErr instanceof Error ? netErr : new Error('Merge failed')
+          await sleep(Math.min(8000, 1500 * stalls))
           continue
         }
-        if (!r.ok) throw new Error(d.detail ? `${d.error || 'Merge failed'} — ${d.detail}` : (d.error || 'Merge failed'))
         confirm = true
-        totalUpserted += Number(d.upserted ?? 0)
+        const did = Number(d.upserted ?? 0)
+        totalUpserted += did
         if (d.done) {
           setRemaining(null)
           setResult({ upserted: totalUpserted, purged: Number(d.purged ?? 0), staged: Number(d.staged ?? 0) })
@@ -81,9 +111,14 @@ export default function AdminCcImportPage() {
           void loadCounts()
           return
         }
-        setRemaining(d.remaining == null ? null : Number(d.remaining)) // progress; loop continues (null → "Merging…")
+        // Progress? Merging rows, or purging (upsert phase already drained), both count.
+        const madeProgress = did > 0 || Number(d.purged ?? 0) > 0 || d.purging === true
+        stalls = madeProgress ? 0 : stalls + 1
+        if (stalls > MAX_STALLS) throw new Error('Merge isn’t making progress — check the database, then click Merge again.')
+        setRemaining(d.remaining == null ? null : Number(d.remaining)) // null → "Merging…"
+        if (!madeProgress) await sleep(2000) // a no-progress cycle: back off before retrying
       }
-      throw new Error('Merge is taking unusually long — click Merge again to continue.')
+      throw new Error('Merge hit the safety cap — click Merge again to continue.')
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Merge failed'
       setErr(msg); toast.error(msg)
