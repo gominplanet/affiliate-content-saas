@@ -16,9 +16,16 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { type Tier } from '@/lib/tier'
 import { toUserMessage } from '@/lib/friendly-error'
-import { keepaProductFinder, keepaConfigured, type KeepaFinderFilters } from '@/services/keepa'
+import { keepaProductFinder, fetchKeepaProductCard, keepaConfigured, type KeepaFinderFilters } from '@/services/keepa'
 import { getItemsByAsin, creatorsApiConfigured } from '@/services/amazon-creators'
 import { recordUsage } from '@/lib/ai-usage'
+import { ONSITE_RULES } from '@/lib/cc-smart-rules'
+import { normalizeTier } from '@/lib/tier'
+
+// MVP picks: how many finder hits to deep-verify per page against MVP's onsite
+// buy-to-review rules (carousel + real demand). Each ≈ 2 Keepa tokens, so it's
+// bounded and paid-only.
+const MVP_PICKS_VERIFY_CAP = 15
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -96,10 +103,27 @@ export async function GET(request: Request) {
 
     const url = new URL(request.url)
     const q = (url.searchParams.get('q') || '').trim().slice(0, 80)
-    const minPrice = numParam(url, 'minPrice')      // dollars
+    // MVP picks: apply MVP's onsite buy-to-review rulebook (price/rating/review
+    // floors in the finder, then verify an open video carousel + real monthly
+    // demand per product). Costs extra Keepa tokens, so it's paid-only.
+    const mvpPicks = url.searchParams.get('mvpPicks') === '1'
+    if (mvpPicks && normalizeTier(tier) === 'trial') {
+      return NextResponse.json({
+        error: 'MVP picks (carousel-verified, buy-to-review vetted) is a paid feature. Upgrade to unlock it — plain research stays free.',
+        upgradeRequired: true, currentTier: tier,
+      }, { status: 403 })
+    }
+    let minPrice = numParam(url, 'minPrice')        // dollars
     const maxPrice = numParam(url, 'maxPrice')      // dollars
-    const minRating = numParam(url, 'minRating')    // 0–5
-    const minReviews = intParam(url, 'minReviews')
+    let minRating = numParam(url, 'minRating')      // 0–5
+    let minReviews = intParam(url, 'minReviews')
+    // MVP picks raises the finder floors to the onsite rulebook (never lowers a
+    // stricter value the user already set).
+    if (mvpPicks) {
+      minPrice = Math.max(minPrice ?? 0, ONSITE_RULES.minPrice)
+      minRating = Math.max(minRating ?? 0, ONSITE_RULES.minRating)
+      minReviews = Math.max(minReviews ?? 0, ONSITE_RULES.minReviews)
+    }
     const maxSalesRank = intParam(url, 'maxSalesRank')
     const catParam = intParam(url, 'category')
     const rootCategory = catParam != null && VALID_CATEGORY.has(catParam) && catParam > 0 ? catParam : undefined
@@ -148,6 +172,41 @@ export async function GET(request: Request) {
     // (best-effort — if it isn't configured or rate-limits, we still return the
     // ASINs with tagged links, just without images).
     const tag = ((intRow?.amazon_associates_tag as string | null) || '').trim() || null
+
+    // ── MVP picks: verify the onsite buy-to-review rules per product ──────────
+    // The finder already floored price/rating/reviews; here we deep-check each
+    // candidate for an OPEN VIDEO CAROUSEL (the traffic mechanism) and real
+    // MONTHLY DEMAND — the two signals the finder can't filter on. Bounded +
+    // paid-only (each card ≈ 2 Keepa tokens).
+    if (mvpPicks) {
+      const slice = found.asins.slice(0, MVP_PICKS_VERIFY_CAP)
+      const verified = await Promise.all(slice.map(async asin => ({ asin, card: await fetchKeepaProductCard(asin) })))
+      recordUsage({ userId: user.id, tier, feature: 'amazon_research_mvp', model: 'keepa-card' })
+      const passing = verified.filter(({ card }) =>
+        (card.videoCount ?? 0) > 0
+        && (card.monthlySold ?? 0) >= ONSITE_RULES.minMonthlySales
+        && (card.priceNowCents ?? 0) >= ONSITE_RULES.minPrice * 100,
+      )
+      const info = creatorsApiConfigured() ? await getItemsByAsin(passing.map(p => p.asin)) : new Map()
+      const mvpProducts = passing.map(({ asin, card }) => ({
+        asin,
+        title: info.get(asin)?.title ?? null,
+        imageUrl: info.get(asin)?.imageUrl ?? null,
+        priceNow: card.priceNowCents != null ? Math.round(card.priceNowCents) / 100 : null,
+        productUrl: taggedLink(asin, tag),
+        mvpApproved: true,
+        monthlySold: card.monthlySold ?? null,
+        rating: card.rating ?? null,
+        reviewCount: card.reviewCount ?? null,
+        videoCount: card.videoCount ?? 0,
+      }))
+      return NextResponse.json({
+        ok: true, page, products: mvpProducts,
+        hasMore: found.asins.length === PER_PAGE, hasOwnTag: !!tag,
+        mvpPicks: true, scanned: slice.length,
+      })
+    }
+
     const cards = creatorsApiConfigured() ? await getItemsByAsin(found.asins) : new Map()
 
     const products = found.asins.map(asin => {

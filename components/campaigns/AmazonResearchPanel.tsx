@@ -14,7 +14,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
   Loader2, Search, Bookmark, BookmarkCheck, ShoppingCart, PenLine, Check,
-  ArrowRight, BarChart3, ImageOff, SlidersHorizontal,
+  ArrowRight, BarChart3, ImageOff, SlidersHorizontal, Sparkles, Video, Lock,
 } from 'lucide-react'
 import ProductDeepDiveModal from '@/components/product/ProductDeepDiveModal'
 
@@ -24,6 +24,12 @@ interface Product {
   imageUrl: string | null
   priceNow: number | null
   productUrl: string
+  // Present on MVP picks results (carousel-verified, buy-to-review vetted).
+  mvpApproved?: boolean
+  monthlySold?: number | null
+  rating?: number | null
+  reviewCount?: number | null
+  videoCount?: number
 }
 
 const SORTS = [
@@ -74,6 +80,9 @@ export default function AmazonResearchPanel({ canAct = true, onSavedChange }: { 
   const [minRating, setMinRating] = useState('0')
   const [minReviews, setMinReviews] = useState('0')
   const [maxSalesRank, setMaxSalesRank] = useState('0')
+  // MVP picks: apply MVP's onsite buy-to-review rulebook (price/rating/reviews
+  // floors + a verified open video carousel + real monthly demand). Paid-only.
+  const [mvpPicks, setMvpPicks] = useState(false)
 
   const [rows, setRows] = useState<Product[]>([])
   const [loading, setLoading] = useState(false)
@@ -101,10 +110,11 @@ export default function AmazonResearchPanel({ canAct = true, onSavedChange }: { 
     if (minRating !== '0') params.set('minRating', minRating)
     if (minReviews !== '0') params.set('minReviews', minReviews)
     if (maxSalesRank !== '0') params.set('maxSalesRank', maxSalesRank)
+    if (mvpPicks) params.set('mvpPicks', '1')
     params.set('sort', sort)
     params.set('page', String(pageToLoad))
     return params
-  }, [q, category, minPrice, maxPrice, minRating, minReviews, maxSalesRank, sort])
+  }, [q, category, minPrice, maxPrice, minRating, minReviews, maxSalesRank, sort, mvpPicks])
 
   const load = useCallback(async (pageToLoad = 0, append = false) => {
     if (append) setLoadingMore(true); else setLoading(true)
@@ -129,7 +139,7 @@ export default function AmazonResearchPanel({ canAct = true, onSavedChange }: { 
   // Debounced reload on any filter change (skips the wide-open no-filter state).
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hasFilters = q.trim() || category !== '0' || (minPrice.trim() && Number(minPrice) > 0)
-    || (maxPrice.trim() && Number(maxPrice) > 0) || minRating !== '0' || minReviews !== '0' || maxSalesRank !== '0'
+    || (maxPrice.trim() && Number(maxPrice) > 0) || minRating !== '0' || minReviews !== '0' || maxSalesRank !== '0' || mvpPicks
   useEffect(() => {
     // Free/trial users search MANUALLY (a Search button) so filter-fiddling
     // doesn't silently burn their daily search cap. Paid users get instant
@@ -161,7 +171,7 @@ export default function AmazonResearchPanel({ canAct = true, onSavedChange }: { 
   }
 
   const clearFilters = () => {
-    setQ(''); setCategory('0'); setMinPrice(''); setMaxPrice(''); setMinRating('0'); setMinReviews('0'); setMaxSalesRank('0'); setSort('salesRank')
+    setQ(''); setCategory('0'); setMinPrice(''); setMaxPrice(''); setMinRating('0'); setMinReviews('0'); setMaxSalesRank('0'); setSort('salesRank'); setMvpPicks(false)
   }
 
   return (
@@ -178,6 +188,19 @@ export default function AmazonResearchPanel({ canAct = true, onSavedChange }: { 
           />
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {/* MVP picks — MVP's onsite buy-to-review rulebook (carousel-verified). */}
+          <button
+            onClick={() => {
+              if (!canAct) { toast.error('MVP picks is a paid feature — plain research stays free. Upgrade to unlock carousel-verified, buy-to-review products.'); return }
+              setMvpPicks(v => !v)
+            }}
+            title="MVP picks: MVP's onsite buy-to-review criteria — $25+ price, 3.8★+, 50+ reviews, real monthly demand, and an open video carousel on the product page. Slower (each pick is verified) and paid-only."
+            className={`inline-flex items-center gap-1.5 h-9 rounded-full px-3.5 text-sm font-semibold border transition ${mvpPicks ? '' : 'bg-white dark:bg-[#1c1c1e]'}`}
+            style={mvpPicks
+              ? { background: '#7C3AED', borderColor: '#7C3AED', color: '#fff' }
+              : { borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
+            {canAct ? <Sparkles size={14} /> : <Lock size={12} />} MVP picks
+          </button>
           <Select value={sort} onChange={setSort} options={SORTS} />
           <Select value={category} onChange={setCategory} options={CATEGORIES} />
           <Select value={minRating} onChange={setMinRating} options={[
@@ -227,7 +250,9 @@ export default function AmazonResearchPanel({ canAct = true, onSavedChange }: { 
         </div>
       ) : rows.length === 0 ? (
         <div className="text-center py-12 text-sm" style={{ color: 'var(--text-faint)' }}>
-          No products match those filters : try widening them.
+          {mvpPicks
+            ? "Nothing cleared MVP's bar here — carousel, demand, rating and price floors are strict. Try another keyword or category."
+            : 'No products match those filters : try widening them.'}
           {debug && (
             <div className="mt-3 text-[11px] font-mono break-all max-w-2xl mx-auto" style={{ color: 'var(--text-faint)' }}>
               <div>diagnostic · status {debug.status} · tokens {debug.tokensLeft ?? '—'} · total {debug.totalResults ?? '—'} · matched {debug.matched}</div>
@@ -326,6 +351,11 @@ function ProductCard({ p, canAct, saved, onToggleSave, onDeepDive }: {
           className="absolute top-2 right-2 inline-flex items-center gap-1 text-[10px] font-semibold rounded-full px-2 py-1 bg-black/55 text-white hover:bg-black/75 backdrop-blur-sm transition-colors">
           <BarChart3 size={10} /> Data
         </button>
+        {p.mvpApproved && (
+          <span className="absolute top-2 left-2 inline-flex items-center gap-1 text-[10px] font-bold rounded-full px-2 py-1 text-white" style={{ background: '#7C3AED' }}>
+            <Sparkles size={10} /> MVP pick
+          </span>
+        )}
       </a>
 
       <div className="p-2.5 flex flex-col gap-2 flex-1">
@@ -335,6 +365,13 @@ function ProductCard({ p, canAct, saved, onToggleSave, onDeepDive }: {
         {p.priceNow != null ? (
           <span className="text-[15px] font-extrabold" style={{ color: '#16a34a' }}>${p.priceNow.toFixed(2)}</span>
         ) : <div className="h-[1.1rem]" />}
+        {p.mvpApproved && (
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10.5px]" style={{ color: 'var(--text-faint)' }}>
+            {p.rating != null && <span>★{p.rating.toFixed(1)}{p.reviewCount != null ? ` (${p.reviewCount.toLocaleString()})` : ''}</span>}
+            {p.monthlySold != null && <span>{p.monthlySold.toLocaleString()}+ sold/mo</span>}
+            {(p.videoCount ?? 0) > 0 && <span className="inline-flex items-center gap-0.5" style={{ color: '#7C3AED' }}><Video size={10} /> carousel</span>}
+          </div>
+        )}
 
         <div className="mt-auto pt-1 space-y-1.5">
           {gen === 'done' && postUrl ? (
