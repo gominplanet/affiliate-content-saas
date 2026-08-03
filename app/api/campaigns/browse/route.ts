@@ -153,7 +153,13 @@ export async function GET(request: Request) {
       budget: number | null; budget_remaining: number | null
       available_slot: number | null; total_slot: number | null
     }
-    let rows = ((data ?? []) as Row[]).filter(r => Array.isArray(r.asins) && r.asins.length > 0)
+    // Many CC campaigns arrive with an EMPTY asins[] — the ASIN lives only in
+    // the campaign name (e.g. "B0FHK9DYTC 6L Cool Mist Humidifier 10%"). Browse
+    // used to drop those (it needs an ASIN for the card), which is why a keyword
+    // with thousands of catalog matches showed only the handful that happened to
+    // carry a populated asins column. Recover the ASIN from the name so they all
+    // show (and can be enriched on demand / linked / bought).
+    let rows = ((data ?? []) as Row[]).filter(r => pickAsin(r) != null)
     // MVP picks also drops the "never" categories (supplements / food / pharmacy
     // / clothing) — the one gate that isn't a clean numeric column. Best-effort on
     // the page; pagination is unaffected (hasMore still reflects the DB window).
@@ -182,6 +188,21 @@ function applySort(query: any, sort: SortKey) {
   }
 }
 
+// Amazon ASINs are 10 alphanumerics; CC products are effectively all B0-prefixed.
+// CC campaign names very often embed the ASIN when the asins column is empty.
+const ASIN_IN_NAME = /\bB0[A-Z0-9]{8}\b/i
+function extractAsinFromName(name: string | null | undefined): string | null {
+  if (!name) return null
+  const m = name.match(ASIN_IN_NAME)
+  return m ? m[0].toUpperCase() : null
+}
+// The campaign's representative ASIN: the stored asins[0], else recovered from
+// the campaign name.
+function pickAsin(r: { asins?: string[] | null; campaign_name?: string | null }): string | null {
+  const first = Array.isArray(r.asins) && r.asins[0] ? String(r.asins[0]).toUpperCase() : null
+  return first || extractAsinFromName(r.campaign_name)
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function toClient(r: any) {
   let daysLeft: number | null = null
@@ -197,8 +218,8 @@ function toClient(r: any) {
     campaignId: r.campaign_id,
     campaignName: r.campaign_name,
     brand: r.brand_name,
-    asin: r.asins[0] as string,
-    asinCount: r.asins.length,
+    asin: pickAsin(r) as string,
+    asinCount: (Array.isArray(r.asins) && r.asins.length) ? r.asins.length : 1,
     commissionPct: Number(r.commission_pct),
     startsAt: r.starts_at,
     endsAt: r.ends_at,

@@ -324,6 +324,7 @@ export default function AdminCcImportPage() {
               <span>Matches (Browse search): <b style={{ color: '#0a84ff' }}>{covData.ftsCount?.toLocaleString?.() ?? '—'}</b></span>
               <span>…live only: <b style={{ color: 'var(--text)' }}>{covData.ftsLiveCount?.toLocaleString?.() ?? '—'}</b></span>
               <span>Name contains &ldquo;{covData.q}&rdquo;: <b style={{ color: 'var(--text)' }}>{covData.nameIlikeCount?.toLocaleString?.() ?? '—'}</b></span>
+              <span>…with a populated ASIN: <b style={{ color: covData.withAsins === 0 ? '#e11d48' : 'var(--text)' }}>{covData.withAsins?.toLocaleString?.() ?? '—'}</b></span>
               <span>Newest import: <b style={{ color: 'var(--text)' }}>{covData.latestImportedAt ? String(covData.latestImportedAt).slice(0, 10) : '—'}</b></span>
             </div>
             {Array.isArray(covData.sample) && covData.sample.length > 0 && (
@@ -335,6 +336,7 @@ export default function AdminCcImportPage() {
                       <th className="py-1 pr-3 font-semibold">Brand</th>
                       <th className="py-1 pr-3 font-semibold">Imported</th>
                       <th className="py-1 pr-3 font-semibold">Ends</th>
+                      <th className="py-1 pr-3 font-semibold">ASINs</th>
                       <th className="py-1 pr-3 font-semibold">Enriched</th>
                     </tr>
                   </thead>
@@ -346,6 +348,7 @@ export default function AdminCcImportPage() {
                         <td className="py-1 pr-3">{r.brand || '—'}</td>
                         <td className="py-1 pr-3">{r.importedAt ? String(r.importedAt).slice(0, 10) : '—'}</td>
                         <td className="py-1 pr-3">{r.endsAt ? String(r.endsAt).slice(0, 10) : '—'}</td>
+                        <td className="py-1 pr-3" style={{ color: r.asinCount === 0 ? '#e11d48' : 'var(--text-soft)' }}>{r.asinCount}</td>
                         <td className="py-1 pr-3">{r.enriched ? 'yes' : 'no'}</td>
                       </tr>
                     ))}
