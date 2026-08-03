@@ -50,6 +50,20 @@ export async function GET(req: Request) {
   if (!keepaConfigured()) return NextResponse.json({ ok: true, skipped: 'keepa_unconfigured' })
 
   const admin = createAdminClient()
+
+  // Skip this run if a catalog import/merge is in progress — the merge takes row
+  // locks and we don't want to compete for them (migration 216). A STALE flag
+  // (> 20 min without a refresh) is ignored, so an abandoned import can't keep
+  // enrichment paused forever.
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: flag } = await (admin as any)
+      .from('system_flags').select('active, updated_at').eq('key', 'cc_import_active').maybeSingle()
+    if (flag?.active && flag.updated_at && Date.now() - new Date(flag.updated_at).getTime() < 20 * 60_000) {
+      return NextResponse.json({ ok: true, skipped: 'import_in_progress' })
+    }
+  } catch { /* flag table may lag a deploy — fall through and enrich */ }
+
   const cap = MAX_PER_RUN()
   const today = new Date().toISOString().slice(0, 10)
   const staleCutoff = new Date(Date.now() - STALE_DAYS() * 86_400_000).toISOString()

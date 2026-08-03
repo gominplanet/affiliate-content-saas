@@ -157,6 +157,18 @@ export async function POST(request: Request) {
     // even while waiting out a lock held by the enrichment cron. With that
     // headroom we run larger batches for speed; the loop still commits each batch
     // (separate RPC calls) and the client auto-resumes until done.
+    // Pause the enrichment cron while this merge runs so it isn't competing for
+    // row locks (migration 216). Refreshed on every resume call; the cron ignores
+    // a stale flag, so an abandoned import can't disable enrichment forever. Best-
+    // effort — a missing system_flags table (pre-216) must not block the merge.
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (admin as any).from('system_flags').upsert(
+        { key: 'cc_import_active', active: true, updated_at: new Date().toISOString() },
+        { onConflict: 'key' },
+      )
+    } catch { /* pre-216 DB — proceed without the pause flag */ }
+
     const BATCH = 1000
     const PURGE_BATCH = 2000
     const deadline = Date.now() + 40_000
@@ -220,6 +232,14 @@ export async function POST(request: Request) {
       // More to purge; client auto-resumes.
       return NextResponse.json({ ok: true, done: false, staged: stagedCount ?? undefined, upserted, purging: true, purged })
     }
+    // Import finished — let the enrichment cron resume immediately (don't wait
+    // for the 20-min staleness fallback). Best-effort.
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (admin as any).from('system_flags')
+        .update({ active: false, updated_at: new Date().toISOString() }).eq('key', 'cc_import_active')
+    } catch { /* flag clear is best-effort; it also auto-expires */ }
+
     return NextResponse.json({
       ok: true,
       done: true,
