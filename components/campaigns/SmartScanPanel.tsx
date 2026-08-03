@@ -69,7 +69,11 @@ export default function SmartScanPanel({
   /** Fired after a save/unsave so the parent's Saved list can refresh. */
   onSavedChange?: () => void
 }) {
-  const [mode, setMode] = useState<'campaigns' | 'onsite'>('campaigns')
+  // The MVP Finder is Creator Connections campaigns only. The old "Campaigns
+  // OFF" onsite Amazon search was pulled — searching Amazon with no campaign is
+  // what Amazon Product Research is for, and it doesn't belong under CC. `mode`
+  // stays a union so the (now unreachable) onsite branches keep type-checking.
+  const [mode] = useState<'campaigns' | 'onsite'>('campaigns')
   // Focus (MVP Profitability Rules — recommended) vs Wide (looser net).
   const [ruleMode, setRuleMode] = useState<CampaignRuleMode>('focus')
   const [focus, setFocus] = useState('')
@@ -382,12 +386,7 @@ export default function SmartScanPanel({
         </div>
         {/* Controls */}
         <div className="flex items-center gap-2 flex-wrap mt-3">
-          {/* Campaigns toggle */}
-          <div className="inline-flex items-center gap-1 p-1 rounded-xl" style={{ background: 'rgba(124,58,237,0.06)' }}>
-            <Chip on={mode === 'campaigns'} label="Campaigns ON" onClick={() => { setMode('campaigns'); restartSearch() }} />
-            <Chip on={mode === 'onsite'} label="Campaigns OFF" onClick={() => { setMode('onsite'); restartSearch() }} />
-          </div>
-          {/* Focus vs Wide — how strict MVP's picks are (Campaigns ON only). */}
+          {/* Focus vs Wide — how strict MVP's picks are. */}
           {mode === 'campaigns' && (
             <div className="inline-flex items-center gap-1 p-1 rounded-xl" style={{ background: 'rgba(124,58,237,0.06)' }}
               title="MVP Focus: the tightest picks, following MVP's Profitability Rules — best results. Wide: casts a broader net (more campaigns, less focused). Both are solid; Focus is stronger.">
