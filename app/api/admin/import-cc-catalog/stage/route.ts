@@ -43,11 +43,20 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({})) as { rows?: InRow[]; reset?: boolean }
     const admin = createAdminClient()
 
-    // First batch of a fresh import: empty the staging table.
+    // First batch of a fresh import: empty the staging table. Use TRUNCATE (via
+    // RPC) — instant. A DELETE over ~800k staged rows blew the function timeout
+    // and hung the whole upload at 0%.
     if (body.reset) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error } = await (admin as any).from('cc_campaign_catalog_import').delete().not('campaign_id', 'is', null)
-      if (error) return NextResponse.json({ error: toUserMessage(error, 'Could not clear staging.') }, { status: 500 })
+      const { error } = await (admin as any).rpc('truncate_cc_import')
+      if (error) {
+        const missingFn = /could not find the function|does not exist|schema cache|PGRST202/i.test(error.message || '')
+        return NextResponse.json({
+          error: missingFn
+            ? 'Run migration 212 in Supabase (adds truncate_cc_import), then start the import again. Or clear staging manually with TRUNCATE cc_campaign_catalog_import; and uncheck “Clear staging first”.'
+            : toUserMessage(error, 'Could not clear staging.'),
+        }, { status: 500 })
+      }
     }
 
     const clean = (body.rows ?? []).map(normalizeRow).filter((r): r is StageRow => r !== null)
