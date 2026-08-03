@@ -45,6 +45,7 @@ import {
   Facebook, Sparkles, Image as ImageIcon,
   Scale, ArrowUpRight, BadgePercent, Eye, Clock,
   Youtube, Link2, BookOpen, Send, Mail,
+  PackageSearch, Radar, ShoppingBag, Store,
 } from 'lucide-react'
 import Link from 'next/link'
 import { TIERS, billingWindow, type Tier } from '@/lib/tier'
@@ -285,6 +286,23 @@ export default async function DashboardPage() {
         {/* Price Alerts — Keepa-detected new lows / stale-price nudges on watched
             products. Self-hides when there's nothing to show. */}
         <PriceAlertsPanel />
+
+        {/* Free-research first — for Free Trial users the research finders ARE the
+            reason they're here, so surface them above "What do you want to do?".
+            All four work with no content setup (Scout needed for the CC catalog;
+            Levanta/PartnerBoost search your own connected accounts). */}
+        {tier === 'trial' && (
+          <section className="rounded-2xl p-5 sm:p-6" style={{ background: 'rgba(124, 58, 237, 0.08)', border: '1px solid rgba(124, 58, 237, 0.20)' }}>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] mb-1" style={{ color: '#7C3AED' }}>Free research — start here</p>
+            <p className="text-sm mb-3" style={{ color: 'var(--text-soft)' }}>Find products worth reviewing. No card, no setup.</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <BigAction href="/amz-finder" icon={<PackageSearch size={17} />} title="Amazon Research" desc="Search the whole catalogue by the numbers that matter" accent="#7C3AED" />
+              <BigAction href="/deal-radar" icon={<Radar size={17} />} title="Deal Radar" desc="Live, price-verified Amazon deals" accent="#F43F5E" />
+              <BigAction href="/levanta" icon={<ShoppingBag size={17} />} title="MVP x Levanta" desc="Search your Levanta campaigns" accent="#22D3EE" />
+              <BigAction href="/partnerboost" icon={<Store size={17} />} title="MVP x PartnerBoost" desc="Search your PartnerBoost campaigns" accent="#10B981" />
+            </div>
+          </section>
+        )}
 
         {/* Primary actions. Big, clearly-labelled buttons — one per core
             workflow — so a user (especially a first-timer fresh off the
