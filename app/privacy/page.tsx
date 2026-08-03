@@ -4,7 +4,7 @@ export default function PrivacyPage() {
   return (
     <main className="max-w-3xl mx-auto px-6 py-16 text-[#1d1d1f] dark:text-[#f5f5f7]">
       <h1 className="text-3xl font-bold mb-2">Privacy Policy</h1>
-      <p className="text-sm text-[#86868b] dark:text-[#8e8e93] mb-10">Last updated: May 13, 2026</p>
+      <p className="text-sm text-[#86868b] dark:text-[#8e8e93] mb-10">Last updated: August 3, 2026</p>
 
       <section className="prose prose-sm max-w-none space-y-8 text-[#374151] leading-relaxed">
 
@@ -78,19 +78,22 @@ export default function PrivacyPage() {
           <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">5. Google / YouTube Data</h2>
           <p>
             If you connect your YouTube channel, MVP Affiliate uses YouTube API Services. We
-            request only the scopes needed to read <strong>your own</strong> channel and videos
-            and, <strong>only when you explicitly click an action</strong> (such as
-            &quot;Apply&quot; or &quot;Save as draft&quot;), to update the title, description,
-            tags, thumbnail, privacy or schedule on <strong>your own</strong> videos:
+            request only the scopes needed to read <strong>your own</strong> channel and videos,
+            to update the title, description, tags, thumbnail, privacy or schedule on
+            <strong> your own</strong> videos, and to publish a short video you created in the App
+            to <strong>your own</strong> channel &mdash; and only ever
+            <strong> when you explicitly click an action</strong> (such as &quot;Apply&quot;,
+            &quot;Save as draft&quot;, or &quot;Publish to YouTube&quot;):
           </p>
           <ul className="list-disc ml-5 space-y-1 mt-2">
             <li><strong>https://www.googleapis.com/auth/youtube</strong> — read your channel/videos and update your own video metadata, thumbnail, privacy and schedule.</li>
             <li><strong>https://www.googleapis.com/auth/youtube.force-ssl</strong> — perform those same read/update operations over a secure connection, as required by the YouTube Data API.</li>
+            <li><strong>https://www.googleapis.com/auth/youtube.upload</strong> — publish a short clip you edited inside the App to your own channel (a single <code>videos.insert</code> call), only when you click &quot;Publish to YouTube&quot;. Nothing is ever uploaded automatically or to any channel other than the one you authorized.</li>
           </ul>
           <p className="mt-3">
-            We never access channels other than the authenticated user&apos;s own, never post or
-            change anything in the background, and never use YouTube data for advertising or to
-            train AI/ML models. You can revoke access at any time from the App&apos;s Settings page
+            We never access channels other than the authenticated user&apos;s own, never post,
+            upload, or change anything in the background, and never use YouTube data for advertising
+            or to train AI/ML models. You can revoke access at any time from the App&apos;s Settings page
             (we delete the stored tokens on disconnection) and via your Google Account at{' '}
             <a href="https://myaccount.google.com/permissions" className="text-[#7C3AED] hover:underline" target="_blank" rel="noopener noreferrer">myaccount.google.com/permissions</a>.
           </p>
