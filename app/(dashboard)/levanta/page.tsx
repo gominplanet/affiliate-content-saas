@@ -76,7 +76,11 @@ export default function LevantaPage() {
     window.addEventListener(VIEW_AS_EVENT, apply)
     return () => { cancelled = true; window.removeEventListener(VIEW_AS_EVENT, apply) }
   }, [])
-  const canUseFinder = tier !== 'trial' // all PAID tiers; Trial sees the upsell
+  // The Levanta FINDER is open to every tier (incl. Free Trial) — it searches the
+  // user's own connected Levanta account. Turning a find into a published post is
+  // gated at the API (WordPress + YouTube for trial). So the finder always shows;
+  // the upsell branch below is retained but no longer reached.
+  const canUseFinder = true
 
   const load = useCallback(async () => {
     setLoading(true); setError(''); setForbidden(false); setNeedsToken(false)

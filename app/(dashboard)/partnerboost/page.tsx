@@ -109,7 +109,10 @@ export default function WalmartPBPage() {
     window.addEventListener(VIEW_AS_EVENT, apply)
     return () => { cancelled = true; window.removeEventListener(VIEW_AS_EVENT, apply) }
   }, [])
-  const canUseFinder = tier !== 'trial' // all PAID tiers; Trial sees the upsell
+  // The PartnerBoost FINDER is open to every tier (incl. Free Trial) — it searches
+  // the user's own connected PartnerBoost account. The finder always shows; the
+  // upsell branch below is retained but no longer reached.
+  const canUseFinder = true
 
   const load = useCallback(async () => {
     setLoading(true); setError(null)

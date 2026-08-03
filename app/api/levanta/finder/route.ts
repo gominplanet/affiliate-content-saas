@@ -20,7 +20,7 @@ import {
   levantaRules, passesLevantaGates, scoreLevanta,
   type LevantaCandidate, type LevantaRuleMode,
 } from '@/lib/levanta-rules'
-import { tierAllowsFinders, type Tier } from '@/lib/tier'
+// Finder is open to all tiers; no tier gate here.
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 180
@@ -43,13 +43,10 @@ export async function POST(request: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
 
-    const { data: intRow } = await supabase
-      .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
-    const tier = (intRow?.tier as Tier) ?? 'trial'
-    if (!tierAllowsFinders(tier)) {
-      return NextResponse.json({ ok: false, error: 'MVP x Levanta requires a paid plan.' }, { status: 403 })
-    }
-
+    // Open to EVERY signed-in tier (incl. Free Trial): the finder searches the
+    // user's OWN connected Levanta account, so access is gated by "connect your
+    // Levanta API key" below, not by plan. Turning a find into a published post
+    // is still gated — see /api/levanta/generate.
     const token = await getExternalKey(supabase, user.id, 'levanta')
     if (!token) {
       return NextResponse.json({ ok: false, needsToken: true, error: 'Connect your Levanta API key in External Integrations.' })

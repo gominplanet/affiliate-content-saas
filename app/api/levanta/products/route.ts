@@ -9,7 +9,7 @@ import type { NextRequest } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { listLevantaProducts } from '@/services/levanta'
 import { getExternalKey } from '@/lib/external-keys'
-import { tierAllowsFinders, type Tier } from '@/lib/tier'
+// Finder browse is open to all tiers; no tier gate here.
 
 export const dynamic = 'force-dynamic'
 
@@ -19,13 +19,8 @@ export async function GET(request: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
 
-    const { data: intRow } = await supabase
-      .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
-    const tier = (intRow?.tier as Tier) ?? 'trial'
-    if (!tierAllowsFinders(tier)) {
-      return NextResponse.json({ ok: false, error: 'MVP x Levanta requires a paid plan.' }, { status: 403 })
-    }
-
+    // Open to every signed-in tier — the user's own connected Levanta account
+    // (gated by the token check below), not by plan.
     const token = await getExternalKey(supabase, user.id, 'levanta')
     if (!token) {
       return NextResponse.json({ ok: false, needsToken: true, error: 'Connect your Levanta API key in External Integrations.' })

@@ -25,7 +25,7 @@ import { sweepJoinedProducts, diversify } from '@/lib/partnerboost-sweep'
 import {
   pbRules, brandPassesPb, passesPbGates, scorePb, type PbRuleMode, type ScoredPbMatch,
 } from '@/lib/partnerboost-rules'
-import { tierAllowsFinders, type Tier } from '@/lib/tier'
+// Finder is open to all tiers; no tier gate here.
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -41,10 +41,9 @@ export async function POST(request: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
 
-    const { data: intRow } = await supabase
-      .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
-    const tier = (intRow?.tier as Tier) ?? 'trial'
-    if (!tierAllowsFinders(tier)) return NextResponse.json({ ok: false, error: 'MVP x PartnerBoost requires a paid plan.' }, { status: 403 })
+    // Open to every signed-in tier (incl. Free Trial) — the finder searches the
+    // user's OWN connected PartnerBoost account, gated by the connection check
+    // below, not by plan.
 
     const token = await getExternalKey(supabase, user.id, 'partnerboost')
     if (!token) return NextResponse.json({ ok: false, needsToken: true, error: 'Connect your PartnerBoost API key in External Integrations.' })

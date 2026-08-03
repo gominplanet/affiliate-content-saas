@@ -66,11 +66,14 @@ export const NAV_ACCESS = {
     enforcedBy: 'POST /api/instagram/burn + /api/instagram/burn-batch',
   },
   finders: {
-    label: 'Source & Earn (AMZ Finder, Levanta, PartnerBoost, LTK, Launch Kit)',
+    label: 'Paid finders (LTK, Social Launch Kit)',
     tiers: PAID,
-    // Named concretely so scripts/test-feature-access.mjs can verify these
-    // rather than shrug at prose. All three call tierAllowsFinders().
-    enforcedBy: '/api/campaigns/catalog-search + /api/levanta/finder + /api/partnerboost/finder',
+    // The Levanta + PartnerBoost FINDERS and AMZ Research are now OPEN to every
+    // tier (they search the user's own connected account / free Amazon catalog),
+    // so they're no longer enforced here — turning a find into a published post
+    // is what stays gated. These routes still call tierAllowsFinders(). Named
+    // concretely so scripts/test-feature-access.mjs can verify them.
+    enforcedBy: '/api/ltk/generate + /api/social-launch-kit/generate',
   },
   labs: {
     label: 'Labs (Instagram Auto-DM)',
