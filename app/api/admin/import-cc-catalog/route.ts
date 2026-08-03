@@ -169,7 +169,7 @@ export async function POST(request: Request) {
       )
     } catch { /* pre-216 DB — proceed without the pause flag */ }
 
-    const BATCH = 1000
+    const BATCH = 500
     const PURGE_BATCH = 2000
     const deadline = Date.now() + 40_000
     let upserted = 0
