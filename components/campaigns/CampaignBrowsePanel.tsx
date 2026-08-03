@@ -61,7 +61,6 @@ const SORTS: { key: string; label: string }[] = [
   { key: 'budget', label: 'Most budget left' },
 ]
 
-const PAGE_SIZE = 40
 const money = (n: number | null) => (n == null ? null : n >= 1000 ? `$${(n / 1000).toFixed(1)}k` : `$${Math.round(n)}`)
 
 export default function CampaignBrowsePanel({
@@ -130,7 +129,11 @@ export default function CampaignBrowsePanel({
       setLocked(false)
       const incoming: Campaign[] = Array.isArray(data.campaigns) ? data.campaigns : []
       setRows(prev => append ? [...prev, ...incoming] : incoming)
-      setHasMore(incoming.length === PAGE_SIZE)
+      // Trust the SERVER's hasMore (raw page was full), NOT the returned count:
+      // the server filters each page (rows with no recoverable ASIN, avoid-list),
+      // so a page can come back with fewer than a full page of cards while more
+      // still exist. Using incoming.length here hid "Load more" after page 1.
+      setHasMore(!!data.hasMore)
       setPage(pageToLoad)
     } catch {
       setError('Could not load campaigns.')
