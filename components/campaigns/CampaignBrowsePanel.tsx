@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import type { MessageBrandCampaign } from '@/components/campaigns/MessageBrandModal'
 import ProductDeepDiveModal from '@/components/product/ProductDeepDiveModal'
+import MvpPicksInfo from '@/components/campaigns/MvpPicksInfo'
 import { requestCcSmartScan } from '@/lib/extension-frame'
 import { campaignRules } from '@/lib/cc-smart-rules'
 
@@ -306,6 +307,7 @@ export default function CampaignBrowsePanel({
               : { color: 'var(--text-soft)', borderColor: 'var(--border)' }}>
             <Sparkles size={14} /> MVP picks
           </button>
+          <MvpPicksInfo />
           <Select value={sort} onChange={setSort} options={SORTS.map(s => ({ v: s.key, l: s.label }))} />
           <Select value={String(minCommission)} onChange={v => setMinCommission(Number(v))} options={[
             { v: '0', l: 'Any commission' }, { v: '5', l: '5%+' }, { v: '10', l: '10%+' }, { v: '15', l: '15%+' }, { v: '20', l: '20%+' },

@@ -17,6 +17,7 @@ import {
   ArrowRight, BarChart3, ImageOff, SlidersHorizontal, Sparkles, Video, Lock,
 } from 'lucide-react'
 import ProductDeepDiveModal from '@/components/product/ProductDeepDiveModal'
+import MvpPicksInfo from '@/components/campaigns/MvpPicksInfo'
 
 interface Product {
   asin: string
@@ -220,6 +221,7 @@ export default function AmazonResearchPanel({ canAct = true, onSavedChange }: { 
               : { borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
             {canAct ? <Sparkles size={14} /> : <Lock size={12} />} MVP picks
           </button>
+          <MvpPicksInfo />
           <Select value={sort} onChange={setSort} options={SORTS} />
           <Select value={category} onChange={setCategory} options={CATEGORIES} />
           <Select value={minRating} onChange={setMinRating} options={[
