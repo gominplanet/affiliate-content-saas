@@ -32,6 +32,9 @@ export default function AdminCcImportPage() {
   const [covLoading, setCovLoading] = useState(false)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [covData, setCovData] = useState<any | null>(null)
+  const [backfilling, setBackfilling] = useState(false)
+  const [backfillFilled, setBackfillFilled] = useState<number | null>(null)
+  const [backfillDone, setBackfillDone] = useState(false)
 
   const loadCounts = useCallback(async () => {
     setLoading(true); setErr(null)
@@ -100,6 +103,36 @@ export default function AdminCcImportPage() {
       setErr(msg); toast.error(msg)
     } finally { setProbing(false) }
   }, [probing, probeQ])
+
+  const backfillAsins = useCallback(async () => {
+    if (backfilling) return
+    if (!window.confirm('Backfill ASINs from campaign names for every catalog row that has none?\n\nThis fills asins (and rep_asin) from the B0-ASIN in the campaign name, so those campaigns show in Browse and can be enriched. Paced in small batches; no Keepa tokens spent.')) return
+    setBackfilling(true); setBackfillDone(false); setBackfillFilled(null); setErr(null)
+    let after: string | undefined
+    let total = 0
+    try {
+      for (let guard = 0; guard < 800; guard++) {
+        const r = await fetch('/api/admin/backfill-cc-asins', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ after }),
+        })
+        const d = await r.json()
+        if (!r.ok) throw new Error(d.detail ? `${d.error || 'Backfill failed'} — ${d.detail}` : (d.error || 'Backfill failed'))
+        after = d.after
+        total += Number(d.filled ?? 0)
+        setBackfillFilled(total)
+        if (d.done) {
+          setBackfillDone(true)
+          toast.success(`Backfilled ${total.toLocaleString()} ASINs`)
+          void loadCounts()
+          return
+        }
+      }
+      throw new Error('Backfill is taking unusually long — click again to continue.')
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Backfill failed'
+      setErr(msg); toast.error(msg)
+    } finally { setBackfilling(false) }
+  }, [backfilling, loadCounts])
 
   const runCoverage = useCallback(async () => {
     if (covLoading) return
@@ -295,6 +328,32 @@ export default function AdminCcImportPage() {
         {probeRows && probeRows.length === 0 && (
           <p className="text-[12px]" style={{ color: 'var(--text-faint)' }}>No catalog rows matched that keyword.</p>
         )}
+      </div>
+
+      {/* Backfill ASINs — fill asins/rep_asin from the campaign name for rows
+          that imported with an empty asins[] (so they show + can be enriched). */}
+      <div className="card p-5 mb-5">
+        <div className="flex items-center gap-2 mb-1.5" style={{ color: '#7C3AED' }}>
+          <Database size={16} />
+          <span className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-faint)' }}>Backfill ASINs</span>
+        </div>
+        <p className="text-[13px] mb-3" style={{ color: 'var(--text-soft)' }}>
+          Many campaigns import with an empty ASIN column even though the ASIN is right in the campaign name (e.g. <code>B0FHK9DYTC 6L Cool Mist Humidifier</code>). This pulls it out and fills <code>asins</code> / <code>rep_asin</code> so those rows show in Browse and the enrich cron can reach them. Paced, no Keepa tokens. Future imports do this automatically (migration 211).
+        </p>
+        <div className="flex items-center gap-3 flex-wrap">
+          <button onClick={() => backfillAsins()} disabled={backfilling || loading || merging}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-semibold text-white disabled:opacity-50"
+            style={{ background: '#7C3AED' }}>
+            {backfilling
+              ? <><Loader2 size={15} className="animate-spin" /> Backfilling{backfillFilled != null ? ` — ${backfillFilled.toLocaleString()}` : '…'}</>
+              : <><Database size={15} /> Backfill ASINs from names</>}
+          </button>
+          {backfillDone && backfillFilled != null && (
+            <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold" style={{ color: '#1f8a3a' }}>
+              <CheckCircle2 size={15} /> Filled {backfillFilled.toLocaleString()} ASINs. The enrich cron will now reach them.
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Catalog coverage — why does Amazon CC show 1000+ for a keyword but
