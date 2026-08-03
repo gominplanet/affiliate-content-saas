@@ -3534,36 +3534,49 @@ export default function ContentPage() {
                 ? `Your videos to blog posts + Instagram image posts. Click Generate Post to start. ${horizontalVideos.length} video${horizontalVideos.length !== 1 ? 's' : ''} · ${generatedCount} published.`
                 : 'Hit Sync to pull every YouTube video into your generation queue.'
         }
-        actions={<SitePicker value={siteId} onChange={setSiteId} compact />}
+        actions={
+          <div className="flex items-center gap-2">
+            <SitePicker value={siteId} onChange={setSiteId} compact />
+            <button
+              onClick={() => refreshActiveTabRef.current()}
+              disabled={loading || postsLoading || scheduledLoading}
+              title="Reload the active tab from the database / WordPress"
+              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border text-[13px] font-medium disabled:opacity-50"
+              style={{ borderColor: 'var(--border)', color: 'var(--text-soft)', background: 'var(--surface)' }}
+            >
+              <RefreshCw size={14} className={(loading || postsLoading || scheduledLoading) ? 'animate-spin' : ''} />
+              {(loading || postsLoading || scheduledLoading) ? 'Refreshing…' : 'Refresh'}
+            </button>
+          </div>
+        }
       />
 
-      {/* Toolbar — colour-coded action tiles. A full-width row BELOW the hero so
-          it wraps cleanly onto a second line instead of clipping off the hero's
-          right edge. Same actions/handlers as before, grouped by colour:
-          create (violet), fix (amber/rose), settings (blue/violet), data
-          (green/slate). */}
-      <div className="flex flex-wrap items-center gap-2 mb-6">
-        <ToolButton tint="violet" icon={<Sparkles size={16} />} label="New post from a link" desc="Product link or ASIN → live post"
+      {/* Toolbar — colour-coded action tiles, 3 per row. Full-width grid below
+          the hero (Refresh lives up in the header next to the site picker).
+          Grouped by colour: create (violet), fix (amber/rose), settings
+          (blue/violet), data (green). */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-6">
+        <ToolButton tint="violet" icon={<Sparkles size={18} />} label="New post from a link" desc="Product link or ASIN → live post"
           onClick={() => setFromLinkOpen(true)}
           title="No video? Create a post from a product link or ASIN — MVP researches, writes and publishes it." />
 
-        <ToolButton tint="amber" icon={<Tags size={16} />} label="Fix Categories"
+        <ToolButton tint="amber" icon={<Tags size={18} />} label="Fix Categories"
           desc={catPreviewLoading ? 'Loading preview…' : 'Auto-assign each post'}
           onClick={previewFixCategories} loading={catPreviewLoading} disabled={catPreviewLoading || fixingCategories}
           title="Preview which category each post will be assigned to before applying" />
-        <ToolButton tint="rose" icon={<Wrench size={16} />} label="Fix Affiliate Links"
+        <ToolButton tint="rose" icon={<Wrench size={18} />} label="Fix Affiliate Links"
           desc={affPreviewLoading && affMode === 'broken' ? 'Scanning links…' : 'Find & repair broken'}
           onClick={() => previewFixAffiliate('broken')} loading={affPreviewLoading && affMode === 'broken'} disabled={affPreviewLoading || affApplying}
           title="Scan published posts for broken affiliate links and repair them" />
-        <ToolButton tint="rose" icon={<Shuffle size={16} />} label="Re-route Geniuslinks"
+        <ToolButton tint="rose" icon={<Shuffle size={18} />} label="Re-route Geniuslinks"
           desc={affPreviewLoading && affMode === 'regroup' ? 'Scanning links…' : "Route via this site's group"}
           onClick={() => previewFixAffiliate('regroup')} loading={affPreviewLoading && affMode === 'regroup'} disabled={affPreviewLoading || affApplying}
           title="Re-wrap every geni.us link in your published posts so it routes through the per-site Geniuslink group (e.g. gominreviews) instead of MVP-YOUTUBE. Use this once after the per-site group routing fix to clean up legacy links." />
 
-        <ToolButton tint="blue" icon={<Handshake size={16} />} label="Brand message" desc="Edit the recap you send"
+        <ToolButton tint="blue" icon={<Handshake size={18} />} label="Brand message" desc="Edit the recap you send"
           onClick={() => setBrandSettingsOpen(true)}
           title="Customize the recap message the &ldquo;Share with brand&rdquo; button sends — tone, sign-off, and template" />
-        <ToolButton tint="violet" icon={<Link2 size={16} />} label="Link settings" desc="Blog / affiliate / both"
+        <ToolButton tint="violet" icon={<Link2 size={18} />} label="Link settings" desc="Blog / affiliate / both"
           onClick={() => setLinkModeOpen(true)}
           title="Choose where posted links point — blog, affiliate, or both — for Facebook, LinkedIn, and Bluesky" />
 
@@ -3583,15 +3596,11 @@ export default function ContentPage() {
                 ))}
               </select>
             )}
-            <ToolButton tint="green" icon={<RefreshCw size={16} />} label="Sync videos"
+            <ToolButton tint="green" icon={<RefreshCw size={18} />} label="Sync videos"
               desc={syncing ? `Pulling${syncProgress ? ` ${syncProgress.pulled}` : ''}…` : 'Pull new from YouTube'}
               onClick={() => syncVideos()} loading={syncing} disabled={syncing} title="Pull your latest YouTube videos into this blog" />
           </>
         )}
-        <ToolButton tint="slate" icon={<RefreshCw size={16} />} label="Refresh"
-          desc={(loading || postsLoading || scheduledLoading) ? 'Reloading…' : 'Reload this tab'}
-          onClick={() => refreshActiveTabRef.current()} loading={loading || postsLoading || scheduledLoading} disabled={loading || postsLoading || scheduledLoading}
-          title="Reload the active tab from the database / WordPress" />
       </div>
 
       <CapBannerHost />
@@ -4601,15 +4610,15 @@ function ToolButton({ tint, icon, label, desc, onClick, loading, disabled, title
       onClick={onClick}
       disabled={disabled}
       title={title}
-      className="inline-flex items-center gap-2.5 rounded-xl border pl-2 pr-3.5 py-2 text-left transition-all hover:shadow-sm disabled:opacity-60 active:scale-[0.98]"
+      className="flex w-full items-center gap-3 rounded-2xl border pl-2.5 pr-4 py-3.5 text-left transition-all hover:shadow-md disabled:opacity-60 active:scale-[0.99]"
       style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}
     >
-      <span className="grid place-items-center w-8 h-8 rounded-lg flex-shrink-0" style={{ background: t.bg, color: t.fg }}>
-        {loading ? <Loader2 size={15} className="animate-spin" /> : icon}
+      <span className="grid place-items-center w-11 h-11 rounded-xl flex-shrink-0" style={{ background: t.bg, color: t.fg }}>
+        {loading ? <Loader2 size={19} className="animate-spin" /> : icon}
       </span>
-      <span className="flex flex-col leading-tight">
-        <span className="text-[12.5px] font-semibold whitespace-nowrap" style={{ color: 'var(--text)' }}>{label}</span>
-        <span className="text-[10.5px] whitespace-nowrap" style={{ color: 'var(--text-faint)' }}>{desc}</span>
+      <span className="flex flex-col leading-tight min-w-0">
+        <span className="text-[14px] font-bold truncate" style={{ color: 'var(--text)' }}>{label}</span>
+        <span className="text-[12px] truncate" style={{ color: 'var(--text-faint)' }}>{desc}</span>
       </span>
     </button>
   )
