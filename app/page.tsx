@@ -2494,13 +2494,16 @@ function Footer() {
               { label: 'Watch intro', href: '#demo' },
             ]}
           />
+          {/* Public resources only — no member-only in-app tools here (WordPress
+              setup / Connection Doctor live behind auth and would just bounce a
+              logged-out visitor to /login). */}
           <FooterCol
             title="Resources"
             links={[
-              { label: 'WordPress setup', href: '/setup' },
-              { label: 'Connection Doctor', href: '/setup/wp-doctor' },
-              { label: 'Help center', href: '/help' },
-              { label: 'Blog', href: '/blog' },
+              { label: 'Product tour', href: '/tour' },
+              { label: 'SCOUT extension', href: 'https://chromewebstore.google.com/detail/scout-%E2%80%94-mvp-affiliate/blpmlneliggaekangckpgknphpacapkg' },
+              { label: 'Pricing', href: '/pricing' },
+              { label: 'FAQ', href: '#faq' },
             ]}
           />
           <FooterCol
