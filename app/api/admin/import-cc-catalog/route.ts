@@ -147,10 +147,19 @@ export async function POST(request: Request) {
     // call, once every staged row is merged.
     // Short per-call window so the client gets a fresh "N left" countdown every
     // ~40s (it auto-resumes until done), instead of one long silent 4-min call.
-    // Smaller batches (500, was 2000): the upsert touches two GIN indexes
-    // (search_vec + asins) per row, so a big chunk can exceed the DB statement
-    // timeout. 500 stays under it; the client auto-resumes until done.
-    const BATCH = 500
+    //
+    // Batch sizing is the ONLY reliable lever here. Each merged row does TWO GIN
+    // index inserts (the STORED search_vec tsvector + the asins array), and the
+    // step marks _merged=true in the SAME statement as the insert — so if that
+    // statement hits the DB statement timeout, the whole thing rolls back and
+    // ZERO rows advance. Every retry then re-hits the exact same first batch and
+    // fails identically (what "same error after 4 tries" looks like). SET LOCAL
+    // statement_timeout=0 does NOT override the outer PostgREST timeout, so the
+    // fix is a batch small enough that one statement finishes under it. 500 was
+    // still too big on a loaded DB; 150 completes and the client auto-resumes.
+    // The purge (a plain ctid DELETE, no GIN churn) can stay larger.
+    const BATCH = 150
+    const PURGE_BATCH = 500
     const deadline = Date.now() + 40_000
     let upserted = 0
     let n = BATCH
@@ -190,10 +199,10 @@ export async function POST(request: Request) {
     // if there's still more to delete, return done:false so the client resumes
     // (the upsert is drained, so the next call goes straight back to purging).
     let purged = 0
-    let pn = BATCH
+    let pn = PURGE_BATCH
     while (Date.now() < deadline) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data, error } = await (admin as any).rpc('merge_cc_catalog_purge_step', { p_limit: BATCH })
+      const { data, error } = await (admin as any).rpc('merge_cc_catalog_purge_step', { p_limit: PURGE_BATCH })
       if (error) {
         console.error('[import-cc-catalog purge]', error.message)
         const missingFn = /could not find the function|does not exist|schema cache|PGRST202/i.test(error.message || '')
@@ -206,9 +215,9 @@ export async function POST(request: Request) {
       }
       pn = Number(data ?? 0)
       purged += pn
-      if (pn < BATCH) break // a short batch means no fall-outs remain
+      if (pn < PURGE_BATCH) break // a short batch means no fall-outs remain
     }
-    if (pn >= BATCH) {
+    if (pn >= PURGE_BATCH) {
       // More to purge; client auto-resumes.
       return NextResponse.json({ ok: true, done: false, staged: stagedCount ?? undefined, upserted, purging: true, purged })
     }
