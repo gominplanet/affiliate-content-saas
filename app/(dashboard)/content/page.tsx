@@ -31,12 +31,13 @@ import { InfoTip } from '@/components/ui/InfoTip'
 import { InstagramPublishModal } from '@/components/content/InstagramPublishModal'
 import ShareWithBrandModal from '@/components/content/ShareWithBrandModal'
 import BrandRecapSettingsModal from '@/components/content/BrandRecapSettingsModal'
+import SocialLinkModeModal from '@/components/content/SocialLinkModeModal'
 import { renderThumbnailOverlay, pickWeightedStyleIndex } from '@/lib/thumbnail-overlay'
 import { effectiveTier } from '@/lib/view-as'
 import { metaEnabled } from '@/lib/feature-flags'
 import {
   Youtube, Wand2, ExternalLink, CheckCircle, AlertCircle,
-  RefreshCw, Loader2, ChevronRight, Sparkles, X, Facebook, Pin, MessageCircle, Save, Upload, Search, Calendar, Handshake, ImagePlus,
+  RefreshCw, Loader2, ChevronRight, Sparkles, X, Facebook, Pin, MessageCircle, Save, Upload, Search, Calendar, Handshake, ImagePlus, Link2,
 } from 'lucide-react'
 import type { PinPreviewData } from '@/components/PinterestPreviewModal'
 
@@ -2131,6 +2132,7 @@ export default function ContentPage() {
   // Global "Brand message settings" — the recap template every per-post
   // "Share with brand" modal pre-fills from.
   const [brandSettingsOpen, setBrandSettingsOpen] = useState(false)
+  const [linkModeOpen, setLinkModeOpen] = useState(false)
   // Affiliate-link repair — dryRun finds posts with a broken affiliate link
   // (e.g. a dead amazon.com/dp/UNDERWATER) and previews old→new before writing.
   const [affPreview, setAffPreview] = useState<{ postId: string; title: string; oldUrl: string; newUrl: string }[] | null>(null)
@@ -3593,6 +3595,14 @@ export default function ContentPage() {
             >
               <Handshake size={14} /> Brand message
             </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setLinkModeOpen(true)}
+              title="Choose where posted links point — blog, affiliate, or both — for Facebook, LinkedIn, and Bluesky"
+            >
+              <Link2 size={14} /> Link settings
+            </Button>
             {/* Divider: maintenance tools | sync & refresh (2026 redesign) */}
             <span className="hidden sm:block w-px h-5 self-center bg-black/10 dark:bg-white/12 mx-0.5" aria-hidden="true" />
             {(activeTab === 'horizontal' || activeTab === 'vertical') && (
@@ -4390,6 +4400,7 @@ export default function ContentPage() {
 
       {/* Brand message settings — the recap template "Share with brand" uses. */}
       {brandSettingsOpen && <BrandRecapSettingsModal onClose={() => setBrandSettingsOpen(false)} />}
+      <SocialLinkModeModal open={linkModeOpen} onClose={() => setLinkModeOpen(false)} />
 
       {/* Recategorize preview modal — dryRun first, apply on confirm. */}
       {catPreview && (

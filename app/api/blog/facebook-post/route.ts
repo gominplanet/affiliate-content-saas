@@ -16,6 +16,7 @@ import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { maybeDecrypt } from '@/lib/secrets'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
 import { resolvePostAffiliateLink } from '@/lib/ig-dm'
+import { parseLinkModes, composeCaption, effectiveMode } from '@/lib/social-link-mode'
 
 export const maxDuration = 60
 
@@ -93,7 +94,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: intRow } = await supabase
       .from('integrations')
-      .select('facebook_page_id,facebook_page_access_token,tier')
+      .select('facebook_page_id,facebook_page_access_token,tier,social_link_modes')
       .eq('user_id', user.id)
       .single()
     // Decrypt secret columns transparently (2026-06-02 rollout).
@@ -168,15 +169,22 @@ Return ONLY the post text, nothing else.`,
     // disclaimer repeats at the very end. Never falls back to the blog URL, so it
     // only appears when the post has a real product link.
     const affiliateLink = resolvePostAffiliateLink(post)
-    const affiliateHeader = includeAffiliateCta && affiliateLink
-      ? `⚡ No need to read more — grab it right here 👉 ${affiliateLink}\n${disclaimer}\n\n`
-      : ''
+    // Per-user link mode (blog / affiliate / both) drives where the link points.
+    // Legacy: an explicit includeAffiliateCta=true still forces 'both' when the
+    // user hasn't set a Facebook mode, so old callers keep working.
+    const storedMode = parseLinkModes(integration?.social_link_modes).facebook
+    const fbMode = storedMode ?? (includeAffiliateCta ? 'both' : 'blog')
     // Scrub BEFORE composing, so the dry-run preview returns exactly what
-    // gets published. It used to scrub only inline at composition, so the
-    // text handed back to the modal — and saved as scheduled_posts.body_text
-    // — still contained banned words.
+    // gets published.
     reviewText = scrubBanned(reviewText)
-    const caption = `${affiliateHeader}${reviewText}\n\n🔗 Read the full post: ${post.wordpress_url}\n\n${disclaimer}`
+    const caption = composeCaption({
+      mode: fbMode, writeUp: reviewText, blogUrl: post.wordpress_url,
+      affiliateLink, disclaimer, blogLabel: 'Read the full post',
+    })
+    // For the link-post fallback (no image), point the card at the affiliate
+    // product in affiliate mode, else the blog.
+    const fallbackLink = (effectiveMode(fbMode, affiliateLink) === 'affiliate' && affiliateLink)
+      ? affiliateLink : post.wordpress_url
 
     if (dryRun) {
       // Generate 3 SPECIFIC, niche hashtags that fit this exact product/topic
@@ -229,7 +237,7 @@ Topic: ${(post.content as string).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').
             // preview, so the post still goes out with an image + is fully
             // comment→DM capable.
             console.warn('[facebook-post] photo post failed, falling back to link post:', photoErr)
-            const r = await fbService.postLink({ message: caption, link: post.wordpress_url })
+            const r = await fbService.postLink({ message: caption, link: fallbackLink })
             pagePostId = r.id
           }
         } else {
