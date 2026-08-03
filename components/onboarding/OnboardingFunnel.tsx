@@ -297,6 +297,30 @@ export default function OnboardingFunnel({
           </div>
         )}
 
+        {/* Brand-new user with nothing connected: a big, obvious way into the
+            FREE research tools without any setup. The dashboard lets un-onboarded
+            users use the RESEARCH group; the moment they try a content feature
+            they're routed back here to connect WordPress + YouTube. */}
+        {!status.ytConnected && !status.wpConnected && (
+          <div className="mb-6 rounded-2xl border p-5 flex items-center justify-between gap-4 flex-wrap"
+            style={{ borderColor: 'rgba(124,58,237,0.45)', background: 'rgba(124,58,237,0.10)' }}>
+            <div className="min-w-0">
+              <p className="font-semibold text-[15px]" style={{ color: '#f5f5f7' }}>Just want the free tools? Skip setup.</p>
+              <p className="text-sm text-[#c7c7cc] mt-0.5">
+                Use our Amazon product research and Deal Radar right now — no WordPress or YouTube needed.
+                You’ll connect those later, only when you want to publish content.
+              </p>
+            </div>
+            <button
+              onClick={() => router.push('/amz-finder')}
+              className="inline-flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 whitespace-nowrap"
+              style={{ background: ACCENT }}
+            >
+              <Sparkles size={16} /> Browse free research →
+            </button>
+          </div>
+        )}
+
         <div className="grid md:grid-cols-[240px_1fr] gap-8">
           {/* Progress rail */}
           <nav className="hidden md:block">
