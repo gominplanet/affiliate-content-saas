@@ -181,7 +181,7 @@ export default function AmazonResearchPanel({ canAct = true, onSavedChange }: { 
         {/* Search row — the input is only as wide as it needs to be, with Search
             and Clear right beside it (reads more like a search box). */}
         <div className="flex items-center gap-2">
-          <div className="relative flex-1 min-w-0">
+          <div className="relative w-full sm:w-1/2 min-w-0">
             <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-[18px] w-[18px]" style={{ color: 'var(--text-faint)' }} />
             <input
               value={q} onChange={e => setQ(e.target.value)}
