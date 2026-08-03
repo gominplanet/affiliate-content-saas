@@ -19,12 +19,12 @@ import { TourBody } from '@/components/tour/tour-content'
 export const metadata: Metadata = {
   title: 'Product tour · MVP Affiliate',
   description:
-    'The full tour of MVP Affiliate: turn a review video — or just a product link — into a blog post that ranks, comparisons, buying guides, thumbnails, a newsletter, and brand pitches. Plus Amazon Deal Radar (live, price-verified deals with one-click posts, roundups & auto Instagram Stories), a shoppable Link-in-Bio Shop page, and Source & Earn finders that surface the Amazon, Levanta & PartnerBoost products worth promoting. All fact-grounded and published to a blog you own. Everything that ships today.',
+    'Free Amazon product research, no card, no setup: search the whole catalogue by sales, rating, price, review ratio and video competition, watch live price-verified deals on Deal Radar, and scout your Levanta & PartnerBoost campaigns. Then, when you want it, MVP turns any find (or a review video) into a blog post that ranks, comparisons, buying guides, thumbnails, a newsletter and brand pitches, all in your voice, published to a blog you own. The full tour of what ships today.',
   alternates: { canonical: '/tour' },
   openGraph: {
     title: 'Product tour · MVP Affiliate',
     description:
-      'Turn a review video — or a product link — into content that ranks: blog, comparisons, buying guides, thumbnails, newsletter, brand outreach. Plus Amazon Deal Radar, a shoppable Link-in-Bio Shop page, auto Instagram Stories, and finders that source the products worth promoting. The full tour of what ships today.',
+      'Free Amazon product research, no card, no setup: filter the whole catalogue, watch live deals, and scout your Levanta & PartnerBoost campaigns. Then turn any find (or a review video) into content that ranks: blog, comparisons, buying guides, thumbnails, newsletter, brand outreach, all in your voice. The full tour of what ships today.',
     url: '/tour',
     type: 'website',
   },
@@ -96,16 +96,16 @@ export default function PublicTourPage() {
             </span>
           </div>
           <h1 className="text-3xl sm:text-4xl font-bold tracking-tight mb-4" style={{ color: 'var(--text)' }}>
-            Everything MVP Affiliate does today
+            Research the whole Amazon catalogue, free
           </h1>
           <p className="text-[15px] leading-relaxed max-w-3xl mb-6" style={{ color: 'var(--text-soft)' }}>
-            One review video — or just a product or service link — becomes a blog post that ranks, plus comparisons,
-            buying guides, a thumbnail, a newsletter, brand pitches, and more. New this season: <strong style={{ color: 'var(--text)' }}>Amazon
-            Deal Radar</strong> surfaces live, price-verified deals you can post in two clicks, and a shoppable
-            <strong style={{ color: 'var(--text)' }}> Link-in-Bio Shop page</strong> turns your bio link into a storefront —
-            with auto Instagram Stories driving traffic to it. All fact-grounded in your real video or real research,
-            published to a blog you own. This is the full tour of what ships right now. No roadmap, no &quot;coming
-            soon.&quot; Just what works today.
+            Start free, no card, nothing to set up. <strong style={{ color: 'var(--text)' }}>Amazon Product Research</strong> filters
+            the entire catalogue by the numbers that matter (sales, rating, price, review ratio, video competition).
+            <strong style={{ color: 'var(--text)' }}> Deal Radar</strong> shows live, price-verified deals. And the
+            <strong style={{ color: 'var(--text)' }}> Levanta &amp; PartnerBoost finders</strong> scout your own connected
+            campaigns. Then, when you want it, MVP turns any find (or any review video) into a blog post that ranks, plus
+            comparisons, buying guides, a thumbnail, a newsletter and brand pitches, all in your voice, published to a
+            blog you own. This is the full tour of what ships right now. No roadmap, no &quot;coming soon.&quot;
           </p>
           <div className="flex flex-wrap items-center gap-3">
             <Link

@@ -41,15 +41,17 @@ const plans: PlanExt[] = [
     label: 'Free Trial',
     price: 0,
     regularPrice: 0,
-    limit: '5 posts, no card',
-    description: 'A real trial, not a teaser. Run the full YouTube workflow on 5 real reviews before paying a cent. No card, no time limit.',
+    limit: 'Free forever · no card',
+    description: 'Research is free for everyone. Search the whole Amazon catalogue, browse live deals, and scout your affiliate campaigns with no card and no setup. Plus 5 full published reviews to try the content engine.',
     features: [
-      '5 full reviews (lifetime, no time limit)',
+      'Amazon Product Research: the whole catalogue, filter by sales, rating, price, reviews & best-sellers',
+      'Deal Radar: browse live, price-history-verified Amazon deals',
+      'Levanta + PartnerBoost finders: search your own connected campaigns',
+      'Creator Connections catalogue search (needs your own CC access + the free Scout extension)',
+      '5 full published reviews to try the content engine (blog + thumbnail + metadata)',
       'YouTube Co-Pilot: description, tags, hashtags & thumbnail pushed back to YouTube',
       'Branded WordPress review site (theme + plugin auto-installed)',
-      'One-click publish to your site',
       'Full AI agent pipeline (research, outline, draft, verdict, SEO)',
-      'Geniuslink affiliate-link wrapping',
       'MVP Help Desk: 20 messages / month',
     ],
     highlight: false,
@@ -63,10 +65,10 @@ const plans: PlanExt[] = [
     limit: '20 posts / month',
     description: 'For creators shipping a few reviews a week across the lower-friction socials, with a taste of the Pro brand-pitch workflow.',
     features: [
-      '⚡ Amazon Deal Radar: live, price-history-verified deals + shoppable Link-in-Bio page + auto Instagram Stories',
+      '⚡ Publish from Deal Radar: quick-post deals, roundups & the weekly digest + shoppable Link-in-Bio page + auto Instagram Stories (browsing deals is free on every plan)',
       '20 full reviews per month (blog + thumbnail + metadata bundle)',
       'Auto-post to Facebook, Threads, LinkedIn & Bluesky',
-      'Affiliate networks: connect Levanta + PartnerBoost for commissionable posts beyond your Amazon tag',
+      'Publish from Levanta + PartnerBoost: turn any campaign you find into a commissionable post (searching them is free on every plan)',
       'In-body AI product images (up to 3 per post)',
       'Your Face in AI thumbnails (1 face, 1 LoRA retrain / month)',
       'Photobooth headshots (10 / month)',
@@ -87,10 +89,10 @@ const plans: PlanExt[] = [
     limit: '45 posts / month',
     description: 'For the solo creator going full-time — everything in Creator plus the tools that turn a blog into a real publication: Deals Hub, topic hubs, video scripts, and a weekly newsletter on schedule.',
     features: [
-      '⚡ Amazon Deal Radar: live, price-history-verified deals + shoppable Link-in-Bio page + auto Instagram Stories',
+      '⚡ Publish from Deal Radar: quick-post deals, roundups & the weekly digest + shoppable Link-in-Bio page + auto Instagram Stories (browsing deals is free on every plan)',
       '45 full reviews per month (blog + thumbnail + metadata bundle)',
       'Adds Pinterest, Instagram & Telegram auto-post on top of Creator',
-      'Affiliate networks: connect Levanta + PartnerBoost for commissionable posts beyond your Amazon tag',
+      'Publish from Levanta + PartnerBoost: turn any campaign you find into a commissionable post (searching them is free on every plan)',
       'Deals Hub: 5 deal posts / month with countdown banners + Amazon CSV bulk import',
       'Refresh Images on any published post (re-renders the in-body shots)',
       'Topic hubs auto-aggregate your reviews into category pages (built-in WP plugin)',
@@ -113,10 +115,10 @@ const plans: PlanExt[] = [
     limit: '100 posts / month',
     description: 'Become the creator brands want. Comparisons, Buying Guides, Rebuild-from-video, multi-account social, VA seats, and 10 WordPress sites.',
     features: [
-      '⚡ Amazon Deal Radar: live, price-history-verified deals + shoppable Link-in-Bio page + auto Instagram Stories',
+      '⚡ Publish from Deal Radar: quick-post deals, roundups & the weekly digest + shoppable Link-in-Bio page + auto Instagram Stories (browsing deals is free on every plan)',
       '100 full reviews per month (blog + thumbnail + metadata bundle)',
       'Adds X (Twitter) auto-post on top of Studio',
-      'Affiliate networks: connect Levanta + PartnerBoost for commissionable posts beyond your Amazon tag',
+      'Publish from Levanta + PartnerBoost: turn any campaign you find into a commissionable post (searching them is free on every plan)',
       'Comparison posts: head-to-head ranked review with a named winner',
       'Buying Guides: "Best [topic] for 2026" round-ups (auto-curate or pick-your-own)',
       'Rebuild-from-video: re-write any legacy WordPress post from its source video',
@@ -143,16 +145,18 @@ export default function PricingPage() {
     <div className="min-h-screen bg-[#FAFAFA] dark:bg-[#0A0A0B] flex flex-col items-center px-4 py-16">
       <div className="text-center mb-12 max-w-3xl">
         <p className="text-xs font-semibold text-[#7C3AED] uppercase tracking-widest mb-3">
-          Stop paying for 6 tools
+          Free Amazon research · no card · no setup
         </p>
         <h1 className="text-4xl sm:text-5xl font-bold text-[#1d1d1f] dark:text-[#f5f5f7] mb-4 tracking-tight leading-[1.05]">
-          One co-pilot for the entire<br className="hidden sm:block" />
-          <span className="bg-gradient-to-br from-[#7C3AED] to-[#C026D3] bg-clip-text text-transparent">YouTube affiliate workflow</span>
+          Find products worth reviewing.<br className="hidden sm:block" />
+          <span className="bg-gradient-to-br from-[#7C3AED] to-[#C026D3] bg-clip-text text-transparent">Free.</span>
         </h1>
         <p className="text-lg text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
-          Paste a YouTube link. Get a published, SEO-tuned blog post — plus comparison
-          and buying-guide articles, a thumbnail, a newsletter, and a script for your
-          next video. All in your voice, all from one tool. Start free, no card.
+          Search the whole Amazon catalogue by the numbers that matter: sales, rating,
+          price, review ratio, video competition. Watch live price-drop deals. Scout your
+          Levanta and PartnerBoost campaigns. All free, no card, nothing to set up. When
+          you want to turn a find into a published review in your voice, that is what the
+          paid plans do.
         </p>
         <p className="mt-3 text-sm font-semibold text-[#34c759]">
           🔒 Early access pricing, locked in for life on the tier you subscribe to.
