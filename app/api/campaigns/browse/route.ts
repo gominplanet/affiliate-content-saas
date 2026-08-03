@@ -18,6 +18,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { type Tier } from '@/lib/tier'
 import { ccAccessOk } from '@/lib/cc-access'
 import { toUserMessage } from '@/lib/friendly-error'
+import { CC_SMART_RULES, hitsAvoidList } from '@/lib/cc-smart-rules'
 
 export const dynamic = 'force-dynamic'
 
@@ -61,9 +62,16 @@ export async function GET(request: Request) {
     const maxVideos = url.searchParams.get('maxVideos') || ''
     const sort = (url.searchParams.get('sort') || 'commission') as SortKey
     const page = Math.max(0, intParam(url, 'page') ?? 0)
+    // MVP picks: layer MVP's Focus rulebook (commission / runway / price / demand
+    // / rating floors + carousel required) on top of the user's filters. It reads
+    // the already-enriched catalog columns, so it costs NOTHING extra (unlike the
+    // Amazon-side MVP picks, which hydrates cards). Needs the signal columns.
+    const mvpPicks = url.searchParams.get('mvpPicks') === '1'
 
     // "Still running" is the baseline; minDaysLeft raises the runway floor.
     const runwayCutoff = new Date(Date.now() + minDaysLeft * 86_400_000).toISOString().slice(0, 10)
+    // MVP picks' own runway floor (stricter of the two applies).
+    const mvpRunwayCutoff = new Date(Date.now() + CC_SMART_RULES.minDaysLeft * 86_400_000).toISOString().slice(0, 10)
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sb = supabase as any
@@ -89,8 +97,22 @@ export async function GET(request: Request) {
         // they reappear the moment enrichment fills their data.
         if (minRating != null) query = query.gte('rating', minRating)
         if (minRecentSales != null) query = query.gte('monthly_sold', minRecentSales)
-        if (maxVideos === '0') query = query.eq('video_count', 0)
-        else if (maxVideos && Number(maxVideos) > 0) query = query.lte('video_count', Number(maxVideos))
+        // MVP picks overrides the maxVideos filter (it requires a carousel).
+        if (!mvpPicks && maxVideos === '0') query = query.eq('video_count', 0)
+        else if (!mvpPicks && maxVideos && Number(maxVideos) > 0) query = query.lte('video_count', Number(maxVideos))
+      }
+      // MVP Focus rulebook — the stricter of user filter vs MVP floor wins because
+      // both constraints apply. Requires the signal columns (price/rating/sales/
+      // video), so mvpPicks always runs the `signals` path.
+      if (mvpPicks && signals) {
+        query = query
+          .gte('commission_pct', CC_SMART_RULES.minCommissionPct)
+          .gte('ends_at', mvpRunwayCutoff)
+          .gte('rating', CC_SMART_RULES.minRating)
+          .gte('monthly_sold', CC_SMART_RULES.minMonthlySales)
+          .gte('price_now_cents', CC_SMART_RULES.minPrice * 100)
+          .lte('price_now_cents', CC_SMART_RULES.maxPrice * 100)
+          .gt('video_count', 0)
       }
       if (keyword === 'fts') query = query.textSearch('search_vec', q, { type: 'websearch' })
       else if (keyword === 'ilike') query = query.ilike('campaign_name', `%${q}%`)
@@ -99,17 +121,26 @@ export async function GET(request: Request) {
     }
 
     const lo = page * PAGE_SIZE, hi = lo + PAGE_SIZE - 1
-    let { data, error } = await build(true, q ? 'fts' : 'none').range(lo, hi)
-    // Signal path failed for ANY reason (columns absent pre-197, an .or() hiccup,
-    // etc.) → retry base-only. Broad on purpose: a signal-query error must never
-    // 500 the whole Browse and wipe the results — it just drops the enriched
-    // filters and returns the campaign economics.
-    if (error) {
-      ;({ data, error } = await build(false, q ? 'fts' : 'none').range(lo, hi))
-    }
-    // search_vec absent (migration 162) or another keyword hiccup → ILIKE, base-safe.
-    if (error && q) {
-      ;({ data, error } = await build(false, 'ilike').range(lo, hi))
+    let data, error
+    if (mvpPicks) {
+      // MVP picks NEEDS the signal columns to gate on price/rating/sales/video,
+      // so it never falls back to the base-only path (which would silently return
+      // non-vetted campaigns). Only the keyword transport degrades (fts → ilike).
+      ;({ data, error } = await build(true, q ? 'fts' : 'none').range(lo, hi))
+      if (error && q) { ({ data, error } = await build(true, 'ilike').range(lo, hi)) }
+    } else {
+      ;({ data, error } = await build(true, q ? 'fts' : 'none').range(lo, hi))
+      // Signal path failed for ANY reason (columns absent pre-197, an .or() hiccup,
+      // etc.) → retry base-only. Broad on purpose: a signal-query error must never
+      // 500 the whole Browse and wipe the results — it just drops the enriched
+      // filters and returns the campaign economics.
+      if (error) {
+        ;({ data, error } = await build(false, q ? 'fts' : 'none').range(lo, hi))
+      }
+      // search_vec absent (migration 162) or another keyword hiccup → ILIKE, base-safe.
+      if (error && q) {
+        ;({ data, error } = await build(false, 'ilike').range(lo, hi))
+      }
     }
     if (error) {
       console.error('[campaigns/browse]', error.message)
@@ -122,7 +153,13 @@ export async function GET(request: Request) {
       budget: number | null; budget_remaining: number | null
       available_slot: number | null; total_slot: number | null
     }
-    const rows = ((data ?? []) as Row[]).filter(r => Array.isArray(r.asins) && r.asins.length > 0)
+    let rows = ((data ?? []) as Row[]).filter(r => Array.isArray(r.asins) && r.asins.length > 0)
+    // MVP picks also drops the "never" categories (supplements / food / pharmacy
+    // / clothing) — the one gate that isn't a clean numeric column. Best-effort on
+    // the page; pagination is unaffected (hasMore still reflects the DB window).
+    if (mvpPicks) {
+      rows = rows.filter(r => !hitsAvoidList({ campaignName: r.campaign_name, brand: r.brand_name, crumbs: null }, CC_SMART_RULES))
+    }
     const campaigns = rows.map(toClient)
     return NextResponse.json({ ok: true, page, campaigns, hasMore: (data ?? []).length === PAGE_SIZE })
   } catch (err) {

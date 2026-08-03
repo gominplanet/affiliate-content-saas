@@ -16,7 +16,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
   Loader2, Search, Bookmark, BookmarkCheck, MessageCircle, ShoppingCart,
-  PenLine, Check, ArrowRight, Coins, Users, Video, BarChart3, ImageOff, Lock, ShieldCheck,
+  PenLine, Check, ArrowRight, Coins, Users, Video, BarChart3, ImageOff, Lock, ShieldCheck, Sparkles,
 } from 'lucide-react'
 import type { MessageBrandCampaign } from '@/components/campaigns/MessageBrandModal'
 import ProductDeepDiveModal from '@/components/product/ProductDeepDiveModal'
@@ -81,6 +81,10 @@ export default function CampaignBrowsePanel({
   const [minRating, setMinRating] = useState(0)
   const [minRecentSales, setMinRecentSales] = useState(0)
   const [maxVideos, setMaxVideos] = useState('') // '' off · '5'/'2' ≤N · '0' untapped
+  // MVP picks: apply MVP's Focus rulebook (commission / runway / price / demand /
+  // rating floors + a product-carousel required) over the catalog. Free — it just
+  // filters the already-enriched columns.
+  const [mvpPicks, setMvpPicks] = useState(false)
 
   const [rows, setRows] = useState<Campaign[]>([])
   const [loading, setLoading] = useState(true)
@@ -116,6 +120,7 @@ export default function CampaignBrowsePanel({
       if (minRating > 0) params.set('minRating', String(minRating))
       if (minRecentSales > 0) params.set('minRecentSales', String(minRecentSales))
       if (maxVideos) params.set('maxVideos', maxVideos)
+      if (mvpPicks) params.set('mvpPicks', '1')
       params.set('sort', sort)
       params.set('page', String(pageToLoad))
       const res = await fetch(`/api/campaigns/browse?${params.toString()}`)
@@ -132,7 +137,7 @@ export default function CampaignBrowsePanel({
     } finally {
       if (append) setLoadingMore(false); else setLoading(false)
     }
-  }, [q, sort, minCommission, minDaysLeft, openSlotsOnly, minRating, minRecentSales, maxVideos])
+  }, [q, sort, minCommission, minDaysLeft, openSlotsOnly, minRating, minRecentSales, maxVideos, mvpPicks])
 
   // Debounced reload on any filter change.
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -244,8 +249,8 @@ export default function CampaignBrowsePanel({
     }
   }
 
-  const hasFilters = q.trim() || minCommission > 0 || minDaysLeft > 0 || openSlotsOnly || minRating > 0 || minRecentSales > 0 || !!maxVideos
-  const clearFilters = () => { setQ(''); setMinCommission(0); setMinDaysLeft(0); setOpenSlotsOnly(false); setMinRating(0); setMinRecentSales(0); setMaxVideos(''); setSort('commission') }
+  const hasFilters = q.trim() || minCommission > 0 || minDaysLeft > 0 || openSlotsOnly || minRating > 0 || minRecentSales > 0 || !!maxVideos || mvpPicks
+  const clearFilters = () => { setQ(''); setMinCommission(0); setMinDaysLeft(0); setOpenSlotsOnly(false); setMinRating(0); setMinRecentSales(0); setMaxVideos(''); setSort('commission'); setMvpPicks(false) }
 
   if (locked) {
     return (
@@ -259,7 +264,7 @@ export default function CampaignBrowsePanel({
             The shared campaign catalog is Amazon Creator Connections data, kept private to invited creators. Confirm your own Creator Connections access once and Browse all unlocks for you.
           </p>
           <p className="text-[12px] leading-relaxed mb-5" style={{ color: 'var(--text-faint)' }}>
-            SCOUT opens your Creator Connections grid and confirms it renders for your account; nothing is shared. Smart Scan works without this : it already reads your own grid.
+            SCOUT opens your Creator Connections grid and confirms it renders for your account; nothing is shared.
           </p>
           <button
             onClick={verifyCcAccess}
@@ -288,6 +293,16 @@ export default function CampaignBrowsePanel({
           />
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {/* MVP picks — MVP's Focus rulebook over the catalog (carousel required). */}
+          <button
+            onClick={() => setMvpPicks(v => !v)}
+            title="MVP picks: MVP's proven campaign criteria — 15%+ commission, 90+ days runway, $20–800, 100+ sold/mo, 3★+, a product-carousel video, and no supplements/food/pharmacy/clothing."
+            className={`h-9 text-sm font-semibold rounded-full px-3.5 inline-flex items-center gap-1.5 border transition-all active:scale-[0.97] ${mvpPicks ? '' : 'bg-white dark:bg-[#1c1c1e]'}`}
+            style={mvpPicks
+              ? { background: '#7C3AED', color: '#fff', borderColor: '#7C3AED' }
+              : { color: 'var(--text-soft)', borderColor: 'var(--border)' }}>
+            <Sparkles size={14} /> MVP picks
+          </button>
           <Select value={sort} onChange={setSort} options={SORTS.map(s => ({ v: s.key, l: s.label }))} />
           <Select value={String(minCommission)} onChange={v => setMinCommission(Number(v))} options={[
             { v: '0', l: 'Any commission' }, { v: '5', l: '5%+' }, { v: '10', l: '10%+' }, { v: '15', l: '15%+' }, { v: '20', l: '20%+' },
@@ -331,7 +346,9 @@ export default function CampaignBrowsePanel({
         <div className="text-center py-12 text-sm" style={{ color: 'var(--text-faint)' }}>{error}</div>
       ) : rows.length === 0 ? (
         <div className="text-center py-12 text-sm" style={{ color: 'var(--text-faint)' }}>
-          {hasFilters ? 'No campaigns match those filters — try widening them.' : 'No campaigns in the catalog right now — check back soon.'}
+          {mvpPicks
+            ? "Nothing cleared MVP's bar in this slice yet — the rulebook is strict and only enriched campaigns qualify. Try a keyword or turn MVP picks off to browse everything."
+            : hasFilters ? 'No campaigns match those filters — try widening them.' : 'No campaigns in the catalog right now — check back soon.'}
         </div>
       ) : (
         <div className="p-3 border-t" style={{ borderColor: 'var(--border)' }}>
