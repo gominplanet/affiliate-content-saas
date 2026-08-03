@@ -23,4 +23,10 @@ CREATE TABLE IF NOT EXISTS system_flags (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- RLS on, no policies: this table is server-only (the import endpoint + the
+-- enrichment cron read/write it via service_role, which BYPASSES RLS). Enabling
+-- RLS with zero policies locks out anon/authenticated browser clients entirely,
+-- which is exactly what we want — nothing a browser reaches touches this.
+ALTER TABLE system_flags ENABLE ROW LEVEL SECURITY;
+
 NOTIFY pgrst, 'reload config';
