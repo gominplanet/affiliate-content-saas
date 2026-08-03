@@ -283,7 +283,7 @@ export default function AdminCcImportPage() {
           <button onClick={() => probe()} disabled={probing || !probeQ.trim()}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-semibold text-white disabled:opacity-50"
             style={{ background: '#f59e0b' }}>
-            {probing ? <><Loader2 size={15} className="animate-spin" /> Probing…</> : 'Probe &amp; fix prices'}
+            {probing ? <><Loader2 size={15} className="animate-spin" /> Probing…</> : 'Probe & fix prices'}
           </button>
         </div>
         {probeRows && probeRows.length > 0 && (
