@@ -55,10 +55,13 @@ export async function GET(request: Request) {
   const total = await countOf((query: any) => query, true) // eslint-disable-line @typescript-eslint/no-explicit-any
 
   // A sample of matches with import date + runway, to eyeball staleness/names.
-  let sample: Array<{ name: string; brand: string | null; importedAt: string | null; endsAt: string; enriched: boolean }> = []
+  let sample: Array<{ name: string; brand: string | null; importedAt: string | null; endsAt: string; enriched: boolean; asinCount: number }> = []
+  // How many of the matching rows actually carry a populated asins column —
+  // Browse needs an ASIN, so rows with 0 asins used to be dropped.
+  let withAsins: number | null = null
   try {
     const { data } = await A.from('cc_campaign_catalog')
-      .select('campaign_name, brand_name, imported_at, ends_at, product_verified_at')
+      .select('campaign_name, brand_name, imported_at, ends_at, product_verified_at, asins')
       .textSearch('search_vec', q, { type: 'websearch' })
       .order('imported_at', { ascending: false })
       .limit(20)
@@ -66,8 +69,11 @@ export async function GET(request: Request) {
     sample = (data ?? []).map((r: any) => ({
       name: r.campaign_name, brand: r.brand_name, importedAt: r.imported_at ?? null,
       endsAt: r.ends_at, enriched: r.product_verified_at != null,
+      asinCount: Array.isArray(r.asins) ? r.asins.length : 0,
     }))
   } catch { /* sample is best-effort */ }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  withAsins = await countOf((query: any) => query.textSearch('search_vec', q, { type: 'websearch' }).not('asins', 'eq', '{}'))
 
   // Best-effort newest import across the whole catalog (the staleness signal).
   let latestImportedAt: string | null = null
@@ -77,6 +83,6 @@ export async function GET(request: Request) {
   } catch { /* best-effort */ }
 
   return NextResponse.json({
-    ok: true, q, total, ftsCount, ftsLiveCount, nameIlikeCount, latestImportedAt, sample,
+    ok: true, q, total, ftsCount, ftsLiveCount, nameIlikeCount, withAsins, latestImportedAt, sample,
   })
 }
