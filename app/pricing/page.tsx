@@ -314,6 +314,8 @@ export default function PricingPage() {
             <ul className="flex flex-col gap-2.5 mb-5 text-sm">
               {[
                 ['Cuppa Solo (AI blog writer)',           99],
+                ['Jungle Scout (product research)',        49],
+                ['Keepa (price history & deal tracking)',  19],
                 ['thumbnailcreator.com (Creator)',         41],
                 ['OpusClip Pro (vertical clips)',          29],
                 ['Beehiiv Grow (newsletter)',              43],
@@ -327,11 +329,11 @@ export default function PricingPage() {
             </ul>
             <div className="flex items-baseline justify-between text-sm font-semibold pt-1">
               <span className="text-[#1d1d1f] dark:text-[#f5f5f7]">Total replaced</span>
-              <span className="font-mono text-[#1d1d1f] dark:text-[#f5f5f7]">$212/mo</span>
+              <span className="font-mono text-[#1d1d1f] dark:text-[#f5f5f7]">$280/mo</span>
             </div>
             <div className="mt-4 rounded-xl bg-[#34c759]/10 border border-[#34c759]/25 px-4 py-3 flex items-baseline justify-between">
               <span className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">You save</span>
-              <span className="font-mono text-lg font-bold text-[#34c759]">$113/mo</span>
+              <span className="font-mono text-lg font-bold text-[#34c759]">$181/mo</span>
             </div>
           </div>
 
@@ -351,6 +353,9 @@ export default function PricingPage() {
             <ul className="flex flex-col gap-2.5 mb-5 text-sm">
               {[
                 ['Cuppa Studio (multi-niche AI writer)',  199],
+                ['Jungle Scout (product research)',        49],
+                ['Helium 10 (product + keyword research)', 79],
+                ['Keepa (price history & deal tracking)',  19],
                 ['Frase (SEO research + content briefs)',  97],
                 ['thumbnailcreator.com (Creator)',         41],
                 ['OpusClip Pro (vertical clips)',          29],
@@ -365,11 +370,11 @@ export default function PricingPage() {
             </ul>
             <div className="flex items-baseline justify-between text-sm font-semibold pt-1">
               <span className="text-[#1d1d1f] dark:text-[#f5f5f7]">Total replaced</span>
-              <span className="font-mono text-[#1d1d1f] dark:text-[#f5f5f7]">$438/mo</span>
+              <span className="font-mono text-[#1d1d1f] dark:text-[#f5f5f7]">$585/mo</span>
             </div>
             <div className="mt-4 rounded-xl bg-[#34c759]/15 border border-[#34c759]/30 px-4 py-3 flex items-baseline justify-between">
               <span className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">You save</span>
-              <span className="font-mono text-lg font-bold text-[#34c759]">$239/mo</span>
+              <span className="font-mono text-lg font-bold text-[#34c759]">$386/mo</span>
             </div>
           </div>
         </div>
