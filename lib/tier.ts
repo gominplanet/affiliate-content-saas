@@ -7,8 +7,8 @@
 //     metadata" as a bundle that burns 1 unit; postsPerMonth /
 //     thumbnailsPerMonth read the same cap.
 //     True atomic shared counter is a follow-up RPC (see follow-up task).
-//   - metadataGensPerMonth is a SEPARATE, higher allowance (Studio 100, Pro 250,
-//     2026-08): Co-Pilot re-titling is ~35× cheaper than a post and back-catalog
+//   - metadataGensPerMonth is a SEPARATE, higher allowance (Creator 75, Studio 100,
+//     Pro 250, 2026-08): Co-Pilot re-titling is ~35× cheaper than a post and back-catalog
 //     cleanup is a first-months behaviour. Enforced in /api/youtube/generate-metadata
 //     via checkUsageCap(PRIMARY_FEATURE.metadata) — its own bucket, never the
 //     post/thumbnail quota.
@@ -148,7 +148,10 @@ export const TIERS = {
     lifetimeMax: null as number | null,
     collabsPerMonth: 5 as number | null,
     thumbnailsPerMonth: 20 as number | null,
-    metadataGensPerMonth: 20 as number | null,
+    // Metadata is its own (higher) bucket — see the Studio/Pro note above. Creator
+    // gets 75 so a new user can clear a real back-catalog of old videos early on
+    // without hitting the wall (metadata is ~$0.05 a gen).
+    metadataGensPerMonth: 75 as number | null,
     instagramAiThumbnailsPerMonth: 0 as number | null,
     dealsPerMonth: 0 as number | null,
     photoboothPerMonth: 10 as number | null,
