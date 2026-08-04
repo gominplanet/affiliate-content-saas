@@ -10,17 +10,20 @@
 
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { Send, Check, AlertCircle, X as CloseIcon, Loader2, CalendarClock } from 'lucide-react'
+import { Send, Check, AlertCircle, X as CloseIcon, Loader2, CalendarClock, Info } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { InfoTip } from '@/components/ui/InfoTip'
 
-// A sensible default schedule time: 2 hours out, on the minute, formatted for a
-// <input type="datetime-local"> (local time, no timezone suffix).
-function defaultScheduleValue(): string {
+// Sensible defaults: 2 hours out, on the minute. Split into date (YYYY-MM-DD)
+// and time (HH:mm) for the two separate pickers, both in the viewer's local time.
+const pad = (n: number) => String(n).padStart(2, '0')
+function defaultSchedule(): { date: string; time: string } {
   const d = new Date(Date.now() + 2 * 3600_000)
   d.setSeconds(0, 0)
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  return {
+    date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+    time: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
+  }
 }
 
 export interface QuickPostDeal { asin: string; title: string; imageUrl: string | null }
@@ -45,10 +48,12 @@ export default function QuickPostModal({
   const [posting, setPosting] = useState(false)
   const [results, setResults] = useState<PostResult[] | null>(null)
   const [linkNote, setLinkNote] = useState<string | null>(null)
-  // Scheduling: a red "Schedule" toggle reveals a datetime picker; submitting
-  // queues the deal instead of posting now.
+  // Scheduling: the red "Schedule" button reveals a date + time picker; the same
+  // button then queues the deal instead of posting now.
   const [scheduleOpen, setScheduleOpen] = useState(false)
-  const [scheduledFor, setScheduledFor] = useState(defaultScheduleValue)
+  const initial = defaultSchedule()
+  const [scheduleDate, setScheduleDate] = useState(initial.date)
+  const [scheduleTime, setScheduleTime] = useState(initial.time)
   const [scheduling, setScheduling] = useState(false)
 
   const toggle = (key: string) => setSelected((s) => {
@@ -56,8 +61,10 @@ export default function QuickPostModal({
   })
 
   const schedule = async () => {
+    // First click just opens the picker; the second (with the picker showing) submits.
+    if (!scheduleOpen) { setScheduleOpen(true); return }
     if (selected.size === 0 && !story) { toast.error('Pick at least one destination.'); return }
-    const when = new Date(scheduledFor)
+    const when = new Date(`${scheduleDate}T${scheduleTime}`)
     if (isNaN(when.getTime())) { toast.error('Pick a valid date and time.'); return }
     if (when.getTime() < Date.now()) { toast.error('Pick a time in the future.'); return }
     setScheduling(true)
@@ -160,20 +167,27 @@ export default function QuickPostModal({
 
           {/* Schedule panel — revealed by the red Schedule button in the footer. */}
           {scheduleOpen && (
-            <div className="rounded-lg border border-red-500/40 bg-red-500/5 p-3 space-y-2">
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-red-600 dark:text-red-400">
-                <CalendarClock size={14} /> Schedule this post
+            <div className="space-y-2">
+              <div className="text-xs font-semibold text-muted-foreground">Schedule for</div>
+              <div className="flex gap-2">
+                <input
+                  type="date" value={scheduleDate} min={initial.date}
+                  onChange={(e) => setScheduleDate(e.target.value)}
+                  className="flex-1 min-w-0 text-sm rounded-lg border bg-background p-2.5"
+                />
+                <input
+                  type="time" value={scheduleTime}
+                  onChange={(e) => setScheduleTime(e.target.value)}
+                  className="w-32 text-sm rounded-lg border bg-background p-2.5"
+                />
+              </div>
+              <div className="flex items-center gap-1.5 text-[12px]" style={{ color: '#7C3AED' }}>
+                <Info size={14} className="shrink-0" />
+                <span>We&apos;ll only post if the deal is still live.</span>
                 <InfoTip>
-                  Heads up: deals end. If this one is no longer live when the scheduled time comes around, we won&apos;t post it. Better to skip it than to promote a deal that&apos;s already gone. Timed and lightning deals are the ones to be careful with.
+                  Deals end. If this one is no longer live when the scheduled time comes around, we won&apos;t post it. Better to skip it than to promote a deal that&apos;s already gone. Timed and lightning deals are the ones to watch.
                 </InfoTip>
               </div>
-              <input
-                type="datetime-local"
-                value={scheduledFor}
-                onChange={(e) => setScheduledFor(e.target.value)}
-                className="w-full text-sm rounded-lg border bg-background p-2"
-              />
-              <p className="text-[11px] text-muted-foreground">We&apos;ll post it then to the destinations you picked above.</p>
             </div>
           )}
 
@@ -202,19 +216,12 @@ export default function QuickPostModal({
         <div className="flex items-center justify-between gap-2 p-4 border-t">
           <Button variant="outline" size="sm" onClick={onClose}>Close</Button>
           <div className="flex items-center gap-2">
-            {scheduleOpen ? (
-              <Button size="sm" onClick={schedule} disabled={scheduling || (selected.size === 0 && !story)}
-                className="bg-red-600 hover:bg-red-700 text-white">
-                {scheduling ? <><Loader2 size={14} className="mr-1.5 animate-spin" /> Scheduling…</> : <><CalendarClock size={14} className="mr-1.5" /> Schedule</>}
-              </Button>
-            ) : (
-              <Button variant="outline" size="sm" onClick={() => setScheduleOpen(true)}
-                className="border-red-500/50 text-red-600 hover:bg-red-500/10 dark:text-red-400">
-                <CalendarClock size={14} className="mr-1.5" /> Schedule
-              </Button>
-            )}
-            <Button size="sm" onClick={post} disabled={posting || (selected.size === 0 && !story)}>
+            <Button size="sm" onClick={post} disabled={posting || scheduling || (selected.size === 0 && !story)}>
               {posting ? <><Loader2 size={14} className="mr-1.5 animate-spin" /> Posting…</> : <><Send size={14} className="mr-1.5" /> Post now</>}
+            </Button>
+            <Button size="sm" onClick={schedule} disabled={scheduling || posting || (selected.size === 0 && !story)}
+              className="bg-red-600 hover:bg-red-700 text-white">
+              {scheduling ? <><Loader2 size={14} className="mr-1.5 animate-spin" /> Scheduling…</> : <><CalendarClock size={14} className="mr-1.5" /> Schedule</>}
             </Button>
           </div>
         </div>
