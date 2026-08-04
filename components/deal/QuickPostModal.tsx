@@ -10,8 +10,18 @@
 
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { Send, Check, AlertCircle, X as CloseIcon, Loader2 } from 'lucide-react'
+import { Send, Check, AlertCircle, X as CloseIcon, Loader2, CalendarClock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { InfoTip } from '@/components/ui/InfoTip'
+
+// A sensible default schedule time: 2 hours out, on the minute, formatted for a
+// <input type="datetime-local"> (local time, no timezone suffix).
+function defaultScheduleValue(): string {
+  const d = new Date(Date.now() + 2 * 3600_000)
+  d.setSeconds(0, 0)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
 
 export interface QuickPostDeal { asin: string; title: string; imageUrl: string | null }
 interface PostResult { platform: string; ok: boolean; url?: string; error?: string }
@@ -35,10 +45,40 @@ export default function QuickPostModal({
   const [posting, setPosting] = useState(false)
   const [results, setResults] = useState<PostResult[] | null>(null)
   const [linkNote, setLinkNote] = useState<string | null>(null)
+  // Scheduling: a red "Schedule" toggle reveals a datetime picker; submitting
+  // queues the deal instead of posting now.
+  const [scheduleOpen, setScheduleOpen] = useState(false)
+  const [scheduledFor, setScheduledFor] = useState(defaultScheduleValue)
+  const [scheduling, setScheduling] = useState(false)
 
   const toggle = (key: string) => setSelected((s) => {
     const n = new Set(s); n.has(key) ? n.delete(key) : n.add(key); return n
   })
+
+  const schedule = async () => {
+    if (selected.size === 0 && !story) { toast.error('Pick at least one destination.'); return }
+    const when = new Date(scheduledFor)
+    if (isNaN(when.getTime())) { toast.error('Pick a valid date and time.'); return }
+    if (when.getTime() < Date.now()) { toast.error('Pick a time in the future.'); return }
+    setScheduling(true)
+    try {
+      const res = await fetch('/api/deal-radar/social-post', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          asin: deal.asin, platforms: [...selected], story, caption: caption.trim() || undefined,
+          title: deal.title, imageUrl: deal.imageUrl, scheduledFor: when.toISOString(),
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.scheduled) { toast.error(data.error || 'Could not schedule that post.'); return }
+      toast.success(`Scheduled for ${when.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}.`)
+      setTimeout(onClose, 700)
+    } catch {
+      toast.error('Could not schedule that post.')
+    } finally {
+      setScheduling(false)
+    }
+  }
 
   const post = async () => {
     if (selected.size === 0 && !story) { toast.error('Pick at least one destination.'); return }
@@ -118,6 +158,25 @@ export default function QuickPostModal({
             <p className="text-[11px] text-muted-foreground mt-1">Your affiliate link and an #ad disclosure are added automatically. We avoid quoting a specific price so the post stays accurate over time.</p>
           </div>
 
+          {/* Schedule panel — revealed by the red Schedule button in the footer. */}
+          {scheduleOpen && (
+            <div className="rounded-lg border border-red-500/40 bg-red-500/5 p-3 space-y-2">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-red-600 dark:text-red-400">
+                <CalendarClock size={14} /> Schedule this post
+                <InfoTip>
+                  Heads up: deals end. If this one is no longer live when the scheduled time comes around, we won&apos;t post it. Better to skip it than to promote a deal that&apos;s already gone. Timed and lightning deals are the ones to be careful with.
+                </InfoTip>
+              </div>
+              <input
+                type="datetime-local"
+                value={scheduledFor}
+                onChange={(e) => setScheduledFor(e.target.value)}
+                className="w-full text-sm rounded-lg border bg-background p-2"
+              />
+              <p className="text-[11px] text-muted-foreground">We&apos;ll post it then to the destinations you picked above.</p>
+            </div>
+          )}
+
           {results && (
             <div className="space-y-1.5">
               {results.map((r) => (
@@ -140,11 +199,24 @@ export default function QuickPostModal({
           )}
         </div>
 
-        <div className="flex items-center justify-end gap-2 p-4 border-t">
+        <div className="flex items-center justify-between gap-2 p-4 border-t">
           <Button variant="outline" size="sm" onClick={onClose}>Close</Button>
-          <Button size="sm" onClick={post} disabled={posting || (selected.size === 0 && !story)}>
-            {posting ? <><Loader2 size={14} className="mr-1.5 animate-spin" /> Posting…</> : <><Send size={14} className="mr-1.5" /> Post now</>}
-          </Button>
+          <div className="flex items-center gap-2">
+            {scheduleOpen ? (
+              <Button size="sm" onClick={schedule} disabled={scheduling || (selected.size === 0 && !story)}
+                className="bg-red-600 hover:bg-red-700 text-white">
+                {scheduling ? <><Loader2 size={14} className="mr-1.5 animate-spin" /> Scheduling…</> : <><CalendarClock size={14} className="mr-1.5" /> Schedule</>}
+              </Button>
+            ) : (
+              <Button variant="outline" size="sm" onClick={() => setScheduleOpen(true)}
+                className="border-red-500/50 text-red-600 hover:bg-red-500/10 dark:text-red-400">
+                <CalendarClock size={14} className="mr-1.5" /> Schedule
+              </Button>
+            )}
+            <Button size="sm" onClick={post} disabled={posting || (selected.size === 0 && !story)}>
+              {posting ? <><Loader2 size={14} className="mr-1.5 animate-spin" /> Posting…</> : <><Send size={14} className="mr-1.5" /> Post now</>}
+            </Button>
+          </div>
         </div>
       </div>
     </div>
