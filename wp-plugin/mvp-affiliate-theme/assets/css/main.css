@@ -207,6 +207,14 @@ html, body { overflow-x: clip; }
   position: sticky;
   top: 0;
   z-index: 40;
+}
+/* Opt-out (Customize Blog → sticky header off): render a normal static header
+   so a long nav can't pin over the page. */
+.mvp-header.mvp-header--static {
+  position: static;
+  top: auto;
+}
+.mvp-header {
   background: var(--mvp-header-bg, rgba(255,255,255,0.98));
   border-bottom: 1px solid var(--mvp-header-border, var(--mvp-border));
   backdrop-filter: saturate(180%) blur(10px);

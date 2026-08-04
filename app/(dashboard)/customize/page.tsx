@@ -126,6 +126,14 @@ interface BlogCustomizations {
   /** "Work with brands" — a discreet blog banner inviting brands to reach the
    *  creator via a media-kit link and/or an in-app contact form (→ dashboard). */
   brandCta: BrandCtaData
+  /** Blog layout options the theme reads (mvp_affiliate_data().layout). */
+  layout: LayoutData
+}
+
+interface LayoutData {
+  /** Sticky (pinned) header on/off. Default on; off = a normal static header so
+   *  a long nav can't pin over the page. */
+  stickyHeader: boolean
 }
 
 interface BrandCtaData {
@@ -159,6 +167,9 @@ const emptyFooter: FooterData = {
   socials: { youtube: '', facebook: '', instagram: '', threads: '', pinterest: '', tiktok: '', twitter: '', contact: '' },
   links: [],
 }
+const emptyLayout: LayoutData = {
+  stickyHeader: true,
+}
 const emptyBrandCta: BrandCtaData = {
   enabled: false,
   pillLabel: 'Work with us',
@@ -189,6 +200,7 @@ const defaultCustomizations: BlogCustomizations = {
   headMetaTags: [],
   analytics: { gtmId: '', ga4Id: '' },
   brandCta: emptyBrandCta,
+  layout: emptyLayout,
 }
 
 
@@ -346,6 +358,10 @@ export default function CustomizePage() {
           mediaKitLabel: bc.brandCta?.mediaKitLabel ?? emptyBrandCta.mediaKitLabel,
           inbox:         typeof bc.brandCta?.inbox === 'boolean' ? bc.brandCta.inbox : true,
           directLink:    typeof bc.brandCta?.directLink === 'boolean' ? bc.brandCta.directLink : false,
+        },
+        layout: {
+          // Sticky header defaults ON — only an explicit saved false turns it off.
+          stickyHeader: bc.layout?.stickyHeader !== false,
         },
       })
     }
@@ -590,6 +606,28 @@ export default function CustomizePage() {
               aria-label="Toggle post dates"
             >
               {data.postMeta.showDate
+                ? <ToggleRight size={28} className="text-[#7C3AED]" />
+                : <ToggleLeft size={28} />}
+            </button>
+          </div>
+        </Section>
+
+        {/* Sticky header */}
+        <Section
+          title="Sticky header"
+          description="Keep the top menu pinned as readers scroll, or let it scroll away with the page. Turn this off if your menu feels like it's taking up too much of the screen."
+        >
+          <div className="flex items-center justify-between p-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border-2)]">
+            <div>
+              <p className="text-sm font-medium text-[var(--text)]">Pin the header to the top</p>
+              <p className="text-xs text-[var(--text-3)]">On = the header stays visible while scrolling. Off = a normal header that scrolls away.</p>
+            </div>
+            <button
+              onClick={() => setData(d => ({ ...d, layout: { ...d.layout, stickyHeader: !d.layout.stickyHeader } }))}
+              className="text-[var(--text-3)]"
+              aria-label="Toggle sticky header"
+            >
+              {data.layout.stickyHeader
                 ? <ToggleRight size={28} className="text-[#7C3AED]" />
                 : <ToggleLeft size={28} />}
             </button>

@@ -86,6 +86,16 @@ $disclaimer = trim($profile['affiliateDisclaimer'] ?? '');
 if ($disclaimer === '') {
     $disclaimer = 'This site contains affiliate links. We may earn a commission on purchases made through links on this site, at no extra cost to you.';
 }
+// Sticky header is opt-out via Customize Blog (layout.stickyHeader). Default
+// true so existing sites are unchanged; false renders a STATIC header so a long
+// nav can't pin over the page and block scrolling.
+$mvp_sticky_header = true;
+if (function_exists('mvp_affiliate_data')) {
+    $mvp_data_layout = mvp_affiliate_data();
+    if (isset($mvp_data_layout['layout']['stickyHeader'])) {
+        $mvp_sticky_header = (bool) $mvp_data_layout['layout']['stickyHeader'];
+    }
+}
 ?>
 
 <!-- Utility bar: socials only. The affiliate disclaimer is NOT shown here —
@@ -123,7 +133,7 @@ if ($disclaimer === '') {
 <?php endif; ?>
 
 <!-- Main header -->
-<header class="mvp-header">
+<header class="mvp-header<?php echo $mvp_sticky_header ? '' : ' mvp-header--static'; ?>">
   <div class="mvp-container mvp-header-inner">
     <a href="<?php echo esc_url(home_url('/')); ?>" class="mvp-header-brand">
       <span class="mvp-header-title"><?php echo esc_html($brand); ?></span>
@@ -146,7 +156,9 @@ if ($disclaimer === '') {
           'title_li'   => '',
           'orderby'    => 'count',
           'order'      => 'DESC',
-          'number'     => 7,
+          // Cap at 5 so the bar stays a clean single row instead of wrapping /
+          // stacking and swamping the header on sites with many categories.
+          'number'     => 5,
           'hide_empty' => true,
       ]);
       $mvp_about = get_page_by_path('about');
