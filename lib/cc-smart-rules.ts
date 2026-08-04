@@ -41,23 +41,22 @@ export interface CcSmartRules {
 }
 
 export const CC_SMART_RULES: CcSmartRules = {
-  minCommissionPct: 15,
+  minCommissionPct: 10,
   minDaysLeft: 90,
   // Floor lowered 30→20 (2026-08) — $30 cut too many viable niches (e.g. solar
   // lights). hardFloorPrice matches so the effective gate is a clean $20.
   minPrice: 20,
-  maxPrice: 800,
+  // Ceiling raised 800→2000 (2026-08) to keep higher-ticket niches in play.
+  maxPrice: 2000,
   minMonthlySales: 100,
   minRating: 3,
   minEpc: 0.25,
   hardFloorPrice: 20,
   requireCarousel: true,
   deepCheckCap: 40,
-  // never: supplements, food, pharmacy, clothing
+  // never: food, pharmacy, clothing. (Supplements were dropped from the ban
+  // 2026-08 — they're a viable niche now, so creatine/vitamins/etc. can qualify.)
   avoidPatterns: [
-    // supplements
-    'supplement', 'vitamin', 'gummies', 'protein powder', 'creatine', 'collagen',
-    'probiotic', 'pre-workout', 'preworkout', 'multivitamin', 'omega-3', 'omega 3',
     // food / grocery
     'grocery', 'gourmet food', 'snack', 'coffee', 'chocolate', 'candy', 'sauce',
     'seasoning', 'beverage', 'drink mix', 'tea bags', 'protein bar', 'cereal',
@@ -73,8 +72,8 @@ export const CC_SMART_RULES: CcSmartRules = {
 
 /**
  * WIDE preset — the "less focused" mode of the MVP Finder's Campaigns ON. Same
- * hard NO categories (supplements/food/pharmacy/clothing stay banned — those are
- * never good picks), but every numeric gate is loosened so more campaigns clear:
+ * hard NO categories (food/pharmacy/clothing stay banned — those are never good
+ * picks), but every numeric gate is loosened so more campaigns clear:
  * lower commission floor, shorter runway, wider price band, lower demand + rating
  * bars, and no carousel requirement. Still returns real, viable campaigns — just
  * a broader net than MVP Focus (which follows the full Profitability Rules).
