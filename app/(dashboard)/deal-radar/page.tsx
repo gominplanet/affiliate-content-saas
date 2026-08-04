@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import QuickPostModal from '@/components/deal/QuickPostModal'
+import WalmartDeals from '@/components/walmart/WalmartDeals'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { type Tier } from '@/lib/tier'
@@ -249,6 +250,11 @@ export default function DealRadarPage() {
   const [videoOnly, setVideoOnly] = useState(false)
   const [sort, setSort] = useState('opportunity')
 
+  // Which marketplace's deals to show. Amazon = the cached Keepa feed (all the
+  // filters below). Walmart = live time-boxed PartnerBoost commission boosts
+  // (per-user, so a separate live source — no shared cache).
+  const [source, setSource] = useState<'amazon' | 'walmart'>('amazon')
+
   const [deals, setDeals] = useState<Deal[]>([])
   const [ticker, setTicker] = useState<Deal[]>([])
   const [loading, setLoading] = useState(true)
@@ -371,7 +377,7 @@ export default function DealRadarPage() {
         <div>
           <div className="flex items-center gap-2 flex-wrap">
             <div className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-orange-100 text-orange-600"><Radar size={20} /></div>
-            <h1 className="text-2xl font-bold">Amazon Deal Radar</h1>
+            <h1 className="text-2xl font-bold">Deal Radar</h1>
             <button onClick={() => setShowGuide(true)} className="text-xs font-medium text-orange-600 dark:text-orange-400 underline inline-flex items-center gap-1">
               <HelpCircle size={13} /> Full guide
             </button>
@@ -381,7 +387,11 @@ export default function DealRadarPage() {
               </button>
             )}
           </div>
-          <p className="text-sm text-muted-foreground mt-1">Live Amazon deals in your niche. Turn any one into a blog post, then push it to social.</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            {source === 'amazon'
+              ? 'Live Amazon deals in your niche. Turn any one into a blog post, then push it to social.'
+              : 'Live time-limited Walmart deals from your PartnerBoost account. Turn any one into a post with a cloaked link.'}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           {isPaid && <DigestToggle />}
@@ -389,6 +399,17 @@ export default function DealRadarPage() {
             <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
           </Button>
         </div>
+      </div>
+
+      {/* Marketplace source toggle — Amazon (cached Keepa feed) vs Walmart (live
+          time-boxed PartnerBoost boosts). */}
+      <div className="inline-flex rounded-full border p-0.5 bg-background">
+        {([['amazon', 'Amazon'], ['walmart', 'Walmart']] as const).map(([key, label]) => (
+          <button key={key} onClick={() => setSource(key)}
+            className={`px-4 h-8 text-sm font-semibold rounded-full transition-colors ${source === key ? (key === 'walmart' ? 'bg-[#0071CE] text-white' : 'bg-orange-500 text-white') : 'text-muted-foreground hover:text-foreground'}`}>
+            {label}
+          </button>
+        ))}
       </div>
 
       {/* Free plan: browsing is open; posting is paid. */}
@@ -409,6 +430,7 @@ export default function DealRadarPage() {
       {/* How it works */}
       {showHelp && <HowItWorks onDismiss={dismissHelp} />}
 
+      {source === 'amazon' && (<>
       {/* Double-win ticker */}
       {ticker.length > 0 && (
         <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3">
@@ -548,6 +570,11 @@ export default function DealRadarPage() {
           <button onClick={() => setSelected(new Set())} className="text-xs text-muted-foreground hover:text-foreground">Clear</button>
         </div>
       )}
+      </>)}
+
+      {/* Walmart source — live time-boxed PartnerBoost boosts (real end dates
+          only). Self-fetches per-user; prompts to connect when there's no token. */}
+      {source === 'walmart' && <WalmartDeals timedOnly embedded />}
     </div>
   )
 }

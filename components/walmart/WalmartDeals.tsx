@@ -13,7 +13,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react'
-import { Loader2, RefreshCw, ExternalLink, Copy, Wand2, Package, CheckCircle2, Clock, Zap, TicketPercent } from 'lucide-react'
+import { Loader2, RefreshCw, ExternalLink, Copy, Wand2, Package, CheckCircle2, Clock, Zap, TicketPercent, Store } from 'lucide-react'
 import { toast } from 'sonner'
 
 // Walmart brand palette — used only here so the feed reads unmistakably as the
@@ -51,7 +51,7 @@ function endsIn(iso: string | null): string | null {
   return 'ending soon'
 }
 
-export default function WalmartDeals() {
+export default function WalmartDeals({ timedOnly = false, embedded = false }: { timedOnly?: boolean; embedded?: boolean } = {}) {
   const [loading, setLoading] = useState(true)
   const [deals, setDeals] = useState<Deal[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -112,9 +112,30 @@ export default function WalmartDeals() {
     }
   }
 
-  // Don't take up space on accounts with no token — the finder below already
-  // prompts to connect PartnerBoost.
-  if (needsToken) return null
+  // In Deal Radar, "real timed deals only" — keep boosts with a genuine future
+  // end time (a live countdown), not open-ended ones.
+  const shown = timedOnly
+    ? deals.filter((d) => d.endTime && Number.isFinite(Date.parse(d.endTime)) && Date.parse(d.endTime) > Date.now())
+    : deals
+
+  // On the /partnerboost page the finder below already prompts to connect, so we
+  // stay out of the way (null). Embedded in Deal Radar there's no such prompt, so
+  // show one — otherwise the Walmart tab looks broken.
+  if (needsToken) {
+    if (!embedded) return null
+    return (
+      <div className="rounded-xl border p-4 flex items-start gap-3" style={{ background: 'rgba(0,113,206,0.08)', borderColor: 'rgba(0,113,206,0.35)' }}>
+        <Store size={16} className="flex-shrink-0 mt-0.5" style={{ color: WM_BLUE }} />
+        <div className="text-[13px]" style={{ color: 'var(--text)' }}>
+          <p className="font-semibold mb-1">Connect PartnerBoost to see Walmart deals</p>
+          <p style={{ color: 'var(--text-soft)' }}>
+            Walmart deals come from your PartnerBoost account. Add your API key in{' '}
+            <a href="/external-integrations" className="font-medium underline" style={{ color: WM_BLUE }}>External Integrations</a>, then refresh.
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="rounded-xl border mb-5 overflow-hidden" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
@@ -148,13 +169,13 @@ export default function WalmartDeals() {
           </p>
         ) : error ? (
           <p className="text-[12.5px] p-3" style={{ color: '#ef4444' }}>{error}</p>
-        ) : deals.length === 0 ? (
+        ) : shown.length === 0 ? (
           <p className="text-[12.5px] p-3" style={{ color: 'var(--text-soft)' }}>
-            No live Walmart commission boosts right now. Check back — PartnerBoost refreshes these often.
+            No live Walmart {timedOnly ? 'timed deals' : 'commission boosts'} right now. Check back — PartnerBoost refreshes these often.
           </p>
         ) : (
           <div className="flex flex-col gap-2">
-            {deals.map((d) => {
+            {shown.map((d) => {
               const gen = generating === d.itemId
               const done = results[d.itemId]
               const ends = endsIn(d.endTime)
