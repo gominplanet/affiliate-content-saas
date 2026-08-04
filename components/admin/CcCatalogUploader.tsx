@@ -157,7 +157,13 @@ export default function CcCatalogUploader({ onDone }: { onDone?: () => void }) {
       return {
         campaign_id: g('campaign_id'), campaign_name: g('campaign_name'),
         brand_name: g('brand_name'),
-        asins: asinRaw ? String(asinRaw).split(/[\s,;|]+/).filter(Boolean) : [],
+        // CC exports the ASIN list as a bracketed string: "[B0DYP43XH2, B0DYP3SVQ8,
+        // B0FZ...]". A plain split on spaces/commas left the brackets attached to the
+        // first and last ASIN ("[B0DYP43XH2", "B0FZ...]"), so those weren't valid
+        // ASINs — rep_asin came back null, the campaign counted as "no ASIN", and every
+        // product-card view hid it or couldn't enrich it. Regex-extract the real B0
+        // ASINs instead (brackets/quotes/spaces ignored), order-preserved and deduped.
+        asins: asinRaw ? Array.from(new Set(String(asinRaw).toUpperCase().match(/B0[A-Z0-9]{8}/g) ?? [])) : [],
         commission_pct: g('commission_pct'),
         starts_at: g('starts_at'), ends_at: g('ends_at'),
         budget: g('budget'), budget_remaining: g('budget_remaining'),
