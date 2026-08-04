@@ -40,6 +40,8 @@ interface Offer {
   brandName: string | null
   sku: string | null
   trackingUrl: string
+  /** URL of the user's existing post for this item, if they already made one. */
+  posted: string | null
 }
 
 interface WalmartOffersProps {
@@ -256,6 +258,9 @@ export default function WalmartOffers({ embedded = false, autoRun = false, minDi
                       {o.perSale != null && o.perSale >= 10 && (
                         <span className="absolute bottom-2 right-2 text-[10px] font-bold text-white rounded px-1.5 py-0.5 inline-flex items-center gap-0.5" style={{ background: '#7C3AED' }} title="High estimated earnings per sale"><Flame size={10} /> Top pick</span>
                       )}
+                      {o.posted && (
+                        <span className="absolute bottom-2 left-2 text-[10px] font-bold bg-emerald-600 text-white rounded px-1.5 py-0.5 inline-flex items-center gap-0.5" title="You've already published this"><Check size={10} /> Published</span>
+                      )}
                     </a>
                     <div className="p-3 flex flex-col gap-1.5 flex-1">
                       <div className="text-sm font-medium line-clamp-2 leading-snug min-h-[2.5rem]" style={{ color: 'var(--text)' }}>{o.name}</div>
@@ -277,6 +282,12 @@ export default function WalmartOffers({ embedded = false, autoRun = false, minDi
                         </div>
                       )}
                       <div className="mt-auto pt-2 space-y-1.5">
+                        {o.posted && !done && (
+                          <a href={o.posted} target="_blank" rel="noopener noreferrer"
+                            className="flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400 hover:underline">
+                            <Check size={12} /> You&apos;ve posted this — view it
+                          </a>
+                        )}
                         {done ? (
                           <a href={done.draft ? (done.editUrl || done.url) : done.url} target="_blank" rel="noopener noreferrer"
                             className="w-full inline-flex items-center justify-center gap-1 text-xs font-semibold rounded-full bg-emerald-600 text-white py-2">
@@ -285,7 +296,7 @@ export default function WalmartOffers({ embedded = false, autoRun = false, minDi
                         ) : (
                           <button onClick={() => generatePost(o)} disabled={gen}
                             className="w-full inline-flex items-center justify-center gap-1 text-xs font-semibold rounded-full bg-violet-600 hover:bg-violet-700 text-white py-2 disabled:opacity-60 transition">
-                            {gen ? <><Loader2 size={14} className="mr-1 animate-spin" /> Writing…</> : <>Make blog post <ArrowRight size={14} className="ml-1" /></>}
+                            {gen ? <><Loader2 size={14} className="mr-1 animate-spin" /> Writing…</> : o.posted ? <>Post again <ArrowRight size={14} className="ml-1" /></> : <>Make blog post <ArrowRight size={14} className="ml-1" /></>}
                           </button>
                         )}
                         <button onClick={() => setQuickPostItem({ itemId: o.itemId, name: o.name, imageUrl: o.image, url: o.trackingUrl || o.url })}

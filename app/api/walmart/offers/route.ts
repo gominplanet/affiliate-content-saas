@@ -119,9 +119,15 @@ export async function GET(request: NextRequest) {
       matches.sort((a, b) => b.perSale - a.perSale || (b.commissionPct ?? 0) - (a.commissionPct ?? 0))
     }
 
+    const shown = matches.slice(0, limit)
+    // Which of these item ids has the user already turned into a post? (a single
+    // Walmart post stamps deal_meta.itemId; a roundup stamps deal_meta.itemIds).
+    const posted = await fetchWalmartPosted(supabase, user.id, shown.map((m) => m.itemId))
+    for (const m of shown) m.posted = posted.get(m.itemId) || null
+
     return NextResponse.json({
       ok: true,
-      matches: matches.slice(0, limit),
+      matches: shown,
       scanned,
       nextPage: hasMore ? page : null,
       ...(matches.length === 0 ? { note: 'No Walmart offers in this batch cleared the MVP criteria. Try a different keyword, or load more.' } : {}),
@@ -131,4 +137,43 @@ export async function GET(request: NextRequest) {
       : e instanceof Error ? e.message : 'Unexpected error'
     return NextResponse.json({ ok: false, error: msg }, { status: 500 })
   }
+}
+
+/** Map Walmart item id → the user's existing post URL, for the shown items.
+ *  A single Walmart post stamps deal_meta.itemId (kind:'walmart'); a roundup
+ *  stamps deal_meta.itemIds (kind:'walmart_roundup'). Best-effort — returns an
+ *  empty map on any error so the feed never breaks. */
+async function fetchWalmartPosted(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any, userId: string, itemIds: string[],
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>()
+  const ids = [...new Set(itemIds.filter(Boolean))]
+  if (!ids.length) return out
+  const want = new Set(ids)
+  try {
+    const { data: singles } = await supabase
+      .from('blog_posts')
+      .select('wordpress_url, deal_meta')
+      .eq('user_id', userId)
+      .eq('deal_meta->>kind', 'walmart')
+      .in('deal_meta->>itemId', ids)
+    for (const row of (singles ?? []) as Array<{ wordpress_url: string | null; deal_meta: { itemId?: string } | null }>) {
+      const id = String(row.deal_meta?.itemId || '')
+      if (id && row.wordpress_url && !out.has(id)) out.set(id, row.wordpress_url)
+    }
+    const { data: rounds } = await supabase
+      .from('blog_posts')
+      .select('wordpress_url, deal_meta')
+      .eq('user_id', userId)
+      .eq('deal_meta->>kind', 'walmart_roundup')
+    for (const row of (rounds ?? []) as Array<{ wordpress_url: string | null; deal_meta: { itemIds?: unknown } | null }>) {
+      const arr = Array.isArray(row.deal_meta?.itemIds) ? row.deal_meta!.itemIds as unknown[] : []
+      for (const raw of arr) {
+        const id = String(raw)
+        if (want.has(id) && row.wordpress_url && !out.has(id)) out.set(id, row.wordpress_url)
+      }
+    }
+  } catch { /* deal_meta column absent / query error — no badges this run */ }
+  return out
 }

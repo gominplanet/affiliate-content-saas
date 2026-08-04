@@ -319,6 +319,8 @@ export async function POST(request: NextRequest) {
         post_type: 'review',
         wordpress_url: wpPost.link,
         wordpress_post_id: wpPost.id,
+        // Stamp the Walmart item id so Deal Radar can mark it "Published" later.
+        ...(isWalmart && itemId ? { deal_meta: { kind: 'walmart', itemId } } : {}),
         published_at: status === 'draft' ? null : new Date().toISOString(),
       })
       if (bpErr) console.error('[partnerboost] blog_posts insert failed:', bpErr.message)
