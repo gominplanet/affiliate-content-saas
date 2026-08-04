@@ -80,7 +80,7 @@ export default function CampaignBrowsePanel({
   const [openSlotsOnly, setOpenSlotsOnly] = useState(false)
   const [minRating, setMinRating] = useState(0)
   const [minRecentSales, setMinRecentSales] = useState(0)
-  const [maxVideos, setMaxVideos] = useState('') // '' off · '5'/'2' ≤N · '0' untapped
+  const [videoBand, setVideoBand] = useState('') // '' any · 'none' 0 · '1-6' · '6+' >6
   // MVP picks: apply MVP's Focus rulebook (commission / runway / price / demand /
   // rating floors + a product-carousel required) over the catalog. Free — it just
   // filters the already-enriched columns.
@@ -119,7 +119,7 @@ export default function CampaignBrowsePanel({
       if (openSlotsOnly) params.set('openSlots', '1')
       if (minRating > 0) params.set('minRating', String(minRating))
       if (minRecentSales > 0) params.set('minRecentSales', String(minRecentSales))
-      if (maxVideos) params.set('maxVideos', maxVideos)
+      if (videoBand) params.set('videos', videoBand)
       if (mvpPicks) params.set('mvpPicks', '1')
       params.set('sort', sort)
       params.set('page', String(pageToLoad))
@@ -141,7 +141,7 @@ export default function CampaignBrowsePanel({
     } finally {
       if (append) setLoadingMore(false); else setLoading(false)
     }
-  }, [q, sort, minCommission, minDaysLeft, openSlotsOnly, minRating, minRecentSales, maxVideos, mvpPicks])
+  }, [q, sort, minCommission, minDaysLeft, openSlotsOnly, minRating, minRecentSales, videoBand, mvpPicks])
 
   // Debounced reload on any filter change.
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -253,8 +253,8 @@ export default function CampaignBrowsePanel({
     }
   }
 
-  const hasFilters = q.trim() || minCommission > 0 || minDaysLeft > 0 || openSlotsOnly || minRating > 0 || minRecentSales > 0 || !!maxVideos || mvpPicks
-  const clearFilters = () => { setQ(''); setMinCommission(0); setMinDaysLeft(0); setOpenSlotsOnly(false); setMinRating(0); setMinRecentSales(0); setMaxVideos(''); setSort('commission'); setMvpPicks(false) }
+  const hasFilters = q.trim() || minCommission > 0 || minDaysLeft > 0 || openSlotsOnly || minRating > 0 || minRecentSales > 0 || !!videoBand || mvpPicks
+  const clearFilters = () => { setQ(''); setMinCommission(0); setMinDaysLeft(0); setOpenSlotsOnly(false); setMinRating(0); setMinRecentSales(0); setVideoBand(''); setSort('commission'); setMvpPicks(false) }
 
   if (locked) {
     return (
@@ -330,8 +330,8 @@ export default function CampaignBrowsePanel({
               : { background: 'var(--surface)', color: 'var(--text-soft)', borderColor: 'var(--border)' }}>
             <Users size={14} /> Open slots
           </button>
-          <Select value={maxVideos} onChange={setMaxVideos} options={[
-            { v: '', l: 'Any videos' }, { v: '5', l: '≤ 5 carousel videos' }, { v: '2', l: '≤ 2 videos' }, { v: '0', l: '0 videos — untapped' },
+          <Select value={videoBand} onChange={setVideoBand} options={[
+            { v: '', l: 'Any videos' }, { v: 'none', l: 'No videos' }, { v: '1-6', l: 'Between 1 and 6 videos' }, { v: '6+', l: 'More than 6 videos' },
           ]} />
           <span className="text-[11px] hidden lg:inline" style={{ color: 'var(--text-faint)' }} title="Fewer carousel videos = less competition, easier to stand out">
             <Video size={11} className="inline -mt-0.5" /> = product-carousel videos

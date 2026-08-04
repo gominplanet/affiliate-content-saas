@@ -57,9 +57,10 @@ export async function GET(request: Request) {
     const openSlotsOnly = url.searchParams.get('openSlots') === '1'
     const minRating = numParam(url, 'minRating')
     const minRecentSales = intParam(url, 'minRecentSales')
-    // Carousel-video saturation: '0' = untapped (zero videos), '2'/'5' = at most
-    // N videos (low competition). Empty = no filter.
-    const maxVideos = url.searchParams.get('maxVideos') || ''
+    // Carousel-video saturation band: 'none' = 0 videos (untapped), '1-6' = 1 to
+    // 6, '6+' = more than 6 (crowded). Empty = no filter. Fewer videos = less
+    // competition to stand out.
+    const videoBand = url.searchParams.get('videos') || ''
     const sort = (url.searchParams.get('sort') || 'commission') as SortKey
     const page = Math.max(0, intParam(url, 'page') ?? 0)
     // MVP picks: layer MVP's Focus rulebook (commission / runway / price / demand
@@ -97,9 +98,10 @@ export async function GET(request: Request) {
         // they reappear the moment enrichment fills their data.
         if (minRating != null) query = query.gte('rating', minRating)
         if (minRecentSales != null) query = query.gte('monthly_sold', minRecentSales)
-        // MVP picks overrides the maxVideos filter (it requires a carousel).
-        if (!mvpPicks && maxVideos === '0') query = query.eq('video_count', 0)
-        else if (!mvpPicks && maxVideos && Number(maxVideos) > 0) query = query.lte('video_count', Number(maxVideos))
+        // MVP picks overrides the video-band filter (it requires a carousel).
+        if (!mvpPicks && videoBand === 'none') query = query.eq('video_count', 0)
+        else if (!mvpPicks && videoBand === '1-6') query = query.gte('video_count', 1).lte('video_count', 6)
+        else if (!mvpPicks && videoBand === '6+') query = query.gt('video_count', 6)
       }
       // MVP Focus rulebook — the stricter of user filter vs MVP floor wins because
       // both constraints apply. Requires the signal columns (price/rating/sales/
