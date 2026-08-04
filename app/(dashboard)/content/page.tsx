@@ -2233,8 +2233,38 @@ export default function ContentPage() {
   // Library filters/sort (applied to the current videos tab — horizontal or vertical)
   const [videoSort, setVideoSort] = useState<'newest' | 'oldest' | 'views' | 'title'>('newest')
   const [videoSearch, setVideoSearch] = useState('')
+  // Server-side search results for videos BEYOND the loaded slice — so a big
+  // back-catalogue (8k+, only the newest 4k held in the browser) stays fully
+  // searchable. Merged into visibleVideos when a query is active.
+  const [videoSearchExtra, setVideoSearchExtra] = useState<Record<string, unknown>[]>([])
   const [videoChannel, setVideoChannel] = useState<string>('') // '' = all channels
   const [videoGenFilter, setVideoGenFilter] = useState<'all' | 'ungenerated' | 'generated'>('all')
+  // Debounced server-side video search: when the user types ≥2 chars, query the
+  // FULL youtube_videos table (not just the loaded newest-4k slice) so any video
+  // in an 8k+ catalogue is findable. Cleared when the box empties.
+  useEffect(() => {
+    const q = videoSearch.trim()
+    if (q.length < 2) { setVideoSearchExtra([]); return }
+    let cancelled = false
+    const t = setTimeout(async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user || cancelled) return
+        const like = `%${q.replace(/[,%_()]/g, ' ').trim()}%`
+        const { data } = await supabase
+          .from('youtube_videos')
+          .select('*')
+          .eq('user_id', user.id)
+          .or(`title.ilike.${like},description.ilike.${like},channel_title.ilike.${like}`)
+          .order('published_at', { ascending: false })
+          .limit(300)
+        if (!cancelled) setVideoSearchExtra((data as Record<string, unknown>[]) ?? [])
+      } catch { if (!cancelled) setVideoSearchExtra([]) }
+    }, 350)
+    return () => { cancelled = true; clearTimeout(t) }
+    // supabase client is a stable singleton; intentionally not a dep.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [videoSearch])
   // Channel filter (multi-channel): 'all' or a youtube channel_id (UC…). Lets a
   // creator view/blog just one channel's videos when several are synced.
   const [channelFilter, setChannelFilter] = useState<string>('all')
@@ -2312,7 +2342,11 @@ export default function ContentPage() {
       // a user ever exceeds it they get the most-recent slice + a notice. The
       // full fix (server-side pagination/virtualization) is the deferred,
       // preview-tested follow-up — this is the guardrail until then.
-      const MAX_VIDEOS = 2500
+      // Load the newest 4,000 into the browser for the scrollable list; anything
+      // older than that is still fully SEARCHABLE via the server-side search
+      // (searchStoredVideos) so a big back-catalogue (8k+) stays reachable
+      // without rendering every card at once.
+      const MAX_VIDEOS = 4000
       const all: Record<string, unknown>[] = []
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let lastError: any = null
@@ -2337,7 +2371,7 @@ export default function ContentPage() {
         if (all.length >= MAX_VIDEOS) { truncated = true; break }
       }
       if (truncated) {
-        toast(`Showing your ${MAX_VIDEOS.toLocaleString()} most recent videos. Older ones aren't listed here yet.`)
+        toast(`Showing your ${MAX_VIDEOS.toLocaleString()} most recent videos. Older ones aren't in the list, but you can still find any of them with the search box.`)
       }
       if (lastError && all.length === 0) {
         // Surface to the user instead of silently rendering empty state.
@@ -3091,8 +3125,9 @@ export default function ContentPage() {
     try {
       // Loop through every page of the channel feed so large channels
       // (1,000+ videos) come down in one click instead of needing the
-      // user to click "Load more" 20 times. Hard cap at 100 pages
-      // (~5,000 videos) as a safety belt.
+      // user to click "Load more" 20 times. Hard cap at 300 pages
+      // (~15,000 videos) as a safety belt — big back-catalogues (8k+) sync
+      // fully in one pass.
       let token: string | null = null
       let pulled = 0
       let pages = 0
@@ -3116,7 +3151,7 @@ export default function ContentPage() {
         pages += 1
         setSyncProgress({ pulled, pages })
         token = data.nextPageToken ?? null
-      } while (token && pages < 100)
+      } while (token && pages < 300)
       setNextPageToken(null)
       await load()
       // Success toast — without this the user has no way to know the sync
@@ -3322,11 +3357,23 @@ export default function ContentPage() {
   // Memoised so the per-render filter/sort chain over up to ~2,500 videos only
   // recomputes when its real inputs change — not on every keystroke elsewhere.
   const visibleVideos = useMemo(
-    () => videos.filter(v =>
-      (showHidden || !dismissed.has(v.id as string)) &&
-      (channelFilter === 'all' || (v.channel_id as string | null) === channelFilter),
-    ),
-    [videos, showHidden, dismissed, channelFilter],
+    () => {
+      const base = videos.filter(v =>
+        (showHidden || !dismissed.has(v.id as string)) &&
+        (channelFilter === 'all' || (v.channel_id as string | null) === channelFilter),
+      )
+      // Fold in server-side search hits that live beyond the loaded slice so a
+      // big catalogue stays searchable. Deduped by id; only present while a
+      // query is active (videoSearchExtra is cleared otherwise).
+      if (!videoSearchExtra.length) return base
+      const seen = new Set(base.map(v => v.id as string))
+      const extra = videoSearchExtra.filter(v =>
+        !seen.has(v.id as string) &&
+        (channelFilter === 'all' || (v.channel_id as string | null) === channelFilter),
+      )
+      return extra.length ? [...base, ...extra] : base
+    },
+    [videos, showHidden, dismissed, channelFilter, videoSearchExtra],
   )
 
   // Batch "which of these posts' products have a live Creator Connections
