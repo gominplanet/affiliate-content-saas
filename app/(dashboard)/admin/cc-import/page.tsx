@@ -55,6 +55,10 @@ export default function AdminCcImportPage() {
     setMerging(true); setResult(null); setErr(null); setRemaining(null)
     let confirm = false
     let totalUpserted = 0
+    // Cursor for the single-pass purge (migration 220). Starts '' and the server
+    // hands back the next position each resume; we send it straight back so the
+    // purge walks the catalog once instead of re-scanning from the top.
+    let purgeAfter = ''
     // Self-driving loop: the endpoint does a bounded, RESUMABLE chunk per call
     // and reports done:false + remaining while work is left. We keep calling
     // until done — and on a transient hiccup (a network blip, a chunk that timed
@@ -74,7 +78,7 @@ export default function AdminCcImportPage() {
         let d: any = {}
         try {
           const r = await fetch('/api/admin/import-cc-catalog', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm }),
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm, purgeAfter }),
           })
           d = await r.json().catch(() => ({}))
           // Safety prompt: staging far smaller than live — likely a partial upload.
@@ -102,6 +106,9 @@ export default function AdminCcImportPage() {
           continue
         }
         confirm = true
+        // Carry the purge cursor forward so the next call resumes the single-pass
+        // walk instead of restarting it.
+        if (typeof d.purgeAfter === 'string') purgeAfter = d.purgeAfter
         const did = Number(d.upserted ?? 0)
         totalUpserted += did
         if (d.done) {

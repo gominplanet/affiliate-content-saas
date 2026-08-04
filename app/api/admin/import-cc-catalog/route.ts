@@ -87,7 +87,7 @@ export async function POST(request: Request) {
     const { data: intRow } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
     if (normalizeTier(intRow?.tier) !== 'admin') return NextResponse.json({ error: 'Admin only' }, { status: 403 })
 
-    const body = await request.json().catch(() => ({})) as { confirm?: boolean }
+    const body = await request.json().catch(() => ({})) as { confirm?: boolean; purgeAfter?: string }
     const admin = createAdminClient()
 
     // Guard 1: refuse to merge an EMPTY staging table (that would purge the whole
@@ -234,37 +234,75 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, done: false, staged: stagedCount ?? undefined, upserted, remaining: null })
     }
 
-    // Everything merged → purge fall-outs in CHUNKS (a single anti-join DELETE
-    // over ~800k rows can time out). Loop bounded batches until the deadline;
-    // if there's still more to delete, return done:false so the client resumes
-    // (the upsert is drained, so the next call goes straight back to purging).
+    // Everything merged → purge the fall-outs (campaigns no longer in the CSV).
+    //
+    // The client opts into the SINGLE-PASS cursor purge (migration 220) by sending
+    // a `purgeAfter` string. That walks the catalog once in campaign_id order,
+    // carrying the cursor between calls — O(rows) total, instead of the old
+    // stateless step (migration 213) that re-scanned from the top every batch and
+    // degraded to O(rows × batches) (the hours-long purge). We keep the old path
+    // as a fallback for any in-flight client that predates this deploy, so an
+    // import already running mid-purge can't break.
+    const useCursorPurge = typeof body.purgeAfter === 'string'
     let purged = 0
-    let pn = PURGE_BATCH
-    let purgeTransient = false
-    while (Date.now() < deadline) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data, error } = await (admin as any).rpc('merge_cc_catalog_purge_step', { p_limit: PURGE_BATCH })
-      if (error) {
-        const missingFn = /could not find the function|does not exist|schema cache|PGRST202/i.test(error.message || '')
-        if (missingFn) {
-          return NextResponse.json({
-            error: 'The chunked-purge function is missing — run migration 213 in Supabase, then click Merge again.',
-            detail: error.message?.slice(0, 200), upserted, purgedSoFar: purged,
-          }, { status: 500 })
+
+    if (useCursorPurge) {
+      const PURGE_SCAN = 5000
+      let cursor = body.purgeAfter as string
+      let purgeDone = false
+      let purgeTransient = false
+      while (Date.now() < deadline) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data, error } = await (admin as any).rpc('merge_cc_catalog_purge_cursor', { p_limit: PURGE_SCAN, p_after: cursor })
+        if (error) {
+          const missingFn = /could not find the function|does not exist|schema cache|PGRST202/i.test(error.message || '')
+          if (missingFn) {
+            return NextResponse.json({
+              error: 'The single-pass purge function is missing — run migration 220 in Supabase, then click Merge again.',
+              detail: error.message?.slice(0, 200), upserted, purgedSoFar: purged,
+            }, { status: 500 })
+          }
+          console.error('[import-cc-catalog purge transient]', error.message)
+          purgeTransient = true
+          break
         }
-        // Resumable (timeout/lock on a purge chunk) — stop this call and let the
-        // client auto-resume; the next call keeps purging.
-        console.error('[import-cc-catalog purge transient]', error.message)
-        purgeTransient = true
-        break
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const row = (Array.isArray(data) ? data[0] : data) as { last_id?: string | null; scanned?: number; deleted?: number } | null
+        const scanned = Number(row?.scanned ?? 0)
+        purged += Number(row?.deleted ?? 0)
+        if (row?.last_id != null) cursor = String(row.last_id)
+        if (scanned < PURGE_SCAN) { purgeDone = true; break } // reached the end of the table
       }
-      pn = Number(data ?? 0)
-      purged += pn
-      if (pn < PURGE_BATCH) break // a short batch means no fall-outs remain
-    }
-    if (purgeTransient || pn >= PURGE_BATCH) {
-      // More to purge (or a chunk timed out); client auto-resumes.
-      return NextResponse.json({ ok: true, done: false, staged: stagedCount ?? undefined, upserted, purging: true, purged })
+      if (!purgeDone) {
+        // More table to walk (or a chunk timed out) — resume from the cursor.
+        return NextResponse.json({ ok: true, done: false, staged: stagedCount ?? undefined, upserted, purging: true, purged, purgeAfter: cursor })
+      }
+    } else {
+      // Legacy stateless purge (migration 213) — kept only for in-flight clients.
+      let pn = PURGE_BATCH
+      let purgeTransient = false
+      while (Date.now() < deadline) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data, error } = await (admin as any).rpc('merge_cc_catalog_purge_step', { p_limit: PURGE_BATCH })
+        if (error) {
+          const missingFn = /could not find the function|does not exist|schema cache|PGRST202/i.test(error.message || '')
+          if (missingFn) {
+            return NextResponse.json({
+              error: 'The chunked-purge function is missing — run migration 213 in Supabase, then click Merge again.',
+              detail: error.message?.slice(0, 200), upserted, purgedSoFar: purged,
+            }, { status: 500 })
+          }
+          console.error('[import-cc-catalog purge transient]', error.message)
+          purgeTransient = true
+          break
+        }
+        pn = Number(data ?? 0)
+        purged += pn
+        if (pn < PURGE_BATCH) break
+      }
+      if (purgeTransient || pn >= PURGE_BATCH) {
+        return NextResponse.json({ ok: true, done: false, staged: stagedCount ?? undefined, upserted, purging: true, purged })
+      }
     }
     // Import finished — let the enrichment cron resume immediately (don't wait
     // for the 20-min staleness fallback). Best-effort.
