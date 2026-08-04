@@ -151,12 +151,14 @@ export async function POST(req: Request) {
         ...stripped,
         about: {
           ...existingAbout,
-          ...(storedLogoUrl ? { logoUrl: storedLogoUrl } : {}),
-          ...(storedBannerUrl ? { headerBannerUrl: storedBannerUrl } : {}),
           ...strippedAbout,
-          // Re-assert the banner LAST so a client `about` (which lacks the
-          // field entirely) can never overwrite/clear it.
-          ...(storedBannerUrl ? { headerBannerUrl: storedBannerUrl } : {}),
+          // Logo + banner are driven by the source of truth (brand_profiles) and
+          // written EXPLICITLY — '' when cleared — placed LAST so neither a stale
+          // client `about` nor WordPress's previous value can restore a removed
+          // one. (Was omit-on-empty + an unconditional re-assert, which made the
+          // banner/logo impossible to clear from the live site.)
+          logoUrl: storedLogoUrl || '',
+          headerBannerUrl: storedBannerUrl || '',
         },
         footer: { ...existingFooter, ...strippedFooter },
         // The plugin/theme look up `newsletter.userId` to know whose form

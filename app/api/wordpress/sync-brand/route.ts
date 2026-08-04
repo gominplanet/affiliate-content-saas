@@ -75,6 +75,11 @@ export async function POST(request: Request) {
     .single()
   const storedBannerUrl = (brandRow?.header_banner_url as string | null)?.trim() || null
   const storedLogoUrl = (brandRow?.logo_url as string | null)?.trim() || null
+  // Effective logo/banner to push: a fresh value in THIS request wins (even ''),
+  // else our stored source of truth. Used to send an EXPLICIT value (empty string
+  // when cleared) so a removed logo/banner actually clears on the live site.
+  const effLogoUrl = logoUrl !== undefined ? logoUrl : storedLogoUrl
+  const effBannerUrl = headerBannerUrl !== undefined ? headerBannerUrl : storedBannerUrl
 
   const wpBase = site.wordpress_url.replace(/\/$/, '')
   const cleanPw = site.wordpress_app_password.replace(/\s+/g, '')
@@ -173,16 +178,16 @@ export async function POST(request: Request) {
       },
       about: {
         ...existingAbout,
-        // Seed from our stored source of truth FIRST so the banner/logo
-        // persist even if the live customizations GET failed (existingAbout
-        // empty) or this sync's payload omits them (e.g. logo-only upload).
-        ...(storedLogoUrl ? { logoUrl: storedLogoUrl } : {}),
-        ...(storedBannerUrl ? { headerBannerUrl: storedBannerUrl } : {}),
-        // Then let an explicit value in THIS request win (a fresh upload).
-        ...(logoUrl ? { logoUrl } : {}),
-        // Wide top banner — theme renders this in place of the small
-        // centered logo when present (falls back to logoUrl otherwise).
-        ...(headerBannerUrl ? { headerBannerUrl } : {}),
+        // ALWAYS write an explicit value — sending '' when cleared — so removing a
+        // logo/banner in Brand Profile actually clears it on the live site. The
+        // old `? {k} : {}` idiom OMITTED empties, so `...existingAbout` restored
+        // WordPress's previous logo/banner and a deleted one stayed stuck forever.
+        // effLogoUrl/effBannerUrl prefer a fresh value in this request, else the
+        // stored source of truth; null (cleared) → ''.
+        logoUrl: effLogoUrl || '',
+        // Wide top banner — theme renders this in place of the small centered
+        // logo when present (falls back to logoUrl otherwise).
+        headerBannerUrl: effBannerUrl || '',
       },
     }
 
