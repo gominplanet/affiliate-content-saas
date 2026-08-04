@@ -18,7 +18,6 @@ import { PartnerBoostGuide } from '@/components/guide/tool-guides'
 import ExternalKeyConnect from '@/components/integrations/ExternalKeyConnect'
 import PartnerBoostFinder from '@/components/partnerboost/PartnerBoostFinder'
 import PartnerBoostSaved from '@/components/partnerboost/PartnerBoostSaved'
-import WalmartDeals from '@/components/walmart/WalmartDeals'
 import WalmartOffers from '@/components/walmart/WalmartOffers'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { createBrowserClient } from '@/lib/supabase/client'
@@ -328,11 +327,8 @@ export default function WalmartPBPage() {
             MVP does not guarantee commissions or any type of return. The MVP Finder is simply a focused search through your PartnerBoost campaigns using criteria that have been fruitful for influencers over the past 4 years — actual results depend on the product, your content, and your audience.
           </p>
           <PartnerBoostSaved reloadKey={savedReloadKey} />
-          {/* Live Walmart commission boosts (Affiliate Boost feed). Self-gates on
-              the PartnerBoost token — renders nothing when not connected. */}
-          <WalmartDeals />
           {/* The full Walmart catalog (all offers, not just joined brands), run
-              through MVP's rulebook. Self-gates on the token like WalmartDeals. */}
+              through MVP's rulebook. Self-gates on the PartnerBoost token. */}
           <WalmartOffers />
           <div className="flex items-center gap-2 mb-3">
             <span className="text-[12px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-faint)' }}>Or browse a specific brand</span>

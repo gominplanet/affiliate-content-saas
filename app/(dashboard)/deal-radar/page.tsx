@@ -20,7 +20,6 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import QuickPostModal from '@/components/deal/QuickPostModal'
-import WalmartDeals from '@/components/walmart/WalmartDeals'
 import WalmartOffers from '@/components/walmart/WalmartOffers'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { createBrowserClient } from '@/lib/supabase/client'
@@ -391,7 +390,7 @@ export default function DealRadarPage() {
           <p className="text-sm text-muted-foreground mt-1">
             {source === 'amazon'
               ? 'Live Amazon deals in your niche. Turn any one into a blog post, then push it to social.'
-              : 'Live time-limited Walmart deals from your PartnerBoost account. Turn any one into a post with a cloaked link.'}
+              : 'Live Walmart price drops from your PartnerBoost account, run through MVP’s rules. Turn any one into a post with a cloaked link.'}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -573,18 +572,15 @@ export default function DealRadarPage() {
       )}
       </>)}
 
-      {/* Walmart source — two deal types: time-boxed PartnerBoost boosts (real
-          end dates, live countdown) and price drops (steep catalog markdowns, no
-          countdown). Self-fetch per-user; prompt to connect when there's no token. */}
+      {/* Walmart source — price drops (steep catalog markdowns) from PartnerBoost,
+          run through MVP's rules. Self-fetch per-user; prompt to connect when
+          there's no token. */}
       {source === 'walmart' && (
-        <div className="space-y-5">
-          <WalmartDeals timedOnly embedded />
-          <WalmartOffers
-            embedded autoRun minDiscount={25} sort="discount"
-            title="Walmart price drops"
-            subtitle="Steep markdowns across the Walmart catalog, run through MVP’s rules. Not time-boxed — no countdown, but the discount is live now."
-          />
-        </div>
+        <WalmartOffers
+          embedded autoRun minDiscount={25} sort="discount"
+          title="Walmart price drops"
+          subtitle="Steep markdowns across the Walmart catalog, run through MVP’s rules. The discount is live now."
+        />
       )}
     </div>
   )

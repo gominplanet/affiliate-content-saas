@@ -124,7 +124,7 @@ export async function GET(request: NextRequest) {
       matches: matches.slice(0, limit),
       scanned,
       nextPage: hasMore ? page : null,
-      ...(matches.length === 0 ? { note: 'No Walmart offers in this batch cleared the MVP criteria. Try Wide, a different keyword, or load more.' } : {}),
+      ...(matches.length === 0 ? { note: 'No Walmart offers in this batch cleared the MVP criteria. Try a different keyword, or load more.' } : {}),
     })
   } catch (e) {
     const msg = e instanceof Error && e.name === 'AbortError' ? 'PartnerBoost request timed out.'

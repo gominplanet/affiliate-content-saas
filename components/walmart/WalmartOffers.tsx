@@ -3,8 +3,8 @@
 /**
  * Walmart Offers — browse the FULL Walmart catalog on PartnerBoost (not only the
  * brands you've joined), run through MVP's rulebook: price band, commission
- * floor, category bans, ranked by estimated $/sale. Focus (strict) or Wide
- * (looser). Each card → Copy link (commissionable) or Generate post (Walmart-blue
+ * floor, category bans, ranked by estimated $/sale. Keyword-searchable. Each
+ * card → Copy link (commissionable) or Generate post (Walmart-blue
  * CTA, cloaked deep-link).
  *
  * Reads /api/walmart/offers — open to every signed-in tier (gated only by the
@@ -50,7 +50,9 @@ interface WalmartOffersProps {
 }
 
 export default function WalmartOffers({ embedded = false, autoRun = false, minDiscount = 0, sort = 'payout', title, subtitle }: WalmartOffersProps = {}) {
-  const [mode, setMode] = useState<'focus' | 'wide'>('focus')
+  // MVP's standard (Focus) rulebook is always applied — no user-facing Focus/Wide
+  // toggle for Walmart; keyword is the only knob for now.
+  const mode = 'focus' as const
   const [q, setQ] = useState('')
   const [offers, setOffers] = useState<Offer[]>([])
   const [nextPage, setNextPage] = useState<number | null>(null)
@@ -77,7 +79,7 @@ export default function WalmartOffers({ embedded = false, autoRun = false, minDi
     const rows: Offer[] = Array.isArray(j.matches) ? j.matches : []
     setOffers((prev) => append ? [...prev, ...rows] : rows)
     setNextPage(j.nextPage ?? null)
-  }, [mode, q, minDiscount, sort])
+  }, [q, minDiscount, sort])
 
   const run = useCallback(async () => {
     setLoading(true); setStarted(true); setError(null)
@@ -162,15 +164,6 @@ export default function WalmartOffers({ embedded = false, autoRun = false, minDi
 
       {/* Controls */}
       <div className="p-3 flex flex-wrap items-center gap-2 border-b" style={{ borderColor: 'var(--border)' }}>
-        <div className="inline-flex rounded-lg overflow-hidden" style={{ border: '1px solid var(--border)' }}>
-          {(['focus', 'wide'] as const).map((m) => (
-            <button key={m} onClick={() => setMode(m)}
-              className="px-3 py-1.5 text-[12px] font-semibold capitalize"
-              style={{ background: mode === m ? WM_BLUE : 'var(--surface)', color: mode === m ? '#fff' : 'var(--text-soft)' }}>
-              {m}
-            </button>
-          ))}
-        </div>
         <div className="flex items-center gap-1.5 flex-1 min-w-[180px] px-2.5 py-1.5 rounded-lg" style={{ background: 'var(--surface-bright)', border: '1px solid var(--border)' }}>
           <Search size={13} style={{ color: 'var(--text-soft)' }} />
           <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') run() }}
@@ -203,7 +196,7 @@ export default function WalmartOffers({ embedded = false, autoRun = false, minDi
           <p className="text-[12.5px] p-3" style={{ color: '#ef4444' }}>{error}</p>
         ) : offers.length === 0 ? (
           <p className="text-[12.5px] p-3" style={{ color: 'var(--text-soft)' }}>
-            No Walmart offers cleared the MVP criteria. Try <span className="font-semibold">Wide</span>, a different keyword, or load more.
+            No Walmart offers cleared the MVP criteria. Try a different keyword, or load more.
           </p>
         ) : (
           <>
