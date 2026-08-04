@@ -9,6 +9,10 @@
       "schedule": "* * * * *"
     },
     {
+      "path": "/api/cron/process-deal-schedules",
+      "schedule": "* * * * *"
+    },
+    {
       "path": "/api/cron/process-burn-jobs",
       "schedule": "* * * * *"
     },
