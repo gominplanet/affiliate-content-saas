@@ -3474,18 +3474,26 @@ export default function ContentPage() {
   // for a forgiving title match). Drives the single merged Published Posts
   // stream below.
   const postQuery = postSearch.trim().toLowerCase()
-  const videoIdsInLibrary = useMemo(() => new Set(videos.map(v => v.id as string)), [videos])
-  // "Orphans" = posts whose source video isn't in the current youtube_videos
-  // list (comparisons, buying guides, link posts, older/deleted-video reviews).
-  // These render as the lightweight card in the merged stream; library-video
-  // posts render as the rich VideoCard. The split avoids double-listing a
-  // single post. `filteredPosts` also backs the bulk-select toolbar (no-
-  // thumbnail / select-all → delete / rewrite), which targets standalone posts.
+  // A video-backed post renders as a rich VideoCard ONLY when its source video
+  // is in one of the rendered "done" streams. If that video is hidden,
+  // channel-filtered, or a not-yet-pushed Short, the post would be counted (it's
+  // in allBlogPosts) but shown NOWHERE — that's the "8 posts but only 5 listed"
+  // bug. So treat any post NOT tied to a rendered video as an orphan and render
+  // it as the lightweight card. Every post renders exactly once, and the tab
+  // count agrees with the list.
+  const renderedVideoIds = useMemo(
+    () => new Set([...horizontalDone, ...verticalDone].map(v => v.id as string)),
+    [horizontalDone, verticalDone],
+  )
+  // "Orphans" = posts with no rendered source video (comparisons, buying guides,
+  // link posts, older/deleted/hidden/filtered-video reviews). `filteredPosts`
+  // also backs the bulk-select toolbar (no-thumbnail / select-all → delete /
+  // rewrite), which targets standalone posts.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const orphanPosts = useMemo(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    () => allBlogPosts.filter((p: any) => !p.videoId || !videoIdsInLibrary.has(p.videoId)),
-    [allBlogPosts, videoIdsInLibrary],
+    () => allBlogPosts.filter((p: any) => !p.videoId || !renderedVideoIds.has(p.videoId)),
+    [allBlogPosts, renderedVideoIds],
   )
   const filteredPosts = useMemo(() => postQuery
     ? orphanPosts.filter(p => (p.title || '').replace(/<[^>]+>/g, '').toLowerCase().includes(postQuery))
@@ -3574,7 +3582,7 @@ export default function ContentPage() {
           activeTab === 'scheduled'
             ? `Queued posts that will fire automatically. The cron runs every minute, your computer can be off.`
             : activeTab === 'posts'
-            ? `Everything live on your blog — reviews, comparisons, buying guides and link posts, from any source. Manage social fan-out from each card. ${allBlogPosts.length} post${allBlogPosts.length !== 1 ? 's' : ''} live.`
+            ? `This is your whole live blog, not a list of drafts. Every published article shows here so you can push it out to your connected socials (Facebook, X, LinkedIn, Threads, Bluesky, Telegram, Pinterest) from its card — re-share any post, any time. Use "Hide shared" to tuck away ones you've already sent everywhere. ${allBlogPosts.length} post${allBlogPosts.length !== 1 ? 's' : ''} live.`
             : activeTab === 'vertical'
               ? `Shorts to Instagram Reels & Stories. Click the Instagram pill on a card to publish. ${verticalVideos.length} vertical video${verticalVideos.length !== 1 ? 's' : ''}.`
               : horizontalVideos.length > 0
