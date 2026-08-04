@@ -5,8 +5,13 @@
 //   - Generation caps DROPPED for paid tiers (Creator 40→20, Studio 80→60,
 //     Pro unchanged at 200). Tier copy now sells "blog + thumbnail +
 //     metadata" as a bundle that burns 1 unit; postsPerMonth /
-//     thumbnailsPerMonth / metadataGensPerMonth all read the same cap.
+//     thumbnailsPerMonth read the same cap.
 //     True atomic shared counter is a follow-up RPC (see follow-up task).
+//   - metadataGensPerMonth is a SEPARATE, higher allowance (Studio 100, Pro 250,
+//     2026-08): Co-Pilot re-titling is ~35× cheaper than a post and back-catalog
+//     cleanup is a first-months behaviour. Enforced in /api/youtube/generate-metadata
+//     via checkUsageCap(PRIMARY_FEATURE.metadata) — its own bucket, never the
+//     post/thumbnail quota.
 //   - Scripts open to Creator (10/mo), Studio (30/mo), Pro (150/mo).
 //   - LoRA training opens to Creator + Studio (was Pro-only).
 //   - Deals Hub gets its own counter: Studio 5/mo, Pro 30/mo.
@@ -202,7 +207,10 @@ export const TIERS = {
     lifetimeMax: null as number | null,
     collabsPerMonth: 15 as number | null,
     thumbnailsPerMonth: 45 as number | null,
-    metadataGensPerMonth: 45 as number | null,
+    // Metadata (Co-Pilot re-titling/description) is its OWN cap, sized well above
+    // posts/thumbnails: it's ~$0.05 a gen (35× cheaper than a post), and creators
+    // clearing an old back-catalog want to run a lot of them early on.
+    metadataGensPerMonth: 100 as number | null,
     /** IG AI thumbnails open to Studio at 30/mo (was Pro-only). */
     instagramAiThumbnailsPerMonth: 30 as number | null,
     /** Studio gets 5 deal posts / mo. Separate counter from blog. */
@@ -266,7 +274,10 @@ export const TIERS = {
     lifetimeMax: null as number | null,
     collabsPerMonth: 100 as number | null,
     thumbnailsPerMonth: 100 as number | null,
-    metadataGensPerMonth: 100 as number | null,
+    // Metadata is its OWN cap, sized well above posts/thumbnails (see Studio note):
+    // ~$0.05/gen, and back-catalog cleanup is a first-few-months behaviour. At
+    // full use that's ~$12/mo of AI against a $200 spend ceiling — comfortably safe.
+    metadataGensPerMonth: 250 as number | null,
     instagramAiThumbnailsPerMonth: 100 as number | null,
     /** Pro: 30 deal posts/mo (revised down from 90 → 60 → 30 for COGS). */
     dealsPerMonth: 30 as number | null,

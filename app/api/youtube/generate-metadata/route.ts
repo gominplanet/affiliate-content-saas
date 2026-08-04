@@ -605,6 +605,22 @@ export async function POST(request: Request) {
     const spendBlocked = await spendGate(user.id, tier)
     if (spendBlocked) return spendBlocked
 
+    // Hard monthly cap for Co-Pilot metadata generations — its OWN bucket,
+    // counted off the `yt_meta_title_strategist` telemetry (one row per gen), so
+    // it NEVER touches the blog-post / thumbnail quotas. Sits under the spend
+    // ceiling as a clean, communicable number (Pro 250, Studio 100).
+    const metaCap = await checkUsageCap(
+      supabase, user.id, PRIMARY_FEATURE.metadata, TIERS[tier].metadataGensPerMonth,
+      intRow?.subscription_period_start ?? null, intRow?.subscription_period_end ?? null,
+    )
+    if (metaCap?.exceeded) {
+      const nudge = nextTierFor(tier, 'metadataGensPerMonth')
+      return NextResponse.json({
+        error: `You've used all ${metaCap.limit} Co-Pilot metadata generations this month${metaCap.resetLabel ? ` (resets ${metaCap.resetLabel})` : ''}. This is a separate allowance from your blog posts and thumbnails.${nudge?.limit ? ` ${nudge.label} includes ${nudge.limit}.` : ''}`,
+        capExceeded: true,
+      }, { status: 429 })
+    }
+
     const brandName = (brand?.name as string) || 'our channel'
     const authorName = (brand?.author_name as string) || ''
     const niches = ((brand?.niches as string[]) || []).join(', ') || 'consumer products'
