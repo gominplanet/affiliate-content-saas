@@ -598,12 +598,22 @@ function useMakePost(d: Deal) {
   const makePost = async () => {
     if (gen === 'working') return
     setGen('working')
-    try {
+    const submit = async (confirmDuplicate: boolean) => {
       const res = await fetch('/api/deals', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ asin: d.asin, occasion: 'auto' }),
+        body: JSON.stringify({ asin: d.asin, occasion: 'auto', ...(confirmDuplicate ? { confirmDuplicate: true } : {}) }),
       })
-      const data = await res.json()
+      return { res, data: await res.json() }
+    }
+    try {
+      let { res, data } = await submit(false)
+      // Server says we already have a deal post for this ASIN — confirm before
+      // publishing another one (and burning another monthly post).
+      if (data?.duplicate) {
+        const ok = window.confirm(`You've already posted this product${data.existingTitle ? ` ("${String(data.existingTitle).slice(0, 60)}")` : ''}. Publish another article about it anyway?`)
+        if (!ok) { setGen('idle'); return }
+        ;({ res, data } = await submit(true))
+      }
       if (!res.ok) { toast.error(data.error || 'Could not create the post.'); setGen('idle'); return }
       setPostUrl(data.url || null); setGen('done')
       toast.success('Deal post published.')

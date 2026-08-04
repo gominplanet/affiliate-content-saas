@@ -353,6 +353,9 @@ export async function POST(req: Request) {
     occasion?: DealOccasionSlug | 'auto'
     manualDealEnd?: string
     preview?: boolean
+    /** Set to true by the client AFTER the user confirms the "you already
+     *  posted this ASIN — post again?" prompt, to bypass the duplicate guard. */
+    confirmDuplicate?: boolean
     /** Regenerate path: when set, ignores the other inputs and replays the
      *  generation with whatever's saved in the row's deal_meta. After the
      *  new post publishes successfully, the old row + WP post get deleted.
@@ -444,6 +447,39 @@ export async function POST(req: Request) {
     : (body.occasion as DealOccasionSlug)
   const occasion = getOccasion(requestedOccasion)
   const manualDealEnd = (body.manualDealEnd || '').trim() || null
+
+  // ─── Duplicate-ASIN guard ─────────────────────────────────────────────────
+  // The publish path is non-idempotent: a retried / timed-out / double-submitted
+  // POST re-runs the whole ~300s pipeline and inserts a SECOND deal post for the
+  // same ASIN — silently burning a monthly unit (the quota is counted straight
+  // off blog_posts rows, migration 131). Before generating, check whether this
+  // user already has a live deal post for this ASIN. Unless they explicitly
+  // confirmed, return a `duplicate` signal the client turns into a "you already
+  // posted this — post again?" prompt. Regenerate / refresh intentionally re-use
+  // the same ASIN, so they skip this guard. Preview doesn't publish a row, so it
+  // isn't guarded — the confirm fires when they actually publish.
+  if (!regenerateOldRow && body.preview !== true && body.confirmDuplicate !== true) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: existingDeal } = await (supabase as any)
+      .from('blog_posts')
+      .select('id, wordpress_url, title')
+      .eq('user_id', user.id)
+      .eq('post_type', 'deal')
+      .eq('deal_meta->>asin', asin)
+      .not('wordpress_url', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (existingDeal) {
+      return NextResponse.json({
+        duplicate: true,
+        asin,
+        existingUrl: (existingDeal.wordpress_url as string | null) ?? null,
+        existingPostId: (existingDeal.id as string | null) ?? null,
+        existingTitle: (existingDeal.title as string | null) ?? null,
+      })
+    }
+  }
 
   // Schedule path: parse + validate the requested timestamp once so the
   // WP create call + the DB write share the same ISO. Falls through to

@@ -286,8 +286,18 @@ export default function DealsHubPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       })
-      const j = await res.json()
-      if (!res.ok) {
+      let j = await res.json()
+      // Already posted this ASIN — confirm before publishing (and burning) a second.
+      if (j.duplicate) {
+        const ok = window.confirm(`You've already posted this product${j.existingTitle ? ` ("${String(j.existingTitle).slice(0, 60)}")` : ''}. Publish another article about it anyway?`)
+        if (!ok) return
+        const r2 = await fetch('/api/deals', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...body, confirmDuplicate: true }),
+        })
+        j = await r2.json()
+        if (!r2.ok) { toast.error(j.error || 'Generation failed'); return }
+      } else if (!res.ok) {
         toast.error(j.error || 'Generation failed')
         return
       }
@@ -336,21 +346,30 @@ export default function DealsHubPage() {
     setGenerating(true)
     try {
       const scheduledIso = localToIso(previewScheduleAt)
+      const pubBody: Record<string, unknown> = {
+        url: input.trim(),
+        promoCode: previewPromoCode.trim() || undefined,
+        promoUrl: previewPromoUrl.trim() || undefined,
+        occasion: previewOccasion,
+        manualDealEnd: previewDealEnd || undefined,
+        ...(scheduledIso ? { scheduledAt: scheduledIso } : {}),
+        // preview omitted → server runs the full publish (or schedule) path.
+      }
       const res = await fetch('/api/deals', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          url: input.trim(),
-          promoCode: previewPromoCode.trim() || undefined,
-          promoUrl: previewPromoUrl.trim() || undefined,
-          occasion: previewOccasion,
-          manualDealEnd: previewDealEnd || undefined,
-          ...(scheduledIso ? { scheduledAt: scheduledIso } : {}),
-          // preview omitted → server runs the full publish (or schedule) path.
-        }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(pubBody),
       })
-      const j = await res.json()
-      if (!res.ok) {
+      let j = await res.json()
+      if (j.duplicate) {
+        const ok = window.confirm(`You've already posted this product${j.existingTitle ? ` ("${String(j.existingTitle).slice(0, 60)}")` : ''}. Publish another article about it anyway?`)
+        if (!ok) return
+        const r2 = await fetch('/api/deals', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...pubBody, confirmDuplicate: true }),
+        })
+        j = await r2.json()
+        if (!r2.ok) { toast.error(j.error || 'Publish failed'); return }
+      } else if (!res.ok) {
         toast.error(j.error || 'Publish failed')
         return
       }
