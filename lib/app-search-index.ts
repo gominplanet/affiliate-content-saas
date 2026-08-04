@@ -60,7 +60,8 @@ export const APP_SEARCH_INDEX: AppSearchEntry[] = [
   // ── Source & Earn ────────────────────────────────────────────────────────
   { label: 'AMZ Product Finder', href: '/amz-finder', group: 'Source & Earn', keywords: 'amazon product finder creator connections campaigns epc smart scan find products commission' },
   { label: 'MVP x Levanta', href: '/levanta', group: 'Source & Earn', keywords: 'levanta amazon creator network commissionable links brands' },
-  { label: 'MVP x PartnerBoost', href: '/partnerboost', group: 'Source & Earn', keywords: 'partnerboost walmart amazon dtc brands finder' },
+  { label: 'MVP x PartnerBoost', href: '/partnerboost', group: 'Source & Earn', keywords: 'partnerboost walmart amazon dtc brands finder commission deep link' },
+  { label: 'Walmart Deals & Offers', href: '/partnerboost', group: 'Source & Earn', keywords: 'walmart deals offers catalog affiliate boost commission promotion partnerboost creator marketplace generate post browse products' },
 
   // ── Grow ─────────────────────────────────────────────────────────────────
   { label: 'SEO & Indexing', href: '/seo', group: 'Grow', keywords: 'seo search console index indexing google ranking keywords gsc rebuild' },

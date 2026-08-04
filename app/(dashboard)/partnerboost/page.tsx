@@ -18,6 +18,8 @@ import { PartnerBoostGuide } from '@/components/guide/tool-guides'
 import ExternalKeyConnect from '@/components/integrations/ExternalKeyConnect'
 import PartnerBoostFinder from '@/components/partnerboost/PartnerBoostFinder'
 import PartnerBoostSaved from '@/components/partnerboost/PartnerBoostSaved'
+import WalmartDeals from '@/components/walmart/WalmartDeals'
+import WalmartOffers from '@/components/walmart/WalmartOffers'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { normalizeTier } from '@/lib/tier'
@@ -208,7 +210,7 @@ export default function WalmartPBPage() {
       <PageHero
         guide={<PartnerBoostGuide />}
         title="MVP x PartnerBoost"
-        subtitle="Your live brands across every network you've joined — commission, your join status, and the deep-link base for each. Pick a network, browse a Joined brand's products, and turn any one into a post with a cloaked affiliate link."
+        subtitle="Your Walmart, Amazon and DTC brands in one place. See live Walmart commission boosts, browse a joined brand's products, and turn any item into a post with a cloaked affiliate link."
         accent="rgba(34,211,238,0.32)"
       />
 
@@ -326,6 +328,12 @@ export default function WalmartPBPage() {
             MVP does not guarantee commissions or any type of return. The MVP Finder is simply a focused search through your PartnerBoost campaigns using criteria that have been fruitful for influencers over the past 4 years — actual results depend on the product, your content, and your audience.
           </p>
           <PartnerBoostSaved reloadKey={savedReloadKey} />
+          {/* Live Walmart commission boosts (Affiliate Boost feed). Self-gates on
+              the PartnerBoost token — renders nothing when not connected. */}
+          <WalmartDeals />
+          {/* The full Walmart catalog (all offers, not just joined brands), run
+              through MVP's rulebook. Self-gates on the token like WalmartDeals. */}
+          <WalmartOffers />
           <div className="flex items-center gap-2 mb-3">
             <span className="text-[12px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-faint)' }}>Or browse a specific brand</span>
             <span className="flex-1 h-px" style={{ background: 'var(--border)' }} />
