@@ -1290,7 +1290,7 @@ const VideoCard = memo(function VideoCardImpl({
                     : 'Generate now, publish later — pick a date/time and which socials to push'}
                   className="inline-flex items-center gap-2 h-8 px-3 text-xs font-medium rounded-lg whitespace-nowrap border border-[var(--border-2)] bg-[var(--surface)] text-[var(--text)] hover:bg-[var(--surface-2)] transition-colors"
                 >
-                  <Calendar size={12} /> {post ? 'Schedule socials' : 'Schedule'}
+                  <Calendar size={12} /> {post ? 'Schedule socials' : 'Schedule for later'}
                 </button>
               )}
               {/* Visit Link or Product — opens the first affiliate / product
