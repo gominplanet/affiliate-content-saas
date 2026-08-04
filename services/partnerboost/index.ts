@@ -315,6 +315,45 @@ export interface PBWalmartOffer extends PBProduct {
   discountPct: number | null
 }
 
+/**
+ * Mint commissionable Walmart tracking links by item id (≤50 per call).
+ * POST /walmart_datafeed/get_products_link { item_id: "a,b,c" }. This is the
+ * ONLY thing that earns — a bare walmart.com/ip URL carries no attribution.
+ * The link routes PartnerBoost → goto.walmart.com (Impact) → Walmart with the
+ * publisher's id + sharedid. Returns a map item_id → tracking url (prefers the
+ * short pboost.me link). Best-effort: empty map when none can be minted (e.g.
+ * the account isn't approved for that Walmart brand).
+ */
+export async function getWalmartProductLinks(
+  token: string,
+  itemIds: string[],
+): Promise<Record<string, string>> {
+  const ids = itemIds.filter(Boolean).slice(0, 50)
+  if (ids.length === 0) return {}
+  const json = await pbPost('/walmart_datafeed/get_products_link', token, { item_id: ids.join(',') })
+  if (json?.status?.code !== 0) return {}
+  const data = json?.data || {}
+  const out: Record<string, string> = {}
+  const pick = (r: Record<string, unknown>): string =>
+    asStr(r?.short_link ?? r?.tracking_url ?? r?.smart_link ?? r?.link ?? r?.url ?? r?.attribution_link)
+  const list = Array.isArray(data.list) ? data.list : Array.isArray(data) ? data : []
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const row of list as any[]) {
+    const id = asStr(row?.item_id ?? row?.itemId ?? row?.id)
+    const url = pick(row)
+    if (id && url) out[id] = url
+  }
+  // Some payloads return a plain object map { "<item_id>": "<url|obj>" }.
+  if (Object.keys(out).length === 0 && data && typeof data === 'object' && !Array.isArray(data.list)) {
+    for (const [k, v] of Object.entries(data)) {
+      if (k === 'has_more') continue
+      if (typeof v === 'string' && v) out[k] = v
+      else if (v && typeof v === 'object') { const s = pick(v as Record<string, unknown>); if (s) out[k] = s }
+    }
+  }
+  return out
+}
+
 /** commission arrives as a fraction ("0.15"=15) or a percent ("15"/"15%"). */
 function pctFrom(v: unknown): number | null {
   const n = asNum(typeof v === 'string' ? v.replace('%', '') : v)
@@ -368,7 +407,10 @@ export async function getWalmartOffers(
       mcid: asStrOrNull(p.mcid),
       brandId: p.brand_id != null ? String(p.brand_id) : null,
       sku: asStrOrNull(p.sku ?? p.item_id),
-      trackingUrl: asStr(p.tracking_url ?? p.partnerboost_link ?? p.link ?? ''),
+      // Only accept a REAL tracking field here — never p.link/p.url, which are
+      // the bare (un-attributed) product page. A commissionable link is minted
+      // below via get_products_link.
+      trackingUrl: asStr(p.tracking_url ?? p.partnerboost_link ?? ''),
       itemId,
       commissionPct: pctFrom(p.commission ?? p.commission_rate ?? p.comm_rate),
       rating: asNum(p.rating ?? p.avg_rating ?? p.average_rating),
@@ -376,5 +418,17 @@ export async function getWalmartOffers(
       discountPct: asNum(typeof p.discount === 'string' ? p.discount.replace(/[^\d.]/g, '') : (p.discount ?? p.discount_pct)),
     }
   }).filter((o: PBWalmartOffer) => !!o.name && !!o.url)
+
+  // Mint the real commissionable link per item (attribution lives here, not in
+  // the datafeed). Best-effort — on failure the card falls back to the bare
+  // product URL, which the generate route flags as un-monetized.
+  try {
+    const need = offers.filter((o) => !o.trackingUrl && o.itemId).map((o) => o.itemId)
+    if (need.length) {
+      const links = await getWalmartProductLinks(token, need)
+      for (const o of offers) { const minted = links[o.itemId]; if (minted) o.trackingUrl = minted }
+    }
+  } catch { /* keep bare URLs — better a working product link than a broken feed */ }
+
   return { offers, hasMore: !!(data.has_more ?? data.hasMore), total: asNum(data.total ?? data.total_count) }
 }
