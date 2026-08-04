@@ -21,6 +21,7 @@ import {
 import { Button } from '@/components/ui/button'
 import QuickPostModal from '@/components/deal/QuickPostModal'
 import WalmartDeals from '@/components/walmart/WalmartDeals'
+import WalmartOffers from '@/components/walmart/WalmartOffers'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { type Tier } from '@/lib/tier'
@@ -572,9 +573,19 @@ export default function DealRadarPage() {
       )}
       </>)}
 
-      {/* Walmart source — live time-boxed PartnerBoost boosts (real end dates
-          only). Self-fetches per-user; prompts to connect when there's no token. */}
-      {source === 'walmart' && <WalmartDeals timedOnly embedded />}
+      {/* Walmart source — two deal types: time-boxed PartnerBoost boosts (real
+          end dates, live countdown) and price drops (steep catalog markdowns, no
+          countdown). Self-fetch per-user; prompt to connect when there's no token. */}
+      {source === 'walmart' && (
+        <div className="space-y-5">
+          <WalmartDeals timedOnly embedded />
+          <WalmartOffers
+            embedded autoRun minDiscount={25} sort="discount"
+            title="Walmart price drops"
+            subtitle="Steep markdowns across the Walmart catalog, run through MVP’s rules. Not time-boxed — no countdown, but the discount is live now."
+          />
+        </div>
+      )}
     </div>
   )
 }

@@ -11,7 +11,7 @@
  * user's PartnerBoost token). Generation runs the paid + WordPress gates.
  */
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { Loader2, Search, ExternalLink, Copy, Wand2, Package, CheckCircle2, Clock, Store, Star } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -36,7 +36,20 @@ interface Offer {
   trackingUrl: string
 }
 
-export default function WalmartOffers() {
+interface WalmartOffersProps {
+  /** Show a connect-PartnerBoost prompt instead of rendering nothing when there's no token. */
+  embedded?: boolean
+  /** Scan on mount instead of waiting for a "Find offers" click. */
+  autoRun?: boolean
+  /** "Price drops" mode: only offers marked down at least this much, ranked by discount. */
+  minDiscount?: number
+  /** Ranking: 'payout' (est $/sale, default) or 'discount' (biggest markdown first). */
+  sort?: 'payout' | 'discount'
+  title?: string
+  subtitle?: string
+}
+
+export default function WalmartOffers({ embedded = false, autoRun = false, minDiscount = 0, sort = 'payout', title, subtitle }: WalmartOffersProps = {}) {
   const [mode, setMode] = useState<'focus' | 'wide'>('focus')
   const [q, setQ] = useState('')
   const [offers, setOffers] = useState<Offer[]>([])
@@ -53,6 +66,8 @@ export default function WalmartOffers() {
   const fetchPage = useCallback(async (page: number, append: boolean) => {
     const qs = new URLSearchParams({ mode, page: String(page), limit: '24' })
     if (q.trim()) qs.set('q', q.trim())
+    if (minDiscount > 0) qs.set('minDiscount', String(minDiscount))
+    if (sort === 'discount') qs.set('sort', 'discount')
     const res = await fetch(`/api/walmart/offers?${qs.toString()}`, { cache: 'no-store' })
     const j = await res.json()
     if (j.needsToken) { setNeedsToken(true); return }
@@ -62,7 +77,7 @@ export default function WalmartOffers() {
     const rows: Offer[] = Array.isArray(j.matches) ? j.matches : []
     setOffers((prev) => append ? [...prev, ...rows] : rows)
     setNextPage(j.nextPage ?? null)
-  }, [mode, q])
+  }, [mode, q, minDiscount, sort])
 
   const run = useCallback(async () => {
     setLoading(true); setStarted(true); setError(null)
@@ -70,6 +85,10 @@ export default function WalmartOffers() {
     catch (e) { setError(e instanceof Error ? e.message : 'Network error'); setOffers([]) }
     finally { setLoading(false) }
   }, [fetchPage])
+
+  // Scan on mount when embedded (Deal Radar) — the user didn't come here to
+  // click "Find offers". Mount-only on purpose (re-scan is the Find button).
+  useEffect(() => { if (autoRun) void run() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [])
 
   const loadMore = useCallback(async () => {
     if (nextPage == null) return
@@ -112,7 +131,21 @@ export default function WalmartOffers() {
     }
   }
 
-  if (needsToken) return null
+  if (needsToken) {
+    if (!embedded) return null
+    return (
+      <div className="rounded-xl border p-4 flex items-start gap-3" style={{ background: 'rgba(0,113,206,0.08)', borderColor: 'rgba(0,113,206,0.35)' }}>
+        <Store size={16} className="flex-shrink-0 mt-0.5" style={{ color: WM_BLUE }} />
+        <div className="text-[13px]" style={{ color: 'var(--text)' }}>
+          <p className="font-semibold mb-1">Connect PartnerBoost to see Walmart price drops</p>
+          <p style={{ color: 'var(--text-soft)' }}>
+            Add your PartnerBoost API key in{' '}
+            <a href="/external-integrations" className="font-medium underline" style={{ color: WM_BLUE }}>External Integrations</a>, then refresh.
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="rounded-xl border mb-5 overflow-hidden" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
@@ -122,8 +155,8 @@ export default function WalmartOffers() {
           <Store size={16} style={{ color: '#fff' }} />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-[14px] font-bold" style={{ color: 'var(--text)' }}>Walmart Offers</p>
-          <p className="text-[11.5px]" style={{ color: 'var(--text-soft)' }}>The whole Walmart catalog on PartnerBoost, filtered by MVP&rsquo;s rules — not just brands you&rsquo;ve joined. Ranked by estimated $/sale.</p>
+          <p className="text-[14px] font-bold" style={{ color: 'var(--text)' }}>{title ?? 'Walmart Offers'}</p>
+          <p className="text-[11.5px]" style={{ color: 'var(--text-soft)' }}>{subtitle ?? 'The whole Walmart catalog on PartnerBoost, filtered by MVP’s rules — not just brands you’ve joined. Ranked by estimated $/sale.'}</p>
         </div>
       </div>
 

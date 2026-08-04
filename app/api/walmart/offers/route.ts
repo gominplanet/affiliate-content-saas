@@ -70,6 +70,10 @@ export async function GET(request: NextRequest) {
     const relRaw = searchParams.get('relationship')
     const relationship = relRaw != null && relRaw !== '' ? Number(relRaw) : undefined
     const limit = Math.min(Math.max(Number(searchParams.get('limit')) || 24, 10), 50)
+    // Optional "price drops" mode: keep only offers marked down at least this
+    // much, ranked by discount instead of estimated payout.
+    const minDiscount = Number(searchParams.get('minDiscount')) || 0
+    const sortBy = searchParams.get('sort') === 'discount' ? 'discount' : 'payout'
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const matches: any[] = []
@@ -94,6 +98,7 @@ export async function GET(request: NextRequest) {
         if (c.commissionPct != null && c.commissionPct < rules.minCommissionPct) continue
         if (isAvoidedPb(c, rules)) continue
         if (q && !`${c.name} ${c.category || ''}`.toLowerCase().includes(q)) continue
+        if (minDiscount > 0 && (o.discountPct == null || o.discountPct < minDiscount)) continue
         const scored = scorePb(c)
         matches.push({
           key: scored.key, itemId: o.itemId, name: scored.name,
@@ -108,7 +113,11 @@ export async function GET(request: NextRequest) {
       if (!more) break
     }
 
-    matches.sort((a, b) => b.perSale - a.perSale || (b.commissionPct ?? 0) - (a.commissionPct ?? 0))
+    if (sortBy === 'discount') {
+      matches.sort((a, b) => (b.discountPct ?? 0) - (a.discountPct ?? 0) || b.perSale - a.perSale)
+    } else {
+      matches.sort((a, b) => b.perSale - a.perSale || (b.commissionPct ?? 0) - (a.commissionPct ?? 0))
+    }
 
     return NextResponse.json({
       ok: true,
