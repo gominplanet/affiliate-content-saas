@@ -25,6 +25,12 @@ import { toUserMessage } from '@/lib/friendly-error'
 export const runtime = 'nodejs'
 export const maxDuration = 120
 
+// A soft guardrail on scheduling: at most this many deal posts queued to fire on
+// any one calendar day (UTC), per user. This protects the user more than us —
+// firing dozens of near-identical posts a day is how a social account gets
+// flagged as spam by the platforms. The cost to MVP is negligible either way.
+const DAILY_SCHEDULE_CAP = 50
+
 export async function POST(request: Request) {
   try {
     const supabase = await createServerClient()
@@ -63,6 +69,23 @@ export async function POST(request: Request) {
       // when the post fires with nothing to earn.
       if (platforms.length && !((intRow as { amazon_associates_tag?: string | null } | null)?.amazon_associates_tag || '').trim()) {
         return NextResponse.json({ error: 'Add your Amazon Associates tag in Settings first, so your links earn.' }, { status: 400 })
+      }
+      // Daily cap: count what's already queued for that calendar day (UTC) and
+      // refuse once it hits DAILY_SCHEDULE_CAP. Best-effort — a count error never
+      // blocks a legitimate schedule.
+      const dayStart = new Date(Date.UTC(when.getUTCFullYear(), when.getUTCMonth(), when.getUTCDate(), 0, 0, 0))
+      const dayEnd = new Date(Date.UTC(when.getUTCFullYear(), when.getUTCMonth(), when.getUTCDate(), 23, 59, 59, 999))
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { count: dayCount } = await (supabase as any).from('deal_scheduled_posts')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .in('status', ['pending', 'processing'])
+        .gte('scheduled_at', dayStart.toISOString())
+        .lte('scheduled_at', dayEnd.toISOString())
+      if (typeof dayCount === 'number' && dayCount >= DAILY_SCHEDULE_CAP) {
+        return NextResponse.json({
+          error: `You already have ${dayCount} posts scheduled for that day (limit ${DAILY_SCHEDULE_CAP}). Spread them across other days, or post some now. This cap keeps your accounts from being flagged as spam.`,
+        }, { status: 429 })
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { error: insErr } = await (supabase as any).from('deal_scheduled_posts').insert({
