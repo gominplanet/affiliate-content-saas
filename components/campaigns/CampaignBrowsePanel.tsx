@@ -300,7 +300,7 @@ export default function CampaignBrowsePanel({
           {/* MVP picks — MVP's Focus rulebook over the catalog (carousel required). */}
           <button
             onClick={() => setMvpPicks(v => !v)}
-            title="MVP picks: MVP's proven campaign criteria — 15%+ commission, 90+ days runway, $20–800, 100+ sold/mo, 3★+, a product-carousel video, and no supplements/food/pharmacy/clothing."
+            title="MVP picks: MVP's proven campaign criteria — 10%+ commission, 90+ days runway, $20–2000, 100+ sold/mo, 3★+, a product-carousel video, and no food/pharmacy/clothing."
             className={`h-9 text-sm font-semibold rounded-full px-3.5 inline-flex items-center gap-1.5 border transition-all active:scale-[0.97] ${mvpPicks ? '' : 'bg-white dark:bg-[#1c1c1e]'}`}
             style={mvpPicks
               ? { background: '#7C3AED', color: '#fff', borderColor: '#7C3AED' }
