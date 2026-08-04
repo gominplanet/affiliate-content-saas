@@ -168,7 +168,14 @@ export default function WalmartDeals({ timedOnly = false, embedded = false }: { 
             <Loader2 size={14} className="animate-spin" /> Loading Walmart deals…
           </p>
         ) : error ? (
-          <p className="text-[12.5px] p-3" style={{ color: '#ef4444' }}>{error}</p>
+          /not authorized|affiliate boost|contact publisher/i.test(error) ? (
+            <div className="text-[12.5px] p-3 leading-relaxed" style={{ color: 'var(--text-soft)' }}>
+              <span className="font-semibold" style={{ color: 'var(--text)' }}>Affiliate Boost isn&rsquo;t enabled on your PartnerBoost account yet.</span>{' '}
+              These are live commission boosts on Walmart items. To turn them on, ask PartnerBoost to enable <span className="font-medium">Affiliate Boost for Walmart</span> for your publisher account. Walmart price drops below work without it.
+            </div>
+          ) : (
+            <p className="text-[12.5px] p-3" style={{ color: '#ef4444' }}>{error}</p>
+          )
         ) : shown.length === 0 ? (
           <p className="text-[12.5px] p-3" style={{ color: 'var(--text-soft)' }}>
             No live Walmart {timedOnly ? 'timed deals' : 'commission boosts'} right now. Check back — PartnerBoost refreshes these often.
