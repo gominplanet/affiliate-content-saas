@@ -101,10 +101,23 @@ export default function WalmartOffers({ embedded = false, autoRun = false, minDi
   }, [nextPage, fetchPage])
 
   const copyLink = async (o: Offer) => {
-    const url = o.trackingUrl || o.url
-    if (!url) { toast.error('No link on this item yet'); return }
-    try { await navigator.clipboard.writeText(url); toast.success(o.trackingUrl ? 'Tracking link copied' : 'Product link copied (no tracking link yet)') }
-    catch { toast.error('Could not copy') }
+    try {
+      // Mint the guaranteed-attributed link (and cloak via Geniuslink if the
+      // user has it) server-side, then copy that — not the bare product URL.
+      const res = await fetch('/api/walmart/link', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ itemId: o.itemId, title: o.name, fallbackUrl: o.trackingUrl || o.url }),
+      })
+      const j = await res.json().catch(() => ({}))
+      const url = j.ok ? j.url : (o.trackingUrl || o.url)
+      if (!url) { toast.error('No link on this item yet'); return }
+      await navigator.clipboard.writeText(url)
+      toast.success(
+        j.cloaked ? 'Cloaked link copied (Geniuslink)'
+        : j.source === 'minted' ? 'Tracking link copied'
+        : 'Product link copied (no tracking link yet)',
+      )
+    } catch { toast.error('Could not copy') }
   }
 
   const generatePost = async (o: Offer) => {

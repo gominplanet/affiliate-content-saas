@@ -20,7 +20,8 @@ import { fetchWpProxySecret } from '@/lib/wp-proxy'
 import { createWordPressService } from '@/services/wordpress'
 import { createClaudeService, type BrandProfile } from '@/services/claude'
 import { createGeniuslinkService } from '@/services/geniuslink'
-import { buildPartnerBoostDeepLink } from '@/services/partnerboost'
+import { buildPartnerBoostDeepLink, getWalmartProductLinks } from '@/services/partnerboost'
+import { getExternalKey } from '@/lib/external-keys'
 import { fetchAmazonProduct, isValidAsin, type AmazonProduct } from '@/services/amazon'
 import { researchProduct } from '@/services/research'
 import { rebuildCtaCard } from '@/lib/cta-thumb'
@@ -109,11 +110,30 @@ export async function POST(request: NextRequest) {
     }
     const brand = brandRow as unknown as BrandProfile
 
-    // ── Affiliate link: datafeed tracking_url → deep-link → bare URL, then cloak ─
+    // ── Affiliate link: product tracking → (Walmart) mint by item id → brand
+    //    deep-link → bare URL, then Geniuslink cloak. For Walmart, a minted
+    //    get_products_link is the only link with GUARANTEED attribution (it
+    //    routes through goto.walmart.com/Impact with the sharedid); the brand
+    //    deep-link to a bare walmart.com page relies on PartnerBoost's redirect. ─
+    const isWalmart = (body.network || '').trim().toLowerCase() === 'walmart'
+    const itemId = (p.sku || '').trim()
     let affiliateUrl = ''
     let linkSource: 'product_tracking' | 'deep_link' | 'bare_url' = 'bare_url'
     if (p.trackingUrl && p.trackingUrl.trim()) {
       affiliateUrl = p.trackingUrl.trim(); linkSource = 'product_tracking'
+    } else if (isWalmart && itemId) {
+      try {
+        const pbToken = await getExternalKey(supabase, user.id, 'partnerboost')
+        if (pbToken) {
+          const links = await getWalmartProductLinks(pbToken, [itemId])
+          const minted = links[itemId]
+          if (minted) { affiliateUrl = minted; linkSource = 'product_tracking' }
+        }
+      } catch { /* fall through to the deep-link / bare URL below */ }
+      if (!affiliateUrl && body.brandTrackingUrl && body.brandTrackingUrl.trim()) {
+        affiliateUrl = buildPartnerBoostDeepLink(body.brandTrackingUrl.trim(), p.url); linkSource = 'deep_link'
+      }
+      if (!affiliateUrl) { affiliateUrl = p.url; linkSource = 'bare_url' }
     } else if (body.brandTrackingUrl && body.brandTrackingUrl.trim()) {
       affiliateUrl = buildPartnerBoostDeepLink(body.brandTrackingUrl.trim(), p.url); linkSource = 'deep_link'
     } else {
