@@ -120,10 +120,13 @@ export async function generateDigestContent(opts: {
   reviewerName: string
   nicheLabel: string
   monthYear: string
+  /** Retailer these deals are on ("Amazon" default, or "Walmart"). */
+  retailer?: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   recordUsage?: (msg: any) => void
 }): Promise<{ title: string; html: string; excerpt: string; theme: string }> {
   const { client, deals, reviewerName, nicheLabel, monthYear } = opts
+  const retailer = opts.retailer || 'Amazon'
 
   const dealLines = deals.map((d, i) => {
     const price = money(d.price_now_cents)
@@ -139,7 +142,7 @@ export async function generateDigestContent(opts: {
       max_tokens: 1000,
       messages: [{
         role: 'user',
-        content: `You are ${reviewerName}, writing a hand-picked roundup of the best Amazon deals for your affiliate review blog.
+        content: `You are ${reviewerName}, writing a hand-picked roundup of the best ${retailer} deals for your affiliate review blog.
 Your blog usually covers "${nicheLabel}", but only lean on that if these SPECIFIC products fit it — otherwise describe what is ACTUALLY in this list.
 
 DEALS (in order):
@@ -185,7 +188,7 @@ Rules:
     const img = d.image_url
       ? `<figure class="mvp-deal-image"><img src="${esc(d.image_url)}" alt="${esc(d.title).slice(0, 120)}" loading="lazy" /></figure>`
       : ''
-    return `<h2>${esc(d.title).slice(0, 120)}</h2>\n${img}\n${priceLine}\n<p>${esc(blurb)}</p>\n<p><a href="${esc(d.affiliateUrl)}" rel="nofollow sponsored">See the deal on Amazon</a></p>`
+    return `<h2>${esc(d.title).slice(0, 120)}</h2>\n${img}\n${priceLine}\n<p>${esc(blurb)}</p>\n<p><a href="${esc(d.affiliateUrl)}" rel="nofollow sponsored">See the deal on ${esc(retailer)}</a></p>`
   }).join('\n\n')
 
   const html = `<p>${esc(intro)}</p>\n\n${sections}\n\n<p>${esc(outro)}</p>`

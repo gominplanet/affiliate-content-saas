@@ -51,20 +51,23 @@ interface PublishOpts {
   baseCaption: string
   disclaimer: string
   platforms: QuickPostPlatform[]
+  /** Retailer named in the "Grab it on X" CTA. Defaults to Amazon. */
+  retailerLabel?: string
 }
 
 /** Compose the final text for a platform: the affiliate link leads (a shopper
  *  can buy without reading), then the caption, then the disclosure — all capped
  *  to the platform's limit. */
-function composeText(base: string, platform: QuickPostPlatform, link: string, disclaimer: string): string {
+function composeText(base: string, platform: QuickPostPlatform, link: string, disclaimer: string, retailer = 'Amazon'): string {
   if (platform === 'twitter') return capSocialText(base, SOCIAL_LIMITS.twitter, ` #ad`, `🛒 ${link}\n\n`)
   if (platform === 'bluesky') return capSocialText(base, SOCIAL_LIMITS.bluesky, `\n#ad`, `🛒 ${link}\n\n`)
   const limit = (SOCIAL_LIMITS as Record<string, number>)[platform] ?? 1000
-  return capSocialText(base, limit, `\n\n${disclaimer}`, `🛒 Grab it on Amazon 👉 ${link}\n\n`)
+  return capSocialText(base, limit, `\n\n${disclaimer}`, `🛒 Grab it on ${retailer} 👉 ${link}\n\n`)
 }
 
 export async function publishDealToSocials(opts: PublishOpts): Promise<PlatformResult[]> {
   const { supabase, userId, deal, baseCaption, disclaimer } = opts
+  const retailer = opts.retailerLabel || 'Amazon'
   const platforms = opts.platforms.filter((p) => QUICK_POST_PLATFORMS.includes(p))
   const results: PlatformResult[] = []
   if (!platforms.length) return results
@@ -105,7 +108,7 @@ export async function publishDealToSocials(opts: PublishOpts): Promise<PlatformR
             twitter_expires_at: new Date(Date.now() + r.expires_in * 1000).toISOString(),
           })).eq('user_id', userId)
         }
-        const t = await createTweet(token!, composeText(baseCaption, 'twitter', link, disclaimer))
+        const t = await createTweet(token!, composeText(baseCaption, 'twitter', link, disclaimer, retailer))
         recordXPost(userId, xcap.tier)
         results.push({ platform, ok: true, url: `https://x.com/i/web/status/${t.id}` })
 
@@ -124,7 +127,7 @@ export async function publishDealToSocials(opts: PublishOpts): Promise<PlatformR
           },
         })
         if (!acct) throw new Error('Facebook Page is not connected.')
-        const caption = composeText(baseCaption, 'facebook', link, disclaimer)
+        const caption = composeText(baseCaption, 'facebook', link, disclaimer, retailer)
         const fb = createFacebookService(acct.accessToken, acct.externalId)
         let id: string
         if (img) { const r = await fb.postPhoto({ imageUrl: img, caption }); id = r.post_id || r.id }
@@ -144,7 +147,7 @@ export async function publishDealToSocials(opts: PublishOpts): Promise<PlatformR
           },
         })
         if (!acct) throw new Error('Threads is not connected.')
-        const r = await new ThreadsService(acct.accessToken, acct.externalId).createPost(composeText(baseCaption, 'threads', link, disclaimer), img || undefined)
+        const r = await new ThreadsService(acct.accessToken, acct.externalId).createPost(composeText(baseCaption, 'threads', link, disclaimer, retailer), img || undefined)
         results.push({ platform, ok: true, url: r.permalink })
 
       } else if (platform === 'linkedin') {
@@ -152,7 +155,7 @@ export async function publishDealToSocials(opts: PublishOpts): Promise<PlatformR
         const person = ig.linkedin_person_id as string | undefined
         if (!token || !person) throw new Error('LinkedIn is not connected.')
         const li = createLinkedInService(token, person)
-        const text = composeText(baseCaption, 'linkedin', link, disclaimer)
+        const text = composeText(baseCaption, 'linkedin', link, disclaimer, retailer)
         if (img) await li.createImagePost({ text, imageUrl: img, title: deal.title })
         else await li.createPost({ text, articleUrl: link, articleTitle: deal.title, articleDescription: deal.title })
         results.push({ platform, ok: true })
@@ -165,7 +168,7 @@ export async function publishDealToSocials(opts: PublishOpts): Promise<PlatformR
         // (dp + geni.us URLs contain no ')' so the destination is safe unescaped).
         // Link leads so a shopper can buy without reading.
         const body = escapeMarkdownV2(capSocialText(baseCaption, 700))
-        const caption = `🛒 [Grab it on Amazon](${link})\n\n${body}\n\n${escapeMarkdownV2(disclaimer)}`
+        const caption = `🛒 [Grab it on ${retailer}](${link})\n\n${body}\n\n${escapeMarkdownV2(disclaimer)}`
         if (img) await sendPhoto(token, channel, img, caption)
         else await sendMessage(token, channel, caption)
         results.push({ platform, ok: true })
@@ -175,7 +178,7 @@ export async function publishDealToSocials(opts: PublishOpts): Promise<PlatformR
         const appPw = ig.bluesky_app_password as string | undefined
         if (!handle || !appPw) throw new Error('Bluesky is not connected.')
         const session = await blueskySession(handle, appPw)
-        const text = composeText(baseCaption, 'bluesky', link, disclaimer)
+        const text = composeText(baseCaption, 'bluesky', link, disclaimer, retailer)
         await blueskyPost(session, {
           text, linkUrl: link, linkText: link,
           embed: { url: link, title: deal.title, description: '', imageUrl: img || undefined },

@@ -3,17 +3,23 @@
 /**
  * Walmart Offers — browse the FULL Walmart catalog on PartnerBoost (not only the
  * brands you've joined), run through MVP's rulebook: price band, commission
- * floor, category bans, ranked by estimated $/sale. Keyword-searchable. Each
- * card → Copy link (commissionable) or Generate post (Walmart-blue
- * CTA, cloaked deep-link).
+ * floor, category bans, ranked by estimated $/sale. Keyword-searchable.
+ *
+ * Cards mirror the Amazon Deal Radar card: Make blog post (→ /api/walmart/generate),
+ * Quick post to socials (→ WalmartQuickPostModal), Add to roundup (→ a floating
+ * bar → /api/walmart/roundup), View on Walmart, and Copy link (minted + cloaked).
  *
  * Reads /api/walmart/offers — open to every signed-in tier (gated only by the
- * user's PartnerBoost token). Generation runs the paid + WordPress gates.
+ * user's PartnerBoost token). Posting actions run the paid + WordPress gates.
  */
 
 import { useState, useCallback, useEffect } from 'react'
-import { Loader2, Search, ExternalLink, Copy, Wand2, Package, CheckCircle2, Clock, Store, Star } from 'lucide-react'
+import {
+  Loader2, Search, ExternalLink, Copy, Package, Store, Star, Coins, Flame,
+  Plus, Check, Send, ArrowRight, Layers, Clock, CheckCircle2,
+} from 'lucide-react'
 import { toast } from 'sonner'
+import WalmartQuickPostModal, { type WalmartQuickPostItem } from '@/components/walmart/WalmartQuickPostModal'
 
 const WM_BLUE = '#0071CE'
 
@@ -64,6 +70,9 @@ export default function WalmartOffers({ embedded = false, autoRun = false, minDi
   const [publishLive, setPublishLive] = useState(false)
   const [generating, setGenerating] = useState<string | null>(null)
   const [results, setResults] = useState<Record<string, { url: string; editUrl?: string; draft?: boolean; cloaked: boolean }>>({})
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [quickPostItem, setQuickPostItem] = useState<WalmartQuickPostItem | null>(null)
+  const [roundupBusy, setRoundupBusy] = useState(false)
 
   const fetchPage = useCallback(async (page: number, append: boolean) => {
     const qs = new URLSearchParams({ mode, page: String(page), limit: '24' })
@@ -146,6 +155,30 @@ export default function WalmartOffers({ embedded = false, autoRun = false, minDi
     }
   }
 
+  const toggleSelect = (itemId: string) => setSelected((s) => {
+    const n = new Set(s); n.has(itemId) ? n.delete(itemId) : n.add(itemId); return n
+  })
+
+  const createRoundup = async () => {
+    const items = offers.filter((o) => selected.has(o.itemId)).map((o) => ({
+      itemId: o.itemId, name: o.name, image: o.image, url: o.url,
+      price: o.price, oldPrice: o.oldPrice, discountPct: o.discountPct,
+    }))
+    if (items.length < 2) { toast.error('Pick at least 2 deals for a roundup.'); return }
+    setRoundupBusy(true)
+    try {
+      const res = await fetch('/api/walmart/roundup', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items }),
+      })
+      const j = await res.json()
+      if (!res.ok || !j.ok) { toast.error(j.error || 'Could not build the roundup.'); return }
+      toast.success('Roundup post published.')
+      if (j.url) window.open(j.url, '_blank')
+      setSelected(new Set())
+    } catch { toast.error('Could not build the roundup.') } finally { setRoundupBusy(false) }
+  }
+
   if (needsToken) {
     if (!embedded) return null
     return (
@@ -213,68 +246,76 @@ export default function WalmartOffers({ embedded = false, autoRun = false, minDi
           </p>
         ) : (
           <>
-            <div className="flex flex-col gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
               {offers.map((o) => {
                 const gen = generating === o.key
                 const done = results[o.key]
+                const inRoundup = selected.has(o.itemId)
                 return (
-                  <div key={o.key} className="flex items-center gap-3 rounded-lg p-2.5" style={{ background: 'var(--surface-bright)' }}>
-                    <div className="w-11 h-11 rounded-md flex-shrink-0 overflow-hidden flex items-center justify-center" style={{ background: 'var(--surface)' }}>
-                      {o.image ? <img src={o.image} alt="" className="w-full h-full object-contain" /> : <Package size={16} style={{ color: 'var(--text-soft)' }} />}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[12.5px] font-medium truncate" style={{ color: 'var(--text)' }}>{o.name}</p>
-                      <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
-                        {o.commissionPct != null && (
-                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold" style={{ background: `${WM_BLUE}1a`, color: WM_BLUE }}>
-                            {o.commissionPct}% comm
-                          </span>
-                        )}
-                        {o.perSale != null && (
-                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold" style={{ background: 'rgba(16,185,129,0.14)', color: '#10B981' }}>
-                            ~${o.perSale.toFixed(2)}/sale
-                          </span>
-                        )}
-                        {o.discountPct != null && o.discountPct > 0 && (
-                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold" style={{ background: 'rgba(245,158,11,0.14)', color: '#f59e0b' }}>
-                            {Math.round(o.discountPct)}% off
-                          </span>
-                        )}
-                        {o.rating != null && (
-                          <span className="inline-flex items-center gap-0.5 text-[10.5px]" style={{ color: 'var(--text-soft)' }}>
-                            <Star size={9} fill="#f59e0b" style={{ color: '#f59e0b' }} /> {o.rating.toFixed(1)}{o.ratingsTotal ? ` (${o.ratingsTotal.toLocaleString()})` : ''}
-                          </span>
-                        )}
-                        <span className="text-[11px]" style={{ color: 'var(--text-soft)' }}>
-                          {o.price ? `$${o.price}` : '—'}{o.oldPrice ? ` (was $${o.oldPrice})` : ''}
-                        </span>
-                        {o.url && (
-                          <a href={o.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 hover:underline text-[11px]" style={{ color: WM_BLUE }}>
-                            See product <ExternalLink size={9} />
-                          </a>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1 flex-shrink-0">
-                      <button onClick={() => copyLink(o)}
-                        className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-[11px] font-semibold"
-                        style={{ background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }}
-                        title="Copy the commissionable tracking link">
-                        <Copy size={12} /> Link
-                      </button>
-                      {done ? (
-                        <a href={done.draft ? (done.editUrl || done.url) : done.url} target="_blank" rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold"
-                          style={{ background: 'rgba(16,185,129,0.16)', color: '#10B981' }}>
-                          <CheckCircle2 size={12} /> {done.draft ? 'View draft' : 'View post'} <ExternalLink size={11} />
-                        </a>
-                      ) : (
-                        <button onClick={() => generatePost(o)} disabled={gen}
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold disabled:opacity-60"
-                          style={{ background: WM_BLUE, color: '#fff' }}>
-                          {gen ? <><Loader2 size={12} className="animate-spin" /> Writing…</> : <><Wand2 size={12} /> Generate post</>}
-                        </button>
+                  <div key={o.key} className="rounded-xl border bg-card overflow-hidden flex flex-col transition-shadow hover:shadow-md" style={{ borderColor: 'var(--border)' }}>
+                    <a href={o.url} target="_blank" rel="noopener noreferrer" className="relative flex items-center justify-center bg-white h-40 p-3">
+                      {o.image
+                        ? <img src={o.image} alt="" className="max-h-full max-w-full object-contain" />
+                        : <div className="flex items-center justify-center text-muted-foreground"><Package size={26} /></div>}
+                      {o.discountPct != null && o.discountPct > 0 && (
+                        <span className="absolute top-2 left-2 text-xs font-bold bg-red-600 text-white rounded px-1.5 py-0.5">-{Math.round(o.discountPct)}%</span>
                       )}
+                      {o.perSale != null && o.perSale >= 10 && (
+                        <span className="absolute bottom-2 right-2 text-[10px] font-bold text-white rounded px-1.5 py-0.5 inline-flex items-center gap-0.5" style={{ background: '#7C3AED' }} title="High estimated earnings per sale"><Flame size={10} /> Top pick</span>
+                      )}
+                    </a>
+                    <div className="p-3 flex flex-col gap-1.5 flex-1">
+                      <div className="text-sm font-medium line-clamp-2 leading-snug min-h-[2.5rem]" style={{ color: 'var(--text)' }}>{o.name}</div>
+                      {o.brandName && <div className="text-xs text-muted-foreground">{o.brandName}</div>}
+                      <div className="flex items-center gap-2">
+                        {o.price && <span className="text-base font-bold" style={{ color: 'var(--text)' }}>${o.price}</span>}
+                        {o.oldPrice && <span className="text-xs text-muted-foreground line-through">${o.oldPrice}</span>}
+                      </div>
+                      {o.rating != null && (
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <Star size={12} className="fill-amber-400 text-amber-400" /> {o.rating.toFixed(1)}
+                          {o.ratingsTotal != null && <span>({o.ratingsTotal.toLocaleString()})</span>}
+                        </div>
+                      )}
+                      {o.perSale != null && o.perSale > 0 && (
+                        <div className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400 w-fit" title="Estimated commission per sale">
+                          <Coins size={12} /> ≈ ${o.perSale.toFixed(2)}/sale
+                          {o.commissionPct != null && <span className="font-normal text-muted-foreground">· {o.commissionPct}% comm</span>}
+                        </div>
+                      )}
+                      <div className="mt-auto pt-2 space-y-1.5">
+                        {done ? (
+                          <a href={done.draft ? (done.editUrl || done.url) : done.url} target="_blank" rel="noopener noreferrer"
+                            className="w-full inline-flex items-center justify-center gap-1 text-xs font-semibold rounded-full bg-emerald-600 text-white py-2">
+                            <Check size={14} /> {done.draft ? 'View draft' : 'View post'}
+                          </a>
+                        ) : (
+                          <button onClick={() => generatePost(o)} disabled={gen}
+                            className="w-full inline-flex items-center justify-center gap-1 text-xs font-semibold rounded-full bg-violet-600 hover:bg-violet-700 text-white py-2 disabled:opacity-60 transition">
+                            {gen ? <><Loader2 size={14} className="mr-1 animate-spin" /> Writing…</> : <>Make blog post <ArrowRight size={14} className="ml-1" /></>}
+                          </button>
+                        )}
+                        <button onClick={() => setQuickPostItem({ itemId: o.itemId, name: o.name, imageUrl: o.image, url: o.trackingUrl || o.url })}
+                          className="w-full inline-flex items-center justify-center gap-1.5 text-xs font-semibold rounded-full bg-orange-500 hover:bg-orange-600 text-white py-2 transition">
+                          <Send size={13} /> Quick post to socials
+                        </button>
+                        <div className="flex items-center justify-between pt-0.5">
+                          <button onClick={() => toggleSelect(o.itemId)} title={inRoundup ? 'Remove from roundup' : 'Add to a roundup post'}
+                            className={`inline-flex items-center gap-1 text-[11px] font-medium rounded-full px-2 py-1 transition ${inRoundup ? 'bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300' : 'text-muted-foreground hover:bg-accent'}`}>
+                            {inRoundup ? <><Check size={12} /> In roundup</> : <><Plus size={12} /> Add to roundup</>}
+                          </button>
+                          <div className="flex items-center gap-2">
+                            <button onClick={() => copyLink(o)} title="Copy the commissionable tracking link"
+                              className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground">
+                              <Copy size={12} /> Link
+                            </button>
+                            <a href={o.url} target="_blank" rel="noopener noreferrer" title="View on Walmart"
+                              className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground">
+                              Walmart <ExternalLink size={12} />
+                            </a>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )
@@ -282,7 +323,7 @@ export default function WalmartOffers({ embedded = false, autoRun = false, minDi
             </div>
             {nextPage != null && (
               <button onClick={loadMore} disabled={loadingMore}
-                className="w-full mt-2 py-2 rounded-lg text-[12px] font-semibold disabled:opacity-50"
+                className="w-full mt-3 py-2 rounded-lg text-[12px] font-semibold disabled:opacity-50"
                 style={{ background: 'var(--surface-bright)', color: 'var(--text)', border: '1px solid var(--border)' }}>
                 {loadingMore ? <span className="inline-flex items-center gap-1.5"><Loader2 size={13} className="animate-spin" /> Loading…</span> : 'Load more offers'}
               </button>
@@ -290,6 +331,22 @@ export default function WalmartOffers({ embedded = false, autoRun = false, minDi
           </>
         )}
       </div>
+
+      {/* Floating roundup bar — appears once a deal is selected. */}
+      {selected.size >= 1 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 rounded-full border bg-white dark:bg-[#16161a] shadow-2xl px-4 py-2.5">
+          <span className="text-sm font-medium inline-flex items-center gap-1.5"><Layers size={15} /> {selected.size} selected</span>
+          <button onClick={createRoundup} disabled={selected.size < 2 || roundupBusy}
+            title={selected.size < 2 ? 'Pick at least 2 deals' : 'Publish a curated roundup post of these Walmart deals'}
+            className="text-sm font-semibold rounded-full text-white px-4 py-1.5 disabled:opacity-60 inline-flex items-center gap-1.5"
+            style={{ background: WM_BLUE }}>
+            {roundupBusy ? <><Loader2 size={14} className="animate-spin" /> Building…</> : 'Create roundup post'}
+          </button>
+          <button onClick={() => setSelected(new Set())} className="text-xs text-muted-foreground hover:text-foreground">Clear</button>
+        </div>
+      )}
+
+      {quickPostItem && <WalmartQuickPostModal item={quickPostItem} onClose={() => setQuickPostItem(null)} />}
     </div>
   )
 }
