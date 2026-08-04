@@ -16,7 +16,7 @@
 import { useState, useCallback, useEffect } from 'react'
 import {
   Loader2, Search, ExternalLink, Copy, Package, Store, Star, Coins, Flame,
-  Plus, Check, Send, ArrowRight, Layers, Clock, CheckCircle2,
+  Plus, Check, Send, ArrowRight, Layers,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import WalmartQuickPostModal, { type WalmartQuickPostItem } from '@/components/walmart/WalmartQuickPostModal'
@@ -67,7 +67,6 @@ export default function WalmartOffers({ embedded = false, autoRun = false, minDi
   const [started, setStarted] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [needsToken, setNeedsToken] = useState(false)
-  const [publishLive, setPublishLive] = useState(false)
   const [generating, setGenerating] = useState<string | null>(null)
   const [results, setResults] = useState<Record<string, { url: string; editUrl?: string; draft?: boolean; cloaked: boolean }>>({})
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -141,7 +140,7 @@ export default function WalmartOffers({ embedded = false, autoRun = false, minDi
             category: o.category, brand: o.brandName, sku: o.sku, trackingUrl: o.trackingUrl,
           },
           network: 'Walmart',
-          draft: !publishLive,
+          draft: false,
         }),
       })
       const j = await res.json()
@@ -215,12 +214,6 @@ export default function WalmartOffers({ embedded = false, autoRun = false, minDi
           <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') run() }}
             placeholder="Keyword (optional)" className="bg-transparent outline-none text-[12.5px] flex-1" style={{ color: 'var(--text)' }} />
         </div>
-        <button onClick={() => setPublishLive((v) => !v)}
-          className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11.5px] font-semibold"
-          style={{ background: publishLive ? 'rgba(16,185,129,0.14)' : 'rgba(245,158,11,0.14)', color: publishLive ? '#10B981' : '#f59e0b', border: '1px solid var(--border)' }}
-          title="Draft = saves to WordPress as a draft. Live = publishes immediately.">
-          {publishLive ? <><CheckCircle2 size={13} /> Live</> : <><Clock size={13} /> Draft</>}
-        </button>
         <button onClick={run} disabled={loading}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold disabled:opacity-50"
           style={{ background: WM_BLUE, color: '#fff' }}>
