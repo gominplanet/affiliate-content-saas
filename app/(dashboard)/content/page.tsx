@@ -4312,7 +4312,7 @@ export default function ContentPage() {
                   ? `Showing ${displayVideos.length} of ${currentTabVideos.length} videos`
                   : activeTab === 'vertical'
                     ? `${verticalVideos.length} vertical video${verticalVideos.length !== 1 ? 's' : ''} — source for Instagram Reels & Stories`
-                    : `${generatedCount} of ${horizontalVideos.length} long-form videos published as blog posts (each can also become an Instagram image post)`}
+                    : `${generatedCount} of ${horizontalVideos.length} long-form videos published as blog posts`}
               </span>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
