@@ -15,9 +15,9 @@ import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
 import {
   Loader2, ExternalLink, Search, ShieldCheck, ShieldAlert, ShieldQuestion,
-  Users, Star, TrendingUp, Clock, FileText, CheckCircle2, Lock, Mail, Radar, Grid3x3,
+  Users, Star, TrendingUp, Clock, FileText, CheckCircle2, Lock, Mail, Radar, Grid3x3, Handshake,
 } from 'lucide-react'
-import { requestCcSmartScan, requestFindCampaign } from '@/lib/extension-frame'
+import { requestCcSmartScan, requestFindCampaign, requestAcceptCampaign } from '@/lib/extension-frame'
 import { campaignRules } from '@/lib/cc-smart-rules'
 import MessageBrandModal, { type MessageBrandCampaign } from '@/components/campaigns/MessageBrandModal'
 import SmartScanPanel from '@/components/campaigns/SmartScanPanel'
@@ -109,6 +109,40 @@ function useMakePost(c: Campaign, presetUrl: string | null) {
 function CampaignCard({ c, status, onMessage }: { c: Campaign; status?: CampaignStatus; onMessage: (c: Campaign) => void }) {
   const { gen, postUrl, makePost } = useMakePost(c, status?.url ?? null)
   const endingSoon = c.daysLeft != null && c.daysLeft <= 1
+
+  // In-app Accept: SCOUT opens the campaign's Amazon page (the user's logged-in
+  // session) and clicks Accept — no tab-hopping. On success we record it via the
+  // upserting mark-accepted route so the badge sticks even with no prior row.
+  const [accepting, setAccepting] = useState(false)
+  const [acceptedLocal, setAcceptedLocal] = useState(false)
+  const isAccepted = !!status?.accepted || acceptedLocal
+  const doAccept = useCallback(async () => {
+    if (!c.repAsin) { toast.error('No product ASIN on this campaign yet.'); return }
+    setAccepting(true)
+    const tId = `cc-accept-${c.campaignId}`
+    toast.loading('Accepting on Amazon via SCOUT…', { id: tId, duration: Infinity })
+    try {
+      const res = await requestAcceptCampaign(c.detailsUrl)
+      if (!res.ok) {
+        const msg = res.error === 'not-installed'
+          ? 'SCOUT extension not detected. Install/enable it and open Amazon Creator Connections, then try again.'
+          : res.error === 'timeout'
+            ? 'SCOUT timed out. Make sure you’re logged into Amazon, then try again.'
+            : res.reason || res.error || 'Couldn’t accept automatically — use “Open on Amazon”.'
+        toast.error(msg, { id: tId, duration: 8_000 })
+        return
+      }
+      // Record it (upsert — carries the catalog ids so status sticks).
+      void fetch('/api/campaigns/mark-accepted', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ asin: c.repAsin, campaignId: c.campaignId, detailsUrl: c.detailsUrl, brand: c.brand, commissionPct: c.commissionPct, productTitle: c.name }),
+      }).catch(() => {})
+      setAcceptedLocal(true)
+      toast.success(res.already ? 'Already accepted — you’re in.' : 'Accepted. You can message the brand or make a post.', { id: tId, duration: 6_000 })
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Accept failed', { id: tId, duration: 8_000 })
+    } finally { setAccepting(false) }
+  }, [c.repAsin, c.campaignId, c.detailsUrl, c.brand, c.commissionPct, c.name])
   return (
     <div className="card p-4 flex flex-col gap-3">
       <div className="flex gap-3">
@@ -124,8 +158,8 @@ function CampaignCard({ c, status, onMessage }: { c: Campaign; status?: Campaign
             {c.isFull && <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold text-[#b3261e] bg-[#ff3b30]/12">FULL</span>}
             {endingSoon && !c.isFull && <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold text-[#b3261e] bg-[#ff3b30]/12">Ends {c.daysLeft === 0 ? 'today' : 'tomorrow'}</span>}
             {status?.posted && <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold text-[#1c7a35] bg-[#34c759]/15 inline-flex items-center gap-0.5"><CheckCircle2 size={10} /> Posted</span>}
-            {status?.accepted && !status?.posted && <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold text-[#7C3AED] bg-[#7C3AED]/12">Accepted</span>}
-            {status?.messaged && !status?.accepted && !status?.posted && <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold text-[#8a6d00] bg-[#ffcc00]/15">Messaged</span>}
+            {isAccepted && !status?.posted && <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold text-[#7C3AED] bg-[#7C3AED]/12">Accepted</span>}
+            {status?.messaged && !isAccepted && !status?.posted && <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold text-[#8a6d00] bg-[#ffcc00]/15">Messaged</span>}
           </div>
           <p className="text-[11px] text-[var(--text-3)] truncate">{c.brand || 'Unknown brand'}</p>
           <p className="text-sm font-medium text-[var(--text)] leading-snug line-clamp-2">{c.name || c.repAsin}</p>
@@ -163,23 +197,37 @@ function CampaignCard({ c, status, onMessage }: { c: Campaign; status?: Campaign
         {c.daysLeft != null && c.daysLeft > 1 && <span className="inline-flex items-center gap-1"><Clock size={12} /> {c.daysLeft}d left</span>}
       </div>
 
-      <div className="flex items-center gap-2 mt-auto pt-1">
-        {postUrl ? (
-          <a href={postUrl} target="_blank" rel="noopener noreferrer" className="btn-secondary flex items-center gap-1.5 text-xs flex-1 justify-center">
-            <CheckCircle2 size={13} className="text-[#34c759]" /> View post
-          </a>
+      <div className="flex flex-col gap-2 mt-auto pt-1">
+        {/* Accept — SCOUT clicks Accept on Amazon in the user's session, no
+            tab-hopping. Once accepted, a subtle confirmation replaces it. */}
+        {isAccepted ? (
+          <div className="flex items-center gap-1.5 text-xs font-medium text-[#7C3AED]">
+            <Handshake size={13} /> Accepted on Amazon
+          </div>
         ) : (
-          <button onClick={() => makePost()} disabled={gen || c.isFull} className="btn-primary flex items-center gap-1.5 text-xs flex-1 justify-center disabled:opacity-50"
-            title={c.isFull ? 'Campaign is full — no bounty to earn' : 'Scrape, write and publish a blog post for this product (~1 min)'}>
-            {gen ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />} {gen ? 'Publishing…' : 'Make blog post'}
+          <button onClick={doAccept} disabled={accepting || c.isFull} className="btn-secondary w-full flex items-center gap-1.5 text-xs justify-center disabled:opacity-50"
+            title={c.isFull ? 'Campaign is full — no spot to accept' : 'Accept this campaign on Amazon via SCOUT — no tab-hopping'}>
+            {accepting ? <Loader2 size={13} className="animate-spin" /> : <Handshake size={13} />} {accepting ? 'Accepting via SCOUT…' : 'Accept campaign'}
           </button>
         )}
-        <button onClick={() => onMessage(c)} disabled={c.isFull} className="btn-secondary flex items-center gap-1.5 text-xs disabled:opacity-50" title="Draft + send a pitch to the brand via SCOUT">
-          <Mail size={13} />
-        </button>
-        <a href={c.detailsUrl} target="_blank" rel="noopener noreferrer" className="btn-secondary flex items-center gap-1.5 text-xs" title="Open the campaign on Amazon Creator Connections">
-          <ExternalLink size={13} />
-        </a>
+        <div className="flex items-center gap-2">
+          {postUrl ? (
+            <a href={postUrl} target="_blank" rel="noopener noreferrer" className="btn-secondary flex items-center gap-1.5 text-xs flex-1 justify-center">
+              <CheckCircle2 size={13} className="text-[#34c759]" /> View post
+            </a>
+          ) : (
+            <button onClick={() => makePost()} disabled={gen || c.isFull} className="btn-primary flex items-center gap-1.5 text-xs flex-1 justify-center disabled:opacity-50"
+              title={c.isFull ? 'Campaign is full — no bounty to earn' : 'Scrape, write and publish a blog post for this product (~1 min)'}>
+              {gen ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />} {gen ? 'Publishing…' : 'Make blog post'}
+            </button>
+          )}
+          <button onClick={() => onMessage(c)} disabled={c.isFull} className="btn-secondary flex items-center gap-1.5 text-xs disabled:opacity-50" title="Draft + send a pitch to the brand via SCOUT">
+            <Mail size={13} />
+          </button>
+          <a href={c.detailsUrl} target="_blank" rel="noopener noreferrer" className="btn-secondary flex items-center gap-1.5 text-xs" title="Open the campaign on Amazon Creator Connections">
+            <ExternalLink size={13} />
+          </a>
+        </div>
       </div>
     </div>
   )
