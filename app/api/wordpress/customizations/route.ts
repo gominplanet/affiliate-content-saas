@@ -1,24 +1,40 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { getWordPressCredentials } from '@/lib/wordpress-sites'
+import { getWordPressCredentials, getSiteCustomizations, saveSiteCustomizations } from '@/lib/wordpress-sites'
 import { tryWpProxy } from '@/lib/wp-proxy'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 
-export async function GET() {
+export async function GET(req: Request) {
   const supabase = await createServerClient()
   // 2026-06-09 Phase 2 (VA): customizations belong to the owner's WP.
   const auth = await getAuthAndOwner(supabase)
   if (auth.error) return auth.error
   const { ownerId } = auth
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data } = await supabase
-    .from('integrations')
-    .select('blog_customizations')
-    .eq('user_id', ownerId)
-    .single()
+  // Per-site (migration 221): resolve the Customize Blog set for the user's
+  // ACTIVE blog (the topbar switcher's default site). Optional ?siteId targets
+  // a specific blog. Falls back to the account-level set while a blog hasn't
+  // been customized yet, so nothing changes for existing single-site users.
+  const url = new URL(req.url)
+  const siteId = url.searchParams.get('siteId')
+  const sc = await getSiteCustomizations(supabase, ownerId, siteId)
+  if (!sc) return NextResponse.json({})
 
-  return NextResponse.json(data?.blog_customizations ?? {})
+  // Return the blog's own set, plus a `_site` block the Customize page reads for
+  // per-blog identity (which blog this is, its logo/banner override, and the
+  // account defaults it inherits from when an override is empty).
+  return NextResponse.json({
+    ...sc.blogCustomizations,
+    _site: {
+      id: sc.siteId,
+      label: sc.siteLabel,
+      isLegacy: sc.isLegacy,
+      logoUrl: sc.logoUrl ?? '',
+      headerBannerUrl: sc.headerBannerUrl ?? '',
+      accountLogoUrl: sc.accountLogoUrl ?? '',
+      accountBannerUrl: sc.accountBannerUrl ?? '',
+    },
+  })
 }
 
 export async function POST(req: Request) {
@@ -27,22 +43,33 @@ export async function POST(req: Request) {
   if (auth.error) return auth.error
   const { ownerId } = auth
 
-  const body = await req.json() as Record<string, unknown> & { siteId?: string | null }
-  // Strip siteId from the saved customizations — it's a routing param, not
-  // customization data. The rest of the body is the actual customizations.
+  const body = await req.json() as Record<string, unknown> & {
+    siteId?: string | null
+    /** Per-site branding overrides (migration 221). '' clears → inherit the
+     *  Brand Profile default; undefined leaves the site's value untouched. */
+    logoUrl?: string
+    headerBannerUrl?: string
+  }
+  // Strip routing/override params from the saved customizations — they're not
+  // part of the Customize Blog set. The rest of the body is the actual set.
   const siteId = body.siteId ?? null
+  const perSiteLogo = typeof body.logoUrl === 'string' ? body.logoUrl : undefined
+  const perSiteBanner = typeof body.headerBannerUrl === 'string' ? body.headerBannerUrl : undefined
   const customizations = { ...body }
   delete (customizations as { siteId?: unknown }).siteId
+  delete (customizations as { logoUrl?: unknown }).logoUrl
+  delete (customizations as { headerBannerUrl?: unknown }).headerBannerUrl
+  delete (customizations as { _site?: unknown })._site
 
-  // Save to Supabase (per-user, applies to whichever site they push to).
-  // `as never` here is the same boundary cast used elsewhere for JSONB cols
-  // — Json typing rejects arbitrary { [x: string]: unknown } at write time.
-  const { error: dbError } = await supabase
-    .from('integrations')
-    .update({ blog_customizations: customizations as never })
-    .eq('user_id', ownerId)
-
-  if (dbError) return NextResponse.json({ error: dbError.message }, { status: 500 })
+  // Save per-site (migration 221): the Customize Blog set + branding land on the
+  // targeted blog's wordpress_sites row (or the account-level integrations row
+  // for a pure-legacy single-site user). Each blog keeps its own identity.
+  const saved = await saveSiteCustomizations(supabase, ownerId, siteId, {
+    blogCustomizations: customizations,
+    logoUrl: perSiteLogo,
+    headerBannerUrl: perSiteBanner,
+  })
+  if (!saved.ok) return NextResponse.json({ error: saved.error }, { status: 500 })
 
   // Push to WordPress — multi-site: target the specific site if siteId
   // provided; default site otherwise.
@@ -86,20 +113,15 @@ export async function POST(req: Request) {
       // Never touch `profile.*` either — that's Brand Profile territory.
       delete stripped.profile
 
-      // Source-of-truth banner/logo from brand_profiles (same as
-      // sync-brand). Customize Blog's `about` only carries {logoUrl,
-      // headerBg} — it has NO headerBannerUrl field — so a shallow merge
-      // would silently drop the wide header banner the user set in Brand
-      // Profile. We seed + re-assert it here so no Customize save can ever
-      // revert the banner to the small logo again.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: brandRow } = await supabase
-        .from('brand_profiles')
-        .select('header_banner_url, logo_url')
-        .eq('user_id', ownerId)
-        .single()
-      const storedBannerUrl = (brandRow?.header_banner_url as string | null)?.trim() || null
-      const storedLogoUrl = (brandRow?.logo_url as string | null)?.trim() || null
+      // Effective banner/logo for THIS blog (migration 221): the site's own
+      // per-site override wins; otherwise it inherits the account default from
+      // brand_profiles. Customize Blog's `about` only carries {logoUrl,
+      // headerBg} — it has NO headerBannerUrl field — so a shallow merge would
+      // silently drop the wide header banner. We seed + re-assert the resolved
+      // per-site value here so no Customize save can ever revert it.
+      const effBrand = await getSiteCustomizations(supabase, ownerId, siteId)
+      const storedLogoUrl = (effBrand?.logoUrl || effBrand?.accountLogoUrl) || null
+      const storedBannerUrl = (effBrand?.headerBannerUrl || effBrand?.accountBannerUrl) || null
 
       // DEEP-merge `about` and `footer` so a partial client payload can never
       // DROP keys that live in the WP option (most importantly

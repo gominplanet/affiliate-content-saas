@@ -453,6 +453,179 @@ export async function ensureLegacySiteInTable(
   }
 }
 
+// ─── per-site Customize Blog + branding (Phase 3, migration 221) ─────────────
+
+/** The resolved per-site Customize Blog set + branding for one blog.
+ *  `blogCustomizations` is the site's own set, falling back to the
+ *  account-level integrations.blog_customizations while a site hasn't been
+ *  customized yet. logo/banner are the per-site OVERRIDES (null = inherit the
+ *  account default), and accountLogoUrl/accountBannerUrl are those defaults so
+ *  the UI can show "inheriting X" and the WP push can resolve an effective
+ *  value. */
+export interface SiteCustomizations {
+  siteId: string
+  siteLabel: string
+  /** True when there's no wordpress_sites row (pure-legacy user on the
+   *  integrations bridge). Per-site logo/banner overrides don't apply — the
+   *  single site IS the account. */
+  isLegacy: boolean
+  blogCustomizations: Record<string, unknown>
+  logoUrl: string | null
+  headerBannerUrl: string | null
+  accountLogoUrl: string | null
+  accountBannerUrl: string | null
+}
+
+/** Read the effective Customize Blog set + branding for a user's active blog
+ *  (or a specific site when siteId is given). Resolves through the same
+ *  default-site path the rest of the app uses, so it always targets whatever
+ *  blog the topbar switcher currently points at. Returns null only when the
+ *  user has no WordPress connection at all. */
+export async function getSiteCustomizations(
+  supabase: Client,
+  userId: string,
+  siteId?: string | null,
+): Promise<SiteCustomizations | null> {
+  const site = siteId ? await getSite(supabase, userId, siteId) : await getDefaultSite(supabase, userId)
+
+  // Account-level defaults (fallbacks). Both are per-user source-of-truth.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: brandRow } = await (supabase as any)
+    .from('brand_profiles')
+    .select('logo_url, header_banner_url')
+    .eq('user_id', userId)
+    .maybeSingle()
+  const accountLogoUrl = (brandRow?.logo_url as string | null)?.trim() || null
+  const accountBannerUrl = (brandRow?.header_banner_url as string | null)?.trim() || null
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const readAccountCustomizations = async (): Promise<Record<string, unknown>> => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data } = await (supabase as any)
+      .from('integrations')
+      .select('blog_customizations')
+      .eq('user_id', userId)
+      .maybeSingle()
+    const bc = data?.blog_customizations
+    return bc && typeof bc === 'object' ? (bc as Record<string, unknown>) : {}
+  }
+
+  // No site row at all, or the legacy integrations bridge → single-site user.
+  if (!site || site.id === 'legacy') {
+    if (!site) return null
+    return {
+      siteId: site.id,
+      siteLabel: site.label,
+      isLegacy: true,
+      blogCustomizations: await readAccountCustomizations(),
+      logoUrl: null,
+      headerBannerUrl: null,
+      accountLogoUrl,
+      accountBannerUrl,
+    }
+  }
+
+  // Real wordpress_sites row → read its own per-site values, falling back to
+  // the account-level defaults where a per-site value hasn't been set yet.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: row } = await (supabase as any)
+    .from('wordpress_sites')
+    .select('blog_customizations, logo_url, header_banner_url')
+    .eq('user_id', userId)
+    .eq('id', site.id)
+    .maybeSingle()
+
+  const perSite = row?.blog_customizations
+  const blogCustomizations = perSite && typeof perSite === 'object'
+    ? (perSite as Record<string, unknown>)
+    : await readAccountCustomizations()
+
+  return {
+    siteId: site.id,
+    siteLabel: site.label,
+    isLegacy: false,
+    blogCustomizations,
+    logoUrl: (row?.logo_url as string | null)?.trim() || null,
+    headerBannerUrl: (row?.header_banner_url as string | null)?.trim() || null,
+    accountLogoUrl,
+    accountBannerUrl,
+  }
+}
+
+/** Persist the Customize Blog set + per-site branding for one blog. Writes to
+ *  the wordpress_sites row for a real site; falls back to the account-level
+ *  integrations.blog_customizations for a pure-legacy user (single site = the
+ *  account). logo/banner are per-site overrides: pass a string to set, '' to
+ *  clear (inherit the account default), or undefined to leave unchanged. */
+export async function saveSiteCustomizations(
+  supabase: Client,
+  userId: string,
+  siteId: string | null | undefined,
+  input: {
+    blogCustomizations: Record<string, unknown>
+    logoUrl?: string
+    headerBannerUrl?: string
+  },
+): Promise<{ ok: true; siteId: string; isLegacy: boolean } | { ok: false; error: string }> {
+  const site = siteId ? await getSite(supabase, userId, siteId) : await getDefaultSite(supabase, userId)
+  if (!site) return { ok: false, error: 'No WordPress site connected.' }
+
+  // MERGE the posted slice over the blog's existing set (shallow, top-level).
+  // Different pages own different top-level sections — Customize owns
+  // about/footer/pickOfDay/layout/…, Ads owns sidebar/incontent/homepageAds,
+  // Brand Inquiries owns brandCta — and each posts ONLY its own keys. A
+  // straight replace would let an Ads save wipe Pick of the Day (and vice
+  // versa); merging preserves every other page's section.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const readExisting = async (): Promise<Record<string, unknown>> => {
+    const sc = await getSiteCustomizations(supabase, userId, site.id)
+    return sc?.blogCustomizations ?? {}
+  }
+  const merged = { ...(await readExisting()), ...input.blogCustomizations }
+
+  // Legacy bridge (no wordpress_sites row): keep the old single-site behavior —
+  // store the set on integrations. Per-site logo/banner don't apply.
+  if (site.id === 'legacy') {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (supabase as any)
+      .from('integrations')
+      .update({ blog_customizations: merged as never })
+      .eq('user_id', userId)
+    if (error) return { ok: false, error: error.message }
+    return { ok: true, siteId: 'legacy', isLegacy: true }
+  }
+
+  // '' clears the override (inherit the account default) → store NULL.
+  // undefined leaves the column untouched.
+  const patch: Record<string, unknown> = { blog_customizations: merged }
+  if (input.logoUrl !== undefined) patch.logo_url = input.logoUrl.trim() || null
+  if (input.headerBannerUrl !== undefined) patch.header_banner_url = input.headerBannerUrl.trim() || null
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any)
+    .from('wordpress_sites')
+    .update(patch as never)
+    .eq('user_id', userId)
+    .eq('id', site.id)
+  if (error) return { ok: false, error: error.message }
+
+  // Mirror the ACTIVE blog's set into integrations.blog_customizations. Many
+  // server + client readers still read that legacy column directly (ads page,
+  // brand-inquiry routing, blog generation postMeta, purge-cache). Keeping it in
+  // lock-step with the default site — the app's single "active blog" — means
+  // every one of them reflects the blog the user is currently working on,
+  // without having to migrate each reader individually. (active-site switch does
+  // the same mirror when the user changes blogs.)
+  if (site.isDefault) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any)
+      .from('integrations')
+      .update({ blog_customizations: merged as never })
+      .eq('user_id', userId)
+  }
+  return { ok: true, siteId: site.id, isLegacy: false }
+}
+
 // ─── internals ─────────────────────────────────────────────────────────────
 
 /** Trim trailing slash + lowercase host so two writes of the same site

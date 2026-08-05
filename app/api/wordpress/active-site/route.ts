@@ -37,7 +37,7 @@ export async function POST(req: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: site, error: siteErr } = await (supabase as any)
     .from('wordpress_sites')
-    .select('id, url, username, app_password, api_token, content_only, cta_style')
+    .select('id, url, username, app_password, api_token, content_only, cta_style, blog_customizations')
     .eq('user_id', ownerId)
     .eq('id', siteId)
     .maybeSingle()
@@ -49,18 +49,26 @@ export async function POST(req: Request) {
   if (!def.ok) return NextResponse.json({ error: def.error }, { status: 400 })
 
   // 2) Mirror into the legacy integrations columns so the topbar + every
-  //    not-yet-migrated route targets this blog too.
+  //    not-yet-migrated route targets this blog too. blog_customizations is
+  //    mirrored ONLY when the target blog has its own set — if it's still null
+  //    (never customized), it inherits whatever's already in integrations, which
+  //    matches getSiteCustomizations' fallback. This keeps every reader of
+  //    integrations.blog_customizations (ads page, brand-inquiry, generation,
+  //    purge-cache) pointed at the active blog's Customize Blog set.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const intPatch: Record<string, unknown> = {
+    wordpress_url: site.url,
+    wordpress_username: site.username,
+    wordpress_app_password: site.app_password,
+    wordpress_api_token: site.api_token,
+    content_only: site.content_only ?? false,
+    cta_style: site.cta_style === 'link' ? 'link' : 'button',
+  }
+  if (site.blog_customizations != null) intPatch.blog_customizations = site.blog_customizations
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error: intErr } = await (supabase as any)
     .from('integrations')
-    .update({
-      wordpress_url: site.url,
-      wordpress_username: site.username,
-      wordpress_app_password: site.app_password,
-      wordpress_api_token: site.api_token,
-      content_only: site.content_only ?? false,
-      cta_style: site.cta_style === 'link' ? 'link' : 'button',
-    })
+    .update(intPatch)
     .eq('user_id', ownerId)
   if (intErr) return NextResponse.json({ error: intErr.message }, { status: 500 })
 
