@@ -15,6 +15,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier, type Tier } from '@/lib/tier'
 import { canBrowseDealRadar } from '@/lib/feature-access'
 import { toUserMessage } from '@/lib/friendly-error'
+import { campaignFullness, daysUntil } from '@/lib/cc-intelligence'
 
 export const runtime = 'nodejs'
 
@@ -69,6 +70,10 @@ interface DealRow {
   campaign_commission_pct: number | null
   campaign_brand: string | null
   campaign_details_url: string | null
+  campaign_available_slot: number | null
+  campaign_total_slot: number | null
+  campaign_budget_remaining: number | null
+  campaign_ends_at: string | null
   price_avg90_cents: number | null
   price_low_cents: number | null
   deal_quality: string | null
@@ -288,11 +293,22 @@ function toClient(r: DealRow, amazonTag: string, postedUrl: string | null = null
     dealType: lightningExpired ? 'price_drop' : r.deal_type,
     lightningEndsAt: lightningExpired ? null : r.lightning_ends_at,
     amazonUrl,
-    campaign: r.campaign_commission_pct != null ? {
-      commissionPct: Number(r.campaign_commission_pct),
-      brand: r.campaign_brand,
-      detailsUrl: r.campaign_details_url,
-    } : null,
+    campaign: r.campaign_commission_pct != null ? (() => {
+      // CC intelligence (migration 223): fullness + days-left so a deal card can
+      // badge "3 spots left", "full", "ends tomorrow" on its campaign.
+      const f = campaignFullness(r.campaign_available_slot, r.campaign_total_slot)
+      return {
+        commissionPct: Number(r.campaign_commission_pct),
+        brand: r.campaign_brand,
+        detailsUrl: r.campaign_details_url,
+        spotsLeft: f.spotsLeft,
+        totalSlots: f.totalSlots,
+        pctFilled: f.pctFilled,
+        isFull: f.isFull,
+        daysLeft: daysUntil(r.campaign_ends_at),
+        stillFunding: r.campaign_budget_remaining == null || Number(r.campaign_budget_remaining) > 0,
+      }
+    })() : null,
     verdict: r.deal_quality ? {
       quality: r.deal_quality,          // excellent | genuine | fair | weak
       label: r.lowest_label,            // "All-time low" / "32% below its usual price"

@@ -27,7 +27,11 @@ import { type Tier } from '@/lib/tier'
 import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
 import { canUseDealRadar, canBrowseDealRadar } from '@/lib/feature-access'
 
-interface DealCampaign { commissionPct: number; brand: string | null; detailsUrl: string | null }
+interface DealCampaign {
+  commissionPct: number; brand: string | null; detailsUrl: string | null
+  spotsLeft?: number | null; totalSlots?: number | null; pctFilled?: number | null
+  isFull?: boolean; daysLeft?: number | null; stillFunding?: boolean
+}
 interface DealVerdict { quality: string; label: string | null; typical: number | null; allTimeLow: number | null }
 interface Deal {
   asin: string
@@ -688,10 +692,27 @@ function DealCard({ deal: d, onQuickPost, selected = false, onToggleSelect, lock
         )}
         {d.verdict && <VerdictBadge verdict={d.verdict} />}
         {d.campaign && (
-          <a href={d.campaign.detailsUrl || '#'} target="_blank" rel="noopener noreferrer"
-             className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:underline">
-            <Sparkles size={12} /> +{d.campaign.commissionPct}% Creator Connections
-          </a>
+          <div className="flex flex-col gap-0.5">
+            <a href={d.campaign.detailsUrl || '#'} target="_blank" rel="noopener noreferrer"
+               className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:underline">
+              <Sparkles size={12} /> +{d.campaign.commissionPct}% Creator Connections
+            </a>
+            {/* CC intelligence: spots left / full / ending — the "should I bother" line */}
+            <div className="flex items-center gap-1.5 flex-wrap text-[10px]">
+              {d.campaign.isFull ? (
+                <span className="px-1.5 py-0.5 rounded font-semibold text-[#b3261e] bg-[#ff3b30]/12">Campaign full</span>
+              ) : d.campaign.spotsLeft != null && d.campaign.totalSlots != null ? (
+                <span className={`px-1.5 py-0.5 rounded font-medium ${(d.campaign.pctFilled ?? 0) > 80 ? 'text-[#8a6d00] bg-[#ffcc00]/15' : 'text-[var(--text-3)] bg-[var(--surface-2)]'}`}>
+                  {d.campaign.spotsLeft.toLocaleString()} spots left
+                </span>
+              ) : null}
+              {!d.campaign.isFull && d.campaign.daysLeft != null && d.campaign.daysLeft <= 2 && (
+                <span className="px-1.5 py-0.5 rounded font-semibold text-[#b3261e] bg-[#ff3b30]/12">
+                  Ends {d.campaign.daysLeft <= 0 ? 'today' : d.campaign.daysLeft === 1 ? 'tomorrow' : `in ${d.campaign.daysLeft}d`}
+                </span>
+              )}
+            </div>
+          </div>
         )}
         <div className="mt-auto pt-2 space-y-1.5">
           {d.postedUrl && gen !== 'done' && (
