@@ -3,24 +3,26 @@
 -- Each connected blog gets its OWN identity + Customize Blog set, instead of one
 -- account-wide value shared by every site. This is what lets a user run a
 -- remote-control-car blog and a vacuum blog off the same account with different
--- banners, logos, Pick of the Day, footer links, ad slots, layout toggles, etc.
+-- banners, logos, Pick of the Day, footer links, ad slots, meta tags, etc.
 --
 -- WHERE IT LIVES
 --   - blog_customizations: already a reserved jsonb column on wordpress_sites
 --     (migration 085 anticipated this). We just start writing/reading it here.
---   - logo_url / header_banner_url: NEW per-site columns added below. The
---     account-level defaults stay in brand_profiles and act as the fallback when
---     a site hasn't set its own.
+--   - logo_url / header_banner_url: NEW per-site columns added below. NULL means
+--     "inherit the account default from brand_profiles". They stay NULL here so
+--     every blog keeps inheriting the account logo/banner until the user sets a
+--     per-blog one on the Customize page.
 --
--- FALLBACK MODEL (no data loss)
---   - A site row whose blog_customizations is NULL inherits the account-level
---     integrations.blog_customizations (the old single value). A site whose
---     logo_url/header_banner_url is NULL inherits brand_profiles.
---   - So existing users see ZERO change until they customize a specific blog.
---   - The backfill below seeds each user's DEFAULT site with their current
---     account-level values, so "what they have today" becomes that blog's own
---     settings explicitly (and any second blog they add inherits the account
---     default until they change it).
+-- INDEPENDENCE (no data loss)
+--   - We seed EVERY existing site's blog_customizations with the current
+--     account-level value (integrations.blog_customizations) so each blog starts
+--     exactly where it is today, then they diverge independently as the user
+--     edits each one. Editing one blog never touches another.
+--   - The app also seeds this lazily on read as a safety net, so it works even
+--     before this migration runs — but running it does the backfill in bulk and,
+--     critically, adds the logo/banner columns the per-blog logo feature needs.
+--   - Guarded by "is null", so re-running never clobbers a blog the user has
+--     since customized.
 
 -- ── New per-site branding columns ───────────────────────────────────────────
 alter table public.wordpress_sites
@@ -33,31 +35,14 @@ comment on column public.wordpress_sites.header_banner_url is
   'Per-site wide header banner override. NULL = inherit brand_profiles.header_banner_url.';
 comment on column public.wordpress_sites.blog_customizations is
   'Per-site Customize Blog set (Pick of the Day, footer links, ad slots, layout '
-  'toggles, newsletter inline, etc.). NULL = inherit integrations.blog_customizations.';
+  'toggles, meta tags, analytics, newsletter inline, etc.). Independent per blog.';
 
--- ── Backfill: seed each user''s DEFAULT site with their current values ───────
--- Only fills where the per-site value is still NULL, so re-running never
+-- ── Backfill: give EVERY site its own copy of the current settings ──────────
+-- Only fills where the site''s value is still NULL, so re-running never
 -- clobbers a blog the user has since customized.
 update public.wordpress_sites ws
 set blog_customizations = i.blog_customizations
 from public.integrations i
 where i.user_id = ws.user_id
-  and ws.is_default = true
   and ws.blog_customizations is null
   and i.blog_customizations is not null;
-
-update public.wordpress_sites ws
-set logo_url = nullif(btrim(bp.logo_url), '')
-from public.brand_profiles bp
-where bp.user_id = ws.user_id
-  and ws.is_default = true
-  and ws.logo_url is null
-  and nullif(btrim(bp.logo_url), '') is not null;
-
-update public.wordpress_sites ws
-set header_banner_url = nullif(btrim(bp.header_banner_url), '')
-from public.brand_profiles bp
-where bp.user_id = ws.user_id
-  and ws.is_default = true
-  and ws.header_banner_url is null
-  and nullif(btrim(bp.header_banner_url), '') is not null;

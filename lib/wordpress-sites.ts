@@ -525,26 +525,55 @@ export async function getSiteCustomizations(
     }
   }
 
-  // Real wordpress_sites row → read its own per-site values, falling back to
-  // the account-level defaults where a per-site value hasn't been set yet.
+  // Read the site's own row. Try the full select first; if migration 221's
+  // branding columns aren't present yet, fall back to the always-present column
+  // so the feature DEGRADES (per-site logo just inherits the account default
+  // until the migration runs) instead of hard-failing every read + save.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: row } = await (supabase as any)
+  let row: any = null
+  const full = await (supabase as any)
     .from('wordpress_sites')
     .select('blog_customizations, logo_url, header_banner_url')
     .eq('user_id', userId)
     .eq('id', site.id)
     .maybeSingle()
+  if (full.error) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const basic = await (supabase as any)
+      .from('wordpress_sites')
+      .select('blog_customizations')
+      .eq('user_id', userId)
+      .eq('id', site.id)
+      .maybeSingle()
+    row = basic.data
+  } else {
+    row = full.data
+  }
 
-  const perSite = row?.blog_customizations
-  const blogCustomizations = perSite && typeof perSite === 'object'
-    ? (perSite as Record<string, unknown>)
-    : await readAccountCustomizations()
+  let perSite = row?.blog_customizations as Record<string, unknown> | null | undefined
+  // Independence guarantee: EVERY blog owns its OWN set. The first time a blog
+  // is read without one, seed it from the account-level set (a ONE-TIME copy)
+  // and persist it to this blog's row — so from then on, editing one blog never
+  // affects another. Without this, two blogs that both have a null row would
+  // read the SAME shared value and look "linked" (and since the default site
+  // follows whichever blog is active, even the active blog would share it).
+  if (!perSite || typeof perSite !== 'object') {
+    const seed = await readAccountCustomizations()
+    perSite = seed
+    // Best-effort persist; if it fails we simply seed again on the next read.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any)
+      .from('wordpress_sites')
+      .update({ blog_customizations: seed } as never)
+      .eq('user_id', userId)
+      .eq('id', site.id)
+  }
 
   return {
     siteId: site.id,
     siteLabel: site.label,
     isLegacy: false,
-    blogCustomizations,
+    blogCustomizations: perSite,
     logoUrl: (row?.logo_url as string | null)?.trim() || null,
     headerBannerUrl: (row?.header_banner_url as string | null)?.trim() || null,
     accountLogoUrl,
@@ -602,11 +631,25 @@ export async function saveSiteCustomizations(
   if (input.headerBannerUrl !== undefined) patch.header_banner_url = input.headerBannerUrl.trim() || null
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase as any)
+  let { error } = await (supabase as any)
     .from('wordpress_sites')
     .update(patch as never)
     .eq('user_id', userId)
     .eq('id', site.id)
+  // If migration 221's branding columns aren't present yet, the update above
+  // errors on an unknown column. Retry persisting JUST the Customize set (that
+  // column has existed since migration 085) so a save NEVER hard-fails — the
+  // per-site logo/banner just won't stick until the migration runs. This is why
+  // saves were silently 500-ing and nothing reached the live site.
+  if (error && (patch.logo_url !== undefined || patch.header_banner_url !== undefined)) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const retry = await (supabase as any)
+      .from('wordpress_sites')
+      .update({ blog_customizations: merged as never })
+      .eq('user_id', userId)
+      .eq('id', site.id)
+    error = retry.error
+  }
   if (error) return { ok: false, error: error.message }
 
   // Mirror the ACTIVE blog's set into integrations.blog_customizations. Many
