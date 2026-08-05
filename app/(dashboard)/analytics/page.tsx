@@ -50,9 +50,22 @@ interface StorefrontProduct {
   pieces: Array<{ type: 'blog' | 'youtube'; title: string; url: string | null }>
   amazonUrl: string
 }
+interface ContentRoi {
+  type: 'blog' | 'youtube'
+  title: string
+  url: string | null
+  asin: string
+  productTitle: string | null
+  productImage: string | null
+  clicks: number
+  estEarnings: number | null
+  productEarnings: number | null
+  clickSharePct: number | null
+}
 interface StorefrontResponse {
   connected: boolean
   period: 'weekly' | 'monthly'
+  content: ContentRoi[]
   products: StorefrontProduct[]
   totals: { products: number; clicks: number; topClicks: number; revenue: number; commission: number }
   lastSyncedAt: string | null
@@ -240,6 +253,48 @@ export default function AnalyticsPage() {
           bg="bg-[#ff9500]/8"
         />
       </div>
+
+      {/* Top-earning content — the MVP-only view: money mapped onto YOUR posts +
+          videos. Clicks are real; $ is an estimate (each product's real earnings
+          split by the click share each piece drove). This is the thing Amazon
+          can't do — it doesn't know your content exists. */}
+      {store?.content && store.content.length > 0 && (
+        <div className="card p-5 mb-6">
+          <div className="mb-4">
+            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Top-earning content</p>
+            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Your posts + videos ranked by what they earn. Clicks are real; the dollar figure is an estimate — each product&apos;s real earnings split by the share of its clicks your content drove.</p>
+          </div>
+          <div className="flex flex-col">
+            {store.content.slice(0, 20).map((c, i) => {
+              const Icon = c.type === 'youtube' ? Youtube : Globe
+              return (
+                <div key={i} className="flex items-center gap-3 py-3 border-b border-gray-100 dark:border-white/5 last:border-b-0">
+                  <span className="text-[11px] font-semibold text-[#86868b] w-5 tabular-nums">{i + 1}</span>
+                  <Icon size={15} className={c.type === 'youtube' ? 'text-[#ff3b30] flex-shrink-0' : 'text-[#7C3AED] flex-shrink-0'} />
+                  <div className="flex-1 min-w-0">
+                    <a href={c.url || '#'} target="_blank" rel="noopener noreferrer" className={`text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] truncate hover:text-[#7C3AED] block ${!c.url ? 'pointer-events-none' : ''}`}>{c.title}</a>
+                    <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] truncate">
+                      for {c.productTitle || c.asin}{c.clickSharePct != null && <> · drove {c.clickSharePct}% of its clicks</>}
+                    </p>
+                  </div>
+                  <div className="text-right w-14 flex-shrink-0">
+                    <span className="text-sm font-semibold tabular-nums text-[#1d1d1f] dark:text-[#f5f5f7]">{c.clicks.toLocaleString()}</span>
+                    <span className="block text-[10px] text-[#86868b]">clicks</span>
+                  </div>
+                  <div className="text-right w-20 flex-shrink-0">
+                    {c.estEarnings != null
+                      ? <><span className="text-sm font-semibold tabular-nums text-[#1c7a35]">~${c.estEarnings.toFixed(2)}</span><span className="block text-[10px] text-[#86868b]">est. earned</span></>
+                      : <span className="text-xs text-[#86868b]">—</span>}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-4 leading-relaxed">
+            &ldquo;~$&rdquo; is estimated: each product&apos;s real Amazon earnings split across the content that drove its clicks. Only MVP can show this — Amazon reports money by product, never by your video or post. Sales sync from SCOUT; clicks from Geniuslink.
+          </p>
+        </div>
+      )}
 
       {/* Your products — per-ASIN rollup. Real clicks (Geniuslink) + real sales
           (SCOUT → storefront_earnings) + Keepa demand. The "storefront" view. */}
