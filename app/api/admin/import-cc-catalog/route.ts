@@ -245,6 +245,11 @@ export async function POST(request: Request) {
     // import already running mid-purge can't break.
     const useCursorPurge = typeof body.purgeAfter === 'string'
     let purged = 0
+    // Set when the purge DB function isn't applied yet (migration 220). We do
+    // NOT fail the whole merge for this: the upsert already landed every new
+    // campaign, so we finish and return a warning telling the admin to apply
+    // 220 for cleanup — instead of leaving the import looking broken.
+    let purgeMissing = false
 
     if (useCursorPurge) {
       const PURGE_SCAN = 5000
@@ -256,12 +261,7 @@ export async function POST(request: Request) {
         const { data, error } = await (admin as any).rpc('merge_cc_catalog_purge_cursor', { p_limit: PURGE_SCAN, p_after: cursor })
         if (error) {
           const missingFn = /could not find the function|does not exist|schema cache|PGRST202/i.test(error.message || '')
-          if (missingFn) {
-            return NextResponse.json({
-              error: 'The single-pass purge function is missing — run migration 220 in Supabase, then click Merge again.',
-              detail: error.message?.slice(0, 200), upserted, purgedSoFar: purged,
-            }, { status: 500 })
-          }
+          if (missingFn) { purgeMissing = true; break }
           console.error('[import-cc-catalog purge transient]', error.message)
           purgeTransient = true
           break
@@ -273,7 +273,7 @@ export async function POST(request: Request) {
         if (row?.last_id != null) cursor = String(row.last_id)
         if (scanned < PURGE_SCAN) { purgeDone = true; break } // reached the end of the table
       }
-      if (!purgeDone) {
+      if (!purgeDone && !purgeMissing) {
         // More table to walk (or a chunk timed out) — resume from the cursor.
         return NextResponse.json({ ok: true, done: false, staged: stagedCount ?? undefined, upserted, purging: true, purged, purgeAfter: cursor })
       }
@@ -286,12 +286,7 @@ export async function POST(request: Request) {
         const { data, error } = await (admin as any).rpc('merge_cc_catalog_purge_step', { p_limit: PURGE_BATCH })
         if (error) {
           const missingFn = /could not find the function|does not exist|schema cache|PGRST202/i.test(error.message || '')
-          if (missingFn) {
-            return NextResponse.json({
-              error: 'The chunked-purge function is missing — run migration 213 in Supabase, then click Merge again.',
-              detail: error.message?.slice(0, 200), upserted, purgedSoFar: purged,
-            }, { status: 500 })
-          }
+          if (missingFn) { purgeMissing = true; break }
           console.error('[import-cc-catalog purge transient]', error.message)
           purgeTransient = true
           break
@@ -300,7 +295,7 @@ export async function POST(request: Request) {
         purged += pn
         if (pn < PURGE_BATCH) break
       }
-      if (purgeTransient || pn >= PURGE_BATCH) {
+      if (!purgeMissing && (purgeTransient || pn >= PURGE_BATCH)) {
         return NextResponse.json({ ok: true, done: false, staged: stagedCount ?? undefined, upserted, purging: true, purged })
       }
     }
@@ -318,6 +313,9 @@ export async function POST(request: Request) {
       staged: stagedCount ?? undefined,
       upserted,
       purged,
+      warning: purgeMissing
+        ? 'Merge finished and all campaigns are live, but cleanup of fallen-out campaigns was skipped: the purge DB function isn’t installed. Run migration 220 in Supabase to enable it (nothing else is blocked).'
+        : undefined,
     })
   } catch (err) {
     console.error('[import-cc-catalog]', err instanceof Error ? err.message : err)
