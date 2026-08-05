@@ -28,7 +28,7 @@
 // worse capability. Use the Newsletter page to schedule a blast.
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import { Calendar, Loader2, X } from 'lucide-react'
 import type { SchedulableSocial, ScheduleMode } from '@/lib/schedule-types'
@@ -76,6 +76,16 @@ export interface ScheduleModalProps {
    *  "Include photos in the article" checkbox on the row. Ignored in cascade-
    *  only mode (the post already exists). Default true. */
   includeImages?: boolean
+  /** Lifts the "Include photos" toggle so the modal shows a live checkbox that
+   *  stays in sync with the card. When provided, the modal renders the checkbox
+   *  under "Post options"; when omitted, includeImages is used as a fixed value
+   *  (back-compat for any caller that doesn't lift it). Ignored in cascade mode. */
+  onIncludeImagesChange?: (v: boolean) => void
+  /** Extra per-post controls (custom blog thumbnail, category, tags) composed by
+   *  the parent card. They persist to the youtube_videos row, so they apply to
+   *  the scheduled generation. Rendered under "Post options". Cascade mode (the
+   *  post already exists) skips them. */
+  optionsSlot?: ReactNode
   /** Open/close control. Owned by the parent (the row). */
   open: boolean
   onClose: () => void
@@ -102,7 +112,7 @@ function defaultScheduleIso(): string {
 }
 
 export default function ScheduleModal({
-  videoId, videoTitle, connectedChannels, userTier, siteId, existingPostId, includeImages = true, open, onClose, onScheduled,
+  videoId, videoTitle, connectedChannels, userTier, siteId, existingPostId, includeImages = true, onIncludeImagesChange, optionsSlot, open, onClose, onScheduled,
 }: ScheduleModalProps) {
   const cascadeOnly = !!existingPostId
   // A channel is USABLE only when it's connected AND the user's tier allows it.
@@ -346,6 +356,29 @@ export default function ScheduleModal({
             </p>
             <p className="text-sm font-medium truncate">{videoTitle}</p>
           </div>
+
+          {/* Post options — mirror the card's Generate-now panel so a user who
+              schedules straight from the fork can still set photos, a custom
+              thumbnail, category and tags. The thumbnail/category/tags persist
+              to the video row and apply when the post generates for the schedule.
+              Skipped in cascade-only mode (the post already exists). */}
+          {!cascadeOnly && (onIncludeImagesChange || optionsSlot) && (
+            <div className="rounded-lg border p-3 space-y-2.5" style={{ borderColor: 'var(--border, rgba(255,255,255,0.08))', backgroundColor: 'var(--surface, rgba(255,255,255,0.03))' }}>
+              <p className="text-[11px] uppercase tracking-wider" style={{ color: 'var(--text-faint, rgba(255,255,255,0.5))' }}>Post options</p>
+              {onIncludeImagesChange && (
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={includeImages}
+                    onChange={(e) => onIncludeImagesChange(e.target.checked)}
+                    className="w-4 h-4 rounded accent-[#7C3AED]"
+                  />
+                  <span className="text-sm">Include photos in the article</span>
+                </label>
+              )}
+              {optionsSlot}
+            </div>
+          )}
 
           {/* Date / time picker */}
           <div>
