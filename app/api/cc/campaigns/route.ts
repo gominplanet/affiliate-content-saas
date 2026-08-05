@@ -80,14 +80,37 @@ export async function GET(request: NextRequest) {
     const hasSpots = searchParams.get('hasSpots') === '1'
     const hideJoined = searchParams.get('hideJoined') === '1'
     const hidePosted = searchParams.get('hidePosted') === '1'
+    // "Joined only" — the inverse of Hide joined: show ONLY campaigns this user
+    // has accepted. Mutually exclusive with the hide filters (client enforces).
+    const joinedOnly = searchParams.get('joinedOnly') === '1'
     const today = new Date().toISOString().slice(0, 10)
+
+    // Joined-only: gather this user's accepted ASINs to POSITIVELY filter the
+    // catalog down to them. Empty set → no joined campaigns (handled below).
+    let joinedAsins: string[] = []
+    if (joinedOnly) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: acc } = await (supabase as any)
+        .from('campaigns')
+        .select('asin,accepted_at')
+        .eq('user_id', user.id)
+        .not('accepted_at', 'is', null)
+        .limit(4000)
+      const s = new Set<string>()
+      for (const r of acc ?? []) {
+        const a = String(r?.asin || '').toUpperCase()
+        if (/^[A-Z0-9]{10}$/.test(a)) s.add(a)
+      }
+      joinedAsins = [...s].slice(0, 2000)
+    }
 
     // "Hide joined / Hide posted" — exclude this user's already-acted ASINs from
     // the query itself, so the coarse window fills with FRESH campaigns (a real
     // floor) instead of being thinned client-side. Pull the acted ASINs from the
     // per-user campaigns table; cap the exclusion list so the filter stays cheap.
+    // Skipped in joined-only mode (that's a positive filter, not a hide).
     let excludeAsins: string[] = []
-    if (hideJoined || hidePosted) {
+    if (!joinedOnly && (hideJoined || hidePosted)) {
       const set = new Set<string>()
       const addAsin = (v: unknown) => {
         const a = String(v || '').toUpperCase()
@@ -149,10 +172,22 @@ export async function GET(request: NextRequest) {
       .limit(WINDOW)
 
     if (minCommission > 0) query = query.gte('commission_pct', minCommission)
-    if (hasSpots) query = query.or('available_slot.is.null,available_slot.gt.0')
-    if (excludeAsins.length) query = query.not('rep_asin', 'in', `(${excludeAsins.join(',')})`)
+    // In joined-only mode, positively filter to the user's accepted ASINs and
+    // DON'T apply the open-spots gate (a joined campaign is worth showing even
+    // when it's now full). A sentinel keeps an empty joined set matching nothing.
+    if (joinedOnly) {
+      query = query.in('rep_asin', joinedAsins.length ? joinedAsins : ['__none__'])
+    } else {
+      if (hasSpots) query = query.or('available_slot.is.null,available_slot.gt.0')
+      // Null-safe exclusion: `rep_asin NOT IN (...)` is NULL (→ dropped) for
+      // rows with a null rep_asin, which would silently hide untouched campaigns.
+      // Keep null-rep_asin rows in with an explicit OR.
+      if (excludeAsins.length) query = query.or(`rep_asin.is.null,rep_asin.not.in.(${excludeAsins.join(',')})`)
+    }
     if (q) {
-      const safe = q.replace(/[,()]/g, ' ').trim()
+      // Strip PostgREST .or() structural chars, then escape LIKE wildcards so a
+      // typed % or _ matches literally instead of broadening the search.
+      const safe = q.replace(/[,()]/g, ' ').replace(/[%_\\]/g, ' ').trim()
       if (safe) query = query.or(`campaign_name.ilike.%${safe}%,brand_name.ilike.%${safe}%`)
     }
     // Cheap DB ordering (final ranking happens after enrichment).
@@ -175,7 +210,11 @@ export async function GET(request: NextRequest) {
       const { data: brandRows } = await (supabase as any)
         .from('cc_campaign_catalog')
         .select('brand_name, budget, budget_remaining, commission_pct, ends_at')
-        .in('brand_name', brands)
+        .in('brand_name', brands.slice(0, 300))
+        // Bound the scan: this runs on every load / page / filter change. A
+        // popular brand can have many historical rows; the trust aggregate is
+        // fine on a capped sample and this keeps the query from scanning deep.
+        .limit(8000)
       for (const b of (brandRows ?? []) as Array<{ brand_name: string | null; budget: number | null; budget_remaining: number | null; commission_pct: number | null; ends_at: string | null }>) {
         const name = (b.brand_name || '').trim()
         if (!name) continue

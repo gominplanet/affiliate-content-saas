@@ -36,6 +36,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'A valid ASIN is required' }, { status: 400 })
     }
     const now = new Date().toISOString()
+    // Sanitize the free-text body fields before they're stored:
+    //  - details_url must be an Amazon affiliate URL (else drop it — never store
+    //    an arbitrary/`javascript:` string that might later render as an href).
+    //  - brand is capped like product_title.
+    const safeDetailsUrl = (typeof body.detailsUrl === 'string' && /^https:\/\/affiliate-program\.amazon\.[a-z.]+\//i.test(body.detailsUrl))
+      ? body.detailsUrl.slice(0, 500)
+      : null
+    const safeBrand = typeof body.brand === 'string' ? body.brand.slice(0, 200) : null
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sb = supabase as any
@@ -54,8 +62,8 @@ export async function POST(request: Request) {
     if (existing?.id) {
       const patch: Record<string, unknown> = { accepted_at: now, updated_at: now }
       if (body.campaignId) patch.cc_campaign_id = body.campaignId
-      if (body.detailsUrl) patch.details_url = body.detailsUrl
-      if (body.brand) patch.brand_name = body.brand
+      if (safeDetailsUrl) patch.details_url = safeDetailsUrl
+      if (safeBrand) patch.brand_name = safeBrand
       const { error } = await sb.from('campaigns').update(patch).eq('id', existing.id)
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
       return NextResponse.json({ ok: true, created: false })
@@ -71,8 +79,8 @@ export async function POST(request: Request) {
       accepted_at: now,
     }
     if (body.campaignId) insert.cc_campaign_id = body.campaignId
-    if (body.detailsUrl) insert.details_url = body.detailsUrl
-    if (body.brand) insert.brand_name = body.brand
+    if (safeDetailsUrl) insert.details_url = safeDetailsUrl
+    if (safeBrand) insert.brand_name = safeBrand
     if (typeof body.commissionPct === 'number' && isFinite(body.commissionPct)) insert.commission_pct = body.commissionPct
     if (body.productTitle) insert.product_title = body.productTitle.slice(0, 300)
 
