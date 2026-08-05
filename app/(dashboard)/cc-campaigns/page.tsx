@@ -15,7 +15,7 @@ import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
 import {
   Loader2, ExternalLink, Search, ShieldCheck, ShieldAlert, ShieldQuestion,
-  Users, Star, TrendingUp, Clock, FileText, CheckCircle2, Lock, Mail, Radar, Grid3x3, Handshake,
+  Users, Star, TrendingUp, Clock, FileText, CheckCircle2, Lock, Mail, Radar, Grid3x3, Handshake, ShoppingBag,
 } from 'lucide-react'
 import { requestCcSmartScan, requestFindCampaign, requestAcceptCampaign } from '@/lib/extension-frame'
 import { campaignRules } from '@/lib/cc-smart-rules'
@@ -224,6 +224,13 @@ function CampaignCard({ c, status, onMessage }: { c: Campaign; status?: Campaign
           <button onClick={() => onMessage(c)} disabled={c.isFull} className="btn-secondary flex items-center gap-1.5 text-xs disabled:opacity-50" title="Draft + send a pitch to the brand via SCOUT">
             <Mail size={13} />
           </button>
+          {/* View the actual product on Amazon (the /dp page) so the user can
+              check it out before committing — distinct from the campaign link. */}
+          {c.repAsin && (
+            <a href={`https://www.amazon.com/dp/${c.repAsin}`} target="_blank" rel="noopener noreferrer" className="btn-secondary flex items-center gap-1.5 text-xs" title="View the product on Amazon">
+              <ShoppingBag size={13} />
+            </a>
+          )}
           <a href={c.detailsUrl} target="_blank" rel="noopener noreferrer" className="btn-secondary flex items-center gap-1.5 text-xs" title="Open the campaign on Amazon Creator Connections">
             <ExternalLink size={13} />
           </a>
