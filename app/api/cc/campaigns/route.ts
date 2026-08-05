@@ -88,20 +88,53 @@ export async function GET(request: NextRequest) {
     // per-user campaigns table; cap the exclusion list so the filter stays cheap.
     let excludeAsins: string[] = []
     if (hideJoined || hidePosted) {
+      const set = new Set<string>()
+      const addAsin = (v: unknown) => {
+        const a = String(v || '').toUpperCase()
+        if (/^[A-Z0-9]{10}$/.test(a)) set.add(a)
+      }
+      // Source A — the per-user campaigns table (CC-flow + deal posts carry the
+      // accepted / published state here).
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: acted } = await (supabase as any)
         .from('campaigns')
         .select('asin,accepted_at,status,wordpress_url')
         .eq('user_id', user.id)
         .limit(4000)
-      const set = new Set<string>()
       for (const r of acted ?? []) {
         const a = String(r?.asin || '').toUpperCase()
         if (!/^[A-Z0-9]{10}$/.test(a)) continue
         if (hideJoined && r.accepted_at) set.add(a)
         if (hidePosted && r.status === 'published' && r.wordpress_url) set.add(a)
       }
-      excludeAsins = [...set].slice(0, 2000)
+      // Source B — UNIVERSAL "posted" signal. Any published blog post counts as
+      // content for its product, no matter how it was made. Video-to-blog posts
+      // don't create a campaigns row, but they store the resolved ASIN on the
+      // linked youtube_videos row (migration 204). So: published blog_posts →
+      // their videos' ASINs. This is what makes "Hide posted" catch posts made
+      // outside the CC flow (the Blog Post Generator).
+      if (hidePosted) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: bp } = await (supabase as any)
+          .from('blog_posts')
+          .select('video_id')
+          .eq('user_id', user.id)
+          .eq('status', 'published')
+          .not('video_id', 'is', null)
+          .limit(4000)
+        const videoIds = [...new Set((bp ?? []).map((p: { video_id?: string }) => p?.video_id).filter(Boolean))].slice(0, 2000)
+        if (videoIds.length) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { data: vids } = await (supabase as any)
+            .from('youtube_videos')
+            .select('asin')
+            .eq('user_id', user.id)
+            .in('id', videoIds)
+            .not('asin', 'is', null)
+          for (const v of vids ?? []) addAsin(v?.asin)
+        }
+      }
+      excludeAsins = [...set].slice(0, 3000)
     }
 
     // Coarse fetch: live campaigns, ordered by a cheap proxy for the chosen sort.
