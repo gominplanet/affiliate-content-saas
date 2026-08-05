@@ -5,6 +5,7 @@ import PageHero from '@/components/layout/PageHero'
 import { AnalyticsGuide } from '@/components/guide/tool-guides'
 import Link from 'next/link'
 import { TrendingUp, MousePointerClick, Eye, ExternalLink, Loader2, AlertCircle, Link2, Youtube, Globe, DollarSign, ArrowUpRight, ArrowDownRight } from 'lucide-react'
+import ScoutTokenStrip from '@/components/dashboard/ScoutTokenStrip'
 
 interface AnalyticsPost {
   postId: string
@@ -174,7 +175,8 @@ export default function AnalyticsPage() {
     return (
       <>
         <PageHero title="Storefront Stats" subtitle="Click data from your affiliate links." />
-        <div className="card p-8 max-w-md flex flex-col items-center text-center gap-3">
+        <ScoutTokenStrip />
+        <div className="card p-8 max-w-md flex flex-col items-center text-center gap-3 mt-3">
           <MousePointerClick size={22} className="text-[#86868b]" />
           <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">No clicks tracked yet</p>
           <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] max-w-sm leading-relaxed">
@@ -205,6 +207,11 @@ export default function AnalyticsPage() {
           </button>
         }
       />
+
+      {/* SCOUT token — handy right here, since earnings sync (revenue/units)
+          rides on SCOUT being connected with this token. Self-gates: only shows
+          when SCOUT is installed + not yet dismissed. */}
+      <ScoutTokenStrip />
 
       {/* Top stats — three tiles (Geniuslink click data). */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
