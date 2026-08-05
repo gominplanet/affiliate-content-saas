@@ -491,10 +491,7 @@ export default function DashboardShellV2({
       label: 'Grow',
       items: [
         { href: '/seo', icon: <TrendingUp size={15} />, label: 'SEO & Indexing' },
-        // Storefront Stats (2026-08, reframed from the old hidden Analytics
-        // page): per-product Geniuslink clicks + Keepa demand. Real sales/revenue
-        // land in v2 via the SCOUT earnings reader.
-        { href: '/analytics', icon: <BarChart3 size={15} />, label: 'Storefront Stats' },
+        // Storefront Stats moved into Labs 2026-08 (still being figured out).
       ],
     },
     {
@@ -552,6 +549,10 @@ export default function DashboardShellV2({
     {
       label: 'Labs',
       items: [
+        // Storefront Stats — parked in Labs 2026-08 until the per-product
+        // clicks + SCOUT earnings picture is complete. Per-product Geniuslink
+        // clicks + Keepa demand today; real sales/revenue via the SCOUT reader.
+        { href: '/analytics', icon: <BarChart3 size={15} />, label: 'Storefront Stats', gate: isPro },
         { href: '/instagram-dm', icon: <MessageCircle size={15} />, label: 'Instagram Auto-DM', gate: isPro },
         // Clip Factory — the single video tool: Shorts Studio (create) + Shop
         // Burner (enhance + publish) merged into one Create → Enhance → Publish
