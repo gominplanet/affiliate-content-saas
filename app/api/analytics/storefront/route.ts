@@ -23,7 +23,7 @@ const MAX_CODES = 150
 const CONCURRENCY = 8
 
 interface Piece { type: 'blog' | 'youtube'; title: string; url: string | null; code: string }
-interface EarnRow { asin: string; period_start: string; period_end: string; units: number | null; ordered_items: number | null; revenue_cents: number | null; commission_cents: number | null; clicks: number | null }
+interface EarnRow { asin: string; period_start: string; period_end: string; units: number | null; ordered_items: number | null; revenue_cents: number | null; commission_cents: number | null; clicks: number | null; product_title: string | null }
 
 export async function GET(request: NextRequest) {
   try {
@@ -62,7 +62,7 @@ export async function GET(request: NextRequest) {
       // [1]=previous per ASIN for the trend).
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (supabase as any).from('storefront_earnings')
-        .select('asin,period_start,period_end,units,ordered_items,revenue_cents,commission_cents,clicks')
+        .select('asin,period_start,period_end,units,ordered_items,revenue_cents,commission_cents,clicks,product_title')
         .eq('user_id', user.id).eq('period_type', period)
         .order('period_start', { ascending: false }).limit(2000),
     ])
@@ -160,7 +160,7 @@ export async function GET(request: NextRequest) {
       const meta = enrich.get(asin)
       return {
         asin,
-        title: meta?.title || g?.pieces[0]?.title || asin,
+        title: meta?.title || g?.pieces[0]?.title || cur?.product_title || asin,
         image: meta?.image ?? null,
         clicks,
         pieceCount: g?.pieces.length ?? 0,

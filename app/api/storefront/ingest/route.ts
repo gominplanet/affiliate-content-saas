@@ -40,6 +40,7 @@ interface IncomingEarning {
   revenue?: number      // dollars
   commission?: number   // dollars
   clicks?: number
+  productTitle?: string
 }
 
 const toCents = (v: unknown): number | null => {
@@ -95,6 +96,7 @@ export async function POST(request: Request) {
         revenue_cents: toCents(e.revenue),
         commission_cents: toCents(e.commission),
         clicks: toInt(e.clicks),
+        product_title: typeof e.productTitle === 'string' ? e.productTitle.slice(0, 300) : null,
         source: 'scout',
         synced_at: new Date().toISOString(),
       }
