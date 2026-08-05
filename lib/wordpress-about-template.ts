@@ -11,6 +11,10 @@ export interface AboutPageOptions {
   twitterUrl?: string
   pinterestUrl?: string
   facebookUrl?: string
+  /** Show the headshot + bio text in the hero. Default true. When false the
+   *  page keeps the heading, socials and contact but drops the photo + bio, so
+   *  the footer "About" band is the only place they appear (no duplication). */
+  showBio?: boolean
 }
 
 function esc(str: string) {
@@ -19,6 +23,7 @@ function esc(str: string) {
 
 export function generateAboutPage(opts: AboutPageOptions): { title: string; content: string } {
   const { brandName, authorName, aboutText, accentColor, headshotUrl, contactEmail, youtubeUrl, instagramUrl, tiktokUrl, twitterUrl, pinterestUrl, facebookUrl } = opts
+  const showBio = opts.showBio !== false
 
   const socials: string[] = []
   if (youtubeUrl) socials.push(`<a class="ab-social" href="${esc(youtubeUrl)}" target="_blank" rel="noopener">▶ YouTube</a>`)
@@ -49,11 +54,11 @@ export function generateAboutPage(opts: AboutPageOptions): { title: string; cont
 <style>${css}</style>
 <div class="ab-wrap">
   <div class="ab-hero">
-    ${headshotUrl ? `<img class="ab-headshot" src="${esc(headshotUrl)}" alt="${esc(authorName || brandName)}" />` : ''}
+    ${showBio && headshotUrl ? `<img class="ab-headshot" src="${esc(headshotUrl)}" alt="${esc(authorName || brandName)}" />` : ''}
     <div>
       <h1 class="ab-name">${esc(brandName)}</h1>
       ${authorName ? `<p class="ab-by">By ${esc(authorName)}</p>` : ''}
-      <div class="ab-text">${esc(aboutText).replace(/\n/g, '<br>')}</div>
+      ${showBio ? `<div class="ab-text">${esc(aboutText).replace(/\n/g, '<br>')}</div>` : ''}
       ${socials.length ? `<div class="ab-socials">${socials.join('')}</div>` : ''}
     </div>
   </div>

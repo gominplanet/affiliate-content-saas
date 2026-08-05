@@ -134,6 +134,9 @@ interface LayoutData {
   /** Sticky (pinned) header on/off. Default on; off = a normal static header so
    *  a long nav can't pin over the page. */
   stickyHeader: boolean
+  /** Show the bio + photo on the generated About page. Default on; off = they
+   *  appear only in the footer band (no duplication). */
+  aboutBio: boolean
 }
 
 interface BrandCtaData {
@@ -169,6 +172,7 @@ const emptyFooter: FooterData = {
 }
 const emptyLayout: LayoutData = {
   stickyHeader: true,
+  aboutBio: true,
 }
 const emptyBrandCta: BrandCtaData = {
   enabled: false,
@@ -360,8 +364,9 @@ export default function CustomizePage() {
           directLink:    typeof bc.brandCta?.directLink === 'boolean' ? bc.brandCta.directLink : false,
         },
         layout: {
-          // Sticky header defaults ON — only an explicit saved false turns it off.
+          // Both default ON — only an explicit saved false turns them off.
           stickyHeader: bc.layout?.stickyHeader !== false,
+          aboutBio: bc.layout?.aboutBio !== false,
         },
       })
     }
@@ -400,6 +405,12 @@ export default function CustomizePage() {
       } else {
         // Auto-purge cache so changes appear immediately on the live blog.
         fetch('/api/wordpress/purge-cache', { method: 'POST' }).catch(() => {})
+        // Rebuild the live About page to match the bio-on-About toggle (drops or
+        // restores the headshot + bio). Best-effort; never blocks the save.
+        fetch('/api/wordpress/regenerate-about', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ showBio: data.layout.aboutBio }),
+        }).catch(() => {})
         toast.success('Saved — pushed to your blog.')
       }
       setSaved(true); setTimeout(() => setSaved(false), 3000)
@@ -628,6 +639,28 @@ export default function CustomizePage() {
               aria-label="Toggle sticky header"
             >
               {data.layout.stickyHeader
+                ? <ToggleRight size={28} className="text-[#7C3AED]" />
+                : <ToggleLeft size={28} />}
+            </button>
+          </div>
+        </Section>
+
+        {/* About page bio */}
+        <Section
+          title="Bio on the About page"
+          description="Your bio and photo already show in the footer on every page. Turn this off to drop them from the About page too, so they aren't duplicated. Saving updates your live About page."
+        >
+          <div className="flex items-center justify-between p-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border-2)]">
+            <div>
+              <p className="text-sm font-medium text-[var(--text)]">Show bio &amp; photo on the About page</p>
+              <p className="text-xs text-[var(--text-3)]">Off = they appear only in the footer. The About page keeps its heading, socials and contact.</p>
+            </div>
+            <button
+              onClick={() => setData(d => ({ ...d, layout: { ...d.layout, aboutBio: !d.layout.aboutBio } }))}
+              className="text-[var(--text-3)]"
+              aria-label="Toggle bio on About page"
+            >
+              {data.layout.aboutBio
                 ? <ToggleRight size={28} className="text-[#7C3AED]" />
                 : <ToggleLeft size={28} />}
             </button>
