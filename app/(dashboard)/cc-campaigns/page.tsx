@@ -74,7 +74,7 @@ function TrustBadge({ t }: { t: Trust }) {
 
 interface CampaignStatus { accepted?: boolean; messaged?: boolean; posted?: boolean; url?: string | null }
 
-function useMakePost(c: Campaign, presetUrl: string | null) {
+function useMakePost(c: Campaign, presetUrl: string | null, onActed?: () => void) {
   const [gen, setGen] = useState(false)
   const [postUrl, setPostUrl] = useState<string | null>(presetUrl)
   const makePost = useCallback(async () => {
@@ -99,6 +99,7 @@ function useMakePost(c: Campaign, presetUrl: string | null) {
       }
       setPostUrl(j.wordpressUrl || j.url || null)
       toast.success('Blog post published.', { id: toastId, duration: 6_000 })
+      onActed?.() // refresh per-ASIN status so "Hide posted" sees this immediately
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to generate', { id: toastId, duration: 8_000 })
     } finally { setGen(false) }
@@ -106,8 +107,8 @@ function useMakePost(c: Campaign, presetUrl: string | null) {
   return { gen, postUrl, makePost }
 }
 
-function CampaignCard({ c, status, onMessage }: { c: Campaign; status?: CampaignStatus; onMessage: (c: Campaign) => void }) {
-  const { gen, postUrl, makePost } = useMakePost(c, status?.url ?? null)
+function CampaignCard({ c, status, onMessage, onActed }: { c: Campaign; status?: CampaignStatus; onMessage: (c: Campaign) => void; onActed?: () => void }) {
+  const { gen, postUrl, makePost } = useMakePost(c, status?.url ?? null, onActed)
   const endingSoon = c.daysLeft != null && c.daysLeft <= 1
 
   // In-app Accept: SCOUT opens the campaign's Amazon page (the user's logged-in
@@ -139,10 +140,11 @@ function CampaignCard({ c, status, onMessage }: { c: Campaign; status?: Campaign
       }).catch(() => {})
       setAcceptedLocal(true)
       toast.success(res.already ? 'Already accepted — you’re in.' : 'Accepted. You can message the brand or make a post.', { id: tId, duration: 6_000 })
+      onActed?.() // refresh per-ASIN status so "Hide joined" sees this immediately
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Accept failed', { id: tId, duration: 8_000 })
     } finally { setAccepting(false) }
-  }, [c.repAsin, c.campaignId, c.detailsUrl, c.brand, c.commissionPct, c.name])
+  }, [c.repAsin, c.campaignId, c.detailsUrl, c.brand, c.commissionPct, c.name, onActed])
   return (
     <div className="card p-4 flex flex-col gap-3">
       <div className="flex gap-3">
@@ -281,11 +283,16 @@ export default function CcCampaignsPage() {
         const asin = String(r.asin || '').toUpperCase()
         if (!asin) continue
         covered.push(asin)
+        // A user can have MORE than one campaigns row per ASIN (e.g. an accept
+        // row + a separate generate row). OR the flags across them so a
+        // published row anywhere wins — otherwise a stale 'pending' row could
+        // mask a real post and "Hide posted" wouldn't fire.
+        const cur = map[asin]
         map[asin] = {
-          accepted: !!r.accepted_at,
-          messaged: !!r.messaged_at,
-          posted: r.status === 'published' && !!r.wordpress_url,
-          url: r.wordpress_url ?? null,
+          accepted: !!cur?.accepted || !!r.accepted_at,
+          messaged: !!cur?.messaged || !!r.messaged_at,
+          posted: !!cur?.posted || (r.status === 'published' && !!r.wordpress_url),
+          url: cur?.url || (r.wordpress_url ?? null),
         }
       }
       setStatusByAsin(map); setCoveredAsins(covered)
@@ -295,7 +302,7 @@ export default function CcCampaignsPage() {
   const fetchPage = useCallback(async (page: number, append: boolean) => {
     if (append) setLoadingMore(true); else setLoading(true)
     try {
-      const p = new URLSearchParams({ page: String(page), sort, ...(q ? { q } : {}), ...(minCommission ? { minCommission: String(minCommission) } : {}), ...(payingOnly ? { payingOnly: '1' } : {}), ...(hasSpots ? { hasSpots: '1' } : {}) })
+      const p = new URLSearchParams({ page: String(page), sort, ...(q ? { q } : {}), ...(minCommission ? { minCommission: String(minCommission) } : {}), ...(payingOnly ? { payingOnly: '1' } : {}), ...(hasSpots ? { hasSpots: '1' } : {}), ...(hideJoined ? { hideJoined: '1' } : {}), ...(hidePosted ? { hidePosted: '1' } : {}) })
       const res = await fetch(`/api/cc/campaigns?${p.toString()}`, { cache: 'no-store' })
       const j = await res.json().catch(() => ({}))
       if (res.status === 403 && j?.needsCcVerify) { setLocked(true); if (!append) setCampaigns([]); return }
@@ -305,7 +312,7 @@ export default function CcCampaignsPage() {
       setNextPage(j.nextPage)
       setTotal(j.total ?? 0)
     } finally { setLoadingMore(false); setLoading(false) }
-  }, [sort, q, minCommission, payingOnly, hasSpots])
+  }, [sort, q, minCommission, payingOnly, hasSpots, hideJoined, hidePosted])
 
   // "Verify my CC access" — SCOUT opens the user's own Creator Connections grid;
   // real campaigns back = proven invite, which we stamp server-side to unlock.
@@ -451,6 +458,7 @@ export default function CcCampaignsPage() {
             {visible.map((c) => (
               <CampaignCard key={c.campaignId} c={c}
                 status={c.repAsin ? statusByAsin[c.repAsin] : undefined}
+                onActed={loadStatus}
                 onMessage={(cc) => {
                   if (!cc.repAsin) { toast.error('No product ASIN on this campaign yet.'); return }
                   setMsgModal({ product: cc.name || cc.repAsin, asin: cc.repAsin, commissionPct: cc.commissionPct ?? 0, detailsUrl: cc.detailsUrl, brandLabel: cc.brand || undefined })
