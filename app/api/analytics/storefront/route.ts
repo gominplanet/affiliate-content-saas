@@ -183,7 +183,39 @@ export async function GET(request: NextRequest) {
       }
     }).sort((a, b) => (b.revenue ?? -1) - (a.revenue ?? -1) || b.clicks - a.clicks)
 
+    // ── Content ROI: attribute each product's REAL earnings to the pieces that
+    // drove its clicks. est = product earnings × (piece clicks ÷ Amazon's clicks
+    // for that product) — grounded in real numbers on both sides, capped at the
+    // product's total, labeled "est" in the UI. Clicks themselves are real. This
+    // is the thing only MVP can do: money mapped onto YOUR content. ─────────────
+    const content: Array<Record<string, unknown>> = []
+    for (const [asin, g] of byAsin.entries()) {
+      const e = earnByAsin.get(asin)?.current
+      const productEarnings = dollars(e?.commission_cents ?? null)
+      const amazonClicks = e?.clicks ?? null
+      const meta = enrich.get(asin)
+      for (const p of g.pieces) {
+        const clicks = clicksByCode.get(p.code) ?? 0
+        const estEarnings = (productEarnings != null && amazonClicks && amazonClicks > 0)
+          ? Math.round(productEarnings * Math.min(1, clicks / amazonClicks) * 100) / 100
+          : null
+        content.push({
+          type: p.type, title: p.title, url: p.url, asin,
+          productTitle: meta?.title || e?.product_title || null,
+          productImage: meta?.image ?? null,
+          clicks,
+          estEarnings,
+          productEarnings,
+          // What share of the product's Amazon clicks came through THIS piece —
+          // an honest "how much of this did you drive" number.
+          clickSharePct: amazonClicks && amazonClicks > 0 ? Math.round(Math.min(1, clicks / amazonClicks) * 100) : null,
+        })
+      }
+    }
+    content.sort((a, b) => ((b.estEarnings as number ?? -1) - (a.estEarnings as number ?? -1)) || ((b.clicks as number) - (a.clicks as number)))
+
     return NextResponse.json({
+      content: content.slice(0, 100),
       connected: hasGenius,
       period,
       products,
