@@ -482,6 +482,7 @@ export default function DashboardShellV2({
       items: [
         { href: '/amz-finder', icon: <PackageSearch size={15} />, label: 'AMZ Research' },
         { href: '/deal-radar', icon: <Radar size={15} />, label: 'Deal Radar', gate: canBrowseDealRadar(effectiveTier) },
+        { href: '/cc-campaigns', icon: <BadgePercent size={15} />, label: 'CC Campaigns', gate: canBrowseDealRadar(effectiveTier) },
         { href: '/levanta', icon: <ShoppingBag size={15} />, label: 'MVP x Levanta' },
         { href: '/partnerboost', icon: <Store size={15} />, label: 'MVP x PartnerBoost' },
       ],

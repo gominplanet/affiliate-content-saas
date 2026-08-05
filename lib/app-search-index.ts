@@ -33,6 +33,7 @@ export const APP_SEARCH_INDEX: AppSearchEntry[] = [
   { label: 'WordPress', href: '/setup', group: 'Set up', keywords: 'connect site wordpress plugin install reconnect connection doctor blog site domain' },
   { label: 'Connection Doctor', href: '/setup/wp-doctor', group: 'Set up', keywords: 'fix connection publish failing firewall wordfence not publishing 403 401 diagnose' },
   { label: 'YouTube', href: '/connect-youtube', group: 'Set up', keywords: 'connect youtube channel oauth link account' },
+  { label: 'CC Campaigns', href: '/cc-campaigns', group: 'Research', keywords: 'creator connections campaigns bounty commission spots left full brand pays out payout reliability trust est per sale affiliate plus research find campaigns' },
   { label: 'Brand Profile', href: '/brand', group: 'Set up', keywords: 'brand name niche tone bio about author' },
   { label: 'Geniuslink API key & groups', href: '/brand#affiliate', group: 'Brand Profile', keywords: 'geniuslink geni.us affiliate link tracking api key secret amazon tag associates monetization groups' },
   { label: 'Amazon Associates tag', href: '/brand#affiliate', group: 'Brand Profile', keywords: 'amazon tag associates id store id affiliate tag tracking' },
