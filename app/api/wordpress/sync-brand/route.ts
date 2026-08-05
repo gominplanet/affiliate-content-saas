@@ -11,6 +11,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { tryWpProxy } from '@/lib/wp-proxy'
 import { getAuthAndOwner } from '@/lib/agency-auth'
+import { snapshotActiveBlogIdentity } from '@/lib/site-identity'
 
 export async function POST(request: Request) {
   const supabase = await createServerClient()
@@ -20,6 +21,12 @@ export async function POST(request: Request) {
   const auth = await getAuthAndOwner(supabase)
   if (auth.error) return auth.error
   const { ownerId } = auth
+
+  // The Brand Profile page has already written brand_profiles before calling us.
+  // Snapshot the active blog's identity onto its own wordpress_sites row so this
+  // blog keeps its own brand (logo, title, colors, socials…) across a blog
+  // switch. Per-blog independence. Best-effort — never blocks the WP push.
+  await snapshotActiveBlogIdentity(supabase, ownerId)
 
   const body = await request.json() as {
     authorName?: string

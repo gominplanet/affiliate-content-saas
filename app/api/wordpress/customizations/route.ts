@@ -3,6 +3,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { tryWpProxy } from '@/lib/wp-proxy'
 import { getAuthAndOwner } from '@/lib/agency-auth'
+import { snapshotActiveBlogIdentity } from '@/lib/site-identity'
 
 export async function GET() {
   const supabase = await createServerClient()
@@ -31,18 +32,37 @@ export async function POST(req: Request) {
   // Strip siteId from the saved customizations — it's a routing param, not
   // customization data. The rest of the body is the actual customizations.
   const siteId = body.siteId ?? null
-  const customizations = { ...body }
-  delete (customizations as { siteId?: unknown }).siteId
+  const posted = { ...body }
+  delete (posted as { siteId?: unknown }).siteId
 
-  // Save to Supabase (per-user, applies to whichever site they push to).
-  // `as never` here is the same boundary cast used elsewhere for JSONB cols
-  // — Json typing rejects arbitrary { [x: string]: unknown } at write time.
+  // MERGE the posted slice over the current stored set (shallow, top-level).
+  // Different pages save different sections — Customize owns
+  // about/footer/pickOfDay/layout/…, Ads owns sidebar/incontent/homepageAds,
+  // Brand Inquiries owns brandCta — and each posts ONLY its own keys. A straight
+  // replace would let an Ads save wipe Pick of the Day (and vice versa).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: existingRow } = await supabase
+    .from('integrations')
+    .select('blog_customizations')
+    .eq('user_id', ownerId)
+    .maybeSingle()
+  const existing = (existingRow?.blog_customizations && typeof existingRow.blog_customizations === 'object')
+    ? existingRow.blog_customizations as Record<string, unknown>
+    : {}
+  const customizations = { ...existing, ...posted }
+
+  // Save to Supabase. brand_profiles + integrations always hold the ACTIVE
+  // blog's identity; the snapshot below copies this onto the active blog's own
+  // wordpress_sites row so it survives a blog switch (per-blog independence).
   const { error: dbError } = await supabase
     .from('integrations')
     .update({ blog_customizations: customizations as never })
     .eq('user_id', ownerId)
 
   if (dbError) return NextResponse.json({ error: dbError.message }, { status: 500 })
+
+  // Persist this blog's set onto its own row so switching blogs never loses it.
+  await snapshotActiveBlogIdentity(supabase, ownerId)
 
   // Push to WordPress — multi-site: target the specific site if siteId
   // provided; default site otherwise.
