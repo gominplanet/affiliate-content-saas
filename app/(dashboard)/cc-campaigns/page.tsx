@@ -15,10 +15,12 @@ import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
 import {
   Loader2, ExternalLink, Search, ShieldCheck, ShieldAlert, ShieldQuestion,
-  Users, Star, TrendingUp, Clock, FileText, CheckCircle2, Lock,
+  Users, Star, TrendingUp, Clock, FileText, CheckCircle2, Lock, Mail, Radar, Grid3x3,
 } from 'lucide-react'
-import { requestCcSmartScan } from '@/lib/extension-frame'
+import { requestCcSmartScan, requestFindCampaign } from '@/lib/extension-frame'
 import { campaignRules } from '@/lib/cc-smart-rules'
+import MessageBrandModal, { type MessageBrandCampaign } from '@/components/campaigns/MessageBrandModal'
+import SmartScanPanel from '@/components/campaigns/SmartScanPanel'
 
 interface Trust { score: number; tier: 'reliable' | 'mixed' | 'risky' | 'unknown'; spendRatio: number | null; reasons: string[] }
 interface Campaign {
@@ -70,37 +72,34 @@ function TrustBadge({ t }: { t: Trust }) {
   )
 }
 
-function useMakePost(c: Campaign) {
+interface CampaignStatus { accepted?: boolean; messaged?: boolean; posted?: boolean; url?: string | null }
+
+function useMakePost(c: Campaign, presetUrl: string | null) {
   const [gen, setGen] = useState(false)
-  const [postUrl, setPostUrl] = useState<string | null>(null)
-  const makePost = useCallback(async (confirmDuplicate = false) => {
+  const [postUrl, setPostUrl] = useState<string | null>(presetUrl)
+  const makePost = useCallback(async () => {
     if (!c.repAsin) { toast.error('No product ASIN on this campaign yet.'); return }
     setGen(true)
     try {
-      const res = await fetch('/api/deals', {
+      // The CC-native engine: scrape → research → write → publish, and it tracks
+      // the campaign in your inbox (status/accepted). Long-running (~1 min).
+      const res = await fetch('/api/campaigns/generate', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ asin: c.repAsin, occasion: 'auto', ...(confirmDuplicate ? { confirmDuplicate: true } : {}) }),
+        body: JSON.stringify({ asin: c.repAsin, campaignName: c.name || undefined, endsAt: c.endsAt || undefined }),
       })
       const j = await res.json().catch(() => ({}))
-      if (j?.duplicate && !confirmDuplicate) {
-        if (window.confirm(`You already have a post for this product${j.existingTitle ? `: "${j.existingTitle}"` : ''}. Make another?`)) {
-          setGen(false); return makePost(true)
-        }
-        setGen(false); return
-      }
       if (!res.ok || j?.error) { toast.error(j?.error || `Failed (${res.status})`); return }
-      const url = j.wordpressUrl || j.url || j.existingUrl || null
-      setPostUrl(url)
-      toast.success('Blog post created.')
+      setPostUrl(j.wordpressUrl || j.url || null)
+      toast.success('Blog post published.')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to generate')
     } finally { setGen(false) }
-  }, [c.repAsin])
+  }, [c.repAsin, c.name, c.endsAt])
   return { gen, postUrl, makePost }
 }
 
-function CampaignCard({ c }: { c: Campaign }) {
-  const { gen, postUrl, makePost } = useMakePost(c)
+function CampaignCard({ c, status, onMessage }: { c: Campaign; status?: CampaignStatus; onMessage: (c: Campaign) => void }) {
+  const { gen, postUrl, makePost } = useMakePost(c, status?.url ?? null)
   const endingSoon = c.daysLeft != null && c.daysLeft <= 1
   return (
     <div className="card p-4 flex flex-col gap-3">
@@ -116,6 +115,9 @@ function CampaignCard({ c }: { c: Campaign }) {
             <TrustBadge t={c.trust} />
             {c.isFull && <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold text-[#b3261e] bg-[#ff3b30]/12">FULL</span>}
             {endingSoon && !c.isFull && <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold text-[#b3261e] bg-[#ff3b30]/12">Ends {c.daysLeft === 0 ? 'today' : 'tomorrow'}</span>}
+            {status?.posted && <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold text-[#1c7a35] bg-[#34c759]/15 inline-flex items-center gap-0.5"><CheckCircle2 size={10} /> Posted</span>}
+            {status?.accepted && !status?.posted && <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold text-[#7C3AED] bg-[#7C3AED]/12">Accepted</span>}
+            {status?.messaged && !status?.accepted && !status?.posted && <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold text-[#8a6d00] bg-[#ffcc00]/15">Messaged</span>}
           </div>
           <p className="text-[11px] text-[var(--text-3)] truncate">{c.brand || 'Unknown brand'}</p>
           <p className="text-sm font-medium text-[var(--text)] leading-snug line-clamp-2">{c.name || c.repAsin}</p>
@@ -160,10 +162,13 @@ function CampaignCard({ c }: { c: Campaign }) {
           </a>
         ) : (
           <button onClick={() => makePost()} disabled={gen || c.isFull} className="btn-primary flex items-center gap-1.5 text-xs flex-1 justify-center disabled:opacity-50"
-            title={c.isFull ? 'Campaign is full — no bounty to earn' : 'Generate a blog post for this product'}>
-            {gen ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />} Make blog post
+            title={c.isFull ? 'Campaign is full — no bounty to earn' : 'Scrape, write and publish a blog post for this product (~1 min)'}>
+            {gen ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />} {gen ? 'Publishing…' : 'Make blog post'}
           </button>
         )}
+        <button onClick={() => onMessage(c)} disabled={c.isFull} className="btn-secondary flex items-center gap-1.5 text-xs disabled:opacity-50" title="Draft + send a pitch to the brand via SCOUT">
+          <Mail size={13} />
+        </button>
         <a href={c.detailsUrl} target="_blank" rel="noopener noreferrer" className="btn-secondary flex items-center gap-1.5 text-xs" title="Open the campaign on Amazon Creator Connections">
           <ExternalLink size={13} />
         </a>
@@ -188,6 +193,37 @@ export default function CcCampaignsPage() {
   const [locked, setLocked] = useState(false)
   const [verifying, setVerifying] = useState(false)
   const [verifyMsg, setVerifyMsg] = useState<string | null>(null)
+  // Browse (intelligence catalog) vs Smart-Scan (live SCOUT sweep of your grid).
+  const [mode, setMode] = useState<'browse' | 'scan'>('browse')
+  // Your campaigns inbox → per-ASIN status (accepted / messaged / posted) so the
+  // cards show what you've already acted on. Also the covered-ASIN skip list.
+  const [statusByAsin, setStatusByAsin] = useState<Record<string, CampaignStatus>>({})
+  const [coveredAsins, setCoveredAsins] = useState<string[]>([])
+  const [msgModal, setMsgModal] = useState<MessageBrandCampaign | null>(null)
+
+  const loadStatus = useCallback(async () => {
+    try {
+      const res = await fetch('/api/campaigns/list', { cache: 'no-store' })
+      if (!res.ok) return
+      const j = await res.json().catch(() => ({}))
+      const rows = Array.isArray(j?.campaigns) ? j.campaigns : []
+      const map: Record<string, CampaignStatus> = {}
+      const covered: string[] = []
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const r of rows as any[]) {
+        const asin = String(r.asin || '').toUpperCase()
+        if (!asin) continue
+        covered.push(asin)
+        map[asin] = {
+          accepted: !!r.accepted_at,
+          messaged: !!r.messaged_at,
+          posted: r.status === 'published' && !!r.wordpress_url,
+          url: r.wordpress_url ?? null,
+        }
+      }
+      setStatusByAsin(map); setCoveredAsins(covered)
+    } catch { /* non-fatal */ }
+  }, [])
 
   const fetchPage = useCallback(async (page: number, append: boolean) => {
     if (append) setLoadingMore(true); else setLoading(true)
@@ -237,6 +273,9 @@ export default function CcCampaignsPage() {
     return () => clearTimeout(t)
   }, [fetchPage])
 
+  // Your accepted/messaged/posted status, loaded once (refreshed after actions).
+  useEffect(() => { loadStatus() }, [loadStatus])
+
   return (
     <>
       <PageHero
@@ -264,6 +303,20 @@ export default function CcCampaignsPage() {
             No Creator Connections invite? Use <a href="/amz-finder" className="text-[#7C3AED] hover:underline">AMZ Research</a> or <a href="/deal-radar" className="text-[#7C3AED] hover:underline">Deal Radar</a> instead.
           </p>
         </div>
+      ) : (<>
+
+      {/* Browse (intelligence catalog) vs Smart-Scan (live SCOUT sweep). */}
+      <div className="flex rounded-lg border border-[var(--border-2)] overflow-hidden w-fit mb-5">
+        {([['browse', 'Browse all', Grid3x3], ['scan', 'Smart-Scan (live)', Radar]] as const).map(([m, label, Ic]) => (
+          <button key={m} onClick={() => setMode(m)}
+            className={`px-4 py-2 text-xs font-medium inline-flex items-center gap-1.5 transition-colors ${mode === m ? 'bg-[#7C3AED] text-white' : 'text-[var(--text-3)] hover:text-[var(--text)] bg-[var(--surface-2)]'}`}>
+            <Ic size={13} /> {label}
+          </button>
+        ))}
+      </div>
+
+      {mode === 'scan' ? (
+        <SmartScanPanel coveredAsins={coveredAsins} onMessageBrand={setMsgModal} onSavedChange={loadStatus} />
       ) : (<>
 
       {/* Filters */}
@@ -300,7 +353,14 @@ export default function CcCampaignsPage() {
         <>
           <p className="text-xs text-[var(--text-3)] mb-3">{total.toLocaleString()} live campaign{total === 1 ? '' : 's'}</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {campaigns.map((c) => <CampaignCard key={c.campaignId} c={c} />)}
+            {campaigns.map((c) => (
+              <CampaignCard key={c.campaignId} c={c}
+                status={c.repAsin ? statusByAsin[c.repAsin] : undefined}
+                onMessage={(cc) => {
+                  if (!cc.repAsin) { toast.error('No product ASIN on this campaign yet.'); return }
+                  setMsgModal({ product: cc.name || cc.repAsin, asin: cc.repAsin, commissionPct: cc.commissionPct ?? 0, detailsUrl: cc.detailsUrl, brandLabel: cc.brand || undefined })
+                }} />
+            ))}
           </div>
           {nextPage && (
             <div className="flex justify-center mt-6">
@@ -312,6 +372,16 @@ export default function CcCampaignsPage() {
         </>
       )}
       </>)}
+      </>)}
+
+      {msgModal && (
+        <MessageBrandModal
+          campaign={msgModal}
+          onClose={() => setMsgModal(null)}
+          onSent={() => { setMsgModal(null); loadStatus() }}
+          onFindCampaign={() => requestFindCampaign(msgModal.brandLabel || msgModal.product || '', msgModal.asin || '')}
+        />
+      )}
     </>
   )
 }
