@@ -169,7 +169,13 @@ export async function GET(request: NextRequest) {
     else if (sort === 'perSale') enriched.sort((a, b) => (b.perSale ?? 0) - (a.perSale ?? 0))
     else if (payingOnly) { /* keep DB order */ }
 
-    const filtered = payingOnly ? enriched.filter((e) => e.trust.tier === 'reliable') : enriched
+    // "Paying brands only" hides brands we can POSITIVELY prove aren't paying —
+    // budget committed but sitting unspent → 'risky'. Brands we simply can't
+    // judge (no budget data → 'unknown') stay visible: we never blank the page
+    // on a signal we don't have. Today the catalog carries budget_remaining but
+    // no total `budget`, so nothing scores 'risky' yet and this is a soft filter;
+    // once total-budget data flows in it starts excluding proven non-spenders.
+    const filtered = payingOnly ? enriched.filter((e) => e.trust.tier !== 'risky') : enriched
     const start = (page - 1) * limit
     const shown = filtered.slice(start, start + limit)
 
