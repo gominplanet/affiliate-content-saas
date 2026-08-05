@@ -19,6 +19,8 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { brandTrust, campaignFullness, estPerSale, daysUntil, opportunityScore, type BrandAgg } from '@/lib/cc-intelligence'
+import { ccAccessOk } from '@/lib/cc-access'
+import { type Tier } from '@/lib/tier'
 
 export const dynamic = 'force-dynamic'
 
@@ -56,6 +58,16 @@ export async function GET(request: NextRequest) {
     const supabase = await createServerClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
+
+    // CONFIDENTIALITY GATE: the shared CC catalog is shown ONLY to creators who
+    // actually have Creator Connections. Proof = SCOUT confirmed their own CC
+    // grid renders (integrations.cc_verified_at). An unverified user — any tier —
+    // gets a verify prompt and ZERO catalog data. Never leak CC data to accounts
+    // that don't have the invite.
+    const { data: intRow } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+    if (!(await ccAccessOk(supabase, user.id, (intRow?.tier as Tier) ?? 'trial'))) {
+      return NextResponse.json({ ok: false, needsCcVerify: true, error: 'Verify your Creator Connections access to browse campaigns.' }, { status: 403 })
+    }
 
     const { searchParams } = new URL(request.url)
     const page = Math.max(Number(searchParams.get('page')) || 1, 1)
