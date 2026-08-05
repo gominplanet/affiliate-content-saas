@@ -295,6 +295,26 @@ export default function CcCampaignsPage() {
           url: cur?.url || (r.wordpress_url ?? null),
         }
       }
+      // Universal "posted" overlay — posts made through ANY flow (not just CC),
+      // keyed by ASIN with the live URL. Makes the Posted badge + View-post link
+      // light up for Blog-Post-Generator posts too, matching the Hide-posted
+      // filter. Best-effort; if it fails the campaigns-table status still stands.
+      try {
+        const pr = await fetch('/api/cc/posted-asins', { cache: 'no-store' })
+        if (pr.ok) {
+          const pj = await pr.json().catch(() => ({}))
+          const posted = (pj?.posted ?? {}) as Record<string, string>
+          for (const [asin, url] of Object.entries(posted)) {
+            const cur = map[asin]
+            map[asin] = {
+              accepted: !!cur?.accepted,
+              messaged: !!cur?.messaged,
+              posted: true,
+              url: cur?.url || (url || null),
+            }
+          }
+        }
+      } catch { /* non-fatal */ }
       setStatusByAsin(map); setCoveredAsins(covered)
     } catch { /* non-fatal */ }
   }, [])
