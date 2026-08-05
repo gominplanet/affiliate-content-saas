@@ -29,6 +29,26 @@ interface AnalyticsResponse {
   error?: string
 }
 
+interface StorefrontProduct {
+  asin: string
+  title: string
+  image: string | null
+  clicks: number
+  pieceCount: number
+  blogCount: number
+  videoCount: number
+  monthlySold: number | null
+  priceNow: number | null
+  commissionPct: number | null
+  pieces: Array<{ type: 'blog' | 'youtube'; title: string; url: string | null }>
+  amazonUrl: string
+}
+interface StorefrontResponse {
+  connected: boolean
+  products: StorefrontProduct[]
+  totals: { products: number; clicks: number; topClicks: number }
+}
+
 function StatCard({
   icon: Icon, label, value, sub, color, bg,
 }: {
@@ -53,12 +73,19 @@ function StatCard({
 
 export default function AnalyticsPage() {
   const [data, setData] = useState<AnalyticsResponse | null>(null)
+  const [store, setStore] = useState<StorefrontResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   async function load() {
     setLoading(true)
     setError(null)
+    // Per-product storefront rollup loads in parallel; it's best-effort, so a
+    // failure there never blocks the per-post click view.
+    fetch('/api/analytics/storefront')
+      .then((r) => r.ok ? r.json() : null)
+      .then((j) => setStore(j as StorefrontResponse | null))
+      .catch(() => setStore(null))
     try {
       const res = await fetch('/api/analytics/clicks')
       const json = await res.json().catch(() => ({}))
@@ -77,7 +104,7 @@ export default function AnalyticsPage() {
   if (loading) {
     return (
       <>
-        <PageHero title="Analytics" subtitle="Click data from your affiliate links." />
+        <PageHero title="Storefront Stats" subtitle="Click data from your affiliate links." />
         <div className="card p-12 flex flex-col items-center gap-2 text-sm text-[#86868b]">
           <Loader2 size={20} className="animate-spin text-[#7C3AED]" />
           <span>Loading click data from Geniuslink…</span>
@@ -90,7 +117,7 @@ export default function AnalyticsPage() {
   if (error) {
     return (
       <>
-        <PageHero title="Analytics" subtitle="Click data from your affiliate links." />
+        <PageHero title="Storefront Stats" subtitle="Click data from your affiliate links." />
         <div className="card p-8 max-w-md flex flex-col items-center text-center gap-3">
           <AlertCircle size={20} className="text-[#ff3b30]" />
           <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Couldn&apos;t load analytics</p>
@@ -105,7 +132,7 @@ export default function AnalyticsPage() {
   if (data && !data.connected) {
     return (
       <>
-        <PageHero title="Analytics" subtitle="Click data from your affiliate links." />
+        <PageHero title="Storefront Stats" subtitle="Click data from your affiliate links." />
         <div className="card p-8 max-w-lg flex flex-col items-center text-center gap-4">
           <div className="w-12 h-12 rounded-full bg-[#7C3AED]/10 flex items-center justify-center">
             <Link2 size={22} className="text-[#7C3AED]" />
@@ -133,7 +160,7 @@ export default function AnalyticsPage() {
   if (data && data.totals.clicks === 0 && data.posts.length === 0) {
     return (
       <>
-        <PageHero title="Analytics" subtitle="Click data from your affiliate links." />
+        <PageHero title="Storefront Stats" subtitle="Click data from your affiliate links." />
         <div className="card p-8 max-w-md flex flex-col items-center text-center gap-3">
           <MousePointerClick size={22} className="text-[#86868b]" />
           <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">No clicks tracked yet</p>
@@ -157,7 +184,7 @@ export default function AnalyticsPage() {
     <>
       <PageHero
         guide={<AnalyticsGuide />}
-        title="Analytics"
+        title="Storefront Stats"
         subtitle="Last 30 days, human clicks only (bot/junk filtered to match Geniuslink's default). Only shortcodes tied to MVP-generated posts — your Geniuslink dashboard total will include codes from outside MVP."
         actions={
           <button onClick={load} className="btn-secondary text-sm">
@@ -193,6 +220,52 @@ export default function AnalyticsPage() {
           bg="bg-[#ff9500]/8"
         />
       </div>
+
+      {/* Your products — per-ASIN rollup. Real clicks (Geniuslink) + demand /
+          price (Keepa) for every product you've made content about. This is the
+          "storefront" view: which products are actually pulling traffic. */}
+      {store?.products && store.products.length > 0 && (() => {
+        const pMax = store.products[0]?.clicks || 1
+        return (
+          <div className="card p-5 mb-6">
+            <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+              <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Your products by clicks</p>
+              <span className="text-xs text-[#86868b] dark:text-[#8e8e93]">{store.totals.products} product{store.totals.products === 1 ? '' : 's'} · clicks rolled up across every post + video</span>
+            </div>
+            <div className="flex flex-col">
+              {store.products.map((p) => (
+                <div key={p.asin} className="flex items-center gap-3 py-3 border-b border-gray-100 dark:border-white/5 last:border-b-0">
+                  <div className="w-11 h-11 rounded-lg bg-[var(--surface-2)] border border-[var(--border-2)] flex items-center justify-center overflow-hidden flex-shrink-0">
+                    {p.image
+                      // eslint-disable-next-line @next/next/no-img-element
+                      ? <img src={p.image} alt="" className="w-full h-full object-contain p-0.5" />
+                      : <span className="text-[9px] text-[var(--text-3)]">—</span>}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <a href={p.amazonUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7] font-medium truncate hover:text-[#7C3AED] block">{p.title}</a>
+                    <div className="mt-1 h-1 rounded-full bg-gray-100 dark:bg-white/5 overflow-hidden">
+                      <div className="h-full rounded-full bg-gradient-to-r from-[#7C3AED] to-[#5856d6]" style={{ width: `${Math.max((p.clicks / pMax) * 100, 1)}%` }} />
+                    </div>
+                    <div className="flex items-center gap-2 mt-1 text-[10px] text-[#86868b] dark:text-[#8e8e93] flex-wrap">
+                      <span>{p.blogCount > 0 && `${p.blogCount} post${p.blogCount > 1 ? 's' : ''}`}{p.blogCount > 0 && p.videoCount > 0 && ' · '}{p.videoCount > 0 && `${p.videoCount} video${p.videoCount > 1 ? 's' : ''}`}</span>
+                      {p.monthlySold != null && <span>· {p.monthlySold.toLocaleString()}+ sold/mo</span>}
+                      {p.priceNow != null && <span>· ${p.priceNow.toFixed(2)}</span>}
+                      {p.commissionPct != null && <span className="text-[#1c7a35] font-semibold">· {p.commissionPct}% CC</span>}
+                    </div>
+                  </div>
+                  <div className="flex flex-col items-end flex-shrink-0 w-16 text-right">
+                    <span className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] tabular-nums">{p.clicks.toLocaleString()}</span>
+                    <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">clicks</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-4 leading-relaxed">
+              Clicks are real (Geniuslink, last 30 days). &ldquo;Sold/mo&rdquo; is a Keepa demand estimate, not your sales. Actual sales &amp; revenue per product are coming next.
+            </p>
+          </div>
+        )
+      })()}
 
       {/* Clicks by source — per-Geniuslink-group breakdown. Lets the user
           see at a glance whether YouTube descriptions or blog posts are

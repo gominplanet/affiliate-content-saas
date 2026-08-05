@@ -491,8 +491,10 @@ export default function DashboardShellV2({
       label: 'Grow',
       items: [
         { href: '/seo', icon: <TrendingUp size={15} />, label: 'SEO & Indexing' },
-        // Analytics still hidden 2026-06-12 — route stays alive (/analytics),
-        // just unlinked for now.
+        // Storefront Stats (2026-08, reframed from the old hidden Analytics
+        // page): per-product Geniuslink clicks + Keepa demand. Real sales/revenue
+        // land in v2 via the SCOUT earnings reader.
+        { href: '/analytics', icon: <BarChart3 size={15} />, label: 'Storefront Stats' },
       ],
     },
     {
