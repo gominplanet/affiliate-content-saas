@@ -251,6 +251,10 @@ export default function CcCampaignsPage() {
   const [minCommission, setMinCommission] = useState(0)
   const [payingOnly, setPayingOnly] = useState(false)
   const [hasSpots, setHasSpots] = useState(true)
+  // Hide campaigns the user has already acted on (client-side, over the loaded
+  // pages — status comes from statusByAsin, no API change needed).
+  const [hideJoined, setHideJoined] = useState(false)
+  const [hidePosted, setHidePosted] = useState(false)
   // CC access gate: the shared catalog stays locked until SCOUT confirms this
   // user's own Creator Connections grid renders (proof they have the invite).
   const [locked, setLocked] = useState(false)
@@ -404,6 +408,12 @@ export default function CcCampaignsPage() {
         <button onClick={() => setHasSpots((v) => !v)} className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${hasSpots ? 'border-[#7C3AED] text-[#7C3AED] bg-[#7C3AED]/10' : 'border-[var(--border-2)] text-[var(--text-3)]'}`}>
           Has open spots
         </button>
+        <button onClick={() => setHideJoined((v) => !v)} title="Hide campaigns you've already accepted" className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${hideJoined ? 'border-[#ff9500] text-[#ff9500] bg-[#ff9500]/10' : 'border-[var(--border-2)] text-[var(--text-3)]'}`}>
+          Hide joined
+        </button>
+        <button onClick={() => setHidePosted((v) => !v)} title="Hide campaigns you've already made a post for" className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${hidePosted ? 'border-[#ff9500] text-[#ff9500] bg-[#ff9500]/10' : 'border-[var(--border-2)] text-[var(--text-3)]'}`}>
+          Hide posted
+        </button>
       </div>
 
       {loading ? (
@@ -412,11 +422,33 @@ export default function CcCampaignsPage() {
         <div className="card p-8 text-center text-sm text-[var(--text-3)]">
           No live campaigns match these filters. Try clearing filters, or check back after the next catalog import.
         </div>
-      ) : (
+      ) : (() => {
+        // Hide-joined / hide-posted are client-side over the loaded pages, using
+        // this user's per-ASIN status. Applied here so the count + empty state
+        // reflect what's actually shown.
+        const visible = campaigns.filter((c) => {
+          if (!hideJoined && !hidePosted) return true
+          const st = c.repAsin ? statusByAsin[c.repAsin] : undefined
+          if (hideJoined && st?.accepted) return false
+          if (hidePosted && st?.posted) return false
+          return true
+        })
+        const hiddenCount = campaigns.length - visible.length
+        if (visible.length === 0) {
+          return (
+            <div className="card p-8 text-center text-sm text-[var(--text-3)]">
+              Every loaded campaign is hidden by your “Hide joined / Hide posted” filters. Turn one off, or Load more.
+            </div>
+          )
+        }
+        return (
         <>
-          <p className="text-xs text-[var(--text-3)] mb-3">{total.toLocaleString()} live campaign{total === 1 ? '' : 's'}</p>
+          <p className="text-xs text-[var(--text-3)] mb-3">
+            {total.toLocaleString()} live campaign{total === 1 ? '' : 's'}
+            {hiddenCount > 0 && <span> · {hiddenCount.toLocaleString()} hidden</span>}
+          </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {campaigns.map((c) => (
+            {visible.map((c) => (
               <CampaignCard key={c.campaignId} c={c}
                 status={c.repAsin ? statusByAsin[c.repAsin] : undefined}
                 onMessage={(cc) => {
@@ -433,7 +465,8 @@ export default function CcCampaignsPage() {
             </div>
           )}
         </>
-      )}
+        )
+      })()}
       </>)}
       </>)}
 
