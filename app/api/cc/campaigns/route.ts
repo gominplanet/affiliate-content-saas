@@ -20,6 +20,7 @@ import type { NextRequest } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { brandTrust, campaignFullness, estPerSale, daysUntil, opportunityScore, type BrandAgg } from '@/lib/cc-intelligence'
 import { ccAccessOk } from '@/lib/cc-access'
+import { ccRequestUrl } from '@/lib/cc-urls'
 import { type Tier } from '@/lib/tier'
 
 export const dynamic = 'force-dynamic'
@@ -160,7 +161,7 @@ export async function GET(request: NextRequest) {
         budgetRemaining: r.budget_remaining,
         trust: { score: trust.score, tier: trust.tier, spendRatio: trust.spendRatio, reasons: trust.reasons },
         score,
-        detailsUrl: `https://affiliate-program.amazon.com/creatorconnections/campaign/${r.campaign_id}`,
+        detailsUrl: ccRequestUrl(r.campaign_id),
       }
     })
 
