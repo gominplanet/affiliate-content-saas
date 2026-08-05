@@ -2250,7 +2250,13 @@ export default function ContentPage() {
       try {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user || cancelled) return
-        const like = `%${q.replace(/[,%_()]/g, ' ').trim()}%`
+        // Conservatively strip to alphanumerics + spaces: any PostgREST-reserved
+        // char (, . : % _ ( ) etc.) in an .or() value can malform the filter and
+        // error the whole request. This is a supplementary query — the precise
+        // substring match still runs client-side in displayVideos.
+        const term = q.replace(/[^a-z0-9 ]/gi, ' ').replace(/\s+/g, ' ').trim()
+        if (!term) { if (!cancelled) setVideoSearchExtra([]); return }
+        const like = `%${term}%`
         const { data } = await supabase
           .from('youtube_videos')
           .select('*')

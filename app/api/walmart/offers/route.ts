@@ -113,10 +113,12 @@ export async function GET(request: NextRequest) {
       if (!more) break
     }
 
+    // perSale can be null (offer with unknown commission) — coalesce to 0 so the
+    // comparator never returns NaN (which corrupts the sort order).
     if (sortBy === 'discount') {
-      matches.sort((a, b) => (b.discountPct ?? 0) - (a.discountPct ?? 0) || b.perSale - a.perSale)
+      matches.sort((a, b) => (b.discountPct ?? 0) - (a.discountPct ?? 0) || (b.perSale ?? 0) - (a.perSale ?? 0))
     } else {
-      matches.sort((a, b) => b.perSale - a.perSale || (b.commissionPct ?? 0) - (a.commissionPct ?? 0))
+      matches.sort((a, b) => (b.perSale ?? 0) - (a.perSale ?? 0) || (b.commissionPct ?? 0) - (a.commissionPct ?? 0))
     }
 
     const shown = matches.slice(0, limit)
