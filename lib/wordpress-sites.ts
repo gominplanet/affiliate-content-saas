@@ -525,6 +525,13 @@ export async function getSiteCustomizations(
     }
   }
 
+  // Independence guarantee: snapshot the account-level set onto EVERY of the
+  // user's sites that has none yet, in ONE shot, BEFORE any single blog is
+  // edited. Seeding all sites together (not one at a time) is the whole trick —
+  // it means an edit to one blog can never become the seed for another. Runs
+  // once (guarded on "still null") and never clobbers a customized blog.
+  await backfillNullSitesFromAccount(supabase, userId, readAccountCustomizations)
+
   // Read the site's own row. Try the full select first; if migration 221's
   // branding columns aren't present yet, fall back to the always-present column
   // so the feature DEGRADES (per-site logo just inherits the account default
@@ -550,30 +557,21 @@ export async function getSiteCustomizations(
     row = full.data
   }
 
-  let perSite = row?.blog_customizations as Record<string, unknown> | null | undefined
-  // Independence guarantee: EVERY blog owns its OWN set. The first time a blog
-  // is read without one, seed it from the account-level set (a ONE-TIME copy)
-  // and persist it to this blog's row — so from then on, editing one blog never
-  // affects another. Without this, two blogs that both have a null row would
-  // read the SAME shared value and look "linked" (and since the default site
-  // follows whichever blog is active, even the active blog would share it).
-  if (!perSite || typeof perSite !== 'object') {
-    const seed = await readAccountCustomizations()
-    perSite = seed
-    // Best-effort persist; if it fails we simply seed again on the next read.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any)
-      .from('wordpress_sites')
-      .update({ blog_customizations: seed } as never)
-      .eq('user_id', userId)
-      .eq('id', site.id)
-  }
+  // A blog's row is the SOLE source for its Customize set. We deliberately do
+  // NOT fall back to the shared integrations blob here: that blob is a moving
+  // mirror of the active blog, and reading it would re-link the blogs (an edit
+  // to one would leak into another). A blog with no row yet reads as an empty
+  // clean slate — the snapshot above normally fills it first.
+  const perSite = row?.blog_customizations
+  const blogCustomizations = perSite && typeof perSite === 'object'
+    ? (perSite as Record<string, unknown>)
+    : {}
 
   return {
     siteId: site.id,
     siteLabel: site.label,
     isLegacy: false,
-    blogCustomizations: perSite,
+    blogCustomizations,
     logoUrl: (row?.logo_url as string | null)?.trim() || null,
     headerBannerUrl: (row?.header_banner_url as string | null)?.trim() || null,
     accountLogoUrl,
@@ -667,6 +665,37 @@ export async function saveSiteCustomizations(
       .eq('user_id', userId)
   }
   return { ok: true, siteId: site.id, isLegacy: false }
+}
+
+/** One-shot snapshot: copy the account-level Customize set onto EVERY of this
+ *  user's sites that doesn't have its own yet, in a single update. Seeding all
+ *  sites together — before any single blog diverges — is what keeps blogs
+ *  independent: an edit to one can never become the seed for another. Guarded on
+ *  "still null" so it runs once and never clobbers a customized blog.
+ *  Best-effort; a failure just leaves rows null (they read as an empty slate). */
+async function backfillNullSitesFromAccount(
+  supabase: Client,
+  userId: string,
+  readAccountCustomizations: () => Promise<Record<string, unknown>>,
+): Promise<void> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: nullRows } = await (supabase as any)
+      .from('wordpress_sites')
+      .select('id')
+      .eq('user_id', userId)
+      .is('blog_customizations', null)
+      .limit(1)
+    if (!nullRows || nullRows.length === 0) return // every site already seeded
+    const seed = await readAccountCustomizations()
+    if (!seed || typeof seed !== 'object' || Object.keys(seed).length === 0) return
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any)
+      .from('wordpress_sites')
+      .update({ blog_customizations: seed } as never)
+      .eq('user_id', userId)
+      .is('blog_customizations', null)
+  } catch { /* best-effort seed; safe to retry next read */ }
 }
 
 // ─── internals ─────────────────────────────────────────────────────────────
