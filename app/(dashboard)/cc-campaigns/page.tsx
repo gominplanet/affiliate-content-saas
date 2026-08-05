@@ -15,8 +15,10 @@ import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
 import {
   Loader2, ExternalLink, Search, ShieldCheck, ShieldAlert, ShieldQuestion,
-  Users, Star, TrendingUp, Clock, FileText, CheckCircle2,
+  Users, Star, TrendingUp, Clock, FileText, CheckCircle2, Lock,
 } from 'lucide-react'
+import { requestCcSmartScan } from '@/lib/extension-frame'
+import { campaignRules } from '@/lib/cc-smart-rules'
 
 interface Trust { score: number; tier: 'reliable' | 'mixed' | 'risky' | 'unknown'; spendRatio: number | null; reasons: string[] }
 interface Campaign {
@@ -181,6 +183,11 @@ export default function CcCampaignsPage() {
   const [minCommission, setMinCommission] = useState(0)
   const [payingOnly, setPayingOnly] = useState(false)
   const [hasSpots, setHasSpots] = useState(true)
+  // CC access gate: the shared catalog stays locked until SCOUT confirms this
+  // user's own Creator Connections grid renders (proof they have the invite).
+  const [locked, setLocked] = useState(false)
+  const [verifying, setVerifying] = useState(false)
+  const [verifyMsg, setVerifyMsg] = useState<string | null>(null)
 
   const fetchPage = useCallback(async (page: number, append: boolean) => {
     if (append) setLoadingMore(true); else setLoading(true)
@@ -188,12 +195,41 @@ export default function CcCampaignsPage() {
       const p = new URLSearchParams({ page: String(page), sort, ...(q ? { q } : {}), ...(minCommission ? { minCommission: String(minCommission) } : {}), ...(payingOnly ? { payingOnly: '1' } : {}), ...(hasSpots ? { hasSpots: '1' } : {}) })
       const res = await fetch(`/api/cc/campaigns?${p.toString()}`, { cache: 'no-store' })
       const j = await res.json().catch(() => ({}))
+      if (res.status === 403 && j?.needsCcVerify) { setLocked(true); if (!append) setCampaigns([]); return }
       if (!res.ok || !j.ok) { toast.error(j?.error || 'Failed to load campaigns'); return }
+      setLocked(false)
       setCampaigns((prev) => append ? [...prev, ...j.campaigns] : j.campaigns)
       setNextPage(j.nextPage)
       setTotal(j.total ?? 0)
     } finally { setLoadingMore(false); setLoading(false) }
   }, [sort, q, minCommission, payingOnly, hasSpots])
+
+  // "Verify my CC access" — SCOUT opens the user's own Creator Connections grid;
+  // real campaigns back = proven invite, which we stamp server-side to unlock.
+  const verifyCcAccess = useCallback(async () => {
+    if (verifying) return
+    setVerifying(true); setVerifyMsg('SCOUT is opening your Creator Connections grid to confirm your access — this can take a minute…')
+    try {
+      const res = await requestCcSmartScan(campaignRules('wide'))
+      if (!res.ok) {
+        setVerifyMsg(res.error === 'not-installed'
+          ? 'SCOUT isn’t connected — install it and paste your token, then try again.'
+          : res.error === 'timeout'
+            ? 'That ran long and timed out — try again in a moment.'
+            : 'We couldn’t confirm a Creator Connections grid for your account. Open your Creator Connections tab once, then try again.')
+        return
+      }
+      if (!(res.matches && res.matches.length > 0)) {
+        setVerifyMsg('Your grid opened but had no live campaigns to confirm against right now. Try again when opportunities are showing.')
+        return
+      }
+      const stamp = await fetch('/api/campaigns/cc-verify', { method: 'POST' }).then(r => r.json()).catch(() => null)
+      if (stamp?.verified) { setLocked(false); setVerifyMsg(null); toast.success('Creator Connections access confirmed.'); fetchPage(1, false) }
+      else setVerifyMsg('Verified your grid, but couldn’t save it just now. Please try again.')
+    } catch {
+      setVerifyMsg('Verification failed unexpectedly — reload and try again.')
+    } finally { setVerifying(false) }
+  }, [verifying, fetchPage])
 
   // Debounced reload on filter change.
   useEffect(() => {
@@ -207,6 +243,28 @@ export default function CcCampaignsPage() {
         title="CC Campaigns"
         subtitle="Every live Creator Connections campaign with the numbers that matter — commission, $ per sale, spots left, whether the brand actually pays out — and one click to turn it into a blog post."
       />
+
+      {locked ? (
+        <div className="card p-8 max-w-lg flex flex-col items-center text-center gap-4">
+          <div className="w-12 h-12 rounded-full bg-[#7C3AED]/10 flex items-center justify-center">
+            <Lock size={22} className="text-[#7C3AED]" />
+          </div>
+          <div>
+            <p className="text-base font-semibold text-[var(--text)] mb-1">Creator Connections access required</p>
+            <p className="text-xs text-[var(--text-3)] max-w-md leading-relaxed">
+              These campaigns are only shown to creators who actually have the Amazon Creator Connections invite. SCOUT will open your own Creator Connections grid and confirm it — most creators don&apos;t have the invite yet, and if you don&apos;t, this stays locked. No campaign data is shown until it&apos;s confirmed.
+            </p>
+          </div>
+          <button onClick={verifyCcAccess} disabled={verifying} className="btn-primary flex items-center gap-2 text-sm">
+            {verifying ? <Loader2 size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
+            {verifying ? 'Verifying…' : 'Verify my CC access'}
+          </button>
+          {verifyMsg && <p className="text-xs text-[var(--text-3)] max-w-md">{verifyMsg}</p>}
+          <p className="text-[11px] text-[var(--text-3)]">
+            No Creator Connections invite? Use <a href="/amz-finder" className="text-[#7C3AED] hover:underline">AMZ Research</a> or <a href="/deal-radar" className="text-[#7C3AED] hover:underline">Deal Radar</a> instead.
+          </p>
+        </div>
+      ) : (<>
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-2 mb-5">
@@ -253,6 +311,7 @@ export default function CcCampaignsPage() {
           )}
         </>
       )}
+      </>)}
     </>
   )
 }
