@@ -38,7 +38,7 @@ const GUESS: Record<FieldKey, RegExp> = {
   asins: /asin|product.?id/i,
   brand_name: /brand|advertiser|seller|vendor/i,
   starts_at: /start.?date|start$|from.?date|begin/i,
-  budget: /^budget$|total.?budget|budget.?amount/i,
+  budget: /^budget$|campaign.?budget|total.?budget|budget.?amount/i,
   budget_remaining: /remain|budget.?left/i,
   available_slot: /avail|open.?slot|slots.?open|remaining.?slot/i,
   total_slot: /total.?slot|slot.?total|max.?slot|^slots$/i,
