@@ -78,7 +78,31 @@ export async function GET(request: NextRequest) {
     const minCommission = Number(searchParams.get('minCommission')) || 0
     const payingOnly = searchParams.get('payingOnly') === '1'
     const hasSpots = searchParams.get('hasSpots') === '1'
+    const hideJoined = searchParams.get('hideJoined') === '1'
+    const hidePosted = searchParams.get('hidePosted') === '1'
     const today = new Date().toISOString().slice(0, 10)
+
+    // "Hide joined / Hide posted" — exclude this user's already-acted ASINs from
+    // the query itself, so the coarse window fills with FRESH campaigns (a real
+    // floor) instead of being thinned client-side. Pull the acted ASINs from the
+    // per-user campaigns table; cap the exclusion list so the filter stays cheap.
+    let excludeAsins: string[] = []
+    if (hideJoined || hidePosted) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: acted } = await (supabase as any)
+        .from('campaigns')
+        .select('asin,accepted_at,status,wordpress_url')
+        .eq('user_id', user.id)
+        .limit(4000)
+      const set = new Set<string>()
+      for (const r of acted ?? []) {
+        const a = String(r?.asin || '').toUpperCase()
+        if (!/^[A-Z0-9]{10}$/.test(a)) continue
+        if (hideJoined && r.accepted_at) set.add(a)
+        if (hidePosted && r.status === 'published' && r.wordpress_url) set.add(a)
+      }
+      excludeAsins = [...set].slice(0, 2000)
+    }
 
     // Coarse fetch: live campaigns, ordered by a cheap proxy for the chosen sort.
     // Cast: cc_campaign_catalog + its enrichment columns aren't in the generated
@@ -93,6 +117,7 @@ export async function GET(request: NextRequest) {
 
     if (minCommission > 0) query = query.gte('commission_pct', minCommission)
     if (hasSpots) query = query.or('available_slot.is.null,available_slot.gt.0')
+    if (excludeAsins.length) query = query.not('rep_asin', 'in', `(${excludeAsins.join(',')})`)
     if (q) {
       const safe = q.replace(/[,()]/g, ' ').trim()
       if (safe) query = query.or(`campaign_name.ilike.%${safe}%,brand_name.ilike.%${safe}%`)
