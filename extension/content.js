@@ -2104,3 +2104,108 @@ setInterval(() => {
   } catch (e) {}
 }, 2000)
 })()
+
+// ─── Storefront Stats v2: Amazon Influencer earnings scraper ─────────────────
+// Self-contained (runs after the main IIFE). On affiliate-program.amazon.com
+// report pages, finds the earnings/orders table by HEADER TEXT, parses per-ASIN
+// rows, detects the period (weekly|monthly) + date range, and pushes to
+// /api/storefront/ingest via the worker. Auto-syncs (throttled) whenever the
+// user is on a report page — no button.
+//
+// NOTE: the table/column selectors are HEURISTIC (matched on header words like
+// "ASIN", "Earnings", "Shipped Items"), because Amazon's report markup isn't
+// fixed. It never throws and no-ops when it can't confidently find a table or a
+// date range — so a markup change degrades to "no sync", never bad data. Needs
+// one validation pass against the live report DOM to confirm the header words.
+(function mvpEarningsScout() {
+  try {
+    if (!/affiliate-program\.amazon\.com/.test(location.host)) return
+    if (!/report|earning|order|performance/i.test(location.href)) return
+  } catch (e) { return }
+
+  const num = (s) => { const n = parseFloat(String(s || '').replace(/[^0-9.\-]/g, '')); return isFinite(n) ? n : null }
+  const ASIN_RE = /\b([A-Z0-9]{10})\b/
+  const toISO = (s) => { const d = new Date(s); return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10) }
+  const getToken = () => new Promise((r) => { try { chrome.storage.local.get(['ccToken'], (o) => r(((o && o.ccToken) || '').trim() || null)) } catch (e) { r(null) } })
+
+  function pickPeriod() {
+    let start = null, end = null
+    try {
+      const txt = document.body.innerText || ''
+      const m = txt.match(/([A-Z][a-z]{2,8}\s+\d{1,2},?\s*\d{4}|\d{1,2}\/\d{1,2}\/\d{4})\s*(?:-|–|—|to)\s*([A-Z][a-z]{2,8}\s+\d{1,2},?\s*\d{4}|\d{1,2}\/\d{1,2}\/\d{4})/)
+      if (m) { start = toISO(m[1]); end = toISO(m[2]) }
+    } catch (e) {}
+    let type = 'monthly'
+    if (start && end) {
+      const days = Math.round((Date.parse(end) - Date.parse(start)) / 86400000)
+      if (days <= 10) type = 'weekly'; else if (days >= 20) type = 'monthly'
+    }
+    return { type, start, end }
+  }
+
+  function findEarningsTable() {
+    for (const t of document.querySelectorAll('table')) {
+      const head = ((t.querySelector('thead') || t).innerText || '').toLowerCase()
+      const hasAsin = /asin/.test(head) || /product/.test(head)
+      const hasMoney = /(earn|revenue|commission|fee|ordered)/.test(head)
+      const hasUnits = /(item|shipped|ordered|qty|quantity|unit)/.test(head)
+      if (hasAsin && (hasMoney || hasUnits)) return t
+    }
+    return null
+  }
+
+  function colMap(table) {
+    const ths = [...table.querySelectorAll('thead th, thead td')]
+    const map = {}
+    ths.forEach((th, i) => {
+      const h = (th.innerText || '').toLowerCase()
+      if (/asin/.test(h) && map.asin == null) map.asin = i
+      else if (/(shipped item|items shipped|units|qty|quantity)/.test(h) && map.units == null) map.units = i
+      else if (/(ordered item|items ordered|orders)/.test(h) && map.orders == null) map.orders = i
+      else if (/(earning|commission|ad fees|\bfees\b|fee earned)/.test(h) && map.commission == null) map.commission = i
+      else if (/(revenue|product sales|ordered product sales|\bsales\b)/.test(h) && map.revenue == null) map.revenue = i
+    })
+    return map
+  }
+
+  function parse() {
+    const table = findEarningsTable(); if (!table) return []
+    const map = colMap(table)
+    const { type, start, end } = pickPeriod()
+    if (!start || !end) return [] // no confident period → skip
+    const out = []
+    for (const tr of table.querySelectorAll('tbody tr')) {
+      const cells = [...tr.children].map((td) => (td.innerText || '').trim())
+      if (!cells.length) continue
+      let asin = map.asin != null && cells[map.asin] ? (cells[map.asin].match(ASIN_RE) || [])[1] : null
+      if (!asin) { for (const c of cells) { const m = c.match(ASIN_RE); if (m) { asin = m[1]; break } } }
+      if (!asin) continue
+      const rec = { asin, periodType: type, periodStart: start, periodEnd: end }
+      if (map.revenue != null) rec.revenue = num(cells[map.revenue])
+      if (map.commission != null) rec.commission = num(cells[map.commission])
+      if (map.units != null) rec.units = num(cells[map.units])
+      if (map.orders != null) rec.orderedItems = num(cells[map.orders])
+      // Skip empty rows (totals, blanks) — need at least one real number.
+      if (rec.revenue == null && rec.commission == null && rec.units == null && rec.orderedItems == null) continue
+      out.push(rec)
+    }
+    return out
+  }
+
+  async function syncIfDue() {
+    const token = await getToken(); if (!token) return
+    const earnings = parse(); if (!earnings.length) return
+    const key = 'mvpEarnSync:' + earnings[0].periodType + ':' + earnings[0].periodStart
+    const last = await new Promise((r) => { try { chrome.storage.local.get([key], (o) => r((o && o[key]) || 0)) } catch (e) { r(0) } })
+    if (Date.now() - last < 4 * 3600 * 1000) return // at most every 4h per range
+    try {
+      const res = await chrome.runtime.sendMessage({ type: 'SCOUT_PUSH_EARNINGS', token, earnings })
+      if (res && res.ok) { try { chrome.storage.local.set({ [key]: Date.now() }) } catch (e) {} }
+    } catch (e) {}
+  }
+
+  let t = null
+  const kick = () => { clearTimeout(t); t = setTimeout(() => { try { syncIfDue() } catch (e) {} }, 2500) }
+  kick()
+  try { new MutationObserver(kick).observe(document.body, { childList: true, subtree: true }) } catch (e) {}
+})();

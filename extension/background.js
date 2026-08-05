@@ -41,6 +41,27 @@ async function pushCampaignsToMvp(token, campaigns) {
   }
 }
 
+// POST scraped Amazon Influencer earnings into MVP (Storefront Stats v2), from
+// the worker (same CSP-avoidance reason as pushCampaignsToMvp). Returns
+// { reached, ok, upserted, error }.
+async function pushEarningsToMvp(token, earnings) {
+  if (!token) return { reached: false, ok: false, error: 'no token' }
+  if (!Array.isArray(earnings) || earnings.length === 0) return { reached: true, ok: true, upserted: 0 }
+  try {
+    const res = await fetch(`${MVP_ORIGIN}/api/storefront/ingest`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ earnings }),
+    })
+    let body = null
+    try { body = await res.json() } catch (e) {}
+    if (res.ok) return { reached: true, ok: true, upserted: body && body.upserted }
+    return { reached: true, ok: false, status: res.status, error: (body && body.error) || `HTTP ${res.status}` }
+  } catch (e) {
+    return { reached: false, ok: false, error: (e && e.message) || 'network error' }
+  }
+}
+
 // Draft an outreach message via MVP, from the WORKER (not the content script):
 // a content-script fetch amazon.com→mvpaffiliate.io is subject to Amazon's page
 // CSP `connect-src` and can be silently blocked. Same worker-first pattern as
@@ -962,6 +983,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
   if (msg && msg.type === 'SCOUT_PUSH_CAMPAIGN') {
     pushCampaignsToMvp(msg.token, msg.campaigns).then(sendResponse)
+    return true // async response
+  }
+  if (msg && msg.type === 'SCOUT_PUSH_EARNINGS') {
+    pushEarningsToMvp(msg.token, msg.earnings).then(sendResponse)
     return true // async response
   }
   if (msg && msg.type === 'SCOUT_OUTREACH') {
