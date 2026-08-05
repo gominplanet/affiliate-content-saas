@@ -80,19 +80,27 @@ function useMakePost(c: Campaign, presetUrl: string | null) {
   const makePost = useCallback(async () => {
     if (!c.repAsin) { toast.error('No product ASIN on this campaign yet.'); return }
     setGen(true)
+    // Persistent toast for the whole run — the CC engine (scrape → research →
+    // write → fact-check → hero image → publish) takes ~1-2 min. Keeping the
+    // toast up (and the card in its generating state) tells the user it's
+    // working rather than looking hung. The request itself runs at 600s server
+    // side now, so it finishes instead of timing out.
+    const toastId = `cc-gen-${c.repAsin}`
+    toast.loading('Writing your post… (~1-2 min — keep this tab open)', { id: toastId, duration: Infinity })
     try {
-      // The CC-native engine: scrape → research → write → publish, and it tracks
-      // the campaign in your inbox (status/accepted). Long-running (~1 min).
       const res = await fetch('/api/campaigns/generate', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ asin: c.repAsin, campaignName: c.name || undefined, endsAt: c.endsAt || undefined }),
       })
       const j = await res.json().catch(() => ({}))
-      if (!res.ok || j?.error) { toast.error(j?.error || `Failed (${res.status})`); return }
+      if (!res.ok || j?.error) {
+        toast.error(j?.error || `Failed (${res.status})`, { id: toastId, duration: 8_000 })
+        return
+      }
       setPostUrl(j.wordpressUrl || j.url || null)
-      toast.success('Blog post published.')
+      toast.success('Blog post published.', { id: toastId, duration: 6_000 })
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to generate')
+      toast.error(e instanceof Error ? e.message : 'Failed to generate', { id: toastId, duration: 8_000 })
     } finally { setGen(false) }
   }, [c.repAsin, c.name, c.endsAt])
   return { gen, postUrl, makePost }

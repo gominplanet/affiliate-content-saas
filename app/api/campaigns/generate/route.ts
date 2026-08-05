@@ -38,7 +38,10 @@ import { scrubBanned } from '@/lib/scrub'
 import { buildCampaignHero } from '@/lib/hero-image'
 import { pingIndexNowForUrl } from '@/lib/seo-on-publish'
 
-export const maxDuration = 300
+// 600s to match /api/blog/generate. The pipeline (scrape → research → 32k-token
+// write → fact-check → hero image → WP publish) can stack past the old 300s cap,
+// which is what surfaced as a 504 for users. 600 gives real headroom.
+export const maxDuration = 600
 
 function slugify(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 60)
