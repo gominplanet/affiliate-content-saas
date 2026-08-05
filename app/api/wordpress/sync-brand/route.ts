@@ -8,9 +8,10 @@
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { getWordPressCredentials, getSiteCustomizations } from '@/lib/wordpress-sites'
+import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { tryWpProxy } from '@/lib/wp-proxy'
 import { getAuthAndOwner } from '@/lib/agency-auth'
+import { snapshotActiveBlogIdentity } from '@/lib/site-identity'
 
 export async function POST(request: Request) {
   const supabase = await createServerClient()
@@ -20,6 +21,12 @@ export async function POST(request: Request) {
   const auth = await getAuthAndOwner(supabase)
   if (auth.error) return auth.error
   const { ownerId } = auth
+
+  // The Brand Profile page has already written brand_profiles before calling us.
+  // Snapshot the active blog's identity onto its own wordpress_sites row so this
+  // blog keeps its own brand (logo, title, colors, socials…) across a blog
+  // switch. Per-blog independence. Best-effort — never blocks the WP push.
+  await snapshotActiveBlogIdentity(supabase, ownerId)
 
   const body = await request.json() as {
     authorName?: string
@@ -63,17 +70,23 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, wordpress: 'not_connected' })
   }
 
-  // Effective banner + logo to push to THIS blog. Per-site (migration 221): a
-  // blog with its OWN logo/banner override keeps it — an account-level Brand
-  // Profile sync must never clobber a blog's custom identity. Otherwise: a fresh
-  // value in THIS request wins (even '', so a cleared logo actually clears),
-  // else the account default from brand_profiles. We always send an EXPLICIT
-  // value so a removed logo/banner clears on the live site.
-  const sc = await getSiteCustomizations(supabase, ownerId, body.siteId)
-  const accountLogoUrl = sc?.accountLogoUrl ?? null
-  const accountBannerUrl = sc?.accountBannerUrl ?? null
-  const effLogoUrl = sc?.logoUrl ?? (logoUrl !== undefined ? logoUrl : accountLogoUrl)
-  const effBannerUrl = sc?.headerBannerUrl ?? (headerBannerUrl !== undefined ? headerBannerUrl : accountBannerUrl)
+  // Stored banner + logo from OUR source of truth (brand_profiles). We
+  // always seed the `about` merge with these so a partial sync (e.g. a
+  // logo-only upload) or a failed customizations-GET can never drop the
+  // header banner the user already saved.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: brandRow } = await supabase
+    .from('brand_profiles')
+    .select('header_banner_url, logo_url')
+    .eq('user_id', ownerId)
+    .single()
+  const storedBannerUrl = (brandRow?.header_banner_url as string | null)?.trim() || null
+  const storedLogoUrl = (brandRow?.logo_url as string | null)?.trim() || null
+  // Effective logo/banner to push: a fresh value in THIS request wins (even ''),
+  // else our stored source of truth. Used to send an EXPLICIT value (empty string
+  // when cleared) so a removed logo/banner actually clears on the live site.
+  const effLogoUrl = logoUrl !== undefined ? logoUrl : storedLogoUrl
+  const effBannerUrl = headerBannerUrl !== undefined ? headerBannerUrl : storedBannerUrl
 
   const wpBase = site.wordpress_url.replace(/\/$/, '')
   const cleanPw = site.wordpress_app_password.replace(/\s+/g, '')

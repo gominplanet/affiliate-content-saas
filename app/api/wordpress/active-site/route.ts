@@ -18,6 +18,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { setDefaultSite } from '@/lib/wordpress-sites'
+import { snapshotActiveBlogIdentity, restoreBlogIdentity } from '@/lib/site-identity'
 
 export const dynamic = 'force-dynamic'
 
@@ -37,38 +38,40 @@ export async function POST(req: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: site, error: siteErr } = await (supabase as any)
     .from('wordpress_sites')
-    .select('id, url, username, app_password, api_token, content_only, cta_style, blog_customizations')
+    .select('id, url, username, app_password, api_token, content_only, cta_style')
     .eq('user_id', ownerId)
     .eq('id', siteId)
     .maybeSingle()
   if (siteErr) return NextResponse.json({ error: siteErr.message }, { status: 500 })
   if (!site) return NextResponse.json({ error: 'Site not found' }, { status: 404 })
 
+  // 0) Snapshot the CURRENTLY-active blog's identity (brand + Customize set)
+  //    onto its own row BEFORE we switch away, so nothing it had is lost.
+  await snapshotActiveBlogIdentity(supabase, ownerId)
+
   // 1) Make it the default in the new table.
   const def = await setDefaultSite(supabase, ownerId, siteId)
   if (!def.ok) return NextResponse.json({ error: def.error }, { status: 400 })
 
+  // 1b) Restore the INCOMING blog's identity into the live per-user tables
+  //     (brand_profiles + integrations.blog_customizations), so the whole app —
+  //     Brand Profile, Customize Blog, generation, sync — now reflects THIS
+  //     blog. This is what makes each blog have its own logo/title/colors/ads.
+  await restoreBlogIdentity(supabase, ownerId, siteId)
+
   // 2) Mirror into the legacy integrations columns so the topbar + every
-  //    not-yet-migrated route targets this blog too. blog_customizations is
-  //    mirrored ONLY when the target blog has its own set — if it's still null
-  //    (never customized), it inherits whatever's already in integrations, which
-  //    matches getSiteCustomizations' fallback. This keeps every reader of
-  //    integrations.blog_customizations (ads page, brand-inquiry, generation,
-  //    purge-cache) pointed at the active blog's Customize Blog set.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const intPatch: Record<string, unknown> = {
-    wordpress_url: site.url,
-    wordpress_username: site.username,
-    wordpress_app_password: site.app_password,
-    wordpress_api_token: site.api_token,
-    content_only: site.content_only ?? false,
-    cta_style: site.cta_style === 'link' ? 'link' : 'button',
-  }
-  if (site.blog_customizations != null) intPatch.blog_customizations = site.blog_customizations
+  //    not-yet-migrated route targets this blog too.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error: intErr } = await (supabase as any)
     .from('integrations')
-    .update(intPatch)
+    .update({
+      wordpress_url: site.url,
+      wordpress_username: site.username,
+      wordpress_app_password: site.app_password,
+      wordpress_api_token: site.api_token,
+      content_only: site.content_only ?? false,
+      cta_style: site.cta_style === 'link' ? 'link' : 'button',
+    })
     .eq('user_id', ownerId)
   if (intErr) return NextResponse.json({ error: intErr.message }, { status: 500 })
 

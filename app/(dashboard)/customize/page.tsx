@@ -7,27 +7,8 @@ import { CustomizeGuide } from '@/components/guide/tool-guides'
 import { createBrowserClient } from '@/lib/supabase/client'
 import {
   Plus, Trash2, Save, Loader2, ToggleLeft, ToggleRight,
-  RefreshCw, Sparkles, AlertCircle, Upload, X,
+  RefreshCw, Sparkles, AlertCircle,
 } from 'lucide-react'
-
-// Same uploader Brand Profile uses — unique path per upload so the CDN never
-// serves a stale image. Stores in the shared `headshots` bucket.
-async function uploadSiteImage(
-  file: File,
-  userId: string,
-  kind: 'logo' | 'header-banner',
-): Promise<string> {
-  const supabase = createBrowserClient()
-  const ext = file.name.split('.').pop()?.toLowerCase() || 'png'
-  const path = `${userId}/site-${kind}-${Date.now()}.${ext}`
-  const { error } = await supabase.storage.from('headshots').upload(path, file, {
-    cacheControl: '31536000',
-    upsert: false,
-  })
-  if (error) throw new Error(error.message)
-  const { data } = supabase.storage.from('headshots').getPublicUrl(path)
-  return data.publicUrl
-}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -255,18 +236,6 @@ export default function CustomizePage() {
   const [userId, setUserId] = useState('')
   // Published posts for the Featured-posts dropdowns (title + live URL).
   const [pubPosts, setPubPosts] = useState<Array<{ title: string; url: string }>>([])
-  // Per-site identity (migration 221). Everything on this page saves to the
-  // ACTIVE blog (the one in the topbar switcher). `siteMeta` tells us which blog
-  // that is + the account defaults it inherits; siteLogo/siteBanner are this
-  // blog's OWN logo/banner overrides ('' = inherit the Brand Profile default).
-  const [siteMeta, setSiteMeta] = useState<{
-    id: string; label: string; isLegacy: boolean
-    accountLogoUrl: string; accountBannerUrl: string
-  } | null>(null)
-  const [siteLogo, setSiteLogo] = useState('')
-  const [siteBanner, setSiteBanner] = useState('')
-  const [logoUploading, setLogoUploading] = useState(false)
-  const [bannerUploading, setBannerUploading] = useState(false)
 
   // (Logo upload / bio / socials editing was removed — those are managed in Brand Profile now.)
 
@@ -289,47 +258,27 @@ export default function CustomizePage() {
         .filter(p => p.title && p.wordpress_url)
         .map(p => ({ title: p.title as string, url: p.wordpress_url as string })))
     } catch { /* non-fatal */ }
-    // Author block defaults pulled from Brand Profile (single source of truth
-    // for who-you-are). User can override per-blog in the form below.
+    // Pull the canonical logo URL from brand_profiles — that's the single source
+    // of truth (set in Brand Profile). We only use blog_customizations.about
+    // for blog-specific layout choices (the banner background color).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: brandRow } = await supabase
       .from('brand_profiles')
-      .select('author_name, headshot_url, youtube_channel_url')
+      .select('logo_url, author_name, headshot_url, youtube_channel_url')
       .eq('user_id', user.id)
       .single()
+    const canonicalLogoUrl: string = brandRow?.logo_url ?? ''
+    // Author block defaults pulled from Brand Profile (single source of truth
+    // for who-you-are). User can override per-blog in the form below.
     const brandAuthorName: string = brandRow?.author_name ?? ''
     const brandHeadshot: string = brandRow?.headshot_url ?? ''
     const brandYouTube: string = brandRow?.youtube_channel_url ?? ''
-
-    // Per-site (migration 221): load the ACTIVE blog's Customize Blog set +
-    // identity from the API, which resolves the topbar switcher's default site
-    // and falls back to the account-level set while a blog isn't customized yet.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let bcJson: any = {}
-    try {
-      const res = await fetch('/api/wordpress/customizations', { cache: 'no-store' })
-      if (res.ok) bcJson = await res.json()
-    } catch { /* fall back to defaults below */ }
-    const site = bcJson?._site as {
-      id: string; label: string; isLegacy: boolean
-      logoUrl: string; headerBannerUrl: string
-      accountLogoUrl: string; accountBannerUrl: string
-    } | undefined
-    if (site) {
-      setSiteMeta({
-        id: site.id, label: site.label, isLegacy: !!site.isLegacy,
-        accountLogoUrl: site.accountLogoUrl || '', accountBannerUrl: site.accountBannerUrl || '',
-      })
-      setSiteLogo(site.logoUrl || '')
-      setSiteBanner(site.headerBannerUrl || '')
-    }
-    // `_site` is transport metadata, not part of the Customize set — drop it so
-    // it never leaks into `data` (and back to the server on save).
-    if (bcJson && typeof bcJson === 'object') delete bcJson._site
-    // This blog's effective logo (its own override, else the account default).
-    const canonicalLogoUrl: string = (site?.logoUrl || site?.accountLogoUrl) || ''
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const row: { blog_customizations: any } | null = { blog_customizations: bcJson }
+    const { data: row } = await supabase
+      .from('integrations')
+      .select('blog_customizations')
+      .eq('user_id', user.id)
+      .single()
     if (row?.blog_customizations) {
       // blog_customizations is a JSONB column (Postgrest types it Json). We
       // narrow at the read boundary because our /api/wordpress/customizations
@@ -445,15 +394,7 @@ export default function CustomizePage() {
       const res = await fetch('/api/wordpress/customizations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...data,
-          // Target the blog we loaded (the active site) explicitly, so a save
-          // can't drift to a different default if it changed mid-edit.
-          ...(siteMeta && !siteMeta.isLegacy ? { siteId: siteMeta.id } : {}),
-          // Per-site logo/banner overrides. '' = inherit the Brand Profile
-          // default. Only sent for real (non-legacy) blogs.
-          ...(siteMeta && !siteMeta.isLegacy ? { logoUrl: siteLogo, headerBannerUrl: siteBanner } : {}),
-        }),
+        body: JSON.stringify(data),
       })
       const json = await res.json().catch(() => ({}))
       if (!res.ok || json.error) { toast.error(json.error || `Save failed (${res.status})`); return }
@@ -486,27 +427,6 @@ export default function CustomizePage() {
   }
   function updateAbout(patch: Partial<AboutData>) {
     setData(d => ({ ...d, about: { ...d.about, ...patch } }))
-  }
-
-  async function handleSiteImageUpload(
-    e: React.ChangeEvent<HTMLInputElement>,
-    kind: 'logo' | 'header-banner',
-    setBusy: (v: boolean) => void,
-    setUrl: (v: string) => void,
-  ) {
-    const file = e.target.files?.[0]
-    e.target.value = '' // let the same file be re-picked after a remove
-    if (!file || !userId) return
-    setBusy(true)
-    try {
-      const url = await uploadSiteImage(file, userId, kind)
-      setUrl(url)
-      toast.success('Uploaded. Hit Save & Push to apply it to this blog.')
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Upload failed')
-    } finally {
-      setBusy(false)
-    }
   }
 
   function updatePickOfDay(patch: Partial<PickOfDayConfig>) {
@@ -570,111 +490,16 @@ export default function CustomizePage() {
       <div className="flex flex-col gap-6 max-w-2xl">
 
 
-        {/* Active-blog banner — everything on this page applies to the blog the
-            topbar switcher currently points at. */}
-        {siteMeta && !siteMeta.isLegacy && (
-          <div className="rounded-xl border border-[#7C3AED]/30 bg-[#7C3AED]/5 px-4 py-3 flex items-start gap-3">
-            <Sparkles size={16} className="text-[#7C3AED] flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-0.5">
-                You&apos;re customizing <span className="text-[#7C3AED]">{siteMeta.label}</span>
-              </p>
-              <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">
-                These settings are saved to this blog only. To customize a different blog, switch it from the site menu in the top bar, then come back here. Each blog keeps its own logo, banner, and layout.
-              </p>
-            </div>
-          </div>
-        )}
-
         {/* Cross-link banner */}
         <div className="rounded-xl border border-blue-200 dark:border-blue-500/30 bg-blue-50/50 dark:bg-blue-500/5 px-4 py-3 flex items-start gap-3">
           <Sparkles size={16} className="text-[#7C3AED] flex-shrink-0 mt-0.5" />
           <div>
-            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-0.5">
-              {siteMeta && !siteMeta.isLegacy ? 'Account-wide brand stuff lives in Brand Profile' : 'Brand stuff lives in Brand Profile'}
-            </p>
+            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-0.5">Brand stuff lives in Brand Profile</p>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">
-              {siteMeta && !siteMeta.isLegacy ? (
-                <>Your bio, social links, brand name, tagline, fonts, and colors are managed once in <a href="/brand" className="text-[#7C3AED] hover:underline font-medium">Brand Profile</a> and apply everywhere. The logo and banner below are per-blog — set them here to give this blog its own look, or leave them empty to inherit the Brand Profile logo/banner.</>
-              ) : (
-                <>Your logo, header banner, bio, social links, brand name, tagline, fonts, and colors are all managed in <a href="/brand" className="text-[#7C3AED] hover:underline font-medium">Brand Profile</a>. This page is for blog-specific layout: sidebar/in-content ads, Pick of the Day, and custom footer links.</>
-              )}
+              Your logo, header banner, bio, social links, brand name, tagline, fonts, and colors are all managed in <a href="/brand" className="text-[#7C3AED] hover:underline font-medium">Brand Profile</a>. This page is for blog-specific layout: sidebar/in-content ads, Pick of the Day, and custom footer links.
             </p>
           </div>
         </div>
-
-        {/* Per-blog logo + banner (migration 221) — this blog's own identity.
-            Hidden for pure-legacy single-site users (their one site IS the
-            account, so Brand Profile is the right place). */}
-        {siteMeta && !siteMeta.isLegacy && (
-          <Section
-            title="This blog's logo & banner"
-            description="Give this blog its own logo and header banner. Leave either empty to inherit the default from your Brand Profile. This is what lets each of your blogs look different."
-          >
-            <div className="flex flex-col gap-6">
-              {/* Logo */}
-              <div>
-                <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">Logo</label>
-                <div className="flex items-center gap-4">
-                  <div className="w-20 h-20 rounded-xl border border-[var(--border-2)] bg-[var(--surface-2)] flex items-center justify-center overflow-hidden flex-shrink-0">
-                    {(siteLogo || siteMeta.accountLogoUrl) ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={siteLogo || siteMeta.accountLogoUrl} alt="Blog logo" className="w-full h-full object-contain p-1" />
-                    ) : (
-                      <span className="text-[10px] text-[var(--text-3)] text-center px-1">No logo</span>
-                    )}
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <label className="btn-secondary flex items-center gap-2 cursor-pointer w-fit">
-                      {logoUploading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
-                      {logoUploading ? 'Uploading…' : siteLogo ? 'Replace logo' : 'Upload logo'}
-                      <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="hidden"
-                        onChange={e => handleSiteImageUpload(e, 'logo', setLogoUploading, setSiteLogo)} />
-                    </label>
-                    {siteLogo ? (
-                      <button onClick={() => setSiteLogo('')} className="text-[11px] text-[var(--text-3)] hover:text-[#ff3b30] flex items-center gap-1 w-fit">
-                        <X size={11} /> Remove (inherit Brand Profile logo)
-                      </button>
-                    ) : (
-                      <p className="text-[11px] text-[var(--text-3)]">
-                        {siteMeta.accountLogoUrl ? 'Inheriting your Brand Profile logo.' : 'PNG, JPG, SVG or WebP.'}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Header banner */}
-              <div>
-                <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">Header banner</label>
-                <p className="text-[11px] text-[var(--text-3)] mb-2">Wide image shown across the top of the blog in place of the small logo. Center your logo + tagline — narrow screens letterbox it, never crop.</p>
-                <div className="w-full rounded-xl border border-[var(--border-2)] bg-[var(--surface-2)] overflow-hidden flex items-center justify-center" style={{ aspectRatio: '4 / 1' }}>
-                  {(siteBanner || siteMeta.accountBannerUrl) ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={siteBanner || siteMeta.accountBannerUrl} alt="Header banner" className="w-full h-full object-contain" />
-                  ) : (
-                    <span className="text-[11px] text-[var(--text-3)]">No banner</span>
-                  )}
-                </div>
-                <div className="flex items-center gap-3 mt-2">
-                  <label className="btn-secondary flex items-center gap-2 cursor-pointer w-fit">
-                    {bannerUploading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
-                    {bannerUploading ? 'Uploading…' : siteBanner ? 'Replace banner' : 'Upload banner'}
-                    <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden"
-                      onChange={e => handleSiteImageUpload(e, 'header-banner', setBannerUploading, setSiteBanner)} />
-                  </label>
-                  {siteBanner ? (
-                    <button onClick={() => setSiteBanner('')} className="text-[11px] text-[var(--text-3)] hover:text-[#ff3b30] flex items-center gap-1">
-                      <X size={11} /> Remove (inherit Brand Profile banner)
-                    </button>
-                  ) : siteMeta.accountBannerUrl ? (
-                    <span className="text-[11px] text-[var(--text-3)]">Inheriting your Brand Profile banner.</span>
-                  ) : null}
-                </div>
-              </div>
-            </div>
-          </Section>
-        )}
 
         {/* Logo Banner section removed from the UI — the live header is now
             driven by Brand Profile's Header Banner image (full-width wide
