@@ -257,6 +257,9 @@ export default function CcCampaignsPage() {
   // pages — status comes from statusByAsin, no API change needed).
   const [hideJoined, setHideJoined] = useState(false)
   const [hidePosted, setHidePosted] = useState(false)
+  // "Joined only" — inverse of Hide joined: surface only accepted campaigns.
+  // Mutually exclusive with the hide filters.
+  const [joinedOnly, setJoinedOnly] = useState(false)
   // CC access gate: the shared catalog stays locked until SCOUT confirms this
   // user's own Creator Connections grid renders (proof they have the invite).
   const [locked, setLocked] = useState(false)
@@ -322,7 +325,7 @@ export default function CcCampaignsPage() {
   const fetchPage = useCallback(async (page: number, append: boolean) => {
     if (append) setLoadingMore(true); else setLoading(true)
     try {
-      const p = new URLSearchParams({ page: String(page), sort, ...(q ? { q } : {}), ...(minCommission ? { minCommission: String(minCommission) } : {}), ...(payingOnly ? { payingOnly: '1' } : {}), ...(hasSpots ? { hasSpots: '1' } : {}), ...(hideJoined ? { hideJoined: '1' } : {}), ...(hidePosted ? { hidePosted: '1' } : {}) })
+      const p = new URLSearchParams({ page: String(page), sort, ...(q ? { q } : {}), ...(minCommission ? { minCommission: String(minCommission) } : {}), ...(payingOnly ? { payingOnly: '1' } : {}), ...(hasSpots && !joinedOnly ? { hasSpots: '1' } : {}), ...(joinedOnly ? { joinedOnly: '1' } : { ...(hideJoined ? { hideJoined: '1' } : {}), ...(hidePosted ? { hidePosted: '1' } : {}) }) })
       const res = await fetch(`/api/cc/campaigns?${p.toString()}`, { cache: 'no-store' })
       const j = await res.json().catch(() => ({}))
       if (res.status === 403 && j?.needsCcVerify) { setLocked(true); if (!append) setCampaigns([]); return }
@@ -332,7 +335,7 @@ export default function CcCampaignsPage() {
       setNextPage(j.nextPage)
       setTotal(j.total ?? 0)
     } finally { setLoadingMore(false); setLoading(false) }
-  }, [sort, q, minCommission, payingOnly, hasSpots, hideJoined, hidePosted])
+  }, [sort, q, minCommission, payingOnly, hasSpots, hideJoined, hidePosted, joinedOnly])
 
   // "Verify my CC access" — SCOUT opens the user's own Creator Connections grid;
   // real campaigns back = proven invite, which we stamp server-side to unlock.
@@ -435,10 +438,13 @@ export default function CcCampaignsPage() {
         <button onClick={() => setHasSpots((v) => !v)} className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${hasSpots ? 'border-[#7C3AED] text-[#7C3AED] bg-[#7C3AED]/10' : 'border-[var(--border-2)] text-[var(--text-3)]'}`}>
           Has open spots
         </button>
-        <button onClick={() => setHideJoined((v) => !v)} title="Hide campaigns you've already accepted" className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${hideJoined ? 'border-[#ff9500] text-[#ff9500] bg-[#ff9500]/10' : 'border-[var(--border-2)] text-[var(--text-3)]'}`}>
+        <button onClick={() => setJoinedOnly((v) => { const nv = !v; if (nv) { setHideJoined(false); setHidePosted(false) } return nv })} title="Show only campaigns you've accepted" className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${joinedOnly ? 'border-[#0a84ff] text-[#0a84ff] bg-[#0a84ff]/10' : 'border-[var(--border-2)] text-[var(--text-3)]'}`}>
+          Joined only
+        </button>
+        <button onClick={() => setHideJoined((v) => { const nv = !v; if (nv) setJoinedOnly(false); return nv })} title="Hide campaigns you've already accepted" className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${hideJoined ? 'border-[#ff9500] text-[#ff9500] bg-[#ff9500]/10' : 'border-[var(--border-2)] text-[var(--text-3)]'}`}>
           Hide joined
         </button>
-        <button onClick={() => setHidePosted((v) => !v)} title="Hide campaigns you've already made a post for" className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${hidePosted ? 'border-[#ff9500] text-[#ff9500] bg-[#ff9500]/10' : 'border-[var(--border-2)] text-[var(--text-3)]'}`}>
+        <button onClick={() => setHidePosted((v) => { const nv = !v; if (nv) setJoinedOnly(false); return nv })} title="Hide campaigns you've already made a post for" className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${hidePosted ? 'border-[#ff9500] text-[#ff9500] bg-[#ff9500]/10' : 'border-[var(--border-2)] text-[var(--text-3)]'}`}>
           Hide posted
         </button>
       </div>
@@ -447,7 +453,9 @@ export default function CcCampaignsPage() {
         <div className="flex items-center gap-2 text-sm text-[var(--text-3)] py-10"><Loader2 size={16} className="animate-spin" /> Loading campaigns…</div>
       ) : campaigns.length === 0 ? (
         <div className="card p-8 text-center text-sm text-[var(--text-3)]">
-          No live campaigns match these filters. Try clearing filters, or check back after the next catalog import.
+          {joinedOnly
+            ? 'None of the campaigns you’ve accepted are live in the catalog right now. Accept a campaign, or turn off “Joined only”.'
+            : 'No live campaigns match these filters. Try clearing filters, or check back after the next catalog import.'}
         </div>
       ) : (() => {
         // Hide-joined / hide-posted are client-side over the loaded pages, using
