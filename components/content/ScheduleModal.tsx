@@ -30,7 +30,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
-import { Calendar, Loader2, X } from 'lucide-react'
+import { Calendar, Loader2, X, SlidersHorizontal } from 'lucide-react'
 import type { SchedulableSocial, ScheduleMode } from '@/lib/schedule-types'
 import { DEFAULT_SOCIAL_OFFSETS_MIN } from '@/lib/schedule-types'
 import { tierAllowsSocial, minTierForSocial, tierLabel, type Tier } from '@/lib/tier'
@@ -498,47 +498,6 @@ export default function ScheduleModal({
             )}
           </div>
 
-          {/* Advanced offsets */}
-          <div>
-            <button
-              type="button"
-              onClick={() => setShowAdvanced(s => !s)}
-              className="text-xs underline decoration-dotted underline-offset-2 opacity-80 hover:opacity-100"
-            >
-              {showAdvanced ? 'Hide advanced' : 'Advanced: per-channel offset'}
-            </button>
-            {showAdvanced && (
-              <div className="mt-2 space-y-2">
-                <p className="text-[11px]" style={{ color: 'var(--text-faint, rgba(255,255,255,0.5))' }}>
-                  Minutes after the blog goes live that each channel fires.
-                  Default {DEFAULT_SOCIAL_OFFSETS_MIN.linkedin} min for all socials.
-                </p>
-                {CHANNEL_OPTIONS.map((opt) => {
-                  if (!selectedChannels.has(opt.key)) return null
-                  const value = offsetOverrides[opt.key] ?? DEFAULT_SOCIAL_OFFSETS_MIN[opt.key]
-                  return (
-                    <div key={opt.key} className="flex items-center gap-2">
-                      <span className="text-sm w-28">{opt.label}</span>
-                      <input
-                        type="number"
-                        min={0}
-                        max={1440}
-                        value={value}
-                        onChange={(e) => {
-                          const n = parseInt(e.target.value, 10)
-                          setOffsetOverrides((prev) => ({ ...prev, [opt.key]: isNaN(n) ? 0 : n }))
-                        }}
-                        className="w-20 px-2 py-1 rounded border bg-transparent text-sm"
-                        style={{ borderColor: 'var(--border-bright, rgba(255,255,255,0.14))', color: 'var(--text, #F5F5F7)' }}
-                      />
-                      <span className="text-xs opacity-70">min</span>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-
           {/* Summary */}
           {summary && (
             <div className="rounded-lg border p-3 text-sm" style={{ borderColor: 'var(--border, rgba(255,255,255,0.08))', backgroundColor: 'var(--surface, rgba(255,255,255,0.03))' }}>
@@ -553,22 +512,77 @@ export default function ScheduleModal({
           )}
         </div>
 
-        <div className="p-5 border-t flex items-center justify-end gap-2 shrink-0" style={{ borderColor: 'var(--border, rgba(255,255,255,0.08))' }}>
+        {/* Per-channel timing panel — toggled from the footer button. Sits
+            directly above the footer so it reads as one unit with its toggle.
+            Own scroll cap so many channels don't push the footer off-screen. */}
+        {showAdvanced && (
+          <div className="px-5 py-3 border-t shrink-0 max-h-44 overflow-y-auto space-y-2" style={{ borderColor: 'var(--border, rgba(255,255,255,0.08))', backgroundColor: 'var(--surface, rgba(255,255,255,0.03))' }}>
+            <p className="text-[11px]" style={{ color: 'var(--text-faint, rgba(255,255,255,0.5))' }}>
+              Minutes after the blog goes live that each channel fires. Default {DEFAULT_SOCIAL_OFFSETS_MIN.linkedin} min for all socials.
+            </p>
+            {selectedChannels.size === 0 && (
+              <p className="text-[11px]" style={{ color: 'var(--text-faint, rgba(255,255,255,0.5))' }}>Pick at least one channel above to set its timing.</p>
+            )}
+            {CHANNEL_OPTIONS.map((opt) => {
+              if (!selectedChannels.has(opt.key)) return null
+              const value = offsetOverrides[opt.key] ?? DEFAULT_SOCIAL_OFFSETS_MIN[opt.key]
+              return (
+                <div key={opt.key} className="flex items-center gap-2">
+                  <span className="text-sm w-28">{opt.label}</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={1440}
+                    value={value}
+                    onChange={(e) => {
+                      const n = parseInt(e.target.value, 10)
+                      setOffsetOverrides((prev) => ({ ...prev, [opt.key]: isNaN(n) ? 0 : n }))
+                    }}
+                    className="w-20 px-2 py-1 rounded border bg-transparent text-sm"
+                    style={{ borderColor: 'var(--border-bright, rgba(255,255,255,0.14))', color: 'var(--text, #F5F5F7)' }}
+                  />
+                  <span className="text-xs opacity-70">min</span>
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        <div className="p-5 border-t flex items-center justify-between gap-2 shrink-0" style={{ borderColor: 'var(--border, rgba(255,255,255,0.08))' }}>
+          {/* Prominent entry point to the per-channel timing panel (was a small
+              dotted-text link buried in the body). Sits left of Schedule. */}
           <button
-            onClick={onClose}
+            type="button"
+            onClick={() => setShowAdvanced(s => !s)}
             disabled={submitting}
-            className="px-3 py-2 rounded-lg text-sm font-medium opacity-80 hover:opacity-100 disabled:opacity-40"
+            title="Set how many minutes after the blog goes live each social fires"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium border transition-colors disabled:opacity-40"
+            style={{
+              borderColor: showAdvanced ? '#7C3AED' : 'var(--border-bright, rgba(255,255,255,0.14))',
+              backgroundColor: showAdvanced ? 'rgba(124,58,237,0.10)' : 'transparent',
+              color: 'var(--text, #F5F5F7)',
+            }}
           >
-            Cancel
+            <SlidersHorizontal size={14} />
+            {showAdvanced ? 'Hide timing' : 'Per-channel timing'}
           </button>
-          <button
-            onClick={handleSubmit}
-            disabled={submitting}
-            className="px-4 py-2 rounded-lg text-sm font-semibold inline-flex items-center gap-2 bg-gradient-to-r from-[#7C3AED] to-[#5856D6] text-white shadow-md hover:shadow-lg transition-shadow disabled:opacity-60"
-          >
-            {submitting ? <Loader2 size={14} className="animate-spin" /> : <Calendar size={14} />}
-            {submitting ? 'Scheduling…' : 'Schedule'}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onClose}
+              disabled={submitting}
+              className="px-3 py-2 rounded-lg text-sm font-medium opacity-80 hover:opacity-100 disabled:opacity-40"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={submitting}
+              className="px-4 py-2 rounded-lg text-sm font-semibold inline-flex items-center gap-2 bg-gradient-to-r from-[#7C3AED] to-[#5856D6] text-white shadow-md hover:shadow-lg transition-shadow disabled:opacity-60"
+            >
+              {submitting ? <Loader2 size={14} className="animate-spin" /> : <Calendar size={14} />}
+              {submitting ? 'Scheduling…' : 'Schedule'}
+            </button>
+          </div>
         </div>
       </div>
     </div>
