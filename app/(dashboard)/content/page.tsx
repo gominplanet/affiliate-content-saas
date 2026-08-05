@@ -1406,8 +1406,11 @@ const VideoCard = memo(function VideoCardImpl({
                  brand-new row isn't buried under every setting at once. */}
           {video.is_vertical !== true && (post || isScheduledPending || genPanelOpen) && (
           <div className="pt-3 mt-1 border-t border-black/[0.06] dark:border-white/[0.07]">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#86868b] dark:text-[#8e8e93] mb-2">Post settings &amp; tools</p>
-          <div className="flex items-center gap-x-4 gap-y-1.5 flex-wrap">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#86868b] dark:text-[#8e8e93] mb-2">{(!post && genPanelOpen) ? 'Set up your post' : 'Post settings & tools'}</p>
+          {/* Fresh Generate-now panel → stack every option vertically so it reads
+              as a short checklist. Post-exists rows keep the compact horizontal
+              tool row (Generate / Category / Edit / Delete). */}
+          <div className={(!post && genPanelOpen) ? 'flex flex-col items-start gap-2.5' : 'flex items-center gap-x-4 gap-y-1.5 flex-wrap'}>
             <GenerateButton videoId={id} youtubeVideoId={(video.youtube_video_id as string) || undefined} existingPost={post} userTier={userTier} blogImagePref={blogImagePref} siteId={siteId} includeImages={includeImages} onIncludeImagesChange={setIncludeImages} onDone={(url, t, pid) => onGenerated(id, url, t, pid)} />
             {/* Optional custom blog hero (else the YT thumbnail is the hero).
                 Only meaningful before a post exists — the featured image is
@@ -4432,6 +4435,9 @@ export default function ContentPage() {
               })()}
             </div>
           </div>
+          {/* Two cards per row on wide screens (was a single full-width stack,
+              which read as bland rows). Collapses to one column below xl. */}
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 items-start">
           {displayVideos.map((video) => {
             const isSelected = selectedVideoIds.has(video.id as string)
             return (
@@ -4486,6 +4492,7 @@ export default function ContentPage() {
               </div>
             )
           })}
+          </div>
           {nextPageToken && (
             <button onClick={loadMore} disabled={loadingMore} className="btn-secondary text-sm self-center mt-2">
               {loadingMore ? <><Loader2 size={14} className="animate-spin" /> Loading…</> : <><RefreshCw size={14} /> Load more videos</>}
