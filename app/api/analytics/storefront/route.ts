@@ -43,15 +43,21 @@ export async function GET(request: NextRequest) {
 
     // ── Content pieces (for clicks) ───────────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const [postsRes, vidsRes, earnRes] = await Promise.all([
+    const [postsRes, vidsRes, campRes, earnRes] = await Promise.all([
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (supabase as any).from('blog_posts')
-        .select('title,wordpress_url,geniuslink_code,deal_meta')
+        .select('id,title,wordpress_url,geniuslink_code,deal_meta,video_id')
         .eq('user_id', user.id).eq('status', 'published').not('geniuslink_code', 'is', null),
+      // All YT videos with an ASIN (also the id/youtube_video_id maps used to
+      // resolve a blog post's product via its source video).
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (supabase as any).from('youtube_videos')
-        .select('title,asin,geniuslink_yt_code,youtube_video_id')
-        .eq('user_id', user.id).not('asin', 'is', null).not('geniuslink_yt_code', 'is', null),
+        .select('id,title,asin,geniuslink_yt_code,youtube_video_id')
+        .eq('user_id', user.id).not('asin', 'is', null),
+      // Creator-Connections posts carry their ASIN here (asin ↔ blog_post_id).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (supabase as any).from('campaigns')
+        .select('asin,blog_post_id').eq('user_id', user.id).not('blog_post_id', 'is', null),
       // Real earnings: latest periods of the selected type (desc so [0]=current,
       // [1]=previous per ASIN for the trend).
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -67,11 +73,32 @@ export async function GET(request: NextRequest) {
       if (!g) { g = { pieces: [], codes: new Set(), blog: 0, video: 0 }; byAsin.set(asin, g) }
       return g
     }
-    for (const p of (postsRes.data ?? []) as Array<{ title: string | null; wordpress_url: string | null; geniuslink_code: string | null; deal_meta: { asin?: string } | null }>) {
-      const asin = (p.deal_meta?.asin || '').trim(); const code = (p.geniuslink_code || '').trim()
-      if (!asin || !code) continue
+
+    // ASIN resolution maps: a blog post's product can come from its deal_meta,
+    // its source YouTube video (video_id → youtube_videos.asin), or a Creator
+    // Connections campaign row (blog_post_id → asin). Video-derived posts are the
+    // common case for a YouTube-first creator, so this widens coverage a lot.
+    const vidAsinById = new Map<string, string>()
+    const vidAsinByYtId = new Map<string, string>()
+    for (const v of (vidsRes.data ?? []) as Array<{ id: string | null; asin: string | null; youtube_video_id: string | null }>) {
+      const asin = (v.asin || '').trim(); if (!asin) continue
+      if (v.id) vidAsinById.set(v.id, asin)
+      if (v.youtube_video_id) vidAsinByYtId.set(v.youtube_video_id, asin)
+    }
+    const campAsinByPost = new Map<string, string>()
+    for (const c of (campRes.data ?? []) as Array<{ asin: string | null; blog_post_id: string | null }>) {
+      if (c.blog_post_id && c.asin) campAsinByPost.set(c.blog_post_id, c.asin.trim())
+    }
+
+    for (const p of (postsRes.data ?? []) as Array<{ id: string; title: string | null; wordpress_url: string | null; geniuslink_code: string | null; deal_meta: { asin?: string } | null; video_id: string | null }>) {
+      const code = (p.geniuslink_code || '').trim(); if (!code) continue
+      const asin = (p.deal_meta?.asin || '').trim()
+        || campAsinByPost.get(p.id)
+        || (p.video_id ? (vidAsinById.get(p.video_id) || vidAsinByYtId.get(p.video_id) || '') : '')
+      if (!asin) continue
       const g = ensure(asin); g.pieces.push({ type: 'blog', title: p.title || 'Untitled post', url: p.wordpress_url, code }); g.codes.add(code); g.blog++
     }
+    // YouTube pieces (need their own geniuslink_yt_code for click attribution).
     for (const v of (vidsRes.data ?? []) as Array<{ title: string | null; asin: string | null; geniuslink_yt_code: string | null; youtube_video_id: string | null }>) {
       const asin = (v.asin || '').trim(); const code = (v.geniuslink_yt_code || '').trim()
       if (!asin || !code) continue
