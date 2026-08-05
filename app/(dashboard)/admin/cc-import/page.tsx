@@ -115,6 +115,7 @@ export default function AdminCcImportPage() {
           setRemaining(null)
           setResult({ upserted: totalUpserted, purged: Number(d.purged ?? 0), staged: Number(d.staged ?? 0) })
           toast.success(`Merged ${totalUpserted.toLocaleString()} campaigns · purged ${Number(d.purged ?? 0).toLocaleString()}`)
+          if (d.warning) toast.warning(String(d.warning), { duration: 12_000 })
           void loadCounts()
           return
         }
