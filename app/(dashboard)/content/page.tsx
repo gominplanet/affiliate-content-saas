@@ -1295,19 +1295,28 @@ const VideoCard = memo(function VideoCardImpl({
               ── Fresh rows: hidden until the user clicks "Generate now" (the
                  fork above). Once a post exists or a schedule is pending, this
                  shows unconditionally. */}
-          {video.is_vertical !== true && (post || isScheduledPending || genPanelOpen) && (
+          {/* Fresh row the user expanded → JUST a yellow Back button, then the
+              separator + "Set up your post" panel below. No publish-all /
+              schedule / product-photo up here (per Seb): the fork already
+              offered Schedule, and the panel below is the whole generate flow. */}
+          {video.is_vertical !== true && !post && !isScheduledPending && genPanelOpen && (
             <div className="flex items-center gap-2 flex-wrap">
-              {/* Back to the fork — only on a fresh row the user expanded. */}
-              {!post && !isScheduledPending && genPanelOpen && (
-                <button
-                  type="button"
-                  onClick={() => setGenPanelOpen(false)}
-                  className="inline-flex items-center gap-1 h-8 px-2.5 text-xs font-medium rounded-lg whitespace-nowrap text-[#86868b] dark:text-[#8e8e93] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] transition-colors"
-                  title="Back to Generate / Schedule"
-                >
-                  <ChevronRight size={13} className="rotate-180" /> Back
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => setGenPanelOpen(false)}
+                className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-semibold rounded-lg whitespace-nowrap text-[#1d1d1f] bg-[#FFC200] hover:bg-[#FFD000] hover:shadow-md transition-all"
+                title="Back to Generate / Schedule"
+              >
+                <ChevronRight size={13} className="rotate-180" /> Back
+              </button>
+            </div>
+          )}
+
+          {/* Action row for rows that already have a post OR a pending schedule:
+              Publish-all + Schedule + Visit link. Fresh rows use the fork + panel
+              instead. The pink "Upload product photo" button was removed. */}
+          {video.is_vertical !== true && (post || isScheduledPending) && (
+            <div className="flex items-center gap-2 flex-wrap">
               {showPublishAll && (publishingAll ? (
                 <div className="inline-flex items-center gap-2 h-8 px-3 rounded-lg text-xs font-semibold bg-gradient-to-r from-[#7C3AED] to-[#5856d6] text-white opacity-80">
                   <Loader2 size={12} className="animate-spin" />
@@ -1374,15 +1383,6 @@ const VideoCard = memo(function VideoCardImpl({
                   </a>
                 )
               })()}
-              {/* Pink — upload the exact product photo the AI uses as a
-                  visual reference so in-body images match the real product. */}
-              <span className="inline-flex items-center gap-1">
-                <ProductPhotoUpload
-                  videoId={id}
-                  initialUrl={(video.product_image_url as string | null) ?? null}
-                />
-                <InfoTip>Upload the exact product photo so the AI&rsquo;s in-article images match the real product instead of guessing at it.</InfoTip>
-              </span>
               {publishAllError && (
                 <span className="text-xs text-[#ff3b30] line-clamp-1">{publishAllError}</span>
               )}
@@ -1407,6 +1407,11 @@ const VideoCard = memo(function VideoCardImpl({
           {video.is_vertical !== true && (post || isScheduledPending || genPanelOpen) && (
           <div className="pt-3 mt-1 border-t border-black/[0.06] dark:border-white/[0.07]">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-[#86868b] dark:text-[#8e8e93] mb-2">{(!post && genPanelOpen) ? 'Set up your post' : 'Post settings & tools'}</p>
+          {(!post && genPanelOpen) && (
+            <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] -mt-1 mb-2.5">
+              Everything below <span className="font-semibold text-[#7C3AED]">Generate post</span> is optional. Hit Generate post and we handle the rest.
+            </p>
+          )}
           {/* Fresh Generate-now panel → stack every option vertically so it reads
               as a short checklist. Post-exists rows keep the compact horizontal
               tool row (Generate / Category / Edit / Delete). */}
