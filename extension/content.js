@@ -2129,41 +2129,45 @@ setInterval(() => {
   const getToken = () => new Promise((r) => { try { chrome.storage.local.get(['ccToken'], (o) => r(((o && o.ccToken) || '').trim() || null)) } catch (e) { r(null) } })
 
   function pickPeriod() {
+    const txt = document.body.innerText || ''
+    // Range type from the report's OWN selector wording (beats guessing off the
+    // span — a partial "This Month" can be only a few days wide).
+    const sel = (txt.match(/\b(This Week|Last Week|This Month|Last Month|Year to Date|Last \d+ Days?)\b/i) || [])[1] || ''
+    let type = /week/i.test(sel) ? 'weekly' : /month|year/i.test(sel) ? 'monthly' : ''
+    // Date range like "Jul 26 - Aug 04 2026" (the year may sit only on the END).
     let start = null, end = null
-    try {
-      const txt = document.body.innerText || ''
-      const m = txt.match(/([A-Z][a-z]{2,8}\s+\d{1,2},?\s*\d{4}|\d{1,2}\/\d{1,2}\/\d{4})\s*(?:-|–|—|to)\s*([A-Z][a-z]{2,8}\s+\d{1,2},?\s*\d{4}|\d{1,2}\/\d{1,2}\/\d{4})/)
-      if (m) { start = toISO(m[1]); end = toISO(m[2]) }
-    } catch (e) {}
-    let type = 'monthly'
-    if (start && end) {
-      const days = Math.round((Date.parse(end) - Date.parse(start)) / 86400000)
-      if (days <= 10) type = 'weekly'; else if (days >= 20) type = 'monthly'
+    const m = txt.match(/([A-Z][a-z]{2})\s+(\d{1,2})(?:,?\s*(\d{4}))?\s*(?:-|–|—|to)\s*([A-Z][a-z]{2})\s+(\d{1,2}),?\s*(\d{4})/)
+    if (m) {
+      const year = m[6]
+      start = toISO(`${m[1]} ${m[2]} ${m[3] || year}`)
+      end = toISO(`${m[4]} ${m[5]} ${year}`)
     }
+    if (!type) type = (start && end && Math.round((Date.parse(end) - Date.parse(start)) / 86400000) <= 10) ? 'weekly' : 'monthly'
     return { type, start, end }
   }
 
+  // Per-product earnings table = the one whose header carries BOTH "Total
+  // Earnings" and "Items Shipped" (verified against the live report DOM).
   function findEarningsTable() {
     for (const t of document.querySelectorAll('table')) {
       const head = ((t.querySelector('thead') || t).innerText || '').toLowerCase()
-      const hasAsin = /asin/.test(head) || /product/.test(head)
-      const hasMoney = /(earn|revenue|commission|fee|ordered)/.test(head)
-      const hasUnits = /(item|shipped|ordered|qty|quantity|unit)/.test(head)
-      if (hasAsin && (hasMoney || hasUnits)) return t
+      if (/total earnings/.test(head) && /items shipped/.test(head)) return t
     }
     return null
   }
 
+  // Columns by exact header wording. units = Items Shipped, revenue = Items
+  // Shipped Revenue, earnings = Total Earnings. "Commission Rate" is a %, NOT
+  // money, so it's deliberately skipped.
   function colMap(table) {
     const ths = [...table.querySelectorAll('thead th, thead td')]
     const map = {}
     ths.forEach((th, i) => {
-      const h = (th.innerText || '').toLowerCase()
-      if (/asin/.test(h) && map.asin == null) map.asin = i
-      else if (/(shipped item|items shipped|units|qty|quantity)/.test(h) && map.units == null) map.units = i
-      else if (/(ordered item|items ordered|orders)/.test(h) && map.orders == null) map.orders = i
-      else if (/(earning|commission|ad fees|\bfees\b|fee earned)/.test(h) && map.commission == null) map.commission = i
-      else if (/(revenue|product sales|ordered product sales|\bsales\b)/.test(h) && map.revenue == null) map.revenue = i
+      const h = (th.innerText || '').toLowerCase().replace(/\s+/g, ' ').trim()
+      if (h === 'clicks' && map.clicks == null) map.clicks = i
+      else if (/items shipped revenue/.test(h) && map.revenue == null) map.revenue = i
+      else if (/total earnings/.test(h) && map.commission == null) map.commission = i
+      else if (/^items shipped$/.test(h) && map.units == null) map.units = i
     })
     return map
   }
@@ -2172,21 +2176,25 @@ setInterval(() => {
     const table = findEarningsTable(); if (!table) return []
     const map = colMap(table)
     const { type, start, end } = pickPeriod()
-    if (!start || !end) return [] // no confident period → skip
+    if (!start || !end) return [] // no confident date range → skip
     const out = []
     for (const tr of table.querySelectorAll('tbody tr')) {
-      const cells = [...tr.children].map((td) => (td.innerText || '').trim())
+      const cells = [...tr.children]
       if (!cells.length) continue
-      let asin = map.asin != null && cells[map.asin] ? (cells[map.asin].match(ASIN_RE) || [])[1] : null
-      if (!asin) { for (const c of cells) { const m = c.match(ASIN_RE); if (m) { asin = m[1]; break } } }
+      // The report has NO ASIN text column — the ASIN lives in the product link
+      // (/dp/ASIN or /gp/product/ASIN). That's the only reliable key.
+      const asin = (tr.innerHTML.match(/\/(?:dp|gp\/product|product)\/([A-Z0-9]{10})/) || [])[1]
       if (!asin) continue
+      const cell = (i) => (i != null && cells[i]) ? (cells[i].innerText || '').trim() : ''
+      const link = tr.querySelector('a[href*="/product/"], a[href*="/dp/"]')
+      const title = ((link && (link.getAttribute('title') || link.textContent)) || '').trim().slice(0, 300)
       const rec = { asin, periodType: type, periodStart: start, periodEnd: end }
-      if (map.revenue != null) rec.revenue = num(cells[map.revenue])
-      if (map.commission != null) rec.commission = num(cells[map.commission])
-      if (map.units != null) rec.units = num(cells[map.units])
-      if (map.orders != null) rec.orderedItems = num(cells[map.orders])
-      // Skip empty rows (totals, blanks) — need at least one real number.
-      if (rec.revenue == null && rec.commission == null && rec.units == null && rec.orderedItems == null) continue
+      if (title) rec.productTitle = title
+      if (map.revenue != null) rec.revenue = num(cell(map.revenue))
+      if (map.commission != null) rec.commission = num(cell(map.commission))
+      if (map.units != null) rec.units = num(cell(map.units))
+      if (map.clicks != null) rec.clicks = num(cell(map.clicks))
+      if (rec.revenue == null && rec.commission == null && rec.units == null) continue
       out.push(rec)
     }
     return out
