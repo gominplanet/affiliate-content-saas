@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.11.95'
+export const SCOUT_LATEST_VERSION = '1.11.96'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Send on Creator Connections is now fully background + catalog-free: SCOUT resolves your ASIN to your accepted campaign through Amazon’s own API, looks up the brand chat, and posts your recap — no visible tab, no button-clicking, no popups. Learned from your own sends.'
+  'Storefront Stats: SCOUT now reads your Amazon Influencer earnings (units, revenue, commission) off the reports page and syncs them into MVP automatically, per product, weekly + monthly — powering real sales numbers on the Storefront Stats page.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar

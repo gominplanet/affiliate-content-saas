@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import PageHero from '@/components/layout/PageHero'
 import { AnalyticsGuide } from '@/components/guide/tool-guides'
 import Link from 'next/link'
-import { TrendingUp, MousePointerClick, Eye, ExternalLink, Loader2, AlertCircle, Link2, Youtube, Globe } from 'lucide-react'
+import { TrendingUp, MousePointerClick, Eye, ExternalLink, Loader2, AlertCircle, Link2, Youtube, Globe, DollarSign, ArrowUpRight, ArrowDownRight } from 'lucide-react'
 
 interface AnalyticsPost {
   postId: string
@@ -37,16 +37,24 @@ interface StorefrontProduct {
   pieceCount: number
   blogCount: number
   videoCount: number
+  hasContent: boolean
   monthlySold: number | null
   priceNow: number | null
   commissionPct: number | null
+  units: number | null
+  revenue: number | null
+  commission: number | null
+  revenueDeltaPct: number | null
+  conversionPct: number | null
   pieces: Array<{ type: 'blog' | 'youtube'; title: string; url: string | null }>
   amazonUrl: string
 }
 interface StorefrontResponse {
   connected: boolean
+  period: 'weekly' | 'monthly'
   products: StorefrontProduct[]
-  totals: { products: number; clicks: number; topClicks: number }
+  totals: { products: number; clicks: number; topClicks: number; revenue: number; commission: number }
+  lastSyncedAt: string | null
 }
 
 function StatCard({
@@ -74,18 +82,23 @@ function StatCard({
 export default function AnalyticsPage() {
   const [data, setData] = useState<AnalyticsResponse | null>(null)
   const [store, setStore] = useState<StorefrontResponse | null>(null)
+  const [period, setPeriod] = useState<'weekly' | 'monthly'>('monthly')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  // Storefront rollup — reloads on its own when the period toggle changes, so we
+  // don't re-run the (slower) Geniuslink click fan-out just to switch periods.
+  const loadStore = (p: 'weekly' | 'monthly') => {
+    fetch(`/api/analytics/storefront?period=${p}`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((j) => setStore(j as StorefrontResponse | null))
+      .catch(() => setStore(null))
+  }
+  useEffect(() => { loadStore(period) }, [period])
 
   async function load() {
     setLoading(true)
     setError(null)
-    // Per-product storefront rollup loads in parallel; it's best-effort, so a
-    // failure there never blocks the per-post click view.
-    fetch('/api/analytics/storefront')
-      .then((r) => r.ok ? r.json() : null)
-      .then((j) => setStore(j as StorefrontResponse | null))
-      .catch(() => setStore(null))
     try {
       const res = await fetch('/api/analytics/clicks')
       const json = await res.json().catch(() => ({}))
@@ -221,17 +234,44 @@ export default function AnalyticsPage() {
         />
       </div>
 
-      {/* Your products — per-ASIN rollup. Real clicks (Geniuslink) + demand /
-          price (Keepa) for every product you've made content about. This is the
-          "storefront" view: which products are actually pulling traffic. */}
+      {/* Your products — per-ASIN rollup. Real clicks (Geniuslink) + real sales
+          (SCOUT → storefront_earnings) + Keepa demand. The "storefront" view. */}
       {store?.products && store.products.length > 0 && (() => {
         const pMax = store.products[0]?.clicks || 1
+        const hasSales = store.products.some((p) => p.revenue != null || p.units != null)
+        const syncedAgo = store.lastSyncedAt ? new Date(store.lastSyncedAt).toLocaleDateString() : null
         return (
           <div className="card p-5 mb-6">
             <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-              <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Your products by clicks</p>
-              <span className="text-xs text-[#86868b] dark:text-[#8e8e93]">{store.totals.products} product{store.totals.products === 1 ? '' : 's'} · clicks rolled up across every post + video</span>
+              <div>
+                <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Your products</p>
+                <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">
+                  {store.totals.products} product{store.totals.products === 1 ? '' : 's'}
+                  {hasSales && <> · ${store.totals.revenue.toLocaleString(undefined, { maximumFractionDigits: 0 })} sales · ${store.totals.commission.toLocaleString(undefined, { maximumFractionDigits: 0 })} earned this {period === 'weekly' ? 'week' : 'month'}</>}
+                  {syncedAgo && <> · synced {syncedAgo}</>}
+                </p>
+              </div>
+              {/* Weekly / Monthly toggle */}
+              <div className="flex rounded-lg border border-[var(--border-2)] overflow-hidden">
+                {(['weekly', 'monthly'] as const).map((p) => (
+                  <button key={p} onClick={() => setPeriod(p)}
+                    className={`px-3 py-1.5 text-xs font-medium transition-colors ${period === p ? 'bg-[#7C3AED] text-white' : 'text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]'}`}>
+                    {p === 'weekly' ? 'Weekly' : 'Monthly'}
+                  </button>
+                ))}
+              </div>
             </div>
+
+            {/* Header row (sales columns only show once we have sales data) */}
+            <div className="hidden sm:flex items-center gap-3 px-1 pb-2 text-[10px] font-semibold uppercase tracking-wide text-[#86868b] dark:text-[#8e8e93]">
+              <span className="w-11 flex-shrink-0" />
+              <span className="flex-1">Product</span>
+              {hasSales && <span className="w-20 text-right">Revenue</span>}
+              {hasSales && <span className="w-14 text-right">Units</span>}
+              {hasSales && <span className="w-20 text-right">Earned</span>}
+              <span className="w-14 text-right">Clicks</span>
+            </div>
+
             <div className="flex flex-col">
               {store.products.map((p) => (
                 <div key={p.asin} className="flex items-center gap-3 py-3 border-b border-gray-100 dark:border-white/5 last:border-b-0">
@@ -247,21 +287,42 @@ export default function AnalyticsPage() {
                       <div className="h-full rounded-full bg-gradient-to-r from-[#7C3AED] to-[#5856d6]" style={{ width: `${Math.max((p.clicks / pMax) * 100, 1)}%` }} />
                     </div>
                     <div className="flex items-center gap-2 mt-1 text-[10px] text-[#86868b] dark:text-[#8e8e93] flex-wrap">
+                      {!p.hasContent && <span className="text-[#ff9500] font-semibold">No content yet</span>}
                       <span>{p.blogCount > 0 && `${p.blogCount} post${p.blogCount > 1 ? 's' : ''}`}{p.blogCount > 0 && p.videoCount > 0 && ' · '}{p.videoCount > 0 && `${p.videoCount} video${p.videoCount > 1 ? 's' : ''}`}</span>
+                      {p.conversionPct != null && <span>· {p.conversionPct}% conv</span>}
                       {p.monthlySold != null && <span>· {p.monthlySold.toLocaleString()}+ sold/mo</span>}
-                      {p.priceNow != null && <span>· ${p.priceNow.toFixed(2)}</span>}
                       {p.commissionPct != null && <span className="text-[#1c7a35] font-semibold">· {p.commissionPct}% CC</span>}
                     </div>
                   </div>
-                  <div className="flex flex-col items-end flex-shrink-0 w-16 text-right">
+                  {hasSales && (
+                    <div className="w-20 text-right flex-shrink-0 hidden sm:block">
+                      {p.revenue != null ? (
+                        <>
+                          <span className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] tabular-nums">${p.revenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                          {p.revenueDeltaPct != null && (
+                            <span className={`flex items-center justify-end gap-0.5 text-[10px] ${p.revenueDeltaPct >= 0 ? 'text-[#1c7a35]' : 'text-[#b3261e]'}`}>
+                              {p.revenueDeltaPct >= 0 ? <ArrowUpRight size={10} /> : <ArrowDownRight size={10} />}{Math.abs(p.revenueDeltaPct)}%
+                            </span>
+                          )}
+                        </>
+                      ) : <span className="text-xs text-[#86868b]">—</span>}
+                    </div>
+                  )}
+                  {hasSales && <div className="w-14 text-right flex-shrink-0 hidden sm:block"><span className="text-sm tabular-nums text-[#1d1d1f] dark:text-[#f5f5f7]">{p.units != null ? p.units.toLocaleString() : '—'}</span></div>}
+                  {hasSales && <div className="w-20 text-right flex-shrink-0 hidden sm:block"><span className="text-sm font-semibold tabular-nums text-[#1c7a35]">{p.commission != null ? `$${p.commission.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—'}</span></div>}
+                  <div className="w-14 text-right flex-shrink-0">
                     <span className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] tabular-nums">{p.clicks.toLocaleString()}</span>
-                    <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">clicks</span>
+                    <span className="block text-[10px] text-[#86868b] dark:text-[#8e8e93] sm:hidden">clicks</span>
                   </div>
                 </div>
               ))}
             </div>
+
             <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-4 leading-relaxed">
-              Clicks are real (Geniuslink, last 30 days). &ldquo;Sold/mo&rdquo; is a Keepa demand estimate, not your sales. Actual sales &amp; revenue per product are coming next.
+              Clicks are real (Geniuslink, last 30 days).{' '}
+              {hasSales
+                ? <>Revenue, units &amp; earnings are your real Amazon Influencer sales for the selected {period === 'weekly' ? 'week' : 'month'}, synced by the SCOUT extension.</>
+                : <><DollarSign size={11} className="inline -mt-0.5" /> Sales &amp; revenue fill in once the SCOUT extension syncs your Amazon earnings. &ldquo;Sold/mo&rdquo; is a Keepa demand estimate until then.</>}
             </p>
           </div>
         )
