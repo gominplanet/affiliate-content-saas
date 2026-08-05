@@ -834,6 +834,13 @@ const VideoCard = memo(function VideoCardImpl({
   // once a row has a live post, the user uses WP's own "Edit schedule"
   // workflow instead. Open via the Schedule button next to Publish to all.
   const [scheduleOpen, setScheduleOpen] = useState(false)
+  // Progressive disclosure for fresh (un-generated) rows: the card opens as a
+  // clean two-button fork — "Generate now" vs "Schedule for later" — instead of
+  // dumping every post setting on screen at once (which is what confused users).
+  // Clicking "Generate now" flips this on and reveals the options + generate
+  // actions below. Only meaningful before a post exists / before a schedule is
+  // pending; those states show their own rows.
+  const [genPanelOpen, setGenPanelOpen] = useState(false)
   // Connected social channels for the cascade list. Only the channels
   // the cron worker can publish to are included (no IG/Pinterest/TikTok
   // — they use their own direct-publish routes).
@@ -1238,14 +1245,69 @@ const VideoCard = memo(function VideoCardImpl({
         <div className="flex flex-col gap-2">
           {/* Publish All — shown when ≥1 social platform is connected and unpublished.
               Locked behind Pro tier; non-Pro users see the button but it links to /pricing. */}
+          {/* Fresh, un-generated row → a clean two-choice fork. We hide every
+              post setting + generate action until the user commits to a path
+              (Generate now vs Schedule for later). Showing all of it at once is
+              what confused people; this is the streamlining fix. */}
+          {video.is_vertical !== true && !post && !isScheduledPending && !genPanelOpen && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => setGenPanelOpen(true)}
+                leftIcon={<Sparkles size={12} />}
+                title="Set your options, then generate the blog post now"
+              >
+                Generate now
+              </Button>
+              <button
+                type="button"
+                onClick={() => setScheduleOpen(true)}
+                title="Generate now, publish later — pick a date/time and which socials to push"
+                className="inline-flex items-center gap-2 h-8 px-3 text-xs font-medium rounded-lg whitespace-nowrap border border-[var(--border-2)] bg-[var(--surface)] text-[var(--text)] hover:bg-[var(--surface-2)] transition-colors"
+              >
+                <Calendar size={12} /> Schedule for later
+              </button>
+              {(() => {
+                const link = deriveProductUrl(video)
+                if (!link) return null
+                return (
+                  <a
+                    href={link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="Open the first product / affiliate link from the video description"
+                    className="inline-flex items-center gap-2 h-8 px-3 text-xs font-medium rounded-lg text-[#1d1d1f] whitespace-nowrap bg-[#FFC200] hover:bg-[#FFD000] hover:shadow-md transition-all"
+                  >
+                    <ExternalLink size={12} /> Visit Link or Product
+                  </a>
+                )
+              })()}
+            </div>
+          )}
+
           {/* Action row — Publish all (when relevant) + the yellow Visit
               and pink Upload-product-photo buttons.
               ── VERTICAL videos: hidden. The Vertical Videos workflow is
                 "Short → TikTok / IG" via the modal pills below; we do NOT
                 want a blog-post-generation entry point cluttering the row
-                or tempting users into the long-form path for a Short. */}
-          {video.is_vertical !== true && (
+                or tempting users into the long-form path for a Short.
+              ── Fresh rows: hidden until the user clicks "Generate now" (the
+                 fork above). Once a post exists or a schedule is pending, this
+                 shows unconditionally. */}
+          {video.is_vertical !== true && (post || isScheduledPending || genPanelOpen) && (
             <div className="flex items-center gap-2 flex-wrap">
+              {/* Back to the fork — only on a fresh row the user expanded. */}
+              {!post && !isScheduledPending && genPanelOpen && (
+                <button
+                  type="button"
+                  onClick={() => setGenPanelOpen(false)}
+                  className="inline-flex items-center gap-1 h-8 px-2.5 text-xs font-medium rounded-lg whitespace-nowrap text-[#86868b] dark:text-[#8e8e93] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] transition-colors"
+                  title="Back to Generate / Schedule"
+                >
+                  <ChevronRight size={13} className="rotate-180" /> Back
+                </button>
+              )}
               {showPublishAll && (publishingAll ? (
                 <div className="inline-flex items-center gap-2 h-8 px-3 rounded-lg text-xs font-semibold bg-gradient-to-r from-[#7C3AED] to-[#5856d6] text-white opacity-80">
                   <Loader2 size={12} className="animate-spin" />
@@ -1339,8 +1401,10 @@ const VideoCard = memo(function VideoCardImpl({
               ── VERTICAL videos: hidden. Short-form vertical workflow is
                 Post-to-TikTok / Post-to-IG only; the blog-post manage
                 actions (Generate, Rewrite, Edit in WP, Delete the WP post)
-                don't apply when there's no blog post in this flow. */}
-          {video.is_vertical !== true && (
+                don't apply when there's no blog post in this flow.
+              ── Fresh rows: hidden until "Generate now" (the fork above) so a
+                 brand-new row isn't buried under every setting at once. */}
+          {video.is_vertical !== true && (post || isScheduledPending || genPanelOpen) && (
           <div className="pt-3 mt-1 border-t border-black/[0.06] dark:border-white/[0.07]">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-[#86868b] dark:text-[#8e8e93] mb-2">Post settings &amp; tools</p>
           <div className="flex items-center gap-x-4 gap-y-1.5 flex-wrap">
@@ -1349,10 +1413,13 @@ const VideoCard = memo(function VideoCardImpl({
                 Only meaningful before a post exists — the featured image is
                 set at generation time. */}
             {!post && (
-              <BlogThumbUpload
-                videoId={id}
-                initialUrl={(video.blog_thumbnail_url as string | null) ?? null}
-              />
+              <span className="inline-flex items-center gap-1">
+                <BlogThumbUpload
+                  videoId={id}
+                  initialUrl={(video.blog_thumbnail_url as string | null) ?? null}
+                />
+                <InfoTip>Optional. This becomes the blog post&rsquo;s featured image. If you don&rsquo;t upload one, MVP uses your YouTube thumbnail as the post thumbnail.</InfoTip>
+              </span>
             )}
             <span className="inline-flex items-center gap-1">
               <CategoryPicker
@@ -1752,6 +1819,34 @@ const VideoCard = memo(function VideoCardImpl({
         existingPostId={post?.postId ?? null}
         siteId={siteId}
         includeImages={includeImages}
+        onIncludeImagesChange={setIncludeImages}
+        // Same per-post controls as the card's Generate-now panel, so a user
+        // who schedules straight from the fork can still set a custom thumbnail,
+        // category and tags. They persist to the youtube_videos row → applied
+        // when the scheduled post generates.
+        optionsSlot={!post ? (
+          <div className="flex items-center gap-x-4 gap-y-2 flex-wrap">
+            <span className="inline-flex items-center gap-1">
+              <BlogThumbUpload videoId={id} initialUrl={(video.blog_thumbnail_url as string | null) ?? null} />
+              <InfoTip>Optional. This becomes the blog post&rsquo;s featured image. If you don&rsquo;t upload one, MVP uses your YouTube thumbnail as the post thumbnail.</InfoTip>
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <CategoryPicker
+                videoId={id}
+                initial={(video.selected_category as string | null) ?? null}
+                brandNiches={brandNiches}
+                customCategories={customCategories}
+                onCustomCategoryAdded={onCustomCategoryAdded}
+                hasPublishedPost={false}
+              />
+              <InfoTip>Which blog category this post files under. Leave it and MVP picks the best fit from your brand&rsquo;s niches.</InfoTip>
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <BrandTagsInput videoId={id} initial={(video.brand_tags as string | null) ?? null} />
+              <InfoTip>Extra keywords/brands to weave into this post for SEO. Optional, comma-separated.</InfoTip>
+            </span>
+          </div>
+        ) : undefined}
         open={scheduleOpen}
         onClose={() => setScheduleOpen(false)}
         onScheduled={(result) => {
