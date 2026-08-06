@@ -43,7 +43,7 @@ import DailyCcDigest from '@/components/dashboard/DailyCcDigest'
 import TrialResearchRow from '@/components/dashboard/TrialResearchRow'
 import {
   PlaySquare, ArrowRight, FileText, Layers, Gauge,
-  Facebook, Sparkles, Image as ImageIcon,
+  Facebook, Sparkles,
   Scale, ArrowUpRight, BadgePercent, Eye, Clock,
   Youtube, Link2, BookOpen, Send, Mail,
 } from 'lucide-react'
@@ -91,9 +91,6 @@ export default async function DashboardPage() {
     { count: collabsThisPeriod },
     { count: thumbnailsThisPeriod },
     { count: metadataGensThisPeriod },
-    { count: postedVideoCount },
-    { count: missingImagesCount },
-    { count: scheduledCount },
     { data: recentVideos },
   ] = await Promise.all([
     sb.from('blog_posts').select('id', { count: 'estimated', head: true }).eq('user_id', user!.id).gte('published_at', periodStartISO),
@@ -106,12 +103,6 @@ export default async function DashboardPage() {
       .eq('user_id', user!.id)
       .eq('feature', 'yt_meta_title_strategist')
       .gte('created_at', periodStartISO),
-    // Videos that already became a post (video-backed blog_posts).
-    sb.from('blog_posts').select('id', { count: 'estimated', head: true }).eq('user_id', user!.id).not('video_id', 'is', null),
-    // Published posts with no in-article images yet — a quick quality win.
-    sb.from('blog_posts').select('id', { count: 'estimated', head: true }).eq('user_id', user!.id).eq('status', 'published').or('body_images_count.is.null,body_images_count.eq.0'),
-    // Posts queued to auto-publish (pending = active queue, future = dated).
-    sb.from('scheduled_posts').select('id', { count: 'estimated', head: true }).eq('user_id', user!.id).in('status', ['pending', 'future']),
     // Recent catalog for the hero strip.
     sb.from('youtube_videos')
       .select('id, title, published_at, thumbnail_url, youtube_video_id, is_vertical')
@@ -141,16 +132,6 @@ export default async function DashboardPage() {
   const videoCount = videoCountRaw ?? 0
   const publishedCount = postCount ?? 0
   const isNewUser = publishedCount === 0
-
-  // ── Opportunities & to-dos ───────────────────────────────────────────────
-  // The opportunity counts (postedVideoCount / missingImagesCount /
-  // scheduledCount) are fetched in the merged wave above; the slower signals
-  // (SEO ranking, link clicks) load lazily client-side below.
-  // Untapped catalog: synced videos not yet turned into a post. The single
-  // biggest lever — a backlog of free content sitting idle.
-  const catalogGap = Math.max(0, videoCount - (postedVideoCount ?? 0))
-  const missingImages = missingImagesCount ?? 0
-  const scheduledPending = scheduledCount ?? 0
 
   const int = integration as Record<string, unknown> | null
   const wpConnected = int?.setup_status === 'site_ready'
@@ -337,54 +318,6 @@ export default async function DashboardPage() {
                 per user request. Standalone card; the detailed per-bucket bars
                 still live in the "Plan & usage" section below. */}
             <ConsumptionGauge />
-            {/* To-dos & opportunities — orange panel. */}
-            <section className="rounded-2xl p-5 sm:p-6" style={{ background: 'rgba(255, 149, 0, 0.08)', border: '1px solid rgba(255, 149, 0, 0.18)' }}>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] mb-3" style={{ color: 'var(--text-faint)' }}>Your opportunities</p>
-            {/* auto-fit grid so the row stays balanced whether 2, 3 or 4 cards
-                are present (the conditional cards come and go). */}
-            <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))' }}>
-              {catalogGap > 0 && (
-                <TodoCard
-                  href="/content"
-                  icon={<PlaySquare size={14} />}
-                  accent="#7C3AED"
-                  value={catalogGap.toLocaleString()}
-                  title="videos not yet posted"
-                  desc="Turn your back catalog into ranking blog posts — one click each."
-                />
-              )}
-              {missingImages > 0 && (
-                <TodoCard
-                  href="/content"
-                  icon={<ImageIcon size={14} />}
-                  accent="#FF9500"
-                  value={missingImages.toLocaleString()}
-                  title="posts have no images"
-                  desc="Add in-article photos — better engagement and on-page SEO."
-                />
-              )}
-              {scheduledPending > 0 && (
-                <TodoCard
-                  href="/content"
-                  icon={<Clock size={14} />}
-                  accent="#10B981"
-                  value={scheduledPending.toLocaleString()}
-                  title="posts scheduled"
-                  desc="Queued to auto-publish — the cron fires every minute."
-                />
-              )}
-              {/* Always present (this whole section only renders once the user
-                  has published posts), so the row never looks lopsided. */}
-              <TodoCard
-                href="/content?tab=posts"
-                icon={<Send size={14} />}
-                accent="#3B82F6"
-                value={publishedCount.toLocaleString()}
-                title="posts ready to share"
-                desc="Push them to your socials for more reach and affiliate clicks."
-              />
-            </div>
-            </section>
             <DashboardLiveCards />
           </>
         )}
@@ -604,26 +537,6 @@ function BigAction({ href, icon, title, desc, accent, external }: { href: string
   return (
     <Link href={href} style={style} className={className}>
       {inner}
-    </Link>
-  )
-}
-
-function TodoCard({ href, icon, accent, value, title, desc }: { href: string; icon: React.ReactNode; accent: string; value: string; title: string; desc: string }) {
-  return (
-    <Link
-      href={href}
-      className="group rounded-2xl border p-5 transition-all duration-200 hover:-translate-y-0.5 flex flex-col"
-      style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', boxShadow: 'var(--card-shadow)' }}
-    >
-      <div className="flex items-center gap-2 mb-3" style={{ color: accent }}>
-        <span className="grid place-items-center w-7 h-7 rounded-lg" style={{ backgroundColor: `${accent}1a` }}>{icon}</span>
-        <ArrowUpRight size={13} className="ml-auto opacity-40 group-hover:opacity-100 transition-opacity" style={{ color: 'var(--text-faint)' }} />
-      </div>
-      <p className="leading-none" style={{ color: 'var(--text)' }}>
-        <span className="text-[26px] font-semibold tabular-nums">{value}</span>{' '}
-        <span className="text-[13px] font-medium" style={{ color: 'var(--text-soft)' }}>{title}</span>
-      </p>
-      <p className="text-[11px] mt-2" style={{ color: 'var(--text-faint)' }}>{desc}</p>
     </Link>
   )
 }
