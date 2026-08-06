@@ -910,6 +910,21 @@ export class WordPressService {
     return null
   }
 
+  /** The post's CURRENT public permalink (WP's `link` field), or '' if it can't
+   *  be read. Used to repair a stored ?p=123 URL to the pretty "Post name" form
+   *  once the post is live, before we share it to social. */
+  async getPostLink(id: number): Promise<string> {
+    try {
+      const p = await this.request<{ link?: string }>(
+        `/posts/${id}?_fields=id,link&context=view`,
+        { method: 'GET' },
+      )
+      return (p && typeof p.link === 'string') ? p.link : ''
+    } catch {
+      return ''
+    }
+  }
+
   async updatePost(id: number, post: Partial<WPPost>): Promise<WPPostResponse> {
     post = this.healBlocks(post)
     return this.request<WPPostResponse>(`/posts/${id}`, {

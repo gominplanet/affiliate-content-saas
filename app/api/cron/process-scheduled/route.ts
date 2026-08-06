@@ -37,6 +37,7 @@ import { getDeadChannels, shouldSkipChannel, autoSkipMessage, type DeadChannel }
 import { createWordPressService } from '@/services/wordpress'
 import { getWordPressCredentials, isSitePaused } from '@/lib/wordpress-sites'
 import { normalizeTier } from '@/lib/tier'
+import { isPlainPermalink } from '@/lib/clean-permalink'
 import { pingIndexNowForUrl } from '@/lib/seo-on-publish'
 import { publishTikTokForTarget, type TikTokScheduleOptions } from '@/lib/tiktok-publish'
 import { publishInstagramForTarget, type IgMode } from '@/lib/instagram-publish'
@@ -341,7 +342,7 @@ async function publishOne(
   const [postRes, intRes] = await Promise.all([
     admin
       .from('blog_posts')
-      .select('id,title,wordpress_url,wordpress_post_id,geniuslink_code,content,youtube_videos(thumbnail_url,youtube_video_id)')
+      .select('id,title,wordpress_url,wordpress_post_id,wordpress_site_id,geniuslink_code,content,youtube_videos(thumbnail_url,youtube_video_id)')
       .eq('id', row.blog_post_id)
       .single(),
     admin
@@ -363,7 +364,28 @@ async function publishOne(
     throw new Error('Blog post has no published URL')
   }
 
-  const url = post.wordpress_url ?? ''
+  let url = post.wordpress_url ?? ''
+
+  // Repair an ugly ?p=123 URL before sharing. A post created as a draft or
+  // scheduled had its plain permalink captured at create time; once it's live,
+  // WordPress reports the real "Post name" URL. If the stored URL is still the
+  // ?p= form, fetch the current permalink from WP and persist it so this share
+  // (and every future one) uses the clean link. Best-effort — on any failure we
+  // fall back to whatever we had.
+  if (isPlainPermalink(url) && post.wordpress_post_id) {
+    try {
+      const siteId = (post as { wordpress_site_id?: string | null }).wordpress_site_id ?? null
+      const creds = await getWordPressCredentials(admin, row.user_id, siteId)
+      if (creds?.wordpress_url && creds.wordpress_username && creds.wordpress_app_password) {
+        const wp = createWordPressService(creds.wordpress_url, creds.wordpress_username, creds.wordpress_app_password, creds.wordpress_api_token ?? undefined)
+        const fresh = (await wp.getPostLink(post.wordpress_post_id)).trim()
+        if (fresh && !isPlainPermalink(fresh)) {
+          url = fresh
+          await admin.from('blog_posts').update({ wordpress_url: fresh }).eq('id', post.id)
+        }
+      }
+    } catch { /* keep the stored URL on any failure */ }
+  }
 
   // Per-user link prefs (affiliate on/off × content blog/video/none) for FB /
   // LinkedIn / Bluesky, plus the video URL + Amazon-tag flag for disclosure.
@@ -749,6 +771,15 @@ async function flipBlogPostToPublished(
   // The flip itself — single PATCH to /posts/:id with status=publish.
   // WP accepts this even if the post is in 'draft' or 'pending' status.
   const updated = await wpService.updatePost(post.wordpress_post_id, { status: 'publish' })
+
+  // Now that the post is LIVE, WordPress reports its real "Post name" permalink
+  // (before publish, `link` is the ugly ?p=123 form). Persist it so the social
+  // cascade that runs after this flip shares the clean URL instead of ?p=. Only
+  // overwrite when WP gave us a real, non-plain link.
+  const freshLink = (updated.link || '').trim()
+  if (freshLink && !isPlainPermalink(freshLink) && freshLink !== post.wordpress_url) {
+    await admin.from('blog_posts').update({ wordpress_url: freshLink }).eq('id', post.id)
+  }
 
   // Fire the deferred IndexNow ping now that the URL is live.
   // Fire-and-forget so a slow/rejected ping never fails the cron row.
