@@ -137,7 +137,7 @@ function FreeResearchSection() {
             className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-medium uppercase tracking-[0.18em] mb-5"
             style={{ backgroundColor: 'rgba(52,199,89,0.12)', color: '#34c759', border: '1px solid rgba(52,199,89,0.28)' }}
           >
-            <Sparkles size={10} /> Free · no card · no setup
+            <Sparkles size={10} /> Free on every plan · even the free tier
           </span>
           <h2 className="text-[40px] sm:text-[56px] font-extrabold tracking-[-0.03em] leading-[1.0] mb-5" style={{ color: 'var(--text)' }}>
             One research engine.<br />
@@ -153,7 +153,7 @@ function FreeResearchSection() {
             </span>
           </h2>
           <p className="text-[16px] sm:text-[18px] leading-relaxed max-w-2xl mx-auto" style={{ color: 'var(--text-soft)' }}>
-            MVP&apos;s research algorithm scans the <span style={{ color: 'var(--text)' }}>whole Amazon catalogue</span>, every <span style={{ color: 'var(--text)' }}>live deal</span>, and the <span style={{ color: 'var(--text)' }}>Creator Connections</span> campaign board — then one intuitive filter sorts them by sales volume, rating, price, real discount, commission and competition. The winners rise to the top. And the research is free.
+            MVP&apos;s research algorithm scans the <span style={{ color: 'var(--text)' }}>whole Amazon catalogue</span>, every <span style={{ color: 'var(--text)' }}>live deal</span>, and the <span style={{ color: 'var(--text)' }}>Creator Connections</span> campaign board — then one intuitive filter sorts them by sales volume, rating, price, real discount, commission and competition. The winners rise to the top. <span style={{ color: 'var(--text)' }}>Every plan gets the full research engine — including the free tier.</span> No card, no trial clock.
           </p>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -215,7 +215,7 @@ function RolesSection() {
             One hub. Many hats.
           </span>
           <h2
-            className="text-[40px] sm:text-[52px] font-semibold tracking-tight leading-[1.05] mb-5"
+            className="text-[40px] sm:text-[54px] font-extrabold tracking-[-0.03em] leading-[1.02] mb-5"
             style={{ color: 'var(--text)' }}
           >
             MVP is many roles.
@@ -290,7 +290,7 @@ function BusinessLayerSection() {
             <BadgePercent size={10} />
             The business layer
           </span>
-          <h2 className="text-[40px] sm:text-[52px] font-semibold tracking-tight leading-[1.05] mb-5" style={{ color: 'var(--text)' }}>
+          <h2 className="text-[40px] sm:text-[54px] font-extrabold tracking-[-0.03em] leading-[1.02] mb-5" style={{ color: 'var(--text)' }}>
             Content is step one.
             <br />
             <span style={{ background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
@@ -360,7 +360,7 @@ function DealRadarSection() {
             <Zap size={10} />
             New — Amazon Deal Radar
           </span>
-          <h2 className="text-[40px] sm:text-[52px] font-semibold tracking-tight leading-[1.05] mb-5" style={{ color: 'var(--text)' }}>
+          <h2 className="text-[40px] sm:text-[54px] font-extrabold tracking-[-0.03em] leading-[1.02] mb-5" style={{ color: 'var(--text)' }}>
             You’re leaving commissions on the table.
             <br />
             <span style={{ background: 'linear-gradient(135deg, #F97316 0%, #C026D3 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
@@ -487,7 +487,7 @@ function DiscoverabilitySection() {
             <Sparkles size={10} />
             Found by Google and AI
           </span>
-          <h2 className="text-[40px] sm:text-[52px] font-semibold tracking-tight leading-[1.05] mb-5" style={{ color: 'var(--text)' }}>
+          <h2 className="text-[40px] sm:text-[54px] font-extrabold tracking-[-0.03em] leading-[1.02] mb-5" style={{ color: 'var(--text)' }}>
             Search changed.
             <br />
             <span style={{ background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
@@ -632,7 +632,7 @@ function AsinSection() {
             <Bookmark size={10} />
             No channel? No problem
           </span>
-          <h2 className="text-[40px] sm:text-[52px] font-semibold tracking-tight leading-[1.05] mb-5" style={{ color: 'var(--text)' }}>
+          <h2 className="text-[40px] sm:text-[54px] font-extrabold tracking-[-0.03em] leading-[1.02] mb-5" style={{ color: 'var(--text)' }}>
             Don&apos;t make videos?{' '}
             <span style={{ background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
               Start from a link.
@@ -684,7 +684,7 @@ function PartnerNetworksSection() {
             <Sparkles size={10} />
             Multi-network affiliate
           </span>
-          <h2 className="text-[40px] sm:text-[52px] font-semibold tracking-tight leading-[1.05] mb-5" style={{ color: 'var(--text)' }}>
+          <h2 className="text-[40px] sm:text-[54px] font-extrabold tracking-[-0.03em] leading-[1.02] mb-5" style={{ color: 'var(--text)' }}>
             Earn beyond the{' '}
             <span style={{ background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
               Amazon tag.
@@ -752,7 +752,7 @@ function WorkflowSection() {
             How it works
           </span>
           <h2
-            className="text-[40px] sm:text-[52px] font-semibold tracking-tight leading-[1.05] mb-5"
+            className="text-[40px] sm:text-[54px] font-extrabold tracking-[-0.03em] leading-[1.02] mb-5"
             style={{ color: 'var(--text)' }}
           >
             The{' '}
@@ -933,7 +933,7 @@ function GroundedSection() {
             Grounded. Never guessed.
           </span>
           <h2
-            className="text-[40px] sm:text-[52px] font-semibold tracking-tight leading-[1.05] mb-5"
+            className="text-[40px] sm:text-[54px] font-extrabold tracking-[-0.03em] leading-[1.02] mb-5"
             style={{ color: 'var(--text)' }}
           >
             Grounded in{' '}
@@ -1141,7 +1141,7 @@ function BrandedSiteSection() {
             Free with every plan, trial included
           </p>
           <h2
-            className="text-[28px] lg:text-[40px] font-semibold tracking-tight leading-tight mb-5"
+            className="text-[28px] lg:text-[42px] font-extrabold tracking-[-0.03em] leading-tight mb-5"
             style={{ color: 'var(--text)' }}
           >
             A real branded WordPress site.{' '}
@@ -1375,7 +1375,7 @@ function PricingSection() {
             Pricing
           </span>
           <h2
-            className="text-[40px] sm:text-[52px] font-semibold tracking-tight leading-[1.05] mb-5"
+            className="text-[40px] sm:text-[54px] font-extrabold tracking-[-0.03em] leading-[1.02] mb-5"
             style={{ color: 'var(--text)' }}
           >
             Start free.{' '}
@@ -1670,7 +1670,7 @@ function ProofSection() {
             Proven, not projected
           </span>
           <h2
-            className="text-[36px] sm:text-[44px] font-semibold tracking-tight leading-[1.1] mb-4"
+            className="text-[36px] sm:text-[46px] font-extrabold tracking-[-0.03em] leading-[1.05] mb-4"
             style={{ color: 'var(--text)' }}
           >
             The system behind a $3M/year affiliate business.
@@ -1777,7 +1777,7 @@ function FinalCTASection() {
           Ready when you are
         </span>
         <h2
-          className="text-[44px] sm:text-[60px] font-semibold tracking-tight leading-[1.02] mb-5"
+          className="text-[44px] sm:text-[64px] font-extrabold tracking-[-0.035em] leading-[1.0] mb-5"
           style={{ color: 'var(--text)' }}
         >
           Start your{' '}
@@ -2362,7 +2362,7 @@ function BeforeAfterSection() {
             One subscription replaces your stack
           </span>
           <h2
-            className="text-[40px] sm:text-[52px] font-semibold tracking-tight leading-[1.05] mb-5"
+            className="text-[40px] sm:text-[54px] font-extrabold tracking-[-0.03em] leading-[1.02] mb-5"
             style={{ color: 'var(--text)' }}
           >
             Five tools and a tab tangle.{' '}
