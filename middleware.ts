@@ -54,6 +54,13 @@ const publicPaths = [
   // to land on the page to sign in / sign up. Page-level auth check does the
   // rest.
   '/agency/accept',
+  // Public link-in-bio / "Shop Grid" storefront at /shop/<handle>. This is the
+  // whole point of the feature: a page tapped from an Instagram/TikTok bio by
+  // logged-out visitors. Without this, middleware 307s every public hit to
+  // /login (creators saw their bio link land on the MVP login page). The page
+  // renders server-side with the service-role client and shows only PUBLISHED
+  // pages, so there's nothing session-gated to protect.
+  '/shop',
   '/pricing', '/privacy', '/terms',
   // Public product tour — the marketing twin of the in-app /pro-tour page.
   '/tour',
