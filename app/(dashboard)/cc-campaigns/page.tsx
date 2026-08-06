@@ -420,7 +420,9 @@ export default function CcCampaignsPage() {
       }
       const r = await fetch('/api/campaigns/sync-joined', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ campaigns: res.campaigns }),
+        // reconcile: make the stored joined set an exact mirror of Amazon's list
+        // (clears rows no longer joined). Safe — only runs on a non-empty sync.
+        body: JSON.stringify({ campaigns: res.campaigns, reconcile: true }),
       })
       const j = await r.json().catch(() => ({}))
       if (!r.ok || j?.error) { if (!silent) toast.error(j?.error || 'Sync failed.', { id: tId, duration: 8_000 }); return }

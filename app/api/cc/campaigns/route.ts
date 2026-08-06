@@ -89,12 +89,16 @@ export async function GET(request: NextRequest) {
     // catalog down to them. Empty set → no joined campaigns (handled below).
     let joinedAsins: string[] = []
     if (joinedOnly) {
+      // Read the PERSISTED, authoritative joined marker (amazon_joined_at) — set by
+      // the SCOUT active-view sync and in-app accepts, reconciled to mirror Amazon.
+      // This persists across reloads (no re-sync needed) and excludes the stale
+      // accepted_at rows an early sync left behind.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: acc } = await (supabase as any)
         .from('campaigns')
-        .select('asin,accepted_at')
+        .select('asin,amazon_joined_at')
         .eq('user_id', user.id)
-        .not('accepted_at', 'is', null)
+        .not('amazon_joined_at', 'is', null)
         .limit(4000)
       const s = new Set<string>()
       for (const r of acc ?? []) {
