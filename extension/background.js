@@ -721,7 +721,19 @@ async function sendByAsinApi(asin, message, campaignIdsHint) {
 function ccListMyCampaignsInPage(opts) {
   return (async () => {
     try {
-      const { creatorId, headers } = opts
+      let creatorId = opts.creatorId
+      const headers = opts.headers
+      // Self-discover the creator id from the OPEN page if the background didn't
+      // have it yet — Amazon embeds it (amzn1.creator.…) in the CC page's state
+      // JSON even when it's not in the URL. This is what lets SCOUT open the page
+      // itself instead of asking the user to visit their grid first.
+      if (!creatorId) {
+        try {
+          const html = (document.documentElement && document.documentElement.innerHTML) || ''
+          const m = html.match(/amzn1\.creator\.[a-z0-9-]+/i)
+          if (m) creatorId = m[0]
+        } catch (e) {}
+      }
       if (!creatorId) return { ok: false, reason: 'no-creator-id' }
       const hdr = () => { const o = Object.assign({}, headers || {}); if (!o['Content-Type'] && !o['content-type']) o['Content-Type'] = 'application/json'; if (!o['Accept'] && !o['accept']) o['Accept'] = 'application/json'; return o }
       const out = []
@@ -748,7 +760,7 @@ function ccListMyCampaignsInPage(opts) {
         nextToken = (resp && resp.nextToken) || null
         if (!ads.length || !nextToken) break
       }
-      return { ok: true, campaigns: out }
+      return { ok: true, campaigns: out, creatorId }
     } catch (e) { return { ok: false, error: e && e.message ? e.message : 'exception' } }
   })()
 }
@@ -763,12 +775,20 @@ async function listMyCampaignsApi() {
     const tab = await chrome.tabs.create({ url: 'https://affiliate-program.amazon.com/p/connect/requests?status=opportunity&type=affiliate-plus', active: false })
     tabId = tab.id
     await waitForTabLoad(tabId, 15000)
-    await _sleep(800)
+    // Give Amazon's React app a moment to embed the page state (which carries
+    // the creator id) before we scan / call the API.
+    await _sleep(2200)
     const res = await chrome.scripting.executeScript({
       target: { tabId }, world: 'MAIN', func: ccListMyCampaignsInPage,
       args: [{ creatorId: _ccCreatorId, headers: (_ccSendRecipe && _ccSendRecipe.headers) || {} }],
     })
-    return (res && res[0] && res[0].result) || { ok: false, reason: 'no-result' }
+    const out = (res && res[0] && res[0].result) || { ok: false, reason: 'no-result' }
+    // Persist a newly-discovered creator id so every later call has it instantly.
+    if (out && out.creatorId && out.creatorId !== _ccCreatorId) {
+      _ccCreatorId = out.creatorId
+      try { chrome.storage.local.set({ ccCreatorId: out.creatorId }) } catch (e) {}
+    }
+    return out
   } catch (e) {
     return { ok: false, error: e && e.message ? e.message : 'exception' }
   } finally {
