@@ -479,8 +479,8 @@ export default function LinkInBioPage() {
               <label className="text-[11px] font-medium text-muted-foreground">Title
                 <input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="Product name" className="mt-1 w-full px-2.5 py-1.5 text-sm rounded-lg border bg-background" />
               </label>
-              <label className="text-[11px] font-medium text-muted-foreground">Link (paste your Geniuslink here)
-                <input value={newUrl} onChange={(e) => setNewUrl(e.target.value)} placeholder="https://…" className="mt-1 w-full px-2.5 py-1.5 text-sm rounded-lg border bg-background" />
+              <label className="text-[11px] font-medium text-muted-foreground">Link (paste any Amazon or product link — we&rsquo;ll make it your affiliate link)
+                <input value={newUrl} onChange={(e) => setNewUrl(e.target.value)} placeholder="https://… (Amazon, geni.us, any product link)" className="mt-1 w-full px-2.5 py-1.5 text-sm rounded-lg border bg-background" />
               </label>
               <Button size="sm" onClick={addManual} disabled={busy}><Plus className="h-4 w-4 mr-1" /> Add</Button>
               <label className="text-[11px] font-medium text-muted-foreground sm:col-span-3">Image URL (optional)
