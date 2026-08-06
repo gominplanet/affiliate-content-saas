@@ -23,23 +23,7 @@ import {
   ShoppingBag, Store, ShoppingCart, Search,
   Radar, Coins,
 } from 'lucide-react'
-import { DemoVideoSection, FAQSection, StickyBottomBar } from '@/components/landing/islands'
-
-// Per-section accent presets. Card icon badges + header pills read from
-// --accent-soft / --accent-text, so wrapping a section in <Accent vars={…}>
-// recolors its cards without touching markup. Default (purple) lives in the
-// palettes below.
-const A_ORANGE = { ['--accent-soft' as string]: 'rgba(249,115,22,0.14)', ['--accent-text' as string]: '#F97316' }
-const A_TEAL = { ['--accent-soft' as string]: 'rgba(34,211,238,0.16)', ['--accent-text' as string]: '#22D3EE' }
-const A_GREEN = { ['--accent-soft' as string]: 'rgba(16,185,129,0.14)', ['--accent-text' as string]: '#10B981' }
-const A_BLUE = { ['--accent-soft' as string]: 'rgba(59,130,246,0.14)', ['--accent-text' as string]: '#3B82F6' }
-const A_PINK = { ['--accent-soft' as string]: 'rgba(236,72,153,0.14)', ['--accent-text' as string]: '#EC4899' }
-const A_AMBER = { ['--accent-soft' as string]: 'rgba(245,158,11,0.14)', ['--accent-text' as string]: '#F59E0B' }
-
-/** Recolor a section's card accents (icon badges + header pills). */
-function Accent({ vars, children }: { vars: React.CSSProperties; children: React.ReactNode }) {
-  return <div style={vars}>{children}</div>
-}
+import { FAQSection, StickyBottomBar } from '@/components/landing/islands'
 
 // Local CSS-var override for a DARK emphasis band inside the otherwise-light
 // page. Any section wrapped in <DarkBand> flips its text/surface tokens so
@@ -105,31 +89,27 @@ export default function LandingPreview() {
       {/* Hub-animation keyframes + smooth scroll now live in globals.css so
           this page can render as a Server Component (styled-jsx is client-only). */}
       <Nav />
+      {/* One accent (purple), lots of white — logie5-style. Sections render on
+          the light page; only the final CTA keeps a dark band, as a strong
+          closer. (Was: per-section rainbow accents + multiple dark bands.) */}
       <Hero />
       <PlatformBar />
       <ComparisonSection />
-      <DarkBand bg="linear-gradient(160deg, #1A0B2E 0%, #2D0F4A 50%, #17082B 100%)" accent={A_TEAL}>
-        <FreeResearchSection />
-      </DarkBand>
-      <DemoVideoSection />
+      <FreeResearchSection />
       <RolesSection />
       <WorkflowSection />
-      <DarkBand bg="linear-gradient(160deg, #1A0B2E 0%, #2A0E3A 45%, #3A0E22 100%)" accent={A_ORANGE}>
-        <DealRadarSection />
-      </DarkBand>
+      <DealRadarSection />
       <AsinSection />
-      <Accent vars={A_AMBER}><BeforeAfterSection /></Accent>
+      <BeforeAfterSection />
       <GroundedSection />
-      <DarkBand bg="linear-gradient(160deg, #120A2E 0%, #1E0E3E 100%)" accent={A_TEAL}>
-        <DiscoverabilitySection />
-      </DarkBand>
-      <Accent vars={A_BLUE}><BrandedSiteSection /></Accent>
-      <Accent vars={A_GREEN}><BusinessLayerSection /></Accent>
-      <Accent vars={A_PINK}><PartnerNetworksSection /></Accent>
+      <DiscoverabilitySection />
+      <BrandedSiteSection />
+      <BusinessLayerSection />
+      <PartnerNetworksSection />
       <PricingSection />
       <ProofSection />
       <FAQSection />
-      <DarkBand bg="linear-gradient(160deg, #16091E 0%, #2A0E3A 55%, #3A0E22 100%)" accent={A_PINK}>
+      <DarkBand bg="linear-gradient(160deg, #16091E 0%, #2A0E3A 55%, #3A0E22 100%)">
         <FinalCTASection />
       </DarkBand>
       <Footer />
@@ -159,9 +139,8 @@ function FreeResearchSection() {
           >
             <Sparkles size={10} /> Free · no card · no setup
           </span>
-          <h2 className="text-[40px] sm:text-[52px] font-semibold tracking-tight leading-[1.05] mb-5" style={{ color: 'var(--text)' }}>
-            The product research most tools charge for.
-            <br />
+          <h2 className="text-[40px] sm:text-[56px] font-extrabold tracking-[-0.03em] leading-[1.0] mb-5" style={{ color: 'var(--text)' }}>
+            One research engine.<br />
             <span
               style={{
                 background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)',
@@ -170,12 +149,11 @@ function FreeResearchSection() {
                 backgroundClip: 'text',
               }}
             >
-              Free.
+              Every opportunity, found for you.
             </span>
           </h2>
-          <p className="text-[16px] sm:text-[17px] leading-relaxed max-w-2xl mx-auto" style={{ color: 'var(--text-soft)' }}>
-            Sign up and start finding products worth reviewing in minutes. No WordPress, no YouTube,
-            no credit card. Publishing is where the paid plans come in. The research is yours.
+          <p className="text-[16px] sm:text-[18px] leading-relaxed max-w-2xl mx-auto" style={{ color: 'var(--text-soft)' }}>
+            MVP&apos;s research algorithm scans the <span style={{ color: 'var(--text)' }}>whole Amazon catalogue</span>, every <span style={{ color: 'var(--text)' }}>live deal</span>, and the <span style={{ color: 'var(--text)' }}>Creator Connections</span> campaign board — then one intuitive filter sorts them by sales volume, rating, price, real discount, commission and competition. The winners rise to the top. And the research is free.
           </p>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1835,7 +1813,7 @@ function FinalCTASection() {
             <ArrowRight size={16} />
           </a>
           <a
-            href="#demo"
+            href="/tour"
             className="px-5 py-3.5 rounded-xl text-[15px] inline-flex items-center gap-2 transition-colors"
             style={{
               backgroundColor: 'var(--surface-bright)',
@@ -1843,8 +1821,8 @@ function FinalCTASection() {
               border: '1px solid var(--border)',
             }}
           >
-            <Play size={14} />
-            Watch the intro
+            Take the product tour
+            <ArrowRight size={14} />
           </a>
         </div>
 
@@ -2022,8 +2000,10 @@ function Hero() {
                 Start your free trial
                 <ArrowRight size={14} />
               </a>
+              {/* Secondary CTA — the full public product tour (/tour). No video;
+                  the tour walks the features directly. */}
               <a
-                href="#demo"
+                href="/tour"
                 className="px-5 py-3 rounded-xl border text-[14px] font-medium inline-flex items-center gap-2 transition-colors"
                 style={{
                   backgroundColor: 'var(--surface)',
@@ -2031,17 +2011,7 @@ function Hero() {
                   color: 'var(--text)',
                 }}
               >
-                <Play size={13} fill="currentColor" />
-                Watch the intro
-              </a>
-              {/* Tertiary CTA — the full public product tour (/tour). Kept as a
-                  plain link so it doesn't compete with the two buttons above. */}
-              <a
-                href="/tour"
-                className="px-3 py-3 text-[14px] font-medium inline-flex items-center gap-1.5 transition-colors hover:opacity-80"
-                style={{ color: 'var(--text-soft)' }}
-              >
-                See the full tour
+                See the product tour
                 <ArrowRight size={13} />
               </a>
             </div>
@@ -2597,7 +2567,7 @@ function Footer() {
               { label: 'Product tour', href: '/tour' },
               { label: 'Pricing', href: '/pricing' },
               { label: 'FAQ', href: '#faq' },
-              { label: 'Watch intro', href: '#demo' },
+              { label: 'Product tour', href: '/tour' },
             ]}
           />
           {/* Public resources only — no member-only in-app tools here (WordPress
