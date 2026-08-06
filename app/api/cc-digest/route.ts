@@ -68,7 +68,13 @@ export async function GET() {
     const { data: cached } = await sb.from('cc_digest_cache')
       .select('campaigns, generated_at').eq('user_id', user.id).eq('digest_date', today).maybeSingle()
     if (cached && Array.isArray(cached.campaigns) && cached.campaigns.length > 0) {
-      return NextResponse.json({ eligible: true, campaigns: cached.campaigns, generatedAt: cached.generated_at, cached: true })
+      // Serve the cache only if it's already free of same-item duplicates. A
+      // legacy batch that predates the dedup falls through and regenerates a
+      // clean set now (rather than waiting out the 24h).
+      const unique = dedupeCards(cached.campaigns as { campaignId: string; brand: string | null; asin: string; imageUrl: string | null }[])
+      if (unique.length === cached.campaigns.length) {
+        return NextResponse.json({ eligible: true, campaigns: cached.campaigns, generatedAt: cached.generated_at, cached: true })
+      }
     }
 
     // ── Generate ──────────────────────────────────────────────────────────
@@ -115,7 +121,29 @@ export async function GET() {
       return { row: r, cat, score }
     }).sort((a, b) => b.score - a.score)
 
-    const shortlist = scored.slice(0, SHORTLIST)
+    // Collapse same-item duplicates: one brand's product often appears under
+    // several campaign ids ("High-Demand Automotive Product", "Promote a
+    // Best-Selling Automotive Category", …) — same ASIN / same product image.
+    // Keep only the best-scoring campaign per item (scored is sorted desc, so
+    // the first occurrence of each key is the best), and remember the siblings
+    // so we can mark them seen too (the same item won't resurface tomorrow
+    // under a different campaign id).
+    const siblings = new Map<string, string[]>()
+    for (const s of scored) {
+      const k = itemKey(s.row)
+      const arr = siblings.get(k)
+      if (arr) arr.push(s.row.campaign_id)
+      else siblings.set(k, [s.row.campaign_id])
+    }
+    const seenKeys = new Set<string>()
+    const deduped = scored.filter((s) => {
+      const k = itemKey(s.row)
+      if (seenKeys.has(k)) return false
+      seenKeys.add(k)
+      return true
+    })
+
+    const shortlist = deduped.slice(0, SHORTLIST)
 
     // LLM re-rank the shortlist by true topical fit → final order. Skipped
     // (deterministic order kept) if the spend ceiling is hit or the call fails.
@@ -145,13 +173,21 @@ export async function GET() {
     }, { onConflict: 'user_id,digest_date' })
 
     if (picked.length) {
-      await sb.from('cc_digest_seen').upsert(
-        picked.map((s) => ({
-          user_id: user.id, campaign_id: s.row.campaign_id, shown_on: today,
-          brand_name: s.row.brand_name ?? null, category: s.cat ?? null,
-        })),
-        { onConflict: 'user_id,campaign_id', ignoreDuplicates: true },
-      )
+      // Mark the picked campaign AND all its same-item siblings as seen, so the
+      // product can't reappear tomorrow under one of its other campaign ids.
+      const seenUpserts: { user_id: string; campaign_id: string; shown_on: string; brand_name: string | null; category: string | null }[] = []
+      const added = new Set<string>()
+      for (const s of picked) {
+        for (const cid of siblings.get(itemKey(s.row)) ?? [s.row.campaign_id]) {
+          if (added.has(cid)) continue
+          added.add(cid)
+          seenUpserts.push({
+            user_id: user.id, campaign_id: cid, shown_on: today,
+            brand_name: s.row.brand_name ?? null, category: s.cat ?? null,
+          })
+        }
+      }
+      await sb.from('cc_digest_seen').upsert(seenUpserts, { onConflict: 'user_id,campaign_id', ignoreDuplicates: true })
     }
 
     return NextResponse.json({ eligible: true, campaigns, generatedAt: new Date().toISOString(), cached: false })
@@ -290,6 +326,21 @@ function pickAsin(r: { asins?: string[] | null; campaign_name?: string | null })
   return m ? m[0].toUpperCase() : null
 }
 
+/** Product identity used to collapse duplicate campaigns for the SAME item.
+ *  Same brand + same product image = same product — the strongest visible
+ *  signal, and it collapses brand-level campaigns that reuse one product under
+ *  several campaign ids (the JASKLEV case) even when their ASINs differ. Falls
+ *  back to ASIN, then campaign id so a row with no identity signal is never
+ *  wrongly merged with another. Product images are per-ASIN from enrichment,
+ *  so brand+image won't merge genuinely different products. */
+function itemKey(r: CatalogRow): string {
+  const img = (r.image_url || '').split('?')[0]
+  if (r.brand_name && img) return `bi:${r.brand_name.trim().toLowerCase()}|${img}`
+  const asin = pickAsin(r)
+  if (asin) return `a:${asin}`
+  return `c:${r.campaign_id}`
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function loadInterestProfile(sb: any, userId: string) {
   const [bp, vids, blogs] = await Promise.all([
@@ -383,6 +434,21 @@ function toCard(r: CatalogRow, category: string | null, amazonTag: string) {
     // The CC message page URL the outreach modal opens (constructible from id).
     detailsUrl: `https://affiliate-program.amazon.com/p/connect/request?campaignId=${encodeURIComponent(r.campaign_id)}&type=affiliate-plus&status=active`,
   }
+}
+
+/** Dedupe already-built cards by the same product identity as itemKey, keeping
+ *  the first (best-ranked) of each. Used as a read-time guard on cached batches. */
+function dedupeCards<T extends { campaignId: string; brand: string | null; asin: string; imageUrl: string | null }>(cards: T[]): T[] {
+  const seen = new Set<string>()
+  const out: T[] = []
+  for (const c of cards) {
+    const img = (c.imageUrl || '').split('?')[0]
+    const key = c.brand && img ? `bi:${c.brand.trim().toLowerCase()}|${img}` : c.asin ? `a:${c.asin}` : `c:${c.campaignId}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(c)
+  }
+  return out
 }
 
 function numOr(v: unknown, d: number): number { return typeof v === 'number' && isFinite(v) ? v : d }
