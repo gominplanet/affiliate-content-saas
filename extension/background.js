@@ -416,7 +416,11 @@ function ccCampaignUrl(campaignId, type) {
 // which SCOUT then replays. creatorId is filled from the session when omitted.
 function ccActiveUrl() {
   const q = _ccCreatorId ? `creatorId=${encodeURIComponent(_ccCreatorId)}&` : ''
-  return `${CC_BASE}?${q}status=active&type=affiliate-plus&sortBy=alphabetical`
+  // status=active lists ALL joined campaigns. We deliberately DON'T pin
+  // type=affiliate-plus — that narrows to one campaign type (e.g. 44 of 666). The
+  // creator's joined list spans multiple types, so we want the unfiltered active
+  // view and then broaden the replayed query's campaignType too.
+  return `${CC_BASE}?${q}status=active&sortBy=alphabetical`
 }
 
 const _sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -805,6 +809,9 @@ function ccListMyCampaignsInPage(opts) {
             o.nextToken = nextToken
             if (!o.pageSize || o.pageSize < 30) o.pageSize = 30
             if (!o.creatorId && creatorId) o.creatorId = creatorId
+            // Broaden the type so we get EVERY joined campaign, not just the type the
+            // active tab happened to default to (that's the 44-vs-666 gap).
+            if (o.filterOptions && typeof o.filterOptions === 'object') o.filterOptions.campaignType = null
             return JSON.stringify(o)
           } catch (e) { /* fall through to synthetic body */ }
         }
@@ -820,7 +827,10 @@ function ccListMyCampaignsInPage(opts) {
         try { const t = await r.text(); j = JSON.parse(t); if (!r.ok) errText = t.slice(0, 200) } catch (e) { errText = 'parse' }
         const resp = j && j.responses && j.responses[0]
         const ads = (resp && resp.ads) || []
-        return { status: r.status, ads, nextToken: (resp && resp.nextToken) || null, errText }
+        // Amazon reports the full match count under a few possible field names —
+        // grab whichever exists so the diagnostic shows total vs fetched.
+        const total = (resp && (resp.totalResultCount ?? resp.totalCount ?? resp.total ?? (resp.pagination && (resp.pagination.totalCount ?? resp.pagination.total)))) ?? null
+        return { status: r.status, ads, nextToken: (resp && resp.nextToken) || null, errText, total }
       }
 
       // Filter variants to try, in order — Amazon's list query is fiddly: an empty
@@ -847,14 +857,17 @@ function ccListMyCampaignsInPage(opts) {
       const seen = {}
       const statusCounts = {}
       const collect = (ads) => {
+        let added = 0
         for (const a of ads) {
           if (!a || !a.campaignId || seen[a.campaignId]) continue
           seen[a.campaignId] = 1
+          added++
           const asins = Array.isArray(a.campaignAsins) ? a.campaignAsins.map((x) => String(x).toUpperCase()) : []
           const st = a.campaignStatus || a.status || a.collaborationStatus || a.contractStatus || null
           if (st) statusCounts[st] = (statusCounts[st] || 0) + 1
           out.push({ campaignId: a.campaignId, asin: asins[0] || null, brand: a.brandName || null, name: a.campaignName || null, status: st })
         }
+        return added
       }
 
       // Read the status field off ads WITHOUT adding them to the written list.
@@ -877,13 +890,24 @@ function ccListMyCampaignsInPage(opts) {
             if (v.diagOnly) { tallyStatuses(first.ads); continue }
             picked = v
             collect(first.ads)
+            if (first.total != null) diag.total = first.total
             let nextToken = first.nextToken
-            for (let pageNumber = 2; pageNumber <= 20 && nextToken; pageNumber++) {
+            let pages = 1
+            // Paginate up to 60 pages (~1800 campaigns). Do NOT stop just because
+            // nextToken is absent — some responses paginate by pageNumber with no
+            // token. Carry the token when present, always bump pageNumber, and stop
+            // only when a page adds NO new campaigns (dedup-aware) so token-less and
+            // token-based pagination both terminate correctly.
+            for (let pageNumber = 2; pageNumber <= 60; pageNumber++) {
               const p = await runPage(v, pageNumber, nextToken)
-              collect(p.ads)
+              const added = collect(p.ads)
+              pages = pageNumber
               nextToken = p.nextToken
-              if (!p.ads.length) break
+              if (p.total != null) diag.total = p.total
+              if (!added) break
             }
+            diag.pagesFetched = pages
+            diag.fetched = out.length
             break
           }
         } catch (e) {
