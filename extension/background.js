@@ -712,6 +712,71 @@ async function sendByAsinApi(asin, message, campaignIdsHint) {
   }
 }
 
+// Runs IN the page (MAIN world): list ALL of the creator's accepted/active
+// Creator Connections campaigns via Amazon's own API, paginating the
+// collaboration/search endpoint (statuses SCHEDULED + DELIVERING = joined). No
+// ASIN filter — returns everything the creator has joined, so MVP can show them
+// under "Joined only" even for campaigns joined directly on Amazon. Self-
+// contained (executeScript serializes it — no outer refs).
+function ccListMyCampaignsInPage(opts) {
+  return (async () => {
+    try {
+      const { creatorId, headers } = opts
+      if (!creatorId) return { ok: false, reason: 'no-creator-id' }
+      const hdr = () => { const o = Object.assign({}, headers || {}); if (!o['Content-Type'] && !o['content-type']) o['Content-Type'] = 'application/json'; if (!o['Accept'] && !o['accept']) o['Accept'] = 'application/json'; return o }
+      const out = []
+      const seen = {}
+      let nextToken = null
+      for (let pageNumber = 1; pageNumber <= 20; pageNumber++) { // cap ~600 campaigns
+        const body = JSON.stringify({
+          campaignId: null, brandId: null,
+          filterOptions: { campaignType: 'BOUNTY_BOARD', availableSlotsOnly: null, interestTags: null, providingSamplesOnly: null, statuses: ['SCHEDULED', 'DELIVERING'], commissionPercentageFilters: null, dateRange: null, campaignBrowseNodes: null, earlyAccessOnly: null, gcorIdList: null, campaignQualifiers: null, contentTypes: null, adId: null, storeIds: null, creatorIds: null, flatFeeRanges: null, rangeFilters: null, socialChannels: null, premiumCreator: null, contractStatus: null, ratingStar: null, reviewCount: null, priceRange: null, budgetAvailabilityScoreList: null, dealMetadata: null },
+          sortOptions: [{ name: 'CAMPAIGN_TITLE', order: 'ASCENDING' }],
+          nextToken, pageNumber, pageSize: 30, creatorId,
+          searchOptions: [],
+        })
+        const r = await fetch('/connect/api/collaboration/search', { method: 'POST', headers: hdr(), body, credentials: 'include' })
+        const j = await r.json().catch(() => null)
+        const resp = j && j.responses && j.responses[0]
+        const ads = (resp && resp.ads) || []
+        for (const a of ads) {
+          if (!a || !a.campaignId || seen[a.campaignId]) continue
+          seen[a.campaignId] = 1
+          const asins = Array.isArray(a.campaignAsins) ? a.campaignAsins.map((x) => String(x).toUpperCase()) : []
+          out.push({ campaignId: a.campaignId, asin: asins[0] || null, brand: a.brandName || null, name: a.campaignName || null })
+        }
+        nextToken = (resp && resp.nextToken) || null
+        if (!ads.length || !nextToken) break
+      }
+      return { ok: true, campaigns: out }
+    } catch (e) { return { ok: false, error: e && e.message ? e.message : 'exception' } }
+  })()
+}
+
+// Background driver for the above: opens a hidden affiliate-program tab (the
+// creator's own session) and runs the list-in-page function.
+async function listMyCampaignsApi() {
+  await ensureRecipesLoaded()
+  const keepAlive = startKeepAlive()
+  let tabId = null
+  try {
+    const tab = await chrome.tabs.create({ url: 'https://affiliate-program.amazon.com/p/connect/requests?status=opportunity&type=affiliate-plus', active: false })
+    tabId = tab.id
+    await waitForTabLoad(tabId, 15000)
+    await _sleep(800)
+    const res = await chrome.scripting.executeScript({
+      target: { tabId }, world: 'MAIN', func: ccListMyCampaignsInPage,
+      args: [{ creatorId: _ccCreatorId, headers: (_ccSendRecipe && _ccSendRecipe.headers) || {} }],
+    })
+    return (res && res[0] && res[0].result) || { ok: false, reason: 'no-result' }
+  } catch (e) {
+    return { ok: false, error: e && e.message ? e.message : 'exception' }
+  } finally {
+    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+    stopKeepAlive(keepAlive)
+  }
+}
+
 function waitForTabLoad(tabId, ms) {
   return new Promise((resolve) => {
     const onUpdated = (id, info) => {
@@ -2965,6 +3030,16 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     const callerTabId = sender && sender.tab ? sender.tab.id : null
     const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 180000)
     sendByCampaignIds(msg.campaignIds || [], msg.message || '', msg.asin || null, callerTabId, msg.fallbackCampaignIds || [])
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true // async response — keep the channel open
+  }
+  if (msg.type === 'MVP_CC_MY_CAMPAIGNS') {
+    // List the creator's accepted/active campaigns from Amazon (their real CC
+    // dashboard), so MVP's "Joined only" can show everything they've joined —
+    // including campaigns joined directly on Amazon, not just via MVP.
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 90000)
+    listMyCampaignsApi()
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async response — keep the channel open

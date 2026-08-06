@@ -263,6 +263,24 @@ export async function requestAcceptCampaign(detailsUrl: string): Promise<AcceptC
  * the user to review and Send. Human-in-the-loop: SCOUT never clicks Send.
  * Best-effort: resolves, never throws.
  */
+export interface MyCcCampaign { campaignId: string; asin: string | null; brand: string | null; name: string | null }
+
+/**
+ * List the creator's accepted/active Creator Connections campaigns straight from
+ * Amazon (their real CC dashboard), so MVP can show ALL joined campaigns under
+ * "Joined only" — including ones joined directly on Amazon, not just via MVP.
+ * Best-effort: resolves, never throws.
+ */
+export async function requestMyCcCampaigns(): Promise<{ ok: boolean; campaigns: MyCcCampaign[]; error?: string; reason?: string }> {
+  if (!(await isExtensionAvailable())) return { ok: false, campaigns: [], error: 'not-installed' }
+  const resp = await sendToExtension<{ ok?: boolean; campaigns?: MyCcCampaign[]; error?: string; reason?: string }>(
+    { type: 'MVP_CC_MY_CAMPAIGNS' },
+    95000,
+  )
+  if (!resp) return { ok: false, campaigns: [], error: 'timeout' }
+  return { ok: !!resp.ok, campaigns: Array.isArray(resp.campaigns) ? resp.campaigns : [], error: resp.error, reason: resp.reason }
+}
+
 export async function requestMessageBrand(detailsUrl: string, message: string): Promise<MessageBrandResult> {
   if (!detailsUrl) return { ok: false, error: 'no-url' }
   if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
