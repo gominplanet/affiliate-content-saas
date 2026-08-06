@@ -1,4 +1,4 @@
--- 224 — Geniuslink-wrapped blog link for social shares.
+-- 225 — Geniuslink-wrapped blog link for social shares.
 --
 -- Opt-in: when a creator turns this on, social shares use a short branded
 -- geni.us link to the blog post instead of the raw WordPress URL (which can be
