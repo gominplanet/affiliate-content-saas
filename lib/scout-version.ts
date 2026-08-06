@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.13.1'
+export const SCOUT_LATEST_VERSION = '1.14.0'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'CC Campaigns: "Joined only" is now a live view of your Amazon joined campaigns. Type any brand, product, or ASIN and SCOUT searches your real joined list on Amazon (scales to 100k+ joins) instead of only matching MVP\'s catalogue.'
+  'Cleaner popup + no setup: SCOUT now works automatically while you\'re signed in to MVP, with nothing to paste or connect. (The old ingest token was retired.)'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
