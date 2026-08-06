@@ -15,7 +15,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import {
   Sparkles, ExternalLink, MessageSquare, PenLine, ThumbsUp, ThumbsDown,
-  Star, Clock, Users,
+  Star, Clock, Users, ChevronDown, ChevronUp, Bookmark, BookmarkCheck,
 } from 'lucide-react'
 import MessageBrandModal, { type MessageBrandCampaign } from '@/components/campaigns/MessageBrandModal'
 import { FromLinkModal } from '@/components/content/FromLinkModal'
@@ -44,6 +44,7 @@ interface DigestCampaign {
 }
 
 const INITIAL_VISIBLE = 6
+const COLLAPSE_KEY = 'mvp.ccDigest.collapsed.v1'
 
 export default function DailyCcDigest() {
   const [campaigns, setCampaigns] = useState<DigestCampaign[]>([])
@@ -52,6 +53,9 @@ export default function DailyCcDigest() {
   const [reactions, setReactions] = useState<Record<string, 'up' | 'down'>>({})
   const [msgModal, setMsgModal] = useState<MessageBrandCampaign | null>(null)
   const [createFor, setCreateFor] = useState<DigestCampaign | null>(null)
+  const [savedAsins, setSavedAsins] = useState<Set<string>>(new Set())
+  // Persisted collapse — null = not yet read (avoids a flash of the wrong state).
+  const [collapsed, setCollapsed] = useState<boolean | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -64,6 +68,45 @@ export default function DailyCcDigest() {
   }, [])
 
   useEffect(() => { void load() }, [load])
+
+  // Restore collapse preference + which campaigns are already saved.
+  useEffect(() => {
+    try { setCollapsed(window.localStorage.getItem(COLLAPSE_KEY) === '1') } catch { setCollapsed(false) }
+    fetch('/api/campaigns/saved').then((r) => r.json()).then((d) => {
+      if (d?.ok && Array.isArray(d.saved)) setSavedAsins(new Set(d.saved.map((s: { asin: string }) => s.asin.toUpperCase())))
+    }).catch(() => {})
+  }, [])
+
+  const toggleCollapse = () => {
+    setCollapsed((prev) => {
+      const next = !prev
+      try { window.localStorage.setItem(COLLAPSE_KEY, next ? '1' : '0') } catch { /* non-fatal */ }
+      return next
+    })
+  }
+
+  const toggleSave = async (c: DigestCampaign) => {
+    const asin = c.asin.toUpperCase()
+    const wasSaved = savedAsins.has(asin)
+    setSavedAsins((prev) => { const n = new Set(prev); if (wasSaved) n.delete(asin); else n.add(asin); return n })
+    try {
+      if (wasSaved) {
+        await fetch(`/api/campaigns/saved?asin=${asin}`, { method: 'DELETE' })
+      } else {
+        await fetch('/api/campaigns/saved', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            asin: c.asin, source: 'campaign', campaignId: c.campaignId, title: c.name, brand: c.brand,
+            imageUrl: c.imageUrl, commissionPct: c.commissionPct, price: c.price, monthlySales: c.monthlySold,
+            rating: c.rating, marketplace: 'us', detailsUrl: c.detailsUrl,
+          }),
+        })
+        toast.success('Saved to your Saved Campaigns.')
+      }
+    } catch {
+      setSavedAsins((prev) => { const n = new Set(prev); if (wasSaved) n.add(asin); else n.delete(asin); return n }) // revert
+    }
+  }
 
   const react = async (campaignId: string, feedback: 'up' | 'down') => {
     // Toggle off if tapping the same thumb again.
@@ -92,7 +135,12 @@ export default function DailyCcDigest() {
   return (
     <>
       <div className="rounded-2xl border bg-card overflow-hidden">
-        <div className="flex items-center justify-between gap-2 px-4 py-3 border-b">
+        <button
+          type="button"
+          onClick={toggleCollapse}
+          className="w-full flex items-center justify-between gap-2 px-4 py-3 border-b text-left"
+          title={collapsed ? 'Expand' : 'Collapse'}
+        >
           <div className="flex items-center gap-2 font-semibold text-sm">
             <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-violet-100 text-violet-600 dark:bg-violet-500/20 dark:text-violet-300">
               <Sparkles size={15} />
@@ -100,16 +148,22 @@ export default function DailyCcDigest() {
             Campaigns picked for you
             <span className="text-xs font-bold rounded-full bg-violet-600 text-white px-2 py-0.5">{campaigns.length}</span>
           </div>
-          <span className="text-[11px] text-muted-foreground">Fresh daily · matched to your content</span>
-        </div>
+          <div className="flex items-center gap-2">
+            <span className="hidden sm:inline text-[11px] text-muted-foreground">Fresh daily · matched to your content</span>
+            <span className="text-muted-foreground">{collapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}</span>
+          </div>
+        </button>
 
+        {!collapsed && (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 p-3">
           {shown.map((c) => (
             <CampaignCard
               key={c.campaignId}
               c={c}
               reaction={reactions[c.campaignId] ?? null}
+              saved={savedAsins.has(c.asin.toUpperCase())}
               onReact={react}
+              onToggleSave={() => toggleSave(c)}
               onContact={() => setMsgModal({
                 product: c.name, asin: c.asin, commissionPct: c.commissionPct,
                 detailsUrl: c.detailsUrl, brandLabel: c.brand || undefined,
@@ -118,8 +172,9 @@ export default function DailyCcDigest() {
             />
           ))}
         </div>
+        )}
 
-        {campaigns.length > INITIAL_VISIBLE && (
+        {!collapsed && campaigns.length > INITIAL_VISIBLE && (
           <div className="px-4 py-3 border-t text-center">
             <button
               onClick={() => setShowAll((v) => !v)}
@@ -152,10 +207,12 @@ export default function DailyCcDigest() {
   )
 }
 
-function CampaignCard({ c, reaction, onReact, onContact, onCreate }: {
+function CampaignCard({ c, reaction, saved, onReact, onToggleSave, onContact, onCreate }: {
   c: DigestCampaign
   reaction: 'up' | 'down' | null
+  saved: boolean
   onReact: (id: string, f: 'up' | 'down') => void
+  onToggleSave: () => void
   onContact: () => void
   onCreate: () => void
 }) {
@@ -222,6 +279,15 @@ function CampaignCard({ c, reaction, onReact, onContact, onCreate }: {
           className="inline-flex items-center gap-1 text-xs font-medium rounded-full border px-2.5 py-1.5 hover:bg-accent"
         >
           <PenLine size={12} /> Create
+        </button>
+        <button
+          onClick={onToggleSave}
+          title={saved ? 'Saved — click to remove' : 'Save to Saved Campaigns'}
+          className={`inline-flex items-center gap-1 text-xs font-medium rounded-full border px-2.5 py-1.5 transition ${
+            saved ? 'border-amber-500 bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300' : 'hover:bg-accent'
+          }`}
+        >
+          {saved ? <BookmarkCheck size={12} /> : <Bookmark size={12} />} {saved ? 'Saved' : 'Save'}
         </button>
         <div className="ml-auto flex items-center gap-1">
           <button
