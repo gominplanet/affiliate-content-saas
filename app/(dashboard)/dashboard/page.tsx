@@ -40,6 +40,7 @@ import MetaLiveBanner from '@/components/dashboard/MetaLiveBanner'
 import DealRadarLaunchBanner from '@/components/dashboard/DealRadarLaunchBanner'
 import { DashboardLiveCards } from '@/components/dashboard/DashboardLiveCards'
 import PriceAlertsPanel from '@/components/dashboard/PriceAlertsPanel'
+import DailyCcDigest from '@/components/dashboard/DailyCcDigest'
 import TrialResearchRow from '@/components/dashboard/TrialResearchRow'
 import {
   PlaySquare, ArrowRight, FileText, Layers, Gauge,
@@ -286,6 +287,11 @@ export default async function DashboardPage() {
         {/* Price Alerts — Keepa-detected new lows / stale-price nudges on watched
             products. Self-hides when there's nothing to show. */}
         <PriceAlertsPanel />
+
+        {/* Daily CC Campaign Digest — ~25 Creator Connections campaigns picked
+            for this creator from their blog + YouTube history, refreshed every
+            24h. Self-hides for users without CC access or with no matches. */}
+        <DailyCcDigest />
 
         {/* Free-research first — for Free Trial users the research finders ARE the
             reason they're here, so surface them above "What do you want to do?".
