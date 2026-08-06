@@ -231,11 +231,11 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
           <ul>
             <li><strong>Creator</strong> auto-posts to Facebook, Threads, LinkedIn and Bluesky.</li>
             <li><strong>Studio</strong> adds Pinterest, Instagram and Telegram on top.</li>
-            <li><strong>Pro</strong> adds X (Twitter).</li>
+            <li><strong>Pro</strong> adds X (Twitter) and TikTok.</li>
           </ul>
           <p>
-            TikTok is in final platform review — it switches on automatically, at no extra cost, the moment it&apos;s
-            approved.
+            TikTok posts your vertical Shorts straight to your feed from Clip Factory. Connect it once under
+            Integrations and grant posting access.
           </p>
           {isApp && <SectionCta href="/connect-socials" label="Connect your channels" />}
         </Section>

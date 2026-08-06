@@ -2263,8 +2263,10 @@ function ProductMock() {
  *  the content-first pitch; it's reach, not the headline). LIVE today: your
  *  WordPress site + X, LinkedIn, Facebook, Instagram, Threads, Bluesky,
  *  Telegram, Pinterest. Meta cleared App Review 2026-06-15, Pinterest 2026-06-16.
- *  TikTok is intentionally NOT listed (still in review) — never advertise what
- *  we can't yet deliver. The count is derived from PLATFORMS so it can't drift.
+ *  TikTok is live (Direct Post audit approved) but it's VIDEO-only (Shorts /
+ *  Clip Factory), not blog-post syndication, so it's not in this strip; it's
+ *  called out in the footnote instead. The count is derived from PLATFORMS so
+ *  it can't drift.
  *
  *  Visual: a count-driven headline + brand-colored channel chips that wrap.
  *  Chip border/text are theme-aware; the icon carries the platform's brand
@@ -2459,7 +2461,7 @@ function PlatformBar() {
           ))}
         </div>
         <p className="text-[11px] mt-5" style={{ color: 'var(--text-faint)' }}>
-          TikTok is in final platform review — it switches on automatically, at no extra cost, once approved.
+          TikTok included: your Shorts post straight to your feed from MVP, no phone step.
         </p>
       </div>
     </section>

@@ -651,6 +651,11 @@ export function TikTokDirectModal({
               {postError && (
                 <div className="rounded-lg border-[#ff3b30]/20 bg-[#ff3b30]/5 p-3">
                   <p className="text-xs text-[#ff3b30] flex items-center gap-1.5"><AlertCircle size={12} /> {postError}</p>
+                  {reconnectRequired && (
+                    <a href="/setup?tab=integrations" className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-[#7C3AED] hover:underline">
+                      <RefreshCw size={11} /> Reconnect TikTok to grant posting access →
+                    </a>
+                  )}
                 </div>
               )}
               {publishError && (
