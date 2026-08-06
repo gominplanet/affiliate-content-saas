@@ -807,7 +807,6 @@ export type Database = {
           bluesky_app_password: string | null
           bluesky_did: string | null
           bluesky_handle: string | null
-          cc_ingest_token: string | null
           content_only: boolean
           created_at: string
           cta_style: string
@@ -887,7 +886,6 @@ export type Database = {
           bluesky_app_password?: string | null
           bluesky_did?: string | null
           bluesky_handle?: string | null
-          cc_ingest_token?: string | null
           content_only?: boolean
           created_at?: string
           cta_style?: string
@@ -967,7 +965,6 @@ export type Database = {
           bluesky_app_password?: string | null
           bluesky_did?: string | null
           bluesky_handle?: string | null
-          cc_ingest_token?: string | null
           content_only?: boolean
           created_at?: string
           cta_style?: string

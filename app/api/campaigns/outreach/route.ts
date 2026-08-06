@@ -32,13 +32,6 @@ export function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS })
 }
 
-function bearer(request: Request): string {
-  const auth = request.headers.get('authorization') || ''
-  return auth.toLowerCase().startsWith('bearer ')
-    ? auth.slice(7).trim()
-    : (request.headers.get('x-cc-token') || '').trim()
-}
-
 interface OutreachOptions {
   includeAsin?: boolean
   includeLinks?: boolean
@@ -66,23 +59,14 @@ interface OutreachBody {
 
 export async function POST(request: Request) {
   try {
-    // Dual auth: the SCOUT extension calls with a Bearer ingest token (no
-    // cookie); the MVP dashboard's /epc list calls with its session cookie.
+    // Session-authed: the MVP dashboard's Message Brand flow calls this with its
+    // cookie, gets the draft, and the SCOUT bridge places the text in Amazon's
+    // chat box. (The old token-authed path — the extension drafting directly
+    // from amazon.com — was retired with the ingest token in 2026-08.)
     const admin = createAdminClient()
     let userId: string | null = null
     let tier: Tier = 'trial'
-    const token = bearer(request)
-    if (token) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: intRow } = await admin
-        .from('integrations')
-        .select('user_id,tier')
-        .eq('cc_ingest_token', token)
-        .single()
-      if (!intRow?.user_id) return NextResponse.json({ error: 'Invalid ingest token' }, { status: 401, headers: CORS })
-      userId = intRow.user_id as string
-      tier = normalizeTier((intRow as { tier?: string }).tier) as Tier
-    } else {
+    {
       const supabase = await createServerClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return NextResponse.json({ error: 'Not signed in' }, { status: 401, headers: CORS })
