@@ -15,11 +15,12 @@ import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import {
   Sparkles, ExternalLink, MessageSquare, PenLine, ThumbsUp, ThumbsDown,
-  Star, Clock, Users, ChevronDown, ChevronUp, Bookmark, BookmarkCheck,
+  Star, Clock, Users, ChevronDown, ChevronUp, Bookmark, BookmarkCheck, Handshake, Loader2,
 } from 'lucide-react'
 import MessageBrandModal, { type MessageBrandCampaign } from '@/components/campaigns/MessageBrandModal'
 import { FromLinkModal } from '@/components/content/FromLinkModal'
 import { requestFindCampaign } from '@/lib/extension-frame'
+import { acceptCampaignViaScout } from '@/lib/accept-campaign'
 
 interface DigestCampaign {
   campaignId: string
@@ -216,6 +217,18 @@ function CampaignCard({ c, reaction, saved, onReact, onToggleSave, onContact, on
   onContact: () => void
   onCreate: () => void
 }) {
+  const [accepting, setAccepting] = useState(false)
+  const [accepted, setAccepted] = useState(false)
+  const accept = async () => {
+    if (accepting) return
+    setAccepting(true)
+    const ok = await acceptCampaignViaScout({
+      detailsUrl: c.detailsUrl, asin: c.asin, campaignId: c.campaignId,
+      brand: c.brand, commissionPct: c.commissionPct, productTitle: c.name,
+    })
+    if (ok) setAccepted(true)
+    setAccepting(false)
+  }
   return (
     <div className="rounded-xl border p-3 flex flex-col gap-2 bg-background/40">
       <div className="flex gap-3">
@@ -268,6 +281,20 @@ function CampaignCard({ c, reaction, saved, onReact, onToggleSave, onContact, on
         >
           <ExternalLink size={12} /> Buy
         </a>
+        {accepted ? (
+          <span className="inline-flex items-center gap-1 text-xs font-semibold rounded-full px-2.5 py-1.5 text-violet-600 dark:text-violet-400">
+            <Handshake size={12} /> Accepted
+          </span>
+        ) : (
+          <button
+            onClick={accept}
+            disabled={accepting}
+            title="Accept this campaign on Amazon via SCOUT — no tab-hopping"
+            className="inline-flex items-center gap-1 text-xs font-medium rounded-full border px-2.5 py-1.5 hover:bg-accent disabled:opacity-50"
+          >
+            {accepting ? <Loader2 size={12} className="animate-spin" /> : <Handshake size={12} />} {accepting ? 'Accepting…' : 'Accept'}
+          </button>
+        )}
         <button
           onClick={onContact}
           className="inline-flex items-center gap-1 text-xs font-medium rounded-full border px-2.5 py-1.5 hover:bg-accent"
