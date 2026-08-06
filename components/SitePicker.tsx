@@ -34,6 +34,9 @@ interface Site {
   label: string
   url: string
   isDefault: boolean
+  /** Over the current tier's site cap after a downgrade — kept connected but
+   *  not a valid publish target. Shown disabled here. */
+  paused?: boolean
 }
 
 interface Props {
@@ -69,8 +72,10 @@ export function SitePicker({
         const list = Array.isArray(data?.sites) ? data.sites : []
         setSites(list)
         // Auto-select the default site if no value is set. Parent can override.
+        // Never auto-select a paused site (it can't publish); the default is
+        // always active, so preferring it keeps the picker on a valid target.
         if (!value && list.length > 0) {
-          const def = list.find(s => s.isDefault) || list[0]
+          const def = list.find(s => s.isDefault) || list.find(s => !s.paused) || list[0]
           onChange(def.id)
         }
         setLoading(false)
@@ -109,8 +114,8 @@ export function SitePicker({
         className={inputClasses}
       >
         {sites.map(s => (
-          <option key={s.id} value={s.id}>
-            {s.label} {s.isDefault ? '(default)' : ''}
+          <option key={s.id} value={s.id} disabled={s.paused}>
+            {s.label} {s.isDefault ? '(default)' : s.paused ? '(paused — upgrade to Pro)' : ''}
           </option>
         ))}
       </select>

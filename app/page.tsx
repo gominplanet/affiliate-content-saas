@@ -1376,8 +1376,16 @@ const SITE_COST_STACK: ReadonlyArray<readonly [string, string]> = [
  */
 function PricingSection() {
   return (
-    <section id="pricing" className="px-6 lg:px-8 pt-12 pb-16 sm:pb-28 relative">
-      <div className="max-w-6xl mx-auto">
+    <section id="pricing" className="px-6 lg:px-8 pt-12 pb-16 sm:pb-28 relative overflow-hidden">
+      {/* Decorative glow behind the cards — a soft violet bloom centred on the
+          popular column so the whole section reads as a spotlight, not a flat
+          grey band. Pointer-events off; sits below the content. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[900px] h-[560px] rounded-full blur-[120px] opacity-[0.5]"
+        style={{ background: 'radial-gradient(circle, rgba(124,58,237,0.22) 0%, rgba(192,38,211,0.10) 45%, transparent 70%)' }}
+      />
+      <div className="max-w-6xl mx-auto relative">
         <div className="text-center max-w-3xl mx-auto mb-10">
           <span
             className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-medium uppercase tracking-[0.18em] mb-5"
@@ -1491,11 +1499,22 @@ interface PricingTier {
   icon: React.ReactNode
   features: string[]
   cta: string
+  /** Per-tier accent so each card has its own identity while violet stays the
+   *  hero. `grad` = icon chip / price number / gradient strip; `solid` = a
+   *  readable check colour on the light card; `tint`/`ring` = fills + borders. */
+  accent: { grad: string; solid: string; tint: string; ring: string }
 }
 
-// Refreshed 2026-06-04 to match the new tier matrix (lib/tier.ts). This
-// preview page is the headline sales deck; numbers MUST match /pricing.
-// If you edit one, edit both (and update tier.ts if the change is real).
+// Refreshed 2026-08 to match the live tier matrix (lib/tier.ts) AND surface the
+// features shipped since (Clip Factory, Creator Connections finder + daily
+// digest, all-deals & full-catalogue research). This preview page is the
+// headline sales deck; numbers MUST match /pricing. If you edit one, edit both
+// (and update tier.ts if the change is real).
+//
+// Feature lists read as a full breakdown: Creator lists the base explicitly;
+// Studio and Pro lead with "Everything in <lower>, plus:" then their net-new
+// unlocks — so every capability in the product is represented across the three
+// cards without a wall of repeated text.
 const PRICING_TIERS: PricingTier[] = [
   {
     name: 'Creator',
@@ -1504,16 +1523,25 @@ const PRICING_TIERS: PricingTier[] = [
     regularPrice: 99,
     highlight: false,
     icon: <Sparkles size={16} />,
+    accent: {
+      grad: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+      solid: '#059669',
+      tint: 'rgba(16,185,129,0.12)',
+      ring: 'rgba(16,185,129,0.35)',
+    },
     features: [
-      '⚡ Amazon Deal Radar + shoppable Link-in-Bio + auto IG Stories',
-      '20 posts / month (blog + thumbnail + metadata bundle)',
+      '⚡ Amazon Deal Radar + all-deals & full-catalogue research',
+      'Creator Connections finder + daily picked-for-you campaign digest',
+      'Shoppable Link-in-Bio + auto Instagram Stories',
+      '20 generations / month — blog + thumbnail + metadata bundle',
+      'Video-to-Blog + Blog-to-Social, written in your voice',
       'Auto-post to Facebook, Threads, LinkedIn & Bluesky',
-      '1 face + 1 LoRA retrain / month, 10 Photobooth headshots',
       '10 video scripts + shot-lists / month',
-      'Newsletter taster: 500 subs, 1 broadcast / month',
+      '1 trained face + 1 LoRA retrain, 10 Photobooth headshots',
+      'Newsletter taster — 500 subs, 1 send / month',
       '5 brand-collab pitch emails / month',
-      '200 assistant messages / month',
-      '1 WordPress site',
+      '200 AI assistant messages / month',
+      '1 WordPress site, yours forever',
     ],
     cta: 'Start as Creator',
   },
@@ -1524,17 +1552,23 @@ const PRICING_TIERS: PricingTier[] = [
     regularPrice: 199,
     highlight: true,
     icon: <Crown size={16} />,
+    accent: {
+      grad: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)',
+      solid: '#7C3AED',
+      tint: 'rgba(124,58,237,0.14)',
+      ring: 'rgba(124,58,237,0.45)',
+    },
     features: [
-      '⚡ Amazon Deal Radar + shoppable Link-in-Bio + auto IG Stories',
-      '45 posts / month (blog + thumbnail + metadata bundle)',
-      'Adds Pinterest, Instagram & Telegram auto-post on top of Creator',
-      'Deals Hub: 5 deal posts / month + Amazon CSV bulk import',
+      'Everything in Creator, plus:',
+      '45 generations / month',
+      'Pinterest, Instagram & Telegram auto-post',
+      'Deals Hub — 5 deal posts / month + Amazon CSV bulk import',
       'Topic hubs + Refresh Images on published posts',
-      '2 faces + 3 LoRA retrains / month, 15 Photobooth headshots',
-      '30 video scripts, 15 brand pitches',
-      'Newsletter: 5,000 subs, weekly + scheduling',
-      '1,000 assistant messages / month',
-      'Priority support',
+      '2 faces + 3 LoRA retrains, 15 Photobooth headshots',
+      '30 video scripts, 15 brand pitches / month',
+      'Newsletter — 5,000 subs, weekly sends + scheduling',
+      '1,000 AI assistant messages / month',
+      'Priority generation queue + priority support',
     ],
     cta: 'Go Studio',
   },
@@ -1545,19 +1579,25 @@ const PRICING_TIERS: PricingTier[] = [
     regularPrice: 499,
     highlight: false,
     icon: <Rocket size={16} />,
+    accent: {
+      grad: 'linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%)',
+      solid: '#4F46E5',
+      tint: 'rgba(79,70,229,0.12)',
+      ring: 'rgba(79,70,229,0.35)',
+    },
     features: [
-      '⚡ Amazon Deal Radar + shoppable Link-in-Bio + auto IG Stories',
-      '100 posts / month + Comparisons + Buying Guides',
-      'Adds X (Twitter) auto-post on top of Studio',
-      'Rebuild-from-video on any legacy WP post',
-      'Up to 10 WordPress sites + 3 Virtual Assistant seats',
-      'Multiple YouTube channels — a default channel per blog, or pull from any',
+      'Everything in Studio, plus:',
+      '🎬 Clip Factory — turn long videos into ready-to-post shorts',
+      '100 generations / month',
+      'Comparison posts + Buying Guides',
+      'Rebuild-from-video on any legacy WordPress post',
+      'X (Twitter) & TikTok auto-post',
       'Multi-account social + one-click Publish All',
-      '30 deal posts / month, 3 LoRA retrains, 20 Photobooth headshots',
-      '150 video scripts, 100 brand pitches',
-      'Newsletter: 10k subs, weekly + A/B + segments',
-      '2,500 assistant messages / month',
-      'Priority generation queue + priority support',
+      'Up to 10 WordPress sites + 3 Virtual Assistant seats',
+      'Multiple YouTube channels — one per site, or pull from any',
+      '30 deal posts, 100 brand pitches / month',
+      'Newsletter — 10k subs, weekly + A/B + segments',
+      '2,500 AI assistant messages / month',
     ],
     cta: 'Go Pro',
   },
@@ -1565,98 +1605,129 @@ const PRICING_TIERS: PricingTier[] = [
 
 function PricingCard({ tier }: { tier: PricingTier }) {
   const highlight = tier.highlight
+  const a = tier.accent
   return (
-    <div className="relative">
+    <div className={`relative ${highlight ? 'lg:-translate-y-2 lg:scale-[1.03] z-10' : ''}`}>
       {highlight && (
         <div
-          className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full text-[10px] font-semibold uppercase tracking-[0.15em] text-white z-10"
-          style={{ background: 'linear-gradient(135deg, #7C3AED, #C026D3)' }}
+          className="absolute -top-3.5 left-1/2 -translate-x-1/2 px-3.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.15em] text-white z-20 whitespace-nowrap"
+          style={{ background: a.grad, boxShadow: `0 6px 18px ${a.ring}` }}
         >
-          Most popular
+          ★ Most popular
         </div>
       )}
       <div
-        className={`rounded-2xl border p-6 h-full flex flex-col gap-5 transition-all duration-200 ${highlight ? 'lg:-translate-y-2' : 'hover:-translate-y-0.5'}`}
+        className="relative rounded-[22px] h-full overflow-hidden transition-all duration-200 hover:-translate-y-1"
         style={{
           backgroundColor: 'var(--surface)',
-          borderColor: highlight ? 'rgba(124,58,237,0.5)' : 'var(--border)',
+          // Gradient hairline "ring" via a padded border for the popular card;
+          // a soft accent-tinted border for the rest. Both far richer than the
+          // flat grey border they replace.
+          border: highlight ? '1.5px solid transparent' : '1px solid var(--border)',
+          backgroundImage: highlight
+            ? `linear-gradient(var(--surface), var(--surface)), ${a.grad}`
+            : `linear-gradient(180deg, ${a.tint} 0%, transparent 180px)`,
+          backgroundOrigin: 'border-box',
+          backgroundClip: highlight ? 'padding-box, border-box' : 'border-box',
           boxShadow: highlight
-            ? '0 8px 32px rgba(124,58,237,0.15), inset 0 1px 0 rgba(255,255,255,0.06)'
+            ? `0 20px 50px ${a.ring}, 0 2px 8px rgba(0,0,0,0.06)`
             : 'var(--card-shadow)',
         }}
       >
-        {/* Header — icon + tier name + tagline. */}
-        <div>
-          <div className="flex items-center gap-2 mb-2">
-            <span
-              className="inline-flex items-center justify-center w-7 h-7 rounded-lg"
+        {/* Gradient accent strip across the top — the single biggest "pop" cue,
+            gives each card a colour identity at a glance. */}
+        <div className="absolute top-0 inset-x-0 h-1.5" style={{ background: a.grad }} />
+
+        <div className="p-6 pt-7 h-full flex flex-col gap-5">
+          {/* Header — icon + tier name + tagline. */}
+          <div>
+            <div className="flex items-center gap-2.5 mb-2">
+              <span
+                className="inline-flex items-center justify-center w-9 h-9 rounded-xl text-white flex-shrink-0"
+                style={{ background: a.grad, boxShadow: `0 4px 14px ${a.ring}` }}
+              >
+                {tier.icon}
+              </span>
+              <h3 className="text-[22px] font-bold tracking-tight" style={{ color: 'var(--text)' }}>
+                {tier.name}
+              </h3>
+            </div>
+            <p className="text-[13px] leading-snug" style={{ color: 'var(--text-soft)' }}>
+              {tier.tagline}
+            </p>
+          </div>
+
+          {/* Feature list. Fills the middle so the price + CTA pin to the bottom
+              and line up across all three cards. */}
+          <ul className="flex flex-col gap-2.5 flex-1">
+            {tier.features.map((f, i) => {
+              // "Everything in X, plus:" renders as a divider-style lead line
+              // (no check), not a feature bullet.
+              if (/^everything in/i.test(f)) {
+                return (
+                  <li key={i} className="text-[12px] font-bold uppercase tracking-[0.06em] pb-1 mb-0.5" style={{ color: a.solid }}>
+                    {f}
+                  </li>
+                )
+              }
+              return (
+                <li key={i} className="flex items-start gap-2.5">
+                  <span
+                    className="inline-flex items-center justify-center w-4 h-4 rounded-full flex-shrink-0 mt-0.5"
+                    style={{ backgroundColor: a.tint }}
+                  >
+                    <Check size={11} strokeWidth={3} style={{ color: a.solid }} />
+                  </span>
+                  <span className="text-[13px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                    {f}
+                  </span>
+                </li>
+              )
+            })}
+          </ul>
+
+          {/* Price block — now at the BOTTOM, right above the CTA, so the eye
+              lands on the value first and the price after. */}
+          <div className="mt-auto pt-4" style={{ borderTop: '1px solid var(--border)' }}>
+            <p className="text-[12px] line-through mb-0.5" style={{ color: 'var(--text-faint)' }}>
+              ${tier.regularPrice}/month regular
+            </p>
+            <div className="flex items-baseline gap-1.5">
+              <span
+                className="text-[44px] font-extrabold tracking-[-0.02em] tabular-nums leading-none"
+                style={{
+                  background: a.grad,
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  backgroundClip: 'text',
+                }}
+              >
+                ${tier.price}
+              </span>
+              <span className="text-[14px] font-medium" style={{ color: 'var(--text-soft)' }}>
+                /month
+              </span>
+            </div>
+            <p className="text-[11px] mt-1.5 mb-4" style={{ color: 'var(--text-faint)' }}>
+              Founder pricing, locked for the life of your subscription.
+            </p>
+
+            {/* CTA. Carries the plan slug so the signup flow lands the user
+                on the right checkout post-signup. */}
+            <a
+              href={`/signup?plan=${tier.name.toLowerCase()}`}
+              className="block w-full px-4 py-3 rounded-xl text-center text-[14px] font-bold transition-all hover:brightness-110"
               style={{
-                background: 'linear-gradient(135deg, rgba(124,58,237,0.18), rgba(192,38,211,0.14))',
-                color: '#C4B5FD',
-                border: '1px solid rgba(124,58,237,0.25)',
+                background: highlight ? a.grad : 'var(--surface-bright)',
+                color: highlight ? '#FFFFFF' : a.solid,
+                boxShadow: highlight ? `0 6px 22px ${a.ring}` : 'none',
+                border: highlight ? 'none' : `1.5px solid ${a.ring}`,
               }}
             >
-              {tier.icon}
-            </span>
-            <h3 className="text-[20px] font-semibold tracking-tight" style={{ color: 'var(--text)' }}>
-              {tier.name}
-            </h3>
+              {tier.cta} →
+            </a>
           </div>
-          <p className="text-[13px]" style={{ color: 'var(--text-soft)' }}>
-            {tier.tagline}
-          </p>
         </div>
-
-        {/* Price block. Regular price strikethrough on top, current price big. */}
-        <div>
-          <p className="text-[12px] line-through" style={{ color: 'var(--text-faint)' }}>
-            ${tier.regularPrice}/month regular
-          </p>
-          <div className="flex items-baseline gap-1.5">
-            <span className="text-[40px] font-semibold tracking-tight tabular-nums" style={{ color: 'var(--text)' }}>
-              ${tier.price}
-            </span>
-            <span className="text-[14px]" style={{ color: 'var(--text-soft)' }}>
-              /month
-            </span>
-          </div>
-          <p className="text-[11px] mt-1" style={{ color: 'var(--text-faint)' }}>
-            Founder pricing, locked for the life of your subscription.
-          </p>
-        </div>
-
-        {/* Feature list. */}
-        <ul className="flex flex-col gap-2.5 flex-1">
-          {tier.features.map((f, i) => (
-            <li key={i} className="flex items-start gap-2">
-              <Check
-                size={13}
-                className="flex-shrink-0 mt-1"
-                style={{ color: highlight ? '#9D6BFF' : 'var(--text-soft)' }}
-              />
-              <span className="text-[13px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-                {f}
-              </span>
-            </li>
-          ))}
-        </ul>
-
-        {/* CTA. Carries the plan slug so the signup flow lands the user
-            on the right checkout post-signup. */}
-        <a
-          href={`/signup?plan=${tier.name.toLowerCase()}`}
-          className="w-full px-4 py-3 rounded-xl text-center text-[14px] font-semibold transition-all"
-          style={{
-            background: highlight
-              ? 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)'
-              : 'var(--surface-bright)',
-            color: highlight ? '#FFFFFF' : 'var(--text)',
-            boxShadow: highlight ? '0 4px 20px rgba(124,58,237,0.35)' : 'none',
-            border: highlight ? 'none' : '1px solid var(--border)',
-          }}
-        >
-          {tier.cta} →
-        </a>
       </div>
     </div>
   )

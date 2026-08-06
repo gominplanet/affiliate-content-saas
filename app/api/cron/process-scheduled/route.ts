@@ -35,7 +35,8 @@ import { scrubBanned } from '@/lib/scrub'
 import { maybeDecrypt } from '@/lib/secrets'
 import { getDeadChannels, shouldSkipChannel, autoSkipMessage, type DeadChannel } from '@/lib/channel-health'
 import { createWordPressService } from '@/services/wordpress'
-import { getWordPressCredentials } from '@/lib/wordpress-sites'
+import { getWordPressCredentials, isSitePaused } from '@/lib/wordpress-sites'
+import { normalizeTier } from '@/lib/tier'
 import { pingIndexNowForUrl } from '@/lib/seo-on-publish'
 import { publishTikTokForTarget, type TikTokScheduleOptions } from '@/lib/tiktok-publish'
 import { publishInstagramForTarget, type IgMode } from '@/lib/instagram-publish'
@@ -719,7 +720,24 @@ async function flipBlogPostToPublished(
   // post that was created on a specific site gets flipped on THAT site
   // even if the user's default has changed since they scheduled.
   const creds = await getWordPressCredentials(admin, row.user_id, post.wordpress_site_id)
-  if (!creds) throw new Error('WordPress credentials not found for this user/site')
+  if (!creds) {
+    // Distinguish a paused site (over the tier's site cap after a downgrade)
+    // from genuinely-missing credentials, so the schedule row shows an
+    // actionable reason instead of a scary "not found".
+    if (post.wordpress_site_id) {
+      const { data: ig } = await admin
+        .from('integrations').select('tier').eq('user_id', row.user_id).maybeSingle()
+      const paused = await isSitePaused(
+        admin, row.user_id, post.wordpress_site_id, normalizeTier(ig?.tier),
+      )
+      if (paused) {
+        throw new Error(
+          'This blog is paused on your current plan — you have more connected sites than your plan publishes to. Upgrade to Pro, or make this blog your active site, to publish here again.',
+        )
+      }
+    }
+    throw new Error('WordPress credentials not found for this user/site')
+  }
 
   const wpService = createWordPressService(
     creds.wordpress_url,
