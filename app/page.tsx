@@ -23,23 +23,7 @@ import {
   ShoppingBag, Store, ShoppingCart, Search,
   Radar, Coins,
 } from 'lucide-react'
-import { DemoVideoSection, FAQSection, StickyBottomBar } from '@/components/landing/islands'
-
-// Per-section accent presets. Card icon badges + header pills read from
-// --accent-soft / --accent-text, so wrapping a section in <Accent vars={…}>
-// recolors its cards without touching markup. Default (purple) lives in the
-// palettes below.
-const A_ORANGE = { ['--accent-soft' as string]: 'rgba(249,115,22,0.14)', ['--accent-text' as string]: '#F97316' }
-const A_TEAL = { ['--accent-soft' as string]: 'rgba(34,211,238,0.16)', ['--accent-text' as string]: '#22D3EE' }
-const A_GREEN = { ['--accent-soft' as string]: 'rgba(16,185,129,0.14)', ['--accent-text' as string]: '#10B981' }
-const A_BLUE = { ['--accent-soft' as string]: 'rgba(59,130,246,0.14)', ['--accent-text' as string]: '#3B82F6' }
-const A_PINK = { ['--accent-soft' as string]: 'rgba(236,72,153,0.14)', ['--accent-text' as string]: '#EC4899' }
-const A_AMBER = { ['--accent-soft' as string]: 'rgba(245,158,11,0.14)', ['--accent-text' as string]: '#F59E0B' }
-
-/** Recolor a section's card accents (icon badges + header pills). */
-function Accent({ vars, children }: { vars: React.CSSProperties; children: React.ReactNode }) {
-  return <div style={vars}>{children}</div>
-}
+import { FAQSection, StickyBottomBar } from '@/components/landing/islands'
 
 // Local CSS-var override for a DARK emphasis band inside the otherwise-light
 // page. Any section wrapped in <DarkBand> flips its text/surface tokens so
@@ -105,30 +89,27 @@ export default function LandingPreview() {
       {/* Hub-animation keyframes + smooth scroll now live in globals.css so
           this page can render as a Server Component (styled-jsx is client-only). */}
       <Nav />
+      {/* One accent (purple), lots of white — logie5-style. Sections render on
+          the light page; only the final CTA keeps a dark band, as a strong
+          closer. (Was: per-section rainbow accents + multiple dark bands.) */}
       <Hero />
       <PlatformBar />
-      <DarkBand bg="linear-gradient(160deg, #1A0B2E 0%, #2D0F4A 50%, #17082B 100%)" accent={A_TEAL}>
-        <FreeResearchSection />
-      </DarkBand>
-      <DemoVideoSection />
+      <ComparisonSection />
+      <FreeResearchSection />
       <RolesSection />
       <WorkflowSection />
-      <DarkBand bg="linear-gradient(160deg, #1A0B2E 0%, #2A0E3A 45%, #3A0E22 100%)" accent={A_ORANGE}>
-        <DealRadarSection />
-      </DarkBand>
+      <DealRadarSection />
       <AsinSection />
-      <Accent vars={A_AMBER}><BeforeAfterSection /></Accent>
+      <BeforeAfterSection />
       <GroundedSection />
-      <DarkBand bg="linear-gradient(160deg, #120A2E 0%, #1E0E3E 100%)" accent={A_TEAL}>
-        <DiscoverabilitySection />
-      </DarkBand>
-      <Accent vars={A_BLUE}><BrandedSiteSection /></Accent>
-      <Accent vars={A_GREEN}><BusinessLayerSection /></Accent>
-      <Accent vars={A_PINK}><PartnerNetworksSection /></Accent>
+      <DiscoverabilitySection />
+      <BrandedSiteSection />
+      <BusinessLayerSection />
+      <PartnerNetworksSection />
       <PricingSection />
       <ProofSection />
       <FAQSection />
-      <DarkBand bg="linear-gradient(160deg, #16091E 0%, #2A0E3A 55%, #3A0E22 100%)" accent={A_PINK}>
+      <DarkBand bg="linear-gradient(160deg, #16091E 0%, #2A0E3A 55%, #3A0E22 100%)">
         <FinalCTASection />
       </DarkBand>
       <Footer />
@@ -156,11 +137,10 @@ function FreeResearchSection() {
             className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-medium uppercase tracking-[0.18em] mb-5"
             style={{ backgroundColor: 'rgba(52,199,89,0.12)', color: '#34c759', border: '1px solid rgba(52,199,89,0.28)' }}
           >
-            <Sparkles size={10} /> Free · no card · no setup
+            <Sparkles size={10} /> Free on every plan · even the free tier
           </span>
-          <h2 className="text-[40px] sm:text-[52px] font-semibold tracking-tight leading-[1.05] mb-5" style={{ color: 'var(--text)' }}>
-            The product research most tools charge for.
-            <br />
+          <h2 className="text-[40px] sm:text-[56px] font-extrabold tracking-[-0.03em] leading-[1.0] mb-5" style={{ color: 'var(--text)' }}>
+            One research engine.<br />
             <span
               style={{
                 background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)',
@@ -169,12 +149,11 @@ function FreeResearchSection() {
                 backgroundClip: 'text',
               }}
             >
-              Free.
+              Every opportunity, found for you.
             </span>
           </h2>
-          <p className="text-[16px] sm:text-[17px] leading-relaxed max-w-2xl mx-auto" style={{ color: 'var(--text-soft)' }}>
-            Sign up and start finding products worth reviewing in minutes. No WordPress, no YouTube,
-            no credit card. Publishing is where the paid plans come in. The research is yours.
+          <p className="text-[16px] sm:text-[18px] leading-relaxed max-w-2xl mx-auto" style={{ color: 'var(--text-soft)' }}>
+            MVP&apos;s research algorithm scans the <span style={{ color: 'var(--text)' }}>whole Amazon catalogue</span>, every <span style={{ color: 'var(--text)' }}>live deal</span>, and the <span style={{ color: 'var(--text)' }}>Creator Connections</span> campaign board — then one intuitive filter sorts them by sales volume, rating, price, real discount, commission and competition. The winners rise to the top. <span style={{ color: 'var(--text)' }}>Every plan gets the full research engine — including the free tier.</span> No card, no trial clock.
           </p>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -236,7 +215,7 @@ function RolesSection() {
             One hub. Many hats.
           </span>
           <h2
-            className="text-[40px] sm:text-[52px] font-semibold tracking-tight leading-[1.05] mb-5"
+            className="text-[40px] sm:text-[54px] font-extrabold tracking-[-0.03em] leading-[1.02] mb-5"
             style={{ color: 'var(--text)' }}
           >
             MVP is many roles.
@@ -311,7 +290,7 @@ function BusinessLayerSection() {
             <BadgePercent size={10} />
             The business layer
           </span>
-          <h2 className="text-[40px] sm:text-[52px] font-semibold tracking-tight leading-[1.05] mb-5" style={{ color: 'var(--text)' }}>
+          <h2 className="text-[40px] sm:text-[54px] font-extrabold tracking-[-0.03em] leading-[1.02] mb-5" style={{ color: 'var(--text)' }}>
             Content is step one.
             <br />
             <span style={{ background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
@@ -381,7 +360,7 @@ function DealRadarSection() {
             <Zap size={10} />
             New — Amazon Deal Radar
           </span>
-          <h2 className="text-[40px] sm:text-[52px] font-semibold tracking-tight leading-[1.05] mb-5" style={{ color: 'var(--text)' }}>
+          <h2 className="text-[40px] sm:text-[54px] font-extrabold tracking-[-0.03em] leading-[1.02] mb-5" style={{ color: 'var(--text)' }}>
             You’re leaving commissions on the table.
             <br />
             <span style={{ background: 'linear-gradient(135deg, #F97316 0%, #C026D3 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
@@ -440,6 +419,20 @@ function DealRadarSection() {
               <p className="text-[13.5px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>{p.body}</p>
             </div>
           ))}
+        </div>
+
+        {/* Link in bio — one shareable, self-updating URL. Explained on its own
+            so it reads as a real feature, not a footnote to Stories. */}
+        <div className="mt-8 rounded-2xl border px-6 py-6 flex flex-col sm:flex-row items-start gap-5" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', boxShadow: 'var(--card-shadow)' }}>
+          <span className="inline-flex items-center justify-center w-12 h-12 rounded-xl flex-shrink-0 text-white" style={{ background: 'linear-gradient(135deg,#7C3AED,#C026D3)' }}>
+            <ShoppingBag size={22} />
+          </span>
+          <div>
+            <p className="text-[19px] font-bold" style={{ color: 'var(--text)' }}>One link in bio. Always up to date.</p>
+            <p className="mt-1.5 text-[15px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
+              MVP builds you one clean, easy-to-manage URL — <span style={{ color: 'var(--text)' }}>your own shoppable link-in-bio page</span> — to drop into your Instagram, TikTok and YouTube bios. It fills itself with your latest reviews, deals and picks, so every visitor lands on a live page of exactly what you&apos;re promoting right now. Set it once; it updates itself. No Linktree, no extra subscription, no manual editing.
+            </p>
+          </div>
         </div>
 
         <div className="text-center mt-10">
@@ -508,7 +501,7 @@ function DiscoverabilitySection() {
             <Sparkles size={10} />
             Found by Google and AI
           </span>
-          <h2 className="text-[40px] sm:text-[52px] font-semibold tracking-tight leading-[1.05] mb-5" style={{ color: 'var(--text)' }}>
+          <h2 className="text-[40px] sm:text-[54px] font-extrabold tracking-[-0.03em] leading-[1.02] mb-5" style={{ color: 'var(--text)' }}>
             Search changed.
             <br />
             <span style={{ background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
@@ -653,7 +646,7 @@ function AsinSection() {
             <Bookmark size={10} />
             No channel? No problem
           </span>
-          <h2 className="text-[40px] sm:text-[52px] font-semibold tracking-tight leading-[1.05] mb-5" style={{ color: 'var(--text)' }}>
+          <h2 className="text-[40px] sm:text-[54px] font-extrabold tracking-[-0.03em] leading-[1.02] mb-5" style={{ color: 'var(--text)' }}>
             Don&apos;t make videos?{' '}
             <span style={{ background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
               Start from a link.
@@ -705,7 +698,7 @@ function PartnerNetworksSection() {
             <Sparkles size={10} />
             Multi-network affiliate
           </span>
-          <h2 className="text-[40px] sm:text-[52px] font-semibold tracking-tight leading-[1.05] mb-5" style={{ color: 'var(--text)' }}>
+          <h2 className="text-[40px] sm:text-[54px] font-extrabold tracking-[-0.03em] leading-[1.02] mb-5" style={{ color: 'var(--text)' }}>
             Earn beyond the{' '}
             <span style={{ background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
               Amazon tag.
@@ -773,7 +766,7 @@ function WorkflowSection() {
             How it works
           </span>
           <h2
-            className="text-[40px] sm:text-[52px] font-semibold tracking-tight leading-[1.05] mb-5"
+            className="text-[40px] sm:text-[54px] font-extrabold tracking-[-0.03em] leading-[1.02] mb-5"
             style={{ color: 'var(--text)' }}
           >
             The{' '}
@@ -954,7 +947,7 @@ function GroundedSection() {
             Grounded. Never guessed.
           </span>
           <h2
-            className="text-[40px] sm:text-[52px] font-semibold tracking-tight leading-[1.05] mb-5"
+            className="text-[40px] sm:text-[54px] font-extrabold tracking-[-0.03em] leading-[1.02] mb-5"
             style={{ color: 'var(--text)' }}
           >
             Grounded in{' '}
@@ -1162,7 +1155,7 @@ function BrandedSiteSection() {
             Free with every plan, trial included
           </p>
           <h2
-            className="text-[28px] lg:text-[40px] font-semibold tracking-tight leading-tight mb-5"
+            className="text-[28px] lg:text-[42px] font-extrabold tracking-[-0.03em] leading-tight mb-5"
             style={{ color: 'var(--text)' }}
           >
             A real branded WordPress site.{' '}
@@ -1396,7 +1389,7 @@ function PricingSection() {
             Pricing
           </span>
           <h2
-            className="text-[40px] sm:text-[52px] font-semibold tracking-tight leading-[1.05] mb-5"
+            className="text-[40px] sm:text-[54px] font-extrabold tracking-[-0.03em] leading-[1.02] mb-5"
             style={{ color: 'var(--text)' }}
           >
             Start free.{' '}
@@ -1691,7 +1684,7 @@ function ProofSection() {
             Proven, not projected
           </span>
           <h2
-            className="text-[36px] sm:text-[44px] font-semibold tracking-tight leading-[1.1] mb-4"
+            className="text-[36px] sm:text-[46px] font-extrabold tracking-[-0.03em] leading-[1.05] mb-4"
             style={{ color: 'var(--text)' }}
           >
             The system behind a $3M/year affiliate business.
@@ -1798,7 +1791,7 @@ function FinalCTASection() {
           Ready when you are
         </span>
         <h2
-          className="text-[44px] sm:text-[60px] font-semibold tracking-tight leading-[1.02] mb-5"
+          className="text-[44px] sm:text-[64px] font-extrabold tracking-[-0.035em] leading-[1.0] mb-5"
           style={{ color: 'var(--text)' }}
         >
           Start your{' '}
@@ -1834,7 +1827,7 @@ function FinalCTASection() {
             <ArrowRight size={16} />
           </a>
           <a
-            href="#demo"
+            href="/tour"
             className="px-5 py-3.5 rounded-xl text-[15px] inline-flex items-center gap-2 transition-colors"
             style={{
               backgroundColor: 'var(--surface-bright)',
@@ -1842,8 +1835,8 @@ function FinalCTASection() {
               border: '1px solid var(--border)',
             }}
           >
-            <Play size={14} />
-            Watch the intro
+            Take the product tour
+            <ArrowRight size={14} />
           </a>
         </div>
 
@@ -1983,21 +1976,22 @@ function Hero() {
             Built by a <span style={{ color: 'var(--text-muted)' }}>$3M/yr affiliate creator</span>. No card to start.
           </p>
 
-          {/* Main + Secondary headlines */}
+          {/* Main + Secondary headlines — fat, tight, high-contrast (logie5-style).
+              Leads with the positioning: one tool, every feature, no compromise. */}
           <h1
-            className="text-[38px] sm:text-[52px] lg:text-[64px] font-semibold tracking-[-0.02em] leading-[1.05] sm:leading-[1.02]"
+            className="text-[40px] sm:text-[58px] lg:text-[70px] font-extrabold tracking-[-0.035em] leading-[0.98]"
             style={{ color: 'var(--text)' }}
           >
-            Your reviews, everywhere.<br />
+            Everything an Amazon<br />affiliate needs.{' '}
             <span style={{ background: 'linear-gradient(120deg, #F97316 0%, #C026D3 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
-              Not just YouTube.
+              Zero compromise.
             </span>
           </h1>
           <p
-            className="mt-4 text-[20px] font-medium tracking-tight"
+            className="mt-5 text-[20px] sm:text-[22px] font-semibold tracking-tight"
             style={{ color: 'var(--text-muted)' }}
           >
-            The content engine for affiliate creators — your first stop after every YouTube upload.
+            The only tool that runs your whole Amazon affiliate business — and never uses your personal data.
           </p>
 
           {/* Sub */}
@@ -2020,8 +2014,10 @@ function Hero() {
                 Start your free trial
                 <ArrowRight size={14} />
               </a>
+              {/* Secondary CTA — the full public product tour (/tour). No video;
+                  the tour walks the features directly. */}
               <a
-                href="#demo"
+                href="/tour"
                 className="px-5 py-3 rounded-xl border text-[14px] font-medium inline-flex items-center gap-2 transition-colors"
                 style={{
                   backgroundColor: 'var(--surface)',
@@ -2029,24 +2025,20 @@ function Hero() {
                   color: 'var(--text)',
                 }}
               >
-                <Play size={13} fill="currentColor" />
-                Watch the intro
-              </a>
-              {/* Tertiary CTA — the full public product tour (/tour). Kept as a
-                  plain link so it doesn't compete with the two buttons above. */}
-              <a
-                href="/tour"
-                className="px-3 py-3 text-[14px] font-medium inline-flex items-center gap-1.5 transition-colors hover:opacity-80"
-                style={{ color: 'var(--text-soft)' }}
-              >
-                See the full tour
+                See the product tour
                 <ArrowRight size={13} />
               </a>
             </div>
-            <p className="mt-3 text-[12px] inline-flex items-center gap-1.5" style={{ color: 'var(--text-faint)' }}>
-              <span className="w-1 h-1 rounded-full bg-[#10B981]" />
-              Keep your WordPress site forever.
-            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12px]" style={{ color: 'var(--text-faint)' }}>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="w-1 h-1 rounded-full bg-[#10B981]" />
+                Keep your WordPress site forever.
+              </span>
+              <span className="inline-flex items-center gap-1.5" style={{ color: 'var(--text-soft)' }}>
+                <ShieldCheck size={13} style={{ color: '#10B981' }} />
+                We never use or sell your personal data.
+              </span>
+            </div>
 
             {/* New-feature ribbon — vibrant strip that ties the hero to the
                 flagship Deal Radar section below. */}
@@ -2205,6 +2197,104 @@ function ProductMock() {
  *  Chip border/text are theme-aware; the icon carries the platform's brand
  *  color (X/Threads use --text-soft so their black mark adapts to the theme).
  */
+/** MVP vs the rest — the "only tool, zero compromise, your data stays yours"
+ *  argument as a scannable comparison. Generic "Other tools" column (no named
+ *  competitors). The privacy row is the emphasized differentiator. */
+const COMPARE_ROWS: { label: string; mvp: boolean; others: 'no' | 'partial'; highlight?: boolean }[] = [
+  { label: 'Turn a YouTube video into a full SEO blog post', mvp: true, others: 'no' },
+  { label: 'Any product link or Amazon ASIN → review, comparison, buying guide & deal post', mvp: true, others: 'partial' },
+  { label: 'Finish the upload: description, tags, affiliate links & a CTR-tested thumbnail', mvp: true, others: 'no' },
+  { label: 'Auto-syndicate every post to all your socials (FB, IG, X, LinkedIn, Threads, Bluesky, Telegram, Pinterest)', mvp: true, others: 'partial' },
+  { label: 'Price-history-verified Amazon Deal Radar', mvp: true, others: 'no' },
+  { label: 'Creator Connections: find, accept & message brands', mvp: true, others: 'no' },
+  { label: 'Levanta, PartnerBoost & Walmart campaigns in one place', mvp: true, others: 'no' },
+  { label: 'A beautiful blog on your own site that you keep forever', mvp: true, others: 'no' },
+  { label: 'Never uses or sells your personal data', mvp: true, others: 'no', highlight: true },
+]
+
+function ComparisonSection() {
+  return (
+    <section id="compare" className="px-5 sm:px-8 pt-16 sm:pt-24 pb-16 sm:pb-24 relative">
+      <div className="max-w-5xl mx-auto">
+        <div className="text-center max-w-3xl mx-auto mb-12">
+          <span
+            className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-semibold uppercase tracking-[0.18em] mb-5"
+            style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent-text)', border: '1px solid var(--border)' }}
+          >
+            <ShieldCheck size={11} /> The only one that does it all
+          </span>
+          <h2 className="text-[36px] sm:text-[52px] font-extrabold tracking-[-0.03em] leading-[1.0]" style={{ color: 'var(--text)' }}>
+            One tool. Every feature.<br />
+            <span style={{ background: 'linear-gradient(120deg, #F97316 0%, #C026D3 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
+              Your data stays yours.
+            </span>
+          </h2>
+          <p className="mt-5 text-[16px] sm:text-[17px] leading-relaxed max-w-2xl mx-auto" style={{ color: 'var(--text-soft)' }}>
+            Other Amazon affiliate tools make you stitch together three or four services — and pay for it with your personal data. MVP does the whole job in one place, and never touches yours.
+          </p>
+        </div>
+
+        <div className="rounded-3xl border overflow-hidden" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', boxShadow: 'var(--card-shadow)' }}>
+          {/* Header row */}
+          <div className="grid grid-cols-[1fr_auto_auto]">
+            <div className="px-5 sm:px-7 py-4 text-[12px] font-semibold uppercase tracking-[0.12em]" style={{ color: 'var(--text-faint)' }}>
+              Feature
+            </div>
+            <div className="w-[92px] sm:w-[120px] px-2 py-4 text-center text-[13px] sm:text-[15px] font-extrabold" style={{ color: 'var(--text)', background: 'var(--accent-soft)' }}>
+              MVP
+            </div>
+            <div className="w-[92px] sm:w-[120px] px-2 py-4 text-center text-[12px] sm:text-[13px] font-semibold" style={{ color: 'var(--text-subtle)' }}>
+              Other tools
+            </div>
+          </div>
+
+          {COMPARE_ROWS.map((r, i) => (
+            <div
+              key={i}
+              className="grid grid-cols-[1fr_auto_auto] items-center border-t"
+              style={{ borderColor: 'var(--border)', background: r.highlight ? 'var(--accent-soft)' : 'transparent' }}
+            >
+              <div className="px-5 sm:px-7 py-4 text-[14px] sm:text-[15px]" style={{ color: 'var(--text-muted)', fontWeight: r.highlight ? 700 : 500 }}>
+                {r.label}
+              </div>
+              <div className="w-[92px] sm:w-[120px] px-2 py-4 flex items-center justify-center" style={{ background: r.highlight ? 'transparent' : 'var(--accent-soft)' }}>
+                <span className="inline-flex items-center justify-center w-7 h-7 rounded-full text-white" style={{ background: 'linear-gradient(135deg, #7C3AED, #C026D3)' }}>
+                  <Check size={15} strokeWidth={3} />
+                </span>
+              </div>
+              <div className="w-[92px] sm:w-[120px] px-2 py-4 flex items-center justify-center">
+                {r.others === 'partial' ? (
+                  <span className="text-[11px] font-semibold" style={{ color: 'var(--text-faint)' }}>Some</span>
+                ) : (
+                  <span className="inline-flex items-center justify-center w-7 h-7 rounded-full" style={{ background: 'var(--surface-bright)', color: 'var(--text-faint)' }}>
+                    <XIcon size={14} strokeWidth={2.5} />
+                  </span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Privacy promise strip */}
+        <div
+          className="mt-6 rounded-2xl border px-5 sm:px-7 py-5 flex items-start gap-4"
+          style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
+        >
+          <span className="inline-flex items-center justify-center w-10 h-10 rounded-xl flex-shrink-0 text-white" style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>
+            <ShieldCheck size={20} />
+          </span>
+          <div>
+            <p className="text-[16px] font-bold" style={{ color: 'var(--text)' }}>Your data is never the product.</p>
+            <p className="mt-1 text-[14px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
+              We don&apos;t harvest, sell, or train on your personal data — not your audience, not your earnings, not your content. Your accounts stay connected to <span style={{ color: 'var(--text)' }}>you</span>, and your site is yours to keep forever. That&apos;s a promise most tools can&apos;t make.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
 function PlatformBar() {
   return (
     <section className="px-6 lg:px-8 pt-2 pb-14 relative">
@@ -2286,7 +2376,7 @@ function BeforeAfterSection() {
             One subscription replaces your stack
           </span>
           <h2
-            className="text-[40px] sm:text-[52px] font-semibold tracking-tight leading-[1.05] mb-5"
+            className="text-[40px] sm:text-[54px] font-extrabold tracking-[-0.03em] leading-[1.02] mb-5"
             style={{ color: 'var(--text)' }}
           >
             Five tools and a tab tangle.{' '}
@@ -2491,7 +2581,7 @@ function Footer() {
               { label: 'Product tour', href: '/tour' },
               { label: 'Pricing', href: '/pricing' },
               { label: 'FAQ', href: '#faq' },
-              { label: 'Watch intro', href: '#demo' },
+              { label: 'Product tour', href: '/tour' },
             ]}
           />
           {/* Public resources only — no member-only in-app tools here (WordPress
