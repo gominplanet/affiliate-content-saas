@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
 
 Blog title: ${p.title}
 Blog excerpt: ${p.excerpt || p.content?.substring(0, 300) || ''}
-Blog URL: ${p.wordpress_url}
+Blog URL: ${p.geniuslink_blog_url || p.wordpress_url}
 
 Write ONLY the post text, nothing else. Do not include a disclaimer or #ad tag.`,
         }],

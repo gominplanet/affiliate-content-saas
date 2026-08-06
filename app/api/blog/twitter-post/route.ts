@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: postRow } = await supabase
       .from('blog_posts')
-      .select('id,title,excerpt,content,wordpress_url,social_publish_counts')
+      .select('id,title,excerpt,content,wordpress_url,geniuslink_blog_url,social_publish_counts')
       .eq('id', postId)
       .eq('user_id', user.id)
       .single()
@@ -192,7 +192,7 @@ Return ONLY the tweet text.`,
     // text handed back to the modal — and saved as scheduled_posts.body_text
     // — still contained banned words.
     tweetText = scrubBanned(tweetText)
-    const finalText = `${tweetText} ${post.wordpress_url}`
+    const finalText = `${tweetText} ${(post as any).geniuslink_blog_url || post.wordpress_url}`
 
     if (dryRun) {
       return NextResponse.json({ ok: true, dryRun: true, text: tweetText, finalText })

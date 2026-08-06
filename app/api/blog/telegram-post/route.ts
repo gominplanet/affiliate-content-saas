@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: postRow } = await supabase
       .from('blog_posts')
-      .select('id,title,excerpt,content,wordpress_url,social_publish_counts,youtube_videos(thumbnail_url)')
+      .select('id,title,excerpt,content,wordpress_url,geniuslink_blog_url,social_publish_counts,youtube_videos(thumbnail_url)')
       .eq('id', postId)
       .eq('user_id', user.id)
       .single()
@@ -174,14 +174,14 @@ Return ONLY the post text.`,
     // CTA link in MarkdownV2. Everything user-derived (title, body, URL) must
     // be escaped to avoid 400 from the Telegram API.
     const escapedBody = escapeMarkdownV2(captionText)
-    const escapedUrl = escapeMarkdownV2(post.wordpress_url as string)
+    const escapedUrl = escapeMarkdownV2(((post as any).geniuslink_blog_url || post.wordpress_url) as string)
     const linkLabel = escapeMarkdownV2('Read the full review →')
     const finalCaption = `${escapedBody}\n\n[${linkLabel}](${escapedUrl})`
 
     if (dryRun) {
       // Show the body the user can edit; finalText is the rendered Markdown
       // version that ships to Telegram (with the CTA link appended).
-      return NextResponse.json({ ok: true, dryRun: true, text: captionText, finalText: `${captionText}\n\nRead the full review → ${post.wordpress_url}` })
+      return NextResponse.json({ ok: true, dryRun: true, text: captionText, finalText: `${captionText}\n\nRead the full review → ${(post as any).geniuslink_blog_url || post.wordpress_url}` })
     }
 
     // Video-less posts (campaigns, guides, comparisons) have no YouTube
