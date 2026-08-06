@@ -25,8 +25,14 @@ export async function POST(request: Request) {
     if ('error' in auth) return auth.error
     const { ownerId } = auth
 
-    const body = await request.json().catch(() => ({})) as { campaigns?: InCampaign[] }
+    const body = await request.json().catch(() => ({})) as { campaigns?: InCampaign[]; reconcile?: boolean }
     const now = new Date().toISOString()
+    // Reconcile (default on): after writing the incoming joined set, clear the
+    // amazon_joined_at marker on the user's rows that are NO LONGER in Amazon's
+    // list, so "Joined only" mirrors Amazon exactly. Only runs when we got a
+    // non-empty list (guarded below) — a failed/empty sync never wipes the saved
+    // joined set, which is the whole point of persisting it.
+    const reconcile = body.reconcile !== false
 
     // Dedup incoming by valid ASIN, cap for safety.
     const byAsin = new Map<string, InCampaign>()
@@ -58,7 +64,10 @@ export async function POST(request: Request) {
     for (const [asin, c] of byAsin) {
       const id = existingByAsin.get(asin)
       if (id) { toUpdateIds.push(id); continue }
-      const row: Record<string, unknown> = { user_id: ownerId, asin, status: 'pending', accepted_at: now }
+      // amazon_joined_at is the authoritative, PERSISTED "joined on Amazon" marker
+      // that "Joined only" reads — so the joined list survives reloads with no
+      // re-sync. accepted_at is written alongside for badge/back-compat.
+      const row: Record<string, unknown> = { user_id: ownerId, asin, status: 'pending', accepted_at: now, amazon_joined_at: now }
       if (c.campaignId) row.cc_campaign_id = c.campaignId
       if (c.brand) row.brand_name = String(c.brand).slice(0, 200)
       if (c.name) row.product_title = String(c.name).slice(0, 300)
@@ -66,13 +75,36 @@ export async function POST(request: Request) {
     }
 
     if (toUpdateIds.length) {
-      await sb.from('campaigns').update({ accepted_at: now, updated_at: now }).in('id', toUpdateIds)
+      await sb.from('campaigns').update({ accepted_at: now, amazon_joined_at: now, updated_at: now }).in('id', toUpdateIds)
     }
     if (toInsert.length) {
       await sb.from('campaigns').insert(toInsert)
     }
 
-    return NextResponse.json({ ok: true, synced: byAsin.size, inserted: toInsert.length, updated: toUpdateIds.length })
+    // Reconcile: clear the joined marker on rows that are no longer in Amazon's
+    // list, so "Joined only" stays an exact mirror. Guarded by a healthy non-empty
+    // sync (byAsin.size > 0 is already true here) so a bad sync can't wipe the set.
+    let cleared = 0
+    if (reconcile) {
+      const { data: stale } = await sb
+        .from('campaigns')
+        .select('id,asin')
+        .eq('user_id', ownerId)
+        .not('amazon_joined_at', 'is', null)
+      const staleIds = (stale ?? [])
+        .filter((r: { asin?: string }) => !byAsin.has(String(r?.asin || '').toUpperCase()))
+        .map((r: { id: string }) => r.id)
+      if (staleIds.length) {
+        // Batch in chunks to keep the IN() lists sane.
+        for (let i = 0; i < staleIds.length; i += 200) {
+          const chunk = staleIds.slice(i, i + 200)
+          await sb.from('campaigns').update({ amazon_joined_at: null, updated_at: now }).in('id', chunk)
+        }
+        cleared = staleIds.length
+      }
+    }
+
+    return NextResponse.json({ ok: true, synced: byAsin.size, inserted: toInsert.length, updated: toUpdateIds.length, cleared })
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Sync failed' }, { status: 500 })
   }

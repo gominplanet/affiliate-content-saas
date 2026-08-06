@@ -60,7 +60,9 @@ export async function POST(request: Request) {
       .maybeSingle()
 
     if (existing?.id) {
-      const patch: Record<string, unknown> = { accepted_at: now, updated_at: now }
+      // amazon_joined_at is the persisted "joined on Amazon" marker "Joined only"
+      // reads — accepting a campaign IS joining it, so set it here too.
+      const patch: Record<string, unknown> = { accepted_at: now, amazon_joined_at: now, updated_at: now }
       if (body.campaignId) patch.cc_campaign_id = body.campaignId
       if (safeDetailsUrl) patch.details_url = safeDetailsUrl
       if (safeBrand) patch.brand_name = safeBrand
@@ -77,6 +79,7 @@ export async function POST(request: Request) {
       asin,
       status: 'pending',
       accepted_at: now,
+      amazon_joined_at: now,
     }
     if (body.campaignId) insert.cc_campaign_id = body.campaignId
     if (safeDetailsUrl) insert.details_url = safeDetailsUrl
