@@ -66,17 +66,24 @@ export async function GET() {
       return (data?.length ?? 0) > 0
     } catch { return null }
   }
-  const [staged, live, enriched, hasStaged, keepa] = await Promise.all([
+  const today = new Date().toISOString().slice(0, 10)
+  const [staged, live, enriched, enrichable, hasStaged, keepa] = await Promise.all([
     countOf('cc_campaign_catalog_import'),
     countOf('cc_campaign_catalog'),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     countOf('cc_campaign_catalog', (q: any) => q.not('product_verified_at', 'is', null)),
+    // ENRICHABLE = the rows enrichment can actually touch (live + has a rep ASIN).
+    // The honest coverage % is enriched / enrichable, not enriched / all rows:
+    // ended and ASIN-less campaigns are never enriched by design, so dividing by
+    // the whole catalog understates real coverage.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    countOf('cc_campaign_catalog', (q: any) => q.gte('ends_at', today).not('rep_asin', 'is', null)),
     hasStagedCheck(),
     // Live Keepa token balance — the shared budget enrichment / Deal Radar /
     // the Product Finder all draw from. /token doesn't cost product tokens.
     fetchKeepaTokenStatus(),
   ])
-  return NextResponse.json({ ok: true, staged, live, enriched, hasStaged, keepa })
+  return NextResponse.json({ ok: true, staged, live, enriched, enrichable, hasStaged, keepa })
 }
 
 export async function POST(request: Request) {
