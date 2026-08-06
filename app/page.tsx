@@ -89,20 +89,24 @@ export default function LandingPreview() {
       {/* Hub-animation keyframes + smooth scroll now live in globals.css so
           this page can render as a Server Component (styled-jsx is client-only). */}
       <Nav />
-      {/* One accent (purple), lots of white — logie5-style. Sections render on
-          the light page; only the final CTA keeps a dark band, as a strong
-          closer. (Was: per-section rainbow accents + multiple dark bands.) */}
+      {/* One accent (purple) + lots of white, logie5-style — with a few dark
+          emphasis bands to break up the page and make the flagship features
+          punch. The banded sections were designed for a dark background. */}
       <Hero />
       <PlatformBar />
       <ComparisonSection />
       <FreeResearchSection />
       <RolesSection />
       <WorkflowSection />
-      <DealRadarSection />
+      <DarkBand bg="linear-gradient(160deg, #1A0B2E 0%, #2A0E3A 45%, #3A0E22 100%)">
+        <DealRadarSection />
+      </DarkBand>
       <AsinSection />
       <BeforeAfterSection />
       <GroundedSection />
-      <DiscoverabilitySection />
+      <DarkBand bg="linear-gradient(160deg, #120A2E 0%, #1E0E3E 100%)">
+        <DiscoverabilitySection />
+      </DarkBand>
       <BrandedSiteSection />
       <BusinessLayerSection />
       <PartnerNetworksSection />
