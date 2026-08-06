@@ -798,6 +798,14 @@ function ccListMyCampaignsInPage(opts) {
 
       const FILTER_BASE = { availableSlotsOnly: null, interestTags: null, providingSamplesOnly: null, commissionPercentageFilters: null, dateRange: null, campaignBrowseNodes: null, earlyAccessOnly: null, gcorIdList: null, campaignQualifiers: null, contentTypes: null, adId: null, storeIds: null, creatorIds: null, flatFeeRanges: null, rangeFilters: null, socialChannels: null, premiumCreator: null, contractStatus: null, ratingStar: null, reviewCount: null, priceRange: null, budgetAvailabilityScoreList: null, dealMetadata: null }
 
+      // A keyword narrows the query server-side (Amazon's own search) so we can find
+      // any of a creator's joined campaigns — even at 100k+ — without pulling them
+      // all. Matches brand OR product OR ASIN, mirroring Amazon's search box.
+      const kw = String(opts.keyword || '').trim()
+      const searchOptionsFor = () => kw
+        ? [{ fieldName: 'brandName', searchString: kw }, { fieldName: 'campaignName', searchString: kw }, { fieldName: 'asin', searchString: kw }]
+        : []
+
       const buildBody = (v, pageNumber, nextToken) => {
         // Authoritative path: replay the page's OWN active-view query, only swapping
         // the pagination cursor. This is the exact filter Amazon uses for the joined
@@ -812,12 +820,14 @@ function ccListMyCampaignsInPage(opts) {
             // Broaden the type so we get EVERY joined campaign, not just the type the
             // active tab happened to default to (that's the 44-vs-666 gap).
             if (o.filterOptions && typeof o.filterOptions === 'object') o.filterOptions.campaignType = null
+            // Apply the keyword search (or clear it) on the replayed query.
+            o.searchOptions = searchOptionsFor()
             return JSON.stringify(o)
           } catch (e) { /* fall through to synthetic body */ }
         }
         const filterOptions = Object.assign({ campaignType: v.campaignType, statuses: v.statuses }, FILTER_BASE)
         const b = { campaignId: null, brandId: null, filterOptions, sortOptions: [{ name: 'CAMPAIGN_TITLE', order: 'ASCENDING' }], nextToken, pageNumber, pageSize: 30, creatorId }
-        if (!v.omitSearch) b.searchOptions = v.searchOptions || []
+        if (!v.omitSearch) b.searchOptions = kw ? searchOptionsFor() : (v.searchOptions || [])
         return JSON.stringify(b)
       }
 
@@ -856,6 +866,7 @@ function ccListMyCampaignsInPage(opts) {
       const out = []
       const seen = {}
       const statusCounts = {}
+      const num = (...xs) => { for (const x of xs) { const n = Number(x); if (isFinite(n) && x != null && x !== '') return n } return null }
       const collect = (ads) => {
         let added = 0
         for (const a of ads) {
@@ -865,7 +876,20 @@ function ccListMyCampaignsInPage(opts) {
           const asins = Array.isArray(a.campaignAsins) ? a.campaignAsins.map((x) => String(x).toUpperCase()) : []
           const st = a.campaignStatus || a.status || a.collaborationStatus || a.contractStatus || null
           if (st) statusCounts[st] = (statusCounts[st] || 0) + 1
-          out.push({ campaignId: a.campaignId, asin: asins[0] || null, brand: a.brandName || null, name: a.campaignName || null, status: st })
+          // Map extra fields defensively (names vary across ad shapes) so the joined
+          // cards can show commission / image / rating without another lookup.
+          out.push({
+            campaignId: a.campaignId,
+            asin: asins[0] || null,
+            asinCount: asins.length,
+            brand: a.brandName || a.brand || null,
+            name: a.campaignName || a.title || null,
+            image: a.campaignImageUrl || a.imageUrl || a.image || (Array.isArray(a.campaignImages) ? a.campaignImages[0] : null) || null,
+            commissionPct: num(a.commissionPercentage, a.commissionPercent, a.commission),
+            rating: num(a.averageRating, a.rating, a.ratingStar),
+            reviewCount: num(a.reviewCount, a.totalReviews),
+            status: st,
+          })
         }
         return added
       }
@@ -893,21 +917,28 @@ function ccListMyCampaignsInPage(opts) {
             if (first.total != null) diag.total = first.total
             let nextToken = first.nextToken
             let pages = 1
-            // Paginate up to 60 pages (~1800 campaigns). Do NOT stop just because
-            // nextToken is absent — some responses paginate by pageNumber with no
-            // token. Carry the token when present, always bump pageNumber, and stop
-            // only when a page adds NO new campaigns (dedup-aware) so token-less and
-            // token-based pagination both terminate correctly.
-            for (let pageNumber = 2; pageNumber <= 60; pageNumber++) {
+            let lastPageFull = first.ads.length >= 30
+            // Paginate up to maxPages (default 60 ≈ 1800; the keyword search caps
+            // lower for a fast, responsive query). Do NOT stop just because nextToken
+            // is absent — some responses paginate by pageNumber with no token. Carry
+            // the token when present, always bump pageNumber, and stop only when a
+            // page adds NO new campaigns (dedup-aware) so token-less and token-based
+            // pagination both terminate correctly.
+            const maxPages = Math.max(1, opts.maxPages || 60)
+            for (let pageNumber = 2; pageNumber <= maxPages; pageNumber++) {
               const p = await runPage(v, pageNumber, nextToken)
               const added = collect(p.ads)
               pages = pageNumber
               nextToken = p.nextToken
+              lastPageFull = p.ads.length >= 30
               if (p.total != null) diag.total = p.total
               if (!added) break
             }
             diag.pagesFetched = pages
             diag.fetched = out.length
+            // More may exist if we stopped at the page cap while pages were still
+            // full (or Amazon's total exceeds what we fetched).
+            diag.hasMore = (typeof diag.total === 'number' && out.length < diag.total) || (pages >= maxPages && !!(nextToken || lastPageFull))
             break
           }
         } catch (e) {
@@ -917,14 +948,16 @@ function ccListMyCampaignsInPage(opts) {
 
       diag.picked = picked ? picked.label : null
       diag.statusCounts = statusCounts
-      return { ok: true, campaigns: out, creatorId, diag }
+      return { ok: true, campaigns: out, creatorId, total: (typeof diag.total === 'number' ? diag.total : out.length), hasMore: !!diag.hasMore, diag }
     } catch (e) { return { ok: false, error: e && e.message ? e.message : 'exception', diag } }
   })()
 }
 
 // Background driver for the above: opens a hidden affiliate-program tab (the
 // creator's own session) and runs the list-in-page function.
-async function listMyCampaignsApi() {
+async function listMyCampaignsApi(params) {
+  const keyword = (params && params.keyword) || ''
+  const maxPages = params && params.maxPages
   await ensureRecipesLoaded()
   const keepAlive = startKeepAlive()
   let tabId = null
@@ -955,6 +988,8 @@ async function listMyCampaignsApi() {
         headers: (_ccSendRecipe && _ccSendRecipe.headers) || {},
         capturedBody: captured ? captured.body : null,
         capturedHeaders: captured ? captured.headers : null,
+        keyword,
+        maxPages,
       }],
     })
     const out = (res && res[0] && res[0].result) || { ok: false, reason: 'no-result' }
@@ -3234,7 +3269,10 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     // dashboard), so MVP's "Joined only" can show everything they've joined —
     // including campaigns joined directly on Amazon, not just via MVP.
     const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 90000)
-    listMyCampaignsApi()
+    // Optional keyword narrows the query server-side (Amazon's own search) so any
+    // of the creator's joined campaigns is findable — even at 100k+ — without
+    // pulling them all. maxPages caps the fetch for a responsive live search.
+    listMyCampaignsApi({ keyword: msg.keyword || '', maxPages: msg.maxPages })
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async response — keep the channel open
