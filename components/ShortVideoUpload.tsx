@@ -105,7 +105,10 @@ export function ShortVideoUpload({
       // Path shape matches the existing IG burner / composer uploads so the
       // bucket's RLS policy (first folder = user id) accepts it.
       const ext = file.name.split('.').pop()?.toLowerCase() || 'mp4'
-      const path = `${user.id}/short-${crypto.randomUUID()}.${ext}`
+      // Distinct prefix for clip SOURCES vs finished clips: the retention sweep
+      // can age out orphaned `source-` files without ever touching a `short-`
+      // deliverable that shares the folder.
+      const path = `${user.id}/${isSource ? 'source' : 'short'}-${crypto.randomUUID()}.${ext}`
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { error: upErr } = await (supabase.storage as any)
