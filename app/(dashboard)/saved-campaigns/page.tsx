@@ -160,37 +160,41 @@ export default function SavedCampaignsPage() {
                     {accepting === s.id ? 'Accepting via SCOUT…' : 'Accept campaign'}
                   </button>
                 )}
-                <div className="flex items-center gap-2">
-                <a
-                  href={`https://www.amazon.com/dp/${s.asin}`} target="_blank" rel="noopener noreferrer"
-                  className="btn-secondary flex items-center gap-1.5 text-xs flex-1 justify-center"
-                  title="View the product on Amazon"
-                >
-                  <ExternalLink size={13} /> Buy
-                </a>
-                <button
-                  onClick={() => setMsgModal({ product: s.title || s.asin, asin: s.asin, commissionPct: s.commission_pct, detailsUrl: detailsUrlFor(s), brandLabel: s.brand || undefined })}
-                  className="btn-secondary flex items-center gap-1.5 text-xs"
-                  title="Draft + send a pitch to the brand via SCOUT"
-                >
-                  <MessageSquare size={13} /> Contact
-                </button>
-                <button
-                  onClick={() => setCreateFor(s)}
-                  className="btn-secondary flex items-center gap-1.5 text-xs"
-                  title="Write a blog post from this product"
-                >
-                  <PenLine size={13} /> Create
-                </button>
+                {/* Primary actions: equal 3-up grid so they always fit the card
+                    width (even in the 4-column layout) instead of overflowing. */}
+                <div className="grid grid-cols-3 gap-1.5">
+                  <a
+                    href={`https://www.amazon.com/dp/${s.asin}`} target="_blank" rel="noopener noreferrer"
+                    className="btn-secondary px-2 flex items-center justify-center gap-1 text-xs min-w-0"
+                    title="View the product on Amazon"
+                  >
+                    <ExternalLink size={13} className="flex-shrink-0" /> <span className="truncate">Buy</span>
+                  </a>
+                  <button
+                    onClick={() => setMsgModal({ product: s.title || s.asin, asin: s.asin, commissionPct: s.commission_pct, detailsUrl: detailsUrlFor(s), brandLabel: s.brand || undefined })}
+                    className="btn-secondary px-2 flex items-center justify-center gap-1 text-xs min-w-0"
+                    title="Draft + send a pitch to the brand via SCOUT"
+                  >
+                    <MessageSquare size={13} className="flex-shrink-0" /> <span className="truncate">Contact</span>
+                  </button>
+                  <button
+                    onClick={() => setCreateFor(s)}
+                    className="btn-secondary px-2 flex items-center justify-center gap-1 text-xs min-w-0"
+                    title="Write a blog post from this product"
+                  >
+                    <PenLine size={13} className="flex-shrink-0" /> <span className="truncate">Create</span>
+                  </button>
+                </div>
+                {/* Remove — secondary + destructive, on its own subtle line so it
+                    never crowds the primary actions out of the card. */}
                 <button
                   onClick={() => remove(s.id)}
                   disabled={removing === s.id}
-                  className="btn-secondary flex items-center gap-1.5 text-xs text-[#ff3b30] disabled:opacity-50"
+                  className="self-end inline-flex items-center gap-1 text-[11px] text-[var(--text-3)] hover:text-[#ff3b30] disabled:opacity-50"
                   title="Remove from Saved Campaigns (permanent)"
                 >
-                  {removing === s.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                  {removing === s.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />} Remove
                 </button>
-                </div>
               </div>
             </div>
           ))}
