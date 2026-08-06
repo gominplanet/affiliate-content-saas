@@ -476,20 +476,22 @@ function recordNetResponse(rec) {
   if (_ccRespRing.length > 10) _ccRespRing.shift()
 }
 
-// The most recent collaboration/search POST body the page fired. When SCOUT opens
-// the creator's ACTIVE view (status=active&type=affiliate-plus), this is the exact
-// query Amazon uses to list joined campaigns — so we replay it (paginated) instead
-// of guessing filterOptions. Skips ASIN-scoped searches (those are per-product
-// message lookups, not the browse-all-joined query).
-function latestCollabSearchBody() {
+// The most recent collaboration/search POST the page fired. When SCOUT opens the
+// creator's ACTIVE view (status=active&type=affiliate-plus), this is the exact
+// query Amazon uses to list joined campaigns — body AND headers. We replay it
+// (paginated) instead of guessing filterOptions; crucially the captured HEADERS
+// carry Amazon's anti-CSRF token, without which collaboration/search returns 401.
+// sinceTs limits to captures from THIS run's page load, so we never replay a stale
+// (or our own tokenless) request left in the ring. Skips ASIN-scoped searches
+// (those are per-product message lookups, not the browse-all-joined query).
+function latestCollabSearch(sinceTs) {
   for (let i = _ccNetRing.length - 1; i >= 0; i--) {
     const rec = _ccNetRing[i]
     if (!rec || typeof rec.body !== 'string' || !rec.body) continue
+    if (sinceTs && rec.ts && rec.ts < sinceTs) continue
     if (!/\/connect\/api\/collaboration\/search/i.test(rec.url || '')) continue
-    // Ignore a body carrying an explicit ASIN searchOption — that's a targeted
-    // resolve, not the full active-view browse.
     if (/"fieldName"\s*:\s*"asin"/i.test(rec.body)) continue
-    return rec.body
+    return { body: rec.body, headers: rec.headers || {} }
   }
   return null
 }
@@ -774,7 +776,21 @@ function ccListMyCampaignsInPage(opts) {
       }
       if (!creatorId) return { ok: false, reason: 'no-creator-id', diag }
       diag.creatorId = String(creatorId).slice(0, 22) + '…'
-      const hdr = () => { const o = Object.assign({}, headers || {}); if (!o['Content-Type'] && !o['content-type']) o['Content-Type'] = 'application/json'; if (!o['Accept'] && !o['accept']) o['Accept'] = 'application/json'; return o }
+      // Prefer the headers captured from the page's OWN collaboration/search call —
+      // they carry Amazon's anti-CSRF token (anti-csrftoken-a2z / x-amz-*). Without
+      // it the endpoint returns 401 (the exact failure the diagnostic showed). Drop
+      // headers the fetch layer must set itself (content-length/host) or that would
+      // break the replay. Fall back to the send-recipe headers if nothing captured.
+      const baseHeaders = opts.capturedHeaders && Object.keys(opts.capturedHeaders).length ? opts.capturedHeaders : (headers || {})
+      diag.usedCapturedHeaders = !!(opts.capturedHeaders && Object.keys(opts.capturedHeaders).length)
+      const DROP = { 'content-length': 1, 'host': 1, 'connection': 1, 'accept-encoding': 1 }
+      const hdr = () => {
+        const o = {}
+        for (const k in baseHeaders) { if (!DROP[String(k).toLowerCase()]) o[k] = baseHeaders[k] }
+        if (!o['Content-Type'] && !o['content-type']) o['Content-Type'] = 'application/json'
+        if (!o['Accept'] && !o['accept']) o['Accept'] = 'application/json'
+        return o
+      }
 
       const FILTER_BASE = { availableSlotsOnly: null, interestTags: null, providingSamplesOnly: null, commissionPercentageFilters: null, dateRange: null, campaignBrowseNodes: null, earlyAccessOnly: null, gcorIdList: null, campaignQualifiers: null, contentTypes: null, adId: null, storeIds: null, creatorIds: null, flatFeeRanges: null, rangeFilters: null, socialChannels: null, premiumCreator: null, contractStatus: null, ratingStar: null, reviewCount: null, priceRange: null, budgetAvailabilityScoreList: null, dealMetadata: null }
 
@@ -889,6 +905,9 @@ async function listMyCampaignsApi() {
   const keepAlive = startKeepAlive()
   let tabId = null
   try {
+    // Only trust captures from THIS run's page load (not our own tokenless calls
+    // left in the ring by a previous sync).
+    const openedAt = Date.now()
     // Open the ACTIVE / joined view (status=active&type=affiliate-plus) — the tab
     // that lists campaigns the user has joined. Opening this (not the opportunity
     // grid) makes the page fire the exact collaboration/search query for joined
@@ -899,15 +918,20 @@ async function listMyCampaignsApi() {
     // Give Amazon's React app a moment, then POLL for BOTH the creator id AND the
     // page's own collaboration/search capture. Amazon's SPA does NOT put the id in
     // the page HTML — it loads it via its own connect API calls, whose bodies carry
-    // amzn1.creator.… and the joined-view filter. net-hook.js captures those POSTs
-    // and relays them to learnFromCapture. So we wait for the page to fire them
-    // (up to ~14s) rather than scraping the DOM.
+    // amzn1.creator.… and the joined-view filter, and whose HEADERS carry the
+    // anti-CSRF token collaboration/search needs (else 401). net-hook.js captures
+    // those POSTs. So we wait for the page to fire them (up to ~14s).
     await _sleep(1500)
-    for (let i = 0; i < 26 && (!_ccCreatorId || !latestCollabSearchBody()); i++) await _sleep(500)
-    const capturedBody = latestCollabSearchBody()
+    for (let i = 0; i < 26 && (!_ccCreatorId || !latestCollabSearch(openedAt)); i++) await _sleep(500)
+    const captured = latestCollabSearch(openedAt)
     const res = await chrome.scripting.executeScript({
       target: { tabId }, world: 'MAIN', func: ccListMyCampaignsInPage,
-      args: [{ creatorId: _ccCreatorId, headers: (_ccSendRecipe && _ccSendRecipe.headers) || {}, capturedBody }],
+      args: [{
+        creatorId: _ccCreatorId,
+        headers: (_ccSendRecipe && _ccSendRecipe.headers) || {},
+        capturedBody: captured ? captured.body : null,
+        capturedHeaders: captured ? captured.headers : null,
+      }],
     })
     const out = (res && res[0] && res[0].result) || { ok: false, reason: 'no-result' }
     // Persist a newly-discovered creator id so every later call has it instantly.
