@@ -20,7 +20,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { ChevronDown, Check, Loader2, Settings2 } from 'lucide-react'
 
-interface Site { id: string; label: string; url: string; isDefault: boolean }
+interface Site { id: string; label: string; url: string; isDefault: boolean; paused?: boolean }
 
 const hostOf = (url: string) => url.replace(/^https?:\/\//, '').replace(/\/+$/, '')
 
@@ -161,8 +161,15 @@ export default function SiteSwitcherChip({ currentHostname }: { currentHostname:
               >
                 <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: active ? '#7C3AED' : 'var(--border)' }} />
                 <span className="min-w-0 flex-1">
-                  <span className="block font-medium truncate">{s.label || hostOf(s.url)}</span>
-                  <span className="block text-[11px] truncate" style={{ color: 'var(--text-faint)' }}>{hostOf(s.url)}</span>
+                  <span className="block font-medium truncate">
+                    {s.label || hostOf(s.url)}
+                    {s.paused && !active && (
+                      <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-[#ff9500]">paused</span>
+                    )}
+                  </span>
+                  <span className="block text-[11px] truncate" style={{ color: 'var(--text-faint)' }}>
+                    {s.paused && !active ? 'Switch here to make it active' : hostOf(s.url)}
+                  </span>
                 </span>
                 {busy ? <Loader2 size={14} className="animate-spin flex-shrink-0" style={{ color: 'var(--text-faint)' }} />
                   : active ? <Check size={14} className="flex-shrink-0" style={{ color: '#7C3AED' }} /> : null}

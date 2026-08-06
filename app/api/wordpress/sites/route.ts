@@ -1,6 +1,6 @@
 /**
  * GET    /api/wordpress/sites          — list every WP site the user has connected
- * POST   /api/wordpress/sites          — add a new site (Pro-gated, max 5)
+ * POST   /api/wordpress/sites          — add a new site (Pro-gated, max 10)
  *
  * Per-site PATCH (relabel / set default) + DELETE live at
  * /api/wordpress/sites/[id]/route.ts. Splitting them keeps each route file
@@ -16,6 +16,7 @@ import {
   addSite,
   canAddSite,
   ensureLegacySiteInTable,
+  resolvePublishableSiteIds,
 } from '@/lib/wordpress-sites'
 import { normalizeTier } from '@/lib/tier'
 import { getAuthAndOwner } from '@/lib/agency-auth'
@@ -43,12 +44,25 @@ export async function GET() {
   const sites = await listSites(supabase, ownerId)
   const cap = await canAddSite(supabase, ownerId, tier)
 
+  // Downgrade state: which of the connected sites are still publishable on the
+  // current tier. A Pro who dropped to Creator keeps every row here, but only
+  // the first `cap` (default first) publish; the rest are "paused". The UI uses
+  // this to badge paused sites + show a "pick your active site" banner.
+  const publishable = await resolvePublishableSiteIds(supabase, ownerId, tier)
+
   // listSites decrypts appPassword/apiToken because the server-side callers
   // need them to talk to WordPress — but nothing in the UI does, and sending
   // them here put live WordPress credentials in a browser response, in
   // devtools, and in the hands of any VA seat that can load this page.
   // Strip them; every field the manager and picker actually render survives.
-  const safeSites = sites.map(({ appPassword: _pw, apiToken: _tok, ...rest }) => rest)
+  const safeSites = sites.map(({ appPassword: _pw, apiToken: _tok, ...rest }) => ({
+    ...rest,
+    // Sites within the tier cap are active; anything beyond it is paused
+    // (kept intact, just not a publish target until they upgrade or promote it).
+    paused: !publishable.has(rest.id),
+  }))
+
+  const pausedCount = safeSites.filter(s => s.paused).length
 
   return NextResponse.json({
     sites: safeSites,
@@ -57,6 +71,9 @@ export async function GET() {
       max: cap.cap,
       canAddMore: cap.allowed,
     },
+    // Non-zero only after a downgrade left more connected sites than the tier
+    // allows. Drives the downgrade banner + paused badges in the manager.
+    pausedCount,
     tier,
   })
 }

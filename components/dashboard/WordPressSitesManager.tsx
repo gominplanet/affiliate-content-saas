@@ -22,7 +22,7 @@ import { useModalA11y } from '@/components/ui/useModalA11y'
 import { toast } from 'sonner'
 import {
   Plus, Loader2, Star, Pencil, Trash2, ExternalLink, Globe,
-  Check, X, AlertCircle, Settings2,
+  Check, X, AlertCircle, Settings2, PauseCircle,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useConfirm } from '@/components/ui/useConfirm'
@@ -43,11 +43,16 @@ interface Site {
   contentOnly: boolean
   ctaStyle: 'button' | 'link'
   geniuslinkGroupName?: string | null
+  /** True when this site is over the current tier's site cap after a downgrade
+   *  — kept connected, but not a publish target until upgrade / promote. */
+  paused?: boolean
 }
 
 interface SitesPayload {
   sites: Site[]
   cap: { current: number; max: number; canAddMore: boolean }
+  /** How many connected sites are paused (over cap after a downgrade). */
+  pausedCount?: number
   tier: Tier
 }
 
@@ -83,6 +88,7 @@ export default function WordPressSitesManager() {
 
   const isPro = data.tier === 'pro' || data.tier === 'admin'
   const showAddCTA = isPro || data.sites.length < data.cap.max
+  const pausedCount = data.pausedCount ?? data.sites.filter(s => s.paused).length
 
   return (
     <div className="card p-5 mt-4">
@@ -92,8 +98,10 @@ export default function WordPressSitesManager() {
             Connected WordPress sites
           </p>
           <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-0.5">
-            {data.cap.current} of {data.cap.max} site{data.cap.max === 1 ? '' : 's'} connected
-            {!isPro && data.cap.max === 1 && ' · Upgrade to Pro for up to 5 sites'}
+            {data.sites.length} site{data.sites.length === 1 ? '' : 's'} connected
+            {isPro
+              ? ` · ${data.cap.max} allowed on your plan`
+              : ` · ${data.cap.max} active on ${data.tier === 'admin' ? 'Admin' : 'your plan'}, upgrade to Pro for up to 10`}
           </p>
         </div>
         {showAddCTA && data.cap.canAddMore && (
@@ -112,6 +120,29 @@ export default function WordPressSitesManager() {
           </span>
         )}
       </div>
+
+      {/* Downgrade banner — shown when the user connected more sites on a higher
+          plan than their current tier allows. Nothing is deleted: the extra
+          sites are PAUSED (kept connected, WordPress content untouched), and
+          only the active site(s) publish. The user picks which stays active by
+          starring it; upgrading reactivates them all. */}
+      {pausedCount > 0 && (
+        <div className="rounded-xl bg-[#ff9500]/10 border border-[#ff9500]/40 p-3.5 mb-4 flex items-start gap-2.5">
+          <PauseCircle size={16} className="text-[#ff9500] flex-shrink-0 mt-0.5" />
+          <div className="text-xs text-[#3a3a3c] dark:text-[#ebebf0] leading-relaxed">
+            <p className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-0.5">
+              {pausedCount} site{pausedCount === 1 ? ' is' : 's are'} paused on your current plan
+            </p>
+            <p>
+              Your plan publishes to {data.cap.max} site{data.cap.max === 1 ? '' : 's'}. The rest stay
+              connected and your WordPress content is untouched — MVP just won&rsquo;t publish or refresh
+              them until you reactivate. The <strong>active</strong> {data.cap.max === 1 ? 'site is the one marked default below' : 'sites are the first below'}.
+              To keep a different blog active instead, press its <Star size={11} className="inline align-text-bottom text-[#7C3AED]" /> star to make it the default.
+              {' '}<a href="/upgrade" className="text-[#7C3AED] font-medium hover:underline">Upgrade to Pro</a> to reactivate all {data.sites.length}.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* How routing works — informational banner for multi-site users.
           The publish pipeline is fully per-site as of Phase 3.1: rewrites
@@ -288,7 +319,7 @@ function SiteRow({
   }
 
   return (
-    <li className="flex flex-col gap-2 p-3 rounded-xl bg-[var(--surface)] border border-[var(--border-2)]">
+    <li className={`flex flex-col gap-2 p-3 rounded-xl bg-[var(--surface)] border ${site.paused ? 'border-[#ff9500]/30' : 'border-[var(--border-2)]'}`}>
       <div className="flex items-center gap-3">
       <div className="w-8 h-8 rounded-lg bg-[#7C3AED]/10 flex items-center justify-center flex-shrink-0">
         <Globe size={14} className="text-[#7C3AED]" />
@@ -325,6 +356,14 @@ function SiteRow({
               {site.isDefault && (
                 <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider bg-[#7C3AED]/15 text-[#7C3AED]">
                   <Star size={9} /> Default
+                </span>
+              )}
+              {site.paused && (
+                <span
+                  className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider bg-[#ff9500]/15 text-[#ff9500]"
+                  title="Over your plan's site limit — kept connected but not publishing. Star it to make it active, or upgrade to Pro."
+                >
+                  <PauseCircle size={9} /> Paused
                 </span>
               )}
             </div>

@@ -2,9 +2,19 @@
  * Helpers for the multi-site WordPress feature (Pro tier).
  *
  * The wordpress_sites table replaces the singular `integrations.wordpress_*`
- * columns. Pro plans support up to 5 sites (one per niche / client / project);
+ * columns. Pro plans support up to 10 sites (one per niche / client / project);
  * Creator + Studio stay at 1 site (the existing behaviour, just stored in
  * the new table).
+ *
+ * DOWNGRADE HANDLING
+ * ------------------
+ * A Pro can connect up to 10 sites. If they later drop to Creator (cap 1) we
+ * NEVER delete or disconnect anything — their rows, credentials and live
+ * WordPress content are left completely untouched. Instead the cap is enforced
+ * at PUBLISH time: the first `cap` sites in canonical order (default first)
+ * stay "active"; the rest are "paused" in MVP until they upgrade again or pick
+ * a different site to keep active (by making it the default). See
+ * resolvePublishableSiteIds + the guard inside getWordPressCredentials.
  *
  * USAGE
  * -----
@@ -60,6 +70,54 @@ export interface WordPressSite {
  *  Per the 2026-06-04 matrix: trial/creator/studio = 1, pro = 10, admin = 999. */
 export function maxSitesForTier(tier: Tier): number {
   return TIERS[normalizeTier(tier)].sites
+}
+
+/** Read the user's current tier from integrations. Used by the publish-time
+ *  downgrade guard when the caller didn't already have the tier in hand. */
+async function fetchTier(supabase: Client, userId: string): Promise<Tier> {
+  const { data } = await supabase
+    .from('integrations')
+    .select('tier')
+    .eq('user_id', userId)
+    .maybeSingle()
+  return normalizeTier((data as { tier?: string | null } | null)?.tier)
+}
+
+/** The set of site IDs the user is allowed to PUBLISH to right now, given their
+ *  tier's site cap.
+ *
+ *  Canonical order (default first, then display_order, then created_at — the
+ *  same order listSites returns) means the first `cap` sites are "active"; any
+ *  beyond that are "paused". A Pro who connected 3 sites and dropped to Creator
+ *  (cap 1) keeps all 3 rows, but only their default publishes until they
+ *  upgrade again or promote a different site to default.
+ *
+ *  NEVER destructive: this only decides publish eligibility. Paused sites keep
+ *  their rows, credentials, labels and live WordPress content untouched. The
+ *  default site is always index 0, so it is never paused — a downgraded user
+ *  can always still publish to their primary blog. */
+export async function resolvePublishableSiteIds(
+  supabase: Client,
+  userId: string,
+  tier: Tier,
+): Promise<Set<string>> {
+  const cap = maxSitesForTier(tier)
+  const sites = await listSites(supabase, userId)
+  return new Set(sites.slice(0, cap).map(s => s.id))
+}
+
+/** True when a specific connected site is currently PAUSED for the user's tier
+ *  (i.e. over the site cap after a downgrade). Sentinels + the default primary
+ *  are never paused. Convenience wrapper over resolvePublishableSiteIds. */
+export async function isSitePaused(
+  supabase: Client,
+  userId: string,
+  siteId: string,
+  tier: Tier,
+): Promise<boolean> {
+  if (!siteId || siteId === 'legacy' || siteId === 'default') return false
+  const allowed = await resolvePublishableSiteIds(supabase, userId, tier)
+  return !allowed.has(siteId)
 }
 
 /** Whether the user can add another site (true when below their tier cap).
@@ -185,6 +243,15 @@ export async function getWordPressCredentials(
   supabase: Client,
   userId: string,
   siteId?: string | null,
+  opts?: {
+    /** The user's tier, if the caller already has it — saves a lookup for the
+     *  downgrade guard. Omit and we read it ourselves when needed. */
+    tier?: Tier
+    /** Skip the publish-time site-cap (downgrade) guard. Use ONLY for
+     *  maintenance/read paths that must still reach a paused site (e.g. a
+     *  cleanup that touches every connected blog). Default false. */
+    skipCapGuard?: boolean
+  },
 ): Promise<{
   wordpress_url: string
   wordpress_username: string
@@ -199,6 +266,18 @@ export async function getWordPressCredentials(
     ? await getSite(supabase, userId, siteId)
     : await getDefaultSite(supabase, userId)
   if (!site) return null
+
+  // Downgrade guard. Only bites when an EXPLICIT, non-default site is targeted
+  // and that site is over the user's current tier cap ("paused"). The default
+  // primary is always index 0 in canonical order, so it is never paused — a
+  // downgraded user can always still publish to their main blog. Cron jobs and
+  // single-site users hit the default path and never pay the extra lookup.
+  if (!opts?.skipCapGuard && site.id !== 'legacy' && !site.isDefault) {
+    const tier = opts?.tier ?? (await fetchTier(supabase, userId))
+    const allowed = await resolvePublishableSiteIds(supabase, userId, tier)
+    if (!allowed.has(site.id)) return null
+  }
+
   return {
     wordpress_url: site.url,
     wordpress_username: site.username,
@@ -262,7 +341,7 @@ export async function setDefaultSite(
 }
 
 /** Add a new site. Tier-gates BEFORE the insert (the DB trigger also
- *  enforces a hard 5-cap as a safety net regardless of tier). The first
+ *  enforces a hard 10-cap as a safety net regardless of tier). The first
  *  site a user adds becomes the default automatically.
  *
  *  Verifies the credentials WORK against WordPress before the insert.
@@ -294,8 +373,8 @@ export async function addSite(
     return {
       ok: false,
       error: tier === 'pro'
-        ? `You've reached the 5-site limit for Pro. Remove a site first.`
-        : `Multi-site is a Pro feature. Upgrade to Pro to connect up to 5 WordPress sites.`,
+        ? `You've reached the ${cap.cap}-site limit for Pro. Remove a site first.`
+        : `Multi-site is a Pro feature. Upgrade to Pro to connect up to ${maxSitesForTier('pro')} WordPress sites.`,
       code: 'tier_capped',
     }
   }
