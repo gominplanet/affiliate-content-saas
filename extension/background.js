@@ -507,6 +507,15 @@ function learnSearchRecipe(rec) {
 function learnFromCapture(rec) {
   try {
     recordNetCapture(rec)
+    // Learn the creator id from ANY captured CC request — its URL or body carries
+    // amzn1.creator.…. This is how SCOUT gets the id from a page it opened itself
+    // (the CC grid's own collaboration/search POST), with no dependency on the
+    // user having visited a URL that happens to include it.
+    if (!_ccCreatorId && rec) {
+      const hay = String(rec.url || '') + ' ' + (typeof rec.body === 'string' ? rec.body : '')
+      const m = hay.match(/amzn1\.creator\.[a-z0-9-]+/i)
+      if (m) { _ccCreatorId = m[0]; try { chrome.storage.local.set({ ccCreatorId: m[0] }) } catch (e) {} }
+    }
     if (/\/chat\/message\/send/i.test(rec.url)) learnSendRecipe(rec)
     else if (/\/chat\/search/i.test(rec.url)) learnSearchRecipe(rec)
   } catch (e) {}
@@ -775,9 +784,14 @@ async function listMyCampaignsApi() {
     const tab = await chrome.tabs.create({ url: 'https://affiliate-program.amazon.com/p/connect/requests?status=opportunity&type=affiliate-plus', active: false })
     tabId = tab.id
     await waitForTabLoad(tabId, 15000)
-    // Give Amazon's React app a moment to embed the page state (which carries
-    // the creator id) before we scan / call the API.
-    await _sleep(2200)
+    // Give Amazon's React app a moment, then POLL for the creator id. Amazon's SPA
+    // does NOT put the id in the page HTML — it loads it via its own connect API
+    // calls, whose bodies carry amzn1.creator.…. net-hook.js captures those POSTs
+    // and relays them to learnFromCapture, which sets _ccCreatorId. So we wait for
+    // the page to fire those calls (up to ~14s) rather than scraping the DOM, which
+    // is why the HTML-only scan came back empty. Once we have the id, call the API.
+    await _sleep(1500)
+    for (let i = 0; i < 26 && !_ccCreatorId; i++) await _sleep(500)
     const res = await chrome.scripting.executeScript({
       target: { tabId }, world: 'MAIN', func: ccListMyCampaignsInPage,
       args: [{ creatorId: _ccCreatorId, headers: (_ccSendRecipe && _ccSendRecipe.headers) || {} }],
