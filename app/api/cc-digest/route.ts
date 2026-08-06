@@ -70,7 +70,7 @@ export async function GET() {
       // Serve the cache only if it's already free of same-item duplicates. A
       // legacy batch that predates the dedup falls through and regenerates a
       // clean set now (rather than waiting out the 24h).
-      const unique = dedupeCards(cached.campaigns as { campaignId: string; brand: string | null; asin: string; imageUrl: string | null }[])
+      const unique = dedupeCards(cached.campaigns as { campaignId: string; brand: string | null; asin: string; imageUrl: string | null; name?: string | null; commissionPct?: number | null }[])
       if (unique.length === cached.campaigns.length) {
         // Buy links must be CLEAN — strip any affiliate tag a legacy batch cached.
         const clean = (cached.campaigns as { asin: string; buyUrl?: string }[]).map((c) => ({ ...c, buyUrl: cleanBuyUrl(c.asin) }))
@@ -124,25 +124,27 @@ export async function GET() {
 
     // Collapse same-item duplicates: one brand's product often appears under
     // several campaign ids ("High-Demand Automotive Product", "Promote a
-    // Best-Selling Automotive Category", …) — same ASIN / same product image.
-    // Keep only the best-scoring campaign per item (scored is sorted desc, so
-    // the first occurrence of each key is the best), and remember the siblings
-    // so we can mark them seen too (the same item won't resurface tomorrow
+    // Best-Selling Automotive Category", …) — same product, different images
+    // and different commission rates. RULE: keep the campaign that PAYS THE
+    // CREATOR MOST (highest commission); score breaks ties. Remember the
+    // siblings so we can mark them all seen (the item won't resurface tomorrow
     // under a different campaign id).
+    const commOf = (s: { row: CatalogRow }) => numOrNull(s.row.commission_pct) ?? -1
     const siblings = new Map<string, string[]>()
+    const bestByKey = new Map<string, typeof scored[number]>()
     for (const s of scored) {
       const k = itemKey(s.row)
       const arr = siblings.get(k)
       if (arr) arr.push(s.row.campaign_id)
       else siblings.set(k, [s.row.campaign_id])
+      const cur = bestByKey.get(k)
+      if (!cur || commOf(s) > commOf(cur) || (commOf(s) === commOf(cur) && s.score > cur.score)) {
+        bestByKey.set(k, s)
+      }
     }
-    const seenKeys = new Set<string>()
-    const deduped = scored.filter((s) => {
-      const k = itemKey(s.row)
-      if (seenKeys.has(k)) return false
-      seenKeys.add(k)
-      return true
-    })
+    // One representative per item (the highest-paying), re-sorted by score so
+    // the shortlist + LLM re-rank keep the same topical ordering as before.
+    const deduped = [...bestByKey.values()].sort((a, b) => b.score - a.score)
 
     const shortlist = deduped.slice(0, SHORTLIST)
 
@@ -334,11 +336,25 @@ function pickAsin(r: { asins?: string[] | null; campaign_name?: string | null })
  *  back to ASIN, then campaign id so a row with no identity signal is never
  *  wrongly merged with another. Product images are per-ASIN from enrichment,
  *  so brand+image won't merge genuinely different products. */
+/** Normalize a product title to a stable identity token: lowercased, alnum
+ *  only, first 8 words. '' when too short to be meaningful. */
+function normTitle(s: string | null | undefined): string {
+  const t = (s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).filter(Boolean).slice(0, 8).join(' ')
+  return t.length >= 6 ? t : ''
+}
+
+/** Product identity for same-item dedupe. Brand + product title first (a brand
+ *  lists the SAME product under several campaigns with different images and
+ *  commission rates — the visible title is what makes them "the same product"),
+ *  then ASIN, then brand + image, then the campaign id as a last resort. */
 function itemKey(r: CatalogRow): string {
-  const img = (r.image_url || '').split('?')[0]
-  if (r.brand_name && img) return `bi:${r.brand_name.trim().toLowerCase()}|${img}`
+  const brand = (r.brand_name || '').trim().toLowerCase()
+  const nt = normTitle(r.campaign_name)
+  if (brand && nt) return `bt:${brand}|${nt}`
   const asin = pickAsin(r)
   if (asin) return `a:${asin}`
+  const img = (r.image_url || '').split('?')[0]
+  if (brand && img) return `bi:${brand}|${img}`
   return `c:${r.campaign_id}`
 }
 
@@ -446,15 +462,33 @@ function cleanBuyUrl(asin: string): string {
 }
 
 /** Dedupe already-built cards by the same product identity as itemKey, keeping
- *  the first (best-ranked) of each. Used as a read-time guard on cached batches. */
-function dedupeCards<T extends { campaignId: string; brand: string | null; asin: string; imageUrl: string | null }>(cards: T[]): T[] {
-  const seen = new Set<string>()
+ *  the HIGHEST-COMMISSION card per item (score/order breaks ties). Read-time
+ *  guard that also self-heals cached batches generated before this rule. */
+function dedupeCards<T extends { campaignId: string; brand: string | null; asin: string; imageUrl: string | null; name?: string | null; commissionPct?: number | null }>(cards: T[]): T[] {
+  const keyOf = (c: T) => {
+    const brand = (c.brand || '').trim().toLowerCase()
+    const nt = normTitle(c.name)
+    if (brand && nt) return `bt:${brand}|${nt}`
+    if (c.asin) return `a:${c.asin}`
+    const img = (c.imageUrl || '').split('?')[0]
+    if (brand && img) return `bi:${brand}|${img}`
+    return `c:${c.campaignId}`
+  }
+  const comm = (c: T) => (typeof c.commissionPct === 'number' && isFinite(c.commissionPct) ? c.commissionPct : -1)
+  // Winning campaignId per item: highest commission, first-seen breaks ties.
+  const winner = new Map<string, T>()
+  for (const c of cards) {
+    const k = keyOf(c)
+    const cur = winner.get(k)
+    if (!cur || comm(c) > comm(cur)) winner.set(k, c)
+  }
+  const keepIds = new Set([...winner.values()].map((c) => c.campaignId))
+  // Emit in the original order, one per winning id.
+  const emitted = new Set<string>()
   const out: T[] = []
   for (const c of cards) {
-    const img = (c.imageUrl || '').split('?')[0]
-    const key = c.brand && img ? `bi:${c.brand.trim().toLowerCase()}|${img}` : c.asin ? `a:${c.asin}` : `c:${c.campaignId}`
-    if (seen.has(key)) continue
-    seen.add(key)
+    if (!keepIds.has(c.campaignId) || emitted.has(c.campaignId)) continue
+    emitted.add(c.campaignId)
     out.push(c)
   }
   return out
