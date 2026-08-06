@@ -13,7 +13,7 @@ import OpportunitiesPanel from '@/components/seo/OpportunitiesPanel'
 import Link from 'next/link'
 import PageHero from '@/components/layout/PageHero'
 import { SeoGuide } from '@/components/guide/tool-guides'
-import { Gauge, Loader2, RefreshCw, ExternalLink, CheckCircle, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight, Wand2, X, Zap, Youtube, DollarSign, ImageOff } from 'lucide-react'
+import { Gauge, Loader2, RefreshCw, ExternalLink, CheckCircle, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight, Wand2, X, Zap, Youtube, DollarSign, ImageOff, Link2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { type Tier } from '@/lib/tier'
@@ -177,6 +177,22 @@ export default function SeoPage() {
       await load()
     } catch { toast.error('Couldn’t reach the server.') }
     finally { setReattaching(false) }
+  }, [load])
+
+  // Re-sync stored post URLs from WordPress — fixes ugly ?p=123 links left over
+  // from before a permalink change (WP now reports the pretty /post-name/ URL).
+  const [resyncingUrls, setResyncingUrls] = useState(false)
+  const resyncUrls = useCallback(async () => {
+    setResyncingUrls(true)
+    try {
+      const res = await fetch('/api/blog/resync-permalinks', { method: 'POST' })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) { toast.error(d.error || 'Couldn’t refresh post URLs.'); return }
+      if (d.updated > 0) toast.success(`Updated ${d.updated} post URL${d.updated !== 1 ? 's' : ''} to the current WordPress permalink.`)
+      else toast.success('All post URLs already match WordPress.')
+      await load()
+    } catch { toast.error('Couldn’t reach the server.') }
+    finally { setResyncingUrls(false) }
   }, [load])
 
   // One-time repair: pull live bodies from WordPress for legacy/imported posts
@@ -698,6 +714,15 @@ export default function SeoPage() {
               {refreshPriceProgress
                 ? <><Loader2 size={13} className="animate-spin" /> {refreshPriceProgress.total > 0 ? `${refreshPriceProgress.done}/${refreshPriceProgress.total}` : 'Scanning…'}</>
                 : <><DollarSign size={13} /> Refresh prices</>}
+            </button>
+            <button
+              onClick={resyncUrls}
+              disabled={resyncingUrls}
+              className="px-3.5 py-2 rounded-lg border text-[13px] font-semibold inline-flex items-center gap-1.5 transition-colors disabled:opacity-50"
+              style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border-bright)', color: 'var(--text)' }}
+              title="Re-fetch each post's current WordPress permalink and update stored links — fixes leftover ?p=123 URLs after switching permalinks"
+            >
+              {resyncingUrls ? <><Loader2 size={13} className="animate-spin" /> Syncing URLs…</> : <><Link2 size={13} /> Refresh post URLs</>}
             </button>
             <button
               onClick={load}

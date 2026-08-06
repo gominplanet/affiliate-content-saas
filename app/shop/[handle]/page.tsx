@@ -140,7 +140,7 @@ export default async function BioPage({ params }: { params: Promise<{ handle: st
         {/* Current deals — live in the creator's story right now (24h). */}
         {currentDeals.length > 0 && (
           <div style={{ marginBottom: moreDeals.length ? 34 : 0 }}>
-            <div style={headingStyle}>🔥 In my story right now</div>
+            <div style={headingStyle}>🔥 In my Instagram Stories currently</div>
             <ProductGrid items={currentDeals} accent={t.accent} />
           </div>
         )}
