@@ -583,10 +583,10 @@ export default function CcCampaignsPage() {
           <option value={15}>15%+</option>
           <option value={20}>20%+</option>
         </select>
-        <button onClick={() => setPayingOnly((v) => !v)} className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${payingOnly ? 'border-[#34c759] text-[#1c7a35] bg-[#34c759]/10' : 'border-[var(--border-2)] text-[var(--text-3)]'}`}>
+        <button onClick={() => setPayingOnly((v) => !v)} disabled={joinedOnly} title={joinedOnly ? 'Payout history isn’t returned for your joined campaigns, so this filter only applies to Browse all.' : undefined} className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${payingOnly && !joinedOnly ? 'border-[#34c759] text-[#1c7a35] bg-[#34c759]/10' : 'border-[var(--border-2)] text-[var(--text-3)]'}`}>
           Paying brands only
         </button>
-        <button onClick={() => setHasSpots((v) => !v)} className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${hasSpots ? 'border-[#7C3AED] text-[#7C3AED] bg-[#7C3AED]/10' : 'border-[var(--border-2)] text-[var(--text-3)]'}`}>
+        <button onClick={() => setHasSpots((v) => !v)} disabled={joinedOnly} title={joinedOnly ? 'Spots-left isn’t returned for your joined campaigns, so this filter only applies to Browse all.' : undefined} className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${hasSpots && !joinedOnly ? 'border-[#7C3AED] text-[#7C3AED] bg-[#7C3AED]/10' : 'border-[var(--border-2)] text-[var(--text-3)]'}`}>
           Has open spots
         </button>
         <button onClick={() => setJoinedOnly((v) => { const nv = !v; if (nv) { setHideJoined(false); setHidePosted(false) } return nv })} title="Live view of the campaigns you've joined on Amazon (via SCOUT). Type in the search box to find any of them by brand, product, or ASIN." className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${joinedOnly ? 'border-[#0a84ff] text-[#0a84ff] bg-[#0a84ff]/10' : 'border-[var(--border-2)] text-[var(--text-3)]'}`}>
@@ -619,8 +619,12 @@ export default function CcCampaignsPage() {
       ) : (() => {
         // Hide-joined / hide-posted are client-side over the loaded pages, using
         // this user's per-ASIN status. Applied here so the count + empty state
-        // reflect what's actually shown.
+        // reflect what's actually shown. In the LIVE joined view we also apply the
+        // commission filter client-side (its cards carry commissionPct) — the SCOUT
+        // search deliberately doesn't re-run on filter changes, so the numeric
+        // filter is honored here instead, instantly and without another Amazon tab.
         const visible = campaigns.filter((c) => {
+          if (joinedOnly && minCommission && (c.commissionPct == null || c.commissionPct < minCommission)) return false
           if (!hideJoined && !hidePosted) return true
           const st = c.repAsin ? statusByAsin[c.repAsin] : undefined
           if (hideJoined && st?.accepted) return false
@@ -631,7 +635,9 @@ export default function CcCampaignsPage() {
         if (visible.length === 0) {
           return (
             <div className="card p-8 text-center text-sm text-[var(--text-3)]">
-              Every loaded campaign is hidden by your “Hide joined / Hide posted” filters. Turn one off, or Load more.
+              {joinedOnly && minCommission
+                ? `None of the loaded joined campaigns are at ${minCommission}%+ commission. Lower the commission filter, or Load more.`
+                : 'Every loaded campaign is hidden by your “Hide joined / Hide posted” filters. Turn one off, or Load more.'}
             </div>
           )
         }
