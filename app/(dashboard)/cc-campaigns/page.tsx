@@ -16,6 +16,7 @@ import PageHero from '@/components/layout/PageHero'
 import {
   Loader2, ExternalLink, Search, ShieldCheck, ShieldAlert, ShieldQuestion,
   Users, Star, TrendingUp, Clock, FileText, CheckCircle2, Lock, Mail, Radar, Grid3x3, Handshake, ShoppingBag,
+  Bookmark, BookmarkCheck,
 } from 'lucide-react'
 import { requestCcSmartScan, requestFindCampaign, requestAcceptCampaign, requestMyCcCampaigns } from '@/lib/extension-frame'
 import { campaignRules } from '@/lib/cc-smart-rules'
@@ -107,7 +108,7 @@ function useMakePost(c: Campaign, presetUrl: string | null, onActed?: () => void
   return { gen, postUrl, makePost }
 }
 
-function CampaignCard({ c, status, onMessage, onActed }: { c: Campaign; status?: CampaignStatus; onMessage: (c: Campaign) => void; onActed?: () => void }) {
+function CampaignCard({ c, status, onMessage, onActed, saved, onToggleSave }: { c: Campaign; status?: CampaignStatus; onMessage: (c: Campaign) => void; onActed?: () => void; saved?: boolean; onToggleSave?: () => void }) {
   const { gen, postUrl, makePost } = useMakePost(c, status?.url ?? null, onActed)
   const endingSoon = c.daysLeft != null && c.daysLeft <= 1
 
@@ -226,6 +227,16 @@ function CampaignCard({ c, status, onMessage, onActed }: { c: Campaign; status?:
           <button onClick={() => onMessage(c)} disabled={c.isFull} className="btn-secondary flex items-center gap-1.5 text-xs disabled:opacity-50" title="Draft + send a pitch to the brand via SCOUT">
             <Mail size={13} />
           </button>
+          {onToggleSave && (
+            <button
+              onClick={onToggleSave}
+              title={saved ? 'Saved — click to remove' : 'Save to Saved Campaigns'}
+              className="btn-secondary flex items-center gap-1.5 text-xs"
+              style={saved ? { borderColor: '#f59e0b', background: 'rgba(245,158,11,0.10)', color: '#b26a00' } : undefined}
+            >
+              {saved ? <BookmarkCheck size={13} /> : <Bookmark size={13} />}
+            </button>
+          )}
           {/* View the actual product on Amazon (the /dp page) so the user can
               check it out before committing — distinct from the campaign link. */}
           {c.repAsin && (
@@ -278,6 +289,38 @@ export default function CcCampaignsPage() {
   const [statusByAsin, setStatusByAsin] = useState<Record<string, CampaignStatus>>({})
   const [coveredAsins, setCoveredAsins] = useState<string[]>([])
   const [msgModal, setMsgModal] = useState<MessageBrandCampaign | null>(null)
+  // ASINs the user has saved — drives the Save/Saved toggle on each card. Writes
+  // to the shared cc_saved_finds shelf via /api/campaigns/saved (same store as
+  // the dashboard digest + the Saved Campaigns page).
+  const [savedAsins, setSavedAsins] = useState<Set<string>>(new Set())
+  useEffect(() => {
+    fetch('/api/campaigns/saved').then((r) => r.json()).then((d) => {
+      if (d?.ok && Array.isArray(d.saved)) setSavedAsins(new Set(d.saved.map((s: { asin: string }) => s.asin.toUpperCase())))
+    }).catch(() => {})
+  }, [])
+  const toggleSave = useCallback(async (c: Campaign) => {
+    if (!c.repAsin) { toast.error('No product ASIN on this campaign yet.'); return }
+    const asin = c.repAsin.toUpperCase()
+    const wasSaved = savedAsins.has(asin)
+    setSavedAsins((prev) => { const n = new Set(prev); if (wasSaved) n.delete(asin); else n.add(asin); return n })
+    try {
+      if (wasSaved) {
+        await fetch(`/api/campaigns/saved?asin=${asin}`, { method: 'DELETE' })
+      } else {
+        await fetch('/api/campaigns/saved', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            asin: c.repAsin, source: 'campaign', campaignId: c.campaignId, title: c.name, brand: c.brand,
+            imageUrl: c.image, commissionPct: c.commissionPct, price: c.priceNow, monthlySales: c.monthlySold,
+            rating: c.rating, hasVideo: (c.videoCount ?? 0) > 0, marketplace: 'us', detailsUrl: c.detailsUrl,
+          }),
+        })
+        toast.success('Saved to your Saved Campaigns.')
+      }
+    } catch {
+      setSavedAsins((prev) => { const n = new Set(prev); if (wasSaved) n.add(asin); else n.delete(asin); return n }) // revert
+    }
+  }, [savedAsins])
 
   const loadStatus = useCallback(async () => {
     try {
@@ -654,6 +697,8 @@ export default function CcCampaignsPage() {
               <CampaignCard key={c.campaignId} c={c}
                 status={c.repAsin ? statusByAsin[c.repAsin] : undefined}
                 onActed={loadStatus}
+                saved={c.repAsin ? savedAsins.has(c.repAsin.toUpperCase()) : false}
+                onToggleSave={() => toggleSave(c)}
                 onMessage={(cc) => {
                   if (!cc.repAsin) { toast.error('No product ASIN on this campaign yet.'); return }
                   setMsgModal({ product: cc.name || cc.repAsin, asin: cc.repAsin, commissionPct: cc.commissionPct ?? 0, detailsUrl: cc.detailsUrl, brandLabel: cc.brand || undefined })
