@@ -1241,6 +1241,31 @@ const VideoCard = memo(function VideoCardImpl({
               <Calendar size={10} /> Scheduled · {scheduledLabel}
             </span>
           )}
+          {/* "Published · where" badge — at a glance, whether this video's blog is
+              live and which channels it went out on. Derived from the per-channel
+              id columns already on `post` (a non-null id = posted there). */}
+          {post && (() => {
+            const chans: string[] = []
+            if (post.url) chans.push('WordPress')
+            if (post.facebookPostId) chans.push('Facebook')
+            if (post.instagramReelId || post.instagramStoryId) chans.push('Instagram')
+            if (post.twitterPostId) chans.push('X')
+            if (post.linkedInPostId) chans.push('LinkedIn')
+            if (post.threadsPostId) chans.push('Threads')
+            if (post.blueskyPostUri) chans.push('Bluesky')
+            if (post.telegramMessageId) chans.push('Telegram')
+            if (post.pinterestPinId) chans.push('Pinterest')
+            if (!chans.length) return null
+            return (
+              <span
+                className="inline-flex items-center gap-1 text-[10px] font-bold rounded-full px-2 py-0.5"
+                style={{ background: 'rgba(10,132,255,0.14)', color: '#0a6fd6', border: '1px solid rgba(10,132,255,0.35)' }}
+                title={`This post is live on ${chans.join(', ')}.`}
+              >
+                ✓ Published · {chans.join(' · ')}
+              </span>
+            )
+          })()}
         </div>
         <div className="flex flex-col gap-2">
           {/* Publish All — shown when ≥1 social platform is connected and unpublished.
