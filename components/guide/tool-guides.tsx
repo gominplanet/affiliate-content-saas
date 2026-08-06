@@ -467,12 +467,16 @@ export function ClipFactoryGuide() {
       guideKey="clip-factory"
       icon={<Video size={20} />}
       title="Your guide to Clip Factory"
-      subtitle="Make a shoppable vertical short from a long video."
+      subtitle="Turn one long video into shoppable vertical shorts, then publish them."
       sections={[
-        { icon: <Video size={18} />, title: 'Vertical from horizontal', body: <>Turn a long video into a single vertical short built for Reels, TikTok, and YouTube Shorts.</> },
-        { icon: <Tag size={18} />, title: 'Make it shoppable', body: <>Add a call to action and a product link right on the clip, so the video does not just get views, it sends people to buy.</> },
-        { icon: <Send size={18} />, title: 'Publish where you are', body: <>Push the finished short straight to Instagram, TikTok, or YouTube from here.</> },
+        { icon: <Youtube size={18} />, title: 'Start with a source', body: <>Three ways in: pick one of your synced long videos below, paste a YouTube link, or upload an MP4. Source videos can be up to <strong>10 minutes</strong>; a short only ever uses a 15 to 30 second slice, so there is no need for anything longer. If you paste a link, tick the box confirming you own the video (or have the rights to use it).</> },
+        { icon: <Scissors size={18} />, title: 'MVP finds the best moments', body: <>Hit <strong>Generate Clips</strong> and MVP reads the transcript, finds the strongest 15 to 30 second moments, and writes a hook for each. You get a set of suggested clips to pick from, scored by how well they stand alone; you are choosing from real options, not hoping one guess lands.</> },
+        { icon: <Type size={18} />, title: 'Captions from what you actually said', body: <>Each clip is cut vertical (9:16) with word-for-word subtitles burned in, timed to your speech so they hit on the beat. Nothing is invented; the words are pulled straight from your transcript. Pick a caption style before you render.</> },
+        { icon: <Tag size={18} />, title: 'Make it shoppable', body: <>Add a call to action and a product link right on the clip, so the short does not just collect views; it sends people to buy. Your affiliate link is wrapped for you, so every tap earns on your account.</> },
+        { icon: <Send size={18} />, title: 'Render, then publish where you are', body: <>Render the clips you like, then push each finished short straight to <strong>Instagram, TikTok, or YouTube</strong> from here: no phone, no re-upload, no separate scheduler. Posted clips show a badge so you can see at a glance what has gone out.</> },
+        { icon: <ShieldCheck size={18} />, title: 'A couple of ground rules', body: <>Only use your own videos or ones you have the rights to. If we cannot fetch a pasted link automatically (YouTube sometimes blocks it), you will be asked to upload the MP4 once and we take it from there. Rendering is a Pro feature, capped at <strong>50 finished shorts a month</strong>.</> },
       ]}
+      footerNote={<><strong className="text-foreground">Longer videos are not better here.</strong> Clip Factory shines on tight, spoken review content: pick a video with faces and clear speech, and it does the rest.</>}
     />
   )
 }
