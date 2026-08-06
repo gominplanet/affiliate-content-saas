@@ -421,6 +421,20 @@ function DealRadarSection() {
           ))}
         </div>
 
+        {/* Link in bio — one shareable, self-updating URL. Explained on its own
+            so it reads as a real feature, not a footnote to Stories. */}
+        <div className="mt-8 rounded-2xl border px-6 py-6 flex flex-col sm:flex-row items-start gap-5" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', boxShadow: 'var(--card-shadow)' }}>
+          <span className="inline-flex items-center justify-center w-12 h-12 rounded-xl flex-shrink-0 text-white" style={{ background: 'linear-gradient(135deg,#7C3AED,#C026D3)' }}>
+            <ShoppingBag size={22} />
+          </span>
+          <div>
+            <p className="text-[19px] font-bold" style={{ color: 'var(--text)' }}>One link in bio. Always up to date.</p>
+            <p className="mt-1.5 text-[15px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
+              MVP builds you one clean, easy-to-manage URL — <span style={{ color: 'var(--text)' }}>your own shoppable link-in-bio page</span> — to drop into your Instagram, TikTok and YouTube bios. It fills itself with your latest reviews, deals and picks, so every visitor lands on a live page of exactly what you&apos;re promoting right now. Set it once; it updates itself. No Linktree, no extra subscription, no manual editing.
+            </p>
+          </div>
+        </div>
+
         <div className="text-center mt-10">
           <a href="/signup" className="px-5 py-3 rounded-xl bg-[#7C3AED] hover:bg-[#6D28D9] text-[14px] font-semibold text-white inline-flex items-center gap-2 transition-colors shadow-[0_4px_16px_rgba(124,58,237,0.3)]">
             Start finding deals
