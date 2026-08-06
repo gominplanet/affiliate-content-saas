@@ -21,7 +21,7 @@ import {
   Crown, Rocket,
   LayoutTemplate, BadgePercent, Pin,
   ShoppingBag, Store, ShoppingCart, Search,
-  Radar, Coins,
+  Radar, Coins, Scissors, Megaphone, Users, Inbox, Signpost,
 } from 'lucide-react'
 import { FAQSection, StickyBottomBar } from '@/components/landing/islands'
 
@@ -110,6 +110,7 @@ export default function LandingPreview() {
       <BrandedSiteSection />
       <BusinessLayerSection />
       <PartnerNetworksSection />
+      <CapabilitiesSection />
       <PricingSection />
       <ProofSection />
       <FAQSection />
@@ -2209,6 +2210,9 @@ const COMPARE_ROWS: { label: string; mvp: boolean; others: 'no' | 'partial'; hig
   { label: 'Price-history-verified Amazon Deal Radar', mvp: true, others: 'no' },
   { label: 'Creator Connections: find, accept & message brands', mvp: true, others: 'no' },
   { label: 'Levanta, PartnerBoost & Walmart campaigns in one place', mvp: true, others: 'no' },
+  { label: 'Turn one long video into vertical Reels, TikToks & YouTube Shorts', mvp: true, others: 'no' },
+  { label: 'Clean up + migrate your existing site (404s, duplicates, old affiliate links)', mvp: true, others: 'no' },
+  { label: 'Display-ad + affiliate-banner revenue on your own site', mvp: true, others: 'no' },
   { label: 'A beautiful blog on your own site that you keep forever', mvp: true, others: 'no' },
   { label: 'Never uses or sells your personal data', mvp: true, others: 'no', highlight: true },
 ]
@@ -2290,6 +2294,62 @@ function ComparisonSection() {
               We don&apos;t harvest, sell, or train on your personal data — not your audience, not your earnings, not your content. Your accounts stay connected to <span style={{ color: 'var(--text)' }}>you</span>, and your site is yours to keep forever. That&apos;s a promise most tools can&apos;t make.
             </p>
           </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+/** "Everything else in the box" — the capabilities that don't get their own
+ *  section but round out the all-in-one story (and would each be a separate
+ *  paid tool elsewhere). Clean light grid, one accent. */
+const CAPABILITIES: Array<{ icon: React.ReactNode; title: string; body: string; badge?: string }> = [
+  { icon: <Scissors size={18} />, title: 'Short-form video', badge: 'New', body: 'Clip Factory turns one long video into vertical Reels, TikToks and YouTube Shorts — hook, captions and vertical crop done for you. Post the same review as long-form and short-form.' },
+  { icon: <Signpost size={18} />, title: 'Move over in an afternoon', body: 'Coming from Lasso or another tool? MVP fixes your existing site as you switch: 404 redirects, duplicate posts splitting your rankings, broken block formatting and leftover affiliate tags — cleaned automatically.' },
+  { icon: <Megaphone size={18} />, title: 'Display-ad revenue', body: 'Layer AdSense and affiliate-banner placements onto your site for passive income on top of your affiliate links — set once, earns on every visit.' },
+  { icon: <Sparkles size={18} />, title: 'MVP x LTK', body: 'Paste an LTK link and MVP writes a full SEO blog post with your LTK link as the call-to-action — your LTK picks, working for you on Google too.' },
+  { icon: <Inbox size={18} />, title: 'Brand deals, inbound', body: 'A “Work with brands” banner on your blog collects paid-collaboration inquiries into one inbox — plus AI outreach drafts for the brands you want to pitch.' },
+  { icon: <Users size={18} />, title: 'Hand it to your VA', body: 'Invite an assistant or teammate to run your account — research, generate and publish on your behalf, without sharing your logins.' },
+]
+
+function CapabilitiesSection() {
+  return (
+    <section id="more" className="px-6 lg:px-8 pt-16 sm:pt-24 pb-16 sm:pb-24 relative">
+      <div className="max-w-6xl mx-auto">
+        <div className="text-center max-w-3xl mx-auto mb-12">
+          <span
+            className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-semibold uppercase tracking-[0.18em] mb-5"
+            style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent-text)', border: '1px solid var(--border)' }}
+          >
+            <Sparkles size={11} /> All in one subscription
+          </span>
+          <h2 className="text-[36px] sm:text-[52px] font-extrabold tracking-[-0.03em] leading-[1.02] mb-5" style={{ color: 'var(--text)' }}>
+            Everything else you&apos;d otherwise<br />
+            <span style={{ background: 'linear-gradient(120deg, #F97316 0%, #C026D3 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
+              stitch together and pay for.
+            </span>
+          </h2>
+          <p className="text-[16px] sm:text-[17px] leading-relaxed max-w-2xl mx-auto" style={{ color: 'var(--text-soft)' }}>
+            The features that usually mean four more tabs and four more invoices — all in the same place, no compromise.
+          </p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {CAPABILITIES.map((c) => (
+            <div key={c.title} className="rounded-2xl border p-6" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', boxShadow: 'var(--card-shadow)' }}>
+              <div className="flex items-center gap-2.5 mb-3">
+                <span className="inline-flex items-center justify-center w-10 h-10 rounded-xl flex-shrink-0" style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent-text)' }}>
+                  {c.icon}
+                </span>
+                {c.badge && (
+                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full text-white" style={{ background: 'linear-gradient(135deg, #F97316, #C026D3)' }}>
+                    {c.badge}
+                  </span>
+                )}
+              </div>
+              <p className="text-[16px] font-bold mb-1.5" style={{ color: 'var(--text)' }}>{c.title}</p>
+              <p className="text-[14px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>{c.body}</p>
+            </div>
+          ))}
         </div>
       </div>
     </section>
