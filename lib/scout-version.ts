@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.11.97'
+export const SCOUT_LATEST_VERSION = '1.11.98'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Storefront Stats: SCOUT now reads your Amazon Influencer earnings (units, revenue, commission) off the reports page and syncs them into MVP automatically, per product, weekly + monthly — powering real sales numbers on the Storefront Stats page.'
+  'CC Campaigns: SCOUT can now read every campaign you’ve joined on Amazon (accepted/active) so “Sync joined from Amazon” shows all of them under Joined only — including ones you joined directly on Amazon.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
