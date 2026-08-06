@@ -15,7 +15,7 @@ import { toast } from 'sonner'
 import CcCatalogUploader from '@/components/admin/CcCatalogUploader'
 
 interface KeepaStatus { tokensLeft: number | null; refillRate: number | null; refillIn: number | null }
-interface Counts { staged: number | null; live: number | null; enriched: number | null; hasStaged: boolean | null; keepa: KeepaStatus | null }
+interface Counts { staged: number | null; live: number | null; enriched: number | null; enrichable: number | null; hasStaged: boolean | null; keepa: KeepaStatus | null }
 
 export default function AdminCcImportPage() {
   const [counts, setCounts] = useState<Counts | null>(null)
@@ -42,7 +42,7 @@ export default function AdminCcImportPage() {
       const r = await fetch('/api/admin/import-cc-catalog')
       const d = await r.json()
       if (!r.ok) throw new Error(d.error || 'Failed to load')
-      setCounts({ staged: d.staged, live: d.live, enriched: d.enriched, hasStaged: d.hasStaged ?? null, keepa: d.keepa ?? null })
+      setCounts({ staged: d.staged, live: d.live, enriched: d.enriched, enrichable: d.enrichable ?? null, hasStaged: d.hasStaged ?? null, keepa: d.keepa ?? null })
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed to load')
     } finally { setLoading(false) }
@@ -194,7 +194,10 @@ export default function AdminCcImportPage() {
   // While counts are still loading, show a dash, never a bare "0" — a transient
   // zero on the Live Catalog card reads like the whole shared catalog was wiped
   // and is genuinely alarming. Only show a real number once loaded.
-  const num = (n: number | null | undefined) => (loading || n == null ? '—' : n.toLocaleString())
+  // The card numbers are Postgres ESTIMATES (exact COUNTs over ~800k rows time
+  // out), kept fresh by frequent autovacuum ANALYZE (migration 229). Prefix with
+  // "≈" so a small lag never reads as "stuck".
+  const approx = (n: number | null | undefined) => (loading || n == null ? '—' : `≈ ${n.toLocaleString()}`)
   // "Can I merge?" and "is staging empty?" come from the cheap existence check
   // (hasStaged), NOT the exact staged count — that count can time out on a huge
   // table and come back null, which must NOT read as empty. Only a definitive
@@ -202,8 +205,13 @@ export default function AdminCcImportPage() {
   // stays enabled (the merge endpoint re-checks existence before doing anything).
   const stagingEmpty = counts?.hasStaged === false
   const canMerge = !loading && !stagingEmpty
-  const enrichedPct = counts?.live && counts?.enriched != null && counts.live > 0
-    ? Math.round((counts.enriched / counts.live) * 100) : null
+  // Honest coverage = enriched / ENRICHABLE (live + has a rep ASIN), not
+  // enriched / all rows: ended + ASIN-less campaigns are never enriched by
+  // design, so dividing by the whole catalog understates real coverage. Falls
+  // back to /live only if the enrichable count is unavailable.
+  const enrichDenom = counts?.enrichable ?? counts?.live ?? null
+  const enrichedPct = enrichDenom && counts?.enriched != null && enrichDenom > 0
+    ? Math.round((counts.enriched / enrichDenom) * 100) : null
 
   return (
     <>
@@ -227,11 +235,11 @@ export default function AdminCcImportPage() {
 
       {/* Counts */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
-        <StatCard label="Staged (ready to merge)" value={num(counts?.staged)} icon={<Database size={16} />} accent="#7C3AED" />
-        <StatCard label="Live catalog" value={num(counts?.live)} icon={<CheckCircle2 size={16} />} accent="#34c759" />
+        <StatCard label="Staged (ready to merge)" value={approx(counts?.staged)} icon={<Database size={16} />} accent="#7C3AED" />
+        <StatCard label="Live catalog" value={approx(counts?.live)} icon={<CheckCircle2 size={16} />} accent="#34c759" />
         <StatCard
-          label="Enriched (signals)"
-          value={counts?.enriched == null ? '—' : `${num(counts.enriched)}${enrichedPct != null ? ` · ${enrichedPct}%` : ''}`}
+          label="Enriched (of enrichable)"
+          value={counts?.enriched == null ? '—' : `${approx(counts.enriched)}${enrichedPct != null ? ` · ${enrichedPct}%` : ''}`}
           icon={<RefreshCw size={16} />} accent="#0a84ff"
         />
       </div>

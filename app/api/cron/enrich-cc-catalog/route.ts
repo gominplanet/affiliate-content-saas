@@ -39,7 +39,13 @@ const STALE_DAYS = () => {
 }
 const MAX_PER_RUN = () => {
   const n = Number(process.env.CC_ENRICH_MAX_PER_RUN)
-  return Number.isInteger(n) && n >= 1 && n <= 1000 ? n : 150
+  // Default raised 150 → 300 (2026-08) to work through the enrichment backlog
+  // faster. The real throttle is the shared Keepa token floor (MIN_TOKENS_TO_
+  // CONTINUE) and the 200s wall-clock deadline below, both of which still bind
+  // first and protect Deal Radar's slice of the budget; this just stops the
+  // per-run cap from being the artificial limit when tokens are flush. Override
+  // with CC_ENRICH_MAX_PER_RUN.
+  return Number.isInteger(n) && n >= 1 && n <= 1000 ? n : 300
 }
 
 export async function GET(req: Request) {
