@@ -110,7 +110,7 @@ export async function POST(request: Request) {
 
     // Resolve the source video row (must belong to the caller).
     const q = sb.from('youtube_videos')
-      .select('id,youtube_video_id,title,transcript,transcript_cues,channel_id,source_video_url')
+      .select('id,youtube_video_id,title,transcript,transcript_cues,channel_id,source_video_url,duration_seconds')
       .eq('user_id', user.id)
     let { data: video } = await (videoId
       ? q.eq('id', videoId)
@@ -128,6 +128,12 @@ export async function POST(request: Request) {
       const apiKey = process.env.YOUTUBE_API_KEY
       const snip = apiKey ? await fetchYouTubeVideoSnippet(apiKey, ytId) : null
       if (!snip) return NextResponse.json({ error: "We couldn't find that YouTube video — double-check the link." }, { status: 404 })
+      // Cap source length at 10 minutes BEFORE creating a row — transcription
+      // cost scales with duration and shorts only use a 15–30s window, so longer
+      // videos are wasted spend.
+      if ((snip.durationSeconds || 0) > 600) {
+        return NextResponse.json({ error: 'Clip Factory works on videos up to 10 minutes long. Pick a shorter video, or trim this one first.' }, { status: 400 })
+      }
       // The creator's own description names the product + their affiliate link.
       // Pull the link (prefills the product field) and keep the description to
       // give the planner real product context for better hooks/captions/title.
@@ -143,11 +149,20 @@ export async function POST(request: Request) {
         thumbnail_url: snip.thumbnailUrl || null,
         duration_seconds: snip.durationSeconds || null,
         ...(productLink ? { product_url: productLink } : {}),
-      }).select('id,youtube_video_id,title,transcript,transcript_cues,channel_id,source_video_url').maybeSingle()
+      }).select('id,youtube_video_id,title,transcript,transcript_cues,channel_id,source_video_url,duration_seconds').maybeSingle()
       if (createErr || !created) return NextResponse.json({ error: createErr?.message || 'Could not add that video.' }, { status: 500 })
       video = created
     }
     if (!video) return NextResponse.json({ error: 'Video not found.' }, { status: 404 })
+
+    // Source-length cap: Clip Factory only ever cuts a 15–30s window, but
+    // transcription cost scales with the whole video's duration. Reject anything
+    // over 10 minutes BEFORE we pull audio or pay Whisper. (0/null = unknown
+    // duration → allowed; the creator's own synced videos carry a real value.)
+    const MAX_SOURCE_SECONDS = 600
+    if ((Number(video.duration_seconds) || 0) > MAX_SOURCE_SECONDS) {
+      return NextResponse.json({ error: 'Clip Factory works on videos up to 10 minutes long. Pick a shorter video, or trim this one first.' }, { status: 400 })
+    }
 
     const youtubeVideoId = (video.youtube_video_id as string | null) || ytId || null
     const videoTitle = (video.title as string) || 'Untitled'
