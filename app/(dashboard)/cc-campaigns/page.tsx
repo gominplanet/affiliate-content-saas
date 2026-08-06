@@ -423,16 +423,22 @@ export default function CcCampaignsPage() {
     } finally { setVerifying(false) }
   }, [verifying, fetchPage])
 
-  // Debounced reload on filter change. Joined-only routes to the LIVE SCOUT search
-  // (longer debounce — each run opens an Amazon tab); everything else hits the
-  // catalog API.
+  // Browse mode: debounced reload when any catalog filter changes.
   useEffect(() => {
-    const t = setTimeout(() => {
-      if (joinedOnly) { setJoinedPages(12); void fetchJoinedLive(12, false) }
-      else void fetchPage(1, false)
-    }, joinedOnly ? 700 : 250)
+    if (joinedOnly) return
+    const t = setTimeout(() => void fetchPage(1, false), 250)
     return () => clearTimeout(t)
-  }, [joinedOnly, fetchJoinedLive, fetchPage])
+  }, [joinedOnly, fetchPage])
+
+  // Joined-only is a LIVE SCOUT search — each run opens an Amazon tab, so it must
+  // ONLY re-run on the keyword (fetchJoinedLive depends on q) and the toggle. The
+  // commission / paying / spots filters don't apply to it and must NOT re-trigger
+  // it (that was firing a needless, sometimes-empty search). Longer debounce.
+  useEffect(() => {
+    if (!joinedOnly) return
+    const t = setTimeout(() => { setJoinedPages(12); void fetchJoinedLive(12, false) }, 700)
+    return () => clearTimeout(t)
+  }, [joinedOnly, fetchJoinedLive])
 
   // Your accepted/messaged/posted status, loaded once (refreshed after actions).
   useEffect(() => { loadStatus() }, [loadStatus])

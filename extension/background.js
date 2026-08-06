@@ -443,6 +443,11 @@ let _ccNetRing = []           // recent captured request POSTs (in-memory)
 let _ccRespRing = []          // recent captured RESPONSES (in-memory, for diag)
 let _ccSendRecipe = null      // /chat/message/send template (persisted)
 let _ccSearchRecipe = null    // /chat/search template (persisted)
+// collaboration/search browse query learned from the active view — {body,headers}.
+// Persisted so repeat "Joined only" searches work even when the SPA loads from
+// cache and doesn't re-fire its query (no fresh capture that run → would 401).
+let _ccListRecipe = null
+try { chrome.storage.local.get(['ccListRecipe'], (o) => { if (o && o.ccListRecipe) _ccListRecipe = o.ccListRecipe }) } catch (e) {}
 try {
   chrome.storage.local.get(['ccSendRecipe', 'ccSearchRecipe'], (o) => {
     if (!o) return
@@ -979,15 +984,23 @@ async function listMyCampaignsApi(params) {
     // anti-CSRF token collaboration/search needs (else 401). net-hook.js captures
     // those POSTs. So we wait for the page to fire them (up to ~14s).
     await _sleep(1500)
-    for (let i = 0; i < 26 && (!_ccCreatorId || !latestCollabSearch(openedAt)); i++) await _sleep(500)
+    // Wait for the creator id AND a fresh capture — but if we already have a
+    // persisted list recipe, don't block on a fresh capture (cached SPA loads may
+    // not re-fire the query). Once creatorId is known we can proceed on the recipe.
+    for (let i = 0; i < 26 && (!_ccCreatorId || (!latestCollabSearch(openedAt) && !_ccListRecipe)); i++) await _sleep(500)
     const captured = latestCollabSearch(openedAt)
+    // Persist a fresh capture as the reusable recipe; fall back to the persisted one
+    // when this run captured nothing (so repeat searches don't 401 on missing CSRF).
+    if (captured) { _ccListRecipe = { body: captured.body, headers: captured.headers, learnedAt: Date.now() }; try { chrome.storage.local.set({ ccListRecipe: _ccListRecipe }) } catch (e) {} }
+    const useBody = captured ? captured.body : (_ccListRecipe && _ccListRecipe.body) || null
+    const useHeaders = captured ? captured.headers : (_ccListRecipe && _ccListRecipe.headers) || null
     const res = await chrome.scripting.executeScript({
       target: { tabId }, world: 'MAIN', func: ccListMyCampaignsInPage,
       args: [{
         creatorId: _ccCreatorId,
         headers: (_ccSendRecipe && _ccSendRecipe.headers) || {},
-        capturedBody: captured ? captured.body : null,
-        capturedHeaders: captured ? captured.headers : null,
+        capturedBody: useBody,
+        capturedHeaders: useHeaders,
         keyword,
         maxPages,
       }],
