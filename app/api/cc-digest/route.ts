@@ -49,10 +49,9 @@ export async function GET() {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const { data: intRow } = await supabase
-      .from('integrations').select('tier,amazon_associates_tag')
+      .from('integrations').select('tier')
       .eq('user_id', user.id).maybeSingle()
     const tier = normalizeTier(intRow?.tier) as Tier
-    const amazonTag = ((intRow as { amazon_associates_tag?: string | null } | null)?.amazon_associates_tag || '').trim()
 
     // CC access gate (proof-of-CC, not paid tier). Unverified → empty; the
     // dashboard card self-hides, no error surfaced.
@@ -73,7 +72,9 @@ export async function GET() {
       // clean set now (rather than waiting out the 24h).
       const unique = dedupeCards(cached.campaigns as { campaignId: string; brand: string | null; asin: string; imageUrl: string | null }[])
       if (unique.length === cached.campaigns.length) {
-        return NextResponse.json({ eligible: true, campaigns: cached.campaigns, generatedAt: cached.generated_at, cached: true })
+        // Buy links must be CLEAN — strip any affiliate tag a legacy batch cached.
+        const clean = (cached.campaigns as { asin: string; buyUrl?: string }[]).map((c) => ({ ...c, buyUrl: cleanBuyUrl(c.asin) }))
+        return NextResponse.json({ eligible: true, campaigns: clean, generatedAt: cached.generated_at, cached: true })
       }
     }
 
@@ -164,7 +165,7 @@ export async function GET() {
 
     const byId = new Map(shortlist.map((s) => [s.row.campaign_id, s]))
     const picked = order.map((id) => byId.get(id)).filter(Boolean).slice(0, DIGEST_SIZE) as typeof shortlist
-    const campaigns = picked.map((s) => toCard(s.row, s.cat, amazonTag))
+    const campaigns = picked.map((s) => toCard(s.row, s.cat))
 
     // Persist: cache the batch + record every card in the seen-ledger so it
     // never returns (with its matched brand/category for realignment).
@@ -406,7 +407,7 @@ async function llmRerank(
   }
 }
 
-function toCard(r: CatalogRow, category: string | null, amazonTag: string) {
+function toCard(r: CatalogRow, category: string | null) {
   const asin = pickAsin(r) as string
   const total = typeof r.total_slot === 'number' ? r.total_slot : null
   const open = typeof r.available_slot === 'number' ? r.available_slot : null
@@ -430,10 +431,18 @@ function toCard(r: CatalogRow, category: string | null, amazonTag: string) {
     totalSlot: total,
     daysLeft: daysUntil(r.ends_at),
     budgetPct,
-    buyUrl: `https://www.amazon.com/dp/${asin}${amazonTag ? `?tag=${encodeURIComponent(amazonTag)}` : ''}`,
+    // CLEAN Amazon link — deliberately NO affiliate tag. These are campaign
+    // discovery cards; the creator decides how to promote, and a pre-tagged
+    // buy link (theirs or anyone's) is not wanted here.
+    buyUrl: cleanBuyUrl(asin),
     // The CC message page URL the outreach modal opens (constructible from id).
     detailsUrl: `https://affiliate-program.amazon.com/p/connect/request?campaignId=${encodeURIComponent(r.campaign_id)}&type=affiliate-plus&status=active`,
   }
+}
+
+/** A clean Amazon product link — no affiliate tag, ever. */
+function cleanBuyUrl(asin: string): string {
+  return `https://www.amazon.com/dp/${asin}`
 }
 
 /** Dedupe already-built cards by the same product identity as itemKey, keeping
