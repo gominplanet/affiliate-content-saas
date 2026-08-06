@@ -353,7 +353,7 @@ export default function TikTokPublishPage() {
         <div className="card p-5 border-[#ff3b30]/20 bg-[#ff3b30]/5">
           <p className="text-sm text-[#ff3b30] flex items-center gap-2"><AlertCircle size={14} /> {loadError}</p>
           {reconnectRequired && (
-            <a href="/setup?tab=integrations" className="mt-3 inline-block text-xs text-[#7C3AED] hover:underline">
+            <a href="/connect-socials" className="mt-3 inline-block text-xs text-[#7C3AED] hover:underline">
               Go to Integrations → Reconnect TikTok →
             </a>
           )}

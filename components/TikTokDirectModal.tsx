@@ -439,8 +439,8 @@ export function TikTokDirectModal({
               <div className="rounded-lg border-[#ff9500]/20 bg-[#ff9500]/5 p-3">
                 <p className="text-sm text-[#9a5d00] flex items-start gap-2"><AlertCircle size={14} className="mt-0.5" /> {loadError}</p>
                 {reconnectRequired && (
-                  <a href="/setup?tab=integrations" className="mt-3 inline-block text-xs text-[#7C3AED] hover:underline">
-                    Go to Integrations → Reconnect TikTok →
+                  <a href="/connect-socials" className="mt-3 inline-block text-xs text-[#7C3AED] hover:underline">
+                    Go to Connect Socials → Reconnect TikTok →
                   </a>
                 )}
               </div>
@@ -652,7 +652,7 @@ export function TikTokDirectModal({
                 <div className="rounded-lg border-[#ff3b30]/20 bg-[#ff3b30]/5 p-3">
                   <p className="text-xs text-[#ff3b30] flex items-center gap-1.5"><AlertCircle size={12} /> {postError}</p>
                   {reconnectRequired && (
-                    <a href="/setup?tab=integrations" className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-[#7C3AED] hover:underline">
+                    <a href="/connect-socials" className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-[#7C3AED] hover:underline">
                       <RefreshCw size={11} /> Reconnect TikTok to grant posting access →
                     </a>
                   )}

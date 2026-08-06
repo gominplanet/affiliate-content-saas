@@ -186,8 +186,8 @@ export function InstagramDirectModal({
               <div className="rounded-lg border-[#ff9500]/20 bg-[#ff9500]/5 p-3">
                 <p className="text-sm text-[#9a5d00] flex items-start gap-2"><AlertCircle size={14} className="mt-0.5" /> {loadError}</p>
                 {reconnectRequired && (
-                  <a href="/setup?tab=integrations" className="mt-3 inline-block text-xs text-[#7C3AED] hover:underline">
-                    Go to Integrations → Reconnect Instagram →
+                  <a href="/connect-socials" className="mt-3 inline-block text-xs text-[#7C3AED] hover:underline">
+                    Go to Connect Socials → Reconnect Instagram →
                   </a>
                 )}
               </div>
