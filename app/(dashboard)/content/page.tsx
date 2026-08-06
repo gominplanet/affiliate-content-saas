@@ -4058,6 +4058,10 @@ export default function ContentPage() {
                     <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Newest first · everything live on your blog</p>
                   </div>
                 </div>
+                {/* Two cards per row on wide screens — matches the Video-to-Blog
+                    grid so Blog-to-Social reads as cards, not a bland full-width
+                    stack. Collapses to one column below xl. */}
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 items-start">
                 {sliced.map(it => {
                   if (it.kind === 'video') {
                     const video = it.video
@@ -4146,7 +4150,7 @@ export default function ContentPage() {
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
+              <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end">
                 {/* Rewrite is Pro-only and one-shot per post. Hide for
                     everyone else — they manually edit in WordPress. */}
                 {post.videoId && (userTier === 'pro' || userTier === 'admin') && (
@@ -4218,6 +4222,7 @@ export default function ContentPage() {
             </div>
                   )
                 })}
+                </div>
                 {totalPages > 1 && (
                   <Pagination
                     page={safePage}
