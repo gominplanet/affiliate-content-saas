@@ -398,7 +398,26 @@ export default function CcCampaignsPage() {
       }
       // Mark a successful reach so the auto-sync throttle can back off.
       try { localStorage.setItem('cc-joined-autosync', String(Date.now())) } catch { /* no-op */ }
-      if (!res.campaigns.length) { if (!silent) toast.success('No accepted campaigns found on Amazon yet.', { id: tId, duration: 5_000 }); return }
+      if (!res.campaigns.length) {
+        // Surface the SCOUT diagnostic so an unexpected empty result is debuggable
+        // (which filter variants Amazon answered, HTTP status + ad counts) instead
+        // of a silent zero. Full object also goes to the console.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const diag = (res as any).diag
+        if (diag) { try { console.log('[SCOUT] joined-sync diagnostic:', diag) } catch { /* no-op */ } }
+        if (!silent) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const v = (diag?.variants || []) as any[]
+          const line = v.length ? v.map((x) => `${x.label}: ${x.status ?? '-'}/${x.ads ?? 0}${x.err ? ` (${x.err})` : ''}`).join(' · ') : ''
+          toast.success(
+            diag
+              ? `No accepted campaigns returned. SCOUT reached Amazon (id ${diag.creatorId || '?'}). Variants — ${line || 'none tried'}. Open the console for the full diagnostic and send it to support.`
+              : 'No accepted campaigns found on Amazon yet.',
+            { id: tId, duration: 12_000 },
+          )
+        }
+        return
+      }
       const r = await fetch('/api/campaigns/sync-joined', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ campaigns: res.campaigns }),

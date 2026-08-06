@@ -271,14 +271,16 @@ export interface MyCcCampaign { campaignId: string; asin: string | null; brand: 
  * "Joined only" — including ones joined directly on Amazon, not just via MVP.
  * Best-effort: resolves, never throws.
  */
-export async function requestMyCcCampaigns(): Promise<{ ok: boolean; campaigns: MyCcCampaign[]; error?: string; reason?: string }> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function requestMyCcCampaigns(): Promise<{ ok: boolean; campaigns: MyCcCampaign[]; error?: string; reason?: string; diag?: any }> {
   if (!(await isExtensionAvailable())) return { ok: false, campaigns: [], error: 'not-installed' }
-  const resp = await sendToExtension<{ ok?: boolean; campaigns?: MyCcCampaign[]; error?: string; reason?: string }>(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const resp = await sendToExtension<{ ok?: boolean; campaigns?: MyCcCampaign[]; error?: string; reason?: string; diag?: any }>(
     { type: 'MVP_CC_MY_CAMPAIGNS' },
     95000,
   )
   if (!resp) return { ok: false, campaigns: [], error: 'timeout' }
-  return { ok: !!resp.ok, campaigns: Array.isArray(resp.campaigns) ? resp.campaigns : [], error: resp.error, reason: resp.reason }
+  return { ok: !!resp.ok, campaigns: Array.isArray(resp.campaigns) ? resp.campaigns : [], error: resp.error, reason: resp.reason, diag: resp.diag }
 }
 
 export async function requestMessageBrand(detailsUrl: string, message: string): Promise<MessageBrandResult> {

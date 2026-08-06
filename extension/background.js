@@ -729,13 +729,14 @@ async function sendByAsinApi(asin, message, campaignIdsHint) {
 // contained (executeScript serializes it — no outer refs).
 function ccListMyCampaignsInPage(opts) {
   return (async () => {
+    const diag = { variants: [], creatorId: null }
     try {
       let creatorId = opts.creatorId
       const headers = opts.headers
       // Self-discover the creator id from the OPEN page if the background didn't
-      // have it yet — Amazon embeds it (amzn1.creator.…) in the CC page's state
-      // JSON even when it's not in the URL. This is what lets SCOUT open the page
-      // itself instead of asking the user to visit their grid first.
+      // have it yet — try the page HTML first, then any inline JSON. Amazon's SPA
+      // usually loads it via its own API (which net-hook captures for the
+      // background), but scan here too as a fallback.
       if (!creatorId) {
         try {
           const html = (document.documentElement && document.documentElement.innerHTML) || ''
@@ -743,34 +744,97 @@ function ccListMyCampaignsInPage(opts) {
           if (m) creatorId = m[0]
         } catch (e) {}
       }
-      if (!creatorId) return { ok: false, reason: 'no-creator-id' }
+      if (!creatorId) return { ok: false, reason: 'no-creator-id', diag }
+      diag.creatorId = String(creatorId).slice(0, 22) + '…'
       const hdr = () => { const o = Object.assign({}, headers || {}); if (!o['Content-Type'] && !o['content-type']) o['Content-Type'] = 'application/json'; if (!o['Accept'] && !o['accept']) o['Accept'] = 'application/json'; return o }
-      const out = []
-      const seen = {}
-      let nextToken = null
-      for (let pageNumber = 1; pageNumber <= 20; pageNumber++) { // cap ~600 campaigns
-        const body = JSON.stringify({
-          campaignId: null, brandId: null,
-          filterOptions: { campaignType: 'BOUNTY_BOARD', availableSlotsOnly: null, interestTags: null, providingSamplesOnly: null, statuses: ['SCHEDULED', 'DELIVERING'], commissionPercentageFilters: null, dateRange: null, campaignBrowseNodes: null, earlyAccessOnly: null, gcorIdList: null, campaignQualifiers: null, contentTypes: null, adId: null, storeIds: null, creatorIds: null, flatFeeRanges: null, rangeFilters: null, socialChannels: null, premiumCreator: null, contractStatus: null, ratingStar: null, reviewCount: null, priceRange: null, budgetAvailabilityScoreList: null, dealMetadata: null },
-          sortOptions: [{ name: 'CAMPAIGN_TITLE', order: 'ASCENDING' }],
-          nextToken, pageNumber, pageSize: 30, creatorId,
-          searchOptions: [],
-        })
-        const r = await fetch('/connect/api/collaboration/search', { method: 'POST', headers: hdr(), body, credentials: 'include' })
-        const j = await r.json().catch(() => null)
+
+      const FILTER_BASE = { availableSlotsOnly: null, interestTags: null, providingSamplesOnly: null, commissionPercentageFilters: null, dateRange: null, campaignBrowseNodes: null, earlyAccessOnly: null, gcorIdList: null, campaignQualifiers: null, contentTypes: null, adId: null, storeIds: null, creatorIds: null, flatFeeRanges: null, rangeFilters: null, socialChannels: null, premiumCreator: null, contractStatus: null, ratingStar: null, reviewCount: null, priceRange: null, budgetAvailabilityScoreList: null, dealMetadata: null }
+
+      const buildBody = (v, pageNumber, nextToken) => {
+        const filterOptions = Object.assign({ campaignType: v.campaignType, statuses: v.statuses }, FILTER_BASE)
+        const b = { campaignId: null, brandId: null, filterOptions, sortOptions: [{ name: 'CAMPAIGN_TITLE', order: 'ASCENDING' }], nextToken, pageNumber, pageSize: 30, creatorId }
+        if (!v.omitSearch) b.searchOptions = v.searchOptions || []
+        return JSON.stringify(b)
+      }
+
+      const runPage = async (v, pageNumber, nextToken) => {
+        const r = await fetch('/connect/api/collaboration/search', { method: 'POST', headers: hdr(), body: buildBody(v, pageNumber, nextToken), credentials: 'include' })
+        let j = null, errText = ''
+        try { const t = await r.text(); j = JSON.parse(t); if (!r.ok) errText = t.slice(0, 200) } catch (e) { errText = 'parse' }
         const resp = j && j.responses && j.responses[0]
         const ads = (resp && resp.ads) || []
+        return { status: r.status, ads, nextToken: (resp && resp.nextToken) || null, errText }
+      }
+
+      // Filter variants to try, in order — Amazon's list query is fiddly: an empty
+      // searchOptions can return nothing, and a too-narrow campaignType/status set
+      // hides affiliate-plus joins. We use the FIRST variant that returns ads, and
+      // record every variant's outcome in diag so a still-empty result is
+      // debuggable (HTTP status + count per variant) instead of a silent zero.
+      const variants = [
+        { label: 'bounty+sched/deliv', campaignType: 'BOUNTY_BOARD', statuses: ['SCHEDULED', 'DELIVERING'] },
+        { label: 'any-type+sched/deliv', campaignType: null, statuses: ['SCHEDULED', 'DELIVERING'] },
+        { label: 'any-type+accepted/active', campaignType: null, statuses: ['ACCEPTED', 'ACTIVE', 'IN_PROGRESS', 'LIVE', 'SCHEDULED', 'DELIVERING', 'COMPLETED'] },
+        // Diagnostic-only: no status filter. Runs ONLY if the real variants above
+        // came back empty, and its ads are NOT written as "joined" (they could be
+        // plain opportunities). We just read the status field off each ad so the
+        // diagnostic shows which real statuses this account's campaigns carry —
+        // that's what we need to pin the exact "joined" filter next.
+        { label: 'any-type+no-status', campaignType: null, statuses: null, diagOnly: true },
+      ]
+
+      const out = []
+      const seen = {}
+      const statusCounts = {}
+      const collect = (ads) => {
         for (const a of ads) {
           if (!a || !a.campaignId || seen[a.campaignId]) continue
           seen[a.campaignId] = 1
           const asins = Array.isArray(a.campaignAsins) ? a.campaignAsins.map((x) => String(x).toUpperCase()) : []
-          out.push({ campaignId: a.campaignId, asin: asins[0] || null, brand: a.brandName || null, name: a.campaignName || null })
+          const st = a.campaignStatus || a.status || a.collaborationStatus || a.contractStatus || null
+          if (st) statusCounts[st] = (statusCounts[st] || 0) + 1
+          out.push({ campaignId: a.campaignId, asin: asins[0] || null, brand: a.brandName || null, name: a.campaignName || null, status: st })
         }
-        nextToken = (resp && resp.nextToken) || null
-        if (!ads.length || !nextToken) break
       }
-      return { ok: true, campaigns: out, creatorId }
-    } catch (e) { return { ok: false, error: e && e.message ? e.message : 'exception' } }
+
+      // Read the status field off ads WITHOUT adding them to the written list.
+      const tallyStatuses = (ads) => {
+        for (const a of ads) {
+          if (!a) continue
+          const st = a.campaignStatus || a.status || a.collaborationStatus || a.contractStatus || null
+          if (st) statusCounts[st] = (statusCounts[st] || 0) + 1
+        }
+      }
+
+      let picked = null
+      for (const v of variants) {
+        // Skip the diagnostic-only probe unless every real variant came up empty.
+        if (v.diagOnly && out.length) continue
+        try {
+          const first = await runPage(v, 1, null)
+          diag.variants.push({ label: v.label, status: first.status, ads: first.ads.length, err: first.errText || undefined })
+          if (first.ads.length) {
+            if (v.diagOnly) { tallyStatuses(first.ads); continue }
+            picked = v
+            collect(first.ads)
+            let nextToken = first.nextToken
+            for (let pageNumber = 2; pageNumber <= 20 && nextToken; pageNumber++) {
+              const p = await runPage(v, pageNumber, nextToken)
+              collect(p.ads)
+              nextToken = p.nextToken
+              if (!p.ads.length) break
+            }
+            break
+          }
+        } catch (e) {
+          diag.variants.push({ label: v.label, err: (e && e.message) || 'exception' })
+        }
+      }
+
+      diag.picked = picked ? picked.label : null
+      diag.statusCounts = statusCounts
+      return { ok: true, campaigns: out, creatorId, diag }
+    } catch (e) { return { ok: false, error: e && e.message ? e.message : 'exception', diag } }
   })()
 }
 
