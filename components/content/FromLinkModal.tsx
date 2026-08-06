@@ -21,11 +21,18 @@ function isAmazonLink(u: string): boolean {
   return /(^|\.)amazon\.[a-z.]+/i.test(s) || /amzn\.(to|com)/i.test(s) || /geni\.us/i.test(s) || /^[A-Z0-9]{10}$/i.test(s)
 }
 
-export function FromLinkModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
-  const [link, setLink] = useState('')
-  const [name, setName] = useState('')
+export function FromLinkModal({ onClose, onDone, initialLink, initialName, initialCategory }: {
+  onClose: () => void
+  onDone: () => void
+  /** Optional prefill — e.g. opened from a campaign card with the product's ASIN. */
+  initialLink?: string
+  initialName?: string
+  initialCategory?: string
+}) {
+  const [link, setLink] = useState(initialLink ?? '')
+  const [name, setName] = useState(initialName ?? '')
   const [angle, setAngle] = useState('')
-  const [category, setCategory] = useState('')
+  const [category, setCategory] = useState(initialCategory ?? '')
   const [busy, setBusy] = useState(false)
   const [phase, setPhase] = useState<'idle' | 'scout' | 'write'>('idle')
   const [done, setDone] = useState<{ url: string; title: string } | null>(null)
