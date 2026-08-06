@@ -235,7 +235,7 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
           </ul>
           <p>
             TikTok posts your vertical Shorts straight to your feed from Clip Factory. Connect it once under
-            Integrations and grant posting access.
+            Connect Socials and grant posting access.
           </p>
           {isApp && <SectionCta href="/connect-socials" label="Connect your channels" />}
         </Section>
