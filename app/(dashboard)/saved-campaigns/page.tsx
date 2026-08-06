@@ -10,10 +10,12 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { Bookmark, Loader2, ExternalLink, MessageSquare, Trash2, Star } from 'lucide-react'
+import { Bookmark, Loader2, ExternalLink, MessageSquare, Trash2, Star, PenLine, Handshake } from 'lucide-react'
 import PageHero from '@/components/layout/PageHero'
 import MessageBrandModal, { type MessageBrandCampaign } from '@/components/campaigns/MessageBrandModal'
+import { FromLinkModal } from '@/components/content/FromLinkModal'
 import { requestFindCampaign } from '@/lib/extension-frame'
+import { acceptCampaignViaScout } from '@/lib/accept-campaign'
 
 interface SavedCampaign {
   id: string
@@ -45,6 +47,20 @@ export default function SavedCampaignsPage() {
   const [items, setItems] = useState<SavedCampaign[] | null>(null)
   const [removing, setRemoving] = useState<string | null>(null)
   const [msgModal, setMsgModal] = useState<MessageBrandCampaign | null>(null)
+  const [createFor, setCreateFor] = useState<SavedCampaign | null>(null)
+  const [accepting, setAccepting] = useState<string | null>(null)
+  const [accepted, setAccepted] = useState<Set<string>>(new Set())
+
+  const accept = async (s: SavedCampaign) => {
+    if (accepting) return
+    setAccepting(s.id)
+    const ok = await acceptCampaignViaScout({
+      detailsUrl: detailsUrlFor(s), asin: s.asin, campaignId: s.campaign_id,
+      brand: s.brand, commissionPct: s.commission_pct, productTitle: s.title,
+    })
+    if (ok) setAccepted((prev) => new Set(prev).add(s.id))
+    setAccepting(null)
+  }
 
   const load = useCallback(() => {
     fetch('/api/campaigns/saved')
@@ -126,7 +142,25 @@ export default function SavedCampaignsPage() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 mt-auto pt-1">
+              <div className="flex flex-col gap-2 mt-auto pt-1">
+                {/* Accept — SCOUT clicks Accept on the user's Amazon session, no
+                    tab-hopping. Turns into a confirmation once accepted. */}
+                {accepted.has(s.id) ? (
+                  <div className="flex items-center gap-1.5 text-xs font-medium text-[#7C3AED]">
+                    <Handshake size={13} /> Accepted on Amazon
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => accept(s)}
+                    disabled={accepting === s.id}
+                    className="btn-secondary w-full flex items-center gap-1.5 text-xs justify-center disabled:opacity-50"
+                    title="Accept this campaign on Amazon via SCOUT — no tab-hopping"
+                  >
+                    {accepting === s.id ? <Loader2 size={13} className="animate-spin" /> : <Handshake size={13} />}
+                    {accepting === s.id ? 'Accepting via SCOUT…' : 'Accept campaign'}
+                  </button>
+                )}
+                <div className="flex items-center gap-2">
                 <a
                   href={`https://www.amazon.com/dp/${s.asin}`} target="_blank" rel="noopener noreferrer"
                   className="btn-secondary flex items-center gap-1.5 text-xs flex-1 justify-center"
@@ -142,6 +176,13 @@ export default function SavedCampaignsPage() {
                   <MessageSquare size={13} /> Contact
                 </button>
                 <button
+                  onClick={() => setCreateFor(s)}
+                  className="btn-secondary flex items-center gap-1.5 text-xs"
+                  title="Write a blog post from this product"
+                >
+                  <PenLine size={13} /> Create
+                </button>
+                <button
                   onClick={() => remove(s.id)}
                   disabled={removing === s.id}
                   className="btn-secondary flex items-center gap-1.5 text-xs text-[#ff3b30] disabled:opacity-50"
@@ -149,6 +190,7 @@ export default function SavedCampaignsPage() {
                 >
                   {removing === s.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
                 </button>
+                </div>
               </div>
             </div>
           ))}
@@ -161,6 +203,14 @@ export default function SavedCampaignsPage() {
           onClose={() => setMsgModal(null)}
           onSent={() => setMsgModal(null)}
           onFindCampaign={() => requestFindCampaign(msgModal.brandLabel || msgModal.product || '', msgModal.asin || '')}
+        />
+      )}
+      {createFor && (
+        <FromLinkModal
+          initialLink={createFor.asin}
+          initialName={createFor.title || ''}
+          onClose={() => setCreateFor(null)}
+          onDone={() => setCreateFor(null)}
         />
       )}
     </>
