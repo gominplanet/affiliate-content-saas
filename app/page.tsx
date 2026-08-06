@@ -1574,7 +1574,7 @@ const PRICING_TIERS: PricingTier[] = [
   },
   {
     name: 'Pro',
-    tagline: 'Best for operators running a portfolio of sites.',
+    tagline: 'Best for the serious affiliate marketer.',
     price: 199,
     regularPrice: 499,
     highlight: false,
