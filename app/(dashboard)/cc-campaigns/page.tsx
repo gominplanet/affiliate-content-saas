@@ -261,6 +261,11 @@ export default function CcCampaignsPage() {
   // Mutually exclusive with the hide filters.
   const [joinedOnly, setJoinedOnly] = useState(false)
   const [syncingJoined, setSyncingJoined] = useState(false)
+  // Joined-only is a LIVE view backed by SCOUT (queries the creator's real Amazon
+  // joined list on demand), so it scales to accounts with 100k+ joins instead of
+  // trying to mirror them all into our catalog.
+  const [joinedHasMore, setJoinedHasMore] = useState(false)
+  const [joinedPages, setJoinedPages] = useState(12)
   // CC access gate: the shared catalog stays locked until SCOUT confirms this
   // user's own Creator Connections grid renders (proof they have the invite).
   const [locked, setLocked] = useState(false)
@@ -338,6 +343,59 @@ export default function CcCampaignsPage() {
     } finally { setLoadingMore(false); setLoading(false) }
   }, [sort, q, minCommission, payingOnly, hasSpots, hideJoined, hidePosted, joinedOnly])
 
+  // Map a SCOUT joined campaign (from Amazon's real active list) onto the card
+  // shape. Fields Amazon doesn't return on the list stay null (rendered
+  // conditionally). Marked as joined on Amazon, so the card shows "Accepted".
+  const mapJoined = useCallback((mc: import('@/lib/extension-frame').MyCcCampaign): Campaign => ({
+    campaignId: mc.campaignId,
+    name: mc.name ?? null,
+    brand: mc.brand ?? null,
+    repAsin: mc.asin ?? null,
+    asinCount: mc.asinCount ?? (mc.asin ? 1 : 0),
+    image: mc.image ?? null,
+    commissionPct: mc.commissionPct ?? null,
+    perSale: null, priceNow: null, discountPct: null,
+    rating: mc.rating ?? null, reviewCount: mc.reviewCount ?? null,
+    monthlySold: null, videoCount: null,
+    endsAt: null, daysLeft: null, spotsLeft: null, totalSlots: null, pctFilled: null,
+    isFull: false, budgetRemaining: null,
+    trust: { score: 0, tier: 'unknown', spendRatio: null, reasons: ['Joined on Amazon'] },
+    score: 0,
+    detailsUrl: `https://affiliate-program.amazon.com/p/connect/request?campaignId=${encodeURIComponent(mc.campaignId)}&type=affiliate-plus&status=active`,
+  }), [])
+
+  // LIVE joined view: ask SCOUT to query the creator's Amazon joined list (keyword
+  // = the search box) and render those campaigns directly. No catalog filter, so
+  // it mirrors Amazon exactly and works at any scale.
+  const fetchJoinedLive = useCallback(async (pages: number, append: boolean) => {
+    if (append) setLoadingMore(true); else setLoading(true)
+    try {
+      const res = await requestMyCcCampaigns({ keyword: q.trim(), maxPages: pages })
+      if (!res.ok) {
+        const msg = res.error === 'not-installed'
+          ? 'SCOUT isn’t detected. Install/enable it and open Amazon, then try again.'
+          : res.error === 'timeout' ? 'Amazon took too long — try again.'
+            : res.reason === 'no-creator-id' ? 'SCOUT couldn’t read your Creator Connections session. Open Amazon (logged in) and retry.'
+              : (res.reason || res.error || 'Couldn’t read your joined campaigns.')
+        toast.error(msg)
+        if (!append) setCampaigns([])
+        return
+      }
+      setLocked(false)
+      const mapped = res.campaigns.map(mapJoined)
+      setCampaigns(mapped)
+      setTotal(res.total ?? mapped.length)
+      setNextPage(null)
+      setJoinedHasMore(!!res.hasMore)
+      // These are all joined → mark accepted so the cards read "Accepted on Amazon".
+      setStatusByAsin((prev) => {
+        const n = { ...prev }
+        for (const m of mapped) if (m.repAsin) n[m.repAsin] = { ...(n[m.repAsin] || {}), accepted: true }
+        return n
+      })
+    } finally { setLoadingMore(false); setLoading(false) }
+  }, [q, mapJoined])
+
   // "Verify my CC access" — SCOUT opens the user's own Creator Connections grid;
   // real campaigns back = proven invite, which we stamp server-side to unlock.
   const verifyCcAccess = useCallback(async () => {
@@ -365,11 +423,16 @@ export default function CcCampaignsPage() {
     } finally { setVerifying(false) }
   }, [verifying, fetchPage])
 
-  // Debounced reload on filter change.
+  // Debounced reload on filter change. Joined-only routes to the LIVE SCOUT search
+  // (longer debounce — each run opens an Amazon tab); everything else hits the
+  // catalog API.
   useEffect(() => {
-    const t = setTimeout(() => fetchPage(1, false), 250)
+    const t = setTimeout(() => {
+      if (joinedOnly) { setJoinedPages(12); void fetchJoinedLive(12, false) }
+      else void fetchPage(1, false)
+    }, joinedOnly ? 700 : 250)
     return () => clearTimeout(t)
-  }, [fetchPage])
+  }, [joinedOnly, fetchJoinedLive, fetchPage])
 
   // Your accepted/messaged/posted status, loaded once (refreshed after actions).
   useEffect(() => { loadStatus() }, [loadStatus])
@@ -420,9 +483,10 @@ export default function CcCampaignsPage() {
       }
       const r = await fetch('/api/campaigns/sync-joined', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        // reconcile: make the stored joined set an exact mirror of Amazon's list
-        // (clears rows no longer joined). Safe — only runs on a non-empty sync.
-        body: JSON.stringify({ campaigns: res.campaigns, reconcile: true }),
+        // reconcile OFF: this sync only fetches a WINDOW of large accounts (the live
+        // "Joined only" view is the complete picture now). Additive-only marking, so
+        // a partial fetch never wrongly clears joined markers used by Hide joined.
+        body: JSON.stringify({ campaigns: res.campaigns, reconcile: false }),
       })
       const j = await r.json().catch(() => ({}))
       if (!r.ok || j?.error) { if (!silent) toast.error(j?.error || 'Sync failed.', { id: tId, duration: 8_000 }); return }
@@ -449,16 +513,10 @@ export default function CcCampaignsPage() {
     } finally { setSyncingJoined(false) }
   }, [loadStatus, fetchPage])
 
-  // Auto-sync joined campaigns on load — but throttled to ~every 3h per browser
-  // so we don't pop a hidden Amazon tab on every single visit. Silent: if SCOUT
-  // isn't there or the user isn't logged into Amazon, it just no-ops.
-  useEffect(() => {
-    let last = 0
-    try { last = Number(localStorage.getItem('cc-joined-autosync') || 0) } catch { /* no-op */ }
-    if (Date.now() - last < 3 * 3600_000) return
-    const t = setTimeout(() => { void syncJoined({ silent: true }) }, 1500)
-    return () => clearTimeout(t)
-  }, [syncJoined])
+  // (Auto-sync-on-load removed: "Joined only" is now a live SCOUT view, so there's
+  // nothing to pre-warm, and on large accounts a background sync would pull a big
+  // slice on every visit. The manual "Sync joined from Amazon" button remains for
+  // populating Hide-joined markers on Browse all.)
 
   return (
     <>
@@ -525,7 +583,7 @@ export default function CcCampaignsPage() {
         <button onClick={() => setHasSpots((v) => !v)} className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${hasSpots ? 'border-[#7C3AED] text-[#7C3AED] bg-[#7C3AED]/10' : 'border-[var(--border-2)] text-[var(--text-3)]'}`}>
           Has open spots
         </button>
-        <button onClick={() => setJoinedOnly((v) => { const nv = !v; if (nv) { setHideJoined(false); setHidePosted(false) } return nv })} title="Show only campaigns you've accepted" className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${joinedOnly ? 'border-[#0a84ff] text-[#0a84ff] bg-[#0a84ff]/10' : 'border-[var(--border-2)] text-[var(--text-3)]'}`}>
+        <button onClick={() => setJoinedOnly((v) => { const nv = !v; if (nv) { setHideJoined(false); setHidePosted(false) } return nv })} title="Live view of the campaigns you've joined on Amazon (via SCOUT). Type in the search box to find any of them by brand, product, or ASIN." className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${joinedOnly ? 'border-[#0a84ff] text-[#0a84ff] bg-[#0a84ff]/10' : 'border-[var(--border-2)] text-[var(--text-3)]'}`}>
           Joined only
         </button>
         <button onClick={() => setHideJoined((v) => { const nv = !v; if (nv) setJoinedOnly(false); return nv })} title="Hide campaigns you've already accepted" className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${hideJoined ? 'border-[#ff9500] text-[#ff9500] bg-[#ff9500]/10' : 'border-[var(--border-2)] text-[var(--text-3)]'}`}>
@@ -534,10 +592,12 @@ export default function CcCampaignsPage() {
         <button onClick={() => setHidePosted((v) => { const nv = !v; if (nv) setJoinedOnly(false); return nv })} title="Hide campaigns you've already made a post for" className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${hidePosted ? 'border-[#ff9500] text-[#ff9500] bg-[#ff9500]/10' : 'border-[var(--border-2)] text-[var(--text-3)]'}`}>
           Hide posted
         </button>
-        <button onClick={() => syncJoined()} disabled={syncingJoined} title="Read every campaign you've joined on Amazon (via SCOUT) so they all show under Joined only" className="px-3 py-2 rounded-lg border border-[var(--border-2)] text-xs font-medium text-[var(--text-3)] hover:text-[var(--text)] inline-flex items-center gap-1.5 disabled:opacity-60 transition-colors">
-          {syncingJoined ? <Loader2 size={13} className="animate-spin" /> : <Handshake size={13} />}
-          {syncingJoined ? 'Syncing…' : 'Sync joined from Amazon'}
-        </button>
+        {!joinedOnly && (
+          <button onClick={() => syncJoined()} disabled={syncingJoined} title="Save the campaigns you've joined on Amazon (via SCOUT) so Hide joined works across Browse all" className="px-3 py-2 rounded-lg border border-[var(--border-2)] text-xs font-medium text-[var(--text-3)] hover:text-[var(--text)] inline-flex items-center gap-1.5 disabled:opacity-60 transition-colors">
+            {syncingJoined ? <Loader2 size={13} className="animate-spin" /> : <Handshake size={13} />}
+            {syncingJoined ? 'Syncing…' : 'Sync joined from Amazon'}
+          </button>
+        )}
       </div>
 
       {loading ? (
@@ -545,7 +605,9 @@ export default function CcCampaignsPage() {
       ) : campaigns.length === 0 ? (
         <div className="card p-8 text-center text-sm text-[var(--text-3)]">
           {joinedOnly
-            ? 'None of the campaigns you’ve accepted are live in the catalog right now. Accept a campaign, or turn off “Joined only”.'
+            ? (q.trim()
+                ? `None of your joined Amazon campaigns match “${q.trim()}”. Try a different keyword, or clear the search.`
+                : 'No joined campaigns came back from Amazon. Make sure SCOUT is installed and you’re logged into Amazon, then try again.')
             : 'No live campaigns match these filters. Try clearing filters, or check back after the next catalog import.'}
         </div>
       ) : (() => {
@@ -570,7 +632,9 @@ export default function CcCampaignsPage() {
         return (
         <>
           <p className="text-xs text-[var(--text-3)] mb-3">
-            {total.toLocaleString()} live campaign{total === 1 ? '' : 's'}
+            {joinedOnly
+              ? <>{total.toLocaleString()} joined campaign{total === 1 ? '' : 's'}{joinedHasMore && <span> · showing first {visible.length.toLocaleString()} — narrow your keyword or Load more</span>}</>
+              : <>{total.toLocaleString()} live campaign{total === 1 ? '' : 's'}</>}
             {hiddenCount > 0 && <span> · {hiddenCount.toLocaleString()} hidden</span>}
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -584,13 +648,19 @@ export default function CcCampaignsPage() {
                 }} />
             ))}
           </div>
-          {nextPage && (
+          {joinedOnly ? (joinedHasMore && (
+            <div className="flex justify-center mt-6">
+              <button onClick={() => { const p = joinedPages + 12; setJoinedPages(p); void fetchJoinedLive(p, true) }} disabled={loadingMore} className="btn-secondary flex items-center gap-2">
+                {loadingMore ? <Loader2 size={14} className="animate-spin" /> : null} Load more
+              </button>
+            </div>
+          )) : (nextPage && (
             <div className="flex justify-center mt-6">
               <button onClick={() => fetchPage(nextPage, true)} disabled={loadingMore} className="btn-secondary flex items-center gap-2">
                 {loadingMore ? <Loader2 size={14} className="animate-spin" /> : null} Load more
               </button>
             </div>
-          )}
+          ))}
         </>
         )
       })()}

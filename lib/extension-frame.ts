@@ -263,7 +263,18 @@ export async function requestAcceptCampaign(detailsUrl: string): Promise<AcceptC
  * the user to review and Send. Human-in-the-loop: SCOUT never clicks Send.
  * Best-effort: resolves, never throws.
  */
-export interface MyCcCampaign { campaignId: string; asin: string | null; brand: string | null; name: string | null }
+export interface MyCcCampaign {
+  campaignId: string
+  asin: string | null
+  brand: string | null
+  name: string | null
+  asinCount?: number
+  image?: string | null
+  commissionPct?: number | null
+  rating?: number | null
+  reviewCount?: number | null
+  status?: string | null
+}
 
 /**
  * List the creator's accepted/active Creator Connections campaigns straight from
@@ -272,15 +283,18 @@ export interface MyCcCampaign { campaignId: string; asin: string | null; brand: 
  * Best-effort: resolves, never throws.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function requestMyCcCampaigns(): Promise<{ ok: boolean; campaigns: MyCcCampaign[]; error?: string; reason?: string; diag?: any }> {
+export async function requestMyCcCampaigns(opts?: { keyword?: string; maxPages?: number }): Promise<{ ok: boolean; campaigns: MyCcCampaign[]; total?: number; hasMore?: boolean; error?: string; reason?: string; diag?: any }> {
   if (!(await isExtensionAvailable())) return { ok: false, campaigns: [], error: 'not-installed' }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const resp = await sendToExtension<{ ok?: boolean; campaigns?: MyCcCampaign[]; error?: string; reason?: string; diag?: any }>(
-    { type: 'MVP_CC_MY_CAMPAIGNS' },
+  const resp = await sendToExtension<{
+    ok?: boolean; campaigns?: MyCcCampaign[]; total?: number; hasMore?: boolean; error?: string; reason?: string
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    diag?: any
+  }>(
+    { type: 'MVP_CC_MY_CAMPAIGNS', keyword: opts?.keyword || '', maxPages: opts?.maxPages },
     95000,
   )
   if (!resp) return { ok: false, campaigns: [], error: 'timeout' }
-  return { ok: !!resp.ok, campaigns: Array.isArray(resp.campaigns) ? resp.campaigns : [], error: resp.error, reason: resp.reason, diag: resp.diag }
+  return { ok: !!resp.ok, campaigns: Array.isArray(resp.campaigns) ? resp.campaigns : [], total: resp.total, hasMore: resp.hasMore, error: resp.error, reason: resp.reason, diag: resp.diag }
 }
 
 export async function requestMessageBrand(detailsUrl: string, message: string): Promise<MessageBrandResult> {

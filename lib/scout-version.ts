@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.12.4'
+export const SCOUT_LATEST_VERSION = '1.13.0'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'CC Campaigns: "Sync joined from Amazon" now works even when SCOUT opens the page itself. It learns your creator id from Amazon\'s own network calls instead of scraping the page, so Joined only reliably shows every campaign you\'ve joined (including ones joined directly on Amazon).'
+  'CC Campaigns: "Joined only" is now a live view of your Amazon joined campaigns. Type any brand, product, or ASIN and SCOUT searches your real joined list on Amazon (scales to 100k+ joins) instead of only matching MVP\'s catalogue.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
