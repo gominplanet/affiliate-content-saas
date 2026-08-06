@@ -1,15 +1,16 @@
 /**
  * GET /api/analytics/storefront — per-PRODUCT performance (Storefront Stats).
  *
- * v1: rolls the creator's content up by product (ASIN) and attaches REAL
- * Geniuslink clicks (30-day, bot-filtered) + a Keepa demand/price estimate.
- * v2: merges REAL sales from storefront_earnings (units / revenue / commission,
- * scraped from Amazon Influencer earnings by SCOUT), for the selected period
- * (weekly | monthly), with a trend vs the previous period. Products with sales
- * but no MVP content are included too (the "this is selling, make content" gap).
+ * Rolls the creator's content up by product (ASIN) and attaches REAL Geniuslink
+ * clicks (30-day, bot-filtered) plus a Keepa demand/price estimate. This is the
+ * "which of my products is getting clicked, and does it have content" view.
  *
- * Product ↔ content mapping: blog_posts.deal_meta.asin + youtube_videos.asin.
- * Query: ?period=weekly|monthly (default monthly).
+ * (Amazon Influencer earnings/sales used to be merged in here from the SCOUT
+ * extension via storefront_earnings; that was removed in 2026-08 — MVP no longer
+ * collects Amazon sales data. Clicks + demand are all server-side now.)
+ *
+ * Product ↔ content mapping: blog_posts.deal_meta.asin + youtube_videos.asin +
+ * Creator-Connections campaign rows.
  */
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
@@ -23,7 +24,6 @@ const MAX_CODES = 150
 const CONCURRENCY = 8
 
 interface Piece { type: 'blog' | 'youtube'; title: string; url: string | null; code: string }
-interface EarnRow { asin: string; period_start: string; period_end: string; units: number | null; ordered_items: number | null; revenue_cents: number | null; commission_cents: number | null; clicks: number | null; product_title: string | null }
 
 export async function GET(request: NextRequest) {
   try {
@@ -31,19 +31,16 @@ export async function GET(request: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const period = new URL(request.url).searchParams.get('period') === 'weekly' ? 'weekly' : 'monthly'
-
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: intRow } = await (supabase as any)
       .from('integrations')
-      .select('geniuslink_api_key,geniuslink_api_secret,storefront_synced_at')
+      .select('geniuslink_api_key,geniuslink_api_secret')
       .eq('user_id', user.id)
       .single()
     const hasGenius = !!(intRow?.geniuslink_api_key && intRow?.geniuslink_api_secret)
 
     // ── Content pieces (for clicks) ───────────────────────────────────────────
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const [postsRes, vidsRes, campRes, earnRes] = await Promise.all([
+    const [postsRes, vidsRes, campRes] = await Promise.all([
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (supabase as any).from('blog_posts')
         .select('id,title,wordpress_url,geniuslink_code,deal_meta,video_id')
@@ -58,13 +55,6 @@ export async function GET(request: NextRequest) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (supabase as any).from('campaigns')
         .select('asin,blog_post_id').eq('user_id', user.id).not('blog_post_id', 'is', null),
-      // Real earnings: latest periods of the selected type (desc so [0]=current,
-      // [1]=previous per ASIN for the trend).
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (supabase as any).from('storefront_earnings')
-        .select('asin,period_start,period_end,units,ordered_items,revenue_cents,commission_cents,clicks,product_title')
-        .eq('user_id', user.id).eq('period_type', period)
-        .order('period_start', { ascending: false }).limit(2000),
     ])
 
     const byAsin = new Map<string, { pieces: Piece[]; codes: Set<string>; blog: number; video: number }>()
@@ -106,19 +96,9 @@ export async function GET(request: NextRequest) {
       const g = ensure(asin); g.pieces.push({ type: 'youtube', title: v.title || 'Untitled video', url, code }); g.codes.add(code); g.video++
     }
 
-    // ── Earnings: current + previous period per ASIN ──────────────────────────
-    const earnByAsin = new Map<string, { current: EarnRow; previous?: EarnRow }>()
-    for (const e of (earnRes.data ?? []) as EarnRow[]) {
-      const cur = earnByAsin.get(e.asin)
-      if (!cur) earnByAsin.set(e.asin, { current: e })
-      else if (!cur.previous && e.period_start < cur.current.period_start) cur.previous = e
-    }
-
-    // Union of content ASINs + earnings ASINs (a product can have sales with no
-    // MVP content yet — that's a "make content" signal, so it belongs here).
-    const allAsins = new Set<string>([...byAsin.keys(), ...earnByAsin.keys()])
+    const allAsins = new Set<string>(byAsin.keys())
     if (allAsins.size === 0) {
-      return NextResponse.json({ connected: hasGenius, period, products: [], totals: { products: 0, clicks: 0, topClicks: 0, revenue: 0, commission: 0 }, lastSyncedAt: intRow?.storefront_synced_at ?? null })
+      return NextResponse.json({ connected: hasGenius, products: [], totals: { products: 0, clicks: 0, topClicks: 0 } })
     }
 
     // ── Clicks (Geniuslink), bounded fan-out ──────────────────────────────────
@@ -146,21 +126,13 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const dollars = (c: number | null | undefined) => c != null ? c / 100 : null
     const products = [...allAsins].map((asin) => {
       const g = byAsin.get(asin)
       const clicks = g ? [...g.codes].reduce((s, c) => s + (clicksByCode.get(c) ?? 0), 0) : 0
-      const e = earnByAsin.get(asin)
-      const cur = e?.current, prev = e?.previous
-      const revenue = dollars(cur?.revenue_cents ?? null)
-      const commission = dollars(cur?.commission_cents ?? null)
-      const prevRevenue = dollars(prev?.revenue_cents ?? null)
-      const units = cur?.units ?? cur?.ordered_items ?? null
-      const orders = cur?.ordered_items ?? cur?.units ?? null
       const meta = enrich.get(asin)
       return {
         asin,
-        title: meta?.title || g?.pieces[0]?.title || cur?.product_title || asin,
+        title: meta?.title || g?.pieces[0]?.title || asin,
         image: meta?.image ?? null,
         clicks,
         pieceCount: g?.pieces.length ?? 0,
@@ -170,63 +142,19 @@ export async function GET(request: NextRequest) {
         monthlySold: meta?.monthlySold ?? null,
         priceNow: meta?.priceNow ?? null,
         commissionPct: meta?.commissionPct ?? null,
-        // v2 real sales
-        units,
-        revenue,
-        commission,
-        revenueDeltaPct: revenue != null && prevRevenue != null && prevRevenue > 0 ? Math.round(((revenue - prevRevenue) / prevRevenue) * 100) : null,
-        conversionPct: orders != null && clicks > 0 ? Math.round((orders / clicks) * 1000) / 10 : null,
-        periodStart: cur?.period_start ?? null,
-        periodEnd: cur?.period_end ?? null,
         pieces: (g?.pieces ?? []).slice(0, 6).map((p) => ({ type: p.type, title: p.title, url: p.url })),
         amazonUrl: `https://www.amazon.com/dp/${asin}`,
       }
-    }).sort((a, b) => (b.revenue ?? -1) - (a.revenue ?? -1) || b.clicks - a.clicks)
-
-    // ── Content ROI: attribute each product's REAL earnings to the pieces that
-    // drove its clicks. est = product earnings × (piece clicks ÷ Amazon's clicks
-    // for that product) — grounded in real numbers on both sides, capped at the
-    // product's total, labeled "est" in the UI. Clicks themselves are real. This
-    // is the thing only MVP can do: money mapped onto YOUR content. ─────────────
-    const content: Array<Record<string, unknown>> = []
-    for (const [asin, g] of byAsin.entries()) {
-      const e = earnByAsin.get(asin)?.current
-      const productEarnings = dollars(e?.commission_cents ?? null)
-      const amazonClicks = e?.clicks ?? null
-      const meta = enrich.get(asin)
-      for (const p of g.pieces) {
-        const clicks = clicksByCode.get(p.code) ?? 0
-        const estEarnings = (productEarnings != null && amazonClicks && amazonClicks > 0)
-          ? Math.round(productEarnings * Math.min(1, clicks / amazonClicks) * 100) / 100
-          : null
-        content.push({
-          type: p.type, title: p.title, url: p.url, asin,
-          productTitle: meta?.title || e?.product_title || null,
-          productImage: meta?.image ?? null,
-          clicks,
-          estEarnings,
-          productEarnings,
-          // What share of the product's Amazon clicks came through THIS piece —
-          // an honest "how much of this did you drive" number.
-          clickSharePct: amazonClicks && amazonClicks > 0 ? Math.round(Math.min(1, clicks / amazonClicks) * 100) : null,
-        })
-      }
-    }
-    content.sort((a, b) => ((b.estEarnings as number ?? -1) - (a.estEarnings as number ?? -1)) || ((b.clicks as number) - (a.clicks as number)))
+    }).sort((a, b) => b.clicks - a.clicks)
 
     return NextResponse.json({
-      content: content.slice(0, 100),
       connected: hasGenius,
-      period,
       products,
       totals: {
         products: products.length,
         clicks: products.reduce((s, p) => s + p.clicks, 0),
         topClicks: Math.max(0, ...products.map((p) => p.clicks)),
-        revenue: products.reduce((s, p) => s + (p.revenue ?? 0), 0),
-        commission: products.reduce((s, p) => s + (p.commission ?? 0), 0),
       },
-      lastSyncedAt: intRow?.storefront_synced_at ?? null,
     })
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Unexpected error' }, { status: 500 })

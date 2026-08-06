@@ -4,8 +4,7 @@ import { useEffect, useState } from 'react'
 import PageHero from '@/components/layout/PageHero'
 import { AnalyticsGuide } from '@/components/guide/tool-guides'
 import Link from 'next/link'
-import { TrendingUp, MousePointerClick, Eye, ExternalLink, Loader2, AlertCircle, Link2, Youtube, Globe, DollarSign, ArrowUpRight, ArrowDownRight } from 'lucide-react'
-import ScoutTokenStrip from '@/components/dashboard/ScoutTokenStrip'
+import { TrendingUp, MousePointerClick, Eye, ExternalLink, Loader2, AlertCircle, Link2, Youtube, Globe } from 'lucide-react'
 
 interface AnalyticsPost {
   postId: string
@@ -42,33 +41,13 @@ interface StorefrontProduct {
   monthlySold: number | null
   priceNow: number | null
   commissionPct: number | null
-  units: number | null
-  revenue: number | null
-  commission: number | null
-  revenueDeltaPct: number | null
-  conversionPct: number | null
   pieces: Array<{ type: 'blog' | 'youtube'; title: string; url: string | null }>
   amazonUrl: string
 }
-interface ContentRoi {
-  type: 'blog' | 'youtube'
-  title: string
-  url: string | null
-  asin: string
-  productTitle: string | null
-  productImage: string | null
-  clicks: number
-  estEarnings: number | null
-  productEarnings: number | null
-  clickSharePct: number | null
-}
 interface StorefrontResponse {
   connected: boolean
-  period: 'weekly' | 'monthly'
-  content: ContentRoi[]
   products: StorefrontProduct[]
-  totals: { products: number; clicks: number; topClicks: number; revenue: number; commission: number }
-  lastSyncedAt: string | null
+  totals: { products: number; clicks: number; topClicks: number }
 }
 
 function StatCard({
@@ -96,19 +75,16 @@ function StatCard({
 export default function AnalyticsPage() {
   const [data, setData] = useState<AnalyticsResponse | null>(null)
   const [store, setStore] = useState<StorefrontResponse | null>(null)
-  const [period, setPeriod] = useState<'weekly' | 'monthly'>('monthly')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Storefront rollup — reloads on its own when the period toggle changes, so we
-  // don't re-run the (slower) Geniuslink click fan-out just to switch periods.
-  const loadStore = (p: 'weekly' | 'monthly') => {
-    fetch(`/api/analytics/storefront?period=${p}`)
+  // Per-product clicks + demand rollup.
+  useEffect(() => {
+    fetch('/api/analytics/storefront')
       .then((r) => r.ok ? r.json() : null)
       .then((j) => setStore(j as StorefrontResponse | null))
       .catch(() => setStore(null))
-  }
-  useEffect(() => { loadStore(period) }, [period])
+  }, [])
 
   async function load() {
     setLoading(true)
@@ -188,7 +164,6 @@ export default function AnalyticsPage() {
     return (
       <>
         <PageHero title="Storefront Stats" subtitle="Click data from your affiliate links." />
-        <ScoutTokenStrip />
         <div className="card p-8 max-w-md flex flex-col items-center text-center gap-3 mt-3">
           <MousePointerClick size={22} className="text-[#86868b]" />
           <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">No clicks tracked yet</p>
@@ -221,11 +196,6 @@ export default function AnalyticsPage() {
         }
       />
 
-      {/* SCOUT token — handy right here, since earnings sync (revenue/units)
-          rides on SCOUT being connected with this token. Self-gates: only shows
-          when SCOUT is installed + not yet dismissed. */}
-      <ScoutTokenStrip />
-
       {/* Top stats — three tiles (Geniuslink click data). */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         <StatCard
@@ -254,83 +224,24 @@ export default function AnalyticsPage() {
         />
       </div>
 
-      {/* Top-earning content — the MVP-only view: money mapped onto YOUR posts +
-          videos. Clicks are real; $ is an estimate (each product's real earnings
-          split by the click share each piece drove). This is the thing Amazon
-          can't do — it doesn't know your content exists. */}
-      {store?.content && store.content.length > 0 && (
-        <div className="card p-5 mb-6">
-          <div className="mb-4">
-            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Top-earning content</p>
-            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Your posts + videos ranked by what they earn. Clicks are real; the dollar figure is an estimate — each product&apos;s real earnings split by the share of its clicks your content drove.</p>
-          </div>
-          <div className="flex flex-col">
-            {store.content.slice(0, 20).map((c, i) => {
-              const Icon = c.type === 'youtube' ? Youtube : Globe
-              return (
-                <div key={i} className="flex items-center gap-3 py-3 border-b border-gray-100 dark:border-white/5 last:border-b-0">
-                  <span className="text-[11px] font-semibold text-[#86868b] w-5 tabular-nums">{i + 1}</span>
-                  <Icon size={15} className={c.type === 'youtube' ? 'text-[#ff3b30] flex-shrink-0' : 'text-[#7C3AED] flex-shrink-0'} />
-                  <div className="flex-1 min-w-0">
-                    <a href={c.url || '#'} target="_blank" rel="noopener noreferrer" className={`text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] truncate hover:text-[#7C3AED] block ${!c.url ? 'pointer-events-none' : ''}`}>{c.title}</a>
-                    <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] truncate">
-                      for {c.productTitle || c.asin}{c.clickSharePct != null && <> · drove {c.clickSharePct}% of its clicks</>}
-                    </p>
-                  </div>
-                  <div className="text-right w-14 flex-shrink-0">
-                    <span className="text-sm font-semibold tabular-nums text-[#1d1d1f] dark:text-[#f5f5f7]">{c.clicks.toLocaleString()}</span>
-                    <span className="block text-[10px] text-[#86868b]">clicks</span>
-                  </div>
-                  <div className="text-right w-20 flex-shrink-0">
-                    {c.estEarnings != null
-                      ? <><span className="text-sm font-semibold tabular-nums text-[#1c7a35]">~${c.estEarnings.toFixed(2)}</span><span className="block text-[10px] text-[#86868b]">est. earned</span></>
-                      : <span className="text-xs text-[#86868b]">—</span>}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-          <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-4 leading-relaxed">
-            &ldquo;~$&rdquo; is estimated: each product&apos;s real Amazon earnings split across the content that drove its clicks. Only MVP can show this — Amazon reports money by product, never by your video or post. Sales sync from SCOUT; clicks from Geniuslink.
-          </p>
-        </div>
-      )}
-
-      {/* Your products — per-ASIN rollup. Real clicks (Geniuslink) + real sales
-          (SCOUT → storefront_earnings) + Keepa demand. The "storefront" view. */}
+      {/* Your products — per-ASIN rollup: real clicks (Geniuslink) + Keepa
+          demand, mapped onto the content you've published for each product. */}
       {store?.products && store.products.length > 0 && (() => {
         const pMax = store.products[0]?.clicks || 1
-        const hasSales = store.products.some((p) => p.revenue != null || p.units != null)
-        const syncedAgo = store.lastSyncedAt ? new Date(store.lastSyncedAt).toLocaleDateString() : null
         return (
           <div className="card p-5 mb-6">
             <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
               <div>
                 <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Your products</p>
                 <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">
-                  {store.totals.products} product{store.totals.products === 1 ? '' : 's'}
-                  {hasSales && <> · ${store.totals.revenue.toLocaleString(undefined, { maximumFractionDigits: 0 })} sales · ${store.totals.commission.toLocaleString(undefined, { maximumFractionDigits: 0 })} earned this {period === 'weekly' ? 'week' : 'month'}</>}
-                  {syncedAgo && <> · synced {syncedAgo}</>}
+                  {store.totals.products} product{store.totals.products === 1 ? '' : 's'} with published content, ranked by clicks
                 </p>
-              </div>
-              {/* Weekly / Monthly toggle */}
-              <div className="flex rounded-lg border border-[var(--border-2)] overflow-hidden">
-                {(['weekly', 'monthly'] as const).map((p) => (
-                  <button key={p} onClick={() => setPeriod(p)}
-                    className={`px-3 py-1.5 text-xs font-medium transition-colors ${period === p ? 'bg-[#7C3AED] text-white' : 'text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]'}`}>
-                    {p === 'weekly' ? 'Weekly' : 'Monthly'}
-                  </button>
-                ))}
               </div>
             </div>
 
-            {/* Header row (sales columns only show once we have sales data) */}
             <div className="hidden sm:flex items-center gap-3 px-1 pb-2 text-[10px] font-semibold uppercase tracking-wide text-[#86868b] dark:text-[#8e8e93]">
               <span className="w-11 flex-shrink-0" />
               <span className="flex-1">Product</span>
-              {hasSales && <span className="w-20 text-right">Revenue</span>}
-              {hasSales && <span className="w-14 text-right">Units</span>}
-              {hasSales && <span className="w-20 text-right">Earned</span>}
               <span className="w-14 text-right">Clicks</span>
             </div>
 
@@ -351,27 +262,10 @@ export default function AnalyticsPage() {
                     <div className="flex items-center gap-2 mt-1 text-[10px] text-[#86868b] dark:text-[#8e8e93] flex-wrap">
                       {!p.hasContent && <span className="text-[#ff9500] font-semibold">No content yet</span>}
                       <span>{p.blogCount > 0 && `${p.blogCount} post${p.blogCount > 1 ? 's' : ''}`}{p.blogCount > 0 && p.videoCount > 0 && ' · '}{p.videoCount > 0 && `${p.videoCount} video${p.videoCount > 1 ? 's' : ''}`}</span>
-                      {p.conversionPct != null && <span>· {p.conversionPct}% conv</span>}
                       {p.monthlySold != null && <span>· {p.monthlySold.toLocaleString()}+ sold/mo</span>}
                       {p.commissionPct != null && <span className="text-[#1c7a35] font-semibold">· {p.commissionPct}% CC</span>}
                     </div>
                   </div>
-                  {hasSales && (
-                    <div className="w-20 text-right flex-shrink-0 hidden sm:block">
-                      {p.revenue != null ? (
-                        <>
-                          <span className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] tabular-nums">${p.revenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
-                          {p.revenueDeltaPct != null && (
-                            <span className={`flex items-center justify-end gap-0.5 text-[10px] ${p.revenueDeltaPct >= 0 ? 'text-[#1c7a35]' : 'text-[#b3261e]'}`}>
-                              {p.revenueDeltaPct >= 0 ? <ArrowUpRight size={10} /> : <ArrowDownRight size={10} />}{Math.abs(p.revenueDeltaPct)}%
-                            </span>
-                          )}
-                        </>
-                      ) : <span className="text-xs text-[#86868b]">—</span>}
-                    </div>
-                  )}
-                  {hasSales && <div className="w-14 text-right flex-shrink-0 hidden sm:block"><span className="text-sm tabular-nums text-[#1d1d1f] dark:text-[#f5f5f7]">{p.units != null ? p.units.toLocaleString() : '—'}</span></div>}
-                  {hasSales && <div className="w-20 text-right flex-shrink-0 hidden sm:block"><span className="text-sm font-semibold tabular-nums text-[#1c7a35]">{p.commission != null ? `$${p.commission.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—'}</span></div>}
                   <div className="w-14 text-right flex-shrink-0">
                     <span className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] tabular-nums">{p.clicks.toLocaleString()}</span>
                     <span className="block text-[10px] text-[#86868b] dark:text-[#8e8e93] sm:hidden">clicks</span>
@@ -381,10 +275,7 @@ export default function AnalyticsPage() {
             </div>
 
             <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-4 leading-relaxed">
-              Clicks are real (Geniuslink, last 30 days).{' '}
-              {hasSales
-                ? <>Revenue, units &amp; earnings are your real Amazon Influencer sales for the selected {period === 'weekly' ? 'week' : 'month'}, synced by the SCOUT extension.</>
-                : <><DollarSign size={11} className="inline -mt-0.5" /> Sales &amp; revenue fill in once the SCOUT extension syncs your Amazon earnings. &ldquo;Sold/mo&rdquo; is a Keepa demand estimate until then.</>}
+              Clicks are real (Geniuslink, last 30 days). &ldquo;Sold/mo&rdquo; is a Keepa demand estimate.
             </p>
           </div>
         )
