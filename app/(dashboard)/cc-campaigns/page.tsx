@@ -17,7 +17,7 @@ import {
   Loader2, ExternalLink, Search, ShieldCheck, ShieldAlert, ShieldQuestion,
   Users, Star, TrendingUp, Clock, FileText, CheckCircle2, Lock, Mail, Radar, Grid3x3, Handshake, ShoppingBag,
 } from 'lucide-react'
-import { requestCcSmartScan, requestFindCampaign, requestAcceptCampaign } from '@/lib/extension-frame'
+import { requestCcSmartScan, requestFindCampaign, requestAcceptCampaign, requestMyCcCampaigns } from '@/lib/extension-frame'
 import { campaignRules } from '@/lib/cc-smart-rules'
 import MessageBrandModal, { type MessageBrandCampaign } from '@/components/campaigns/MessageBrandModal'
 import SmartScanPanel from '@/components/campaigns/SmartScanPanel'
@@ -260,6 +260,7 @@ export default function CcCampaignsPage() {
   // "Joined only" — inverse of Hide joined: surface only accepted campaigns.
   // Mutually exclusive with the hide filters.
   const [joinedOnly, setJoinedOnly] = useState(false)
+  const [syncingJoined, setSyncingJoined] = useState(false)
   // CC access gate: the shared catalog stays locked until SCOUT confirms this
   // user's own Creator Connections grid renders (proof they have the invite).
   const [locked, setLocked] = useState(false)
@@ -373,6 +374,39 @@ export default function CcCampaignsPage() {
   // Your accepted/messaged/posted status, loaded once (refreshed after actions).
   useEffect(() => { loadStatus() }, [loadStatus])
 
+  // Pull EVERY campaign the creator has joined straight from Amazon (via SCOUT)
+  // and record them, so "Joined only" shows all of them — including ones joined
+  // directly on Amazon, not just accepted through MVP.
+  const syncJoined = useCallback(async () => {
+    setSyncingJoined(true)
+    const tId = 'cc-sync-joined'
+    toast.loading('Reading your accepted campaigns from Amazon…', { id: tId, duration: Infinity })
+    try {
+      const res = await requestMyCcCampaigns()
+      if (!res.ok) {
+        const msg = res.error === 'not-installed'
+          ? 'SCOUT extension not detected. Install/enable it and open Amazon, then try again.'
+          : res.reason === 'no-creator-id'
+            ? 'SCOUT needs to see your Creator Connections page once first — open it, then try again.'
+            : res.error === 'timeout' ? 'Amazon took too long. Try again.' : (res.reason || res.error || 'Couldn’t read your campaigns.')
+        toast.error(msg, { id: tId, duration: 8_000 })
+        return
+      }
+      if (!res.campaigns.length) { toast.success('No accepted campaigns found on Amazon yet.', { id: tId, duration: 5_000 }); return }
+      const r = await fetch('/api/campaigns/sync-joined', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ campaigns: res.campaigns }),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok || j?.error) { toast.error(j?.error || 'Sync failed.', { id: tId, duration: 8_000 }); return }
+      toast.success(`Synced ${j.synced ?? res.campaigns.length} joined campaign${(j.synced ?? res.campaigns.length) === 1 ? '' : 's'} from Amazon.`, { id: tId, duration: 6_000 })
+      await loadStatus()
+      void fetchPage(1, false)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Sync failed', { id: tId, duration: 8_000 })
+    } finally { setSyncingJoined(false) }
+  }, [loadStatus, fetchPage])
+
   return (
     <>
       <PageHero
@@ -446,6 +480,10 @@ export default function CcCampaignsPage() {
         </button>
         <button onClick={() => setHidePosted((v) => { const nv = !v; if (nv) setJoinedOnly(false); return nv })} title="Hide campaigns you've already made a post for" className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${hidePosted ? 'border-[#ff9500] text-[#ff9500] bg-[#ff9500]/10' : 'border-[var(--border-2)] text-[var(--text-3)]'}`}>
           Hide posted
+        </button>
+        <button onClick={syncJoined} disabled={syncingJoined} title="Read every campaign you've joined on Amazon (via SCOUT) so they all show under Joined only" className="px-3 py-2 rounded-lg border border-[var(--border-2)] text-xs font-medium text-[var(--text-3)] hover:text-[var(--text)] inline-flex items-center gap-1.5 disabled:opacity-60 transition-colors">
+          {syncingJoined ? <Loader2 size={13} className="animate-spin" /> : <Handshake size={13} />}
+          {syncingJoined ? 'Syncing…' : 'Sync joined from Amazon'}
         </button>
       </div>
 
