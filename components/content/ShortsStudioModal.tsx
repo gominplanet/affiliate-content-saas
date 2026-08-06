@@ -371,6 +371,25 @@ export function ShortsStudioModal({
                               <ExternalLink size={10} /> Watch moment
                             </a>
                           )}
+                          {/* "Published · where" — at a glance which channels this short
+                              went out on. Derived from the posted-at stamps already on
+                              the clip (non-null = posted there). */}
+                          {(() => {
+                            const chans: string[] = []
+                            if (clip.postedTiktok) chans.push('TikTok')
+                            if (clip.postedInstagram) chans.push('Instagram')
+                            if (clip.postedYoutube) chans.push('YouTube')
+                            if (!chans.length) return null
+                            return (
+                              <span
+                                className="text-[10px] font-semibold rounded-full px-2 py-0.5 inline-flex items-center gap-1"
+                                style={{ background: 'rgba(52,199,89,0.15)', color: '#1f8a3a', border: '1px solid rgba(52,199,89,0.4)' }}
+                                title={`This short is posted on ${chans.join(', ')}.`}
+                              >
+                                <Check size={10} /> Published · {chans.join(' · ')}
+                              </span>
+                            )
+                          })()}
                         </div>
                         <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mt-1.5">{clip.hook || 'Untitled clip'}</p>
                         {clip.caption && <p className="text-[12px] text-[#4b4b4f] dark:text-[#b0b0b5] mt-1">{clip.caption}</p>}
