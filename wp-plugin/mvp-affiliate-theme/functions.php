@@ -9,7 +9,20 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MVP_AFFILIATE_THEME_VERSION', '1.4.32');
+// Read the version straight from style.css's `Version:` header at runtime, so
+// this constant can NEVER drift from the header again. A hardcoded number here
+// had gone stale (constant said 1.4.32 while style.css said 1.4.33), which made
+// the update banner compare 1.4.32 < 1.4.33 forever — clicking "Update" pulled a
+// zip whose constant was still 1.4.32, so the banner came straight back. Same
+// fix the plugin got on 2026-06-09 (get_file_data auto-read). The literal
+// fallback is only used if the header can't be read for some reason.
+if (!defined('MVP_AFFILIATE_THEME_VERSION')) {
+    $mvp_theme_header = get_file_data(__DIR__ . '/style.css', ['Version' => 'Version']);
+    define(
+        'MVP_AFFILIATE_THEME_VERSION',
+        !empty($mvp_theme_header['Version']) ? $mvp_theme_header['Version'] : '1.4.34'
+    );
+}
 
 // ── Theme support ───────────────────────────────────────────────────────────
 add_action('after_setup_theme', function () {
