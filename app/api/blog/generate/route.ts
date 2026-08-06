@@ -2,6 +2,7 @@ import { NextResponse, after } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getAuthAndOwner } from '@/lib/agency-auth'
+import { maybeCreateBlogGeniuslink } from '@/lib/blog-share-url'
 import { createClaudeService } from '@/services/claude'
 import { createWordPressService } from '@/services/wordpress'
 import { getValidYouTubeToken, createYouTubeOAuthService } from '@/services/youtube'
@@ -1789,6 +1790,23 @@ async function handleGenerate(request: Request) {
       return NextResponse.json({ error: `Failed to save post record: ${insErr.message}` }, { status: 500 })
     }
     savedPost = data
+  }
+
+  // ── Geni.us-wrap the blog link for social (opt-in) ────────────────────────
+  // When the creator enabled wrap_blog_geniuslink, create + cache a short
+  // branded link to this post's blog URL; social routes then share the short
+  // link instead of the raw WordPress URL. Best-effort with a plain-URL
+  // fallback, so it never blocks or breaks the publish.
+  if (savedPost?.id) {
+    const wpAny = wp as Record<string, unknown> | null
+    await maybeCreateBlogGeniuslink(supabase, {
+      postId: savedPost.id as string,
+      blogUrl: wpPost.link,
+      title: generated.title,
+      enabled: wpAny?.wrap_blog_geniuslink === true,
+      apiKey: (wpAny?.geniuslink_api_key as string) || null,
+      apiSecret: (wpAny?.geniuslink_api_secret as string) || null,
+    })
   }
 
   // ── Persist Phase 2 / Track A SEO fields (best-effort) ────────────────────

@@ -11,6 +11,7 @@ import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } from '@/lib/social-cap'
 import { resolveBlogPostId } from '@/lib/resolve-post-id'
 import { recordSocialPermalink } from '@/lib/social-permalink'
+import { blogShareUrl } from '@/lib/blog-share-url'
 import { socialPermalink } from '@/lib/brand-recap'
 import { fetchOgImage, stripLinkPlaceholders } from '@/lib/og-image'
 import { AFFILIATE_DISCLAIMER_DEFAULT } from '@/lib/social-disclaimer'
@@ -54,7 +55,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: postRow } = await supabase
       .from('blog_posts')
-      .select('id,title,excerpt,content,wordpress_url,video_id,social_publish_counts,geniuslink_code')
+      .select('id,title,excerpt,content,wordpress_url,geniuslink_blog_url,video_id,social_publish_counts,geniuslink_code')
       .eq('id', postId)
       .eq('user_id', user.id)
       .single()
@@ -170,14 +171,15 @@ Return ONLY the post text, no extra commentary.`,
     const videoUrl = youtubeWatchUrl(ytVideoId)
     const disclosure = effectiveDisclosure(brand?.affiliate_disclaimer || AFFILIATE_DISCLAIMER_DEFAULT, affiliateLink, !!integration?.amazon_associates_tag)
     const cleaned = scrubBanned(stripLinkPlaceholders(rawText))
+    const shareUrl = blogShareUrl(post) || (post.wordpress_url as string)
     const composed = composeCaption({
       product: pref.product, content: pref.content, writeUp: cleaned,
-      blogUrl: post.wordpress_url, videoUrl, affiliateLink, disclosure, blogLabel: 'Read the full review',
+      blogUrl: shareUrl, videoUrl, affiliateLink, disclosure, blogLabel: 'Read the full review',
     })
     // LinkedIn's UGC API allows up to 3000 chars per post — defensive cap.
     const postText = capSocialText(composed, SOCIAL_LIMITS.linkedin)
     // The ARTICLE-card fallback (no image) carries one URL — the primary link.
-    const cardUrl = primaryCardUrl(pref, affiliateLink, post.wordpress_url, videoUrl) ?? post.wordpress_url
+    const cardUrl = primaryCardUrl(pref, affiliateLink, shareUrl, videoUrl) ?? shareUrl
 
     if (dryRun) {
       return NextResponse.json({ ok: true, dryRun: true, text: postText, finalText: postText })

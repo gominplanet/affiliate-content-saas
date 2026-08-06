@@ -375,6 +375,7 @@ export default function BrandPage() {
   // brand and how it monetizes" settings sit on one page.
   const [geniuslinkKey, setGeniuslinkKey] = useState('')
   const [geniuslinkSecret, setGeniuslinkSecret] = useState('')
+  const [wrapBlogGeniuslink, setWrapBlogGeniuslink] = useState(false)
   const [amazonAssociatesTag, setAmazonAssociatesTag] = useState('')
   // Google Search Console — read-only SEO connection, lives in this card now.
   const [gscConnected, setGscConnected] = useState(false)
@@ -525,7 +526,7 @@ export default function BrandPage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     supabase
       .from('integrations')
-      .select('geniuslink_api_key, geniuslink_api_secret, amazon_associates_tag, gsc_oauth_access_token, tier')
+      .select('geniuslink_api_key, geniuslink_api_secret, wrap_blog_geniuslink, amazon_associates_tag, gsc_oauth_access_token, tier')
       .eq('user_id', user.id)
       .maybeSingle()
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -533,6 +534,7 @@ export default function BrandPage() {
         if (intRow) {
           setGeniuslinkKey(intRow.geniuslink_api_key ?? '')
           setGeniuslinkSecret(intRow.geniuslink_api_secret ?? '')
+          setWrapBlogGeniuslink(intRow.wrap_blog_geniuslink === true)
           setAmazonAssociatesTag(intRow.amazon_associates_tag ?? '')
           setGscConnected(!!intRow.gsc_oauth_access_token)
           if (typeof intRow.tier === 'string') setUserTier(intRow.tier)
@@ -676,6 +678,7 @@ export default function BrandPage() {
             user_id: user.id,
             geniuslink_api_key: geniuslinkKey.trim() || null,
             geniuslink_api_secret: geniuslinkSecret.trim() || null,
+            wrap_blog_geniuslink: wrapBlogGeniuslink,
             amazon_associates_tag: amazonAssociatesTag.trim() || null,
           },
           { onConflict: 'user_id' },
@@ -1069,6 +1072,21 @@ export default function BrandPage() {
                   )}
                 </div>
               </div>
+
+              {/* Opt-in: wrap the BLOG post URL in a short geni.us link when
+                  sharing to social (branded + short, instead of the raw WP URL). */}
+              <label className="mt-3 flex items-start gap-2.5 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={wrapBlogGeniuslink}
+                  onChange={e => setWrapBlogGeniuslink(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 rounded accent-[#7C3AED]"
+                />
+                <span>
+                  <span className="block text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Use a short geni.us link when sharing posts to social</span>
+                  <span className="block text-[11px] text-[#86868b] dark:text-[#8e8e93]">Wraps each post&rsquo;s blog link in a branded geni.us short link on Facebook, LinkedIn, X, Threads, Bluesky and Telegram. Needs your Geniuslink key + secret above. Applies to posts generated after you turn it on.</span>
+                </span>
+              </label>
 
               {/* Live "does it actually work?" test — the real gate. Turns a
                   wrong key/secret into an immediate ✗ instead of a silent 401

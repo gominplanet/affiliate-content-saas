@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: postRow } = await supabase
       .from('blog_posts')
-      .select('id,title,excerpt,content,wordpress_url,social_publish_counts,geniuslink_code,youtube_videos(thumbnail_url,youtube_video_id)')
+      .select('id,title,excerpt,content,wordpress_url,geniuslink_blog_url,social_publish_counts,geniuslink_code,youtube_videos(thumbnail_url,youtube_video_id)')
       .eq('id', postId)
       .eq('user_id', user.id)
       .single()
@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
     const pref = linkPrefFor(parseLinkPrefs(integration?.social_link_modes), 'bluesky')
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const videoUrl = youtubeWatchUrl((post as any).youtube_videos?.youtube_video_id)
-    const cardUrl = primaryCardUrl(pref, affiliateLink, post.wordpress_url as string, videoUrl) ?? (post.wordpress_url as string)
+    const cardUrl = primaryCardUrl(pref, affiliateLink, ((post as any).geniuslink_blog_url || post.wordpress_url) as string, videoUrl) ?? (((post as any).geniuslink_blog_url || post.wordpress_url) as string)
     // Reserve room for the card URL + a compact #ad tag when the affiliate is on.
     const generationBudget = POST_CHAR_LIMIT - (pref.product ? 95 : 80)
 

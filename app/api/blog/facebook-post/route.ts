@@ -17,6 +17,7 @@ import { maybeDecrypt } from '@/lib/secrets'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
 import { resolvePostAffiliateLink } from '@/lib/ig-dm'
 import { parseLinkPrefs, linkPrefFor, composeCaption, primaryCardUrl, effectiveDisclosure, youtubeWatchUrl } from '@/lib/social-link-mode'
+import { blogShareUrl } from '@/lib/blog-share-url'
 
 export const maxDuration = 60
 
@@ -48,7 +49,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: postRow } = await supabase
       .from('blog_posts')
-      .select('id,title,excerpt,content,wordpress_url,video_id,social_publish_counts,geniuslink_code')
+      .select('id,title,excerpt,content,wordpress_url,geniuslink_blog_url,video_id,social_publish_counts,geniuslink_code')
       .eq('id', postId)
       .eq('user_id', user.id)
       .single()
@@ -177,12 +178,15 @@ Return ONLY the post text, nothing else.`,
     const disclosure = effectiveDisclosure(disclaimer, affiliateLink, !!integration?.amazon_associates_tag)
     // Scrub BEFORE composing, so the dry-run preview returns exactly what posts.
     reviewText = scrubBanned(reviewText)
+    // The link to SHARE: a geni.us short link when the user enabled wrapping
+    // (cached on the row), else the raw WordPress URL.
+    const shareUrl = blogShareUrl(post) || (post.wordpress_url as string)
     const caption = composeCaption({
       product: pref.product, content: pref.content, writeUp: reviewText,
-      blogUrl: post.wordpress_url, videoUrl, affiliateLink, disclosure, blogLabel: 'Read the full post',
+      blogUrl: shareUrl, videoUrl, affiliateLink, disclosure, blogLabel: 'Read the full post',
     })
     // The link-post fallback (no image) points at whichever link is primary.
-    const fallbackLink = primaryCardUrl(pref, affiliateLink, post.wordpress_url, videoUrl) ?? post.wordpress_url
+    const fallbackLink = primaryCardUrl(pref, affiliateLink, shareUrl, videoUrl) ?? shareUrl
 
     if (dryRun) {
       // Generate 3 SPECIFIC, niche hashtags that fit this exact product/topic
@@ -239,7 +243,7 @@ Topic: ${(post.content as string).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').
             pagePostId = r.id
           }
         } else {
-          const r = await fbService.postLink({ message: caption, link: post.wordpress_url })
+          const r = await fbService.postLink({ message: caption, link: shareUrl })
           pagePostId = r.id
         }
         results.push({ accountId: acct.id, page: acct.displayName, ok: true, id: pagePostId })
