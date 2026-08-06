@@ -15,20 +15,26 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { normalizeTier, type Tier } from '@/lib/tier'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { normalizeTier, billingWindow, type Tier } from '@/lib/tier'
 import { cloudinaryConfigured, renderVerticalShort, getLastShortError } from '@/services/cloudinary'
 import { ingestConfigured, clipSegment, renderShort, renderShortSegment, getLastIngestError } from '@/lib/youtube-ingest'
 import { buildCaptionChunks } from '@/lib/shorts-captions'
 import { recordUsage } from '@/lib/ai-usage'
 import { rowToShort } from '@/lib/shorts-row'
 import { storagePathFromPublicUrl } from '@/lib/storage-url'
-import { checkUsageCap, PRIMARY_FEATURE, SHORTS_MONTHLY_CAP } from '@/lib/usage-cap'
+import { SHORTS_MONTHLY_CAP } from '@/lib/usage-cap'
 import { SUBTITLE_STYLES, type SubtitleStyle, type CaptionChunk } from '@/lib/shorts-types'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
 
 export async function POST(request: Request) {
+  // The monthly cap is claimed atomically up front (a reservation row) and
+  // refunded here if the render doesn't finish — so a failed/aborted render
+  // never burns the user's quota. See the finally block.
+  let reservationId: string | null = null
+  let renderSucceeded = false
   try {
     const supabase = await createServerClient()
     const { data: { user } } = await supabase.auth.getUser()
@@ -47,21 +53,30 @@ export async function POST(request: Request) {
       }, { status: 403 })
     }
 
-    // Monthly cap on finished Shorts (admin = unlimited). Counts shorts_render
-    // rows this billing window; checked BEFORE we spend on the render. A re-render
-    // of an already-rendered clip still counts (it's a new render event).
+    // Monthly cap on finished Shorts (admin = unlimited), claimed ATOMICALLY so
+    // concurrent renders can't slip past it. The RPC locks per-user, counts, and
+    // (if under cap) inserts a zero-cost reservation row it returns; we refund it
+    // in the finally if the render fails. Real render cost is logged separately
+    // as 'shorts_render_cost' so it never double-counts the cap.
     const capLimit = tier === 'admin' ? null : SHORTS_MONTHLY_CAP
-    const capCheck = await checkUsageCap(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      supabase, user.id, PRIMARY_FEATURE.short, capLimit,
-      (intRow?.subscription_period_start as string | null) ?? null,
-      (intRow?.subscription_period_end as string | null) ?? null,
-    )
-    if (capCheck?.exceeded) {
+    const { startISO, resetLabel } = billingWindow({
+      periodStart: (intRow?.subscription_period_start as string | null) ?? null,
+      periodEnd: (intRow?.subscription_period_end as string | null) ?? null,
+    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: claimed, error: claimErr } = await (supabase as any)
+      .rpc('claim_shorts_render', { p_cap: capLimit, p_since: startISO, p_tier: tier })
+    if (claimErr) {
+      // A telemetry/claim hiccup must never hard-block a paid render — fall
+      // through uncapped (matches the old fail-open) and log it.
+      console.error('[shorts/render] claim', claimErr.message)
+    } else if (claimed === null) {
       return NextResponse.json({
-        error: `You've rendered all ${capLimit} Shorts for this billing period. Resets ${capCheck.resetLabel}.`,
+        error: `You've rendered all ${capLimit} Shorts for this billing period. Resets ${resetLabel}.`,
         limitReached: true, cap: 'shorts_studio', currentTier: tier,
       }, { status: 429 })
+    } else {
+      reservationId = claimed as string
     }
     // Need at least one render engine: the FFmpeg service (primary, animated
     // captions) or Cloudinary (fallback, static captions).
@@ -191,11 +206,23 @@ export async function POST(request: Request) {
       .eq('id', shortId).eq('user_id', user.id)
       .select('*').maybeSingle()
 
-    recordUsage({ userId: user.id, tier, feature: 'shorts_render', model: engine, images: 1 })
+    // Real render cost — separate feature so it never inflates the cap counter.
+    recordUsage({ userId: user.id, tier, feature: 'shorts_render_cost', model: engine, images: 1 })
+    // If the atomic claim was unavailable (RPC hiccup), count this render against
+    // the cap the old (non-atomic) way so the quota still advances.
+    if (!reservationId) recordUsage({ userId: user.id, tier, feature: 'shorts_render', model: 'reserved', images: 0 })
+    renderSucceeded = true
     return NextResponse.json({ ok: true, short: updated ? rowToShort(updated) : null })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error('[shorts/render]', msg)
     return NextResponse.json({ error: msg }, { status: 500 })
+  } finally {
+    // Refund the reserved cap slot when the render didn't finish (both engines
+    // failed, a needs-upload bail-out, or an exception) — a failed render must
+    // never burn the user's monthly quota.
+    if (reservationId && !renderSucceeded) {
+      try { await createAdminClient().from('ai_usage').delete().eq('id', reservationId) } catch { /* best-effort refund */ }
+    }
   }
 }

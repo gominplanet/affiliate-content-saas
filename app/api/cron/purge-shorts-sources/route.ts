@@ -90,8 +90,8 @@ export async function GET(request: Request) {
       if (folder.id) continue
       const { data: files } = await admin.storage.from(BUCKET).list(folder.name, { limit: 1000 })
       const stale = (files || []).filter((f) => {
-        if (!f.id || !f.name) return false                 // skip sub-folders
-        if (!/^(burner|clip)-/.test(f.name)) return false  // only transient inputs
+        if (!f.id || !f.name) return false                        // skip sub-folders
+        if (!/^(burner|clip|source)-/.test(f.name)) return false  // transient inputs + orphaned clip sources (never `short-` deliverables)
         const created = f.created_at ? new Date(f.created_at).getTime() : 0
         if (!created || created >= cutoffMs) return false  // still within window
         return !excluded.has(`${folder.name}/${f.name}`)
