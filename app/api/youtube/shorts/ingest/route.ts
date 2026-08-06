@@ -19,6 +19,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier, type Tier } from '@/lib/tier'
 import { ingestConfigured, ingestYouTubeVideo } from '@/lib/youtube-ingest'
 import { recordUsage } from '@/lib/ai-usage'
+import { spendGate } from '@/lib/ai-spend'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -45,6 +46,10 @@ export async function POST(request: Request) {
         ingestDisabled: true,
       }, { status: 501 })
     }
+    // Full-video proxy download is the most bandwidth-expensive op in the
+    // pipeline — respect the monthly AI-spend ceiling before pulling.
+    const gate = await spendGate(user.id, tier)
+    if (gate) return gate
 
     const { videoId, target } = await request.json().catch(() => ({})) as { videoId?: string; target?: string }
     const id = (videoId || '').trim()
@@ -57,9 +62,15 @@ export async function POST(request: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sb = supabase as any
     const { data: video } = await sb.from('youtube_videos')
-      .select('id,youtube_video_id,source_video_url,instagram_video_url')
+      .select('id,youtube_video_id,source_video_url,instagram_video_url,duration_seconds')
       .eq('id', id).eq('user_id', user.id).maybeSingle()
     if (!video) return NextResponse.json({ error: 'Video not found.' }, { status: 404 })
+
+    // Don't fetch a long-form SOURCE we'd never be allowed to transcribe — the
+    // Clip Factory 10-minute cap. ('short' target is a finished clip, exempt.)
+    if (!asShort && (Number(video.duration_seconds) || 0) > 600) {
+      return NextResponse.json({ error: 'Clip Factory works on videos up to 10 minutes long. Pick a shorter video, or trim this one first.' }, { status: 400 })
+    }
 
     // Already have the file — nothing to fetch.
     const existing = (video[column] as string | null) || ''

@@ -21,6 +21,24 @@ import { createBrowserClient } from '@/lib/supabase/client'
 
 const MAX_BYTES = 300 * 1024 * 1024 // 300 MB — matches the IG-burner cap
 
+/** Read a video file's duration (seconds) in the browser, without uploading.
+ *  Resolves 0 if the metadata can't be read. */
+function readVideoDuration(file: File): Promise<number> {
+  return new Promise((resolve) => {
+    try {
+      const url = URL.createObjectURL(file)
+      const v = document.createElement('video')
+      v.preload = 'metadata'
+      const done = (secs: number) => { URL.revokeObjectURL(url); resolve(Number.isFinite(secs) && secs > 0 ? secs : 0) }
+      v.onloadedmetadata = () => done(v.duration)
+      v.onerror = () => done(0)
+      // Safety: don't hang the upload if metadata never fires.
+      setTimeout(() => done(v.duration), 5000)
+      v.src = url
+    } catch { resolve(0) }
+  })
+}
+
 export function ShortVideoUpload({
   videoId,
   onUploaded,
@@ -65,6 +83,20 @@ export function ShortVideoUpload({
       setError(`That file is ${(file.size / 1024 / 1024).toFixed(1)} MB — keep it under 300 MB.`)
       return
     }
+    // Clip Factory caps SOURCE videos at 10 minutes (transcription cost scales
+    // with duration). Only applies when this upload is the clip source; the IG/
+    // TikTok publish path uploads an already-short finished clip and must not
+    // touch the source-duration column. Recording the duration lets the server
+    // enforce the same cap on the uploaded source.
+    const isSource = targetColumn === 'source_video_url'
+    let durationSec = 0
+    if (isSource) {
+      try { durationSec = await readVideoDuration(file) } catch { /* unreadable → 0 */ }
+      if (durationSec > 600) {
+        setError(`That video is ${Math.round(durationSec / 60)} minutes. Clip Factory works on videos up to 10 minutes — trim it first.`)
+        return
+      }
+    }
     setUploading(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
@@ -92,7 +124,7 @@ export function ShortVideoUpload({
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { error: dbErr } = await (supabase as any)
         .from('youtube_videos')
-        .update({ [targetColumn]: publicUrl, ...(extraFields ?? {}) })
+        .update({ [targetColumn]: publicUrl, ...(isSource && durationSec > 0 ? { duration_seconds: Math.round(durationSec) } : {}), ...(extraFields ?? {}) })
         .eq('id', videoId)
         .eq('user_id', user.id)
       if (dbErr) throw new Error(`Couldn't link the video: ${dbErr.message}`)

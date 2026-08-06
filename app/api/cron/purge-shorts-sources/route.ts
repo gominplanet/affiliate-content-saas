@@ -47,7 +47,11 @@ export async function GET(request: Request) {
   let storageDeleted = 0, cloudinaryDeleted = 0, cleared = 0
   for (const r of (rows || [])) {
     const path = storagePathFromPublicUrl(r.source_video_url as string, BUCKET)
-    if (path) {
+    // SECURITY: source_video_url is user-writable (RLS), and this runs as the
+    // service role (RLS-bypassing). Only ever delete a file that lives under
+    // this row's OWN user-id folder, so a user can't point their row at another
+    // user's storage path and have the cron delete it for them.
+    if (path && path.split('/')[0] === r.user_id) {
       const { error: rmErr } = await admin.storage.from(BUCKET).remove([path])
       if (!rmErr) storageDeleted++
     }

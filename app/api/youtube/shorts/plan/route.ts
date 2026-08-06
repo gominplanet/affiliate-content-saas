@@ -205,6 +205,12 @@ export async function POST(request: Request) {
     //    SRT is only phrase-level, so its lines drift). Falls through to the
     //    caption sources below if transcription isn't available or fails.
     if (cues.length === 0 && /^https:\/\//i.test(sourceUrl) && transcriptionConfigured()) {
+      // Fail closed: never Whisper an uploaded source whose length we can't
+      // verify against the 10-minute cap. (Synced videos carry a real duration;
+      // uploads record it client-side. Unknown here = don't pay for it.)
+      if ((Number(video.duration_seconds) || 0) <= 0) {
+        return NextResponse.json({ error: "We couldn't read this video's length. Re-upload it so we can confirm it's under 10 minutes." }, { status: 400 })
+      }
       cues = await transcribeToCues(sourceUrl)
       if (cues.length > 0) {
         cuesFromWhisper = true

@@ -84,6 +84,16 @@ export const PRICING: Record<string, Pricing> = {
   'gemini-2.5-pro':         { in: 1.25,  out: 10   },
   'gemini-1.5-flash':       { in: 0.075, out: 0.3  },
   'gemini-1.5-pro':         { in: 1.25,  out: 5    },
+
+  // ── Clip Factory (shorts) — flat per-op approximations so the spend gate
+  //    reflects real cost, not the $0.04 image fallback. Each is logged once
+  //    per run (images:1). fal-Whisper on a ≤10-min source ≈ $0.06-0.10;
+  //    youtube-ingest pulls a full video through the metered proxy; the render
+  //    engines are self-hosted ffmpeg (near-free) or a Cloudinary transform.
+  'fal-whisper':    { in: 0, out: 0, imageCost: 0.10 },
+  'youtube-ingest': { in: 0, out: 0, imageCost: 0.06 },
+  'ffmpeg-ass':     { in: 0, out: 0, imageCost: 0.01 },
+  'cloudinary':     { in: 0, out: 0, imageCost: 0.02 },
 }
 export const WEB_SEARCH_COST = 0.01 // $ per search (Anthropic server tool)
 /** Fallback per-image cost when an image model isn't in PRICING. */
