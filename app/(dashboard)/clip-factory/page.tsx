@@ -74,7 +74,7 @@ const DURATIONS = [
 ] as const
 
 type Stage = 'create' | 'enhance' | 'publish'
-interface WorkingClip { url: string; title: string; hashtags?: string[] }
+interface WorkingClip { url: string; title: string; hashtags?: string[]; caption?: string }
 interface VideoLite { id: string; youtubeVideoId: string | null; title: string; thumbnailUrl: string | null; durationSeconds: number | null }
 interface ShortItem { id: string; title: string; thumbnailUrl: string | null; hasVideo: boolean; youtubeVideoId: string | null; posted: boolean; productUrl: string | null }
 
@@ -176,7 +176,17 @@ export default function ClipFactoryPage() {
 
   // The clip that flows into Publish: the burned one if Enhance ran, else the raw clip.
   const publishUrl = burnedUrl || clip?.url || ''
-  const publishCaption = composedCaption || ''
+  // A caption is ALWAYS available for a scripted clip: the planner wrote a hook
+  // + hashtags per clip. Use that as the floor so Publish never opens with an
+  // empty caption when the burn returns nothing or Enhance is skipped. (Only a
+  // raw upload with no plan/title/hashtags can still be empty — that's the case
+  // the Enhance panel nudges toward adding a product link.)
+  const fallbackCaption = useMemo(() => {
+    if (!clip) return ''
+    const tags = (clip.hashtags || []).map((h) => (h.startsWith('#') ? h : `#${h}`)).join(' ')
+    return [clip.caption || clip.title || '', tags].filter(Boolean).join('\n\n').trim()
+  }, [clip])
+  const publishCaption = composedCaption || fallbackCaption
 
   // Load gate + long videos on mount.
   useEffect(() => {
@@ -387,14 +397,17 @@ export default function ClipFactoryPage() {
         throw new Error(data.error || 'Burn failed')
       }
       setBurnedUrl(data.url as string)
-      setComposedCaption((data.caption as string) || '')
+      // Never let a caption-less burn wipe the clip's own AI caption.
+      setComposedCaption(((data.caption as string) || '').trim() || fallbackCaption)
       setStage('publish')
       toast.success('Overlay burned')
     } catch (e) { toast.error(errText(e)) }
     finally { setBurning(false) }
-  }, [clip, overlayType, stickerId, customStickerUrl, caption, style, position, product, productName, burnDuration])
+  }, [clip, overlayType, stickerId, customStickerUrl, caption, style, position, product, productName, burnDuration, fallbackCaption])
 
-  const skipEnhance = useCallback(() => { setBurnedUrl(null); setComposedCaption(''); setStage('publish') }, [])
+  // Skip Enhance: publish the raw clip, but keep the clip's AI caption (don't
+  // wipe it to empty — that's what left Publish caption-less).
+  const skipEnhance = useCallback(() => { setBurnedUrl(null); setComposedCaption(fallbackCaption); setStage('publish') }, [fallbackCaption])
 
   const postYouTube = useCallback(async () => {
     if (!publishUrl) return
@@ -539,9 +552,10 @@ export default function ClipFactoryPage() {
                 videoTitle={selectedVideo.title}
                 onUseClip={(c) => {
                   setClipSource('created')
-                  setClip({ url: c.url, title: c.title, hashtags: c.hashtags })
+                  setClip({ url: c.url, title: c.title, hashtags: c.hashtags, caption: c.caption })
                   void loadUsage()
-                  // Seed a caption in case Enhance is skipped; burn overwrites it.
+                  // Seed the caption from the plan (retained on the clip too, so
+                  // it survives an empty burn / Skip Enhance via fallbackCaption).
                   setComposedCaption([c.caption, (c.hashtags || []).join(' ')].filter(Boolean).join('\n\n').trim())
                   setSelectedVideo(null)
                   setStage('enhance')
