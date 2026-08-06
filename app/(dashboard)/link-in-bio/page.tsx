@@ -174,10 +174,21 @@ export default function LinkInBioPage() {
   }
 
   // Post an IG Story for each "current deal" (ticked product with an ASIN).
+  // Two steps: "Create IG Stories" opens a review modal (which deals go out),
+  // then the user confirms — never a blind fire-and-post.
   const [creatingStories, setCreatingStories] = useState(false)
+  const [storiesOpen, setStoriesOpen] = useState(false)
+  const [storyPick, setStoryPick] = useState<Set<string>>(new Set())
+  const storyTargets = items.filter((it) => it.kind !== 'link' && it.in_story && it.asin)
+  const openStories = () => {
+    if (!storyTargets.length) { toast.error('Tick the imported deals that are in your story first.'); return }
+    setStoryPick(new Set(storyTargets.map((t) => t.id))) // default: all selected
+    setStoriesOpen(true)
+  }
   const createStories = async () => {
-    const targets = items.filter((it) => it.kind !== 'link' && it.in_story && it.asin)
-    if (!targets.length) { toast.error('Tick the imported deals that are in your story first.'); return }
+    const targets = storyTargets.filter((it) => storyPick.has(it.id))
+    if (!targets.length) { toast.error('Pick at least one deal to post.'); return }
+    setStoriesOpen(false)
     setCreatingStories(true)
     let ok = 0, fail = 0
     let firstError = ''
@@ -312,6 +323,50 @@ export default function LinkInBioPage() {
 
       {showGuide && <ShopPageGuide onClose={closeGuide} />}
 
+      {/* IG Stories review modal — pick which deals go out before posting,
+          instead of firing them all blindly. */}
+      {storiesOpen && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-6" role="dialog" aria-modal="true" aria-label="Create IG Stories">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setStoriesOpen(false)} />
+          <div className="relative w-full sm:max-w-md max-h-full sm:max-h-[85vh] flex flex-col rounded-t-2xl sm:rounded-2xl border bg-white dark:bg-[#16161a] shadow-xl overflow-hidden">
+            <div className="flex items-center justify-between gap-3 px-5 py-4 border-b shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-orange-100 text-orange-600"><Send size={18} /></div>
+                <div>
+                  <div className="text-base font-bold leading-tight">Post to IG Stories</div>
+                  <div className="text-xs text-muted-foreground">Pick which deals go out. Each posts as a Story with a “link in bio” CTA back to your page.</div>
+                </div>
+              </div>
+              <button onClick={() => setStoriesOpen(false)} className="shrink-0 inline-flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground" title="Close"><CloseIcon size={18} /></button>
+            </div>
+            <div className="overflow-y-auto px-3 py-2 divide-y">
+              {storyTargets.map((t) => {
+                const on = storyPick.has(t.id)
+                return (
+                  <label key={t.id} className="flex items-center gap-3 px-2 py-2.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      onChange={() => setStoryPick((prev) => { const n = new Set(prev); if (on) n.delete(t.id); else n.add(t.id); return n })}
+                      className="h-4 w-4 rounded accent-orange-500 shrink-0"
+                    />
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    {t.image_url ? <img src={t.image_url} alt="" className="h-10 w-10 rounded-md object-contain bg-white border shrink-0" /> : <div className="h-10 w-10 rounded-md bg-muted shrink-0" />}
+                    <span className="text-sm leading-snug line-clamp-2">{t.title}</span>
+                  </label>
+                )
+              })}
+            </div>
+            <div className="flex items-center justify-between gap-3 px-5 py-3.5 border-t shrink-0">
+              <button onClick={() => setStoriesOpen(false)} className="text-sm font-medium text-muted-foreground hover:text-foreground">Cancel</button>
+              <Button size="sm" onClick={createStories} disabled={storyPick.size === 0}>
+                <Send className="h-4 w-4 mr-1.5" /> Post {storyPick.size} stor{storyPick.size === 1 ? 'y' : 'ies'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {!page ? (
         /* Claim a handle */
         <div className="rounded-2xl border bg-card p-6">
@@ -440,7 +495,7 @@ export default function LinkInBioPage() {
                   <div className="text-xs font-semibold text-orange-600 dark:text-orange-400 inline-flex items-center gap-1"><Zap size={13} /> Current deals · live in your story</div>
                   <div className="flex items-center gap-2">
                     <button onClick={clearStory} className="text-xs font-medium text-muted-foreground hover:text-foreground underline">Clear all</button>
-                    <Button size="sm" onClick={createStories} disabled={creatingStories}>
+                    <Button size="sm" onClick={openStories} disabled={creatingStories}>
                       {creatingStories ? <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> Posting…</> : <><Send className="h-4 w-4 mr-1.5" /> Create IG Stories</>}
                     </Button>
                   </div>
