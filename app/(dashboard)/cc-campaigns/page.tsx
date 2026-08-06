@@ -426,7 +426,22 @@ export default function CcCampaignsPage() {
       })
       const j = await r.json().catch(() => ({}))
       if (!r.ok || j?.error) { if (!silent) toast.error(j?.error || 'Sync failed.', { id: tId, duration: 8_000 }); return }
-      if (!silent) toast.success(`Synced ${j.synced ?? res.campaigns.length} joined campaign${(j.synced ?? res.campaigns.length) === 1 ? '' : 's'} from Amazon.`, { id: tId, duration: 6_000 })
+      // Always log the SCOUT diagnostic (Amazon's reported total, pages fetched)
+      // so a short count is inspectable even on a "successful" sync.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const diag = (res as any).diag
+      if (diag) { try { console.log('[SCOUT] joined-sync diagnostic:', diag) } catch { /* no-op */ } }
+      if (!silent) {
+        const n = j.synced ?? res.campaigns.length
+        const total = typeof diag?.total === 'number' ? diag.total : null
+        const short = total != null && n < total
+        toast.success(
+          short
+            ? `Synced ${n} of ${total} joined campaigns. If that's short, sync again — Amazon paginates large lists.`
+            : `Synced ${n} joined campaign${n === 1 ? '' : 's'} from Amazon.`,
+          { id: tId, duration: short ? 9_000 : 6_000 },
+        )
+      }
       await loadStatus()
       void fetchPage(1, false)
     } catch (e) {
