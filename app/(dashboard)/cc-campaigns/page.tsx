@@ -377,13 +377,17 @@ export default function CcCampaignsPage() {
   // Pull EVERY campaign the creator has joined straight from Amazon (via SCOUT)
   // and record them, so "Joined only" shows all of them — including ones joined
   // directly on Amazon, not just accepted through MVP.
-  const syncJoined = useCallback(async () => {
+  const syncJoined = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent === true
     setSyncingJoined(true)
     const tId = 'cc-sync-joined'
-    toast.loading('Reading your accepted campaigns from Amazon…', { id: tId, duration: Infinity })
+    if (!silent) toast.loading('Reading your accepted campaigns from Amazon…', { id: tId, duration: Infinity })
     try {
       const res = await requestMyCcCampaigns()
       if (!res.ok) {
+        // Auto-sync stays silent on failure (no SCOUT, not logged in, etc.) —
+        // it's a background nicety, not something the user asked for right now.
+        if (silent) return
         const msg = res.error === 'not-installed'
           ? 'SCOUT extension not detected. Install/enable it and open Amazon, then try again.'
           : res.reason === 'no-creator-id'
@@ -392,20 +396,33 @@ export default function CcCampaignsPage() {
         toast.error(msg, { id: tId, duration: 8_000 })
         return
       }
-      if (!res.campaigns.length) { toast.success('No accepted campaigns found on Amazon yet.', { id: tId, duration: 5_000 }); return }
+      // Mark a successful reach so the auto-sync throttle can back off.
+      try { localStorage.setItem('cc-joined-autosync', String(Date.now())) } catch { /* no-op */ }
+      if (!res.campaigns.length) { if (!silent) toast.success('No accepted campaigns found on Amazon yet.', { id: tId, duration: 5_000 }); return }
       const r = await fetch('/api/campaigns/sync-joined', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ campaigns: res.campaigns }),
       })
       const j = await r.json().catch(() => ({}))
-      if (!r.ok || j?.error) { toast.error(j?.error || 'Sync failed.', { id: tId, duration: 8_000 }); return }
-      toast.success(`Synced ${j.synced ?? res.campaigns.length} joined campaign${(j.synced ?? res.campaigns.length) === 1 ? '' : 's'} from Amazon.`, { id: tId, duration: 6_000 })
+      if (!r.ok || j?.error) { if (!silent) toast.error(j?.error || 'Sync failed.', { id: tId, duration: 8_000 }); return }
+      if (!silent) toast.success(`Synced ${j.synced ?? res.campaigns.length} joined campaign${(j.synced ?? res.campaigns.length) === 1 ? '' : 's'} from Amazon.`, { id: tId, duration: 6_000 })
       await loadStatus()
       void fetchPage(1, false)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Sync failed', { id: tId, duration: 8_000 })
+      if (!silent) toast.error(e instanceof Error ? e.message : 'Sync failed', { id: tId, duration: 8_000 })
     } finally { setSyncingJoined(false) }
   }, [loadStatus, fetchPage])
+
+  // Auto-sync joined campaigns on load — but throttled to ~every 3h per browser
+  // so we don't pop a hidden Amazon tab on every single visit. Silent: if SCOUT
+  // isn't there or the user isn't logged into Amazon, it just no-ops.
+  useEffect(() => {
+    let last = 0
+    try { last = Number(localStorage.getItem('cc-joined-autosync') || 0) } catch { /* no-op */ }
+    if (Date.now() - last < 3 * 3600_000) return
+    const t = setTimeout(() => { void syncJoined({ silent: true }) }, 1500)
+    return () => clearTimeout(t)
+  }, [syncJoined])
 
   return (
     <>
@@ -481,7 +498,7 @@ export default function CcCampaignsPage() {
         <button onClick={() => setHidePosted((v) => { const nv = !v; if (nv) setJoinedOnly(false); return nv })} title="Hide campaigns you've already made a post for" className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${hidePosted ? 'border-[#ff9500] text-[#ff9500] bg-[#ff9500]/10' : 'border-[var(--border-2)] text-[var(--text-3)]'}`}>
           Hide posted
         </button>
-        <button onClick={syncJoined} disabled={syncingJoined} title="Read every campaign you've joined on Amazon (via SCOUT) so they all show under Joined only" className="px-3 py-2 rounded-lg border border-[var(--border-2)] text-xs font-medium text-[var(--text-3)] hover:text-[var(--text)] inline-flex items-center gap-1.5 disabled:opacity-60 transition-colors">
+        <button onClick={() => syncJoined()} disabled={syncingJoined} title="Read every campaign you've joined on Amazon (via SCOUT) so they all show under Joined only" className="px-3 py-2 rounded-lg border border-[var(--border-2)] text-xs font-medium text-[var(--text-3)] hover:text-[var(--text)] inline-flex items-center gap-1.5 disabled:opacity-60 transition-colors">
           {syncingJoined ? <Loader2 size={13} className="animate-spin" /> : <Handshake size={13} />}
           {syncingJoined ? 'Syncing…' : 'Sync joined from Amazon'}
         </button>
