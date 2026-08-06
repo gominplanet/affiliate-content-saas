@@ -21,7 +21,7 @@ import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import {
-  Rocket, Scissors, Flame, Send, FlaskConical, Loader2, Search, Youtube, Link2,
+  Rocket, Scissors, Flame, Send, Loader2, Search, Youtube, Link2,
   Sparkles, UploadCloud, Video, Check, Download, Instagram, Music2, ArrowRight, ArrowLeft,
   Trash2, Wand2, Package, ExternalLink, ImageIcon,
 } from 'lucide-react'
@@ -470,9 +470,6 @@ export default function ClipFactoryPage() {
         <Rocket size={20} style={{ color: PURPLE }} />
         <h1 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Clip Factory</h1>
         <ClipFactoryGuide />
-        <span className="inline-flex items-center gap-1 text-[10px] font-semibold rounded-full px-2 py-0.5 text-white bg-[#DC2626]">
-          <FlaskConical size={10} /> Labs
-        </span>
         {usage && usage.limit !== null && (
           <span
             className="inline-flex items-center gap-1 text-[11px] font-semibold rounded-full px-2.5 py-0.5 border"
@@ -487,7 +484,7 @@ export default function ClipFactoryPage() {
       </div>
       <p className="text-[13px] text-[#4b4b4f] dark:text-[#b0b0b5] max-w-2xl mb-5">
         Make a vertical short from a long video, add a shoppable CTA and product link, then publish to Instagram,
-        TikTok and YouTube. Shorts Studio and Shop Burner, one flow. <span className="italic">Experimental; still being tested.</span>
+        TikTok and YouTube. Shorts Studio and Shop Burner, one flow.
       </p>
 
       {/* Stepper */}

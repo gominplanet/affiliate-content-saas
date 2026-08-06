@@ -442,6 +442,10 @@ export default function DashboardShellV2({
         // Jumps straight to the "Published Posts & Social Push" tab — publish or
         // schedule any existing post to every connected channel.
         { href: '/content?tab=posts', icon: <Send size={15} />, label: 'Social Push' },
+        // Clip Factory — turn one long video into vertical Reels/TikToks/Shorts.
+        // Graduated from Labs 2026-08; Pro-only (page + APIs already Pro-gated,
+        // capped at 50 finished Shorts/month, source videos capped at 10 min).
+        { href: '/clip-factory', icon: <Rocket size={15} />, label: 'Clip Factory', gate: isPro },
         // Deal Radar moved to the RESEARCH section (2026-07-30) — it's a
         // product-discovery tool, so it lives with the other research finders.
         // Link in Bio — a shoppable affiliate "Shop Grid" page at /s/<handle>,
@@ -555,15 +559,8 @@ export default function DashboardShellV2({
         // clicks + Keepa demand today; real sales/revenue via the SCOUT reader.
         { href: '/analytics', icon: <BarChart3 size={15} />, label: 'Storefront Stats', gate: isPro },
         { href: '/instagram-dm', icon: <MessageCircle size={15} />, label: 'Instagram Auto-DM', gate: isPro },
-        // Clip Factory — the single video tool: Shorts Studio (create) + Shop
-        // Burner (enhance + publish) merged into one Create → Enhance → Publish
-        // flow. The standalone Shorts Studio nav entry was retired 2026-07-27
-        // (Clip Factory fully subsumes it — same create engine, plus enhance +
-        // publish); the /shorts-studio route stays live but unlinked. Admin-only
-        // while it's tested; graduates by flipping isAdmin→isPro to open it to
-        // all Pro users (the APIs + page are already Pro-gated, capped at 50
-        // finished Shorts/month).
-        { href: '/clip-factory', icon: <Rocket size={15} />, label: 'Clip Factory', gate: isAdmin },
+        // Clip Factory graduated out of Labs 2026-08 → now lives under Create
+        // (between Social Push and Link in Bio), open to all Pro tiers.
         // Deal Radar graduated out of Labs 2026-07-27 → now lives under
         // Create > Social Push, open to all paid tiers.
       ],
