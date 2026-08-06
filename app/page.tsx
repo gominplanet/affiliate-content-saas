@@ -107,6 +107,7 @@ export default function LandingPreview() {
       <Nav />
       <Hero />
       <PlatformBar />
+      <ComparisonSection />
       <DarkBand bg="linear-gradient(160deg, #1A0B2E 0%, #2D0F4A 50%, #17082B 100%)" accent={A_TEAL}>
         <FreeResearchSection />
       </DarkBand>
@@ -1983,21 +1984,22 @@ function Hero() {
             Built by a <span style={{ color: 'var(--text-muted)' }}>$3M/yr affiliate creator</span>. No card to start.
           </p>
 
-          {/* Main + Secondary headlines */}
+          {/* Main + Secondary headlines — fat, tight, high-contrast (logie5-style).
+              Leads with the positioning: one tool, every feature, no compromise. */}
           <h1
-            className="text-[38px] sm:text-[52px] lg:text-[64px] font-semibold tracking-[-0.02em] leading-[1.05] sm:leading-[1.02]"
+            className="text-[40px] sm:text-[58px] lg:text-[70px] font-extrabold tracking-[-0.035em] leading-[0.98]"
             style={{ color: 'var(--text)' }}
           >
-            Your reviews, everywhere.<br />
+            Everything an Amazon<br />affiliate needs.{' '}
             <span style={{ background: 'linear-gradient(120deg, #F97316 0%, #C026D3 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
-              Not just YouTube.
+              Zero compromise.
             </span>
           </h1>
           <p
-            className="mt-4 text-[20px] font-medium tracking-tight"
+            className="mt-5 text-[20px] sm:text-[22px] font-semibold tracking-tight"
             style={{ color: 'var(--text-muted)' }}
           >
-            The content engine for affiliate creators — your first stop after every YouTube upload.
+            The only tool that runs your whole Amazon affiliate business — and never uses your personal data.
           </p>
 
           {/* Sub */}
@@ -2043,10 +2045,16 @@ function Hero() {
                 <ArrowRight size={13} />
               </a>
             </div>
-            <p className="mt-3 text-[12px] inline-flex items-center gap-1.5" style={{ color: 'var(--text-faint)' }}>
-              <span className="w-1 h-1 rounded-full bg-[#10B981]" />
-              Keep your WordPress site forever.
-            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12px]" style={{ color: 'var(--text-faint)' }}>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="w-1 h-1 rounded-full bg-[#10B981]" />
+                Keep your WordPress site forever.
+              </span>
+              <span className="inline-flex items-center gap-1.5" style={{ color: 'var(--text-soft)' }}>
+                <ShieldCheck size={13} style={{ color: '#10B981' }} />
+                We never use or sell your personal data.
+              </span>
+            </div>
 
             {/* New-feature ribbon — vibrant strip that ties the hero to the
                 flagship Deal Radar section below. */}
@@ -2205,6 +2213,104 @@ function ProductMock() {
  *  Chip border/text are theme-aware; the icon carries the platform's brand
  *  color (X/Threads use --text-soft so their black mark adapts to the theme).
  */
+/** MVP vs the rest — the "only tool, zero compromise, your data stays yours"
+ *  argument as a scannable comparison. Generic "Other tools" column (no named
+ *  competitors). The privacy row is the emphasized differentiator. */
+const COMPARE_ROWS: { label: string; mvp: boolean; others: 'no' | 'partial'; highlight?: boolean }[] = [
+  { label: 'Turn a YouTube video into a full SEO blog post', mvp: true, others: 'no' },
+  { label: 'Any product link or Amazon ASIN → review, comparison, buying guide & deal post', mvp: true, others: 'partial' },
+  { label: 'Finish the upload: description, tags, affiliate links & a CTR-tested thumbnail', mvp: true, others: 'no' },
+  { label: 'Auto-syndicate every post to all your socials (FB, IG, X, LinkedIn, Threads, Bluesky, Telegram, Pinterest)', mvp: true, others: 'partial' },
+  { label: 'Price-history-verified Amazon Deal Radar', mvp: true, others: 'no' },
+  { label: 'Creator Connections: find, accept & message brands', mvp: true, others: 'no' },
+  { label: 'Levanta, PartnerBoost & Walmart campaigns in one place', mvp: true, others: 'no' },
+  { label: 'A beautiful blog on your own site that you keep forever', mvp: true, others: 'no' },
+  { label: 'Never uses or sells your personal data', mvp: true, others: 'no', highlight: true },
+]
+
+function ComparisonSection() {
+  return (
+    <section id="compare" className="px-5 sm:px-8 pt-16 sm:pt-24 pb-16 sm:pb-24 relative">
+      <div className="max-w-5xl mx-auto">
+        <div className="text-center max-w-3xl mx-auto mb-12">
+          <span
+            className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-semibold uppercase tracking-[0.18em] mb-5"
+            style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent-text)', border: '1px solid var(--border)' }}
+          >
+            <ShieldCheck size={11} /> The only one that does it all
+          </span>
+          <h2 className="text-[36px] sm:text-[52px] font-extrabold tracking-[-0.03em] leading-[1.0]" style={{ color: 'var(--text)' }}>
+            One tool. Every feature.<br />
+            <span style={{ background: 'linear-gradient(120deg, #F97316 0%, #C026D3 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
+              Your data stays yours.
+            </span>
+          </h2>
+          <p className="mt-5 text-[16px] sm:text-[17px] leading-relaxed max-w-2xl mx-auto" style={{ color: 'var(--text-soft)' }}>
+            Other Amazon affiliate tools make you stitch together three or four services — and pay for it with your personal data. MVP does the whole job in one place, and never touches yours.
+          </p>
+        </div>
+
+        <div className="rounded-3xl border overflow-hidden" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', boxShadow: 'var(--card-shadow)' }}>
+          {/* Header row */}
+          <div className="grid grid-cols-[1fr_auto_auto]">
+            <div className="px-5 sm:px-7 py-4 text-[12px] font-semibold uppercase tracking-[0.12em]" style={{ color: 'var(--text-faint)' }}>
+              Feature
+            </div>
+            <div className="w-[92px] sm:w-[120px] px-2 py-4 text-center text-[13px] sm:text-[15px] font-extrabold" style={{ color: 'var(--text)', background: 'var(--accent-soft)' }}>
+              MVP
+            </div>
+            <div className="w-[92px] sm:w-[120px] px-2 py-4 text-center text-[12px] sm:text-[13px] font-semibold" style={{ color: 'var(--text-subtle)' }}>
+              Other tools
+            </div>
+          </div>
+
+          {COMPARE_ROWS.map((r, i) => (
+            <div
+              key={i}
+              className="grid grid-cols-[1fr_auto_auto] items-center border-t"
+              style={{ borderColor: 'var(--border)', background: r.highlight ? 'var(--accent-soft)' : 'transparent' }}
+            >
+              <div className="px-5 sm:px-7 py-4 text-[14px] sm:text-[15px]" style={{ color: 'var(--text-muted)', fontWeight: r.highlight ? 700 : 500 }}>
+                {r.label}
+              </div>
+              <div className="w-[92px] sm:w-[120px] px-2 py-4 flex items-center justify-center" style={{ background: r.highlight ? 'transparent' : 'var(--accent-soft)' }}>
+                <span className="inline-flex items-center justify-center w-7 h-7 rounded-full text-white" style={{ background: 'linear-gradient(135deg, #7C3AED, #C026D3)' }}>
+                  <Check size={15} strokeWidth={3} />
+                </span>
+              </div>
+              <div className="w-[92px] sm:w-[120px] px-2 py-4 flex items-center justify-center">
+                {r.others === 'partial' ? (
+                  <span className="text-[11px] font-semibold" style={{ color: 'var(--text-faint)' }}>Some</span>
+                ) : (
+                  <span className="inline-flex items-center justify-center w-7 h-7 rounded-full" style={{ background: 'var(--surface-bright)', color: 'var(--text-faint)' }}>
+                    <XIcon size={14} strokeWidth={2.5} />
+                  </span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Privacy promise strip */}
+        <div
+          className="mt-6 rounded-2xl border px-5 sm:px-7 py-5 flex items-start gap-4"
+          style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
+        >
+          <span className="inline-flex items-center justify-center w-10 h-10 rounded-xl flex-shrink-0 text-white" style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>
+            <ShieldCheck size={20} />
+          </span>
+          <div>
+            <p className="text-[16px] font-bold" style={{ color: 'var(--text)' }}>Your data is never the product.</p>
+            <p className="mt-1 text-[14px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
+              We don&apos;t harvest, sell, or train on your personal data — not your audience, not your earnings, not your content. Your accounts stay connected to <span style={{ color: 'var(--text)' }}>you</span>, and your site is yours to keep forever. That&apos;s a promise most tools can&apos;t make.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
 function PlatformBar() {
   return (
     <section className="px-6 lg:px-8 pt-2 pb-14 relative">
