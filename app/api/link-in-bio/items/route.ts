@@ -9,6 +9,8 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { createGeniuslinkService } from '@/services/geniuslink'
+import { asinFromAmazonUrl } from '@/lib/product-link'
 
 export const runtime = 'nodejs'
 
@@ -22,6 +24,30 @@ const cleanUrl = (u: string) => {
   const t = (u || '').trim()
   if (!t) return null
   return /^https?:\/\//i.test(t) ? t : `https://${t}`
+}
+
+/**
+ * Turn ANY pasted product link into the creator's own tracked affiliate link:
+ * if it's not already a geni.us short link, wrap it with their Geniuslink. So a
+ * creator can paste a raw Amazon (or any affiliate) URL and MVP does the rest.
+ * Best-effort — no creds / already-wrapped / any failure just keeps the URL.
+ * Also returns the ASIN when derivable (stored for tracking / CC matching).
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function autoWrapGeniuslink(sb: any, userId: string, url: string, title: string): Promise<{ url: string; asin: string | null }> {
+  const asin = asinFromAmazonUrl(url) || null
+  if (/(^|\.)geni\.us\//i.test(url)) return { url, asin } // already a Geniuslink
+  try {
+    const { data: intRow } = await sb.from('integrations')
+      .select('geniuslink_api_key, geniuslink_api_secret').eq('user_id', userId).maybeSingle()
+    const key = intRow?.geniuslink_api_key
+    const secret = intRow?.geniuslink_api_secret
+    if (!key || !secret) return { url, asin } // no creds → keep the pasted link
+    const genius = createGeniuslinkService(key, secret)
+    const wrapped = await genius.createLink(url, (title || 'Product').slice(0, 120))
+    if (wrapped) return { url: wrapped, asin }
+  } catch { /* keep the pasted link */ }
+  return { url, asin }
 }
 
 export async function POST(request: Request) {
@@ -39,12 +65,24 @@ export async function POST(request: Request) {
   if (!title || !url) return NextResponse.json({ error: 'A title and a link are required.' }, { status: 400 })
   const kind = body.kind === 'link' ? 'link' : 'product'
 
+  // Product tiles: auto-wrap the pasted link in the creator's own Geniuslink so
+  // they don't have to paste a geni.us link themselves — any Amazon/affiliate
+  // URL becomes their tracked affiliate link. Social "link" tiles are left as-is.
+  let finalUrl = url
+  let asin: string | null = null
+  if (kind === 'product') {
+    const wrapped = await autoWrapGeniuslink(sb, user.id, url, title)
+    finalUrl = wrapped.url
+    asin = wrapped.asin
+  }
+
   const { data: last } = await sb.from('link_page_items').select('position').eq('page_id', pageId)
     .order('position', { ascending: false }).limit(1).maybeSingle()
   const position = (last?.position ?? -1) + 1
 
   const { data, error } = await sb.from('link_page_items').insert({
-    page_id: pageId, user_id: user.id, kind, title, url,
+    page_id: pageId, user_id: user.id, kind, title, url: finalUrl,
+    ...(asin ? { asin } : {}),
     image_url: (body.image_url || '').trim() || null,
     icon: kind === 'link' ? ((body.icon || '').trim() || 'link') : null,
     subtitle: (body.subtitle || '').trim() || null,
