@@ -409,6 +409,16 @@ function ccCampaignUrl(campaignId, type) {
   return `${CC_REQUEST_BASE}?${creator}campaignId=${encodeURIComponent(cid)}&type=${encodeURIComponent(t)}&status=opportunity`
 }
 
+// The creator's ACTIVE / joined campaigns view. This is the tab that lists the
+// campaigns the user has already joined (status=active, type=affiliate-plus) —
+// confirmed from a real creator's URL. Opening THIS (not the opportunity grid) is
+// what makes the page fire the collaboration/search query for joined campaigns,
+// which SCOUT then replays. creatorId is filled from the session when omitted.
+function ccActiveUrl() {
+  const q = _ccCreatorId ? `creatorId=${encodeURIComponent(_ccCreatorId)}&` : ''
+  return `${CC_BASE}?${q}status=active&type=affiliate-plus&sortBy=alphabetical`
+}
+
 const _sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 // ── LEARN-AND-REPLAY the Creator Connections send API ─────────────────────────
@@ -464,6 +474,24 @@ function recordNetResponse(rec) {
   if (!rec || !rec.url) return
   _ccRespRing.push(rec)
   if (_ccRespRing.length > 10) _ccRespRing.shift()
+}
+
+// The most recent collaboration/search POST body the page fired. When SCOUT opens
+// the creator's ACTIVE view (status=active&type=affiliate-plus), this is the exact
+// query Amazon uses to list joined campaigns — so we replay it (paginated) instead
+// of guessing filterOptions. Skips ASIN-scoped searches (those are per-product
+// message lookups, not the browse-all-joined query).
+function latestCollabSearchBody() {
+  for (let i = _ccNetRing.length - 1; i >= 0; i--) {
+    const rec = _ccNetRing[i]
+    if (!rec || typeof rec.body !== 'string' || !rec.body) continue
+    if (!/\/connect\/api\/collaboration\/search/i.test(rec.url || '')) continue
+    // Ignore a body carrying an explicit ASIN searchOption — that's a targeted
+    // resolve, not the full active-view browse.
+    if (/"fieldName"\s*:\s*"asin"/i.test(rec.body)) continue
+    return rec.body
+  }
+  return null
 }
 
 // Replace the STRING value of a top-level-ish JSON key with a placeholder, leaving
@@ -729,13 +757,14 @@ async function sendByAsinApi(asin, message, campaignIdsHint) {
 // contained (executeScript serializes it — no outer refs).
 function ccListMyCampaignsInPage(opts) {
   return (async () => {
+    const diag = { variants: [], creatorId: null }
     try {
       let creatorId = opts.creatorId
       const headers = opts.headers
       // Self-discover the creator id from the OPEN page if the background didn't
-      // have it yet — Amazon embeds it (amzn1.creator.…) in the CC page's state
-      // JSON even when it's not in the URL. This is what lets SCOUT open the page
-      // itself instead of asking the user to visit their grid first.
+      // have it yet — try the page HTML first, then any inline JSON. Amazon's SPA
+      // usually loads it via its own API (which net-hook captures for the
+      // background), but scan here too as a fallback.
       if (!creatorId) {
         try {
           const html = (document.documentElement && document.documentElement.innerHTML) || ''
@@ -743,34 +772,113 @@ function ccListMyCampaignsInPage(opts) {
           if (m) creatorId = m[0]
         } catch (e) {}
       }
-      if (!creatorId) return { ok: false, reason: 'no-creator-id' }
+      if (!creatorId) return { ok: false, reason: 'no-creator-id', diag }
+      diag.creatorId = String(creatorId).slice(0, 22) + '…'
       const hdr = () => { const o = Object.assign({}, headers || {}); if (!o['Content-Type'] && !o['content-type']) o['Content-Type'] = 'application/json'; if (!o['Accept'] && !o['accept']) o['Accept'] = 'application/json'; return o }
-      const out = []
-      const seen = {}
-      let nextToken = null
-      for (let pageNumber = 1; pageNumber <= 20; pageNumber++) { // cap ~600 campaigns
-        const body = JSON.stringify({
-          campaignId: null, brandId: null,
-          filterOptions: { campaignType: 'BOUNTY_BOARD', availableSlotsOnly: null, interestTags: null, providingSamplesOnly: null, statuses: ['SCHEDULED', 'DELIVERING'], commissionPercentageFilters: null, dateRange: null, campaignBrowseNodes: null, earlyAccessOnly: null, gcorIdList: null, campaignQualifiers: null, contentTypes: null, adId: null, storeIds: null, creatorIds: null, flatFeeRanges: null, rangeFilters: null, socialChannels: null, premiumCreator: null, contractStatus: null, ratingStar: null, reviewCount: null, priceRange: null, budgetAvailabilityScoreList: null, dealMetadata: null },
-          sortOptions: [{ name: 'CAMPAIGN_TITLE', order: 'ASCENDING' }],
-          nextToken, pageNumber, pageSize: 30, creatorId,
-          searchOptions: [],
-        })
-        const r = await fetch('/connect/api/collaboration/search', { method: 'POST', headers: hdr(), body, credentials: 'include' })
-        const j = await r.json().catch(() => null)
+
+      const FILTER_BASE = { availableSlotsOnly: null, interestTags: null, providingSamplesOnly: null, commissionPercentageFilters: null, dateRange: null, campaignBrowseNodes: null, earlyAccessOnly: null, gcorIdList: null, campaignQualifiers: null, contentTypes: null, adId: null, storeIds: null, creatorIds: null, flatFeeRanges: null, rangeFilters: null, socialChannels: null, premiumCreator: null, contractStatus: null, ratingStar: null, reviewCount: null, priceRange: null, budgetAvailabilityScoreList: null, dealMetadata: null }
+
+      const buildBody = (v, pageNumber, nextToken) => {
+        // Authoritative path: replay the page's OWN active-view query, only swapping
+        // the pagination cursor. This is the exact filter Amazon uses for the joined
+        // list, so it matches regardless of how the API names campaignType/statuses.
+        if (v.capturedBody) {
+          try {
+            const o = JSON.parse(v.capturedBody)
+            o.pageNumber = pageNumber
+            o.nextToken = nextToken
+            if (!o.pageSize || o.pageSize < 30) o.pageSize = 30
+            if (!o.creatorId && creatorId) o.creatorId = creatorId
+            return JSON.stringify(o)
+          } catch (e) { /* fall through to synthetic body */ }
+        }
+        const filterOptions = Object.assign({ campaignType: v.campaignType, statuses: v.statuses }, FILTER_BASE)
+        const b = { campaignId: null, brandId: null, filterOptions, sortOptions: [{ name: 'CAMPAIGN_TITLE', order: 'ASCENDING' }], nextToken, pageNumber, pageSize: 30, creatorId }
+        if (!v.omitSearch) b.searchOptions = v.searchOptions || []
+        return JSON.stringify(b)
+      }
+
+      const runPage = async (v, pageNumber, nextToken) => {
+        const r = await fetch('/connect/api/collaboration/search', { method: 'POST', headers: hdr(), body: buildBody(v, pageNumber, nextToken), credentials: 'include' })
+        let j = null, errText = ''
+        try { const t = await r.text(); j = JSON.parse(t); if (!r.ok) errText = t.slice(0, 200) } catch (e) { errText = 'parse' }
         const resp = j && j.responses && j.responses[0]
         const ads = (resp && resp.ads) || []
+        return { status: r.status, ads, nextToken: (resp && resp.nextToken) || null, errText }
+      }
+
+      // Filter variants to try, in order — Amazon's list query is fiddly: an empty
+      // searchOptions can return nothing, and a too-narrow campaignType/status set
+      // hides affiliate-plus joins. We use the FIRST variant that returns ads, and
+      // record every variant's outcome in diag so a still-empty result is
+      // debuggable (HTTP status + count per variant) instead of a silent zero.
+      const variants = [
+        // First: replay the active-view query the page just fired (if captured). This
+        // is Amazon's own joined-campaigns filter, so it's the reliable path.
+        ...(opts.capturedBody ? [{ label: 'captured-active-view', capturedBody: opts.capturedBody }] : []),
+        { label: 'bounty+sched/deliv', campaignType: 'BOUNTY_BOARD', statuses: ['SCHEDULED', 'DELIVERING'] },
+        { label: 'any-type+sched/deliv', campaignType: null, statuses: ['SCHEDULED', 'DELIVERING'] },
+        { label: 'any-type+accepted/active', campaignType: null, statuses: ['ACCEPTED', 'ACTIVE', 'IN_PROGRESS', 'LIVE', 'SCHEDULED', 'DELIVERING', 'COMPLETED'] },
+        // Diagnostic-only: no status filter. Runs ONLY if the real variants above
+        // came back empty, and its ads are NOT written as "joined" (they could be
+        // plain opportunities). We just read the status field off each ad so the
+        // diagnostic shows which real statuses this account's campaigns carry —
+        // that's what we need to pin the exact "joined" filter next.
+        { label: 'any-type+no-status', campaignType: null, statuses: null, diagOnly: true },
+      ]
+
+      const out = []
+      const seen = {}
+      const statusCounts = {}
+      const collect = (ads) => {
         for (const a of ads) {
           if (!a || !a.campaignId || seen[a.campaignId]) continue
           seen[a.campaignId] = 1
           const asins = Array.isArray(a.campaignAsins) ? a.campaignAsins.map((x) => String(x).toUpperCase()) : []
-          out.push({ campaignId: a.campaignId, asin: asins[0] || null, brand: a.brandName || null, name: a.campaignName || null })
+          const st = a.campaignStatus || a.status || a.collaborationStatus || a.contractStatus || null
+          if (st) statusCounts[st] = (statusCounts[st] || 0) + 1
+          out.push({ campaignId: a.campaignId, asin: asins[0] || null, brand: a.brandName || null, name: a.campaignName || null, status: st })
         }
-        nextToken = (resp && resp.nextToken) || null
-        if (!ads.length || !nextToken) break
       }
-      return { ok: true, campaigns: out, creatorId }
-    } catch (e) { return { ok: false, error: e && e.message ? e.message : 'exception' } }
+
+      // Read the status field off ads WITHOUT adding them to the written list.
+      const tallyStatuses = (ads) => {
+        for (const a of ads) {
+          if (!a) continue
+          const st = a.campaignStatus || a.status || a.collaborationStatus || a.contractStatus || null
+          if (st) statusCounts[st] = (statusCounts[st] || 0) + 1
+        }
+      }
+
+      let picked = null
+      for (const v of variants) {
+        // Skip the diagnostic-only probe unless every real variant came up empty.
+        if (v.diagOnly && out.length) continue
+        try {
+          const first = await runPage(v, 1, null)
+          diag.variants.push({ label: v.label, status: first.status, ads: first.ads.length, err: first.errText || undefined })
+          if (first.ads.length) {
+            if (v.diagOnly) { tallyStatuses(first.ads); continue }
+            picked = v
+            collect(first.ads)
+            let nextToken = first.nextToken
+            for (let pageNumber = 2; pageNumber <= 20 && nextToken; pageNumber++) {
+              const p = await runPage(v, pageNumber, nextToken)
+              collect(p.ads)
+              nextToken = p.nextToken
+              if (!p.ads.length) break
+            }
+            break
+          }
+        } catch (e) {
+          diag.variants.push({ label: v.label, err: (e && e.message) || 'exception' })
+        }
+      }
+
+      diag.picked = picked ? picked.label : null
+      diag.statusCounts = statusCounts
+      return { ok: true, campaigns: out, creatorId, diag }
+    } catch (e) { return { ok: false, error: e && e.message ? e.message : 'exception', diag } }
   })()
 }
 
@@ -781,20 +889,25 @@ async function listMyCampaignsApi() {
   const keepAlive = startKeepAlive()
   let tabId = null
   try {
-    const tab = await chrome.tabs.create({ url: 'https://affiliate-program.amazon.com/p/connect/requests?status=opportunity&type=affiliate-plus', active: false })
+    // Open the ACTIVE / joined view (status=active&type=affiliate-plus) — the tab
+    // that lists campaigns the user has joined. Opening this (not the opportunity
+    // grid) makes the page fire the exact collaboration/search query for joined
+    // campaigns, which we capture and replay.
+    const tab = await chrome.tabs.create({ url: ccActiveUrl(), active: false })
     tabId = tab.id
     await waitForTabLoad(tabId, 15000)
-    // Give Amazon's React app a moment, then POLL for the creator id. Amazon's SPA
-    // does NOT put the id in the page HTML — it loads it via its own connect API
-    // calls, whose bodies carry amzn1.creator.…. net-hook.js captures those POSTs
-    // and relays them to learnFromCapture, which sets _ccCreatorId. So we wait for
-    // the page to fire those calls (up to ~14s) rather than scraping the DOM, which
-    // is why the HTML-only scan came back empty. Once we have the id, call the API.
+    // Give Amazon's React app a moment, then POLL for BOTH the creator id AND the
+    // page's own collaboration/search capture. Amazon's SPA does NOT put the id in
+    // the page HTML — it loads it via its own connect API calls, whose bodies carry
+    // amzn1.creator.… and the joined-view filter. net-hook.js captures those POSTs
+    // and relays them to learnFromCapture. So we wait for the page to fire them
+    // (up to ~14s) rather than scraping the DOM.
     await _sleep(1500)
-    for (let i = 0; i < 26 && !_ccCreatorId; i++) await _sleep(500)
+    for (let i = 0; i < 26 && (!_ccCreatorId || !latestCollabSearchBody()); i++) await _sleep(500)
+    const capturedBody = latestCollabSearchBody()
     const res = await chrome.scripting.executeScript({
       target: { tabId }, world: 'MAIN', func: ccListMyCampaignsInPage,
-      args: [{ creatorId: _ccCreatorId, headers: (_ccSendRecipe && _ccSendRecipe.headers) || {} }],
+      args: [{ creatorId: _ccCreatorId, headers: (_ccSendRecipe && _ccSendRecipe.headers) || {}, capturedBody }],
     })
     const out = (res && res[0] && res[0].result) || { ok: false, reason: 'no-result' }
     // Persist a newly-discovered creator id so every later call has it instantly.
