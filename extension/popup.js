@@ -1,47 +1,16 @@
 /* SCOUT — MVP Affiliate popup.
- * SCOUT is INVISIBLE on Amazon (2026-07-06): the on-page panel is retired and
- * every scan/verify is driven headlessly from the MVP app. This popup is the
- * ONLY surface: connect your MVP ingest token (+ the optional non-Amazon read
- * permission, which Chrome requires to be granted from a click in extension
- * UI), and an enrollment link for non-members. */
+ * SCOUT is INVISIBLE on Amazon: the on-page panel is retired and every
+ * scan/verify is driven headlessly from the signed-in MVP app (session bridge).
+ * There is no token to paste anymore (the old ingest token + Amazon earnings
+ * sync were removed in 2026-08). This popup is just: a status line, a quick
+ * "what SCOUT does" recap, and the two OPTIONAL host-permission toggles (Chrome
+ * requires those grants to happen from a click inside extension UI). */
 
-const APP_URL = 'https://www.mvpaffiliate.io'
 const $ = (id) => document.getElementById(id)
 
-function setStatus(msg, kind) {
-  const el = $('status')
-  el.textContent = msg || ''
-  el.className = kind || ''
-}
-
-// ── MVP token: green "connected" pill vs editable input ─────────────────
-async function validateToken(token) {
-  if (!token) return { ok: false }
-  try {
-    const res = await fetch(`${APP_URL}/api/campaigns/ingest`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-    const data = await res.json().catch(() => ({}))
-    return { ok: res.ok && !!data.ok, status: res.status, ...data }
-  } catch {
-    return { ok: false, error: 'network' }
-  }
-}
-
-function showConnected(v) {
-  $('tokenEdit').style.display = 'none'
-  $('tokenConnected').style.display = 'flex'
-  const bits = []
-  if (typeof v.queued === 'number') bits.push(`${v.queued} in your queue`)
-  if (v.pro === false) bits.push('⚠ not on Pro — pushing needs Pro')
-  $('connMeta').textContent = bits.length ? `· ${bits.join(' · ')}` : ''
-}
-
-function showTokenEdit() {
-  $('tokenConnected').style.display = 'none'
-  $('tokenEdit').style.display = 'block'
-  $('token').focus()
-}
+// One-time cleanup: drop any ingest token left in local storage by older
+// versions. It's no longer used for anything.
+try { chrome.storage.local.remove('ccToken') } catch { /* ignore */ }
 
 // ── Optional retail hosts (Walmart, Target, …) ────────────────────────────
 // OPTIONAL host permissions so SCOUT's default footprint is Amazon-only and
@@ -86,17 +55,8 @@ async function refreshIntl() {
 }
 
 // ── boot ────────────────────────────────────────────────────────────────
-chrome.storage.local.get(['ccToken'], async ({ ccToken }) => {
-  refreshRetail()
-  refreshIntl()
-  if (ccToken) {
-    $('token').value = ccToken
-    const v = await validateToken(ccToken)
-    if (v.ok) showConnected(v); else showTokenEdit()
-  } else {
-    showTokenEdit()
-  }
-})
+refreshRetail()
+refreshIntl()
 
 $('retail').addEventListener('change', async () => {
   // request() and remove() must run in this click's user gesture.
@@ -123,21 +83,3 @@ $('intl').addEventListener('change', async () => {
     renderIntl(false)
   }
 })
-
-$('connect').addEventListener('click', async () => {
-  const t = $('token').value.trim()
-  if (!t) { setStatus('Paste your MVP ingest token first.', 'err'); return }
-  setStatus('Checking token…', 'work')
-  const v = await validateToken(t)
-  if (!v.ok) {
-    setStatus(v.status === 401
-      ? 'That token isn’t valid — copy a fresh one from AMZ+ & EPC in MVP.'
-      : 'Couldn’t verify the token (network). Try again.', 'err')
-    return
-  }
-  chrome.storage.local.set({ ccToken: t })
-  showConnected(v)
-  setStatus('Connected to MVP.', 'ok')
-})
-
-$('editToken').addEventListener('click', showTokenEdit)
