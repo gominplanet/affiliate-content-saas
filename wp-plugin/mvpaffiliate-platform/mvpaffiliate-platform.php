@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.70
+ * Version: 1.0.71
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -435,6 +435,79 @@ if (!function_exists('mvp_affiliate_get_data')) {
         return $cache;
     }
 }
+
+// ─── 3b. Read counter ─────────────────────────────────────────────────────────
+// Opt-in "N reads" social-proof chip. Controlled by the `showReadCount` toggle in
+// Customize Blog. Counts are stored in the `_mvp_reads` post meta, bumped by a
+// tiny session-deduped browser beacon (cache-safe), and the chip only renders once
+// a post passes the threshold (default 100) so new posts never show a low number.
+add_action('rest_api_init', function () {
+    register_rest_route('affiliateos/v1', '/view', [
+        'methods'             => 'POST',
+        'callback'            => 'mvp_affiliate_rest_count_view',
+        'permission_callback' => '__return_true', // public: called from the visitor's browser
+    ]);
+});
+if (!function_exists('mvp_affiliate_rest_count_view')) {
+    function mvp_affiliate_rest_count_view($req) {
+        $pid = (int) $req->get_param('post_id');
+        if ($pid <= 0 || get_post_status($pid) !== 'publish' || get_post_type($pid) !== 'post') {
+            return new WP_REST_Response(['ok' => false], 200);
+        }
+        $n = ((int) get_post_meta($pid, '_mvp_reads', true)) + 1;
+        update_post_meta($pid, '_mvp_reads', $n);
+        return new WP_REST_Response(['ok' => true], 200);
+    }
+}
+
+if (!function_exists('mvp_affiliate_read_threshold')) {
+    function mvp_affiliate_read_threshold() {
+        $data = mvp_affiliate_get_data();
+        $layout = isset($data['layout']) && is_array($data['layout']) ? $data['layout'] : [];
+        $t = isset($layout['readCountThreshold']) ? (int) $layout['readCountThreshold'] : 100;
+        return $t > 0 ? $t : 100;
+    }
+}
+
+// Count beacon — one bump per browser session per post (a refresh doesn't inflate).
+add_action('wp_footer', function () {
+    if (!is_singular('post')) return;
+    $data = mvp_affiliate_get_data();
+    $layout = isset($data['layout']) && is_array($data['layout']) ? $data['layout'] : [];
+    if (empty($layout['showReadCount'])) return; // don't even count when the feature is off
+    $pid = (int) get_the_ID();
+    if ($pid <= 0) return;
+    $endpoint = esc_url_raw(rest_url('affiliateos/v1/view'));
+    ?>
+    <script>
+    (function(){
+      try{
+        var k='mvp_read_<?php echo $pid; ?>';
+        if(sessionStorage.getItem(k))return;
+        sessionStorage.setItem(k,'1');
+        fetch(<?php echo wp_json_encode($endpoint); ?>,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({post_id:<?php echo $pid; ?>}),keepalive:true}).catch(function(){});
+      }catch(e){}
+    })();
+    </script>
+    <?php
+});
+
+// The chip — prepended to the post body, only on a single post, only when the
+// toggle is on AND the post has passed the threshold. Muted, rounded, modern.
+add_filter('the_content', function ($content) {
+    if (!is_singular('post') || !in_the_loop() || !is_main_query()) return $content;
+    $data = mvp_affiliate_get_data();
+    $layout = isset($data['layout']) && is_array($data['layout']) ? $data['layout'] : [];
+    if (empty($layout['showReadCount'])) return $content;
+    $pid = (int) get_the_ID();
+    $reads = (int) get_post_meta($pid, '_mvp_reads', true);
+    if ($reads < mvp_affiliate_read_threshold()) return $content;
+    $label = $reads >= 1000 ? rtrim(rtrim(number_format($reads / 1000, 1), '0'), '.') . 'k' : number_format($reads);
+    $chip = '<div class="mvp-read-count" style="display:inline-flex;align-items:center;gap:7px;font-size:13px;line-height:1;color:#6b7280;margin:0 0 20px;padding:6px 13px;border:1px solid rgba(0,0,0,.09);border-radius:999px;background:rgba(0,0,0,.02);font-weight:600;letter-spacing:.2px">'
+        . '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:.7"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>'
+        . esc_html($label) . ' reads</div>';
+    return $chip . $content;
+}, 6);
 
 // ─── 4. REST endpoints ────────────────────────────────────────────────────────
 add_action('rest_api_init', function () {

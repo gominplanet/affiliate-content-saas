@@ -137,6 +137,12 @@ interface LayoutData {
   /** Show the bio + photo on the generated About page. Default on; off = they
    *  appear only in the footer band (no duplication). */
   aboutBio: boolean
+  /** Opt-in "N reads" social-proof chip on posts. Default OFF. The plugin only
+   *  renders it once a post passes readCountThreshold, so new posts never show a
+   *  low number. */
+  showReadCount: boolean
+  /** Reads a post must pass before the chip appears. Default 100. */
+  readCountThreshold: number
 }
 
 interface BrandCtaData {
@@ -173,6 +179,8 @@ const emptyFooter: FooterData = {
 const emptyLayout: LayoutData = {
   stickyHeader: true,
   aboutBio: true,
+  showReadCount: false,
+  readCountThreshold: 100,
 }
 const emptyBrandCta: BrandCtaData = {
   enabled: false,
@@ -367,6 +375,8 @@ export default function CustomizePage() {
           // Both default ON — only an explicit saved false turns them off.
           stickyHeader: bc.layout?.stickyHeader !== false,
           aboutBio: bc.layout?.aboutBio !== false,
+          showReadCount: bc.layout?.showReadCount === true, // opt-in
+          readCountThreshold: typeof bc.layout?.readCountThreshold === 'number' && bc.layout.readCountThreshold > 0 ? bc.layout.readCountThreshold : 100,
         },
       })
     }
@@ -643,6 +653,46 @@ export default function CustomizePage() {
                 : <ToggleLeft size={28} />}
             </button>
           </div>
+        </Section>
+
+        {/* Read counter */}
+        <Section
+          title="Read counter"
+          description="Show a small “N reads” badge near the top of each post as social proof. It only appears once a post passes the threshold, so a brand-new post never shows a low number. Off by default."
+        >
+          <div className="flex items-center justify-between p-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border-2)]">
+            <div>
+              <p className="text-sm font-medium text-[var(--text)]">Show a read count on posts</p>
+              <p className="text-xs text-[var(--text-3)]">A subtle, modern badge (e.g. “1.2k reads”). Hidden until a post passes the threshold below.</p>
+            </div>
+            <button
+              onClick={() => setData(d => ({ ...d, layout: { ...d.layout, showReadCount: !d.layout.showReadCount } }))}
+              className="text-[var(--text-3)]"
+              aria-label="Toggle read counter"
+            >
+              {data.layout.showReadCount
+                ? <ToggleRight size={28} className="text-[#7C3AED]" />
+                : <ToggleLeft size={28} />}
+            </button>
+          </div>
+          {data.layout.showReadCount && (
+            <div className="flex items-center justify-between p-3 mt-2 rounded-xl bg-[var(--surface-2)] border border-[var(--border-2)]">
+              <div>
+                <p className="text-sm font-medium text-[var(--text)]">Show it after</p>
+                <p className="text-xs text-[var(--text-3)]">Reads a post needs before the badge appears.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  value={data.layout.readCountThreshold}
+                  onChange={e => setData(d => ({ ...d, layout: { ...d.layout, readCountThreshold: Math.max(1, parseInt(e.target.value || '100', 10) || 100) } }))}
+                  className="w-24 px-3 py-2 rounded-lg text-sm bg-[var(--surface)] border border-[var(--border-2)] text-[var(--text)] outline-none focus:border-[#7C3AED]"
+                />
+                <span className="text-xs text-[var(--text-3)]">reads</span>
+              </div>
+            </div>
+          )}
         </Section>
 
         {/* About page bio */}
