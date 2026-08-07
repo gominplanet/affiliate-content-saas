@@ -307,7 +307,7 @@ function buildSystemPrompt(
   }
   const disabledSections: string[] = []
   if (!sec.quickVerdict) disabledSections.push('• Section [3] QUICK VERDICT BOX — OMIT the entire <div class="gr-verdict-box"> block. No Buy-if / Skip-if. The hook opener handles the framing.')
-  if (!sec.scorecard)    disabledSections.push('• Section [3b] SCORECARD — OMIT the entire <div class="gr-scorecard"> block (no overall score, no subscores, no Best-for badges). ALSO OMIT [6] RATING BOX at the end — both are rating UI and they go together.')
+  if (!sec.scorecard)    disabledSections.push('• Section [3b] SCORECARD — OMIT the entire <div class="gr-scorecard"> block (no overall score, no subscores, no Best-for badges, no final gr-sc-text verdict line). It is the ONLY rating card and it lives after the FAQ — omitting it means the post has no rating UI at all.')
   if (!sec.prosCons)     disabledSections.push('• PROS & CONS H2 lists — DO NOT emit <h2>Pros</h2><ul>… or <h2>Cons</h2><ul>… anywhere. Skip the structured pros/cons block. The body sections still carry observations naturally.')
   if (!sec.faq)          disabledSections.push('• Section [5] FAQ — OMIT the "Frequently Asked Questions" H2 and all its Q&A pairs entirely.')
   const sectionsConfig = disabledSections.length > 0 ? `
@@ -1026,6 +1026,7 @@ Use exactly this structure with {VIDEO_ID} replaced:
 .gr-scorecard .gr-sc-sub-bar{flex:1;height:6px;background:#f0f0f0;border-radius:3px;overflow:hidden;position:relative}
 .gr-scorecard .gr-sc-sub-bar > span{display:block;height:100%;background:linear-gradient(90deg,#FFC200,#FF6B00);border-radius:3px}
 .gr-scorecard .gr-sc-sub-num{flex-shrink:0;font-weight:700;font-size:13px;color:#111;min-width:32px;text-align:right}
+.gr-scorecard .gr-sc-text{grid-column:1/-1;border-top:2px solid #f0f0f0;padding-top:14px;margin-top:2px;font-size:15px;line-height:1.6;color:#333}
 @media(max-width:600px){.gr-scorecard{grid-template-columns:1fr;gap:18px}.gr-scorecard .gr-sc-overall{border-right:none;border-bottom:2px solid #f0f0f0;padding-right:0;padding-bottom:14px;flex-direction:row;gap:14px}.gr-scorecard .gr-sc-subs{grid-template-columns:1fr}}
 </style>
 <div class="gr-video-wrap">
@@ -1103,8 +1104,14 @@ BUY / SKIP / (optional WAIT) — three modes of conviction:
   -->
 </div>
 
-[3b] SCORECARD (HTML block, immediately after the Quick Verdict)
-This gives readers at-a-glance trust + drives Google rich snippets via the Review schema (the overall score is what shows as stars in search results). The 4 subscore bars are visual only — derived from the transcript, not invented. If the video clearly doesn't speak to one of the four dimensions, you may still infer a score from how the reviewer talks (enthusiasm, ease of setup mentions, comparisons to other products, etc.) — but ground every number in something the transcript actually shows.
+[3b] SCORECARD (HTML block)
+⚠️ POSITION: although it's described here next to the Quick Verdict, you MUST
+EMIT this scorecard block LATER — AFTER the [5] FAQ section, immediately before
+the [7] CTA card (see the pointer at [5]). Do NOT place it near the top. The
+reader gets the Quick Verdict up top and the full scored rating card at the end,
+right before the buy button. It is defined here only to keep the rating rules
+together.
+This gives readers an at-the-end trust anchor + drives Google rich snippets via the Review schema (the overall score is what shows as stars in search results). The 4 subscore bars are visual only — derived from the transcript, not invented. If the video clearly doesn't speak to one of the four dimensions, you may still infer a score from how the reviewer talks (enthusiasm, ease of setup mentions, comparisons to other products, etc.) — but ground every number in something the transcript actually shows.
 
 Score guide (1-5, decimals allowed, e.g. 4.5). The 4 dimensions are tailored to this product's niche — score and discuss the product against THESE:
   - ${scGuide.join('\n  - ')}
@@ -1177,6 +1184,12 @@ Stars row: use ★ for whole points, ½ for halves, ☆ for empty. E.g. 4.5/5 �
     {{-- optional --}}<span class="gr-best-for-tag">{Tag 2}</span>
     {{-- optional --}}<span class="gr-best-for-tag">{Tag 3}</span>
   </div>
+  {{-- Punchy final-rating line, folded INTO the scorecard (there is no
+       separate rating box anymore). This is the LAST thing the reader sees
+       before the buy button, so make it land per the RATING-TEXT PUNCH RULES:
+       sentence 1 names the decisive trade-off; sentence 2-3 names who
+       shouldn't buy + what would push it to a 5. No banned openers/sign-offs. --}}
+  <div class="gr-sc-text">{2-3 sentence verdict per the RATING-TEXT PUNCH RULES}</div>
 </div>
 <!-- /wp:html -->
 
@@ -1189,7 +1202,7 @@ included accessories, etc.). Skip vague marketing ("premium quality",
 OMIT the entire block. Goal: a compact 4–6 row table same shape Tom's
 Guide / TechRadar use for at-a-glance scanning.
 
-Render as (block goes right after the scorecard, before the body H2):
+Render as (block goes right after the Quick Verdict box, before the body H2 — the scorecard now lives at the END, so don't wait for it):
 <!-- wp:html -->
 <table class="gr-specs-table">
   <tbody>
@@ -1412,10 +1425,16 @@ least twice.
 Each Q: <!-- wp:heading {"level":3} --><h3>{question}</h3><!-- /wp:heading -->
         <!-- wp:paragraph --><p>{specific candid answer}</p><!-- /wp:paragraph -->
 
-[6] RATING BOX (HTML block)
+[6] SCORECARD GOES HERE (emit the [3b] scorecard block NOW)
+This is where the full scorecard block (defined at [3b] above — overall score,
+stars, verbal label, the 4 subscore bars, the Best-for badges, AND the folded-in
+gr-sc-text verdict line) must be EMITTED: after the FAQ, immediately before the
+[7] CTA card. There is NO separate rating box anymore — the gr-sc-text inside the
+scorecard is the final rating line.
 
-RATING-TEXT PUNCH RULES (2026-06-09 Sprint 2):
-The gr-rating-text below is the LAST thing readers read before deciding.
+RATING-TEXT PUNCH RULES (2026-06-09 Sprint 2) — these govern the gr-sc-text line
+folded into the scorecard above:
+The gr-sc-text is the LAST thing readers read before deciding.
 Today it reads AI-uniform across posts ("a strong contender in its
 category", "delivers great value", "won me over for daily use"). Make it
 land. Required structure for the 2-3 sentences:
@@ -1442,15 +1461,10 @@ land. Required structure for the 2-3 sentences:
   • The sign-off should be the conviction itself, not a sealed-deal
     catchphrase.
 
-<div class="gr-rating-box">
-  <div>
-    <div class="gr-rating-score">{X.X}/5</div>
-    <div class="gr-rating-label">Final Rating</div>
-  </div>
-  <div class="gr-rating-text">{2-3 sentences per rules above. Sentence 1 names the decisive trade-off. Sentence 2-3 names who shouldn't buy + what would close it to a 5. No banned openers, no banned sign-offs.}</div>
-</div>
+(No separate rating-box markup — the verdict text lives in the scorecard's
+gr-sc-text line. Emit the [3b] scorecard block here, then the CTA card below.)
 
-[7] CTA CARD (HTML block — full content width, matches the rating box width)
+[7] CTA CARD (HTML block — full content width, matches the scorecard width)
 Use the exact same product name string here as in the mid-article CTA from [4]:
 <div class="gr-cta-card">
   <div class="gr-cta-body">
@@ -2224,7 +2238,7 @@ STRUCTURE OVERRIDE (replaces the product-review template above)
     G. WHAT TO DO WITH THIS — what the reader walks away with: a recommendation, a question to sit with, a thing to try, a perspective shift.
     OMIT the mid-article CTA card entirely.
 [5] FAQ → keep, but reframe around the TOPIC / story / claims of the video. Answer with transcript-backed specifics.
-[6] RATING BOX → OMIT ENTIRELY.
+[3b]/[6] SCORECARD (the rating card) → OMIT ENTIRELY (no scorecard, no subscores, no rating line — this isn't a product review).
 [7] FINAL CTA CARD → REPLACE with a simple "Watch it for yourself" paragraph pointing back to the embedded video (and a soft subscribe nudge if it fits). No button styling, no Amazon language.
 [8] HASHTAG TAGS → keep, but exclude #ad / #affiliate / any sponsorship-flavoured tags.
 
