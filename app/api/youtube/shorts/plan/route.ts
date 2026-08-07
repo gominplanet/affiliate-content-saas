@@ -286,11 +286,25 @@ export async function POST(request: Request) {
       } catch { /* best-effort */ }
     }
 
+    // Windows the creator already turned into Shorts (rendered/posted). Passed to
+    // the planner so a re-plan / "Find more" never re-proposes a moment that's
+    // already finished work.
+    let excludeRanges: Array<{ startSec: number; endSec: number }> = []
+    try {
+      const { data: doneRows } = await sb.from('youtube_shorts')
+        .select('start_sec,end_sec')
+        .eq('user_id', user.id).eq('video_id', video.id).neq('status', 'suggested')
+      excludeRanges = ((doneRows ?? []) as Array<{ start_sec: number; end_sec: number }>)
+        .map(r => ({ startSec: Number(r.start_sec), endSec: Number(r.end_sec) }))
+        .filter(r => Number.isFinite(r.startSec) && Number.isFinite(r.endSec) && r.endSec > r.startSec)
+    } catch { /* best-effort — no exclusions on read error */ }
+
     const anthropic = createAnthropicClient()
     const clips = await planShorts(anthropic, {
       cues, videoTitle, niches, tone,
       count: Math.min(10, Math.max(1, Number(body.count) || 5)),
       sourceDescription,
+      excludeRanges,
       telemetry: { userId: user.id, tier },
     })
     if (clips.length === 0) {
