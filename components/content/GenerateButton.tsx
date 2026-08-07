@@ -595,7 +595,7 @@ export function GenerateButton({
               title="Upload up to 3 of your own photos to use throughout the article instead of the AI ones"
             >
               {imgBusy ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />}
-              {userImages.length > 0 ? `Your photos (${userImages.length}/3)` : 'Upload your own'}
+              {userImages.length > 0 ? `Your article photos (${userImages.length}/3)` : 'Upload your own (up to 3)'}
             </button>
           </>
         )}
