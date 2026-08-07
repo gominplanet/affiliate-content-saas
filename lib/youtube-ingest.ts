@@ -108,10 +108,11 @@ export async function renderShort(
   sourceUrl: string,
   startSec: number,
   endSec: number,
-  words: Array<{ startSec: number; endSec: number; text: string }>,
+  words: Array<{ startSec: number; endSec: number; text: string; hl?: boolean }>,
   userId?: string,
+  captionTheme?: string,
 ): Promise<IngestResult | null> {
-  return renderShortReq({ videoUrl: sourceUrl }, startSec, endSec, words, userId)
+  return renderShortReq({ videoUrl: sourceUrl }, startSec, endSec, words, userId, captionTheme)
 }
 
 /**
@@ -123,19 +124,24 @@ export async function renderShortSegment(
   youtubeVideoId: string,
   startSec: number,
   endSec: number,
-  words: Array<{ startSec: number; endSec: number; text: string }>,
+  words: Array<{ startSec: number; endSec: number; text: string; hl?: boolean }>,
   userId?: string,
+  captionTheme?: string,
 ): Promise<IngestResult | null> {
   if (!/^[A-Za-z0-9_-]{11}$/.test(youtubeVideoId)) return null
-  return renderShortReq({ youtubeVideoId }, startSec, endSec, words, userId)
+  return renderShortReq({ youtubeVideoId }, startSec, endSec, words, userId, captionTheme)
 }
 
 async function renderShortReq(
   source: { videoUrl?: string; youtubeVideoId?: string },
   startSec: number,
   endSec: number,
-  words: Array<{ startSec: number; endSec: number; text: string }>,
+  // `hl` flags a "power word" to accent-color in the burned captions; the render
+  // service colors flagged words and renders any emoji present in `text`.
+  // Older service builds ignore the extra fields (backward-compatible).
+  words: Array<{ startSec: number; endSec: number; text: string; hl?: boolean }>,
   userId?: string,
+  captionTheme?: string,
 ): Promise<IngestResult | null> {
   const base = (process.env.YOUTUBE_INGEST_URL || '').replace(/\/+$/, '')
   if (!base || !(endSec > startSec) || (!source.videoUrl && !source.youtubeVideoId)) return null

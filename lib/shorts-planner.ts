@@ -149,7 +149,10 @@ export async function planShorts(anthropic: Anthropic, opts: PlanOpts): Promise<
     `- startSec/endSec are integer SECONDS on the video timeline; endSec-startSec must be ${minSec}–${maxSec}.\n` +
     `- Clips must NOT overlap. Spread them across the video.\n` +
     `- hook: a punchy on-screen title (≤ 8 words) that fits the moment. No clickbait that the clip doesn't deliver.\n` +
-    `- caption: 1–2 sentence post caption in the creator's ${tone} voice. Never use the word "honest".\n` +
+    `- caption: 1–2 sentence post caption in the creator's ${tone} voice. Open with the strongest hook, ` +
+    `add 1–2 relevant emoji (never more, never decorative rows of them), and end with a light engagement ` +
+    `prompt or soft CTA ("which would you grab?", "save this for later", "link in bio"). Sound like a real ` +
+    `creator, not a brand. Never use the word "honest".\n` +
     `- hashtags: 3–5 specific, niche hashtags (no #ad here; the poster adds disclosure).\n` +
     `- score: 0–100, your honest estimate of stop-the-scroll potential.\n\n` +
     `Return ONLY a JSON array:\n` +

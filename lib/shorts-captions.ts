@@ -37,6 +37,28 @@ export function sliceCuesToWindow(
   return out
 }
 
+// "Power words" a viewer's eye should snap to — numbers, money, and high-emphasis
+// terms. The render service colors these in the burned captions (Opus/Hormozi
+// style), so a word only needs to be FLAGGED here; the coloring happens there.
+const POWER_WORDS = new Set([
+  'best', 'worst', 'never', 'always', 'free', 'secret', 'most', 'first', 'only',
+  'stop', 'warning', 'huge', 'insane', 'crazy', 'biggest', 'new', 'now', 'proven',
+  'guaranteed', 'instantly', 'fast', 'easy', 'worth', 'save', 'wrong', 'mistake',
+  'nobody', 'everyone', 'exactly', 'literally', 'game', 'changer', 'game-changer',
+])
+
+/** Should this caption word be highlighted (accent color) in the burned
+ *  captions? True for numbers / %, / $ amounts, ALL-CAPS emphasis (≥3 chars),
+ *  and known power words. Punctuation-insensitive. Pure + deterministic. */
+export function isPowerWord(text: string): boolean {
+  const raw = (text || '').trim()
+  if (!raw) return false
+  if (/[0-9]/.test(raw) || /[$%]/.test(raw)) return true            // "50%", "$29", "3x"
+  const core = raw.replace(/[^A-Za-z]/g, '')
+  if (core.length >= 3 && core === core.toUpperCase()) return true   // shouted emphasis
+  return POWER_WORDS.has(core.toLowerCase())
+}
+
 /** True when the cues are WORD-level (Whisper chunk_level:'word') — most cues
  *  are a single token. Word-level cues carry real per-word timings, so we group
  *  them into lines instead of evenly splitting a phrase. */
