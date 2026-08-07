@@ -2175,6 +2175,14 @@ function ScheduledList({
                   })}
                 </div>
               )}
+              {/* No socials queued with this post — say so explicitly so a blank
+                  card reads as intentional, not broken. Only on the blog publish
+                  row (social child rows obviously don't cascade further). */}
+              {item.kind === 'blog_publish' && (!item.cascade || item.cascade.length === 0) && (
+                <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-2">
+                  No socials scheduled with this post.
+                </p>
+              )}
               {item.error_message && (
                 <p className="text-[11px] text-[#ff3b30] mt-2 break-all">⚠ {item.error_message}</p>
               )}
