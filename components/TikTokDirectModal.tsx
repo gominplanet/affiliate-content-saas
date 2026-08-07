@@ -775,6 +775,7 @@ export function TikTokDirectModal({
         )}
 
         {!loading && !loadError && info && meta && (
+          <>
           {/* Why is "Post to TikTok" greyed out? The button is disabled until a
               privacy level is picked (TikTok requires an explicit choice), plus a
               couple of edge cases. Without this line users just see a dead button
@@ -815,6 +816,7 @@ export function TikTokDirectModal({
               }
             </button>
           </div>
+          </>
         )}
       </div>
     </div>
