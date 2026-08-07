@@ -34,7 +34,7 @@ export function FromLinkModal({ onClose, onDone, initialLink, initialName, initi
   const [angle, setAngle] = useState('')
   const [category, setCategory] = useState(initialCategory ?? '')
   const [busy, setBusy] = useState(false)
-  const [phase, setPhase] = useState<'idle' | 'scout' | 'write'>('idle')
+  const [phase, setPhase] = useState<'idle' | 'scout' | 'write' | 'images'>('idle')
   const [done, setDone] = useState<{ url: string; title: string } | null>(null)
 
   useEffect(() => {
@@ -81,6 +81,20 @@ export function FromLinkModal({ onClose, onDone, initialLink, initialName, initi
       })
       const d = await res.json().catch(() => ({}))
       if (!res.ok) { toast.error(d.error || 'Generation failed. Try again.'); setBusy(false); setPhase('idle'); return }
+      // The post is published with its hero image. from-link doesn't add
+      // IN-BODY images server-side, so fire the same reliable image step the
+      // video flow uses — it reads your "images per article" brand setting and
+      // inserts that many photos. Best-effort: the post already stands without it.
+      if (d.postId) {
+        setPhase('images')
+        try {
+          await fetch('/api/blog/refresh-images', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ wordpressPostId: d.postId }),
+          })
+        } catch { /* non-fatal — published post stands with its hero image */ }
+      }
       toast.success('Post generated and published.')
       setDone({ url: d.url, title: d.title })
       onDone()
@@ -158,6 +172,8 @@ export function FromLinkModal({ onClose, onDone, initialLink, initialName, initi
               {busy
                 ? (phase === 'scout'
                     ? <><Loader2 size={15} className="animate-spin" /> Reading the product page with SCOUT…</>
+                    : phase === 'images'
+                    ? <><Loader2 size={15} className="animate-spin" /> Adding your images…</>
                     : <><Loader2 size={15} className="animate-spin" /> Researching &amp; writing… (~1–2 min)</>)
                 : <><Sparkles size={15} /> Generate &amp; publish</>}
             </button>
