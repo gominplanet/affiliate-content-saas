@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Loader2, X, RefreshCw, CheckCircle, AlertCircle, Calendar, Copy, ExternalLink, Users } from 'lucide-react'
 import { useModalA11y } from '@/components/ui/useModalA11y'
+import { tzAbbrev } from '@/lib/format-schedule'
 
 /** Platform key the SocialPreviewModal accepts for scheduling. The cron
  *  worker handles the same set. */
@@ -374,7 +375,7 @@ export function SocialPreviewModal({
                         className="w-full text-xs px-3 py-2 rounded-lg bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 focus:border-[#7C3AED] focus:outline-none"
                       />
                       <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-1.5 leading-relaxed">
-                        Your timezone. The post fires automatically — you don&apos;t need to keep the app open.
+                        Times are in your local timezone ({tzAbbrev()}). The post fires automatically, you don&apos;t need to keep the app open.
                       </p>
                     </div>
                   )}

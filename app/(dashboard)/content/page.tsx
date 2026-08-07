@@ -24,6 +24,7 @@ import { ManualEdit } from '@/components/content/ManualEdit'
 import { ChangeThumbnailButton } from '@/components/content/ChangeThumbnailButton'
 import { RewriteFeedbackModal } from '@/components/content/RewriteFeedbackModal'
 import { errText } from '@/lib/err-text'
+import { formatScheduleTime } from '@/lib/format-schedule'
 import { generateBlogRequest } from '@/lib/blog-generate-client'
 import { GenerateButton } from '@/components/content/GenerateButton'
 import { SitePicker } from '@/components/SitePicker'
@@ -128,6 +129,9 @@ interface ScheduledItem {
   /** Set on vertical Short-direct rows (no blog post) — gives them a title. */
   video_id?: string | null
   youtube_videos?: { title: string | null } | null
+  /** True for a synthesized "scheduled blog post" entry (wp-native schedule,
+   *  no scheduled_posts row). View-only here — managed from Video to Blog. */
+  synthetic?: boolean
 }
 
 // ── Readiness gate ────────────────────────────────────────────────────────────
@@ -868,7 +872,7 @@ const VideoCard = memo(function VideoCardImpl({
   const scheduledForDate = post?.scheduledFor ? new Date(post.scheduledFor) : null
   const isScheduledPending = !!(scheduledForDate && !isNaN(scheduledForDate.getTime()) && scheduledForDate.getTime() > Date.now())
   const scheduledLabel = isScheduledPending && scheduledForDate
-    ? scheduledForDate.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+    ? formatScheduleTime(scheduledForDate, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
     : null
 
   // "Share with brand" modal — assembles every published link for this post
@@ -2119,8 +2123,7 @@ function ScheduledList({
           : (PLATFORM_META[item.platform ?? 'linkedin']
               ?? { label: item.platform ? item.platform.charAt(0).toUpperCase() + item.platform.slice(1) : 'Social', color: '#7C3AED' })
         const pill = STATUS_PILL[item.status]
-        const when = new Date(item.scheduled_at)
-        const dt = when.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+        const dt = formatScheduleTime(item.scheduled_at)
         return (
           <div
             key={item.id}
@@ -2155,13 +2158,18 @@ function ScheduledList({
                 <p className="text-[11px] text-[#ff3b30] mt-2 break-all">⚠ {item.error_message}</p>
               )}
             </div>
-            {item.status === 'pending' && (
+            {item.status === 'pending' && !item.synthetic && (
               <button
                 onClick={() => onCancel(item.id)}
                 className="text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] transition-colors flex-shrink-0"
               >
                 Cancel
               </button>
+            )}
+            {item.status === 'pending' && item.synthetic && (
+              <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93] flex-shrink-0 text-right leading-tight">
+                Manage in<br />Video to Blog
+              </span>
             )}
           </div>
         )
@@ -2615,7 +2623,14 @@ export default function ContentPage() {
 
     const postMap: Record<string, { url: string; title: string; postId?: string; wpPostId?: number; indexed?: boolean | null; coverage?: string | null; bodyImagesCount?: number | null; scheduledFor?: string | null; scheduleMode?: string | null; publishedAt?: string | null; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string; instagramReelId?: string; instagramStoryId?: string }> = {}
     for (const p of blogPosts as Record<string, unknown>[] ?? []) {
-      if (liveIds && p.wordpress_post_id != null && !liveIds.has(p.wordpress_post_id as number)) continue  // deleted/trashed in WordPress
+      // A post SCHEDULED for the future isn't live in WordPress yet (its WP
+      // status is 'future'/'draft', so its id isn't in liveIds). Don't drop it
+      // as "deleted/trashed" — keep it so the card keeps showing its "Scheduled
+      // · …" pill on reload instead of reverting to the fresh Generate/Schedule
+      // fork (which is what let Scott accidentally re-schedule the same video).
+      const _schedFor = p.scheduled_for as string | null | undefined
+      const _isFutureScheduled = !!_schedFor && new Date(_schedFor).getTime() > Date.now()
+      if (liveIds && p.wordpress_post_id != null && !liveIds.has(p.wordpress_post_id as number) && !_isFutureScheduled) continue  // deleted/trashed in WordPress
       if (p.video_id && p.wordpress_url) {
         const idx = seoByPostId.get(p.id as string)
         postMap[p.video_id as string] = {

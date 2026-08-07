@@ -20,6 +20,7 @@ import {
 import { ShortVideoUpload } from '@/components/ShortVideoUpload'
 import { useModalA11y } from '@/components/ui/useModalA11y'
 import { youtubeUploadEnabled } from '@/lib/feature-flags'
+import { tzAbbrev } from '@/lib/format-schedule'
 
 type PrivacyLevel = 'PUBLIC_TO_EVERYONE' | 'MUTUAL_FOLLOW_FRIENDS' | 'SELF_ONLY' | 'FOLLOWER_OF_CREATOR'
 
@@ -755,7 +756,7 @@ export function TikTokDirectModal({
                   onChange={e => { setScheduleAt(e.target.value); setScheduledMsg(null); setScheduleError(null) }}
                   className="w-full text-sm px-3 py-2 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-[#f5f5f7]"
                 />
-                <p className="text-[11px] text-[#86868b] mt-1">Uses your settings + caption above. Fires automatically — you can close this.</p>
+                <p className="text-[11px] text-[#86868b] mt-1">Times are in your local timezone ({tzAbbrev()}). Uses your settings + caption above. Fires automatically, you can close this.</p>
                 {scheduledMsg && <p className="mt-2 text-[11px] text-[#34c759] flex items-center gap-1.5"><CheckCircle size={11} /> {scheduledMsg}</p>}
                 {scheduleError && <p className="mt-2 text-[11px] text-[#ff3b30] flex items-center gap-1.5"><AlertCircle size={11} /> {scheduleError}</p>}
                 <div className="flex gap-2 mt-2">
