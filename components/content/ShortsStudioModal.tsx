@@ -13,7 +13,7 @@
  *      creator uploads once (YouTube ToS: we never server-pull the video) — the
  *      same upload the Instagram burner uses.
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { toast } from 'sonner'
 import { X, Scissors, Loader2, Sparkles, Download, ExternalLink, AlertCircle, Film, Youtube, Instagram, Music2, Check } from 'lucide-react'
@@ -96,6 +96,9 @@ export function ShortsStudioModal({
   const [loading, setLoading] = useState(true)
   const [planning, setPlanning] = useState(false)
   const [clips, setClips] = useState<ShortRow[]>([])
+  // Rank the strongest cuts to the top, and let the creator hide the weaker
+  // ones with a single toggle — the planner already scores each clip 0-100.
+  const [topOnly, setTopOnly] = useState(false)
   const [hasSource, setHasSource] = useState(false)
   const [ingestEnabled, setIngestEnabled] = useState(false)
   const [preparing, setPreparing] = useState(false)
@@ -260,6 +263,20 @@ export function ShortsStudioModal({
     }
   }, [markPosted])
 
+  // Always show the strongest clips first (planner scores each 0-100). The
+  // "Top clips only" toggle hides the weaker ones; it's only offered when it
+  // would actually change the list (some clips clear the bar, some don't).
+  const TOP_SCORE = 80
+  const sortedClips = useMemo(
+    () => [...clips].sort((a, b) => (b.score ?? 0) - (a.score ?? 0)),
+    [clips],
+  )
+  const topCount = useMemo(() => sortedClips.filter(c => (c.score ?? 0) >= TOP_SCORE).length, [sortedClips])
+  const canFilterTop = topCount > 0 && topCount < sortedClips.length
+  const visibleClips = topOnly && canFilterTop
+    ? sortedClips.filter(c => (c.score ?? 0) >= TOP_SCORE)
+    : sortedClips
+
   return (
     <>
     <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:p-8" onClick={onClose}>
@@ -348,7 +365,27 @@ export function ShortsStudioModal({
             </div>
           ) : (
             <div className="space-y-3">
-              {clips.map(clip => {
+              {/* Ranking summary + "top clips only" filter. Clips are always
+                  sorted best-first; the toggle just hides the weaker ones. */}
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <p className="text-[11px] text-[#86868b]">
+                  {visibleClips.length} clip{visibleClips.length === 1 ? '' : 's'}
+                  {topOnly && canFilterTop ? ` · top picks (${TOP_SCORE}+)` : ' · best first'}
+                </p>
+                {canFilterTop && (
+                  <button
+                    onClick={() => setTopOnly(v => !v)}
+                    className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold border transition-colors"
+                    style={topOnly
+                      ? { backgroundColor: PURPLE, color: '#fff', borderColor: PURPLE }
+                      : { borderColor: 'rgba(124,58,237,0.4)', color: PURPLE }}
+                    title={`Show only clips scoring ${TOP_SCORE} or higher`}
+                  >
+                    <Sparkles size={12} /> {topOnly ? `Top ${topCount} only` : 'Top clips only'}
+                  </button>
+                )}
+              </div>
+              {visibleClips.map(clip => {
                 const style = styleById[clip.id] || clip.subtitleStyle || 'bold-white'
                 const captionsOn = captionsById[clip.id] !== false
                 const rendering = renderingId === clip.id
