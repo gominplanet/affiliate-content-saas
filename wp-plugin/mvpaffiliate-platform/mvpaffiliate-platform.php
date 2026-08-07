@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.69
+ * Version: 1.0.70
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -1090,6 +1090,10 @@ add_action('wp_footer', function () {
 
     $cards = [];
     foreach ($q->posts as $p) {
+        // get_the_modified_date() can return a non-string (false) when a
+        // date-hiding filter is active — coerce to a string so the JS pill
+        // never renders the literal "Updated false". Empty => no pill.
+        $modified = get_the_modified_date('M j', $p->ID);
         $cards[] = [
             'title'    => get_the_title($p->ID),
             'url'      => get_permalink($p->ID),
@@ -1100,7 +1104,7 @@ add_action('wp_footer', function () {
             // isn't registered so WP gracefully returns the full image — sharp
             // either way.
             'image'    => get_the_post_thumbnail_url($p->ID, 'mvp-card-large') ?: '',
-            'modified' => get_the_modified_date('M j', $p->ID),
+            'modified' => is_string($modified) ? $modified : '',
         ];
     }
     wp_reset_postdata();
@@ -1158,8 +1162,12 @@ add_action('wp_footer', function () {
   var html = '<h2>Recently updated</h2><div class="gr-ru-scroll">';
   data.forEach(function (c) {
     var img = c.image ? ('background-image:url(' + c.image.replace(/"/g, '%22') + ')') : '';
+    // Only render the "Updated <date>" pill when there's a real date string —
+    // never "Updated false"/"Updated " when the date is hidden or missing.
+    var pill = (c.modified && typeof c.modified === 'string')
+      ? '<span class="gr-ru-pill">Updated ' + c.modified + '</span>' : '';
     html += '<a class="gr-ru-card" href="' + c.url + '">'
-         +    '<div class="gr-ru-image" style="' + img + '"><span class="gr-ru-pill">Updated ' + c.modified + '</span></div>'
+         +    '<div class="gr-ru-image" style="' + img + '">' + pill + '</div>'
          +    '<div class="gr-ru-body"><p class="gr-ru-title">' + c.title.replace(/</g, '&lt;') + '</p></div>'
          + '</a>';
   });
