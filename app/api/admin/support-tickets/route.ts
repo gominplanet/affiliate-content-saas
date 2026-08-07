@@ -49,11 +49,34 @@ export async function GET(req: Request) {
   // open → answered → closed, newest-first within each bucket. (Can't do this in
   // the DB order() — alphabetical status sort would bury "open".)
   const rank: Record<string, number> = { open: 0, answered: 1, closed: 2 }
-  const tickets = ((data ?? []) as Array<{ status: string; priority?: boolean }>).slice().sort(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const tickets = ((data ?? []) as Array<{ id: string; status: string; priority?: boolean; messages?: unknown }>).slice().sort(
     (a, b) =>
       (b.priority ? 1 : 0) - (a.priority ? 1 : 0) ||
       (rank[a.status] ?? 9) - (rank[b.status] ?? 9),
   )
+
+  // Attach each ticket's full message thread (best-effort — a pre-migration-232
+  // DB has no support_messages, so we leave the legacy body/admin_response shape).
+  const ids = tickets.map(t => t.id)
+  if (ids.length > 0) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: msgs } = await (admin as any)
+      .from('support_messages')
+      .select('id,ticket_id,sender,body,created_at')
+      .in('ticket_id', ids)
+      .order('created_at', { ascending: true })
+      .then((r: { data: unknown }) => r, () => ({ data: null }))
+    if (Array.isArray(msgs)) {
+      const byTicket = new Map<string, Array<Record<string, unknown>>>()
+      for (const m of msgs as Array<{ ticket_id: string }>) {
+        const arr = byTicket.get(m.ticket_id) ?? []
+        arr.push(m as unknown as Record<string, unknown>)
+        byTicket.set(m.ticket_id, arr)
+      }
+      for (const t of tickets) t.messages = byTicket.get(t.id) ?? []
+    }
+  }
   return NextResponse.json({ tickets })
 }
 
@@ -79,6 +102,20 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ error: 'Nothing to update.' }, { status: 400 })
   }
 
+  const admin = createAdminClient()
+
+  // A reply APPENDS an admin message to the thread AND flips the ticket to
+  // answered. We also keep the ticket-level admin_response / responded_at /
+  // response_seen in sync so the existing bell (which reads those) still lights
+  // up without touching the notifications route.
+  if (response !== undefined && response.length > 0) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (admin as any)
+      .from('support_messages')
+      .insert({ ticket_id: id, sender: 'admin', body: response, seen: false })
+      .then((r: unknown) => r, () => null)
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const patch: Record<string, any> = { updated_at: new Date().toISOString() }
   if (response !== undefined && response.length > 0) {
@@ -90,7 +127,6 @@ export async function PATCH(req: Request) {
     patch.status = nextStatus
   }
 
-  const admin = createAdminClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (admin as any)
     .from('support_tickets')
@@ -99,5 +135,14 @@ export async function PATCH(req: Request) {
     .select('id,user_id,email,subject,body,status,admin_response,responded_at,created_at,updated_at')
     .single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json({ ticket: data })
+
+  // Return the fresh thread so the admin UI can re-render without a full reload.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: messages } = await (admin as any)
+    .from('support_messages')
+    .select('id,sender,body,created_at')
+    .eq('ticket_id', id)
+    .order('created_at', { ascending: true })
+    .then((r: { data: unknown }) => r, () => ({ data: null }))
+  return NextResponse.json({ ticket: { ...data, messages: Array.isArray(messages) ? messages : undefined } })
 }
