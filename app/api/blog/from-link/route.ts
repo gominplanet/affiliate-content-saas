@@ -19,6 +19,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAnthropicClient } from '@/lib/anthropic'
+import { deriveProductName } from '@/lib/product-name'
 import { toUserMessage } from '@/lib/friendly-error'
 import { createClaudeService } from '@/services/claude'
 import { createWordPressService } from '@/services/wordpress'
@@ -276,24 +277,38 @@ export async function POST(req: Request) {
   }
 
   // ── 3. Write the review (single product, grounded, MVP rules + voice) ───────
+  // Distil the messy Amazon title into a clean, searchable name. Shoppers query
+  // AI/Google with BRAND + a short core name, so we thread that canonical name
+  // through the title, H1, first mention and SEO keyword — and keep the raw
+  // full title for ONE exact-match mention (long-tail search).
+  const pn = deriveProductName(productName, (scraped?.brand as string | null | undefined) ?? null)
   const anthropic = createAnthropicClient()
-  const sys = `You are the creator writing a FIRST-PERSON ("I"/"we") affiliate review of ONE product — you personally recommend it. Never write in third person or refer to "the reviewer". Only state facts present in the PRODUCT DATA or RESEARCH below — NEVER invent specs, numbers, prices, test results, or personal anecdotes you cannot support from that data. If first-hand detail is thin, write only at the level the data supports rather than fabricating. Lead each section answer-first. Naturally target the main buyer-intent keyword for this product in the title, the first paragraph, and one H2. ${BANNED_RULE}\n${learnBlock}`
+  const sys = `You are the creator writing a FIRST-PERSON ("I"/"we") affiliate review of ONE product — you personally recommend it. Never write in third person or refer to "the reviewer". Only state facts present in the PRODUCT DATA or RESEARCH below — NEVER invent specs, numbers, prices, test results, or personal anecdotes you cannot support from that data. If first-hand detail is thin, write only at the level the data supports rather than fabricating. Lead each section answer-first. ${BANNED_RULE}\n${learnBlock}`
 
   const userPrompt = `Write a complete, SEO- and AI-Overview-optimized affiliate review blog post about ONE product.
 ${angle ? `ANGLE / FOCUS: ${angle}\n` : ''}${category ? `CATEGORY: ${category}\n` : ''}
 PRODUCT
-- Name: ${productName}
+- Canonical name (USE THIS as the product's name everywhere): ${pn.canonical || productName}
+- Brand: ${pn.brand || 'n/a'}
+- Full listing title (for ONE exact mention only): ${pn.fullTitle || productName}
 - Marketing description: ${(pDescription || '').slice(0, 800) || 'n/a'}
 - Key features: ${bullets.slice(0, 8).join(' · ') || 'n/a'}
+
+PRODUCT-NAME RULES (customers search the exact brand + product name, so match it):
+- TITLE: must contain the canonical name "${pn.canonical || productName}" plus a short angle (e.g. "Review", "Worth It?"). Keep it under ~65 characters. Do NOT stuff the long marketing tail into the title.
+- H1 + first mention: use the FULL canonical name once, in the opening sentence.
+- After that: refer to it naturally with shorter forms (the brand, "this ${pn.shortName ? pn.shortName.split(' ').slice(-2).join(' ') : 'product'}") so it reads human, not keyword-stuffed.
+- Include the FULL listing title verbatim EXACTLY ONCE in the body (a specs sentence or beside the buy button) for exact-match search — never in the flowing prose.
+- Never write the brand as "<Brand> Store"; the brand is just "${pn.brand || productName}".
 
 RESEARCH (web + real owner sentiment — ground real-world pros/cons and use cases here; for any specific number, spec, or claim, only include it if it appears in this data):
 ${(research || '').slice(0, 3500) || 'n/a'}
 
 Return ONLY valid JSON (no markdown fences) with this exact shape:
 {
-  "title": "<= 65 char SEO title targeting the buyer keyword, no banned words",
-  "meta_description": "150-160 char compelling meta description, no banned words",
-  "target_keyword": "the main keyword you targeted",
+  "title": "<= 65 char SEO title that INCLUDES the canonical product name above + a short angle, no banned words",
+  "meta_description": "150-160 char compelling meta description that leads with the canonical product name, no banned words",
+  "target_keyword": "the canonical product name (brand + short name)",
   "category": "a single concise blog category for this product/service, Title Case, 1-3 words (e.g. 'VPNs & Security', 'Headphones', 'Kitchen'); never the word 'blog'",
   "hero_prompt": "one vivid sentence describing an editorial, text-free HERO photo of this product's CATEGORY — clean, aspirational, magazine-style (no people required, no logos, no text)",
   "intro_html": "1-2 short intro paragraphs as raw HTML <p>...</p> (first person, answer-first hook)",
@@ -338,7 +353,21 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
   // ── 4. Assemble the WordPress (Gutenberg) HTML ──────────────────────────────
   const wpService = createWordPressService(site.wordpress_url ?? '', site.wordpress_username ?? '', site.wordpress_app_password ?? '')
   const scrub = (s: string) => scrubBanned(s || '')
-  const title = scrub(parsed.title) || `${productName} Review`
+  // Enforce the canonical product name in the title (belt-and-braces on the
+  // prompt): if the model's title dropped the brand AND the product's core
+  // words, fall back to a clean "<canonical> Review". Keeps every review title
+  // matching how shoppers search, without the keyword-stuffed tail.
+  let title = scrub(parsed.title) || ''
+  if (pn.canonical) {
+    const lt = title.toLowerCase()
+    const coreWords = pn.shortName.toLowerCase().split(/\s+/).filter(Boolean).slice(0, 2)
+    const hasBrand = !!pn.brand && lt.includes(pn.brand.toLowerCase())
+    const hasCore = coreWords.length > 0 && coreWords.every((w) => lt.includes(w))
+    if (!title || !(hasBrand || hasCore)) title = `${pn.canonical} Review`
+  }
+  if (!title) title = `${productName} Review`
+  // The product's canonical name is the primary keyword.
+  if (pn.canonical) parsed.target_keyword = pn.canonical
   const slug = slugify(title)
 
   let bodyHtml = ''
@@ -350,7 +379,7 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
   const ctaButton = (label: string) => affiliateUrl
     ? `<!-- wp:buttons --><div class="wp-block-buttons"><!-- wp:button {"backgroundColor":"vivid-amber"} --><div class="wp-block-button"><a class="wp-block-button__link wp-element-button" href="${affiliateUrl}" target="_blank" rel="nofollow sponsored noopener">${scrub(label)}</a></div><!-- /wp:button --></div><!-- /wp:buttons -->\n`
     : ''
-  bodyHtml += ctaButton(`Check price → ${productName.split(',')[0].slice(0, 40)}`)
+  bodyHtml += ctaButton(`Check price → ${(pn.canonical || productName).split(',')[0].slice(0, 45)}`)
 
   bodyHtml += `${scrub(parsed.body_html)}\n`
 
