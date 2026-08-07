@@ -125,21 +125,16 @@ export async function subscribePageToFeed(opts: { pageId: string; pageAccessToke
 }
 
 export async function getPages(userToken: string): Promise<FacebookPage[]> {
-  // Primary: Pages the user has a direct role on. Covers Classic Pages and
-  // most of the New Pages Experience.
+  // UNION both sources rather than early-returning on the first non-empty one.
+  // A creator can have some Pages on a direct role (/me/accounts) AND their real
+  // target Page under a Business Manager. The old code returned ONLY the direct
+  // Pages whenever /me/accounts had any, so a Business-Manager Page was invisible
+  // and "opt in to all" didn't surface it — the modernday.tech ticket (opted in
+  // all, still only one Page to pick). Fetch both, dedupe, return everything.
+  // Direct must not throw (it's the primary), business is best-effort.
   const direct = await fetchMeAccounts(userToken)
-  if (direct.length > 0) return dedupePages(direct)
-
-  // Fallback: Business-Manager-owned / client Pages. This is the case where a
-  // real business's Pages live under a Business Manager and /me/accounts comes
-  // back EMPTY even though the user picked Pages during consent. Needs the
-  // `business_management` permission — granted immediately for the app's own
-  // admins/developers/testers, and for customers once that scope clears App
-  // Review. Best-effort: any failure (permission not granted, no businesses,
-  // no page token returned) just yields [], so this can never regress an
-  // account that already worked via /me/accounts.
-  const viaBusiness = await fetchBusinessPages(userToken)
-  return dedupePages(viaBusiness)
+  const viaBusiness = await fetchBusinessPages(userToken)   // best-effort → [] on any failure
+  return dedupePages([...direct, ...viaBusiness])
 }
 
 async function fetchMeAccounts(userToken: string): Promise<FacebookPage[]> {
