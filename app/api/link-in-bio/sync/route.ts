@@ -36,7 +36,7 @@ export async function POST() {
   const { data: page } = await sb.from('link_pages').select('id').eq('user_id', user.id).maybeSingle()
   if (!page?.id) return NextResponse.json({ error: 'Create your page first.' }, { status: 400 })
 
-  type SrcRow = { asin: string; title: string | null; image_url: string | null; source: 'deal' | 'review' }
+  type SrcRow = { asin: string | null; title: string | null; image_url: string | null; url?: string | null; source: 'deal' | 'review' }
 
   // Source 1 — products the creator has engaged with (posted DEALS auto-watch;
   // plus manual watches).
@@ -58,23 +58,45 @@ export async function POST() {
     .not('video_id', 'is', null)
     .order('published_at', { ascending: false })
     .limit(IMPORT_MAX)
+  // A product link we can use as-is for a tile even when we can't read an ASIN
+  // out of it (the common case: MVP already wrapped it into a geni.us short link).
+  const usableUrl = (u: string) => /^https?:\/\//i.test(u) && /(amazon\.|amzn\.to|a\.co|geni\.us)/i.test(u)
   const reviewRows: SrcRow[] = []
   for (const b of (reviews ?? []) as Array<{ title: string | null; youtube_videos: { product_url: string | null; product_image_url: string | null; title: string | null } | Array<{ product_url: string | null; product_image_url: string | null; title: string | null }> | null }>) {
     const yv = Array.isArray(b.youtube_videos) ? b.youtube_videos[0] : b.youtube_videos
-    const purl = yv?.product_url || ''
-    const asin = purl ? asinFromAmazonUrl(purl) : null
-    if (!asin) continue // only import reviews whose product resolves to an Amazon ASIN
-    reviewRows.push({ asin, title: b.title || yv?.title || null, image_url: yv?.product_image_url || null, source: 'review' })
+    const purl = (yv?.product_url || '').trim()
+    if (!purl) continue // no product link stored for this review → nothing to link a tile to
+    const title = b.title || yv?.title || null
+    const image_url = yv?.product_image_url || null
+    const asin = asinFromAmazonUrl(purl)
+    if (asin) {
+      // Raw Amazon link → import by ASIN (dedups + re-wraps into a Geniuslink).
+      reviewRows.push({ asin, title, image_url, source: 'review' })
+    } else if (usableUrl(purl)) {
+      // Already a geni.us / short affiliate link → use it directly, dedup by URL.
+      reviewRows.push({ asin: null, title, image_url, url: purl, source: 'review' })
+    }
+    // else: not an affiliate link we can use → skip
   }
 
-  // Merge + dedupe by ASIN (deals first, so a posted deal keeps its richer data),
-  // capped to the import limit.
+  // Merge + dedupe (deals first, so a posted deal keeps its richer data), capped
+  // to the import limit. ASIN rows dedupe by ASIN; link-only review rows (no ASIN)
+  // dedupe by URL.
   const seenAsin = new Set<string>()
+  const seenUrl = new Set<string>()
   const rows: SrcRow[] = []
   for (const r of [...dealRows, ...reviewRows]) {
-    const a = (r.asin || '').toUpperCase()
-    if (!/^[A-Z0-9]{10}$/.test(a) || seenAsin.has(a)) continue
-    seenAsin.add(a)
+    if (r.asin) {
+      const a = r.asin.toUpperCase()
+      if (!/^[A-Z0-9]{10}$/.test(a) || seenAsin.has(a)) continue
+      seenAsin.add(a)
+    } else if (r.url) {
+      const u = r.url.trim()
+      if (seenUrl.has(u)) continue
+      seenUrl.add(u)
+    } else {
+      continue
+    }
     rows.push(r)
     if (rows.length >= IMPORT_MAX) break
   }
@@ -85,11 +107,13 @@ export async function POST() {
     .order('position', { ascending: false }).limit(1).maybeSingle()
   const position = (last?.position ?? -1) + 1
 
-  // Product tiles already on the page (id + url so we can HEAL bare-tagged ones).
+  // Product tiles already on the page (ALL of them — need urls to dedupe the
+  // link-only review tiles, and asins to HEAL bare-tagged ones).
   const { data: existing } = await sb.from('link_page_items')
-    .select('id,asin,url,title').eq('page_id', page.id).eq('kind', 'product').not('asin', 'is', null)
+    .select('id,asin,url,title').eq('page_id', page.id).eq('kind', 'product')
   const existingRows = ((existing ?? []) as Array<{ id: string; asin: string | null; url: string; title: string | null }>)
-  const have = new Set(existingRows.map((e) => (e.asin || '').toUpperCase()))
+  const have = new Set(existingRows.filter((e) => e.asin).map((e) => (e.asin || '').toUpperCase()))
+  const haveUrls = new Set(existingRows.map((e) => (e.url || '').trim()).filter(Boolean))
 
   const started = Date.now()
   const isGeni = (u: string) => /geni\.us/i.test(u)
@@ -119,17 +143,26 @@ export async function POST() {
   const tiles: any[] = []
   let position2 = position
   for (const r of rows) {
-    if (!/^[A-Z0-9]{10}$/i.test(r.asin)) continue
-    const asinU = r.asin.toUpperCase()
-    if (have.has(asinU)) continue
-    const title = (r.title || `Amazon product ${asinU}`).slice(0, 120)
-    let url: string
-    if (gKey && gSecret && Date.now() - started < 45_000) {
-      url = await resolveAffiliateUrl(asinU, title, tag, gKey, gSecret)
-    } else {
-      url = tag ? `https://www.amazon.com/dp/${asinU}?tag=${encodeURIComponent(tag)}` : `https://www.amazon.com/dp/${asinU}`
+    if (r.asin) {
+      const asinU = r.asin.toUpperCase()
+      if (!/^[A-Z0-9]{10}$/.test(asinU) || have.has(asinU)) continue
+      const title = (r.title || `Amazon product ${asinU}`).slice(0, 120)
+      let url: string
+      if (gKey && gSecret && Date.now() - started < 45_000) {
+        url = await resolveAffiliateUrl(asinU, title, tag, gKey, gSecret)
+      } else {
+        url = tag ? `https://www.amazon.com/dp/${asinU}?tag=${encodeURIComponent(tag)}` : `https://www.amazon.com/dp/${asinU}`
+      }
+      tiles.push({ page_id: page.id, user_id: user.id, kind: 'product', title, image_url: r.image_url || null, url, asin: asinU, source: r.source, position: position2++ })
+    } else if (r.url) {
+      // Link-only review tile: the product link is already a usable affiliate URL
+      // (geni.us). Use it directly; dedupe by URL against what's on the page.
+      const u = r.url.trim()
+      if (haveUrls.has(u)) continue
+      haveUrls.add(u)
+      const title = (r.title || 'Product').slice(0, 120)
+      tiles.push({ page_id: page.id, user_id: user.id, kind: 'product', title, image_url: r.image_url || null, url: u, asin: null, source: r.source, position: position2++ })
     }
-    tiles.push({ page_id: page.id, user_id: user.id, kind: 'product', title, image_url: r.image_url || null, url, asin: asinU, source: r.source, position: position2++ })
   }
 
   let added = 0
