@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.77
+ * Version: 1.0.78
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -620,11 +620,15 @@ add_action('wp_footer', function () {
         var wrap = document.createElement('div');
         wrap.innerHTML = '<div class="mvp-blog-reads"><span>' + eye + fmt(total) + ' reads across the blog</span></div>';
         var chip = wrap.firstChild;
-        // Insert at the TOP of the main content wrapper — a full-width banner ABOVE
-        // the first section/grid. Never before an <article>: the homepage cards are
-        // a CSS grid, so a sibling <article> becomes a grid cell and eats the
-        // featured post's image slot (the bug). grid-column/flex-basis in the CSS
-        // keep it full-width even if the wrapper itself is a grid/flex row.
+        // Preferred: the MVP theme renders an explicit .mvp-blog-reads-slot at a
+        // known-good spot (a centered band under the hero). Drop the badge there —
+        // no DOM guessing, never inside the Editor's Picks grid.
+        var slot = document.querySelector('.mvp-blog-reads-slot');
+        if (slot) { slot.appendChild(chip); return true; }
+        // Fallback (non-MVP themes): top of the main content wrapper, above the
+        // first section/grid. Never before an <article> — the homepage cards are a
+        // CSS grid, so a sibling <article> becomes a grid cell and eats the
+        // featured post's image slot. grid-column/flex-basis keep it full width.
         var host = document.querySelector('.site-main, main, .content-area, #primary, #content, #main');
         if (host) { host.insertBefore(chip, host.firstChild); return true; }
         var header = document.querySelector('header, .site-header');
