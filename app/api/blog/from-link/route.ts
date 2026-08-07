@@ -159,12 +159,33 @@ export async function POST(req: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: brand } = await supabase
     .from('brand_profiles')
-    .select('learn_profile,affiliate_disclaimer,name,niches,author_name')
+    .select('*')
     .eq('user_id', ownerId)
     .maybeSingle()
   const learnBlock = learnProfileToPrompt(brand?.learn_profile)
   const disclaimer = (brand?.affiliate_disclaimer as string) ||
     '📌 As an Amazon Associate I earn from qualifying purchases. This post contains affiliate links — I may earn a small commission at no extra cost to you.'
+
+  // ── Content preferences — parity with video-to-blog (Brand Profile →
+  //    Content). Each section toggle defaults ON (only an explicit false hides
+  //    it), matching services/claude so both entry points read the same way. ──
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const b = (brand || {}) as Record<string, any>
+  const lengthMap: Record<string, string> = {
+    short: '600–900 words', medium: '900–1,500 words',
+    long: '1,500–2,500 words', deep: '2,500–3,200 words',
+  }
+  const targetLength = lengthMap[b.post_length as string] || '900–1,500 words'
+  const ctaStyleMap: Record<string, string> = {
+    hard_sell: 'Be direct and persuasive about buying — clear "buy this" energy, urgency is fine.',
+    soft_recommendation: 'Recommend warmly but low-pressure — "here’s why I liked it, worth a look".',
+    informational: 'Stay neutral and informational — let the facts sell it, no pushy language.',
+  }
+  const ctaGuidance = ctaStyleMap[b.cta_style as string] || ctaStyleMap.soft_recommendation
+  const wantVerdict   = b.include_quick_verdict !== false
+  const wantProsCons  = b.include_pros_cons !== false
+  const wantScorecard = b.include_scorecard !== false
+  const wantFaq       = b.include_faq !== false
 
   const ctx = { userId: user.id, tier }
   const genius = (wp?.geniuslink_api_key && wp?.geniuslink_api_secret)
@@ -304,6 +325,9 @@ PRODUCT-NAME RULES (customers search the exact brand + product name, so match it
 RESEARCH (web + real owner sentiment — ground real-world pros/cons and use cases here; for any specific number, spec, or claim, only include it if it appears in this data):
 ${(research || '').slice(0, 3500) || 'n/a'}
 
+LENGTH: write the body at ${targetLength}.
+CTA STYLE: ${ctaGuidance}
+
 Return ONLY valid JSON (no markdown fences) with this exact shape:
 {
   "title": "<= 65 char SEO title that INCLUDES the canonical product name above + a short angle, no banned words",
@@ -312,17 +336,19 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
   "category": "a single concise blog category for this product/service, Title Case, 1-3 words (e.g. 'VPNs & Security', 'Headphones', 'Kitchen'); never the word 'blog'",
   "hero_prompt": "one vivid sentence describing an editorial, text-free HERO photo of this product's CATEGORY — clean, aspirational, magazine-style (no people required, no logos, no text)",
   "intro_html": "1-2 short intro paragraphs as raw HTML <p>...</p> (first person, answer-first hook)",
-  "body_html": "700-1100 words as raw HTML <p>/<h2>/<ul><li> blocks. Real benefits, who it's for, how it's used, set-up, and trade-offs — specific and grounded, answer-first under each H2. Refer to the product by its name naturally several times across the body. No fabricated claims, no banned words.",
+  "body_html": "${targetLength} as raw HTML <p>/<h2>/<ul><li> blocks. Real benefits, who it's for, how it's used, set-up, and trade-offs — specific and grounded, answer-first under each H2. Refer to the product by its name naturally several times across the body. No fabricated claims, no banned words."${wantProsCons ? `,
   "pros": ["3-5 concrete pros grounded in the data"],
-  "cons": ["2-3 real drawbacks/limitations grounded in the data (every product has trade-offs)"],
-  "verdict": "one punchy bottom-line sentence",
-  "faq": [ { "q": "buyer question", "a": "answer-first 2-4 sentence answer" } ]  // 4-5 FAQs
+  "cons": ["2-3 real drawbacks/limitations grounded in the data (every product has trade-offs)"]` : ''}${wantVerdict ? `,
+  "verdict": "one punchy bottom-line sentence"` : ''}${wantScorecard ? `,
+  "scorecard": [ { "label": "a rating dimension (e.g. Build quality, Value, Ease of use)", "score": 4.5 } ]  // 3-5 dimensions, each score 1-5 grounded in the data` : ''}${wantFaq ? `,
+  "faq": [ { "q": "buyer question", "a": "answer-first 2-4 sentence answer" } ]  // 4-5 FAQs` : ''}
 }`
 
   let parsed: {
     title: string; meta_description: string; target_keyword?: string; hero_prompt?: string
     category?: string
     intro_html: string; body_html: string; pros?: string[]; cons?: string[]; verdict?: string
+    scorecard?: Array<{ label: string; score: number }>
     faq?: Array<{ q: string; a: string }>
   }
   try {
@@ -383,22 +409,34 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
 
   bodyHtml += `${scrub(parsed.body_html)}\n`
 
-  // Pros / cons columns.
-  const pros = (parsed.pros || []).filter(Boolean)
-  const cons = (parsed.cons || []).filter(Boolean)
+  // Pros / cons columns — honor the Pros & Cons toggle (Brand Profile → Content).
+  const pros = wantProsCons ? (parsed.pros || []).filter(Boolean) : []
+  const cons = wantProsCons ? (parsed.cons || []).filter(Boolean) : []
   if (pros.length || cons.length) {
     const li = (arr: string[]) => arr.map(x => `<li>${scrub(x)}</li>`).join('')
     const prosCol = pros.length ? `<!-- wp:column --><div class="wp-block-column"><!-- wp:paragraph --><p><strong>👍 Pros</strong></p><!-- /wp:paragraph --><!-- wp:list --><ul>${li(pros)}</ul><!-- /wp:list --></div><!-- /wp:column -->` : ''
     const consCol = cons.length ? `<!-- wp:column --><div class="wp-block-column"><!-- wp:paragraph --><p><strong>👎 Cons</strong></p><!-- /wp:paragraph --><!-- wp:list --><ul>${li(cons)}</ul><!-- /wp:list --></div><!-- /wp:column -->` : ''
     bodyHtml += `<!-- wp:columns --><div class="wp-block-columns">${prosCol}${consCol}</div><!-- /wp:columns -->\n`
   }
-  if (parsed.verdict) {
+  // Scorecard — honor the Scorecard toggle. A compact ratings list with star bars.
+  const scorecard = wantScorecard ? (parsed.scorecard || []).filter(s => s?.label && typeof s.score === 'number') : []
+  if (scorecard.length) {
+    const rows = scorecard.slice(0, 5).map(s => {
+      const score = Math.max(1, Math.min(5, Number(s.score)))
+      const full = Math.round(score)
+      const stars = '★'.repeat(full) + '☆'.repeat(5 - full)
+      return `<!-- wp:paragraph --><p><strong>${scrub(s.label)}</strong> — <span style="color:#f5a623;letter-spacing:2px">${stars}</span> ${score.toFixed(1)}/5</p><!-- /wp:paragraph -->`
+    }).join('\n')
+    bodyHtml += `<!-- wp:heading --><h2>The scorecard</h2><!-- /wp:heading -->\n${rows}\n`
+  }
+  // Quick verdict — honor the Quick Verdict toggle.
+  if (wantVerdict && parsed.verdict) {
     bodyHtml += `<!-- wp:paragraph {"style":{"typography":{"fontStyle":"italic"}}} --><p><em>👉 ${scrub(parsed.verdict)}</em></p><!-- /wp:paragraph -->\n`
   }
   bodyHtml += ctaButton(`See it on the store →`)
 
-  // FAQ.
-  if (Array.isArray(parsed.faq) && parsed.faq.length) {
+  // FAQ — honor the FAQ toggle.
+  if (wantFaq && Array.isArray(parsed.faq) && parsed.faq.length) {
     bodyHtml += `<!-- wp:heading --><h2>Frequently asked questions</h2><!-- /wp:heading -->\n`
     for (const f of parsed.faq) {
       if (!f?.q) continue
