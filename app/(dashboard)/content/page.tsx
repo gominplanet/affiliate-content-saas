@@ -132,6 +132,9 @@ interface ScheduledItem {
   /** True for a synthesized "scheduled blog post" entry (wp-native schedule,
    *  no scheduled_posts row). View-only here — managed from Video to Blog. */
   synthetic?: boolean
+  /** On a blog_publish row: the social platforms queued to cascade after the
+   *  post publishes. Summarized as chips on the card. */
+  cascade?: string[]
 }
 
 // ── Readiness gate ────────────────────────────────────────────────────────────
@@ -2154,6 +2157,24 @@ function ScheduledList({
               <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] line-clamp-2 italic">
                 &ldquo;{item.body_text.slice(0, 150)}{item.body_text.length > 150 ? '…' : ''}&rdquo;
               </p>
+              {item.kind === 'blog_publish' && item.cascade && item.cascade.length > 0 && (
+                <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                  <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">Then posts to:</span>
+                  {item.cascade.map((p) => {
+                    const m = PLATFORM_META[p as keyof typeof PLATFORM_META] ?? { label: p.charAt(0).toUpperCase() + p.slice(1), color: '#7C3AED' }
+                    return (
+                      <span
+                        key={p}
+                        className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full"
+                        style={{ backgroundColor: `${m.color}1a`, color: m.color }}
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: m.color }} />
+                        {m.label}
+                      </span>
+                    )
+                  })}
+                </div>
+              )}
               {item.error_message && (
                 <p className="text-[11px] text-[#ff3b30] mt-2 break-all">⚠ {item.error_message}</p>
               )}
