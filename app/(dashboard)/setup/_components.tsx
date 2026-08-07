@@ -237,7 +237,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
     const fbConnected = searchParams.get('fb_connected')
     const fbError = searchParams.get('fb_error')
     if (fbConnected) setFbNotice({ ok: true, msg: 'Facebook page connected!' })
-    if (fbError) setFbNotice({ ok: false, msg: fbError === 'no_pages' ? 'No Facebook pages found on your account.' : `Facebook error: ${fbError}` })
+    if (fbError) setFbNotice({ ok: false, msg: fbError === 'no_pages' ? 'Facebook connected, but no Page came through — on Facebook’s permission screen you have to switch your Page ON (tap “Opt in to all” or toggle the Page), then reconnect. Without that, Facebook shows MVP as connected but hands over no Page to post to.' : `Facebook error: ${fbError}` })
     const ptConnected = searchParams.get('pinterest_connected')
     const ptError = searchParams.get('pinterest_error')
     if (ptConnected) setPtNotice({ ok: true, msg: 'Pinterest connected!' })
