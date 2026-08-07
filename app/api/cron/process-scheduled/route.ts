@@ -560,7 +560,12 @@ async function publishOne(
       if (liImage) {
         try {
           result = await linkedin.createImagePost({ text: postText, imageUrl: liImage, title: post.title ?? '', description: row.body_text.slice(0, 200) })
-        } catch {
+        } catch (imgErr) {
+          // Fall back to a text/article post only for image problems. An auth
+          // error (expired LinkedIn token) must bubble up so it's classified as
+          // 'expired' (reconnect), not silently downgraded to a link post.
+          const im = imgErr instanceof Error ? imgErr.message : String(imgErr)
+          if (/\b401\b|\b403\b|token|expired|revoked|unauthorized|oauth/i.test(im)) throw imgErr
           result = await linkedin.createPost({ text: postText, ...liArticle })
         }
       } else {
@@ -643,7 +648,13 @@ async function publishOne(
         try {
           const r = await fb.postPhoto({ imageUrl, caption })
           fbPostId = (r as { id: string; post_id?: string }).post_id || r.id
-        } catch {
+        } catch (photoErr) {
+          // Only fall back to a link post when the IMAGE is the problem. An
+          // auth error (expired/revoked Page token) must bubble up so the
+          // dead-channel classifier marks it 'expired' (reconnect) instead of a
+          // vague 'failing' — otherwise a link post can quietly mask a dying token.
+          const pm = photoErr instanceof Error ? photoErr.message : String(photoErr)
+          if (/\b401\b|\b403\b|token|expired|revoked|unauthorized|oauth/i.test(pm)) throw photoErr
           const r = await fb.postLink({ message: caption, link: fbFallbackLink })
           fbPostId = r.id
         }
