@@ -5,6 +5,13 @@ import PageHero from '@/components/layout/PageHero'
 import { Loader2, AlertCircle, Send, CheckCircle2, Clock, Archive, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 
+interface AdminMessage {
+  id: string
+  sender: 'user' | 'admin'
+  body: string
+  created_at: string
+}
+
 interface AdminTicket {
   id: string
   user_id: string
@@ -17,10 +24,22 @@ interface AdminTicket {
   created_at: string
   tier?: string | null
   priority?: boolean
+  messages?: AdminMessage[]
 }
 
 const FILTERS = ['open', 'answered', 'closed', 'all'] as const
 type Filter = (typeof FILTERS)[number]
+
+const fmt = (iso: string) =>
+  new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+
+/** Legacy fallback: a pre-thread ticket has no messages array. */
+function threadOf(t: AdminTicket): AdminMessage[] {
+  if (t.messages && t.messages.length > 0) return t.messages
+  const out: AdminMessage[] = [{ id: `${t.id}:body`, sender: 'user', body: t.body, created_at: t.created_at }]
+  if (t.admin_response) out.push({ id: `${t.id}:resp`, sender: 'admin', body: t.admin_response, created_at: t.responded_at ?? t.created_at })
+  return out
+}
 
 export default function AdminSupportTicketsPage() {
   const [filter, setFilter] = useState<Filter>('open')
@@ -72,7 +91,7 @@ export default function AdminSupportTicketsPage() {
     <>
       <PageHero
         title="Support tickets (admin)"
-        subtitle="Reply here and the user reads it back inside MVP. New tickets also email you so you don't have to keep checking this page."
+        subtitle="Reply here and the user reads it back inside MVP. Each ticket is a full thread — reply as many times as needed; a user's reply reopens it. New activity also emails you."
       />
 
       <div className="flex items-center gap-2 mb-5">
@@ -104,8 +123,9 @@ export default function AdminSupportTicketsPage() {
 
       <div className="space-y-3">
         {tickets.map(t => {
-          const draft = drafts[t.id] ?? t.admin_response ?? ''
+          const draft = drafts[t.id] ?? ''
           const saving = savingId === t.id
+          const messages = threadOf(t)
           return (
             <div key={t.id} className="card p-5">
               <div className="flex items-start justify-between gap-3 mb-1">
@@ -125,10 +145,30 @@ export default function AdminSupportTicketsPage() {
                   </span>
                 </div>
               </div>
-              <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mb-2">
-                {t.email || t.user_id} · {new Date(t.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+              <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mb-3">
+                {t.email || t.user_id} · opened {fmt(t.created_at)}
               </p>
-              <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] whitespace-pre-wrap mb-3 rounded-lg bg-black/[0.02] dark:bg-white/[0.03] p-3">{t.body}</p>
+
+              {/* Full thread */}
+              <div className="space-y-2.5 mb-3">
+                {messages.map(m => (
+                  <div key={m.id} className={m.sender === 'admin' ? 'flex justify-end' : 'flex justify-start'}>
+                    <div
+                      className={`max-w-[85%] rounded-lg p-3 ${
+                        m.sender === 'admin'
+                          ? 'border-l-2 border-[#7C3AED] bg-[#7C3AED]/[0.06]'
+                          : 'bg-black/[0.02] dark:bg-white/[0.03]'
+                      }`}
+                    >
+                      <p className={`text-[11px] font-semibold mb-1 ${m.sender === 'admin' ? 'text-[#7C3AED]' : 'text-[#6e6e73] dark:text-[#ebebf0]'}`}>
+                        {m.sender === 'admin' ? 'You (MVP Support)' : t.email || 'User'}
+                      </p>
+                      <p className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7] whitespace-pre-wrap">{m.body}</p>
+                      <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-1.5">{fmt(m.created_at)}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
 
               <textarea
                 value={draft}
@@ -144,7 +184,7 @@ export default function AdminSupportTicketsPage() {
                   className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#7C3AED] text-white hover:bg-[#6d28d9] disabled:opacity-50 transition-colors"
                 >
                   {saving ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
-                  {t.admin_response ? 'Update reply' : 'Send reply'}
+                  Send reply
                 </button>
                 {t.status !== 'closed' && (
                   <button
