@@ -42,6 +42,12 @@ Key facts that already help:
 
 ## 4. The plan — per stage, with quality guardrails
 
+> STATUS: A + B shipped in `lib/shorts-planner.ts` (hotspot Haiku pass on videos
+> > 8 min, top-window selection feeding Sonnet) and the plan route now passes
+> already-rendered clip windows as `excludeRanges` so re-plans never repropose a
+> finished Short. Persisting hotspot scores across runs (pure caching) is the
+> remaining smaller optimization.
+
 ### A. Planner: two-pass, chunked (biggest cost win)
 Problem: feeding the entire transcript to Sonnet every time.
 Plan:
