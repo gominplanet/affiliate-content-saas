@@ -108,7 +108,10 @@ export async function POST(request: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: tierRow } = await supabase
       .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
-    const tier = (tierRow?.tier as Tier) ?? 'trial'
+    // Normalize at the read site: a legacy DB value ('growth'/'starter'/'free')
+    // must map to a canonical Tier, else the account-gate below (and any direct
+    // tier comparison) misbehaves for former-Pro rows.
+    const tier: Tier = normalizeTier(tierRow?.tier)
 
     // Validate each social entry now so we can early-error before we
     // burn a generation credit.
