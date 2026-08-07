@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.76
+ * Version: 1.0.77
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -610,28 +610,43 @@ add_action('wp_footer', function () {
     if (empty($layout['showReadCount'])) return; // toggle off → don't even emit the script
     $endpoint = esc_url_raw(rest_url('affiliateos/v1/total-reads'));
     ?>
-    <style>.mvp-blog-reads{display:flex;justify-content:center;margin:0 0 22px}.mvp-blog-reads span{display:inline-flex;align-items:center;gap:8px;font-size:14px;font-weight:600;line-height:1;color:#6b7280;padding:8px 16px;border:1px solid rgba(0,0,0,.09);border-radius:999px;background:rgba(0,0,0,.02);letter-spacing:.2px}</style>
+    <style>.mvp-blog-reads{grid-column:1/-1;flex-basis:100%;display:flex!important;justify-content:center;width:100%;margin:16px 0 22px}.mvp-blog-reads span{display:inline-flex;align-items:center;gap:8px;font-size:14px;font-weight:600;line-height:1;color:#6b7280;padding:8px 16px;border:1px solid rgba(0,0,0,.09);border-radius:999px;background:rgba(0,0,0,.02);letter-spacing:.2px}</style>
     <script>
     (function(){
       function fmt(n){ return n >= 1000 ? (Math.round(n/100)/10 + '').replace(/\.0$/,'') + 'k' : n.toLocaleString(); }
-      fetch(<?php echo wp_json_encode($endpoint); ?>, { headers: { 'Accept': 'application/json' } })
-        .then(function(r){ return r.json(); })
-        .then(function(d){
-          if (!d || d.show === false) return;
-          var total = parseInt(d.total, 10) || 0;
-          var threshold = parseInt(d.threshold, 10) || 0;
-          if (total < threshold) return;
-          if (document.querySelector('.mvp-blog-reads')) return; // guard double-insert
-          var eye = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:.7"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>';
-          var wrap = document.createElement('div');
-          wrap.innerHTML = '<div class="mvp-blog-reads"><span>' + eye + fmt(total) + ' reads across the blog</span></div>';
-          var chip = wrap.firstChild;
-          var firstArticle = document.querySelector('main article:first-of-type, .site-content article:first-of-type, #content article:first-of-type, .entry-content article:first-of-type');
-          if (firstArticle && firstArticle.parentNode) { firstArticle.parentNode.insertBefore(chip, firstArticle); return; }
-          var host = document.querySelector('.site-content, main, #content, #main') || document.body;
-          host.insertBefore(chip, host.firstChild);
-        })
-        .catch(function(){});
+      function place(total){
+        if (document.querySelector('.mvp-blog-reads')) return true; // already in
+        var eye = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:.7"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>';
+        var wrap = document.createElement('div');
+        wrap.innerHTML = '<div class="mvp-blog-reads"><span>' + eye + fmt(total) + ' reads across the blog</span></div>';
+        var chip = wrap.firstChild;
+        // Insert at the TOP of the main content wrapper — a full-width banner ABOVE
+        // the first section/grid. Never before an <article>: the homepage cards are
+        // a CSS grid, so a sibling <article> becomes a grid cell and eats the
+        // featured post's image slot (the bug). grid-column/flex-basis in the CSS
+        // keep it full-width even if the wrapper itself is a grid/flex row.
+        var host = document.querySelector('.site-main, main, .content-area, #primary, #content, #main');
+        if (host) { host.insertBefore(chip, host.firstChild); return true; }
+        var header = document.querySelector('header, .site-header');
+        if (header && header.parentNode) { header.parentNode.insertBefore(chip, header.nextSibling); return true; }
+        return false;
+      }
+      function run(){
+        fetch(<?php echo wp_json_encode($endpoint); ?>, { headers: { 'Accept': 'application/json' } })
+          .then(function(r){ return r.json(); })
+          .then(function(d){
+            if (!d || d.show === false) return;
+            var total = parseInt(d.total, 10) || 0;
+            var threshold = parseInt(d.threshold, 10) || 0;
+            if (total < threshold) return;
+            // Retry placement for ~4s — theme content (or a JS-rendered homepage)
+            // may not exist yet when this runs, and LiteSpeed can defer inline JS.
+            var tries = 0;
+            (function attempt(){ if (place(total)) return; if (++tries < 20) setTimeout(attempt, 200); })();
+          })
+          .catch(function(){});
+      }
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run); else run();
     })();
     </script>
     <?php
