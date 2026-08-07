@@ -775,6 +775,21 @@ export function TikTokDirectModal({
         )}
 
         {!loading && !loadError && info && meta && (
+          {/* Why is "Post to TikTok" greyed out? The button is disabled until a
+              privacy level is picked (TikTok requires an explicit choice), plus a
+              couple of edge cases. Without this line users just see a dead button
+              and don't know they have to choose "Who can see this" — the Lisa
+              ticket ("the post to tiktok button doesn't become live"). */}
+          {!canPost && !publishId && (
+            <p className="px-5 pt-3 text-[12px] text-[#ff3b30] text-right">
+              {!info ? 'Loading your TikTok settings…'
+                : !meta?.videoUrl ? 'Preparing your video…'
+                : privacy === '' ? 'Choose who can see this in the “Who can see this video” dropdown above to enable posting.'
+                : commercialNeedsChoice ? 'Tell TikTok whether this promotes you, a brand, or both.'
+                : brandedNoPrivate ? "Branded content can't be set to private — pick a public or friends option."
+                : 'Finish the required fields above to post.'}
+            </p>
+          )}
           <div className="flex items-center justify-end gap-2 p-5 border-t border-gray-100 dark:border-white/10">
             <button onClick={onClose} disabled={!closeAllowed} className="btn-secondary text-sm">Cancel</button>
             <button
@@ -783,7 +798,9 @@ export function TikTokDirectModal({
               // only enabled when a secondary platform actually failed — so it
               // never re-posts a video that already went out.
               disabled={!canPost || (!!publishId && !(igResult === 'failed' || pinResult === 'failed' || ytResult === 'failed'))}
-              title={commercialNeedsChoice
+              title={privacy === '' && info && meta?.videoUrl
+                ? 'Choose who can see this video first'
+                : commercialNeedsChoice
                 ? 'You need to indicate if your content promotes yourself, a third party, or both'
                 : brandedNoPrivate
                   ? "Branded content visibility can't be set to private"
