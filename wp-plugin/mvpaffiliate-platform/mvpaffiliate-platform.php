@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.71
+ * Version: 1.0.72
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -508,6 +508,54 @@ add_filter('the_content', function ($content) {
         . esc_html($label) . ' reads</div>';
     return $chip . $content;
 }, 6);
+
+// Aggregate reads across the whole blog — summed once and cached (10 min) so the
+// homepage never runs a heavy meta scan per visit.
+if (!function_exists('mvp_affiliate_total_reads')) {
+    function mvp_affiliate_total_reads() {
+        $t = get_transient('mvp_total_reads');
+        if ($t !== false) return (int) $t;
+        global $wpdb;
+        $sum = (int) $wpdb->get_var(
+            "SELECT COALESCE(SUM(CAST(pm.meta_value AS UNSIGNED)),0)
+               FROM {$wpdb->postmeta} pm
+               INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
+              WHERE pm.meta_key = '_mvp_reads' AND p.post_status = 'publish' AND p.post_type = 'post'"
+        );
+        set_transient('mvp_total_reads', $sum, 10 * MINUTE_IN_SECONDS);
+        return $sum;
+    }
+}
+
+// The blog-index chip — one clean, centered "N reads across the blog" badge near
+// the top of the main blog / homepage. Same toggle + threshold; theme-independent
+// (injected via wp_footer JS, matching the topic-hub pattern).
+add_action('wp_footer', function () {
+    if (!(is_home() || is_front_page()) || is_singular()) return;
+    if (!is_main_query()) return;
+    $data = mvp_affiliate_get_data();
+    $layout = isset($data['layout']) && is_array($data['layout']) ? $data['layout'] : [];
+    if (empty($layout['showReadCount'])) return;
+    $total = mvp_affiliate_total_reads();
+    if ($total < mvp_affiliate_read_threshold()) return;
+    $label = $total >= 1000 ? rtrim(rtrim(number_format($total / 1000, 1), '0'), '.') . 'k' : number_format($total);
+    ?>
+    <style>.mvp-blog-reads{display:flex;justify-content:center;margin:0 0 22px}.mvp-blog-reads span{display:inline-flex;align-items:center;gap:8px;font-size:14px;font-weight:600;line-height:1;color:#6b7280;padding:8px 16px;border:1px solid rgba(0,0,0,.09);border-radius:999px;background:rgba(0,0,0,.02);letter-spacing:.2px}</style>
+    <script>
+    (function(){
+      var label = <?php echo wp_json_encode($label . ' reads across the blog'); ?>;
+      var eye = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:.7"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>';
+      var wrap = document.createElement('div');
+      wrap.innerHTML = '<div class="mvp-blog-reads"><span>' + eye + label + '</span></div>';
+      var chip = wrap.firstChild;
+      var firstArticle = document.querySelector('main article:first-of-type, .site-content article:first-of-type, #content article:first-of-type, .entry-content article:first-of-type');
+      if (firstArticle && firstArticle.parentNode) { firstArticle.parentNode.insertBefore(chip, firstArticle); return; }
+      var host = document.querySelector('.site-content, main, #content, #main') || document.body;
+      host.insertBefore(chip, host.firstChild);
+    })();
+    </script>
+    <?php
+});
 
 // ─── 4. REST endpoints ────────────────────────────────────────────────────────
 add_action('rest_api_init', function () {
