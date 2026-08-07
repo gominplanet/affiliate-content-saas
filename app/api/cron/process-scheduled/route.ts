@@ -44,6 +44,8 @@ import { publishInstagramForTarget, type IgMode } from '@/lib/instagram-publish'
 import { publishPinForPost } from '@/lib/pin-publish'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
 import { resolvePostAffiliateLink } from '@/lib/ig-dm'
+import { ensureAffiliateGeniuslink } from '@/lib/blog-share-url'
+import { resolveGeniuslinkGroupId } from '@/lib/geniuslink-group'
 import { parseLinkPrefs, linkPrefFor, composeCaption, primaryCardUrl, effectiveDisclosure, youtubeWatchUrl } from '@/lib/social-link-mode'
 import { buildPinAssets, composePinDescription } from '@/lib/pin-assets'
 import { ensureDisclaimer, AFFILIATE_DISCLAIMER_DEFAULT } from '@/lib/social-disclaimer'
@@ -392,7 +394,30 @@ async function publishOne(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const linkPrefs = parseLinkPrefs((integration as any).social_link_modes)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const schedAffiliateLink = resolvePostAffiliateLink(post as any)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let schedAffiliateLink = resolvePostAffiliateLink(post as any)
+  // "If a user has a Geniuslink, MVP always uses it." A post generated during a
+  // brief Geniuslink outage has no code, so this resolves to the raw Amazon
+  // tagged link. When the creator has Geniuslink connected, build one now (in
+  // the correct per-site group) and persist the code so every later share reuses
+  // it. Best-effort — falls back to the raw tagged link if Geniuslink is down.
+  if (schedAffiliateLink && (integration as any)?.geniuslink_api_key && (integration as any)?.geniuslink_api_secret) {
+    const glGroupId = await resolveGeniuslinkGroupId({
+      supabase: admin,
+      siteId: (post as any).wordpress_site_id ?? null,
+      siteUrl: (post as any).wordpress_url ?? null,
+      apiKey: (integration as any).geniuslink_api_key,
+      apiSecret: (integration as any).geniuslink_api_secret,
+    }).catch(() => null)
+    schedAffiliateLink = await ensureAffiliateGeniuslink(admin, {
+      postId: (post as any).id,
+      link: schedAffiliateLink,
+      title: post.title ?? '',
+      apiKey: (integration as any).geniuslink_api_key,
+      apiSecret: (integration as any).geniuslink_api_secret,
+      groupId: glGroupId,
+    })
+  }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const schedVideoUrl = youtubeWatchUrl((post as any).youtube_videos?.youtube_video_id)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
