@@ -39,5 +39,55 @@ export async function GET() {
   }
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json({ scheduled: data ?? [] })
+
+  const rows = (data ?? []) as Array<{ blog_post_id: string | null; kind: string | null }>
+
+  // ── Also surface SCHEDULED BLOG POSTS themselves ──────────────────────────
+  // A blog post scheduled via /api/blog/schedule-publish in wp-native mode
+  // (the default) writes NO scheduled_posts row — WordPress publishes it on its
+  // own cron — so it never appeared in this list, only its social children did.
+  // That's why a creator couldn't see their scheduled posts here. Synthesize a
+  // 'blog_publish' entry from blog_posts.scheduled_for (future) so every waiting
+  // post shows up. Skip any that already have a real blog_publish row
+  // (draft-flip mode) to avoid double-listing.
+  const haveBlogPublish = new Set(
+    rows.filter((r) => r.kind === 'blog_publish' && r.blog_post_id).map((r) => r.blog_post_id as string),
+  )
+  const nowIso = new Date().toISOString()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: schedBlogs } = await (supabase as any)
+    .from('blog_posts')
+    .select('id, title, wordpress_url, video_id, scheduled_for, created_at')
+    .eq('user_id', user.id)
+    .not('scheduled_for', 'is', null)
+    .gt('scheduled_for', nowIso)
+    .order('scheduled_for', { ascending: true })
+    .limit(100)
+
+  const synthetic = ((schedBlogs ?? []) as Array<{
+    id: string; title: string | null; wordpress_url: string | null; video_id: string | null; scheduled_for: string; created_at: string | null
+  }>)
+    .filter((b) => !haveBlogPublish.has(b.id))
+    .map((b) => ({
+      id: `bp:${b.id}`,
+      blog_post_id: b.id,
+      video_id: b.video_id ?? null,
+      kind: 'blog_publish' as const,
+      parent_id: null,
+      platform: null,
+      scheduled_at: b.scheduled_for,
+      body_text: 'Auto-publishes to your blog at the scheduled time, then any social posts cascade after.',
+      status: 'pending' as const,
+      attempts: 0,
+      error_message: null,
+      external_id: null,
+      created_at: b.created_at ?? b.scheduled_for,
+      blog_posts: { title: b.title, wordpress_url: b.wordpress_url },
+      youtube_videos: null,
+      // Managed from the Video-to-Blog tab (there's no scheduled_posts row to
+      // cancel here) — the UI hides the Cancel action for these.
+      synthetic: true,
+    }))
+
+  return NextResponse.json({ scheduled: [...(data ?? []), ...synthetic] })
 }

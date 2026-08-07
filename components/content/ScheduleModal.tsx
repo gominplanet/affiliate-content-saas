@@ -34,6 +34,7 @@ import { Calendar, Loader2, X, SlidersHorizontal } from 'lucide-react'
 import type { SchedulableSocial, ScheduleMode } from '@/lib/schedule-types'
 import { DEFAULT_SOCIAL_OFFSETS_MIN } from '@/lib/schedule-types'
 import { tierAllowsSocial, minTierForSocial, tierLabel, type Tier } from '@/lib/tier'
+import { formatScheduleTime, tzAbbrev } from '@/lib/format-schedule'
 
 /** Platforms surfaced in the modal. Order is intentional — cheapest,
  *  fastest, lowest-friction channels at the top. Pinterest / Instagram
@@ -152,7 +153,7 @@ export default function ScheduleModal({
   const summary = useMemo(() => {
     const t = scheduledFor ? new Date(scheduledFor) : null
     if (!t || isNaN(t.getTime())) return null
-    const dt = t.toLocaleString(undefined, { dateStyle: 'full', timeStyle: 'short' })
+    const dt = formatScheduleTime(t, { dateStyle: 'full', timeStyle: 'short' })
     const list = [...selectedChannels].map(p => CHANNEL_OPTIONS.find(c => c.key === p)?.label || p).join(', ') || 'no social pushes'
     return { dt, list }
   }, [scheduledFor, selectedChannels])
@@ -268,7 +269,7 @@ export default function ScheduleModal({
             duration: 8_000,
           })
         }
-        toast.success(`Scheduled for ${new Date(localIso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}`, {
+        toast.success(`Scheduled for ${formatScheduleTime(new Date(localIso), { dateStyle: 'medium', timeStyle: 'short' })}`, {
           id: toastId,
           duration: 6_000,
         })
@@ -394,7 +395,7 @@ export default function ScheduleModal({
               style={{ borderColor: 'var(--border-bright, rgba(255,255,255,0.14))', color: 'var(--text, #F5F5F7)' }}
             />
             <p className="text-[11px] mt-1" style={{ color: 'var(--text-faint, rgba(255,255,255,0.5))' }}>
-              Your local time. Must be at least 1 minute in the future.
+              Times are in your local timezone ({tzAbbrev()}). Must be at least 1 minute in the future.
             </p>
           </div>
 
