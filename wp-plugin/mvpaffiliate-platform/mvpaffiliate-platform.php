@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.75
+ * Version: 1.0.76
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -574,37 +574,64 @@ if (!function_exists('mvp_affiliate_total_reads')) {
     }
 }
 
+// Public REST — the live blog-wide total + threshold. The front-page badge reads
+// this client-side so it works no matter how aggressively the page is cached
+// (static front pages get a 7-day LiteSpeed cache; a server-rendered badge would
+// only appear when that cache happened to regenerate above threshold).
+add_action('rest_api_init', function () {
+    register_rest_route('affiliateos/v1', '/total-reads', [
+        'methods'             => 'GET',
+        'callback'            => function () {
+            $data = mvp_affiliate_get_data();
+            $layout = isset($data['layout']) && is_array($data['layout']) ? $data['layout'] : [];
+            return new WP_REST_Response([
+                'total'     => mvp_affiliate_total_reads(),
+                'threshold' => mvp_affiliate_blog_read_threshold(),
+                'show'      => !empty($layout['showReadCount']),
+            ], 200);
+        },
+        'permission_callback' => '__return_true',
+    ]);
+});
+
 // The blog-index chip — one clean, centered "N reads across the blog" badge near
-// the top of the main blog / homepage. Same toggle + threshold; theme-independent
-// (injected via wp_footer JS, matching the topic-hub pattern).
+// the top of the main blog / homepage. Theme-independent (wp_footer JS) AND
+// cache-independent: the script is always emitted when the toggle is on, then it
+// fetches the live total and only draws the badge once total ≥ threshold. Nothing
+// here depends on the page cache regenerating.
 add_action('wp_footer', function () {
-    // Show on the blog landing — whether that's the posts index (is_home) OR a
-    // static Page set as the front page (is_front_page + is_singular('page')).
-    // The old `|| is_singular()` guard wrongly suppressed it on static-front-page
-    // sites (the common MVP setup), which is exactly the "main site" a creator
-    // means. Only exclude single posts — those carry their own per-post chip.
+    // Show on the blog landing — the posts index (is_home) OR a static Page set
+    // as the front page (is_front_page). Never on single posts (own per-post chip).
     if (!(is_home() || is_front_page())) return;
     if (is_single()) return;
     if (!is_main_query()) return;
     $data = mvp_affiliate_get_data();
     $layout = isset($data['layout']) && is_array($data['layout']) ? $data['layout'] : [];
-    if (empty($layout['showReadCount'])) return;
-    $total = mvp_affiliate_total_reads();
-    if ($total < mvp_affiliate_blog_read_threshold()) return;
-    $label = $total >= 1000 ? rtrim(rtrim(number_format($total / 1000, 1), '0'), '.') . 'k' : number_format($total);
+    if (empty($layout['showReadCount'])) return; // toggle off → don't even emit the script
+    $endpoint = esc_url_raw(rest_url('affiliateos/v1/total-reads'));
     ?>
     <style>.mvp-blog-reads{display:flex;justify-content:center;margin:0 0 22px}.mvp-blog-reads span{display:inline-flex;align-items:center;gap:8px;font-size:14px;font-weight:600;line-height:1;color:#6b7280;padding:8px 16px;border:1px solid rgba(0,0,0,.09);border-radius:999px;background:rgba(0,0,0,.02);letter-spacing:.2px}</style>
     <script>
     (function(){
-      var label = <?php echo wp_json_encode($label . ' reads across the blog'); ?>;
-      var eye = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:.7"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>';
-      var wrap = document.createElement('div');
-      wrap.innerHTML = '<div class="mvp-blog-reads"><span>' + eye + label + '</span></div>';
-      var chip = wrap.firstChild;
-      var firstArticle = document.querySelector('main article:first-of-type, .site-content article:first-of-type, #content article:first-of-type, .entry-content article:first-of-type');
-      if (firstArticle && firstArticle.parentNode) { firstArticle.parentNode.insertBefore(chip, firstArticle); return; }
-      var host = document.querySelector('.site-content, main, #content, #main') || document.body;
-      host.insertBefore(chip, host.firstChild);
+      function fmt(n){ return n >= 1000 ? (Math.round(n/100)/10 + '').replace(/\.0$/,'') + 'k' : n.toLocaleString(); }
+      fetch(<?php echo wp_json_encode($endpoint); ?>, { headers: { 'Accept': 'application/json' } })
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+          if (!d || d.show === false) return;
+          var total = parseInt(d.total, 10) || 0;
+          var threshold = parseInt(d.threshold, 10) || 0;
+          if (total < threshold) return;
+          if (document.querySelector('.mvp-blog-reads')) return; // guard double-insert
+          var eye = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:.7"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>';
+          var wrap = document.createElement('div');
+          wrap.innerHTML = '<div class="mvp-blog-reads"><span>' + eye + fmt(total) + ' reads across the blog</span></div>';
+          var chip = wrap.firstChild;
+          var firstArticle = document.querySelector('main article:first-of-type, .site-content article:first-of-type, #content article:first-of-type, .entry-content article:first-of-type');
+          if (firstArticle && firstArticle.parentNode) { firstArticle.parentNode.insertBefore(chip, firstArticle); return; }
+          var host = document.querySelector('.site-content, main, #content, #main') || document.body;
+          host.insertBefore(chip, host.firstChild);
+        })
+        .catch(function(){});
     })();
     </script>
     <?php
