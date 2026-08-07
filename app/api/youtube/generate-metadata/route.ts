@@ -15,6 +15,7 @@ import { spendGate } from '@/lib/ai-spend'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 import { scoreTitle } from '@/lib/thumbnail-score'
+import { deriveProductName } from '@/lib/product-name'
 
 export const maxDuration = 120
 
@@ -924,24 +925,16 @@ export async function POST(request: Request) {
     // ── SWARM PHASE 1: Product Analyst + SEO Researcher run in parallel ────────
     // (anthropic client created above, before the transcript brief)
 
-    // Extract a clean "brand + product name" from the Amazon title for SEO
-    // anchoring in the title strategist. Amazon titles look like:
-    //   "Cortisol Manager by Integrative Therapeutics - Supports..."
-    //   "Ancient Nutrition Bone Broth Protein Powder, Chocolate..."
-    //   "Dyson V15 Detect Absolute Vacuum, Blue"
-    // We strip at the first comma, " - ", " | ", or " with " and cap at 60 chars
-    // to get the core "brand model" string without the marketing fluff.
+    // Extract a clean "brand + product name" from the keyword-stuffed Amazon
+    // title for SEO anchoring in the title strategist. Shoppers search YouTube
+    // for the brand + product name directly ("Xprite 42 LED Rooftop Beacon
+    // Strobe Light Bar"), so most titles should carry it verbatim. Uses the
+    // SAME shared helper as the blog title/H1 rules (lib/product-name.ts): it
+    // strips storefront scaffolding ("Xprite Store" → "Xprite"), cuts at the
+    // first use-case/connector word, and caps the length — so a YouTube title
+    // and its matching blog post name the product identically.
     const seoProductName: string | null = isProduct && product.title
-      ? (() => {
-          const raw = product.title
-          // Strip at first comma, pipe, " - ", or " with " (case-insensitive)
-          const cut = raw
-            .split(/\s*[,|]\s*/)[0]
-            .split(/\s+[-–]\s+/)[0]
-            .split(/\s+with\s+/i)[0]
-            .trim()
-          return cut.length >= 3 ? cut.slice(0, 60).trim() : null
-        })()
+      ? (deriveProductName(product.title).canonical || null)
       : null
 
     const [productAnalysis, seoData] = await Promise.all([

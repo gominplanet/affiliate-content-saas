@@ -19,6 +19,7 @@ import { firstProductUrl, resolveFinalUrl, asinFromAmazonUrl, isAmazonNonProduct
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { resolveGeniuslinkGroupId, appendAmazonSubtag, groupNameForSiteUrl } from '@/lib/geniuslink-group'
 import { extractAsin, fetchAmazonProduct } from '@/services/amazon'
+import { deriveProductName } from '@/lib/product-name'
 import { verifyProductMatch } from '@/lib/product-image'
 import { researchProductFromUrl, researchProductByWebSearch } from '@/services/research'
 import { resolveProductReference } from '@/lib/resolve-product-reference'
@@ -951,10 +952,28 @@ async function handleGenerate(request: Request) {
       // the title fact-check (§5.6) reads the same productResearch, so it gains
       // the real brand too.
       const a = amazonStep.product
+      // Distil the keyword-stuffed listing title into a clean, searchable name
+      // (brand + short core name) the writer should use in the title/H1/first
+      // mention. Shoppers and Google match on "Xprite 42 LED Rooftop Beacon
+      // Strobe Light Bar", not the 30-word listing. Same rule the from-link
+      // route applies — see lib/product-name.ts.
+      const pn = deriveProductName(a.title as string)
+      const nameRules = pn.canonical
+        ? [
+            `PREFERRED PRODUCT NAME (use this exact string): "${pn.canonical}"`,
+            pn.brand ? `Brand: "${pn.brand}" — never write it as "${pn.brand} Store"/"${pn.brand} Shop"; "Store"/"Shop"/"Official" is Amazon storefront scaffolding, not the brand.` : '',
+            'NAMING RULES:',
+            `- The blog title MUST contain "${pn.canonical}" (add a short angle after it — review, worth it?, tested — keep the whole title under ~65 chars).`,
+            `- The H1 and the FIRST in-body mention use the full "${pn.canonical}".`,
+            pn.shortName ? `- After the first mention you may shorten to "${pn.shortName}" or the brand.` : '',
+            '- Mention the full listing title verbatim at most ONCE (e.g. a specs line); never use it as the blog title or a heading.',
+          ].filter(Boolean).join('\n')
+        : ''
       const amazonFacts = [
         'AUTHORITATIVE PRODUCT LISTING (Amazon) — the exact item the affiliate link sells. Use THIS for the product\'s real brand + name; it overrides any generic descriptor the creator used on camera.',
         `Title: ${a.title}`,
         a.bullets.length ? `About this item:\n${a.bullets.map((b: string) => `- ${b}`).join('\n')}` : '',
+        nameRules,
       ].filter(Boolean).join('\n')
       productResearch = productResearch ? `${amazonFacts}\n\n${productResearch}` : amazonFacts
     }

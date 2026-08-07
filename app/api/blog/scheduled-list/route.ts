@@ -68,17 +68,40 @@ export async function GET() {
   )
   const nowIso = new Date().toISOString()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: schedBlogs } = await (supabase as any)
-    .from('blog_posts')
-    .select('id, title, wordpress_url, video_id, scheduled_for, created_at')
-    .eq('user_id', user.id)
-    .not('scheduled_for', 'is', null)
-    .gt('scheduled_for', nowIso)
-    .order('scheduled_for', { ascending: true })
-    .limit(100)
+  // Try selecting the ticked-platforms column (migration 231) too; if the DB
+  // doesn't have it yet, fall back to the select without it so the list keeps
+  // working. The column holds the socials the creator chose regardless of
+  // whether those channels were connected (so the card can name them even when
+  // no scheduled_posts child row exists for them).
+  let schedBlogs: Array<Record<string, unknown>> | null = null
+  {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const primary = await (supabase as any)
+      .from('blog_posts')
+      .select('id, title, wordpress_url, video_id, scheduled_for, created_at, scheduled_social_platforms')
+      .eq('user_id', user.id)
+      .not('scheduled_for', 'is', null)
+      .gt('scheduled_for', nowIso)
+      .order('scheduled_for', { ascending: true })
+      .limit(100)
+    if (primary.error) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const fb = await (supabase as any)
+        .from('blog_posts')
+        .select('id, title, wordpress_url, video_id, scheduled_for, created_at')
+        .eq('user_id', user.id)
+        .not('scheduled_for', 'is', null)
+        .gt('scheduled_for', nowIso)
+        .order('scheduled_for', { ascending: true })
+        .limit(100)
+      schedBlogs = fb.data
+    } else {
+      schedBlogs = primary.data
+    }
+  }
 
   const synthetic = ((schedBlogs ?? []) as Array<{
-    id: string; title: string | null; wordpress_url: string | null; video_id: string | null; scheduled_for: string; created_at: string | null
+    id: string; title: string | null; wordpress_url: string | null; video_id: string | null; scheduled_for: string; created_at: string | null; scheduled_social_platforms?: string[] | null
   }>)
     .filter((b) => !haveBlogPublish.has(b.id))
     .map((b) => ({
@@ -97,8 +120,17 @@ export async function GET() {
       created_at: b.created_at ?? b.scheduled_for,
       blog_posts: { title: b.title, wordpress_url: b.wordpress_url },
       youtube_videos: null,
-      // The socials queued to cascade after this post goes live.
-      cascade: socialByBlog.get(b.id) ?? [],
+      // The socials queued to cascade after this post goes live. Union two
+      // sources: the actual pending child rows (only exist for CONNECTED
+      // platforms) AND the platforms the creator ticked at schedule time
+      // (stored on blog_posts.scheduled_social_platforms — survives even for
+      // channels that weren't connected). The ticked list is the reliable one
+      // for showing "what did I schedule"; the child rows just confirm they're
+      // actually queued. Dedupe so a connected+ticked platform shows once.
+      cascade: [...new Set([
+        ...(socialByBlog.get(b.id) ?? []),
+        ...((b.scheduled_social_platforms ?? []).filter((p): p is string => typeof p === 'string' && !!p)),
+      ])],
       // Managed from the Video-to-Blog tab (there's no scheduled_posts row to
       // cancel here) — the UI hides the Cancel action for these.
       synthetic: true,

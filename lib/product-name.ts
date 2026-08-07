@@ -58,8 +58,10 @@ const CUT_WORDS = new Set([
   'ideal', 'perfect', 'multifunctional', 'gift', 'gifts', 'great',
 ])
 
-// Connector words: the name ends before "… for X", "… with Y", "w/ Z".
-const CONNECTORS = /\b(for|with|w\/|featuring|fits|includes|including|to)\b/i
+// Connector words: the name ends before "… for X", "… with Y", "w/ Z",
+// "… by <manufacturer>" (common on supplements: "Cortisol Manager by
+// Integrative Therapeutics").
+const CONNECTORS = /\b(for|with|w\/|featuring|fits|includes|including|to|by)\b/i
 
 /**
  * Distil a raw Amazon title into a clean product name.

@@ -197,6 +197,27 @@ export async function POST(request: Request) {
     const wpUrl = genJson.wordpressUrl
     console.log('[schedule-publish] generate ok', { blogPostId, wpPostId, scheduleMode, scheduledFor, socialCount: socials.length })
 
+    // Persist the platforms the creator TICKED, before any connection filtering
+    // below drops the unconnected ones. This is what the Scheduled card reads to
+    // show "Then posts to: Facebook, Pinterest" — without it, a post scheduled to
+    // channels that aren't connected yet shows no socials at all (the child rows
+    // are never created). Best-effort: if the column isn't there yet (migration
+    // 231 not applied), swallow the error — the schedule still works.
+    const tickedPlatforms = [...new Set(socials.map(s => s.platform))]
+    if (tickedPlatforms.length > 0) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase as any)
+        .from('blog_posts')
+        .update({ scheduled_social_platforms: tickedPlatforms })
+        .eq('id', blogPostId)
+        .eq('user_id', user.id)
+        .then(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (r: any) => { if (r?.error) console.warn('[schedule-publish] could not persist scheduled_social_platforms (migration 231?):', r.error.message) },
+          () => { /* non-fatal */ },
+        )
+    }
+
     // ─── 2. (draft-flip only) Insert the parent blog_publish row ──────────
     // For wp-native, WP handles the flip — we skip this and the social
     // children below have parent_id=null. The user can still
