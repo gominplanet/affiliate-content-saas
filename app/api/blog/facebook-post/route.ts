@@ -16,6 +16,8 @@ import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { maybeDecrypt } from '@/lib/secrets'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
 import { resolvePostAffiliateLink } from '@/lib/ig-dm'
+import { ensureAffiliateGeniuslink } from '@/lib/blog-share-url'
+import { resolveGeniuslinkGroupId } from '@/lib/geniuslink-group'
 import { parseLinkPrefs, linkPrefFor, composeCaption, primaryCardUrl, effectiveDisclosure, youtubeWatchUrl } from '@/lib/social-link-mode'
 import { blogShareUrl } from '@/lib/blog-share-url'
 
@@ -49,7 +51,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: postRow } = await supabase
       .from('blog_posts')
-      .select('id,title,excerpt,content,wordpress_url,geniuslink_blog_url,video_id,social_publish_counts,geniuslink_code')
+      .select('id,title,excerpt,content,wordpress_url,wordpress_site_id,geniuslink_blog_url,video_id,social_publish_counts,geniuslink_code')
       .eq('id', postId)
       .eq('user_id', user.id)
       .single()
@@ -95,7 +97,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: intRow } = await supabase
       .from('integrations')
-      .select('facebook_page_id,facebook_page_access_token,tier,social_link_modes,amazon_associates_tag')
+      .select('facebook_page_id,facebook_page_access_token,facebook_page_name,tier,social_link_modes,amazon_associates_tag,geniuslink_api_key,geniuslink_api_secret')
       .eq('user_id', user.id)
       .single()
     // Decrypt secret columns transparently (2026-06-02 rollout).
@@ -169,7 +171,20 @@ Return ONLY the post text, nothing else.`,
     // product before reading, then the review blurb + blog link follow, and the
     // disclaimer repeats at the very end. Never falls back to the blog URL, so it
     // only appears when the post has a real product link.
-    const affiliateLink = resolvePostAffiliateLink(post)
+    let affiliateLink = resolvePostAffiliateLink(post)
+    // "If a user has a Geniuslink, MVP always uses it." Upgrade a raw Amazon
+    // link to a Geniuslink at post time (correct per-site group) and persist the
+    // code so future shares reuse it. Best-effort; falls back to the tagged link.
+    if (affiliateLink && integration?.geniuslink_api_key && integration?.geniuslink_api_secret) {
+      const glGroupId = await resolveGeniuslinkGroupId({
+        supabase, siteId: post.wordpress_site_id ?? null, siteUrl: post.wordpress_url ?? null,
+        apiKey: integration.geniuslink_api_key, apiSecret: integration.geniuslink_api_secret,
+      }).catch(() => null)
+      affiliateLink = await ensureAffiliateGeniuslink(supabase, {
+        postId: post.id, link: affiliateLink, title: post.title ?? '',
+        apiKey: integration.geniuslink_api_key, apiSecret: integration.geniuslink_api_secret, groupId: glGroupId,
+      })
+    }
     // Per-platform link pref: affiliate on/off × content (blog / video / none).
     const pref = linkPrefFor(parseLinkPrefs(integration?.social_link_modes), 'facebook')
     const videoUrl = youtubeWatchUrl(video?.youtube_video_id)
