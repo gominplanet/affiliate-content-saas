@@ -23,13 +23,20 @@ reviewed change rather than an unattended edit. Each has file:line + the fix.
 - Fix (catches the common window): at the top of each `publishOne` platform branch, if the linked `blog_posts.<platform>_post_id` is already set, skip publishing and return that id as `externalId`. This closes the "crashed after publishOne, before completed write" case. The residual window (crash mid-`publishOne`, after the platform API but before the blog_posts id write) needs an external-id reservation and is much rarer — acceptable to leave once the common case is closed.
 - Risk: touches the core publish path; verify each platform writes its `blog_posts.<platform>_post_id` and that a legitimate re-attempt (transient earlier failure) isn't wrongly skipped (it won't be — the id is only set on success).
 
-### 2. X monthly cap is non-atomic → paid cap can be exceeded
+### 2. X monthly cap is non-atomic → paid cap can be exceeded — ✅ DONE
+> Shipped: migration 233 `claim_x_post` reserves a slot atomically under a
+> per-user advisory lock; reserveXPost/refundXPost replace check-then-record in
+> the cron, the immediate route, and deal-social-publish.
+
 - Where: `lib/x-cap.ts:32-52` (check-then-record; `recordXPost`→`recordUsage` is fire-and-forget, `lib/ai-usage.ts:177`), consumed in the parallel batch `process-scheduled/route.ts:483` and `lib/deal-social-publish.ts:99`.
 - Failure: several X posts for one user in one tick all read the same pre-post count, all pass, all post — over the $0.20/post cap.
 - Fix: gate X through an atomic consume RPC (mirror `try_consume_post_quota`) that reserves the slot before `createTweet`, or serialize X posts per user per tick. Also make `x-cap` fail CLOSED (conservative) on a telemetry read error instead of `exceeded:false` (`x-cap.ts:32-48`).
 - Risk: needs a small DB RPC + careful rollout; real dollars, so worth doing right.
 
-### 3. No retry on transient upstream errors in the social cron
+### 3. No retry on transient upstream errors in the social cron — ✅ DONE
+> Shipped: migration 234 adds scheduled_posts.retry_count; a transient publish
+> error requeues (status→pending) up to 2 retries instead of a permanent failed.
+
 - Where: `process-scheduled/route.ts:11-13` ("no retries"), failure path `:242-268`.
 - Failure: a single `ECONNRESET`/`5xx` marks the post permanently `failed`, and 3 such blips also falsely trip the dead-channel nag (see #5 below).
 - Fix: classify transient errors (regex already exists at `generate/route.ts:1118`); on transient, set the row back to `pending` with a bounded `retry_count` (add the column) instead of `failed`. Cap at 2–3 to stay under `maxDuration=60`.

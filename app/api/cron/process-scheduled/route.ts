@@ -21,7 +21,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createSession as createBlueskySession, createPost as createBlueskyPost } from '@/services/bluesky'
 import { createTweet, refreshAccessToken as refreshTwitterToken } from '@/services/twitter'
-import { checkXPostCap, recordXPost, xCapMessage } from '@/lib/x-cap'
+import { reserveXPost, refundXPost, xCapMessage } from '@/lib/x-cap'
 import { ThreadsService } from '@/services/threads'
 import { recordSocialPermalink } from '@/lib/social-permalink'
 import { socialPermalink } from '@/lib/brand-recap'
@@ -79,7 +79,16 @@ interface ScheduledRow {
   /** Optional chosen destination (multi-account). Null = use the user's
    *  default / legacy integrations credentials. */
   social_account_id?: string | null
+  /** How many times this row has already been requeued after a transient
+   *  failure. Bounded by MAX_PUBLISH_RETRIES. */
+  retry_count?: number
 }
+
+// Transient upstream errors (network blips / 5xx / timeouts) shouldn't kill a
+// scheduled post — requeue it a bounded number of times instead of marking it
+// permanently failed. Mirrors the classifier in blog/generate.
+const MAX_PUBLISH_RETRIES = 2
+const TRANSIENT_RE = /terminated|fetch failed|socket|ECONNRESET|ETIMEDOUT|EAI_AGAIN|aborted|network|timeout|overloaded|rate.?limit|\b429\b|internal server error|\b5\d{2}\b|502|503|504/i
 
 interface BlogPostRow {
   id: string
@@ -150,7 +159,7 @@ export async function GET(request: Request) {
     .update({ status: 'processing', claimed_at: nowIso, last_attempt_at: nowIso })
     .eq('status', 'pending')
     .lte('scheduled_at', nowIso)
-    .select('id,user_id,blog_post_id,platform,body_text,social_account_id')
+    .select('id,user_id,blog_post_id,platform,body_text,social_account_id,retry_count')
     .limit(MAX_PER_TICK)
 
   if (claimErr) {
@@ -169,6 +178,7 @@ export async function GET(request: Request) {
     platform: (r.platform as ScheduledRow['platform']) ?? null,
     body_text: (r.body_text as string) ?? '',
     social_account_id: (r.social_account_id as string | null | undefined) ?? null,
+    retry_count: (r.retry_count as number | null | undefined) ?? 0,
     kind: r.platform == null ? 'blog_publish' : 'social',
   }))
   if (rows.length === 0) {
@@ -254,6 +264,22 @@ export async function GET(request: Request) {
         .replace(/refresh_token=[^&\s"]+/gi, 'refresh_token=[REDACTED]')
         .replace(/"access_token"\s*:\s*"[^"]+"/gi, '"access_token":"[REDACTED]"')
         .replace(/"refresh_token"\s*:\s*"[^"]+"/gi, '"refresh_token":"[REDACTED]"')
+      // Transient upstream blip → requeue (back to 'pending') for the next tick
+      // instead of a permanent 'failed', up to MAX_PUBLISH_RETRIES. The idempotency
+      // guard in publishOne stops a retry from double-posting if the earlier
+      // attempt actually reached the platform. A retried row also doesn't pollute
+      // the dead-channel streak (it never lands as 'failed').
+      const attempts = (row.retry_count ?? 0)
+      const isTransient = TRANSIENT_RE.test(rawMsg)
+      if (isTransient && attempts < MAX_PUBLISH_RETRIES) {
+        console.warn('[cron/process-scheduled] transient publish error — requeueing', { id: row.id, platform: row.platform, attempt: attempts + 1, error: msg })
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (admin as any)
+          .from('scheduled_posts')
+          .update({ status: 'pending', retry_count: attempts + 1, error_message: msg.slice(0, 500), updated_at: new Date().toISOString() })
+          .eq('id', row.id)
+        return { id: row.id, ok: false, error: `retry ${attempts + 1}/${MAX_PUBLISH_RETRIES}: ${msg}` }
+      }
       console.error('[cron/process-scheduled] publish failed', { id: row.id, platform: row.platform, error: msg })
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await admin
@@ -502,10 +528,12 @@ async function publishOne(
         catch (e) { throw new Error(`X token refresh failed: ${e instanceof Error ? e.message : String(e)}`) }
       }
 
-      // Monthly X post cap (X is the only paid-per-post channel). Over cap →
-      // fail this scheduled post with a clear reason rather than spend a credit.
-      const xcap = await checkXPostCap(admin, row.user_id)
-      if (xcap.exceeded) throw new Error(xCapMessage(xcap.resetLabel))
+      // Monthly X post cap (X is the only paid-per-post channel). Reserve a slot
+      // ATOMICALLY before posting so several X posts in one tick can't all pass a
+      // stale count and overspend. Over cap → fail this post with a clear reason.
+      // Refund the reservation if the tweet fails so a blip doesn't burn a slot.
+      const xres = await reserveXPost(admin, row.user_id)
+      if (!xres.ok) throw new Error(xCapMessage(xres.resetLabel))
 
       // Cap the body so the trailing link always survives — an un-capped
       // `${body} ${url}` on a near-280-char body pushed the tweet over the limit
@@ -514,20 +542,25 @@ async function publishOne(
       const finalText = capSocialText(stripLinkPlaceholders(row.body_text), SOCIAL_LIMITS.twitter, xSuffix)
       let result
       try {
-        result = await createTweet(accessToken!, finalText)
-      } catch (e) {
-        // Reactive refresh: a 401 means the access token is dead even though
-        // expiry looked fine (missing/stale expiry, or token revoked then
-        // re-issued). Refresh once and retry before giving up.
-        const msg = e instanceof Error ? e.message : String(e)
-        if (/\b401\b|unauthorized/i.test(msg) && refreshToken) {
-          accessToken = await doRefresh()
-          result = await createTweet(accessToken, finalText)
-        } else {
-          throw e
+        try {
+          result = await createTweet(accessToken!, finalText)
+        } catch (e) {
+          // Reactive refresh: a 401 means the access token is dead even though
+          // expiry looked fine (missing/stale expiry, or token revoked then
+          // re-issued). Refresh once and retry before giving up.
+          const msg = e instanceof Error ? e.message : String(e)
+          if (/\b401\b|unauthorized/i.test(msg) && refreshToken) {
+            accessToken = await doRefresh()
+            result = await createTweet(accessToken, finalText)
+          } else {
+            throw e
+          }
         }
+      } catch (e) {
+        await refundXPost(admin, xres.reservationId) // tweet failed → don't burn the slot
+        throw e
       }
-      recordXPost(row.user_id, xcap.tier)
+      // Success: the reservation already counted this post (no recordXPost).
       await admin.from('blog_posts').update({ twitter_post_id: result.id }).eq('id', row.blog_post_id)
       await recordSocialPermalink(admin, row.blog_post_id, 'x', socialPermalink.x(result.id))
       return { externalId: result.id }
