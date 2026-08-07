@@ -70,7 +70,7 @@ export async function GET() {
       // Serve the cache only if it's already free of same-item duplicates. A
       // legacy batch that predates the dedup falls through and regenerates a
       // clean set now (rather than waiting out the 24h).
-      const unique = dedupeCards(cached.campaigns as { campaignId: string; brand: string | null; asin: string; imageUrl: string | null; name?: string | null; commissionPct?: number | null }[])
+      const unique = dedupeCards(cached.campaigns as { campaignId: string; brand: string | null; asin: string; imageUrl: string | null; name?: string | null; commissionPct?: number | null; price?: number | null; rating?: number | null }[])
       if (unique.length === cached.campaigns.length) {
         // Buy links must be CLEAN — strip any affiliate tag a legacy batch cached.
         const clean = (cached.campaigns as { asin: string; buyUrl?: string }[]).map((c) => ({ ...c, buyUrl: cleanBuyUrl(c.asin) }))
@@ -130,21 +130,26 @@ export async function GET() {
     // siblings so we can mark them all seen (the item won't resurface tomorrow
     // under a different campaign id).
     const commOf = (s: { row: CatalogRow }) => numOrNull(s.row.commission_pct) ?? -1
+    const groups = groupBySignals(scored, (s) => productSignals({
+      campaignId: s.row.campaign_id, brand: s.row.brand_name, asin: pickAsin(s.row),
+      name: s.row.campaign_name, imageUrl: s.row.image_url,
+      priceCents: s.row.price_now_cents, rating: s.row.rating,
+    }))
+    // Keyed by the WINNER's campaign_id → all campaign_ids in its group, so we
+    // can mark the whole product family seen when the winner is shown.
     const siblings = new Map<string, string[]>()
-    const bestByKey = new Map<string, typeof scored[number]>()
-    for (const s of scored) {
-      const k = itemKey(s.row)
-      const arr = siblings.get(k)
-      if (arr) arr.push(s.row.campaign_id)
-      else siblings.set(k, [s.row.campaign_id])
-      const cur = bestByKey.get(k)
-      if (!cur || commOf(s) > commOf(cur) || (commOf(s) === commOf(cur) && s.score > cur.score)) {
-        bestByKey.set(k, s)
+    const winners: typeof scored = []
+    for (const g of groups) {
+      let best = g[0]
+      for (const s of g) {
+        if (commOf(s) > commOf(best) || (commOf(s) === commOf(best) && s.score > best.score)) best = s
       }
+      siblings.set(best.row.campaign_id, g.map((s) => s.row.campaign_id))
+      winners.push(best)
     }
     // One representative per item (the highest-paying), re-sorted by score so
     // the shortlist + LLM re-rank keep the same topical ordering as before.
-    const deduped = [...bestByKey.values()].sort((a, b) => b.score - a.score)
+    const deduped = winners.sort((a, b) => b.score - a.score)
 
     const shortlist = deduped.slice(0, SHORTLIST)
 
@@ -181,7 +186,7 @@ export async function GET() {
       const seenUpserts: { user_id: string; campaign_id: string; shown_on: string; brand_name: string | null; category: string | null }[] = []
       const added = new Set<string>()
       for (const s of picked) {
-        for (const cid of siblings.get(itemKey(s.row)) ?? [s.row.campaign_id]) {
+        for (const cid of siblings.get(s.row.campaign_id) ?? [s.row.campaign_id]) {
           if (added.has(cid)) continue
           added.add(cid)
           seenUpserts.push({
@@ -356,19 +361,57 @@ function normTitle(s: string | null | undefined): string {
   return t.length >= 6 ? t : ''
 }
 
-/** Product identity for same-item dedupe. Brand + product title first (a brand
- *  lists the SAME product under several campaigns with different images and
- *  commission rates — the visible title is what makes them "the same product"),
- *  then ASIN, then brand + image, then the campaign id as a last resort. */
-function itemKey(r: CatalogRow): string {
-  const brand = (r.brand_name || '').trim().toLowerCase()
-  const nt = normTitle(r.campaign_name)
-  if (brand && nt) return `bt:${brand}|${nt}`
-  const asin = pickAsin(r)
-  if (asin) return `a:${asin}`
-  const img = (r.image_url || '').split('?')[0]
-  if (brand && img) return `bi:${brand}|${img}`
-  return `c:${r.campaign_id}`
+/** All "same product" fingerprints for a campaign. Two campaigns are the SAME
+ *  item if they share ANY of these, so we union-find on the whole set instead of
+ *  picking one priority key. Signals: a real ASIN, brand+image, brand+clean-title,
+ *  and brand+price+rating.
+ *
+ *  brand+price+rating is what catches a brand listing ONE product under several
+ *  UNRELATED marketing headlines ("Tech Meets Cuddles Smart Peppa!!", "VIRAL:
+ *  They're Already Fans", "Smart Peppa = Smarter Gifting") — the names share no
+ *  words and the images differ, but the product is identical so its price +
+ *  rating match. Distinct products from the same brand almost always differ in
+ *  price or rating, so the collision risk is low and a rare false merge only
+ *  hides the lower-commission twin (still reachable via "Show all"). */
+function productSignals(x: {
+  campaignId: string; brand: string | null; asin?: string | null; name?: string | null
+  imageUrl?: string | null; priceCents?: number | null; rating?: number | null
+}): string[] {
+  const b = (x.brand || '').trim().toLowerCase()
+  const out: string[] = []
+  const asin = (x.asin || '').toUpperCase()
+  if (/^[A-Z0-9]{10}$/.test(asin)) out.push(`a:${asin}`)
+  const nt = normTitle(x.name)
+  if (b && nt) out.push(`bt:${b}|${nt}`)
+  const img = (x.imageUrl || '').split('?')[0]
+  if (b && img) out.push(`bi:${b}|${img}`)
+  if (b && x.priceCents != null && x.rating != null) out.push(`bpr:${b}|${x.priceCents}|${x.rating}`)
+  if (!out.length) out.push(`c:${x.campaignId}`)
+  return out
+}
+
+/** Group items that share ANY signal (union-find). Groups are returned in the
+ *  first-seen order of each group's earliest member, so downstream ordering is
+ *  stable. */
+function groupBySignals<T>(items: T[], sigsOf: (t: T) => string[]): T[][] {
+  const parent = items.map((_, i) => i)
+  const find = (i: number): number => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i] } return i }
+  const owner = new Map<string, number>()
+  items.forEach((it, i) => {
+    for (const s of sigsOf(it)) {
+      const o = owner.get(s)
+      if (o == null) owner.set(s, i)
+      else { const ra = find(i), rb = find(o); if (ra !== rb) parent[ra] = rb }
+    }
+  })
+  const groups = new Map<number, T[]>()
+  const order: number[] = []
+  items.forEach((it, i) => {
+    const r = find(i)
+    if (!groups.has(r)) { groups.set(r, []); order.push(r) }
+    groups.get(r)!.push(it)
+  })
+  return order.map((r) => groups.get(r)!)
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -477,25 +520,20 @@ function cleanBuyUrl(asin: string): string {
 /** Dedupe already-built cards by the same product identity as itemKey, keeping
  *  the HIGHEST-COMMISSION card per item (score/order breaks ties). Read-time
  *  guard that also self-heals cached batches generated before this rule. */
-function dedupeCards<T extends { campaignId: string; brand: string | null; asin: string; imageUrl: string | null; name?: string | null; commissionPct?: number | null }>(cards: T[]): T[] {
-  const keyOf = (c: T) => {
-    const brand = (c.brand || '').trim().toLowerCase()
-    const nt = normTitle(c.name)
-    if (brand && nt) return `bt:${brand}|${nt}`
-    if (c.asin) return `a:${c.asin}`
-    const img = (c.imageUrl || '').split('?')[0]
-    if (brand && img) return `bi:${brand}|${img}`
-    return `c:${c.campaignId}`
-  }
+function dedupeCards<T extends { campaignId: string; brand: string | null; asin: string; imageUrl: string | null; name?: string | null; commissionPct?: number | null; price?: number | null; rating?: number | null }>(cards: T[]): T[] {
   const comm = (c: T) => (typeof c.commissionPct === 'number' && isFinite(c.commissionPct) ? c.commissionPct : -1)
-  // Winning campaignId per item: highest commission, first-seen breaks ties.
-  const winner = new Map<string, T>()
-  for (const c of cards) {
-    const k = keyOf(c)
-    const cur = winner.get(k)
-    if (!cur || comm(c) > comm(cur)) winner.set(k, c)
+  const groups = groupBySignals(cards, (c) => productSignals({
+    campaignId: c.campaignId, brand: c.brand, asin: c.asin, name: c.name, imageUrl: c.imageUrl,
+    priceCents: typeof c.price === 'number' ? Math.round(c.price * 100) : null,
+    rating: typeof c.rating === 'number' ? c.rating : null,
+  }))
+  // Winner per product: highest commission (first-seen breaks ties).
+  const keepIds = new Set<string>()
+  for (const g of groups) {
+    let best = g[0]
+    for (const c of g) if (comm(c) > comm(best)) best = c
+    keepIds.add(best.campaignId)
   }
-  const keepIds = new Set([...winner.values()].map((c) => c.campaignId))
   // Emit in the original order, one per winning id.
   const emitted = new Set<string>()
   const out: T[] = []
