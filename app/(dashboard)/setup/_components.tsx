@@ -1117,6 +1117,18 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
                 <Link2 size={13} className="text-[#86868b] dark:text-[#8e8e93]" /> {facebook.pageName}
               </p>
             )}
+            {/* Only ONE Page came through the Facebook grant, so there's nothing
+                to switch to. This is almost always because the other Pages were
+                left toggled OFF on Facebook's permission screen — tell the user
+                exactly how to fix a wrong/missing Page instead of leaving only a
+                Disconnect button (the modernday.tech / Gina ticket). */}
+            {facebook.pages.length <= 1 && (
+              <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed">
+                Wrong Page, or don’t see the one you want? Disconnect, then reconnect — and on Facebook’s
+                “What do you want to allow MVP to access?” screen tap <strong>Opt in to all</strong> (or switch ON
+                every Page you manage). All your Pages will then show here to pick from.
+              </p>
+            )}
             <button onClick={disconnectFacebook} disabled={fbDisconnecting} className="flex items-center gap-1.5 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] transition-colors self-start">
               {fbDisconnecting ? <Loader2 size={12} className="animate-spin" /> : <LogOut size={12} />} Disconnect
             </button>
