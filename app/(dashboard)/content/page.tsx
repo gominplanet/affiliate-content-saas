@@ -835,6 +835,16 @@ const VideoCard = memo(function VideoCardImpl({
   // buttons, so all three honor the SAME toggle. Seeded from the Brand Profile
   // "Images per article" pref (>=1 → pre-ticked), matching the checkbox default.
   const [includeImages, setIncludeImages] = useState<boolean>(blogImagePref != null && blogImagePref >= 1)
+  // blogImagePref loads ASYNC (null until the brand profile fetch resolves), so a
+  // card that mounted first seeds includeImages=false and would ignore the
+  // creator's "N images per article" setting — the exact "I set 2 images but got
+  // none" bug. Re-sync to the pref when it arrives, unless the user has manually
+  // toggled the checkbox on this card (then respect their per-post choice).
+  const imagesTouchedRef = useRef(false)
+  useEffect(() => {
+    if (!imagesTouchedRef.current) setIncludeImages(blogImagePref != null && blogImagePref >= 1)
+  }, [blogImagePref])
+  const setIncludeImagesTouched = (v: boolean) => { imagesTouchedRef.current = true; setIncludeImages(v) }
   const [fbPosting, setFbPosting] = useState(false)
   const [fbPosted, setFbPosted] = useState(!!post?.facebookPostId)
   // Schedule modal — only relevant for un-generated rows (post == null);
@@ -1448,7 +1458,7 @@ const VideoCard = memo(function VideoCardImpl({
               as a short checklist. Post-exists rows keep the compact horizontal
               tool row (Generate / Category / Edit / Delete). */}
           <div className={(!post && genPanelOpen) ? 'flex flex-col items-start gap-2.5' : 'flex items-center gap-x-4 gap-y-1.5 flex-wrap'}>
-            <GenerateButton videoId={id} youtubeVideoId={(video.youtube_video_id as string) || undefined} existingPost={post} userTier={userTier} blogImagePref={blogImagePref} siteId={siteId} includeImages={includeImages} onIncludeImagesChange={setIncludeImages} onDone={(url, t, pid) => onGenerated(id, url, t, pid)} />
+            <GenerateButton videoId={id} youtubeVideoId={(video.youtube_video_id as string) || undefined} existingPost={post} userTier={userTier} blogImagePref={blogImagePref} siteId={siteId} includeImages={includeImages} onIncludeImagesChange={setIncludeImagesTouched} onDone={(url, t, pid) => onGenerated(id, url, t, pid)} />
             {/* Optional custom blog hero (else the YT thumbnail is the hero).
                 Only meaningful before a post exists — the featured image is
                 set at generation time. */}
@@ -1859,7 +1869,7 @@ const VideoCard = memo(function VideoCardImpl({
         existingPostId={post?.postId ?? null}
         siteId={siteId}
         includeImages={includeImages}
-        onIncludeImagesChange={setIncludeImages}
+        onIncludeImagesChange={setIncludeImagesTouched}
         // Same per-post controls as the card's Generate-now panel, so a user
         // who schedules straight from the fork can still set a custom thumbnail,
         // category and tags. They persist to the youtube_videos row → applied
