@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.74
+ * Version: 1.0.75
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -578,7 +578,13 @@ if (!function_exists('mvp_affiliate_total_reads')) {
 // the top of the main blog / homepage. Same toggle + threshold; theme-independent
 // (injected via wp_footer JS, matching the topic-hub pattern).
 add_action('wp_footer', function () {
-    if (!(is_home() || is_front_page()) || is_singular()) return;
+    // Show on the blog landing — whether that's the posts index (is_home) OR a
+    // static Page set as the front page (is_front_page + is_singular('page')).
+    // The old `|| is_singular()` guard wrongly suppressed it on static-front-page
+    // sites (the common MVP setup), which is exactly the "main site" a creator
+    // means. Only exclude single posts — those carry their own per-post chip.
+    if (!(is_home() || is_front_page())) return;
+    if (is_single()) return;
     if (!is_main_query()) return;
     $data = mvp_affiliate_get_data();
     $layout = isset($data['layout']) && is_array($data['layout']) ? $data['layout'] : [];
