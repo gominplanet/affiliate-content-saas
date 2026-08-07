@@ -35,6 +35,37 @@ export async function POST(req: Request) {
 
   const wpBase = site.wordpress_url.replace(/\/$/, '')
   const authHeader = `Basic ${Buffer.from(`${site.wordpress_username}:${site.wordpress_app_password.replace(/\s+/g, '')}`).toString('base64')}`
+  const UA0 = 'MVP Affiliate/1.0 (+https://www.mvpaffiliate.io)'
+
+  // Preferred path (plugin v1.0.74+): one dedicated call that purges EVERY cache
+  // layer — LiteSpeed, WP Rocket, W3TC, SiteGround, WP Super Cache, the object
+  // cache, and PHP opcache — exactly like clicking LiteSpeed → Purge All, so the
+  // creator never touches wp-admin. Older plugins don't have this route (404) →
+  // fall through to the re-save trick below, which triggers the same purge on
+  // whatever version they run.
+  {
+    const proxied = await tryWpProxy({
+      siteUrl: wpBase,
+      proxySecret: site.wordpress_api_token,
+      innerPath: '/affiliateos/v1/purge',
+      method: 'POST',
+      body: {},
+    })
+    let purged = false
+    if (proxied) {
+      purged = proxied.ok
+    } else {
+      try {
+        const res = await fetch(`${wpBase}/wp-json/affiliateos/v1/purge`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'User-Agent': UA0, Authorization: authHeader },
+          body: '{}',
+        })
+        purged = res.ok
+      } catch { /* fall through to the re-save fallback */ }
+    }
+    if (purged) return NextResponse.json({ ok: true, method: 'purge-endpoint' })
+  }
 
   // Always GET current WP customizations first, then re-POST the same data.
   // This triggers litespeed_purge_all without ever overwriting stored data with empty.

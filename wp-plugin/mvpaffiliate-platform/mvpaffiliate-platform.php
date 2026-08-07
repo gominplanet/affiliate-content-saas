@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.73
+ * Version: 1.0.74
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -387,6 +387,36 @@ if (!function_exists('mvp_affiliate_purge_sitemap_cache')) {
         wp_cache_flush();
     }
 }
+// Full-site cache purge — everything the "Clear cache" button in the MVP
+// dashboard should do, so creators never have to open wp-admin → LiteSpeed →
+// Purge All. Covers every common page cache + the object cache + PHP opcode
+// cache. Each call is guarded, so a host that doesn't run a given plugin is a
+// silent no-op, not an error.
+if (!function_exists('mvp_affiliate_purge_all_caches')) {
+    function mvp_affiliate_purge_all_caches() {
+        // LiteSpeed (Hostinger / most cPanel hosts) — the big one. The action is
+        // the public API; the class call is a belt-and-suspenders for setups
+        // where the action hook was unhooked.
+        do_action('litespeed_purge_all');
+        if (class_exists('\\LiteSpeed\\Purge') && method_exists('\\LiteSpeed\\Purge', 'purge_all')) {
+            try { \LiteSpeed\Purge::purge_all(); } catch (\Throwable $e) { /* ignore */ }
+        }
+        // Other popular page caches — all no-ops when the plugin isn't installed.
+        do_action('sg_cachepress_purge_cache');                              // SiteGround Optimizer
+        if (function_exists('rocket_clean_domain')) rocket_clean_domain();    // WP Rocket
+        if (function_exists('w3tc_flush_all')) w3tc_flush_all();              // W3 Total Cache
+        if (function_exists('wp_cache_clear_cache')) wp_cache_clear_cache();  // WP Super Cache
+        if (function_exists('wpfc_clear_all_cache')) wpfc_clear_all_cache();  // WP Fastest Cache
+        do_action('cache_enabler_clear_complete_cache');                     // Cache Enabler
+        do_action('breeze_clear_all_cache');                                 // Breeze (Cloudways)
+        do_action('autoptimize_flush');                                      // Autoptimize (minified CSS/JS)
+        // Object cache (Redis / Memcached) so freshly-saved options are read.
+        if (function_exists('wp_cache_flush')) wp_cache_flush();
+        // PHP opcode cache — stale bytecode is why a just-updated plugin file
+        // sometimes doesn't "take" until the pool recycles.
+        if (function_exists('opcache_reset')) @opcache_reset();
+    }
+}
 if (!function_exists('mvp_affiliate_indexnow_submit')) {
     function mvp_affiliate_indexnow_submit($urls) {
         $key = get_option('affiliateos_indexnow_key');
@@ -653,8 +683,7 @@ if (!function_exists('mvp_affiliate_rest_save_customizations')) {
         if (!is_array($data)) $data = [];
         $clean = mvp_affiliate_sanitize_customizations($data);
         update_option('affiliateos_customizations', $clean);
-        do_action('litespeed_purge_all');
-        if (function_exists('wp_cache_flush')) wp_cache_flush();
+        mvp_affiliate_purge_all_caches();
         return new WP_REST_Response(['saved' => true], 200);
     }
 }
@@ -2979,6 +3008,21 @@ add_action('rest_api_init', function () {
                 mvp_affiliate_purge_sitemap_cache();
             }
             return new WP_REST_Response(['ok' => true], 200);
+        },
+        'permission_callback' => function () { return current_user_can('manage_options'); },
+    ]);
+    // Full-site "Clear cache" — what the dashboard button hits so a creator
+    // never opens wp-admin → LiteSpeed. Purges every page/object/opcode cache.
+    register_rest_route('affiliateos/v1', '/purge', [
+        'methods'             => 'POST',
+        'callback'            => function () {
+            if (function_exists('mvp_affiliate_purge_all_caches')) {
+                mvp_affiliate_purge_all_caches();
+            }
+            if (function_exists('mvp_affiliate_purge_sitemap_cache')) {
+                mvp_affiliate_purge_sitemap_cache();
+            }
+            return new WP_REST_Response(['ok' => true, 'purged' => true], 200);
         },
         'permission_callback' => function () { return current_user_can('manage_options'); },
     ]);

@@ -168,12 +168,17 @@ export function GenerateButton({
   )
   const includeImages = includeImagesProp ?? internalIncludeImages
   const setIncludeImages = (v: boolean) => (onIncludeImagesChange ?? setInternalIncludeImages)(v)
-  // Optional: bring-your-own in-article images (up to 3). When present, these
-  // are placed throughout the post INSTEAD of AI-generated photos.
-  const [userImages, setUserImages] = useState<string[]>([])
-  const [imgBusy, setImgBusy] = useState(false)
+  // Optional: bring-your-own in-article images. Three fixed slots (image 1, 2,
+  // 3), each optional, one photo per slot. When any are filled, THOSE are placed
+  // through the post INSTEAD of AI-generated photos. Fixed-length array so each
+  // slot stays put; empties are stripped before sending.
+  const [userImages, setUserImages] = useState<(string | null)[]>([null, null, null])
+  const [imgBusyIdx, setImgBusyIdx] = useState<number | null>(null)
   const [imgErr, setImgErr] = useState<string | null>(null)
-  const imgInputRef = useRef<HTMLInputElement>(null)
+  const imgInputRef0 = useRef<HTMLInputElement>(null)
+  const imgInputRef1 = useRef<HTMLInputElement>(null)
+  const imgInputRef2 = useRef<HTMLInputElement>(null)
+  const imgInputRefs = [imgInputRef0, imgInputRef1, imgInputRef2]
   const supabase = createBrowserClient()
   const { confirm, ConfirmHost } = useConfirm()
 
@@ -187,40 +192,40 @@ export function GenerateButton({
     return () => clearInterval(interval)
   }, [status])
 
-  async function addUserImages(files: FileList | null) {
-    if (!files || files.length === 0) return
+  // Upload one photo into a specific slot (0, 1, 2). Replaces whatever is there.
+  async function uploadSlot(idx: number, files: FileList | null) {
+    const f = files?.[0]
+    if (!f) return
     setImgErr(null)
-    const room = 3 - userImages.length
-    if (room <= 0) { setImgErr('Up to 3 images'); return }
-    setImgBusy(true)
+    if (!f.type.startsWith('image/')) { setImgErr('Images only'); return }
+    if (f.size > 10 * 1024 * 1024) { setImgErr('Each image must be under 10 MB'); return }
+    setImgBusyIdx(idx)
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Not signed in')
-      const next: string[] = []
-      for (const f of Array.from(files).slice(0, room)) {
-        if (!f.type.startsWith('image/')) continue
-        if (f.size > 10 * 1024 * 1024) { setImgErr('Each image must be under 10 MB'); continue }
-        const ext = f.name.split('.').pop()?.toLowerCase() || 'jpg'
-        const path = `${user.id}/blog/${videoId}/${crypto.randomUUID()}.${ext}`
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { error: upErr } = await (supabase.storage as any).from('product-images').upload(path, f, {
-          cacheControl: '31536000', upsert: false, contentType: f.type || 'image/jpeg',
-        })
-        if (upErr) throw new Error(upErr.message || 'Upload failed')
-        const { data: urlData } = supabase.storage.from('product-images').getPublicUrl(path)
-        if (urlData?.publicUrl) next.push(urlData.publicUrl)
+      const ext = f.name.split('.').pop()?.toLowerCase() || 'jpg'
+      const path = `${user.id}/blog/${videoId}/${crypto.randomUUID()}.${ext}`
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error: upErr } = await (supabase.storage as any).from('product-images').upload(path, f, {
+        cacheControl: '31536000', upsert: false, contentType: f.type || 'image/jpeg',
+      })
+      if (upErr) throw new Error(upErr.message || 'Upload failed')
+      const { data: urlData } = supabase.storage.from('product-images').getPublicUrl(path)
+      if (urlData?.publicUrl) {
+        const url = urlData.publicUrl
+        setUserImages(prev => { const n = [...prev]; n[idx] = url; return n })
       }
-      if (next.length) setUserImages(prev => [...prev, ...next].slice(0, 3))
     } catch (e) {
       setImgErr(e instanceof Error ? e.message : 'Upload failed')
     } finally {
-      setImgBusy(false)
-      if (imgInputRef.current) imgInputRef.current.value = ''
+      setImgBusyIdx(null)
+      const ref = imgInputRefs[idx]?.current
+      if (ref) ref.value = ''
     }
   }
 
-  function removeUserImage(url: string) {
-    setUserImages(prev => prev.filter(u => u !== url))
+  function clearSlot(idx: number) {
+    setUserImages(prev => { const n = [...prev]; n[idx] = null; return n })
   }
 
   async function generate(opts?: { rewriteFeedback?: string }) {
@@ -250,7 +255,7 @@ export function GenerateButton({
             videoId,
             includeImages,
             ...(siteId ? { siteId } : {}),
-            ...(includeImages && userImages.length > 0 ? { userImageUrls: userImages } : {}),
+            ...(includeImages && userImages.some(Boolean) ? { userImageUrls: userImages.filter((u): u is string => !!u) } : {}),
             ...(opts?.rewriteFeedback ? { rewriteFeedback: opts.rewriteFeedback } : {}),
             ...(allowEmptyTranscript ? { allowEmptyTranscript: true } : {}),
           }, ctrl.signal)
@@ -363,7 +368,7 @@ export function GenerateButton({
       // image work runs in the background and lands a toast when it
       // either succeeds or fails. The user can keep doing other
       // things — no blocking. 2026-06-08.
-      if (includeImages && userImages.length === 0 && data.wordpressPostId) {
+      if (includeImages && !userImages.some(Boolean) && data.wordpressPostId) {
         const wpPostId = data.wordpressPostId
         toast.loading('Generating in-article images… (1-3 minutes — you can keep working)', {
           id: `img-gen-${wpPostId}`,
@@ -578,49 +583,57 @@ export function GenerateButton({
           />
           Include photos in the article
         </label>
-        {includeImages && (
-          <>
-            <input
-              ref={imgInputRef}
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              multiple
-              className="hidden"
-              onChange={(e) => addUserImages(e.target.files)}
-            />
-            <button
-              onClick={() => imgInputRef.current?.click()}
-              disabled={imgBusy || userImages.length >= 3}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-gray-200 dark:border-white/10 text-[11px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#7C3AED] disabled:opacity-50 transition-colors"
-              title="Upload up to 3 of your own photos to use throughout the article instead of the AI ones"
-            >
-              {imgBusy ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />}
-              {userImages.length > 0 ? `Your article photos (${userImages.length}/3)` : 'Upload your own (up to 3)'}
-            </button>
-          </>
-        )}
       </div>
 
       {includeImages && (
-        <div className="flex items-center gap-2 flex-wrap">
-          {userImages.map((u) => (
-            <div key={u} className="relative w-12 h-12 rounded-md overflow-hidden border border-gray-200 dark:border-white/10">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={u} alt="Article image" className="w-full h-full object-cover" />
-              <button
-                onClick={() => removeUserImage(u)}
-                aria-label="Remove image"
-                className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-black/60 hover:bg-[#ff3b30] text-white flex items-center justify-center"
-              >
-                <X size={9} />
-              </button>
-            </div>
-          ))}
+        <div className="flex flex-col gap-1.5">
+          {/* Three optional slots — one photo each. Empty slots fall back to an
+              AI-generated photo; filled ones are used as-is, in order. */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {[0, 1, 2].map((idx) => {
+              const u = userImages[idx]
+              const busy = imgBusyIdx === idx
+              return (
+                <div key={idx} className="flex flex-col items-center gap-1">
+                  <input
+                    ref={imgInputRefs[idx]}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={(e) => uploadSlot(idx, e.target.files)}
+                  />
+                  {u ? (
+                    <div className="relative w-14 h-14 rounded-md overflow-hidden border border-gray-200 dark:border-white/10">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={u} alt={`Article image ${idx + 1}`} className="w-full h-full object-cover" />
+                      <button
+                        onClick={() => clearSlot(idx)}
+                        aria-label={`Remove image ${idx + 1}`}
+                        className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-black/60 hover:bg-[#ff3b30] text-white flex items-center justify-center"
+                      >
+                        <X size={9} />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => imgInputRefs[idx]?.current?.click()}
+                      disabled={busy}
+                      className="w-14 h-14 rounded-md border border-dashed border-gray-300 dark:border-white/15 flex items-center justify-center text-[#86868b] dark:text-[#8e8e93] hover:border-[#7C3AED] hover:text-[#7C3AED] disabled:opacity-50 transition-colors"
+                      title={`Upload your own image ${idx + 1} (optional)`}
+                    >
+                      {busy ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                    </button>
+                  )}
+                  <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">Image {idx + 1}</span>
+                </div>
+              )
+            })}
+          </div>
           {/* Explain the default so the option is discoverable. */}
           <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">
-            {userImages.length > 0
-              ? 'Your photos will be placed through the article.'
-              : 'By default we generate AI photos of the actual product in different real-world settings — or upload your own.'}
+            {userImages.some(Boolean)
+              ? 'Only the photos you add here go in the article (no AI photos mixed in). Fill more slots for more images.'
+              : 'Optional. By default we generate AI photos of the actual product in different real-world settings — or drop in up to 3 of your own above.'}
           </span>
           {imgErr && <span className="text-[10px] text-[#ff3b30]">{imgErr}</span>}
         </div>
