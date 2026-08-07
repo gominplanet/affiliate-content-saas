@@ -53,7 +53,7 @@ export async function POST() {
   // review is about one product; pull its ASIN + photo from the linked video and
   // turn it into a shop tile too.
   const { data: reviews } = await sb.from('blog_posts')
-    .select('title, published_at, youtube_videos(product_url, product_image_url, title)')
+    .select('title, published_at, youtube_videos(product_url, product_image_url, blog_thumbnail_url, thumbnail_url, title)')
     .eq('user_id', user.id)
     .not('video_id', 'is', null)
     .order('published_at', { ascending: false })
@@ -61,13 +61,16 @@ export async function POST() {
   // A product link we can use as-is for a tile even when we can't read an ASIN
   // out of it (the common case: MVP already wrapped it into a geni.us short link).
   const usableUrl = (u: string) => /^https?:\/\//i.test(u) && /(amazon\.|amzn\.to|a\.co|geni\.us)/i.test(u)
+  type YV = { product_url: string | null; product_image_url: string | null; blog_thumbnail_url: string | null; thumbnail_url: string | null; title: string | null }
   const reviewRows: SrcRow[] = []
-  for (const b of (reviews ?? []) as Array<{ title: string | null; youtube_videos: { product_url: string | null; product_image_url: string | null; title: string | null } | Array<{ product_url: string | null; product_image_url: string | null; title: string | null }> | null }>) {
+  for (const b of (reviews ?? []) as Array<{ title: string | null; youtube_videos: YV | YV[] | null }>) {
     const yv = Array.isArray(b.youtube_videos) ? b.youtube_videos[0] : b.youtube_videos
     const purl = (yv?.product_url || '').trim()
     if (!purl) continue // no product link stored for this review → nothing to link a tile to
     const title = b.title || yv?.title || null
-    const image_url = yv?.product_image_url || null
+    // Prefer the real product photo, else the review's hero image, else the
+    // video thumbnail — so a review tile is never blank.
+    const image_url = yv?.product_image_url || yv?.blog_thumbnail_url || yv?.thumbnail_url || null
     const asin = asinFromAmazonUrl(purl)
     if (asin) {
       // Raw Amazon link → import by ASIN (dedups + re-wraps into a Geniuslink).
@@ -110,10 +113,30 @@ export async function POST() {
   // Product tiles already on the page (ALL of them — need urls to dedupe the
   // link-only review tiles, and asins to HEAL bare-tagged ones).
   const { data: existing } = await sb.from('link_page_items')
-    .select('id,asin,url,title').eq('page_id', page.id).eq('kind', 'product')
-  const existingRows = ((existing ?? []) as Array<{ id: string; asin: string | null; url: string; title: string | null }>)
+    .select('id,asin,url,title,image_url').eq('page_id', page.id).eq('kind', 'product')
+  const existingRows = ((existing ?? []) as Array<{ id: string; asin: string | null; url: string; title: string | null; image_url: string | null }>)
   const have = new Set(existingRows.filter((e) => e.asin).map((e) => (e.asin || '').toUpperCase()))
   const haveUrls = new Set(existingRows.map((e) => (e.url || '').trim()).filter(Boolean))
+
+  // Backfill images onto tiles already on the page that have none — review tiles
+  // imported before we had a photo source stay blank on re-sync (they're deduped
+  // as "already present"), so heal them from the current product/hero/thumbnail.
+  const imgByAsin = new Map<string, string>()
+  const imgByUrl = new Map<string, string>()
+  for (const r of rows) {
+    if (!r.image_url) continue
+    if (r.asin) imgByAsin.set(r.asin.toUpperCase(), r.image_url)
+    if (r.url) imgByUrl.set(r.url.trim(), r.image_url)
+  }
+  let imageHealed = 0
+  for (const e of existingRows) {
+    if (e.image_url) continue
+    const img = (e.asin && imgByAsin.get((e.asin || '').toUpperCase())) || (e.url && imgByUrl.get((e.url || '').trim())) || null
+    if (img) {
+      await sb.from('link_page_items').update({ image_url: img }).eq('id', e.id)
+      imageHealed++
+    }
+  }
 
   const started = Date.now()
   const isGeni = (u: string) => /geni\.us/i.test(u)
@@ -174,5 +197,5 @@ export async function POST() {
     added = (ins ?? []).length
   }
 
-  return NextResponse.json({ ok: true, added, relinked })
+  return NextResponse.json({ ok: true, added, relinked, imageHealed })
 }
