@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.72
+ * Version: 1.0.73
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -460,12 +460,29 @@ if (!function_exists('mvp_affiliate_rest_count_view')) {
     }
 }
 
+// Per-post threshold — the chip on a single post shows once THAT post passes it.
 if (!function_exists('mvp_affiliate_read_threshold')) {
     function mvp_affiliate_read_threshold() {
         $data = mvp_affiliate_get_data();
         $layout = isset($data['layout']) && is_array($data['layout']) ? $data['layout'] : [];
         $t = isset($layout['readCountThreshold']) ? (int) $layout['readCountThreshold'] : 100;
         return $t > 0 ? $t : 100;
+    }
+}
+
+// Main-blog threshold — the aggregate "N reads across the blog" chip shows once the
+// whole-blog total passes it. Independent from the per-post number (a creator may
+// want a post to reveal its count early but keep the blog-wide badge private until
+// it's a bigger figure). Falls back to the per-post threshold when unset.
+if (!function_exists('mvp_affiliate_blog_read_threshold')) {
+    function mvp_affiliate_blog_read_threshold() {
+        $data = mvp_affiliate_get_data();
+        $layout = isset($data['layout']) && is_array($data['layout']) ? $data['layout'] : [];
+        if (isset($layout['blogReadCountThreshold'])) {
+            $t = (int) $layout['blogReadCountThreshold'];
+            if ($t > 0) return $t;
+        }
+        return mvp_affiliate_read_threshold();
     }
 }
 
@@ -537,7 +554,7 @@ add_action('wp_footer', function () {
     $layout = isset($data['layout']) && is_array($data['layout']) ? $data['layout'] : [];
     if (empty($layout['showReadCount'])) return;
     $total = mvp_affiliate_total_reads();
-    if ($total < mvp_affiliate_read_threshold()) return;
+    if ($total < mvp_affiliate_blog_read_threshold()) return;
     $label = $total >= 1000 ? rtrim(rtrim(number_format($total / 1000, 1), '0'), '.') . 'k' : number_format($total);
     ?>
     <style>.mvp-blog-reads{display:flex;justify-content:center;margin:0 0 22px}.mvp-blog-reads span{display:inline-flex;align-items:center;gap:8px;font-size:14px;font-weight:600;line-height:1;color:#6b7280;padding:8px 16px;border:1px solid rgba(0,0,0,.09);border-radius:999px;background:rgba(0,0,0,.02);letter-spacing:.2px}</style>

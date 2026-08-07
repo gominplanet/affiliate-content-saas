@@ -141,8 +141,12 @@ interface LayoutData {
    *  renders it once a post passes readCountThreshold, so new posts never show a
    *  low number. */
   showReadCount: boolean
-  /** Reads a post must pass before the chip appears. Default 100. */
+  /** Reads a single POST must pass before its own chip appears. Default 100. */
   readCountThreshold: number
+  /** Total reads across the whole blog before the aggregate "N reads across the
+   *  blog" chip appears on the main blog. Independent from the per-post number.
+   *  Default 100. */
+  blogReadCountThreshold: number
 }
 
 interface BrandCtaData {
@@ -181,6 +185,7 @@ const emptyLayout: LayoutData = {
   aboutBio: true,
   showReadCount: false,
   readCountThreshold: 100,
+  blogReadCountThreshold: 100,
 }
 const emptyBrandCta: BrandCtaData = {
   enabled: false,
@@ -377,6 +382,7 @@ export default function CustomizePage() {
           aboutBio: bc.layout?.aboutBio !== false,
           showReadCount: bc.layout?.showReadCount === true, // opt-in
           readCountThreshold: typeof bc.layout?.readCountThreshold === 'number' && bc.layout.readCountThreshold > 0 ? bc.layout.readCountThreshold : 100,
+          blogReadCountThreshold: typeof bc.layout?.blogReadCountThreshold === 'number' && bc.layout.blogReadCountThreshold > 0 ? bc.layout.blogReadCountThreshold : 100,
         },
       })
     }
@@ -658,7 +664,7 @@ export default function CustomizePage() {
         {/* Read counter */}
         <Section
           title="Read counter"
-          description="Show a small “N reads” badge near the top of each post as social proof. It only appears once a post passes the threshold, so a brand-new post never shows a low number. Off by default."
+          description="Show a small “N reads” badge as social proof: on each post near the top, and one “N reads across the blog” badge on your main blog. Each appears only after it passes the threshold you set below, so a brand-new blog never shows a low number. Off by default."
         >
           <div className="flex items-center justify-between p-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border-2)]">
             <div>
@@ -676,22 +682,40 @@ export default function CustomizePage() {
             </button>
           </div>
           {data.layout.showReadCount && (
-            <div className="flex items-center justify-between p-3 mt-2 rounded-xl bg-[var(--surface-2)] border border-[var(--border-2)]">
-              <div>
-                <p className="text-sm font-medium text-[var(--text)]">Show it after</p>
-                <p className="text-xs text-[var(--text-3)]">Reads a post needs before the badge appears.</p>
+            <>
+              <div className="flex items-center justify-between p-3 mt-2 rounded-xl bg-[var(--surface-2)] border border-[var(--border-2)]">
+                <div>
+                  <p className="text-sm font-medium text-[var(--text)]">On each post, show it after</p>
+                  <p className="text-xs text-[var(--text-3)]">Reads a single post needs before its badge appears.</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={1}
+                    value={data.layout.readCountThreshold}
+                    onChange={e => setData(d => ({ ...d, layout: { ...d.layout, readCountThreshold: Math.max(1, parseInt(e.target.value || '100', 10) || 100) } }))}
+                    className="w-24 px-3 py-2 rounded-lg text-sm bg-[var(--surface)] border border-[var(--border-2)] text-[var(--text)] outline-none focus:border-[#7C3AED]"
+                  />
+                  <span className="text-xs text-[var(--text-3)]">reads</span>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min={1}
-                  value={data.layout.readCountThreshold}
-                  onChange={e => setData(d => ({ ...d, layout: { ...d.layout, readCountThreshold: Math.max(1, parseInt(e.target.value || '100', 10) || 100) } }))}
-                  className="w-24 px-3 py-2 rounded-lg text-sm bg-[var(--surface)] border border-[var(--border-2)] text-[var(--text)] outline-none focus:border-[#7C3AED]"
-                />
-                <span className="text-xs text-[var(--text-3)]">reads</span>
+              <div className="flex items-center justify-between p-3 mt-2 rounded-xl bg-[var(--surface-2)] border border-[var(--border-2)]">
+                <div>
+                  <p className="text-sm font-medium text-[var(--text)]">On the main blog, show it after</p>
+                  <p className="text-xs text-[var(--text-3)]">Total reads across every post before the “N reads across the blog” badge appears.</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={1}
+                    value={data.layout.blogReadCountThreshold}
+                    onChange={e => setData(d => ({ ...d, layout: { ...d.layout, blogReadCountThreshold: Math.max(1, parseInt(e.target.value || '100', 10) || 100) } }))}
+                    className="w-24 px-3 py-2 rounded-lg text-sm bg-[var(--surface)] border border-[var(--border-2)] text-[var(--text)] outline-none focus:border-[#7C3AED]"
+                  />
+                  <span className="text-xs text-[var(--text-3)]">reads</span>
+                </div>
               </div>
-            </div>
+            </>
           )}
         </Section>
 
