@@ -4,6 +4,7 @@ import { jsonrepair } from 'jsonrepair'
 import { recordUsage, usageFromAnthropic } from '@/lib/ai-usage'
 import { learnProfileToPrompt } from '@/lib/learn'
 import { resolveNicheScaffold, nicheScaffoldToPrompt, type NicheScaffold } from '@/lib/niche-scaffold'
+import { deriveProductName } from '@/lib/product-name'
 
 /** Caller identity for cost telemetry (optional — logging is best-effort). */
 export interface UsageCtx { userId?: string | null; tier?: string | null }
@@ -2396,6 +2397,20 @@ ${video.transcript ? video.transcript.slice(0, 12000) : 'No transcript available
     const systemPrompt = buildSystemPrompt(brand, undefined, isAmazon, campaignScaffold, retailerLabel)
     const p = input.product
 
+    // Clean, searchable product name (brand + short core) distilled from the
+    // keyword-stuffed Amazon title. Buyers and Google match on this, so the
+    // blog title/H1/first mention should use it verbatim. See lib/product-name.ts.
+    const pn = deriveProductName(p.title)
+    const nameRules = pn.canonical
+      ? `
+PRODUCT-NAME RULES (use the clean name, not the keyword-stuffed listing title):
+- Preferred product name (use this exact string): "${pn.canonical}"
+${pn.brand ? `- Brand is "${pn.brand}" — never write it as "${pn.brand} Store"/"${pn.brand} Shop"; that trailing "Store/Shop/Official" is Amazon storefront scaffolding, not part of the brand.\n` : ''}- The blog TITLE must contain "${pn.canonical}" plus a short angle (e.g. review, worth it?, buyer's guide). Keep the whole title under ~65 characters.
+- The H1 and the FIRST in-body mention use the full "${pn.canonical}".
+${pn.shortName ? `- After the first mention you may shorten to "${pn.shortName}" or just the brand.\n` : ''}- Use the full listing title verbatim at most ONCE (e.g. a specs line) — never as the title or a heading.
+`
+      : ''
+
     const userMessage = `Generate a long-form, SEO-optimized INFORMATIONAL buyer's-guide article about this product. This is NOT a personal review. There is NO video — base the post entirely on the product facts and the research brief below.
 
 ⛔ CRITICAL FRAMING — this overrides any "first-person reviewer" instruction in your system prompt:
@@ -2411,7 +2426,7 @@ ${p.price ? `Price: ${p.price}` : ''}
 ${p.rating ? `Amazon rating: ${p.rating}` : ''}
 ${p.bullets.length ? `Features:\n${p.bullets.map(b => `- ${b}`).join('\n')}` : ''}
 ${p.description ? `Description: ${p.description.slice(0, 1500)}` : ''}
-
+${nameRules}
 AFFILIATE URL: ${input.affiliateUrl || '[AFFILIATE_LINK]'}
 
 RESEARCH BRIEF (use this as the backbone — it reflects what real buyers ask and the problems this solves):
