@@ -21,6 +21,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { brandTrust, campaignFullness, estPerSale, daysUntil, opportunityScore, type BrandAgg } from '@/lib/cc-intelligence'
 import { ccAccessOk } from '@/lib/cc-access'
 import { ccRequestUrl } from '@/lib/cc-urls'
+import { productSignals, groupBySignals } from '@/lib/cc-dedupe'
 import { type Tier } from '@/lib/tier'
 
 export const dynamic = 'force-dynamic'
@@ -278,14 +279,32 @@ export async function GET(request: NextRequest) {
     // no total `budget`, so nothing scores 'risky' yet and this is a soft filter;
     // once total-budget data flows in it starts excluding proven non-spenders.
     const filtered = payingOnly ? enriched.filter((e) => e.trust.tier !== 'risky') : enriched
+
+    // Collapse same-product campaigns (one product listed under several campaign
+    // ids / marketing headlines) so the browser shows each item once — the same
+    // rule the daily digest uses. Keep the highest-commission twin, then the
+    // higher-scored one; preserve the current sort order otherwise.
+    const groups = groupBySignals(filtered, (e) => productSignals({
+      campaignId: e.campaignId, brand: e.brand, asin: e.repAsin, name: e.name,
+      imageUrl: e.image, priceCents: e.priceNow != null ? Math.round(e.priceNow * 100) : null, rating: e.rating,
+    }))
+    const deduped = groups.map((g) => {
+      let best = g[0]
+      for (const e of g) {
+        const cb = best.commissionPct ?? -1, ce = e.commissionPct ?? -1
+        if (ce > cb || (ce === cb && e.score > best.score)) best = e
+      }
+      return best
+    })
+
     const start = (page - 1) * limit
-    const shown = filtered.slice(start, start + limit)
+    const shown = deduped.slice(start, start + limit)
 
     return NextResponse.json({
       ok: true,
       campaigns: shown,
-      total: filtered.length,
-      nextPage: start + limit < filtered.length ? page + 1 : null,
+      total: deduped.length,
+      nextPage: start + limit < deduped.length ? page + 1 : null,
       windowCapped: rows.length >= WINDOW,
     })
   } catch (e) {
