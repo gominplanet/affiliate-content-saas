@@ -9,7 +9,7 @@ import {
   refreshAccessToken,
 } from '@/services/twitter'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
-import { checkXPostCap, recordXPost, xCapMessage } from '@/lib/x-cap'
+import { checkXPostCap, reserveXPost, refundXPost, xCapMessage } from '@/lib/x-cap'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } from '@/lib/social-cap'
 import { resolveBlogPostId } from '@/lib/resolve-post-id'
@@ -199,8 +199,20 @@ Return ONLY the tweet text.`,
     }
 
     // ── 5. Post the tweet ──────────────────────────────────────────────────
-    const tweet = await createTweet(accessToken, finalText)
-    recordXPost(user.id, xcap.tier)
+    // Reserve a slot atomically right before posting (the early check above is
+    // just for a fast over-cap 429 before we spend a caption). Refund on failure.
+    const xres = await reserveXPost(supabase, user.id)
+    if (!xres.ok) {
+      return NextResponse.json({ error: xCapMessage(xres.resetLabel), limitReached: true }, { status: 429 })
+    }
+    let tweet
+    try {
+      tweet = await createTweet(accessToken, finalText)
+    } catch (e) {
+      await refundXPost(supabase, xres.reservationId) // failed → don't burn the slot
+      throw e
+    }
+    // The reservation already counted this post (no recordXPost).
 
     // ── 6. Save tweet id on the post ───────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -19,7 +19,7 @@ import {
 import { resolveSocialAccount } from '@/lib/social-accounts'
 import { capSocialText, SOCIAL_LIMITS } from '@/lib/social-cap'
 import { createTweet, refreshAccessToken as refreshTwitter } from '@/services/twitter'
-import { checkXPostCap, recordXPost, xCapMessage } from '@/lib/x-cap'
+import { reserveXPost, refundXPost, xCapMessage } from '@/lib/x-cap'
 import { createFacebookService } from '@/services/facebook'
 import { ThreadsService } from '@/services/threads'
 import { createLinkedInService } from '@/services/linkedin'
@@ -95,9 +95,10 @@ export async function publishDealToSocials(opts: PublishOpts): Promise<PlatformR
       if (platform === 'twitter') {
         let token = ig.twitter_access_token as string | undefined
         if (!token) throw new Error('X is not connected.')
-        // X is the only paid-per-post channel — enforce the monthly cap.
-        const xcap = await checkXPostCap(supabase, userId)
-        if (xcap.exceeded) throw new Error(xCapMessage(xcap.resetLabel))
+        // X is the only paid-per-post channel — reserve a slot atomically before
+        // posting so concurrent posts can't overspend the cap. Refund on failure.
+        const xres = await reserveXPost(supabase, userId)
+        if (!xres.ok) throw new Error(xCapMessage(xres.resetLabel))
         const expiry = ig.twitter_expires_at ? new Date(ig.twitter_expires_at).getTime() : 0
         if (expiry && Date.now() > expiry - 60_000 && ig.twitter_refresh_token) {
           const r = await refreshTwitter(ig.twitter_refresh_token as string)
@@ -108,8 +109,14 @@ export async function publishDealToSocials(opts: PublishOpts): Promise<PlatformR
             twitter_expires_at: new Date(Date.now() + r.expires_in * 1000).toISOString(),
           })).eq('user_id', userId)
         }
-        const t = await createTweet(token!, composeText(baseCaption, 'twitter', link, disclaimer, retailer))
-        recordXPost(userId, xcap.tier)
+        let t
+        try {
+          t = await createTweet(token!, composeText(baseCaption, 'twitter', link, disclaimer, retailer))
+        } catch (e) {
+          await refundXPost(supabase, xres.reservationId) // failed → don't burn the slot
+          throw e
+        }
+        // The reservation already counted this post (no recordXPost).
         results.push({ platform, ok: true, url: `https://x.com/i/web/status/${t.id}` })
 
       } else if (platform === 'facebook') {
