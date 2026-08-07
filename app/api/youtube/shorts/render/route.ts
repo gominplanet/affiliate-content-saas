@@ -19,7 +19,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { normalizeTier, billingWindow, type Tier } from '@/lib/tier'
 import { cloudinaryConfigured, renderVerticalShort, getLastShortError } from '@/services/cloudinary'
 import { ingestConfigured, clipSegment, renderShort, renderShortSegment, getLastIngestError } from '@/lib/youtube-ingest'
-import { buildCaptionChunks } from '@/lib/shorts-captions'
+import { buildCaptionChunks, isPowerWord } from '@/lib/shorts-captions'
 import { recordUsage } from '@/lib/ai-usage'
 import { rowToShort } from '@/lib/shorts-row'
 import { storagePathFromPublicUrl } from '@/lib/storage-url'
@@ -117,6 +117,11 @@ export async function POST(request: Request) {
     // Cues are stored WORD-level (one entry per spoken word, clip-relative) so
     // the caption engine can animate word-by-word.
     const rawCues = (Array.isArray(short.subtitles) ? short.subtitles : []) as CaptionChunk[]
+    // Flag "power words" (numbers, $/%, shouted or high-emphasis terms) so the
+    // render service can accent-color them in the burned captions — the visual
+    // that makes Hormozi/Opus-style captions pop. Backward-compatible: an older
+    // render build ignores the extra `hl` field.
+    const cuesWithHl = rawCues.map(c => ({ ...c, hl: isPowerWord(c.text) }))
     const startSec = Number(short.start_sec)
     const endSec = Number(short.end_sec)
 
@@ -129,8 +134,8 @@ export async function POST(request: Request) {
     // source when present, else downloads ONLY this clip's window from YouTube.
     if (ingestConfigured()) {
       const r = hasSource
-        ? await renderShort(sourceUrl, startSec, endSec, withCaptions ? rawCues : [], user.id)
-        : await renderShortSegment(ytId, startSec, endSec, withCaptions ? rawCues : [], user.id)
+        ? await renderShort(sourceUrl, startSec, endSec, withCaptions ? cuesWithHl : [], user.id, style)
+        : await renderShortSegment(ytId, startSec, endSec, withCaptions ? cuesWithHl : [], user.id, style)
       if (r?.url) renderedUrl = r.url
     }
 
