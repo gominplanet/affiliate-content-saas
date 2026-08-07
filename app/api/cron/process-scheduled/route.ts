@@ -483,7 +483,11 @@ async function publishOne(
       const xcap = await checkXPostCap(admin, row.user_id)
       if (xcap.exceeded) throw new Error(xCapMessage(xcap.resetLabel))
 
-      const finalText = `${row.body_text} ${url}`
+      // Cap the body so the trailing link always survives — an un-capped
+      // `${body} ${url}` on a near-280-char body pushed the tweet over the limit
+      // and X rejected the whole scheduled post. Matches the immediate path.
+      const xSuffix = row.body_text.includes(url) ? '' : ` ${url}`
+      const finalText = capSocialText(stripLinkPlaceholders(row.body_text), SOCIAL_LIMITS.twitter, xSuffix)
       let result
       try {
         result = await createTweet(accessToken!, finalText)
