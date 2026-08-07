@@ -337,9 +337,22 @@ function pickAsin(r: { asins?: string[] | null; campaign_name?: string | null })
  *  wrongly merged with another. Product images are per-ASIN from enrichment,
  *  so brand+image won't merge genuinely different products. */
 /** Normalize a product title to a stable identity token: lowercased, alnum
- *  only, first 8 words. '' when too short to be meaningful. */
+ *  only, first 8 words. '' when too short to be meaningful.
+ *
+ *  Brands routinely list the SAME product under several campaign slots whose
+ *  names differ ONLY by a commission marker or a trailing variant number
+ *  ("soap dispenser-50%-1" vs "soap dispenser-50%-2"). Those are naming
+ *  artifacts, not different products, so strip them BEFORE tokenizing or the
+ *  two never collapse. */
 function normTitle(s: string | null | undefined): string {
-  const t = (s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).filter(Boolean).slice(0, 8).join(' ')
+  const cleaned = (s || '')
+    .toLowerCase()
+    .replace(/\b\d{1,3}\s*%/g, ' ')            // commission marker: "50%", "50 %"
+    .replace(/\b\d{1,3}\s*percent\b/g, ' ')    // spelled out: "50 percent"
+    .replace(/\bcommissions?\b/g, ' ')          // the word "commission(s)" itself
+    .replace(/[-#]\s*\d{1,3}\s*$/g, ' ')        // trailing variant slot: "-1", "#2"
+    .replace(/\bv\s*\d{1,3}\s*$/g, ' ')         // trailing "v2" / "v 3"
+  const t = cleaned.replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).filter(Boolean).slice(0, 8).join(' ')
   return t.length >= 6 ? t : ''
 }
 

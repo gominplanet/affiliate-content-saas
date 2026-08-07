@@ -2162,13 +2162,27 @@ function ScheduledList({
                   <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">Then posts to:</span>
                   {item.cascade.map((p) => {
                     const m = PLATFORM_META[p as keyof typeof PLATFORM_META] ?? { label: p.charAt(0).toUpperCase() + p.slice(1), color: '#7C3AED' }
-                    return (
+                    // Solid chips read clearly in BOTH themes because the brand
+                    // color IS the background (theme-independent) with white text.
+                    // The black-branded platforms (X, Threads, TikTok) can't use a
+                    // black chip — it vanishes on a dark card — so they get a
+                    // theme-aware neutral chip instead.
+                    const neutral = m.color === '#000000'
+                    return neutral ? (
                       <span
                         key={p}
-                        className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full"
-                        style={{ backgroundColor: `${m.color}1a`, color: m.color }}
+                        className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-[#1d1d1f] text-white dark:bg-white/20 dark:text-white"
                       >
-                        <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: m.color }} />
+                        <span className="w-1.5 h-1.5 rounded-full bg-white/80" />
+                        {m.label}
+                      </span>
+                    ) : (
+                      <span
+                        key={p}
+                        className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2 py-0.5 rounded-full text-white"
+                        style={{ backgroundColor: m.color }}
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-white/90" />
                         {m.label}
                       </span>
                     )
