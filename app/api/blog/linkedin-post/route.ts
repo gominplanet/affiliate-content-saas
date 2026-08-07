@@ -17,6 +17,8 @@ import { fetchOgImage, stripLinkPlaceholders } from '@/lib/og-image'
 import { AFFILIATE_DISCLAIMER_DEFAULT } from '@/lib/social-disclaimer'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
 import { resolvePostAffiliateLink } from '@/lib/ig-dm'
+import { ensureAffiliateGeniuslink } from '@/lib/blog-share-url'
+import { resolveGeniuslinkGroupId } from '@/lib/geniuslink-group'
 import { parseLinkPrefs, linkPrefFor, composeCaption, primaryCardUrl, effectiveDisclosure, youtubeWatchUrl } from '@/lib/social-link-mode'
 
 export const maxDuration = 60
@@ -55,7 +57,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: postRow } = await supabase
       .from('blog_posts')
-      .select('id,title,excerpt,content,wordpress_url,geniuslink_blog_url,video_id,social_publish_counts,geniuslink_code')
+      .select('id,title,excerpt,content,wordpress_url,wordpress_site_id,geniuslink_blog_url,video_id,social_publish_counts,geniuslink_code')
       .eq('id', postId)
       .eq('user_id', user.id)
       .single()
@@ -110,7 +112,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: intRow } = await supabase
       .from('integrations')
-      .select('linkedin_access_token,linkedin_person_id,linkedin_person_name,social_link_modes,amazon_associates_tag')
+      .select('linkedin_access_token,linkedin_person_id,linkedin_person_name,social_link_modes,amazon_associates_tag,geniuslink_api_key,geniuslink_api_secret')
       .eq('user_id', user.id)
       .single()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -166,7 +168,18 @@ Return ONLY the post text, no extra commentary.`,
     // Compose the caption per the user's LinkedIn link mode (blog / affiliate /
     // both). composeCaption places the affiliate + blog links and the FTC
     // disclosure in the right order; the write-up itself carries no links.
-    const affiliateLink = resolvePostAffiliateLink(post)
+    let affiliateLink = resolvePostAffiliateLink(post)
+    // "If a user has a Geniuslink, MVP always uses it." (best-effort upgrade)
+    if (affiliateLink && integration?.geniuslink_api_key && integration?.geniuslink_api_secret) {
+      const glGroupId = await resolveGeniuslinkGroupId({
+        supabase, siteId: (post as any).wordpress_site_id ?? null, siteUrl: (post as any).wordpress_url ?? null,
+        apiKey: integration.geniuslink_api_key, apiSecret: integration.geniuslink_api_secret,
+      }).catch(() => null)
+      affiliateLink = await ensureAffiliateGeniuslink(supabase, {
+        postId: (post as any).id, link: affiliateLink, title: (post as any).title ?? '',
+        apiKey: integration.geniuslink_api_key, apiSecret: integration.geniuslink_api_secret, groupId: glGroupId,
+      })
+    }
     const pref = linkPrefFor(parseLinkPrefs(integration?.social_link_modes), 'linkedin')
     const videoUrl = youtubeWatchUrl(ytVideoId)
     const disclosure = effectiveDisclosure(brand?.affiliate_disclaimer || AFFILIATE_DISCLAIMER_DEFAULT, affiliateLink, !!integration?.amazon_associates_tag)

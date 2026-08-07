@@ -11,6 +11,8 @@ import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } from '@/lib/social-cap'
 import { resolveBlogPostId } from '@/lib/resolve-post-id'
 import { resolvePostAffiliateLink } from '@/lib/ig-dm'
+import { ensureAffiliateGeniuslink } from '@/lib/blog-share-url'
+import { resolveGeniuslinkGroupId } from '@/lib/geniuslink-group'
 import { parseLinkPrefs, linkPrefFor, primaryCardUrl, youtubeWatchUrl } from '@/lib/social-link-mode'
 
 export const maxDuration = 60
@@ -52,7 +54,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: postRow } = await supabase
       .from('blog_posts')
-      .select('id,title,excerpt,content,wordpress_url,geniuslink_blog_url,social_publish_counts,geniuslink_code,youtube_videos(thumbnail_url,youtube_video_id)')
+      .select('id,title,excerpt,content,wordpress_url,wordpress_site_id,geniuslink_blog_url,social_publish_counts,geniuslink_code,youtube_videos(thumbnail_url,youtube_video_id)')
       .eq('id', postId)
       .eq('user_id', user.id)
       .single()
@@ -87,7 +89,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: intRow } = await supabase
       .from('integrations')
-      .select('bluesky_handle,bluesky_app_password,bluesky_did,social_link_modes,amazon_associates_tag')
+      .select('bluesky_handle,bluesky_app_password,bluesky_did,social_link_modes,amazon_associates_tag,geniuslink_api_key,geniuslink_api_secret')
       .eq('user_id', user.id)
       .single()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -100,7 +102,18 @@ export async function POST(request: NextRequest) {
     // Bluesky's card carries ONE clickable link (300-char cap), so we show the
     // PRIMARY link there — the affiliate product when the affiliate is on, else
     // the chosen content link (review video or blog).
-    const affiliateLink = resolvePostAffiliateLink(post)
+    let affiliateLink = resolvePostAffiliateLink(post)
+    // "If a user has a Geniuslink, MVP always uses it." (best-effort upgrade)
+    if (affiliateLink && integration?.geniuslink_api_key && integration?.geniuslink_api_secret) {
+      const glGroupId = await resolveGeniuslinkGroupId({
+        supabase, siteId: (post as any).wordpress_site_id ?? null, siteUrl: (post as any).wordpress_url ?? null,
+        apiKey: integration.geniuslink_api_key, apiSecret: integration.geniuslink_api_secret,
+      }).catch(() => null)
+      affiliateLink = await ensureAffiliateGeniuslink(supabase, {
+        postId: (post as any).id, link: affiliateLink, title: (post as any).title ?? '',
+        apiKey: integration.geniuslink_api_key, apiSecret: integration.geniuslink_api_secret, groupId: glGroupId,
+      })
+    }
     const pref = linkPrefFor(parseLinkPrefs(integration?.social_link_modes), 'bluesky')
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const videoUrl = youtubeWatchUrl((post as any).youtube_videos?.youtube_video_id)
