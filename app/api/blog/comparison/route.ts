@@ -20,6 +20,7 @@ import { createWordPressService } from '@/services/wordpress'
 import { resolveFinalUrl } from '@/lib/product-link'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
+import { deriveProductName } from '@/lib/product-name'
 import { researchProductFromUrl } from '@/services/research'
 import { checkUsageLimit, checkGenerationLimit, normalizeTier } from '@/lib/tier'
 import { scrubBanned, BANNED_RULE } from '@/lib/scrub'
@@ -435,7 +436,12 @@ export async function POST(request: Request) {
             amazonTitle = p.title || ''
             if (matchesVideo(amazonTitle || '')) {
               asin = a
-              if (p.title) productName = p.title
+              // Clean the keyword-stuffed listing title into "Brand + short name"
+              // (never "<Brand> Store"). This feeds the prompt's per-product Name
+              // line, the short_name fallbacks, the button labels and the schema
+              // — so a comparison names each product the same clean way the
+              // single-product posts do. See lib/product-name.ts.
+              if (p.title) productName = deriveProductName(p.title).canonical || p.title
               pDescription = p.description || ''
               bullets = p.bullets || []
               matched = true
