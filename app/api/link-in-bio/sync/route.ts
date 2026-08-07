@@ -12,6 +12,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier, type Tier } from '@/lib/tier'
 import { canUseDealRadar } from '@/lib/feature-access'
 import { resolveAffiliateUrl } from '@/lib/weekly-digest'
+import { asinFromAmazonUrl } from '@/lib/product-link'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -35,14 +36,49 @@ export async function POST() {
   const { data: page } = await sb.from('link_pages').select('id').eq('user_id', user.id).maybeSingle()
   if (!page?.id) return NextResponse.json({ error: 'Create your page first.' }, { status: 400 })
 
-  // Products the creator has engaged with (posted deals auto-watch; plus manual).
+  type SrcRow = { asin: string; title: string | null; image_url: string | null; source: 'deal' | 'review' }
+
+  // Source 1 — products the creator has engaged with (posted DEALS auto-watch;
+  // plus manual watches).
   const { data: watches } = await sb.from('product_watches')
     .select('asin,title,image_url,created_at')
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
     .limit(IMPORT_MAX)
-  const rows = (watches ?? []) as Array<{ asin: string; title: string | null; image_url: string | null }>
-  if (!rows.length) return NextResponse.json({ ok: true, added: 0, message: 'No posted products to import yet.' })
+  const dealRows: SrcRow[] = ((watches ?? []) as Array<{ asin: string; title: string | null; image_url: string | null }>)
+    .map((w) => ({ asin: w.asin, title: w.title, image_url: w.image_url, source: 'deal' as const }))
+
+  // Source 2 — the creator's published REVIEWS. Most creators (like Scott) make
+  // review posts, not deals, so a deals-only import left their shop empty. Each
+  // review is about one product; pull its ASIN + photo from the linked video and
+  // turn it into a shop tile too.
+  const { data: reviews } = await sb.from('blog_posts')
+    .select('title, published_at, youtube_videos(product_url, product_image_url, title)')
+    .eq('user_id', user.id)
+    .not('video_id', 'is', null)
+    .order('published_at', { ascending: false })
+    .limit(IMPORT_MAX)
+  const reviewRows: SrcRow[] = []
+  for (const b of (reviews ?? []) as Array<{ title: string | null; youtube_videos: { product_url: string | null; product_image_url: string | null; title: string | null } | Array<{ product_url: string | null; product_image_url: string | null; title: string | null }> | null }>) {
+    const yv = Array.isArray(b.youtube_videos) ? b.youtube_videos[0] : b.youtube_videos
+    const purl = yv?.product_url || ''
+    const asin = purl ? asinFromAmazonUrl(purl) : null
+    if (!asin) continue // only import reviews whose product resolves to an Amazon ASIN
+    reviewRows.push({ asin, title: b.title || yv?.title || null, image_url: yv?.product_image_url || null, source: 'review' })
+  }
+
+  // Merge + dedupe by ASIN (deals first, so a posted deal keeps its richer data),
+  // capped to the import limit.
+  const seenAsin = new Set<string>()
+  const rows: SrcRow[] = []
+  for (const r of [...dealRows, ...reviewRows]) {
+    const a = (r.asin || '').toUpperCase()
+    if (!/^[A-Z0-9]{10}$/.test(a) || seenAsin.has(a)) continue
+    seenAsin.add(a)
+    rows.push(r)
+    if (rows.length >= IMPORT_MAX) break
+  }
+  if (!rows.length) return NextResponse.json({ ok: true, added: 0, message: 'No posted products or reviews to import yet.' })
 
   // Append after the current last position.
   const { data: last } = await sb.from('link_page_items').select('position').eq('page_id', page.id)
@@ -86,14 +122,14 @@ export async function POST() {
     if (!/^[A-Z0-9]{10}$/i.test(r.asin)) continue
     const asinU = r.asin.toUpperCase()
     if (have.has(asinU)) continue
-    const title = (r.title || `Amazon deal ${asinU}`).slice(0, 120)
+    const title = (r.title || `Amazon product ${asinU}`).slice(0, 120)
     let url: string
     if (gKey && gSecret && Date.now() - started < 45_000) {
       url = await resolveAffiliateUrl(asinU, title, tag, gKey, gSecret)
     } else {
       url = tag ? `https://www.amazon.com/dp/${asinU}?tag=${encodeURIComponent(tag)}` : `https://www.amazon.com/dp/${asinU}`
     }
-    tiles.push({ page_id: page.id, user_id: user.id, kind: 'product', title, image_url: r.image_url || null, url, asin: asinU, source: 'deal', position: position2++ })
+    tiles.push({ page_id: page.id, user_id: user.id, kind: 'product', title, image_url: r.image_url || null, url, asin: asinU, source: r.source, position: position2++ })
   }
 
   let added = 0
