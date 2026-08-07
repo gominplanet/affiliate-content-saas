@@ -12,7 +12,12 @@ reviewed change rather than an unattended edit. Each has file:line + the fix.
 
 ## High value, needs careful review (do these next, with eyes on)
 
-### 1. Duplicate social posts after a mid-publish crash (no idempotency)
+### 1. Duplicate social posts after a mid-publish crash (no idempotency) — ✅ DONE
+> Shipped: `publishOne` now short-circuits when the post already carries this
+> platform's external id (twitter/threads/linkedin/facebook/bluesky/pinterest/
+> telegram), returning it instead of republishing. Closes the common
+> crash-after-publish-before-completed window.
+
 - Where: `app/api/cron/process-scheduled/route.ts` — stuck-recovery `:127-138` flips `processing→pending` after 5 min; publish then `status:'completed'` + `external_id` write at `:236-237`. Per-platform blog_posts id (e.g. `twitter_post_id`) is written inside `publishOne` (X `:503`) BEFORE the completed write.
 - Failure: publish succeeds, the function dies before the `completed` write (Vercel timeout on a big parallel batch), recovery re-queues the row, it republishes → duplicate tweet/FB/LI post.
 - Fix (catches the common window): at the top of each `publishOne` platform branch, if the linked `blog_posts.<platform>_post_id` is already set, skip publishing and return that id as `externalId`. This closes the "crashed after publishOne, before completed write" case. The residual window (crash mid-`publishOne`, after the platform API but before the blog_posts id write) needs an external-id reservation and is much rarer — acceptable to leave once the common case is closed.

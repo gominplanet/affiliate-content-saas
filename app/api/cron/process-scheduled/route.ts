@@ -344,7 +344,7 @@ async function publishOne(
   const [postRes, intRes] = await Promise.all([
     admin
       .from('blog_posts')
-      .select('id,title,wordpress_url,wordpress_post_id,wordpress_site_id,geniuslink_code,content,youtube_videos(thumbnail_url,youtube_video_id)')
+      .select('id,title,wordpress_url,wordpress_post_id,wordpress_site_id,geniuslink_code,content,twitter_post_id,threads_post_id,linkedin_post_id,facebook_post_id,bluesky_post_uri,pinterest_pin_id,telegram_message_id,youtube_videos(thumbnail_url,youtube_video_id)')
       .eq('id', row.blog_post_id)
       .single(),
     admin
@@ -364,6 +364,30 @@ async function publishOne(
   if (!integration) throw new Error('User has no integrations row')
   if (!post.wordpress_url) {
     throw new Error('Blog post has no published URL')
+  }
+
+  // Idempotency guard: if this post already carries this platform's external id,
+  // a previous run published it and (most likely) the function died before the
+  // row was flipped to `completed`, so stuck-recovery re-queued it. Publishing
+  // again would post a duplicate. The id column is written ONLY on a successful
+  // publish, so its presence means "already posted" — return it and let the row
+  // complete cleanly. Closes the common crash-after-publish-before-completed
+  // window (audit follow-up #1). TikTok/Instagram handled above (no shared id).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const p = post as any
+  const existingExternalId: Record<string, unknown> = {
+    twitter: p.twitter_post_id,
+    threads: p.threads_post_id,
+    linkedin: p.linkedin_post_id,
+    facebook: p.facebook_post_id,
+    bluesky: p.bluesky_post_uri,
+    pinterest: p.pinterest_pin_id,
+    telegram: p.telegram_message_id,
+  }
+  const alreadyPosted = existingExternalId[row.platform]
+  if (alreadyPosted) {
+    console.warn(`[process-scheduled] row ${row.id}: ${row.platform} already has external id ${String(alreadyPosted)} — skipping republish (idempotency)`)
+    return { externalId: String(alreadyPosted) }
   }
 
   let url = post.wordpress_url ?? ''
