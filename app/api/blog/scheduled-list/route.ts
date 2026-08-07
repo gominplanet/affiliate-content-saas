@@ -40,7 +40,20 @@ export async function GET() {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  const rows = (data ?? []) as Array<{ blog_post_id: string | null; kind: string | null }>
+  const rows = (data ?? []) as Array<{ blog_post_id: string | null; kind: string | null; platform: string | null; status: string | null }>
+
+  // Which socials will cascade after each blog post publishes — collected from
+  // the pending kind='social' rows, keyed by blog_post_id. Used to summarize
+  // "then posts to FB, IG, …" on the blog card so the creator can see the whole
+  // plan (blog + socials) at a glance.
+  const socialByBlog = new Map<string, string[]>()
+  for (const r of rows) {
+    if (r.kind === 'social' && r.status === 'pending' && r.blog_post_id && r.platform) {
+      const arr = socialByBlog.get(r.blog_post_id) ?? []
+      if (!arr.includes(r.platform)) arr.push(r.platform)
+      socialByBlog.set(r.blog_post_id, arr)
+    }
+  }
 
   // ── Also surface SCHEDULED BLOG POSTS themselves ──────────────────────────
   // A blog post scheduled via /api/blog/schedule-publish in wp-native mode
@@ -84,10 +97,19 @@ export async function GET() {
       created_at: b.created_at ?? b.scheduled_for,
       blog_posts: { title: b.title, wordpress_url: b.wordpress_url },
       youtube_videos: null,
+      // The socials queued to cascade after this post goes live.
+      cascade: socialByBlog.get(b.id) ?? [],
       // Managed from the Video-to-Blog tab (there's no scheduled_posts row to
       // cancel here) — the UI hides the Cancel action for these.
       synthetic: true,
     }))
 
-  return NextResponse.json({ scheduled: [...(data ?? []), ...synthetic] })
+  // Attach the same cascade summary to any REAL blog_publish rows (draft-flip).
+  const withCascade = (data ?? []).map((d: { kind?: string | null; blog_post_id?: string | null }) =>
+    d.kind === 'blog_publish' && d.blog_post_id
+      ? { ...d, cascade: socialByBlog.get(d.blog_post_id) ?? [] }
+      : d,
+  )
+
+  return NextResponse.json({ scheduled: [...withCascade, ...synthetic] })
 }
