@@ -393,20 +393,29 @@ function buildAss(cues) {
     'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',
   ].join('\n')
 
+  // Flatten to ONE global, time-ordered sequence (each word tagged with its
+  // line). Building events per-line let a line's last word hold to its own end,
+  // which (a) left a gap before the next line → flicker, and (b) could overlap
+  // the next line when Whisper word times cross → two lines stacked ("stepping
+  // over each other"). Here every word event ends exactly when the NEXT word
+  // starts, so the track is gap-free and never overlaps.
+  const seq = []
+  for (const line of lines) for (let i = 0; i < line.length; i++) seq.push({ line, i, start: line[i].start, end: line[i].end })
+  seq.sort((a, b) => a.start - b.start)
+
   const events = []
-  for (const line of lines) {
-    for (let i = 0; i < line.length; i++) {
-      const start = line[i].start
-      // Hold each state until the next word starts (no flicker gap).
-      const end = i < line.length - 1 ? line[i + 1].start : line[i].end
-      const text = line.map((w, j) => {
-        const up = w.text.toUpperCase()
-        return j === i
-          ? `{\\c${HIGHLIGHT}\\fscx118\\fscy118\\t(0,90,\\fscx100\\fscy100)}${up}{\\r}`
-          : up
-      }).join(' ')
-      events.push(`Dialogue: 0,${assTime(start)},${assTime(end)},Cap,,0,0,0,,${text}`)
-    }
+  for (let k = 0; k < seq.length; k++) {
+    const cur = seq[k]
+    const start = cur.start
+    const next = seq[k + 1]
+    const end = Math.max(start + 0.05, next ? next.start : cur.end)
+    const text = cur.line.map((w, j) => {
+      const up = w.text.toUpperCase()
+      return j === cur.i
+        ? `{\\c${HIGHLIGHT}\\fscx118\\fscy118\\t(0,90,\\fscx100\\fscy100)}${up}{\\r}`
+        : up
+    }).join(' ')
+    events.push(`Dialogue: 0,${assTime(start)},${assTime(end)},Cap,,0,0,0,,${text}`)
   }
   return `${header}\n${events.join('\n')}\n`
 }
@@ -462,26 +471,12 @@ app.post('/audio', async (req, res) => {
   }
 })
 
-// ── Render options: split-screen reframe (#1) + silence trim (#2) ────────────
-// Pure logic (parsing, range math, caption remap, filtergraph strings) lives in
-// render-filters.js so it's unit-tested directly (test-render-filters.js).
-const { parseSilenceStderr, keptRanges, remapWords, keptSelectExpr, reframeChain } = require('./render-filters')
+// ── Render options: split-screen reframe (#1) ────────────────────────────────
+// The reframe filtergraph lives in render-filters.js so it's unit-tested
+// directly (test-render-filters.js).
+const { reframeChain } = require('./render-filters')
 
-// Detect silent stretches in the seeked [ss, ss+dur] window. Times returned are
-// CLIP-RELATIVE (0 = clip start) because we seek with -ss before -i. Never throws
-// — a detect failure just yields [] so the render proceeds untrimmed.
-function detectSilences(input, ss, dur) {
-  return new Promise((resolve) => {
-    execFile('ffmpeg', [
-      '-hide_banner', '-nostats', '-ss', String(ss), '-i', input, '-t', String(dur),
-      '-af', 'silencedetect=noise=-30dB:d=0.5', '-f', 'null', '-',
-    ], { maxBuffer: 1024 * 1024 * 32 }, (_err, _so, se) => {
-      resolve(parseSilenceStderr(String(se || ''), dur))
-    })
-  })
-}
-
-// Run ffmpeg with a -filter_complex graph (split and/or silence-trim paths).
+// Run ffmpeg with a -filter_complex graph (the split-screen path).
 function ffmpegRenderComplex(input, startSec, dur, filterComplex, audioMap, outPath) {
   return new Promise((resolve, reject) => {
     execFile('ffmpeg', [
@@ -504,17 +499,16 @@ function ffmpegRenderComplex(input, startSec, dur, filterComplex, audioMap, outP
 //   - youtubeVideoId: download ONLY the [start,end] section (bandwidth saver)
 //   - videoUrl: a hosted source (a creator upload) — download + seek
 // Body: { videoUrl?|youtubeVideoId?, startSec, endSec, words[], userId,
-//         reframe?: 'center'|'split', trimSilence?: boolean }.
+//         reframe?: 'center'|'split' }.
 app.post('/render-short', async (req, res) => {
   if (SECRET && req.get('x-ingest-secret') !== SECRET) return res.status(401).json({ error: 'unauthorized' })
   const url = String(req.body?.videoUrl || '').trim()
   const ytVid = String(req.body?.youtubeVideoId || '').trim()
   const startSec = Math.max(0, Number(req.body?.startSec) || 0)
   const endSec = Number(req.body?.endSec)
-  let words = Array.isArray(req.body?.words) ? req.body.words : []
+  const words = Array.isArray(req.body?.words) ? req.body.words : []
   const userId = String(req.body?.userId || '').trim()
   const reframeMode = req.body?.reframe === 'split' ? 'split' : 'center'
-  const wantTrimSilence = req.body?.trimSilence === true
   const fromYouTube = /^[A-Za-z0-9_-]{11}$/.test(ytVid)
   if (!fromYouTube && !/^https?:\/\//i.test(url)) return res.status(400).json({ error: 'bad source' })
   if (!Number.isFinite(endSec) || endSec <= startSec) return res.status(400).json({ error: 'bad window' })
@@ -542,22 +536,6 @@ app.post('/render-short', async (req, res) => {
     }
     if (!fs.existsSync(srcTmp)) throw new Error('source download produced no file')
 
-    // Silence trim (#2): detect silent stretches, compute the kept ranges, and
-    // remap caption words onto the compressed timeline. Fully fail-safe — any
-    // detection issue (or too-little-left) leaves `kept` empty → render untrimmed.
-    let kept = []
-    if (wantTrimSilence) {
-      try {
-        const removed = await detectSilences(srcTmp, renderStart, dur)
-        kept = keptRanges(removed, dur)
-        if (kept.length) words = remapWords(words, removed)
-      } catch (e) {
-        console.warn('[render-short] silence trim skipped:', e && e.message)
-        kept = []
-      }
-    }
-    const trimming = kept.length > 0
-
     const withCaptions = words.length > 0
     if (withCaptions) fs.writeFileSync(assTmp, buildAss(words))
     // Output at 720x1280 (9:16). The source is already capped at ≤720p, so this
@@ -569,21 +547,11 @@ app.post('/render-short', async (req, res) => {
     const H = Math.max(640, Math.min(1920, Number(process.env.RENDER_HEIGHT || 1280)))
     const W = Math.round(H * 9 / 16 / 2) * 2 // keep 9:16, even width for yuv420p
 
-    if (reframeMode === 'split' || trimming) {
-      // Advanced path — a -filter_complex graph. Optional silence select/concat
-      // feeds the reframe (center or split), which optionally burns captions.
-      const chains = []
-      let vIn = '[0:v]'
-      let audioMap = '0:a?'
-      if (trimming) {
-        const expr = keptSelectExpr(kept)
-        chains.push(`[0:v]select='${expr}',setpts=N/FRAME_RATE/TB[vsel]`)
-        chains.push(`[0:a]aselect='${expr}',asetpts=N/SR/TB[aout]`)
-        vIn = '[vsel]'
-        audioMap = '[aout]'
-      }
-      chains.push(reframeChain(vIn, reframeMode, W, H, withCaptions ? assTmp : null))
-      await ffmpegRenderComplex(srcTmp, renderStart, dur, chains.join(';'), audioMap, outTmp)
+    if (reframeMode === 'split') {
+      // Split-screen path — a -filter_complex graph (vstack of the two halves),
+      // optionally burning captions. Audio passes through untouched.
+      const graph = reframeChain('[0:v]', 'split', W, H, withCaptions ? assTmp : null)
+      await ffmpegRenderComplex(srcTmp, renderStart, dur, graph, '0:a?', outTmp)
     } else {
       // Default path — the original simple -vf center-crop (unchanged, low-risk).
       const reframe = `scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}`
@@ -593,9 +561,7 @@ app.post('/render-short', async (req, res) => {
     if (!fs.existsSync(outTmp)) throw new Error('render produced no file')
     const key = `${userId || 'ingest'}/short-${Date.now()}.mp4`
     await uploadToSupabase(key, outTmp)
-    // When we trimmed silence the finished clip is shorter than the source window.
-    const finalDur = trimming ? kept.reduce((a, r) => a + (r.e - r.s), 0) : dur
-    return res.json({ url: publicUrl(key), durationSeconds: Math.round(finalDur * 10) / 10 })
+    return res.json({ url: publicUrl(key), durationSeconds: Math.round(dur * 10) / 10 })
   } catch (e) {
     console.error('[render-short] failed', e && e.message)
     return res.status(502).json({ error: String((e && e.message) || e).slice(0, 300) })
@@ -607,7 +573,7 @@ app.post('/render-short', async (req, res) => {
 // BUILD marker: bump this string when the service code changes so the Railway
 // deploy logs unambiguously show which build is actually running (Railway can
 // re-run an older commit).
-const BUILD = 'render-splitscreen+silencetrim-2026-08-08'
+const BUILD = 'render-seamless-split+caption-sync-2026-08-08'
 loadCookies().finally(() => {
   app.listen(PORT, () => console.log(`ingest-service listening on :${PORT} [build ${BUILD}]`))
 })

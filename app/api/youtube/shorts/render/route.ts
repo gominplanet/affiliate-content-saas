@@ -84,17 +84,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Video rendering isn\'t configured yet. Try again shortly.' }, { status: 503 })
     }
 
-    const body = await request.json().catch(() => ({})) as { shortId?: string; subtitleStyle?: string; captions?: boolean; reframe?: string; trimSilence?: boolean }
+    const body = await request.json().catch(() => ({})) as { shortId?: string; subtitleStyle?: string; captions?: boolean; reframe?: string }
     const shortId = (body.shortId || '').trim()
     // Captions default ON; captions:false renders a clean clip (no burned text).
     const withCaptions = body.captions !== false
     if (!shortId) return NextResponse.json({ error: 'shortId is required.' }, { status: 400 })
     const style: SubtitleStyle = SUBTITLE_STYLES.includes(body.subtitleStyle as SubtitleStyle)
       ? (body.subtitleStyle as SubtitleStyle) : 'bold-white'
-    // Layout + tightening (ingest service handles both; older builds ignore them).
+    // Layout (ingest service handles it; older builds ignore it).
     const renderOpts = {
       reframe: body.reframe === 'split' ? 'split' as const : 'center' as const,
-      trimSilence: body.trimSilence === true,
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

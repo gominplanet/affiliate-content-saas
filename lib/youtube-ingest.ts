@@ -105,10 +105,9 @@ export async function clipSegment(
  * Returns null when unconfigured or on failure (caller falls back to Cloudinary).
  */
 /** Render-time layout/tightening options handled by the ingest service.
- *  reframe 'split' = top center-crop + bottom full-frame; trimSilence cuts dead air. */
+ *  reframe 'split' = seamless top center-crop over the full horizontal frame. */
 export interface RenderShortOpts {
   reframe?: 'center' | 'split'
-  trimSilence?: boolean
 }
 
 export async function renderShort(
@@ -164,12 +163,11 @@ async function renderShortReq(
         'Content-Type': 'application/json',
         ...(process.env.YOUTUBE_INGEST_SECRET ? { 'x-ingest-secret': process.env.YOUTUBE_INGEST_SECRET } : {}),
       },
-      // reframe/trimSilence are ignored by older service builds (backward-compatible).
+      // reframe is ignored by older service builds (backward-compatible).
       body: JSON.stringify({
         ...source, startSec, endSec, words: words || [],
         ...(userId ? { userId } : {}),
         ...(opts?.reframe ? { reframe: opts.reframe } : {}),
-        ...(opts?.trimSilence ? { trimSilence: true } : {}),
       }),
       signal: AbortSignal.timeout(280_000),
     })
