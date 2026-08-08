@@ -35,6 +35,7 @@ import type { SchedulableSocial, ScheduleMode } from '@/lib/schedule-types'
 import { DEFAULT_SOCIAL_OFFSETS_MIN } from '@/lib/schedule-types'
 import { tierAllowsSocial, minTierForSocial, tierLabel, type Tier } from '@/lib/tier'
 import { formatScheduleTime, tzAbbrev } from '@/lib/format-schedule'
+import { BodyImageSlots } from '@/components/content/BodyImageSlots'
 
 /** Platforms surfaced in the modal. Order is intentional — cheapest,
  *  fastest, lowest-friction channels at the top. Pinterest / Instagram
@@ -133,6 +134,11 @@ export default function ScheduleModal({
   // disclaimer (mirrors the immediate-publish opt-in). Off by default.
   const [includeFbAffiliate, setIncludeFbAffiliate] = useState(false)
 
+  // Bring-your-own in-article photos (up to 3) for the scheduled post. Mirrors
+  // the immediate generate flow — the schedule path was missing it entirely
+  // (modernday.tech "Photos" ticket: "I see the option in generate, not schedule").
+  const [userImages, setUserImages] = useState<(string | null)[]>([null, null, null])
+
   // Show / hide the Advanced per-channel offset overrides. Defaults are
   // good for almost everyone; power users get the knob.
   const [showAdvanced, setShowAdvanced] = useState(false)
@@ -206,6 +212,9 @@ export default function ScheduleModal({
     const localVideoId = videoId
     const localSiteId = siteId ?? null
     const localVideoTitle = videoTitle
+    // Snapshot the uploaded photos now — the modal unmounts before the
+    // background refresh-images call fires.
+    const localUserImages = userImages.filter((u): u is string => !!u)
 
     // Show a persistent loading toast — survives the modal unmount and
     // updates in place when the fetch resolves. The id lets us swap
@@ -288,7 +297,9 @@ export default function ScheduleModal({
           void fetch('/api/blog/refresh-images', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ wordpressPostId: wpImgId }),
+            // Carry the creator's own uploaded photos onto the scheduled post
+            // (empty → AI photos, same as the immediate generate flow).
+            body: JSON.stringify({ wordpressPostId: wpImgId, ...(localUserImages.length ? { userImageUrls: localUserImages } : {}) }),
           })
             .then(async (r) => {
               const d = (await r.json().catch(() => ({}))) as { count?: number; error?: string }
@@ -376,6 +387,11 @@ export default function ScheduleModal({
                   />
                   <span className="text-sm">Include photos in the article</span>
                 </label>
+              )}
+              {/* Bring-your-own photos — same 3 slots as Generate now, so a
+                  scheduled post can carry the creator's own images too. */}
+              {includeImages && (
+                <BodyImageSlots videoId={videoId} value={userImages} onChange={setUserImages} disabled={submitting} />
               )}
               {optionsSlot}
             </div>
