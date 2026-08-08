@@ -76,6 +76,8 @@ export async function POST(request: Request) {
 
   const body = await request.json().catch(() => ({})) as {
     handle?: string; title?: string; bio?: string; avatar_url?: string; theme?: string; published?: boolean
+    cta_label?: string; cta_url?: string
+    ad_enabled?: boolean; ad_image_url?: string; ad_title?: string; ad_subtitle?: string; ad_url?: string
   }
 
   const { data: existing } = await sb.from('link_pages').select('*').eq('user_id', user.id).maybeSingle()
@@ -103,6 +105,15 @@ export async function POST(request: Request) {
   if (body.avatar_url !== undefined) patch.avatar_url = (body.avatar_url || '').trim() || null
   if (body.theme !== undefined) patch.theme = themeFor(body.theme).key
   if (body.published !== undefined) patch.published = !!body.published
+  // Custom main CTA button.
+  if (body.cta_label !== undefined) patch.cta_label = (body.cta_label || '').slice(0, 60) || null
+  if (body.cta_url !== undefined) patch.cta_url = (body.cta_url || '').trim().slice(0, 1000) || null
+  // Optional advertisement insert.
+  if (body.ad_enabled !== undefined) patch.ad_enabled = !!body.ad_enabled
+  if (body.ad_image_url !== undefined) patch.ad_image_url = (body.ad_image_url || '').trim().slice(0, 1000) || null
+  if (body.ad_title !== undefined) patch.ad_title = (body.ad_title || '').slice(0, 80) || null
+  if (body.ad_subtitle !== undefined) patch.ad_subtitle = (body.ad_subtitle || '').slice(0, 140) || null
+  if (body.ad_url !== undefined) patch.ad_url = (body.ad_url || '').trim().slice(0, 1000) || null
 
   try {
     if (existing) {

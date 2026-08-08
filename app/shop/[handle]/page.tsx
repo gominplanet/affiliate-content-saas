@@ -110,6 +110,35 @@ export default async function BioPage({ params }: { params: Promise<{ handle: st
           {page.bio && <p style={{ fontSize: 15, color: t.sub, margin: '10px auto 0', maxWidth: 440, lineHeight: 1.55 }}>{page.bio}</p>}
         </header>
 
+        {/* Custom main CTA — one prominent button under the header (e.g. "Shop My
+            Amazon Storefront"), label + destination set by the creator. */}
+        {page.cta_label && page.cta_url && (
+          <a
+            href={page.cta_url}
+            target="_blank"
+            rel="nofollow sponsored noopener"
+            style={{ display: 'block', textAlign: 'center', background: t.accent, color: '#fff', fontSize: 16, fontWeight: 800, padding: '16px 20px', borderRadius: 16, textDecoration: 'none', boxShadow: '0 10px 30px rgba(0,0,0,0.18)', marginBottom: 24 }}
+          >
+            {page.cta_label}
+          </a>
+        )}
+
+        {/* Optional advertisement insert — off unless the creator enables it. */}
+        {page.ad_enabled && (page.ad_image_url || page.ad_title) && (
+          <a
+            href={page.ad_url || undefined}
+            {...(page.ad_url ? { target: '_blank', rel: 'nofollow sponsored noopener' } : {})}
+            style={{ display: 'flex', alignItems: 'center', gap: 14, background: '#ffffff', borderRadius: 16, padding: 14, textDecoration: 'none', color: '#111114', boxShadow: '0 8px 24px rgba(0,0,0,0.14)', marginBottom: 30, position: 'relative' }}
+          >
+            <span style={{ position: 'absolute', top: 8, right: 12, fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#9ca3af' }}>Ad</span>
+            {page.ad_image_url && <img src={page.ad_image_url} alt="" style={{ width: 56, height: 56, borderRadius: 12, objectFit: 'cover', flex: 'none' }} />}
+            <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {page.ad_title && <span style={{ fontSize: 15, fontWeight: 700, color: '#1d1d1f' }}>{page.ad_title}</span>}
+              {page.ad_subtitle && <span style={{ fontSize: 13, color: '#6b7280' }}>{page.ad_subtitle}</span>}
+            </span>
+          </a>
+        )}
+
         {/* Brand links — a compact centered row of icon pills under the header. */}
         {links.length > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 12, marginBottom: products.length ? 34 : 0 }}>
