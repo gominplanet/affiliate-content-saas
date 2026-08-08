@@ -664,12 +664,12 @@ export default function CustomizePage() {
         {/* Read counter */}
         <Section
           title="Read counter"
-          description="Show a small “N reads” badge as social proof: on each post near the top, and one “N reads across the blog” badge on your main blog. Each appears only after it passes the threshold you set below, so a brand-new blog never shows a low number. Off by default."
+          description="Show one “N reads across the blog” badge as social proof, in your main blog header. It appears only after your total passes the threshold you set below, so a brand-new blog never shows a low number. Off by default."
         >
           <div className="flex items-center justify-between p-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border-2)]">
             <div>
-              <p className="text-sm font-medium text-[var(--text)]">Show a read count on posts</p>
-              <p className="text-xs text-[var(--text-3)]">A subtle, modern badge (e.g. “1.2k reads”). Hidden until a post passes the threshold below.</p>
+              <p className="text-sm font-medium text-[var(--text)]">Show a read count on your main blog</p>
+              <p className="text-xs text-[var(--text-3)]">A subtle, modern badge (e.g. “1.2k reads across the blog”). Hidden until your total passes the threshold below.</p>
             </div>
             <button
               onClick={() => setData(d => ({ ...d, layout: { ...d.layout, showReadCount: !d.layout.showReadCount } }))}
@@ -683,22 +683,6 @@ export default function CustomizePage() {
           </div>
           {data.layout.showReadCount && (
             <>
-              <div className="flex items-center justify-between p-3 mt-2 rounded-xl bg-[var(--surface-2)] border border-[var(--border-2)]">
-                <div>
-                  <p className="text-sm font-medium text-[var(--text)]">On each post, show it after</p>
-                  <p className="text-xs text-[var(--text-3)]">Reads a single post needs before its badge appears.</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    min={1}
-                    value={data.layout.readCountThreshold}
-                    onChange={e => setData(d => ({ ...d, layout: { ...d.layout, readCountThreshold: Math.max(1, parseInt(e.target.value || '100', 10) || 100) } }))}
-                    className="w-24 px-3 py-2 rounded-lg text-sm bg-[var(--surface)] border border-[var(--border-2)] text-[var(--text)] outline-none focus:border-[#7C3AED]"
-                  />
-                  <span className="text-xs text-[var(--text-3)]">reads</span>
-                </div>
-              </div>
               <div className="flex items-center justify-between p-3 mt-2 rounded-xl bg-[var(--surface-2)] border border-[var(--border-2)]">
                 <div>
                   <p className="text-sm font-medium text-[var(--text)]">On the main blog, show it after</p>
