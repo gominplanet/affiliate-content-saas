@@ -1,11 +1,15 @@
 /**
- * POST /api/wayward/placement — draft a Wayward "Post a placement" sponsorship
- * offer from the creator's Brand Profile (+ optional hints). Wayward has no API
- * to CREATE a placement, so this returns copy-paste-ready fields matching their
- * form: Title, Description, Expectations, a suggested base price + rationale, and
- * recommended retailers.
+ * Wayward "Post a placement" builder.
  *
- * Body: { contentType?, audience?, targetRate?, notes? }
+ * Wayward has NO API to create a placement, so MVP does the hard part — asking
+ * the right questions (mostly tick-boxes, informed by the creator's Brand
+ * Profile) and composing copy-paste-ready copy for every field of Wayward's
+ * "Post a placement" form: Basics → Title, Description → About this placement,
+ * Expectations → Non-negotiables, plus the plain values (rate, end date,
+ * retailers) the creator sets directly.
+ *
+ *   GET  → { ok, brand: {...} }   prefill hints from the Brand Profile
+ *   POST → { ok, placement: {...} } composed, copy-paste-ready fields
  */
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
@@ -19,6 +23,47 @@ export const dynamic = 'force-dynamic'
 export const maxDuration = 120
 
 const MODEL = 'claude-sonnet-4-6'
+const RETAILERS = ['Amazon', 'Walmart', 'DTC', 'Other']
+
+export async function GET() {
+  const supabase = await createServerClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
+  const { data: brand } = await supabase.from('brand_profiles').select('*').eq('user_id', user.id).maybeSingle()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const b = (brand || {}) as any
+  return NextResponse.json({
+    ok: true,
+    brand: {
+      name: b.brand_name || b.name || null,
+      niche: b.niche || null,
+      audience: b.target_audience || null,
+      voice: b.brand_voice || null,
+      contentStyle: b.content_style || null,
+      website: b.website_url || null,
+      hasProfile: !!brand,
+    },
+  })
+}
+
+interface PlacementInput {
+  contentTypes?: string[]
+  audience?: string
+  audienceSize?: string
+  includePastPerformance?: boolean
+  pastPerformanceNote?: string
+  hooks?: string[]
+  editorialAutonomy?: string
+  performanceGuarantee?: string
+  exclusivity?: string
+  leadTime?: string
+  pastExamplesUrl?: string
+  rate?: number | string
+  endsOn?: 'always' | 'date'
+  endDate?: string
+  retailers?: string[]
+  notes?: string
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -32,47 +77,76 @@ export async function POST(request: NextRequest) {
     if (gate) return gate
 
     const { data: brand } = await supabase.from('brand_profiles').select('*').eq('user_id', user.id).maybeSingle()
-    if (!brand) return NextResponse.json({ ok: false, error: 'Set up your Brand Profile first (Set up → Brand Profile).' }, { status: 400 })
-
-    const body = await request.json().catch(() => ({})) as { contentType?: string; audience?: string; targetRate?: number | string; notes?: string }
-    const contentType = (body.contentType || '').toString().slice(0, 200)
-    const audience = (body.audience || '').toString().slice(0, 600)
-    const notes = (body.notes || '').toString().slice(0, 800)
-    const targetRate = body.targetRate != null && body.targetRate !== '' ? Number(body.targetRate) : null
-
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const b = brand as any
+    const b = (brand || {}) as any
+
+    const body = await request.json().catch(() => ({})) as PlacementInput
+    const arr = (v: unknown, cap = 12) => Array.isArray(v) ? v.map(x => String(x).slice(0, 120)).slice(0, cap) : []
+    const str = (v: unknown, cap = 800) => (v == null ? '' : String(v)).slice(0, cap)
+
+    const contentTypes = arr(body.contentTypes)
+    const hooks = arr(body.hooks)
+    const audience = str(body.audience, 600)
+    const audienceSize = str(body.audienceSize, 120)
+    const includePastPerformance = !!body.includePastPerformance
+    const pastPerformanceNote = str(body.pastPerformanceNote, 600)
+    const editorialAutonomy = str(body.editorialAutonomy, 200)
+    const performanceGuarantee = str(body.performanceGuarantee, 200)
+    const exclusivity = str(body.exclusivity, 200)
+    const leadTime = str(body.leadTime, 60)
+    const pastExamplesUrl = str(body.pastExamplesUrl, 400)
+    const notes = str(body.notes, 800)
+    const rate = body.rate != null && body.rate !== '' ? Math.max(1, Math.round(Number(body.rate))) : null
+    const retailers = (arr(body.retailers).filter(r => RETAILERS.includes(r)))
+    const selectedRetailers = retailers.length ? retailers : ['Amazon']
+
     const brandBits = [
-      b.brand_name ? `Creator/brand: ${b.brand_name}` : '',
+      b.brand_name || b.name ? `Creator/brand: ${b.brand_name || b.name}` : '',
       b.niche ? `Niche: ${b.niche}` : '',
-      b.target_audience ? `Audience: ${b.target_audience}` : '',
+      b.target_audience ? `Profile audience: ${b.target_audience}` : '',
       b.brand_voice ? `Voice: ${b.brand_voice}` : '',
       b.content_style ? `Content style: ${b.content_style}` : '',
       b.website_url ? `Site: ${b.website_url}` : '',
     ].filter(Boolean).join('\n')
 
+    const answers = [
+      contentTypes.length ? `Content type(s): ${contentTypes.join(', ')}` : '',
+      audience ? `Audience for this placement: ${audience}` : '',
+      audienceSize ? `Audience size/reach: ${audienceSize}` : '',
+      includePastPerformance ? `Include past performance. ${pastPerformanceNote || '(no numbers given — speak to it generally, do NOT invent stats)'}` : 'Do NOT mention past performance.',
+      hooks.length ? `The hook / what makes this compelling: ${hooks.join(', ')}` : '',
+      editorialAutonomy ? `Editorial autonomy stance: ${editorialAutonomy}` : '',
+      performanceGuarantee ? `Performance guarantees: ${performanceGuarantee}` : '',
+      exclusivity ? `Exclusivity: ${exclusivity}` : '',
+      leadTime ? `Lead time: ${leadTime}` : '',
+      pastExamplesUrl ? `Links to past examples: ${pastExamplesUrl}` : '',
+      notes ? `Extra notes: ${notes}` : '',
+      `Supported retailers: ${selectedRetailers.join(', ')}`,
+      rate ? `Creator's rate (USD per product inclusion): ${rate}` : 'No rate set — suggest one.',
+    ].filter(Boolean).join('\n')
+
     const system =
-      'You help a content creator write a compelling "placement" listing on Wayward, a marketplace where brands pitch products for the creator to feature. ' +
-      'Write in the creator\'s own confident, specific voice — never generic. Return ONLY valid JSON, no prose.'
+      'You help a content creator post a "placement" on Wayward, a marketplace where brands pitch products for the creator to feature. ' +
+      'A placement is a future article/post the creator opens up; matching brands pitch a product + short pitch; the creator picks which to accept, publishes, and is paid per accepted inclusion through Wayward. ' +
+      'Write in the creator\'s own confident, specific, human voice — never generic, no corporate filler, no em-dashes. ' +
+      'Only use facts given; never invent metrics. Return ONLY valid JSON, no prose.'
 
     const user_prompt =
-      `Draft a Wayward placement offer for this creator.\n\nCREATOR PROFILE:\n${brandBits || '(sparse — infer sensible defaults from the niche)'}\n\n` +
-      (contentType ? `CONTENT TYPE FOR THIS PLACEMENT: ${contentType}\n` : '') +
-      (audience ? `AUDIENCE NOTES: ${audience}\n` : '') +
-      (notes ? `EXTRA NOTES: ${notes}\n` : '') +
-      (targetRate ? `TARGET RATE (USD per product inclusion): ${targetRate}\n` : '') +
-      `\nReturn JSON with these fields:\n` +
-      `- "title": a specific, scroll-stopping placement headline (≤ 70 chars). Specific beats generic (e.g. "Skincare routine feature — 45k engaged beauty audience", not "Product feature").\n` +
-      `- "description": 2–4 short paragraphs (plain text, blank line between paragraphs) covering: content type, the audience, past performance if implied by the profile, and the hook (what makes this placement compelling). No markdown headers.\n` +
-      `- "expectations": a plain-text bulleted list (use "• " prefixes) of non-negotiables: editorial autonomy stance, performance guarantees (or explicit lack thereof), exclusivity terms, lead time, content format, and anything a brand must agree to upfront.\n` +
-      `- "suggestedRate": an integer USD amount per accepted product inclusion${targetRate ? ' (anchor near the target rate but sanity-check it)' : ''}.\n` +
-      `- "rateRationale": one sentence justifying the rate.\n` +
-      `- "retailers": an array from ["Amazon","Walmart","DTC","Other"] the creator most plausibly supports (default ["Amazon"]).\n\n` +
+      `Compose a Wayward placement listing from the creator's answers below.\n\n` +
+      `CREATOR PROFILE:\n${brandBits || '(sparse — infer sensible defaults from the niche)'}\n\n` +
+      `CREATOR'S ANSWERS:\n${answers}\n\n` +
+      `Return JSON with exactly these fields:\n` +
+      `- "title": a specific, scroll-stopping placement headline (<= 70 chars). Specific beats generic (e.g. "Skincare routine feature for 45k engaged beauty readers", not "Product feature"). Reflect the content type + audience.\n` +
+      `- "description": 2-4 short plain-text paragraphs (blank line between them), covering, in a natural flow: the content type, the audience, past performance (only if the creator opted in), and the hook. No markdown headers, no bullet list here.\n` +
+      `- "expectations": a plain-text list (one item per line, each starting with "• ") of non-negotiables drawn from the answers: editorial autonomy stance, performance guarantees (or explicit lack thereof), exclusivity terms, lead time, content format (mention past-example links if provided), and anything else a brand must agree to. Only include items the creator addressed.\n` +
+      (rate
+        ? `- "suggestedRate": ${rate} (echo the creator's rate).\n- "rateRationale": one plain sentence a creator could keep or delete, framing why this rate is fair for this audience + format.\n`
+        : `- "suggestedRate": an integer USD amount per accepted product inclusion, sensible for this niche/audience/format.\n- "rateRationale": one plain sentence justifying it.\n`) +
       `Return ONLY the JSON object.`
 
     const anthropic = createAnthropicClient()
     const msg = await anthropic.messages.create({
-      model: MODEL, max_tokens: 1500, system,
+      model: MODEL, max_tokens: 1800, system,
       messages: [{ role: 'user', content: user_prompt }],
     })
     try { recordAnthropicUsage(msg, { userId: user.id, tier, feature: 'wayward_placement', model: MODEL }) } catch { /* best-effort */ }
@@ -84,16 +158,16 @@ export async function POST(request: NextRequest) {
     let parsed: any
     try { parsed = JSON.parse(m[0]) } catch { return NextResponse.json({ ok: false, error: 'Draft parse failed — try again.' }, { status: 502 }) }
 
-    const RETAILERS = ['Amazon', 'Walmart', 'DTC', 'Other']
     return NextResponse.json({
       ok: true,
       placement: {
         title: String(parsed.title || '').slice(0, 120),
         description: String(parsed.description || '').slice(0, 4000),
         expectations: String(parsed.expectations || '').slice(0, 4000),
-        suggestedRate: Number.isFinite(Number(parsed.suggestedRate)) ? Math.max(1, Math.round(Number(parsed.suggestedRate))) : null,
+        suggestedRate: Number.isFinite(Number(parsed.suggestedRate)) ? Math.max(1, Math.round(Number(parsed.suggestedRate))) : rate,
         rateRationale: String(parsed.rateRationale || '').slice(0, 400),
-        retailers: Array.isArray(parsed.retailers) ? parsed.retailers.filter((r: unknown) => RETAILERS.includes(String(r))) : ['Amazon'],
+        retailers: selectedRetailers,
+        endsOn: body.endsOn === 'date' && body.endDate ? String(body.endDate).slice(0, 40) : 'Always open',
       },
     })
   } catch (e) {
