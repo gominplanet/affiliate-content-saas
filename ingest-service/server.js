@@ -462,19 +462,127 @@ app.post('/audio', async (req, res) => {
   }
 })
 
+// ── Render options: split-screen reframe (#1) + silence trim (#2) ────────────
+
+// Detect silent stretches in the seeked [ss, ss+dur] window. Times returned are
+// CLIP-RELATIVE (0 = clip start) because we seek with -ss before -i. Never throws
+// — a detect failure just yields [] so the render proceeds untrimmed.
+function detectSilences(input, ss, dur) {
+  return new Promise((resolve) => {
+    execFile('ffmpeg', [
+      '-hide_banner', '-nostats', '-ss', String(ss), '-i', input, '-t', String(dur),
+      '-af', 'silencedetect=noise=-30dB:d=0.5', '-f', 'null', '-',
+    ], { maxBuffer: 1024 * 1024 * 32 }, (_err, _so, se) => {
+      const text = String(se || '')
+      const starts = [...text.matchAll(/silence_start:\s*([0-9.]+)/g)].map(m => parseFloat(m[1]))
+      const ends = [...text.matchAll(/silence_end:\s*([0-9.]+)/g)].map(m => parseFloat(m[1]))
+      const ranges = []
+      for (let i = 0; i < Math.min(starts.length, ends.length); i++) {
+        const s = Math.max(0, starts[i]), e = Math.min(dur, ends[i])
+        if (e - s > 0.15) ranges.push({ s, e }) // ignore micro-gaps
+      }
+      resolve(ranges)
+    })
+  })
+}
+
+// The kept (non-silent) ranges = complement of `removed` within [0, dur], with a
+// small pad kept around speech so cuts don't clip word onsets. Returns [] when
+// trimming would leave too little (< 3s) — the fail-safe that disables trim on
+// pathological input.
+function keptRanges(removed, dur) {
+  const pad = 0.08
+  const rem = removed.map(r => ({ s: Math.min(dur, r.s + pad), e: Math.max(0, r.e - pad) })).filter(r => r.e - r.s > 0.15)
+  const kept = []
+  let cursor = 0
+  for (const r of rem.sort((a, b) => a.s - b.s)) {
+    if (r.s > cursor) kept.push({ s: cursor, e: r.s })
+    cursor = Math.max(cursor, r.e)
+  }
+  if (cursor < dur) kept.push({ s: cursor, e: dur })
+  const total = kept.reduce((a, r) => a + (r.e - r.s), 0)
+  return total >= 3 ? kept.filter(r => r.e - r.s > 0.05) : []
+}
+
+// Total removed-silence duration occurring before clip-time `t` — used to shift a
+// caption word back onto the compressed (post-trim) timeline.
+function removedBefore(removed, t) {
+  let x = 0
+  for (const r of removed) { if (r.s < t) x += Math.min(r.e, t) - r.s }
+  return Math.max(0, x)
+}
+
+// Remap caption words onto the compressed timeline after silence cuts. Words that
+// fall entirely inside a removed range are dropped (they were silent anyway).
+function remapWords(words, removed) {
+  if (!removed.length) return words
+  const out = []
+  for (const w of words) {
+    const inside = removed.some(r => w.startSec >= r.s - 0.01 && w.endSec <= r.e + 0.01)
+    if (inside) continue
+    const ns = w.startSec - removedBefore(removed, w.startSec)
+    const ne = w.endSec - removedBefore(removed, w.endSec)
+    if (ne > ns) out.push({ ...w, startSec: Math.max(0, ns), endSec: Math.max(0, ne) })
+  }
+  return out
+}
+
+// A between()-OR expression selecting the kept ranges (for select/aselect).
+function keptSelectExpr(kept) {
+  return kept.map(r => `between(t,${r.s.toFixed(3)},${r.e.toFixed(3)})`).join('+')
+}
+
+// Build the video reframe sub-chain from an input label to [vout], optionally
+// burning captions. mode: 'center' (default center-crop) or 'split' (top =
+// center-crop zoom, bottom = full horizontal frame letterboxed).
+function reframeChain(inLabel, mode, W, H, assPath) {
+  const cap = assPath ? `,ass=${assPath}` : ''
+  if (mode === 'split') {
+    const half = Math.round(H / 2 / 2) * 2
+    return (
+      `${inLabel}split=2[sa][sb];` +
+      `[sa]scale=${W}:${half}:force_original_aspect_ratio=increase,crop=${W}:${half}[stop];` +
+      `[sb]scale=${W}:-2,pad=${W}:${half}:(ow-iw)/2:(oh-ih)/2:black[sbot];` +
+      `[stop][sbot]vstack=inputs=2${cap}[vout]`
+    )
+  }
+  return `${inLabel}scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}${cap}[vout]`
+}
+
+// Run ffmpeg with a -filter_complex graph (split and/or silence-trim paths).
+function ffmpegRenderComplex(input, startSec, dur, filterComplex, audioMap, outPath) {
+  return new Promise((resolve, reject) => {
+    execFile('ffmpeg', [
+      '-hide_banner', '-loglevel', 'error', '-threads', '1',
+      '-ss', String(startSec), '-i', input, '-t', String(dur),
+      '-filter_complex', filterComplex,
+      '-map', '[vout]', '-map', audioMap,
+      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p',
+      '-x264-params', 'bframes=0:ref=1:rc-lookahead=10:sync-lookahead=0',
+      '-c:a', 'aac', '-movflags', '+faststart', '-y', outPath,
+    ], { maxBuffer: 1024 * 1024 * 64 }, (err, _so, se) => {
+      if (err) reject(new Error('ffmpeg: ' + (((se && se.trim()) || err.message || 'failed') + (err.signal ? ` [signal ${err.signal}]` : '')).slice(0, 400)))
+      else resolve()
+    })
+  })
+}
+
 // POST /render-short — trim [startSec,endSec] + reframe to 1080x1920 + burn
 // Hormozi captions in ONE ffmpeg pass. Two source modes:
 //   - youtubeVideoId: download ONLY the [start,end] section (bandwidth saver)
 //   - videoUrl: a hosted source (a creator upload) — download + seek
-// Body: { videoUrl?|youtubeVideoId?, startSec, endSec, words[], userId }.
+// Body: { videoUrl?|youtubeVideoId?, startSec, endSec, words[], userId,
+//         reframe?: 'center'|'split', trimSilence?: boolean }.
 app.post('/render-short', async (req, res) => {
   if (SECRET && req.get('x-ingest-secret') !== SECRET) return res.status(401).json({ error: 'unauthorized' })
   const url = String(req.body?.videoUrl || '').trim()
   const ytVid = String(req.body?.youtubeVideoId || '').trim()
   const startSec = Math.max(0, Number(req.body?.startSec) || 0)
   const endSec = Number(req.body?.endSec)
-  const words = Array.isArray(req.body?.words) ? req.body.words : []
+  let words = Array.isArray(req.body?.words) ? req.body.words : []
   const userId = String(req.body?.userId || '').trim()
+  const reframeMode = req.body?.reframe === 'split' ? 'split' : 'center'
+  const wantTrimSilence = req.body?.trimSilence === true
   const fromYouTube = /^[A-Za-z0-9_-]{11}$/.test(ytVid)
   if (!fromYouTube && !/^https?:\/\//i.test(url)) return res.status(400).json({ error: 'bad source' })
   if (!Number.isFinite(endSec) || endSec <= startSec) return res.status(400).json({ error: 'bad window' })
@@ -501,6 +609,23 @@ app.post('/render-short', async (req, res) => {
       await downloadToFile(url, srcTmp)
     }
     if (!fs.existsSync(srcTmp)) throw new Error('source download produced no file')
+
+    // Silence trim (#2): detect silent stretches, compute the kept ranges, and
+    // remap caption words onto the compressed timeline. Fully fail-safe — any
+    // detection issue (or too-little-left) leaves `kept` empty → render untrimmed.
+    let kept = []
+    if (wantTrimSilence) {
+      try {
+        const removed = await detectSilences(srcTmp, renderStart, dur)
+        kept = keptRanges(removed, dur)
+        if (kept.length) words = remapWords(words, removed)
+      } catch (e) {
+        console.warn('[render-short] silence trim skipped:', e && e.message)
+        kept = []
+      }
+    }
+    const trimming = kept.length > 0
+
     const withCaptions = words.length > 0
     if (withCaptions) fs.writeFileSync(assTmp, buildAss(words))
     // Output at 720x1280 (9:16). The source is already capped at ≤720p, so this
@@ -511,13 +636,34 @@ app.post('/render-short', async (req, res) => {
     // identical, just at 720p. Override with RENDER_HEIGHT if you have more RAM.
     const H = Math.max(640, Math.min(1920, Number(process.env.RENDER_HEIGHT || 1280)))
     const W = Math.round(H * 9 / 16 / 2) * 2 // keep 9:16, even width for yuv420p
-    const reframe = `scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}`
-    const vf = withCaptions ? `${reframe},ass=${assTmp}` : reframe
-    await ffmpegRender(srcTmp, renderStart, dur, vf, outTmp)
+
+    if (reframeMode === 'split' || trimming) {
+      // Advanced path — a -filter_complex graph. Optional silence select/concat
+      // feeds the reframe (center or split), which optionally burns captions.
+      const chains = []
+      let vIn = '[0:v]'
+      let audioMap = '0:a?'
+      if (trimming) {
+        const expr = keptSelectExpr(kept)
+        chains.push(`[0:v]select='${expr}',setpts=N/FRAME_RATE/TB[vsel]`)
+        chains.push(`[0:a]aselect='${expr}',asetpts=N/SR/TB[aout]`)
+        vIn = '[vsel]'
+        audioMap = '[aout]'
+      }
+      chains.push(reframeChain(vIn, reframeMode, W, H, withCaptions ? assTmp : null))
+      await ffmpegRenderComplex(srcTmp, renderStart, dur, chains.join(';'), audioMap, outTmp)
+    } else {
+      // Default path — the original simple -vf center-crop (unchanged, low-risk).
+      const reframe = `scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}`
+      const vf = withCaptions ? `${reframe},ass=${assTmp}` : reframe
+      await ffmpegRender(srcTmp, renderStart, dur, vf, outTmp)
+    }
     if (!fs.existsSync(outTmp)) throw new Error('render produced no file')
     const key = `${userId || 'ingest'}/short-${Date.now()}.mp4`
     await uploadToSupabase(key, outTmp)
-    return res.json({ url: publicUrl(key), durationSeconds: Math.round(dur * 10) / 10 })
+    // When we trimmed silence the finished clip is shorter than the source window.
+    const finalDur = trimming ? kept.reduce((a, r) => a + (r.e - r.s), 0) : dur
+    return res.json({ url: publicUrl(key), durationSeconds: Math.round(finalDur * 10) / 10 })
   } catch (e) {
     console.error('[render-short] failed', e && e.message)
     return res.status(502).json({ error: String((e && e.message) || e).slice(0, 300) })
@@ -529,7 +675,7 @@ app.post('/render-short', async (req, res) => {
 // BUILD marker: bump this string when the service code changes so the Railway
 // deploy logs unambiguously show which build is actually running (Railway can
 // re-run an older commit).
-const BUILD = 'render-720p-lowmem-2026-08-02'
+const BUILD = 'render-splitscreen+silencetrim-2026-08-08'
 loadCookies().finally(() => {
   app.listen(PORT, () => console.log(`ingest-service listening on :${PORT} [build ${BUILD}]`))
 })

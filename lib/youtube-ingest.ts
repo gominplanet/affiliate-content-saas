@@ -104,6 +104,13 @@ export async function clipSegment(
  * `words` are clip-relative { startSec, endSec, text } cues (word-level ideal).
  * Returns null when unconfigured or on failure (caller falls back to Cloudinary).
  */
+/** Render-time layout/tightening options handled by the ingest service.
+ *  reframe 'split' = top center-crop + bottom full-frame; trimSilence cuts dead air. */
+export interface RenderShortOpts {
+  reframe?: 'center' | 'split'
+  trimSilence?: boolean
+}
+
 export async function renderShort(
   sourceUrl: string,
   startSec: number,
@@ -111,8 +118,9 @@ export async function renderShort(
   words: Array<{ startSec: number; endSec: number; text: string; hl?: boolean }>,
   userId?: string,
   captionTheme?: string,
+  opts?: RenderShortOpts,
 ): Promise<IngestResult | null> {
-  return renderShortReq({ videoUrl: sourceUrl }, startSec, endSec, words, userId, captionTheme)
+  return renderShortReq({ videoUrl: sourceUrl }, startSec, endSec, words, userId, captionTheme, opts)
 }
 
 /**
@@ -127,9 +135,10 @@ export async function renderShortSegment(
   words: Array<{ startSec: number; endSec: number; text: string; hl?: boolean }>,
   userId?: string,
   captionTheme?: string,
+  opts?: RenderShortOpts,
 ): Promise<IngestResult | null> {
   if (!/^[A-Za-z0-9_-]{11}$/.test(youtubeVideoId)) return null
-  return renderShortReq({ youtubeVideoId }, startSec, endSec, words, userId, captionTheme)
+  return renderShortReq({ youtubeVideoId }, startSec, endSec, words, userId, captionTheme, opts)
 }
 
 async function renderShortReq(
@@ -142,6 +151,7 @@ async function renderShortReq(
   words: Array<{ startSec: number; endSec: number; text: string; hl?: boolean }>,
   userId?: string,
   captionTheme?: string,
+  opts?: RenderShortOpts,
 ): Promise<IngestResult | null> {
   const base = (process.env.YOUTUBE_INGEST_URL || '').replace(/\/+$/, '')
   if (!base || !(endSec > startSec) || (!source.videoUrl && !source.youtubeVideoId)) return null
@@ -154,7 +164,13 @@ async function renderShortReq(
         'Content-Type': 'application/json',
         ...(process.env.YOUTUBE_INGEST_SECRET ? { 'x-ingest-secret': process.env.YOUTUBE_INGEST_SECRET } : {}),
       },
-      body: JSON.stringify({ ...source, startSec, endSec, words: words || [], ...(userId ? { userId } : {}) }),
+      // reframe/trimSilence are ignored by older service builds (backward-compatible).
+      body: JSON.stringify({
+        ...source, startSec, endSec, words: words || [],
+        ...(userId ? { userId } : {}),
+        ...(opts?.reframe ? { reframe: opts.reframe } : {}),
+        ...(opts?.trimSilence ? { trimSilence: true } : {}),
+      }),
       signal: AbortSignal.timeout(280_000),
     })
     if (!res.ok) {
