@@ -44,7 +44,6 @@ export function ShortsCreatePanel({
   const [styleById, setStyleById] = useState<Record<string, SubtitleStyle>>({})
   const [captionsById, setCaptionsById] = useState<Record<string, boolean>>({})
   const [layoutById, setLayoutById] = useState<Record<string, 'center' | 'split'>>({})
-  const [trimById, setTrimById] = useState<Record<string, boolean>>({})
   const [renderingId, setRenderingId] = useState<string | null>(null)
   // In-app editor: which clip + its draft (trim/hook/caption) + saving flag.
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -105,7 +104,6 @@ export function ShortsCreatePanel({
           subtitleStyle: styleById[clip.id] || clip.subtitleStyle || 'bold-white',
           captions: captionsById[clip.id] !== false,
           reframe: layoutById[clip.id] === 'split' ? 'split' : 'center',
-          trimSilence: trimById[clip.id] === true,
         }),
       })
       const data = await res.json()
@@ -122,7 +120,7 @@ export function ShortsCreatePanel({
     } finally {
       setRenderingId(null)
     }
-  }, [canRender, styleById, captionsById, layoutById, trimById])
+  }, [canRender, styleById, captionsById, layoutById])
 
   function startEdit(clip: ShortRow) {
     setEditingId(clip.id)
@@ -279,10 +277,6 @@ export function ShortsCreatePanel({
                     <option value="center">Standard</option>
                     <option value="split">Split screen</option>
                   </select>
-                  <label className="inline-flex items-center gap-1.5 text-[11px] text-[#4b4b4f] dark:text-[#b0b0b5] cursor-pointer select-none" title="Cut silent gaps so the clip feels faster">
-                    <input type="checkbox" checked={trimById[clip.id] === true} onChange={e => setTrimById(prev => ({ ...prev, [clip.id]: e.target.checked }))} disabled={rendering} className="accent-[#7C3AED]" />
-                    Trim silences
-                  </label>
                   <button
                     onClick={() => renderClip(clip)}
                     disabled={rendering}
