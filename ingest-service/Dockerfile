@@ -15,7 +15,8 @@ RUN apt-get update \
 WORKDIR /app
 COPY package.json ./
 RUN npm install --omit=dev
-COPY server.js ./
+# server.js requires ./render-filters.js at runtime — both must be in the image.
+COPY server.js render-filters.js ./
 
 ENV PORT=8080
 EXPOSE 8080
