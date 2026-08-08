@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.79
+ * Version: 1.0.80
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -394,6 +394,17 @@ if (!function_exists('mvp_affiliate_purge_sitemap_cache')) {
 // silent no-op, not an error.
 if (!function_exists('mvp_affiliate_purge_all_caches')) {
     function mvp_affiliate_purge_all_caches() {
+        // Server-level LiteSpeed (LSWS / QUIC.cloud) purge — the piece that made
+        // MVP's "Clear cache" weaker than LiteSpeed's own "Purge All". We disable
+        // REST caching (cache-rest=0), so the LiteSpeed plugin skips attaching its
+        // purge header on THIS REST response — meaning do_action('litespeed_purge_all')
+        // clears the plugin's bookkeeping but the web-server cache keeps serving the
+        // old HTML. Emitting the header ourselves forces LSWS to drop the entire
+        // site cache, exactly like the wp-admin Purge All button. Must run before
+        // the response headers flush (true during a REST callback).
+        if (!headers_sent()) {
+            @header('X-LiteSpeed-Purge: *');
+        }
         // LiteSpeed (Hostinger / most cPanel hosts) — the big one. The action is
         // the public API; the class call is a belt-and-suspenders for setups
         // where the action hook was unhooked.
@@ -401,6 +412,9 @@ if (!function_exists('mvp_affiliate_purge_all_caches')) {
         if (class_exists('\\LiteSpeed\\Purge') && method_exists('\\LiteSpeed\\Purge', 'purge_all')) {
             try { \LiteSpeed\Purge::purge_all(); } catch (\Throwable $e) { /* ignore */ }
         }
+        // Also drop LiteSpeed's optimized CSS/JS bundles + object cache, which a
+        // page purge alone leaves behind (stale combined assets can pin old markup).
+        do_action('litespeed_purge_cssjs');
         // Other popular page caches — all no-ops when the plugin isn't installed.
         do_action('sg_cachepress_purge_cache');                              // SiteGround Optimizer
         if (function_exists('rocket_clean_domain')) rocket_clean_domain();    // WP Rocket
