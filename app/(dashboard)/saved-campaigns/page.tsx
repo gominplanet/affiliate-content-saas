@@ -91,7 +91,7 @@ export default function SavedCampaignsPage() {
     <>
       <PageHero
         title="Saved Campaigns"
-        subtitle="Every Creator Connections campaign you've saved — revisit it, message the brand, or remove it for good."
+        subtitle="Every campaign you've saved — from Creator Connections or MVP x Wayward. Revisit it, message the brand, or remove it for good."
       />
 
       {items === null ? (
@@ -143,9 +143,21 @@ export default function SavedCampaignsPage() {
               </div>
 
               <div className="flex flex-col gap-2 mt-auto pt-1">
-                {/* Accept — SCOUT clicks Accept on the user's Amazon session, no
-                    tab-hopping. Turns into a confirmation once accepted. */}
-                {accepted.has(s.id) ? (
+                {/* Wayward finds aren't CC campaigns — there's nothing to Accept.
+                    Instead we hand the creator straight to Wayward (product
+                    pre-selected) where they can mint a link or generate a post. */}
+                {s.source === 'wayward' ? (
+                  <a
+                    href={`/wayward?asin=${encodeURIComponent(s.asin)}`}
+                    className="btn-secondary w-full flex items-center gap-1.5 text-xs justify-center"
+                    style={{ background: 'rgba(124,58,237,0.10)', color: '#7C3AED', borderColor: 'rgba(124,58,237,0.25)' }}
+                    title="Open this product in MVP x Wayward"
+                  >
+                    <ExternalLink size={13} /> View on Wayward
+                  </a>
+                ) : accepted.has(s.id) ? (
+                  /* Accept — SCOUT clicks Accept on the user's Amazon session, no
+                     tab-hopping. Turns into a confirmation once accepted. */
                   <div className="flex items-center gap-1.5 text-xs font-medium text-[#7C3AED]">
                     <Handshake size={13} /> Accepted on Amazon
                   </div>
@@ -160,9 +172,9 @@ export default function SavedCampaignsPage() {
                     {accepting === s.id ? 'Accepting via SCOUT…' : 'Accept campaign'}
                   </button>
                 )}
-                {/* Primary actions: equal 3-up grid so they always fit the card
-                    width (even in the 4-column layout) instead of overflowing. */}
-                <div className="grid grid-cols-3 gap-1.5">
+                {/* Primary actions. Contact-the-brand is CC-specific (SCOUT pitches
+                    the Amazon CC brand), so Wayward cards show Buy + Create only. */}
+                <div className={`grid gap-1.5 ${s.source === 'wayward' ? 'grid-cols-2' : 'grid-cols-3'}`}>
                   <a
                     href={`https://www.amazon.com/dp/${s.asin}`} target="_blank" rel="noopener noreferrer"
                     className="btn-secondary px-2 flex items-center justify-center gap-1 text-xs min-w-0"
@@ -170,13 +182,15 @@ export default function SavedCampaignsPage() {
                   >
                     <ExternalLink size={13} className="flex-shrink-0" /> <span className="truncate">Buy</span>
                   </a>
-                  <button
-                    onClick={() => setMsgModal({ product: s.title || s.asin, asin: s.asin, commissionPct: s.commission_pct, detailsUrl: detailsUrlFor(s), brandLabel: s.brand || undefined })}
-                    className="btn-secondary px-2 flex items-center justify-center gap-1 text-xs min-w-0"
-                    title="Draft + send a pitch to the brand via SCOUT"
-                  >
-                    <MessageSquare size={13} className="flex-shrink-0" /> <span className="truncate">Contact</span>
-                  </button>
+                  {s.source !== 'wayward' && (
+                    <button
+                      onClick={() => setMsgModal({ product: s.title || s.asin, asin: s.asin, commissionPct: s.commission_pct, detailsUrl: detailsUrlFor(s), brandLabel: s.brand || undefined })}
+                      className="btn-secondary px-2 flex items-center justify-center gap-1 text-xs min-w-0"
+                      title="Draft + send a pitch to the brand via SCOUT"
+                    >
+                      <MessageSquare size={13} className="flex-shrink-0" /> <span className="truncate">Contact</span>
+                    </button>
+                  )}
                   <button
                     onClick={() => setCreateFor(s)}
                     className="btn-secondary px-2 flex items-center justify-center gap-1 text-xs min-w-0"
