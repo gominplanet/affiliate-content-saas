@@ -382,8 +382,13 @@ export async function GET(request: Request) {
       })
     }
 
+    // Refresh stale cached descriptions so a video that's since been given a real
+    // description on YouTube drops out of "Needs metadata" (the cache never
+    // refreshes existing rows' descriptions on its own).
+    const trued = await backfillTrueDescriptions(createYouTubeOAuthService(token), drafts)
+
     return NextResponse.json({
-      drafts: await enrichWithPushState(supabase, user.id, drafts),
+      drafts: await enrichWithPushState(supabase, user.id, trued),
       nextPageToken: nextCursor,
       fromCache: usedCache,
       includePublished,
@@ -558,6 +563,42 @@ async function runFullScan(
 ): Promise<ReturnType<typeof buildDraftVideo>[]> {
   const result = await runFullScanWithCursor(yt, supabase, userId, cachedPlaylistId, fromPageToken, persist)
   return result.videos
+}
+
+// Refresh possibly-stale CACHED descriptions before classification. A video
+// scanned while its description was empty (a fresh upload) is cached that way;
+// the incremental top-up only ADDS new uploads, so if the creator later writes a
+// description on YouTube, our cached copy stays empty and the Co-Pilot queue
+// wrongly keeps showing it under "Needs metadata". Here we re-fetch the TRUE
+// description (+ status/publishAt) for just the at-risk videos — the ones that
+// would classify as "todo": not public, not scheduled, short/empty description.
+// Cheap (1 unit per 50) and best-effort — any failure leaves the list unchanged.
+async function backfillTrueDescriptions(
+  yt: ReturnType<typeof createYouTubeOAuthService>,
+  drafts: ReturnType<typeof buildDraftVideo>[],
+): Promise<ReturnType<typeof buildDraftVideo>[]> {
+  const suspects = drafts.filter(
+    d => d.youtubeVideoId && d.status !== 'public' && !d.publishAt && (d.description || '').trim().length < 40,
+  ).slice(0, 200)
+  if (!suspects.length) return drafts
+  let meta: Record<string, { description: string; status: string; publishAt: string | null }> = {}
+  try {
+    meta = await yt.getVideoMetaByIds(suspects.map(d => d.youtubeVideoId))
+  } catch (err) {
+    console.warn('[yt-drafts] description backfill failed (non-fatal):', err instanceof Error ? err.message : String(err))
+    return drafts
+  }
+  return drafts.map(d => {
+    const m = meta[d.youtubeVideoId]
+    if (!m) return d
+    return {
+      ...d,
+      description: m.description || d.description,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      status: (m.status || d.status) as any,
+      publishAt: m.publishAt ?? d.publishAt,
+    }
+  })
 }
 
 // Enrich drafts with Co-Pilot push timestamps (best-effort, non-blocking)
