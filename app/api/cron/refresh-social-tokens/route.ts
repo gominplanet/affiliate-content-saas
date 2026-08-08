@@ -60,6 +60,19 @@ export async function GET(request: Request) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   const rows = (data ?? []) as Row[]
+
+  // Bounded-concurrency fan-out (P1). The loops below were strictly sequential
+  // (≤2000 integrations + ≤5000 social_accounts, up to a few awaited HTTP each),
+  // which blew maxDuration=300 and left the tail unrefreshed → tokens aged out →
+  // "why did my scheduled post fail?". Process in slices so the whole set drains
+  // within budget. Each row's work is independent and only ++s its own tally.
+  const REFRESH_CONCURRENCY = 12
+  const mapPool = async <T>(items: T[], size: number, fn: (item: T) => Promise<void>): Promise<void> => {
+    for (let i = 0; i < items.length; i += size) {
+      await Promise.all(items.slice(i, i + size).map(fn))
+    }
+  }
+
   const tally = {
     threads: { refreshed: 0, skipped: 0, failed: 0 },
     instagram: { refreshed: 0, skipped: 0, failed: 0 },
@@ -67,7 +80,7 @@ export async function GET(request: Request) {
     social_accounts: { refreshed: 0, skipped: 0, failed: 0 },
   }
 
-  for (const row of rows) {
+  const processRow = async (row: Row) => {
     // ── Threads ──────────────────────────────────────────────────────────
     const threadsTok = maybeDecrypt(row.threads_access_token)
     if (threadsTok) {
@@ -126,6 +139,7 @@ export async function GET(request: Request) {
       }
     }
   }
+  await mapPool(rows, REFRESH_CONCURRENCY, processRow)
 
   // ── social_accounts (the multi-account table) ──────────────────────────────
   // Instagram/Threads (and Facebook) connections live here, NOT in the legacy
@@ -142,15 +156,26 @@ export async function GET(request: Request) {
     .not('access_token', 'is', null)
     .limit(5000)
 
-  for (const acc of (saData ?? []) as Array<{ id: string; platform: string; access_token: string | null; extra: Record<string, unknown> | null }>) {
+  // Soonest-expiry first (unknown expiry = 0 sorts first, so never-stamped rows
+  // get healed early) so if the budget is tight the MOST urgent tokens drain
+  // before the tail (P1).
+  const accounts = ((saData ?? []) as Array<{ id: string; platform: string; access_token: string | null; extra: Record<string, unknown> | null }>)
+    .slice()
+    .sort((a, b) => {
+      const ea = Number((a.extra as { token_expiry?: number } | null)?.token_expiry || 0)
+      const eb = Number((b.extra as { token_expiry?: number } | null)?.token_expiry || 0)
+      return ea - eb
+    })
+
+  const processAcc = async (acc: { id: string; platform: string; access_token: string | null; extra: Record<string, unknown> | null }) => {
     const tok = maybeDecrypt(acc.access_token)
-    if (!tok) { tally.social_accounts.skipped++; continue }
+    if (!tok) { tally.social_accounts.skipped++; return }
     const extra = (acc.extra && typeof acc.extra === 'object') ? acc.extra : {}
     const exp = Number((extra as { token_expiry?: number }).token_expiry || 0)
     // Only refresh when nearing expiry (a Meta token must be >24h old to refresh;
     // this window keeps us clear of that and avoids needless daily churn). Unknown
     // expiry → refresh, so pre-existing rows that never stored one get healed once.
-    if (exp && exp - Date.now() > META_REFRESH_WINDOW_MS) { tally.social_accounts.skipped++; continue }
+    if (exp && exp - Date.now() > META_REFRESH_WINDOW_MS) { tally.social_accounts.skipped++; return }
     try {
       const r = acc.platform === 'threads' ? await refreshThreadsToken(tok) : await refreshInstagramToken(tok)
       await admin.from('social_accounts')
@@ -167,6 +192,7 @@ export async function GET(request: Request) {
       tally.social_accounts.failed++
     }
   }
+  await mapPool(accounts, REFRESH_CONCURRENCY, processAcc)
 
   return NextResponse.json({ ok: true, scanned: rows.length, tally })
 }

@@ -76,10 +76,17 @@ reviewed change rather than an unattended edit. Each has file:line + the fix.
 > last-resort safety.
 - `app/api/cron/process-generation-jobs/route.ts:140-142`: success path wraps `completeJob` in empty catch; job stays `running`, the 720s reclaim re-runs it. Idempotent for the rewrite/blog path, but a non-upsert handler (campaign/comparison) would double-execute/double-bill. Fix: retry `completeJob`, or flip `running→done` unconditionally.
 
-### 10. Deal-schedule + burn-job crons have no dead-channel guard
+### 10. Deal-schedule + burn-job crons have no dead-channel guard — ✅ DONE (deal-schedules) / deferred (burn)
+> Shipped: process-deal-schedules now drops dead platforms per row and skips a
+> row only when all its channels are dead (auto-skip tagged, one attempt/day still
+> slips through). Burn-jobs is gated behind metaEnabled() (Meta App Review
+> pending) so its cron early-returns — guard deferred until the feature is live.
 - `process-deal-schedules/route.ts:69-126`, `process-burn-jobs/route.ts:65-131` don't call `getDeadChannels`/`shouldSkipChannel`, so a disconnected channel keeps getting full attempts. Fix: reuse the guard from `process-scheduled/route.ts:188-219`.
 
-### 11. Burn-job transient failure discards a paid render
+### 11. Burn-job transient failure discards a paid render — ⏸ DEFERRED
+> The burn-jobs cron early-returns while metaEnabled() is false (Meta App Review
+> pending), so no paid renders run today. Revisit (checkpoint result_url + bounded
+> retry) when Meta is approved and the feature is live.
 - `process-burn-jobs/route.ts:120-131`: any post-render error marks the job `failed`; the paid Cloudinary render (`:88-102`) is lost, user re-pays. Fix: on transient publish error, requeue reusing the already-rendered `burned.url` (checkpoint-before-publish, like `lib/generation-jobs.ts:169-201`).
 
 ### 12. Newsletter sends a hollow issue on a post-lookup error — ✅ DONE
@@ -96,10 +103,15 @@ reviewed change rather than an unattended edit. Each has file:line + the fix.
 
 ## Performance (from the speed sweep)
 
-### P1. `refresh-social-tokens` is fully sequential and unbounded
+### P1. `refresh-social-tokens` is fully sequential and unbounded — ✅ DONE
+> Shipped: both loops now run bounded-concurrency (12) via mapPool; social_accounts
+> processed soonest-expiry first so the most urgent tokens drain before the tail.
 - `app/api/cron/refresh-social-tokens/route.ts:70` (≤2000 integrations, up to 3 awaited HTTP each) + `:145` (≤5000 social_accounts) — strictly sequential under `maxDuration=300`. Blows the budget → the tail never gets refreshed → tokens age out → "why did my scheduled post fail?". Fix: bounded-concurrency chunks (Promise.all over ~10–20 slices) and/or order by soonest-expiry so each run drains the most urgent first.
 
-### P2. `refresh-indexing` doubly sequential + unbounded users
+### P2. `refresh-indexing` doubly sequential + unbounded users — ✅ DONE
+> Shipped: users capped at 200/run, day-rotated (round-robin so the whole base is
+> covered over successive runs), processed with concurrency 6; per-post inspection
+> stays serial to respect GSC per-property rate limits.
 - `refresh-indexing/route.ts:61` user loop, `:124` inspect loop, users query `:48` has no `.limit()`. ~15s/user caps it at ~20 users/tick; the rest are silently skipped daily with no round-robin. Fix: cap users/run, order by oldest-refreshed, bounded concurrency.
 
 ### P3. Deal quick-post publishes platforms serially on the user's request — ✅ DONE

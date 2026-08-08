@@ -18,6 +18,7 @@ import { normalizeTier, type Tier } from '@/lib/tier'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { executeDealQuickPost } from '@/lib/deal-quick-post'
 import { QUICK_POST_PLATFORMS, type QuickPostPlatform } from '@/lib/deal-social-publish'
+import { getDeadChannels, shouldSkipChannel, type DeadChannel } from '@/lib/channel-health'
 
 export const runtime = 'nodejs'
 export const maxDuration = 120
@@ -66,6 +67,21 @@ export async function GET(request: Request) {
   const rows = (claimed ?? []) as DealScheduleRow[]
   if (rows.length === 0) return NextResponse.json({ ok: true, processed: 0 })
 
+  // Dead-channel guard (audit #10) — mirror process-scheduled. Look up each
+  // affected user's dead channels once, then drop dead platforms from each row so
+  // we don't keep hammering a connection we already know is broken. One real
+  // attempt/day still slips through (shouldSkipChannel), so reconnecting resumes
+  // publishing on its own.
+  const userIds = [...new Set(rows.map(r => r.user_id))]
+  const deadByUser = new Map<string, DeadChannel[]>()
+  await Promise.all(userIds.map(async (uid) => {
+    deadByUser.set(uid, await getDeadChannels(admin, uid, { requireConnected: false }))
+  }))
+  const isDead = (uid: string, platform: string): boolean => {
+    const d = (deadByUser.get(uid) || []).find(x => x.platform === platform)
+    return !!d && shouldSkipChannel(d)
+  }
+
   const results = await Promise.allSettled(rows.map(async (row) => {
     try {
       // The user's tag + geniuslink creds + tier — decrypt like every cron path.
@@ -79,8 +95,20 @@ export async function GET(request: Request) {
       } | null
       const tier = normalizeTier(intRow?.tier) as Tier
 
-      const platforms = (Array.isArray(row.platforms) ? row.platforms : [])
+      const requested = (Array.isArray(row.platforms) ? row.platforms : [])
         .filter((p): p is QuickPostPlatform => QUICK_POST_PLATFORMS.includes(p as QuickPostPlatform))
+      const platforms = requested.filter(p => !isDead(row.user_id, p))
+      // Every requested channel is currently dead → skip the row entirely rather
+      // than fire a guaranteed-failing post. Tagged so it never counts toward the
+      // dead-channel streak (which would keep the channel dead forever).
+      if (requested.length > 0 && platforms.length === 0) {
+        await (admin as any).from("deal_scheduled_posts").update({
+          status: 'skipped',
+          error_message: '[auto-skipped] Connected channel(s) need reconnecting — not sent.',
+          updated_at: new Date().toISOString(),
+        }).eq('id', row.id)
+        return { id: row.id, status: 'skipped' as const }
+      }
 
       const out = await executeDealQuickPost({
         db: admin, userId: row.user_id, tier, intRow,

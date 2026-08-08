@@ -51,18 +51,35 @@ export async function GET(request: Request) {
     .not('gsc_oauth_access_token', 'is', null)
     .not('gsc_property', 'is', null)
     .not('wordpress_url', 'is', null)
-  const users = (usersRaw ?? []) as Array<{ user_id: string; gsc_property: string; wordpress_url: string }>
+  const allUsers = (usersRaw ?? []) as Array<{ user_id: string; gsc_property: string; wordpress_url: string }>
+
+  // P2: the old loop was serial + unbounded (~15s/user under maxDuration=300 →
+  // ~20 users/tick), so everyone past the first ~20 was silently skipped every
+  // day with no rotation. Cap the working set, ROTATE the window by day so the
+  // whole base is covered over successive runs (round-robin), and process users
+  // with bounded concurrency. Per-post inspection stays serial per user to
+  // respect GSC per-property rate limits.
+  const MAX_USERS_PER_RUN = 200
+  const USER_CONCURRENCY = 6
+  const dayIdx = Math.floor(Date.now() / 86_400_000)
+  const users = allUsers.length > MAX_USERS_PER_RUN
+    ? (() => {
+        const offset = (dayIdx * MAX_USERS_PER_RUN) % allUsers.length
+        const rotated = allUsers.slice(offset).concat(allUsers.slice(0, offset))
+        return rotated.slice(0, MAX_USERS_PER_RUN)
+      })()
+    : allUsers
 
   let totalUsers = 0
   let totalInspected = 0
   let totalRefreshed = 0
   const errors: Array<{ userId: string; msg: string }> = []
 
-  for (const u of users) {
+  const processUser = async (u: { user_id: string; gsc_property: string; wordpress_url: string }) => {
     totalUsers++
     try {
       const token = await getValidGscToken(supabase, u.user_id)
-      if (!token) continue
+      if (!token) return
 
       // Multi-site: load this user's connected sites so we can build the
       // right post URL per post. Legacy posts (wordpress_site_id null)
@@ -84,7 +101,7 @@ export async function GET(request: Request) {
         .not('wordpress_post_id', 'is', null)
         .not('slug', 'is', null)
       const posts = (postsRaw ?? []) as Array<{ id: string; slug: string; wordpress_site_id: string | null }>
-      if (posts.length === 0) continue
+      if (posts.length === 0) return
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: cacheRowsRaw } = await supabase
@@ -117,7 +134,7 @@ export async function GET(request: Request) {
       .sort((a, b) => a.priority - b.priority || b.age - a.age)
       .slice(0, PER_USER_QUOTA)
 
-      if (candidates.length === 0) continue
+      if (candidates.length === 0) return
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const toUpsert: any[] = []
@@ -164,9 +181,15 @@ export async function GET(request: Request) {
     }
   }
 
+  // Bounded-concurrency fan-out across users (per-post work stays serial inside).
+  for (let i = 0; i < users.length; i += USER_CONCURRENCY) {
+    await Promise.all(users.slice(i, i + USER_CONCURRENCY).map(processUser))
+  }
+
   return NextResponse.json({
     ok: true,
     users: totalUsers,
+    totalEligible: allUsers.length,
     inspected: totalInspected,
     refreshed: totalRefreshed,
     ...(errors.length ? { errors } : {}),
