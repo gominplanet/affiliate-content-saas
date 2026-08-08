@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.78
+ * Version: 1.0.79
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -539,22 +539,9 @@ add_action('wp_footer', function () {
     <?php
 });
 
-// The chip — prepended to the post body, only on a single post, only when the
-// toggle is on AND the post has passed the threshold. Muted, rounded, modern.
-add_filter('the_content', function ($content) {
-    if (!is_singular('post') || !in_the_loop() || !is_main_query()) return $content;
-    $data = mvp_affiliate_get_data();
-    $layout = isset($data['layout']) && is_array($data['layout']) ? $data['layout'] : [];
-    if (empty($layout['showReadCount'])) return $content;
-    $pid = (int) get_the_ID();
-    $reads = (int) get_post_meta($pid, '_mvp_reads', true);
-    if ($reads < mvp_affiliate_read_threshold()) return $content;
-    $label = $reads >= 1000 ? rtrim(rtrim(number_format($reads / 1000, 1), '0'), '.') . 'k' : number_format($reads);
-    $chip = '<div class="mvp-read-count" style="display:inline-flex;align-items:center;gap:7px;font-size:13px;line-height:1;color:#6b7280;margin:0 0 20px;padding:6px 13px;border:1px solid rgba(0,0,0,.09);border-radius:999px;background:rgba(0,0,0,.02);font-weight:600;letter-spacing:.2px">'
-        . '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:.7"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>'
-        . esc_html($label) . ' reads</div>';
-    return $chip . $content;
-}, 6);
+// NOTE: the per-post "N reads" chip was removed by design — only the blog-wide
+// aggregate badge (below) is shown, on the main blog. We still COUNT per-post
+// reads (the beacon above) because the aggregate sums that same `_mvp_reads` meta.
 
 // Aggregate reads across the whole blog — summed once and cached (10 min) so the
 // homepage never runs a heavy meta scan per visit.
