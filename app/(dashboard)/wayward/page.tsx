@@ -252,7 +252,6 @@ export default function WaywardPage() {
       <div className="flex items-center gap-2 mb-1 flex-wrap">
         <ShoppingBag size={20} style={{ color: PURPLE }} />
         <h1 className="text-xl font-bold text-[#1d1d1f] dark:text-[#f5f5f7]">MVP x Wayward</h1>
-        <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full" style={{ background: 'rgba(124,58,237,0.12)', color: PURPLE }}>Labs</span>
         <Link href="/wayward/placement" className="ml-auto inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold border border-[#7C3AED]/40 text-[#7C3AED] hover:bg-[#7C3AED]/5">
           <ClipboardList size={13} /> Build a placement offer
         </Link>

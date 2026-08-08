@@ -490,6 +490,10 @@ export default function DashboardShellV2({
         { href: '/saved-campaigns', icon: <Bookmark size={15} />, label: 'Saved Campaigns', gate: canBrowseDealRadar(effectiveTier) },
         { href: '/levanta', icon: <ShoppingBag size={15} />, label: 'MVP x Levanta' },
         { href: '/partnerboost', icon: <Store size={15} />, label: 'MVP x PartnerBoost' },
+        // MVP x Wayward — graduated out of Labs 2026-08. Amazon Attribution catalog
+        // (300k+ products, 20–30% commissions); page/APIs gated by the user's own
+        // Wayward key, so it sits with the other network finders (no tier gate).
+        { href: '/wayward', icon: <ShoppingBag size={15} />, label: 'MVP x Wayward' },
       ],
     },
     {
@@ -559,10 +563,8 @@ export default function DashboardShellV2({
         // clicks + Keepa demand today; real sales/revenue via the SCOUT reader.
         { href: '/analytics', icon: <BarChart3 size={15} />, label: 'Storefront Stats', gate: isPro },
         { href: '/instagram-dm', icon: <MessageCircle size={15} />, label: 'Instagram Auto-DM', gate: isPro },
-        // MVP x Wayward — browse the Wayward Amazon Attribution catalog (300k+
-        // products, 20–30% commissions) and mint attributed Amazon links. Needs
-        // the user's own Wayward API key (External Integrations). Pro-only in Labs.
-        { href: '/wayward', icon: <ShoppingBag size={15} />, label: 'MVP x Wayward', gate: isPro },
+        // MVP x Wayward graduated out of Labs 2026-08 → now under the network
+        // finders, right below MVP x PartnerBoost.
         // Clip Factory graduated out of Labs 2026-08 → now lives under Create
         // (between Social Push and Link in Bio), open to all Pro tiers.
         // Deal Radar graduated out of Labs 2026-07-27 → now lives under
