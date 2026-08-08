@@ -10,8 +10,9 @@ import Link from 'next/link'
 import { toast } from 'sonner'
 import {
   ShoppingBag, Loader2, Search, Link2, Copy, ExternalLink, ChevronLeft, ChevronRight,
-  Bookmark, BookmarkCheck, FileText, ClipboardList, Tag, ArrowDownWideNarrow, X,
+  Bookmark, BookmarkCheck, FileText, ClipboardList, Tag, ArrowDownWideNarrow, X, Send,
 } from 'lucide-react'
+import WaywardQuickPostModal from '@/components/wayward/WaywardQuickPostModal'
 
 const PURPLE = '#7C3AED'
 
@@ -47,6 +48,7 @@ export default function WaywardPage() {
   const [brandQuery, setBrandQuery] = useState('')
   const [selBrand, setSelBrand] = useState<Brand | null>(null)
   const [sortByComm, setSortByComm] = useState(false)
+  const [postItem, setPostItem] = useState<{ asin: string; name: string; imageUrl: string | null } | null>(null)
 
   const load = useCallback(async (pageNumber: number, asinFilter: string, brandId?: string) => {
     setLoading(true); setError(null)
@@ -235,6 +237,8 @@ export default function WaywardPage() {
                         <button onClick={() => toggleSave(p)} disabled={savingAsin === p.asin}
                           className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-medium border border-black/10 dark:border-white/15 text-[#4b4b4f] dark:text-[#b0b0b5] disabled:opacity-60">
                           {saved ? <BookmarkCheck size={12} style={{ color: PURPLE }} /> : <Bookmark size={12} />} {saved ? 'Saved' : 'Save'}</button>
+                        <button onClick={() => setPostItem({ asin: p.asin, name: p.name, imageUrl: bigImg(p.imageUrl) })}
+                          className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-medium border border-black/10 dark:border-white/15 text-[#4b4b4f] dark:text-[#b0b0b5]"><Send size={12} /> Post</button>
                         <a href={`https://www.amazon.com/dp/${p.asin}`} target="_blank" rel="noreferrer"
                           className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-medium border border-black/10 dark:border-white/15 text-[#4b4b4f] dark:text-[#b0b0b5]"><ExternalLink size={12} /> Visit</a>
                       </div>
@@ -256,6 +260,8 @@ export default function WaywardPage() {
           )}
         </>
       )}
+
+      {postItem && <WaywardQuickPostModal item={postItem} onClose={() => setPostItem(null)} />}
     </div>
   )
 }
