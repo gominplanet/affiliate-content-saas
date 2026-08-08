@@ -16,18 +16,25 @@ export interface LinkPage {
   // Custom main CTA button under the header (label + destination).
   cta_label?: string | null
   cta_url?: string | null
-  // Optional advertisement insert (toggled on by the creator).
+  // Optional advertisement insert (legacy single-ad from mig 235; superseded by
+  // kind='ad' item tabs in mig 236 — kept for back-compat, no longer rendered).
   ad_enabled?: boolean
   ad_image_url?: string | null
   ad_title?: string | null
   ad_subtitle?: string | null
   ad_url?: string | null
+  // Editable section headings (blank → renderer default).
+  heading_stories?: string | null
+  heading_ads?: string | null
+  heading_more?: string | null
+  // Custom accent hex — overrides the theme preset's accent when set.
+  accent?: string | null
 }
 
 export interface LinkPageItem {
   id: string
   page_id: string
-  kind: string           // 'product' (grid tile) | 'link' (full-width button)
+  kind: string           // 'product' (grid tile) | 'link' (icon pill) | 'ad' (tab)
   title: string
   subtitle: string | null
   icon: string | null    // platform slug for links (see LINK_ICONS)
@@ -38,6 +45,8 @@ export interface LinkPageItem {
   position: number
   hidden: boolean
   in_story: boolean      // product tile is "live in my story right now"
+  badge?: string | null  // ad tab: discount pill, e.g. "$20 Off"
+  code?: string | null   // ad tab: promo code, e.g. "Cameron20"
   clicks: number
 }
 

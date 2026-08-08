@@ -173,6 +173,30 @@ export default function LinkInBioPage() {
     if (ok) { setLinkTitle(''); setLinkUrl(''); setLinkIcon('link'); toast.success('Link added.') }
   }
 
+  // Advertisement tabs (kind='ad'): a clickable sponsor card with icon/thumb,
+  // title, optional discount badge, subtitle, and optional promo code.
+  const [adTitle, setAdTitle] = useState('')
+  const [adSubtitle, setAdSubtitle] = useState('')
+  const [adImg, setAdImg] = useState('')
+  const [adUrl, setAdUrl] = useState('')
+  const [adBadge, setAdBadge] = useState('')
+  const [adCode, setAdCode] = useState('')
+  const addAd = async () => {
+    if (!adTitle.trim() || !adUrl.trim()) { toast.error('An ad needs a title and a link.'); return }
+    setBusy(true)
+    try {
+      const res = await fetch('/api/link-in-bio/items', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: 'ad', title: adTitle, subtitle: adSubtitle, url: adUrl, image_url: adImg, badge: adBadge, code: adCode }),
+      })
+      const data = await res.json()
+      if (!res.ok) { toast.error(data.error || 'Could not add ad.'); return }
+      setItems((x) => [...x, data.item])
+      setAdTitle(''); setAdSubtitle(''); setAdImg(''); setAdUrl(''); setAdBadge(''); setAdCode('')
+      toast.success('Ad added.')
+    } catch { toast.error('Could not add ad.') } finally { setBusy(false) }
+  }
+
   // Post an IG Story for each "current deal" (ticked product with an ASIN).
   // Two steps: "Create IG Stories" opens a review modal (which deals go out),
   // then the user confirms — never a blind fire-and-post.
@@ -423,13 +447,29 @@ export default function LinkInBioPage() {
             </label>
             <div>
               <div className="text-xs font-medium text-muted-foreground mb-1.5">Theme</div>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {LINK_THEMES.map((th) => (
                   <button key={th.key} onClick={() => savePage({ theme: th.key })} title={th.label}
                     className={`h-9 w-9 rounded-full border-2 transition ${page.theme === th.key ? 'border-violet-500 scale-110' : 'border-transparent'}`}
                     style={{ background: th.bg }} />
                 ))}
               </div>
+              {/* Custom accent — any color for buttons, badges & highlights. */}
+              <div className="flex items-center gap-2 mt-3">
+                <span className="text-xs font-medium text-muted-foreground">Accent color</span>
+                <label className="relative inline-flex items-center">
+                  <input type="color" defaultValue={page.accent || '#7C3AED'}
+                    onChange={(e) => savePage({ accent: e.target.value })}
+                    className="h-8 w-10 rounded-md border cursor-pointer bg-transparent p-0.5" title="Pick any accent color" />
+                </label>
+                {page.accent && (
+                  <>
+                    <code className="text-[11px] text-muted-foreground">{page.accent}</code>
+                    <button onClick={() => savePage({ accent: '' })} className="text-[11px] text-muted-foreground hover:underline">Reset to theme</button>
+                  </>
+                )}
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-1">Pick a swatch for the whole look, or set a custom accent for buttons, badges & the “Shop now” color.</p>
             </div>
           </div>
 
@@ -451,33 +491,40 @@ export default function LinkInBioPage() {
             </div>
 
             <div className="border-t pt-4">
-              <div className="flex items-center justify-between gap-2">
-                <div className="text-sm font-semibold">Advertisement <span className="text-muted-foreground font-normal">· optional sponsor slot</span></div>
-                <button onClick={() => savePage({ ad_enabled: !page.ad_enabled })} disabled={busy}
-                  className={`inline-flex items-center gap-1 text-xs font-semibold rounded-lg px-2.5 py-1.5 ${page.ad_enabled ? 'bg-violet-600 text-white' : 'border text-muted-foreground'}`}>
-                  {page.ad_enabled ? <><Check size={12} /> On</> : 'Off'}
-                </button>
+              <div className="text-sm font-semibold">Advertisements <span className="text-muted-foreground font-normal">· sponsor tabs shown between your two product sections</span></div>
+              <div className="grid sm:grid-cols-2 gap-2 mt-3">
+                <input value={adTitle} onChange={(e) => setAdTitle(e.target.value)} placeholder="Title (e.g. Function Health)" className="px-2.5 py-2 text-sm rounded-lg border bg-background text-foreground" />
+                <input value={adSubtitle} onChange={(e) => setAdSubtitle(e.target.value)} placeholder="Subtitle (e.g. One Year Membership)" className="px-2.5 py-2 text-sm rounded-lg border bg-background text-foreground" />
+                <input value={adImg} onChange={(e) => setAdImg(e.target.value)} placeholder="Icon / thumbnail URL" className="px-2.5 py-2 text-sm rounded-lg border bg-background text-foreground" />
+                <input value={adUrl} onChange={(e) => setAdUrl(e.target.value)} placeholder="Link (where the tab goes)" className="px-2.5 py-2 text-sm rounded-lg border bg-background text-foreground" />
+                <input value={adBadge} onChange={(e) => setAdBadge(e.target.value)} placeholder="Badge (optional, e.g. $20 Off)" className="px-2.5 py-2 text-sm rounded-lg border bg-background text-foreground" />
+                <input value={adCode} onChange={(e) => setAdCode(e.target.value)} placeholder="Promo code (optional, e.g. Cameron20)" className="px-2.5 py-2 text-sm rounded-lg border bg-background text-foreground" />
               </div>
-              {page.ad_enabled && (
-                <div className="grid sm:grid-cols-2 gap-3 mt-3">
-                  <label className="text-xs font-medium text-muted-foreground">Image URL
-                    <input defaultValue={page.ad_image_url || ''} onBlur={(e) => e.target.value !== (page.ad_image_url || '') && savePage({ ad_image_url: e.target.value })}
-                      placeholder="https://… (logo or product)" className="mt-1 w-full px-2.5 py-2 text-sm rounded-lg border bg-background text-foreground" />
-                  </label>
-                  <label className="text-xs font-medium text-muted-foreground">Link
-                    <input defaultValue={page.ad_url || ''} onBlur={(e) => e.target.value !== (page.ad_url || '') && savePage({ ad_url: e.target.value })}
-                      placeholder="https://…" className="mt-1 w-full px-2.5 py-2 text-sm rounded-lg border bg-background text-foreground" />
-                  </label>
-                  <label className="text-xs font-medium text-muted-foreground">Title
-                    <input defaultValue={page.ad_title || ''} onBlur={(e) => e.target.value !== (page.ad_title || '') && savePage({ ad_title: e.target.value })}
-                      placeholder="e.g. Try Function Health" className="mt-1 w-full px-2.5 py-2 text-sm rounded-lg border bg-background text-foreground" />
-                  </label>
-                  <label className="text-xs font-medium text-muted-foreground">Subtitle
-                    <input defaultValue={page.ad_subtitle || ''} onBlur={(e) => e.target.value !== (page.ad_subtitle || '') && savePage({ ad_subtitle: e.target.value })}
-                      placeholder="e.g. One-year membership" className="mt-1 w-full px-2.5 py-2 text-sm rounded-lg border bg-background text-foreground" />
-                  </label>
-                </div>
+              <Button size="sm" className="mt-2" onClick={addAd} disabled={busy}><Plus className="h-4 w-4 mr-1" /> Add advertisement</Button>
+              {items.filter((it) => it.kind === 'ad').length > 0 && (
+                <ul className="divide-y mt-2">
+                  {items.filter((it) => it.kind === 'ad').map((it, i, list) => renderItem(it, i, list))}
+                </ul>
               )}
+            </div>
+          </div>
+
+          {/* Section headings — all editable (blank = default). */}
+          <div className="rounded-2xl border bg-card p-5 space-y-3">
+            <div className="text-sm font-semibold">Section headings <span className="text-muted-foreground font-normal">· leave blank for the defaults</span></div>
+            <div className="grid sm:grid-cols-3 gap-3">
+              <label className="text-xs font-medium text-muted-foreground">Stories strip
+                <input defaultValue={page.heading_stories || ''} onBlur={(e) => e.target.value !== (page.heading_stories || '') && savePage({ heading_stories: e.target.value })}
+                  placeholder="🔥 In my Stories currently" className="mt-1 w-full px-2.5 py-2 text-sm rounded-lg border bg-background text-foreground" />
+              </label>
+              <label className="text-xs font-medium text-muted-foreground">Ads strip
+                <input defaultValue={page.heading_ads ?? ''} onBlur={(e) => e.target.value !== (page.heading_ads ?? '') && savePage({ heading_ads: e.target.value })}
+                  placeholder="Featured" className="mt-1 w-full px-2.5 py-2 text-sm rounded-lg border bg-background text-foreground" />
+              </label>
+              <label className="text-xs font-medium text-muted-foreground">Products strip
+                <input defaultValue={page.heading_more || ''} onBlur={(e) => e.target.value !== (page.heading_more || '') && savePage({ heading_more: e.target.value })}
+                  placeholder="More Products We Love" className="mt-1 w-full px-2.5 py-2 text-sm rounded-lg border bg-background text-foreground" />
+              </label>
             </div>
           </div>
 

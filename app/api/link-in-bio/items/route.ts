@@ -59,15 +59,16 @@ export async function POST(request: Request) {
   const pageId = await ownPage(sb, user.id)
   if (!pageId) return NextResponse.json({ error: 'Create your page first.' }, { status: 400 })
 
-  const body = await request.json().catch(() => ({})) as { title?: string; url?: string; image_url?: string; kind?: string; icon?: string; subtitle?: string }
+  const body = await request.json().catch(() => ({})) as { title?: string; url?: string; image_url?: string; kind?: string; icon?: string; subtitle?: string; badge?: string; code?: string }
   const title = (body.title || '').trim().slice(0, 120)
   const url = cleanUrl(body.url || '')
   if (!title || !url) return NextResponse.json({ error: 'A title and a link are required.' }, { status: 400 })
-  const kind = body.kind === 'link' ? 'link' : 'product'
+  const kind = body.kind === 'link' ? 'link' : body.kind === 'ad' ? 'ad' : 'product'
 
   // Product tiles: auto-wrap the pasted link in the creator's own Geniuslink so
   // they don't have to paste a geni.us link themselves — any Amazon/affiliate
-  // URL becomes their tracked affiliate link. Social "link" tiles are left as-is.
+  // URL becomes their tracked affiliate link. Social "link" + sponsor "ad" tiles
+  // link out as-is (an ad points at the sponsor's own destination).
   let finalUrl = url
   let asin: string | null = null
   if (kind === 'product') {
@@ -86,6 +87,7 @@ export async function POST(request: Request) {
     image_url: (body.image_url || '').trim() || null,
     icon: kind === 'link' ? ((body.icon || '').trim() || 'link') : null,
     subtitle: (body.subtitle || '').trim() || null,
+    ...(kind === 'ad' ? { badge: (body.badge || '').trim() || null, code: (body.code || '').trim() || null } : {}),
     source: 'manual', position,
   }).select('*').single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -100,7 +102,7 @@ export async function PATCH(request: Request) {
   const sb = supabase as any
 
   const body = await request.json().catch(() => ({})) as {
-    order?: string[]; id?: string; hidden?: boolean; in_story?: boolean; clearStory?: boolean; title?: string; url?: string; image_url?: string
+    order?: string[]; id?: string; hidden?: boolean; in_story?: boolean; clearStory?: boolean; title?: string; url?: string; image_url?: string; subtitle?: string; badge?: string; code?: string
   }
 
   // Bulk: clear the whole "in my story" section (e.g. after 24h stories expire).
@@ -125,6 +127,9 @@ export async function PATCH(request: Request) {
   if (body.title !== undefined) patch.title = (body.title || '').trim().slice(0, 120)
   if (body.url !== undefined) { const u = cleanUrl(body.url); if (u) patch.url = u }
   if (body.image_url !== undefined) patch.image_url = (body.image_url || '').trim() || null
+  if (body.subtitle !== undefined) patch.subtitle = (body.subtitle || '').trim() || null
+  if (body.badge !== undefined) patch.badge = (body.badge || '').trim() || null
+  if (body.code !== undefined) patch.code = (body.code || '').trim() || null
   if (!Object.keys(patch).length) return NextResponse.json({ error: 'Nothing to update.' }, { status: 400 })
 
   const { data, error } = await sb.from('link_page_items').update(patch).eq('id', body.id).eq('user_id', user.id).select('*').maybeSingle()

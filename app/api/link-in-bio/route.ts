@@ -78,6 +78,7 @@ export async function POST(request: Request) {
     handle?: string; title?: string; bio?: string; avatar_url?: string; theme?: string; published?: boolean
     cta_label?: string; cta_url?: string
     ad_enabled?: boolean; ad_image_url?: string; ad_title?: string; ad_subtitle?: string; ad_url?: string
+    heading_stories?: string; heading_ads?: string; heading_more?: string; accent?: string
   }
 
   const { data: existing } = await sb.from('link_pages').select('*').eq('user_id', user.id).maybeSingle()
@@ -114,6 +115,15 @@ export async function POST(request: Request) {
   if (body.ad_title !== undefined) patch.ad_title = (body.ad_title || '').slice(0, 80) || null
   if (body.ad_subtitle !== undefined) patch.ad_subtitle = (body.ad_subtitle || '').slice(0, 140) || null
   if (body.ad_url !== undefined) patch.ad_url = (body.ad_url || '').trim().slice(0, 1000) || null
+  // Editable section headings (blank → renderer default).
+  if (body.heading_stories !== undefined) patch.heading_stories = (body.heading_stories || '').slice(0, 80) || null
+  if (body.heading_ads !== undefined) patch.heading_ads = (body.heading_ads || '').slice(0, 80) || null
+  if (body.heading_more !== undefined) patch.heading_more = (body.heading_more || '').slice(0, 80) || null
+  // Custom accent — validate a #rgb/#rrggbb hex, else clear (fall back to theme).
+  if (body.accent !== undefined) {
+    const a = (body.accent || '').trim()
+    patch.accent = /^#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/.test(a) ? a : null
+  }
 
   try {
     if (existing) {
