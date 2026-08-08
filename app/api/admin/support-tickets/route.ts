@@ -63,7 +63,7 @@ export async function GET(req: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: msgs } = await (admin as any)
       .from('support_messages')
-      .select('id,ticket_id,sender,body,created_at')
+      .select('id,ticket_id,sender,body,image_url,created_at')
       .in('ticket_id', ids)
       .order('created_at', { ascending: true })
       .then((r: { data: unknown }) => r, () => ({ data: null }))
@@ -84,7 +84,7 @@ export async function PATCH(req: Request) {
   const gate = await requireAdmin()
   if ('error' in gate) return gate.error
 
-  let payload: { id?: string; admin_response?: string; status?: string }
+  let payload: { id?: string; admin_response?: string; status?: string; imageUrl?: string }
   try {
     payload = await req.json()
   } catch {
@@ -94,11 +94,13 @@ export async function PATCH(req: Request) {
   if (!id) return NextResponse.json({ error: 'Ticket id is required.' }, { status: 400 })
 
   const response = typeof payload.admin_response === 'string' ? payload.admin_response.trim() : undefined
+  const imageUrl = /^https?:\/\//i.test(String(payload.imageUrl || '').trim()) ? String(payload.imageUrl).trim().slice(0, 1000) : null
+  const hasReply = (response !== undefined && response.length > 0) || !!imageUrl
   let nextStatus: Status | undefined
   if (payload.status && (VALID_STATUS as readonly string[]).includes(payload.status)) {
     nextStatus = payload.status as Status
   }
-  if (response === undefined && nextStatus === undefined) {
+  if (!hasReply && nextStatus === undefined) {
     return NextResponse.json({ error: 'Nothing to update.' }, { status: 400 })
   }
 
@@ -108,18 +110,18 @@ export async function PATCH(req: Request) {
   // answered. We also keep the ticket-level admin_response / responded_at /
   // response_seen in sync so the existing bell (which reads those) still lights
   // up without touching the notifications route.
-  if (response !== undefined && response.length > 0) {
+  if (hasReply) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (admin as any)
       .from('support_messages')
-      .insert({ ticket_id: id, sender: 'admin', body: response, seen: false })
+      .insert({ ticket_id: id, sender: 'admin', body: response ?? '', image_url: imageUrl, seen: false })
       .then((r: unknown) => r, () => null)
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const patch: Record<string, any> = { updated_at: new Date().toISOString() }
-  if (response !== undefined && response.length > 0) {
-    patch.admin_response = response
+  if (hasReply) {
+    if (response !== undefined && response.length > 0) patch.admin_response = response
     patch.responded_at = new Date().toISOString()
     patch.response_seen = false           // re-light the user's bell
     patch.status = nextStatus ?? 'answered'
@@ -140,7 +142,7 @@ export async function PATCH(req: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: messages } = await (admin as any)
     .from('support_messages')
-    .select('id,sender,body,created_at')
+    .select('id,sender,body,image_url,created_at')
     .eq('ticket_id', id)
     .order('created_at', { ascending: true })
     .then((r: { data: unknown }) => r, () => ({ data: null }))
