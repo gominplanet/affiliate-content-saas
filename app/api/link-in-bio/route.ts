@@ -141,8 +141,23 @@ export async function POST(request: Request) {
     if (error) throw error
     return NextResponse.json({ ok: true, page: data })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
+    // Supabase returns a PostgrestError — a plain object, NOT an Error instance —
+    // so `String(err)` would render "[object Object]". Pull .message off it.
+    const msg = errMessage(err)
     if (/duplicate key|23505/i.test(msg)) return NextResponse.json({ error: 'That handle is taken — try another.' }, { status: 409 })
+    if (/column .* does not exist|schema cache|42703/i.test(msg)) {
+      return NextResponse.json({ error: 'This page needs a quick database update (migrations 235–236) before custom colors/ads can save. Ask your admin to run them.' }, { status: 500 })
+    }
     return NextResponse.json({ error: msg }, { status: 500 })
   }
+}
+
+function errMessage(err: unknown): string {
+  if (err instanceof Error) return err.message
+  if (err && typeof err === 'object') {
+    const e = err as { message?: unknown; details?: unknown; hint?: unknown }
+    const parts = [e.message, e.details, e.hint].filter((x) => typeof x === 'string' && x)
+    if (parts.length) return parts.join(' — ')
+  }
+  return String(err)
 }
