@@ -160,9 +160,32 @@ export async function resolveManualPage(
     return { pageId: chosen.id, pageName: chosen.name, pageAccessToken: chosen.access_token, allPages: pages }
   }
 
-  // Path B — the token IS a Page token; /me returns the Page itself.
+  // Path B — a Page ID was given. Ask Facebook for THAT Page and its own posting
+  // token directly. This is the reliable route for a System-User token: the token
+  // itself can't post, but /{pageId}?fields=access_token mints the Page token when
+  // the Page is assigned to that system user with a posting role.
+  if (hint) {
+    const pUrl = new URL(`${GRAPH}/${hint}`)
+    pUrl.searchParams.set('fields', 'id,name,access_token')
+    pUrl.searchParams.set('access_token', inputToken)
+    const pRes = await fetch(pUrl.toString())
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const pBody: any = await pRes.json()
+    if (pRes.ok && pBody?.id) {
+      if (!pBody.access_token) {
+        throw new Error(`Facebook accepted the token for "${pBody.name || hint}" but returned no posting token — the token needs the pages_manage_posts permission and a posting role on this Page.`)
+      }
+      const page: FacebookPage = { id: String(pBody.id), name: pBody.name || 'Facebook Page', access_token: pBody.access_token }
+      return { pageId: page.id, pageName: page.name, pageAccessToken: page.access_token, allPages: [page] }
+    }
+    // fall through to the /me check for a clearer error
+  }
+
+  // Path C — the token IS a Page token; /me returns the Page itself. A Page has a
+  // `category`; a User or System-User token does not — use that to reject the
+  // wrong token type instead of storing a non-postable object.
   const meUrl = new URL(`${GRAPH}/me`)
-  meUrl.searchParams.set('fields', 'id,name')
+  meUrl.searchParams.set('fields', 'id,name,category')
   meUrl.searchParams.set('access_token', inputToken)
   const res = await fetch(meUrl.toString())
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -170,10 +193,15 @@ export async function resolveManualPage(
   if (!res.ok || !body?.id) {
     throw new Error(body?.error?.message || 'Facebook did not accept that access token. Generate a fresh Page or System-User token and try again.')
   }
-  const page: FacebookPage = { id: String(body.id), name: body.name || 'Facebook Page', access_token: inputToken }
-  if (hint && hint !== page.id) {
-    throw new Error(`That token is for "${page.name}" (${page.id}), not the Page ID you entered.`)
+  if (!body.category) {
+    // A User / System-User token with no Page surfaced. Almost always means the
+    // Page isn't assigned to the token yet, or no Page ID was supplied.
+    throw new Error('That looks like a User or System-User token with no Page attached. Assign your Page to the system user (Manage Page access) and enter your Page ID above, or paste the Page access token directly.')
   }
+  if (hint && hint !== String(body.id)) {
+    throw new Error(`That token is for "${body.name}" (${body.id}), not the Page ID you entered.`)
+  }
+  const page: FacebookPage = { id: String(body.id), name: body.name || 'Facebook Page', access_token: inputToken }
   return { pageId: page.id, pageName: page.name, pageAccessToken: inputToken, allPages: [page] }
 }
 
