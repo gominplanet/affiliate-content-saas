@@ -46,7 +46,7 @@ export interface LinkPageItem {
   hidden: boolean
   in_story: boolean      // product tile is "live in my story right now"
   badge?: string | null  // ad tab: discount pill, e.g. "$20 Off"
-  code?: string | null   // ad tab: promo code, e.g. "Cameron20"
+  code?: string | null   // ad tab: promo code, e.g. "mvp2026"
   clicks: number
 }
 

@@ -498,7 +498,7 @@ export default function LinkInBioPage() {
                 <input value={adImg} onChange={(e) => setAdImg(e.target.value)} placeholder="Icon / thumbnail URL" className="px-2.5 py-2 text-sm rounded-lg border bg-background text-foreground" />
                 <input value={adUrl} onChange={(e) => setAdUrl(e.target.value)} placeholder="Link (where the tab goes)" className="px-2.5 py-2 text-sm rounded-lg border bg-background text-foreground" />
                 <input value={adBadge} onChange={(e) => setAdBadge(e.target.value)} placeholder="Badge (optional, e.g. $20 Off)" className="px-2.5 py-2 text-sm rounded-lg border bg-background text-foreground" />
-                <input value={adCode} onChange={(e) => setAdCode(e.target.value)} placeholder="Promo code (optional, e.g. Cameron20)" className="px-2.5 py-2 text-sm rounded-lg border bg-background text-foreground" />
+                <input value={adCode} onChange={(e) => setAdCode(e.target.value)} placeholder="Promo code (optional, e.g. mvp2026)" className="px-2.5 py-2 text-sm rounded-lg border bg-background text-foreground" />
               </div>
               <Button size="sm" className="mt-2" onClick={addAd} disabled={busy}><Plus className="h-4 w-4 mr-1" /> Add advertisement</Button>
               {items.filter((it) => it.kind === 'ad').length > 0 && (
