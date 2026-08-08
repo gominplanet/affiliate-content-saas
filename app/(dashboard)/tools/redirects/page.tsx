@@ -11,7 +11,7 @@ import Link from 'next/link'
 import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
 import { gscPageIndexingUrl } from '@/lib/gsc-links'
-import { Loader2, ExternalLink, ChevronLeft, ArrowRight, Upload, Signpost, CheckCircle2 } from 'lucide-react'
+import { Loader2, ExternalLink, ChevronLeft, ArrowRight, Upload, Signpost, CheckCircle2, Home } from 'lucide-react'
 
 type Confidence = 'high' | 'medium' | 'low' | 'none'
 interface Match {
@@ -111,6 +111,30 @@ export default function RedirectsPage() {
     () => (matches || []).filter(m => !appliedFroms.has(m.from) && choice[m.from] && choice[m.from] !== SKIP),
     [matches, choice, appliedFroms],
   )
+
+  // How many rows have no live-post match — these are the ones you'd typically
+  // batch-send to the homepage in one click.
+  const unmatchedCount = useMemo(
+    () => (matches || []).filter(m => !appliedFroms.has(m.from) && (m.confidence === 'none' || !m.to)).length,
+    [matches, appliedFroms],
+  )
+
+  // Bulk selectors — only touch rows that aren't already applied.
+  function bulkSet(fn: (m: Match) => string | null) {
+    setChoice(c => {
+      const n = { ...c }
+      for (const m of matches || []) {
+        if (appliedFroms.has(m.from)) continue
+        const v = fn(m)
+        if (v != null) n[m.from] = v
+      }
+      return n
+    })
+  }
+  const sendAllToHome = () => bulkSet(() => HOME)
+  const sendUnmatchedToHome = () => bulkSet(m => (m.confidence === 'none' || !m.to) ? HOME : null)
+  const skipAll = () => bulkSet(() => SKIP)
+  const resetToBest = () => bulkSet(m => (m.to && (m.confidence === 'high' || m.confidence === 'medium')) ? m.to : SKIP)
 
   async function applyRedirects(rows: Match[]) {
     const redirects = rows
@@ -215,6 +239,33 @@ export default function RedirectsPage() {
                 className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white bg-[#7C3AED] hover:bg-[#6d28d9] disabled:opacity-60">
                 {applying ? <Loader2 size={15} className="animate-spin" /> : <ArrowRight size={15} />}
                 Apply {pending.length} redirect{pending.length === 1 ? '' : 's'}
+              </button>
+            </div>
+
+            {/* Bulk actions — the fast path. Most 404s with no live match just
+                want to point at the homepage; do it in one click. */}
+            <div className="flex items-center gap-2 mb-3 flex-wrap">
+              <span className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-faint)' }}>Bulk:</span>
+              {unmatchedCount > 0 && (
+                <button onClick={sendUnmatchedToHome}
+                  className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-semibold text-white bg-[#7C3AED] hover:bg-[#6d28d9]">
+                  <Home size={12} /> {unmatchedCount} unmatched → Homepage
+                </button>
+              )}
+              <button onClick={sendAllToHome}
+                className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium"
+                style={{ backgroundColor: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text)' }}>
+                <Home size={12} /> All → Homepage
+              </button>
+              <button onClick={resetToBest}
+                className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium"
+                style={{ backgroundColor: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text)' }}>
+                Reset to best match
+              </button>
+              <button onClick={skipAll}
+                className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium"
+                style={{ backgroundColor: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text)' }}>
+                Skip all
               </button>
             </div>
 
