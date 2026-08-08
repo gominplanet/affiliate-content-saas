@@ -48,6 +48,60 @@ const EXCLUSIVITY = [
 const LEAD_TIMES = ['1 week', '2 weeks', '3 weeks', '1 month', 'Flexible']
 const RETAILERS = ['Amazon', 'Walmart', 'DTC', 'Other']
 
+// NOTE: these presentational components live at MODULE scope on purpose. Defining
+// them inside the page component would give them a new identity on every render,
+// so React would remount the whole form on each keystroke/tick — losing input
+// focus and jumping the scroll to the top.
+function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button type="button" onClick={onClick}
+      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium border transition ${active ? 'text-white' : 'text-[#4b4b4f] dark:text-[#b0b0b5] border-black/10 dark:border-white/15 hover:border-[#7C3AED]/40'}`}
+      style={active ? { backgroundColor: PURPLE, borderColor: PURPLE } : undefined}>
+      {active && <Check size={12} />}{children}
+    </button>
+  )
+}
+function Radio({ options, value, onChange }: { options: string[]; value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      {options.map(o => (
+        <button key={o} type="button" onClick={() => onChange(o)}
+          className={`text-left inline-flex items-start gap-2 rounded-lg px-3 py-2 text-[13px] border transition ${value === o ? 'border-[#7C3AED] bg-[#7C3AED]/5 text-[#1d1d1f] dark:text-[#f5f5f7]' : 'border-black/10 dark:border-white/15 text-[#4b4b4f] dark:text-[#b0b0b5] hover:border-[#7C3AED]/40'}`}>
+          <span className={`mt-0.5 shrink-0 h-3.5 w-3.5 rounded-full border ${value === o ? 'border-[#7C3AED]' : 'border-black/25 dark:border-white/30'} flex items-center justify-center`}>
+            {value === o && <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: PURPLE }} />}
+          </span>
+          {o}
+        </button>
+      ))}
+    </div>
+  )
+}
+function Section({ n, title, sub, children }: { n: string; title: string; sub: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-xl border border-black/5 dark:border-white/10 p-4">
+      <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]"><span className="text-[#86868b] mr-1.5">{n}</span>{title}</p>
+      <p className="text-[12px] text-[#86868b] mb-3">{sub}</p>
+      {children}
+    </div>
+  )
+}
+function Field({ n, title, hint, value, onCopy }: { n: string; title: string; hint: string; value: string; onCopy: (label: string, text: string) => void }) {
+  return (
+    <div className="rounded-xl border border-black/5 dark:border-white/10 p-4">
+      <div className="flex items-start justify-between gap-3 mb-2">
+        <div>
+          <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]"><span className="text-[#86868b] mr-1">{n}</span>{title}</p>
+          <p className="text-[11px] text-[#86868b]">Paste into: {hint}</p>
+        </div>
+        <button onClick={() => onCopy(title, value)} className="shrink-0 inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg border border-[#7C3AED]/40 text-[#7C3AED] hover:bg-[#7C3AED]/5">
+          <Copy size={11} /> Copy
+        </button>
+      </div>
+      <pre className="whitespace-pre-wrap font-sans text-[13px] text-[#1d1d1f] dark:text-[#f5f5f7] leading-relaxed">{value}</pre>
+    </div>
+  )
+}
+
 export default function PlacementBuilderPage() {
   // Answers
   const [contentTypes, setContentTypes] = useState<string[]>([])
@@ -110,49 +164,6 @@ export default function PlacementBuilderPage() {
   function copy(label: string, text: string) {
     navigator.clipboard.writeText(text).then(() => toast.success(`${label} copied`)).catch(() => {})
   }
-
-  // ── reusable bits ─────────────────────────────────────────────────────────
-  const Chip = ({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) => (
-    <button type="button" onClick={onClick}
-      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium border transition ${active ? 'text-white' : 'text-[#4b4b4f] dark:text-[#b0b0b5] border-black/10 dark:border-white/15 hover:border-[#7C3AED]/40'}`}
-      style={active ? { backgroundColor: PURPLE, borderColor: PURPLE } : undefined}>
-      {active && <Check size={12} />}{children}
-    </button>
-  )
-  const Radio = ({ options, value, onChange }: { options: string[]; value: string; onChange: (v: string) => void }) => (
-    <div className="flex flex-col gap-1.5">
-      {options.map(o => (
-        <button key={o} type="button" onClick={() => onChange(o)}
-          className={`text-left inline-flex items-start gap-2 rounded-lg px-3 py-2 text-[13px] border transition ${value === o ? 'border-[#7C3AED] bg-[#7C3AED]/5 text-[#1d1d1f] dark:text-[#f5f5f7]' : 'border-black/10 dark:border-white/15 text-[#4b4b4f] dark:text-[#b0b0b5] hover:border-[#7C3AED]/40'}`}>
-          <span className={`mt-0.5 shrink-0 h-3.5 w-3.5 rounded-full border ${value === o ? 'border-[#7C3AED]' : 'border-black/25 dark:border-white/30'} flex items-center justify-center`}>
-            {value === o && <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: PURPLE }} />}
-          </span>
-          {o}
-        </button>
-      ))}
-    </div>
-  )
-  const Section = ({ n, title, sub, children }: { n: string; title: string; sub: string; children: React.ReactNode }) => (
-    <div className="rounded-xl border border-black/5 dark:border-white/10 p-4">
-      <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]"><span className="text-[#86868b] mr-1.5">{n}</span>{title}</p>
-      <p className="text-[12px] text-[#86868b] mb-3">{sub}</p>
-      {children}
-    </div>
-  )
-  const Field = ({ n, title, hint, value }: { n: string; title: string; hint: string; value: string }) => (
-    <div className="rounded-xl border border-black/5 dark:border-white/10 p-4">
-      <div className="flex items-start justify-between gap-3 mb-2">
-        <div>
-          <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]"><span className="text-[#86868b] mr-1">{n}</span>{title}</p>
-          <p className="text-[11px] text-[#86868b]">Paste into: {hint}</p>
-        </div>
-        <button onClick={() => copy(title, value)} className="shrink-0 inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg border border-[#7C3AED]/40 text-[#7C3AED] hover:bg-[#7C3AED]/5">
-          <Copy size={11} /> Copy
-        </button>
-      </div>
-      <pre className="whitespace-pre-wrap font-sans text-[13px] text-[#1d1d1f] dark:text-[#f5f5f7] leading-relaxed">{value}</pre>
-    </div>
-  )
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-6">
@@ -298,9 +309,9 @@ export default function PlacementBuilderPage() {
           </div>
           <p className="text-[12px] text-[#86868b] -mt-1">Open Wayward → Sponsorship Offers → Post a placement, then paste each field below into the matching step.</p>
 
-          <Field n="01" title="Title" hint="Basics → Title" value={result.title} />
-          <Field n="02" title="Description" hint="Description → About this placement" value={result.description} />
-          <Field n="03" title="Expectations" hint="Expectations → Non-negotiables" value={result.expectations} />
+          <Field n="01" title="Title" hint="Basics → Title" value={result.title} onCopy={copy} />
+          <Field n="02" title="Description" hint="Description → About this placement" value={result.description} onCopy={copy} />
+          <Field n="03" title="Expectations" hint="Expectations → Non-negotiables" value={result.expectations} onCopy={copy} />
 
           <div className="rounded-xl border border-black/5 dark:border-white/10 p-4">
             <div className="flex items-start justify-between gap-3">
