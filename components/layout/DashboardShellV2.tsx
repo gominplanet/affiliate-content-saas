@@ -423,6 +423,9 @@ export default function DashboardShellV2({
         { href: '/customize', icon: <Brush size={15} />, label: 'Customize Blog', gate: !contentOnly },
         { href: '/photobooth', icon: <UserSquare size={15} />, label: 'Face Models' },
         { href: '/connect-socials', icon: <Share2 size={15} />, label: 'Connect Socials' },
+        // External Integrations — connect your own API keys for outside networks
+        // (Levanta, PartnerBoost, Wayward). Paid tiers only (matches the API gate).
+        { href: '/external-integrations', icon: <Plug size={15} />, label: 'External Integrations', gate: canUseFinders },
         // Ads — one home for AdSense + affiliate banners. Shown to everyone:
         // AdSense injection works on BYO-theme sites too (via the MVP plugin),
         // and the /ads page itself hides the theme-only banner blocks for

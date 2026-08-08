@@ -26,7 +26,9 @@ export async function GET() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
     .from('cc_saved_finds').select(COLS)
-    .in('source', ['campaign', 'onsite']) // Levanta finds live in their own shelf (/api/levanta/saved)
+    // Wayward finds land here too now (no separate Saved tab on the Wayward page).
+    // Levanta finds still live in their own shelf (/api/levanta/saved).
+    .in('source', ['campaign', 'onsite', 'wayward'])
     .order('created_at', { ascending: false }).limit(500)
   if (error) return NextResponse.json({ ok: false, error: error.message, saved: [] }, { status: 200 })
   return NextResponse.json({ ok: true, saved: data ?? [] })

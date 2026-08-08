@@ -29,7 +29,6 @@ function bigImg(u: string | null): string | null {
 }
 
 export default function WaywardPage() {
-  const [tab, setTab] = useState<'catalog' | 'saved'>('catalog')
   const [loading, setLoading] = useState(true)
   const [needsToken, setNeedsToken] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -41,10 +40,8 @@ export default function WaywardPage() {
   const [linking, setLinking] = useState<string | null>(null)
   const [links, setLinks] = useState<Record<string, string>>({})
   const [savedAsins, setSavedAsins] = useState<Set<string>>(new Set())
-  const [savedItems, setSavedItems] = useState<Product[]>([])
   const [savingAsin, setSavingAsin] = useState<string | null>(null)
   const [genAsin, setGenAsin] = useState<string | null>(null)
-  const [genAll, setGenAll] = useState(false)
   const [brands, setBrands] = useState<Brand[]>([])
   const [brandOpen, setBrandOpen] = useState(false)
   const [brandQuery, setBrandQuery] = useState('')
@@ -71,23 +68,23 @@ export default function WaywardPage() {
     } catch (e) { setError(e instanceof Error ? e.message : 'Failed to load') } finally { setLoading(false) }
   }, [])
 
+  // Saved products now live on /saved-campaigns alongside the CC saves. Here we
+  // only track which ASINs are already saved, so the Save button shows the right
+  // state — the shelf itself moved out of this page.
   const loadSaved = useCallback(async () => {
     try {
       const d = await (await fetch('/api/wayward/saved')).json()
-      if (d.ok && Array.isArray(d.saved)) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const rows: Product[] = d.saved.map((s: any) => ({
-          productId: s.id, asin: s.asin, name: s.title || s.asin, brandName: s.brand || null,
-          price: s.price ?? null, currency: 'USD', commissionRate: s.commission_pct ?? null,
-          imageUrl: s.image_url || null, marketplace: s.marketplace || 'amazon.com', isActive: true,
-        }))
-        setSavedItems(rows)
-        setSavedAsins(new Set(rows.map(r => r.asin)))
-      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if (d.ok && Array.isArray(d.saved)) setSavedAsins(new Set(d.saved.map((s: any) => s.asin)))
     } catch { /* ignore */ }
   }, [])
 
-  useEffect(() => { load(1, '') }, [load])
+  useEffect(() => {
+    // Deep-link support: /wayward?asin=XXXX (e.g. "View on Wayward" from Saved
+    // Campaigns) pre-fills the search and jumps straight to that product.
+    const qa = (new URLSearchParams(window.location.search).get('asin') || '').trim()
+    if (/^[A-Z0-9]{10}$/i.test(qa)) { setAsin(qa); load(1, qa) } else { load(1, '') }
+  }, [load])
   useEffect(() => { loadSaved() }, [loadSaved])
   useEffect(() => {
     fetch('/api/wayward/brands').then(r => r.json()).then(d => {
@@ -157,12 +154,10 @@ export default function WaywardPage() {
       if (isSaved) {
         await fetch(`/api/wayward/saved?asin=${encodeURIComponent(p.asin)}`, { method: 'DELETE' })
         setSavedAsins(prev => { const n = new Set(prev); n.delete(p.asin); return n })
-        setSavedItems(prev => prev.filter(s => s.asin !== p.asin))
       } else {
         await fetch('/api/wayward/saved', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ asin: p.asin, title: p.name, brand: p.brandName, imageUrl: p.imageUrl, commissionPct: p.commissionRate, price: p.price, marketplace: p.marketplace }) })
         setSavedAsins(prev => new Set(prev).add(p.asin))
-        setSavedItems(prev => prev.some(s => s.asin === p.asin) ? prev : [{ ...p }, ...prev])
-        toast.success('Saved')
+        toast.success('Saved to Saved Campaigns')
       }
     } catch { toast.error('Could not update saved') } finally { setSavingAsin(null) }
   }
@@ -179,25 +174,9 @@ export default function WaywardPage() {
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Generation failed', { id: `gen-${p.asin}` }); return false } finally { setGenAsin(null) }
   }
 
-  async function generateAllSaved() {
-    if (!savedItems.length) return
-    if (!confirm(`Generate and publish ${savedItems.length} blog post${savedItems.length > 1 ? 's' : ''} from your saved products? This uses AI credits and posts to your blog.`)) return
-    setGenAll(true)
-    let ok = 0, fail = 0
-    for (let i = 0; i < savedItems.length; i++) {
-      toast.message(`Generating ${i + 1}/${savedItems.length}…`)
-      // eslint-disable-next-line no-await-in-loop
-      const done = await generatePost(savedItems[i])
-      done ? ok++ : fail++
-      if (fail >= 2) { toast.error('Stopped after repeated failures.'); break } // fail-safe
-    }
-    setGenAll(false)
-    toast.success(`Done — ${ok} published${fail ? `, ${fail} failed` : ''}.`)
-  }
-
   const money = (p: Product) => p.price != null ? `${p.currency === 'USD' || !p.currency ? '$' : ''}${p.price}` : ''
 
-  // Shared product card, used by both the Catalog and Saved tabs.
+  // Shared product card.
   function Card({ p }: { p: Product }) {
     const saved = savedAsins.has(p.asin); const busyGen = genAsin === p.asin
     return (
@@ -224,7 +203,7 @@ export default function WaywardPage() {
                 className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-semibold text-white disabled:opacity-60" style={{ backgroundColor: PURPLE }}>
                 {linking === p.asin ? <Loader2 size={12} className="animate-spin" /> : <Link2 size={12} />} Get link</button>
             )}
-            <button onClick={() => generatePost(p)} disabled={busyGen || genAll}
+            <button onClick={() => generatePost(p)} disabled={busyGen}
               className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-semibold border border-[#7C3AED]/40 text-[#7C3AED] hover:bg-[#7C3AED]/5 disabled:opacity-60">
               {busyGen ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />} {busyGen ? 'Writing…' : 'Generate post'}</button>
           </div>
@@ -267,18 +246,13 @@ export default function WaywardPage() {
         </div>
       ) : (
         <>
-          {/* Tabs */}
-          <div className="flex items-center gap-2 mb-4 border-b border-black/5 dark:border-white/10">
-            {(['catalog', 'saved'] as const).map(tk => (
-              <button key={tk} onClick={() => setTab(tk)}
-                className={`px-3 py-2 text-sm font-medium -mb-px border-b-2 ${tab === tk ? 'border-[#7C3AED] text-[#7C3AED]' : 'border-transparent text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]'}`}>
-                {tk === 'catalog' ? 'Catalog' : `Saved${savedItems.length ? ` (${savedItems.length})` : ''}`}
-              </button>
-            ))}
+          <div className="rounded-lg border border-black/5 dark:border-white/10 bg-black/[.02] dark:bg-white/[.03] px-3 py-2 mb-4 text-[12px] text-[#6e6e73] dark:text-[#a1a1a6]">
+            Products you <strong>Save</strong> here land in your{' '}
+            <Link href="/saved-campaigns" className="font-semibold text-[#7C3AED] hover:underline">Saved Campaigns</Link>{' '}
+            shelf, alongside everything else you&apos;ve saved.
           </div>
 
-          {tab === 'catalog' ? (
-            <>
+          <>
               <div className="flex items-center gap-2 mb-4 flex-wrap">
                 <form onSubmit={e => { e.preventDefault(); runSearch() }} className="relative flex-1 min-w-[200px] max-w-sm flex items-center gap-2">
                   <div className="relative flex-1">
@@ -339,25 +313,6 @@ export default function WaywardPage() {
                 </div>
               )}
             </>
-          ) : (
-            /* Saved tab */
-            savedItems.length === 0 ? (
-              <p className="text-sm text-[#86868b] py-10 text-center">Nothing saved yet — tap <strong>Save</strong> on any product in the Catalog.</p>
-            ) : (
-              <>
-                <div className="flex items-center gap-2 mb-4">
-                  <span className="text-[12px] text-[#86868b]">{savedItems.length} saved</span>
-                  <button onClick={generateAllSaved} disabled={genAll}
-                    className="ml-auto inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold text-white disabled:opacity-60" style={{ backgroundColor: PURPLE }}>
-                    {genAll ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />} {genAll ? 'Generating…' : `Generate all (${savedItems.length})`}
-                  </button>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {savedItems.map(p => <Card key={p.productId} p={p} />)}
-                </div>
-              </>
-            )
-          )}
         </>
       )}
 
