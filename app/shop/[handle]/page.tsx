@@ -101,6 +101,9 @@ export default async function BioPage({ params }: { params: Promise<{ handle: st
   const hMore = (page.heading_more || '').trim() || (currentDeals.length ? 'More Products We Love' : 'Shop my picks')
   const hAds = (page.heading_ads ?? 'Featured').trim()
   const headingStyle: React.CSSProperties = { textAlign: 'center', fontSize: 12, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: t.sub, margin: '0 0 14px' }
+  // Only allow http(s) as a link target — neutralizes any javascript:/data: URL
+  // that may already be stored on an older row (stored-XSS guard at render time).
+  const ctaHref = /^https?:\/\//i.test((page.cta_url || '').trim()) ? (page.cta_url as string).trim() : null
 
   return (
     <main style={{ background: t.bg, color: t.text, minHeight: '100vh', backgroundAttachment: 'fixed' }}>
@@ -126,9 +129,9 @@ export default async function BioPage({ params }: { params: Promise<{ handle: st
 
         {/* Custom main CTA — one prominent button under the header (e.g. "Shop My
             Amazon Storefront"), label + destination set by the creator. */}
-        {page.cta_label && page.cta_url && (
+        {page.cta_label && ctaHref && (
           <a
-            href={page.cta_url}
+            href={ctaHref}
             target="_blank"
             rel="nofollow sponsored noopener"
             style={{ display: 'block', textAlign: 'center', background: accent, color: '#fff', fontSize: 16, fontWeight: 800, padding: '16px 20px', borderRadius: 16, textDecoration: 'none', boxShadow: '0 10px 30px rgba(0,0,0,0.18)', marginBottom: 24 }}
