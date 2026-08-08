@@ -28,8 +28,9 @@ export async function GET(request: NextRequest) {
     const pageNumber = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1)
     const pageSize = Math.min(100, Math.max(1, parseInt(searchParams.get('pageSize') || '25', 10) || 25))
     const asin = (searchParams.get('asin') || '').trim() || undefined
+    const brandId = (searchParams.get('brandId') || '').trim() || undefined
 
-    const page = await getWaywardProducts(token, { pageNumber, pageSize, asin })
+    const page = await getWaywardProducts(token, { pageNumber, pageSize, asin, brandId })
     return NextResponse.json({ ok: true, ...page })
   } catch (e) {
     const msg = e instanceof Error && e.name === 'AbortError' ? 'Wayward request timed out.'
