@@ -9,8 +9,8 @@
 import type { createServerClient } from '@/lib/supabase/server'
 import { maybeEncrypt, maybeDecrypt } from '@/lib/secrets'
 
-export type ExternalProvider = 'levanta' | 'partnerboost'
-export const EXTERNAL_PROVIDERS: ExternalProvider[] = ['levanta', 'partnerboost']
+export type ExternalProvider = 'levanta' | 'partnerboost' | 'wayward'
+export const EXTERNAL_PROVIDERS: ExternalProvider[] = ['levanta', 'partnerboost', 'wayward']
 
 export function isExternalProvider(v: unknown): v is ExternalProvider {
   return typeof v === 'string' && (EXTERNAL_PROVIDERS as string[]).includes(v)
@@ -20,7 +20,9 @@ export function isExternalProvider(v: unknown): v is ExternalProvider {
  *  key — it must NEVER be handed to another user, or every user would see the
  *  operator's connected brands/products. Gated to admin only below. */
 function envKeyFor(provider: ExternalProvider): string | null {
-  const v = provider === 'levanta' ? process.env.LEVANTA_API_TOKEN : process.env.PARTNERBOOST_API_TOKEN
+  const v = provider === 'levanta' ? process.env.LEVANTA_API_TOKEN
+    : provider === 'partnerboost' ? process.env.PARTNERBOOST_API_TOKEN
+    : process.env.WAYWARD_API_TOKEN
   return v?.trim() || null
 }
 
