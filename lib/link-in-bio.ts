@@ -13,6 +13,15 @@ export interface LinkPage {
   theme: string
   published: boolean
   clicks: number
+  // Custom main CTA button under the header (label + destination).
+  cta_label?: string | null
+  cta_url?: string | null
+  // Optional advertisement insert (toggled on by the creator).
+  ad_enabled?: boolean
+  ad_image_url?: string | null
+  ad_title?: string | null
+  ad_subtitle?: string | null
+  ad_url?: string | null
 }
 
 export interface LinkPageItem {

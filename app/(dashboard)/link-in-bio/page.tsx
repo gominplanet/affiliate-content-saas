@@ -433,6 +433,54 @@ export default function LinkInBioPage() {
             </div>
           </div>
 
+          {/* Main button + Advertisement */}
+          <div className="rounded-2xl border bg-card p-5 space-y-4">
+            <div>
+              <div className="text-sm font-semibold">Main button <span className="text-muted-foreground font-normal">· a big CTA under your name + tagline</span></div>
+              <div className="grid sm:grid-cols-2 gap-3 mt-2">
+                <label className="text-xs font-medium text-muted-foreground">Button label
+                  <input defaultValue={page.cta_label || ''} onBlur={(e) => e.target.value !== (page.cta_label || '') && savePage({ cta_label: e.target.value })}
+                    placeholder="e.g. Shop My Amazon Storefront" className="mt-1 w-full px-2.5 py-2 text-sm rounded-lg border bg-background text-foreground" />
+                </label>
+                <label className="text-xs font-medium text-muted-foreground">Button link
+                  <input defaultValue={page.cta_url || ''} onBlur={(e) => e.target.value !== (page.cta_url || '') && savePage({ cta_url: e.target.value })}
+                    placeholder="https://…" className="mt-1 w-full px-2.5 py-2 text-sm rounded-lg border bg-background text-foreground" />
+                </label>
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-1">Leave both blank to hide the button.</p>
+            </div>
+
+            <div className="border-t pt-4">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-sm font-semibold">Advertisement <span className="text-muted-foreground font-normal">· optional sponsor slot</span></div>
+                <button onClick={() => savePage({ ad_enabled: !page.ad_enabled })} disabled={busy}
+                  className={`inline-flex items-center gap-1 text-xs font-semibold rounded-lg px-2.5 py-1.5 ${page.ad_enabled ? 'bg-violet-600 text-white' : 'border text-muted-foreground'}`}>
+                  {page.ad_enabled ? <><Check size={12} /> On</> : 'Off'}
+                </button>
+              </div>
+              {page.ad_enabled && (
+                <div className="grid sm:grid-cols-2 gap-3 mt-3">
+                  <label className="text-xs font-medium text-muted-foreground">Image URL
+                    <input defaultValue={page.ad_image_url || ''} onBlur={(e) => e.target.value !== (page.ad_image_url || '') && savePage({ ad_image_url: e.target.value })}
+                      placeholder="https://… (logo or product)" className="mt-1 w-full px-2.5 py-2 text-sm rounded-lg border bg-background text-foreground" />
+                  </label>
+                  <label className="text-xs font-medium text-muted-foreground">Link
+                    <input defaultValue={page.ad_url || ''} onBlur={(e) => e.target.value !== (page.ad_url || '') && savePage({ ad_url: e.target.value })}
+                      placeholder="https://…" className="mt-1 w-full px-2.5 py-2 text-sm rounded-lg border bg-background text-foreground" />
+                  </label>
+                  <label className="text-xs font-medium text-muted-foreground">Title
+                    <input defaultValue={page.ad_title || ''} onBlur={(e) => e.target.value !== (page.ad_title || '') && savePage({ ad_title: e.target.value })}
+                      placeholder="e.g. Try Function Health" className="mt-1 w-full px-2.5 py-2 text-sm rounded-lg border bg-background text-foreground" />
+                  </label>
+                  <label className="text-xs font-medium text-muted-foreground">Subtitle
+                    <input defaultValue={page.ad_subtitle || ''} onBlur={(e) => e.target.value !== (page.ad_subtitle || '') && savePage({ ad_subtitle: e.target.value })}
+                      placeholder="e.g. One-year membership" className="mt-1 w-full px-2.5 py-2 text-sm rounded-lg border bg-background text-foreground" />
+                  </label>
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* Brand links (Linktree-style) */}
           <div className="rounded-2xl border bg-card p-5 space-y-3">
             <div className="text-sm font-semibold">Brand links <span className="text-muted-foreground font-normal">· tap a platform to port your link, or add your own below</span></div>
