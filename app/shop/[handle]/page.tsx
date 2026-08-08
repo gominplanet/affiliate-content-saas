@@ -115,6 +115,10 @@ export default async function BioPage({ params }: { params: Promise<{ handle: st
               title invisible (e.g. light text on the light theme). */}
           <h1 style={{ fontSize: 24, fontWeight: 800, margin: 0, letterSpacing: '-0.01em', color: t.text }}>{title}</h1>
           {page.bio && <p style={{ fontSize: 15, color: t.sub, margin: '10px auto 0', maxWidth: 440, lineHeight: 1.55 }}>{page.bio}</p>}
+          {/* FTC affiliate disclaimer — small print under the tagline. */}
+          <p style={{ fontSize: 11, color: t.sub, opacity: 0.7, margin: '10px auto 0', maxWidth: 440, lineHeight: 1.5 }}>
+            When you purchase through the links below, I may earn a commission at no cost to you.
+          </p>
         </header>
 
         {/* Hover lift for the ad tabs (server component → plain <style>). */}
