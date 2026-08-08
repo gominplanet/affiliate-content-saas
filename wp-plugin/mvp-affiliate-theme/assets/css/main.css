@@ -248,6 +248,28 @@ html, body { overflow-x: clip; }
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
+/* Aggregate blog-reads chip when it lands in the header (under the tagline).
+   Strip the plugin's centered-pill look and make it a tiny muted line that
+   matches the tagline. Empty on non-blog pages → collapse it so there's no gap. */
+.mvp-blog-reads-slot--header { margin-top: 2px; }
+.mvp-blog-reads-slot--header:empty { display: none; }
+.mvp-blog-reads-slot--header .mvp-blog-reads {
+  margin: 0 !important;
+  width: auto !important;
+  justify-content: flex-start !important;
+}
+.mvp-blog-reads-slot--header .mvp-blog-reads span {
+  padding: 0 !important;
+  border: 0 !important;
+  background: none !important;
+  gap: 5px !important;
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.04em !important;
+  text-transform: uppercase !important;
+  color: var(--mvp-header-muted, var(--mvp-text-muted)) !important;
+}
+.mvp-blog-reads-slot--header .mvp-blog-reads svg { width: 11px !important; height: 11px !important; }
 
 .mvp-header-nav { flex: 1; display: flex; justify-content: center; }
 .mvp-nav-menu {

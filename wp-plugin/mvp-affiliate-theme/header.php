@@ -140,6 +140,10 @@ if (function_exists('mvp_affiliate_data')) {
       <?php $tagline = get_bloginfo('description'); if ($tagline): ?>
       <span class="mvp-header-tagline"><?php echo esc_html($tagline); ?></span>
       <?php endif; ?>
+      <?php // Aggregate "N reads across the blog" drops in here, right under the
+            // tagline. Filled by the platform plugin on the blog index only; stays
+            // empty (and hidden) elsewhere. ?>
+      <div class="mvp-blog-reads-slot mvp-blog-reads-slot--header"></div>
     </a>
 
     <nav class="mvp-header-nav" aria-label="<?php esc_attr_e('Primary', 'mvp-affiliate'); ?>">
