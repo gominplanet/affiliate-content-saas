@@ -2521,7 +2521,11 @@ async function logFailure(
     job_type: jobType,
     error_message: errorMessage,
     retry_count: 0,
-    status: 'pending_retry',
+    // 'open' = needs attention, matching the failures API/UI vocabulary
+    // (open/resolved/dismissed). The old 'pending_retry' implied an auto-retry
+    // worker that never existed, so rows sat forever in a status nothing drained
+    // (audit #13).
+    status: 'open',
   })
 }
 

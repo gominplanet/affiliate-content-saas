@@ -256,14 +256,14 @@ async function enrichPriceHistory(
     if (budget != null && budget < MIN_TOKENS_TO_CONTINUE) break
     const a = await fetchKeepaProductStats(row.asin)
     // Reconcile the discount the UI filters/sorts/badges on with price-history
-    // reality. The Keepa Deal-endpoint delta stored in discount_pct is often
-    // null even for genuine drops (the card then shows only the price-history
-    // verdict "X% below its usual price"), which made the "% off" filter hide
-    // real deals. Keep the LARGER of the two so the number is populated and
-    // matches what the card shows. Never lowers a legitimately higher delta.
-    const curPct = row.discount_pct ?? 0
-    const histPct = a.pctBelowAvg90 != null ? Math.min(99, a.pctBelowAvg90) : 0
-    const mergedDiscount = Math.max(curPct, histPct)
+    // reality. When Keepa gives us an authoritative price-history read, make
+    // discount_pct REFLECT that verified "% below usual" — the number the card,
+    // the "% off" filter and the sort should all agree on. It must be able to
+    // fall when a product's price recovers: the old code kept max(cur, hist) and
+    // only ever ratcheted UP, so a stale-high delta could never be corrected down
+    // (audit #8), leaving overstated "% off". With NO usable history this run we
+    // leave the stored value alone rather than clobbering the ingest delta with 0.
+    const histPct = a.pctBelowAvg90 != null ? Math.min(99, Math.max(0, a.pctBelowAvg90)) : null
     // Stamp price_verified_at even on a null assessment so we don't re-hammer a
     // product with no usable history every single run.
     await admin.from('deal_radar_cache').update({
@@ -272,8 +272,8 @@ async function enrichPriceHistory(
       deal_quality: a.quality,
       lowest_label: a.label,
       monthly_sold: a.monthlySold,
-      // Backfill discount_pct only when the price-history discount is larger.
-      ...(mergedDiscount > curPct ? { discount_pct: mergedDiscount } : {}),
+      // Set discount_pct to the verified price-history value (bidirectional).
+      ...(histPct != null ? { discount_pct: histPct } : {}),
       // Only write has_video when Keepa actually returned video data (non-null);
       // a null means "unknown this run" and must NOT clobber a known flag.
       ...(a.hasCarouselVideo != null ? { has_video: a.hasCarouselVideo } : {}),

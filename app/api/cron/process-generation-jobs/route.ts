@@ -137,9 +137,20 @@ async function processOneJob(
   // fall into the failure path and re-run an already-published post. If the
   // status write fails, the job ran + published; a later tick / the stale window
   // reconciles it (the .eq('status','running') guard keeps it safe).
-  try {
-    await completeJob(admin, job.id, result)
-  } catch { /* published already; status write will reconcile */ }
+  // Retry the status write a few times: leaving the job 'running' means the 720s
+  // reclaim re-runs it, and a non-upsert handler (campaign/comparison) would then
+  // double-execute/double-bill (audit #9). The .eq('status','running') guard in
+  // completeJob keeps the reclaim safe as a last resort if every retry fails.
+  let completed = false
+  for (let attempt = 0; attempt < 3 && !completed; attempt++) {
+    try {
+      await completeJob(admin, job.id, result)
+      completed = true
+    } catch (e) {
+      if (attempt === 2) console.error('[process-generation-jobs] completeJob failed after retries', { id: job.id, error: e instanceof Error ? e.message : String(e) })
+      else await new Promise(r => setTimeout(r, 200 * (attempt + 1)))
+    }
+  }
   return { id: job.id, ok: true }
 }
 
