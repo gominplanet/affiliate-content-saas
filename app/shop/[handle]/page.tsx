@@ -90,9 +90,16 @@ export default async function BioPage({ params }: { params: Promise<{ handle: st
   const title = page.title || `@${page.handle}`
   const initial = title.replace(/^@/, '').charAt(0).toUpperCase()
   const links = items.filter((it) => it.kind === 'link')
-  const products = items.filter((it) => it.kind !== 'link')
+  const ads = items.filter((it) => it.kind === 'ad')
+  const products = items.filter((it) => it.kind !== 'link' && it.kind !== 'ad')
   const currentDeals = products.filter((it) => it.in_story)
   const moreDeals = products.filter((it) => !it.in_story)
+  // Custom accent overrides the theme preset when the creator set one.
+  const accent = (page.accent || '').trim() || t.accent
+  // Editable section headings (blank → sensible default).
+  const hStories = (page.heading_stories || '').trim() || '🔥 In my Stories currently'
+  const hMore = (page.heading_more || '').trim() || (currentDeals.length ? 'More Products We Love' : 'Shop my picks')
+  const hAds = (page.heading_ads ?? 'Featured').trim()
   const headingStyle: React.CSSProperties = { textAlign: 'center', fontSize: 12, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: t.sub, margin: '0 0 14px' }
 
   return (
@@ -110,6 +117,9 @@ export default async function BioPage({ params }: { params: Promise<{ handle: st
           {page.bio && <p style={{ fontSize: 15, color: t.sub, margin: '10px auto 0', maxWidth: 440, lineHeight: 1.55 }}>{page.bio}</p>}
         </header>
 
+        {/* Hover lift for the ad tabs (server component → plain <style>). */}
+        <style>{`.mvp-ad{transition:transform .15s ease,box-shadow .15s ease}.mvp-ad:hover{transform:translateY(-2px) scale(1.01);box-shadow:0 14px 30px rgba(0,0,0,0.18)}`}</style>
+
         {/* Custom main CTA — one prominent button under the header (e.g. "Shop My
             Amazon Storefront"), label + destination set by the creator. */}
         {page.cta_label && page.cta_url && (
@@ -117,25 +127,9 @@ export default async function BioPage({ params }: { params: Promise<{ handle: st
             href={page.cta_url}
             target="_blank"
             rel="nofollow sponsored noopener"
-            style={{ display: 'block', textAlign: 'center', background: t.accent, color: '#fff', fontSize: 16, fontWeight: 800, padding: '16px 20px', borderRadius: 16, textDecoration: 'none', boxShadow: '0 10px 30px rgba(0,0,0,0.18)', marginBottom: 24 }}
+            style={{ display: 'block', textAlign: 'center', background: accent, color: '#fff', fontSize: 16, fontWeight: 800, padding: '16px 20px', borderRadius: 16, textDecoration: 'none', boxShadow: '0 10px 30px rgba(0,0,0,0.18)', marginBottom: 24 }}
           >
             {page.cta_label}
-          </a>
-        )}
-
-        {/* Optional advertisement insert — off unless the creator enables it. */}
-        {page.ad_enabled && (page.ad_image_url || page.ad_title) && (
-          <a
-            href={page.ad_url || undefined}
-            {...(page.ad_url ? { target: '_blank', rel: 'nofollow sponsored noopener' } : {})}
-            style={{ display: 'flex', alignItems: 'center', gap: 14, background: '#ffffff', borderRadius: 16, padding: 14, textDecoration: 'none', color: '#111114', boxShadow: '0 8px 24px rgba(0,0,0,0.14)', marginBottom: 30, position: 'relative' }}
-          >
-            <span style={{ position: 'absolute', top: 8, right: 12, fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#9ca3af' }}>Ad</span>
-            {page.ad_image_url && <img src={page.ad_image_url} alt="" style={{ width: 56, height: 56, borderRadius: 12, objectFit: 'cover', flex: 'none' }} />}
-            <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              {page.ad_title && <span style={{ fontSize: 15, fontWeight: 700, color: '#1d1d1f' }}>{page.ad_title}</span>}
-              {page.ad_subtitle && <span style={{ fontSize: 13, color: '#6b7280' }}>{page.ad_subtitle}</span>}
-            </span>
           </a>
         )}
 
@@ -168,17 +162,47 @@ export default async function BioPage({ params }: { params: Promise<{ handle: st
 
         {/* Current deals — live in the creator's story right now (24h). */}
         {currentDeals.length > 0 && (
+          <div style={{ marginBottom: (ads.length || moreDeals.length) ? 34 : 0 }}>
+            <div style={headingStyle}>{hStories}</div>
+            <ProductGrid items={currentDeals} accent={accent} />
+          </div>
+        )}
+
+        {/* Advertisement tabs — sponsor cards between the two product sections. */}
+        {ads.length > 0 && (
           <div style={{ marginBottom: moreDeals.length ? 34 : 0 }}>
-            <div style={headingStyle}>🔥 In my Instagram Stories currently</div>
-            <ProductGrid items={currentDeals} accent={t.accent} />
+            {hAds && <div style={headingStyle}>{hAds}</div>}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {ads.map((ad) => (
+                <a
+                  key={ad.id}
+                  className="mvp-ad"
+                  href={`/api/link-click?i=${ad.id}`}
+                  target="_blank"
+                  rel="nofollow sponsored noopener"
+                  style={{ display: 'flex', alignItems: 'center', gap: 14, background: '#ffffff', borderRadius: 16, padding: 14, textDecoration: 'none', color: '#111114', boxShadow: '0 6px 20px rgba(0,0,0,0.10)', border: '1px solid rgba(0,0,0,0.06)' }}
+                >
+                  {ad.image_url
+                    ? <img src={ad.image_url} alt="" style={{ width: 56, height: 56, borderRadius: 14, objectFit: 'cover', flex: 'none', background: '#f2f2f2' }} />
+                    : <div style={{ width: 56, height: 56, borderRadius: 14, background: '#f2f2f2', flex: 'none' }} />}
+                  <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    {ad.badge && <span style={{ alignSelf: 'flex-start', fontSize: 12, fontWeight: 700, color: '#0f7a57', background: 'rgba(16,122,87,0.12)', borderRadius: 8, padding: '2px 8px' }}>{ad.badge}</span>}
+                    <span style={{ fontSize: 17, fontWeight: 700, color: '#1d1d1f', lineHeight: 1.2 }}>{ad.title}</span>
+                    {ad.subtitle && <span style={{ fontSize: 14, color: '#6b7280' }}>{ad.subtitle}</span>}
+                    {ad.code && <span style={{ fontSize: 14, color: '#6b7280' }}>Use code <strong style={{ color: accent }}>{ad.code}</strong></span>}
+                  </div>
+                  <span aria-hidden style={{ color: '#9ca3af', fontSize: 20, flex: 'none' }}>→</span>
+                </a>
+              ))}
+            </div>
           </div>
         )}
 
         {/* Everything else the creator has found. */}
         {moreDeals.length > 0 && (
           <div>
-            <div style={headingStyle}>{currentDeals.length ? 'More sales I found' : 'Shop my picks'}</div>
-            <ProductGrid items={moreDeals} accent={t.accent} />
+            <div style={headingStyle}>{hMore}</div>
+            <ProductGrid items={moreDeals} accent={accent} />
           </div>
         )}
 
