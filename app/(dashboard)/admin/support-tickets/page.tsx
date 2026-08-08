@@ -2,14 +2,24 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import PageHero from '@/components/layout/PageHero'
-import { Loader2, AlertCircle, Send, CheckCircle2, Clock, Archive, Zap } from 'lucide-react'
+import { Loader2, AlertCircle, Send, CheckCircle2, Clock, Archive, Zap, ImagePlus, X } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface AdminMessage {
   id: string
   sender: 'user' | 'admin'
   body: string
+  image_url?: string | null
   created_at: string
+}
+
+async function uploadSupportImage(file: File): Promise<string> {
+  const fd = new FormData()
+  fd.append('file', file)
+  const res = await fetch('/api/support/upload', { method: 'POST', body: fd })
+  const d = await res.json().catch(() => ({}))
+  if (!res.ok || !d.url) throw new Error(d.error || 'Upload failed')
+  return d.url as string
 }
 
 interface AdminTicket {
@@ -47,7 +57,20 @@ export default function AdminSupportTicketsPage() {
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
   const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const [imageDrafts, setImageDrafts] = useState<Record<string, string>>({})
+  const [uploadingId, setUploadingId] = useState<string | null>(null)
   const [savingId, setSavingId] = useState<string | null>(null)
+
+  async function onPickFile(ticketId: string, e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]; e.target.value = ''
+    if (!f) return
+    setUploadingId(ticketId)
+    try {
+      const url = await uploadSupportImage(f)
+      setImageDrafts(prev => ({ ...prev, [ticketId]: url }))
+    } catch (err) { toast.error(err instanceof Error ? err.message : 'Upload failed') }
+    finally { setUploadingId(null) }
+  }
 
   const load = useCallback(async () => {
     setLoading(true); setErr(null)
@@ -65,7 +88,7 @@ export default function AdminSupportTicketsPage() {
 
   useEffect(() => { load() }, [load])
 
-  async function patch(id: string, payload: { admin_response?: string; status?: string }) {
+  async function patch(id: string, payload: { admin_response?: string; status?: string; imageUrl?: string }) {
     setSavingId(id)
     try {
       const res = await fetch('/api/admin/support-tickets', {
@@ -75,8 +98,9 @@ export default function AdminSupportTicketsPage() {
       })
       const d = await res.json()
       if (!res.ok) throw new Error(d.error || 'Failed to save')
-      toast.success(payload.admin_response ? 'Reply sent — the user will see it in MVP.' : 'Ticket updated.')
+      toast.success((payload.admin_response || payload.imageUrl) ? 'Reply sent — the user will see it in MVP.' : 'Ticket updated.')
       setDrafts(prev => { const n = { ...prev }; delete n[id]; return n })
+      setImageDrafts(prev => { const n = { ...prev }; delete n[id]; return n })
       await load()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to save')
@@ -124,6 +148,8 @@ export default function AdminSupportTicketsPage() {
       <div className="space-y-3">
         {tickets.map(t => {
           const draft = drafts[t.id] ?? ''
+          const imgDraft = imageDrafts[t.id] ?? null
+          const uploading = uploadingId === t.id
           const saving = savingId === t.id
           const messages = threadOf(t)
           return (
@@ -163,7 +189,13 @@ export default function AdminSupportTicketsPage() {
                       <p className={`text-[11px] font-semibold mb-1 ${m.sender === 'admin' ? 'text-[#7C3AED]' : 'text-[#6e6e73] dark:text-[#ebebf0]'}`}>
                         {m.sender === 'admin' ? 'You (MVP Support)' : t.email || 'User'}
                       </p>
-                      <p className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7] whitespace-pre-wrap">{m.body}</p>
+                      {m.body && <p className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7] whitespace-pre-wrap">{m.body}</p>}
+                      {m.image_url && (
+                        <a href={m.image_url} target="_blank" rel="noopener noreferrer" className="block mt-1.5">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={m.image_url} alt="attachment" className="max-h-56 rounded-md border border-black/10 dark:border-white/10" loading="lazy" />
+                        </a>
+                      )}
                       <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-1.5">{fmt(m.created_at)}</p>
                     </div>
                   </div>
@@ -177,15 +209,30 @@ export default function AdminSupportTicketsPage() {
                 placeholder="Type your reply… the user reads it on their /support page."
                 className="w-full mb-2 px-3 py-2 rounded-lg text-sm bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] outline-none focus:border-[#7C3AED] resize-y"
               />
+              {imgDraft && (
+                <div className="mb-2 relative inline-block">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={imgDraft} alt="attachment preview" className="max-h-28 rounded-md border border-black/10 dark:border-white/10" />
+                  <button onClick={() => setImageDrafts(prev => { const n = { ...prev }; delete n[t.id]; return n })} title="Remove attachment"
+                    className="absolute -top-2 -right-2 bg-black/70 text-white rounded-full p-0.5 hover:bg-black">
+                    <X size={12} />
+                  </button>
+                </div>
+              )}
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => patch(t.id, { admin_response: draft, status: 'answered' })}
-                  disabled={saving || !draft.trim()}
+                  onClick={() => patch(t.id, { admin_response: draft, imageUrl: imgDraft || undefined, status: 'answered' })}
+                  disabled={saving || uploading || (!draft.trim() && !imgDraft)}
                   className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#7C3AED] text-white hover:bg-[#6d28d9] disabled:opacity-50 transition-colors"
                 >
                   {saving ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
                   Send reply
                 </button>
+                <label title="Attach a screenshot" className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:border-[#7C3AED] cursor-pointer">
+                  {uploading ? <Loader2 size={13} className="animate-spin" /> : <ImagePlus size={13} />}
+                  Screenshot
+                  <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={e => onPickFile(t.id, e)} className="hidden" disabled={uploading} />
+                </label>
                 {t.status !== 'closed' && (
                   <button
                     onClick={() => patch(t.id, { status: 'closed' })}

@@ -22,7 +22,15 @@ export interface SupportMessage {
   id: string
   sender: 'user' | 'admin'
   body: string
+  imageUrl?: string | null
   created_at: string
+}
+
+/** Accept only an http(s) URL for an attachment (the upload route returns one). */
+function cleanImageUrl(v: unknown): string | null {
+  const s = (v == null ? '' : String(v)).trim()
+  if (!s) return null
+  return /^https?:\/\//i.test(s) ? s.slice(0, 1000) : null
 }
 
 export interface SupportTicket {
@@ -60,15 +68,15 @@ export async function GET() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: msgs } = await (supabase as any)
       .from('support_messages')
-      .select('id,ticket_id,sender,body,created_at')
+      .select('id,ticket_id,sender,body,image_url,created_at')
       .in('ticket_id', ids)
       .order('created_at', { ascending: true })
       .then((r: { data: unknown }) => r, () => ({ data: null }))
     if (Array.isArray(msgs)) {
       const byTicket = new Map<string, SupportMessage[]>()
-      for (const m of msgs as Array<{ id: string; ticket_id: string; sender: 'user' | 'admin'; body: string; created_at: string }>) {
+      for (const m of msgs as Array<{ id: string; ticket_id: string; sender: 'user' | 'admin'; body: string; image_url: string | null; created_at: string }>) {
         const arr = byTicket.get(m.ticket_id) ?? []
-        arr.push({ id: m.id, sender: m.sender, body: m.body, created_at: m.created_at })
+        arr.push({ id: m.id, sender: m.sender, body: m.body, imageUrl: m.image_url, created_at: m.created_at })
         byTicket.set(m.ticket_id, arr)
       }
       for (const t of tickets) t.messages = byTicket.get(t.id) ?? []
@@ -108,7 +116,7 @@ export async function POST(req: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  let payload: { subject?: string; body?: string }
+  let payload: { subject?: string; body?: string; imageUrl?: string }
   try {
     payload = await req.json()
   } catch {
@@ -117,6 +125,7 @@ export async function POST(req: Request) {
 
   const subject = (payload.subject || '').trim()
   const body = (payload.body || '').trim()
+  const imageUrl = cleanImageUrl(payload.imageUrl)
   if (!subject || !body) {
     return NextResponse.json({ error: 'A subject and a message are both required.' }, { status: 400 })
   }
@@ -148,12 +157,12 @@ export async function POST(req: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await (supabase as any)
     .from('support_messages')
-    .insert({ ticket_id: data.id, sender: 'user', body, seen: true })
+    .insert({ ticket_id: data.id, sender: 'user', body, image_url: imageUrl, seen: true })
     .then((r: unknown) => r, () => null)
 
-  await alertFounder({ user, tier, priority, subject, body, kind: 'new' })
+  await alertFounder({ user, tier, priority, subject, body: body + (imageUrl ? '\n[screenshot attached]' : ''), kind: 'new' })
 
-  const ticket = { ...(data as SupportTicket), messages: [{ id: `${data.id}:seed`, sender: 'user' as const, body, created_at: data.created_at }] }
+  const ticket = { ...(data as SupportTicket), messages: [{ id: `${data.id}:seed`, sender: 'user' as const, body, imageUrl, created_at: data.created_at }] }
   return NextResponse.json({ ticket })
 }
 
@@ -162,7 +171,7 @@ export async function PATCH(req: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  let payload: { ticketId?: string; body?: string }
+  let payload: { ticketId?: string; body?: string; imageUrl?: string }
   try {
     payload = await req.json()
   } catch {
@@ -170,8 +179,9 @@ export async function PATCH(req: Request) {
   }
   const ticketId = (payload.ticketId || '').trim()
   const body = (payload.body || '').trim()
+  const imageUrl = cleanImageUrl(payload.imageUrl)
   if (!ticketId) return NextResponse.json({ error: 'ticketId is required.' }, { status: 400 })
-  if (!body) return NextResponse.json({ error: 'Type a message first.' }, { status: 400 })
+  if (!body && !imageUrl) return NextResponse.json({ error: 'Type a message or attach a screenshot first.' }, { status: 400 })
   if (body.length > 5000) return NextResponse.json({ error: 'Message is too long (5000 characters max).' }, { status: 400 })
 
   // Verify the ticket is the caller's (RLS on select already scopes it).
@@ -189,10 +199,11 @@ export async function PATCH(req: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: msg, error: mErr } = await (supabase as any)
     .from('support_messages')
-    .insert({ ticket_id: ticketId, sender: 'user', body, seen: true })
-    .select('id,sender,body,created_at')
+    .insert({ ticket_id: ticketId, sender: 'user', body, image_url: imageUrl, seen: true })
+    .select('id,sender,body,image_url,created_at')
     .single()
   if (mErr) return NextResponse.json({ error: mErr.message }, { status: 500 })
+  if (msg) { (msg as { imageUrl?: string | null }).imageUrl = (msg as { image_url?: string | null }).image_url ?? null }
 
   // Reopen the ticket so it resurfaces in the admin inbox. Users have no UPDATE
   // policy on tickets, so flip status with the service-role client.
@@ -206,7 +217,7 @@ export async function PATCH(req: Request) {
   } catch { /* non-fatal — the message is saved either way */ }
 
   const tier = (ticket.tier as string) || 'trial'
-  await alertFounder({ user, tier, priority: !!ticket.priority, subject: `Re: ${ticket.subject}`, body, kind: 'reply' })
+  await alertFounder({ user, tier, priority: !!ticket.priority, subject: `Re: ${ticket.subject}`, body: body + (imageUrl ? '\n[screenshot attached]' : ''), kind: 'reply' })
 
   return NextResponse.json({ message: msg })
 }
