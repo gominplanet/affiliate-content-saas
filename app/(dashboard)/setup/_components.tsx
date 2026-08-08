@@ -50,6 +50,12 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
   const [facebook, setFacebook] = useState({ connected: false, pageName: '', pageId: '', pages: [] as { id: string; name: string }[] })
   const [fbDisconnecting, setFbDisconnecting] = useState(false)
   const [fbNotice, setFbNotice] = useState<{ ok: boolean; msg: string } | null>(null)
+  // Manual connect (Business-Manager Page escape hatch).
+  const [fbManualOpen, setFbManualOpen] = useState(false)
+  const [fbManualToken, setFbManualToken] = useState('')
+  const [fbManualPageId, setFbManualPageId] = useState('')
+  const [fbManualBusy, setFbManualBusy] = useState(false)
+  const [fbManualChoices, setFbManualChoices] = useState<{ id: string; name: string }[] | null>(null)
   const [pinterest, setPinterest] = useState({ connected: false, boardId: '', boardName: '', boards: [] as { id: string; name: string }[], fallbackBoard: '' })
   const [ptDisconnecting, setPtDisconnecting] = useState(false)
   const [ptNotice, setPtNotice] = useState<{ ok: boolean; msg: string } | null>(null)
@@ -406,6 +412,103 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
     const data = await res.json()
     if (data.ok) setFacebook(prev => ({ ...prev, pageId: data.page.id, pageName: data.page.name }))
   }
+
+  // Manual connect: paste a Page/System-User token (+ optional Page ID) from a
+  // Business Manager. Bypasses OAuth's Page list, which can't surface BM Pages
+  // until Facebook approves business_management in App Review.
+  async function connectFacebookManual(pageIdOverride?: string) {
+    setFbManualBusy(true)
+    setFbNotice(null)
+    try {
+      const res = await fetch('/api/auth/facebook/connect-manual', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accessToken: fbManualToken.trim(), pageId: (pageIdOverride ?? fbManualPageId).trim() || undefined }),
+      })
+      const data = await res.json()
+      if (data.needsPageChoice) {
+        setFbManualChoices(data.pages || [])
+        setFbNotice({ ok: false, msg: 'That token reaches more than one Page — pick which to connect.' })
+        return
+      }
+      if (!res.ok || !data.ok) {
+        setFbNotice({ ok: false, msg: data.error || 'Could not connect that Page.' })
+        return
+      }
+      setFacebook({ connected: true, pageName: data.pageName, pageId: data.pageId, pages: [{ id: data.pageId, name: data.pageName }] })
+      setFbManualOpen(false)
+      setFbManualToken('')
+      setFbManualPageId('')
+      setFbManualChoices(null)
+      setFbNotice({ ok: true, msg: `Connected ${data.pageName}.` })
+    } catch (e) {
+      setFbNotice({ ok: false, msg: e instanceof Error ? e.message : 'Could not connect that Page.' })
+    } finally {
+      setFbManualBusy(false)
+    }
+  }
+
+  // Shared manual-connect UI — rendered in both the connected (fix a wrong/BM
+  // Page) and not-connected (OAuth surfaced nothing) states.
+  const fbManualUI = (
+    <div className="rounded-lg border border-gray-200 dark:border-white/10 p-3">
+      <button
+        type="button"
+        onClick={() => setFbManualOpen(o => !o)}
+        className="text-xs font-medium text-[#7C3AED] hover:underline"
+      >
+        {fbManualOpen ? 'Hide manual connect' : 'Can’t find your Page? Connect manually'}
+      </button>
+      {fbManualOpen && (
+        <div className="mt-3 flex flex-col gap-2">
+          <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed">
+            For Pages under a Business Manager. In Facebook <strong>Business Settings → Users → System users</strong>,
+            add a system user, assign your Page with <em>Manage Page</em> access, and click
+            <strong> Generate token</strong> (select the Page, check <em>pages_manage_posts</em> and <em>pages_read_engagement</em>).
+            Paste that token below. The Page ID is optional (needed only if the token can reach several Pages).
+          </p>
+          <input
+            type="text"
+            value={fbManualPageId}
+            onChange={e => setFbManualPageId(e.target.value)}
+            placeholder="Page ID (optional)"
+            className="input-field text-sm"
+          />
+          <textarea
+            value={fbManualToken}
+            onChange={e => setFbManualToken(e.target.value)}
+            placeholder="Paste the Page or System-User access token"
+            rows={3}
+            className="input-field text-sm font-mono"
+          />
+          {fbManualChoices && fbManualChoices.length > 0 && (
+            <div className="flex flex-col gap-1">
+              <span className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Pick the Page to connect:</span>
+              {fbManualChoices.map(p => (
+                <button
+                  key={p.id}
+                  type="button"
+                  disabled={fbManualBusy}
+                  onClick={() => connectFacebookManual(p.id)}
+                  className="text-left text-sm px-3 py-1.5 rounded-md border border-gray-200 dark:border-white/10 hover:border-[#7C3AED] disabled:opacity-50"
+                >
+                  {p.name} <span className="text-[10px] text-[#86868b]">({p.id})</span>
+                </button>
+              ))}
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => connectFacebookManual()}
+            disabled={fbManualBusy || fbManualToken.trim().length < 20}
+            className="btn-primary text-sm self-start disabled:opacity-50"
+          >
+            {fbManualBusy ? <Loader2 size={13} className="animate-spin" /> : 'Connect this Page'}
+          </button>
+        </div>
+      )}
+    </div>
+  )
 
   async function disconnectPinterest() {
     setPtDisconnecting(true)
@@ -1126,9 +1229,11 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
               <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed">
                 Wrong Page, or don’t see the one you want? Disconnect, then reconnect — and on Facebook’s
                 “What do you want to allow MVP to access?” screen tap <strong>Opt in to all</strong> (or switch ON
-                every Page you manage). All your Pages will then show here to pick from.
+                every Page you manage). Still missing? Your Page is under a Business Manager — use
+                <strong> Connect manually</strong> below.
               </p>
             )}
+            {fbManualUI}
             <button onClick={disconnectFacebook} disabled={fbDisconnecting} className="flex items-center gap-1.5 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] transition-colors self-start">
               {fbDisconnecting ? <Loader2 size={12} className="animate-spin" /> : <LogOut size={12} />} Disconnect
             </button>
@@ -1152,6 +1257,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
             <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed">
               You&apos;ll be sent to Facebook to grant access — on that screen, <strong>tick every Page</strong> you want to post to (or &ldquo;opt in to all&rdquo;). This is what lets you pick a Page per post.
             </p>
+            {isUnlocked('facebook') && fbManualUI}
           </div>
         )}
       </div>

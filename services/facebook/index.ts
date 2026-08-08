@@ -124,6 +124,59 @@ export async function subscribePageToFeed(opts: { pageId: string; pageAccessToke
   }
 }
 
+/**
+ * Manual connect escape hatch. When OAuth can't surface a Page (a Business
+ * Manager Page needs `business_management`, which Facebook drops for customers
+ * until App Review), the user pastes a token from their Business Manager instead.
+ *
+ * Accepts a USER, SYSTEM-USER, or PAGE access token (+ optional Page ID hint) and
+ * resolves the specific Page and its posting token — no OAuth Page list involved,
+ * so it works today for any Page the user administers, BM-owned or not.
+ *
+ * Throws `MULTIPLE:<json>` when the token can reach several Pages and no hint was
+ * given, so the caller can show a chooser.
+ */
+export async function resolveManualPage(
+  inputToken: string,
+  pageIdHint?: string,
+): Promise<{ pageId: string; pageName: string; pageAccessToken: string; allPages: FacebookPage[] }> {
+  const hint = (pageIdHint || '').trim() || undefined
+  // Prefer a long-lived exchange so a user token yields long-lived Page tokens.
+  // System-user / Page tokens can't be exchanged — fall back to the raw token.
+  let token = inputToken
+  try { token = await getLongLivedToken(inputToken) } catch { token = inputToken }
+
+  // Path A — the token can list Pages (user or system-user token).
+  let pages: FacebookPage[] = []
+  try { pages = await getPages(token) } catch { pages = [] }
+  if (pages.length > 0) {
+    const chosen = hint
+      ? pages.find(p => p.id === hint)
+      : (pages.length === 1 ? pages[0] : undefined)
+    if (!chosen) {
+      if (hint) throw new Error(`That token can reach ${pages.length} Page(s), but none match the Page ID you entered.`)
+      throw new Error(`MULTIPLE:${JSON.stringify(pages.map(p => ({ id: p.id, name: p.name })))}`)
+    }
+    return { pageId: chosen.id, pageName: chosen.name, pageAccessToken: chosen.access_token, allPages: pages }
+  }
+
+  // Path B — the token IS a Page token; /me returns the Page itself.
+  const meUrl = new URL(`${GRAPH}/me`)
+  meUrl.searchParams.set('fields', 'id,name')
+  meUrl.searchParams.set('access_token', inputToken)
+  const res = await fetch(meUrl.toString())
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const body: any = await res.json()
+  if (!res.ok || !body?.id) {
+    throw new Error(body?.error?.message || 'Facebook did not accept that access token. Generate a fresh Page or System-User token and try again.')
+  }
+  const page: FacebookPage = { id: String(body.id), name: body.name || 'Facebook Page', access_token: inputToken }
+  if (hint && hint !== page.id) {
+    throw new Error(`That token is for "${page.name}" (${page.id}), not the Page ID you entered.`)
+  }
+  return { pageId: page.id, pageName: page.name, pageAccessToken: inputToken, allPages: [page] }
+}
+
 export async function getPages(userToken: string): Promise<FacebookPage[]> {
   // UNION both sources rather than early-returning on the first non-empty one.
   // A creator can have some Pages on a direct role (/me/accounts) AND their real
