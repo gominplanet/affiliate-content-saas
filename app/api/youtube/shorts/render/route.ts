@@ -84,13 +84,18 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Video rendering isn\'t configured yet. Try again shortly.' }, { status: 503 })
     }
 
-    const body = await request.json().catch(() => ({})) as { shortId?: string; subtitleStyle?: string; captions?: boolean }
+    const body = await request.json().catch(() => ({})) as { shortId?: string; subtitleStyle?: string; captions?: boolean; reframe?: string; trimSilence?: boolean }
     const shortId = (body.shortId || '').trim()
     // Captions default ON; captions:false renders a clean clip (no burned text).
     const withCaptions = body.captions !== false
     if (!shortId) return NextResponse.json({ error: 'shortId is required.' }, { status: 400 })
     const style: SubtitleStyle = SUBTITLE_STYLES.includes(body.subtitleStyle as SubtitleStyle)
       ? (body.subtitleStyle as SubtitleStyle) : 'bold-white'
+    // Layout + tightening (ingest service handles both; older builds ignore them).
+    const renderOpts = {
+      reframe: body.reframe === 'split' ? 'split' as const : 'center' as const,
+      trimSilence: body.trimSilence === true,
+    }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sb = supabase as any
@@ -134,8 +139,8 @@ export async function POST(request: Request) {
     // source when present, else downloads ONLY this clip's window from YouTube.
     if (ingestConfigured()) {
       const r = hasSource
-        ? await renderShort(sourceUrl, startSec, endSec, withCaptions ? cuesWithHl : [], user.id, style)
-        : await renderShortSegment(ytId, startSec, endSec, withCaptions ? cuesWithHl : [], user.id, style)
+        ? await renderShort(sourceUrl, startSec, endSec, withCaptions ? cuesWithHl : [], user.id, style, renderOpts)
+        : await renderShortSegment(ytId, startSec, endSec, withCaptions ? cuesWithHl : [], user.id, style, renderOpts)
       if (r?.url) renderedUrl = r.url
     }
 

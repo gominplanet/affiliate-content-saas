@@ -107,6 +107,10 @@ export function ShortsStudioModal({
   const [styleById, setStyleById] = useState<Record<string, SubtitleStyle>>({})
   // Per-clip captions on/off (default on). captions off = a clean clip.
   const [captionsById, setCaptionsById] = useState<Record<string, boolean>>({})
+  // Per-clip layout ('center' default | 'split' = center-crop over full frame)
+  // and "trim silences" (cut dead air). Both handled by the render service.
+  const [layoutById, setLayoutById] = useState<Record<string, 'center' | 'split'>>({})
+  const [trimById, setTrimById] = useState<Record<string, boolean>>({})
   const [renderingId, setRenderingId] = useState<string | null>(null)
   // Publishing: a `${clipId}:ig|yt` key while a direct post is in flight, and
   // the clip whose rendered URL is being posted to TikTok (opens the modal).
@@ -195,6 +199,8 @@ export function ShortsStudioModal({
           shortId: clip.id,
           subtitleStyle: styleById[clip.id] || clip.subtitleStyle || 'bold-white',
           captions: captionsById[clip.id] !== false,
+          reframe: layoutById[clip.id] === 'split' ? 'split' : 'center',
+          trimSilence: trimById[clip.id] === true,
         }),
       })
       const data = await res.json()
@@ -211,7 +217,7 @@ export function ShortsStudioModal({
     } finally {
       setRenderingId(null)
     }
-  }, [hasSource, styleById, captionsById])
+  }, [hasSource, styleById, captionsById, layoutById, trimById])
 
   // Caption for a cross-post: the clip's caption + its hashtags, with the FTC
   // affiliate disclosure appended (ensureDisclaimer skips it if already present).
@@ -470,6 +476,30 @@ export function ShortsStudioModal({
                       >
                         {SUBTITLE_STYLES.map(s => <option key={s} value={s}>{STYLE_LABEL[s]}</option>)}
                       </select>
+                      {/* Layout: Standard = center-crop; Split = center-crop up
+                          top over the full horizontal frame below (no face
+                          tracking needed). */}
+                      <select
+                        value={layoutById[clip.id] || 'center'}
+                        onChange={e => setLayoutById(prev => ({ ...prev, [clip.id]: e.target.value as 'center' | 'split' }))}
+                        disabled={rendering}
+                        title="Video layout"
+                        className="text-[11px] rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-2 py-1 text-[#1d1d1f] dark:text-[#f5f5f7] disabled:opacity-40"
+                      >
+                        <option value="center">Standard</option>
+                        <option value="split">Split screen</option>
+                      </select>
+                      {/* Trim silences: cut dead air for a tighter, faster clip. */}
+                      <label className="inline-flex items-center gap-1.5 text-[11px] text-[#4b4b4f] dark:text-[#b0b0b5] cursor-pointer select-none" title="Cut silent gaps so the clip feels faster">
+                        <input
+                          type="checkbox"
+                          checked={trimById[clip.id] === true}
+                          onChange={e => setTrimById(prev => ({ ...prev, [clip.id]: e.target.checked }))}
+                          disabled={rendering}
+                          className="accent-[#7C3AED]"
+                        />
+                        Trim silences
+                      </label>
                       <button
                         onClick={() => renderClip(clip)}
                         disabled={rendering}
