@@ -1673,6 +1673,35 @@ function isCosmeticTitleDiff(a: string, b: string): boolean {
   return onlyA.length === 0 || onlyB.length === 0
 }
 
+// HTML → plain text for LLM analysis. Critically strips the CONTENTS of <style>
+// and <script> blocks (and HTML comments) BEFORE dropping tags — the naive
+// /<[^>]+>/g strip only removes the <style> tag itself, leaving raw CSS like
+// ".gr-verdict-box{background:#f8f9fa;…}" in the text, which pollutes the model
+// input (and the UI preview) on posts that embed a video/verdict style block.
+function htmlToPlainText(html: string, cap = 8000): string {
+  return (html || '')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, cap)
+}
+
+// A raw marketplace/Amazon listing name — a long, comma-stuffed keyword string
+// like "Cordless Vacuum Cleaner, 650W 55KPa 70Min Wireless Vacuum for Home,
+// Stick Vacuum with Green Light Anti-Tangle, Rechargeable Vacuum Cleaners…".
+// The title-vs-body check must never SUGGEST one of these as a blog title.
+function looksLikeListingName(s: string): boolean {
+  const t = (s || '').trim()
+  const commas = (t.match(/,/g) || []).length
+  const words = t.split(/\s+/).length
+  return commas >= 2 || words > 16 || t.length > 90
+}
+
 export class ClaudeService {
   private client: Anthropic
 
@@ -1930,15 +1959,9 @@ Where i, j are 1-indexed image numbers. Empty array if every pair is distinct en
     const t = (title || '').trim()
     if (!t || !bodyHtml || bodyHtml.length < 300) return title
     try {
-      // Strip HTML to plaintext + cap so the model focuses on the actual
-      // product narrative, not Gutenberg block scaffolding.
-      const plain = bodyHtml
-        .replace(/<[^>]+>/g, ' ')
-        .replace(/&nbsp;/g, ' ')
-        .replace(/&amp;/g, '&')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, 8000)
+      // Strip HTML to plaintext (incl. <style>/<script> contents) + cap so the
+      // model focuses on the actual product narrative, not block scaffolding/CSS.
+      const plain = htmlToPlainText(bodyHtml, 8000)
       const message = await this.client.messages.create({
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 200,
@@ -1956,9 +1979,12 @@ CHECK:
 THESE ARE NOT MISMATCHES — return the title UNCHANGED:
 - Adding or removing words like "Your", "The", "Best", "New".
 - Expanding/shortening the product name, fixing grammar, or improving style/clarity/specificity.
+- The title being NARROWER or more focused than the body (e.g. title highlights one feature like "Anti-Tangle" while the body covers the whole product) — that is the SAME product, NOT a swap.
 - Adding a feature the body doesn't claim.
 - The word "honest".
 When in doubt, return the title UNCHANGED. Only rewrite for a genuine different-product swap. Output ONLY the final title text.
+
+IF YOU DO REWRITE: write a clean, natural, human blog-post title (like the original's style). NEVER output a raw marketplace/Amazon listing name — that is a long, comma-stuffed keyword string (e.g. "Cordless Vacuum Cleaner, 650W 55KPa 70Min Wireless Vacuum for Home, Stick Vacuum with Green Light Anti-Tangle, Rechargeable Vacuum Cleaners for Pet Hair Car"). If the body only names the product as such a listing string, keep the ORIGINAL title unchanged instead. Keep any rewrite under ~70 characters.
 
 OUTPUT: the final title on a single line. No quotes. No JSON. No explanation.
 
@@ -1975,6 +2001,9 @@ ${plain}`,
       recordUsage({ userId: ctx?.userId, tier: ctx?.tier, feature: 'blog_factcheck_title_vs_body', model: 'claude-haiku-4-5-20251001', input: u.input, output: u.output })
       // Safety: reject obviously broken output.
       if (!out || out.length < 5 || out.length > 180 || /\n/.test(out)) return title
+      // Never "fix" a title INTO a raw marketplace listing name (comma-stuffed
+      // keyword salad) — that's not a title. Keep the original instead.
+      if (looksLikeListingName(out) && !looksLikeListingName(t)) return title
       // Deterministic convergence guard: if the model's suggestion is only a
       // COSMETIC variant of the original (same product, just added/dropped
       // descriptors or stopwords), it is NOT a product mismatch — return the
@@ -1998,13 +2027,7 @@ ${plain}`,
     ctx?: UsageCtx,
   ): Promise<string> {
     try {
-      const plain = (bodyHtml || '')
-        .replace(/<[^>]+>/g, ' ')
-        .replace(/&nbsp;/g, ' ')
-        .replace(/&amp;/g, '&')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, 4000)
+      const plain = htmlToPlainText(bodyHtml, 4000)
       const message = await this.client.messages.create({
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 80,

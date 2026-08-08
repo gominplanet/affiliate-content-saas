@@ -119,8 +119,13 @@ export async function POST(request: Request) {
           })
           const cleaned = (newTitle || '').trim()
           if (!cleaned || cleaned === p.title.trim()) return null
-          // Build a short body preview for the UI.
+          // Build a short body preview for the UI. Strip <style>/<script>
+          // contents too, so CSS from the embedded verdict/video block never
+          // leaks into the preview.
           const preview = p.content
+            .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+            .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+            .replace(/<!--[\s\S]*?-->/g, ' ')
             .replace(/<[^>]+>/g, ' ')
             .replace(/&nbsp;/g, ' ')
             .replace(/&amp;/g, '&')
