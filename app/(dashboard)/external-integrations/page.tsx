@@ -33,6 +33,15 @@ const PROVIDERS = [
     where: 'PartnerBoost → Tools → API token',
     dash: 'https://app.partnerboost.com/',
   },
+  {
+    id: 'wayward',
+    name: 'Wayward',
+    tool: 'MVP x Wayward',
+    icon: <ShoppingBag size={16} />,
+    blurb: 'Amazon Attribution network (300k+ products, 20–30% commissions). Powers MVP x Wayward — browse the catalog and mint attributed Amazon links measured back to your Wayward account.',
+    where: 'Wayward → Settings → API',
+    dash: 'https://app.wayward.com/',
+  },
 ] as const
 
 type Status = Record<string, { connected: boolean; last4: string | null; viaEnv: boolean }>
