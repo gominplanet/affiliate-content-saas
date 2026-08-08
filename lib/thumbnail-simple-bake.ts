@@ -232,7 +232,7 @@ export const NEON_BORDER_STYLE_COUNT = NEON_BORDER_STYLES.length
 // Four distinct visual emphasis shapes drawn below the text block. Picked by
 // the angle / content energy of the thumbnail, with anti-repeat so a batch of
 // 4 variants gets 4 different decorations.
-export type ThumbDecoration = 'stars' | 'check' | 'arrow' | 'speedlines' | 'none'
+export type ThumbDecoration = 'stars' | 'check' | 'arrow' | 'speedlines' | 'hot' | 'none'
 
 function starPolygonPoints(cx: number, cy: number, R: number): string {
   const r = R * 0.382
@@ -323,6 +323,21 @@ function buildDecorationSvg(
       return `<line x1="${originX.toFixed(1)}" y1="${originY.toFixed(1)}" x2="${ex}" y2="${ey}" stroke-width="${sw}" opacity="${opacity}"/>`
     })
     content = `<g stroke="#FFFFFF" stroke-linecap="round">${lines.join('')}</g>`
+
+  } else if (decoration === 'hot') {
+    // A bold flame — "hot / trending" energy. Orange body, yellow inner, thick
+    // black outline so it reads on any background (same treatment as the others).
+    const sz = Math.round(scaleBase * 0.12)
+    const bx = svgAnchor === 'start' ? anchorX : anchorX - sz
+    const by = decorationY
+    const P = (nx: number, ny: number) => `${(bx + nx * sz).toFixed(1)},${(by + ny * sz).toFixed(1)}`
+    const flame = `M ${P(0.5, 0)} C ${P(0.64, 0.2)} ${P(0.7, 0.32)} ${P(0.66, 0.46)} C ${P(0.63, 0.57)} ${P(0.8, 0.56)} ${P(0.82, 0.68)} C ${P(0.86, 0.85)} ${P(0.7, 1)} ${P(0.5, 1)} C ${P(0.3, 1)} ${P(0.14, 0.85)} ${P(0.18, 0.68)} C ${P(0.2, 0.56)} ${P(0.37, 0.57)} ${P(0.34, 0.46)} C ${P(0.3, 0.32)} ${P(0.36, 0.2)} ${P(0.5, 0)} Z`
+    const inner = `M ${P(0.5, 0.4)} C ${P(0.6, 0.52)} ${P(0.61, 0.62)} ${P(0.56, 0.72)} C ${P(0.62, 0.8)} ${P(0.55, 0.9)} ${P(0.5, 0.94)} C ${P(0.45, 0.9)} ${P(0.38, 0.8)} ${P(0.44, 0.72)} C ${P(0.39, 0.62)} ${P(0.4, 0.52)} ${P(0.5, 0.4)} Z`
+    const sw = Math.max(2, Math.round(sz * 0.08))
+    content = [
+      `<path d="${flame}" fill="#FF6A00" stroke="#000000" stroke-width="${sw}" stroke-linejoin="round" paint-order="stroke fill"/>`,
+      `<path d="${inner}" fill="#FFD400"/>`,
+    ].join('')
   }
 
   if (!content) return null
