@@ -1335,6 +1335,9 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
             <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed">
               Manage several Instagram accounts? Connect each one — you&apos;ll pick which to post to per review. Tip: on the Instagram screen, use &ldquo;Switch account&rdquo; to add a different one. The most recently connected becomes your default.
             </p>
+            <a href="/docs/instagram-restricted" target="_blank" rel="noopener noreferrer" className="text-[11px] text-[#7C3AED] hover:underline self-start">
+              Instagram blocking your posts or saying &ldquo;restricted&rdquo;? Read this →
+            </a>
           </div>
         ) : (
           isUnlocked('instagram') ? (

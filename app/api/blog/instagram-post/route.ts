@@ -19,7 +19,8 @@ import { encryptIntegrationWrite } from '@/lib/integration-secrets'
 import { resolveBlogPostId } from '@/lib/resolve-post-id'
 import { scrubBanned } from '@/lib/scrub'
 import { createAnthropicClient } from '@/lib/anthropic'
-import { publishMedia, refreshLongLivedToken } from '@/services/instagram'
+import { publishMedia, refreshLongLivedToken, getMediaCount } from '@/services/instagram'
+import { checkInstagramPace, logSocialPublish } from '@/lib/social-pace'
 import { cloudinaryConfigured, overlayCaptionOnVideo } from '@/services/cloudinary'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
@@ -276,6 +277,28 @@ Return ONLY the caption text + hashtags.`,
       })
     }
 
+    // ── Posting-pace guardrail ──────────────────────────────────────────────
+    // Instagram restricts accounts that post in fast bursts via the API (an
+    // approved app does NOT exempt users from per-account spam enforcement). Space
+    // posts out + cap per hour/day. Fails open, so it can never block a legit post
+    // when the log is empty or unavailable.
+    const pace = await checkInstagramPace(supabase, user.id)
+    if (!pace.allowed) {
+      return NextResponse.json({
+        error: pace.reason || 'Posting too fast — try again shortly.',
+        paced: true,
+        retryAfterMinutes: pace.retryAfterMinutes ?? null,
+      }, { status: 429 })
+    }
+    // Brand-new / low-activity accounts are the ones most likely to be flagged —
+    // warn (never block) so the creator knows to go easy at first. Best-effort.
+    try {
+      const mediaCount = await getMediaCount({ userId: igUserId, accessToken: igToken })
+      if (mediaCount != null && mediaCount < 10) {
+        results.warnings.push('Heads up: this Instagram account is still new (few posts). New accounts are more likely to be flagged for automated posting — post a few times manually first and keep API posts spaced out for the first couple of weeks.')
+      }
+    } catch { /* non-fatal */ }
+
     // ── Publish: video kind ─────────────────────────────────────────────────
     if (kind === 'video') {
       const m = mode as VideoMode
@@ -369,6 +392,8 @@ Return ONLY the caption text + hashtags.`,
     // Count one increment per successful publish session, regardless of
     // mode — Reel + Story together still = 1 use of the cap on this post.
     await incrementSocialCount(supabase, postId!, 'instagram')
+    // Record for pacing (one row per publish session) so the next attempt sees it.
+    await logSocialPublish(supabase, user.id, 'instagram', results.reelId || results.imagePostId || results.storyId)
     return NextResponse.json({
       ok: true,
       ...results,

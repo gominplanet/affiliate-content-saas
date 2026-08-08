@@ -164,6 +164,23 @@ export async function refreshLongLivedToken(currentToken: string): Promise<{ acc
 }
 
 /**
+ * Best-effort media_count for the connected account. A very low count means a
+ * brand-new / low-trust account, which is the profile most likely to get
+ * restricted for posting via an API. Used only to WARN the user, never to block.
+ * Returns null on any failure.
+ */
+export async function getMediaCount(opts: { userId: string; accessToken: string }): Promise<number | null> {
+  try {
+    const res = await fetch(`${GRAPH_BASE}/${GRAPH_VERSION}/${opts.userId}?fields=media_count&access_token=${encodeURIComponent(opts.accessToken)}`)
+    const data = await res.json() as { media_count?: number }
+    if (!res.ok || typeof data.media_count !== 'number') return null
+    return data.media_count
+  } catch {
+    return null
+  }
+}
+
+/**
  * Create a media container for a Reel or Story.
  * Returns the container id which we then have to poll until processing
  * finishes, before publishing.
