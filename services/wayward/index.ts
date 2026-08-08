@@ -47,6 +47,13 @@ export interface WaywardProductsPage {
   totalProducts: number
 }
 
+export interface WaywardBrand {
+  id: string
+  name: string
+  avgCommission: number | null
+  activeProductsCount: number | null
+}
+
 async function waywardFetch(path: string, token: string, init?: RequestInit, timeoutMs = 30_000) {
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), timeoutMs)
@@ -95,12 +102,14 @@ function mapProduct(p: any): WaywardProduct {
  */
 export async function getWaywardProducts(
   token: string,
-  opts: { pageNumber?: number; pageSize?: number; asin?: string } = {},
+  opts: { pageNumber?: number; pageSize?: number; asin?: string; brandId?: string } = {},
 ): Promise<WaywardProductsPage> {
   const params = new URLSearchParams()
   params.set('page_number', String(Math.max(1, opts.pageNumber || 1)))
   params.set('page_size', String(Math.min(100, Math.max(1, opts.pageSize || 25))))
   if (opts.asin) params.set('asin', opts.asin.trim())
+  // Confirmed working filter param is snake_case `brand_id` (camelCase is ignored).
+  if (opts.brandId) params.set('brand_id', opts.brandId.trim())
   const data = await waywardFetch(`/amazon-attribution/products?${params.toString()}`, token)
   const products = Array.isArray(data?.products) ? data.products.map(mapProduct) : []
   return {
@@ -126,4 +135,29 @@ export async function createWaywardLink(token: string, asin: string): Promise<{ 
   const link = asStr(data?.link)
   if (!link) throw new Error('Wayward returned no link for that ASIN.')
   return { link, linkId: asStr(data?.linkId) }
+}
+
+/**
+ * List brands the creator can earn on, with per-brand aggregates. Used to power
+ * a brand filter (pick a brand → its products) and a "top-commission brands"
+ * discovery view. The catalog products endpoint only supports pagination + an
+ * exact ASIN + brand_id, so this brand list is how creators actually narrow 326k
+ * products down.
+ */
+export async function getWaywardBrands(
+  token: string,
+  opts: { pageNumber?: number; pageSize?: number } = {},
+): Promise<{ brands: WaywardBrand[]; pageNumber: number; totalPages: number }> {
+  const params = new URLSearchParams()
+  params.set('page_number', String(Math.max(1, opts.pageNumber || 1)))
+  params.set('page_size', String(Math.min(200, Math.max(1, opts.pageSize || 100))))
+  const data = await waywardFetch(`/amazon-attribution/brands?${params.toString()}`, token)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const brands: WaywardBrand[] = Array.isArray(data?.brands) ? data.brands.map((b: any) => ({
+    id: asStr(b?.id),
+    name: asStr(b?.name),
+    avgCommission: asNum(b?.avg_commission),
+    activeProductsCount: asNum(b?.active_products_count),
+  })) : []
+  return { brands, pageNumber: asNum(data?.pageNumber) ?? 1, totalPages: asNum(data?.totalPages) ?? 1 }
 }

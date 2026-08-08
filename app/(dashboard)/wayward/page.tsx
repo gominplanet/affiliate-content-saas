@@ -1,34 +1,27 @@
 'use client'
 
-// MVP x Wayward (Labs) — browse the Wayward Amazon-Attribution catalog, mint an
-// attributed Amazon link, save finds, and generate a full blog post per product.
-// Needs your own Wayward API key connected in External Integrations.
+// MVP x Wayward (Labs) — browse the Wayward Amazon-Attribution catalog, filter by
+// brand, sort by commission, mint attributed links, save finds, and generate a
+// full blog post per product. Needs the user's Wayward API key (External
+// Integrations).
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import {
   ShoppingBag, Loader2, Search, Link2, Copy, ExternalLink, ChevronLeft, ChevronRight,
-  Bookmark, BookmarkCheck, FileText, ClipboardList,
+  Bookmark, BookmarkCheck, FileText, ClipboardList, Tag, ArrowDownWideNarrow, X,
 } from 'lucide-react'
 
 const PURPLE = '#7C3AED'
 
 interface Product {
-  productId: string
-  asin: string
-  name: string
-  brandName: string | null
-  price: number | null
-  currency: string | null
-  commissionRate: number | null
-  imageUrl: string | null
-  marketplace: string | null
-  isActive: boolean
+  productId: string; asin: string; name: string; brandName: string | null
+  price: number | null; currency: string | null; commissionRate: number | null
+  imageUrl: string | null; marketplace: string | null; isActive: boolean
 }
+interface Brand { id: string; name: string; avgCommission: number | null; activeProductsCount: number | null }
 
-// Amazon's feed hands back tiny 60px thumbs (._SS60_.); upscale the URL so the
-// card image is crisp instead of a postage stamp.
 function bigImg(u: string | null): string | null {
   if (!u) return u
   return u.replace(/\._[A-Z]{1,2}\d+_\./i, '._SL500_.')
@@ -48,12 +41,19 @@ export default function WaywardPage() {
   const [savedAsins, setSavedAsins] = useState<Set<string>>(new Set())
   const [savingAsin, setSavingAsin] = useState<string | null>(null)
   const [genAsin, setGenAsin] = useState<string | null>(null)
+  // Brand filter + sort
+  const [brands, setBrands] = useState<Brand[]>([])
+  const [brandOpen, setBrandOpen] = useState(false)
+  const [brandQuery, setBrandQuery] = useState('')
+  const [selBrand, setSelBrand] = useState<Brand | null>(null)
+  const [sortByComm, setSortByComm] = useState(false)
 
-  const load = useCallback(async (pageNumber: number, asinFilter: string) => {
+  const load = useCallback(async (pageNumber: number, asinFilter: string, brandId?: string) => {
     setLoading(true); setError(null)
     try {
       const qs = new URLSearchParams({ page: String(pageNumber), pageSize: '24' })
       if (asinFilter.trim()) qs.set('asin', asinFilter.trim())
+      if (brandId) qs.set('brandId', brandId)
       const res = await fetch(`/api/wayward/products?${qs.toString()}`)
       const data = await res.json()
       if (data.needsToken) { setNeedsToken(true); setProducts([]); return }
@@ -70,44 +70,44 @@ export default function WaywardPage() {
 
   useEffect(() => { load(1, '') }, [load])
 
-  // Load saved ASINs once so cards show the right bookmark state.
   useEffect(() => {
     fetch('/api/wayward/saved').then(r => r.json()).then(d => {
       if (d.ok && Array.isArray(d.saved)) setSavedAsins(new Set(d.saved.map((s: { asin: string }) => s.asin)))
     }).catch(() => {})
+    // Brands for the filter, sorted by highest average commission.
+    fetch('/api/wayward/brands').then(r => r.json()).then(d => {
+      if (d.ok && Array.isArray(d.brands)) {
+        setBrands([...d.brands].sort((a: Brand, b: Brand) => (b.avgCommission ?? 0) - (a.avgCommission ?? 0)))
+      }
+    }).catch(() => {})
   }, [])
+
+  function pickBrand(b: Brand | null) {
+    setSelBrand(b); setBrandOpen(false); setBrandQuery(''); setAsin('')
+    load(1, '', b?.id)
+  }
 
   async function mintLink(p: Product) {
     setLinking(p.asin)
     try {
-      const res = await fetch('/api/wayward/link', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ asin: p.asin, title: p.name }),
-      })
+      const res = await fetch('/api/wayward/link', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ asin: p.asin, title: p.name }) })
       const data = await res.json()
       if (!data.ok) throw new Error(data.error || 'Could not generate link')
       setLinks(prev => ({ ...prev, [p.asin]: data.url }))
       try { await navigator.clipboard.writeText(data.url) } catch { /* ignore */ }
       toast.success(data.cloaked ? 'Attributed link (Geniuslink) copied' : 'Attributed link copied')
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not generate link')
-    } finally { setLinking(null) }
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Could not generate link') } finally { setLinking(null) }
   }
 
   async function toggleSave(p: Product) {
-    const isSaved = savedAsins.has(p.asin)
-    setSavingAsin(p.asin)
+    const isSaved = savedAsins.has(p.asin); setSavingAsin(p.asin)
     try {
       if (isSaved) {
         await fetch(`/api/wayward/saved?asin=${encodeURIComponent(p.asin)}`, { method: 'DELETE' })
         setSavedAsins(prev => { const n = new Set(prev); n.delete(p.asin); return n })
       } else {
-        await fetch('/api/wayward/saved', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ asin: p.asin, title: p.name, brand: p.brandName, imageUrl: p.imageUrl, commissionPct: p.commissionRate, price: p.price, marketplace: p.marketplace }),
-        })
-        setSavedAsins(prev => new Set(prev).add(p.asin))
-        toast.success('Saved')
+        await fetch('/api/wayward/saved', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ asin: p.asin, title: p.name, brand: p.brandName, imageUrl: p.imageUrl, commissionPct: p.commissionRate, price: p.price, marketplace: p.marketplace }) })
+        setSavedAsins(prev => new Set(prev).add(p.asin)); toast.success('Saved')
       }
     } catch { toast.error('Could not update saved') } finally { setSavingAsin(null) }
   }
@@ -116,19 +116,18 @@ export default function WaywardPage() {
     setGenAsin(p.asin)
     toast.loading('Writing & publishing…', { id: `gen-${p.asin}` })
     try {
-      const res = await fetch('/api/wayward/generate', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ product: { asin: p.asin, title: p.name, image: p.imageUrl, price: p.price, brandName: p.brandName } }),
-      })
+      const res = await fetch('/api/wayward/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ product: { asin: p.asin, title: p.name, image: p.imageUrl, price: p.price, brandName: p.brandName } }) })
       const data = await res.json()
       if (!data.ok) throw new Error(data.error || 'Generation failed')
-      toast.success('Post published', { id: `gen-${p.asin}`, description: 'Open it in WordPress', action: data.wordpressUrl ? { label: 'View', onClick: () => window.open(data.wordpressUrl, '_blank') } : undefined })
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Generation failed', { id: `gen-${p.asin}` })
-    } finally { setGenAsin(null) }
+      toast.success('Post published', { id: `gen-${p.asin}`, action: data.wordpressUrl ? { label: 'View', onClick: () => window.open(data.wordpressUrl, '_blank') } : undefined })
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Generation failed', { id: `gen-${p.asin}` }) } finally { setGenAsin(null) }
   }
 
   const money = (p: Product) => p.price != null ? `${p.currency === 'USD' || !p.currency ? '$' : ''}${p.price}` : ''
+  const shown = sortByComm ? [...products].sort((a, b) => (b.commissionRate ?? 0) - (a.commissionRate ?? 0)) : products
+  const filteredBrands = brandQuery.trim()
+    ? brands.filter(b => b.name.toLowerCase().includes(brandQuery.trim().toLowerCase())).slice(0, 60)
+    : brands.slice(0, 60)
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6">
@@ -141,45 +140,68 @@ export default function WaywardPage() {
         </Link>
       </div>
       <p className="text-sm text-[#6e6e73] dark:text-[#a1a1a6] mb-5">
-        Browse Wayward&apos;s Amazon Attribution catalog and mint an attributed Amazon link per product — measured and paid back to your Wayward account.
+        Browse Wayward&apos;s Amazon Attribution catalog, filter by brand, and mint an attributed Amazon link per product — measured and paid back to your Wayward account.
       </p>
 
       {needsToken ? (
         <div className="rounded-xl border border-black/10 dark:border-white/10 p-6 text-center">
           <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7] mb-3">Connect your Wayward API key to use this tool.</p>
-          <Link href="/external-integrations" className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold text-white" style={{ backgroundColor: PURPLE }}>
-            <Link2 size={14} /> Connect Wayward
-          </Link>
+          <Link href="/external-integrations" className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold text-white" style={{ backgroundColor: PURPLE }}><Link2 size={14} /> Connect Wayward</Link>
           <p className="text-[11px] text-[#86868b] mt-3">Wayward → Settings → API → copy your key into External Integrations.</p>
         </div>
       ) : (
         <>
-          <form onSubmit={e => { e.preventDefault(); load(1, asin) }} className="flex items-center gap-2 mb-4">
-            <div className="relative flex-1 max-w-sm">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#86868b]" />
-              <input
-                value={asin}
-                onChange={e => setAsin(e.target.value)}
-                placeholder="Filter by ASIN (e.g. B0C8BRDVT6)"
-                className="w-full pl-9 pr-3 py-2 rounded-lg text-sm bg-[var(--surface,#fff)] border border-black/10 dark:border-white/15 text-[#1d1d1f] dark:text-[#f5f5f7] outline-none focus:border-[#7C3AED]"
-              />
-            </div>
-            <button type="submit" className="rounded-lg px-3 py-2 text-sm font-medium text-white" style={{ backgroundColor: PURPLE }}>Search</button>
-            {asin && <button type="button" onClick={() => { setAsin(''); load(1, '') }} className="text-xs text-[#86868b] hover:underline">Clear</button>}
-            <span className="ml-auto text-[11px] text-[#86868b] tabular-nums">{totalProducts.toLocaleString()} products</span>
-          </form>
+          <div className="flex items-center gap-2 mb-4 flex-wrap">
+            <form onSubmit={e => { e.preventDefault(); setSelBrand(null); load(1, asin) }} className="relative flex-1 min-w-[200px] max-w-sm flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#86868b]" />
+                <input value={asin} onChange={e => setAsin(e.target.value)} placeholder="Filter by ASIN (e.g. B0C8BRDVT6)"
+                  className="w-full pl-9 pr-3 py-2 rounded-lg text-sm bg-[var(--surface,#fff)] border border-black/10 dark:border-white/15 text-[#1d1d1f] dark:text-[#f5f5f7] outline-none focus:border-[#7C3AED]" />
+              </div>
+              <button type="submit" className="rounded-lg px-3 py-2 text-sm font-medium text-white" style={{ backgroundColor: PURPLE }}>Go</button>
+            </form>
 
+            {/* Brand filter */}
+            <div className="relative">
+              <button onClick={() => setBrandOpen(o => !o)} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm border border-black/10 dark:border-white/15 text-[#1d1d1f] dark:text-[#f5f5f7]">
+                <Tag size={13} /> {selBrand ? selBrand.name.slice(0, 22) : 'Brand'}
+                {selBrand && <X size={13} className="text-[#86868b] hover:text-[#ff3b30]" onClick={(e) => { e.stopPropagation(); pickBrand(null) }} />}
+              </button>
+              {brandOpen && (
+                <div className="absolute z-20 mt-1 w-80 max-h-96 overflow-auto rounded-xl border border-black/10 dark:border-white/15 bg-[var(--surface,#fff)] shadow-xl p-2">
+                  <input autoFocus value={brandQuery} onChange={e => setBrandQuery(e.target.value)} placeholder="Search brands…"
+                    className="w-full mb-2 px-2.5 py-1.5 text-sm rounded-lg border border-black/10 dark:border-white/15 bg-transparent outline-none focus:border-[#7C3AED]" />
+                  <p className="text-[10px] text-[#86868b] px-1 mb-1">Sorted by avg commission</p>
+                  {filteredBrands.map(b => (
+                    <button key={b.id} onClick={() => pickBrand(b)} className="w-full text-left px-2 py-1.5 rounded-lg hover:bg-black/[.04] dark:hover:bg-white/[.06] flex items-center justify-between gap-2">
+                      <span className="text-[13px] text-[#1d1d1f] dark:text-[#f5f5f7] truncate">{b.name}</span>
+                      <span className="text-[11px] shrink-0"><span className="font-semibold" style={{ color: '#1f8a3a' }}>{b.avgCommission ?? '—'}%</span> <span className="text-[#86868b]">· {b.activeProductsCount ?? 0}</span></span>
+                    </button>
+                  ))}
+                  {filteredBrands.length === 0 && <p className="text-[12px] text-[#86868b] px-2 py-2">No brands match.</p>}
+                </div>
+              )}
+            </div>
+
+            <button onClick={() => setSortByComm(s => !s)} title="Sort this page by commission"
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm border ${sortByComm ? 'border-[#7C3AED] text-[#7C3AED] bg-[#7C3AED]/5' : 'border-black/10 dark:border-white/15 text-[#1d1d1f] dark:text-[#f5f5f7]'}`}>
+              <ArrowDownWideNarrow size={13} /> Commission
+            </button>
+
+            <span className="ml-auto text-[11px] text-[#86868b] tabular-nums">{totalProducts.toLocaleString()} products</span>
+          </div>
+
+          {selBrand && <p className="text-[12px] text-[#86868b] mb-3">Showing <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">{selBrand.name}</strong> · {selBrand.avgCommission ?? '—'}% avg commission</p>}
           {error && <p className="text-sm text-[#ff3b30] mb-3">{error}</p>}
 
           {loading ? (
             <div className="flex items-center justify-center py-16 text-[#86868b]"><Loader2 className="animate-spin" /></div>
-          ) : products.length === 0 ? (
+          ) : shown.length === 0 ? (
             <p className="text-sm text-[#86868b] py-10 text-center">No products found.</p>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {products.map(p => {
-                const saved = savedAsins.has(p.asin)
-                const busyGen = genAsin === p.asin
+              {shown.map(p => {
+                const saved = savedAsins.has(p.asin); const busyGen = genAsin === p.asin
                 return (
                   <div key={p.productId} className="rounded-xl border border-black/5 dark:border-white/10 p-3 flex flex-col">
                     <div className="aspect-[4/3] rounded-lg bg-white overflow-hidden flex items-center justify-center mb-2">
@@ -199,29 +221,22 @@ export default function WaywardPage() {
                       <div className="flex gap-1.5">
                         {links[p.asin] ? (
                           <button onClick={() => { navigator.clipboard.writeText(links[p.asin]).then(() => toast.success('Copied')).catch(() => {}) }}
-                            className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-semibold text-white" style={{ backgroundColor: '#34c759' }}>
-                            <Copy size={12} /> Copy link
-                          </button>
+                            className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-semibold text-white" style={{ backgroundColor: '#34c759' }}><Copy size={12} /> Copy link</button>
                         ) : (
                           <button onClick={() => mintLink(p)} disabled={linking === p.asin}
                             className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-semibold text-white disabled:opacity-60" style={{ backgroundColor: PURPLE }}>
-                            {linking === p.asin ? <Loader2 size={12} className="animate-spin" /> : <Link2 size={12} />} Get link
-                          </button>
+                            {linking === p.asin ? <Loader2 size={12} className="animate-spin" /> : <Link2 size={12} />} Get link</button>
                         )}
                         <button onClick={() => generatePost(p)} disabled={busyGen}
                           className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-semibold border border-[#7C3AED]/40 text-[#7C3AED] hover:bg-[#7C3AED]/5 disabled:opacity-60">
-                          {busyGen ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />} {busyGen ? 'Writing…' : 'Generate post'}
-                        </button>
+                          {busyGen ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />} {busyGen ? 'Writing…' : 'Generate post'}</button>
                       </div>
                       <div className="flex gap-1.5">
                         <button onClick={() => toggleSave(p)} disabled={savingAsin === p.asin}
                           className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-medium border border-black/10 dark:border-white/15 text-[#4b4b4f] dark:text-[#b0b0b5] disabled:opacity-60">
-                          {saved ? <BookmarkCheck size={12} style={{ color: PURPLE }} /> : <Bookmark size={12} />} {saved ? 'Saved' : 'Save'}
-                        </button>
+                          {saved ? <BookmarkCheck size={12} style={{ color: PURPLE }} /> : <Bookmark size={12} />} {saved ? 'Saved' : 'Save'}</button>
                         <a href={`https://www.amazon.com/dp/${p.asin}`} target="_blank" rel="noreferrer"
-                          className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-medium border border-black/10 dark:border-white/15 text-[#4b4b4f] dark:text-[#b0b0b5]">
-                          <ExternalLink size={12} /> Visit
-                        </a>
+                          className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-medium border border-black/10 dark:border-white/15 text-[#4b4b4f] dark:text-[#b0b0b5]"><ExternalLink size={12} /> Visit</a>
                       </div>
                     </div>
                   </div>
@@ -232,15 +247,11 @@ export default function WaywardPage() {
 
           {!asin && totalPages > 1 && (
             <div className="flex items-center justify-center gap-3 mt-5 text-sm">
-              <button onClick={() => page > 1 && load(page - 1, '')} disabled={page <= 1 || loading}
-                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-black/10 dark:border-white/15 disabled:opacity-40">
-                <ChevronLeft size={14} /> Prev
-              </button>
+              <button onClick={() => page > 1 && load(page - 1, '', selBrand?.id)} disabled={page <= 1 || loading}
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-black/10 dark:border-white/15 disabled:opacity-40"><ChevronLeft size={14} /> Prev</button>
               <span className="text-[12px] text-[#86868b] tabular-nums">Page {page.toLocaleString()} / {totalPages.toLocaleString()}</span>
-              <button onClick={() => page < totalPages && load(page + 1, '')} disabled={page >= totalPages || loading}
-                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-black/10 dark:border-white/15 disabled:opacity-40">
-                Next <ChevronRight size={14} />
-              </button>
+              <button onClick={() => page < totalPages && load(page + 1, '', selBrand?.id)} disabled={page >= totalPages || loading}
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-black/10 dark:border-white/15 disabled:opacity-40">Next <ChevronRight size={14} /></button>
             </div>
           )}
         </>
