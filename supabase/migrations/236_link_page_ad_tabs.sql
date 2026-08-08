@@ -10,7 +10,7 @@
 
 ALTER TABLE link_page_items
   ADD COLUMN IF NOT EXISTS badge text,   -- e.g. "$20 Off"
-  ADD COLUMN IF NOT EXISTS code  text;   -- e.g. "Cameron20"
+  ADD COLUMN IF NOT EXISTS code  text;   -- e.g. "mvp2026"
 
 ALTER TABLE link_pages
   ADD COLUMN IF NOT EXISTS heading_stories text,
