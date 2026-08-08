@@ -66,13 +66,9 @@ $used_ids = [];
   </section>
   <?php wp_reset_postdata(); endif; ?>
 
-  <?php /* ─── Blog-wide "N reads" badge slot ───────────────────────────────
-       Explicit anchor so the plugin drops the reads badge at a known-good
-       spot (a centered band under the hero) instead of guessing the DOM and
-       landing in the Editor's Picks grid. The plugin fills this client-side
-       (cache-proof) only when the toggle is on AND total ≥ threshold; empty
-       otherwise, so it costs nothing when the feature is off. */ ?>
-  <div class="mvp-container"><div class="mvp-blog-reads-slot" style="display:flex;justify-content:center"></div></div>
+  <?php /* Blog-wide "N reads" badge now lives in the header, right under the
+       tagline (see header.php → .mvp-blog-reads-slot--header). The plugin fills
+       the first .mvp-blog-reads-slot in the DOM, which is that header one. */ ?>
 
   <?php /* ─── EDITOR'S PICKS STRIP — curated pins first, recency fills ── */ ?>
   <?php
