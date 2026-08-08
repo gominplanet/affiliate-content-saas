@@ -33,8 +33,16 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { wordpressPostId, capturedFrames } = (await request.json()) as { wordpressPostId?: number; capturedFrames?: string[] }
+  const reqBody = (await request.json()) as { wordpressPostId?: number; capturedFrames?: string[]; userImageUrls?: string[] }
+  const { wordpressPostId, capturedFrames } = reqBody
   if (!wordpressPostId) return NextResponse.json({ error: 'wordpressPostId required' }, { status: 400 })
+  // User-supplied in-article photos (up to 3). When present, we place THESE and
+  // skip AI generation entirely — same rule as the immediate generate path. This
+  // is what carries the creator's own photos onto a SCHEDULED post (the schedule
+  // flow generates with images off, then calls this route). modernday.tech ticket.
+  const userImageUrls = Array.isArray(reqBody.userImageUrls)
+    ? reqBody.userImageUrls.filter(u => typeof u === 'string' && /^https?:\/\//.test(u)).slice(0, 3)
+    : []
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: post } = await supabase
@@ -174,6 +182,38 @@ export async function POST(request: Request) {
   // Strip the existing body images so we don't duplicate, then regenerate.
   const stripped = (post.content as string).replace(/<!-- wp:image[\s\S]*?<!-- \/wp:image -->\s*/g, '')
   const words = stripped.replace(/<[^>]+>/g, ' ').split(/\s+/).filter(Boolean).length
+
+  // ── User-supplied in-article photos ───────────────────────────────────────
+  // When the creator uploaded their own photos, place THOSE (re-hosted on WP for
+  // a permanent URL) and skip every AI step. This is the path that carries a
+  // scheduled post's own photos: the schedule flow generates with images off,
+  // then the client calls this route with userImageUrls. Mirrors the immediate
+  // generate route's user-image block.
+  if (userImageUrls.length > 0) {
+    const uploaded = (await Promise.all(userImageUrls.map(async (src, i) => {
+      try {
+        const media = await wpService.uploadImageFromUrl(src, `${post.slug || 'post'}-body${i + 1}.jpg`)
+        const url = media?.source_url || src // fallback: embed the public URL directly
+        return { url, alt: `${(post.title as string) || 'product'} — photo ${i + 1}` }
+      } catch {
+        return { url: src, alt: `${(post.title as string) || 'product'} — photo ${i + 1}` }
+      }
+    }))).filter((r): r is { url: string; alt: string } => !!r?.url)
+
+    if (uploaded.length === 0) return NextResponse.json({ error: 'Could not attach your photos — try again in a moment.' }, { status: 502 })
+
+    const offsets = pickBodyImageOffsets(stripped, uploaded.length)
+    const finalContent = insertImagesAtOffsets(stripped, offsets, uploaded.map(img => gutenbergImageBlock(img.url, img.alt)))
+    try { await wpService.updatePost(wordpressPostId, { content: finalContent }) }
+    catch (err) {
+      if (isStalePostError(err)) return NextResponse.json({ error: WP_STALE_POST_MESSAGE, code: 'wp_post_deleted' }, { status: 410 })
+      return NextResponse.json({ error: `WordPress update failed: ${err instanceof Error ? err.message : 'unknown'}` }, { status: 502 })
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    try { await supabase.from('blog_posts').update({ content: finalContent, body_images_count: uploaded.length }).eq('id', post.id) } catch { /* non-fatal */ }
+    return NextResponse.json({ ok: true, count: uploaded.length, placed: offsets.length, similarPairs: [], userImages: true })
+  }
+
   // The user hitting Refresh / Re-roll Images / the auto-trigger
   // after generation has EXPLICITLY opted into images for this call.
   // Their Brand Profile "0 — text only" pref applies to the default

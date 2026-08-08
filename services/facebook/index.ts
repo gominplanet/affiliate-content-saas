@@ -137,15 +137,35 @@ export async function getPages(userToken: string): Promise<FacebookPage[]> {
   return dedupePages([...direct, ...viaBusiness])
 }
 
+// Follow Graph API cursor pagination (`paging.next`) so accounts with more Pages
+// than one response holds don't get silently truncated to the first page. Bounded
+// so a broken cursor can't loop forever. `throwOnError` distinguishes the primary
+// /me/accounts call (surface a real failure) from the best-effort business edges.
+async function fetchPagedPages(firstUrl: string, throwOnError: boolean): Promise<FacebookPage[]> {
+  const out: FacebookPage[] = []
+  let next: string | null = firstUrl
+  for (let page = 0; next && page < 20; page++) {
+    const res: Response = await fetch(next)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const body: any = await res.json()
+    if (!res.ok) {
+      if (throwOnError) throw new Error(`Failed to fetch Facebook pages: ${JSON.stringify(body)}`)
+      break
+    }
+    for (const p of (body.data ?? []) as FacebookPage[]) {
+      if (p.id && p.access_token) out.push(p)
+    }
+    next = (body.paging?.next as string | undefined) || null
+  }
+  return out
+}
+
 async function fetchMeAccounts(userToken: string): Promise<FacebookPage[]> {
   const url = new URL(`${GRAPH}/me/accounts`)
   url.searchParams.set('access_token', userToken)
   url.searchParams.set('fields', 'id,name,access_token')
   url.searchParams.set('limit', '100')
-  const res = await fetch(url.toString())
-  const body = await res.json()
-  if (!res.ok) throw new Error(`Failed to fetch Facebook pages: ${JSON.stringify(body)}`)
-  return ((body.data ?? []) as FacebookPage[]).filter((p) => p.id && p.access_token)
+  return fetchPagedPages(url.toString(), true)
 }
 
 // New Pages Experience / Business-owned pages: enumerate the user's Business
@@ -169,13 +189,7 @@ async function fetchBusinessPages(userToken: string): Promise<FacebookPage[]> {
           pUrl.searchParams.set('access_token', userToken)
           pUrl.searchParams.set('fields', 'id,name,access_token')
           pUrl.searchParams.set('limit', '100')
-          const pRes = await fetch(pUrl.toString())
-          const pBody = await pRes.json()
-          if (pRes.ok) {
-            for (const p of (pBody.data ?? []) as FacebookPage[]) {
-              if (p.id && p.access_token) out.push(p)
-            }
-          }
+          out.push(...await fetchPagedPages(pUrl.toString(), false))
         } catch { /* skip this edge — best-effort */ }
       }
     }

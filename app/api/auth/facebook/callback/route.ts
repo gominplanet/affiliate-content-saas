@@ -45,8 +45,22 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(`${setupUrl}?fb_error=no_pages&debug_token=${encodeURIComponent(longToken)}`)
     }
 
-    // Save the first page by default (user can switch in settings)
-    const page = pages[0]
+    // Pick the active page. On a RECONNECT, keep whatever page the user had
+    // already chosen if it's still in the returned list — otherwise reconnecting
+    // (which users do constantly to chase the Facebook per-Page opt-in) would
+    // silently reset them back to pages[0], undoing their pick every time. Only a
+    // first-time connect (or a selection that no longer exists) falls back to the
+    // first page. The in-app picker (Connect Socials) still lets them switch.
+    let page = pages[0]
+    try {
+      const { data: existing } = await supabase
+        .from('integrations').select('facebook_page_id').eq('user_id', user.id).maybeSingle()
+      const prevId = (existing?.facebook_page_id as string | null) || null
+      if (prevId) {
+        const kept = pages.find(p => p.id === prevId)
+        if (kept) page = kept
+      }
+    } catch { /* first connect / no row — default to pages[0] */ }
     // Encrypt access token at rest (2026-06-02). Page id/name remain
     // plaintext — they're not secrets.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
