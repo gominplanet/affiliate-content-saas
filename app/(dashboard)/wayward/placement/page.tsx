@@ -340,7 +340,7 @@ export default function PlacementBuilderPage() {
             </div>
           </div>
 
-          <a href="https://app.wayward.com/dashboard/creator/sponsorship-offers" target="_blank" rel="noreferrer"
+          <a href="https://app.wayward.com/dashboard/partnerships/sponsorship-offers" target="_blank" rel="noreferrer"
             className="self-start inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-semibold text-white mt-1" style={{ backgroundColor: PURPLE }}>
             Open Wayward → Post a placement <ExternalLink size={13} />
           </a>
