@@ -1,10 +1,11 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// External Integrations (Labs) — Pro + admin, behind the LABS password gate.
-// One place for users to connect their OWN API keys for external networks
-// (Levanta, PartnerBoost, …). Keys are stored encrypted server-side; this page
-// only ever shows a masked last-4. Adding a new provider = one entry in
-// PROVIDERS here + lib/external-keys.ts (no migration — generic table).
+// External Integrations — paid tiers. Reachable from SET UP > External
+// Integrations (under Connect Socials). One place for users to connect their OWN
+// API keys for external networks (Levanta, PartnerBoost, Wayward). Keys are
+// stored encrypted server-side; this page only ever shows a masked last-4.
+// Adding a new provider = one entry in PROVIDERS here + lib/external-keys.ts
+// (no migration — generic table).
 
 'use client'
 
