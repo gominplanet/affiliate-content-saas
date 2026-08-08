@@ -12,7 +12,7 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { Loader2, Sparkles, AlertCircle, Film, Scissors, ExternalLink, ArrowRight } from 'lucide-react'
+import { Loader2, Sparkles, AlertCircle, Film, Scissors, ExternalLink, ArrowRight, Pencil, Check } from 'lucide-react'
 import { ShortVideoUpload } from '@/components/ShortVideoUpload'
 import { InfoTip } from '@/components/ui/InfoTip'
 import { dispatchCapReached } from '@/components/CapReachedBanner'
@@ -43,7 +43,13 @@ export function ShortsCreatePanel({
   const [error, setError] = useState<string | null>(null)
   const [styleById, setStyleById] = useState<Record<string, SubtitleStyle>>({})
   const [captionsById, setCaptionsById] = useState<Record<string, boolean>>({})
+  const [layoutById, setLayoutById] = useState<Record<string, 'center' | 'split'>>({})
+  const [trimById, setTrimById] = useState<Record<string, boolean>>({})
   const [renderingId, setRenderingId] = useState<string | null>(null)
+  // In-app editor: which clip + its draft (trim/hook/caption) + saving flag.
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editDraft, setEditDraft] = useState<{ startSec: number; endSec: number; hook: string; caption: string } | null>(null)
+  const [savingEdit, setSavingEdit] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -98,6 +104,8 @@ export function ShortsCreatePanel({
           shortId: clip.id,
           subtitleStyle: styleById[clip.id] || clip.subtitleStyle || 'bold-white',
           captions: captionsById[clip.id] !== false,
+          reframe: layoutById[clip.id] === 'split' ? 'split' : 'center',
+          trimSilence: trimById[clip.id] === true,
         }),
       })
       const data = await res.json()
@@ -114,7 +122,34 @@ export function ShortsCreatePanel({
     } finally {
       setRenderingId(null)
     }
-  }, [canRender, styleById, captionsById])
+  }, [canRender, styleById, captionsById, layoutById, trimById])
+
+  function startEdit(clip: ShortRow) {
+    setEditingId(clip.id)
+    setEditDraft({ startSec: clip.startSec, endSec: clip.endSec, hook: clip.hook || '', caption: clip.caption || '' })
+  }
+  function cancelEdit() { setEditingId(null); setEditDraft(null) }
+
+  const saveEdit = useCallback(async (clipId: string) => {
+    if (!editDraft) return
+    if (!(editDraft.endSec > editDraft.startSec)) { toast.error('End must be after start.'); return }
+    setSavingEdit(true)
+    try {
+      const res = await fetch('/api/youtube/shorts/update', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shortId: clipId, ...editDraft }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Save failed')
+      if (data.short) setClips(prev => prev.map(c => (c.id === clipId ? data.short : c)))
+      setEditingId(null); setEditDraft(null)
+      toast.success('Saved. Re-render to apply.')
+    } catch (e) {
+      toast.error(errText(e))
+    } finally {
+      setSavingEdit(false)
+    }
+  }, [editDraft])
 
   return (
     <div className="space-y-4">
@@ -178,7 +213,43 @@ export function ShortsCreatePanel({
                       <span className="text-[11px] text-[#86868b] tabular-nums">{fmt(clip.startSec)}–{fmt(clip.endSec)} · {Math.round(clip.endSec - clip.startSec)}s</span>
                       {ytLink && <a href={ytLink} target="_blank" rel="noreferrer" className="text-[11px] inline-flex items-center gap-0.5 hover:underline" style={{ color: PURPLE }}><ExternalLink size={10} /> Watch moment</a>}
                     </div>
-                    {clip.hook && <p className="text-[13px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mt-1.5 line-clamp-2">{clip.hook}</p>}
+                    {editingId === clip.id && editDraft ? (
+                      <div className="mt-2 flex flex-col gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <label className="text-[11px] text-[#86868b]">Start
+                            <input type="number" step={0.5} min={0} value={editDraft.startSec}
+                              onChange={e => setEditDraft(d => d && ({ ...d, startSec: Math.max(0, Number(e.target.value) || 0) }))}
+                              className="ml-1 w-20 text-[12px] rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-2 py-1 tabular-nums" />
+                          </label>
+                          <label className="text-[11px] text-[#86868b]">End
+                            <input type="number" step={0.5} min={0} value={editDraft.endSec}
+                              onChange={e => setEditDraft(d => d && ({ ...d, endSec: Math.max(0, Number(e.target.value) || 0) }))}
+                              className="ml-1 w-20 text-[12px] rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-2 py-1 tabular-nums" />
+                          </label>
+                          <span className="text-[11px] text-[#86868b] tabular-nums">= {Math.max(0, Math.round((editDraft.endSec - editDraft.startSec) * 10) / 10)}s</span>
+                        </div>
+                        <input type="text" value={editDraft.hook} maxLength={90} placeholder="On-screen hook"
+                          onChange={e => setEditDraft(d => d && ({ ...d, hook: e.target.value }))}
+                          className="text-[13px] font-medium rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-2 py-1" />
+                        <textarea value={editDraft.caption} maxLength={600} rows={3} placeholder="Post caption"
+                          onChange={e => setEditDraft(d => d && ({ ...d, caption: e.target.value }))}
+                          className="text-[12px] rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-2 py-1" />
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => saveEdit(clip.id)} disabled={savingEdit}
+                            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[12px] font-semibold text-white disabled:opacity-60" style={{ backgroundColor: PURPLE }}>
+                            {savingEdit ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} Save
+                          </button>
+                          <button onClick={cancelEdit} disabled={savingEdit} className="text-[12px] text-[#86868b] hover:underline">Cancel</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-start gap-2 mt-1.5">
+                        {clip.hook && <p className="text-[13px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] line-clamp-2">{clip.hook}</p>}
+                        <button onClick={() => startEdit(clip)} className="text-[11px] inline-flex items-center gap-0.5 hover:underline shrink-0" style={{ color: PURPLE }} title="Edit trim, hook and caption">
+                          <Pencil size={10} /> Edit
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -196,6 +267,22 @@ export function ShortsCreatePanel({
                   >
                     {SUBTITLE_STYLES.map(s => <option key={s} value={s}>{STYLE_LABEL[s]}</option>)}
                   </select>
+                  {/* Layout: Standard center-crop, or Split (center-crop zoom on
+                      top over the full horizontal frame below). */}
+                  <select
+                    value={layoutById[clip.id] || 'center'}
+                    onChange={e => setLayoutById(prev => ({ ...prev, [clip.id]: e.target.value as 'center' | 'split' }))}
+                    disabled={rendering}
+                    title="Video layout"
+                    className="text-[11px] rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-2 py-1 text-[#1d1d1f] dark:text-[#f5f5f7] disabled:opacity-40"
+                  >
+                    <option value="center">Standard</option>
+                    <option value="split">Split screen</option>
+                  </select>
+                  <label className="inline-flex items-center gap-1.5 text-[11px] text-[#4b4b4f] dark:text-[#b0b0b5] cursor-pointer select-none" title="Cut silent gaps so the clip feels faster">
+                    <input type="checkbox" checked={trimById[clip.id] === true} onChange={e => setTrimById(prev => ({ ...prev, [clip.id]: e.target.checked }))} disabled={rendering} className="accent-[#7C3AED]" />
+                    Trim silences
+                  </label>
                   <button
                     onClick={() => renderClip(clip)}
                     disabled={rendering}
