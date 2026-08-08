@@ -431,6 +431,33 @@ export class YouTubeOAuthService {
     return Object.values(byId)
   }
 
+  // Authoritative snippet + status for specific video IDs (chunked 50/call, 1
+  // unit each). Used to refresh a possibly-stale CACHED description before the
+  // Co-Pilot queue classifies a video as "needs metadata" — the cache top-up
+  // only adds new uploads, so a description written after the initial scan never
+  // reaches the cached copy without this.
+  async getVideoMetaByIds(
+    ids: string[],
+  ): Promise<Record<string, { description: string; status: string; publishAt: string | null }>> {
+    const out: Record<string, { description: string; status: string; publishAt: string | null }> = {}
+    const uniq = [...new Set((ids || []).filter(Boolean))]
+    for (let i = 0; i < uniq.length; i += 50) {
+      const chunk = uniq.slice(i, i + 50)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data = await this.get<any>('/videos', { part: 'snippet,status', id: chunk.join(',') })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const v of (data.items ?? []) as any[]) {
+        if (!v?.id) continue
+        out[v.id] = {
+          description: (v.snippet?.description as string) ?? '',
+          status: (v.status?.privacyStatus as string) ?? 'private',
+          publishAt: (v.status?.publishAt as string) ?? null,
+        }
+      }
+    }
+    return out
+  }
+
   // Resolve the uploads playlist ID for the authenticated user.
   // Costs 1 quota unit — callers should cache the result.
   async getUploadsPlaylistId(): Promise<string> {
