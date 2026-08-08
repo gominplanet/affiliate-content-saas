@@ -16,7 +16,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { toast } from 'sonner'
-import { X, Scissors, Loader2, Sparkles, Download, ExternalLink, AlertCircle, Film, Youtube, Instagram, Music2, Check } from 'lucide-react'
+import { X, Scissors, Loader2, Sparkles, Download, ExternalLink, AlertCircle, Film, Youtube, Instagram, Music2, Check, Pencil } from 'lucide-react'
 import { ShortVideoUpload } from '@/components/ShortVideoUpload'
 import { dispatchCapReached } from '@/components/CapReachedBanner'
 import { errText } from '@/lib/err-text'
@@ -111,6 +111,11 @@ export function ShortsStudioModal({
   // and "trim silences" (cut dead air). Both handled by the render service.
   const [layoutById, setLayoutById] = useState<Record<string, 'center' | 'split'>>({})
   const [trimById, setTrimById] = useState<Record<string, boolean>>({})
+  // In-app editor: the clip being edited + its draft (trim/hook/caption), and a
+  // saving flag. Edits persist via /api/youtube/shorts/update; re-render uses them.
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editDraft, setEditDraft] = useState<{ startSec: number; endSec: number; hook: string; caption: string } | null>(null)
+  const [savingEdit, setSavingEdit] = useState(false)
   const [renderingId, setRenderingId] = useState<string | null>(null)
   // Publishing: a `${clipId}:ig|yt` key while a direct post is in flight, and
   // the clip whose rendered URL is being posted to TikTok (opens the modal).
@@ -218,6 +223,34 @@ export function ShortsStudioModal({
       setRenderingId(null)
     }
   }, [hasSource, styleById, captionsById, layoutById, trimById])
+
+  function startEdit(clip: ShortRow) {
+    setEditingId(clip.id)
+    setEditDraft({ startSec: clip.startSec, endSec: clip.endSec, hook: clip.hook || '', caption: clip.caption || '' })
+  }
+  function cancelEdit() { setEditingId(null); setEditDraft(null) }
+
+  const saveEdit = useCallback(async (clipId: string) => {
+    if (!editDraft) return
+    if (!(editDraft.endSec > editDraft.startSec)) { toast.error('End must be after start.'); return }
+    setSavingEdit(true)
+    try {
+      const res = await fetch('/api/youtube/shorts/update', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shortId: clipId, ...editDraft }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Save failed')
+      if (data.short) setClips(prev => prev.map(c => (c.id === clipId ? data.short : c)))
+      setEditingId(null); setEditDraft(null)
+      toast.success('Saved. Re-render to apply.')
+    } catch (e) {
+      toast.error(errText(e))
+    } finally {
+      setSavingEdit(false)
+    }
+  }, [editDraft])
 
   // Caption for a cross-post: the clip's caption + its hashtags, with the FTC
   // affiliate disclosure appended (ensureDisclaimer skips it if already present).
@@ -434,8 +467,46 @@ export function ShortsStudioModal({
                             )
                           })()}
                         </div>
-                        <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mt-1.5">{clip.hook || 'Untitled clip'}</p>
-                        {clip.caption && <p className="text-[12px] text-[#4b4b4f] dark:text-[#b0b0b5] mt-1">{clip.caption}</p>}
+                        {editingId === clip.id && editDraft ? (
+                          <div className="mt-2 flex flex-col gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <label className="text-[11px] text-[#86868b]">Start
+                                <input type="number" step={0.5} min={0} value={editDraft.startSec}
+                                  onChange={e => setEditDraft(d => d && ({ ...d, startSec: Math.max(0, Number(e.target.value) || 0) }))}
+                                  className="ml-1 w-20 text-[12px] rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-2 py-1 tabular-nums" />
+                              </label>
+                              <label className="text-[11px] text-[#86868b]">End
+                                <input type="number" step={0.5} min={0} value={editDraft.endSec}
+                                  onChange={e => setEditDraft(d => d && ({ ...d, endSec: Math.max(0, Number(e.target.value) || 0) }))}
+                                  className="ml-1 w-20 text-[12px] rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-2 py-1 tabular-nums" />
+                              </label>
+                              <span className="text-[11px] text-[#86868b] tabular-nums">= {Math.max(0, Math.round((editDraft.endSec - editDraft.startSec) * 10) / 10)}s</span>
+                            </div>
+                            <input type="text" value={editDraft.hook} maxLength={90} placeholder="On-screen hook"
+                              onChange={e => setEditDraft(d => d && ({ ...d, hook: e.target.value }))}
+                              className="text-sm font-semibold rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-2 py-1" />
+                            <textarea value={editDraft.caption} maxLength={600} rows={3} placeholder="Post caption"
+                              onChange={e => setEditDraft(d => d && ({ ...d, caption: e.target.value }))}
+                              className="text-[12px] rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-2 py-1" />
+                            <div className="flex items-center gap-2">
+                              <button onClick={() => saveEdit(clip.id)} disabled={savingEdit}
+                                className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[12px] font-semibold text-white disabled:opacity-60" style={{ backgroundColor: PURPLE }}>
+                                {savingEdit ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} Save
+                              </button>
+                              <button onClick={cancelEdit} disabled={savingEdit} className="text-[12px] text-[#86868b] hover:underline">Cancel</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="flex items-center gap-2 mt-1.5">
+                              <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{clip.hook || 'Untitled clip'}</p>
+                              <button onClick={() => startEdit(clip)} className="text-[11px] inline-flex items-center gap-0.5 hover:underline shrink-0" style={{ color: PURPLE }} title="Edit trim, hook and caption">
+                                <Pencil size={10} /> Edit
+                              </button>
+                            </div>
+                            {clip.caption && <p className="text-[12px] text-[#4b4b4f] dark:text-[#b0b0b5] mt-1">{clip.caption}</p>}
+                          </>
+                        )}
                         {clip.reason && <p className="text-[11px] italic text-[#86868b] mt-1">{clip.reason}</p>}
                         {clip.hashtags?.length > 0 && (
                           <p className="text-[11px] mt-1" style={{ color: PURPLE }}>{clip.hashtags.join(' ')}</p>
