@@ -119,7 +119,11 @@ reviewed change rather than an unattended edit. Each has file:line + the fix.
 > reserved atomically per call so parallelism is safe.
 - `lib/deal-social-publish.ts:92` `for…await` per platform (~24s for 6). Fix: `Promise.all` the per-platform blocks after the single up-front reads (pre-check the X cap once before fan-out).
 
-### P4/P5. Redundant `integrations`/`brand_profiles` reads on hot generation paths
+### P4/P5. Redundant `integrations`/`brand_profiles` reads on hot generation paths — ⏭ WON'T-DO (marginal)
+> Assessed: the "redundant" reads are single-row indexed lookups (sub-ms) and the
+> only true dedup (POST's integrations read + checkGenerationLimit's internal read)
+> lives inside a shared billing gate used by 10 callers. Churning that gate for
+> sub-ms savings on non-hot routes carries more risk than value; left as-is.
 - `app/api/deals/route.ts:333` re-reads integrations (also inside `checkGenerationLimit`, `lib/tier.ts:883`); `brand_profiles` read twice (`:159`, `:588`). The gate helpers (`lib/tier.ts:641/737/805/883`) each re-read the tier row. Fix: resolve `{tier, period_start, period_end}` + the brand row once per request and pass down.
 
 ---
