@@ -12,7 +12,18 @@ export const BORDER_NAMES = [
 // Common title-accent colours. First = the current default (yellow).
 const ACCENT_SWATCHES = ['#FFE034', '#FFFFFF', '#FF3B3B', '#39FF14', '#33B5FF', '#FF8A00', '#A020F0']
 
-interface SavedStyle { borderStyleIndex: number | null; accentColor: string | null; face: string | null; noCheck?: boolean }
+interface SavedStyle { borderStyleIndex: number | null; accentColor: string | null; face: string | null; noCheck?: boolean; decoration?: string }
+
+// Badge options for the thumbnail generator (single-select; 'auto' = MVP picks).
+const BADGE_OPTIONS: Array<{ v: string; label: string }> = [
+  { v: 'auto', label: 'Auto — MVP picks' },
+  { v: 'check', label: '✓ Green check' },
+  { v: 'stars', label: '★★★★★ Five gold stars' },
+  { v: 'hot', label: '🔥 Hot / trending' },
+  { v: 'arrow', label: '→ Red arrow' },
+  { v: 'speedlines', label: 'Speed lines' },
+  { v: 'none', label: 'No badge' },
+]
 
 // The parent's selectedFaceModelId uses null(off) | 'no-human'(product) | <uuid>.
 // The saved API uses                    'off'      | 'product'          | <uuid>.
@@ -44,6 +55,7 @@ export default function BrandStylePanel({
   accentColor,
   setAccentColor,
   setNoCheck: setParentNoCheck,
+  setDecoration: setParentDecoration,
   disabled,
 }: {
   faceModels: Array<{ id: string; name: string }>
@@ -56,6 +68,8 @@ export default function BrandStylePanel({
   /** Optional: mirror the saved hide-checkmark flag up to a parent that renders
    *  its own visible toggle (the co-pilot page mounts this panel hidden). */
   setNoCheck?: (v: boolean) => void
+  /** Optional: mirror the saved badge preference up to the parent's dropdown. */
+  setDecoration?: (v: string) => void
   disabled?: boolean
 }) {
   const [hasSaved, setHasSaved] = useState(false)
@@ -63,6 +77,8 @@ export default function BrandStylePanel({
   // Hide the green ✓ checkmark decoration on generated thumbnails. Persisted
   // with the brand style and enforced server-side by generate-thumbnail.
   const [noCheck, setNoCheck] = useState(false)
+  // Brand badge preference ('auto' | 'none' | a specific badge).
+  const [decoration, setDecoration] = useState<string>('auto')
 
   // Prefill the block from the saved default once on mount.
   useEffect(() => {
@@ -77,6 +93,7 @@ export default function BrandStylePanel({
           if (d.style.accentColor) setAccentColor(d.style.accentColor)
           if (d.style.face) setSelectedFaceModelId(savedToFace(d.style.face))
           if (typeof d.style.noCheck === 'boolean') { setNoCheck(d.style.noCheck); setParentNoCheck?.(d.style.noCheck) }
+          if (typeof d.style.decoration === 'string') { setDecoration(d.style.decoration); setParentDecoration?.(d.style.decoration) }
         }
       } catch { /* ignore — block just keeps its defaults */ }
     })()
@@ -90,7 +107,7 @@ export default function BrandStylePanel({
       const r = await fetch('/api/youtube/thumbnail-style', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ borderStyleIndex: borderIndex, accentColor, face: faceToSaved(selectedFaceModelId), noCheck }),
+        body: JSON.stringify({ borderStyleIndex: borderIndex, accentColor, face: faceToSaved(selectedFaceModelId), noCheck, decoration }),
       })
       if (!r.ok) {
         const e = await r.json().catch(() => ({})) as { error?: string }
@@ -199,10 +216,23 @@ export default function BrandStylePanel({
           </div>
         </div>
 
-        <label className="flex items-center gap-1.5 cursor-pointer" title="Never draw the green ✓ checkmark badge on your generated thumbnails">
-          <input type="checkbox" checked={noCheck} onChange={e => setNoCheck(e.target.checked)} disabled={disabled} className="accent-[#7C3AED]" />
-          <span className="text-[11px] text-[#86868b]">Hide ✓ checkmark</span>
-        </label>
+        <div className="flex items-center gap-1.5" title="Pick one badge to force on every thumbnail, Auto to let MVP choose, or No badge">
+          <span className="text-[11px] text-[#86868b] whitespace-nowrap">Badge</span>
+          <select
+            value={decoration}
+            disabled={disabled}
+            onChange={e => {
+              const v = e.target.value
+              setDecoration(v)
+              setParentDecoration?.(v)
+              const nc = v === 'none' || (v !== 'auto' && v !== 'check')
+              setNoCheck(nc); setParentNoCheck?.(nc)
+            }}
+            className="text-[11px] px-2 py-1 rounded-md border border-gray-300 dark:border-white/20 bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7]"
+          >
+            {BADGE_OPTIONS.map(o => <option key={o.v} value={o.v}>{o.label}</option>)}
+          </select>
+        </div>
       </div>
     </div>
   )

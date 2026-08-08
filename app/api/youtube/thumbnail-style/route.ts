@@ -23,8 +23,15 @@ interface BrandThumbStyle {
   // (no human) · or a face_models.id for a specific likeness.
   face: string | null
   // When true, the generator never draws the green ✓ checkmark decoration.
+  // (Legacy on/off toggle — superseded by `decoration` but still honored.)
   noCheck?: boolean
+  // Brand badge preference: 'auto' (model picks per thumbnail) · 'none' (never)
+  // · a specific badge forced on every thumbnail.
+  decoration?: ThumbDecoration
 }
+
+type ThumbDecoration = 'auto' | 'none' | 'check' | 'stars' | 'arrow' | 'speedlines' | 'hot'
+const DECORATIONS = new Set<ThumbDecoration>(['auto', 'none', 'check', 'stars', 'arrow', 'speedlines', 'hot'])
 
 const HEX_RE = /^#[0-9a-fA-F]{6}$/
 const UUID_RE = /^[0-9a-fA-F-]{36}$/
@@ -55,10 +62,38 @@ export async function POST(request: Request) {
     accentColor?: string | null
     face?: string | null
     noCheck?: boolean
+    decoration?: ThumbDecoration
     /** Flip ONLY the hide-checkmark flag, preserving the rest of the saved
      *  style (so the co-pilot toggle can't wipe border/accent/face). */
     patchNoCheck?: boolean
+    /** Set ONLY the badge preference, preserving the rest of the saved style
+     *  (the co-pilot badge dropdown). */
+    patchDecoration?: ThumbDecoration
     clear?: boolean
+  }
+
+  // Partial update: just the badge preference, merged into the existing style.
+  if (typeof body.patchDecoration === 'string') {
+    if (!DECORATIONS.has(body.patchDecoration)) {
+      return NextResponse.json({ error: 'invalid decoration' }, { status: 400 })
+    }
+    const { data: cur } = await supabase
+      .from('brand_profiles').select('thumbnail_brand_style').eq('user_id', user.id).maybeSingle()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const existing = ((cur as any)?.thumbnail_brand_style as BrandThumbStyle | null)
+      ?? { borderStyleIndex: null, accentColor: null, face: null }
+    // Keep legacy noCheck consistent so old readers behave: forcing/allowing the
+    // check clears the old opt-out; any other explicit badge implies no check.
+    const merged: BrandThumbStyle = {
+      ...existing,
+      decoration: body.patchDecoration,
+      noCheck: body.patchDecoration === 'none' || (body.patchDecoration !== 'auto' && body.patchDecoration !== 'check'),
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (supabase as any)
+      .from('brand_profiles').update({ thumbnail_brand_style: merged }).eq('user_id', user.id)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ ok: true, style: merged })
   }
 
   // Partial update: just the hide-checkmark flag, merged into the existing style.
@@ -125,7 +160,12 @@ export async function POST(request: Request) {
     }
   }
 
-  const style: BrandThumbStyle = { borderStyleIndex, accentColor, face, noCheck: !!body.noCheck }
+  const decoration: ThumbDecoration = (typeof body.decoration === 'string' && DECORATIONS.has(body.decoration)) ? body.decoration : 'auto'
+  const style: BrandThumbStyle = {
+    borderStyleIndex, accentColor, face, decoration,
+    // Keep legacy noCheck in sync for any old reader.
+    noCheck: decoration === 'none' || (decoration !== 'auto' && decoration !== 'check') || !!body.noCheck,
+  }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (supabase as any)
     .from('brand_profiles')

@@ -608,6 +608,9 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
   // Hide the green ✓ checkmark decoration. Prefilled from the saved style (via
   // the hidden BrandStylePanel), persisted on toggle, enforced by generate-thumbnail.
   const [noCheck, setNoCheck] = useState(false)
+  // Brand badge preference — 'auto' lets MVP pick, or force one badge (or none)
+  // on every thumbnail. Prefilled from the saved style, persisted on change.
+  const [badge, setBadge] = useState<string>('auto')
   // 'auto' = vision-match from all ready models; 'no-human' = product-only; any other string = specific model id
   const [scoutFaceSelection, setScoutFaceSelection] = useState<'auto' | 'no-human' | string>('auto')
   /** Which thumbnail mode card is active. Drives the 4-card picker UI.
@@ -2373,27 +2376,37 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                     </select>
                   </div>
 
-                  {/* Hide the green ✓ checkmark decoration — persists per-user,
-                      enforced server-side on every generation. */}
-                  <label className="flex items-center gap-2 cursor-pointer mt-2" title="Turn off the green ✓ badge MVP adds to some thumbnails">
-                    <input
-                      type="checkbox"
-                      checked={noCheck}
+                  {/* Badge on my thumbnails — one badge (or none) forced on every
+                      generation, or Auto to let MVP pick. Persists per-user,
+                      enforced server-side. */}
+                  <div className="mt-2">
+                    <label className="text-[10px] font-semibold text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide block mb-1.5">Badge on my thumbnails</label>
+                    <select
+                      value={badge}
                       disabled={generatingThumbnail}
                       onChange={async (e) => {
-                        const v = e.target.checked
-                        setNoCheck(v)
+                        const v = e.target.value
+                        setBadge(v)
+                        setNoCheck(v === 'none' || (v !== 'auto' && v !== 'check')) // keep legacy flag consistent
                         try {
                           await fetch('/api/youtube/thumbnail-style', {
                             method: 'POST', headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ patchNoCheck: v }),
+                            body: JSON.stringify({ patchDecoration: v }),
                           })
                         } catch { /* best-effort */ }
                       }}
-                      className="accent-[#7C3AED]"
-                    />
-                    <span className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Hide the green ✓ checkmark on my thumbnails</span>
-                  </label>
+                      className="w-full text-xs px-3 py-2 rounded-lg border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] focus:outline-none focus:border-[#7C3AED] transition"
+                    >
+                      <option value="auto">Auto — let MVP pick the best badge</option>
+                      <option value="check">✓ Green check</option>
+                      <option value="stars">★★★★★ Five gold stars</option>
+                      <option value="hot">🔥 Hot / trending</option>
+                      <option value="arrow">→ Red arrow</option>
+                      <option value="speedlines">Speed lines</option>
+                      <option value="none">No badge</option>
+                    </select>
+                    <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-1">One badge on every thumbnail, or Auto to vary it. Pick “No badge” for none.</p>
+                  </div>
 
                   {/* BrandStylePanel mounted hidden — fires its saved-defaults useEffect on mount */}
                   <div className="hidden">
@@ -2406,6 +2419,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                       accentColor={accentColor}
                       setAccentColor={setAccentColor}
                       setNoCheck={setNoCheck}
+                      setDecoration={setBadge}
                       disabled={generatingThumbnail}
                     />
                   </div>

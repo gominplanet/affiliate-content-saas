@@ -311,7 +311,7 @@ function parseOneCopy(raw: string, fallbackAngle: CtrAngle): ThumbCopy {
       const line1 = scrubBanned(String(o.line1 || '').trim()).toUpperCase().slice(0, 16)
       const line2 = scrubBanned(String(o.line2 || '').trim()).toUpperCase().slice(0, 22)
       const emphasis = scrubBanned(String(o.emphasisWord || '').trim()).toUpperCase()
-      const VALID_DECORATIONS = new Set<ThumbDecoration>(['stars', 'check', 'arrow', 'speedlines', 'none'])
+      const VALID_DECORATIONS = new Set<ThumbDecoration>(['stars', 'check', 'arrow', 'speedlines', 'hot', 'none'])
       const decoration = VALID_DECORATIONS.has(o.decoration as ThumbDecoration) ? (o.decoration as ThumbDecoration) : undefined
       if (line1 && line2) return { angle, line1, line2, emphasisWord: emphasis || line1.split(' ')[0], decoration }
     } catch { /* fall through */ }
@@ -695,16 +695,25 @@ export async function POST(request: Request) {
     const tier = normalizeTier(tierRow?.tier)
     TELEMETRY = { userId: user.id, tier }
 
-    // Per-user "hide the green ✓ checkmark decoration" preference (Thumbnail
-    // style → Save as my default). Enforced in the decoration loop below, so a
-    // saved opt-out can't be bypassed by what the client sends.
+    // Per-user thumbnail badge preference (Thumbnail style → Save as my default).
+    // `decoration`: 'auto' (or unset) → let the model/angle pick per thumbnail;
+    // 'none' → never draw one; a specific badge ('check'|'stars'|'arrow'|
+    // 'speedlines'|'hot') → force THAT badge on every thumbnail. Legacy `noCheck`
+    // (the old on/off toggle) still suppresses the green check under 'auto'.
+    // Enforced in the decoration loop below so it can't be bypassed client-side.
     let noCheckDecoration = false
+    let forcedDecoration: ThumbDecoration | null = null
     try {
       const { data: bp } = await supabase
         .from('brand_profiles').select('thumbnail_brand_style').eq('user_id', user.id).maybeSingle()
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      noCheckDecoration = !!((bp as any)?.thumbnail_brand_style?.noCheck)
-    } catch { /* default: decorations on */ }
+      const bs = (bp as any)?.thumbnail_brand_style || {}
+      noCheckDecoration = !!bs.noCheck
+      const FORCEABLE = new Set<ThumbDecoration>(['check', 'stars', 'arrow', 'speedlines', 'hot', 'none'])
+      if (typeof bs.decoration === 'string' && bs.decoration !== 'auto' && FORCEABLE.has(bs.decoration as ThumbDecoration)) {
+        forcedDecoration = bs.decoration as ThumbDecoration
+      }
+    } catch { /* default: decorations on, model picks */ }
 
     // Monthly AI-spend circuit breaker — thumbnails generate nano-banana-pro
     // images ($0.13 each), an unbounded vector for admin (no thumbnail cap).
@@ -1444,6 +1453,10 @@ export async function POST(request: Request) {
           // variety — the 4-angle rotation produces 4 different defaults).
           const usedDecorations = new Set<ThumbDecoration>()
           const copyVariants: ThumbCopy[] = rawVariants.map((c) => {
+            // Forced brand badge — the creator picked ONE badge (or 'none') as
+            // their default, so every variant gets exactly that, overriding the
+            // model/angle pick and the per-batch variety rule.
+            if (forcedDecoration) return { ...c, decoration: forcedDecoration }
             let preferred = c.decoration ?? ANGLE_DECORATION[c.angle]
             // User opted out of the green ✓ — never let 'check' through.
             if (noCheckDecoration && preferred === 'check') preferred = 'none'
