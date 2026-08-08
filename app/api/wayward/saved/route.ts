@@ -20,6 +20,7 @@ export async function GET() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
     .from('cc_saved_finds').select(COLS)
+    .eq('user_id', user.id) // defense-in-depth (RLS also scopes this)
     .eq('source', 'wayward')
     .order('created_at', { ascending: false }).limit(500)
   if (error) return NextResponse.json({ ok: false, error: error.message, saved: [] }, { status: 200 })
@@ -66,7 +67,7 @@ export async function DELETE(request: Request) {
   const asin = (url.searchParams.get('asin') || '').toUpperCase()
   if (!id && !asin) return NextResponse.json({ error: 'id or asin required' }, { status: 400 })
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let q = (supabase as any).from('cc_saved_finds').delete().eq('source', 'wayward')
+  let q = (supabase as any).from('cc_saved_finds').delete().eq('user_id', user.id).eq('source', 'wayward')
   q = id ? q.eq('id', id) : q.eq('asin', asin)
   const { error } = await q
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })

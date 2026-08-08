@@ -106,15 +106,17 @@ export async function POST(request: Request) {
   if (body.avatar_url !== undefined) patch.avatar_url = (body.avatar_url || '').trim() || null
   if (body.theme !== undefined) patch.theme = themeFor(body.theme).key
   if (body.published !== undefined) patch.published = !!body.published
-  // Custom main CTA button.
+  // Custom main CTA button. cta_url renders as a raw <a href> on the PUBLIC
+  // shop page, so it MUST be scheme-sanitized — safeUrl() forces http(s) and
+  // neutralizes javascript:/data: (stored-XSS guard).
   if (body.cta_label !== undefined) patch.cta_label = (body.cta_label || '').slice(0, 60) || null
-  if (body.cta_url !== undefined) patch.cta_url = (body.cta_url || '').trim().slice(0, 1000) || null
+  if (body.cta_url !== undefined) patch.cta_url = safeUrl(body.cta_url) || null
   // Optional advertisement insert.
   if (body.ad_enabled !== undefined) patch.ad_enabled = !!body.ad_enabled
-  if (body.ad_image_url !== undefined) patch.ad_image_url = (body.ad_image_url || '').trim().slice(0, 1000) || null
+  if (body.ad_image_url !== undefined) patch.ad_image_url = safeUrl(body.ad_image_url) || null
   if (body.ad_title !== undefined) patch.ad_title = (body.ad_title || '').slice(0, 80) || null
   if (body.ad_subtitle !== undefined) patch.ad_subtitle = (body.ad_subtitle || '').slice(0, 140) || null
-  if (body.ad_url !== undefined) patch.ad_url = (body.ad_url || '').trim().slice(0, 1000) || null
+  if (body.ad_url !== undefined) patch.ad_url = safeUrl(body.ad_url) || null
   // Editable section headings (blank → renderer default).
   if (body.heading_stories !== undefined) patch.heading_stories = (body.heading_stories || '').slice(0, 80) || null
   if (body.heading_ads !== undefined) patch.heading_ads = (body.heading_ads || '').slice(0, 80) || null
@@ -150,6 +152,15 @@ export async function POST(request: Request) {
     }
     return NextResponse.json({ error: msg }, { status: 500 })
   }
+}
+
+// Force a user-supplied URL to http(s). Anything without an http(s) scheme
+// (javascript:, data:, vbscript:, …) gets "https://" prepended, which renders
+// it inert as a link target. Empty stays empty. Matches items/route.ts cleanUrl.
+function safeUrl(v: unknown): string {
+  const t = (v == null ? '' : String(v)).trim().slice(0, 1000)
+  if (!t) return ''
+  return /^https?:\/\//i.test(t) ? t : `https://${t.replace(/^\/+/, '')}`
 }
 
 function errMessage(err: unknown): string {

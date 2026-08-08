@@ -113,7 +113,7 @@ export default function ExternalIntegrationsPage() {
         <div className="rounded-xl border p-4 mb-4 flex items-start gap-3"
           style={{ background: 'rgba(245,158,11,0.10)', borderColor: 'rgba(245,158,11,0.40)' }}>
           <Lock size={16} className="flex-shrink-0 mt-0.5" style={{ color: '#f59e0b' }} />
-          <p className="text-[13px]" style={{ color: 'var(--text)' }}>External Integrations are a <strong>Pro</strong> feature.</p>
+          <p className="text-[13px]" style={{ color: 'var(--text)' }}>External Integrations are available on <strong>paid plans</strong>.</p>
         </div>
       )}
 

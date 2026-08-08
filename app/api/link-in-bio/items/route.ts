@@ -113,7 +113,7 @@ export async function PATCH(request: Request) {
 
   // Reorder: write new positions in the given order.
   if (Array.isArray(body.order)) {
-    const ids = body.order.filter((x) => typeof x === 'string')
+    const ids = body.order.filter((x) => typeof x === 'string').slice(0, 200) // clamp: no unbounded fan-out
     await Promise.all(ids.map((id, i) =>
       sb.from('link_page_items').update({ position: i }).eq('id', id).eq('user_id', user.id)))
     return NextResponse.json({ ok: true })
