@@ -1,0 +1,242 @@
+/**
+ * POST /api/wayward/generate — turn ONE Wayward product (an Amazon ASIN) into a
+ * published WordPress post. Mirrors the Levanta generate pipeline:
+ *   1. mint a Wayward attributed link for the ASIN,
+ *   2. enrich the ASIN via the Amazon scraper (title/bullets/desc/imgs),
+ *   3. light research brief (scrape-only fallback),
+ *   4. campaign writer (Opus) → scrub → WordPress publish,
+ *   5. vision-picked hero + CTA image, inline affiliate links.
+ * Geniuslink cloaks the Wayward link when the user has creds.
+ *
+ * Body: { product: { asin, title?, image?, price?, category?, brandName? }, draft?: boolean }
+ */
+import { NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
+import { createServerClient } from '@/lib/supabase/server'
+import { getWordPressCredentials } from '@/lib/wordpress-sites'
+import { fetchWpProxySecret } from '@/lib/wp-proxy'
+import { createWordPressService } from '@/services/wordpress'
+import { createClaudeService, type BrandProfile } from '@/services/claude'
+import { createGeniuslinkService } from '@/services/geniuslink'
+import { createWaywardLink } from '@/services/wayward'
+import { getExternalKey } from '@/lib/external-keys'
+import { fetchAmazonProduct, isValidAsin, type AmazonProduct } from '@/services/amazon'
+import { researchProduct } from '@/services/research'
+import { rebuildCtaCard } from '@/lib/cta-thumb'
+import { injectInlineAffiliateLinks } from '@/lib/inline-affiliate'
+import { buildCampaignHero } from '@/lib/hero-image'
+import { pickProductReferenceImage } from '@/lib/product-image'
+import { scrubBanned } from '@/lib/scrub'
+import { spendGate } from '@/lib/ai-spend'
+import { type Tier } from '@/lib/tier'
+import { freeTierGenerationBlock } from '@/lib/free-tier-gate'
+
+export const dynamic = 'force-dynamic'
+export const maxDuration = 300
+
+interface WaywardProductInput {
+  asin?: string
+  title?: string
+  image?: string | null
+  price?: number | string | null
+  category?: string | null
+  brandName?: string | null
+}
+
+function slugify(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 70)
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const supabase = await createServerClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
+
+    const { data: intRow } = await supabase
+      .from('integrations')
+      .select('tier,geniuslink_api_key,geniuslink_api_secret')
+      .eq('user_id', user.id)
+      .maybeSingle()
+    const tier = (intRow?.tier as Tier) ?? 'trial'
+    const contentBlock = await freeTierGenerationBlock(supabase, user.id, tier)
+    if (contentBlock) return NextResponse.json({ ok: false, error: contentBlock }, { status: 403 })
+
+    const gate = await spendGate(user.id, tier)
+    if (gate) return gate
+
+    const token = await getExternalKey(supabase, user.id, 'wayward')
+    if (!token) {
+      return NextResponse.json({ ok: false, error: 'Connect your Wayward API key in External Integrations.' }, { status: 400 })
+    }
+
+    const body = await request.json() as { product?: WaywardProductInput; draft?: boolean }
+    const p = body.product || {}
+    const asin = (p.asin || '').trim()
+    if (!asin || !isValidAsin(asin)) {
+      return NextResponse.json({ ok: false, error: 'A valid Amazon ASIN is required.' }, { status: 400 })
+    }
+
+    // ── WordPress creds ──────────────────────────────────────────────────────
+    const wpCreds = await getWordPressCredentials(supabase, user.id)
+    if (!wpCreds?.wordpress_url || !wpCreds?.wordpress_username || !wpCreds?.wordpress_app_password) {
+      return NextResponse.json({ ok: false, error: 'Connect a WordPress site first (Set up → WordPress).' }, { status: 400 })
+    }
+    let proxyToken = wpCreds.wordpress_api_token || undefined
+    try {
+      const liveSecret = await fetchWpProxySecret({
+        siteUrl: wpCreds.wordpress_url, username: wpCreds.wordpress_username, appPassword: wpCreds.wordpress_app_password,
+      })
+      if (liveSecret) proxyToken = liveSecret
+    } catch { /* non-fatal */ }
+    const wpService = createWordPressService(
+      wpCreds.wordpress_url, wpCreds.wordpress_username, wpCreds.wordpress_app_password, proxyToken,
+    )
+
+    // ── Brand profile ────────────────────────────────────────────────────────
+    const { data: brandRow } = await supabase
+      .from('brand_profiles').select('*').eq('user_id', user.id).maybeSingle()
+    if (!brandRow) {
+      return NextResponse.json({ ok: false, error: 'Set up your Brand Profile first (Set up → Brand Profile).' }, { status: 400 })
+    }
+    const brand = brandRow as unknown as BrandProfile
+
+    // ── Enrich the ASIN via the Amazon scraper ───────────────────────────────
+    let amz: AmazonProduct | null = null
+    try { amz = await fetchAmazonProduct(asin) } catch { amz = null }
+    const effTitle = amz?.title || p.title || asin
+    const effDescription = amz?.description || ''
+    const effBullets = amz?.bullets ?? []
+    const effRating = amz?.rating || null
+    const priceDisplay = amz?.price || (p.price != null && p.price !== '' ? `$${String(p.price).replace(/^\$/, '')}` : null)
+
+    // ── Wayward attributed link → Geniuslink cloak (optional) ────────────────
+    let affiliateUrl = ''
+    let linkSource: 'wayward' | 'bare_url' = 'bare_url'
+    try {
+      const { link } = await createWaywardLink(token, asin)
+      if (link) { affiliateUrl = link; linkSource = 'wayward' }
+    } catch { /* fall back to the bare Amazon URL (un-monetized — flagged) */ }
+    if (!affiliateUrl) affiliateUrl = `https://www.amazon.com/dp/${asin}`
+    let cloaked = false
+    if (intRow?.geniuslink_api_key && intRow?.geniuslink_api_secret) {
+      try {
+        const genius = createGeniuslinkService(intRow.geniuslink_api_key, intRow.geniuslink_api_secret)
+        const { url } = await genius.createLinkWithCode(affiliateUrl, effTitle.slice(0, 80))
+        if (url) { affiliateUrl = url; cloaked = true }
+      } catch { /* non-fatal */ }
+    }
+
+    // ── Research brief ───────────────────────────────────────────────────────
+    let researchBrief = [
+      `Product: ${effTitle}`,
+      p.brandName ? `Brand: ${p.brandName}` : '',
+      p.category ? `Category: ${p.category}` : '',
+      priceDisplay ? `Price: ${priceDisplay}` : '',
+      effDescription ? `Manufacturer description: ${effDescription.slice(0, 1800)}` : '',
+      `Sold on Amazon. Write for a shopper deciding whether this is the right pick: who it suits, what it solves, common buyer questions, and the real trade-offs before buying.`,
+    ].filter(Boolean).join('\n')
+    try {
+      const researchInput: AmazonProduct = amz || {
+        asin, title: effTitle, bullets: [], description: '', price: priceDisplay, rating: null,
+        imageUrl: p.image || null, images: p.image ? [p.image] : [], priceWas: null, priceSale: null,
+        dealBadge: null, dealEndsAt: null, discountPct: null,
+      }
+      const research = await researchProduct(researchInput, { userId: user.id, tier }, { maxSearches: 2, timeoutMs: 120_000 })
+      if (research?.brief) researchBrief = research.brief
+    } catch { /* keep the scrape-only brief */ }
+
+    // ── Generate (campaign writer — informational) ───────────────────────────
+    const claude = createClaudeService()
+    const generated = await claude.generateCampaignBlogPost(
+      brand,
+      {
+        product: { asin, title: effTitle, bullets: effBullets, description: effDescription, price: priceDisplay, rating: effRating },
+        researchBrief,
+        affiliateUrl,
+        retailer: { isAmazon: true, label: 'Amazon' },
+      },
+      { userId: user.id, tier },
+    )
+
+    const title = scrubBanned(generated.title)
+    const excerpt = scrubBanned(generated.excerpt)
+    let content = scrubBanned(generated.content)
+    const slug = generated.slug || slugify(title)
+    content = injectInlineAffiliateLinks(content, effTitle, affiliateUrl, { max: 3 })
+
+    // ── Publish to WordPress ─────────────────────────────────────────────────
+    let tagIds: number[] = []
+    try { tagIds = await wpService.resolveTagIds((generated.tags || []).slice(0, 10)) } catch { /* non-fatal */ }
+    let categoryIds: number[] = []
+    if (generated.category) {
+      try { categoryIds = [await wpService.createCategory(generated.category)] } catch { /* non-fatal */ }
+    }
+    const status: 'publish' | 'draft' = body.draft ? 'draft' : 'publish'
+    let wpPost
+    try {
+      wpPost = await wpService.createPost({
+        title, slug, content, excerpt, status,
+        tags: tagIds, categories: categoryIds, comment_status: 'closed', ping_status: 'closed',
+      })
+    } catch (err) {
+      return NextResponse.json({ ok: false, error: `WordPress publish failed: ${err instanceof Error ? err.message : 'unknown'}` }, { status: 502 })
+    }
+
+    // ── Hero + CTA image ─────────────────────────────────────────────────────
+    const galleryImages = (amz?.images?.length ? amz.images : (p.image ? [p.image] : []))
+      .filter((u): u is string => !!u && /^https?:\/\//i.test(u))
+    let cleanProductImage: string | null = null
+    try {
+      cleanProductImage = (await pickProductReferenceImage(galleryImages, effTitle, { userId: user.id, tier })) || galleryImages[0] || null
+    } catch { cleanProductImage = galleryImages[0] || null }
+
+    let heroMediaId: number | null = null
+    let heroUrl: string | null = null
+    try {
+      const hero = await buildCampaignHero({ heroPrompt: generated.imagePrompts?.hero, productImageUrl: cleanProductImage, productTitle: effTitle, ctx: { userId: user.id, tier } })
+      if (hero) {
+        const media = await wpService.uploadImageFromBase64(hero.b64, `${asin}-hero.jpg`, hero.mime)
+        heroMediaId = media.id ?? null; heroUrl = media.source_url || null
+      }
+    } catch { /* fall through to the photo floor */ }
+    if (!heroUrl && cleanProductImage) {
+      try {
+        const media = await wpService.uploadImageFromUrl(cleanProductImage, `${asin}-product.jpg`)
+        heroMediaId = media.id ?? null; heroUrl = media.source_url || null
+      } catch { /* non-fatal */ }
+    }
+
+    const ctaImage = heroUrl || cleanProductImage || null
+    let contentChanged = false
+    const rebuilt = rebuildCtaCard(content, {
+      productName: effTitle, url: affiliateUrl, retailerLabel: 'Amazon', imageUrl: ctaImage,
+    })
+    if (rebuilt !== content) { content = rebuilt; contentChanged = true }
+    if (heroMediaId || contentChanged) {
+      try {
+        await wpService.updatePost(wpPost.id, {
+          ...(heroMediaId ? { featured_media: heroMediaId } : {}),
+          ...(contentChanged ? { content } : {}),
+        })
+      } catch { /* non-fatal */ }
+    }
+
+    // ── Persist a blog_posts row ─────────────────────────────────────────────
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error: bpErr } = await (supabase as any).from('blog_posts').insert({
+        user_id: user.id, title, slug, content, excerpt,
+        status: status === 'draft' ? 'draft' : 'published',
+        post_type: 'review', wordpress_url: wpPost.link, wordpress_post_id: wpPost.id,
+        published_at: status === 'draft' ? null : new Date().toISOString(),
+      })
+      if (bpErr) console.error('[wayward] blog_posts insert failed:', bpErr.message)
+    } catch (e) { console.error('[wayward] blog_posts insert threw:', e instanceof Error ? e.message : String(e)) }
+
+    const editUrl = `${wpCreds.wordpress_url.replace(/\/+$/, '')}/wp-admin/post.php?post=${wpPost.id}&action=edit`
+    return NextResponse.json({ ok: true, wordpressUrl: wpPost.link, editUrl, draft: status === 'draft', affiliateUrl, cloaked, linkSource, title })
+  } catch (e) {
+    return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : 'Unexpected error' }, { status: 500 })
+  }
+}

@@ -1,13 +1,16 @@
 'use client'
 
-// MVP x Wayward (Labs) — browse the Wayward Amazon-Attribution catalog and mint
-// an attributed Amazon link per product (measured back to your Wayward account).
+// MVP x Wayward (Labs) — browse the Wayward Amazon-Attribution catalog, mint an
+// attributed Amazon link, save finds, and generate a full blog post per product.
 // Needs your own Wayward API key connected in External Integrations.
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { ShoppingBag, Loader2, Search, Link2, Copy, ExternalLink, ChevronLeft, ChevronRight } from 'lucide-react'
+import {
+  ShoppingBag, Loader2, Search, Link2, Copy, ExternalLink, ChevronLeft, ChevronRight,
+  Bookmark, BookmarkCheck, FileText, ClipboardList,
+} from 'lucide-react'
 
 const PURPLE = '#7C3AED'
 
@@ -24,6 +27,13 @@ interface Product {
   isActive: boolean
 }
 
+// Amazon's feed hands back tiny 60px thumbs (._SS60_.); upscale the URL so the
+// card image is crisp instead of a postage stamp.
+function bigImg(u: string | null): string | null {
+  if (!u) return u
+  return u.replace(/\._[A-Z]{1,2}\d+_\./i, '._SL500_.')
+}
+
 export default function WaywardPage() {
   const [loading, setLoading] = useState(true)
   const [needsToken, setNeedsToken] = useState(false)
@@ -35,6 +45,9 @@ export default function WaywardPage() {
   const [asin, setAsin] = useState('')
   const [linking, setLinking] = useState<string | null>(null)
   const [links, setLinks] = useState<Record<string, string>>({})
+  const [savedAsins, setSavedAsins] = useState<Set<string>>(new Set())
+  const [savingAsin, setSavingAsin] = useState<string | null>(null)
+  const [genAsin, setGenAsin] = useState<string | null>(null)
 
   const load = useCallback(async (pageNumber: number, asinFilter: string) => {
     setLoading(true); setError(null)
@@ -57,6 +70,13 @@ export default function WaywardPage() {
 
   useEffect(() => { load(1, '') }, [load])
 
+  // Load saved ASINs once so cards show the right bookmark state.
+  useEffect(() => {
+    fetch('/api/wayward/saved').then(r => r.json()).then(d => {
+      if (d.ok && Array.isArray(d.saved)) setSavedAsins(new Set(d.saved.map((s: { asin: string }) => s.asin)))
+    }).catch(() => {})
+  }, [])
+
   async function mintLink(p: Product) {
     setLinking(p.asin)
     try {
@@ -74,14 +94,51 @@ export default function WaywardPage() {
     } finally { setLinking(null) }
   }
 
+  async function toggleSave(p: Product) {
+    const isSaved = savedAsins.has(p.asin)
+    setSavingAsin(p.asin)
+    try {
+      if (isSaved) {
+        await fetch(`/api/wayward/saved?asin=${encodeURIComponent(p.asin)}`, { method: 'DELETE' })
+        setSavedAsins(prev => { const n = new Set(prev); n.delete(p.asin); return n })
+      } else {
+        await fetch('/api/wayward/saved', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ asin: p.asin, title: p.name, brand: p.brandName, imageUrl: p.imageUrl, commissionPct: p.commissionRate, price: p.price, marketplace: p.marketplace }),
+        })
+        setSavedAsins(prev => new Set(prev).add(p.asin))
+        toast.success('Saved')
+      }
+    } catch { toast.error('Could not update saved') } finally { setSavingAsin(null) }
+  }
+
+  async function generatePost(p: Product) {
+    setGenAsin(p.asin)
+    toast.loading('Writing & publishing…', { id: `gen-${p.asin}` })
+    try {
+      const res = await fetch('/api/wayward/generate', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ product: { asin: p.asin, title: p.name, image: p.imageUrl, price: p.price, brandName: p.brandName } }),
+      })
+      const data = await res.json()
+      if (!data.ok) throw new Error(data.error || 'Generation failed')
+      toast.success('Post published', { id: `gen-${p.asin}`, description: 'Open it in WordPress', action: data.wordpressUrl ? { label: 'View', onClick: () => window.open(data.wordpressUrl, '_blank') } : undefined })
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Generation failed', { id: `gen-${p.asin}` })
+    } finally { setGenAsin(null) }
+  }
+
   const money = (p: Product) => p.price != null ? `${p.currency === 'USD' || !p.currency ? '$' : ''}${p.price}` : ''
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6">
-      <div className="flex items-center gap-2 mb-1">
+      <div className="flex items-center gap-2 mb-1 flex-wrap">
         <ShoppingBag size={20} style={{ color: PURPLE }} />
         <h1 className="text-xl font-bold text-[#1d1d1f] dark:text-[#f5f5f7]">MVP x Wayward</h1>
         <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full" style={{ background: 'rgba(124,58,237,0.12)', color: PURPLE }}>Labs</span>
+        <Link href="/wayward/placement" className="ml-auto inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold border border-[#7C3AED]/40 text-[#7C3AED] hover:bg-[#7C3AED]/5">
+          <ClipboardList size={13} /> Build a placement offer
+        </Link>
       </div>
       <p className="text-sm text-[#6e6e73] dark:text-[#a1a1a6] mb-5">
         Browse Wayward&apos;s Amazon Attribution catalog and mint an attributed Amazon link per product — measured and paid back to your Wayward account.
@@ -97,11 +154,7 @@ export default function WaywardPage() {
         </div>
       ) : (
         <>
-          {/* Search by ASIN (the catalog is 300k+, so the filter is ASIN-exact). */}
-          <form
-            onSubmit={e => { e.preventDefault(); load(1, asin) }}
-            className="flex items-center gap-2 mb-4"
-          >
+          <form onSubmit={e => { e.preventDefault(); load(1, asin) }} className="flex items-center gap-2 mb-4">
             <div className="relative flex-1 max-w-sm">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#86868b]" />
               <input
@@ -123,57 +176,60 @@ export default function WaywardPage() {
           ) : products.length === 0 ? (
             <p className="text-sm text-[#86868b] py-10 text-center">No products found.</p>
           ) : (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-              {products.map(p => (
-                <div key={p.productId} className="rounded-xl border border-black/5 dark:border-white/10 p-3 flex flex-col">
-                  <div className="aspect-square rounded-lg bg-black/[0.03] dark:bg-white/[0.04] overflow-hidden flex items-center justify-center mb-2">
-                    {p.imageUrl
-                      ? // eslint-disable-next-line @next/next/no-img-element
-                        <img src={p.imageUrl} alt={p.name} className="max-h-full max-w-full object-contain" />
-                      : <ShoppingBag size={28} className="text-[#c7c7cc]" />}
-                  </div>
-                  <p className="text-[12px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] line-clamp-2 leading-snug">{p.name}</p>
-                  <div className="flex items-center gap-2 mt-1 text-[11px] text-[#86868b]">
-                    {money(p) && <span className="tabular-nums">{money(p)}</span>}
-                    {p.commissionRate != null && (
-                      <span className="font-semibold" style={{ color: '#1f8a3a' }}>{p.commissionRate}% commission</span>
-                    )}
-                  </div>
-                  {p.brandName && <p className="text-[10px] text-[#86868b] mt-0.5 truncate">{p.brandName}</p>}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {products.map(p => {
+                const saved = savedAsins.has(p.asin)
+                const busyGen = genAsin === p.asin
+                return (
+                  <div key={p.productId} className="rounded-xl border border-black/5 dark:border-white/10 p-3 flex flex-col">
+                    <div className="aspect-[4/3] rounded-lg bg-white overflow-hidden flex items-center justify-center mb-2">
+                      {p.imageUrl
+                        ? // eslint-disable-next-line @next/next/no-img-element
+                          <img src={bigImg(p.imageUrl) || ''} alt={p.name} loading="lazy" className="max-h-full max-w-full object-contain" />
+                        : <ShoppingBag size={40} className="text-[#c7c7cc]" />}
+                    </div>
+                    <p className="text-[13px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] line-clamp-2 leading-snug">{p.name}</p>
+                    <div className="flex items-center gap-2 mt-1 text-[12px] text-[#86868b]">
+                      {money(p) && <span className="tabular-nums font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{money(p)}</span>}
+                      {p.commissionRate != null && <span className="font-semibold" style={{ color: '#1f8a3a' }}>{p.commissionRate}% commission</span>}
+                    </div>
+                    {p.brandName && <p className="text-[11px] text-[#86868b] mt-0.5 truncate">{p.brandName}</p>}
 
-                  <div className="mt-auto pt-2">
-                    {links[p.asin] ? (
-                      <button
-                        onClick={() => { navigator.clipboard.writeText(links[p.asin]).then(() => toast.success('Copied')).catch(() => {}) }}
-                        className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-semibold text-white"
-                        style={{ backgroundColor: '#34c759' }}
-                      >
-                        <Copy size={12} /> Copy link
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => mintLink(p)}
-                        disabled={linking === p.asin}
-                        className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-semibold text-white disabled:opacity-60"
-                        style={{ backgroundColor: PURPLE }}
-                      >
-                        {linking === p.asin ? <Loader2 size={12} className="animate-spin" /> : <Link2 size={12} />} Get link
-                      </button>
-                    )}
-                    <a
-                      href={`https://www.amazon.com/dp/${p.asin}`}
-                      target="_blank" rel="noreferrer"
-                      className="mt-1 w-full inline-flex items-center justify-center gap-1 text-[10px] text-[#86868b] hover:underline"
-                    >
-                      <ExternalLink size={9} /> {p.asin}
-                    </a>
+                    <div className="mt-auto pt-2 flex flex-col gap-1.5">
+                      <div className="flex gap-1.5">
+                        {links[p.asin] ? (
+                          <button onClick={() => { navigator.clipboard.writeText(links[p.asin]).then(() => toast.success('Copied')).catch(() => {}) }}
+                            className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-semibold text-white" style={{ backgroundColor: '#34c759' }}>
+                            <Copy size={12} /> Copy link
+                          </button>
+                        ) : (
+                          <button onClick={() => mintLink(p)} disabled={linking === p.asin}
+                            className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-semibold text-white disabled:opacity-60" style={{ backgroundColor: PURPLE }}>
+                            {linking === p.asin ? <Loader2 size={12} className="animate-spin" /> : <Link2 size={12} />} Get link
+                          </button>
+                        )}
+                        <button onClick={() => generatePost(p)} disabled={busyGen}
+                          className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-semibold border border-[#7C3AED]/40 text-[#7C3AED] hover:bg-[#7C3AED]/5 disabled:opacity-60">
+                          {busyGen ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />} {busyGen ? 'Writing…' : 'Generate post'}
+                        </button>
+                      </div>
+                      <div className="flex gap-1.5">
+                        <button onClick={() => toggleSave(p)} disabled={savingAsin === p.asin}
+                          className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-medium border border-black/10 dark:border-white/15 text-[#4b4b4f] dark:text-[#b0b0b5] disabled:opacity-60">
+                          {saved ? <BookmarkCheck size={12} style={{ color: PURPLE }} /> : <Bookmark size={12} />} {saved ? 'Saved' : 'Save'}
+                        </button>
+                        <a href={`https://www.amazon.com/dp/${p.asin}`} target="_blank" rel="noreferrer"
+                          className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-medium border border-black/10 dark:border-white/15 text-[#4b4b4f] dark:text-[#b0b0b5]">
+                          <ExternalLink size={12} /> Visit
+                        </a>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
 
-          {/* Pager (disabled while filtering to one ASIN). */}
           {!asin && totalPages > 1 && (
             <div className="flex items-center justify-center gap-3 mt-5 text-sm">
               <button onClick={() => page > 1 && load(page - 1, '')} disabled={page <= 1 || loading}
