@@ -205,6 +205,40 @@ export async function resolveManualPage(
   return { pageId: page.id, pageName: page.name, pageAccessToken: inputToken, allPages: [page] }
 }
 
+/**
+ * Live check that a stored Page access token STILL works. MVP otherwise shows
+ * "Connected" purely because facebook_page_id is populated, so a token that Meta
+ * silently invalidated (permissions revoked, password change, an Instagram
+ * account restricted for "3rd-party" use) keeps showing a false green while
+ * posting fails — the "connected on Facebook but no access on MVP" ticket.
+ *
+ * Returns { ok } when the Page responds to its own token, else a reason and
+ * whether it's an auth/expiry failure (code 190 / OAuthException) vs. transient.
+ */
+export async function verifyPageToken(
+  pageAccessToken: string,
+  pageId: string,
+): Promise<{ ok: boolean; pageName?: string; expired?: boolean; error?: string }> {
+  if (!pageAccessToken || !pageId) return { ok: false, expired: false, error: 'missing token or page id' }
+  try {
+    const url = new URL(`${GRAPH}/${encodeURIComponent(pageId)}`)
+    url.searchParams.set('fields', 'id,name')
+    url.searchParams.set('access_token', pageAccessToken)
+    const res = await fetch(url.toString())
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const body: any = await res.json().catch(() => ({}))
+    if (res.ok && body?.id) return { ok: true, pageName: body.name || undefined }
+    const err = body?.error || {}
+    // 190 = access token expired/invalidated; 10/200 = permission missing; type
+    // OAuthException all mean "reconnect", not "try again later".
+    const expired = err.code === 190 || err.type === 'OAuthException' || [10, 200, 2500].includes(err.code)
+    return { ok: false, expired, error: (err.message as string) || `HTTP ${res.status}` }
+  } catch (e) {
+    // Network/transient — NOT an auth failure, so don't tell the user to reconnect.
+    return { ok: false, expired: false, error: e instanceof Error ? e.message : 'network error' }
+  }
+}
+
 export async function getPages(userToken: string): Promise<FacebookPage[]> {
   // UNION both sources rather than early-returning on the first non-empty one.
   // A creator can have some Pages on a direct role (/me/accounts) AND their real

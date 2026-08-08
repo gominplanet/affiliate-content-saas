@@ -49,6 +49,11 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
   // it's not yet live (under approval with each platform).
   const lockedCta = { opacity: 0.55, pointerEvents: 'none' as const, cursor: 'not-allowed' as const }
   const [facebook, setFacebook] = useState({ connected: false, pageName: '', pageId: '', pages: [] as { id: string; name: string }[] })
+  // Live token health — MVP shows "Connected" from a stored page id alone, so a
+  // token Meta silently killed (revoked perms, restricted IG) looks fine while
+  // posting fails. This flips the badge to "Reconnect needed" when the stored
+  // token no longer works. checked=false → not verified yet (stay optimistic).
+  const [fbHealth, setFbHealth] = useState<{ checked: boolean; live: boolean; expired: boolean; reason: string | null }>({ checked: false, live: false, expired: false, reason: null })
   const [fbDisconnecting, setFbDisconnecting] = useState(false)
   const [fbNotice, setFbNotice] = useState<{ ok: boolean; msg: string } | null>(null)
   const [pinterest, setPinterest] = useState({ connected: false, boardId: '', boardName: '', boards: [] as { id: string; name: string }[], fallbackBoard: '' })
@@ -170,6 +175,14 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
       setWpAppPasswordSaved(!!row.wordpress_app_password)
       const pages = JSON.parse(row.facebook_pages_json || '[]')
       setFacebook({ connected: !!row.facebook_page_id, pageName: row.facebook_page_name ?? '', pageId: row.facebook_page_id ?? '', pages })
+      // Verify the stored token is actually alive (not just present). Best-effort;
+      // a transient failure (expired:false) is not treated as "reconnect".
+      if (row.facebook_page_id) {
+        fetch('/api/auth/facebook/status')
+          .then(r => r.json())
+          .then(d => { if (d?.ok && d.connected) setFbHealth({ checked: true, live: !!d.live, expired: !!d.expired, reason: d.reason || null }) })
+          .catch(() => { /* leave optimistic */ })
+      }
       const boards = JSON.parse(row.pinterest_boards_json || '[]')
       // Connected = we hold a token. A board is NOT required: fresh
       // accounts (and the API sandbox) have zero boards, and we
@@ -1098,7 +1111,11 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
             <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Facebook Page</p>
             <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Auto-post blog links to your page when published</p>
           </div>
-          {facebook.connected && <span className="flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
+          {facebook.connected && (
+            fbHealth.checked && !fbHealth.live
+              ? <span className="flex items-center gap-1 text-xs font-medium text-[#ff9500]"><Clock size={12} /> Reconnect needed</span>
+              : <span className="flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>
+          )}
         </div>
         <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
           Click <strong>Connect Facebook</strong> and you'll be redirected to Facebook to grant permission. We only request access to post on your page's behalf — we never read your personal messages or profile data. Once connected, new blog posts can be shared to your page in one click.
@@ -1106,6 +1123,21 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
         {fbNotice && <p className={`text-xs mb-3 ${fbNotice.ok ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>{fbNotice.msg}</p>}
         {facebook.connected ? (
           <div className="flex flex-col gap-3">
+            {/* Live token died — Meta invalidated it (revoked permissions,
+                password change, or an Instagram account restricted for
+                "3rd-party" use). MVP looked connected but posts were failing.
+                Tell them plainly and give a one-tap reconnect. */}
+            {fbHealth.checked && !fbHealth.live && (
+              <div className="rounded-lg border p-3 text-xs" style={{ background: 'rgba(255,149,0,0.10)', borderColor: 'rgba(255,149,0,0.35)', color: 'var(--text)' }}>
+                <p className="font-semibold mb-1">Your Facebook token stopped working.</p>
+                <p className="text-[#6e6e73] dark:text-[#ebebf0] mb-2">
+                  Facebook may still list MVP as connected, but it&apos;s no longer letting us post to your Page. This usually happens when a permission was removed, your password changed, or a linked Instagram account was restricted. Reconnect to fix it.
+                </p>
+                <a href="/api/auth/facebook" className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-white bg-[#1877F2] hover:opacity-90">
+                  <Facebook size={13} /> Reconnect Facebook
+                </a>
+              </div>
+            )}
             {facebook.pages.length > 1 && (
               <div>
                 <label className="block text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Active page</label>
