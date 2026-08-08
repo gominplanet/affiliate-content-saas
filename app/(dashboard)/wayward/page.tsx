@@ -51,6 +51,7 @@ export default function WaywardPage() {
   const [selBrand, setSelBrand] = useState<Brand | null>(null)
   const [sortByComm, setSortByComm] = useState(false)
   const [postItem, setPostItem] = useState<{ asin: string; name: string; imageUrl: string | null } | null>(null)
+  const [kwNote, setKwNote] = useState<string | null>(null)
 
   const load = useCallback(async (pageNumber: number, asinFilter: string, brandId?: string) => {
     setLoading(true); setError(null)
@@ -94,7 +95,49 @@ export default function WaywardPage() {
     }).catch(() => {})
   }, [])
 
-  function pickBrand(b: Brand | null) { setSelBrand(b); setBrandOpen(false); setBrandQuery(''); setAsin(''); load(1, '', b?.id) }
+  function pickBrand(b: Brand | null) { setSelBrand(b); setBrandOpen(false); setBrandQuery(''); setAsin(''); setKwNote(null); load(1, '', b?.id) }
+
+  // Keyword filter. The Wayward catalog API has NO server-side text search, so we
+  // page through and filter by product name client-side: full coverage inside a
+  // selected brand (small sets), or a best-effort scan of the catalog otherwise.
+  const KW_MAX_PAGES = 20
+  const keywordSearch = useCallback(async (term: string, brandId?: string) => {
+    const q = term.trim().toLowerCase()
+    setLoading(true); setError(null); setKwNote(null)
+    try {
+      const matches: Product[] = []
+      let pageNum = 1, scanned = 0, totalPagesLocal = 1
+      const cap = brandId ? 9999 : KW_MAX_PAGES
+      do {
+        const qs = new URLSearchParams({ page: String(pageNum), pageSize: '100' })
+        if (brandId) qs.set('brandId', brandId)
+        // eslint-disable-next-line no-await-in-loop
+        const res = await fetch(`/api/wayward/products?${qs.toString()}`)
+        // eslint-disable-next-line no-await-in-loop
+        const data = await res.json()
+        if (data.needsToken) { setNeedsToken(true); setProducts([]); return }
+        if (!data.ok) throw new Error(data.error || 'Search failed')
+        totalPagesLocal = data.totalPages || 1
+        for (const p of (data.products || []) as Product[]) if ((p.name || '').toLowerCase().includes(q)) matches.push(p)
+        scanned++; pageNum++
+        if (matches.length >= 60) break
+      } while (pageNum <= totalPagesLocal && scanned < cap)
+      setProducts(matches); setTotalProducts(matches.length); setTotalPages(1); setPage(1)
+      if (!brandId && scanned >= KW_MAX_PAGES && pageNum <= totalPagesLocal) {
+        setKwNote(`Scanned the first ${scanned * 100} products for “${term.trim()}”. Pick a Brand for full-catalog keyword coverage.`)
+      } else if (matches.length === 0) {
+        setKwNote(`No matches for “${term.trim()}”${brandId ? ' in this brand' : ' in the scanned range'}.`)
+      }
+    } catch (e) { setError(e instanceof Error ? e.message : 'Search failed') } finally { setLoading(false) }
+  }, [])
+
+  // Smart submit: exact ASIN → server lookup; anything else → keyword filter.
+  function runSearch() {
+    const term = asin.trim()
+    if (!term) { setSelBrand(null); setKwNote(null); load(1, ''); return }
+    if (/^[A-Z0-9]{10}$/i.test(term)) { setSelBrand(null); setKwNote(null); load(1, term); return }
+    keywordSearch(term, selBrand?.id)
+  }
 
   async function mintLink(p: Product) {
     setLinking(p.asin)
@@ -238,11 +281,11 @@ export default function WaywardPage() {
           {tab === 'catalog' ? (
             <>
               <div className="flex items-center gap-2 mb-4 flex-wrap">
-                <form onSubmit={e => { e.preventDefault(); setSelBrand(null); load(1, asin) }} className="relative flex-1 min-w-[200px] max-w-sm flex items-center gap-2">
+                <form onSubmit={e => { e.preventDefault(); runSearch() }} className="relative flex-1 min-w-[200px] max-w-sm flex items-center gap-2">
                   <div className="relative flex-1">
                     <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#86868b]" />
-                    <input value={asin} onChange={e => setAsin(e.target.value)} placeholder="Filter by ASIN (e.g. B0C8BRDVT6)"
-                      className="w-full pl-9 pr-3 py-2 rounded-lg text-sm bg-[var(--surface,#fff)] border border-black/10 dark:border-white/15 text-[#1d1d1f] dark:text-[#f5f5f7] outline-none focus:border-[#7C3AED]" />
+                    <input value={asin} onChange={e => setAsin(e.target.value)} placeholder="Search by keyword or ASIN"
+                      className="w-full pl-9 pr-3 py-2 rounded-lg text-sm bg-white dark:bg-[#16161a] border border-black/10 dark:border-white/15 text-[#1d1d1f] dark:text-[#f5f5f7] outline-none focus:border-[#7C3AED]" />
                   </div>
                   <button type="submit" className="rounded-lg px-3 py-2 text-sm font-medium text-white" style={{ backgroundColor: PURPLE }}>Go</button>
                 </form>
@@ -252,9 +295,9 @@ export default function WaywardPage() {
                     {selBrand && <X size={13} className="text-[#86868b] hover:text-[#ff3b30]" onClick={(e) => { e.stopPropagation(); pickBrand(null) }} />}
                   </button>
                   {brandOpen && (
-                    <div className="absolute z-20 mt-1 w-80 max-h-96 overflow-auto rounded-xl border border-black/10 dark:border-white/15 bg-[var(--surface,#fff)] shadow-xl p-2">
+                    <div className="absolute z-30 mt-1 w-80 max-h-96 overflow-auto rounded-xl border border-black/10 dark:border-white/15 bg-white dark:bg-[#16161a] shadow-xl p-2">
                       <input autoFocus value={brandQuery} onChange={e => setBrandQuery(e.target.value)} placeholder="Search brands…"
-                        className="w-full mb-2 px-2.5 py-1.5 text-sm rounded-lg border border-black/10 dark:border-white/15 bg-transparent outline-none focus:border-[#7C3AED]" />
+                        className="w-full mb-2 px-2.5 py-1.5 text-sm rounded-lg border border-black/10 dark:border-white/15 bg-white dark:bg-[#16161a] text-[#1d1d1f] dark:text-[#f5f5f7] outline-none focus:border-[#7C3AED]" />
                       <p className="text-[10px] text-[#86868b] px-1 mb-1">Sorted by avg commission</p>
                       {filteredBrands.map(b => (
                         <button key={b.id} onClick={() => pickBrand(b)} className="w-full text-left px-2 py-1.5 rounded-lg hover:bg-black/[.04] dark:hover:bg-white/[.06] flex items-center justify-between gap-2">
@@ -274,6 +317,7 @@ export default function WaywardPage() {
               </div>
 
               {selBrand && <p className="text-[12px] text-[#86868b] mb-3">Showing <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">{selBrand.name}</strong> · {selBrand.avgCommission ?? '—'}% avg commission</p>}
+              {kwNote && <p className="text-[12px] text-[#86868b] mb-3">{kwNote}</p>}
               {error && <p className="text-sm text-[#ff3b30] mb-3">{error}</p>}
 
               {loading ? (
