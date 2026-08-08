@@ -60,13 +60,20 @@ reviewed change rather than an unattended edit. Each has file:line + the fix.
 
 ## Medium value, mostly contained
 
-### 7. deal-social-publish reads X token only from legacy column
+### 7. deal-social-publish reads X token only from legacy column — ✅ N/A
+> Verified not a bug: `SocialPlatform` is only facebook|instagram|threads. X is
+> never stored in social_accounts (twitter callback upserts to integrations), so
+> reading `integrations.twitter_access_token` is X's correct canonical store.
 - `lib/deal-social-publish.ts:96` reads `integrations.twitter_access_token` and throws "X is not connected" if missing, even when X was connected via the modern `social_accounts` flow (used for FB/Threads at `:120`,`:140`). Fix: resolve X via `resolveSocialAccount` like FB/Threads.
 
-### 8. Deal-radar discount can only ratchet UP, never correct down
+### 8. Deal-radar discount can only ratchet UP, never correct down — ✅ DONE
+> Shipped: enrichment now sets discount_pct to the verified price-history value
+> bidirectionally (can fall); leaves it untouched only when no history read.
 - `app/api/cron/refresh-deal-radar/route.ts:264-276`: `Math.max(curPct, histPct)` + write only when higher. A stale-high `discount_pct` can never be lowered by an authoritative price-history read → overstated "% off". Fix: let a fresh history read overwrite downward (or store history-derived separately and display that).
 
-### 9. `completeJob` swallowed failure can leave a job re-runnable
+### 9. `completeJob` swallowed failure can leave a job re-runnable — ✅ DONE
+> Shipped: completeJob is retried up to 3x; the running-guard reclaim remains the
+> last-resort safety.
 - `app/api/cron/process-generation-jobs/route.ts:140-142`: success path wraps `completeJob` in empty catch; job stays `running`, the 720s reclaim re-runs it. Idempotent for the rewrite/blog path, but a non-upsert handler (campaign/comparison) would double-execute/double-bill. Fix: retry `completeJob`, or flip `running→done` unconditionally.
 
 ### 10. Deal-schedule + burn-job crons have no dead-channel guard
@@ -75,10 +82,14 @@ reviewed change rather than an unattended edit. Each has file:line + the fix.
 ### 11. Burn-job transient failure discards a paid render
 - `process-burn-jobs/route.ts:120-131`: any post-render error marks the job `failed`; the paid Cloudinary render (`:88-102`) is lost, user re-pays. Fix: on transient publish error, requeue reusing the already-rendered `burned.url` (checkpoint-before-publish, like `lib/generation-jobs.ts:169-201`).
 
-### 12. Newsletter sends a hollow issue on a post-lookup error
+### 12. Newsletter sends a hollow issue on a post-lookup error — ✅ DONE
+> Shipped: when blog_post_ids was non-empty but zero posts resolved, the
+> broadcast is marked failed instead of mailing intro+outro only.
 - `app/api/cron/newsletter-process/route.ts:189-206`: if the `blog_posts` lookup errors, it proceeds with `posts:[]` and still marks `sent`. Fix: mark `failed` when `blog_post_ids` was non-empty but zero rows came back.
 
-### 13. `job_failures.status:'pending_retry'` implies an auto-retry that never runs
+### 13. `job_failures.status:'pending_retry'` implies an auto-retry that never runs — ✅ DONE
+> Shipped: logFailure now writes status 'open' to match the failures API/UI
+> vocabulary (open/resolved/dismissed).
 - `logFailure` (`generate/route.ts:2524`) writes `pending_retry`; nothing drains it. Fix: either add a worker that drains it (respecting `retry_count`) or rename the initial status to `open` to match the failures API/UI.
 
 ---
@@ -91,7 +102,9 @@ reviewed change rather than an unattended edit. Each has file:line + the fix.
 ### P2. `refresh-indexing` doubly sequential + unbounded users
 - `refresh-indexing/route.ts:61` user loop, `:124` inspect loop, users query `:48` has no `.limit()`. ~15s/user caps it at ~20 users/tick; the rest are silently skipped daily with no round-robin. Fix: cap users/run, order by oldest-refreshed, bounded concurrency.
 
-### P3. Deal quick-post publishes platforms serially on the user's request
+### P3. Deal quick-post publishes platforms serially on the user's request — ✅ DONE
+> Shipped: publishDealToSocials fans out per-platform with Promise.all; X cap is
+> reserved atomically per call so parallelism is safe.
 - `lib/deal-social-publish.ts:92` `for…await` per platform (~24s for 6). Fix: `Promise.all` the per-platform blocks after the single up-front reads (pre-check the X cap once before fan-out).
 
 ### P4/P5. Redundant `integrations`/`brand_profiles` reads on hot generation paths

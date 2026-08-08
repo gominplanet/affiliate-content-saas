@@ -89,7 +89,12 @@ export async function publishDealToSocials(opts: PublishOpts): Promise<PlatformR
   const ig = decryptIntegrationRow(intRaw as any) || {}
   const img = deal.imageUrl || null
 
-  for (const platform of platforms) {
+  // Publish every platform CONCURRENTLY (audit P3). The old for…await ran ~24s
+  // for 6 platforms on the user's request; the blocks are independent (different
+  // APIs, no shared mutable state) and the X cap is reserved atomically per call,
+  // so fan-out is safe. Each block returns its own result; errors are caught per
+  // platform so one failure never rejects the batch.
+  const runOne = async (platform: QuickPostPlatform): Promise<PlatformResult> => {
     try {
       const link = linkFor(platform)
       if (platform === 'twitter') {
@@ -117,7 +122,7 @@ export async function publishDealToSocials(opts: PublishOpts): Promise<PlatformR
           throw e
         }
         // The reservation already counted this post (no recordXPost).
-        results.push({ platform, ok: true, url: `https://x.com/i/web/status/${t.id}` })
+        return { platform, ok: true, url: `https://x.com/i/web/status/${t.id}` }
 
       } else if (platform === 'facebook') {
         // Facebook Pages live in social_accounts (modern connect flow), with the
@@ -139,7 +144,7 @@ export async function publishDealToSocials(opts: PublishOpts): Promise<PlatformR
         let id: string
         if (img) { const r = await fb.postPhoto({ imageUrl: img, caption }); id = r.post_id || r.id }
         else { const r = await fb.postLink({ message: caption, link }); id = r.id }
-        results.push({ platform, ok: true, url: `https://www.facebook.com/${id}` })
+        return { platform, ok: true, url: `https://www.facebook.com/${id}` }
 
       } else if (platform === 'threads') {
         // Same story as Facebook — Threads profiles live in social_accounts with
@@ -155,7 +160,7 @@ export async function publishDealToSocials(opts: PublishOpts): Promise<PlatformR
         })
         if (!acct) throw new Error('Threads is not connected.')
         const r = await new ThreadsService(acct.accessToken, acct.externalId).createPost(composeText(baseCaption, 'threads', link, disclaimer, retailer), img || undefined)
-        results.push({ platform, ok: true, url: r.permalink })
+        return { platform, ok: true, url: r.permalink }
 
       } else if (platform === 'linkedin') {
         const token = ig.linkedin_access_token as string | undefined
@@ -165,7 +170,7 @@ export async function publishDealToSocials(opts: PublishOpts): Promise<PlatformR
         const text = composeText(baseCaption, 'linkedin', link, disclaimer, retailer)
         if (img) await li.createImagePost({ text, imageUrl: img, title: deal.title })
         else await li.createPost({ text, articleUrl: link, articleTitle: deal.title, articleDescription: deal.title })
-        results.push({ platform, ok: true })
+        return { platform, ok: true }
 
       } else if (platform === 'telegram') {
         const token = (ig.telegram_bot_token as string | undefined) || process.env.TELEGRAM_BOT_TOKEN || ''
@@ -178,7 +183,7 @@ export async function publishDealToSocials(opts: PublishOpts): Promise<PlatformR
         const caption = `🛒 [Grab it on ${retailer}](${link})\n\n${body}\n\n${escapeMarkdownV2(disclaimer)}`
         if (img) await sendPhoto(token, channel, img, caption)
         else await sendMessage(token, channel, caption)
-        results.push({ platform, ok: true })
+        return { platform, ok: true }
 
       } else if (platform === 'bluesky') {
         const handle = ig.bluesky_handle as string | undefined
@@ -190,12 +195,16 @@ export async function publishDealToSocials(opts: PublishOpts): Promise<PlatformR
           text, linkUrl: link, linkText: link,
           embed: { url: link, title: deal.title, description: '', imageUrl: img || undefined },
         })
-        results.push({ platform, ok: true, url: `https://bsky.app/profile/${handle}` })
+        return { platform, ok: true, url: `https://bsky.app/profile/${handle}` }
       }
+      // Filtered above, so this is unreachable — satisfy the return type.
+      return { platform, ok: false, error: 'Unsupported platform' }
     } catch (err) {
-      results.push({ platform, ok: false, error: err instanceof Error ? err.message : String(err) })
+      return { platform, ok: false, error: err instanceof Error ? err.message : String(err) }
     }
   }
 
+  const settled = await Promise.all(platforms.map(runOne))
+  results.push(...settled)
   return results
 }

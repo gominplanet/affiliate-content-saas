@@ -204,6 +204,17 @@ async function fireScheduled(opts: { broadcastId: string }): Promise<void> {
         excerpt: p.excerpt ?? '',
         imageUrl: p.youtube_videos?.blog_thumbnail_url ?? p.youtube_videos?.thumbnail_url ?? null,
       }))
+    // The user attached posts but none resolved (DB error, or every row missing
+    // its wordpress_url). Sending intro+outro only would mail a hollow issue —
+    // fail the broadcast loudly so it surfaces as a problem instead of a silent
+    // "sent" with no articles (audit #12).
+    if (baseInput.posts.length === 0) {
+      await (admin as any).from('newsletter_broadcasts').update({
+        status: 'failed',
+        error_message: (error ? `Article lookup failed: ${error.message}` : 'Attached articles could not be resolved (no valid posts).').slice(0, 300),
+      }).eq('id', opts.broadcastId)
+      return
+    }
   }
 
   // Re-render the snapshot HTML once with a placeholder URL — pre-existing
