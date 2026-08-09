@@ -183,13 +183,22 @@ function ytDlp(args) {
     // Tell the bgutil plugin where the PO-token provider lives (only when set).
     ...(POT_BASE_URL ? ['--extractor-args', `youtubepot-bgutilhttp:base_url=${POT_BASE_URL}`] : []),
     '--extractor-retries', '3',
+    // VERBOSE flag (toggle with YT_DLP_VERBOSE=0). Surfaces "Loaded N plugins" +
+    // the PO-token provider's own log lines in stderr so we can see whether the
+    // bgutil plugin actually loaded and reached the provider.
+    ...(process.env.YT_DLP_VERBOSE === '0' ? [] : ['--verbose']),
     ...EXTRA_ARGS,
     ...args,
   ]
   return new Promise((resolve, reject) => {
     execFile('yt-dlp', full, { maxBuffer: 1024 * 1024 * 64 }, (err, stdout, stderr) => {
-      if (err) reject(new Error((stderr || err.message || '').slice(0, 500)))
-      else resolve(stdout)
+      if (err) {
+        const full = (stderr || err.message || '')
+        // Log the FULL verbose stderr to the container console for diagnosis, but
+        // keep the thrown/HTTP error trimmed so the app UI stays readable.
+        console.error('[yt-dlp] failed, full stderr:\n' + full)
+        reject(new Error(full.slice(0, 500)))
+      } else resolve(stdout)
     })
   })
 }
@@ -614,7 +623,7 @@ app.post('/render-short', async (req, res) => {
 // BUILD marker: bump this string when the service code changes so the Railway
 // deploy logs unambiguously show which build is actually running (Railway can
 // re-run an older commit).
-const BUILD = 'ytdlp-nightly+pot-provider-2026-08-09'
+const BUILD = 'ytdlp-verbose-diag-2026-08-09'
 Promise.allSettled([loadCookies(), selfUpdateYtDlp()]).finally(() => {
   app.listen(PORT, () => console.log(`ingest-service listening on :${PORT} [build ${BUILD}] yt-dlp ${ytDlpVersion}`))
 })
