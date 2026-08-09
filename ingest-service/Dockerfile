@@ -11,12 +11,23 @@ FROM node:20-slim
 # satisfy YouTube's "proof of origin" check WITHOUT login cookies, pulling a token
 # from the companion provider service at YT_DLP_POT_BASE_URL.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ffmpeg ca-certificates curl python3 python3-pip fontconfig \
+  && apt-get install -y --no-install-recommends ffmpeg ca-certificates curl unzip python3 python3-pip fontconfig \
   && pip3 install --no-cache-dir --break-system-packages "yt-dlp[default]" bgutil-ytdlp-pot-provider \
   && mkdir -p /usr/share/fonts/truetype/caption \
   && curl -L https://github.com/google/fonts/raw/main/ofl/anton/Anton-Regular.ttf -o /usr/share/fonts/truetype/caption/Anton-Regular.ttf \
   && fc-cache -f \
   && rm -rf /var/lib/apt/lists/*
+
+# Deno — a JavaScript runtime yt-dlp uses to solve YouTube's "n-challenge" (the
+# nsig transform). Without a JS runtime, yt-dlp can't unlock the web formats and
+# falls back to the tv client's DRM-protected streams ("This video is DRM
+# protected"). yt-dlp recommends Deno; it's a single static binary. Installed to
+# /usr/local/bin so it's on PATH and yt-dlp's EJS challenge solver auto-detects it.
+RUN curl -fsSL https://github.com/denoland/deno/releases/latest/download/deno-x86_64-unknown-linux-gnu.zip -o /tmp/deno.zip \
+  && unzip /tmp/deno.zip -d /usr/local/bin \
+  && chmod +x /usr/local/bin/deno \
+  && rm /tmp/deno.zip \
+  && deno --version
 
 WORKDIR /app
 COPY package.json ./
