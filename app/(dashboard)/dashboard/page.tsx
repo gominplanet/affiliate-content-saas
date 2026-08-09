@@ -243,6 +243,7 @@ export default async function DashboardPage() {
               <BookOpen size={12} />
               Tutorials
             </Link>
+            {!isNewUser && <WhatsNewCard />}
           </div>
           </div>
           {/* Right column: Pro capabilities tour — shown only to users who
@@ -335,9 +336,8 @@ export default async function DashboardPage() {
         {int?.wordpress_url ? <AmazonSitesReminder siteUrl={int.wordpress_url as string} /> : null}
         <ReferralBanner />
 
-        {/* "What's new" changelog for existing users — new users get the
-            welcome flow instead, so we don't clutter their first run. */}
-        {!isNewUser && <WhatsNewCard />}
+        {/* "What's new" — its trigger pill now lives in the hero pills row
+            (next to Tutorials); the modal is portaled to <body>. */}
 
         {/* New-user welcome card. Restyled to use the V2 surface tokens
             so it sits cohesively inside the new dark/light shell. */}
