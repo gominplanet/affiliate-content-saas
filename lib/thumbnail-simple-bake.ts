@@ -348,6 +348,43 @@ function buildDecorationSvg(
 </svg>`
 }
 
+/**
+ * Composite ONLY a badge/decoration onto an already-rendered thumbnail — used by
+ * the Graphic-Design (gpt-image) path, which bakes its own headline via the model
+ * and never runs bakeSimpleHeadline, so the creator's chosen badge (5 stars, hot,
+ * etc.) otherwise never appeared. Draws the SAME badge art as the clean path, in
+ * the lower-left below the headline block. Returns a JPEG buffer. On ANY failure
+ * it returns the input unchanged so a badge can never break generation.
+ */
+export async function compositeBadgeOnly(
+  baseImage: Buffer,
+  decoration: ThumbDecoration,
+): Promise<Buffer> {
+  if (!decoration || decoration === 'none') return baseImage
+  try {
+    const meta = await sharp(baseImage).metadata()
+    const width = meta.width ?? 1280
+    const height = meta.height ?? 720
+    const scaleBase = Math.max(360, Math.min(width, height * 16 / 9))
+    // GFX text sits in the LEFT ~40%, vertically centered. Drop the badge in the
+    // lower-left corner, clear of the headline block.
+    const anchorX = Math.round(width * 0.07)
+    const decorationY = Math.round(height * 0.80)
+    const svg = buildDecorationSvg(decoration, anchorX, decorationY, width, height, scaleBase, 'start')
+    if (!svg) return baseImage
+    const badgePng = new Resvg(svg, {
+      fitTo: { mode: 'width', value: width },
+      background: 'rgba(0,0,0,0)',
+    }).render().asPng()
+    return await sharp(baseImage)
+      .composite([{ input: badgePng, top: 0, left: 0 }])
+      .jpeg({ quality: 92 })
+      .toBuffer()
+  } catch {
+    return baseImage
+  }
+}
+
 function neonGradientCoords(angle: NeonBorderStyle['angle']): string {
   if (angle === 'vertical') return 'x1="0%" y1="0%" x2="0%" y2="100%"'
   if (angle === 'horizontal') return 'x1="0%" y1="0%" x2="100%" y2="0%"'
