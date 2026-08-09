@@ -702,7 +702,11 @@ export async function POST(request: Request) {
     // (the old on/off toggle) still suppresses the green check under 'auto'.
     // Enforced in the decoration loop below so it can't be bypassed client-side.
     let noCheckDecoration = false
-    let forcedDecoration: ThumbDecoration | null = null
+    // Default is NO badge until the creator opts in. `decoration`:
+    //   'auto'  → let the model/angle pick per thumbnail (forcedDecoration=null)
+    //   a badge → force it on every thumbnail
+    //   'none' OR unset → no badge (the default)
+    let forcedDecoration: ThumbDecoration | null = 'none'
     try {
       const { data: bp } = await supabase
         .from('brand_profiles').select('thumbnail_brand_style').eq('user_id', user.id).maybeSingle()
@@ -710,10 +714,13 @@ export async function POST(request: Request) {
       const bs = (bp as any)?.thumbnail_brand_style || {}
       noCheckDecoration = !!bs.noCheck
       const FORCEABLE = new Set<ThumbDecoration>(['check', 'stars', 'arrow', 'speedlines', 'hot', 'none'])
-      if (typeof bs.decoration === 'string' && bs.decoration !== 'auto' && FORCEABLE.has(bs.decoration as ThumbDecoration)) {
+      if (bs.decoration === 'auto') {
+        forcedDecoration = null // model/angle picks
+      } else if (typeof bs.decoration === 'string' && FORCEABLE.has(bs.decoration as ThumbDecoration)) {
         forcedDecoration = bs.decoration as ThumbDecoration
       }
-    } catch { /* default: decorations on, model picks */ }
+      // unset → keep the 'none' default (no badge)
+    } catch { /* default: no badge */ }
 
     // Monthly AI-spend circuit breaker — thumbnails generate nano-banana-pro
     // images ($0.13 each), an unbounded vector for admin (no thumbnail cap).
@@ -2028,7 +2035,11 @@ Ultra-sharp, professional, photorealistic.`
                   const effectiveBorderIndex = (typeof borderStyleIndex === 'number' && borderStyleIndex >= 0)
                     ? borderStyleIndex
                     : origIdx + borderOffset
-                  const result = await bakeSimpleHeadline(baseBuf, variantCopy, {
+                  // Honor the creator's badge choice on EVERY path (this GFX path
+                  // included) — force it right before baking so no code path can
+                  // bypass it. null = 'auto' (keep the copy's own decoration).
+                  const bakeCopy = forcedDecoration ? { ...variantCopy, decoration: forcedDecoration } : variantCopy
+                  const result = await bakeSimpleHeadline(baseBuf, bakeCopy, {
                     anchor,
                     personCutoutPng,
                     borderStyleIndex: effectiveBorderIndex,
@@ -2263,7 +2274,8 @@ Bright, flattering, high-contrast premium thumbnail look. Do NOT add any other p
                   const r = await fetch(u, { signal: AbortSignal.timeout(15000) })
                   if (!r.ok) return u
                   const buf = Buffer.from(await r.arrayBuffer())
-                  const copy = copiesU[i] ?? copiesU[0]
+                  const copy0 = copiesU[i] ?? copiesU[0]
+                  const copy = forcedDecoration ? { ...copy0, decoration: forcedDecoration } : copy0
                   const res = await bakeSimpleHeadline(buf, copy, {
                     borderStyleIndex: (typeof borderStyleIndex === 'number' && borderStyleIndex >= 0) ? borderStyleIndex : i,
                     accentColor: accentColor || undefined,
