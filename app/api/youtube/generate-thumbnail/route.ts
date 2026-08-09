@@ -27,7 +27,7 @@ import { analyzeTextZone } from '@/lib/thumbnail-textzone'
 import { scrubBanned } from '@/lib/scrub'
 import { getStarredPhotoboothRefs } from '@/lib/photobooth-refs'
 import { getThumbnailFaceRef } from '@/lib/identity-anchor'
-import { verifyFaceIdentity, verifyFaceIdentityConsensus, verifyNoBrandLeak, verifyBakedText } from '@/lib/product-image'
+import { verifyFaceIdentity, verifyFaceIdentityConsensus, verifyNoBrandLeak, verifyBakedText, verifyProductMatch } from '@/lib/product-image'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
 import { fetchStoryboardFrames } from '@/lib/youtube-storyboards'
 
@@ -1218,6 +1218,7 @@ export async function POST(request: Request) {
         // One gpt-image-1 call per variant, all in parallel.
         const gfxRawUrls = await Promise.all(
           gfxCopies.slice(0, variantCount).map(async (copy, idx) => {
+          const attempt = async (): Promise<string | null> => {
             const line1 = (copy.line1 || '').toUpperCase()
             const line2 = (copy.line2 || '').toUpperCase()
             const accentGlow = idx % 2 === 0 ? 'cyan (#00E5FF)' : 'purple (#7C3AED)'
@@ -1353,6 +1354,27 @@ export async function POST(request: Request) {
             } catch {
               return rehostToFal(`data:image/png;base64,${b64}`)
             }
+          }
+
+          // Product QC + one retry. gpt-image REDRAWS the product, so it can drift
+          // to a similar-but-wrong item (the #1 creator complaint). Verify the
+          // rendered product against the real reference photo; if it doesn't match,
+          // regenerate this variant once and keep whichever one matches. Only runs
+          // when we actually have a product reference to compare against.
+          let gfxUrl = await attempt()
+          if (gfxUrl && productImageUrl) {
+            try {
+              const v = await verifyProductMatch(productImageUrl, gfxUrl, productTitle || productLabel, { userId: user.id, tier })
+              if (!v.match) {
+                const retryUrl = await attempt()
+                if (retryUrl) {
+                  const v2 = await verifyProductMatch(productImageUrl, retryUrl, productTitle || productLabel, { userId: user.id, tier })
+                  gfxUrl = v2.match ? retryUrl : gfxUrl
+                }
+              }
+            } catch { /* verifier hiccup — keep the first render */ }
+          }
+          return gfxUrl
           })
         )
 
@@ -1871,16 +1893,21 @@ Ultra-sharp, professional, photorealistic.`
               const idCtx = { userId: TELEMETRY.userId, tier: TELEMETRY.tier }
               const idRef = faceRefs[0] || null
               if (idRef) faceIdentityChecked = true
+              // Gate on product fidelity ONLY when we fed the model exactly one
+              // product reference. For multi-product comparison thumbnails a
+              // single-ref check is ambiguous and would over-reject good variants.
+              const singleProductRef = productRefs.length === 1 ? productRefs[0] : null
               // Audit one variant against all enabled dimensions. baked-text maps
               // the variant back to its per-variant headline via nbUrls index.
               const auditVariant = async (u: string): Promise<boolean> => {
                 const idx = Math.max(0, nbUrls.indexOf(u))
-                const [face, leak, baked] = await Promise.all([
+                const [face, leak, baked, product] = await Promise.all([
                   idRef ? verifyFaceIdentity(idRef, u, idCtx) : Promise.resolve({ match: true, reason: '' }),
                   verifyNoBrandLeak(u, idCtx),
                   !wantClean ? verifyBakedText(u, flatCopy(hooks[idx % hooks.length]) || overlayHookNB, idCtx) : Promise.resolve({ ok: true, reason: '' }),
+                  singleProductRef ? verifyProductMatch(singleProductRef, u, productTitle || '', idCtx) : Promise.resolve({ match: true, reason: '' }),
                 ])
-                return face.match && leak.clean && baked.ok
+                return face.match && leak.clean && baked.ok && product.match
               }
               const pass1 = await Promise.all(nbUrls.map(auditVariant))
               const surviving = nbUrls.filter((_, i) => pass1[i])
