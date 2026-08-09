@@ -40,6 +40,38 @@ if (!function_exists('mvp_affiliate_incontent_blocks')) {
     }
 }
 
+// Sidebar rotation settings (set in MVP → Ads). Rotate = shuffle the enabled
+// sidebar banners on each page load; show-count caps how many appear at once
+// (0 = show all). Disabled banners are excluded by the caller.
+if (!function_exists('mvp_affiliate_sidebar_rotate')) {
+    function mvp_affiliate_sidebar_rotate(): bool {
+        $d = mvp_affiliate_data();
+        return !empty($d['sidebarRotate']);
+    }
+}
+if (!function_exists('mvp_affiliate_sidebar_show_count')) {
+    function mvp_affiliate_sidebar_show_count(): int {
+        $d = mvp_affiliate_data();
+        $n = intval($d['sidebarShowCount'] ?? 0);
+        return ($n >= 1 && $n <= 12) ? $n : 0; // 0 = show all
+    }
+}
+
+/**
+ * Enabled sidebar banners only (disabled ones stay saved but never render).
+ * Rotation (shuffle) and the show-N cap are applied CLIENT-SIDE in single.php —
+ * a PHP shuffle/slice would be frozen inside the full-page (LiteSpeed) cache and
+ * wouldn't actually vary per visitor. So we render every enabled banner and let
+ * the browser shuffle + cap on each load.
+ */
+if (!function_exists('mvp_affiliate_sidebar_blocks_display')) {
+    function mvp_affiliate_sidebar_blocks_display(): array {
+        return array_values(array_filter(mvp_affiliate_sidebar_blocks(), function ($b) {
+            return !empty($b['enabled']);
+        }));
+    }
+}
+
 /**
  * Pick of the Day config + helpers.
  */
