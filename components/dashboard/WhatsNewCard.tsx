@@ -14,7 +14,7 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import Link from 'next/link'
-import { Sparkles, ChevronDown, ArrowUpRight, X } from 'lucide-react'
+import { Sparkles, ArrowUpRight, X } from 'lucide-react'
 
 // Bump this whenever UPDATES changes — auto-opens the modal once for everyone.
 const RELEASE_ID = '2026-08-09'
@@ -140,35 +140,24 @@ export default function WhatsNewCard() {
 
   return (
     <>
-      {/* Trigger pill — small, right-aligned. */}
-      <div className="flex justify-end">
-        <button
-          onClick={openModal}
-          className="inline-flex items-center gap-2 rounded-xl border pl-2.5 pr-3 py-2 transition-all hover:shadow-sm hover:-translate-y-px"
-          style={{
-            background: 'linear-gradient(135deg, rgba(124, 58, 237, 0.10) 0%, rgba(188, 24, 136, 0.08) 100%)',
-            borderColor: 'rgba(124, 58, 237, 0.28)',
-          }}
-          aria-label="Open what's new"
-        >
-          <span
-            className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
-            style={{ background: 'linear-gradient(135deg, #7C3AED 0%, #bc1888 100%)' }}
-          >
-            <Sparkles size={13} className="text-white" />
-          </span>
-          <span className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>
-            What&apos;s new
-          </span>
-          <span
-            className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
-            style={{ color: '#fff', background: '#7C3AED' }}
-          >
-            {UPDATES.length}
-          </span>
-          <ChevronDown size={15} style={{ color: 'var(--text-faint)' }} />
-        </button>
-      </div>
+      {/* Trigger pill — sits inline in the hero pills row (next to Tutorials).
+          Filled gradient + a pulsing dot so it's noticeable. */}
+      <button
+        onClick={openModal}
+        className="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-semibold text-white shadow-sm transition-all hover:opacity-90 hover:-translate-y-px"
+        style={{ background: 'linear-gradient(135deg, #8B5CF6 0%, #EC4899 100%)' }}
+        aria-label="Open what's new"
+      >
+        <span className="relative flex h-2 w-2">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-white" />
+        </span>
+        <Sparkles size={12} />
+        What&apos;s new
+        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-white/25">
+          {UPDATES.length}
+        </span>
+      </button>
 
       {/* Modal — centered overlay, doesn't affect page layout. */}
       {mounted && open && createPortal(
