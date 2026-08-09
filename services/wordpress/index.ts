@@ -507,6 +507,7 @@ export class WordPressService {
   async getCustomEndpoint(fullPath: string): Promise<unknown> {
     const res = await fetch(`${this.siteUrl}${fullPath}`, {
       headers: { Authorization: this.authHeader },
+      signal: AbortSignal.timeout(30_000),
     })
     if (!res.ok) return {}
     return parseWpJson(res)
@@ -620,7 +621,7 @@ export class WordPressService {
   ): Promise<{ data: T; totalPages: number }> {
     const url = `${this.baseUrl}${path}`
     const headers = { Authorization: this.authHeader, 'User-Agent': WP_USER_AGENT }
-    const res = await fetch(url, { ...options, headers: { ...headers, ...(options.headers || {}) } })
+    const res = await fetch(url, { signal: AbortSignal.timeout(30_000), ...options, headers: { ...headers, ...(options.headers || {}) } })
     if (!res.ok) throw new Error(`WordPress request failed: ${res.status}`)
     const totalPages = parseInt(res.headers.get('X-WP-TotalPages') || '1', 10)
     const data = await parseWpJson<T>(res)
@@ -981,7 +982,7 @@ export class WordPressService {
       let existing: unknown = {}
       let getOk = false
       try {
-        const getRes = await fetch(base, { headers: { 'Authorization': this.authHeader, 'User-Agent': UA } })
+        const getRes = await fetch(base, { headers: { 'Authorization': this.authHeader, 'User-Agent': UA }, signal: AbortSignal.timeout(30_000) })
         if (getRes.ok) { existing = await getRes.json(); getOk = true }
       } catch { /* GET failed — getOk stays false */ }
 
@@ -991,7 +992,7 @@ export class WordPressService {
       else if (getOk) payload = {}                            // GET confirmed site is empty → {} is safe
       else return                                             // GET failed + no fallback → skip (never clobber)
 
-      await fetch(base, { method: 'POST', headers, body: JSON.stringify(payload) })
+      await fetch(base, { method: 'POST', headers, body: JSON.stringify(payload), signal: AbortSignal.timeout(30_000) })
     } catch { /* non-fatal — page refreshes on cache expiry */ }
   }
 

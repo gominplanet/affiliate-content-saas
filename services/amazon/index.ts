@@ -105,6 +105,9 @@ export async function searchAmazonForAsin(query: string): Promise<string | null>
         'Accept-Encoding': 'gzip, deflate, br',
         'Cache-Control': 'no-cache',
       },
+      // Amazon throttles datacenter IPs and can slow-loris; Node fetch has no
+      // default timeout, so cap it or a hung connection stalls the whole caller.
+      signal: AbortSignal.timeout(15_000),
     })
     if (!res.ok) return null
     const html = await res.text()
@@ -154,6 +157,8 @@ export async function fetchAmazonProduct(asin: string): Promise<AmazonProduct> {
         'DNT': '1',
         ...(referer ? { Referer: referer } : {}),
       },
+      // Cap each attempt; fetchAmazonProduct runs up to 3 of these sequentially.
+      signal: AbortSignal.timeout(15_000),
     })
     if (!res.ok) throw new Error(`Amazon fetch failed: HTTP ${res.status}`)
     return res.text()

@@ -31,6 +31,8 @@ const path = require('path')
 const zlib = require('zlib')
 const { pipeline } = require('stream/promises')
 const { Readable } = require('stream')
+const dns = require('dns').promises
+const net = require('net')
 
 const PORT = process.env.PORT || 8080
 const SECRET = process.env.INGEST_SECRET || ''
@@ -42,6 +44,14 @@ const MAX_SECONDS = Number(process.env.MAX_SECONDS || 7200)
 
 if (!SUPABASE_URL || !SERVICE_KEY) {
   console.error('Missing SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY')
+  process.exit(1)
+}
+// INGEST_SECRET is REQUIRED. Without it the endpoint guards (which read as
+// `if (!SECRET || header !== SECRET)`) would otherwise have to fail open — a
+// world-open downloader that writes to service-role Storage. Hard-fail at boot
+// so a misconfigured deploy never silently becomes unauthenticated.
+if (!SECRET) {
+  console.error('Missing INGEST_SECRET — refusing to start (would be unauthenticated)')
   process.exit(1)
 }
 
@@ -189,7 +199,7 @@ function ytDlp(args) {
     ...args,
   ]
   return new Promise((resolve, reject) => {
-    execFile('yt-dlp', full, { maxBuffer: 1024 * 1024 * 64 }, (err, stdout, stderr) => {
+    execFile('yt-dlp', full, { maxBuffer: 1024 * 1024 * 64, timeout: 240_000, killSignal: 'SIGKILL' }, (err, stdout, stderr) => {
       if (err) {
         const fullErr = (stderr || err.message || '')
         // Log the FULL verbose stderr to the container console for diagnosis.
@@ -205,11 +215,42 @@ function ytDlp(args) {
   })
 }
 
+// SSRF guard: only allow http(s) URLs whose resolved IPs are all PUBLIC. Blocks
+// loopback/private/link-local (incl. cloud metadata 169.254.169.254 and the
+// *.railway.internal network) so a caller can't make this service fetch internal
+// targets. Resolves the hostname (defeats DNS names that point at private IPs).
+function isPrivateIp(ip) {
+  if (net.isIPv4(ip)) {
+    const [a, b] = ip.split('.').map(Number)
+    return (
+      a === 10 ||
+      a === 127 ||
+      a === 0 ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 100 && b >= 64 && b <= 127) // CGNAT
+    )
+  }
+  const v = ip.toLowerCase()
+  return v === '::1' || v === '::' || v.startsWith('fc') || v.startsWith('fd') || v.startsWith('fe80') || v.startsWith('::ffff:')
+}
+async function assertPublicHttpUrl(raw) {
+  let u
+  try { u = new URL(raw) } catch { throw new Error('bad url') }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('bad url scheme')
+  const addrs = await dns.lookup(u.hostname, { all: true })
+  if (!addrs.length) throw new Error('unresolvable host')
+  for (const { address } of addrs) {
+    if (isPrivateIp(address)) throw new Error('blocked private address')
+  }
+}
+
 // Download a URL to a local file. ffmpeg seeking a LOCAL file is instant and
 // reliable; seeking a remote URL over HTTP is fragile (moov-atom location, range
 // support) and was failing silently. So we fetch first, then trim locally.
 async function downloadToFile(url, dest) {
-  const res = await fetch(url)
+  const res = await fetch(url, { signal: AbortSignal.timeout(120_000) })
   if (!res.ok || !res.body) throw new Error(`source fetch ${res.status}`)
   // STREAM to disk (constant memory) — buffering a 100MB+ file in a Node Buffer
   // spikes memory and OOM-kills ffmpeg on a small container.
@@ -230,7 +271,7 @@ function ffmpegClip(input, startSec, dur, outPath) {
       '-vf', "scale='min(1280,iw)':-2",
       '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23',
       '-c:a', 'aac', '-movflags', '+faststart', '-y', outPath,
-    ], { maxBuffer: 1024 * 1024 * 64 }, (err, _so, se) => {
+    ], { maxBuffer: 1024 * 1024 * 64, timeout: 240_000, killSignal: 'SIGKILL' }, (err, _so, se) => {
       if (err) {
         // Empty stderr + a signal = the process was killed (usually OOM).
         const detail = (se && se.trim()) || `${err.message || 'failed'}${err.signal ? ` [signal ${err.signal}]` : ''}`
@@ -242,7 +283,7 @@ function ffmpegClip(input, startSec, dur, outPath) {
 
 function ffprobeDuration(file) {
   return new Promise((resolve) => {
-    execFile('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', file], (err, stdout) => {
+    execFile('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', file], { timeout: 30_000, killSignal: 'SIGKILL' }, (err, stdout) => {
       if (err) return resolve(null)
       const d = parseFloat(String(stdout).trim())
       resolve(Number.isFinite(d) ? Math.round(d) : null)
@@ -281,7 +322,7 @@ function publicUrl(key) {
 }
 
 app.post('/ingest', async (req, res) => {
-  if (SECRET && req.get('x-ingest-secret') !== SECRET) {
+  if (!SECRET || req.get('x-ingest-secret') !== SECRET) {
     return res.status(401).json({ error: 'unauthorized' })
   }
   const videoId = String(req.body?.videoId || '').trim()
@@ -335,7 +376,7 @@ app.post('/ingest', async (req, res) => {
 // Trim a segment out of an already-hosted video and return a small mp4 URL, so
 // the render only sends Cloudinary the clip (not the whole 100MB+ source).
 app.post('/clip', async (req, res) => {
-  if (SECRET && req.get('x-ingest-secret') !== SECRET) {
+  if (!SECRET || req.get('x-ingest-secret') !== SECRET) {
     return res.status(401).json({ error: 'unauthorized' })
   }
   const url = String(req.body?.url || '').trim()
@@ -351,6 +392,8 @@ app.post('/clip', async (req, res) => {
   const srcTmp = path.join(os.tmpdir(), `src-${Date.now()}.mp4`)
   const outTmp = path.join(os.tmpdir(), `clip-${Date.now()}-${Math.round(startSec)}.mp4`)
   try {
+    // SSRF guard: refuse internal/private targets before we ever fetch.
+    await assertPublicHttpUrl(url)
     // Fetch the source locally, then trim the local file (reliable seeking).
     await downloadToFile(url, srcTmp)
     await ffmpegClip(srcTmp, Math.max(0, startSec), dur, outTmp)
@@ -486,7 +529,7 @@ function ffmpegRender(input, startSec, dur, vf, outPath) {
       // lookahead buffers. Negligible quality hit for a short clip.
       '-x264-params', 'bframes=0:ref=1:rc-lookahead=10:sync-lookahead=0',
       '-c:a', 'aac', '-movflags', '+faststart', '-y', outPath,
-    ], { maxBuffer: 1024 * 1024 * 64 }, (err, _so, se) => {
+    ], { maxBuffer: 1024 * 1024 * 64, timeout: 240_000, killSignal: 'SIGKILL' }, (err, _so, se) => {
       if (err) reject(new Error('ffmpeg: ' + (((se && se.trim()) || err.message || 'failed') + (err.signal ? ` [signal ${err.signal}]` : '')).slice(0, 400)))
       else resolve()
     })
@@ -539,7 +582,7 @@ function ffmpegRenderComplex(input, startSec, dur, filterComplex, audioMap, outP
       '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p',
       '-x264-params', 'bframes=0:ref=1:rc-lookahead=10:sync-lookahead=0',
       '-c:a', 'aac', '-movflags', '+faststart', '-y', outPath,
-    ], { maxBuffer: 1024 * 1024 * 64 }, (err, _so, se) => {
+    ], { maxBuffer: 1024 * 1024 * 64, timeout: 240_000, killSignal: 'SIGKILL' }, (err, _so, se) => {
       if (err) reject(new Error('ffmpeg: ' + (((se && se.trim()) || err.message || 'failed') + (err.signal ? ` [signal ${err.signal}]` : '')).slice(0, 400)))
       else resolve()
     })
@@ -584,6 +627,7 @@ app.post('/render-short', async (req, res) => {
       ])
       renderStart = 0
     } else {
+      await assertPublicHttpUrl(url) // SSRF guard for creator-supplied source URLs
       await downloadToFile(url, srcTmp)
     }
     if (!fs.existsSync(srcTmp)) throw new Error('source download produced no file')
@@ -625,7 +669,11 @@ app.post('/render-short', async (req, res) => {
 // BUILD marker: bump this string when the service code changes so the Railway
 // deploy logs unambiguously show which build is actually running (Railway can
 // re-run an older commit).
-const BUILD = 'ytdlp-deno-jsruntime-2026-08-09'
-Promise.allSettled([loadCookies(), selfUpdateYtDlp()]).finally(() => {
-  app.listen(PORT, () => console.log(`ingest-service listening on :${PORT} [build ${BUILD}] yt-dlp ${ytDlpVersion}`))
-})
+const BUILD = 'audit-hardening-2026-08-09'
+// Bind the port FIRST so health checks pass immediately, THEN load cookies and
+// self-update yt-dlp in the background (they only populate cookiesReady /
+// ytDlpVersion, both reported by /health). Previously we awaited a ~120s pip
+// update before listening, which could fail a platform health check on a slow
+// build and restart-loop the deploy.
+app.listen(PORT, () => console.log(`ingest-service listening on :${PORT} [build ${BUILD}] yt-dlp ${ytDlpVersion}`))
+Promise.allSettled([loadCookies(), selfUpdateYtDlp()]).catch(() => { /* best-effort */ })

@@ -18,10 +18,26 @@ export default function ChannelStats() {
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
 
-  async function fetchStats() {
+  // Cache the last result client-side so a repeat dashboard visit doesn't hit the
+  // YouTube Data API again (channel stats barely move minute-to-minute). The
+  // manual Sync button forces a fresh fetch.
+  const CACHE_KEY = 'mvp_channel_stats_cache'
+  const CACHE_TTL = 15 * 60 * 1000
+
+  async function fetchStats(force = false) {
+    if (!force) {
+      try {
+        const c = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null')
+        if (c && c.v && Date.now() - c.t < CACHE_TTL) { setStats(c.v); setLoading(false); return }
+      } catch { /* ignore cache read */ }
+    }
     try {
       const res = await fetch('/api/youtube/channel-stats')
-      if (res.ok) setStats(await res.json())
+      if (res.ok) {
+        const v = await res.json()
+        setStats(v)
+        try { localStorage.setItem(CACHE_KEY, JSON.stringify({ t: Date.now(), v })) } catch { /* ignore */ }
+      }
     } finally {
       setLoading(false)
     }
@@ -31,7 +47,7 @@ export default function ChannelStats() {
 
   async function handleSync() {
     setSyncing(true)
-    await fetchStats()
+    await fetchStats(true)
     setSyncing(false)
   }
 

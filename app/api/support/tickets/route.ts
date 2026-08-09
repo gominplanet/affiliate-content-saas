@@ -55,16 +55,22 @@ async function selectThreadMessages(sb: any, ids: string[]): Promise<any[]> {
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function insertMessage(sb: any, row: Record<string, unknown>, returning?: string): Promise<any | null> {
-  const doInsert = async (r: Record<string, unknown>) => {
+  const doInsert = async (r: Record<string, unknown>, ret?: string) => {
     let q = sb.from('support_messages').insert(r)
-    if (returning) q = q.select(returning).single()
+    if (ret) q = q.select(ret).single()
     return q
   }
-  let res = await doInsert(row)
+  let res = await doInsert(row, returning)
   if (res.error && 'image_url' in row) {
+    // Retry WITHOUT image_url — and also drop it from the RETURNING columns, or
+    // the .select() re-references the missing column and errors again (this was
+    // the pre-238 reply 500 the resilience helper was supposed to prevent).
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { image_url, ...rest } = row
-    res = await doInsert(rest)
+    const retNoImg = returning
+      ? returning.split(',').map(c => c.trim()).filter(c => c !== 'image_url').join(',')
+      : undefined
+    res = await doInsert(rest, retNoImg)
   }
   return res.error ? null : (res.data ?? { ok: true })
 }
