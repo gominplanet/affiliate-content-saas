@@ -84,11 +84,24 @@ get_header();
       //    under full-page caching. No-JS fallback: all enabled banners show in order.
       $side_blocks = mvp_affiliate_sidebar_blocks_display();
       if (!empty($side_blocks)) {
+          // Render each enabled block first and DROP the empties (image block
+          // with no imageUrl, html block with no html). If we wrapped those in
+          // .mvp-sidebar-ad-item anyway they'd occupy shuffle/cap slots — which
+          // is why "show 3" sometimes showed 1: two of the slots were blank.
+          $side_html = array();
+          foreach ($side_blocks as $block) {
+              $b = mvp_affiliate_render_block($block);
+              if (trim($b) !== '') {
+                  $side_html[] = $b;
+              }
+          }
+      }
+      if (!empty($side_html)) {
           $side_rotate = mvp_affiliate_sidebar_rotate() ? '1' : '0';
           $side_show   = mvp_affiliate_sidebar_show_count();
           echo '<div class="mvp-sidebar-ads" data-rotate="' . esc_attr($side_rotate) . '" data-show="' . esc_attr((string) $side_show) . '">';
-          foreach ($side_blocks as $block) {
-              echo '<div class="mvp-sidebar-ad-item">' . mvp_affiliate_render_block($block) . '</div>';
+          foreach ($side_html as $b) {
+              echo '<div class="mvp-sidebar-ad-item">' . $b . '</div>';
           }
           echo '</div>';
           if ($side_rotate === '1' || $side_show > 0) {
