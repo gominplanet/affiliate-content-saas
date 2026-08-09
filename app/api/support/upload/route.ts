@@ -8,6 +8,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 const MAX_BYTES = 5 * 1024 * 1024 // 5 MB
 const ALLOWED_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif'])
@@ -36,16 +37,22 @@ export async function POST(req: NextRequest) {
   const ext = extFromMime[file.type] ?? 'png'
   const path = `${user.id}/${Math.floor(Date.now() / 1000)}-${Math.round(Number(`0.${(file.size % 100000)}`) * 1e6)}.${ext}`
 
+  // Upload with the SERVICE-ROLE client so it bypasses Storage RLS — the bucket
+  // has no INSERT policy, which otherwise rejects an authenticated user's upload
+  // ("new row violates row-level security policy"). The user is already
+  // authenticated above, and the path is namespaced by their id, so this stays
+  // scoped and safe without requiring the operator to hand-write bucket policies.
+  const admin = createAdminClient()
   const buffer = Buffer.from(await file.arrayBuffer())
-  const { error: uploadErr } = await supabase.storage
+  const { error: uploadErr } = await admin.storage
     .from(STORAGE_BUCKET)
     .upload(path, buffer, { contentType: file.type, upsert: true })
   if (uploadErr) {
     return NextResponse.json({
-      error: `Upload failed: ${uploadErr.message}. The '${STORAGE_BUCKET}' bucket may not exist — create it as public-read in Supabase → Storage.`,
+      error: `Upload failed: ${uploadErr.message}. The '${STORAGE_BUCKET}' bucket may not exist — create it in Supabase → Storage.`,
     }, { status: 500 })
   }
 
-  const { data } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path)
+  const { data } = admin.storage.from(STORAGE_BUCKET).getPublicUrl(path)
   return NextResponse.json({ ok: true, url: data.publicUrl })
 }
