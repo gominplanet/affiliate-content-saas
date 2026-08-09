@@ -135,7 +135,6 @@ const PLAYER_CLIENTS = (process.env.YT_DLP_PLAYER_CLIENTS || 'default,web_safari
 // service — no login, no cookies. Point YT_DLP_POT_BASE_URL at that service, e.g.
 // http://bgutil-provider.railway.internal:4416. Empty = feature off.
 const POT_BASE_URL = (process.env.YT_DLP_POT_BASE_URL || '').trim()
-const PLUGIN_DIRS = '/opt/ytdlp-plugins'
 
 // yt-dlp update channel. YouTube's bot-wall / player fixes land in the NIGHTLY
 // channel days after a block, while STABLE only cuts a release ~monthly — so a
@@ -143,12 +142,11 @@ const PLUGIN_DIRS = '/opt/ytdlp-plugins'
 // (e.g. 'stable') if a nightly ever regresses.
 const YT_DLP_CHANNEL = (process.env.YT_DLP_CHANNEL || 'nightly').trim()
 
-// yt-dlp self-update on boot. The Docker image only fetches yt-dlp at BUILD time,
-// so a long-running container goes stale and starts hitting the bot wall. On each
-// boot we `--update-to <channel>@latest`, which BOTH switches to the nightly
-// channel and pulls its newest build — no image rebuild, just a restart. Best-
-// effort: a failed update never blocks startup, and the live version + channel are
-// surfaced on /health so we can confirm exactly what's running.
+// yt-dlp self-update on boot. yt-dlp is pip-installed (so the bgutil plugin
+// auto-loads), so we refresh it with pip rather than the standalone `--update-to`.
+// `--pre` pulls the latest NIGHTLY pre-release (YouTube fixes land there first);
+// YT_DLP_CHANNEL=stable drops `--pre` for the stable line. Best-effort: a failed
+// update never blocks startup, and the live version is surfaced on /health.
 let ytDlpVersion = 'unknown'
 function readYtDlpVersion() {
   return new Promise((resolve) => {
@@ -156,10 +154,11 @@ function readYtDlpVersion() {
   })
 }
 async function selfUpdateYtDlp() {
+  const preFlag = YT_DLP_CHANNEL === 'stable' ? [] : ['--pre']
   await new Promise((resolve) => {
-    execFile('yt-dlp', ['--update-to', `${YT_DLP_CHANNEL}@latest`], { timeout: 90_000 }, (err, stdout, stderr) => {
-      if (err) console.warn('yt-dlp update failed (keeping installed version):', (stderr || err.message || '').slice(0, 200))
-      else console.log('yt-dlp update:', ((stdout || '').trim().split('\n').pop() || '').slice(0, 140))
+    execFile('pip3', ['install', '--no-cache-dir', '--break-system-packages', ...preFlag, '-U', 'yt-dlp[default]'], { timeout: 120_000 }, (err, stdout, stderr) => {
+      if (err) console.warn('yt-dlp pip update failed (keeping installed version):', (stderr || err.message || '').slice(0, 200))
+      else console.log('yt-dlp pip update:', ((stdout || '').trim().split('\n').pop() || '').slice(0, 140))
       resolve()
     })
   })
@@ -178,7 +177,6 @@ function ytDlp(args) {
   const full = [
     ...(PROXY ? ['--proxy', PROXY] : []),
     ...(cookiesReady ? ['--cookies', COOKIES_FILE] : []),
-    '--plugin-dirs', PLUGIN_DIRS,
     '--extractor-args', `youtube:player_client=${PLAYER_CLIENTS}`,
     // Tell the bgutil plugin where the PO-token provider lives (only when set).
     ...(POT_BASE_URL ? ['--extractor-args', `youtubepot-bgutilhttp:base_url=${POT_BASE_URL}`] : []),
@@ -623,7 +621,7 @@ app.post('/render-short', async (req, res) => {
 // BUILD marker: bump this string when the service code changes so the Railway
 // deploy logs unambiguously show which build is actually running (Railway can
 // re-run an older commit).
-const BUILD = 'ytdlp-verbose-diag-2026-08-09'
+const BUILD = 'ytdlp-pip+plugin-autoload-2026-08-09'
 Promise.allSettled([loadCookies(), selfUpdateYtDlp()]).finally(() => {
   app.listen(PORT, () => console.log(`ingest-service listening on :${PORT} [build ${BUILD}] yt-dlp ${ytDlpVersion}`))
 })

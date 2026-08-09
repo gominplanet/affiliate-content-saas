@@ -3,14 +3,16 @@ FROM node:20-slim
 
 # yt-dlp needs python3 + ffmpeg (for merging video/audio streams). fontconfig +
 # a heavy display font (Anton) let ffmpeg's libass burn Hormozi-style captions.
-# python3-pip is added so we can install the bgutil PO-token yt-dlp plugin, which
-# lets yt-dlp satisfy YouTube's "proof of origin" bot check WITHOUT login cookies
-# (it fetches a token from the companion provider service at YT_DLP_POT_BASE_URL).
+#
+# yt-dlp is installed VIA PIP (not the standalone binary) so the bgutil PO-token
+# plugin auto-loads from site-packages — the documented, reliable plugin method.
+# (The standalone binary + --plugin-dirs did NOT pick the plugin up, so no PO
+# token was ever fetched and YouTube kept bot-walling.) The plugin lets yt-dlp
+# satisfy YouTube's "proof of origin" check WITHOUT login cookies, pulling a token
+# from the companion provider service at YT_DLP_POT_BASE_URL.
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ffmpeg ca-certificates curl python3 python3-pip fontconfig \
-  && curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp \
-  && chmod a+rx /usr/local/bin/yt-dlp \
-  && pip3 install --no-cache-dir --break-system-packages --target /opt/ytdlp-plugins bgutil-ytdlp-pot-provider \
+  && pip3 install --no-cache-dir --break-system-packages "yt-dlp[default]" bgutil-ytdlp-pot-provider \
   && mkdir -p /usr/share/fonts/truetype/caption \
   && curl -L https://github.com/google/fonts/raw/main/ofl/anton/Anton-Regular.ttf -o /usr/share/fonts/truetype/caption/Anton-Regular.ttf \
   && fc-cache -f \
