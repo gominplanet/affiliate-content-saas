@@ -311,7 +311,7 @@ function parseOneCopy(raw: string, fallbackAngle: CtrAngle): ThumbCopy {
       const line1 = scrubBanned(String(o.line1 || '').trim()).toUpperCase().slice(0, 16)
       const line2 = scrubBanned(String(o.line2 || '').trim()).toUpperCase().slice(0, 22)
       const emphasis = scrubBanned(String(o.emphasisWord || '').trim()).toUpperCase()
-      const VALID_DECORATIONS = new Set<ThumbDecoration>(['stars', 'check', 'arrow', 'speedlines', 'hot', 'none'])
+      const VALID_DECORATIONS = new Set<ThumbDecoration>(['stars', 'check', 'arrow', 'none'])
       const decoration = VALID_DECORATIONS.has(o.decoration as ThumbDecoration) ? (o.decoration as ThumbDecoration) : undefined
       if (line1 && line2) return { angle, line1, line2, emphasisWord: emphasis || line1.split(' ')[0], decoration }
     } catch { /* fall through */ }
@@ -397,8 +397,7 @@ OUTPUT FORMAT: Return a strictly structured JSON block with: angle, line1, line2
 decoration: ONE visual element drawn beneath the text. Match to angle + product energy:
 - "stars" → 5 gold stars. Best for VALUE_DISRUPTION or a strong quality/approval signal.
 - "check" → green checkmark. Best for NEGATION (problem solved / approved).
-- "arrow" → red curved arrow pointing toward the subject. Best for CURIOSITY_GAP.
-- "speedlines" → white speed lines. Best for fast / instant / powerful benefit angles.
+- "arrow" → red curved arrow pointing toward the subject/product. Best for CURIOSITY_GAP.
 - "none" → clean text only. Best for SKEPTIC or when energy is understated.\``
 
 async function generateThumbCopy(videoTitle: string, angle: CtrAngle, productContext = '', claimsSheet = ''): Promise<ThumbCopy> {
@@ -713,7 +712,9 @@ export async function POST(request: Request) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const bs = (bp as any)?.thumbnail_brand_style || {}
       noCheckDecoration = !!bs.noCheck
-      const FORCEABLE = new Set<ThumbDecoration>(['check', 'stars', 'arrow', 'speedlines', 'hot', 'none'])
+      // 'hot' + 'speedlines' retired 2026-08 (cartoony / nonsensical). A stale
+      // stored value now falls through to the 'none' default instead of drawing.
+      const FORCEABLE = new Set<ThumbDecoration>(['check', 'stars', 'arrow', 'none'])
       if (bs.decoration === 'auto') {
         forcedDecoration = null // model/angle picks
       } else if (typeof bs.decoration === 'string' && FORCEABLE.has(bs.decoration as ThumbDecoration)) {
@@ -1485,8 +1486,8 @@ export async function POST(request: Request) {
             if (preferred !== 'none' && usedDecorations.has(preferred)) {
               // This decoration was already used this batch — pick the next fresh one.
               const ALL_DECORATIONS: ThumbDecoration[] = noCheckDecoration
-                ? ['arrow', 'stars', 'speedlines', 'none']
-                : ['check', 'arrow', 'stars', 'speedlines', 'none']
+                ? ['arrow', 'stars', 'none']
+                : ['check', 'arrow', 'stars', 'none']
               decoration = ALL_DECORATIONS.find(d => !usedDecorations.has(d)) ?? preferred
             }
             usedDecorations.add(decoration)

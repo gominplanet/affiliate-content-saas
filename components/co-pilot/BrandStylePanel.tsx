@@ -14,16 +14,16 @@ const ACCENT_SWATCHES = ['#FFE034', '#FFFFFF', '#FF3B3B', '#39FF14', '#33B5FF', 
 
 interface SavedStyle { borderStyleIndex: number | null; accentColor: string | null; face: string | null; noCheck?: boolean; decoration?: string }
 
-// Badge options for the thumbnail generator (single-select; 'auto' = MVP picks).
+// Badge options for the thumbnail generator (single-select). Default is No badge.
+// 'hot' + 'speedlines' + 'auto' retired 2026-08 — any stale saved value is
+// coerced to 'none' on load (see ALLOWED_BADGES below).
 const BADGE_OPTIONS: Array<{ v: string; label: string }> = [
-  { v: 'auto', label: 'Auto — MVP picks' },
+  { v: 'none', label: 'No badge' },
   { v: 'check', label: '✓ Green check' },
   { v: 'stars', label: '★★★★★ Five gold stars' },
-  { v: 'hot', label: '🔥 Hot / trending' },
-  { v: 'arrow', label: '→ Red arrow' },
-  { v: 'speedlines', label: 'Speed lines' },
-  { v: 'none', label: 'No badge' },
+  { v: 'arrow', label: '→ Red arrow (points at the product)' },
 ]
+const ALLOWED_BADGES = new Set(BADGE_OPTIONS.map(o => o.v))
 
 // The parent's selectedFaceModelId uses null(off) | 'no-human'(product) | <uuid>.
 // The saved API uses                    'off'      | 'product'          | <uuid>.
@@ -93,7 +93,12 @@ export default function BrandStylePanel({
           if (d.style.accentColor) setAccentColor(d.style.accentColor)
           if (d.style.face) setSelectedFaceModelId(savedToFace(d.style.face))
           if (typeof d.style.noCheck === 'boolean') { setNoCheck(d.style.noCheck); setParentNoCheck?.(d.style.noCheck) }
-          if (typeof d.style.decoration === 'string') { setDecoration(d.style.decoration); setParentDecoration?.(d.style.decoration) }
+          if (typeof d.style.decoration === 'string') {
+            // Coerce retired/unknown badges (auto/hot/speedlines) to No badge so
+            // the dropdown never shows a value it can't display.
+            const dec = ALLOWED_BADGES.has(d.style.decoration) ? d.style.decoration : 'none'
+            setDecoration(dec); setParentDecoration?.(dec)
+          }
         }
       } catch { /* ignore — block just keeps its defaults */ }
     })()

@@ -2399,15 +2399,12 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                       }}
                       className="w-full text-xs px-3 py-2 rounded-lg border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] focus:outline-none focus:border-[#7C3AED] transition"
                     >
-                      <option value="auto">Auto — let MVP pick the best badge</option>
+                      <option value="none">No badge</option>
                       <option value="check">✓ Green check</option>
                       <option value="stars">★★★★★ Five gold stars</option>
-                      <option value="hot">🔥 Hot / trending</option>
-                      <option value="arrow">→ Red arrow</option>
-                      <option value="speedlines">Speed lines</option>
-                      <option value="none">No badge</option>
+                      <option value="arrow">→ Red arrow (points at the product)</option>
                     </select>
-                    <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-1">One badge on every thumbnail, or Auto to vary it. Pick “No badge” for none.</p>
+                    <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-1">The same badge goes on every thumbnail. Pick “No badge” for none.</p>
                   </div>
 
                   {/* BrandStylePanel mounted hidden — fires its saved-defaults useEffect on mount */}
