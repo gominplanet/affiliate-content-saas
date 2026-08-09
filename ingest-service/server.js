@@ -191,11 +191,15 @@ function ytDlp(args) {
   return new Promise((resolve, reject) => {
     execFile('yt-dlp', full, { maxBuffer: 1024 * 1024 * 64 }, (err, stdout, stderr) => {
       if (err) {
-        const full = (stderr || err.message || '')
-        // Log the FULL verbose stderr to the container console for diagnosis, but
-        // keep the thrown/HTTP error trimmed so the app UI stays readable.
-        console.error('[yt-dlp] failed, full stderr:\n' + full)
-        reject(new Error(full.slice(0, 500)))
+        const fullErr = (stderr || err.message || '')
+        // Log the FULL verbose stderr to the container console for diagnosis.
+        console.error('[yt-dlp] failed, full stderr:\n' + fullErr)
+        // Surface the REAL reason to the caller/UI, not the verbose [debug]
+        // preamble: prefer the last ERROR: line, else the last non-debug line.
+        const realErr = (fullErr.match(/^ERROR:.*$/gm) || []).pop()
+          || fullErr.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('[debug]') && !l.startsWith('WARNING:')).pop()
+          || fullErr.slice(-500)
+        reject(new Error(realErr.slice(0, 500)))
       } else resolve(stdout)
     })
   })
@@ -621,7 +625,7 @@ app.post('/render-short', async (req, res) => {
 // BUILD marker: bump this string when the service code changes so the Railway
 // deploy logs unambiguously show which build is actually running (Railway can
 // re-run an older commit).
-const BUILD = 'ytdlp-pip+plugin-autoload-2026-08-09'
+const BUILD = 'ytdlp-real-error-surface-2026-08-09'
 Promise.allSettled([loadCookies(), selfUpdateYtDlp()]).finally(() => {
   app.listen(PORT, () => console.log(`ingest-service listening on :${PORT} [build ${BUILD}] yt-dlp ${ytDlpVersion}`))
 })
