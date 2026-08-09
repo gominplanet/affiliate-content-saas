@@ -77,8 +77,8 @@ export default function BrandStylePanel({
   // Hide the green ✓ checkmark decoration on generated thumbnails. Persisted
   // with the brand style and enforced server-side by generate-thumbnail.
   const [noCheck, setNoCheck] = useState(false)
-  // Brand badge preference ('auto' | 'none' | a specific badge).
-  const [decoration, setDecoration] = useState<string>('auto')
+  // Brand badge preference. Default is NO badge until the creator picks one.
+  const [decoration, setDecoration] = useState<string>('none')
 
   // Prefill the block from the saved default once on mount.
   useEffect(() => {

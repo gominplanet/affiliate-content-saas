@@ -608,9 +608,9 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
   // Hide the green ✓ checkmark decoration. Prefilled from the saved style (via
   // the hidden BrandStylePanel), persisted on toggle, enforced by generate-thumbnail.
   const [noCheck, setNoCheck] = useState(false)
-  // Brand badge preference — 'auto' lets MVP pick, or force one badge (or none)
-  // on every thumbnail. Prefilled from the saved style, persisted on change.
-  const [badge, setBadge] = useState<string>('auto')
+  // Brand badge preference. Default is NO badge until the creator picks one.
+  // Prefilled from the saved style, persisted on change.
+  const [badge, setBadge] = useState<string>('none')
   // 'auto' = vision-match from all ready models; 'no-human' = product-only; any other string = specific model id
   const [scoutFaceSelection, setScoutFaceSelection] = useState<'auto' | 'no-human' | string>('auto')
   /** Which thumbnail mode card is active. Drives the 4-card picker UI.
