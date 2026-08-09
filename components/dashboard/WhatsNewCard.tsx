@@ -1,23 +1,24 @@
 'use client'
 
 /**
- * WhatsNewCard — a compact, dismissible "What's new" panel that tells EXISTING
- * users about the last batch of product updates. Distinct from <NewsBanner/>
- * (which shows ONE admin-managed announcement at a time) — this is a short,
- * hand-curated changelog rendered as labelled badge rows.
+ * WhatsNewCard — a "What's new" changelog for EXISTING users. Distinct from
+ * <NewsBanner/> (one admin-managed announcement). On a new release it opens
+ * EXPANDED; closing it doesn't hide it — it COLLAPSES into a small rectangular
+ * card that re-expands on click, so the updates are always one tap away.
  *
  * To publish a new batch: bump RELEASE_ID and replace UPDATES. The new RELEASE_ID
- * means everyone — even people who dismissed the previous batch — sees it once
- * more (dismissal is stored per-release in localStorage).
+ * re-opens the panel for everyone (even people who collapsed the last batch) and
+ * fires the one-time "what's new" toast. Collapsed state is stored per-release in
+ * localStorage.
  */
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Sparkles, X, ArrowUpRight } from 'lucide-react'
+import { Sparkles, ChevronDown, ChevronUp, ArrowUpRight } from 'lucide-react'
 import { toast } from 'sonner'
 
-// Bump this whenever UPDATES changes — re-shows the card AND fires the one-time
-// "what's new" toast to everyone (both gated per-release in localStorage).
+// Bump this whenever UPDATES changes — re-opens the panel AND fires the one-time
+// toast to everyone (both gated per-release in localStorage).
 const RELEASE_ID = '2026-08-09'
 const STORAGE_KEY = 'mvp_whats_new_seen'
 const TOAST_KEY = 'mvp_whats_new_toasted'
@@ -109,21 +110,22 @@ const UPDATES: Update[] = [
 ]
 
 export default function WhatsNewCard() {
-  // Start hidden so we never flash before we know the dismissal state.
-  const [dismissed, setDismissed] = useState(true)
+  // Collapsed by default (also the pre-hydration state) so we never flash the
+  // full panel. `ready` gates the first paint until we've read localStorage.
+  const [collapsed, setCollapsed] = useState(true)
+  const [ready, setReady] = useState(false)
 
   useEffect(() => {
     try {
-      setDismissed(localStorage.getItem(STORAGE_KEY) === RELEASE_ID)
+      setCollapsed(localStorage.getItem(STORAGE_KEY) === RELEASE_ID)
     } catch {
-      setDismissed(false)
+      setCollapsed(false)
     }
+    setReady(true)
   }, [])
 
-  // One-time-per-release attention toast — so users actually notice new features
-  // instead of relying on them spotting the card. Separate key from the card's
-  // dismissal so the popup fires once per release regardless. "See all" scrolls
-  // to the card (a no-op if it's been dismissed).
+  // One-time-per-release attention toast so users notice new features even if
+  // the panel is collapsed. Separate key from the collapse state.
   useEffect(() => {
     let toasted: string | null = null
     try { toasted = localStorage.getItem(TOAST_KEY) } catch { /* private mode */ }
@@ -138,18 +140,59 @@ export default function WhatsNewCard() {
       duration: 11000,
       action: {
         label: 'See all',
-        onClick: () => { document.getElementById('mvp-whats-new')?.scrollIntoView({ behavior: 'smooth', block: 'center' }) },
+        onClick: () => {
+          setCollapsed(false)
+          document.getElementById('mvp-whats-new')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        },
       },
     })
   }, [])
 
-  if (dismissed) return null
-
-  function dismiss() {
+  function collapse() {
     try { localStorage.setItem(STORAGE_KEY, RELEASE_ID) } catch { /* ignore */ }
-    setDismissed(true)
+    setCollapsed(true)
+  }
+  function expand() {
+    setCollapsed(false)
   }
 
+  if (!ready) return null
+
+  // ── Collapsed: a neat little rectangular card, right-aligned ─────────────
+  if (collapsed) {
+    return (
+      <div className="flex justify-end mb-6" id="mvp-whats-new">
+        <button
+          onClick={expand}
+          className="inline-flex items-center gap-2 rounded-xl border pl-2.5 pr-3 py-2 transition-all hover:shadow-sm hover:-translate-y-px"
+          style={{
+            background: 'linear-gradient(135deg, rgba(124, 58, 237, 0.10) 0%, rgba(188, 24, 136, 0.08) 100%)',
+            borderColor: 'rgba(124, 58, 237, 0.28)',
+          }}
+          aria-label="Open what's new"
+        >
+          <span
+            className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
+            style={{ background: 'linear-gradient(135deg, #7C3AED 0%, #bc1888 100%)' }}
+          >
+            <Sparkles size={13} className="text-white" />
+          </span>
+          <span className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>
+            What&apos;s new
+          </span>
+          <span
+            className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+            style={{ color: '#fff', background: '#7C3AED' }}
+          >
+            {UPDATES.length}
+          </span>
+          <ChevronDown size={15} style={{ color: 'var(--text-faint)' }} />
+        </button>
+      </div>
+    )
+  }
+
+  // ── Expanded: the full changelog grid ───────────────────────────────────
   return (
     <div
       id="mvp-whats-new"
@@ -160,54 +203,66 @@ export default function WhatsNewCard() {
       }}
     >
       <button
-        onClick={dismiss}
-        className="absolute top-3.5 right-3.5 text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] transition-colors"
-        aria-label="Dismiss what's new"
+        onClick={collapse}
+        className="absolute top-3.5 right-3.5 inline-flex items-center gap-1 text-[11px] font-medium rounded-md px-2 py-1 transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+        style={{ color: 'var(--text-faint)' }}
+        aria-label="Collapse what's new"
       >
-        <X size={15} />
+        Collapse <ChevronUp size={13} />
       </button>
 
-      <div className="flex items-center gap-2 mb-4 pr-6">
+      <div className="flex items-center gap-3 mb-5 pr-24">
         <div
-          className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
-          style={{ background: 'linear-gradient(45deg, #7C3AED 0%, #bc1888 100%)' }}
+          className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm"
+          style={{ background: 'linear-gradient(135deg, #7C3AED 0%, #bc1888 100%)' }}
         >
-          <Sparkles size={14} className="text-white" />
+          <Sparkles size={16} className="text-white" />
         </div>
-        <h3 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>
-          What&apos;s new
-        </h3>
-        <span className="text-[11px]" style={{ color: 'var(--text-faint)' }}>
-          · the latest updates
-        </span>
+        <div className="min-w-0">
+          <h3 className="text-[15px] font-bold leading-tight" style={{ color: 'var(--text)' }}>
+            What&apos;s new in MVP
+          </h3>
+          <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-faint)' }}>
+            {UPDATES.length} updates from the last few days · tap any to open it
+          </p>
+        </div>
       </div>
 
-      <ul className="flex flex-col gap-3.5">
+      <ul className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
         {UPDATES.map((u, i) => {
-          const Row = (
-            <div className="flex items-start gap-3">
-              <span
-                className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md flex-shrink-0 mt-0.5"
-                style={{ color: u.tone, backgroundColor: `${u.tone}1a` }}
-              >
-                {u.badge}
-              </span>
-              <div className="min-w-0">
-                <p className="text-[13px] font-semibold flex items-center gap-1" style={{ color: 'var(--text)' }}>
-                  {u.title}
-                  {u.href && <ArrowUpRight size={12} className="opacity-50" />}
-                </p>
-                <p className="text-[12px] leading-relaxed mt-0.5" style={{ color: 'var(--text-faint)' }}>
-                  {u.desc}
-                </p>
+          const inner = (
+            <div
+              className="h-full rounded-xl border p-3.5 bg-white/70 dark:bg-white/[0.035] transition-all duration-200 hover:shadow-sm hover:-translate-y-px"
+              style={{ borderColor: `${u.tone}33` }}
+            >
+              <div className="flex items-center justify-between gap-2 mb-1.5">
+                <span
+                  className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full"
+                  style={{ color: u.tone, backgroundColor: `${u.tone}1f` }}
+                >
+                  {u.badge}
+                </span>
+                {u.href && (
+                  <ArrowUpRight
+                    size={13}
+                    style={{ color: u.tone }}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity"
+                  />
+                )}
               </div>
+              <p className="text-[13px] font-semibold mb-1" style={{ color: 'var(--text)' }}>
+                {u.title}
+              </p>
+              <p className="text-[12px] leading-relaxed" style={{ color: 'var(--text-faint)' }}>
+                {u.desc}
+              </p>
             </div>
           )
           return (
-            <li key={i}>
+            <li key={i} className="group">
               {u.href
-                ? <Link href={u.href} className="block group hover:opacity-90 transition-opacity">{Row}</Link>
-                : Row}
+                ? <Link href={u.href} className="block h-full">{inner}</Link>
+                : inner}
             </li>
           )
         })}
