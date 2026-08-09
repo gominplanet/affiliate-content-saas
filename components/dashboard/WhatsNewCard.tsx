@@ -1,27 +1,24 @@
 'use client'
 
 /**
- * WhatsNewCard — a "What's new" changelog for EXISTING users. Distinct from
- * <NewsBanner/> (one admin-managed announcement). On a new release it opens
- * EXPANDED; closing it doesn't hide it — it COLLAPSES into a small rectangular
- * card that re-expands on click, so the updates are always one tap away.
+ * WhatsNewCard — a "What's new" changelog for EXISTING users. Renders as a small
+ * pill ("✨ What's new · N"); clicking it opens a centered MODAL with the full
+ * changelog, so it never pushes the page around. On a new release the modal
+ * auto-opens once; after that it stays as the pill until clicked.
  *
  * To publish a new batch: bump RELEASE_ID and replace UPDATES. The new RELEASE_ID
- * re-opens the panel for everyone (even people who collapsed the last batch) and
- * fires the one-time "what's new" toast. Collapsed state is stored per-release in
+ * auto-opens the modal once more for everyone. "Seen" is stored per-release in
  * localStorage.
  */
 
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import Link from 'next/link'
-import { Sparkles, ChevronDown, ChevronUp, ArrowUpRight } from 'lucide-react'
-import { toast } from 'sonner'
+import { Sparkles, ChevronDown, ArrowUpRight, X } from 'lucide-react'
 
-// Bump this whenever UPDATES changes — re-opens the panel AND fires the one-time
-// toast to everyone (both gated per-release in localStorage).
+// Bump this whenever UPDATES changes — auto-opens the modal once for everyone.
 const RELEASE_ID = '2026-08-09'
 const STORAGE_KEY = 'mvp_whats_new_seen'
-const TOAST_KEY = 'mvp_whats_new_toasted'
 
 interface Update {
   badge: string
@@ -110,60 +107,43 @@ const UPDATES: Update[] = [
 ]
 
 export default function WhatsNewCard() {
-  // Collapsed by default (also the pre-hydration state) so we never flash the
-  // full panel. `ready` gates the first paint until we've read localStorage.
-  const [collapsed, setCollapsed] = useState(true)
-  const [ready, setReady] = useState(false)
+  const [mounted, setMounted] = useState(false)
+  const [open, setOpen] = useState(false)
 
+  // On mount: enable the portal, and auto-open the modal once per release.
   useEffect(() => {
-    try {
-      setCollapsed(localStorage.getItem(STORAGE_KEY) === RELEASE_ID)
-    } catch {
-      setCollapsed(false)
+    setMounted(true)
+    let seen: string | null = null
+    try { seen = localStorage.getItem(STORAGE_KEY) } catch { /* private mode */ }
+    if (seen !== RELEASE_ID) setOpen(true)
+  }, [])
+
+  // Lock body scroll + close on Escape while the modal is open.
+  useEffect(() => {
+    if (!open) return
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.body.style.overflow = prev
+      window.removeEventListener('keydown', onKey)
     }
-    setReady(true)
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
 
-  // One-time-per-release attention toast so users notice new features even if
-  // the panel is collapsed. Separate key from the collapse state.
-  useEffect(() => {
-    let toasted: string | null = null
-    try { toasted = localStorage.getItem(TOAST_KEY) } catch { /* private mode */ }
-    if (toasted === RELEASE_ID) return
-    try { localStorage.setItem(TOAST_KEY, RELEASE_ID) } catch { /* ignore */ }
-    const top = UPDATES[0]
-    const more = Math.max(0, UPDATES.length - 1)
-    toast('✨ What’s new in MVP', {
-      description: top
-        ? `${top.title}${more ? ` — and ${more} more update${more === 1 ? '' : 's'}` : ''}.`
-        : `${UPDATES.length} new update${UPDATES.length === 1 ? '' : 's'}.`,
-      duration: 11000,
-      action: {
-        label: 'See all',
-        onClick: () => {
-          setCollapsed(false)
-          document.getElementById('mvp-whats-new')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-        },
-      },
-    })
-  }, [])
-
-  function collapse() {
+  function markSeen() {
     try { localStorage.setItem(STORAGE_KEY, RELEASE_ID) } catch { /* ignore */ }
-    setCollapsed(true)
   }
-  function expand() {
-    setCollapsed(false)
-  }
+  function close() { setOpen(false); markSeen() }
+  function openModal() { setOpen(true) }
 
-  if (!ready) return null
-
-  // ── Collapsed: a neat little rectangular card, right-aligned ─────────────
-  if (collapsed) {
-    return (
-      <div className="flex justify-end mb-6" id="mvp-whats-new">
+  return (
+    <>
+      {/* Trigger pill — small, right-aligned. */}
+      <div className="flex justify-end">
         <button
-          onClick={expand}
+          onClick={openModal}
           className="inline-flex items-center gap-2 rounded-xl border pl-2.5 pr-3 py-2 transition-all hover:shadow-sm hover:-translate-y-px"
           style={{
             background: 'linear-gradient(135deg, rgba(124, 58, 237, 0.10) 0%, rgba(188, 24, 136, 0.08) 100%)',
@@ -189,84 +169,94 @@ export default function WhatsNewCard() {
           <ChevronDown size={15} style={{ color: 'var(--text-faint)' }} />
         </button>
       </div>
-    )
-  }
 
-  // ── Expanded: the full changelog grid ───────────────────────────────────
-  return (
-    <div
-      id="mvp-whats-new"
-      className="rounded-2xl border p-5 relative mb-6 scroll-mt-24"
-      style={{
-        background: 'linear-gradient(135deg, rgba(124, 58, 237, 0.06) 0%, rgba(188, 24, 136, 0.05) 100%)',
-        borderColor: 'rgba(124, 58, 237, 0.22)',
-      }}
-    >
-      <button
-        onClick={collapse}
-        className="absolute top-3.5 right-3.5 inline-flex items-center gap-1 text-[11px] font-medium rounded-md px-2 py-1 transition-colors hover:bg-black/5 dark:hover:bg-white/10"
-        style={{ color: 'var(--text-faint)' }}
-        aria-label="Collapse what's new"
-      >
-        Collapse <ChevronUp size={13} />
-      </button>
-
-      <div className="flex items-center gap-3 mb-5 pr-24">
+      {/* Modal — centered overlay, doesn't affect page layout. */}
+      {mounted && open && createPortal(
         <div
-          className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm"
-          style={{ background: 'linear-gradient(135deg, #7C3AED 0%, #bc1888 100%)' }}
+          className="fixed inset-0 z-[120] flex items-start sm:items-center justify-center p-3 sm:p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-label="What's new in MVP"
         >
-          <Sparkles size={16} className="text-white" />
-        </div>
-        <div className="min-w-0">
-          <h3 className="text-[15px] font-bold leading-tight" style={{ color: 'var(--text)' }}>
-            What&apos;s new in MVP
-          </h3>
-          <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-faint)' }}>
-            {UPDATES.length} updates from the last few days · tap any to open it
-          </p>
-        </div>
-      </div>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={close} />
 
-      <ul className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-        {UPDATES.map((u, i) => {
-          const inner = (
+          <div
+            className="relative w-full max-w-3xl max-h-[88vh] overflow-y-auto rounded-2xl border shadow-2xl bg-white dark:bg-[#141418]"
+            style={{ borderColor: 'rgba(124, 58, 237, 0.30)' }}
+          >
+            {/* Sticky header */}
             <div
-              className="h-full rounded-xl border p-3.5 bg-white/70 dark:bg-white/[0.035] transition-all duration-200 hover:shadow-sm hover:-translate-y-px"
-              style={{ borderColor: `${u.tone}33` }}
+              className="sticky top-0 z-10 flex items-center gap-3 px-5 py-4 border-b bg-white/95 dark:bg-[#141418]/95 backdrop-blur"
+              style={{ borderColor: 'var(--border, rgba(0,0,0,0.08))' }}
             >
-              <div className="flex items-center justify-between gap-2 mb-1.5">
-                <span
-                  className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full"
-                  style={{ color: u.tone, backgroundColor: `${u.tone}1f` }}
-                >
-                  {u.badge}
-                </span>
-                {u.href && (
-                  <ArrowUpRight
-                    size={13}
-                    style={{ color: u.tone }}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity"
-                  />
-                )}
+              <div
+                className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm"
+                style={{ background: 'linear-gradient(135deg, #7C3AED 0%, #bc1888 100%)' }}
+              >
+                <Sparkles size={16} className="text-white" />
               </div>
-              <p className="text-[13px] font-semibold mb-1" style={{ color: 'var(--text)' }}>
-                {u.title}
-              </p>
-              <p className="text-[12px] leading-relaxed" style={{ color: 'var(--text-faint)' }}>
-                {u.desc}
-              </p>
+              <div className="min-w-0 flex-1">
+                <h3 className="text-[16px] font-bold leading-tight" style={{ color: 'var(--text)' }}>
+                  What&apos;s new in MVP
+                </h3>
+                <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-faint)' }}>
+                  {UPDATES.length} updates from the last few days · tap any to open it
+                </p>
+              </div>
+              <button
+                onClick={close}
+                className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+                style={{ color: 'var(--text-faint)' }}
+                aria-label="Close"
+              >
+                <X size={17} />
+              </button>
             </div>
-          )
-          return (
-            <li key={i} className="group">
-              {u.href
-                ? <Link href={u.href} className="block h-full">{inner}</Link>
-                : inner}
-            </li>
-          )
-        })}
-      </ul>
-    </div>
+
+            {/* Grid */}
+            <ul className="grid grid-cols-1 md:grid-cols-2 gap-2.5 p-5">
+              {UPDATES.map((u, i) => {
+                const inner = (
+                  <div
+                    className="h-full rounded-xl border p-3.5 bg-black/[0.015] dark:bg-white/[0.035] transition-all duration-200 hover:shadow-sm hover:-translate-y-px"
+                    style={{ borderColor: `${u.tone}33` }}
+                  >
+                    <div className="flex items-center justify-between gap-2 mb-1.5">
+                      <span
+                        className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full"
+                        style={{ color: u.tone, backgroundColor: `${u.tone}1f` }}
+                      >
+                        {u.badge}
+                      </span>
+                      {u.href && (
+                        <ArrowUpRight
+                          size={13}
+                          style={{ color: u.tone }}
+                          className="opacity-0 group-hover:opacity-100 transition-opacity"
+                        />
+                      )}
+                    </div>
+                    <p className="text-[13px] font-semibold mb-1" style={{ color: 'var(--text)' }}>
+                      {u.title}
+                    </p>
+                    <p className="text-[12px] leading-relaxed" style={{ color: 'var(--text-faint)' }}>
+                      {u.desc}
+                    </p>
+                  </div>
+                )
+                return (
+                  <li key={i} className="group">
+                    {u.href
+                      ? <Link href={u.href} onClick={close} className="block h-full">{inner}</Link>
+                      : inner}
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        </div>,
+        document.body,
+      )}
+    </>
   )
 }
