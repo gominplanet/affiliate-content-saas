@@ -145,12 +145,12 @@ export default function WhatsNewCard() {
       <button
         onClick={openModal}
         className="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-semibold text-white shadow-sm transition-all hover:opacity-90 hover:-translate-y-px"
-        style={{ background: 'linear-gradient(135deg, #8B5CF6 0%, #EC4899 100%)' }}
+        style={{ background: 'linear-gradient(135deg, #FF5A1F 0%, #E11900 100%)' }}
         aria-label="Open what's new"
       >
         <span className="relative flex h-2 w-2">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
-          <span className="relative inline-flex rounded-full h-2 w-2 bg-white" />
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ backgroundColor: '#FFD400' }} />
+          <span className="relative inline-flex rounded-full h-2 w-2" style={{ backgroundColor: '#FFD400' }} />
         </span>
         <Sparkles size={12} />
         What&apos;s new
