@@ -127,12 +127,36 @@ const EXTRA_ARGS = (process.env.YT_DLP_EXTRA || '').trim().split(/\s+/).filter(B
 const PROXY = (process.env.YT_DLP_PROXY || '').trim()
 // YouTube player clients to try, in order. Alternate clients (web_safari, mweb)
 // slip past the bot check more often than the default web client alone.
-const PLAYER_CLIENTS = (process.env.YT_DLP_PLAYER_CLIENTS || 'default,web_safari,mweb').trim()
+const PLAYER_CLIENTS = (process.env.YT_DLP_PLAYER_CLIENTS || 'default,web_safari,mweb,tv,ios').trim()
+
+// yt-dlp self-update on boot. YouTube shifts its player/bot checks every few
+// weeks and the fix is almost always a newer yt-dlp — but the Docker image only
+// fetches yt-dlp at BUILD time, so a long-running container goes stale and starts
+// hitting the bot wall. Running `yt-dlp -U` on every boot keeps it current with
+// just a restart, no image rebuild. Best-effort: a failed update never blocks
+// startup, and the version is surfaced on /health so we can confirm what's live.
+let ytDlpVersion = 'unknown'
+function readYtDlpVersion() {
+  return new Promise((resolve) => {
+    execFile('yt-dlp', ['--version'], (err, stdout) => resolve(err ? 'unknown' : (stdout || '').trim()))
+  })
+}
+async function selfUpdateYtDlp() {
+  await new Promise((resolve) => {
+    execFile('yt-dlp', ['-U'], { timeout: 60_000 }, (err, stdout, stderr) => {
+      if (err) console.warn('yt-dlp -U failed (keeping installed version):', (stderr || err.message || '').slice(0, 200))
+      else console.log('yt-dlp -U:', ((stdout || '').trim().split('\n').pop() || '').slice(0, 120))
+      resolve()
+    })
+  })
+  ytDlpVersion = await readYtDlpVersion()
+  console.log('yt-dlp version:', ytDlpVersion)
+}
 
 const app = express()
 app.use(express.json())
 
-app.get('/health', (_req, res) => res.json({ ok: true, cookies: cookiesReady, build: BUILD }))
+app.get('/health', (_req, res) => res.json({ ok: true, cookies: cookiesReady, ytDlp: ytDlpVersion, build: BUILD }))
 
 function ytDlp(args) {
   // Every yt-dlp call gets: proxy (if set) + cookies (if set) + alternate
@@ -573,7 +597,7 @@ app.post('/render-short', async (req, res) => {
 // BUILD marker: bump this string when the service code changes so the Railway
 // deploy logs unambiguously show which build is actually running (Railway can
 // re-run an older commit).
-const BUILD = 'render-seamless-split+caption-sync-2026-08-08'
-loadCookies().finally(() => {
-  app.listen(PORT, () => console.log(`ingest-service listening on :${PORT} [build ${BUILD}]`))
+const BUILD = 'ytdlp-self-update+more-player-clients-2026-08-09'
+Promise.allSettled([loadCookies(), selfUpdateYtDlp()]).finally(() => {
+  app.listen(PORT, () => console.log(`ingest-service listening on :${PORT} [build ${BUILD}] yt-dlp ${ytDlpVersion}`))
 })
