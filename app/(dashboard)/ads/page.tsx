@@ -42,6 +42,11 @@ interface AdsData {
   homepageAds: HomepageAd[]
   homepageAdsEnabled: boolean
   adsenseClientId: string
+  // Sidebar rotation: shuffle the enabled sidebar banners on each page load, and
+  // optionally show only N of them at a time (0 = show all). Disabled banners are
+  // kept saved but excluded.
+  sidebarRotate: boolean
+  sidebarShowCount: number
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -273,7 +278,7 @@ function BannerBlockEditor({
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
-const EMPTY: AdsData = { sidebar: [], incontent: [], homepageAds: padHomepageAds(null), homepageAdsEnabled: true, adsenseClientId: '' }
+const EMPTY: AdsData = { sidebar: [], incontent: [], homepageAds: padHomepageAds(null), homepageAdsEnabled: true, adsenseClientId: '', sidebarRotate: false, sidebarShowCount: 0 }
 
 export default function AdsPage() {
   const supabase = createBrowserClient()
@@ -299,6 +304,7 @@ export default function AdsPage() {
     const bc = (row?.blog_customizations ?? {}) as {
       sidebar?: unknown[]; incontent?: unknown[]; homepageAds?: unknown
       homepageAdsEnabled?: boolean; adsenseClientId?: string
+      sidebarRotate?: boolean; sidebarShowCount?: number
     }
     setData({
       sidebar: (bc.sidebar ?? []).map(migrateBlock),
@@ -306,6 +312,8 @@ export default function AdsPage() {
       homepageAds: padHomepageAds(bc.homepageAds),
       homepageAdsEnabled: typeof bc.homepageAdsEnabled === 'boolean' ? bc.homepageAdsEnabled : true,
       adsenseClientId: typeof bc.adsenseClientId === 'string' ? bc.adsenseClientId : '',
+      sidebarRotate: !!bc.sidebarRotate,
+      sidebarShowCount: typeof bc.sidebarShowCount === 'number' ? bc.sidebarShowCount : 0,
     })
     setLoading(false)
   }, [supabase])
@@ -326,6 +334,8 @@ export default function AdsPage() {
           homepageAds: data.homepageAds,
           homepageAdsEnabled: data.homepageAdsEnabled,
           adsenseClientId: data.adsenseClientId,
+          sidebarRotate: data.sidebarRotate,
+          sidebarShowCount: data.sidebarShowCount,
         }),
       })
       const json = await res.json().catch(() => ({}))
@@ -445,6 +455,39 @@ export default function AdsPage() {
             title="Sidebar Banners"
             description="Affiliate banners shown in the right sidebar on every blog post. Use an image upload or paste HTML from Impact, ShareASale, CJ, etc."
           >
+            {/* Rotation controls — shuffle order + cap how many show at a time.
+                Disabled banners stay saved but are excluded. */}
+            {data.sidebar.length > 1 && (
+              <div className="flex flex-wrap items-center gap-4 mb-4 p-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border-2)]">
+                <button
+                  onClick={() => setData(d => ({ ...d, sidebarRotate: !d.sidebarRotate }))}
+                  className="flex items-center gap-2 text-sm text-[var(--text-1)]"
+                >
+                  {data.sidebarRotate ? <ToggleRight size={20} className="text-[#7C3AED]" /> : <ToggleLeft size={20} className="text-[var(--text-3)]" />}
+                  <span className="font-medium">Rotate order (random)</span>
+                </button>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-[var(--text-3)]">Show at a time</span>
+                  <select
+                    value={data.sidebarShowCount}
+                    onChange={e => setData(d => ({ ...d, sidebarShowCount: Number(e.target.value) }))}
+                    className="input-field text-sm w-28"
+                  >
+                    <option value={0}>All</option>
+                    <option value={2}>2</option>
+                    <option value={3}>3</option>
+                    <option value={4}>4</option>
+                  </select>
+                </div>
+                <span className="text-[11px] text-[var(--text-3)] basis-full">
+                  {data.sidebarRotate
+                    ? `Each page load shows a random ${data.sidebarShowCount > 0 ? data.sidebarShowCount : 'set'} of your enabled banners.`
+                    : data.sidebarShowCount > 0
+                      ? `Shows the first ${data.sidebarShowCount} enabled banners, in order.`
+                      : 'Shows all enabled banners, in order.'}
+                </span>
+              </div>
+            )}
             <div className="flex flex-col gap-3">
               {data.sidebar.map(block => (
                 <BannerBlockEditor

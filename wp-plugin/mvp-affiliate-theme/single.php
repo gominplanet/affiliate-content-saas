@@ -79,10 +79,42 @@ get_header();
           dynamic_sidebar('sidebar-1');
       }
 
-      // 3. Render MVP Affiliate sidebar ad blocks
-      $blocks = mvp_affiliate_sidebar_blocks();
-      foreach ($blocks as $block) {
-          echo mvp_affiliate_render_block($block);
+      // 3. Render MVP Affiliate sidebar ad blocks. Enabled banners are all output;
+      //    the browser shuffles (rotate) and caps (show N) on each load so it works
+      //    under full-page caching. No-JS fallback: all enabled banners show in order.
+      $side_blocks = mvp_affiliate_sidebar_blocks_display();
+      if (!empty($side_blocks)) {
+          $side_rotate = mvp_affiliate_sidebar_rotate() ? '1' : '0';
+          $side_show   = mvp_affiliate_sidebar_show_count();
+          echo '<div class="mvp-sidebar-ads" data-rotate="' . esc_attr($side_rotate) . '" data-show="' . esc_attr((string) $side_show) . '">';
+          foreach ($side_blocks as $block) {
+              echo '<div class="mvp-sidebar-ad-item">' . mvp_affiliate_render_block($block) . '</div>';
+          }
+          echo '</div>';
+          if ($side_rotate === '1' || $side_show > 0) {
+              ?>
+              <script>
+              (function(){
+                var box = document.querySelector('.mvp-sidebar-ads');
+                if (!box) return;
+                var items = [].slice.call(box.children);
+                if (box.getAttribute('data-rotate') === '1') {
+                  for (var i = items.length - 1; i > 0; i--) {
+                    var j = Math.floor(Math.random() * (i + 1));
+                    var t = items[i]; items[i] = items[j]; items[j] = t;
+                  }
+                  items.forEach(function (el) { box.appendChild(el); });
+                }
+                var show = parseInt(box.getAttribute('data-show'), 10) || 0;
+                if (show > 0) {
+                  [].slice.call(box.children).forEach(function (el, idx) {
+                    if (idx >= show) el.style.display = 'none';
+                  });
+                }
+              })();
+              </script>
+              <?php
+          }
       }
 
       // 4. Newsletter — BOTTOM slot (default). Renders after everything
