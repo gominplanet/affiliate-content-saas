@@ -129,9 +129,13 @@ export async function GET() {
     }
 
     // ── Published posts (owner-scoped) ────────────────────────────────────────
+    // Note: `content` (full post body) is intentionally NOT selected here — it's
+    // only needed as a shortcode fallback for posts missing geniuslink_code, so we
+    // fetch it for just that (usually tiny) subset below instead of shipping up to
+    // 500 full article bodies on every dashboard paint.
     const { data: postRaw } = await supabase
       .from('blog_posts')
-      .select('id,title,wordpress_url,geniuslink_code,content')
+      .select('id,title,wordpress_url,geniuslink_code')
       .eq('user_id', ownerId)
       .eq('status', 'published')
       .limit(500)
@@ -206,9 +210,22 @@ export async function GET() {
     // stays null for everything else (classifier reads null as "unmeasured").
     const hasGenius = Boolean(intRow?.geniuslink_api_key && intRow?.geniuslink_api_secret)
     const codeByPost = new Map<string, string>()
+    const needBodyIds: string[] = []
     for (const p of livePosts) {
-      const code = p.geniuslink_code || extractCode(p.content)
-      if (code) codeByPost.set(p.id, code)
+      if (p.geniuslink_code) codeByPost.set(p.id, p.geniuslink_code)
+      else needBodyIds.push(p.id)
+    }
+    // Body-scrape fallback ONLY for live posts with no stored code — fetch just
+    // those bodies rather than every post's content.
+    if (needBodyIds.length > 0) {
+      const { data: bodies } = await supabase
+        .from('blog_posts')
+        .select('id,content')
+        .in('id', needBodyIds)
+      for (const b of ((bodies ?? []) as Array<{ id: string; content: string | null }>)) {
+        const code = extractCode(b.content)
+        if (code) codeByPost.set(b.id, code)
+      }
     }
 
     const affiliateClicksByCode = new Map<string, number>()

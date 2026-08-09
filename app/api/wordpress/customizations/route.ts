@@ -79,6 +79,7 @@ export async function POST(req: Request) {
       try {
         const getRes = await fetch(`${wpBase}/wp-json/affiliateos/v1/customizations`, {
           headers: { Authorization: authHeader },
+          signal: AbortSignal.timeout(15_000),
         })
         if (getRes.ok) existing = await getRes.json() as Record<string, unknown>
       } catch { /* start fresh */ }
@@ -289,6 +290,7 @@ export async function POST(req: Request) {
             Authorization: authHeader,
           },
           body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(20_000),
         })
         postOk = postRes.ok
         postStatus = postRes.status
