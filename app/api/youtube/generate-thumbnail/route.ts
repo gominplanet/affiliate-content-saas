@@ -22,7 +22,7 @@ import { composeWithNanoBanana, composeWithNanoBananaPro, generateWithIdeogram, 
 // that produced soft/blurry edges). Kept around as a fallback option for
 // admin/preview surfaces that may still reference it.
 import { renderDesignerOverlay } from '@/lib/thumbnail-text-templates'
-import { bakeSimpleHeadline, NEON_BORDER_STYLE_COUNT, type ThumbDecoration } from '@/lib/thumbnail-simple-bake'
+import { bakeSimpleHeadline, compositeBadgeOnly, NEON_BORDER_STYLE_COUNT, type ThumbDecoration } from '@/lib/thumbnail-simple-bake'
 import { analyzeTextZone } from '@/lib/thumbnail-textzone'
 import { scrubBanned } from '@/lib/scrub'
 import { getStarredPhotoboothRefs } from '@/lib/photobooth-refs'
@@ -1329,11 +1329,25 @@ export async function POST(request: Request) {
 
             const b64 = await openaiGfx.generateWithReferences({ prompt, images: refs, size: '1536x1024', quality: 'medium' })
             recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'yt_thumb_graphic', model: gfxModel, images: 1 })
+            // Badge the creator chose (5 stars / hot / etc). The GFX path bakes its
+            // own headline via gpt-image and never runs bakeSimpleHeadline, so the
+            // badge must be composited here or it never shows. forcedDecoration:
+            //   'none'      → no badge
+            //   a specific  → force that badge
+            //   null (auto) → use this variant's own suggested decoration
+            const copyDec = (copy as { decoration?: ThumbDecoration }).decoration
+            const gfxDec: ThumbDecoration =
+              forcedDecoration === 'none'
+                ? 'none'
+                : forcedDecoration
+                  ? forcedDecoration
+                  : (copyDec && copyDec !== 'none' ? copyDec : 'none')
             // gpt-image has no native 16:9 size (1536×1024 = 3:2). Normalize to
             // EXACT YouTube 1280×720, cropping from the bottom (position:'top')
             // so the top headline is never clipped.
             try {
-              const resized = await sharp(Buffer.from(b64, 'base64')).resize(1280, 720, { fit: 'cover', position: 'top' }).jpeg({ quality: 92 }).toBuffer()
+              let resized = await sharp(Buffer.from(b64, 'base64')).resize(1280, 720, { fit: 'cover', position: 'top' }).jpeg({ quality: 92 }).toBuffer()
+              if (gfxDec !== 'none') resized = await compositeBadgeOnly(resized, gfxDec)
               return await rehostToFal(`data:image/jpeg;base64,${resized.toString('base64')}`)
             } catch {
               return rehostToFal(`data:image/png;base64,${b64}`)

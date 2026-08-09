@@ -2181,8 +2181,10 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                     </p>
                   </div>
 
-                  {/* Primary CTA: Create my MVP Thumbnail */}
-                  <div className="flex flex-col gap-2">
+                  {/* Primary CTA: Create my MVP Thumbnail — order-1 so this big
+                      generate button sits BELOW the method/border/badge options
+                      (all order-0). The generator is the last thing you touch. */}
+                  <div className="flex flex-col gap-2 order-1">
 
                     {extensionInstalled === false ? (
                       /* Extension not installed — show install prompt as primary CTA */
@@ -2261,10 +2263,10 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
 
                   </div>
 
-                  {/* Divider — secondary options */}
+                  {/* Divider — options that feed the generate button below */}
                   <div className="flex items-center gap-3 my-1">
                     <div className="flex-1 h-px bg-gray-200 dark:bg-white/10" />
-                    <span className="text-[11px] text-[#86868b] dark:text-[#8e8e93] font-medium whitespace-nowrap">or choose a method</span>
+                    <span className="text-[11px] text-[#86868b] dark:text-[#8e8e93] font-medium whitespace-nowrap">thumbnail options</span>
                     <div className="flex-1 h-px bg-gray-200 dark:bg-white/10" />
                   </div>
 
@@ -2424,9 +2426,9 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                     />
                   </div>
 
-                  {/* Result */}
+                  {/* Result — order-2 so the preview renders below the generate button. */}
                   {thumbnailUrl && (
-                    <div className="flex flex-col gap-2">
+                    <div className="flex flex-col gap-2 order-2">
                       <div className="rounded-xl overflow-hidden border border-gray-100 dark:border-white/10 bg-gray-50 dark:bg-white/5">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={thumbnailUrl} alt="Generated thumbnail" className="w-full object-cover" style={{ aspectRatio: '16/9' }} />

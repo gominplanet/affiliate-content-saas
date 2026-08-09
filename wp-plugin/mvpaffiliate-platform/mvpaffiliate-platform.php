@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.80
+ * Version: 1.0.81
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -746,41 +746,48 @@ if (!function_exists('mvp_affiliate_rest_save_customizations')) {
 // with the same name. Without the guard, activating the plugin while the theme
 // is active triggers a "Cannot redeclare" fatal error.
 if (!function_exists('mvp_affiliate_render_block')) {
+    // RETURNS a string (does NOT echo). Must stay signature-compatible with the
+    // theme's version in inc/customizations.php — plugins load before themes, so
+    // whichever is defined first wins the function_exists guard, and the theme's
+    // single.php / template-tags.php call this as `echo '...' . render_block()`.
+    // When this echoed instead of returning, the sidebar wrappers came out empty
+    // and the per-banner Label never rendered. Renders the optional Label eyebrow.
     function mvp_affiliate_render_block($block) {
-        if (empty($block['enabled'])) return;
-        if (($block['type'] ?? 'image') === 'image') {
+        if (!is_array($block) || empty($block['enabled'])) return '';
+        $type  = $block['type'] ?? 'image';
+        $label = trim((string)($block['label'] ?? ''));
+        $label_html = $label !== ''
+            ? '<p class="mvp-ad-block-label">' . esc_html($label) . '</p>'
+            : '';
+        if ($type === 'image') {
             $img  = esc_url($block['imageUrl'] ?? '');
             $link = esc_url($block['linkUrl'] ?? '');
-            if (!$img) return;
-            echo '<div class="affiliateos-block affiliateos-image-block" style="margin:12px 0;width:350px;max-width:100%;">';
-            if ($link) echo '<a href="' . $link . '" target="_blank" rel="nofollow noopener">';
-            echo '<img src="' . $img . '" alt="" style="width:100%;height:auto;display:block;" />';
-            if ($link) echo '</a>';
-            echo '</div>';
-        } else {
-            $html = $block['html'] ?? '';
-            if (!$html) return;
-            echo '<div class="affiliateos-block affiliateos-html-block" style="margin:12px 0;width:350px;max-width:100%;">';
-            // wp_kses_post — defense-in-depth in case a poisoned option
-            // value bypassed mvp_affiliate_sanitize_customizations (older
-            // rows, hand-edited DB, etc.). Strips <script>, <iframe>, on*
-            // handlers, javascript: URIs. Same allowlist WP uses for
-            // post_content.
-            echo wp_kses_post($html);
-            echo '</div>';
+            if (!$img) return '';
+            $out  = '<div class="mvp-ad-block mvp-ad-image affiliateos-block affiliateos-image-block" style="margin:12px 0;width:350px;max-width:100%;">' . $label_html;
+            if ($link) $out .= '<a href="' . $link . '" target="_blank" rel="nofollow noopener">';
+            $out .= '<img src="' . $img . '" alt="" style="width:100%;height:auto;display:block;" loading="lazy" />';
+            if ($link) $out .= '</a>';
+            $out .= '</div>';
+            return $out;
         }
+        $html = $block['html'] ?? '';
+        if (!$html) return '';
+        // wp_kses_post — defense-in-depth in case a poisoned option value
+        // bypassed mvp_affiliate_sanitize_customizations (older rows, hand-edited
+        // DB, etc.). Strips <script>, <iframe>, on* handlers, javascript: URIs.
+        return '<div class="mvp-ad-block mvp-ad-html affiliateos-block affiliateos-html-block" style="margin:12px 0;width:350px;max-width:100%;">' . $label_html . wp_kses_post($html) . '</div>';
     }
 }
 
 // ─── 6. Sidebar blocks ────────────────────────────────────────────────────────
 add_action('kadence_after_sidebar_widget_area', function () {
     $sidebar = mvp_affiliate_get_data()['sidebar'] ?? [];
-    foreach ($sidebar as $block) mvp_affiliate_render_block($block);
+    foreach ($sidebar as $block) echo mvp_affiliate_render_block($block);
 });
 add_action('dynamic_sidebar_after', function () {
     if (!doing_action('kadence_after_sidebar_widget_area')) {
         $sidebar = mvp_affiliate_get_data()['sidebar'] ?? [];
-        foreach ($sidebar as $block) mvp_affiliate_render_block($block);
+        foreach ($sidebar as $block) echo mvp_affiliate_render_block($block);
     }
 }, 10, 2);
 
@@ -805,9 +812,7 @@ add_filter('the_content', function ($content) {
         if (isset($parts[$i]) && strtolower($parts[$i]) === '</p>') {
             $para_count++;
             if (isset($by_position[$para_count])) {
-                ob_start();
-                foreach ($by_position[$para_count] as $block) mvp_affiliate_render_block($block);
-                $output .= ob_get_clean();
+                foreach ($by_position[$para_count] as $block) $output .= mvp_affiliate_render_block($block);
             }
         }
     }
