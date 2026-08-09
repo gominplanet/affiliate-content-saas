@@ -18,7 +18,7 @@ import { toast } from 'sonner'
 
 // Bump this whenever UPDATES changes — re-shows the card AND fires the one-time
 // "what's new" toast to everyone (both gated per-release in localStorage).
-const RELEASE_ID = '2026-06-20'
+const RELEASE_ID = '2026-08-09'
 const STORAGE_KEY = 'mvp_whats_new_seen'
 const TOAST_KEY = 'mvp_whats_new_toasted'
 
@@ -34,29 +34,77 @@ const UPDATES: Update[] = [
   {
     badge: 'NEW',
     tone: '#7C3AED',
-    title: 'Pick what to do, fast',
-    desc: 'The dashboard now has big, colour-coded shortcuts for every workflow — YouTube metadata, a blog from a video or a link, comparisons, guides, socials, deals and the newsletter.',
-    href: '/dashboard',
+    title: 'Clip Factory — Shorts that actually work',
+    desc: 'Turn a long video into vertical Shorts, pulled straight from a YouTube link or your own upload. Pick Standard or Split screen, get word-for-word captions burned in, then add a shoppable CTA and publish to Instagram, TikTok and YouTube.',
+    href: '/clip-factory',
   },
   {
     badge: 'IMPROVED',
     tone: '#34c759',
-    title: 'Any video works in Co-Pilot',
-    desc: 'You no longer need the Amazon ASIN in your title. We identify the product from your title and what you actually say in the video, and still add your affiliate link.',
+    title: 'Sharper, more accurate thumbnails',
+    desc: 'The generator now double-checks the rendered product matches your real one and re-does it if it drifted — far fewer “wrong product” thumbnails, on every style including Graphic Design.',
+    href: '/co-pilot',
+  },
+  {
+    badge: 'NEW',
+    tone: '#FF9500',
+    title: 'Thumbnail badges',
+    desc: 'Add one badge to every thumbnail: a green check, five gold stars, or a red arrow pointing at your product. Or none — that’s the default. Set it once in Co-Pilot.',
     href: '/co-pilot',
   },
   {
     badge: 'IMPROVED',
-    tone: '#FF9500',
-    title: 'Mobile-friendly blog posts',
-    desc: 'Your published reviews now read cleanly on phones — the text, the video and the “best price” card all fit the screen. (Update your site theme from the prompt above to get it.)',
+    tone: '#0a84ff',
+    title: 'Co-Pilot, tidied up',
+    desc: 'The big “Create my MVP Thumbnail” button now sits below your options, so you choose your method, border and badge first, then generate.',
+    href: '/co-pilot',
   },
   {
     badge: 'NEW',
+    tone: '#bc1888',
+    title: 'Rotating banner ads',
+    desc: 'In Ads, switch banners on or off without deleting them, shuffle their order on every page load, and show only 2, 3 or 4 at a time in the sidebar. Labels now appear above each banner too.',
+    href: '/ads',
+  },
+  {
+    badge: 'NEW',
+    tone: '#30d158',
+    title: 'Wayward placement builder',
+    desc: 'Answer a few tick-box questions and MVP writes your whole sponsorship pitch for you. Copy it, paste it into Wayward, done.',
+    href: '/wayward',
+  },
+  {
+    badge: 'IMPROVED',
+    tone: '#5856d6',
+    title: 'Support is a real conversation now',
+    desc: 'Tickets are an open thread between you and us — back-and-forth in one place, screenshots included, so nothing gets lost.',
+    href: '/support',
+  },
+  {
+    badge: 'IMPROVED',
+    tone: '#FF6B00',
+    title: 'Cleaner, faster blog',
+    desc: 'The Clear Cache button now fully clears your site (a true full purge), your read counter shows live on posts, and there’s a quick batch-redirect to send old or broken links to your homepage.',
+  },
+  {
+    badge: 'FIXED',
+    tone: '#ff3b30',
+    title: 'Link-in-Bio',
+    desc: 'The colour-picker error is gone, and there’s a new “I may earn a commission” disclaimer line under your tagline.',
+    href: '/link-in-bio',
+  },
+  {
+    badge: 'IMPROVED',
     tone: '#0a84ff',
-    title: 'Never miss a site update',
-    desc: 'When new theme or plugin software is ready, you’ll get a clear prompt to one-click install it — no wp-admin trip.',
-    href: '/dashboard',
+    title: 'Everything social in one place',
+    desc: 'External Integrations now lives under Connect Socials, so all your platform connections are together.',
+    href: '/connect-socials',
+  },
+  {
+    badge: 'IMPROVED',
+    tone: '#34c759',
+    title: 'Safer Instagram auto-posting',
+    desc: 'MVP now paces your automatic Instagram posts to help keep your account in good standing.',
   },
 ]
 
