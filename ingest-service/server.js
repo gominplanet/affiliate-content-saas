@@ -129,12 +129,18 @@ const PROXY = (process.env.YT_DLP_PROXY || '').trim()
 // slip past the bot check more often than the default web client alone.
 const PLAYER_CLIENTS = (process.env.YT_DLP_PLAYER_CLIENTS || 'default,web_safari,mweb,tv,ios').trim()
 
-// yt-dlp self-update on boot. YouTube shifts its player/bot checks every few
-// weeks and the fix is almost always a newer yt-dlp — but the Docker image only
-// fetches yt-dlp at BUILD time, so a long-running container goes stale and starts
-// hitting the bot wall. Running `yt-dlp -U` on every boot keeps it current with
-// just a restart, no image rebuild. Best-effort: a failed update never blocks
-// startup, and the version is surfaced on /health so we can confirm what's live.
+// yt-dlp update channel. YouTube's bot-wall / player fixes land in the NIGHTLY
+// channel days after a block, while STABLE only cuts a release ~monthly — so a
+// downloader fighting YouTube should track nightly. Override with YT_DLP_CHANNEL
+// (e.g. 'stable') if a nightly ever regresses.
+const YT_DLP_CHANNEL = (process.env.YT_DLP_CHANNEL || 'nightly').trim()
+
+// yt-dlp self-update on boot. The Docker image only fetches yt-dlp at BUILD time,
+// so a long-running container goes stale and starts hitting the bot wall. On each
+// boot we `--update-to <channel>@latest`, which BOTH switches to the nightly
+// channel and pulls its newest build — no image rebuild, just a restart. Best-
+// effort: a failed update never blocks startup, and the live version + channel are
+// surfaced on /health so we can confirm exactly what's running.
 let ytDlpVersion = 'unknown'
 function readYtDlpVersion() {
   return new Promise((resolve) => {
@@ -143,20 +149,20 @@ function readYtDlpVersion() {
 }
 async function selfUpdateYtDlp() {
   await new Promise((resolve) => {
-    execFile('yt-dlp', ['-U'], { timeout: 60_000 }, (err, stdout, stderr) => {
-      if (err) console.warn('yt-dlp -U failed (keeping installed version):', (stderr || err.message || '').slice(0, 200))
-      else console.log('yt-dlp -U:', ((stdout || '').trim().split('\n').pop() || '').slice(0, 120))
+    execFile('yt-dlp', ['--update-to', `${YT_DLP_CHANNEL}@latest`], { timeout: 90_000 }, (err, stdout, stderr) => {
+      if (err) console.warn('yt-dlp update failed (keeping installed version):', (stderr || err.message || '').slice(0, 200))
+      else console.log('yt-dlp update:', ((stdout || '').trim().split('\n').pop() || '').slice(0, 140))
       resolve()
     })
   })
   ytDlpVersion = await readYtDlpVersion()
-  console.log('yt-dlp version:', ytDlpVersion)
+  console.log(`yt-dlp version: ${ytDlpVersion} (channel ${YT_DLP_CHANNEL})`)
 }
 
 const app = express()
 app.use(express.json())
 
-app.get('/health', (_req, res) => res.json({ ok: true, cookies: cookiesReady, ytDlp: ytDlpVersion, build: BUILD }))
+app.get('/health', (_req, res) => res.json({ ok: true, cookies: cookiesReady, ytDlp: ytDlpVersion, ytDlpChannel: YT_DLP_CHANNEL, build: BUILD }))
 
 function ytDlp(args) {
   // Every yt-dlp call gets: proxy (if set) + cookies (if set) + alternate
@@ -597,7 +603,7 @@ app.post('/render-short', async (req, res) => {
 // BUILD marker: bump this string when the service code changes so the Railway
 // deploy logs unambiguously show which build is actually running (Railway can
 // re-run an older commit).
-const BUILD = 'ytdlp-self-update+more-player-clients-2026-08-09'
+const BUILD = 'ytdlp-nightly-channel-2026-08-09'
 Promise.allSettled([loadCookies(), selfUpdateYtDlp()]).finally(() => {
   app.listen(PORT, () => console.log(`ingest-service listening on :${PORT} [build ${BUILD}] yt-dlp ${ytDlpVersion}`))
 })
