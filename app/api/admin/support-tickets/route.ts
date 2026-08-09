@@ -15,6 +15,32 @@ import { createAdminClient } from '@/lib/supabase/admin'
 const VALID_STATUS = ['open', 'answered', 'closed'] as const
 type Status = (typeof VALID_STATUS)[number]
 
+// Tolerate a DB where migration 238 (support_messages.image_url) hasn't run:
+// retry the SELECT/INSERT without image_url so support never breaks pre-migration.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function selectMessages(sb: any, ids: string[]): Promise<any[]> {
+  const base = 'id,ticket_id,sender,body,created_at'
+  let res = await sb.from('support_messages').select(`${base},image_url`).in('ticket_id', ids).order('created_at', { ascending: true })
+  if (res.error) res = await sb.from('support_messages').select(base).in('ticket_id', ids).order('created_at', { ascending: true })
+  return Array.isArray(res.data) ? res.data : []
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function selectTicketThread(sb: any, ticketId: string): Promise<any[]> {
+  const base = 'id,sender,body,created_at'
+  let res = await sb.from('support_messages').select(`${base},image_url`).eq('ticket_id', ticketId).order('created_at', { ascending: true })
+  if (res.error) res = await sb.from('support_messages').select(base).eq('ticket_id', ticketId).order('created_at', { ascending: true })
+  return Array.isArray(res.data) ? res.data : []
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function insertMessage(sb: any, row: Record<string, unknown>): Promise<void> {
+  let res = await sb.from('support_messages').insert(row)
+  if (res.error && 'image_url' in row) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { image_url, ...rest } = row
+    res = await sb.from('support_messages').insert(rest)
+  }
+}
+
 async function requireAdmin() {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -60,21 +86,15 @@ export async function GET(req: Request) {
   // DB has no support_messages, so we leave the legacy body/admin_response shape).
   const ids = tickets.map(t => t.id)
   if (ids.length > 0) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: msgs } = await (admin as any)
-      .from('support_messages')
-      .select('id,ticket_id,sender,body,image_url,created_at')
-      .in('ticket_id', ids)
-      .order('created_at', { ascending: true })
-      .then((r: { data: unknown }) => r, () => ({ data: null }))
-    if (Array.isArray(msgs)) {
+    const msgs = await selectMessages(admin, ids)
+    if (msgs.length) {
       const byTicket = new Map<string, Array<Record<string, unknown>>>()
       for (const m of msgs as Array<{ ticket_id: string }>) {
         const arr = byTicket.get(m.ticket_id) ?? []
         arr.push(m as unknown as Record<string, unknown>)
         byTicket.set(m.ticket_id, arr)
       }
-      for (const t of tickets) t.messages = byTicket.get(t.id) ?? []
+      for (const t of tickets) { const mm = byTicket.get(t.id); if (mm && mm.length) t.messages = mm }
     }
   }
   return NextResponse.json({ tickets })
@@ -111,11 +131,7 @@ export async function PATCH(req: Request) {
   // response_seen in sync so the existing bell (which reads those) still lights
   // up without touching the notifications route.
   if (hasReply) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (admin as any)
-      .from('support_messages')
-      .insert({ ticket_id: id, sender: 'admin', body: response ?? '', image_url: imageUrl, seen: false })
-      .then((r: unknown) => r, () => null)
+    await insertMessage(admin, { ticket_id: id, sender: 'admin', body: response ?? '', image_url: imageUrl, seen: false })
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -139,12 +155,6 @@ export async function PATCH(req: Request) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   // Return the fresh thread so the admin UI can re-render without a full reload.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: messages } = await (admin as any)
-    .from('support_messages')
-    .select('id,sender,body,image_url,created_at')
-    .eq('ticket_id', id)
-    .order('created_at', { ascending: true })
-    .then((r: { data: unknown }) => r, () => ({ data: null }))
-  return NextResponse.json({ ticket: { ...data, messages: Array.isArray(messages) ? messages : undefined } })
+  const messages = await selectTicketThread(admin, id)
+  return NextResponse.json({ ticket: { ...data, messages: messages.length ? messages : undefined } })
 }

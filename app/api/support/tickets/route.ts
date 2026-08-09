@@ -33,6 +33,42 @@ function cleanImageUrl(v: unknown): string | null {
   return /^https?:\/\//i.test(s) ? s.slice(0, 1000) : null
 }
 
+/**
+ * Fetch a ticket's messages, tolerating a DB where migration 238 (image_url)
+ * hasn't run yet: try WITH image_url, and if that errors (column missing) retry
+ * WITHOUT it. Without this, adding image_url to the SELECT broke the whole thread
+ * on pre-238 databases (it fell back to first+last only) — the "old tickets
+ * don't work anymore" regression. Returns rows (image_url may be undefined).
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function selectThreadMessages(sb: any, ids: string[]): Promise<any[]> {
+  const base = 'id,ticket_id,sender,body,created_at'
+  let res = await sb.from('support_messages').select(`${base},image_url`).in('ticket_id', ids).order('created_at', { ascending: true })
+  if (res.error) res = await sb.from('support_messages').select(base).in('ticket_id', ids).order('created_at', { ascending: true })
+  return Array.isArray(res.data) ? res.data : []
+}
+
+/**
+ * Insert a support message, tolerating a missing image_url column: try WITH it,
+ * and on error retry WITHOUT it (dropping only the attachment, never the reply).
+ * Returns the inserted row (or null). `select` chooses returned columns.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function insertMessage(sb: any, row: Record<string, unknown>, returning?: string): Promise<any | null> {
+  const doInsert = async (r: Record<string, unknown>) => {
+    let q = sb.from('support_messages').insert(r)
+    if (returning) q = q.select(returning).single()
+    return q
+  }
+  let res = await doInsert(row)
+  if (res.error && 'image_url' in row) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { image_url, ...rest } = row
+    res = await doInsert(rest)
+  }
+  return res.error ? null : (res.data ?? { ok: true })
+}
+
 export interface SupportTicket {
   id: string
   subject: string
@@ -65,21 +101,15 @@ export async function GET() {
   // support_messages table isn't there yet (pre-migration-232 DB).
   const ids = tickets.map(t => t.id)
   if (ids.length > 0) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: msgs } = await (supabase as any)
-      .from('support_messages')
-      .select('id,ticket_id,sender,body,image_url,created_at')
-      .in('ticket_id', ids)
-      .order('created_at', { ascending: true })
-      .then((r: { data: unknown }) => r, () => ({ data: null }))
-    if (Array.isArray(msgs)) {
+    const msgs = await selectThreadMessages(supabase, ids)
+    if (msgs.length || ids.length) {
       const byTicket = new Map<string, SupportMessage[]>()
-      for (const m of msgs as Array<{ id: string; ticket_id: string; sender: 'user' | 'admin'; body: string; image_url: string | null; created_at: string }>) {
+      for (const m of msgs as Array<{ id: string; ticket_id: string; sender: 'user' | 'admin'; body: string; image_url?: string | null; created_at: string }>) {
         const arr = byTicket.get(m.ticket_id) ?? []
-        arr.push({ id: m.id, sender: m.sender, body: m.body, imageUrl: m.image_url, created_at: m.created_at })
+        arr.push({ id: m.id, sender: m.sender, body: m.body, imageUrl: m.image_url ?? null, created_at: m.created_at })
         byTicket.set(m.ticket_id, arr)
       }
-      for (const t of tickets) t.messages = byTicket.get(t.id) ?? []
+      for (const t of tickets) { const mm = byTicket.get(t.id); if (mm && mm.length) t.messages = mm }
     }
   }
 
@@ -155,10 +185,7 @@ export async function POST(req: Request) {
   // Seed the thread with the opening user message. Best-effort: if the table
   // isn't there yet the ticket still works off its legacy body field.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (supabase as any)
-    .from('support_messages')
-    .insert({ ticket_id: data.id, sender: 'user', body, image_url: imageUrl, seen: true })
-    .then((r: unknown) => r, () => null)
+  await insertMessage(supabase, { ticket_id: data.id, sender: 'user', body, image_url: imageUrl, seen: true })
 
   await alertFounder({ user, tier, priority, subject, body: body + (imageUrl ? '\n[screenshot attached]' : ''), kind: 'new' })
 
@@ -197,12 +224,8 @@ export async function PATCH(req: Request) {
 
   // Append the user's message (RLS insert policy allows sender='user' on own ticket).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: msg, error: mErr } = await (supabase as any)
-    .from('support_messages')
-    .insert({ ticket_id: ticketId, sender: 'user', body, image_url: imageUrl, seen: true })
-    .select('id,sender,body,image_url,created_at')
-    .single()
-  if (mErr) return NextResponse.json({ error: mErr.message }, { status: 500 })
+  const msg = await insertMessage(supabase, { ticket_id: ticketId, sender: 'user', body, image_url: imageUrl, seen: true }, 'id,sender,body,image_url,created_at')
+  if (!msg) return NextResponse.json({ error: 'Could not save your reply. Try again.' }, { status: 500 })
   if (msg) { (msg as { imageUrl?: string | null }).imageUrl = (msg as { image_url?: string | null }).image_url ?? null }
 
   // Reopen the ticket so it resurfaces in the admin inbox. Users have no UPDATE
