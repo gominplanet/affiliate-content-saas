@@ -625,7 +625,7 @@ app.post('/render-short', async (req, res) => {
 // BUILD marker: bump this string when the service code changes so the Railway
 // deploy logs unambiguously show which build is actually running (Railway can
 // re-run an older commit).
-const BUILD = 'ytdlp-real-error-surface-2026-08-09'
+const BUILD = 'ytdlp-deno-jsruntime-2026-08-09'
 Promise.allSettled([loadCookies(), selfUpdateYtDlp()]).finally(() => {
   app.listen(PORT, () => console.log(`ingest-service listening on :${PORT} [build ${BUILD}] yt-dlp ${ytDlpVersion}`))
 })
