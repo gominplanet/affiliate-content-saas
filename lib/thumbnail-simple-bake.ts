@@ -287,7 +287,8 @@ function buildDecorationSvg(
     ].join('')
 
   } else if (decoration === 'arrow') {
-    const sz = Math.round(scaleBase * 0.12)
+    // 2× the other badges — the red arrow reads too small otherwise (creator ask).
+    const sz = Math.round(scaleBase * 0.24)
     const dir = svgAnchor === 'start' ? 1 : -1
     const x1 = svgAnchor === 'start' ? anchorX : anchorX - sz * 0.3
     const y1 = decorationY + sz * 0.1
