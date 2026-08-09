@@ -49,6 +49,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { TIERS, billingWindow, type Tier } from '@/lib/tier'
+import { PRIMARY_FEATURE } from '@/lib/usage-cap'
 import { canUseDealRadar } from '@/lib/feature-access'
 import { FACEBOOK_GROUP_URL } from '@/lib/community'
 
@@ -95,13 +96,19 @@ export default async function DashboardPage() {
   ] = await Promise.all([
     sb.from('blog_posts').select('id', { count: 'estimated', head: true }).eq('user_id', user!.id).gte('published_at', periodStartISO),
     sb.from('collaborations').select('id', { count: 'estimated', head: true }).eq('user_id', user!.id).gte('created_at', periodStartISO),
+    // Count EVERY thumbnail-image feature the generator can log (nano-banana,
+    // ideogram, gpt-image, kontext, flux, flux-lora) via the shared
+    // PRIMARY_FEATURE list — the SAME set the cap enforcement in
+    // lib/usage-cap.ts uses. Was hardcoded to just kontext+flux (both retired
+    // paths), so the dashboard under-reported and disagreed with what Co-Pilot
+    // actually enforces. Reusing the canonical list keeps them from drifting.
     sb.from('ai_usage').select('id', { count: 'estimated', head: true })
       .eq('user_id', user!.id)
-      .in('feature', ['yt_thumb_kontext_image', 'yt_thumb_flux_image'])
+      .in('feature', PRIMARY_FEATURE.thumbnail)
       .gte('created_at', periodStartISO),
     sb.from('ai_usage').select('id', { count: 'estimated', head: true })
       .eq('user_id', user!.id)
-      .eq('feature', 'yt_meta_title_strategist')
+      .in('feature', PRIMARY_FEATURE.metadata)
       .gte('created_at', periodStartISO),
     // Recent catalog for the hero strip.
     sb.from('youtube_videos')
