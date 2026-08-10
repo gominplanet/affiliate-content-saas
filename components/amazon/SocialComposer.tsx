@@ -69,7 +69,7 @@ export default function SocialComposer() {
             No saved products yet. In <Link href="/amazon/research" className="font-semibold hover:underline" style={{ color: '#d97706' }}>Research</Link> (AMZ Finder, Deal Radar, CC Campaigns), tap <span className="font-semibold">Save</span> on a product and it shows up here, ready to turn into a Pin or post.
           </p>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2.5">
             {items.map(it => (
               <div key={it.id} className="group relative flex flex-col rounded-xl border border-gray-200 dark:border-white/10 overflow-hidden bg-white dark:bg-white/[0.02]">
                 <button onClick={() => remove(it)} title="Remove"
@@ -82,11 +82,11 @@ export default function SocialComposer() {
                     ? <img src={it.image_url} alt={it.title || it.asin} className="w-full h-full object-contain" />
                     : <span className="text-[11px]" style={{ color: 'var(--text-soft)' }}>No image</span>}
                 </div>
-                <div className="p-2.5 flex flex-col gap-2 flex-1">
-                  <p className="text-[12px] leading-tight line-clamp-2 flex-1" style={{ color: 'var(--text)' }}>{it.title || it.asin}</p>
+                <div className="p-2 flex flex-col gap-1.5 flex-1">
+                  <p className="text-[11px] leading-tight line-clamp-2 flex-1" style={{ color: 'var(--text)' }}>{it.title || it.asin}</p>
                   <button onClick={() => use(it)}
-                    className="inline-flex items-center justify-center gap-1.5 text-[12px] font-semibold px-2.5 py-1.5 rounded-lg text-white transition hover:opacity-90" style={{ backgroundColor: '#d97706' }}>
-                    <Wand2 size={13} /> Make post
+                    className="inline-flex items-center justify-center gap-1 text-[11px] font-semibold px-2 py-1.5 rounded-lg text-white transition hover:opacity-90" style={{ backgroundColor: '#d97706' }}>
+                    <Wand2 size={12} /> Make post
                   </button>
                 </div>
               </div>
