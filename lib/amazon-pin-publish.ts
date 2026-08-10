@@ -50,6 +50,47 @@ export function finalizeSocialCaption(text: string, max = 500): string {
   return `${body} ${suffix}`.trim().slice(0, max)
 }
 
+/**
+ * Resolve a product to its affiliate link, shared by every Amazon-social publish
+ * path (pin / IG / FB). ASIN → tagged Amazon destination → geni.us short link
+ * (cache-first). Returns the best link we can build plus a soft note if
+ * Geniuslink hiccuped so the caller can surface it.
+ */
+export async function resolveAffiliateLink(opts: {
+  userId: string
+  intRow: PinIntegration
+  asin?: string
+  productUrl?: string
+  productTitle?: string
+}): Promise<{ linkUrl: string; asin: string; note: string | null }> {
+  const { intRow } = opts
+  let asin = (opts.asin || '').trim().toUpperCase() || asinFromAmazonUrl(opts.productUrl || '') || ''
+  if (!asin && opts.productUrl && /(?:geni\.us|amzn\.to|a\.co|bit\.ly)/i.test(opts.productUrl)) {
+    try { asin = asinFromAmazonUrl(await resolveFinalUrl(opts.productUrl)) || '' } catch { /* leave blank */ }
+  }
+  const tag = intRow.amazon_associates_tag || undefined
+  const destination = asin
+    ? `https://www.amazon.com/dp/${asin}${tag ? `?tag=${tag}` : ''}`
+    : (opts.productUrl || '')
+
+  let linkUrl = destination
+  let note: string | null = null
+  if (intRow.geniuslink_api_key && intRow.geniuslink_api_secret && destination) {
+    try {
+      const svc = createGeniuslinkService(intRow.geniuslink_api_key, intRow.geniuslink_api_secret)
+      if (asin) {
+        const { url } = await getOrCreateAmazonGeniuslink({ userId: opts.userId, asin, destination, service: svc, note: opts.productTitle || asin })
+        linkUrl = url
+      } else {
+        linkUrl = await svc.createLink(destination, opts.productTitle || 'product')
+      }
+    } catch (e) {
+      note = `Geniuslink hiccup — used your plain affiliate link instead. ${e instanceof Error ? e.message : ''}`.trim()
+    }
+  }
+  return { linkUrl, asin, note }
+}
+
 /** Best-effort product title from an ASIN (for grounding the copy). */
 async function productTitleFor(asin: string, given?: string): Promise<string> {
   const t = (given || '').trim()
@@ -122,32 +163,10 @@ export async function publishAmazonPin(opts: {
   const { intRow } = opts
   if (!intRow.pinterest_access_token) throw new Error('Pinterest is not connected.')
 
-  // Resolve ASIN + affiliate destination.
-  let asin = (opts.asin || '').trim().toUpperCase() || asinFromAmazonUrl(opts.productUrl || '') || ''
-  if (!asin && opts.productUrl && /(?:geni\.us|amzn\.to|a\.co|bit\.ly)/i.test(opts.productUrl)) {
-    try { asin = asinFromAmazonUrl(await resolveFinalUrl(opts.productUrl)) || '' } catch { /* leave blank */ }
-  }
-  const tag = intRow.amazon_associates_tag || undefined
-  const destination = asin
-    ? `https://www.amazon.com/dp/${asin}${tag ? `?tag=${tag}` : ''}`
-    : (opts.productUrl || '')
-
-  // Geniuslink the destination (cache-first by ASIN).
-  let linkUrl = destination
-  let geniuslinkNote: string | null = null
-  if (intRow.geniuslink_api_key && intRow.geniuslink_api_secret && destination) {
-    try {
-      const svc = createGeniuslinkService(intRow.geniuslink_api_key, intRow.geniuslink_api_secret)
-      if (asin) {
-        const { url } = await getOrCreateAmazonGeniuslink({ userId: opts.userId, asin, destination, service: svc, note: opts.productTitle || asin })
-        linkUrl = url
-      } else {
-        linkUrl = await svc.createLink(destination, opts.productTitle || 'product')
-      }
-    } catch (e) {
-      geniuslinkNote = `Geniuslink hiccup — used your plain affiliate link instead. ${e instanceof Error ? e.message : ''}`.trim()
-    }
-  }
+  // Resolve ASIN + geni.us affiliate link (shared across pin / IG / FB).
+  const { linkUrl, asin, note: geniuslinkNote } = await resolveAffiliateLink({
+    userId: opts.userId, intRow, asin: opts.asin, productUrl: opts.productUrl, productTitle: opts.productTitle,
+  })
   if (!linkUrl) throw new Error('No product link to pin to. Paste an Amazon link or ASIN.')
 
   // Copy — use what the caller passed, else auto-write.

@@ -493,7 +493,9 @@ Each brief has:
 - expression: the creator's facial REACTION, chosen to fit THIS headline/product — and VARIED across the briefs so they don't all look the same. Pick the emotion the video earns: e.g. "wide-eyed shocked", "delighted open-mouth grin", "skeptical raised eyebrow", "amazed wow face", "excited eyebrows-up", "curious intrigued look", "confident smirk", "thrilled laughing". A "worth it?" angle → skeptical; a big deal/benefit → excited or amazed. Two to four words.
 - pose: the creator's body/gesture, also VARIED (not always pointing): e.g. "pointing at the product", "holding the product up", "arms crossed, confident", "thumbs up", "hand on chin, thinking", "open-handed presenting". Match it to the expression. Two to five words.
 
-HARD RULE (non-negotiable): NEVER put the word "Amazon" (or "Prime", "Amazon Prime") anywhere in line1, line2, emphasisWord, callouts, banner, or concept. Never describe the Amazon smile / swoosh arrow logo. The design must never name or draw the retailer. Say "hidden gem", "this find", "under $30", the product's real category or benefit instead.
+HARD RULE (non-negotiable): NEVER put the word "Amazon" (or "Prime", "Amazon Prime") anywhere in line1, line2, emphasisWord, callouts, banner, or concept. Never describe the Amazon smile / swoosh arrow logo. The design must never name or draw the retailer. Lead with the product's real category, standout feature, or benefit instead.
+
+ANTI-CLICHÉ (non-negotiable): do NOT default to overused, generic hype phrases for the headline OR the banner. NEVER use "HIDDEN GEM", "GAME CHANGER", "GAME-CHANGING", "MUST-HAVE", "YOU NEED THIS", "LIFE CHANGING", "OBSESSED", "VIRAL". These are banned. Every brief's headline and banner must be SPECIFIC to THIS product — its category, its standout feature, a real benefit, a number/spec, or the problem it solves — and genuinely VARIED from brief to brief. Write like a designer who never repeats themselves.
 
 OUTPUT: a strict JSON array of N_BRIEFS objects with keys line1, line2, emphasisWord, banner, palette, callouts (array of strings), concept, expression, pose. No prose, no markdown fences — just the JSON array.`
 
