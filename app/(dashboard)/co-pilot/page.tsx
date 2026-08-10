@@ -1448,14 +1448,9 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
     // to a video where Michelle appears. The captured frame carries the right face.
     const effectiveFaceModelId = opts?.skipFaceModel ? null : selectedFaceModelId
     // Determine textMode early so we know how many frames to request.
-    // 'graphic' (gpt-image-1) is only used when the user has a face model
-    // explicitly selected — it's slower (30-60s) and requires OPENAI_API_KEY.
-    // SCOUT / frame-only thumbnails always use 'clean' (NB/Gemini, 20-30s).
-    const effectiveTextMode = opts?.textMode ?? (
-      isProductOnly ? 'clean' :
-      (effectiveFaceModelId && effectiveFaceModelId !== 'no-human') ? 'graphic' :
-      'clean'
-    )
+    // gpt-image ('graphic') is the ONLY engine now — for face thumbnails AND
+    // product-only. The old NB/Gemini 'clean' path is retired (not good enough).
+    const effectiveTextMode = opts?.textMode ?? 'graphic'
     try {
       // Capture a video frame ONLY when we have no face to work from. With the
       // selfie-driven flow, a selected face IS the identity source and gpt-image
@@ -1627,9 +1622,8 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           scenePrompt: scenePrompt.trim() || undefined,
           // Optional pasted product link — authoritative product source.
           productUrl: productUrl.trim() || undefined,
-          // Composed scene + crisp canvas title by default (matches the manual
-          // Generate button). 'Try AI-baked text' re-runs as 'baked'.
-          textMode: 'clean',
+          // gpt-image is the only engine now (matches the manual Generate button).
+          textMode: 'graphic',
           breakFrame: breakFrame || undefined,
         }),
       })

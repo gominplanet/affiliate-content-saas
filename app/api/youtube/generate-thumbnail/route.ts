@@ -1206,22 +1206,23 @@ export async function POST(request: Request) {
       try {
         const openaiGfxP = createOpenAIService()
         const claimsSheetP = await claimsSheetPromise
-        const splitHP = (h: string) => {
-          const words = h.trim().split(/\s+/)
-          const half = Math.ceil(words.length / 2)
-          return {
-            line1: words.slice(0, half).join(' ').toUpperCase().slice(0, 18),
-            line2: (words.slice(half).join(' ').toUpperCase() || words.slice(0, half).join(' ').toUpperCase()).slice(0, 22),
-            angle: 'NEGATION' as const,
-            emphasisWord: '',
-          }
-        }
-        const gfxCtxP = productDescription
-          ? `[GRAPHIC DESIGN THUMBNAIL — no person, product is the hero. Write a CONCRETE, product-DESCRIPTIVE headline drawn from the product itself (what it IS, its standout number/spec, or its biggest selling feature). Punchy few words.]\n\n${productDescription}`
-          : '[GRAPHIC DESIGN THUMBNAIL — no person, product hero. Concrete product-descriptive headline, punchy few words.]'
-        const gfxCopiesP = lockedHeadline
-          ? [splitHP(lockedHeadline)]
-          : await generateThumbCopies(videoTitle, variantCount, gfxCtxP, claimsSheetP)
+        // Same art director as the face path — bespoke product-specific design.
+        const gfxArtCtxP = [
+          productTitle ? `Product: ${productTitle}` : '',
+          ...((Array.isArray(productBullets) ? productBullets : []) as string[])
+            .filter(b => typeof b === 'string' && b.trim().length > 0)
+            .slice(0, 6)
+            .map(b => `• ${b.replace(/\s+/g, ' ').trim().slice(0, 100)}`),
+          productDescription ? productDescription.replace(/\s+/g, ' ').trim().slice(0, 300) : '',
+        ].filter(Boolean).join('\n').slice(0, 900)
+        const gfxCopiesP = await designThumbnailBriefs({
+          count: variantCount,
+          videoTitle,
+          productTitle,
+          productContext: gfxArtCtxP,
+          claimsSheet: claimsSheetP,
+          lockedHeadline: lockedHeadline || undefined,
+        })
         const productAbP = productImageUrl
           ? await fetch(productImageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(12000) })
               .then(r => r.ok ? r.arrayBuffer() : null).catch(() => null)
@@ -1230,27 +1231,35 @@ export async function POST(request: Request) {
         if (!productBytesP) throw new Error('no product image for product-only graphic')
         const gfxModelP = process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2'
         const productLabelP = productTitle || 'the product'
-        const BG_P = [
-          'a bright modern kitchen counter, softly blurred cabinets and daylight behind, clean and aspirational, shallow depth of field',
-          'a warm living-room side table, softly blurred cosy background, natural window light, shallow depth of field',
-          'a clean studio surface with a soft gradient backdrop and gentle natural lighting',
-          'a bright wood desk or countertop, softly blurred plants and daylight behind, shallow depth of field',
-        ]
         const gfxRawUrlsP = await Promise.all(
           gfxCopiesP.slice(0, variantCount).map(async (copy, idx) => {
             const attemptP = async (): Promise<string | null> => {
               const line1 = (copy.line1 || '').toUpperCase()
               const line2 = (copy.line2 || '').toUpperCase()
-              const bg = BG_P[idx % BG_P.length]
+              const briefP = copy as ThumbBrief
+              const conceptP = (briefP.concept || '').trim()
+              const paletteP = (briefP.palette || '').trim()
+              const bannerP = (briefP.banner || '').trim()
+              const calloutsP = Array.isArray(briefP.callouts) ? briefP.callouts.filter(Boolean) : []
+              const headP = conceptP
+                ? [
+                    `Design a UNIQUE, scroll-stopping, VIRAL product-review YouTube thumbnail — 1536×1024, 16:9 landscape. NO people. Bring THIS art-director brief (written for this product) to life exactly:`,
+                    '',
+                    `DESIGN CONCEPT: ${conceptP}`,
+                    paletteP ? `COLOUR PALETTE: ${paletteP}. Do NOT default to plain yellow-on-black.` : '',
+                    bannerP ? `BANNER PHRASE: render "${bannerP}" inside a hand-painted brush-stroke or torn banner (correct spelling).` : '',
+                    calloutsP.length ? `CALLOUTS / BADGES: work these in as small bright checkmark items, icon chips or spec pill badges — correctly spelled, a few words each: ${calloutsP.join(' · ')}.` : '',
+                    'Vibrant, modern, high-contrast, layered — never flat, dull or template-like. Mixed-weight display type where the key word pops.',
+                  ].filter(Boolean)
+                : [
+                    'Design a UNIQUE, scroll-stopping, VIRAL product-review YouTube thumbnail — 1536×1024, 16:9 landscape. NO people. Vibrant, modern, high-contrast — never flat or plain. Bold mixed-colour display type (not plain white/yellow), a themed colourful background that suits the product, and small checkmark/spec callouts.',
+                  ]
               const prompt = [
-                'A realistic, eye-catching YouTube thumbnail — 1536×1024, 16:9 landscape. Clean, high-CTR, uncluttered, professional. NO people.',
+                ...headP,
                 '',
-                `PRODUCT (the hero): recreate the product from Image 1 accurately and prominently, filling a large part of the frame — keep its true shape, colours and its own printed branding. Do NOT invent retail packaging or extra marketing text on it. Natural product lighting, realistic shadows, no coloured neon glow.`,
+                `PRODUCT (the hero): recreate the product from Image 1 accurately and prominently, filling a large part of the frame — keep its true shape, colours and its own printed branding. Do NOT invent retail packaging or extra marketing text on it. Light it naturally with a grounded shadow so it belongs in the scene; no glow ring or aura around it.`,
                 '',
-                'HEADLINE (bake it onto the thumbnail, large and readable):',
-                `  "${line1}" then "${line2}" — bold condensed capitals; "${line2}" is the larger dominant line in bright yellow (#FFE034) and "${line1}" in white, each with a clean thick black outline. Place it where it does NOT cover the product. Outlined text only — no boxes, panels or shadow blocks. Spelling must be EXACT. No other text, logos or watermarks anywhere except this headline.`,
-                '',
-                `SCENE: ${bg}. Compose it naturally like a real top-creator product thumbnail — the product is the clear focus, background softly out of focus. Bright, clean, high contrast, natural lighting.`,
+                `MAIN HEADLINE — render this text EXACTLY, spelling perfect: "${line1} ${line2}". Style it as the concept describes (mixed colour/size/weight, banner for a key phrase) — a designed, layered look, NOT plain white-and-yellow outlined caps. Place it where it does NOT cover the product.`,
                 'FRAMING (critical): compose for 16:9 with a safe margin — keep the whole product and all text fully inside the frame with clear space from every edge. The outer ~8% is bleed; nothing important there. The image is cropped slightly top and bottom, so never place text hard against the top or bottom edge.',
               ].join('\n')
               const refs = [{ data: productBytesP, filename: 'product.png', mime: 'image/png' as const }]
@@ -1311,10 +1320,21 @@ export async function POST(request: Request) {
           faceUsed: 'none',
           qcWarning: false,
           faceIdentityChecked: false,
+          artDirected: !!(gfxCopiesP[0] as ThumbBrief)?.concept,
+          artConcept: ((gfxCopiesP[0] as ThumbBrief)?.concept || '').slice(0, 400),
+          gfxQuality,
         })
       } catch (gfxPErr) {
-        console.warn('[thumb] product-only graphic failed, falling through to NB:', gfxPErr instanceof Error ? gfxPErr.message : gfxPErr)
-        // fall through to the existing product-only path below
+        // gpt-image is the ONLY engine now — no Nano Banana fallback. Return a
+        // clean, retryable error instead of handing back a worse image.
+        const reason = gfxPErr instanceof Error ? gfxPErr.message : String(gfxPErr)
+        console.warn('[thumb] product-only graphic failed:', reason)
+        return NextResponse.json({
+          ok: false,
+          error: 'thumbnail-generation-failed',
+          message: 'The thumbnail engine hit a snag. Please hit Generate again.',
+          gfxFallbackReason: reason,
+        }, { status: 502 })
       }
     }
 
@@ -1329,9 +1349,6 @@ export async function POST(request: Request) {
         message: "This video is private — MVP can't pull frames from it without the browser extension. Install the SCOUT extension from the Chrome Web Store to capture your video frames, or add a Face Model under \"Your Face\" to generate a thumbnail.",
       }, { status: 409 })
     }
-    // Captured so the NB fallthrough response can tell the UI (and us) WHY the
-    // gpt-image graphic path bailed — no more silent drops to the old engine.
-    let gfxFallbackReason: string | null = null
     if (textMode === 'graphic' && !uploadedPhotoUrl && (faceModel || hasVideoFrame)) {
       try {
         const openaiGfx = createOpenAIService()
@@ -1733,10 +1750,16 @@ export async function POST(request: Request) {
           gfxQuality,
         })
       } catch (gfxErr) {
-        console.warn('[generate-thumbnail] graphic path failed, falling through to NB:', gfxErr instanceof Error ? gfxErr.message : String(gfxErr))
-        // Fall through to NB Pro path. Record WHY so the UI can surface it —
-        // a silent fallthrough is exactly what hid the gpt-image failures.
-        gfxFallbackReason = gfxErr instanceof Error ? gfxErr.message : String(gfxErr)
+        // gpt-image is the ONLY engine now — no Nano Banana fallback. Return a
+        // clean, retryable error instead of silently handing back a worse image.
+        const reason = gfxErr instanceof Error ? gfxErr.message : String(gfxErr)
+        console.warn('[generate-thumbnail] graphic path failed:', reason)
+        return NextResponse.json({
+          ok: false,
+          error: 'thumbnail-generation-failed',
+          message: 'The thumbnail engine hit a snag. Please hit Generate again.',
+          gfxFallbackReason: reason,
+        }, { status: 502 })
       }
     }
 
@@ -2529,9 +2552,6 @@ Ultra-sharp, professional, photorealistic.`
               // wasn't a creator-face thumbnail).
               faceIdentityVerified: faceIdentityChecked ? !qcWarning : null,
               faceDebug: `nano-banana composed (source=${hasCapturedFrame ? `extension-frame[${validFrames.length || 1}]` : frameRef ? 'maxres' : 'face+product (no frame)'}, face=${faceModel?.name ?? 'none'}, faceRefs=${faceRefs.length}, productRefs=${productRefs.length}${customProductRefs.length > 0 ? ' [user-supplied]' : ''}, title=${wantClean ? 'overlay' : 'baked'}, qc=${qcWarning ? 'flagged' : 'verified'})`,
-              // If we're here despite textMode='graphic', the gpt-image path threw
-              // and dropped us to NB. Surface exactly why (this is the flat/halo look).
-              gfxFallbackReason,
             })
           }
           console.warn('[generate-thumbnail] Nano Banana (frame) returned no image; falling through')
