@@ -525,6 +525,7 @@ async function designThumbnailBriefs(input: {
   productContext?: string
   claimsSheet?: string
   lockedHeadline?: string | null
+  noHuman?: boolean
 }): Promise<ThumbBrief[]> {
   const n = Math.max(1, Math.min(5, Math.floor(input.count)))
   const anthropic = createAnthropicClient()
@@ -555,6 +556,7 @@ async function designThumbnailBriefs(input: {
     input.productContext ? `PRODUCT DETAILS (features / specs — ground callouts here, do NOT invent):\n${input.productContext.slice(0, 900)}` : '',
     input.claimsSheet ? `WHAT THE CREATOR SAID IN THE VIDEO (strongest grounding):\n${input.claimsSheet.slice(0, 500)}` : '',
     input.lockedHeadline ? `REQUIRED HEADLINE (use these exact words for every brief's line1+line2, just split + style them): "${input.lockedHeadline}"` : '',
+    input.noHuman ? 'PRODUCT-ONLY (hard rule): these designs must contain NO people at all. Do NOT reference a person, model, hands, or anyone using the product in the concept, callouts or banner. The concept centers on the PRODUCT itself. Leave expression and pose empty.' : '',
     '',
     `Design ${n} distinct briefs now. Output the JSON array only.`,
   ].filter(Boolean).join('\n')
@@ -1314,6 +1316,7 @@ export async function POST(request: Request) {
             productContext: gfxArtCtxP,
             claimsSheet: claimsSheetP,
             lockedHeadline: lockedHeadline || undefined,
+            noHuman: true,
           }),
         })
         const productAbP = productImageUrl
@@ -1351,6 +1354,7 @@ export async function POST(request: Request) {
                 ...headP,
                 '',
                 `PRODUCT (the hero): recreate the product from Image 1 accurately and prominently, filling a large part of the frame — keep its true shape, colours and its own printed branding. Do NOT invent retail packaging or extra marketing text on it. Light it naturally with a grounded shadow so it belongs in the scene; no glow ring or aura around it.`,
+                'ABSOLUTELY NO PEOPLE — HARD RULE: this is a PRODUCT-ONLY design. There must be ZERO humans anywhere in the image: no person, no face, no head, no hands, no fingers, no arms, no body parts, no silhouettes, and no reflections or shadows of a person, not even small, partial, blurred, or at the edges/background. If Image 1 (the reference) shows a model, hands, or any person holding or using the product, keep ONLY the product itself and OMIT every human element entirely.',
                 '',
                 `MAIN HEADLINE — render this text EXACTLY, spelling perfect: "${line1} ${line2}". Style it as the concept describes (mixed colour/size/weight, banner for a key phrase) — a designed, layered look, NOT plain white-and-yellow outlined caps. Place it where it does NOT cover the product.`,
                 `FRAMING: the canvas is a full ${isPortrait ? 'tall vertical portrait' : '16:9 landscape (1536×864)'} and the entire canvas is shown — nothing is cropped. Compose within it with a small, even safe margin (about 5%) on all four sides: every headline, banner, badge, callout and the whole product must sit fully inside the frame, not touching or running off any edge. Fill the frame nicely — no big empty dead bands — just keep that clean margin all around.`,
