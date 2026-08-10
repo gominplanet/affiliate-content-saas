@@ -21,6 +21,10 @@ export const PRICE_IDS = {
   creator: (process.env.STRIPE_PRICE_CREATOR ?? process.env.STRIPE_PRICE_STARTER)!,
   studio:  process.env.STRIPE_PRICE_STUDIO!,
   pro:     process.env.STRIPE_PRICE_PRO!,
+  // Amazon Influencer — $79. Set STRIPE_PRICE_AMAZON in Vercel after creating the
+  // Stripe price; until then the Amazon CTA returns "Invalid tier" (safe, no
+  // broken checkout) rather than charging at the wrong price.
+  amazon:  process.env.STRIPE_PRICE_AMAZON!,
 } as const
 
 // A Stripe price id looks like "price_…". Guard against a mis-pasted env value —

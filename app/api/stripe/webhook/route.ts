@@ -35,6 +35,7 @@ const PRICE_TO_TIER: Record<string, Tier> = Object.fromEntries(
   (
     [
       [process.env.STRIPE_PRICE_CREATOR ?? process.env.STRIPE_PRICE_STARTER, 'creator'],
+      [process.env.STRIPE_PRICE_AMAZON, 'amazon'],
       [process.env.STRIPE_PRICE_STUDIO, 'studio'],
       [process.env.STRIPE_PRICE_PRO, 'pro'],
     ] as Array<[string | undefined, Tier]>
@@ -47,7 +48,7 @@ const PRICE_TO_TIER: Record<string, Tier> = Object.fromEntries(
 // LIST amount (unit_amount), which discounts never change. Set below the real
 // list prices ($49 / $99 / $199) so normal prices never trip it, only a price
 // that's cheaper than the tier BENEATH it.
-const TIER_MIN_CENTS: Partial<Record<Tier, number>> = { creator: 4000, studio: 8000, pro: 15000 }
+const TIER_MIN_CENTS: Partial<Record<Tier, number>> = { creator: 4000, amazon: 6000, studio: 8000, pro: 15000 }
 
 /** Best-effort alert when a paid tier is granted from a suspiciously cheap price
  *  (e.g. Pro on a $49 price). Never throws — a guard here must not fail the

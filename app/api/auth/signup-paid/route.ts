@@ -21,7 +21,7 @@ import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
  * it by the user_id we stamp on the session + subscription. So an abandoned
  * checkout just leaves a normal trial account, exactly like a trial signup.
  */
-const PAID_TIERS: Tier[] = ['creator', 'studio', 'pro']
+const PAID_TIERS: Tier[] = ['creator', 'amazon', 'studio', 'pro']
 
 export async function POST(request: NextRequest) {
   if (SALES_PAUSED) {
