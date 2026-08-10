@@ -18,7 +18,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
 import { pickProductReferenceImage, verifyProductMatchConsensus, verifyNoBrandLeak } from '@/lib/product-image'
 import { resolveTrueDestination } from '@/lib/affiliate-resolve'
-import { asinFromAmazonUrl } from '@/lib/product-link'
+import { asinFromAmazonUrl, firstProductUrl } from '@/lib/product-link'
 import { generateArtDirectorPin } from '@/lib/art-director-pin'
 
 export const AFFILIATE_DISCLAIMER = '📌 Disclosure: As an Amazon Associate I earn from qualifying purchases. This post may contain affiliate links — I may earn a small commission at no extra cost to you.'
@@ -187,6 +187,43 @@ Return ONLY valid JSON with these exact keys:
         }
       }
     } catch { /* no video row — fall through */ }
+  }
+
+  // Fallback: no linked video (guides, comparisons, link-only posts) OR the
+  // video row had no product. EVERY MVP post carries the reviewed product's
+  // affiliate link in its body (direct Amazon, a short link, or a Geniuslink),
+  // so read the product straight off the POST itself — no video required.
+  // Prefer the stored article HTML; fall back to fetching the live permalink.
+  // Follows short/geni.us links to their true Amazon destination to read the
+  // ASIN, then grounds the pin on the real product photo. Best-effort: any
+  // failure just leaves referenceImageUrl null (text-to-image, no QC).
+  if ((opts?.aiScene || opts?.artDirector) && ctx.userId && !referenceImageUrl && !useCollage) {
+    try {
+      let body = String(p.content || '') || String(p.excerpt || '')
+      if (!/https?:\/\//i.test(body) && p.wordpress_url) {
+        // No links in the stored body → pull the published page. WP posts
+        // linking out to the product live behind a permalink we can read.
+        const html = await fetch(String(p.wordpress_url), {
+          headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(10000),
+        }).then((r) => (r.ok ? r.text() : '')).catch(() => '')
+        if (html) body = html
+      }
+      const productUrl = firstProductUrl(body, (p.wordpress_url as string | null) ?? null)
+      if (productUrl) {
+        let asin = asinFromAmazonUrl(productUrl) || extractAsin(productUrl.toUpperCase())
+        if (!asin) {
+          try {
+            const finalUrl = await resolveTrueDestination(productUrl)
+            asin = asinFromAmazonUrl(finalUrl) || extractAsin(finalUrl.toUpperCase())
+          } catch { /* couldn't unwrap — leave asin null */ }
+        }
+        if (asin) {
+          const prod = await fetchAmazonProduct(asin)
+          const picked = await pickProductReferenceImage(prod.images, prod.title, { userId: ctx.userId })
+          referenceImageUrl = (typeof picked === 'string' ? picked : null) || prod.imageUrl || null
+        }
+      }
+    } catch { /* couldn't resolve from the post — fall through */ }
   }
   // IMPORTANT: do NOT fall back to the article's own featured/thumbnail image as
   // the grounding reference. For MVP those are AI-GENERATED hero scenes (not a
