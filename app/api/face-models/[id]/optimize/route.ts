@@ -57,49 +57,57 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     .update({ optimized_status: 'processing', optimize_error: null, updated_at: new Date().toISOString() })
     .eq('id', id).eq('user_id', ownerId)
 
-  // Enhance one source path → returns the NEW storage path, or null on failure.
-  const enhanceOne = async (path: string, idx: number): Promise<string | null> => {
+  // Enhance one source path → { path, error }. path is null on failure and
+  // error carries WHY (so the UI can show the real reason, not a generic fail).
+  const enhanceOne = async (path: string, idx: number): Promise<{ path: string | null; error: string | null }> => {
     try {
       // 1. Download the original from storage.
       const { data: file } = await admin.storage.from(BUCKET).download(path)
-      if (!file) return null
+      if (!file) return { path: null, error: 'could not read the source photo' }
       const bytes = new Uint8Array(await file.arrayBuffer())
       // 2. Host it so CodeFormer can fetch it.
       const inputUrl = await fal.storage.upload(new Blob([bytes], { type: 'image/png' }))
       // 3. Enhance.
-      const enhancedUrl = await enhanceFaceImage(inputUrl)
-      if (!enhancedUrl) return null
+      const { url: enhancedUrl, error } = await enhanceFaceImage(inputUrl)
+      if (!enhancedUrl) return { path: null, error: error || 'enhancer returned nothing' }
       // 4. Pull the result back and save it under an /optimized path.
       const enhancedBytes = await fetch(enhancedUrl, { signal: AbortSignal.timeout(30000) })
         .then(r => r.ok ? r.arrayBuffer() : null).catch(() => null)
-      if (!enhancedBytes) return null
+      if (!enhancedBytes) return { path: null, error: 'could not download the enhanced photo' }
       const outPath = `${ownerId}/optimized/${id}/${idx}.png`
       const { error: upErr } = await admin.storage.from(BUCKET)
         .upload(outPath, Buffer.from(enhancedBytes), { contentType: 'image/png', upsert: true })
-      if (upErr) return null
-      return outPath
-    } catch {
-      return null
+      if (upErr) return { path: null, error: `storage: ${upErr.message}` }
+      return { path: outPath, error: null }
+    } catch (e) {
+      return { path: null, error: e instanceof Error ? e.message : String(e) }
     }
   }
 
-  // Process a few at a time so we don't hammer fal or blow the time budget.
-  const CONCURRENCY = 4
+  // Two at a time — CodeFormer is rate-sensitive, and hammering it (especially
+  // with a second face optimizing at the same time) is what caused most photos
+  // to fail. Slower but reliable.
+  const CONCURRENCY = 2
   const optimizedPaths: string[] = []
+  let firstError: string | null = null
   try {
     for (let i = 0; i < sourcePaths.length; i += CONCURRENCY) {
       const batch = sourcePaths.slice(i, i + CONCURRENCY)
       const results = await Promise.all(batch.map((p, j) => enhanceOne(p, i + j)))
-      for (const r of results) if (r) optimizedPaths.push(r)
+      for (const r of results) {
+        if (r.path) optimizedPaths.push(r.path)
+        else if (!firstError && r.error) firstError = r.error
+      }
     }
-  } catch { /* fall through to the status update below */ }
+  } catch (e) { if (!firstError) firstError = e instanceof Error ? e.message : String(e) }
 
   if (optimizedPaths.length === 0) {
+    const reason = firstError ? `Optimize failed: ${firstError}`.slice(0, 300) : 'Could not enhance any photos.'
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await supabase.from('face_models')
-      .update({ optimized_status: 'failed', optimize_error: 'Could not enhance any photos.', updated_at: new Date().toISOString() })
+      .update({ optimized_status: 'failed', optimize_error: reason, updated_at: new Date().toISOString() })
       .eq('id', id).eq('user_id', ownerId)
-    return NextResponse.json({ error: 'Could not optimize the photos. Your originals are untouched.' }, { status: 502 })
+    return NextResponse.json({ error: reason }, { status: 502 })
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
