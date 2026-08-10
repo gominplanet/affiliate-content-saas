@@ -43,7 +43,9 @@ export async function enhanceFaceImage(imageUrl: string): Promise<EnhanceResult>
           // High fidelity = keep the person's real features (light retouch, not
           // a redraw). 0.7–0.9 is the "preserve identity" band for CodeFormer.
           fidelity: 0.8,
-          upscaling: 2,
+          // No upscaling — a reference photo doesn't need 2×, and the upscaled
+          // output was blowing past the storage size cap. We downscale on save too.
+          upscaling: 1,
           face_upsample: true,
         },
         logs: false,

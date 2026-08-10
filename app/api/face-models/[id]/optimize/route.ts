@@ -11,6 +11,7 @@
  * untouched, so generation is never broken by this.
  */
 import { NextResponse } from 'next/server'
+import sharp from 'sharp'
 import { fal } from '@fal-ai/client'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -70,13 +71,20 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       // 3. Enhance.
       const { url: enhancedUrl, error } = await enhanceFaceImage(inputUrl)
       if (!enhancedUrl) return { path: null, error: error || 'enhancer returned nothing' }
-      // 4. Pull the result back and save it under an /optimized path.
+      // 4. Pull the result back.
       const enhancedBytes = await fetch(enhancedUrl, { signal: AbortSignal.timeout(30000) })
         .then(r => r.ok ? r.arrayBuffer() : null).catch(() => null)
       if (!enhancedBytes) return { path: null, error: 'could not download the enhanced photo' }
-      const outPath = `${ownerId}/optimized/${id}/${idx}.png`
+      // 5. Downscale + compress before storing. CodeFormer upscales, so the raw
+      // result is often several MB — too big for the storage bucket's size cap.
+      // A reference photo only needs ~1024px, so cap the long edge and JPEG it.
+      const outBuf = await sharp(Buffer.from(enhancedBytes))
+        .resize(1024, 1024, { fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality: 88 })
+        .toBuffer()
+      const outPath = `${ownerId}/optimized/${id}/${idx}.jpg`
       const { error: upErr } = await admin.storage.from(BUCKET)
-        .upload(outPath, Buffer.from(enhancedBytes), { contentType: 'image/png', upsert: true })
+        .upload(outPath, outBuf, { contentType: 'image/jpeg', upsert: true })
       if (upErr) return { path: null, error: `storage: ${upErr.message}` }
       return { path: outPath, error: null }
     } catch (e) {
