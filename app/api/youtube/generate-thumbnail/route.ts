@@ -1057,6 +1057,34 @@ export async function POST(request: Request) {
       : isStory
       ? `FORMAT — READ FIRST, OVERRIDES EVERYTHING BELOW: this is a TALL VERTICAL INSTAGRAM STORY design (portrait), NOT a 16:9 video thumbnail — ignore any "16:9" or "landscape" wording that follows. A bold headline high up, the product large and central, 1–3 short punchy callouts. Fill the whole tall frame edge to edge, no empty dead space. Keep the headline a little below the very top and the call-to-action a little above the very bottom so the phone's story UI never covers them. NEVER the word "Amazon".${ctaLinkInBio === false ? ' Do NOT put any "LINK IN BIO", link, URL or call-to-action text in the design — keep it clean.' : ' MANDATORY: prominently design a bold "LINK IN BIO" call-to-action into the image (a pill, ribbon or badge, e.g. "🔗 LINK IN BIO TO SHOP") in the lower third.'}`
       : ''
+    // Telemetry feature per format, so each Amazon-social format is counted
+    // against its own monthly cap (below) rather than lumped as "thumbnail".
+    const gfxFeature = isPin ? 'amazon_pin' : (isIg || isStory) ? 'amazon_ig' : isFb ? 'amazon_fb' : 'yt_thumb_graphic'
+
+    // ── Hard monthly per-format cap ────────────────────────────────────────
+    // pin/ig/fb are finite ONLY on the Amazon tier (null = unlimited on Studio/
+    // Pro, so they never block); the landscape-thumbnail cap is enforced only
+    // for the Amazon tier so Studio/Pro co-pilot behaviour is unchanged. The
+    // monthly $-ceiling (spendGate, above) remains the universal cost backstop.
+    {
+      const T = TIERS[tier]
+      let capLimit: number | null = null
+      let capFeatures: string[] = []
+      let capLabel = 'designs'
+      if (isPin) { capLimit = T.pinsPerMonth; capFeatures = ['amazon_pin']; capLabel = 'pins' }
+      else if (isIg || isStory) { capLimit = T.igPostsPerMonth; capFeatures = ['amazon_ig']; capLabel = 'Instagram designs' }
+      else if (isFb) { capLimit = T.facebookPostsPerMonth; capFeatures = ['amazon_fb']; capLabel = 'Facebook designs' }
+      else if (tier === 'amazon') { capLimit = T.thumbnailsPerMonth; capFeatures = [...PRIMARY_FEATURE.thumbnail, 'yt_thumb_graphic']; capLabel = 'thumbnails' }
+      if (typeof capLimit === 'number') {
+        const cap = await checkUsageCap(supabase, user.id, capFeatures, capLimit, tierRow?.subscription_period_start ?? null, tierRow?.subscription_period_end ?? null)
+        if (cap && cap.exceeded) {
+          return NextResponse.json({
+            error: `You've used all ${capLimit} ${capLabel} on your plan this period${cap.resetLabel ? ` (resets ${cap.resetLabel})` : ''}.`,
+            capExceeded: true, upgrade: nextTierFor(tier, 'thumbnailsPerMonth'),
+          }, { status: 429 })
+        }
+      }
+    }
     const lockedHeadline = (customHeadline || '').trim().toUpperCase()
 
     // Ground the thumbnail copy in what the creator ACTUALLY said: pull the
@@ -1361,7 +1389,7 @@ export async function POST(request: Request) {
               ].filter(Boolean).join('\n')
               const refs = [{ data: productBytesP, filename: 'product.png', mime: 'image/png' as const }]
               const b64 = await openaiGfxP.generateWithReferences({ prompt, images: refs, size: gfxSize, quality: gfxQuality })
-              recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'yt_thumb_graphic', model: gfxModelP, images: 1 })
+              recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: gfxFeature, model: gfxModelP, images: 1 })
               const copyDec = (copy as { decoration?: ThumbDecoration }).decoration
               const gfxDec: ThumbDecoration =
                 forcedDecoration === 'none' ? 'none'
@@ -1768,7 +1796,7 @@ export async function POST(request: Request) {
             // ChatGPT-grade render; other paid tiers get MEDIUM. Co-Pilot generates
             // one variant, so a single high render stays well under the timeout.
             const b64 = await openaiGfx.generateWithReferences({ prompt, images: refs, size: gfxSize, quality: gfxQuality })
-            recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'yt_thumb_graphic', model: gfxModel, images: 1 })
+            recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: gfxFeature, model: gfxModel, images: 1 })
             // Badge the creator chose (5 stars / hot / etc). The GFX path bakes its
             // own headline via gpt-image and never runs bakeSimpleHeadline, so the
             // badge must be composited here or it never shows. forcedDecoration:
