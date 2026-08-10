@@ -14,6 +14,7 @@ import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 import { rankThumbnails, pickBestFrame, type ThumbnailScore } from '@/lib/thumbnail-score'
 import { type TextPosition } from '@/lib/thumbnail-textzone'
 import { NO_BRAND_IMAGE_CLAUSE, stripDesignBrands } from '@/lib/image-guard'
+import { getOrCreateBriefs } from '@/lib/art-director-cache'
 import { composeWithNanoBanana, composeWithNanoBananaPro, generateWithIdeogram, rehostToFal, rehostFacePhotos, rehostStyleRefs, applyMoodyGrade, NANO_BANANA_COST_MODEL, NANO_BANANA_PRO_COST_MODEL, IDEOGRAM_COST_MODEL } from '@/lib/thumbnail-generators'
 // renderDesignerOverlay (Satori-based, template-driven) was the previous
 // clean-path renderer. Now superseded by bakeSimpleHeadline which uses
@@ -892,6 +893,11 @@ export async function POST(request: Request) {
       // 'landscape' (default) → 16:9 YouTube thumbnail. 'pin' → a 2:3 vertical
       // Pinterest pin (1000×1500): text-heavier, shopping-focused, drives a click.
       format,
+      // Shared creative thinking: a key for one "post set" (one product pushed to
+      // several networks). When two format requests share it, the art-director
+      // brief is generated once and reused — secondary formats skip the reasoning
+      // cost. Absent (YouTube co-pilot) → every design thinks fresh, as before.
+      briefKey,
     } = await request.json() as {
       quickMode?: boolean
       videoTitle: string
@@ -990,7 +996,13 @@ export async function POST(request: Request) {
        *  adds ~15-20s per generation. */
       breakFrame?: boolean
       format?: 'landscape' | 'pin'
+      briefKey?: string
     }
+
+    // Sanitize the shared-brief key (opt-in; social composers only).
+    const sharedBriefKey = typeof briefKey === 'string' && briefKey.trim()
+      ? briefKey.trim().slice(0, 200)
+      : undefined
 
     const variantCount = Math.min(10, Math.max(1, Number(rawVariantCount) || 1))
     // Pinterest pin format: 2:3 vertical, text-heavier, shopping-focused.
@@ -1254,13 +1266,17 @@ export async function POST(request: Request) {
             .map(b => `• ${b.replace(/\s+/g, ' ').trim().slice(0, 100)}`),
           productDescription ? productDescription.replace(/\s+/g, ' ').trim().slice(0, 300) : '',
         ].filter(Boolean).join('\n').slice(0, 900)
-        const gfxCopiesP = await designThumbnailBriefs({
-          count: variantCount,
-          videoTitle,
-          productTitle,
-          productContext: gfxArtCtxP,
-          claimsSheet: claimsSheetP,
-          lockedHeadline: lockedHeadline || undefined,
+        const gfxCopiesP = await getOrCreateBriefs({
+          userId: user.id,
+          briefKey: sharedBriefKey,
+          generate: () => designThumbnailBriefs({
+            count: variantCount,
+            videoTitle,
+            productTitle,
+            productContext: gfxArtCtxP,
+            claimsSheet: claimsSheetP,
+            lockedHeadline: lockedHeadline || undefined,
+          }),
         })
         const productAbP = productImageUrl
           ? await fetch(productImageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(12000) })
@@ -1395,13 +1411,17 @@ export async function POST(request: Request) {
             .map(b => `• ${b.replace(/\s+/g, ' ').trim().slice(0, 100)}`),
           productDescription ? productDescription.replace(/\s+/g, ' ').trim().slice(0, 300) : '',
         ].filter(Boolean).join('\n').slice(0, 900)
-        const gfxCopies = await designThumbnailBriefs({
-          count: variantCount,
-          videoTitle,
-          productTitle,
-          productContext: gfxArtCtx,
-          claimsSheet: claimsSheetGfx,
-          lockedHeadline: lockedHeadline || undefined,
+        const gfxCopies = await getOrCreateBriefs({
+          userId: user.id,
+          briefKey: sharedBriefKey,
+          generate: () => designThumbnailBriefs({
+            count: variantCount,
+            videoTitle,
+            productTitle,
+            productContext: gfxArtCtx,
+            claimsSheet: claimsSheetGfx,
+            lockedHeadline: lockedHeadline || undefined,
+          }),
         })
 
         let photoBytes: Buffer | Uint8Array
