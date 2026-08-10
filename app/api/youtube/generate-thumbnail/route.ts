@@ -13,7 +13,7 @@ import { spendGate } from '@/lib/ai-spend'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 import { rankThumbnails, pickBestFrame, type ThumbnailScore } from '@/lib/thumbnail-score'
 import { type TextPosition } from '@/lib/thumbnail-textzone'
-import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
+import { NO_BRAND_IMAGE_CLAUSE, stripDesignBrands } from '@/lib/image-guard'
 import { composeWithNanoBanana, composeWithNanoBananaPro, generateWithIdeogram, rehostToFal, rehostFacePhotos, rehostStyleRefs, applyMoodyGrade, NANO_BANANA_COST_MODEL, NANO_BANANA_PRO_COST_MODEL, IDEOGRAM_COST_MODEL } from '@/lib/thumbnail-generators'
 // renderDesignerOverlay (Satori-based, template-driven) was the previous
 // clean-path renderer. Now superseded by bakeSimpleHeadline which uses
@@ -272,8 +272,8 @@ function flatCopy(c: ThumbCopy | string | null | undefined): string {
   if (!c) return ''
   // Scrub here too — flatCopy feeds the overlay-text draw + response payload,
   // and string-typed hooks bypass the per-line scrub in parseThumbCopy.
-  if (typeof c === 'string') return scrubBanned(c)
-  return scrubBanned(`${c.line1} ${c.line2}`.replace(/\*/g, '').trim())
+  if (typeof c === 'string') return stripDesignBrands(scrubBanned(c))
+  return stripDesignBrands(scrubBanned(`${c.line1} ${c.line2}`.replace(/\*/g, '').trim()))
 }
 
 const ANGLE_DEFS: Record<CtrAngle, string> = {
@@ -307,9 +307,9 @@ function parseOneCopy(raw: string, fallbackAngle: CtrAngle): ThumbCopy {
       const angle = (o.angle as CtrAngle) || fallbackAngle
       // Scrub banned words — this headline gets BAKED into the image, so a
       // banned word can't be fixed after render. (The "never HONEST" rule.)
-      const line1 = scrubBanned(String(o.line1 || '').trim()).toUpperCase().slice(0, 16)
-      const line2 = scrubBanned(String(o.line2 || '').trim()).toUpperCase().slice(0, 22)
-      const emphasis = scrubBanned(String(o.emphasisWord || '').trim()).toUpperCase()
+      const line1 = stripDesignBrands(scrubBanned(String(o.line1 || '').trim())).toUpperCase().slice(0, 16)
+      const line2 = stripDesignBrands(scrubBanned(String(o.line2 || '').trim())).toUpperCase().slice(0, 22)
+      const emphasis = stripDesignBrands(scrubBanned(String(o.emphasisWord || '').trim())).toUpperCase()
       const VALID_DECORATIONS = new Set<ThumbDecoration>(['stars', 'check', 'arrow', 'none'])
       const decoration = VALID_DECORATIONS.has(o.decoration as ThumbDecoration) ? (o.decoration as ThumbDecoration) : undefined
       if (line1 && line2) return { angle, line1, line2, emphasisWord: emphasis || line1.split(' ')[0], decoration }
@@ -492,6 +492,8 @@ Each brief has:
 - expression: the creator's facial REACTION, chosen to fit THIS headline/product — and VARIED across the briefs so they don't all look the same. Pick the emotion the video earns: e.g. "wide-eyed shocked", "delighted open-mouth grin", "skeptical raised eyebrow", "amazed wow face", "excited eyebrows-up", "curious intrigued look", "confident smirk", "thrilled laughing". A "worth it?" angle → skeptical; a big deal/benefit → excited or amazed. Two to four words.
 - pose: the creator's body/gesture, also VARIED (not always pointing): e.g. "pointing at the product", "holding the product up", "arms crossed, confident", "thumbs up", "hand on chin, thinking", "open-handed presenting". Match it to the expression. Two to five words.
 
+HARD RULE (non-negotiable): NEVER put the word "Amazon" (or "Prime", "Amazon Prime") anywhere in line1, line2, emphasisWord, callouts, banner, or concept. Never describe the Amazon smile / swoosh arrow logo. The design must never name or draw the retailer. Say "hidden gem", "this find", "under $30", the product's real category or benefit instead.
+
 OUTPUT: a strict JSON array of N_BRIEFS objects with keys line1, line2, emphasisWord, banner, palette, callouts (array of strings), concept, expression, pose. No prose, no markdown fences — just the JSON array.`
 
 async function designThumbnailBriefs(input: {
@@ -506,21 +508,21 @@ async function designThumbnailBriefs(input: {
   const n = Math.max(1, Math.min(5, Math.floor(input.count)))
   const anthropic = createAnthropicClient()
   const clampBrief = (o: Record<string, unknown>, i: number): ThumbBrief => {
-    const l1 = scrubBanned(String(o.line1 || '').trim()).toUpperCase().slice(0, 16)
-    const l2 = scrubBanned(String(o.line2 || '').trim()).toUpperCase().slice(0, 22)
+    const l1 = stripDesignBrands(scrubBanned(String(o.line1 || '').trim())).toUpperCase().slice(0, 16)
+    const l2 = stripDesignBrands(scrubBanned(String(o.line2 || '').trim())).toUpperCase().slice(0, 22)
     const calls = Array.isArray(o.callouts)
-      ? (o.callouts as unknown[]).filter((c): c is string => typeof c === 'string' && c.trim().length > 0).map(c => scrubBanned(c.trim()).slice(0, 28)).slice(0, 3)
+      ? (o.callouts as unknown[]).filter((c): c is string => typeof c === 'string' && c.trim().length > 0).map(c => stripDesignBrands(scrubBanned(c.trim())).slice(0, 28)).filter(Boolean).slice(0, 3)
       : []
     return {
       angle: ANGLE_ROTATION[i % ANGLE_ROTATION.length],
       line1: l1,
       line2: l2,
-      emphasisWord: scrubBanned(String(o.emphasisWord || '').trim()).toUpperCase().slice(0, 24),
+      emphasisWord: stripDesignBrands(scrubBanned(String(o.emphasisWord || '').trim())).toUpperCase().slice(0, 24),
       decoration: 'none', // gpt-image bakes its own callouts; skip the composited badge
       concept: String(o.concept || '').trim().slice(0, 900),
       palette: String(o.palette || '').trim().slice(0, 160),
       callouts: calls,
-      banner: scrubBanned(String(o.banner || '').trim()).slice(0, 40),
+      banner: stripDesignBrands(scrubBanned(String(o.banner || '').trim())).slice(0, 40),
       expression: String(o.expression || '').trim().slice(0, 60),
       pose: String(o.pose || '').trim().slice(0, 60),
     }
@@ -1001,7 +1003,7 @@ export async function POST(request: Request) {
     // When rendering a Pin, this authoritative first line reframes the whole
     // design as a tall shopping pin (overrides any 16:9 wording further down).
     const pinDirective = isPin
-      ? 'FORMAT — READ FIRST, OVERRIDES EVERYTHING BELOW: this is a 2:3 VERTICAL PINTEREST PIN (1024×1536, tall portrait), NOT a 16:9 video thumbnail — ignore any "16:9" or "landscape" wording that follows. It is a SHOPPING pin whose only job is to earn the click to buy, so use MORE text than a thumbnail: a big bold headline across the TOP, then a STACKED vertical list of 3–5 short benefit/feature callouts (checkmarks, chips or spec badges) down the middle, and a strong shop-style call-to-action near the BOTTOM (e.g. "TAP TO SHOP" or "SEE IT ON AMAZON"). Product large and central; fill the tall frame top-to-bottom with no empty dead space. Person (if any) smaller, to one side.'
+      ? 'FORMAT — READ FIRST, OVERRIDES EVERYTHING BELOW: this is a 2:3 VERTICAL PINTEREST PIN (1024×1536, tall portrait), NOT a 16:9 video thumbnail — ignore any "16:9" or "landscape" wording that follows. It is a SHOPPING pin whose only job is to earn the click to buy, so use MORE text than a thumbnail: a big bold headline across the TOP, then a STACKED vertical list of 3–5 short benefit/feature callouts (checkmarks, chips or spec badges) down the middle, and a strong shop-style call-to-action near the BOTTOM (e.g. "TAP TO SHOP" or "SEE THE DEAL"). NEVER the word "Amazon". Product large and central; fill the tall frame top-to-bottom with no empty dead space. Person (if any) smaller, to one side.'
       : ''
     const lockedHeadline = (customHeadline || '').trim().toUpperCase()
 
@@ -2180,7 +2182,7 @@ ${styleRefClause}
 ${compositionLine}
 ${headlineClause}
 BACKGROUND (must FIT the product's real-world use): set the scene where ${productTitle || 'this product'} is ACTUALLY used — INFER the correct environment from the product itself. Examples: a kitchen gadget → a kitchen; an OUTDOOR / patio / deck / pool / garden / lawn product → a tidy outdoor patio, deck, balcony, poolside or backyard (NOT indoors); a car/auto product → a garage or driveway; a bathroom product → a bathroom; a workshop/tool → a garage or workbench; a desk/office product → a desk. Do NOT default to a generic indoor living room unless the product is genuinely a living-room item. Grade the chosen setting as ${palette.overall} cinematic — a dramatic blend of ${palette.rim} rim-light behind the subject and ${palette.accent} glow around the product, deep contrast, soft vignette around the edges. The rim light must visibly separate the subject from the background so any cut-out edge blends cleanly with NO visible halo or outline. Soft background bokeh and depth; vivid and eye-catching at small sizes. Loosely fits the video "${videoTitle}" without literally illustrating the title.
-The ONLY text in the image is the headline described above (plus the arrow). NO retailer logos (especially "Amazon"/"Prime"), NO invented brand names, NO marketing copy or feature lists from product packaging, NO price tags, watermarks, ©/™/® symbols, or any extra signage anywhere in the background or on surfaces. The product's own physical branding on its body/bottle/box IS kept intact (it's the item being reviewed).
+The ONLY text in the image is the headline described above (plus the arrow). HARD RULE: the word "Amazon" (and "Prime") must NEVER appear in the headline or anywhere in the image, and NEVER draw the Amazon smile / swoosh arrow logo. NO retailer logos, NO invented brand names, NO marketing copy or feature lists from product packaging, NO price tags, watermarks, ©/™/® symbols, or any extra signage anywhere in the background or on surfaces. The product's own physical branding on its body/bottle/box IS kept intact (it's the item being reviewed).
 Ultra-sharp, professional, photorealistic.`
           }
 

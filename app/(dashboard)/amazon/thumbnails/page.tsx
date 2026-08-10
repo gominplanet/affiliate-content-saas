@@ -51,7 +51,7 @@ export default function AmazonThumbnailsPage() {
     const isUrl = /^https?:\/\//i.test(raw)
     const isAsin = /^[A-Z0-9]{10}$/i.test(raw)
     const body: Record<string, unknown> = {
-      videoTitle: headline.trim() || 'New Amazon find',
+      videoTitle: headline.trim() || 'This hidden gem',
       textMode: 'graphic',
       ...(isUrl ? { productUrl: raw } : isAsin ? { asin: raw.toUpperCase() } : { productUrl: raw }),
       ...(mode === 'product' ? { noHuman: true } : { faceModelId: faceId }),
@@ -196,7 +196,6 @@ export default function AmazonThumbnailsPage() {
             </a>
             {result.hook && <span className="text-xs px-2 py-1 rounded-full bg-[#d97706]/10 text-[#d97706] font-medium">{result.hook}</span>}
           </div>
-          {result.diag && <p className="text-[10px] mt-2 font-mono" style={{ color: 'var(--text-soft)' }}>🔧 {result.diag}</p>}
         </div>
       )}
     </div>
