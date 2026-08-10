@@ -1247,6 +1247,7 @@ export async function POST(request: Request) {
                 `  "${line1}" then "${line2}" — bold condensed capitals; "${line2}" is the larger dominant line in bright yellow (#FFE034) and "${line1}" in white, each with a clean thick black outline. Place it where it does NOT cover the product. Outlined text only — no boxes, panels or shadow blocks. Spelling must be EXACT. No other text, logos or watermarks anywhere except this headline.`,
                 '',
                 `SCENE: ${bg}. Compose it naturally like a real top-creator product thumbnail — the product is the clear focus, background softly out of focus. Bright, clean, high contrast, natural lighting.`,
+                'FRAMING (critical): compose for 16:9 with a safe margin — keep the whole product and all text fully inside the frame with clear space from every edge. The outer ~8% is bleed; nothing important there. The image is cropped slightly top and bottom, so never place text hard against the top or bottom edge.',
               ].join('\n')
               const refs = [{ data: productBytesP, filename: 'product.png', mime: 'image/png' as const }]
               const b64 = await openaiGfxP.generateWithReferences({ prompt, images: refs, size: '1536x1024', quality: 'medium' })
@@ -1257,7 +1258,7 @@ export async function POST(request: Request) {
                   : forcedDecoration ? forcedDecoration
                     : (copyDec && copyDec !== 'none' ? copyDec : 'none')
               try {
-                let resized = await sharp(Buffer.from(b64, 'base64')).resize(1280, 720, { fit: 'cover', position: 'top' }).jpeg({ quality: 92 }).toBuffer()
+                let resized = await sharp(Buffer.from(b64, 'base64')).resize(1280, 720, { fit: 'cover', position: 'centre' }).jpeg({ quality: 92 }).toBuffer()
                 if (gfxDec !== 'none') resized = await compositeBadgeOnly(resized, gfxDec)
                 return await rehostToFal(`data:image/jpeg;base64,${resized.toString('base64')}`)
               } catch {
@@ -1630,6 +1631,7 @@ export async function POST(request: Request) {
               '',
               `MAIN HEADLINE — the wording must read EXACTLY, spelling perfect: "${line1} ${line2}". Style it as the concept describes: split it across lines, give words their own colour/size/weight, use a banner for a key phrase — a designed, layered look, NOT plain white-and-yellow outlined caps. Keep the exact words and spelling. Big and instantly readable.`,
               '',
+              'FRAMING (critical): compose for 16:9 and keep a safe margin. ALL text, headlines, banners, badges, callouts, the person and the whole product must sit fully INSIDE the frame with clear breathing room from every edge — nothing touching, overlapping, or running off the top, bottom, left or right. The outer ~8% on every side is bleed: keep it clear of anything important. The image is cropped slightly top and bottom, so never place text or a badge hard against the top or bottom edge.',
               'HARD RULES (only these): keep the person instantly recognisable, keep the product accurate to the reference, and make every piece of text correctly spelled and legible. Everything else — make it POP.',
             ].filter(Boolean).join('\n')
             }
