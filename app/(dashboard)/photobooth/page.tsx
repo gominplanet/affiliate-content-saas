@@ -227,6 +227,20 @@ export default function PhotoboothPage() {
     }
   }
 
+  // On-demand preview of a face's original vs optimized photos (signed URLs).
+  const [photoView, setPhotoView] = useState<Record<string, { original: string[]; optimized: string[] } | 'loading'>>({})
+  async function viewPhotos(id: string) {
+    if (photoView[id]) { setPhotoView(prev => { const n = { ...prev }; delete n[id]; return n }); return }
+    setPhotoView(prev => ({ ...prev, [id]: 'loading' }))
+    try {
+      const r = await fetch(`/api/face-models/${id}/photos`)
+      const d = await r.json()
+      setPhotoView(prev => ({ ...prev, [id]: { original: d.original || [], optimized: d.optimized || [] } }))
+    } catch {
+      setPhotoView(prev => ({ ...prev, [id]: { original: [], optimized: [] } }))
+    }
+  }
+
   // Toggle whether generation uses the optimized photos or the originals.
   async function toggleOptimized(id: string, next: boolean) {
     setFaces(prev => prev.map(m => m.id === id ? { ...m, use_optimized: next } : m))
@@ -420,7 +434,8 @@ export default function PhotoboothPage() {
           ) : (
             <div className="flex flex-col gap-2.5">
               {faces.map(m => (
-                <div key={m.id} className="card p-4 flex items-center gap-3">
+                <div key={m.id} className="card p-4">
+                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full bg-[#7C3AED]/10 flex items-center justify-center flex-shrink-0">
                     <UserCircle2 size={20} className="text-[#7C3AED]" />
                   </div>
@@ -466,6 +481,11 @@ export default function PhotoboothPage() {
                         {m.optimized_status === 'ready' && (
                           <button onClick={() => optimizeFace(m.id)} className="text-[10px] text-[#86868b] hover:text-[#7C3AED] underline">redo</button>
                         )}
+                        {(m.optimized_status === 'ready' || (m.source_images.length > 0)) && (
+                          <button onClick={() => viewPhotos(m.id)} className="text-[10px] text-[#86868b] hover:text-[#7C3AED] underline">
+                            {photoView[m.id] ? 'hide photos' : 'view photos'}
+                          </button>
+                        )}
                         {m.optimized_status === 'failed' && (
                           <span className="text-[10px] text-[#ff3b30]">{m.optimize_error || 'Optimize failed'}</span>
                         )}
@@ -479,6 +499,35 @@ export default function PhotoboothPage() {
                   >
                     <Trash2 size={14} />
                   </button>
+                 </div>
+
+                  {/* Original vs Optimized photo preview (on demand). */}
+                  {photoView[m.id] && (
+                    <div className="mt-3 pt-3 border-t border-gray-100 dark:border-white/10">
+                      {photoView[m.id] === 'loading' ? (
+                        <p className="text-[11px] text-[#86868b] flex items-center gap-1"><Loader2 size={11} className="animate-spin" /> Loading photos…</p>
+                      ) : (
+                        <div className="flex flex-col gap-3">
+                          {(['optimized', 'original'] as const).map(kind => {
+                            const pv = photoView[m.id] as { original: string[]; optimized: string[] }
+                            const urls = pv[kind]
+                            if (kind === 'optimized' && urls.length === 0) return null
+                            return (
+                              <div key={kind}>
+                                <p className="text-[10px] font-semibold uppercase tracking-wide text-[#86868b] mb-1.5">{kind === 'optimized' ? 'Optimized' : 'Original'}</p>
+                                <div className="flex gap-1.5 flex-wrap">
+                                  {urls.map((u, i) => (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img key={i} src={u} alt={`${kind} ${i + 1}`} className="w-14 h-14 rounded-md object-cover border border-gray-200 dark:border-white/10" />
+                                  ))}
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
