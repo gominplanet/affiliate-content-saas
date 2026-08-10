@@ -1463,23 +1463,31 @@ export async function POST(request: Request) {
               ].join('\n')
             } else {
             // PERMISSIVE brief — mirrors the short "surprise me, no rules" prompt
-            // that gets ChatGPT's varied, viral results. We lock ONLY the three
+            // that gets ChatGPT's varied, viral results, but teaches the actual
+            // DESIGN LANGUAGE of modern product-review thumbnails (mixed-colour
+            // display type, brush-stroke banners, checkmark/icon callouts, spec &
+            // hero badges, vivid layered backgrounds). We lock ONLY the three
             // non-negotiables (recognisable person, accurate product, exact/legible
-            // text) and let gpt-image invent everything else: composition, layout,
-            // background, colours, neon/glows, badges, feature callouts, effects.
+            // text); everything else stays free so each thumbnail is unique.
             prompt = [
-              `Create a UNIQUE, scroll-stopping, VIRAL YouTube thumbnail — 1536×1024, 16:9 landscape. Go BOLD like a top MrBeast-era creator: a dramatic, eye-catching THEMED background (energy burst, neon, motion streaks, gradient, or brand colours — whatever fits the product), punchy multi-colour headline text with highlights/brush-strokes/heavy outlines, and small feature badges or callouts where they help it sell. YOU choose the whole design — composition, colours, effects, layout. Make this one ${gfxVibe}. Do NOT follow a fixed template or a plain, flat look.`,
+              `Design a UNIQUE, scroll-stopping, VIRAL YouTube thumbnail — 1536×1024, 16:9 landscape — in the style of today's top product-review creators (MrBeast-era energy). It MUST look vibrant, modern and high-contrast and make the viewer want to click. NEVER flat, dull, plain or template-like. Make this one ${gfxVibe}. YOU are the designer — own the layout, colours, fonts and effects, and make each one feel fresh.`,
               '',
-              `PERSON: ${creatorRefLabel}. ${identityInstruction} Use this exact person — you MAY change their expression and lightly retouch them, but do NOT change their inherent look (same face, skin tone, hair, age, distinctive features); they must be instantly recognisable as the same person. Show them HEAD-AND-SHOULDERS to roughly CHEST-UP only. The references are head-and-chest selfies, so do NOT invent or show their full body, legs, waist-down, or overall body build — keep it an upper-body shot (they can still react, point, or gesture with hands near the frame).`,
+              'USE THESE MODERN DESIGN TOOLS (pick the ones that fit this product, and mix them freely for variety):',
+              '• TITLE TYPOGRAPHY: never one flat block of text. Use a bold modern display font and give different WORDS their own colour, size and weight so the key word jumps out. Drop a short punchy phrase (e.g. "GAME CHANGER!", "SO POWERFUL!", "SMOOTH. FLUID. EPIC.") into a hand-painted brush-stroke or torn banner (black or white) for extra energy.',
+              '• FEATURE CALLOUTS & ICONS: add a short benefit list with bright coloured CHECKMARKS or small circular ICON chips (2–3 words each), and/or spec PILL badges (e.g. "144Hz", "FHD", "360°"), and/or a round hero badge ("#1", "BEST"). Small, clean, correctly spelled.',
+              '• BACKGROUND: choose whatever suits the product — a vivid studio gradient with a glowing light-burst behind the product, a bold themed graphic scene, OR a real-life setting — but always colourful, high-contrast and full of depth (glow, bokeh, motion streaks, sparks). Never a plain flat wall.',
+              "• BRAND: if the product's brand or logo is clear, include it as a clean logo lockup.",
+              '',
+              `PERSON: ${creatorRefLabel}. ${identityInstruction} Use this exact person — you MAY change their expression and lightly retouch them, but do NOT change their inherent look (same face, skin tone, hair, age, distinctive features); they must be instantly recognisable as the same person. Place them on one side reacting or pointing toward the product. Show them HEAD-AND-SHOULDERS to roughly CHEST-UP only. The references are head-and-chest selfies, so do NOT invent or show their full body, legs, waist-down, or overall body build — keep it an upper-body shot (they can still react, point, or gesture with hands near the frame).`,
               '',
               productRefNum
-                ? `PRODUCT: feature the product from Image ${productRefNum} accurately — its true shape, colours and its own printed branding (never invent packaging or fake logos). Show it however fits the design: hero shot, in-use, or lifestyle.`
+                ? `PRODUCT: feature the product from Image ${productRefNum} accurately as a bright hero element — its true shape, colours and its own printed branding (never invent packaging or fake logos). Show it however fits the design: hero shot, in-use, or lifestyle.`
                 : `PRODUCT: feature ${productLabel} accurately and prominently, true to life.`,
               '',
-              `MAIN HEADLINE — render this text EXACTLY, spelling perfect: "${line1} ${line2}". Big, bold and instantly readable; style it however you like (colours, highlights, brush strokes, outlines, however sells best).`,
-              gfxFeatures ? `FEATURE CALLOUTS: like the best product-review thumbnails, add 2–3 short callouts or badges — a checkmark benefit list, spec badges (e.g. "144Hz", "FHD"), or a "#1 / BEST" tag — and the brand name/logo when it's clear. Draw them ONLY from these real product details, keep each a few words, correctly spelled:\n${gfxFeatures}` : '',
+              `MAIN HEADLINE — the wording must read EXACTLY, spelling perfect: "${line1} ${line2}". You MAY split it across lines and give each word or phrase its own colour, size, weight or banner for a dynamic, layered look — as long as the words and spelling stay exact. Big and instantly readable.`,
+              gfxFeatures ? `TURN THESE REAL PRODUCT DETAILS INTO THE CALLOUTS/BADGES above — a 3-item checkmark or icon benefit list and/or a couple of spec badges. Use ONLY these facts, keep each a few words, correctly spelled:\n${gfxFeatures}` : '',
               '',
-              'HARD RULES (these only): keep the person recognisable, keep the product accurate to the reference, and make every piece of text correctly spelled and legible. Everything else — surprise me and make it POP.',
+              'HARD RULES (only these): keep the person instantly recognisable, keep the product accurate to the reference, and make every piece of text correctly spelled and legible. Everything else — surprise me and make it POP.',
             ].filter(Boolean).join('\n')
             }
             refs = [
