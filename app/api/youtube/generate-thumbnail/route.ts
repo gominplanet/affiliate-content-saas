@@ -995,7 +995,7 @@ export async function POST(request: Request) {
        *  neon border ("break the frame" effect). Off by default because rembg
        *  adds ~15-20s per generation. */
       breakFrame?: boolean
-      format?: 'landscape' | 'pin'
+      format?: 'landscape' | 'pin' | 'ig' | 'fb'
       briefKey?: string
     }
 
@@ -1005,17 +1005,27 @@ export async function POST(request: Request) {
       : undefined
 
     const variantCount = Math.min(10, Math.max(1, Number(rawVariantCount) || 1))
-    // Pinterest pin format: 2:3 vertical, text-heavier, shopping-focused.
+    // Social formats. 'pin' = 2:3 Pinterest pin, 'ig' = 4:5 Instagram post (both
+    // portrait, text-heavy shopping designs). 'fb' = landscape Facebook post.
+    // 'landscape' (default) = 16:9 YouTube thumbnail.
     const isPin = format === 'pin'
-    // gpt-image-2 native portrait 2:3 = 1024×1536; landscape 16:9 = 1536×864.
-    const gfxSize: '1536x864' | '1024x1536' = isPin ? '1024x1536' : '1536x864'
-    // Final delivered dimensions (pure downscale, no crop — both keep the ratio).
-    const outW = isPin ? 1000 : 1280
-    const outH = isPin ? 1500 : 720
-    // When rendering a Pin, this authoritative first line reframes the whole
-    // design as a tall shopping pin (overrides any 16:9 wording further down).
+    const isIg = format === 'ig'
+    const isFb = format === 'fb'
+    const isPortrait = isPin || isIg
+    // gpt-image-2 only renders two native sizes: portrait 2:3 (1024×1536) and
+    // landscape 16:9 (1536×864). We render at the closest one, then downscale/crop
+    // to the exact platform dimensions below.
+    const gfxSize: '1536x864' | '1024x1536' = isPortrait ? '1024x1536' : '1536x864'
+    // Final delivered dimensions per platform.
+    const outW = isPin ? 1000 : isIg ? 1080 : isFb ? 1200 : 1280
+    const outH = isPin ? 1500 : isIg ? 1350 : isFb ? 630 : 720
+    // Authoritative first prompt line that reframes the design for the target
+    // format (overrides any 16:9 wording further down). Landscape/FB keep the
+    // default thumbnail styling, so no directive.
     const pinDirective = isPin
       ? 'FORMAT — READ FIRST, OVERRIDES EVERYTHING BELOW: this is a 2:3 VERTICAL PINTEREST PIN (1024×1536, tall portrait), NOT a 16:9 video thumbnail — ignore any "16:9" or "landscape" wording that follows. It is a SHOPPING pin whose only job is to earn the click to buy, so use MORE text than a thumbnail: a big bold headline across the TOP, then a STACKED vertical list of 3–5 short benefit/feature callouts (checkmarks, chips or spec badges) down the middle, and a strong shop-style call-to-action near the BOTTOM (e.g. "TAP TO SHOP" or "SEE THE DEAL"). NEVER the word "Amazon". Product large and central; fill the tall frame top-to-bottom with no empty dead space. Person (if any) smaller, to one side.'
+      : isIg
+      ? 'FORMAT — READ FIRST, OVERRIDES EVERYTHING BELOW: this is a 4:5 VERTICAL INSTAGRAM POST (tall portrait), NOT a 16:9 video thumbnail — ignore any "16:9" or "landscape" wording that follows. It is a scroll-stopping shopping post: a big bold headline near the TOP, a short STACKED list of 2–4 benefit/feature callouts (checkmarks or chips) in the middle, and a clear "LINK IN BIO" call-to-action near the BOTTOM. NEVER the word "Amazon". Product large and central; fill the tall frame with no empty dead space. Person (if any) smaller, to one side.'
       : ''
     const lockedHeadline = (customHeadline || '').trim().toUpperCase()
 
@@ -1315,7 +1325,7 @@ export async function POST(request: Request) {
                 `PRODUCT (the hero): recreate the product from Image 1 accurately and prominently, filling a large part of the frame — keep its true shape, colours and its own printed branding. Do NOT invent retail packaging or extra marketing text on it. Light it naturally with a grounded shadow so it belongs in the scene; no glow ring or aura around it.`,
                 '',
                 `MAIN HEADLINE — render this text EXACTLY, spelling perfect: "${line1} ${line2}". Style it as the concept describes (mixed colour/size/weight, banner for a key phrase) — a designed, layered look, NOT plain white-and-yellow outlined caps. Place it where it does NOT cover the product.`,
-                `FRAMING: the canvas is a full ${isPin ? '2:3 vertical (1024×1536)' : '16:9 landscape (1536×864)'} and the entire canvas is shown — nothing is cropped. Compose within it with a small, even safe margin (about 5%) on all four sides: every headline, banner, badge, callout and the whole product must sit fully inside the frame, not touching or running off any edge. Fill the frame nicely — no big empty dead bands — just keep that clean margin all around.`,
+                `FRAMING: the canvas is a full ${isPortrait ? 'tall vertical portrait' : '16:9 landscape (1536×864)'} and the entire canvas is shown — nothing is cropped. Compose within it with a small, even safe margin (about 5%) on all four sides: every headline, banner, badge, callout and the whole product must sit fully inside the frame, not touching or running off any edge. Fill the frame nicely — no big empty dead bands — just keep that clean margin all around.`,
               ].filter(Boolean).join('\n')
               const refs = [{ data: productBytesP, filename: 'product.png', mime: 'image/png' as const }]
               const b64 = await openaiGfxP.generateWithReferences({ prompt, images: refs, size: gfxSize, quality: gfxQuality })

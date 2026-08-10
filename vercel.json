@@ -13,6 +13,10 @@
       "schedule": "* * * * *"
     },
     {
+      "path": "/api/cron/process-amazon-schedules",
+      "schedule": "* * * * *"
+    },
+    {
       "path": "/api/cron/process-burn-jobs",
       "schedule": "* * * * *"
     },
