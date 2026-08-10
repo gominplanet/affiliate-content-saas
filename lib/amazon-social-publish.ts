@@ -87,6 +87,23 @@ async function syncLinkInBioTile(db: Db, userId: string, item: { asin: string; t
   } catch { /* best-effort */ }
 }
 
+// Facebook caption order (Seb's preference): affiliate link + disclosure FIRST,
+// then the body. Strips any disclosure / #ad / #sponsored / link already in the
+// body so they aren't duplicated, keeping the niche hashtags.
+function facebookCaptionOrder(rawBody: string, linkUrl: string): string {
+  let b = (rawBody || '')
+    .replace(/as an amazon associate i earn from qualifying purchases\.?/ig, '')
+    .replace(/(^|\s)#ad\b/ig, ' ')
+    .replace(/(^|\s)#sponsored\b/ig, ' ')
+  if (linkUrl) b = b.split(linkUrl).join('')
+  b = b.replace(/🛒/g, '').replace(/[^\S\r\n]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim()
+  const header = [
+    linkUrl ? `🛒 ${linkUrl}` : '',
+    'As an Amazon Associate I earn from qualifying purchases. #ad #sponsored',
+  ].filter(Boolean).join('\n')
+  return `${header}\n\n${b}`.trim()
+}
+
 export async function publishToFacebook(opts: {
   userId: string
   tier: Tier
@@ -104,10 +121,9 @@ export async function publishToFacebook(opts: {
     userId: opts.userId, intRow, asin: opts.asin, productUrl: opts.productUrl, productTitle: opts.productTitle,
   })
 
-  let caption = (opts.caption || '').trim() || await writeSocialCaption({ userId: opts.userId, tier: opts.tier, productTitle: opts.productTitle, productUrl: opts.productUrl, asin })
-  caption = finalizeSocialCaption(caption)
-  // Facebook photo posts carry the link inline in the caption text.
-  if (linkUrl && !caption.includes(linkUrl)) caption = `${caption}\n\n🛒 ${linkUrl}`
+  const body = (opts.caption || '').trim() || await writeSocialCaption({ userId: opts.userId, tier: opts.tier, productTitle: opts.productTitle, productUrl: opts.productUrl, asin })
+  // Facebook: lead with the affiliate link + disclosure, then the rest.
+  const caption = facebookCaptionOrder(body, linkUrl)
 
   const fb = createFacebookService(intRow.facebook_page_access_token, intRow.facebook_page_id)
   const res = await fb.postPhoto({ imageUrl: opts.imageUrl, caption })
