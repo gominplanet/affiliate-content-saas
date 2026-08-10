@@ -450,6 +450,106 @@ async function generateHooks(videoTitle: string, count: number): Promise<string[
   return copies.map(flatCopy)
 }
 
+// ── ART DIRECTOR: bespoke per-product design brief (the ChatGPT trick) ──────
+// The reason a plain "make me a viral thumbnail" prompt to ChatGPT one-shots
+// a great result is that a REASONING model designs it first — it studies the
+// product, picks a palette + layout + headline + callouts that fit THAT
+// product, then briefs the image model. We were skipping that and sending
+// gpt-image one fixed template for every product, so it fell back to its safe
+// default (flat white/yellow caps). This runs that missing art-direction step:
+// one Sonnet call returns N distinct, product-specific design briefs. gpt-image
+// then renders each brief instead of guessing.
+interface ThumbBrief extends ThumbCopy {
+  /** 2–4 sentences describing the whole look for THIS product: background,
+   *  composition, colour palette, title styling, mood. The creative core. */
+  concept: string
+  /** Named colour direction (e.g. "deep purple + hot-pink accents, white type"). */
+  palette: string
+  /** 2–3 short real-feature callouts/specs to render as badges/checklist. */
+  callouts: string[]
+  /** Optional short banner phrase for a brush-stroke banner ("GAME CHANGER!"), or ''. */
+  banner: string
+}
+
+const ART_DIRECTOR_SYSTEM = `You are a world-class YouTube thumbnail ART DIRECTOR for product-review channels. You design the kind of thumbnails top creators use: vibrant, high-contrast, modern, impossible to scroll past. You brief an image model that renders your design.
+
+For the product given, output N_BRIEFS DISTINCT design briefs — each a different creative take (different palette, layout, headline approach), the way you'd pitch a few options. Ground every choice in the REAL product (its category, brand colours, standout feature, specs). Never invent specs.
+
+Each brief has:
+- line1 / line2: the headline, split into two short punchy lines (line1 ≤ 15 chars, line2 ≤ 20 chars), ALL CAPS. VARY the approach across briefs — product-descriptive ("KERATIN HAIR CARE", "22\" 144Hz MONITOR"), bold benefit ("SALON-SMOOTH HAIR"), curiosity, or a negation of the real problem. Do NOT make every headline a "NO MORE ___" negation — mix it up like a real designer. No brand model numbers as the whole headline.
+- emphasisWord: the ONE word in the headline to accent in a bright colour.
+- banner: a SHORT extra punch phrase for a hand-painted banner ("GAME CHANGER!", "SO POWERFUL!", "WORTH IT?!"), or "" if it doesn't need one.
+- palette: the colour direction, tuned to the product/brand (e.g. "deep purple gradient, hot-pink + white type" for a beauty product; "black + electric-orange, F1 energy" for a McLaren blender). Avoid defaulting to plain yellow-on-black every time.
+- callouts: 2–3 SHORT real benefit/spec callouts drawn from the product details (e.g. "SMOOTHER", "144Hz", "NOISE REDUCTION"). Correctly spelled, a few words each.
+- concept: 2–4 sentences describing the finished thumbnail — the background (vivid studio gradient, themed graphic scene, or real-life setting that suits the product), the composition, how the title is styled (which words pop, banner placement), and the mood. This is what the image model builds. Make it specific to THIS product, and make it look designed and premium, never flat.
+
+OUTPUT: a strict JSON array of N_BRIEFS objects with keys line1, line2, emphasisWord, banner, palette, callouts (array of strings), concept. No prose, no markdown fences — just the JSON array.`
+
+async function designThumbnailBriefs(input: {
+  count: number
+  videoTitle: string
+  productTitle?: string
+  productBrand?: string
+  productContext?: string
+  claimsSheet?: string
+  lockedHeadline?: string | null
+}): Promise<ThumbBrief[]> {
+  const n = Math.max(1, Math.min(5, Math.floor(input.count)))
+  const anthropic = createAnthropicClient()
+  const clampBrief = (o: Record<string, unknown>, i: number): ThumbBrief => {
+    const l1 = scrubBanned(String(o.line1 || '').trim()).toUpperCase().slice(0, 16)
+    const l2 = scrubBanned(String(o.line2 || '').trim()).toUpperCase().slice(0, 22)
+    const calls = Array.isArray(o.callouts)
+      ? (o.callouts as unknown[]).filter((c): c is string => typeof c === 'string' && c.trim().length > 0).map(c => scrubBanned(c.trim()).slice(0, 28)).slice(0, 3)
+      : []
+    return {
+      angle: ANGLE_ROTATION[i % ANGLE_ROTATION.length],
+      line1: l1,
+      line2: l2,
+      emphasisWord: scrubBanned(String(o.emphasisWord || '').trim()).toUpperCase().slice(0, 24),
+      decoration: 'none', // gpt-image bakes its own callouts; skip the composited badge
+      concept: String(o.concept || '').trim().slice(0, 900),
+      palette: String(o.palette || '').trim().slice(0, 160),
+      callouts: calls,
+      banner: scrubBanned(String(o.banner || '').trim()).slice(0, 40),
+    }
+  }
+  const userMsg = [
+    `VIDEO TITLE: "${input.videoTitle}"`,
+    input.productTitle ? `PRODUCT: ${input.productTitle}` : '',
+    input.productBrand ? `BRAND: ${input.productBrand}` : '',
+    input.productContext ? `PRODUCT DETAILS (features / specs — ground callouts here, do NOT invent):\n${input.productContext.slice(0, 900)}` : '',
+    input.claimsSheet ? `WHAT THE CREATOR SAID IN THE VIDEO (strongest grounding):\n${input.claimsSheet.slice(0, 500)}` : '',
+    input.lockedHeadline ? `REQUIRED HEADLINE (use these exact words for every brief's line1+line2, just split + style them): "${input.lockedHeadline}"` : '',
+    '',
+    `Design ${n} distinct briefs now. Output the JSON array only.`,
+  ].filter(Boolean).join('\n')
+  try {
+    const msg = await withAnthropicRetry(() => anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1600,
+      system: ART_DIRECTOR_SYSTEM.replace(/N_BRIEFS/g, String(n)),
+      messages: [{ role: 'user', content: userMsg }],
+    }))
+    recordAnthropicUsage(msg, {
+      userId: TELEMETRY.userId, tier: TELEMETRY.tier,
+      feature: 'yt_thumb_art_director', model: 'claude-sonnet-4-6',
+    })
+    const raw = (msg.content[0] as { type: string; text?: string }).text || ''
+    const jsonStart = raw.indexOf('[')
+    const jsonEnd = raw.lastIndexOf(']')
+    const arr = jsonStart >= 0 && jsonEnd > jsonStart
+      ? (JSON.parse(raw.slice(jsonStart, jsonEnd + 1)) as Record<string, unknown>[])
+      : []
+    const briefs = arr.slice(0, n).map(clampBrief).filter(b => b.line1 || b.line2)
+    if (briefs.length > 0) return briefs
+  } catch { /* fall through to the copy-only fallback below */ }
+  // Fallback: no art direction — reuse the existing headline generator so the
+  // graphic path still gets valid line1/line2 and just uses the static brief.
+  const copies = await generateThumbCopies(input.videoTitle, n, input.productContext, input.claimsSheet)
+  return copies.map<ThumbBrief>(c => ({ ...c, concept: '', palette: '', callouts: [], banner: '' }))
+}
+
 // (generatePersonScenePrompt removed 2026-05-22 with the flux-lora retirement —
 //  the face path is now gpt-image-1/2 with the creator's reference photos.)
 
@@ -1228,25 +1328,27 @@ export async function POST(request: Request) {
       try {
         const openaiGfx = createOpenAIService()
         const claimsSheetGfx = await claimsSheetPromise
-        // Inline locked-headline split (mirrors the NB block's splitLocked).
-        const splitH = (h: string) => {
-          const words = h.trim().split(/\s+/)
-          const half = Math.ceil(words.length / 2)
-          return {
-            line1: words.slice(0, half).join(' ').toUpperCase().slice(0, 18),
-            line2: (words.slice(half).join(' ').toUpperCase() || words.slice(0, half).join(' ').toUpperCase()).slice(0, 22),
-            angle: 'NEGATION' as const,
-            emphasisWord: '',
-          }
-        }
-        // Prepend a graphic-mode hint so the copy model knows text is displayed
-        // very large (40% of image) and abstract negations don't land well.
-        const gfxProductCtx = productDescription
-          ? `[GRAPHIC DESIGN THUMBNAIL — the headline is the dominant visual element, shown very large. Write a CONCRETE, product-DESCRIPTIVE headline drawn straight from the product itself — what it IS, its standout number/spec, or its single biggest selling feature (e.g. "39 PIECE COMPLETE COOKWARE SET", "5000 LUMEN WORK LIGHT", "TRIPLE-INSULATED TUMBLER"). Prefer this descriptive style over abstract curiosity hooks or negations. Keep it to a punchy few words.]\n\n${productDescription}`
-          : '[GRAPHIC DESIGN THUMBNAIL — the headline dominates. Write a concrete, product-descriptive headline: what the product IS or its biggest selling feature, in a punchy few words. Avoid abstract curiosity hooks.]'
-        const gfxCopies = lockedHeadline
-          ? [splitH(lockedHeadline)]
-          : await generateThumbCopies(videoTitle, variantCount, gfxProductCtx, claimsSheetGfx)
+        // ART DIRECTOR: one reasoning call designs N bespoke, product-specific
+        // briefs (headline + palette + callouts + banner + full visual concept)
+        // — the step ChatGPT does internally that we were skipping. gpt-image
+        // renders each brief instead of guessing from a fixed template. Falls
+        // back to the plain headline generator (empty concept) on any failure.
+        const gfxArtCtx = [
+          productTitle ? `Product: ${productTitle}` : '',
+          ...((Array.isArray(productBullets) ? productBullets : []) as string[])
+            .filter(b => typeof b === 'string' && b.trim().length > 0)
+            .slice(0, 6)
+            .map(b => `• ${b.replace(/\s+/g, ' ').trim().slice(0, 100)}`),
+          productDescription ? productDescription.replace(/\s+/g, ' ').trim().slice(0, 300) : '',
+        ].filter(Boolean).join('\n').slice(0, 900)
+        const gfxCopies = await designThumbnailBriefs({
+          count: variantCount,
+          videoTitle,
+          productTitle,
+          productContext: gfxArtCtx,
+          claimsSheet: claimsSheetGfx,
+          lockedHeadline: lockedHeadline || undefined,
+        })
 
         let photoBytes: Buffer | Uint8Array
         let extraPhotoBytes: (Buffer | Uint8Array)[] = []
@@ -1373,6 +1475,13 @@ export async function POST(request: Request) {
           const attempt = async (): Promise<string | null> => {
             const line1 = (copy.line1 || '').toUpperCase()
             const line2 = (copy.line2 || '').toUpperCase()
+            // Art-director brief for THIS variant (empty concept ⇒ fell back to
+            // the plain copy generator, so we use the generic design menu below).
+            const brief = copy as ThumbBrief
+            const briefConcept = (brief.concept || '').trim()
+            const briefPalette = (brief.palette || '').trim()
+            const briefBanner = (brief.banner || '').trim()
+            const briefCallouts = Array.isArray(brief.callouts) ? brief.callouts.filter(Boolean) : []
             // Content-fitting facial expression. gpt-image RE-RENDERS the person
             // (it doesn't paste the selfie), so the reference photos lock identity
             // while the prompt drives the expression. Seed the FIRST variant's
@@ -1463,21 +1572,37 @@ export async function POST(request: Request) {
                 'STYLE: High-production YouTube creator thumbnail. Bold, punchy, cinematic depth of field (softly blurred background) so the creator and product stay sharp. No logos, no watermarks, no brand names rendered in the image itself.',
               ].join('\n')
             } else {
-            // PERMISSIVE brief — mirrors the short "surprise me, no rules" prompt
-            // that gets ChatGPT's varied, viral results, but teaches the actual
-            // DESIGN LANGUAGE of modern product-review thumbnails (mixed-colour
-            // display type, brush-stroke banners, checkmark/icon callouts, spec &
-            // hero badges, vivid layered backgrounds). We lock ONLY the three
-            // non-negotiables (recognisable person, accurate product, exact/legible
-            // text); everything else stays free so each thumbnail is unique.
+            // The art director (Sonnet) already designed a bespoke, product-
+            // specific brief — lead with THAT (concept + palette + banner +
+            // callouts), the way ChatGPT briefs its image model. If the brief is
+            // empty (art-director call failed → plain copy fallback), fall back
+            // to the generic design-tools menu so it still isn't a flat template.
+            const creativeHead = briefConcept
+              ? [
+                  `Design a UNIQUE, scroll-stopping, VIRAL YouTube thumbnail — 1536×1024, 16:9 landscape — in the polished style of today's top product-review creators. Bring THIS art-director brief (written specifically for this product) to life exactly:`,
+                  '',
+                  `DESIGN CONCEPT: ${briefConcept}`,
+                  briefPalette ? `COLOUR PALETTE: ${briefPalette}. Do NOT default to plain yellow-on-black.` : '',
+                  briefBanner ? `BANNER PHRASE: render "${briefBanner}" inside a hand-painted brush-stroke or torn banner as a secondary punch (correct spelling).` : '',
+                  briefCallouts.length ? `CALLOUTS / BADGES: work these in as small bright checkmark items, icon chips, or spec pill badges — correctly spelled, a few words each: ${briefCallouts.join(' · ')}.` : '',
+                  'Execute it vibrant, modern, high-contrast and layered — never flat, dull or template-like. Mixed-weight display type where the key word pops.',
+                ].filter(Boolean)
+              : [
+                  `Design a UNIQUE, scroll-stopping, VIRAL YouTube thumbnail — 1536×1024, 16:9 landscape — in the style of today's top product-review creators (MrBeast-era energy). It MUST look vibrant, modern and high-contrast and make the viewer want to click. NEVER flat, dull, plain or template-like. Make this one ${gfxVibe}. YOU are the designer — own the layout, colours, fonts and effects.`,
+                  '',
+                  'USE THESE MODERN DESIGN TOOLS (pick the ones that fit this product, and mix them freely for variety):',
+                  '• TITLE TYPOGRAPHY: never one flat block of text, and do NOT default to the generic "plain white top line + plain yellow bottom line" look. Bold modern display font, colour the words to fit THIS product\'s palette (not always yellow), vary size and weight so the key word jumps out, and drop a short punchy phrase into a hand-painted brush-stroke or torn banner.',
+                  '• FEATURE CALLOUTS & ICONS: a short benefit list with bright coloured CHECKMARKS or small circular ICON chips (2–3 words each), and/or spec PILL badges (e.g. "144Hz", "FHD", "360°"), and/or a round hero badge ("#1", "BEST").',
+                  '• BACKGROUND: a vivid studio colour gradient, a bold themed graphic scene, OR a real-life setting — always colourful, high-contrast, with real depth (soft focus / bokeh). Never a plain flat wall.',
+                  gfxFeatures ? `Draw callouts ONLY from these real product details (correctly spelled):\n${gfxFeatures}` : '',
+                ].filter(Boolean)
+            // PERMISSIVE brief — we lock ONLY the three non-negotiables
+            // (recognisable person, accurate product, exact/legible text); the
+            // art director owns everything else so each thumbnail is unique.
             prompt = [
-              `Design a UNIQUE, scroll-stopping, VIRAL YouTube thumbnail — 1536×1024, 16:9 landscape — in the style of today's top product-review creators (MrBeast-era energy). It MUST look vibrant, modern and high-contrast and make the viewer want to click. NEVER flat, dull, plain or template-like. Make this one ${gfxVibe}. YOU are the designer — own the layout, colours, fonts and effects, and make each one feel fresh.`,
+              ...creativeHead,
               '',
-              'USE THESE MODERN DESIGN TOOLS (pick the ones that fit this product, and mix them freely for variety):',
-              '• TITLE TYPOGRAPHY: never one flat block of text, and do NOT default to the generic "plain white top line + plain yellow bottom line" YouTube look. Use a bold modern display font, colour the words to fit THIS product\'s palette (not always yellow), vary their size and weight so the key word jumps out, and drop a short punchy phrase (e.g. "GAME CHANGER!", "SO POWERFUL!", "SMOOTH. FLUID. EPIC.") into a hand-painted brush-stroke or torn banner for extra energy. Make it feel designed, not stamped-on.',
-              '• FEATURE CALLOUTS & ICONS: add a short benefit list with bright coloured CHECKMARKS or small circular ICON chips (2–3 words each), and/or spec PILL badges (e.g. "144Hz", "FHD", "360°"), and/or a round hero badge ("#1", "BEST"). Small, clean, correctly spelled.',
-              '• BACKGROUND: choose whatever suits the product — a vivid studio colour gradient, a bold themed graphic scene, OR a real-life setting — always colourful, high-contrast and with real depth (soft focus / bokeh). Never a plain flat wall.',
-              "• BRAND: if the product's brand or logo is clear, include it as a clean logo lockup.",
+              "BRAND: if the product's brand or logo is clear, include it as a clean logo lockup.",
               '',
               'INTEGRATION (important): the person and the product must sit NATURALLY in the scene with realistic lighting and grounded shadows, like a real photo. Do NOT put a glowing outline, rim-light halo, coloured aura or cut-out edge around the person or the product — no haloing, nothing that makes them look pasted on. Keep edges clean and photographic.',
               '',
@@ -1487,10 +1612,9 @@ export async function POST(request: Request) {
                 ? `PRODUCT: feature the product from Image ${productRefNum} accurately as the hero — its true shape, colours and its own printed branding (never invent packaging or fake logos). Light it naturally with a grounded shadow so it belongs in the scene; no glow ring or aura behind it. Show it however fits the design: hero shot, in-use, or lifestyle.`
                 : `PRODUCT: feature ${productLabel} accurately and prominently, true to life.`,
               '',
-              `MAIN HEADLINE — the wording must read EXACTLY, spelling perfect: "${line1} ${line2}". Style it as described above: split it across lines, give words their own colour/size/weight, use a banner for a key phrase — a designed, layered look, NOT plain white-and-yellow outlined caps. Keep the exact words and spelling. Big and instantly readable.`,
-              gfxFeatures ? `TURN THESE REAL PRODUCT DETAILS INTO THE CALLOUTS/BADGES above — a 3-item checkmark or icon benefit list and/or a couple of spec badges. Use ONLY these facts, keep each a few words, correctly spelled:\n${gfxFeatures}` : '',
+              `MAIN HEADLINE — the wording must read EXACTLY, spelling perfect: "${line1} ${line2}". Style it as the concept describes: split it across lines, give words their own colour/size/weight, use a banner for a key phrase — a designed, layered look, NOT plain white-and-yellow outlined caps. Keep the exact words and spelling. Big and instantly readable.`,
               '',
-              'HARD RULES (only these): keep the person instantly recognisable, keep the product accurate to the reference, and make every piece of text correctly spelled and legible. Everything else — surprise me and make it POP.',
+              'HARD RULES (only these): keep the person instantly recognisable, keep the product accurate to the reference, and make every piece of text correctly spelled and legible. Everything else — make it POP.',
             ].filter(Boolean).join('\n')
             }
             refs = [
