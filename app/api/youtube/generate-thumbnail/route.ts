@@ -1347,31 +1347,19 @@ export async function POST(request: Request) {
             // while the prompt drives the expression. Seed the FIRST variant's
             // expression from the headline's mood, then rotate so each variant
             // gives a different, high-CTR reaction to choose from.
-            const GFX_EXPRESSIONS = [
-              'a big, genuinely excited and enthusiastic expression — bright eyes, real energy, an open smile',
-              'a shocked, wide-eyed, jaw-slightly-dropped expression — like they can hardly believe it',
-              'an impressed, delighted expression — raised eyebrows and an approving, knowing smile',
-              'a warm, happy, mid-laugh expression — relaxed and likeable',
+            // Per-variant creative "vibe" — the only nudge we give, so the two
+            // variants look distinct while gpt-image stays free to invent
+            // everything else (composition, colours, effects, badges, layout).
+            const GFX_VIBES = [
+              'bold and colourful',
+              'high-contrast and punchy',
+              'bright, clean and modern',
+              'dark, dramatic and cinematic',
+              'vibrant with energetic accent colours',
             ]
-            const hLower = `${line1} ${line2}`.toLowerCase()
-            const exprSeed =
-              /\$|deal|cheap|price|worth|free|save|% ?off|dollar/.test(hLower) ? 1   // money/deal → shocked
-              : /\bno more\b|hate|worst|problem|stop|never|worst|fail/.test(hLower) ? 1 // problem framing → shocked
-              : /best|love|perfect|amazing|favou?rite|game.?changer|obsessed/.test(hLower) ? 2 // praise → impressed
-              : 0                                                                     // default → excited
-            const gfxExpr = GFX_EXPRESSIONS[(exprSeed + idx) % GFX_EXPRESSIONS.length]
-            const accentGlow = idx % 2 === 0 ? 'cyan (#00E5FF)' : 'purple (#7C3AED)'
-            // Rotate through varied, bokeh-blurred environments so thumbnails
-            // don't all look the same. Each scene is naturally blurred in the
-            // background so the host + product stay the clear focal point.
-            const GFX_BACKGROUNDS = [
-              'a warmly lit living room — a softly blurred couch and bookshelf in the far background, shallow depth of field, natural daylight from a window, cream and warm-wood tones',
-              'a modern kitchen — softly blurred countertops and cabinets in the background, warm overhead lighting, clean and aspirational, shallow depth of field',
-              'a sunny outdoor patio or deck — softly blurred garden or yard behind, bright natural light, green and warm tones, shallow depth of field',
-              'deep dark gradient (near-black → deep navy/charcoal) with a subtle ' + accentGlow + ' neon glow radiating from behind the product and a cinematic vignette at the edges',
-              'a bright modern home office — a softly blurred desk and shelving in the background, clean white walls with a hint of colour, daylight, shallow depth of field',
-            ]
-            const bg = GFX_BACKGROUNDS[idx % GFX_BACKGROUNDS.length]
+            const gfxVibe = GFX_VIBES[idx % GFX_VIBES.length]
+            // Short product-feature text gpt-image MAY turn into callouts/badges.
+            const gfxFeatures = (productDescription || '').replace(/\s+/g, ' ').trim().slice(0, 400)
 
             const isScoutFrameMode = !!(capturedFrames?.length)
 
@@ -1420,7 +1408,7 @@ export async function POST(request: Request) {
                 `★ CREATOR'S SCENE DIRECTION (highest priority — build the whole thumbnail around this): "${sceneDirection}".`,
                 "Match that direction for the SETTING / background, the creator's pose, expression and action, and any props described. The creator is the main subject of the scene.",
                 '',
-                `★ CREATOR IDENTITY (never compromise, even to fit the direction): ${identityInstruction} Reproduce this EXACT person's face with pixel-level accuracy — same facial structure, skin tone, hair colour and style, age, and distinctive features. A viewer who knows them must recognise them INSTANTLY.`,
+                `★ CREATOR IDENTITY (never compromise, even to fit the direction): ${identityInstruction} Reproduce this EXACT person's face with pixel-level accuracy — same facial structure, skin tone, hair colour and style, age, and distinctive features. A viewer who knows them must recognise them INSTANTLY. Show them HEAD-AND-SHOULDERS to CHEST-UP only — the references are head-and-chest selfies, so never invent their full body, legs or body build.`,
                 '',
                 productRefNum
                   ? `PRODUCT: feature ${productLabel} (from Image ${productRefNum}) clearly and recognisably in the scene exactly as the direction implies (held, beside them, in use…). Keep its true shape, colours and its own printed branding. Do NOT invent retail packaging or marketing text.`
@@ -1434,26 +1422,25 @@ export async function POST(request: Request) {
                 'STYLE: High-production YouTube creator thumbnail. Bold, punchy, cinematic depth of field (softly blurred background) so the creator and product stay sharp. No logos, no watermarks, no brand names rendered in the image itself.',
               ].join('\n')
             } else {
+            // PERMISSIVE brief — mirrors the short "surprise me, no rules" prompt
+            // that gets ChatGPT's varied, viral results. We lock ONLY the three
+            // non-negotiables (recognisable person, accurate product, exact/legible
+            // text) and let gpt-image invent everything else: composition, layout,
+            // background, colours, neon/glows, badges, feature callouts, effects.
             prompt = [
-              // Simple, natural brief (mirrors how a great one-line ChatGPT prompt
-              // composes): describe the person, the product and the headline, then
-              // let the model lay it out like a real top-creator thumbnail. No rigid
-              // percentage zones and no effect-stacking ("3D pop / dramatic studio
-              // lighting / neon") — that machinery is what made results feel
-              // templated and added a coloured rim glow around the person.
-              'A realistic, eye-catching YouTube thumbnail — 1536×1024, 16:9 landscape. Clean, high-CTR, uncluttered, professional.',
+              `Create a UNIQUE, scroll-stopping, VIRAL-style YouTube thumbnail — 1536×1024, 16:9 landscape. Be genuinely creative: YOU choose the composition, background, colour scheme, lighting, effects, badges and text styling so it looks like a top creator hand-designed it. Make this one ${gfxVibe}. Do NOT follow a fixed template.`,
               '',
-              `CREATOR: ${creatorRefLabel}. ${identityInstruction} Reproduce this EXACT person with pixel-level accuracy — same face, skin tone, hair colour and style, age and distinctive features. A viewer who knows them must recognise them instantly. Give them ${gfxExpr} that fits the video — it is fine to change their expression from the reference photos, but keep the identity identical. Upper body in frame, gesturing toward the product. Light them naturally to match the scene — absolutely NO coloured rim light, glow, halo or outline around the person or their hair.`,
+              `PERSON: ${creatorRefLabel}. ${identityInstruction} Use this exact person — you MAY change their expression and lightly retouch them, but do NOT change their inherent look (same face, skin tone, hair, age, distinctive features); they must be instantly recognisable as the same person. Show them HEAD-AND-SHOULDERS to roughly CHEST-UP only. The references are head-and-chest selfies, so do NOT invent or show their full body, legs, waist-down, or overall body build — keep it an upper-body shot (they can still react, point, or gesture with hands near the frame).`,
               '',
               productRefNum
-                ? `PRODUCT: recreate the product from Image ${productRefNum} accurately and prominently — keep its true shape, colours and its own printed branding. Do NOT invent retail packaging or extra marketing text on it.`
+                ? `PRODUCT: feature the product from Image ${productRefNum} accurately — its true shape, colours and its own printed branding (never invent packaging or fake logos). Show it however fits the design: hero shot, in-use, or lifestyle.`
                 : `PRODUCT: feature ${productLabel} accurately and prominently, true to life.`,
               '',
-              'HEADLINE (bake it onto the thumbnail, large and readable):',
-              `  "${line1}" then "${line2}" — bold condensed capitals; "${line2}" is the larger, dominant line in bright yellow (#FFE034) and "${line1}" in white, each with a clean thick black outline. Place it where it does NOT cover the face or the product. Outlined text only — no boxes, panels, or shadow blocks behind any word. Spelling must be EXACT. No other text, logos or watermarks anywhere except this headline.`,
+              `MAIN HEADLINE — render this text EXACTLY, spelling perfect: "${line1} ${line2}". Big, bold and instantly readable; style it however you like (colours, highlights, brush strokes, outlines, however sells best).`,
+              gfxFeatures ? `You MAY add a few short supporting callouts or badges if they help it sell — draw them only from these real product features, keep them short, punchy and correctly spelled: ${gfxFeatures}` : '',
               '',
-              `SCENE: ${bg} Compose it naturally like a real top-creator thumbnail — the creator and the product are the clear focus with the background softly out of focus. Bright, clean and high-contrast, but with natural lighting (no neon, no coloured glows).`,
-            ].join('\n')
+              'HARD RULES (these only): keep the person recognisable, keep the product accurate to the reference, and make every piece of text correctly spelled and legible. Everything else — surprise me and make it POP.',
+            ].filter(Boolean).join('\n')
             }
             refs = [
               { data: photoBytes, filename: usingFaceModel && !scoutUsedFaceModel ? 'creator_portrait.png' : usingFaceModel ? 'creator_portrait_1.png' : 'creator_crop.png', mime: 'image/png' },
