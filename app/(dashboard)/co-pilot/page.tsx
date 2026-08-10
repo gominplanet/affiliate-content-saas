@@ -1474,7 +1474,12 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
         body: JSON.stringify({
           videoTitle: editTitle || video.title,
           asin: video.detectedAsin ?? undefined,
-          videoDescription: video.description,
+          // Co-Pilot converts product links to geni.us, so the RAW video
+          // description usually has no resolvable product link. The MVP-generated
+          // description (editDesc) carries the geni.us link — send that so the
+          // resolver can follow it to the real Amazon product (otherwise
+          // gpt-image invents a generic product).
+          videoDescription: editDesc.trim() || video.description,
           youtubeVideoId: video.youtubeVideoId,
           productTitle: product?.title ?? undefined,
           productDescription: product?.description ?? undefined,
@@ -1569,7 +1574,12 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
         body: JSON.stringify({
           videoTitle: overrides.title || video.title,
           asin: video.detectedAsin ?? undefined,
-          videoDescription: video.description,
+          // Co-Pilot converts product links to geni.us, so the RAW video
+          // description usually has no resolvable product link. The MVP-generated
+          // description (editDesc) carries the geni.us link — send that so the
+          // resolver can follow it to the real Amazon product (otherwise
+          // gpt-image invents a generic product).
+          videoDescription: editDesc.trim() || video.description,
           youtubeVideoId: video.youtubeVideoId,
           productTitle: overrides.productTitle ?? undefined,
           productDescription: overrides.productDescription ?? undefined,
