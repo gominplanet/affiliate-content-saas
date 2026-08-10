@@ -160,8 +160,20 @@ export async function publishToInstagram(opts: {
 
   // The whole point: the posted product lands in the bio shop grid. A Story
   // marks it live in the "in my story" section so followers can tap link-in-bio
-  // and buy it; a feed post just adds the shoppable tile.
-  if (linkUrl) await syncLinkInBioTile(opts.db, opts.userId, { asin, title: opts.productTitle || 'Shop this', imageUrl: opts.imageUrl, url: linkUrl }, isStory)
+  // and buy it; a feed post just adds the shoppable tile. Use the REAL product
+  // name + clean product photo for the tile (not the busy story graphic).
+  if (linkUrl) {
+    let tileTitle = (opts.productTitle || '').trim()
+    let tileImage: string | undefined = undefined
+    if (asin) {
+      try {
+        const p = await fetchAmazonProduct(asin)
+        if (!tileTitle) tileTitle = p.title || ''
+        tileImage = p.imageUrl || undefined
+      } catch { /* best-effort */ }
+    }
+    await syncLinkInBioTile(opts.db, opts.userId, { asin, title: tileTitle || 'Shop this', imageUrl: tileImage || opts.imageUrl, url: linkUrl }, isStory)
+  }
 
   const mediaId = await publishMedia({
     userId: intRow.instagram_user_id, accessToken: intRow.instagram_access_token,
