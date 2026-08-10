@@ -1249,6 +1249,7 @@ export async function POST(request: Request) {
         let photoBytes: Buffer | Uint8Array
         let extraPhotoBytes: (Buffer | Uint8Array)[] = []
         let scoutUsedFaceModel = false
+        let faceSelfieUsed = false
         if (capturedFrames?.length) {
           // Vision-pick the best frame for product / scene context.
           let bestIdx = 0
@@ -1329,17 +1330,27 @@ export async function POST(request: Request) {
               }
             }
           }
+        } else if (faceModel) {
+          // FACE SELECTED → the creator's own selfies are the identity source,
+          // ALWAYS. (Previously a storyboard frame could win here and render a
+          // generic/wrong face.) Load up to 3 selfies — a single reference drifts;
+          // multiple angles give gpt-image a strong identity lock.
+          const urls = faceModel.source_images.slice(0, 3)
+          for (const url of urls) {
+            try {
+              const ab = await fetch(url, { signal: AbortSignal.timeout(12000) })
+                .then(r => r.ok ? r.arrayBuffer() : Promise.reject(new Error(`${r.status}`)))
+              const bytes = await normalizeToPng(new Uint8Array(ab))
+              if (!faceSelfieUsed) { photoBytes = bytes; faceSelfieUsed = true }
+              else extraPhotoBytes.push(bytes)
+            } catch { /* skip unreadable photo */ }
+          }
+          if (!faceSelfieUsed) throw new Error('no readable face photo for graphic mode')
         } else if (gfxStoryboardFrame) {
+          // No face model → the video's storyboard frame is the only identity source.
           photoBytes = await normalizeToPng(new Uint8Array(gfxStoryboardFrame.buffer))
         } else {
-          if (!faceModel) throw new Error('no face identity for graphic mode')
-          // Use the creator's own uploaded selfie (original/optimized), not a
-          // Photobooth headshot — see note above.
-          const photoUrl = faceModel.source_images[0]
-          if (!photoUrl) throw new Error('no face photo for graphic mode')
-          const photoAb = await fetch(photoUrl, { signal: AbortSignal.timeout(12000) })
-            .then(r => r.ok ? r.arrayBuffer() : Promise.reject(new Error(`face photo ${r.status}`)))
-          photoBytes = await normalizeToPng(new Uint8Array(photoAb))
+          throw new Error('no face identity for graphic mode')
         }
 
         // Product image (unchanged — fetched separately).
@@ -1392,7 +1403,7 @@ export async function POST(request: Request) {
             // identity lock than the old "transform this frame" approach, which
             // required a full layout restructuring and caused the face to drift.
             const creatorCount = 1 + extraPhotoBytes.length
-            const usingFaceModel = scoutUsedFaceModel || (!isScoutFrameMode && !gfxStoryboardFrame)
+            const usingFaceModel = scoutUsedFaceModel || faceSelfieUsed || (!isScoutFrameMode && !gfxStoryboardFrame)
             // When SCOUT + face model: Images 1–N are portraits (identity), last image is the video frame crop (context).
             // When SCOUT only: all images are video frame crops.
             // When face model only (no SCOUT): all images are portrait photos.
