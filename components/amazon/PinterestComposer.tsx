@@ -58,7 +58,7 @@ export default function PinterestComposer() {
     const isUrl = /^https?:\/\//i.test(raw)
     const isAsin = /^[A-Z0-9]{10}$/i.test(raw)
     const bodyReq: Record<string, unknown> = {
-      videoTitle: 'New Amazon find',
+      videoTitle: 'This hidden gem',
       textMode: 'graphic',
       format: 'pin', // 2:3 vertical 1000×1500, text-heavy shopping pin
       ...(isUrl ? { productUrl: raw } : isAsin ? { asin: raw.toUpperCase() } : { productUrl: raw }),
