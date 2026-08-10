@@ -887,6 +887,9 @@ export async function POST(request: Request) {
       borderStyleIndex,
       accentColor,
       breakFrame = false,
+      // 'landscape' (default) → 16:9 YouTube thumbnail. 'pin' → a 2:3 vertical
+      // Pinterest pin (1000×1500): text-heavier, shopping-focused, drives a click.
+      format,
     } = await request.json() as {
       quickMode?: boolean
       videoTitle: string
@@ -984,9 +987,22 @@ export async function POST(request: Request) {
        *  neon border ("break the frame" effect). Off by default because rembg
        *  adds ~15-20s per generation. */
       breakFrame?: boolean
+      format?: 'landscape' | 'pin'
     }
 
     const variantCount = Math.min(10, Math.max(1, Number(rawVariantCount) || 1))
+    // Pinterest pin format: 2:3 vertical, text-heavier, shopping-focused.
+    const isPin = format === 'pin'
+    // gpt-image-2 native portrait 2:3 = 1024×1536; landscape 16:9 = 1536×864.
+    const gfxSize: '1536x864' | '1024x1536' = isPin ? '1024x1536' : '1536x864'
+    // Final delivered dimensions (pure downscale, no crop — both keep the ratio).
+    const outW = isPin ? 1000 : 1280
+    const outH = isPin ? 1500 : 720
+    // When rendering a Pin, this authoritative first line reframes the whole
+    // design as a tall shopping pin (overrides any 16:9 wording further down).
+    const pinDirective = isPin
+      ? 'FORMAT — READ FIRST, OVERRIDES EVERYTHING BELOW: this is a 2:3 VERTICAL PINTEREST PIN (1024×1536, tall portrait), NOT a 16:9 video thumbnail — ignore any "16:9" or "landscape" wording that follows. It is a SHOPPING pin whose only job is to earn the click to buy, so use MORE text than a thumbnail: a big bold headline across the TOP, then a STACKED vertical list of 3–5 short benefit/feature callouts (checkmarks, chips or spec badges) down the middle, and a strong shop-style call-to-action near the BOTTOM (e.g. "TAP TO SHOP" or "SEE IT ON AMAZON"). Product large and central; fill the tall frame top-to-bottom with no empty dead space. Person (if any) smaller, to one side.'
+      : ''
     const lockedHeadline = (customHeadline || '').trim().toUpperCase()
 
     // Ground the thumbnail copy in what the creator ACTUALLY said: pull the
@@ -1275,15 +1291,16 @@ export async function POST(request: Request) {
                     'Design a UNIQUE, scroll-stopping, VIRAL product-review YouTube thumbnail — 16:9 landscape (1536×864). NO people. Vibrant, modern, high-contrast — never flat or plain. Bold mixed-colour display type (not plain white/yellow), a themed colourful background that suits the product, and small checkmark/spec callouts.',
                   ]
               const prompt = [
+                pinDirective,
                 ...headP,
                 '',
                 `PRODUCT (the hero): recreate the product from Image 1 accurately and prominently, filling a large part of the frame — keep its true shape, colours and its own printed branding. Do NOT invent retail packaging or extra marketing text on it. Light it naturally with a grounded shadow so it belongs in the scene; no glow ring or aura around it.`,
                 '',
                 `MAIN HEADLINE — render this text EXACTLY, spelling perfect: "${line1} ${line2}". Style it as the concept describes (mixed colour/size/weight, banner for a key phrase) — a designed, layered look, NOT plain white-and-yellow outlined caps. Place it where it does NOT cover the product.`,
-                'FRAMING: the canvas is a full 16:9 landscape (1536×864) and the entire canvas is shown — nothing is cropped. Compose within it with a small, even safe margin (about 5%) on all four sides: every headline, banner, badge, callout and the whole product must sit fully inside the frame, not touching or running off any edge. Fill the frame nicely — no big empty dead bands — just keep that clean margin all around.',
-              ].join('\n')
+                `FRAMING: the canvas is a full ${isPin ? '2:3 vertical (1024×1536)' : '16:9 landscape (1536×864)'} and the entire canvas is shown — nothing is cropped. Compose within it with a small, even safe margin (about 5%) on all four sides: every headline, banner, badge, callout and the whole product must sit fully inside the frame, not touching or running off any edge. Fill the frame nicely — no big empty dead bands — just keep that clean margin all around.`,
+              ].filter(Boolean).join('\n')
               const refs = [{ data: productBytesP, filename: 'product.png', mime: 'image/png' as const }]
-              const b64 = await openaiGfxP.generateWithReferences({ prompt, images: refs, size: '1536x864', quality: gfxQuality })
+              const b64 = await openaiGfxP.generateWithReferences({ prompt, images: refs, size: gfxSize, quality: gfxQuality })
               recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'yt_thumb_graphic', model: gfxModelP, images: 1 })
               const copyDec = (copy as { decoration?: ThumbDecoration }).decoration
               const gfxDec: ThumbDecoration =
@@ -1291,7 +1308,7 @@ export async function POST(request: Request) {
                   : forcedDecoration ? forcedDecoration
                     : (copyDec && copyDec !== 'none' ? copyDec : 'none')
               try {
-                let resized = await sharp(Buffer.from(b64, 'base64')).resize(1280, 720, { fit: 'cover', position: 'centre' }).jpeg({ quality: 92 }).toBuffer()
+                let resized = await sharp(Buffer.from(b64, 'base64')).resize(outW, outH, { fit: 'cover', position: 'centre' }).jpeg({ quality: 92 }).toBuffer()
                 if (gfxDec !== 'none') resized = await compositeBadgeOnly(resized, gfxDec)
                 return await rehostToFal(`data:image/jpeg;base64,${resized.toString('base64')}`)
               } catch {
@@ -1655,6 +1672,7 @@ export async function POST(request: Request) {
             // (recognisable person, accurate product, exact/legible text); the
             // art director owns everything else so each thumbnail is unique.
             prompt = [
+              pinDirective,
               ...creativeHead,
               '',
               "BRAND: if the product's brand or logo is clear, include it as a clean logo lockup.",
@@ -1685,7 +1703,7 @@ export async function POST(request: Request) {
             // Tier-gated quality (gfxQuality): Pro/admin get HIGH for the crispest
             // ChatGPT-grade render; other paid tiers get MEDIUM. Co-Pilot generates
             // one variant, so a single high render stays well under the timeout.
-            const b64 = await openaiGfx.generateWithReferences({ prompt, images: refs, size: '1536x864', quality: gfxQuality })
+            const b64 = await openaiGfx.generateWithReferences({ prompt, images: refs, size: gfxSize, quality: gfxQuality })
             recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'yt_thumb_graphic', model: gfxModel, images: 1 })
             // Badge the creator chose (5 stars / hot / etc). The GFX path bakes its
             // own headline via gpt-image and never runs bakeSimpleHeadline, so the
@@ -1703,7 +1721,7 @@ export async function POST(request: Request) {
             // gpt-image-2 renders NATIVE 16:9 (1536×864), so this is a pure
             // downscale to YouTube's 1280×720 — no cropping, nothing clipped.
             try {
-              let resized = await sharp(Buffer.from(b64, 'base64')).resize(1280, 720, { fit: 'cover', position: 'centre' }).jpeg({ quality: 92 }).toBuffer()
+              let resized = await sharp(Buffer.from(b64, 'base64')).resize(outW, outH, { fit: 'cover', position: 'centre' }).jpeg({ quality: 92 }).toBuffer()
               if (gfxDec !== 'none') resized = await compositeBadgeOnly(resized, gfxDec)
               return await rehostToFal(`data:image/jpeg;base64,${resized.toString('base64')}`)
             } catch {
