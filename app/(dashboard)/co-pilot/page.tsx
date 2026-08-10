@@ -506,6 +506,9 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
   // Server-side debug (faceDebug) — on a fallback render it explains why the
   // primary designed path didn't run, so we can diagnose without server logs.
   const [thumbnailDebug, setThumbnailDebug] = useState<string | null>(null)
+  // Diagnostic line: which engine actually rendered + whether the AI art
+  // director designed it (or gpt-image fell back to Nano Banana, and why).
+  const [thumbnailDiag, setThumbnailDiag] = useState<string | null>(null)
   const [sceneAnalysis, setSceneAnalysis] = useState<string | null>(null)
   const [generatingThumbnail, setGeneratingThumbnail] = useState(false)
   const [thumbnailError, setThumbnailError] = useState<string | null>(null)
@@ -1119,6 +1122,18 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
     const hook = (data.overlayHook as string) || ''
     setThumbnailFaceUsed((data.faceUsed as string | null) ?? null)
     setThumbnailDebug((data.faceDebug as string | null) ?? null)
+    // Build the engine/art-director diagnostic line.
+    {
+      const engine = (data.modelUsed as string) || 'unknown'
+      const isGpt = engine === 'gpt-image-graphic'
+      const fellBack = typeof data.gfxFallbackReason === 'string' && data.gfxFallbackReason.length > 0
+      const parts = [
+        `engine: ${isGpt ? 'gpt-image ✓' : engine}`,
+        isGpt ? (data.artDirected ? 'art-director: ON' : 'art-director: OFF (fallback copy)') : '',
+        fellBack ? `gpt-image FELL BACK → ${data.gfxFallbackReason as string}` : '',
+      ].filter(Boolean)
+      setThumbnailDiag(parts.join(' · '))
+    }
     // Server may return one or many. Backwards-compat: single thumbnailUrl
     // when older callers / older deploys. Always normalize to array first.
     const rawList = (Array.isArray(data.thumbnailUrls) && data.thumbnailUrls.length > 0)
@@ -2518,6 +2533,9 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                       </div>
                       {!!thumbnailDebug && !!thumbnailModel && thumbnailModel !== 'kontext-upload' && (thumbnailModel.startsWith('kontext-') || thumbnailModel.startsWith('ideogram-') || thumbnailModel.startsWith('flux')) && (
                         <p className="text-[10px] text-[#86868b] leading-snug break-words">Why fallback: {thumbnailDebug}</p>
+                      )}
+                      {!!thumbnailDiag && (
+                        <p className="text-[10px] text-[#86868b] leading-snug break-words font-mono">🔧 {thumbnailDiag}</p>
                       )}
                       {thumbnailModel !== 'kontext-upload' && (
                         <div className="flex items-center gap-2 pt-1">
