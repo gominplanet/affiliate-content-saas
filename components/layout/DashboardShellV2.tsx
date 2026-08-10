@@ -110,6 +110,7 @@ interface NavGroupDef {
 const SECTION_ACCENTS: Record<string, { dark: string; light: string }> = {
   'Set up':            { dark: '#60A5FA', light: '#1D4ED8' }, // blue      — foundational
   'Create':            { dark: '#FACC15', light: '#A16207' }, // yellow    — creative core
+  'Amazon Influencer': { dark: '#FB923C', light: '#C2410C' }, // orange    — Amazon storefront
   'Grow':              { dark: '#C084FC', light: '#7E22CE' }, // purple    — growth
   'Research':          { dark: '#A3E635', light: '#4D7C0F' }, // green     — find products & campaigns
   'Source & Earn':     { dark: '#A3E635', light: '#4D7C0F' }, // green     — find & monetize (legacy key)
@@ -126,6 +127,7 @@ const SECTION_ACCENTS: Record<string, { dark: string; light: string }> = {
 const SECTION_ICONS: Record<string, React.ReactNode> = {
   'Set up': <Plug size={12} />,
   'Create': <Sparkles size={12} />,
+  'Amazon Influencer': <ShoppingBag size={12} />,
   'Research': <PackageSearch size={12} />,
   'Source & Earn': <DollarSign size={12} />,
   'Grow': <BarChart3 size={12} />,
@@ -303,6 +305,9 @@ export default function DashboardShellV2({
   // previewing (effectiveTier === tier then), so real users are unaffected.
   const showBuyingGuidesEff = isAdmin ? canSeeNav('buyingGuides', effectiveTier) : showBuyingGuides
   const showDealsEff = isAdmin ? canSeeNav('deals', effectiveTier) : showDeals
+  // The Amazon Influencer section (thumbnails + research + social) is the
+  // standalone Amazon tier's home, and is also shared into Studio + Pro.
+  const canAmazonHub = (['amazon', 'studio', 'pro', 'admin'] as string[]).includes(effectiveTier)
 
   // Admin-only: count of OPEN support tickets (not yet answered/closed). Drives
   // the red "Support" alert in the topbar so the founder catches new tickets
@@ -470,6 +475,19 @@ export default function DashboardShellV2({
         // still work if you hit the URL directly; just no longer in the nav.
         // Re-add with `gate: showBurner` to bring it back.
         { href: '/instagram-burner', icon: <Flame size={15} />, label: 'Shop Burner', gate: false },
+      ],
+    },
+    {
+      // AMAZON INFLUENCER — the storefront creator's home: turn a product link
+      // into a thumbnail (MVP Art Director), find products to review, and push
+      // to Pinterest / Instagram / Facebook. Own the Amazon tier; shared into
+      // Studio + Pro. Gated by canAmazonHub so the whole section hides for tiers
+      // that don't include it (empty groups return null).
+      label: 'Amazon Influencer',
+      items: [
+        { href: '/amazon/thumbnails', icon: <Sparkles size={15} />, label: 'Thumbnail Generator', gate: canAmazonHub },
+        { href: '/amazon/research', icon: <PackageSearch size={15} />, label: 'Research', gate: canAmazonHub },
+        { href: '/amazon/social', icon: <Share2 size={15} />, label: 'Social Influencer', gate: canAmazonHub },
       ],
     },
     {
