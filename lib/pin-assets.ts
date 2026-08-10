@@ -18,8 +18,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
 import { pickProductReferenceImage, verifyProductMatchConsensus, verifyNoBrandLeak } from '@/lib/product-image'
 import { resolveTrueDestination } from '@/lib/affiliate-resolve'
-import { asinFromAmazonUrl, firstProductUrl } from '@/lib/product-link'
-import { generateArtDirectorPin } from '@/lib/art-director-pin'
+import { asinFromAmazonUrl, firstProductUrl, allProductUrls } from '@/lib/product-link'
+import { generateArtDirectorPin, generateArtDirectorCollagePin } from '@/lib/art-director-pin'
 
 export const AFFILIATE_DISCLAIMER = '📌 Disclosure: As an Amazon Associate I earn from qualifying purchases. This post may contain affiliate links — I may earn a small commission at no extra cost to you.'
 export const COMPLIANCE_TAGS = '#ad #affiliate'
@@ -257,6 +257,52 @@ Return ONLY valid JSON with these exact keys:
       userId: ctx.userId,
       tier: ctx.tier,
     })
+  }
+
+  // ── MVP Art Director ROUNDUP pin (buying guides / comparisons) ────────────
+  // A guide/comparison talks about several products, so show them TOGETHER on
+  // one design. Resolve the REAL photo for each product the post links to (its
+  // body carries an affiliate link per product), then have the Art Director
+  // design a numbered comparison grid grounded on those photos — instead of the
+  // older name-only text-to-image collage. Needs ≥ 2 real photos; on anything
+  // less (or any failure) we fall through to the name-grounded collage below.
+  if (!artDirected && (opts?.aiScene || opts?.artDirector) && useCollage && ctx.userId) {
+    try {
+      let body = String(p.content || '') || String(p.excerpt || '')
+      if (!/https?:\/\//i.test(body) && p.wordpress_url) {
+        const html = await fetch(String(p.wordpress_url), {
+          headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(10000),
+        }).then((r) => (r.ok ? r.text() : '')).catch(() => '')
+        if (html) body = html
+      }
+      const urls = allProductUrls(body, (p.wordpress_url as string | null) ?? null, 4)
+      // Resolve each link → { imageUrl, title } (follow short/geni.us links to
+      // the Amazon ASIN, then read the real product photo). Run in parallel.
+      const resolved = (await Promise.all(urls.map(async (url) => {
+        try {
+          let asin = asinFromAmazonUrl(url) || extractAsin(url.toUpperCase())
+          if (!asin) {
+            try {
+              const finalUrl = await resolveTrueDestination(url)
+              asin = asinFromAmazonUrl(finalUrl) || extractAsin(finalUrl.toUpperCase())
+            } catch { /* couldn't unwrap */ }
+          }
+          if (!asin) return null
+          const prod = await fetchAmazonProduct(asin)
+          const picked = await pickProductReferenceImage(prod.images, prod.title, { userId: ctx.userId || undefined })
+          const imageUrl = (typeof picked === 'string' ? picked : null) || prod.imageUrl || null
+          return imageUrl ? { imageUrl, title: prod.title } : null
+        } catch { return null }
+      }))).filter(Boolean) as Array<{ imageUrl: string; title: string }>
+      if (resolved.length >= 2) {
+        artDirected = await generateArtDirectorCollagePin({
+          products: resolved,
+          category: fields.product_category,
+          userId: ctx.userId,
+          tier: ctx.tier,
+        })
+      }
+    } catch { /* couldn't build the roundup — fall through to name collage */ }
   }
 
   // Cheap DEFAULT: composite the post's EXISTING image (its real thumbnail /

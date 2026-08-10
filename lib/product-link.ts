@@ -43,28 +43,58 @@ export function isAmazonNonProductUrl(url: string): boolean {
  * affiliate link (and the dashboard "Visit Product" link) sent readers to a
  * coffee donation page instead of the reviewed product.
  */
+const PRODUCT_URL_SKIP = /(youtu\.?be|youtube\.com|instagram\.com|tiktok\.com|facebook\.com|fb\.com|twitter\.com|x\.com|linktr\.ee|linkedin\.com|pinterest\.|threads\.net|bsky\.|t\.me|discord\.|patreon\.|paypal\.|buymeacoffee\.com|buymeacoff\.ee|ko-?fi\.com|gofundme\.com|cash\.app|venmo\.com|streamlabs\.com|streamelements\.com|alexmediacreations)/i
+
+/** Clean + filter a raw matched URL down to a real product link, or null.
+ *  Shared by firstProductUrl / allProductUrls so the skip rules stay in one
+ *  place (socials, tip jars, the creator's own site, and Amazon non-product
+ *  storefront/search/browse pages are all rejected). */
+function productUrlCandidate(raw: string, own: string): string | null {
+  const clean = raw.replace(/[.,;:)\]>"']+$/, '')
+  if (PRODUCT_URL_SKIP.test(clean)) return null
+  if (own && clean.includes(own)) return null
+  // An Amazon storefront / brand-store / search / browse page is NOT the
+  // reviewed product — skip it so the resolver discovers the actual product
+  // and tags a /dp/ link, instead of sending every reader to a generic
+  // storefront (e.g. amazon.com/shop/<creator>). (2026-07-11)
+  if (isAmazonNonProductUrl(clean)) return null
+  return clean
+}
+
 export function firstProductUrl(description: string, ownSite?: string | null): string | null {
-  const skip = /(youtu\.?be|youtube\.com|instagram\.com|tiktok\.com|facebook\.com|fb\.com|twitter\.com|x\.com|linktr\.ee|linkedin\.com|pinterest\.|threads\.net|bsky\.|t\.me|discord\.|patreon\.|paypal\.|buymeacoffee\.com|buymeacoff\.ee|ko-?fi\.com|gofundme\.com|cash\.app|venmo\.com|streamlabs\.com|streamelements\.com|alexmediacreations)/i
   const own = ownSite ? ownSite.replace(/^https?:\/\//, '').replace(/\/.*$/, '') : ''
-  const candidate = (raw: string): string | null => {
-    const clean = raw.replace(/[.,;:)\]>"']+$/, '')
-    if (skip.test(clean)) return null
-    if (own && clean.includes(own)) return null
-    // An Amazon storefront / brand-store / search / browse page is NOT the
-    // reviewed product — skip it so the resolver discovers the actual product
-    // and tags a /dp/ link, instead of sending every reader to a generic
-    // storefront (e.g. amazon.com/shop/<creator>). (2026-07-11)
-    if (isAmazonNonProductUrl(clean)) return null
-    return clean
-  }
   // 1. URL right after a buy/price/availability cue — the product link.
   const cta = description.match(/(?:today'?s price|price|availability|buy(?:\s+it)?|shop|purchase|order|get yours|grab|available (?:here|at)|here)\b[:\s]*[\s\S]{0,40}?(https?:\/\/[^\s)>\]"']+)/i)
-  if (cta) { const c = candidate(cta[1]); if (c) return c }
+  if (cta) { const c = productUrlCandidate(cta[1], own); if (c) return c }
   // 2. Else the first non-excluded URL anywhere.
   for (const raw of description.match(/https?:\/\/[^\s)>\]"']+/gi) || []) {
-    const c = candidate(raw); if (c) return c
+    const c = productUrlCandidate(raw, own); if (c) return c
   }
   return null
+}
+
+/**
+ * Every DISTINCT product link in a body of text, in document order — used by
+ * multi-product roundup pins (buying guides / comparisons) that show several
+ * real products on one design. Same filtering as firstProductUrl (socials, tip
+ * jars, own site, Amazon storefronts all skipped). Deduped by Amazon ASIN when
+ * present, else by the cleaned URL, so the same product linked twice counts
+ * once. Capped at `max` (default 4 — the collage grid tops out at four tiles).
+ */
+export function allProductUrls(description: string, ownSite?: string | null, max = 4): string[] {
+  const own = ownSite ? ownSite.replace(/^https?:\/\//, '').replace(/\/.*$/, '') : ''
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const raw of description.match(/https?:\/\/[^\s)>\]"']+/gi) || []) {
+    const c = productUrlCandidate(raw, own)
+    if (!c) continue
+    const key = asinFromAmazonUrl(c) || c.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(c)
+    if (out.length >= max) break
+  }
+  return out
 }
 
 // Bot-identifying User-Agent for internal redirect-resolution. We follow

@@ -96,3 +96,88 @@ export async function generateArtDirectorPin(opts: {
     return { data: jpeg.toString('base64'), mediaType: 'image/jpeg' }
   } catch { return null }
 }
+
+const COLLAGE_SYSTEM = `You are a world-class product-review ART DIRECTOR designing ONE scroll-stopping vertical Pinterest pin for a MULTI-PRODUCT buying guide / comparison (a "top picks" roundup). Return STRICT JSON: {"headline","subhead","palette"}.
+- headline: a punchy ALL-CAPS roundup headline (≤ 22 chars) — e.g. the category + a "best of" angle. Specific to the category, never generic.
+- subhead: a short supporting line (≤ 26 chars), e.g. "COMPARED & RANKED" or a benefit angle. May be empty.
+- palette: the colour direction for the whole board.
+HARD RULES: never the word "Amazon" or a retailer name/logo. No people. Do NOT use "HIDDEN GEM", "GAME CHANGER", "MUST-HAVE", "YOU NEED THIS". JSON only, no markdown.`
+
+async function designCollageBrief(category: string, productTitles: string[], userId?: string | null, tier?: string | null): Promise<{ headline: string; subhead: string; palette: string } | null> {
+  try {
+    const anthropic = createAnthropicClient()
+    const msg = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 400,
+      system: COLLAGE_SYSTEM,
+      messages: [{ role: 'user', content: `CATEGORY: ${category}\nPRODUCTS (${productTitles.length}):\n${productTitles.map((t, i) => `${i + 1}. ${t}`).join('\n')}\n\nDesign the roundup pin brief now.` }],
+    })
+    if (userId) { const u = usageFromAnthropic(msg); recordUsage({ userId, tier: tier ?? null, feature: 'pinterest_art_director', model: 'claude-sonnet-4-6', input: u.input, output: u.output }) }
+    const raw = (msg.content[0] as { type: string; text?: string }).text || ''
+    const j = JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1)) as { headline?: string; subhead?: string; palette?: string }
+    const clean = (s: unknown, n: number) => stripDesignBrands(scrubBanned(String(s || '').trim())).slice(0, n)
+    return {
+      headline: clean(j.headline, 24).toUpperCase(),
+      subhead: clean(j.subhead, 28).toUpperCase(),
+      palette: String(j.palette || '').trim().slice(0, 140),
+    }
+  } catch { return null }
+}
+
+/**
+ * Generate a designed 2:3 roundup pin (1000×1500) that shows 2–4 REAL product
+ * photos together in one comparison/grid design (headline + numbered tiles),
+ * grounded on the actual product images. Returns base64 JPEG or null on any
+ * failure (caller falls back to the name-grounded collage).
+ */
+export async function generateArtDirectorCollagePin(opts: {
+  products: Array<{ imageUrl: string; title: string }>
+  category: string
+  userId?: string | null
+  tier?: string | null
+}): Promise<{ data: string; mediaType: string } | null> {
+  try {
+    const items = (opts.products || []).filter((p) => p.imageUrl && p.title).slice(0, 4)
+    if (items.length < 2) return null
+
+    // Fetch every product reference → PNG. Skip any that fail; still proceed if
+    // ≥ 2 survive so one dead image link can't kill the whole roundup pin.
+    const pngs = (await Promise.all(items.map(async (it) => {
+      const ab = await fetch(it.imageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(12000) })
+        .then((r) => (r.ok ? r.arrayBuffer() : null)).catch(() => null)
+      if (!ab) return null
+      const png = await normalizeToPng(new Uint8Array(ab)).catch(() => null)
+      return png ? { data: png, title: it.title } : null
+    }))).filter(Boolean) as Array<{ data: Uint8Array; title: string }>
+    if (pngs.length < 2) return null
+
+    const n = pngs.length
+    const brief = await designCollageBrief(opts.category, pngs.map((p) => p.title), opts.userId, opts.tier)
+    const headline = brief?.headline || `TOP ${n} ${stripDesignBrands(opts.category).toUpperCase()}`.slice(0, 24)
+    const subhead = brief?.subhead || 'COMPARED & RANKED'
+    const layout = n >= 4 ? 'a clean 2×2 grid of four tiles' : n === 3 ? 'three tiles (one wider feature tile on top, two below)' : 'two bold side-by-side tiles'
+
+    const prompt = [
+      `FORMAT — READ FIRST: a 2:3 VERTICAL PINTEREST PIN (1024×1536, tall portrait) for a MULTI-PRODUCT buying guide. Show ALL ${n} products TOGETHER on ONE design as ${layout}, each product in its own clearly separated tile with a small round number badge (1, 2, 3${n >= 4 ? ', 4' : ''}). A bold headline band across the TOP and a shop-style call-to-action near the BOTTOM (e.g. "SEE ALL PICKS"). Vibrant, modern, high-contrast, magazine-roundup feel — never flat or template-like.`,
+      brief?.palette ? `COLOUR PALETTE: ${brief.palette}.` : '',
+      `PRODUCTS (the heroes): the ${n} attached images are the ${n} products IN ORDER. Recreate EACH one accurately in its own tile — its true shape, colours and its own printed branding — one product per tile, equally prominent, crisp and centred, on a clean neutral or soft-gradient tile background. Do NOT merge, duplicate, or invent extra products; exactly ${n} distinct products, matching the ${n} references.`,
+      'ABSOLUTELY NO PEOPLE — HARD RULE: zero humans, faces, hands, body parts, silhouettes or reflections anywhere. If a reference shows a model or hands, keep ONLY the product.',
+      `MAIN HEADLINE — render EXACTLY, spelling perfect: "${headline}"${subhead ? ` with a smaller sub-line "${subhead}"` : ''}. Designed and layered, placed in the top band where it does NOT cover any product.`,
+      NO_BRAND_IMAGE_CLAUSE,
+      'FRAMING: the entire canvas is shown — nothing cropped. Keep every tile, number badge, headline and product fully inside a ~5% safe margin on all four sides.',
+    ].filter(Boolean).join('\n')
+
+    const openai = createOpenAIService()
+    const b64 = await openai.generateWithReferences({
+      prompt,
+      images: pngs.map((p, i) => ({ data: p.data, filename: `product-${i + 1}.png`, mime: 'image/png' })),
+      size: '1024x1536',
+      quality: 'medium',
+    })
+    if (!b64) return null
+    if (opts.userId) recordUsage({ userId: opts.userId, tier: opts.tier ?? null, feature: 'pinterest_art_director', model: 'gpt-image-2', images: 1 })
+
+    const jpeg = await sharp(Buffer.from(b64, 'base64')).resize(1000, 1500, { fit: 'cover', position: 'centre' }).jpeg({ quality: 92 }).toBuffer()
+    return { data: jpeg.toString('base64'), mediaType: 'image/jpeg' }
+  } catch { return null }
+}
