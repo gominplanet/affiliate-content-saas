@@ -23,7 +23,7 @@ export default function AmazonThumbnailsPage() {
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [result, setResult] = useState<{ url: string; diag: string; hook: string } | null>(null)
+  const [result, setResult] = useState<{ url: string; hook: string } | null>(null)
 
   useEffect(() => {
     (async () => {
@@ -71,15 +71,7 @@ export default function AmazonThumbnailsPage() {
       }
       const url = (Array.isArray(data.thumbnailUrls) && data.thumbnailUrls[0]) || data.thumbnailUrl
       if (!url) throw new Error('No thumbnail came back. Try again.')
-      const engine = (data.modelUsed as string) || 'unknown'
-      const isGpt = engine === 'gpt-image-graphic' || engine === 'gpt-image-graphic-product'
-      const diag = [
-        `engine: ${isGpt ? 'gpt-image ✓' : engine}`,
-        isGpt && data.gfxQuality ? `quality: ${data.gfxQuality}` : '',
-        isGpt ? (data.artDirected ? 'art-director: ON' : 'art-director: OFF') : '',
-        data.gfxFallbackReason ? `fell back → ${data.gfxFallbackReason}` : '',
-      ].filter(Boolean).join(' · ')
-      setResult({ url, diag, hook: (data.overlayHook as string) || '' })
+      setResult({ url, hook: (data.overlayHook as string) || '' })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Generation failed. Try again.')
     } finally {
