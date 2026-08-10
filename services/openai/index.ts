@@ -69,7 +69,9 @@ export class OpenAIService {
   async generateWithReferences(opts: {
     prompt: string
     images: Array<{ data: Buffer | Uint8Array; filename: string; mime: string }>
-    size?: '1024x1024' | '1536x1024' | '1024x1536'
+    // gpt-image-2 supports arbitrary WxH (both divisible by 16). 1536x864 is a
+    // true 16:9 landscape — no 3:2 crop needed for YouTube thumbnails.
+    size?: '1024x1024' | '1536x1024' | '1024x1536' | '1536x864'
     quality?: 'low' | 'medium' | 'high' | 'auto'
     /** 'transparent' returns a PNG with alpha (for cut-outs to composite). */
     background?: 'transparent' | 'opaque' | 'auto'
