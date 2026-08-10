@@ -8,6 +8,7 @@
 import type { Metadata } from 'next'
 import { Share2, Sparkles } from 'lucide-react'
 import PinterestComposer from '@/components/amazon/PinterestComposer'
+import SocialConnections from '@/components/amazon/SocialConnections'
 
 export const metadata: Metadata = {
   title: 'Social Influencer — Amazon Influencer',
@@ -53,6 +54,9 @@ export default function AmazonSocialPage() {
           Now that MVP Art Director makes scroll-stopping thumbnails, they become the raw material for great Pins and posts. Caption, affiliate link and publishing, handled.
         </p>
       </header>
+
+      {/* Connect strip — all three accounts in one place, above the columns */}
+      <SocialConnections />
 
       {/* Pinterest composer — the first live builder */}
       <PinterestComposer />
