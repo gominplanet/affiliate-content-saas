@@ -1212,7 +1212,7 @@ export async function POST(request: Request) {
           ? await normalizeToPng(new Uint8Array(productAb)).catch(() => null)
           : null
 
-        const gfxModel = process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1'
+        const gfxModel = process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2'
         const productLabel = productTitle || 'the product'
 
         // One gpt-image-1 call per variant, all in parallel.
@@ -2374,7 +2374,7 @@ Bright, flattering, high-contrast premium thumbnail look. Do NOT add any other p
       ? generateFaceCutout(supabase, {
           userId: user.id,
           sourceImages: faceModel.source_images,
-          imageModel: process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1',
+          imageModel: process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2',
         })
       : Promise.resolve(null)
     const resolveCutout = async (): Promise<{ url: string | null; debug: string }> => {

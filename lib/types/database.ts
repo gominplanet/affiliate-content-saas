@@ -683,10 +683,14 @@ export type Database = {
           id: string
           lora_url: string | null
           name: string
+          optimize_error: string | null
+          optimized_images: Json
+          optimized_status: string
           source_images: Json
           status: string
           trigger_token: string
           updated_at: string
+          use_optimized: boolean
           user_id: string
         }
         Insert: {
@@ -696,10 +700,14 @@ export type Database = {
           id?: string
           lora_url?: string | null
           name: string
+          optimize_error?: string | null
+          optimized_images?: Json
+          optimized_status?: string
           source_images?: Json
           status?: string
           trigger_token: string
           updated_at?: string
+          use_optimized?: boolean
           user_id: string
         }
         Update: {
@@ -709,10 +717,14 @@ export type Database = {
           id?: string
           lora_url?: string | null
           name?: string
+          optimize_error?: string | null
+          optimized_images?: Json
+          optimized_status?: string
           source_images?: Json
           status?: string
           trigger_token?: string
           updated_at?: string
+          use_optimized?: boolean
           user_id?: string
         }
         Relationships: []
