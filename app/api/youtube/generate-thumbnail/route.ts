@@ -1324,6 +1324,9 @@ export async function POST(request: Request) {
         message: "This video is private — MVP can't pull frames from it without the browser extension. Install the SCOUT extension from the Chrome Web Store to capture your video frames, or add a Face Model under \"Your Face\" to generate a thumbnail.",
       }, { status: 409 })
     }
+    // Captured so the NB fallthrough response can tell the UI (and us) WHY the
+    // gpt-image graphic path bailed — no more silent drops to the old engine.
+    let gfxFallbackReason: string | null = null
     if (textMode === 'graphic' && !uploadedPhotoUrl && (faceModel || hasVideoFrame)) {
       try {
         const openaiGfx = createOpenAIService()
@@ -1708,10 +1711,15 @@ export async function POST(request: Request) {
           faceUsed: hasVideoFrame ? (capturedFrames?.length ? 'video-frame-extension' : 'video-frame-storyboard') : (faceModel?.name ?? 'photobooth'),
           qcWarning: false,
           faceIdentityChecked: false,
+          // Diagnostics: did the art director actually design this, and what did it say?
+          artDirected: !!(gfxCopies[0] as ThumbBrief)?.concept,
+          artConcept: ((gfxCopies[0] as ThumbBrief)?.concept || '').slice(0, 400),
         })
       } catch (gfxErr) {
         console.warn('[generate-thumbnail] graphic path failed, falling through to NB:', gfxErr instanceof Error ? gfxErr.message : String(gfxErr))
-        // Fall through to NB Pro path.
+        // Fall through to NB Pro path. Record WHY so the UI can surface it —
+        // a silent fallthrough is exactly what hid the gpt-image failures.
+        gfxFallbackReason = gfxErr instanceof Error ? gfxErr.message : String(gfxErr)
       }
     }
 
@@ -2504,6 +2512,9 @@ Ultra-sharp, professional, photorealistic.`
               // wasn't a creator-face thumbnail).
               faceIdentityVerified: faceIdentityChecked ? !qcWarning : null,
               faceDebug: `nano-banana composed (source=${hasCapturedFrame ? `extension-frame[${validFrames.length || 1}]` : frameRef ? 'maxres' : 'face+product (no frame)'}, face=${faceModel?.name ?? 'none'}, faceRefs=${faceRefs.length}, productRefs=${productRefs.length}${customProductRefs.length > 0 ? ' [user-supplied]' : ''}, title=${wantClean ? 'overlay' : 'baked'}, qc=${qcWarning ? 'flagged' : 'verified'})`,
+              // If we're here despite textMode='graphic', the gpt-image path threw
+              // and dropped us to NB. Surface exactly why (this is the flat/halo look).
+              gfxFallbackReason,
             })
           }
           console.warn('[generate-thumbnail] Nano Banana (frame) returned no image; falling through')
