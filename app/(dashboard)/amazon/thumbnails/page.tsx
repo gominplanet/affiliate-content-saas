@@ -62,7 +62,7 @@ export default function AmazonThumbnailsPage() {
       const res = await fetch('/api/youtube/generate-thumbnail', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(240000),
+        signal: AbortSignal.timeout(290000),
         body: JSON.stringify(body),
       })
       const data = await res.json().catch(() => ({}))

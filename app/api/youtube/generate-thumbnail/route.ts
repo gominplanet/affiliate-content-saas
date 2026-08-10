@@ -1230,7 +1230,6 @@ export async function POST(request: Request) {
         const productBytesP = productAbP ? await normalizeToPng(new Uint8Array(productAbP)).catch(() => null) : null
         if (!productBytesP) throw new Error('no product image for product-only graphic')
         const gfxModelP = process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2'
-        const productLabelP = productTitle || 'the product'
         const gfxRawUrlsP = await Promise.all(
           gfxCopiesP.slice(0, variantCount).map(async (copy, idx) => {
             const attemptP = async (): Promise<string | null> => {
@@ -1278,19 +1277,9 @@ export async function POST(request: Request) {
                 return rehostToFal(`data:image/png;base64,${b64}`)
               }
             }
-            let url = await attemptP()
-            if (url && productImageUrl) {
-              try {
-                const v = await verifyProductMatch(productImageUrl, url, productTitle || productLabelP, { userId: user.id, tier })
-                if (!v.match) {
-                  const retryUrl = await attemptP()
-                  if (retryUrl) {
-                    const v2 = await verifyProductMatch(productImageUrl, retryUrl, productTitle || productLabelP, { userId: user.id, tier })
-                    url = v2.match ? retryUrl : url
-                  }
-                }
-              } catch { /* verifier hiccup — keep first render */ }
-            }
+            // SINGLE render — no QC-retry (see the person+product path). A second
+            // full render here was a main cause of the 240s client timeout.
+            const url = await attemptP()
             return url
           }),
         )
@@ -1695,23 +1684,12 @@ export async function POST(request: Request) {
           }
 
           // Product QC + one retry. gpt-image REDRAWS the product, so it can drift
-          // to a similar-but-wrong item (the #1 creator complaint). Verify the
-          // rendered product against the real reference photo; if it doesn't match,
-          // regenerate this variant once and keep whichever one matches. Only runs
-          // when we actually have a product reference to compare against.
-          let gfxUrl = await attempt()
-          if (gfxUrl && productImageUrl) {
-            try {
-              const v = await verifyProductMatch(productImageUrl, gfxUrl, productTitle || productLabel, { userId: user.id, tier })
-              if (!v.match) {
-                const retryUrl = await attempt()
-                if (retryUrl) {
-                  const v2 = await verifyProductMatch(productImageUrl, retryUrl, productTitle || productLabel, { userId: user.id, tier })
-                  gfxUrl = v2.match ? retryUrl : gfxUrl
-                }
-              }
-            } catch { /* verifier hiccup — keep the first render */ }
-          }
+          // SINGLE render — no QC-retry. The old code re-ran a full gpt-image
+          // render when a product-match check failed, which could add 60–90s and
+          // push the whole request past the client's 240s timeout ("signal timed
+          // out"). With native 16:9 + the art director + the resolved product
+          // reference, drift is rare; speed matters more than an occasional retry.
+          const gfxUrl = await attempt()
           return gfxUrl
           })
         )
