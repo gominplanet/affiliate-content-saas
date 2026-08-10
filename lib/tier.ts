@@ -30,7 +30,7 @@
 //   - API access + White-label: still Pro-only but HIDDEN from nav until
 //     real demand surfaces (route + page stay alive).
 //   - Priority queue + Discord priority support: Studio + Pro.
-export type Tier = 'trial' | 'creator' | 'studio' | 'pro' | 'admin'
+export type Tier = 'trial' | 'creator' | 'amazon' | 'studio' | 'pro' | 'admin'
 
 /** Default tier for a brand-new account (no Stripe subscription yet). */
 export const DEFAULT_TIER: Tier = 'trial'
@@ -47,6 +47,7 @@ export function normalizeTier(raw: unknown): Tier {
   if (
     raw === 'trial' ||
     raw === 'creator' ||
+    raw === 'amazon' ||
     raw === 'studio' ||
     raw === 'pro' ||
     raw === 'admin'
@@ -194,6 +195,72 @@ export const TIERS = {
     priorityQueue: false,
     prioritySupport: false,
   },
+  // Amazon Influencer tier ($79). A focused, blog-free, YouTube-free plan for
+  // storefront creators: the MVP Art Director (200 medium thumbnails), all
+  // product research, Creator Connections + SCOUT earnings, and FB / Pinterest /
+  // Instagram pushes with AI caption + affiliate link + IG link-in-bio. High-
+  // quality rendering stays a Pro perk (the tier-gate already gives non-Pro
+  // 'medium'). Also surfaced as a shared section inside Studio + Pro. This tier
+  // is intentionally NOT on the blog/YouTube upgrade ladder (nextTierFor), so it
+  // never appears as an upgrade target for a blog/script cap.
+  amazon:  {
+    label: 'Amazon',
+    price: 79,
+    regularPrice: 129,
+    /** Medium thumbnails are ~$0.08, so 200 + pushes + 5 photobooth ≈ $20 of AI
+     *  at full use. $40 sits ~2× that so a normal user never trips it. */
+    monthlyAiSpendCeilingUsd: 40 as number | null,
+    /** No blog. Thumbnails have their own cap below; this stays 0. */
+    postsPerMonth: 0,
+    lifetimeMax: null as number | null,
+    /** Creator Connections collabs — storefront creators land brand deals. */
+    collabsPerMonth: 50 as number | null,
+    /** The headline feature: 200 Art Director thumbnails / mo (medium quality). */
+    thumbnailsPerMonth: 200 as number | null,
+    /** No YouTube metadata pipeline. */
+    metadataGensPerMonth: 0 as number | null,
+    instagramAiThumbnailsPerMonth: 0 as number | null,
+    /** Deal / product social posts (their core publishing action). */
+    dealsPerMonth: 100 as number | null,
+    /** Max 5 professional Photobooth shots. */
+    photoboothPerMonth: 5 as number | null,
+    /** One face model, up to 20 selfies (the source_images cap is 20). */
+    maxFaces: 1 as number | null,
+    blogImagesPerPost: 0,
+    assistantMessagesPerMonth: 500 as number | null,
+    /** LoRA is retired; the Art Director uses the uploaded selfies directly. */
+    faceTrainJobs: 0 as number | null,
+    newsletterSubscribers: 0 as number | null,
+    newsletterBroadcastsPerMonth: 0 as number | null,
+    newsletterScheduling: false,
+    newsletterABTesting: false,
+    newsletterSegmentedSends: false,
+    scriptsPerMonth: 0 as number | null,
+    comparisonPosts: false,
+    buyingGuides: false,
+    topicHubs: false,
+    refreshImages: false,
+    rebuildFromVideo: false,
+    basePosts: 0,
+    bonusPosts: 0,
+    /** No WordPress, no YouTube — onboards without either. */
+    sites: 0,
+    youtubeChannels: 0,
+    /** Only the three visual networks Amazon influencers push to. */
+    socials: ['facebook', 'pinterest', 'instagram'] as readonly Social[],
+    multiAccountSocial: false,
+    maxSocialAccountsPerPlatform: 1 as number | null,
+    /** Push the Art Director thumbnail to all three at once. */
+    publishAll: true,
+    cascadeOnlySchedulesPerMonth: null as number | null,
+    /** Creator Connections (brand deals) — a headline value for this buyer. */
+    campaigns: true,
+    apiAccess: false,
+    whiteLabel: false,
+    vaSeats: 0,
+    priorityQueue: true,
+    prioritySupport: true,
+  },
   studio:  {
     label: 'Studio',
     price: 99,
@@ -209,7 +276,9 @@ export const TIERS = {
     postsPerMonth: 45,
     lifetimeMax: null as number | null,
     collabsPerMonth: 15 as number | null,
-    thumbnailsPerMonth: 45 as number | null,
+    // Bumped 45 → 150 (2026-08) so the ladder stays monotonic above the Amazon
+    // section's 200 medium thumbnails. Medium is ~$0.08, so the headroom is cheap.
+    thumbnailsPerMonth: 150 as number | null,
     // Metadata (Co-Pilot re-titling/description) is its OWN cap, sized well above
     // posts/thumbnails: it's ~$0.05 a gen (35× cheaper than a post), and creators
     // clearing an old back-catalog want to run a lot of them early on.
@@ -276,7 +345,9 @@ export const TIERS = {
     postsPerMonth: 100,
     lifetimeMax: null as number | null,
     collabsPerMonth: 100 as number | null,
-    thumbnailsPerMonth: 100 as number | null,
+    // Bumped 100 → 300 (2026-08) to stay above the Amazon section's 200 medium
+    // thumbnails, and Pro renders them at HIGH quality (~$0.19 each).
+    thumbnailsPerMonth: 300 as number | null,
     // Metadata is its OWN cap, sized well above posts/thumbnails (see Studio note):
     // ~$0.05/gen, and back-catalog cleanup is a first-few-months behaviour. At
     // full use that's ~$12/mo of AI against a $200 spend ceiling — comfortably safe.
@@ -440,7 +511,7 @@ export function tierLabel(tier: Tier): string {
  *  Pro is the top purchasable plan, and admin is internal staff with no plan to
  *  buy — neither should ever be shown an upgrade prompt. */
 export function canUpgradeTier(tier: Tier | string): boolean {
-  return tier === 'trial' || tier === 'creator' || tier === 'studio'
+  return tier === 'trial' || tier === 'creator' || tier === 'amazon' || tier === 'studio'
 }
 
 /** Newsletter subscriber cap for the given tier. null = unlimited (admin).
