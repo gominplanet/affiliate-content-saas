@@ -293,6 +293,10 @@ export default function DealRadarPage() {
   // Open to all paid tiers (creator/studio/pro/admin) — graduated out of Labs.
   const isPaid = canUseDealRadar(tier)
   const canView = canBrowseDealRadar(tier)
+  // Amazon Influencer tier has no blog and composes social through the Art
+  // Director in Social Influencer, so on a deal they Save (→ Social) rather than
+  // blog-post or quick-post.
+  const isAmazonSocial = tier === 'amazon'
 
   const PAGE_SIZE = 48 // matches the API
 
@@ -443,7 +447,7 @@ export default function DealRadarPage() {
           </div>
           <div className="flex gap-3 overflow-x-auto pb-1">
             {ticker.map((d) => (
-              <TickerCard key={d.asin} deal={d} onQuickPost={setQuickPostDeal} locked={!isPaid} />
+              <TickerCard key={d.asin} deal={d} onQuickPost={setQuickPostDeal} locked={!isPaid} socialOnly={isAmazonSocial} />
             ))}
           </div>
         </div>
@@ -544,7 +548,7 @@ export default function DealRadarPage() {
       ) : (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-            {deals.map((d) => <DealCard key={d.asin} deal={d} onQuickPost={setQuickPostDeal} selected={selected.has(d.asin)} onToggleSelect={isPaid ? toggleSelect : undefined} locked={!isPaid} />)}
+            {deals.map((d) => <DealCard key={d.asin} deal={d} onQuickPost={setQuickPostDeal} selected={selected.has(d.asin)} onToggleSelect={isPaid && !isAmazonSocial ? toggleSelect : undefined} locked={!isPaid} socialOnly={isAmazonSocial} />)}
           </div>
           {hasMore && (
             <div className="flex justify-center pt-6">
@@ -638,7 +642,7 @@ function useMakePost(d: Deal) {
 // Save this deal to the shared "Saved for later" shelf so it turns up in Social
 // Influencer (and Saved Campaigns), ready to become a Pin / IG / FB post. Same
 // shelf the AMZ Finder + CC Campaigns Save buttons write to.
-function SaveDealButton({ deal: d }: { deal: Deal }) {
+function SaveDealButton({ deal: d, variant = 'quiet' }: { deal: Deal; variant?: 'quiet' | 'primary' }) {
   const [saved, setSaved] = useState(false)
   const [busy, setBusy] = useState(false)
   const save = useCallback(async () => {
@@ -653,10 +657,30 @@ function SaveDealButton({ deal: d }: { deal: Deal }) {
           rating: d.rating, hasVideo: d.hasVideo, marketplace: 'us',
         }),
       })
-      if (res.ok) { setSaved(true); toast.success('Saved — find it in Social Influencer') }
+      if (res.ok) { setSaved(true); toast.success('Saved — make the post in Social Influencer') }
       else toast.error('Could not save. Try again.')
     } catch { toast.error('Could not save. Try again.') } finally { setBusy(false) }
   }, [d, saved, busy])
+
+  // Primary — the Amazon tier's main action on a deal: save it, then compose in
+  // Social Influencer (full-width, prominent). Once saved it links straight there.
+  if (variant === 'primary') {
+    if (saved) {
+      return (
+        <a href="/amazon/social"
+          className="w-full inline-flex items-center justify-center gap-1.5 text-xs font-semibold rounded-full bg-emerald-600 hover:bg-emerald-700 text-white py-2 transition">
+          <Check size={14} /> Saved — make the post <ArrowRight size={13} />
+        </a>
+      )
+    }
+    return (
+      <button onClick={save} disabled={busy}
+        className="w-full inline-flex items-center justify-center gap-1.5 text-xs font-semibold rounded-full bg-orange-500 hover:bg-orange-600 text-white py-2 disabled:opacity-60 transition">
+        {busy ? <Loader2 size={14} className="animate-spin" /> : <Bookmark size={14} />} Save for a post
+      </button>
+    )
+  }
+
   return (
     <button onClick={save} disabled={busy} title={saved ? 'Saved for Social' : 'Save for Social'}
       className={`inline-flex items-center gap-1 text-[11px] font-medium rounded-full px-2 py-1 transition ${saved ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300' : 'text-muted-foreground hover:bg-accent'}`}>
@@ -666,7 +690,7 @@ function SaveDealButton({ deal: d }: { deal: Deal }) {
   )
 }
 
-function DealCard({ deal: d, onQuickPost, selected = false, onToggleSelect, locked = false }: { deal: Deal; onQuickPost: (d: Deal) => void; selected?: boolean; onToggleSelect?: (asin: string) => void; locked?: boolean }) {
+function DealCard({ deal: d, onQuickPost, selected = false, onToggleSelect, locked = false, socialOnly = false }: { deal: Deal; onQuickPost: (d: Deal) => void; selected?: boolean; onToggleSelect?: (asin: string) => void; locked?: boolean; socialOnly?: boolean }) {
   const { gen, postUrl, makePost } = useMakePost(d)
   return (
     <div className="rounded-xl border bg-card overflow-hidden flex flex-col transition-shadow hover:shadow-md">
@@ -766,6 +790,19 @@ function DealCard({ deal: d, onQuickPost, selected = false, onToggleSelect, lock
                 </a>
               </div>
             </>
+          ) : socialOnly ? (
+            /* Amazon Influencer tier: no blog, and social posts go through the
+             * Art Director in Social Influencer — not the quick plain-image post.
+             * So the only action here is Save; composing happens on that page. */
+            <>
+              <SaveDealButton deal={d} variant="primary" />
+              <div className="flex items-center justify-end pt-0.5">
+                <a href={d.amazonUrl} target="_blank" rel="noopener noreferrer"
+                   className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground" title="View on Amazon">
+                  View on Amazon <ExternalLink size={12} />
+                </a>
+              </div>
+            </>
           ) : (
           <>
           {/* Primary actions — each full-width so labels never wrap. */}
@@ -817,7 +854,7 @@ function DealCard({ deal: d, onQuickPost, selected = false, onToggleSelect, lock
 // Compact card for the "double wins" ticker. Same two actions as DealCard —
 // make a blog post (inline) or quick-post to socials (opens the modal) — plus a
 // direct Amazon link, in a small horizontal-scroll footprint.
-function TickerCard({ deal: d, onQuickPost, locked = false }: { deal: Deal; onQuickPost: (d: Deal) => void; locked?: boolean }) {
+function TickerCard({ deal: d, onQuickPost, locked = false, socialOnly = false }: { deal: Deal; onQuickPost: (d: Deal) => void; locked?: boolean; socialOnly?: boolean }) {
   const { gen, postUrl, makePost } = useMakePost(d)
   return (
     <div className="shrink-0 w-48 rounded-lg bg-card text-[color:var(--text)] border border-emerald-500/20 p-2 flex flex-col">
@@ -836,6 +873,8 @@ function TickerCard({ deal: d, onQuickPost, locked = false }: { deal: Deal; onQu
              className="flex-1 inline-flex items-center justify-center gap-1 text-[11px] font-semibold rounded-full bg-violet-600 hover:bg-violet-700 text-white py-1.5 transition">
             <Sparkles size={11} /> Upgrade to post
           </a>
+        ) : socialOnly ? (
+          <SaveDealButton deal={d} variant="primary" />
         ) : (
           <>
             {gen === 'done' && postUrl ? (
