@@ -59,7 +59,10 @@ export async function POST(request: NextRequest) {
   // No board required to PREVIEW — the publish step resolves a board
   // (per-category, auto-created). Fresh/sandbox accounts have none yet.
 
-  const a = await buildPinAssets(p, { userId: user.id, tier: ig?.tier ?? null })
+  // Preview is a single, user-initiated pin → render the designed MVP Art
+  // Director pin when the post has a real product photo. Falls back to the cheap
+  // hero-composite when there's no product photo (no extra generation cost).
+  const a = await buildPinAssets(p, { userId: user.id, tier: ig?.tier ?? null }, { artDirector: true })
 
   // The post's vertical render (if any) — lets the preview offer a VIDEO pin
   // instead of the still image. Resolved from the linked Short.

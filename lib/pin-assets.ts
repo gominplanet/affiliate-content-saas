@@ -54,7 +54,7 @@ export async function buildPinAssets(
   // single pin). DEFAULT is the cheap path — composite the post's EXISTING
   // image into the vertical pin, no fresh gen — which is what scheduled/bulk
   // pushes use so a burst of N pins doesn't fire N image generations.
-  opts?: { aiScene?: boolean },
+  opts?: { aiScene?: boolean; artDirector?: boolean },
 ): Promise<PinAssets> {
   // Apply the user's LEARN voice profile to the pin copy too (whatever
   // parts they filled in). Best-effort — a fetch failure must not block
@@ -156,7 +156,7 @@ Return ONLY valid JSON with these exact keys:
   // scrape the product link → the article's own hero image. Single-product
   // scenes only; the multi-product collage stays name-grounded.
   let referenceImageUrl: string | null = null
-  if (opts?.aiScene && ctx.userId && p.video_id && !useCollage) {
+  if ((opts?.aiScene || opts?.artDirector) && ctx.userId && p.video_id && !useCollage) {
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: vid } = await (createAdminClient() as any)
@@ -212,7 +212,7 @@ Return ONLY valid JSON with these exact keys:
   // never breaks the flow. The design already carries its own text, so it skips
   // the Satori overlay + scene QC entirely.
   let artDirected: { data: string; mediaType: string } | null = null
-  if (opts?.aiScene && !useCollage && referenceImageUrl) {
+  if ((opts?.aiScene || opts?.artDirector) && !useCollage && referenceImageUrl) {
     artDirected = await generateArtDirectorPin({
       productImageUrl: referenceImageUrl,
       productTitle: fields.product_name,
