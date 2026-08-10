@@ -6,6 +6,7 @@ import { discoverProductForVideo } from '@/lib/product-detect'
 import { resolveProductLink } from '@/lib/product-link'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { resolveGeniuslinkYouTubeGroupId, appendAmazonSubtag, YOUTUBE_COPILOT_GROUP_NAME } from '@/lib/geniuslink-group'
+import { getOrCreateAmazonGeniuslink } from '@/lib/geniuslink-cache'
 import Anthropic from '@anthropic-ai/sdk'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { YoutubeTranscript } from 'youtube-transcript'
@@ -790,10 +791,19 @@ export async function POST(request: Request) {
         })
         try {
           const genius = createGeniuslinkService(intRow.geniuslink_api_key, intRow.geniuslink_api_secret)
-          affiliateUrl = await genius.createLink(subtaggedDest, product.title || videoTitle, {
+          // Cache-first by ASIN: reuse a previously-minted geni.us code instantly
+          // when we have one, so Geniuslink's flaky/slow create API is only ever
+          // hit the first time we see a product. Every re-review / Regenerate of
+          // the same ASIN then ships a geni.us link with no live dependency.
+          const { url } = await getOrCreateAmazonGeniuslink({
+            userId: ownerId,
+            asin: trimmedAsin,
+            destination: subtaggedDest,
+            service: genius,
             groupId: groupId ?? undefined,
             note: linkNote,
           })
+          affiliateUrl = url
           geniuslinkUsed = true
         } catch (err) {
           geniuslinkError = err instanceof Error ? err.message : String(err)
