@@ -137,10 +137,13 @@ interface LayoutData {
   /** Show the bio + photo on the generated About page. Default on; off = they
    *  appear only in the footer band (no duplication). */
   aboutBio: boolean
-  /** Opt-in "N reads" social-proof chip on posts. Default OFF. The plugin only
-   *  renders it once a post passes readCountThreshold, so new posts never show a
-   *  low number. */
+  /** Opt-in aggregate "N reads across the blog" badge on the main blog. Default
+   *  OFF. Shows only once the whole-blog total passes blogReadCountThreshold. */
   showReadCount: boolean
+  /** Opt-in per-post "N reads" chip in each post's byline, right after the read
+   *  time. Default OFF. Shows only once THAT post passes readCountThreshold, so a
+   *  new post never shows a low number. Independent of the aggregate badge. */
+  showPerPostReadCount: boolean
   /** Reads a single POST must pass before its own chip appears. Default 100. */
   readCountThreshold: number
   /** Total reads across the whole blog before the aggregate "N reads across the
@@ -184,6 +187,7 @@ const emptyLayout: LayoutData = {
   stickyHeader: true,
   aboutBio: true,
   showReadCount: false,
+  showPerPostReadCount: false,
   readCountThreshold: 100,
   blogReadCountThreshold: 100,
 }
@@ -381,6 +385,7 @@ export default function CustomizePage() {
           stickyHeader: bc.layout?.stickyHeader !== false,
           aboutBio: bc.layout?.aboutBio !== false,
           showReadCount: bc.layout?.showReadCount === true, // opt-in
+          showPerPostReadCount: bc.layout?.showPerPostReadCount === true, // opt-in
           readCountThreshold: typeof bc.layout?.readCountThreshold === 'number' && bc.layout.readCountThreshold > 0 ? bc.layout.readCountThreshold : 100,
           blogReadCountThreshold: typeof bc.layout?.blogReadCountThreshold === 'number' && bc.layout.blogReadCountThreshold > 0 ? bc.layout.blogReadCountThreshold : 100,
         },
@@ -664,9 +669,45 @@ export default function CustomizePage() {
         {/* Read counter */}
         <Section
           title="Read counter"
-          description="Show one “N reads across the blog” badge as social proof, in your main blog header. It appears only after your total passes the threshold you set below, so a brand-new blog never shows a low number. Off by default."
+          description="Show real read counts as social proof: a per-post number in each post’s byline (right after the read time), a blog-wide badge on your main blog, or both. Each appears only after it passes the threshold you set, so a brand-new post or blog never shows a low number. Both off by default."
         >
+          {/* Per-post byline counter */}
           <div className="flex items-center justify-between p-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border-2)]">
+            <div>
+              <p className="text-sm font-medium text-[var(--text)]">Show a read count on each post</p>
+              <p className="text-xs text-[var(--text-3)]">A subtle “1,240 reads” chip in the byline, right after the read time. Different on every post. Hidden until that post passes the threshold below.</p>
+            </div>
+            <button
+              onClick={() => setData(d => ({ ...d, layout: { ...d.layout, showPerPostReadCount: !d.layout.showPerPostReadCount } }))}
+              className="text-[var(--text-3)]"
+              aria-label="Toggle per-post read counter"
+            >
+              {data.layout.showPerPostReadCount
+                ? <ToggleRight size={28} className="text-[#7C3AED]" />
+                : <ToggleLeft size={28} />}
+            </button>
+          </div>
+          {data.layout.showPerPostReadCount && (
+            <div className="flex items-center justify-between p-3 mt-2 rounded-xl bg-[var(--surface-2)] border border-[var(--border-2)]">
+              <div>
+                <p className="text-sm font-medium text-[var(--text)]">On a post, show it after</p>
+                <p className="text-xs text-[var(--text-3)]">Reads that single post must pass before its byline chip appears.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  value={data.layout.readCountThreshold}
+                  onChange={e => setData(d => ({ ...d, layout: { ...d.layout, readCountThreshold: Math.max(1, parseInt(e.target.value || '100', 10) || 100) } }))}
+                  className="w-24 px-3 py-2 rounded-lg text-sm bg-[var(--surface)] border border-[var(--border-2)] text-[var(--text)] outline-none focus:border-[#7C3AED]"
+                />
+                <span className="text-xs text-[var(--text-3)]">reads</span>
+              </div>
+            </div>
+          )}
+
+          {/* Aggregate blog-wide badge */}
+          <div className="flex items-center justify-between p-3 mt-2 rounded-xl bg-[var(--surface-2)] border border-[var(--border-2)]">
             <div>
               <p className="text-sm font-medium text-[var(--text)]">Show a read count on your main blog</p>
               <p className="text-xs text-[var(--text-3)]">A subtle, modern badge (e.g. “1.2k reads across the blog”). Hidden until your total passes the threshold below.</p>
