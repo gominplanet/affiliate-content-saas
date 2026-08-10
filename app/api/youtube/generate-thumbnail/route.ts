@@ -25,7 +25,6 @@ import { renderDesignerOverlay } from '@/lib/thumbnail-text-templates'
 import { bakeSimpleHeadline, compositeBadgeOnly, NEON_BORDER_STYLE_COUNT, type ThumbDecoration } from '@/lib/thumbnail-simple-bake'
 import { analyzeTextZone } from '@/lib/thumbnail-textzone'
 import { scrubBanned } from '@/lib/scrub'
-import { getStarredPhotoboothRefs } from '@/lib/photobooth-refs'
 import { getThumbnailFaceRef } from '@/lib/identity-anchor'
 import { verifyFaceIdentity, verifyFaceIdentityConsensus, verifyNoBrandLeak, verifyBakedText, verifyProductMatch } from '@/lib/product-image'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
@@ -1283,10 +1282,12 @@ export async function POST(request: Request) {
             }
           }
           if (scoutFaceModel) {
-            // 1 face photo (best starred) + 1 frame crop = 2 refs total.
-            // Fewer refs = faster gpt-image-1 processing with no meaningful quality loss.
-            const starredRefs = await getStarredPhotoboothRefs(user.id, scoutFaceModel.id, { maxRefs: 1 })
-            const photoUrls = (starredRefs.length > 0 ? starredRefs : scoutFaceModel.source_images).slice(0, 1)
+            // Identity ref = the creator's own uploaded selfie (original or
+            // optimized set — resolved upstream). We no longer prefer Photobooth
+            // headshots: gpt-image re-renders the person, and a fixed studio shot
+            // anchors the expression, whereas the varied selfies let it hit the
+            // content-fitting expression. One selfie + the video frame crop.
+            const photoUrls = scoutFaceModel.source_images.slice(0, 1)
             for (const url of photoUrls) {
               try {
                 const ab = await fetch(url, { signal: AbortSignal.timeout(12000) })
@@ -1321,8 +1322,9 @@ export async function POST(request: Request) {
           photoBytes = await normalizeToPng(new Uint8Array(gfxStoryboardFrame.buffer))
         } else {
           if (!faceModel) throw new Error('no face identity for graphic mode')
-          const starredGfx = await getStarredPhotoboothRefs(user.id, faceModel.id, { maxRefs: 1 })
-          const photoUrl = starredGfx[0] ?? faceModel.source_images[0]
+          // Use the creator's own uploaded selfie (original/optimized), not a
+          // Photobooth headshot — see note above.
+          const photoUrl = faceModel.source_images[0]
           if (!photoUrl) throw new Error('no face photo for graphic mode')
           const photoAb = await fetch(photoUrl, { signal: AbortSignal.timeout(12000) })
             .then(r => r.ok ? r.arrayBuffer() : Promise.reject(new Error(`face photo ${r.status}`)))
@@ -1694,34 +1696,19 @@ export async function POST(request: Request) {
           if (noHuman) {
             console.log('[thumb] noHuman mode — skipping face references')
           } else if (faceModel?.source_images?.length) {
-            // ── Identity reference priority ───────────────────────────────────
-            // 1. STARRED Photobooth shots for THIS face (clean, studio-lit,
-            //    same person, ideal Nano Banana input). When present, we use
-            //    these alone — mixing in raw uploads dilutes the signal.
-            // 2. Excited-expression anchor (generated/cached) + a couple of
-            //    raw uploads for backup angles. Anchor build is time-boxed.
-            // 3. Raw uploads alone (legacy path; user hasn't run Photobooth
-            //    yet on this face).
-            //
-            // The Photobooth path is the user's instruction: "the headshots
-            // are clean and this is what the agent should be using to
-            // understand what the model looks like." We treat it as the
-            // ground truth when available.
-            const starredPb = await getStarredPhotoboothRefs(user.id, faceModel.id, { maxRefs: 5 })
-            if (starredPb.length > 0) {
-              faceRefs = starredPb
-            } else {
-              const primaryFace = await Promise.race([
-                getThumbnailFaceRef(supabase, user.id, { faceId: faceModel.id, sourceImages: faceModel.source_images, expression: 'excited', tier }),
-                new Promise<null>(res => setTimeout(() => res(null), 120_000)),
-              ])
-              // Pass MORE reference photos so NB Pro has multiple angles to
-              // lock identity to — earlier 2-photo cap was producing loose
-              // likeness averages because the model had too little to anchor
-              // on. Bumped to 4/7 (2026-06-08, user fix for face drift).
-              const rawRefs = await rehostFacePhotos(supabase, faceModel.source_images, primaryFace ? 4 : 7)
-              faceRefs = primaryFace ? [primaryFace, ...rawRefs] : rawRefs
-            }
+            // Identity references = the creator's own uploaded selfies (the
+            // original/optimized set). We no longer prefer Photobooth headshots
+            // (decoupled 2026-08-10): gpt-image is the primary engine and this NB
+            // path is only a fallback; either way the varied selfies are the
+            // ground truth for what the person looks like. An excited-expression
+            // anchor (derived from those same selfies) plus several raw uploads
+            // gives NB Pro multiple angles to lock identity to.
+            const primaryFace = await Promise.race([
+              getThumbnailFaceRef(supabase, user.id, { faceId: faceModel.id, sourceImages: faceModel.source_images, expression: 'excited', tier }),
+              new Promise<null>(res => setTimeout(() => res(null), 120_000)),
+            ])
+            const rawRefs = await rehostFacePhotos(supabase, faceModel.source_images, primaryFace ? 4 : 7)
+            faceRefs = primaryFace ? [primaryFace, ...rawRefs] : rawRefs
           }
           // Product image(s) as references so the product(s) render accurately
           // (the vidIQ look). The prompt scopes the product refs to the
