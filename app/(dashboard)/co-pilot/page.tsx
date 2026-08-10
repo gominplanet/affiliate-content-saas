@@ -2031,11 +2031,11 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
 
           {expanded && (
             <div className="px-5 pb-5 flex flex-col gap-5">
-              {/* Two-column layout: metadata left, thumbnail right */}
-              <div className="flex gap-6 items-start">
+              {/* Full-width stacked steps: metadata, then Art Director, top to bottom */}
+              <div className="flex flex-col gap-5">
 
-                {/* ── Left column: metadata ── */}
-                <div className="flex-1 min-w-0 flex flex-col gap-5">
+                {/* ── Step 1: metadata (full width) ── */}
+                <div className="flex flex-col gap-5">
 
                   {/* Step 1 header */}
                   <div className="flex items-center gap-3 pb-1 border-b border-gray-100 dark:border-white/10">
@@ -2111,20 +2111,20 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                 </div>
               </div>
 
-                </div> {/* ── end left column ── */}
+                </div> {/* ── end Step 1 ── */}
 
-                {/* ── Right column: AI Thumbnail Generator ── */}
-                <div className="w-[360px] flex-shrink-0 flex flex-col gap-4">
+                {/* ── Step 2: MVP Art Director (full width, below step 1) ── */}
+                <div className="flex flex-col gap-4 pt-1">
 
                   {/* Step 2 header */}
                   <div className="flex items-center gap-3 pb-1 border-b border-gray-100 dark:border-white/10">
                     <span className="w-7 h-7 rounded-full bg-[#7C3AED] text-white text-sm font-bold flex items-center justify-center flex-shrink-0 shadow-sm">2</span>
                     <div>
                       <div className="flex items-center gap-2">
-                        <p className="text-sm font-bold text-[#1d1d1f] dark:text-[#f5f5f7]">AI Thumbnail Generator</p>
+                        <p className="text-sm font-bold text-[#1d1d1f] dark:text-[#f5f5f7]">MVP Art Director</p>
                         <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#7C3AED]/10 text-[#7C3AED] font-medium">1280×720</span>
                       </div>
-                      <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Pick a method and generate your thumbnail</p>
+                      <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Designs a unique, viral thumbnail from your product & face</p>
                     </div>
                   </div>
 
@@ -2551,9 +2551,9 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                     </div>
                   )}
 
-                </div> {/* ── end right column ── */}
+                </div> {/* ── end Step 2 ── */}
 
-              </div> {/* ── end two-column flex ── */}
+              </div> {/* ── end stacked steps 1–2 ── */}
 
               {/* ── Step 3: Pinned Comment ── */}
               <div className="flex flex-col gap-3 pt-1">
@@ -2564,18 +2564,25 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                     <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">YouTube's API can't pin — copy & paste this after your video goes live</p>
                   </div>
                 </div>
-                <div className="rounded-xl border border-[#ff9500]/30 bg-[#ff9500]/5 p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Pinned comment</label>
-                    <button onClick={() => copy(generated.pinnedComment, 'pin')} className="text-[10px] text-[#7C3AED] hover:underline flex items-center gap-0.5">
+                {/* Collapsed by default — expand only if you want to use it. */}
+                <details className="rounded-xl border border-[#ff9500]/30 bg-[#ff9500]/5 group">
+                  <summary className="flex items-center gap-2 cursor-pointer list-none p-4 text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                    <ChevronDown size={14} className="text-[#ff9500] transition-transform group-open:rotate-180" />
+                    View suggested pinned comment
+                    <button
+                      onClick={(e) => { e.preventDefault(); copy(generated.pinnedComment, 'pin') }}
+                      className="ml-auto text-[10px] text-[#7C3AED] hover:underline flex items-center gap-0.5"
+                    >
                       <Copy size={10} /> {copied === 'pin' ? 'Copied!' : 'Copy'}
                     </button>
+                  </summary>
+                  <div className="px-4 pb-4">
+                    <div className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7] p-3 rounded-lg bg-white dark:bg-[#1c1c1e] border border-[#d2d2d7] dark:border-[#3a3a3c] leading-relaxed">
+                      {generated.pinnedComment}
+                    </div>
+                    <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-2">After the video is public: post this as a comment, then click the three-dot menu → <strong>Pin</strong>.</p>
                   </div>
-                  <div className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7] p-3 rounded-lg bg-white dark:bg-[#1c1c1e] border border-[#d2d2d7] dark:border-[#3a3a3c] leading-relaxed">
-                    {generated.pinnedComment}
-                  </div>
-                  <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-2">After the video is public: post this as a comment, then click the three-dot menu → <strong>Pin</strong>.</p>
-                </div>
+                </details>
               </div>
 
               {/* Pro batch-apply settings panel — Pro/admin only */}
