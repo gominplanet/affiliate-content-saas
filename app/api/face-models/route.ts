@@ -42,7 +42,7 @@ export async function GET() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data } = await supabase
     .from('face_models')
-    .select('id,name,trigger_token,status,lora_url,failure_reason,source_images,optimized_images,optimized_status,use_optimized,optimize_error,created_at')
+    .select('id,name,trigger_token,status,lora_url,failure_reason,source_images,created_at')
     .eq('user_id', ownerId)
     .order('created_at', { ascending: false })
 

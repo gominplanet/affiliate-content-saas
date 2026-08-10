@@ -22,25 +22,20 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: model } = await supabase
     .from('face_models')
-    .select('source_images,optimized_images')
+    .select('source_images')
     .eq('id', id).eq('user_id', ownerId).single()
   if (!model) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   const admin = createAdminClient()
-  const sign = async (paths: unknown): Promise<string[]> => {
-    const list = Array.isArray(paths) ? paths.filter((p): p is string => typeof p === 'string') : []
-    if (list.length === 0) return []
+  const list = Array.isArray(model.source_images)
+    ? model.source_images.filter((p): p is string => typeof p === 'string')
+    : []
+  let original: string[] = []
+  if (list.length > 0) {
     try {
       const { data } = await admin.storage.from(BUCKET).createSignedUrls(list, TTL)
-      return (data || []).map(d => d.signedUrl).filter((u): u is string => !!u)
-    } catch {
-      return []
-    }
+      original = (data || []).map(d => d.signedUrl).filter((u): u is string => !!u)
+    } catch { /* leave empty */ }
   }
-
-  const [original, optimized] = await Promise.all([
-    sign(model.source_images),
-    sign(model.optimized_images),
-  ])
-  return NextResponse.json({ original, optimized })
+  return NextResponse.json({ original })
 }
