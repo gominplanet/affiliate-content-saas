@@ -29,10 +29,6 @@ interface FaceModel {
   status: 'uploading' | 'training' | 'ready' | 'failed'
   source_images: string[]
   failure_reason?: string | null
-  optimized_images?: string[]
-  optimized_status?: 'none' | 'processing' | 'ready' | 'failed'
-  use_optimized?: boolean
-  optimize_error?: string | null
 }
 
 const MIN_IMAGES = 4
@@ -210,48 +206,17 @@ export default function PhotoboothPage() {
     setFaces(prev => prev.filter(m => m.id !== id))
   }
 
-  // Run the light, identity-preserving retouch over a face's photos. Marks the
-  // face 'processing' locally, then flips to 'ready' (or 'failed') on response.
-  async function optimizeFace(id: string) {
-    setFaces(prev => prev.map(m => m.id === id ? { ...m, optimized_status: 'processing' } : m))
-    try {
-      const res = await fetch(`/api/face-models/${id}/optimize`, { method: 'POST' })
-      if (res.ok) {
-        setFaces(prev => prev.map(m => m.id === id ? { ...m, optimized_status: 'ready' } : m))
-      } else {
-        const d = await res.json().catch(() => ({}))
-        setFaces(prev => prev.map(m => m.id === id ? { ...m, optimized_status: 'failed', optimize_error: d.error || 'Optimize failed' } : m))
-      }
-    } catch {
-      setFaces(prev => prev.map(m => m.id === id ? { ...m, optimized_status: 'failed', optimize_error: 'Optimize failed' } : m))
-    }
-  }
-
-  // On-demand preview of a face's original vs optimized photos (signed URLs).
-  const [photoView, setPhotoView] = useState<Record<string, { original: string[]; optimized: string[] } | 'loading'>>({})
+  // On-demand preview of a face's uploaded photos (signed URLs).
+  const [photoView, setPhotoView] = useState<Record<string, { original: string[] } | 'loading'>>({})
   async function viewPhotos(id: string) {
     if (photoView[id]) { setPhotoView(prev => { const n = { ...prev }; delete n[id]; return n }); return }
     setPhotoView(prev => ({ ...prev, [id]: 'loading' }))
     try {
       const r = await fetch(`/api/face-models/${id}/photos`)
       const d = await r.json()
-      setPhotoView(prev => ({ ...prev, [id]: { original: d.original || [], optimized: d.optimized || [] } }))
+      setPhotoView(prev => ({ ...prev, [id]: { original: d.original || [] } }))
     } catch {
-      setPhotoView(prev => ({ ...prev, [id]: { original: [], optimized: [] } }))
-    }
-  }
-
-  // Toggle whether generation uses the optimized photos or the originals.
-  async function toggleOptimized(id: string, next: boolean) {
-    setFaces(prev => prev.map(m => m.id === id ? { ...m, use_optimized: next } : m))
-    try {
-      const res = await fetch(`/api/face-models/${id}`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ use_optimized: next }),
-      })
-      if (!res.ok) setFaces(prev => prev.map(m => m.id === id ? { ...m, use_optimized: !next } : m))
-    } catch {
-      setFaces(prev => prev.map(m => m.id === id ? { ...m, use_optimized: !next } : m))
+      setPhotoView(prev => ({ ...prev, [id]: { original: [] } }))
     }
   }
 
@@ -456,39 +421,11 @@ export default function PhotoboothPage() {
                       {m.source_images.length} reference photo{m.source_images.length !== 1 ? 's' : ''} · used in thumbnails, posts &amp; headshots
                     </p>
                     {m.failure_reason && <p className="text-[11px] text-[#ff3b30] mt-1">{m.failure_reason}</p>}
-                    {/* Optimize (light, identity-preserving retouch) + original/optimized toggle. */}
-                    {m.status === 'ready' && (
-                      <div className="mt-1.5 flex items-center gap-2 flex-wrap">
-                        {m.optimized_status === 'ready' ? (
-                          <div className="inline-flex items-center rounded-full bg-gray-100 dark:bg-white/10 p-0.5">
-                            <button
-                              onClick={() => toggleOptimized(m.id, false)}
-                              className={`px-2.5 py-0.5 rounded-full text-[10px] font-semibold transition ${!m.use_optimized ? 'bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] shadow-sm' : 'text-[#86868b]'}`}
-                            >Original</button>
-                            <button
-                              onClick={() => toggleOptimized(m.id, true)}
-                              className={`px-2.5 py-0.5 rounded-full text-[10px] font-semibold transition ${m.use_optimized ? 'bg-[#7C3AED] text-white shadow-sm' : 'text-[#86868b]'}`}
-                            >Optimized</button>
-                          </div>
-                        ) : m.optimized_status === 'processing' ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-[#7C3AED]"><Loader2 size={10} className="animate-spin" /> Optimizing photos…</span>
-                        ) : (
-                          <button
-                            onClick={() => optimizeFace(m.id)}
-                            className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border border-[#7C3AED] text-[#7C3AED] hover:bg-[#7C3AED] hover:text-white transition"
-                          >✨ Optimize photos</button>
-                        )}
-                        {m.optimized_status === 'ready' && (
-                          <button onClick={() => optimizeFace(m.id)} className="text-[10px] text-[#86868b] hover:text-[#7C3AED] underline">redo</button>
-                        )}
-                        {(m.optimized_status === 'ready' || (m.source_images.length > 0)) && (
-                          <button onClick={() => viewPhotos(m.id)} className="text-[10px] text-[#86868b] hover:text-[#7C3AED] underline">
-                            {photoView[m.id] ? 'hide photos' : 'view photos'}
-                          </button>
-                        )}
-                        {m.optimized_status === 'failed' && (
-                          <span className="text-[10px] text-[#ff3b30]">{m.optimize_error || 'Optimize failed'}</span>
-                        )}
+                    {m.status === 'ready' && m.source_images.length > 0 && (
+                      <div className="mt-1.5">
+                        <button onClick={() => viewPhotos(m.id)} className="text-[10px] text-[#86868b] hover:text-[#7C3AED] underline">
+                          {photoView[m.id] ? 'hide photos' : 'view photos'}
+                        </button>
                       </div>
                     )}
                   </div>
@@ -501,29 +438,17 @@ export default function PhotoboothPage() {
                   </button>
                  </div>
 
-                  {/* Original vs Optimized photo preview (on demand). */}
+                  {/* Uploaded photo preview (on demand). */}
                   {photoView[m.id] && (
                     <div className="mt-3 pt-3 border-t border-gray-100 dark:border-white/10">
                       {photoView[m.id] === 'loading' ? (
                         <p className="text-[11px] text-[#86868b] flex items-center gap-1"><Loader2 size={11} className="animate-spin" /> Loading photos…</p>
                       ) : (
-                        <div className="flex flex-col gap-3">
-                          {(['optimized', 'original'] as const).map(kind => {
-                            const pv = photoView[m.id] as { original: string[]; optimized: string[] }
-                            const urls = pv[kind]
-                            if (kind === 'optimized' && urls.length === 0) return null
-                            return (
-                              <div key={kind}>
-                                <p className="text-[10px] font-semibold uppercase tracking-wide text-[#86868b] mb-1.5">{kind === 'optimized' ? 'Optimized' : 'Original'}</p>
-                                <div className="flex gap-1.5 flex-wrap">
-                                  {urls.map((u, i) => (
-                                    // eslint-disable-next-line @next/next/no-img-element
-                                    <img key={i} src={u} alt={`${kind} ${i + 1}`} className="w-14 h-14 rounded-md object-cover border border-gray-200 dark:border-white/10" />
-                                  ))}
-                                </div>
-                              </div>
-                            )
-                          })}
+                        <div className="flex gap-1.5 flex-wrap">
+                          {(photoView[m.id] as { original: string[] }).original.map((u, i) => (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img key={i} src={u} alt={`photo ${i + 1}`} className="w-14 h-14 rounded-md object-cover border border-gray-200 dark:border-white/10" />
+                          ))}
                         </div>
                       )}
                     </div>
