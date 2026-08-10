@@ -96,8 +96,9 @@ if (!function_exists('mvp_affiliate_posted_meta')) {
         if (mvp_affiliate_show_perpost_reads()) {
             $reads  = (int) get_post_meta(get_the_ID(), '_mvp_reads', true);
             $layout = mvp_affiliate_data()['layout'] ?? [];
-            $thresh = (is_array($layout) && isset($layout['readCountThreshold']) && (int) $layout['readCountThreshold'] > 0)
-                ? (int) $layout['readCountThreshold'] : 100;
+            // 0 is a valid threshold (chip shows always) — only an unset value defaults to 100.
+            $thresh = (is_array($layout) && isset($layout['readCountThreshold']))
+                ? max(0, (int) $layout['readCountThreshold']) : 100;
             if ($reads >= $thresh) {
                 $reads_label = $reads >= 1000
                     ? rtrim(rtrim(number_format($reads / 1000, 1), '0'), '.') . 'k'

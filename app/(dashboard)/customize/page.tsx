@@ -386,8 +386,8 @@ export default function CustomizePage() {
           aboutBio: bc.layout?.aboutBio !== false,
           showReadCount: bc.layout?.showReadCount === true, // opt-in
           showPerPostReadCount: bc.layout?.showPerPostReadCount === true, // opt-in
-          readCountThreshold: typeof bc.layout?.readCountThreshold === 'number' && bc.layout.readCountThreshold > 0 ? bc.layout.readCountThreshold : 100,
-          blogReadCountThreshold: typeof bc.layout?.blogReadCountThreshold === 'number' && bc.layout.blogReadCountThreshold > 0 ? bc.layout.blogReadCountThreshold : 100,
+          readCountThreshold: typeof bc.layout?.readCountThreshold === 'number' && bc.layout.readCountThreshold >= 0 ? bc.layout.readCountThreshold : 100,
+          blogReadCountThreshold: typeof bc.layout?.blogReadCountThreshold === 'number' && bc.layout.blogReadCountThreshold >= 0 ? bc.layout.blogReadCountThreshold : 100,
         },
       })
     }
@@ -691,14 +691,14 @@ export default function CustomizePage() {
             <div className="flex items-center justify-between p-3 mt-2 rounded-xl bg-[var(--surface-2)] border border-[var(--border-2)]">
               <div>
                 <p className="text-sm font-medium text-[var(--text)]">On a post, show it after</p>
-                <p className="text-xs text-[var(--text-3)]">Reads that single post must pass before its byline chip appears.</p>
+                <p className="text-xs text-[var(--text-3)]">Reads that single post must pass before its byline chip appears. Set 0 to always show it.</p>
               </div>
               <div className="flex items-center gap-2">
                 <input
                   type="number"
-                  min={1}
+                  min={0}
                   value={data.layout.readCountThreshold}
-                  onChange={e => setData(d => ({ ...d, layout: { ...d.layout, readCountThreshold: Math.max(1, parseInt(e.target.value || '100', 10) || 100) } }))}
+                  onChange={e => setData(d => ({ ...d, layout: { ...d.layout, readCountThreshold: Math.max(0, parseInt(e.target.value || '0', 10) || 0) } }))}
                   className="w-24 px-3 py-2 rounded-lg text-sm bg-[var(--surface)] border border-[var(--border-2)] text-[var(--text)] outline-none focus:border-[#7C3AED]"
                 />
                 <span className="text-xs text-[var(--text-3)]">reads</span>
@@ -727,14 +727,14 @@ export default function CustomizePage() {
               <div className="flex items-center justify-between p-3 mt-2 rounded-xl bg-[var(--surface-2)] border border-[var(--border-2)]">
                 <div>
                   <p className="text-sm font-medium text-[var(--text)]">On the main blog, show it after</p>
-                  <p className="text-xs text-[var(--text-3)]">Total reads across every post before the “N reads across the blog” badge appears.</p>
+                  <p className="text-xs text-[var(--text-3)]">Total reads across every post before the “N reads across the blog” badge appears. Set 0 to always show it.</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <input
                     type="number"
-                    min={1}
+                    min={0}
                     value={data.layout.blogReadCountThreshold}
-                    onChange={e => setData(d => ({ ...d, layout: { ...d.layout, blogReadCountThreshold: Math.max(1, parseInt(e.target.value || '100', 10) || 100) } }))}
+                    onChange={e => setData(d => ({ ...d, layout: { ...d.layout, blogReadCountThreshold: Math.max(0, parseInt(e.target.value || '0', 10) || 0) } }))}
                     className="w-24 px-3 py-2 rounded-lg text-sm bg-[var(--surface)] border border-[var(--border-2)] text-[var(--text)] outline-none focus:border-[#7C3AED]"
                   />
                   <span className="text-xs text-[var(--text-3)]">reads</span>

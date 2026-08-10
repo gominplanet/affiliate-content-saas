@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.82
+ * Version: 1.0.83
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -509,8 +509,8 @@ if (!function_exists('mvp_affiliate_read_threshold')) {
     function mvp_affiliate_read_threshold() {
         $data = mvp_affiliate_get_data();
         $layout = isset($data['layout']) && is_array($data['layout']) ? $data['layout'] : [];
-        $t = isset($layout['readCountThreshold']) ? (int) $layout['readCountThreshold'] : 100;
-        return $t > 0 ? $t : 100;
+        // 0 is a valid choice (show the chip always) — only an UNSET value defaults to 100.
+        return isset($layout['readCountThreshold']) ? max(0, (int) $layout['readCountThreshold']) : 100;
     }
 }
 
@@ -523,8 +523,7 @@ if (!function_exists('mvp_affiliate_blog_read_threshold')) {
         $data = mvp_affiliate_get_data();
         $layout = isset($data['layout']) && is_array($data['layout']) ? $data['layout'] : [];
         if (isset($layout['blogReadCountThreshold'])) {
-            $t = (int) $layout['blogReadCountThreshold'];
-            if ($t > 0) return $t;
+            return max(0, (int) $layout['blogReadCountThreshold']); // 0 = always show
         }
         return mvp_affiliate_read_threshold();
     }
