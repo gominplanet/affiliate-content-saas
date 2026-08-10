@@ -2439,26 +2439,9 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                         {thumbnailFaceUsed && (
                           <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#7C3AED]/10 text-[#7C3AED] font-medium">👤 {thumbnailFaceUsed}</span>
                         )}
-                        {thumbnailModel === 'gpt-image-graphic' && (
-                          <>
-                            {/* "New scene" regenerates on the SAME gpt-image engine (fresh
-                                background + expression each time) — it used to secretly drop to
-                                the old Nano Banana 'clean' engine. */}
-                            <button onClick={() => generateThumbnail({ textMode: 'graphic' })} disabled={generatingThumbnail}
-                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 dark:border-white/10 hover:border-[#7C3AED] text-[#1d1d1f] dark:text-[#f5f5f7] transition disabled:opacity-60">
-                              <RefreshCw size={12} /> New scene
-                            </button>
-                            <div className="flex items-center gap-1.5 w-full">
-                              <input type="text" value={gfxTitleInput} onChange={e => setGfxTitleInput(e.target.value)}
-                                onKeyDown={e => { if (e.key === 'Enter' && gfxTitleInput.trim()) generateThumbnail({ textMode: 'graphic', lockedHeadline: gfxTitleInput.trim() }) }}
-                                placeholder="Custom title → Enter"
-                                className="flex-1 min-w-0 text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-white/10 bg-transparent text-[#1d1d1f] dark:text-[#f5f5f7] placeholder:text-gray-400 focus:outline-none focus:border-[#FF6B00] transition" />
-                              <button onClick={() => { if (gfxTitleInput.trim()) generateThumbnail({ textMode: 'graphic', lockedHeadline: gfxTitleInput.trim() }) }}
-                                disabled={generatingThumbnail || !gfxTitleInput.trim()}
-                                className="flex-shrink-0 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-[#FF6B00] text-white hover:bg-[#e55a00] transition disabled:opacity-50">→</button>
-                            </div>
-                          </>
-                        )}
+                        {/* No regenerate / custom-title controls on the gpt-image result:
+                            every regeneration costs a full image, and MVP should land it on
+                            the first try. Download it, or start a new generation. */}
                         {(thumbnailModel === 'nano-banana-pro' || thumbnailModel === 'nano-banana') && (
                           <>
                             <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#34c759]/10 text-[#34c759] font-medium">✨ Scene · crisp text</span>
