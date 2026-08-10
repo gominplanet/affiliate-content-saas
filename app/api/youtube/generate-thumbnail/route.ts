@@ -760,6 +760,10 @@ export async function POST(request: Request) {
       // one thumbnail (comparison videos), or multiple angles of one product.
       customProductImageUrls,
       productCompositionNote,
+      // Optional creator-pasted product link (Amazon / geni.us / store URL). When
+      // present it's the AUTHORITATIVE product source — guarantees MVP renders the
+      // exact product even when the title/description has no resolvable ASIN.
+      productUrl,
       // Free-text creator direction for the WHOLE thumbnail — scene, mood, the
       // creator's pose/expression, background, props. Steers the composed-scene
       // prompt; never overrides identity-lock or product fidelity.
@@ -840,6 +844,8 @@ export async function POST(request: Request) {
        *  - Custom product when no Amazon ASIN exists
        *  Public Supabase URLs. Clamped to 5 server-side. */
       customProductImageUrls?: string[]
+      /** Optional creator-pasted product link (Amazon/geni.us/store URL). */
+      productUrl?: string
       /** Optional free-text composition direction explaining how to arrange the
        *  product references — e.g. "front view on the left, side angle on the
        *  right" or "Product A above, Product B below". Folded into the
@@ -1030,10 +1036,22 @@ export async function POST(request: Request) {
     // title/description/bullets in addition to the image, so we still hit
     // Amazon directly when we have an ASIN — but the IMAGE itself comes
     // from the canonical resolver.
+    // A creator-pasted product link is authoritative: prepend it to the
+    // description so the resolver treats it as THE product URL (it follows
+    // geni.us / short links and extracts the ASIN). Guarantees the exact product
+    // even when the title/description carry no resolvable ASIN.
+    const pastedProductUrl = typeof productUrl === 'string' && /^https?:\/\//.test(productUrl.trim())
+      ? productUrl.trim()
+      : null
+    const resolverDescription = pastedProductUrl
+      ? `${pastedProductUrl}\n${videoDescription ?? ''}`
+      : (videoDescription ?? null)
     const refForThumbnail = await resolveProductReference({
       title: videoTitle ?? null,
-      description: videoDescription ?? null,
-      asin: asin ?? null,
+      description: resolverDescription,
+      // A pasted link overrides a title-detected ASIN — the creator explicitly
+      // chose this product, so don't let a stale title ASIN win.
+      asin: pastedProductUrl ? null : (asin ?? null),
       traceTag: `[thumbnail:${(youtubeVideoId || 'novid').slice(0, 8)}]`,
       userId: user.id,
       tier: null,
