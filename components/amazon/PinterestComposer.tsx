@@ -22,6 +22,8 @@ export default function PinterestComposer() {
   const [genBusy, setGenBusy] = useState(false)
   const [thumbUrl, setThumbUrl] = useState<string | null>(null)
   const [genError, setGenError] = useState<string | null>(null)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [briefKey, setBriefKey] = useState('') // reused when cross-posting this design to IG/FB
 
   // Pinterest
   const [connected, setConnected] = useState<boolean | null>(null)
@@ -57,10 +59,16 @@ export default function PinterestComposer() {
     setGenBusy(true); setGenError(null); setThumbUrl(null); setResult(null)
     const isUrl = /^https?:\/\//i.test(raw)
     const isAsin = /^[A-Z0-9]{10}$/i.test(raw)
+    // Shared creative thinking: one key per generate. A cross-post of THIS design
+    // to IG/FB later reuses the key so the art-director brief isn't re-run; a fresh
+    // Generate mints a new key so the design stays varied.
+    const bk = `${(isAsin ? raw.toUpperCase() : raw)}::${Date.now()}`
+    setBriefKey(bk)
     const bodyReq: Record<string, unknown> = {
       videoTitle: 'This hidden gem',
       textMode: 'graphic',
       format: 'pin', // 2:3 vertical 1000×1500, text-heavy shopping pin
+      briefKey: bk,
       ...(isUrl ? { productUrl: raw } : isAsin ? { asin: raw.toUpperCase() } : { productUrl: raw }),
       ...(mode === 'product' ? { noHuman: true } : { faceModelId: faceId }),
     }

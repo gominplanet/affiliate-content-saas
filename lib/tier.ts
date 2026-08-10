@@ -84,6 +84,9 @@ export const TIERS = {
     instagramAiThumbnailsPerMonth: 0 as number | null,
     /** Deal posts (Amazon CSV + single-link form share this bucket). */
     dealsPerMonth: 0 as number | null,
+    pinsPerMonth: 0 as number | null,
+    igPostsPerMonth: 0 as number | null,
+    facebookPostsPerMonth: 0 as number | null,
     photoboothPerMonth: 0 as number | null,
     maxFaces: 0 as number | null,
     blogImagesPerPost: 2,
@@ -155,6 +158,9 @@ export const TIERS = {
     metadataGensPerMonth: 75 as number | null,
     instagramAiThumbnailsPerMonth: 0 as number | null,
     dealsPerMonth: 0 as number | null,
+    pinsPerMonth: 0 as number | null,
+    igPostsPerMonth: 0 as number | null,
+    facebookPostsPerMonth: 0 as number | null,
     photoboothPerMonth: 10 as number | null,
     maxFaces: 1 as number | null,
     blogImagesPerPost: 3,
@@ -207,9 +213,11 @@ export const TIERS = {
     label: 'Amazon',
     price: 79,
     regularPrice: 129,
-    /** Medium thumbnails are ~$0.08, so 200 + pushes + 5 photobooth ≈ $20 of AI
-     *  at full use. $40 sits ~2× that so a normal user never trips it. */
-    monthlyAiSpendCeilingUsd: 40 as number | null,
+    /** Medium designs are ~$0.08 (or ~$0.07 when a batch shares one art-director
+     *  brief across formats). Fully maxed — 200 thumbs + 300 pins + 150 IG + 45
+     *  FB — is ~$49 of AI. $55 sits just above that hard max so the ceiling is
+     *  reachable but still a circuit-breaker; the average user spends ~$15. */
+    monthlyAiSpendCeilingUsd: 55 as number | null,
     /** No blog. Thumbnails have their own cap below; this stays 0. */
     postsPerMonth: 0,
     lifetimeMax: null as number | null,
@@ -217,6 +225,13 @@ export const TIERS = {
     collabsPerMonth: 50 as number | null,
     /** The headline feature: 200 Art Director thumbnails / mo (medium quality). */
     thumbnailsPerMonth: 200 as number | null,
+    /** Social Influencer design caps. Each is its own format-correct render
+     *  (a pin is not a cropped FB post), but a batch that pushes one product to
+     *  several networks shares the art-director brief, so secondary formats cost
+     *  ~$0.06 not $0.08. Publishing + captions on top are free. */
+    pinsPerMonth: 300 as number | null,
+    igPostsPerMonth: 150 as number | null,
+    facebookPostsPerMonth: 45 as number | null,
     /** No YouTube metadata pipeline. */
     metadataGensPerMonth: 0 as number | null,
     instagramAiThumbnailsPerMonth: 0 as number | null,
@@ -287,6 +302,9 @@ export const TIERS = {
     instagramAiThumbnailsPerMonth: 30 as number | null,
     /** Studio gets 5 deal posts / mo. Separate counter from blog. */
     dealsPerMonth: 5 as number | null,
+    pinsPerMonth: null as number | null,
+    igPostsPerMonth: null as number | null,
+    facebookPostsPerMonth: null as number | null,
     photoboothPerMonth: 15 as number | null,
     maxFaces: 2 as number | null,
     blogImagesPerPost: 3,
@@ -355,6 +373,9 @@ export const TIERS = {
     instagramAiThumbnailsPerMonth: 100 as number | null,
     /** Pro: 30 deal posts/mo (revised down from 90 → 60 → 30 for COGS). */
     dealsPerMonth: 30 as number | null,
+    pinsPerMonth: null as number | null,
+    igPostsPerMonth: null as number | null,
+    facebookPostsPerMonth: null as number | null,
     photoboothPerMonth: 20 as number | null,
     maxFaces: 3 as number | null,
     blogImagesPerPost: 4,
@@ -418,6 +439,9 @@ export const TIERS = {
     metadataGensPerMonth: null as number | null,
     instagramAiThumbnailsPerMonth: null as number | null,
     dealsPerMonth: null as number | null,
+    pinsPerMonth: null as number | null,
+    igPostsPerMonth: null as number | null,
+    facebookPostsPerMonth: null as number | null,
     photoboothPerMonth: null as number | null,
     maxFaces: null as number | null,
     blogImagesPerPost: 6,
