@@ -150,6 +150,11 @@ interface LayoutData {
    *  blog" chip appears on the main blog. Independent from the per-post number.
    *  Default 100. */
   blogReadCountThreshold: number
+  /** Opt-in reader comments on each post. Default OFF. WordPress handles spam
+   *  (required email, first comments held, Akismet). When the newsletter is on,
+   *  the comment form also carries an opt-in checkbox that feeds the same
+   *  double-opt-in subscriber list. */
+  enableComments: boolean
 }
 
 interface BrandCtaData {
@@ -190,6 +195,7 @@ const emptyLayout: LayoutData = {
   showPerPostReadCount: false,
   readCountThreshold: 100,
   blogReadCountThreshold: 100,
+  enableComments: false,
 }
 const emptyBrandCta: BrandCtaData = {
   enabled: false,
@@ -388,6 +394,7 @@ export default function CustomizePage() {
           showPerPostReadCount: bc.layout?.showPerPostReadCount === true, // opt-in
           readCountThreshold: typeof bc.layout?.readCountThreshold === 'number' && bc.layout.readCountThreshold >= 0 ? bc.layout.readCountThreshold : 100,
           blogReadCountThreshold: typeof bc.layout?.blogReadCountThreshold === 'number' && bc.layout.blogReadCountThreshold >= 0 ? bc.layout.blogReadCountThreshold : 100,
+          enableComments: bc.layout?.enableComments === true, // opt-in
         },
       })
     }
@@ -741,6 +748,33 @@ export default function CustomizePage() {
                 </div>
               </div>
             </>
+          )}
+        </Section>
+
+        {/* Comments */}
+        <Section
+          title="Comments"
+          description="Let readers comment on each post. WordPress handles spam and abuse: email is required, first-time comments are held for you to approve, and Akismet (if you activate it) filters the rest. Off by default."
+        >
+          <div className="flex items-center justify-between p-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border-2)]">
+            <div>
+              <p className="text-sm font-medium text-[var(--text)]">Allow comments on posts</p>
+              <p className="text-xs text-[var(--text-3)]">Adds a comment section under each post. Turning this off hides it everywhere, nothing is deleted.</p>
+            </div>
+            <button
+              onClick={() => setData(d => ({ ...d, layout: { ...d.layout, enableComments: !d.layout.enableComments } }))}
+              className="text-[var(--text-3)]"
+              aria-label="Toggle comments"
+            >
+              {data.layout.enableComments
+                ? <ToggleRight size={28} className="text-[#7C3AED]" />
+                : <ToggleLeft size={28} />}
+            </button>
+          </div>
+          {data.layout.enableComments && (
+            <p className="text-xs text-[var(--text-3)] mt-2 px-1">
+              When your Newsletter is on, the comment form also shows an “add me to the newsletter” opt-in. Commenters who tick it get your double opt-in confirmation and land in your Subscribers list. Their email is never published with the comment.
+            </p>
           )}
         </Section>
 

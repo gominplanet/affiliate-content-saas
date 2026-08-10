@@ -1694,3 +1694,57 @@ a.mvp-ad-slot-filled:hover {
     .mvp-single-content { padding-bottom: max(80px, calc(64px + env(safe-area-inset-bottom))); }
   }
 }
+
+/* ── Comments ──────────────────────────────────────────────────────────────
+   Shown on single posts only when the creator enables comments in Customize
+   Blog. Styled to sit inside the main content column, matching the editorial
+   body type. The newsletter opt-in row is injected by the plugin. */
+.mvp-comments { margin: 48px 0 8px; padding-top: 32px; border-top: 1px solid rgba(0,0,0,0.10); }
+.mvp-comments-title, .mvp-comments-reply-title { font-size: 24px; margin: 0 0 20px; line-height: 1.25; }
+.mvp-comments-reply-title { margin-top: 40px; }
+.mvp-comment-list { list-style: none; margin: 0 0 8px; padding: 0; }
+.mvp-comment-list ol.children { list-style: none; margin: 16px 0 0 24px; padding-left: 16px; border-left: 2px solid rgba(0,0,0,0.06); }
+.mvp-comment-list li.comment { margin: 0 0 20px; }
+.mvp-comment-list .comment-body { padding: 16px 18px; background: rgba(0,0,0,0.02); border: 1px solid rgba(0,0,0,0.06); border-radius: 12px; }
+.mvp-comment-list .comment-author { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 600; }
+.mvp-comment-list .comment-author .avatar { border-radius: 50%; }
+.mvp-comment-list .comment-author .says { display: none; }
+.mvp-comment-list .comment-metadata { margin: 2px 0 10px; font-size: 12px; opacity: 0.6; }
+.mvp-comment-list .comment-metadata a { color: inherit; text-decoration: none; }
+.mvp-comment-list .comment-content { font-size: 15px; line-height: 1.6; }
+.mvp-comment-list .comment-content p { margin: 0 0 0.8em; }
+.mvp-comment-list .reply { margin-top: 8px; font-size: 13px; }
+.mvp-comment-list .comment-awaiting-moderation { display: block; margin: 6px 0; font-size: 12px; font-style: italic; opacity: 0.7; }
+.mvp-comments-closed { font-size: 14px; opacity: 0.6; margin: 12px 0; }
+
+/* Comment form */
+.mvp-comments .comment-form { margin-top: 12px; }
+.mvp-comment-notes, .mvp-comments .comment-notes { font-size: 13px; opacity: 0.65; margin: 0 0 16px; }
+.mvp-comments .comment-form label { display: block; font-size: 13px; font-weight: 600; margin: 0 0 6px; }
+.mvp-comments .comment-form input[type="text"],
+.mvp-comments .comment-form input[type="email"],
+.mvp-comments .comment-form input[type="url"],
+.mvp-comments .comment-form textarea {
+  width: 100%; max-width: 100%; box-sizing: border-box;
+  padding: 11px 13px; border: 1px solid rgba(0,0,0,0.16); border-radius: 10px;
+  font-size: 15px; font-family: inherit; background: #fff; color: inherit; outline: none;
+}
+.mvp-comments .comment-form textarea { min-height: 130px; resize: vertical; }
+.mvp-comments .comment-form input:focus, .mvp-comments .comment-form textarea:focus { border-color: rgba(0,0,0,0.4); }
+.mvp-comments .comment-form p { margin: 0 0 16px; }
+.mvp-comment-submit, .mvp-comments .comment-form .submit {
+  display: inline-block; padding: 12px 22px; border: none; border-radius: 10px;
+  background: #111114; color: #fff; font-size: 15px; font-weight: 600; cursor: pointer;
+}
+.mvp-comment-submit:hover, .mvp-comments .comment-form .submit:hover { opacity: 0.9; }
+
+/* Newsletter opt-in row (injected by the plugin into the comment form) */
+.mvp-comment-optin { display: flex; align-items: flex-start; gap: 10px; margin: 4px 0 18px; padding: 12px 14px; background: rgba(0,113,227,0.05); border: 1px solid rgba(0,113,227,0.15); border-radius: 10px; }
+.mvp-comment-optin input[type="checkbox"] { width: 18px; height: 18px; margin: 1px 0 0; flex: 0 0 auto; accent-color: #0071e3; }
+.mvp-comment-optin label { font-size: 13px; line-height: 1.5; font-weight: 500; margin: 0; cursor: pointer; }
+.mvp-comment-optin .mvp-comment-optin-note { display: block; font-weight: 400; opacity: 0.65; margin-top: 2px; }
+
+@media (max-width: 600px) {
+  .mvp-comments { margin-top: 36px; }
+  .mvp-comment-list ol.children { margin-left: 12px; padding-left: 12px; }
+}

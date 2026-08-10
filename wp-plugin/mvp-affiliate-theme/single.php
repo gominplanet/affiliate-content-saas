@@ -63,6 +63,16 @@ get_header();
         </a>
       </div>
       <?php endif; ?>
+
+      <?php
+      // Comment section — only when the creator switched comments ON in
+      // Customize Blog. mvp_affiliate_comments_enabled() also forces
+      // comments_open() true (via a filter) so the form shows on posts that
+      // WordPress created with comments closed, with no per-post fiddling.
+      if (mvp_affiliate_comments_enabled()) {
+          comments_template();
+      }
+      ?>
     </article>
 
     <aside class="mvp-single-sidebar">

@@ -12,6 +12,34 @@ if (!function_exists('mvp_affiliate_profile')) {
     }
 }
 
+/**
+ * Comments — the creator's on/off switch lives in layout.enableComments
+ * (Customize Blog). Default OFF: comments mean moderation + spam work, and a
+ * lot of affiliate blogs don't want them.
+ */
+if (!function_exists('mvp_affiliate_comments_enabled')) {
+    function mvp_affiliate_comments_enabled(): bool {
+        $d = mvp_affiliate_data();
+        $layout = is_array($d['layout'] ?? null) ? $d['layout'] : [];
+        return !empty($layout['enableComments']);
+    }
+}
+
+// When the creator turns comments ON, force comments open on the FRONT END for
+// single posts — MVP generates posts with comments closed, so without this the
+// form would never show and the toggle would look broken. Flipping the toggle
+// off simply stops forcing, no per-post database changes to undo. Scoped to
+// the `post` type so Pages/attachments are untouched, and to the front end so
+// wp-admin still reflects each post's real stored status.
+if (!function_exists('mvp_affiliate_force_comments_open')) {
+    function mvp_affiliate_force_comments_open($open, $post_id) {
+        if (is_admin()) return $open;
+        if (!mvp_affiliate_comments_enabled()) return $open;
+        return get_post_type($post_id) === 'post' ? true : $open;
+    }
+    add_filter('comments_open', 'mvp_affiliate_force_comments_open', 20, 2);
+}
+
 if (!function_exists('mvp_affiliate_about')) {
     function mvp_affiliate_about(): array {
         $d = mvp_affiliate_data();
