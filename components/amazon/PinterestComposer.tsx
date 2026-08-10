@@ -13,9 +13,16 @@ const PIN_RED = '#E60023'
 interface FaceModel { id: string; name: string }
 interface Board { id: string; name: string }
 
-export default function PinterestComposer() {
+export default function PinterestComposer({ presetProduct }: { presetProduct?: { value: string; nonce: number } } = {}) {
   // Product + thumbnail
   const [product, setProduct] = useState('')
+
+  // A saved product picked from the list injects its link/ASIN here. Keyed on a
+  // nonce so picking the SAME product again still re-fills the box.
+  useEffect(() => {
+    if (presetProduct?.value) setProduct(presetProduct.value)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [presetProduct?.nonce])
   const [mode, setMode] = useState<'face' | 'product'>('face')
   const [faces, setFaces] = useState<FaceModel[]>([])
   const [faceId, setFaceId] = useState('')

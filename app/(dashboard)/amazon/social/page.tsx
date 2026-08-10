@@ -7,7 +7,7 @@
 // scaffold — the per-platform composers are being built next.
 import type { Metadata } from 'next'
 import { Share2, Sparkles } from 'lucide-react'
-import PinterestComposer from '@/components/amazon/PinterestComposer'
+import SocialComposer from '@/components/amazon/SocialComposer'
 import SocialConnections from '@/components/amazon/SocialConnections'
 
 export const metadata: Metadata = {
@@ -58,8 +58,8 @@ export default function AmazonSocialPage() {
       {/* Connect strip — all three accounts in one place, above the columns */}
       <SocialConnections />
 
-      {/* Pinterest composer — the first live builder */}
-      <PinterestComposer />
+      {/* Saved research finds + the Pinterest composer */}
+      <SocialComposer />
 
       {/* Instagram + Facebook — next up */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
