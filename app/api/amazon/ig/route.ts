@@ -20,13 +20,13 @@ export async function POST(request: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await request.json().catch(() => ({})) as {
-    imageUrl?: string; productUrl?: string; asin?: string; productTitle?: string; caption?: string; scheduledAt?: string
+    imageUrl?: string; productUrl?: string; asin?: string; productTitle?: string; caption?: string; scheduledAt?: string; postType?: 'feed' | 'story'
   }
   if (!body.imageUrl) return NextResponse.json({ error: 'A design is required. Generate one first.' }, { status: 400 })
 
   const { data: rawInt } = await supabase
     .from('integrations')
-    .select('tier,instagram_user_id,instagram_access_token,geniuslink_api_key,geniuslink_api_secret,amazon_associates_tag')
+    .select('tier,instagram_user_id,instagram_access_token,instagram_username,geniuslink_api_key,geniuslink_api_secret,amazon_associates_tag')
     .eq('user_id', user.id).single()
   const intRow = decryptIntegrationRow(rawInt) as (SocialIntegration & { tier?: string }) | null
   const tier = (intRow?.tier as Tier) ?? 'trial'
@@ -62,6 +62,7 @@ export async function POST(request: Request) {
     const res = await publishToInstagram({
       db: supabase, userId: user.id, tier, intRow,
       imageUrl: body.imageUrl, asin: body.asin, productUrl: body.productUrl, productTitle: body.productTitle, caption: body.caption,
+      postType: body.postType === 'story' ? 'story' : 'feed',
     })
     return NextResponse.json({ ok: true, postUrl: res.url, id: res.id, caption: res.caption, linkUrl: res.linkUrl, geniuslinkNote: res.note })
   } catch (e) {

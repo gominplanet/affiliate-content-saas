@@ -18,6 +18,7 @@ import type { Tier } from '@/lib/tier'
 export interface SocialIntegration extends PinIntegration {
   instagram_user_id?: string | null
   instagram_access_token?: string | null
+  instagram_username?: string | null
   facebook_page_id?: string | null
   facebook_page_access_token?: string | null
 }
@@ -61,23 +62,27 @@ export async function writeSocialCaption(opts: {
   return finalizeSocialCaption(body)
 }
 
-/** Best-effort: drop a product tile into the creator's Link-in-Bio shop grid so
- *  an Instagram "link in bio" actually has the product. Skips silently if they
- *  have no shop page or the tile already exists. */
-async function syncLinkInBioTile(db: Db, userId: string, item: { asin: string; title: string; imageUrl?: string; url: string }): Promise<void> {
+/** Drop the just-posted product into the creator's Link-in-Bio shop grid and
+ *  mark it live "in my story", so followers who see the IG post can tap link-in-
+ *  bio and shop it. Re-marks an existing tile instead of duplicating. Best-effort
+ *  — skips silently if they have no shop page. `inStory` controls the toggle. */
+async function syncLinkInBioTile(db: Db, userId: string, item: { asin: string; title: string; imageUrl?: string; url: string }, inStory: boolean): Promise<void> {
   try {
     const { data: page } = await db.from('link_pages').select('id').eq('user_id', userId).maybeSingle()
     if (!page?.id) return
     if (item.asin) {
       const { data: existing } = await db.from('link_page_items').select('id').eq('page_id', page.id).eq('asin', item.asin).maybeSingle()
-      if (existing?.id) return
+      if (existing?.id) {
+        await db.from('link_page_items').update({ in_story: inStory, hidden: false }).eq('id', existing.id).eq('user_id', userId)
+        return
+      }
     }
     const { data: last } = await db.from('link_page_items').select('position').eq('page_id', page.id).order('position', { ascending: false }).limit(1).maybeSingle()
     const position = (typeof last?.position === 'number' ? last.position : -1) + 1
     await db.from('link_page_items').insert({
       page_id: page.id, user_id: userId, kind: 'product',
       title: item.title.slice(0, 200), url: item.url, image_url: item.imageUrl || null,
-      asin: item.asin || null, source: 'amazon-social', position, hidden: false, in_story: false,
+      asin: item.asin || null, source: 'amazon-social', position, hidden: false, in_story: inStory,
     })
   } catch { /* best-effort */ }
 }
@@ -120,9 +125,13 @@ export async function publishToInstagram(opts: {
   productUrl?: string
   productTitle?: string
   caption?: string
+  /** 'feed' (default) → a 4:5 feed post with a caption. 'story' → a 9:16 story
+   *  (IG ignores its caption/link, so the shop happens purely via Link-in-Bio). */
+  postType?: 'feed' | 'story'
 }): Promise<{ id: string; url: string; caption: string; linkUrl: string; note: string | null }> {
   const { intRow } = opts
   if (!intRow.instagram_user_id || !intRow.instagram_access_token) throw new Error('Instagram is not connected.')
+  const isStory = opts.postType === 'story'
 
   const { linkUrl, asin, note } = await resolveAffiliateLink({
     userId: opts.userId, intRow, asin: opts.asin, productUrl: opts.productUrl, productTitle: opts.productTitle,
@@ -133,12 +142,14 @@ export async function publishToInstagram(opts: {
   // IG can't put a clickable link in the caption — route through Link-in-Bio.
   if (!/link in bio/i.test(caption)) caption = `${caption}\n\n🔗 Link in bio to shop`
 
-  // Best-effort: make sure the product is actually in the bio shop grid.
-  if (linkUrl) await syncLinkInBioTile(opts.db, opts.userId, { asin, title: opts.productTitle || 'Shop this', imageUrl: opts.imageUrl, url: linkUrl })
+  // The whole point: the posted product lands in the bio shop grid. A Story
+  // marks it live in the "in my story" section so followers can tap link-in-bio
+  // and buy it; a feed post just adds the shoppable tile.
+  if (linkUrl) await syncLinkInBioTile(opts.db, opts.userId, { asin, title: opts.productTitle || 'Shop this', imageUrl: opts.imageUrl, url: linkUrl }, isStory)
 
   const mediaId = await publishMedia({
     userId: intRow.instagram_user_id, accessToken: intRow.instagram_access_token,
-    mediaType: 'IMAGE', imageUrl: opts.imageUrl, caption,
+    mediaType: isStory ? 'STORIES' : 'IMAGE', imageUrl: opts.imageUrl, caption: isStory ? undefined : caption,
   })
-  return { id: mediaId, url: `https://www.instagram.com/p/${mediaId}/`, caption, linkUrl, note }
+  return { id: mediaId, url: isStory ? `https://www.instagram.com/${intRow.instagram_username || ''}` : `https://www.instagram.com/p/${mediaId}/`, caption, linkUrl, note }
 }

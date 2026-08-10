@@ -33,6 +33,7 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
   const [genBusy, setGenBusy] = useState(false)
   const [thumbUrl, setThumbUrl] = useState<string | null>(null)
   const [genError, setGenError] = useState<string | null>(null)
+  const [postType, setPostType] = useState<'feed' | 'story'>('feed') // IG only
 
   const [connected, setConnected] = useState<boolean | null>(null)
   const [caption, setCaption] = useState('')
@@ -80,8 +81,9 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
     }).then(r => r.json()).then((c) => { if (c?.caption) setCaption(prev => prev || c.caption) })
       .catch(() => { /* best-effort */ }).finally(() => setCopyBusy(false))
 
+    const fmt = network === 'instagram' && postType === 'story' ? 'story' : cfg.format
     const bodyReq: Record<string, unknown> = {
-      videoTitle: 'Product spotlight', textMode: 'graphic', format: cfg.format, briefKey: bk,
+      videoTitle: 'Product spotlight', textMode: 'graphic', format: fmt, briefKey: bk,
       ...(isUrl ? { productUrl: raw } : isAsin ? { asin: raw.toUpperCase() } : { productUrl: raw }),
       ...(mode === 'product' ? { noHuman: true } : { faceModelId: faceId }),
     }
@@ -98,7 +100,7 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
     } catch (err) {
       setGenError(err instanceof Error ? err.message : 'Design failed. Try again.')
     } finally { setGenBusy(false) }
-  }, [product, mode, faceId, network, cfg.format])
+  }, [product, mode, faceId, network, cfg.format, postType])
 
   const publish = useCallback(async () => {
     if (!thumbUrl) return
@@ -114,6 +116,7 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
           imageUrl: thumbUrl,
           ...(isUrl ? { productUrl: raw } : { asin: raw.toUpperCase() }),
           caption: caption.trim() || undefined,
+          ...(network === 'instagram' ? { postType } : {}),
           ...(when === 'later' ? { scheduledAt: new Date(scheduleAt).toISOString() } : {}),
         }),
       })
@@ -124,7 +127,7 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
     } catch (err) {
       setPubError(err instanceof Error ? err.message : 'Post failed. Try again.')
     } finally { setPubBusy(false) }
-  }, [thumbUrl, product, caption, when, scheduleAt, cfg.endpoint])
+  }, [thumbUrl, product, caption, when, scheduleAt, cfg.endpoint, network, postType])
 
   const inputCls = 'w-full px-3 py-2 rounded-lg text-sm border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] placeholder:text-[#a1a1a6]'
   const selCls = (active: boolean) => `flex items-center justify-center gap-2 px-3 py-2 rounded-xl border text-sm font-medium transition ${active ? 'bg-[var(--a)]/5' : 'border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7]'}`
@@ -166,6 +169,16 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
             {faces.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
           </select>
         )}
+        {network === 'instagram' && (
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={() => setPostType('feed')} className={selCls(postType === 'feed')} style={postType === 'feed' ? { borderColor: cfg.accent, color: cfg.accent } : undefined}>
+              Feed post <span className="text-[10px] opacity-70">4:5</span>
+            </button>
+            <button onClick={() => { setPostType('story'); setWhen('now') }} className={selCls(postType === 'story')} style={postType === 'story' ? { borderColor: cfg.accent, color: cfg.accent } : undefined}>
+              Story <span className="text-[10px] opacity-70">9:16</span>
+            </button>
+          </div>
+        )}
         <button onClick={generate} disabled={genBusy}
           className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-[#d2d2d7] dark:border-[#3a3a3c] text-sm font-semibold transition disabled:opacity-60" style={{ color: 'var(--text)' }}>
           {genBusy ? <><Loader2 size={16} className="animate-spin" /> Designing…</> : <><Wand2 size={16} /> {thumbUrl ? 'Regenerate design' : 'Generate design'}</>}
@@ -190,14 +203,16 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
               <Check size={12} className="mt-0.5 flex-shrink-0" style={{ color: '#34c759' }} /> {cfg.captionHint}
             </p>
 
-            <div className="grid grid-cols-2 gap-2">
-              <button onClick={() => setWhen('now')} className={selCls(when === 'now')} style={when === 'now' ? { borderColor: cfg.accent, color: cfg.accent } : undefined}>
-                <Send size={14} /> Post now
-              </button>
-              <button onClick={() => { setWhen('later'); if (!scheduleAt) setScheduleAt(defaultScheduleValue()) }} className={selCls(when === 'later')} style={when === 'later' ? { borderColor: cfg.accent, color: cfg.accent } : undefined}>
-                <CalendarClock size={14} /> Schedule
-              </button>
-            </div>
+            {!(network === 'instagram' && postType === 'story') && (
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={() => setWhen('now')} className={selCls(when === 'now')} style={when === 'now' ? { borderColor: cfg.accent, color: cfg.accent } : undefined}>
+                  <Send size={14} /> Post now
+                </button>
+                <button onClick={() => { setWhen('later'); if (!scheduleAt) setScheduleAt(defaultScheduleValue()) }} className={selCls(when === 'later')} style={when === 'later' ? { borderColor: cfg.accent, color: cfg.accent } : undefined}>
+                  <CalendarClock size={14} /> Schedule
+                </button>
+              </div>
+            )}
             {when === 'later' && (
               <input type="datetime-local" value={scheduleAt} onChange={e => setScheduleAt(e.target.value)} className={inputCls} />
             )}
