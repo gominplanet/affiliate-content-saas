@@ -33,7 +33,7 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
   const [genBusy, setGenBusy] = useState(false)
   const [thumbUrl, setThumbUrl] = useState<string | null>(null)
   const [genError, setGenError] = useState<string | null>(null)
-  const [postType, setPostType] = useState<'feed' | 'story'>('feed') // IG only
+  const [postType, setPostType] = useState<'feed' | 'story'>('story') // IG only — story (9:16) is the link-in-bio default
   const [linkInBioCta, setLinkInBioCta] = useState(true) // IG only — bake "LINK IN BIO" into the design
 
   const [connected, setConnected] = useState<boolean | null>(null)
