@@ -2229,7 +2229,10 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                       <button
                         type="button"
                         onClick={() => {
-                          openHeadlinePicker({ textMode: 'graphic' })
+                          // Auto-generate: MVP picks the headline from the product
+                          // page itself (like ChatGPT) — no pre-render pick modal.
+                          // The result has an editable headline + Regenerate for tweaks.
+                          generateThumbnail({ textMode: 'graphic' })
                         }}
                         disabled={generatingThumbnail || extensionInstalled === null}
                         className={`flex items-center gap-4 w-full px-5 py-5 rounded-2xl text-left transition-all shadow-md hover:shadow-lg hover:scale-[1.01] active:scale-[0.99] ${generatingThumbnail ? 'opacity-80 cursor-not-allowed' : ''}`}
@@ -2350,7 +2353,8 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                       <button
                         onClick={() => {
                           setSelectedFaceModelId('no-human')
-                          openHeadlinePicker({ noHuman: true })
+                          // Auto-generate — headline comes from the product page, no pick modal.
+                          generateThumbnail({ noHuman: true })
                         }}
                         disabled={generatingThumbnail}
                         className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 transition-all hover:opacity-90"
