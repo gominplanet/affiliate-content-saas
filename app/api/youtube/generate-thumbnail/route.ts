@@ -1388,7 +1388,17 @@ export async function POST(request: Request) {
             ]
             const gfxVibe = GFX_VIBES[idx % GFX_VIBES.length]
             // Short product-feature text gpt-image MAY turn into callouts/badges.
-            const gfxFeatures = (productDescription || '').replace(/\s+/g, ' ').trim().slice(0, 400)
+            // Rich product context (title + brand + bullet features) — the raw
+            // material gpt-image turns into checkmark lists / spec badges / "#1"
+            // tags, the way ChatGPT does when it has the full product page.
+            const gfxFeatures = [
+              productTitle ? `Product: ${productTitle}` : '',
+              ...(Array.isArray(productBullets) ? productBullets : [])
+                .filter((b): b is string => typeof b === 'string' && b.trim().length > 0)
+                .slice(0, 6)
+                .map(b => `• ${b.replace(/\s+/g, ' ').trim().slice(0, 90)}`),
+              productDescription ? productDescription.replace(/\s+/g, ' ').trim().slice(0, 200) : '',
+            ].filter(Boolean).join('\n').slice(0, 800)
 
             const isScoutFrameMode = !!(capturedFrames?.length)
 
@@ -1457,7 +1467,7 @@ export async function POST(request: Request) {
             // text) and let gpt-image invent everything else: composition, layout,
             // background, colours, neon/glows, badges, feature callouts, effects.
             prompt = [
-              `Create a UNIQUE, scroll-stopping, VIRAL-style YouTube thumbnail — 1536×1024, 16:9 landscape. Be genuinely creative: YOU choose the composition, background, colour scheme, lighting, effects, badges and text styling so it looks like a top creator hand-designed it. Make this one ${gfxVibe}. Do NOT follow a fixed template.`,
+              `Create a UNIQUE, scroll-stopping, VIRAL YouTube thumbnail — 1536×1024, 16:9 landscape. Go BOLD like a top MrBeast-era creator: a dramatic, eye-catching THEMED background (energy burst, neon, motion streaks, gradient, or brand colours — whatever fits the product), punchy multi-colour headline text with highlights/brush-strokes/heavy outlines, and small feature badges or callouts where they help it sell. YOU choose the whole design — composition, colours, effects, layout. Make this one ${gfxVibe}. Do NOT follow a fixed template or a plain, flat look.`,
               '',
               `PERSON: ${creatorRefLabel}. ${identityInstruction} Use this exact person — you MAY change their expression and lightly retouch them, but do NOT change their inherent look (same face, skin tone, hair, age, distinctive features); they must be instantly recognisable as the same person. Show them HEAD-AND-SHOULDERS to roughly CHEST-UP only. The references are head-and-chest selfies, so do NOT invent or show their full body, legs, waist-down, or overall body build — keep it an upper-body shot (they can still react, point, or gesture with hands near the frame).`,
               '',
@@ -1466,7 +1476,7 @@ export async function POST(request: Request) {
                 : `PRODUCT: feature ${productLabel} accurately and prominently, true to life.`,
               '',
               `MAIN HEADLINE — render this text EXACTLY, spelling perfect: "${line1} ${line2}". Big, bold and instantly readable; style it however you like (colours, highlights, brush strokes, outlines, however sells best).`,
-              gfxFeatures ? `You MAY add a few short supporting callouts or badges if they help it sell — draw them only from these real product features, keep them short, punchy and correctly spelled: ${gfxFeatures}` : '',
+              gfxFeatures ? `FEATURE CALLOUTS: like the best product-review thumbnails, add 2–3 short callouts or badges — a checkmark benefit list, spec badges (e.g. "144Hz", "FHD"), or a "#1 / BEST" tag — and the brand name/logo when it's clear. Draw them ONLY from these real product details, keep each a few words, correctly spelled:\n${gfxFeatures}` : '',
               '',
               'HARD RULES (these only): keep the person recognisable, keep the product accurate to the reference, and make every piece of text correctly spelled and legible. Everything else — surprise me and make it POP.',
             ].filter(Boolean).join('\n')
