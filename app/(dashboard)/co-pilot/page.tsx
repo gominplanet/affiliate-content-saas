@@ -2346,8 +2346,9 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                       <button
                         onClick={() => {
                           setSelectedFaceModelId('no-human')
-                          // Auto-generate — headline comes from the product page, no pick modal.
-                          generateThumbnail({ noHuman: true })
+                          // Auto-generate on gpt-image (graphic engine, no face) —
+                          // a gorgeous product-hero scene; headline from the product.
+                          generateThumbnail({ textMode: 'graphic', noHuman: true })
                         }}
                         disabled={generatingThumbnail}
                         className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50 transition-all hover:opacity-90"

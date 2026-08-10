@@ -1075,10 +1075,131 @@ export async function POST(request: Request) {
     // Falls through to the NB path on any failure so generation never blanks.
     const gfxStoryboardFrame = textMode === 'graphic' ? await gfxStoryboardPromise : null
     const hasVideoFrame = !!(capturedFrames?.length) || !!gfxStoryboardFrame
+
+    // ── PATH GFX-PRODUCT: gpt-image product-only (no face) ────────────────────
+    // "Product Only" on the gpt-image engine: a clean, gorgeous product-hero
+    // thumbnail with the headline baked on, no creator. Uses only the product
+    // reference image. Falls THROUGH to the NB/Kontext product-only path below on
+    // any failure, so this is purely additive — it never blanks a result.
+    if (textMode === 'graphic' && noHuman) {
+      try {
+        const openaiGfxP = createOpenAIService()
+        const claimsSheetP = await claimsSheetPromise
+        const splitHP = (h: string) => {
+          const words = h.trim().split(/\s+/)
+          const half = Math.ceil(words.length / 2)
+          return {
+            line1: words.slice(0, half).join(' ').toUpperCase().slice(0, 18),
+            line2: (words.slice(half).join(' ').toUpperCase() || words.slice(0, half).join(' ').toUpperCase()).slice(0, 22),
+            angle: 'NEGATION' as const,
+            emphasisWord: '',
+          }
+        }
+        const gfxCtxP = productDescription
+          ? `[GRAPHIC DESIGN THUMBNAIL — no person, product is the hero. Write a CONCRETE, product-DESCRIPTIVE headline drawn from the product itself (what it IS, its standout number/spec, or its biggest selling feature). Punchy few words.]\n\n${productDescription}`
+          : '[GRAPHIC DESIGN THUMBNAIL — no person, product hero. Concrete product-descriptive headline, punchy few words.]'
+        const gfxCopiesP = lockedHeadline
+          ? [splitHP(lockedHeadline)]
+          : await generateThumbCopies(videoTitle, variantCount, gfxCtxP, claimsSheetP)
+        const productAbP = productImageUrl
+          ? await fetch(productImageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(12000) })
+              .then(r => r.ok ? r.arrayBuffer() : null).catch(() => null)
+          : null
+        const productBytesP = productAbP ? await normalizeToPng(new Uint8Array(productAbP)).catch(() => null) : null
+        if (!productBytesP) throw new Error('no product image for product-only graphic')
+        const gfxModelP = process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2'
+        const productLabelP = productTitle || 'the product'
+        const BG_P = [
+          'a bright modern kitchen counter, softly blurred cabinets and daylight behind, clean and aspirational, shallow depth of field',
+          'a warm living-room side table, softly blurred cosy background, natural window light, shallow depth of field',
+          'a clean studio surface with a soft gradient backdrop and gentle natural lighting',
+          'a bright wood desk or countertop, softly blurred plants and daylight behind, shallow depth of field',
+        ]
+        const gfxRawUrlsP = await Promise.all(
+          gfxCopiesP.slice(0, variantCount).map(async (copy, idx) => {
+            const attemptP = async (): Promise<string | null> => {
+              const line1 = (copy.line1 || '').toUpperCase()
+              const line2 = (copy.line2 || '').toUpperCase()
+              const bg = BG_P[idx % BG_P.length]
+              const prompt = [
+                'A realistic, eye-catching YouTube thumbnail — 1536×1024, 16:9 landscape. Clean, high-CTR, uncluttered, professional. NO people.',
+                '',
+                `PRODUCT (the hero): recreate the product from Image 1 accurately and prominently, filling a large part of the frame — keep its true shape, colours and its own printed branding. Do NOT invent retail packaging or extra marketing text on it. Natural product lighting, realistic shadows, no coloured neon glow.`,
+                '',
+                'HEADLINE (bake it onto the thumbnail, large and readable):',
+                `  "${line1}" then "${line2}" — bold condensed capitals; "${line2}" is the larger dominant line in bright yellow (#FFE034) and "${line1}" in white, each with a clean thick black outline. Place it where it does NOT cover the product. Outlined text only — no boxes, panels or shadow blocks. Spelling must be EXACT. No other text, logos or watermarks anywhere except this headline.`,
+                '',
+                `SCENE: ${bg}. Compose it naturally like a real top-creator product thumbnail — the product is the clear focus, background softly out of focus. Bright, clean, high contrast, natural lighting.`,
+              ].join('\n')
+              const refs = [{ data: productBytesP, filename: 'product.png', mime: 'image/png' as const }]
+              const b64 = await openaiGfxP.generateWithReferences({ prompt, images: refs, size: '1536x1024', quality: 'medium' })
+              recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'yt_thumb_graphic', model: gfxModelP, images: 1 })
+              const copyDec = (copy as { decoration?: ThumbDecoration }).decoration
+              const gfxDec: ThumbDecoration =
+                forcedDecoration === 'none' ? 'none'
+                  : forcedDecoration ? forcedDecoration
+                    : (copyDec && copyDec !== 'none' ? copyDec : 'none')
+              try {
+                let resized = await sharp(Buffer.from(b64, 'base64')).resize(1280, 720, { fit: 'cover', position: 'top' }).jpeg({ quality: 92 }).toBuffer()
+                if (gfxDec !== 'none') resized = await compositeBadgeOnly(resized, gfxDec)
+                return await rehostToFal(`data:image/jpeg;base64,${resized.toString('base64')}`)
+              } catch {
+                return rehostToFal(`data:image/png;base64,${b64}`)
+              }
+            }
+            let url = await attemptP()
+            if (url && productImageUrl) {
+              try {
+                const v = await verifyProductMatch(productImageUrl, url, productTitle || productLabelP, { userId: user.id, tier })
+                if (!v.match) {
+                  const retryUrl = await attemptP()
+                  if (retryUrl) {
+                    const v2 = await verifyProductMatch(productImageUrl, retryUrl, productTitle || productLabelP, { userId: user.id, tier })
+                    url = v2.match ? retryUrl : url
+                  }
+                }
+              } catch { /* verifier hiccup — keep first render */ }
+            }
+            return url
+          }),
+        )
+        const gfxUrlsP = gfxRawUrlsP.filter((u): u is string => !!u)
+        if (gfxUrlsP.length === 0) throw new Error('all product-only graphic variants failed')
+        const gfxHookP = flatCopy(gfxCopiesP[0])
+        return NextResponse.json({
+          ok: true,
+          thumbnailUrl: gfxUrlsP[0],
+          thumbnailUrls: gfxUrlsP,
+          thumbnailScores: gfxUrlsP.map(() => 0),
+          thumbnailScore: 0,
+          belowThreshold: false,
+          overlayHook: gfxHookP,
+          overlayHooks: gfxCopiesP.slice(0, gfxUrlsP.length).map(c => flatCopy(c)),
+          headlineLocked: !!lockedHeadline,
+          prompt: 'graphic-design-product-only',
+          styleBriefApplied: false,
+          channelStyle: null,
+          modelUsed: 'gpt-image-graphic-product',
+          baked: true,
+          textPosition: null,
+          faceBox: null,
+          composited: true,
+          headshotUsed: false,
+          personCutoutUrl: null,
+          faceUsed: 'none',
+          qcWarning: false,
+          faceIdentityChecked: false,
+        })
+      } catch (gfxPErr) {
+        console.warn('[thumb] product-only graphic failed, falling through to NB:', gfxPErr instanceof Error ? gfxPErr.message : gfxPErr)
+        // fall through to the existing product-only path below
+      }
+    }
+
     // Private / inaccessible video: storyboard failed, no extension frames, no
     // Photobooth or uploaded photo → return a clear 409 rather than falling
     // through to NB which has nothing to ground on and would hang or produce junk.
-    if (textMode === 'graphic' && !hasVideoFrame && !faceModel && autoFaceModels.length === 0 && !uploadedPhotoUrl) {
+    if (textMode === 'graphic' && !noHuman && !hasVideoFrame && !faceModel && autoFaceModels.length === 0 && !uploadedPhotoUrl) {
       return NextResponse.json({
         ok: false,
         needsExtension: true,
