@@ -19,6 +19,7 @@ import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
 import { pickProductReferenceImage, verifyProductMatchConsensus, verifyNoBrandLeak } from '@/lib/product-image'
 import { resolveTrueDestination } from '@/lib/affiliate-resolve'
 import { asinFromAmazonUrl } from '@/lib/product-link'
+import { generateArtDirectorPin } from '@/lib/art-director-pin'
 
 export const AFFILIATE_DISCLAIMER = '📌 Disclosure: As an Amazon Associate I earn from qualifying purchases. This post may contain affiliate links — I may earn a small commission at no extra cost to you.'
 export const COMPLIANCE_TAGS = '#ad #affiliate'
@@ -203,10 +204,28 @@ Return ONLY valid JSON with these exact keys:
   let rawImage: { data: string; mediaType: string } | null = null
   let imagePrompt = '' // hoisted so the QC-retry block below can reuse it
 
+  // ── MVP Art Director pin (premium path) ──────────────────────────────────
+  // For a fresh single-product pin with a real product photo, render a fully
+  // DESIGNED pin (headline + callouts baked in, like the Amazon Influencer
+  // composer) instead of the older scene + text-overlay. Best-effort: on any
+  // failure we fall straight through to the existing generator below, so this
+  // never breaks the flow. The design already carries its own text, so it skips
+  // the Satori overlay + scene QC entirely.
+  let artDirected: { data: string; mediaType: string } | null = null
+  if (opts?.aiScene && !useCollage && referenceImageUrl) {
+    artDirected = await generateArtDirectorPin({
+      productImageUrl: referenceImageUrl,
+      productTitle: fields.product_name,
+      productContext: [fields.main_benefit, fields.trust_factor].filter(Boolean).join(' · '),
+      userId: ctx.userId,
+      tier: ctx.tier,
+    })
+  }
+
   // Cheap DEFAULT: composite the post's EXISTING image (its real thumbnail /
   // hero) into the vertical pin — no fresh gen. Best-effort: some hosts (a WP
   // WAF) block a server-side image fetch, so this can come back empty.
-  if (!opts?.aiScene) {
+  if (!artDirected && !opts?.aiScene) {
     const srcUrl = (p.featured_image_url as string | null) || (p.thumbnail_url as string | null) || null
     if (srcUrl) rawImage = await fetchImageAsBase64(String(srcUrl))
   }
@@ -214,7 +233,7 @@ Return ONLY valid JSON with these exact keys:
   // Generate a fresh scene when the premium path is requested OR the cheap fetch
   // came back empty — so a pin is NEVER blank (the cheap fetch failing must not
   // ship a broken pin; it just costs a generation for that one pin).
-  if (!rawImage) {
+  if (!artDirected && !rawImage) {
     imagePrompt = useCollage
       ? buildCollageImagePrompt(fields.product_category, collageProducts)
       : buildViralImagePrompt(fields, Math.floor(Math.random() * PIN_COMPOSITIONS.length), !!referenceImageUrl)
@@ -229,7 +248,7 @@ Return ONLY valid JSON with these exact keys:
   //   • brand-leak scan — no Amazon/retailer logo or watermark (all scenes,
   //     incl. collage).
   // On a confident failure of either, regenerate ONCE and keep the retry.
-  if (opts?.aiScene && rawImage && !useCollage) {
+  if (!artDirected && opts?.aiScene && rawImage && !useCollage) {
     const gen = { base64: rawImage.data, mediaType: rawImage.mediaType }
     const idCtx = { userId: ctx.userId, tier: ctx.tier }
     const [prod, leak] = await Promise.all([
@@ -245,7 +264,7 @@ Return ONLY valid JSON with these exact keys:
         rawImage = retry
       }
     }
-  } else if (opts?.aiScene && rawImage && useCollage) {
+  } else if (!artDirected && opts?.aiScene && rawImage && useCollage) {
     // Collage roundup: no single reference to match, but still scan for leaks.
     const leak = await verifyNoBrandLeak({ base64: rawImage.data, mediaType: rawImage.mediaType }, { userId: ctx.userId, tier: ctx.tier })
     if (!leak.clean) {
@@ -256,7 +275,11 @@ Return ONLY valid JSON with these exact keys:
       }
     }
   }
-  const imageResult = rawImage
+  // Art Director pin already carries its own baked text → use it as-is (skip the
+  // Satori overlay). Otherwise compose the scene + overlay as before.
+  const imageResult = artDirected
+    ? artDirected
+    : rawImage
     ? await composePin(rawImage.data, rawImage.mediaType, {
         viral_hook: fields.viral_hook,
         // Collage: drop the center band (it'd cover the grid) and badge the count.
