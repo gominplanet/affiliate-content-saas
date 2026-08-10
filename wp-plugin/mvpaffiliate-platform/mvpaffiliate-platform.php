@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.84
+ * Version: 1.0.85
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -3687,6 +3687,96 @@ if (!function_exists('mvp_affiliate_render_newsletter_form')) {
 </script>
         <?php
         return ob_get_clean();
+    }
+}
+
+// ─── 19b. Comment-form newsletter opt-in ──────────────────────────────────────
+// When the creator enables comments (theme: layout.enableComments) AND their
+// newsletter is on, add a single opt-in checkbox above the "Post comment"
+// button: "Yes, add me to the newsletter." Unchecked by default — consent has
+// to be a deliberate tick, not a pre-filled box, and never a silent harvest of
+// the required comment email.
+//
+// On submit, if it was ticked, the commenter's email is pushed to the SAME
+// double-opt-in list as every other signup (POST /api/newsletter/subscribe,
+// HMAC-signed). They still get the confirmation email — the tick alone doesn't
+// make them an active subscriber, so the compliance story matches the rest of
+// the site. The comment itself is the WordPress-side record of the email.
+
+/** The creator's MVP user id from customizations.newsletter.userId, or '' when
+ *  the newsletter isn't set up. */
+if (!function_exists('mvp_affiliate_newsletter_user_id')) {
+    function mvp_affiliate_newsletter_user_id(): string {
+        $cust = get_option('affiliateos_customizations', []);
+        $nl = is_array($cust['newsletter'] ?? null) ? $cust['newsletter'] : [];
+        if (empty($nl['enabled'])) return '';
+        $uid = is_string($nl['userId'] ?? null) ? trim($nl['userId']) : '';
+        return preg_match('/^[0-9a-f-]{36}$/i', $uid) ? $uid : '';
+    }
+}
+
+// Inject the checkbox just above the submit button (covers logged-in and
+// logged-out via the shared submit-field filter).
+add_filter('comment_form_submit_field', 'mvp_affiliate_comment_optin_field', 10, 2);
+if (!function_exists('mvp_affiliate_comment_optin_field')) {
+    function mvp_affiliate_comment_optin_field($submit_field, $args) {
+        if (mvp_affiliate_newsletter_user_id() === '') return $submit_field;
+        $label = 'Yes, email me the next review. No spam, unsubscribe anytime.';
+        $optin  = '<p class="mvp-comment-optin">'
+            . '<input type="checkbox" name="mvp_comment_optin" id="mvp-comment-optin" value="1" />'
+            . '<label for="mvp-comment-optin">' . esc_html($label)
+            . '<span class="mvp-comment-optin-note">We only use your email to send the newsletter. It is never published with your comment.</span>'
+            . '</label></p>';
+        return $optin . $submit_field;
+    }
+}
+
+// After the comment is stored, fire the (double-opt-in) subscribe if they ticked.
+add_action('comment_post', 'mvp_affiliate_comment_optin_subscribe', 20, 3);
+if (!function_exists('mvp_affiliate_comment_optin_subscribe')) {
+    function mvp_affiliate_comment_optin_subscribe($comment_id, $comment_approved, $commentdata) {
+        if (empty($_POST['mvp_comment_optin'])) return;
+        $user_id = mvp_affiliate_newsletter_user_id();
+        if ($user_id === '') return;
+
+        $comment = get_comment($comment_id);
+        $email = '';
+        if (is_array($commentdata) && !empty($commentdata['comment_author_email'])) {
+            $email = trim((string) $commentdata['comment_author_email']);
+        }
+        if ($email === '' && $comment && !empty($comment->comment_author_email)) {
+            $email = trim((string) $comment->comment_author_email);
+        }
+        if ($email === '' || !is_email($email)) return;
+
+        $api_base = apply_filters('mvp_affiliate_api_base', 'https://www.mvpaffiliate.io');
+        $origin = '';
+        if (function_exists('home_url')) {
+            $parsed = parse_url(home_url());
+            if (!empty($parsed['host'])) $origin = strtolower($parsed['host']);
+        }
+        $ts     = (string) time();
+        $secret = (string) get_option('affiliateos_proxy_secret', '');
+        $sig    = $secret ? hash_hmac('sha256', $user_id . '|' . $origin . '|' . $ts, $secret) : '';
+
+        $source = $comment ? get_permalink((int) $comment->comment_post_ID) : home_url();
+
+        // Fire-and-forget: a slow/unavailable API must never block the comment
+        // from being posted. Short timeout, non-blocking.
+        wp_remote_post($api_base . '/api/newsletter/subscribe', [
+            'timeout'  => 4,
+            'blocking' => false,
+            'headers'  => ['Content-Type' => 'application/json'],
+            'body'     => wp_json_encode([
+                'creatorUserId' => $user_id,
+                'email'         => $email,
+                'hp'            => '',
+                'sourceUrl'     => $source ?: home_url(),
+                'origin'        => $origin,
+                'ts'            => $ts,
+                'sig'           => $sig,
+            ]),
+        ]);
     }
 }
 
