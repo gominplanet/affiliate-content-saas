@@ -16,7 +16,7 @@ import { toast } from 'sonner'
 import {
   Radar, Search, Loader2, Star, Zap, BadgePercent, ExternalLink,
   ArrowRight, Sparkles, TrendingUp, RefreshCw, ShieldCheck, ShieldAlert,
-  Send, Check, AlertCircle, X as CloseIcon, HelpCircle, Mail, Info, Coins, Flame, Plus, Layers, Video, ChevronDown,
+  Send, Check, AlertCircle, X as CloseIcon, HelpCircle, Mail, Info, Coins, Flame, Plus, Layers, Video, ChevronDown, Bookmark,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import QuickPostModal from '@/components/deal/QuickPostModal'
@@ -635,6 +635,37 @@ function useMakePost(d: Deal) {
   return { gen, postUrl, makePost }
 }
 
+// Save this deal to the shared "Saved for later" shelf so it turns up in Social
+// Influencer (and Saved Campaigns), ready to become a Pin / IG / FB post. Same
+// shelf the AMZ Finder + CC Campaigns Save buttons write to.
+function SaveDealButton({ deal: d }: { deal: Deal }) {
+  const [saved, setSaved] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const save = useCallback(async () => {
+    if (saved || busy) return
+    setBusy(true)
+    try {
+      const res = await fetch('/api/campaigns/saved', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          asin: d.asin, source: 'onsite', title: d.title, brand: d.brand,
+          imageUrl: d.imageUrl, price: d.priceNow, monthlySales: d.monthlySold,
+          rating: d.rating, hasVideo: d.hasVideo, marketplace: 'us',
+        }),
+      })
+      if (res.ok) { setSaved(true); toast.success('Saved — find it in Social Influencer') }
+      else toast.error('Could not save. Try again.')
+    } catch { toast.error('Could not save. Try again.') } finally { setBusy(false) }
+  }, [d, saved, busy])
+  return (
+    <button onClick={save} disabled={busy} title={saved ? 'Saved for Social' : 'Save for Social'}
+      className={`inline-flex items-center gap-1 text-[11px] font-medium rounded-full px-2 py-1 transition ${saved ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300' : 'text-muted-foreground hover:bg-accent'}`}>
+      {busy ? <Loader2 size={12} className="animate-spin" /> : <Bookmark size={12} className={saved ? 'fill-current' : ''} />}
+      {saved ? 'Saved' : 'Save'}
+    </button>
+  )
+}
+
 function DealCard({ deal: d, onQuickPost, selected = false, onToggleSelect, locked = false }: { deal: Deal; onQuickPost: (d: Deal) => void; selected?: boolean; onToggleSelect?: (asin: string) => void; locked?: boolean }) {
   const { gen, postUrl, makePost } = useMakePost(d)
   return (
@@ -759,14 +790,17 @@ function DealCard({ deal: d, onQuickPost, selected = false, onToggleSelect, lock
           >
             <Send size={13} /> Quick post to socials
           </button>
-          {/* Secondary row — quiet: roundup toggle on the left, Amazon on the right. */}
+          {/* Secondary row — quiet: roundup toggle + save on the left, Amazon on the right. */}
           <div className="flex items-center justify-between pt-0.5">
-            {onToggleSelect ? (
-              <button onClick={() => onToggleSelect(d.asin)} title={selected ? 'Remove from roundup' : 'Add to a roundup post'}
-                className={`inline-flex items-center gap-1 text-[11px] font-medium rounded-full px-2 py-1 transition ${selected ? 'bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300' : 'text-muted-foreground hover:bg-accent'}`}>
-                {selected ? <><Check size={12} /> In roundup</> : <><Plus size={12} /> Add to roundup</>}
-              </button>
-            ) : <span />}
+            <div className="flex items-center gap-1">
+              {onToggleSelect && (
+                <button onClick={() => onToggleSelect(d.asin)} title={selected ? 'Remove from roundup' : 'Add to a roundup post'}
+                  className={`inline-flex items-center gap-1 text-[11px] font-medium rounded-full px-2 py-1 transition ${selected ? 'bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300' : 'text-muted-foreground hover:bg-accent'}`}>
+                  {selected ? <><Check size={12} /> In roundup</> : <><Plus size={12} /> Add to roundup</>}
+                </button>
+              )}
+              <SaveDealButton deal={d} />
+            </div>
             <a href={d.amazonUrl} target="_blank" rel="noopener noreferrer"
                className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground" title="View on Amazon">
               View on Amazon <ExternalLink size={12} />
