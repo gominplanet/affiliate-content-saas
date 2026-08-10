@@ -4,6 +4,8 @@
 **Question:** Can we move MVP's thumbnail generation to OpenAI's ChatGPT-style image API (accurate products, faces, text) instead of Nano Banana + Haiku QC? Is it better and cheaper? What about Logie?
 **Short answer:** Better — yes, clearly, for product+face accuracy and reliability. Cheaper — only modestly, and not from the per-image price; the savings come from cutting the retry/QC overhead. And the biggest surprise: **we already run OpenAI's image model in production**, so this is a routing + tuning job, not a build-from-scratch research project.
 
+**Validation (10 Aug 2026):** Seb generated a CAROTE 39-piece cookware thumbnail in ChatGPT from a one-line prompt ("make a YouTube thumbnail for this product: [Amazon link], this is a review video") plus his own face. Result was excellent and clearly beat our current pipeline: full product set + the retail box, the CAROTE logo rendered correctly, accurate face, a clean star badge, a pink arrow pointing at the product, and a pixel-perfect baked headline ("39 PIECE COMPLETE COOKWARE SET!"). This is the exact target quality, and it's gpt-image. It also resolves the Logie question — the target was always Seb's own OpenAI output; Logie merely matches it, so no further Logie investigation is needed.
+
 ---
 
 ## 1. The finding that changes the whole picture
