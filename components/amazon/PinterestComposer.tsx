@@ -97,7 +97,7 @@ export default function PinterestComposer({ presetProduct }: { presetProduct?: {
       .finally(() => setCopyBusy(false))
 
     const bodyReq: Record<string, unknown> = {
-      videoTitle: 'This hidden gem',
+      videoTitle: 'Product spotlight',
       textMode: 'graphic',
       format: 'pin', // 2:3 vertical 1000×1500, text-heavy shopping pin
       briefKey: bk,
@@ -226,6 +226,10 @@ export default function PinterestComposer({ presetProduct }: { presetProduct?: {
               <span className="text-xs font-semibold" style={{ color: 'var(--text)' }}>Description</span>
               <textarea value={description} onChange={e => setDescription(e.target.value)} rows={4} placeholder={copyBusy ? 'AI is writing this…' : 'Description'} className={`${inputCls} resize-none`} />
             </label>
+            <p className="text-[11px] flex items-start gap-1.5" style={{ color: 'var(--text-soft)' }}>
+              <Check size={12} className="mt-0.5 flex-shrink-0" style={{ color: '#34c759' }} />
+              Your affiliate link is attached to the Pin automatically — it&apos;s the destination when someone taps the Pin, so it doesn&apos;t need to sit in the text.
+            </p>
 
             {/* Now vs Schedule */}
             <div className="grid grid-cols-2 gap-2">

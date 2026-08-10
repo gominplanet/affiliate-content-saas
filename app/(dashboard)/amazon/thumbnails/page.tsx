@@ -51,7 +51,7 @@ export default function AmazonThumbnailsPage() {
     const isUrl = /^https?:\/\//i.test(raw)
     const isAsin = /^[A-Z0-9]{10}$/i.test(raw)
     const body: Record<string, unknown> = {
-      videoTitle: headline.trim() || 'This hidden gem',
+      videoTitle: headline.trim() || 'Product spotlight',
       textMode: 'graphic',
       ...(isUrl ? { productUrl: raw } : isAsin ? { asin: raw.toUpperCase() } : { productUrl: raw }),
       ...(mode === 'product' ? { noHuman: true } : { faceModelId: faceId }),
