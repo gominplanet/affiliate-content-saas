@@ -1357,6 +1357,26 @@ export async function POST(request: Request) {
         let extraPhotoBytes: (Buffer | Uint8Array)[] = []
         let scoutUsedFaceModel = false
         let faceSelfieUsed = false
+        // Load a selfie as PNG bytes. source_images are STORAGE PATHS in the
+        // private 'headshots' bucket — a raw fetch() on the bare path 400s, which
+        // is exactly why the whole graphic path was silently falling back to
+        // Nano Banana ("no readable face photo"). Download via the storage client
+        // (the NB path does the same); still handle a full http URL just in case.
+        const loadFacePng = async (p: string): Promise<Buffer | Uint8Array | null> => {
+          try {
+            let bytes: Uint8Array
+            if (/^https?:\/\//i.test(p)) {
+              const ab = await fetch(p, { signal: AbortSignal.timeout(12000) })
+                .then(r => r.ok ? r.arrayBuffer() : Promise.reject(new Error(`${r.status}`)))
+              bytes = new Uint8Array(ab)
+            } else {
+              const { data, error } = await supabase.storage.from('headshots').download(p)
+              if (error || !data) return null
+              bytes = new Uint8Array(await data.arrayBuffer())
+            }
+            return await normalizeToPng(bytes)
+          } catch { return null }
+        }
         if (capturedFrames?.length) {
           // Vision-pick the best frame for product / scene context.
           let bestIdx = 0
@@ -1408,12 +1428,8 @@ export async function POST(request: Request) {
             // content-fitting expression. One selfie + the video frame crop.
             const photoUrls = scoutFaceModel.source_images.slice(0, 1)
             for (const url of photoUrls) {
-              try {
-                const ab = await fetch(url, { signal: AbortSignal.timeout(12000) })
-                  .then(r => r.ok ? r.arrayBuffer() : Promise.reject(new Error(`${r.status}`)))
-                photoBytes = await normalizeToPng(new Uint8Array(ab))
-                scoutUsedFaceModel = true
-              } catch { /* skip unreadable photo */ }
+              const png = await loadFacePng(url)
+              if (png) { photoBytes = png; scoutUsedFaceModel = true }
             }
             // Append the video frame crop as context ref.
             if (scoutUsedFaceModel) extraPhotoBytes.push(bestFrameCrop)
@@ -1444,13 +1460,10 @@ export async function POST(request: Request) {
           // multiple angles give gpt-image a strong identity lock.
           const urls = faceModel.source_images.slice(0, 3)
           for (const url of urls) {
-            try {
-              const ab = await fetch(url, { signal: AbortSignal.timeout(12000) })
-                .then(r => r.ok ? r.arrayBuffer() : Promise.reject(new Error(`${r.status}`)))
-              const bytes = await normalizeToPng(new Uint8Array(ab))
-              if (!faceSelfieUsed) { photoBytes = bytes; faceSelfieUsed = true }
-              else extraPhotoBytes.push(bytes)
-            } catch { /* skip unreadable photo */ }
+            const bytes = await loadFacePng(url)
+            if (!bytes) continue
+            if (!faceSelfieUsed) { photoBytes = bytes; faceSelfieUsed = true }
+            else extraPhotoBytes.push(bytes)
           }
           if (!faceSelfieUsed) throw new Error('no readable face photo for graphic mode')
         } else if (gfxStoryboardFrame) {
