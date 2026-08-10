@@ -11,6 +11,14 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Bookmark, Loader2, Wand2, X, Search } from 'lucide-react'
 import PinterestComposer from './PinterestComposer'
+import PostComposer from './PostComposer'
+
+const TABS = [
+  { key: 'pinterest', label: 'Pinterest', accent: '#E60023' },
+  { key: 'instagram', label: 'Instagram', accent: '#E1306C' },
+  { key: 'facebook', label: 'Facebook', accent: '#1877F2' },
+] as const
+type TabKey = typeof TABS[number]['key']
 
 interface SavedItem {
   id: string
@@ -24,6 +32,7 @@ export default function SocialComposer() {
   const [items, setItems] = useState<SavedItem[]>([])
   const [loading, setLoading] = useState(true)
   const [preset, setPreset] = useState<{ value: string; nonce: number } | undefined>(undefined)
+  const [tab, setTab] = useState<TabKey>('pinterest')
   const [page, setPage] = useState(0)
 
   // Show three rows at the widest layout (6 per row), then flip pages.
@@ -117,9 +126,23 @@ export default function SocialComposer() {
         )}
       </div>
 
-      {/* Composer */}
-      <div id="social-composer">
-        <PinterestComposer presetProduct={preset} />
+      {/* Network tabs */}
+      <div id="social-composer" className="flex flex-col gap-4">
+        <div className="flex items-center gap-2">
+          {TABS.map(t => (
+            <button key={t.key} onClick={() => setTab(t.key)}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm font-semibold border transition ${tab === t.key ? 'text-white' : 'border-gray-200 dark:border-white/10 hover:bg-gray-50 dark:hover:bg-white/5'}`}
+              style={tab === t.key ? { backgroundColor: t.accent, borderColor: t.accent } : { color: 'var(--text-soft)' }}>
+              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: tab === t.key ? '#fff' : t.accent }} />
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Keep every composer mounted so a generated design survives tab switches. */}
+        <div className={tab === 'pinterest' ? '' : 'hidden'}><PinterestComposer presetProduct={preset} /></div>
+        <div className={tab === 'instagram' ? '' : 'hidden'}><PostComposer network="instagram" presetProduct={preset} /></div>
+        <div className={tab === 'facebook' ? '' : 'hidden'}><PostComposer network="facebook" presetProduct={preset} /></div>
       </div>
     </div>
   )

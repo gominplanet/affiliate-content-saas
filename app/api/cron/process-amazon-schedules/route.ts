@@ -12,7 +12,8 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { normalizeTier, type Tier } from '@/lib/tier'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
-import { publishAmazonPin, type PinIntegration } from '@/lib/amazon-pin-publish'
+import { publishAmazonPin } from '@/lib/amazon-pin-publish'
+import { publishToInstagram, publishToFacebook, type SocialIntegration } from '@/lib/amazon-social-publish'
 
 export const runtime = 'nodejs'
 export const maxDuration = 120
@@ -53,7 +54,7 @@ export async function GET(request: Request) {
     .from('amazon_scheduled_posts')
     .update({ status: 'processing', claimed_at: nowIso, updated_at: nowIso })
     .eq('status', 'pending')
-    .eq('platform', 'pinterest')
+    .in('platform', ['pinterest', 'instagram', 'facebook'])
     .lte('scheduled_at', nowIso)
     .select('id,user_id,platform,image_url,asin,product_url,product_title,board_id,title,description')
     .limit(MAX_PER_TICK)
@@ -65,21 +66,42 @@ export async function GET(request: Request) {
     try {
       const { data: intRaw } = await admin
         .from('integrations')
-        .select('tier,pinterest_access_token,pinterest_board_id,geniuslink_api_key,geniuslink_api_secret,amazon_associates_tag')
+        .select('tier,pinterest_access_token,pinterest_board_id,instagram_user_id,instagram_access_token,facebook_page_id,facebook_page_access_token,geniuslink_api_key,geniuslink_api_secret,amazon_associates_tag')
         .eq('user_id', row.user_id).maybeSingle()
-      const intRow = decryptIntegrationRow(intRaw) as (PinIntegration & { tier?: string }) | null
+      const intRow = decryptIntegrationRow(intRaw) as (SocialIntegration & { tier?: string }) | null
       const tier = normalizeTier(intRow?.tier) as Tier
-      if (!intRow?.pinterest_access_token) throw new Error('Pinterest not connected at post time.')
+      if (!intRow) throw new Error('No integration row at post time.')
 
-      const out = await publishAmazonPin({
-        userId: row.user_id, tier, intRow,
-        imageUrl: row.image_url, asin: row.asin ?? undefined, productUrl: row.product_url ?? undefined,
-        productTitle: row.product_title ?? undefined, boardId: row.board_id ?? undefined,
-        title: row.title ?? undefined, description: row.description ?? undefined,
-      })
+      let externalId = ''
+      let externalUrl = ''
+      let note: string | null = null
+      if (row.platform === 'instagram') {
+        const out = await publishToInstagram({
+          db: admin, userId: row.user_id, tier, intRow,
+          imageUrl: row.image_url, asin: row.asin ?? undefined, productUrl: row.product_url ?? undefined,
+          productTitle: row.product_title ?? undefined, caption: row.description ?? undefined,
+        })
+        externalId = out.id; externalUrl = out.url; note = out.note
+      } else if (row.platform === 'facebook') {
+        const out = await publishToFacebook({
+          userId: row.user_id, tier, intRow,
+          imageUrl: row.image_url, asin: row.asin ?? undefined, productUrl: row.product_url ?? undefined,
+          productTitle: row.product_title ?? undefined, caption: row.description ?? undefined,
+        })
+        externalId = out.id; externalUrl = out.url; note = out.note
+      } else {
+        if (!intRow.pinterest_access_token) throw new Error('Pinterest not connected at post time.')
+        const out = await publishAmazonPin({
+          userId: row.user_id, tier, intRow,
+          imageUrl: row.image_url, asin: row.asin ?? undefined, productUrl: row.product_url ?? undefined,
+          productTitle: row.product_title ?? undefined, boardId: row.board_id ?? undefined,
+          title: row.title ?? undefined, description: row.description ?? undefined,
+        })
+        externalId = out.pinId; externalUrl = out.pinUrl; note = out.geniuslinkNote
+      }
       await admin.from('amazon_scheduled_posts').update({
-        status: 'completed', external_id: out.pinId, external_url: out.pinUrl,
-        error_message: out.geniuslinkNote, updated_at: new Date().toISOString(),
+        status: 'completed', external_id: externalId, external_url: externalUrl,
+        error_message: note, updated_at: new Date().toISOString(),
       }).eq('id', row.id)
       return { id: row.id, status: 'completed' as const }
     } catch (err) {
