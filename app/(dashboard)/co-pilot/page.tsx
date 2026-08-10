@@ -597,6 +597,9 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
    *  via the route's creatorDirectionClause. Optional; identity-lock + product
    *  fidelity always win over it. Sent on every generate path. */
   const [scenePrompt, setScenePrompt] = useState('')
+  /** Optional creator-pasted product link — guarantees MVP renders the exact
+   *  product (Amazon / geni.us / store URL). Sent on every generate path. */
+  const [productUrl, setProductUrl] = useState('')
   /** User's READY face models — pulled from /api/face-models on mount.
    *  When the user picks one, faceModelId gets passed to the generate
    *  request and the server routes through the LoRA-capable Flux endpoint. */
@@ -1522,6 +1525,8 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           productCompositionNote: productCompositionNote.trim() || undefined,
           // Creator's free-text "describe your thumbnail" direction.
           scenePrompt: scenePrompt.trim() || undefined,
+          // Optional pasted product link — authoritative product source.
+          productUrl: productUrl.trim() || undefined,
           // graphic = gpt-image-1 (identity-grounded, ~20s with video frame or ~2min with Photobooth).
           // Use graphic whenever there's an identity source: face model OR a YouTube video to pull frames from.
           // Product-only / selfie → 'clean' (NB Pro, fast, no face composition).
@@ -1604,6 +1609,8 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           productCompositionNote: productCompositionNote.trim() || undefined,
           // Creator's free-text "describe your thumbnail" direction.
           scenePrompt: scenePrompt.trim() || undefined,
+          // Optional pasted product link — authoritative product source.
+          productUrl: productUrl.trim() || undefined,
           // Composed scene + crisp canvas title by default (matches the manual
           // Generate button). 'Try AI-baked text' re-runs as 'baked'.
           textMode: 'clean',
@@ -2184,6 +2191,27 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                     />
                     <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">
                       Steers the scene, mood, your pose &amp; background. Your face and the real product stay accurate. Leave blank and MVP picks a high-CTR scene for you.
+                    </p>
+                  </div>
+
+                  {/* Optional product link — the reliable way to lock the EXACT
+                      product. Auto-detected from the video when the title/description
+                      has an ASIN; this guarantees it otherwise. */}
+                  <div className="flex flex-col gap-1.5 px-1">
+                    <label htmlFor="product-url" className="text-[11px] font-semibold text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide">
+                      Product link <span className="font-normal normal-case tracking-normal text-[#a1a1a6]">(optional — recommended)</span>
+                    </label>
+                    <input
+                      id="product-url"
+                      type="url"
+                      value={productUrl}
+                      onChange={e => setProductUrl(e.target.value.slice(0, 500))}
+                      disabled={generatingThumbnail}
+                      placeholder="Paste the Amazon or product link for this video"
+                      className="w-full text-xs px-3 py-2 rounded-lg border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] placeholder:text-[#a1a1a6] focus:outline-none focus:border-[#7C3AED] transition"
+                    />
+                    <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">
+                      MVP auto-detects the product from your video. Paste the link to be 100% sure it renders the exact product.
                     </p>
                   </div>
 
