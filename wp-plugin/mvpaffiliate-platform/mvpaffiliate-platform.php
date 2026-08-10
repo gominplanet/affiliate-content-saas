@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.83
+ * Version: 1.0.84
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -649,6 +649,72 @@ add_action('wp_footer', function () {
             // may not exist yet when this runs, and LiteSpeed can defer inline JS.
             var tries = 0;
             (function attempt(){ if (place(total)) return; if (++tries < 20) setTimeout(attempt, 200); })();
+          })
+          .catch(function(){});
+      }
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run); else run();
+    })();
+    </script>
+    <?php
+});
+
+// Per-post reads — live count + threshold + toggle for the byline chip. Client-
+// side (below) reads this, so the chip is cache-independent.
+add_action('rest_api_init', function () {
+    register_rest_route('affiliateos/v1', '/post-reads', [
+        'methods'  => 'GET',
+        'callback' => function ($req) {
+            $pid = (int) $req->get_param('post_id');
+            $data = mvp_affiliate_get_data();
+            $layout = isset($data['layout']) && is_array($data['layout']) ? $data['layout'] : [];
+            return new WP_REST_Response([
+                'reads'     => ($pid > 0) ? (int) get_post_meta($pid, '_mvp_reads', true) : 0,
+                'threshold' => mvp_affiliate_read_threshold(),
+                'show'      => !empty($layout['showPerPostReadCount']),
+            ], 200);
+        },
+        'permission_callback' => '__return_true',
+    ]);
+});
+
+// The per-post "N reads" byline chip — injected CLIENT-SIDE so it appears +
+// updates WITHOUT the post's LiteSpeed cache regenerating (same approach as the
+// blog-wide badge above). Emitted on every single post; the JS respects the live
+// show/threshold from /post-reads, so toggling the setting or setting threshold 0
+// takes effect immediately with no cache purge. Drops the chip into .mvp-byline
+// right after the read-time chip.
+add_action('wp_footer', function () {
+    if (!is_singular('post') || !is_main_query()) return;
+    $pid = (int) get_the_ID();
+    if ($pid <= 0) return;
+    $endpoint = esc_url_raw(add_query_arg('post_id', $pid, rest_url('affiliateos/v1/post-reads')));
+    ?>
+    <script>
+    (function(){
+      function fmt(n){ return n >= 1000 ? (Math.round(n/100)/10 + '').replace(/\.0$/,'') + 'k' : n.toLocaleString(); }
+      function place(reads){
+        var byline = document.querySelector('.mvp-byline');
+        if (!byline) return false;
+        if (byline.querySelector('.mvp-byline-reads')) return true;
+        var eye = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"></path><circle cx="12" cy="12" r="3"></circle></svg>';
+        var dot = document.createElement('span'); dot.className = 'mvp-byline-dot'; dot.textContent = '·';
+        var chip = document.createElement('span'); chip.className = 'mvp-byline-reads'; chip.setAttribute('title','Reads on this post');
+        chip.innerHTML = eye + fmt(reads) + ' reads';
+        var rt = byline.querySelector('.mvp-byline-readtime');
+        if (rt) { byline.insertBefore(dot, rt.nextSibling); byline.insertBefore(chip, dot.nextSibling); }
+        else { byline.appendChild(dot); byline.appendChild(chip); }
+        return true;
+      }
+      function run(){
+        fetch(<?php echo wp_json_encode($endpoint); ?>, { headers: { 'Accept':'application/json' } })
+          .then(function(r){ return r.json(); })
+          .then(function(d){
+            if (!d || d.show === false) return;
+            var reads = parseInt(d.reads, 10) || 0;
+            var threshold = parseInt(d.threshold, 10) || 0;
+            if (reads < threshold) return;
+            var tries = 0;
+            (function attempt(){ if (place(reads)) return; if (++tries < 20) setTimeout(attempt, 200); })();
           })
           .catch(function(){});
       }
