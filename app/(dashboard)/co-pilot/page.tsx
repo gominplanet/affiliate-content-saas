@@ -1484,7 +1484,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
       const res = await fetch('/api/youtube/generate-thumbnail', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(240000),
+        signal: AbortSignal.timeout(290000),
         body: JSON.stringify({
           videoTitle: editTitle || video.title,
           asin: video.detectedAsin ?? undefined,
