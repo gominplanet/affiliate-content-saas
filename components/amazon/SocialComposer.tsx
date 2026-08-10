@@ -24,6 +24,15 @@ export default function SocialComposer() {
   const [items, setItems] = useState<SavedItem[]>([])
   const [loading, setLoading] = useState(true)
   const [preset, setPreset] = useState<{ value: string; nonce: number } | undefined>(undefined)
+  const [page, setPage] = useState(0)
+
+  // Show three rows at the widest layout (6 per row), then flip pages.
+  const PAGE_SIZE = 18
+  const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE))
+  const pageItems = items.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE)
+
+  // Keep the page in range after removals.
+  useEffect(() => { if (page >= totalPages) setPage(totalPages - 1) }, [page, totalPages])
 
   const load = useCallback(async () => {
     try {
@@ -70,7 +79,7 @@ export default function SocialComposer() {
           </p>
         ) : (
           <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2.5">
-            {items.map(it => (
+            {pageItems.map(it => (
               <div key={it.id} className="group relative flex flex-col rounded-xl border border-gray-200 dark:border-white/10 overflow-hidden bg-white dark:bg-white/[0.02]">
                 <button onClick={() => remove(it)} title="Remove"
                   className="absolute top-1.5 right-1.5 z-10 w-6 h-6 rounded-full bg-black/50 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
@@ -90,6 +99,19 @@ export default function SocialComposer() {
                   </button>
                 </div>
               </div>
+            ))}
+          </div>
+        )}
+
+        {/* Page tabs — flip through the rest of the saved finds */}
+        {totalPages > 1 && (
+          <div className="flex flex-wrap items-center gap-1.5 mt-3">
+            {Array.from({ length: totalPages }, (_, i) => (
+              <button key={i} onClick={() => setPage(i)}
+                className={`min-w-[28px] h-7 px-2 rounded-lg text-[12px] font-semibold transition ${i === page ? 'bg-[#d97706] text-white' : 'bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20'}`}
+                style={i === page ? undefined : { color: 'var(--text-soft)' }}>
+                {i + 1}
+              </button>
             ))}
           </div>
         )}
