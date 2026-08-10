@@ -1438,12 +1438,15 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
       'clean'
     )
     try {
-      // Always try to capture a real video frame with SCOUT — it provides the
-      // scene context (the creator in their actual video, the product in context).
-      // A face model (if selected) is used for identity lock IN ADDITION to the
-      // frame, not instead of it. Product-only mode skips frame capture entirely.
+      // Capture a video frame ONLY when we have no face to work from. With the
+      // selfie-driven flow, a selected face IS the identity source and gpt-image
+      // re-renders the person freely — so opening the video for a frame is just
+      // friction. We still grab one when there's no face model (then the frame
+      // is the only identity source) and never for product-only.
+      const hasRealFace = (scoutFaceSelection !== 'auto' && scoutFaceSelection !== 'no-human')
+        || (!!effectiveFaceModelId && effectiveFaceModelId !== 'no-human')
       let capturedFrames: string[] = []
-      if (video.youtubeVideoId && !isProductOnly) {
+      if (video.youtubeVideoId && !isProductOnly && !hasRealFace) {
         if (capturedFramesRef.current?.videoId === video.youtubeVideoId && capturedFramesRef.current.frames.length) {
           capturedFrames = capturedFramesRef.current.frames
         } else {
