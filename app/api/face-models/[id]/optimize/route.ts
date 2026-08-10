@@ -37,13 +37,19 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     .select('source_images,optimized_status')
     .eq('id', id).eq('user_id', ownerId).single()
   if (!model) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  if (model.optimized_status === 'processing') {
-    return NextResponse.json({ error: 'Already optimizing — hang tight.' }, { status: 409 })
-  }
-  const sourcePaths = ((model.source_images as string[]) || []).filter(p => typeof p === 'string')
+  // Only enhance a handful of photos: generation uses ONE face reference, so
+  // there's no benefit to running the enhancer over all 14–20, and doing so
+  // blew past the 5-minute function limit. A small set finishes fast.
+  const MAX_TO_OPTIMIZE = 6
+  const sourcePaths = ((model.source_images as string[]) || [])
+    .filter(p => typeof p === 'string')
+    .slice(0, MAX_TO_OPTIMIZE)
   if (sourcePaths.length === 0) {
     return NextResponse.json({ error: 'This face has no photos to optimize.' }, { status: 400 })
   }
+  // Note: we intentionally DON'T hard-block when status==='processing'. A prior
+  // run that timed out leaves the row stuck on 'processing' forever, so blocking
+  // would lock the creator out. Re-running is safe (storage writes upsert).
 
   const admin = createAdminClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

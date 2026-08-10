@@ -1347,6 +1347,24 @@ export async function POST(request: Request) {
           const attempt = async (): Promise<string | null> => {
             const line1 = (copy.line1 || '').toUpperCase()
             const line2 = (copy.line2 || '').toUpperCase()
+            // Content-fitting facial expression. gpt-image RE-RENDERS the person
+            // (it doesn't paste the selfie), so the reference photos lock identity
+            // while the prompt drives the expression. Seed the FIRST variant's
+            // expression from the headline's mood, then rotate so each variant
+            // gives a different, high-CTR reaction to choose from.
+            const GFX_EXPRESSIONS = [
+              'a big, genuinely excited and enthusiastic expression — bright eyes, real energy, an open smile',
+              'a shocked, wide-eyed, jaw-slightly-dropped expression — like they can hardly believe it',
+              'an impressed, delighted expression — raised eyebrows and an approving, knowing smile',
+              'a warm, happy, mid-laugh expression — relaxed and likeable',
+            ]
+            const hLower = `${line1} ${line2}`.toLowerCase()
+            const exprSeed =
+              /\$|deal|cheap|price|worth|free|save|% ?off|dollar/.test(hLower) ? 1   // money/deal → shocked
+              : /\bno more\b|hate|worst|problem|stop|never|worst|fail/.test(hLower) ? 1 // problem framing → shocked
+              : /best|love|perfect|amazing|favou?rite|game.?changer|obsessed/.test(hLower) ? 2 // praise → impressed
+              : 0                                                                     // default → excited
+            const gfxExpr = GFX_EXPRESSIONS[(exprSeed + idx) % GFX_EXPRESSIONS.length]
             const accentGlow = idx % 2 === 0 ? 'cyan (#00E5FF)' : 'purple (#7C3AED)'
             // Rotate through varied, bokeh-blurred environments so thumbnails
             // don't all look the same. Each scene is naturally blurred in the
@@ -1430,7 +1448,7 @@ export async function POST(request: Request) {
               // templated and added a coloured rim glow around the person.
               'A realistic, eye-catching YouTube thumbnail — 1536×1024, 16:9 landscape. Clean, high-CTR, uncluttered, professional.',
               '',
-              `CREATOR: ${creatorRefLabel}. ${identityInstruction} Reproduce this EXACT person with pixel-level accuracy — same face, skin tone, hair colour and style, age and distinctive features. A viewer who knows them must recognise them instantly. Natural, confident, engaging expression, upper body in frame, gesturing toward the product. Light them naturally to match the scene — absolutely NO coloured rim light, glow, halo or outline around the person or their hair.`,
+              `CREATOR: ${creatorRefLabel}. ${identityInstruction} Reproduce this EXACT person with pixel-level accuracy — same face, skin tone, hair colour and style, age and distinctive features. A viewer who knows them must recognise them instantly. Give them ${gfxExpr} that fits the video — it is fine to change their expression from the reference photos, but keep the identity identical. Upper body in frame, gesturing toward the product. Light them naturally to match the scene — absolutely NO coloured rim light, glow, halo or outline around the person or their hair.`,
               '',
               productRefNum
                 ? `PRODUCT: recreate the product from Image ${productRefNum} accurately and prominently — keep its true shape, colours and its own printed branding. Do NOT invent retail packaging or extra marketing text on it.`
