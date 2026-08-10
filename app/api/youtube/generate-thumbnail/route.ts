@@ -42,6 +42,24 @@ let TELEMETRY: { userId: string | null; tier: string | null } = { userId: null, 
 const THUMBNAIL_SCORE_THRESHOLD = 55
 
 /**
+ * Fit a rendered graphic to the final delivered size. gpt-image only renders a
+ * 2:3 portrait, so a 9:16 story can't be filled without cropping the left/right
+ * edges — which clips headlines and logos. For the tall story we therefore show
+ * the FULL design (no crop) over a blurred, darkened, full-bleed copy of itself
+ * (the standard IG-story look), guaranteeing nothing is lost. Every other format
+ * (4:5 IG, pin, landscape) is close enough that a centred cover-crop is clean.
+ */
+async function fitFinalGraphic(b64: string, outW: number, outH: number, isStory: boolean): Promise<Buffer> {
+  const src = Buffer.from(b64, 'base64')
+  if (isStory) {
+    const bg = await sharp(src).resize(outW, outH, { fit: 'cover', position: 'centre' }).blur(28).modulate({ brightness: 0.6 }).toBuffer()
+    const fg = await sharp(src).resize(outW, outH, { fit: 'inside' }).toBuffer()
+    return sharp(bg).composite([{ input: fg, gravity: 'centre' }]).jpeg({ quality: 92 }).toBuffer()
+  }
+  return sharp(src).resize(outW, outH, { fit: 'cover', position: 'centre' }).jpeg({ quality: 92 }).toBuffer()
+}
+
+/**
  * Score + rank generated thumbnail variants best-first. Returns the URLs
  * reordered so index 0 is the strongest, the aligned scores, the top score,
  * and whether the best variant fell below the publish-gate threshold. Fully
@@ -1035,7 +1053,7 @@ export async function POST(request: Request) {
       : isIg
       ? `FORMAT — READ FIRST, OVERRIDES EVERYTHING BELOW: this is a 4:5 VERTICAL INSTAGRAM FEED POST (1080×1350, tall portrait), NOT a 16:9 video thumbnail — ignore any "16:9" or "landscape" wording that follows. A scroll-stopping shopping post: a big bold headline near the TOP, a short STACKED list of 2–4 benefit/feature callouts in the middle, product large and central. NEVER the word "Amazon". Fill the frame, but SAFE AREA: the TOP and BOTTOM ~10% get cropped — keep every word, badge, logo and the product edge inside a safe margin, never touching the top or bottom edge.${ctaLinkInBio === false ? ' Do NOT put any "LINK IN BIO", link, URL or call-to-action text in the design — keep it clean.' : ' MANDATORY: prominently design a bold "LINK IN BIO" call-to-action into the image (a pill, ribbon or badge, e.g. "🔗 LINK IN BIO TO SHOP") near the bottom (inside the safe area).'}`
       : isStory
-      ? `FORMAT — READ FIRST, OVERRIDES EVERYTHING BELOW: this is a 9:16 FULL-SCREEN VERTICAL INSTAGRAM STORY (1080×1920, very tall portrait), NOT a 16:9 video thumbnail — ignore any "16:9" or "landscape" wording that follows. A bold headline high up, the product large and central, 1–3 short punchy callouts. CRITICAL SAFE AREA: the LEFT and RIGHT ~12% of the frame get cropped, so keep ALL text, headlines, badges, logos and the product fully inside the central ~76% width with a generous margin on BOTH sides — nothing may touch or run off the left/right edges. Also keep content clear of the very top and bottom ~10% where the IG UI sits. NEVER the word "Amazon".${ctaLinkInBio === false ? ' Do NOT put any "LINK IN BIO", link, URL or call-to-action text in the design — keep it clean.' : ' MANDATORY: prominently design a bold "LINK IN BIO" call-to-action into the image (a pill, ribbon or badge, e.g. "🔗 LINK IN BIO TO SHOP") in the lower third, inside the safe area.'}`
+      ? `FORMAT — READ FIRST, OVERRIDES EVERYTHING BELOW: this is a TALL VERTICAL INSTAGRAM STORY design (portrait), NOT a 16:9 video thumbnail — ignore any "16:9" or "landscape" wording that follows. A bold headline high up, the product large and central, 1–3 short punchy callouts. Fill the whole tall frame edge to edge, no empty dead space. Keep the headline a little below the very top and the call-to-action a little above the very bottom so the phone's story UI never covers them. NEVER the word "Amazon".${ctaLinkInBio === false ? ' Do NOT put any "LINK IN BIO", link, URL or call-to-action text in the design — keep it clean.' : ' MANDATORY: prominently design a bold "LINK IN BIO" call-to-action into the image (a pill, ribbon or badge, e.g. "🔗 LINK IN BIO TO SHOP") in the lower third.'}`
       : ''
     const lockedHeadline = (customHeadline || '').trim().toUpperCase()
 
@@ -1346,7 +1364,7 @@ export async function POST(request: Request) {
                   : forcedDecoration ? forcedDecoration
                     : (copyDec && copyDec !== 'none' ? copyDec : 'none')
               try {
-                let resized = await sharp(Buffer.from(b64, 'base64')).resize(outW, outH, { fit: 'cover', position: 'centre' }).jpeg({ quality: 92 }).toBuffer()
+                let resized = await fitFinalGraphic(b64, outW, outH, isStory)
                 if (gfxDec !== 'none') resized = await compositeBadgeOnly(resized, gfxDec)
                 return await rehostToFal(`data:image/jpeg;base64,${resized.toString('base64')}`)
               } catch {
@@ -1763,7 +1781,7 @@ export async function POST(request: Request) {
             // gpt-image-2 renders NATIVE 16:9 (1536×864), so this is a pure
             // downscale to YouTube's 1280×720 — no cropping, nothing clipped.
             try {
-              let resized = await sharp(Buffer.from(b64, 'base64')).resize(outW, outH, { fit: 'cover', position: 'centre' }).jpeg({ quality: 92 }).toBuffer()
+              let resized = await fitFinalGraphic(b64, outW, outH, isStory)
               if (gfxDec !== 'none') resized = await compositeBadgeOnly(resized, gfxDec)
               return await rehostToFal(`data:image/jpeg;base64,${resized.toString('base64')}`)
             } catch {
