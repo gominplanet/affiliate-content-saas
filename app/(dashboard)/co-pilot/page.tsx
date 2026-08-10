@@ -14,7 +14,7 @@ import { isExtensionAvailable, requestVideoFrames, requestAmazonProduct, request
 import { SCOUT_STORE_LISTING_URL } from '@/lib/scout-version'
 import { effectiveTier } from '@/lib/view-as'
 import type { Tier } from '@/lib/tier'
-import BrandStylePanel, { BORDER_NAMES } from '@/components/co-pilot/BrandStylePanel'
+import BrandStylePanel from '@/components/co-pilot/BrandStylePanel'
 import {
   Youtube, Wand2, CheckCircle, AlertCircle, Loader2, ExternalLink,
   Copy, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, RefreshCw, Link2, Tag, Lock, Eye, Globe,
@@ -2366,50 +2366,11 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                   )}
 
 
-                  {/* Border style dropdown */}
-                  <div>
-                    <label className="text-[10px] font-semibold text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide block mb-1.5">Border style</label>
-                    <select
-                      value={borderIndex === null ? '' : borderIndex}
-                      onChange={e => setBorderIndex(e.target.value === '' ? null : Number(e.target.value))}
-                      disabled={generatingThumbnail}
-                      className="w-full text-xs px-3 py-2 rounded-lg border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] focus:outline-none focus:border-[#7C3AED] transition"
-                    >
-                      <option value="">Random / varied</option>
-                      {BORDER_NAMES.map((name, i) => (
-                        <option key={i} value={i}>{name}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Badge on my thumbnails — one badge (or none) forced on every
-                      generation, or Auto to let MVP pick. Persists per-user,
-                      enforced server-side. */}
-                  <div className="mt-2">
-                    <label className="text-[10px] font-semibold text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide block mb-1.5">Badge on my thumbnails</label>
-                    <select
-                      value={badge}
-                      disabled={generatingThumbnail}
-                      onChange={async (e) => {
-                        const v = e.target.value
-                        setBadge(v)
-                        setNoCheck(v === 'none' || (v !== 'auto' && v !== 'check')) // keep legacy flag consistent
-                        try {
-                          await fetch('/api/youtube/thumbnail-style', {
-                            method: 'POST', headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ patchDecoration: v }),
-                          })
-                        } catch { /* best-effort */ }
-                      }}
-                      className="w-full text-xs px-3 py-2 rounded-lg border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] focus:outline-none focus:border-[#7C3AED] transition"
-                    >
-                      <option value="none">No badge</option>
-                      <option value="check">✓ Green check</option>
-                      <option value="stars">★★★★★ Five gold stars</option>
-                      <option value="arrow">→ Red arrow (points at the product)</option>
-                    </select>
-                    <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-1">The same badge goes on every thumbnail. Pick “No badge” for none.</p>
-                  </div>
+                  {/* Border style + badge dropdowns removed: gpt-image composes the
+                      full design (border, badge, arrow) itself, so these manual
+                      controls are no longer needed. Defaults (borderIndex=null,
+                      badge='none') are kept in state and the backend relies on the
+                      model's own styling. */}
 
                   {/* BrandStylePanel mounted hidden — fires its saved-defaults useEffect on mount */}
                   <div className="hidden">
