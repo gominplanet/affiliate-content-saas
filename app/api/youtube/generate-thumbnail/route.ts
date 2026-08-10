@@ -900,6 +900,9 @@ export async function POST(request: Request) {
       // brief is generated once and reused — secondary formats skip the reasoning
       // cost. Absent (YouTube co-pilot) → every design thinks fresh, as before.
       briefKey,
+      // IG/story: when true (default for those formats) bake a bold "LINK IN BIO"
+      // call-to-action into the design; false → keep the design clean of it.
+      ctaLinkInBio,
     } = await request.json() as {
       quickMode?: boolean
       videoTitle: string
@@ -999,6 +1002,7 @@ export async function POST(request: Request) {
       breakFrame?: boolean
       format?: 'landscape' | 'pin' | 'ig' | 'fb' | 'story'
       briefKey?: string
+      ctaLinkInBio?: boolean
     }
 
     // Sanitize the shared-brief key (opt-in; social composers only).
@@ -1019,18 +1023,17 @@ export async function POST(request: Request) {
     // landscape 16:9 (1536×864). We render at the closest one, then downscale/crop
     // to the exact platform dimensions below.
     const gfxSize: '1536x864' | '1024x1536' = isPortrait ? '1024x1536' : '1536x864'
-    // Final delivered dimensions per platform.
+    // Final delivered dimensions per platform. Instagram is 9:16 (1080×1920) —
+    // the story/reel size where link-in-bio actually matters.
     const outW = isPin ? 1000 : isIg ? 1080 : isStory ? 1080 : isFb ? 1200 : 1280
-    const outH = isPin ? 1500 : isIg ? 1350 : isStory ? 1920 : isFb ? 630 : 720
+    const outH = isPin ? 1500 : isIg ? 1920 : isStory ? 1920 : isFb ? 630 : 720
     // Authoritative first prompt line that reframes the design for the target
     // format (overrides any 16:9 wording further down). Landscape/FB keep the
     // default thumbnail styling, so no directive.
     const pinDirective = isPin
       ? 'FORMAT — READ FIRST, OVERRIDES EVERYTHING BELOW: this is a 2:3 VERTICAL PINTEREST PIN (1024×1536, tall portrait), NOT a 16:9 video thumbnail — ignore any "16:9" or "landscape" wording that follows. It is a SHOPPING pin whose only job is to earn the click to buy, so use MORE text than a thumbnail: a big bold headline across the TOP, then a STACKED vertical list of 3–5 short benefit/feature callouts (checkmarks, chips or spec badges) down the middle, and a strong shop-style call-to-action near the BOTTOM (e.g. "TAP TO SHOP" or "SEE THE DEAL"). NEVER the word "Amazon". Product large and central; fill the tall frame top-to-bottom with no empty dead space. Person (if any) smaller, to one side.'
-      : isIg
-      ? 'FORMAT — READ FIRST, OVERRIDES EVERYTHING BELOW: this is a 4:5 VERTICAL INSTAGRAM POST (tall portrait), NOT a 16:9 video thumbnail — ignore any "16:9" or "landscape" wording that follows. It is a scroll-stopping shopping post: a big bold headline near the TOP, a short STACKED list of 2–4 benefit/feature callouts (checkmarks or chips) in the middle, and a clear "LINK IN BIO" call-to-action near the BOTTOM. NEVER the word "Amazon". Product large and central; fill the tall frame with no empty dead space. Person (if any) smaller, to one side.'
-      : isStory
-      ? 'FORMAT — READ FIRST, OVERRIDES EVERYTHING BELOW: this is a 9:16 FULL-SCREEN VERTICAL INSTAGRAM STORY (very tall portrait), NOT a 16:9 video thumbnail — ignore any "16:9" or "landscape" wording that follows. Design it to fill a phone screen top-to-bottom: a bold headline high up, the product large and central, 1–3 short punchy callouts, and a clear "LINK IN BIO to shop" call-to-action near the bottom (keep important content away from the very top and bottom edges where the IG UI sits). NEVER the word "Amazon". No empty dead space.'
+      : (isIg || isStory)
+      ? `FORMAT — READ FIRST, OVERRIDES EVERYTHING BELOW: this is a 9:16 FULL-SCREEN VERTICAL INSTAGRAM design (1080×1920, very tall portrait), NOT a 16:9 video thumbnail — ignore any "16:9" or "landscape" wording that follows. Design it to fill a phone screen top-to-bottom: a bold headline high up, the product large and central, 1–3 short punchy callouts. Keep important content away from the very top and bottom ~12% where the IG UI sits. NEVER the word "Amazon". No empty dead space.${ctaLinkInBio === false ? ' Do NOT put any "LINK IN BIO", link, URL or call-to-action text in the design — keep it clean.' : ' MANDATORY: prominently design a bold "LINK IN BIO" call-to-action into the image (a pill, ribbon or badge, e.g. "🔗 LINK IN BIO TO SHOP") in the lower third.'}`
       : ''
     const lockedHeadline = (customHeadline || '').trim().toUpperCase()
 

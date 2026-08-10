@@ -34,6 +34,7 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
   const [thumbUrl, setThumbUrl] = useState<string | null>(null)
   const [genError, setGenError] = useState<string | null>(null)
   const [postType, setPostType] = useState<'feed' | 'story'>('feed') // IG only
+  const [linkInBioCta, setLinkInBioCta] = useState(true) // IG only — bake "LINK IN BIO" into the design
 
   const [connected, setConnected] = useState<boolean | null>(null)
   const [caption, setCaption] = useState('')
@@ -84,6 +85,7 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
     const fmt = network === 'instagram' && postType === 'story' ? 'story' : cfg.format
     const bodyReq: Record<string, unknown> = {
       videoTitle: 'Product spotlight', textMode: 'graphic', format: fmt, briefKey: bk,
+      ...(network === 'instagram' ? { ctaLinkInBio: linkInBioCta } : {}),
       ...(isUrl ? { productUrl: raw } : isAsin ? { asin: raw.toUpperCase() } : { productUrl: raw }),
       ...(mode === 'product' ? { noHuman: true } : { faceModelId: faceId }),
     }
@@ -100,7 +102,7 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
     } catch (err) {
       setGenError(err instanceof Error ? err.message : 'Design failed. Try again.')
     } finally { setGenBusy(false) }
-  }, [product, mode, faceId, network, cfg.format, postType])
+  }, [product, mode, faceId, network, cfg.format, postType, linkInBioCta])
 
   const publish = useCallback(async () => {
     if (!thumbUrl) return
@@ -178,6 +180,15 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
               Story <span className="text-[10px] opacity-70">9:16</span>
             </button>
           </div>
+        )}
+        {network === 'instagram' && (
+          <button onClick={() => setLinkInBioCta(v => !v)}
+            className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-gray-200 dark:border-white/10 text-sm transition" style={{ color: 'var(--text)' }}>
+            <span className="text-[13px] font-medium">Design &quot;LINK IN BIO&quot; into the image</span>
+            <span className={`relative w-9 h-5 rounded-full transition ${linkInBioCta ? '' : 'bg-gray-300 dark:bg-white/20'}`} style={linkInBioCta ? { backgroundColor: cfg.accent } : undefined}>
+              <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${linkInBioCta ? 'left-[18px]' : 'left-0.5'}`} />
+            </span>
+          </button>
         )}
         <button onClick={generate} disabled={genBusy}
           className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-[#d2d2d7] dark:border-[#3a3a3c] text-sm font-semibold transition disabled:opacity-60" style={{ color: 'var(--text)' }}>
