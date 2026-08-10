@@ -85,6 +85,46 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   return NextResponse.json({ model })
 }
 
+/**
+ * PATCH /api/face-models/[id] — append more selfies to an existing face.
+ * Body: { addImagePaths: string[] } (already uploaded to storage by the client).
+ * Caps the face at 20 photos total.
+ */
+export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  const supabase = await createServerClient()
+  const auth = await getAuthAndOwner(supabase)
+  if (auth.error) return auth.error
+  const { ownerId } = auth
+
+  const body = await request.json().catch(() => ({})) as { addImagePaths?: string[] }
+  const add = Array.isArray(body.addImagePaths) ? body.addImagePaths.filter(p => typeof p === 'string') : []
+  if (add.length === 0) return NextResponse.json({ error: 'No photos to add.' }, { status: 400 })
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: model } = await supabase
+    .from('face_models').select('source_images').eq('id', id).eq('user_id', ownerId).single()
+  if (!model) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+  const existing = Array.isArray(model.source_images)
+    ? (model.source_images as unknown[]).filter((p): p is string => typeof p === 'string')
+    : []
+  const MAX = 20
+  if (existing.length >= MAX) {
+    return NextResponse.json({ error: `A face can hold up to ${MAX} photos. Delete some first.` }, { status: 409 })
+  }
+  const merged = [...existing, ...add].slice(0, MAX)
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await supabase
+    .from('face_models')
+    .update({ source_images: merged, updated_at: new Date().toISOString() })
+    .eq('id', id).eq('user_id', ownerId)
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  return NextResponse.json({ ok: true, source_images: merged })
+}
+
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const supabase = await createServerClient()
