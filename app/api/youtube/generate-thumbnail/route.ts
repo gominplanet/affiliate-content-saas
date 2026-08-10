@@ -915,19 +915,23 @@ export async function POST(request: Request) {
     // Auto-match pool: all the user's ready face models (used when faceAuto is
     // on and no specific model was picked — we vision-match the frame below).
     let autoFaceModels: Array<{ id: string; name: string; source_images: string[] }> = []
+    // When a face has an "optimized" (beautified) set AND the creator toggled
+    // use_optimized on, generate from the cleaned-up photos instead of the raw
+    // uploads. Falls back to the raw set whenever the optimized one is missing.
+    const effImages = (row: { source_images?: unknown; optimized_images?: unknown; use_optimized?: unknown }): string[] => {
+      const asStr = (v: unknown): string[] => Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
+      const opt = asStr(row.optimized_images)
+      return (row.use_optimized === true && opt.length > 0) ? opt : asStr(row.source_images)
+    }
     if (effectiveFaceModelId) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: fm } = await supabase
         .from('face_models')
-        .select('name,source_images')
+        .select('name,source_images,optimized_images,use_optimized')
         .eq('id', effectiveFaceModelId)
         .eq('user_id', user.id)
         .single()
-      // face_models.source_images is JSONB Json[]; we always write string[].
-      // Filter at the read so downstream consumers get the narrow type.
-      const srcImages: string[] = Array.isArray(fm?.source_images)
-        ? (fm.source_images as unknown[]).filter((x): x is string => typeof x === 'string')
-        : []
+      const srcImages: string[] = fm ? effImages(fm) : []
       if (fm && srcImages.length > 0) {
         faceModel = { id: effectiveFaceModelId, name: fm.name, source_images: srcImages }
       }
@@ -935,10 +939,11 @@ export async function POST(request: Request) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: fms } = await supabase
         .from('face_models')
-        .select('id,name,source_images,status')
+        .select('id,name,source_images,optimized_images,use_optimized,status')
         .eq('user_id', user.id)
-      autoFaceModels = ((fms as Array<{ id: string; name: string; source_images: string[]; status: string }>) || [])
-        .filter(m => m.status === 'ready' && Array.isArray(m.source_images) && m.source_images.length > 0)
+      autoFaceModels = ((fms as Array<{ id: string; name: string; source_images: string[]; optimized_images?: string[]; use_optimized?: boolean; status: string }>) || [])
+        .map(m => ({ ...m, source_images: effImages(m) }))
+        .filter(m => m.status === 'ready' && m.source_images.length > 0)
         .map(m => ({ id: m.id, name: m.name, source_images: m.source_images }))
       // Only one face on file → no need to match, just use it.
       if (autoFaceModels.length === 1) { faceModel = autoFaceModels[0]; autoFaceModels = [] }
