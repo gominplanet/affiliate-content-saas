@@ -12,6 +12,7 @@ import Link from 'next/link'
 import { Bookmark, Loader2, Wand2, X, Search } from 'lucide-react'
 import PinterestComposer from './PinterestComposer'
 import PostComposer from './PostComposer'
+import PostToAll from './PostToAll'
 
 const TABS = [
   { key: 'pinterest', label: 'Pinterest', accent: '#E60023' },
@@ -126,8 +127,13 @@ export default function SocialComposer() {
         )}
       </div>
 
+      {/* One-click fan-out to every connected network */}
+      <div id="social-composer">
+        <PostToAll presetProduct={preset} />
+      </div>
+
       {/* Network tabs */}
-      <div id="social-composer" className="flex flex-col gap-4">
+      <div className="flex flex-col gap-4">
         <div className="flex items-center gap-2">
           {TABS.map(t => (
             <button key={t.key} onClick={() => setTab(t.key)}
