@@ -19,6 +19,9 @@ import {
   Bookmark, BookmarkCheck,
 } from 'lucide-react'
 import { requestCcSmartScan, requestFindCampaign, requestAcceptCampaign, requestMyCcCampaigns } from '@/lib/extension-frame'
+import { createBrowserClient } from '@/lib/supabase/client'
+import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
+import { type Tier } from '@/lib/tier'
 import { campaignRules } from '@/lib/cc-smart-rules'
 import MessageBrandModal, { type MessageBrandCampaign } from '@/components/campaigns/MessageBrandModal'
 import SmartScanPanel from '@/components/campaigns/SmartScanPanel'
@@ -108,7 +111,7 @@ function useMakePost(c: Campaign, presetUrl: string | null, onActed?: () => void
   return { gen, postUrl, makePost }
 }
 
-function CampaignCard({ c, status, onMessage, onActed, saved, onToggleSave }: { c: Campaign; status?: CampaignStatus; onMessage: (c: Campaign) => void; onActed?: () => void; saved?: boolean; onToggleSave?: () => void }) {
+function CampaignCard({ c, status, onMessage, onActed, saved, onToggleSave, socialOnly = false }: { c: Campaign; status?: CampaignStatus; onMessage: (c: Campaign) => void; onActed?: () => void; saved?: boolean; onToggleSave?: () => void; socialOnly?: boolean }) {
   const { gen, postUrl, makePost } = useMakePost(c, status?.url ?? null, onActed)
   const endingSoon = c.daysLeft != null && c.daysLeft <= 1
 
@@ -214,7 +217,20 @@ function CampaignCard({ c, status, onMessage, onActed, saved, onToggleSave }: { 
           </button>
         )}
         <div className="flex items-center gap-2">
-          {postUrl ? (
+          {/* Amazon Influencer tier: no blog — the primary action is Save (→ Social
+              Influencer). Accept + Message stay below (they're Creator Connections). */}
+          {socialOnly ? (
+            saved ? (
+              <a href="/amazon/social" className="btn-primary flex items-center gap-1.5 text-xs flex-1 justify-center" style={{ background: '#d97706', borderColor: '#d97706' }}>
+                <BookmarkCheck size={13} /> Make the post →
+              </a>
+            ) : (
+              <button onClick={onToggleSave} disabled={!c.repAsin} className="btn-primary flex items-center gap-1.5 text-xs flex-1 justify-center disabled:opacity-50" style={{ background: '#d97706', borderColor: '#d97706' }}
+                title="Save this product to make a social post in Social Influencer">
+                <Bookmark size={13} /> Save for a post
+              </button>
+            )
+          ) : postUrl ? (
             <a href={postUrl} target="_blank" rel="noopener noreferrer" className="btn-secondary flex items-center gap-1.5 text-xs flex-1 justify-center">
               <CheckCircle2 size={13} className="text-[#34c759]" /> View post
             </a>
@@ -227,7 +243,7 @@ function CampaignCard({ c, status, onMessage, onActed, saved, onToggleSave }: { 
           <button onClick={() => onMessage(c)} disabled={c.isFull} className="btn-secondary flex items-center gap-1.5 text-xs disabled:opacity-50" title="Draft + send a pitch to the brand via SCOUT">
             <Mail size={13} />
           </button>
-          {onToggleSave && (
+          {!socialOnly && onToggleSave && (
             <button
               onClick={onToggleSave}
               title={saved ? 'Saved — click to remove' : 'Save to Saved Campaigns'}
@@ -293,6 +309,26 @@ export default function CcCampaignsPage() {
   // to the shared cc_saved_finds shelf via /api/campaigns/saved (same store as
   // the dashboard digest + the Saved Campaigns page).
   const [savedAsins, setSavedAsins] = useState<Set<string>>(new Set())
+  // Amazon Influencer tier: no blog, so a campaign's action is Save (→ Social
+  // Influencer) rather than "Make blog post". Accept + Message stay (CC actions).
+  const [tier, setTier] = useState<Tier | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    let realTier: string = 'trial'
+    const apply = () => { if (!cancelled) setTier(effectiveTier(realTier)) }
+    ;(async () => {
+      try {
+        const supabase = createBrowserClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) { realTier = 'trial'; apply(); return }
+        const { data } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+        realTier = (data as { tier?: string } | null)?.tier ?? 'trial'
+        apply()
+      } catch { realTier = 'trial'; apply() }
+    })()
+    window.addEventListener(VIEW_AS_EVENT, apply)
+    return () => { cancelled = true; window.removeEventListener(VIEW_AS_EVENT, apply) }
+  }, [])
   useEffect(() => {
     fetch('/api/campaigns/saved').then((r) => r.json()).then((d) => {
       if (d?.ok && Array.isArray(d.saved)) setSavedAsins(new Set(d.saved.map((s: { asin: string }) => s.asin.toUpperCase())))
@@ -699,6 +735,7 @@ export default function CcCampaignsPage() {
                 onActed={loadStatus}
                 saved={c.repAsin ? savedAsins.has(c.repAsin.toUpperCase()) : false}
                 onToggleSave={() => toggleSave(c)}
+                socialOnly={tier === 'amazon'}
                 onMessage={(cc) => {
                   if (!cc.repAsin) { toast.error('No product ASIN on this campaign yet.'); return }
                   setMsgModal({ product: cc.name || cc.repAsin, asin: cc.repAsin, commissionPct: cc.commissionPct ?? 0, detailsUrl: cc.detailsUrl, brandLabel: cc.brand || undefined })
