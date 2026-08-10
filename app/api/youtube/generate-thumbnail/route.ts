@@ -1243,7 +1243,7 @@ export async function POST(request: Request) {
               const calloutsP = Array.isArray(briefP.callouts) ? briefP.callouts.filter(Boolean) : []
               const headP = conceptP
                 ? [
-                    `Design a UNIQUE, scroll-stopping, VIRAL product-review YouTube thumbnail — 1536×1024, 16:9 landscape. NO people. Bring THIS art-director brief (written for this product) to life exactly:`,
+                    `Design a UNIQUE, scroll-stopping, VIRAL product-review YouTube thumbnail — 16:9 landscape (1536×864). NO people. Bring THIS art-director brief (written for this product) to life exactly:`,
                     '',
                     `DESIGN CONCEPT: ${conceptP}`,
                     paletteP ? `COLOUR PALETTE: ${paletteP}. Do NOT default to plain yellow-on-black.` : '',
@@ -1252,7 +1252,7 @@ export async function POST(request: Request) {
                     'Vibrant, modern, high-contrast, layered — never flat, dull or template-like. Mixed-weight display type where the key word pops.',
                   ].filter(Boolean)
                 : [
-                    'Design a UNIQUE, scroll-stopping, VIRAL product-review YouTube thumbnail — 1536×1024, 16:9 landscape. NO people. Vibrant, modern, high-contrast — never flat or plain. Bold mixed-colour display type (not plain white/yellow), a themed colourful background that suits the product, and small checkmark/spec callouts.',
+                    'Design a UNIQUE, scroll-stopping, VIRAL product-review YouTube thumbnail — 16:9 landscape (1536×864). NO people. Vibrant, modern, high-contrast — never flat or plain. Bold mixed-colour display type (not plain white/yellow), a themed colourful background that suits the product, and small checkmark/spec callouts.',
                   ]
               const prompt = [
                 ...headP,
@@ -1260,10 +1260,10 @@ export async function POST(request: Request) {
                 `PRODUCT (the hero): recreate the product from Image 1 accurately and prominently, filling a large part of the frame — keep its true shape, colours and its own printed branding. Do NOT invent retail packaging or extra marketing text on it. Light it naturally with a grounded shadow so it belongs in the scene; no glow ring or aura around it.`,
                 '',
                 `MAIN HEADLINE — render this text EXACTLY, spelling perfect: "${line1} ${line2}". Style it as the concept describes (mixed colour/size/weight, banner for a key phrase) — a designed, layered look, NOT plain white-and-yellow outlined caps. Place it where it does NOT cover the product.`,
-                'FRAMING — CRITICAL, DO NOT IGNORE: the final thumbnail is 16:9, and the TOP ~15% and BOTTOM ~15% of what you draw WILL BE CROPPED OFF. Treat those strips as a dead bleed zone: put ABSOLUTELY NOTHING important there — no headline, no banner, no badge, no callout, and no part of the product. Compose the ENTIRE design — every word, banner, badge and the whole product — inside the central 70% horizontal band with clear margin above and below, plus a margin on the left and right. Nothing may touch or run off any edge.',
+                'FRAMING: the canvas is a full 16:9 landscape (1536×864) and the entire canvas is shown — nothing is cropped. Compose within it with a small, even safe margin (about 5%) on all four sides: every headline, banner, badge, callout and the whole product must sit fully inside the frame, not touching or running off any edge. Fill the frame nicely — no big empty dead bands — just keep that clean margin all around.',
               ].join('\n')
               const refs = [{ data: productBytesP, filename: 'product.png', mime: 'image/png' as const }]
-              const b64 = await openaiGfxP.generateWithReferences({ prompt, images: refs, size: '1536x1024', quality: gfxQuality })
+              const b64 = await openaiGfxP.generateWithReferences({ prompt, images: refs, size: '1536x864', quality: gfxQuality })
               recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'yt_thumb_graphic', model: gfxModelP, images: 1 })
               const copyDec = (copy as { decoration?: ThumbDecoration }).decoration
               const gfxDec: ThumbDecoration =
@@ -1591,7 +1591,7 @@ export async function POST(request: Request) {
               // right-host layout. Identity lock, product fidelity and readable
               // outlined text still hold and are NEVER overridden by the direction.
               prompt = [
-                'Professional YouTube thumbnail, 1536×1024 px, 16:9 landscape. High energy, high contrast, photorealistic.',
+                'Professional YouTube thumbnail, 16:9 landscape (1536×864 px). High energy, high contrast, photorealistic.',
                 '',
                 `★ CREATOR'S SCENE DIRECTION (highest priority — build the whole thumbnail around this): "${sceneDirection}".`,
                 "Match that direction for the SETTING / background, the creator's pose, expression and action, and any props described. The creator is the main subject of the scene.",
@@ -1617,7 +1617,7 @@ export async function POST(request: Request) {
             // to the generic design-tools menu so it still isn't a flat template.
             const creativeHead = briefConcept
               ? [
-                  `Design a UNIQUE, scroll-stopping, VIRAL YouTube thumbnail — 1536×1024, 16:9 landscape — in the polished style of today's top product-review creators. Bring THIS art-director brief (written specifically for this product) to life exactly:`,
+                  `Design a UNIQUE, scroll-stopping, VIRAL YouTube thumbnail — 16:9 landscape (1536×864) — in the polished style of today's top product-review creators. Bring THIS art-director brief (written specifically for this product) to life exactly:`,
                   '',
                   `DESIGN CONCEPT: ${briefConcept}`,
                   briefPalette ? `COLOUR PALETTE: ${briefPalette}. Do NOT default to plain yellow-on-black.` : '',
@@ -1626,7 +1626,7 @@ export async function POST(request: Request) {
                   'Execute it vibrant, modern, high-contrast and layered — never flat, dull or template-like. Mixed-weight display type where the key word pops.',
                 ].filter(Boolean)
               : [
-                  `Design a UNIQUE, scroll-stopping, VIRAL YouTube thumbnail — 1536×1024, 16:9 landscape — in the style of today's top product-review creators (MrBeast-era energy). It MUST look vibrant, modern and high-contrast and make the viewer want to click. NEVER flat, dull, plain or template-like. Make this one ${gfxVibe}. YOU are the designer — own the layout, colours, fonts and effects.`,
+                  `Design a UNIQUE, scroll-stopping, VIRAL YouTube thumbnail — 16:9 landscape (1536×864) — in the style of today's top product-review creators (MrBeast-era energy). It MUST look vibrant, modern and high-contrast and make the viewer want to click. NEVER flat, dull, plain or template-like. Make this one ${gfxVibe}. YOU are the designer — own the layout, colours, fonts and effects.`,
                   '',
                   'USE THESE MODERN DESIGN TOOLS (pick the ones that fit this product, and mix them freely for variety):',
                   '• TITLE TYPOGRAPHY: never one flat block of text, and do NOT default to the generic "plain white top line + plain yellow bottom line" look. Bold modern display font, colour the words to fit THIS product\'s palette (not always yellow), vary size and weight so the key word jumps out, and drop a short punchy phrase into a hand-painted brush-stroke or torn banner.',
@@ -1652,7 +1652,7 @@ export async function POST(request: Request) {
               '',
               `MAIN HEADLINE — the wording must read EXACTLY, spelling perfect: "${line1} ${line2}". Style it as the concept describes: split it across lines, give words their own colour/size/weight, use a banner for a key phrase — a designed, layered look, NOT plain white-and-yellow outlined caps. Keep the exact words and spelling. Big and instantly readable.`,
               '',
-              'FRAMING — CRITICAL, DO NOT IGNORE: the final thumbnail is 16:9, and the TOP ~15% and BOTTOM ~15% of what you draw WILL BE CROPPED OFF. Treat those top and bottom strips as a dead bleed zone: put ABSOLUTELY NOTHING important there — no headline, no banner, no badge, no callout, no part of the person\'s head, and no part of the product. Compose the ENTIRE design — every word, banner, badge, the person\'s full head, and the whole product — inside the central 70% horizontal band, with clear margin above and below it. Also keep a margin on the left and right edges. Nothing may touch or run off any edge.',
+              'FRAMING: the canvas is a full 16:9 landscape (1536×864) and the entire canvas is shown — nothing is cropped. Compose within it with a small, even safe margin (about 5%) on all four sides: every headline, banner, badge, callout, the person\'s full head and the whole product must sit fully inside the frame, not touching or running off any edge. Fill the frame nicely — no big empty dead bands — just keep that clean margin all around.',
               'HARD RULES (only these): keep the person instantly recognisable, keep the product accurate to the reference, and make every piece of text correctly spelled and legible. Everything else — make it POP.',
             ].filter(Boolean).join('\n')
             }
@@ -1668,7 +1668,7 @@ export async function POST(request: Request) {
             // Tier-gated quality (gfxQuality): Pro/admin get HIGH for the crispest
             // ChatGPT-grade render; other paid tiers get MEDIUM. Co-Pilot generates
             // one variant, so a single high render stays well under the timeout.
-            const b64 = await openaiGfx.generateWithReferences({ prompt, images: refs, size: '1536x1024', quality: gfxQuality })
+            const b64 = await openaiGfx.generateWithReferences({ prompt, images: refs, size: '1536x864', quality: gfxQuality })
             recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'yt_thumb_graphic', model: gfxModel, images: 1 })
             // Badge the creator chose (5 stars / hot / etc). The GFX path bakes its
             // own headline via gpt-image and never runs bakeSimpleHeadline, so the
@@ -1683,11 +1683,10 @@ export async function POST(request: Request) {
                 : forcedDecoration
                   ? forcedDecoration
                   : (copyDec && copyDec !== 'none' ? copyDec : 'none')
-            // gpt-image has no native 16:9 size (1536×1024 = 3:2). Normalize to
-            // EXACT YouTube 1280×720, cropping from the bottom (position:'top')
-            // so the top headline is never clipped.
+            // gpt-image-2 renders NATIVE 16:9 (1536×864), so this is a pure
+            // downscale to YouTube's 1280×720 — no cropping, nothing clipped.
             try {
-              let resized = await sharp(Buffer.from(b64, 'base64')).resize(1280, 720, { fit: 'cover', position: 'top' }).jpeg({ quality: 92 }).toBuffer()
+              let resized = await sharp(Buffer.from(b64, 'base64')).resize(1280, 720, { fit: 'cover', position: 'centre' }).jpeg({ quality: 92 }).toBuffer()
               if (gfxDec !== 'none') resized = await compositeBadgeOnly(resized, gfxDec)
               return await rehostToFal(`data:image/jpeg;base64,${resized.toString('base64')}`)
             } catch {
