@@ -56,6 +56,11 @@ export interface ResolveProductReferenceInput {
   userId: string
   /** Tier (or null) for usage tracking. */
   tier: string | null
+  /** Speed mode: skip the vision "pick the cleanest gallery image" call and use
+   *  Amazon's main hero image directly (it's already a clean on-white product
+   *  shot). Saves a 3–8s AI round-trip on latency-sensitive paths like the
+   *  thumbnail generator, where the caller only needs one good product image. */
+  fastImage?: boolean
 }
 
 export interface ResolveProductReferenceResult {
@@ -145,8 +150,12 @@ export async function resolveProductReference(
         galleryCount: p.images?.length ?? 0,
         hasMainImage: !!p.imageUrl,
       })
-      const picked = (await pickProductReferenceImage(p.images, p.title || input.title || '', ctx)) || p.imageUrl
-      console.log(`${tag} step:pickProductReferenceImage (amazon)`, { picked })
+      // fastImage: skip the vision picker and take Amazon's main hero image
+      // (already a clean product-on-white shot). Otherwise vision-pick the best.
+      const picked = input.fastImage
+        ? (p.imageUrl || (p.images && p.images[0]) || null)
+        : ((await pickProductReferenceImage(p.images, p.title || input.title || '', ctx)) || p.imageUrl)
+      console.log(`${tag} step:pickProductReferenceImage (amazon)`, { picked, fast: !!input.fastImage })
       if (picked) {
         // Put the picked image FIRST in the gallery — callers that pass
         // multiple references to an image model expect the cleanest shot

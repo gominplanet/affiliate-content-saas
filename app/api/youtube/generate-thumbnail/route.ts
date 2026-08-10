@@ -1160,6 +1160,8 @@ export async function POST(request: Request) {
       traceTag: `[thumbnail:${(youtubeVideoId || 'novid').slice(0, 8)}]`,
       userId: user.id,
       tier: null,
+      // Speed: use Amazon's clean hero image directly, skip the ~3–8s vision pick.
+      fastImage: true,
     })
     productImageUrl = refForThumbnail.productImageUrl ?? productImageUrl
 
@@ -1194,7 +1196,15 @@ export async function POST(request: Request) {
     // other paid tiers → medium. Co-Pilot generates one variant, so a single
     // high render stays under the timeout.
     // Falls through to the NB path on any failure so generation never blanks.
-    const gfxStoryboardFrame = textMode === 'graphic' ? await gfxStoryboardPromise : null
+    // Only BLOCK on the storyboard frame when it's actually the identity source —
+    // i.e. no captured frames AND no face model selected. With a face picked (the
+    // common Co-Pilot case) the storyboard is never used, so awaiting it just
+    // added 3–8s of dead latency to every generation.
+    const storyboardCouldBeUsed = textMode === 'graphic'
+      && !capturedFrames?.length
+      && !faceModel
+      && autoFaceModels.length === 0
+    const gfxStoryboardFrame = storyboardCouldBeUsed ? await gfxStoryboardPromise : null
     const hasVideoFrame = !!(capturedFrames?.length) || !!gfxStoryboardFrame
 
     // ── PATH GFX-PRODUCT: gpt-image product-only (no face) ────────────────────
