@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.85
+ * Version: 1.0.86
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -3721,11 +3721,11 @@ add_filter('comment_form_submit_field', 'mvp_affiliate_comment_optin_field', 10,
 if (!function_exists('mvp_affiliate_comment_optin_field')) {
     function mvp_affiliate_comment_optin_field($submit_field, $args) {
         if (mvp_affiliate_newsletter_user_id() === '') return $submit_field;
-        $label = 'Yes, email me the next review. No spam, unsubscribe anytime.';
+        $label = 'Email me the best product reviews, just a few times a month. No spam, unsubscribe anytime.';
         $optin  = '<p class="mvp-comment-optin">'
             . '<input type="checkbox" name="mvp_comment_optin" id="mvp-comment-optin" value="1" />'
             . '<label for="mvp-comment-optin">' . esc_html($label)
-            . '<span class="mvp-comment-optin-note">We only use your email to send the newsletter. It is never published with your comment.</span>'
+            . '<span class="mvp-comment-optin-note">We only use your email for the newsletter. It is never published with your comment.</span>'
             . '</label></p>';
         return $optin . $submit_field;
     }
