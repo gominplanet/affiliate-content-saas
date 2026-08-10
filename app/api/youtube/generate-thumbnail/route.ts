@@ -469,6 +469,13 @@ interface ThumbBrief extends ThumbCopy {
   callouts: string[]
   /** Optional short banner phrase for a brush-stroke banner ("GAME CHANGER!"), or ''. */
   banner: string
+  /** Content-fitting facial reaction for the creator (e.g. "wide-eyed shocked",
+   *  "delighted grin", "skeptical raised eyebrow"). Drives expression VARIETY so
+   *  every thumbnail isn't the same look. '' → the render picks. */
+  expression: string
+  /** Body pose / gesture (e.g. "pointing at the product", "arms crossed",
+   *  "holding it up", "thumbs up"). Varies so it isn't always the pointing pose. */
+  pose: string
 }
 
 const ART_DIRECTOR_SYSTEM = `You are a world-class YouTube thumbnail ART DIRECTOR for product-review channels. You design the kind of thumbnails top creators use: vibrant, high-contrast, modern, impossible to scroll past. You brief an image model that renders your design.
@@ -482,8 +489,10 @@ Each brief has:
 - palette: the colour direction, tuned to the product/brand (e.g. "deep purple gradient, hot-pink + white type" for a beauty product; "black + electric-orange, F1 energy" for a McLaren blender). Avoid defaulting to plain yellow-on-black every time.
 - callouts: 2–3 SHORT real benefit/spec callouts drawn from the product details (e.g. "SMOOTHER", "144Hz", "NOISE REDUCTION"). Correctly spelled, a few words each.
 - concept: 2–4 sentences describing the finished thumbnail — the background (vivid studio gradient, themed graphic scene, or real-life setting that suits the product), the composition, how the title is styled (which words pop, banner placement), and the mood. This is what the image model builds. Make it specific to THIS product, and make it look designed and premium, never flat.
+- expression: the creator's facial REACTION, chosen to fit THIS headline/product — and VARIED across the briefs so they don't all look the same. Pick the emotion the video earns: e.g. "wide-eyed shocked", "delighted open-mouth grin", "skeptical raised eyebrow", "amazed wow face", "excited eyebrows-up", "curious intrigued look", "confident smirk", "thrilled laughing". A "worth it?" angle → skeptical; a big deal/benefit → excited or amazed. Two to four words.
+- pose: the creator's body/gesture, also VARIED (not always pointing): e.g. "pointing at the product", "holding the product up", "arms crossed, confident", "thumbs up", "hand on chin, thinking", "open-handed presenting". Match it to the expression. Two to five words.
 
-OUTPUT: a strict JSON array of N_BRIEFS objects with keys line1, line2, emphasisWord, banner, palette, callouts (array of strings), concept. No prose, no markdown fences — just the JSON array.`
+OUTPUT: a strict JSON array of N_BRIEFS objects with keys line1, line2, emphasisWord, banner, palette, callouts (array of strings), concept, expression, pose. No prose, no markdown fences — just the JSON array.`
 
 async function designThumbnailBriefs(input: {
   count: number
@@ -512,6 +521,8 @@ async function designThumbnailBriefs(input: {
       palette: String(o.palette || '').trim().slice(0, 160),
       callouts: calls,
       banner: scrubBanned(String(o.banner || '').trim()).slice(0, 40),
+      expression: String(o.expression || '').trim().slice(0, 60),
+      pose: String(o.pose || '').trim().slice(0, 60),
     }
   }
   const userMsg = [
@@ -547,7 +558,7 @@ async function designThumbnailBriefs(input: {
   // Fallback: no art direction — reuse the existing headline generator so the
   // graphic path still gets valid line1/line2 and just uses the static brief.
   const copies = await generateThumbCopies(input.videoTitle, n, input.productContext, input.claimsSheet)
-  return copies.map<ThumbBrief>(c => ({ ...c, concept: '', palette: '', callouts: [], banner: '' }))
+  return copies.map<ThumbBrief>(c => ({ ...c, concept: '', palette: '', callouts: [], banner: '', expression: '', pose: '' }))
 }
 
 // (generatePersonScenePrompt removed 2026-05-22 with the flux-lora retirement —
@@ -1519,6 +1530,13 @@ export async function POST(request: Request) {
             const briefPalette = (brief.palette || '').trim()
             const briefBanner = (brief.banner || '').trim()
             const briefCallouts = Array.isArray(brief.callouts) ? brief.callouts.filter(Boolean) : []
+            // Art-director-chosen reaction + gesture (varied per thumbnail). Empty
+            // on the fallback path → the render falls back to a generic reaction.
+            const briefExpression = (brief.expression || '').trim()
+            const briefPose = (brief.pose || '').trim()
+            const personAction = briefExpression || briefPose
+              ? `Give them ${briefExpression || 'a natural, content-fitting reaction'}${briefPose ? `, ${briefPose}` : ''} — make the expression genuine and specific, not a generic stock smile.`
+              : 'Place them on one side reacting to the product with a genuine, content-fitting expression (not a generic smile).'
             // Content-fitting facial expression. gpt-image RE-RENDERS the person
             // (it doesn't paste the selfie), so the reference photos lock identity
             // while the prompt drives the expression. Seed the FIRST variant's
@@ -1643,7 +1661,7 @@ export async function POST(request: Request) {
               '',
               'INTEGRATION (important): the person and the product must sit NATURALLY in the scene with realistic lighting and grounded shadows, like a real photo. Do NOT put a glowing outline, rim-light halo, coloured aura or cut-out edge around the person or the product — no haloing, nothing that makes them look pasted on. Keep edges clean and photographic.',
               '',
-              `PERSON: ${creatorRefLabel}. ${identityInstruction} Use this exact person — you MAY change their expression and lightly retouch them, but do NOT change their inherent look (same face, skin tone, hair, age, distinctive features); they must be instantly recognisable as the same person. Place them on one side reacting or pointing toward the product. Show them HEAD-AND-SHOULDERS to roughly CHEST-UP only. The references are head-and-chest selfies, so do NOT invent or show their full body, legs, waist-down, or overall body build — keep it an upper-body shot (they can still react, point, or gesture with hands near the frame).`,
+              `PERSON: ${creatorRefLabel}. ${identityInstruction} Use this exact person — you MUST change their expression to fit this thumbnail (do NOT copy the reference photo's expression) and may lightly retouch them, but do NOT change their inherent look (same face, skin tone, hair, age, distinctive features); they must be instantly recognisable as the same person. ${personAction} Place them on one side of the frame. Show them HEAD-AND-SHOULDERS to roughly CHEST-UP only. The references are head-and-chest selfies, so do NOT invent or show their full body, legs, waist-down, or overall body build — keep it an upper-body shot (they can still react, point, or gesture with hands near the frame).`,
               '',
               productRefNum
                 ? `PRODUCT: feature the product from Image ${productRefNum} accurately as the hero — its true shape, colours and its own printed branding (never invent packaging or fake logos). Light it naturally with a grounded shadow so it belongs in the scene; no glow ring or aura behind it. Show it however fits the design: hero shot, in-use, or lifestyle.`
