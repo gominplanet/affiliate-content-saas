@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.81
+ * Version: 1.0.82
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -535,7 +535,9 @@ add_action('wp_footer', function () {
     if (!is_singular('post')) return;
     $data = mvp_affiliate_get_data();
     $layout = isset($data['layout']) && is_array($data['layout']) ? $data['layout'] : [];
-    if (empty($layout['showReadCount'])) return; // don't even count when the feature is off
+    // Count when EITHER the per-post byline chip or the blog-wide badge is on —
+    // otherwise a creator who only enables the per-post counter would see zeros.
+    if (empty($layout['showReadCount']) && empty($layout['showPerPostReadCount'])) return;
     $pid = (int) get_the_ID();
     if ($pid <= 0) return;
     $endpoint = esc_url_raw(rest_url('affiliateos/v1/view'));

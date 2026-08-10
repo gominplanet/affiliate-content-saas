@@ -29,6 +29,18 @@ if (!function_exists('mvp_affiliate_show_dates')) {
     }
 }
 
+/**
+ * Per-post read counter opt-in. Off unless the dashboard's "Show a read count on
+ * each post" toggle (layout.showPerPostReadCount) is on. The number itself comes
+ * from the `_mvp_reads` post meta the platform plugin tracks.
+ */
+if (!function_exists('mvp_affiliate_show_perpost_reads')) {
+    function mvp_affiliate_show_perpost_reads(): bool {
+        $layout = mvp_affiliate_data()['layout'] ?? [];
+        return is_array($layout) && !empty($layout['showPerPostReadCount']);
+    }
+}
+
 if (!function_exists('mvp_affiliate_posted_meta')) {
     function mvp_affiliate_posted_meta(): void {
         $author = mvp_affiliate_profile()['authorName'] ?? get_the_author();
@@ -75,6 +87,28 @@ if (!function_exists('mvp_affiliate_posted_meta')) {
             '<span class="mvp-byline-readtime" title="Approximate read time"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>%d min read</span>',
             $read_min
         );
+
+        // ── Per-post reads chip ────────────────────────────────────────
+        // Real reads on THIS post (from the `_mvp_reads` meta the platform
+        // plugin tracks). Opt-in, and hidden until the post passes its
+        // threshold so a fresh post never shows a tiny number. Sits right
+        // after the read-time chip.
+        if (mvp_affiliate_show_perpost_reads()) {
+            $reads  = (int) get_post_meta(get_the_ID(), '_mvp_reads', true);
+            $layout = mvp_affiliate_data()['layout'] ?? [];
+            $thresh = (is_array($layout) && isset($layout['readCountThreshold']) && (int) $layout['readCountThreshold'] > 0)
+                ? (int) $layout['readCountThreshold'] : 100;
+            if ($reads >= $thresh) {
+                $reads_label = $reads >= 1000
+                    ? rtrim(rtrim(number_format($reads / 1000, 1), '0'), '.') . 'k'
+                    : number_format_i18n($reads);
+                $chips[] = sprintf(
+                    '<span class="mvp-byline-reads" title="Reads on this post"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"></path><circle cx="12" cy="12" r="3"></circle></svg>%s reads</span>',
+                    esc_html($reads_label)
+                );
+            }
+        }
+
         echo '<div class="mvp-byline">' . implode('<span class="mvp-byline-dot">·</span>', $chips) . '</div>';
     }
 }
