@@ -1104,8 +1104,8 @@ export async function POST(request: Request) {
         // Prepend a graphic-mode hint so the copy model knows text is displayed
         // very large (40% of image) and abstract negations don't land well.
         const gfxProductCtx = productDescription
-          ? `[GRAPHIC DESIGN THUMBNAIL — text is the dominant visual element, displayed at very large scale. Prefer CURIOSITY_GAP or VALUE_DISRUPTION; avoid abstract NEGATION unless the problem is crystal-clear from the product description. Be concrete: name what the product IS or does.]\n\n${productDescription}`
-          : '[GRAPHIC DESIGN THUMBNAIL — text dominates. Use CURIOSITY_GAP or a direct benefit. Be concrete about what the product does.]'
+          ? `[GRAPHIC DESIGN THUMBNAIL — the headline is the dominant visual element, shown very large. Write a CONCRETE, product-DESCRIPTIVE headline drawn straight from the product itself — what it IS, its standout number/spec, or its single biggest selling feature (e.g. "39 PIECE COMPLETE COOKWARE SET", "5000 LUMEN WORK LIGHT", "TRIPLE-INSULATED TUMBLER"). Prefer this descriptive style over abstract curiosity hooks or negations. Keep it to a punchy few words.]\n\n${productDescription}`
+          : '[GRAPHIC DESIGN THUMBNAIL — the headline dominates. Write a concrete, product-descriptive headline: what the product IS or its biggest selling feature, in a punchy few words. Avoid abstract curiosity hooks.]'
         const gfxCopies = lockedHeadline
           ? [splitH(lockedHeadline)]
           : await generateThumbCopies(videoTitle, variantCount, gfxProductCtx, claimsSheetGfx)
@@ -1296,28 +1296,24 @@ export async function POST(request: Request) {
               ].join('\n')
             } else {
             prompt = [
-              'Professional YouTube thumbnail, 1536×1024 px, 16:9 landscape. High energy, high contrast.',
+              // Simple, natural brief (mirrors how a great one-line ChatGPT prompt
+              // composes): describe the person, the product and the headline, then
+              // let the model lay it out like a real top-creator thumbnail. No rigid
+              // percentage zones and no effect-stacking ("3D pop / dramatic studio
+              // lighting / neon") — that machinery is what made results feel
+              // templated and added a coloured rim glow around the person.
+              'A realistic, eye-catching YouTube thumbnail — 1536×1024, 16:9 landscape. Clean, high-CTR, uncluttered, professional.',
               '',
-              'LAYOUT (strict, left to right):',
-              `  LEFT 40% — text block, VERTICALLY CENTERED in the left zone:`,
-              `    VERTICAL POSITION: Text must be centered in the image height. Leave at least 28% of empty canvas ABOVE the top line and at least 20% BELOW the bottom line. The top line must NEVER be closer than 25% of the image height from the top edge.`,
-              `    Top line: "${line1}" — large white bold capitals with a thick black stroke outline only. NO background box, NO dark rectangle, NO panel, NO filled shape of any kind behind the text.`,
-              `    Main line: "${line2}" — even larger, bright yellow (#FFE034) bold capitals with a thick black stroke outline — the dominant visual element. NO background box.`,
-              `    CRITICAL TEXT RULE: text must float DIRECTLY over the image using ONLY a bold stroke/outline for contrast. Absolutely NO dark rectangles, semi-transparent panels, shadow boxes, filled shapes or blocks placed behind or around any word or line of text. Clean outlined text only. Text must be CRISP and FULLY READABLE at small sizes. No other text in the image.`,
+              `CREATOR: ${creatorRefLabel}. ${identityInstruction} Reproduce this EXACT person with pixel-level accuracy — same face, skin tone, hair colour and style, age and distinctive features. A viewer who knows them must recognise them instantly. Natural, confident, engaging expression, upper body in frame, gesturing toward the product. Light them naturally to match the scene — absolutely NO coloured rim light, glow, halo or outline around the person or their hair.`,
               '',
-              `  CENTER 30% — ${productLabel}.`,
               productRefNum
-                ? `    Recreate the product from Image ${productRefNum} in dramatic studio lighting — 3D pop, vivid colours, realistic shadows, floating or resting naturally.`
-                : `    Feature the ${productLabel} prominently in dramatic studio lighting — 3D pop, sharp.`,
+                ? `PRODUCT: recreate the product from Image ${productRefNum} accurately and prominently — keep its true shape, colours and its own printed branding. Do NOT invent retail packaging or extra marketing text on it.`
+                : `PRODUCT: feature ${productLabel} accurately and prominently, true to life.`,
               '',
-              `  RIGHT 35% — creator (${creatorRefLabel}).`,
-              `    CRITICAL IDENTITY: ${identityInstruction} Reproduce this EXACT person's face with pixel-level accuracy: same facial structure, skin tone, hair colour and style, age, and distinctive features. A viewer who knows them must recognise them INSTANTLY.`,
-              `    Show from waist-up with excited/confident expression, pointing LEFT toward the product.`,
+              'HEADLINE (bake it onto the thumbnail, large and readable):',
+              `  "${line1}" then "${line2}" — bold condensed capitals; "${line2}" is the larger, dominant line in bright yellow (#FFE034) and "${line1}" in white, each with a clean thick black outline. Place it where it does NOT cover the face or the product. Outlined text only — no boxes, panels, or shadow blocks behind any word. Spelling must be EXACT. No other text, logos or watermarks anywhere except this headline.`,
               '',
-              `BACKGROUND: ${bg}. No white space.`,
-              '',
-              'STYLE: High-production YouTube creator thumbnail. Bold and punchy. Background must be noticeably blurred (bokeh) so the host and product are the sharpest elements in the frame.',
-              'No logos, no watermarks, no brand names rendered in the image itself.',
+              `SCENE: ${bg} Compose it naturally like a real top-creator thumbnail — the creator and the product are the clear focus with the background softly out of focus. Bright, clean and high-contrast, but with natural lighting (no neon, no coloured glows).`,
             ].join('\n')
             }
             refs = [

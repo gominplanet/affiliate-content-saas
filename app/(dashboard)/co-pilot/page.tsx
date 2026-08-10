@@ -650,9 +650,12 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
         .map(m => ({ id: m.id, name: m.name, trigger_token: m.trigger_token }))
       setFaceModels(ready)
       setSelectedFaceModelId(prev => prev ?? (ready.length ? ready[0].id : null))
-      // Single model → pre-select it in the picker (no auto-detect chip shown).
-      // Multiple models → keep 'auto' so vision-matching runs unless overridden.
-      setScoutFaceSelection(prev => prev !== 'auto' ? prev : ready.length === 1 ? ready[0].id : 'auto')
+      // Always default to an EXPLICIT person (the first ready face), never silent
+      // auto-detect — vision-matching on a video frame guessed wrong (put Michelle
+      // on Seb's video). The "who's in this video?" chips let the creator switch;
+      // this just makes the default a visible, correct-able choice instead of a
+      // silent guess. Single face → that face; multiple → the first (switchable).
+      setScoutFaceSelection(prev => prev !== 'auto' ? prev : ready.length ? ready[0].id : 'auto')
     } catch { setFaceModels([]) }
   }, [])
 
@@ -2106,7 +2109,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                     <ul className="mt-2 flex flex-col gap-1.5 text-[11px] leading-relaxed text-[#6e6e73] dark:text-[#ebebf0]">
                       <li><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Train your face (optional).</strong> A few clear, well-lit photos from different angles — MVP renders your real likeness and auto-checks every thumbnail for a match. No face model? Choose &ldquo;No face&rdquo; for a product-only scene.</li>
                       <li><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Describe the thumbnail you want.</strong> Use the box below to set the scene, mood, your pose or background — e.g. &ldquo;shocked face, bright kitchen, big arrow at the stain.&rdquo; The product photo is pulled from your Amazon link automatically — you don&apos;t need to upload one.</li>
-                      <li><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Pick your headline.</strong> Choose a suggestion or write your own (5 words max) — that exact text gets baked on.</li>
+                      <li><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Headline is automatic.</strong> MVP writes the headline from the product itself. After it generates, you can edit the text or hit Regenerate.</li>
                       <li>Thumbnails are AI-generated, so glance at the variants and regenerate if one isn&apos;t quite right — it&apos;s normal to take a couple of tries.</li>
                     </ul>
                   </details>
@@ -2116,19 +2119,9 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                     <div className="flex flex-col gap-2 px-1 pb-1">
                       <p className="text-[11px] font-semibold text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide">Who&apos;s in this video?</p>
                       <div className="flex flex-wrap gap-1.5">
-                        {faceModels.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => setScoutFaceSelection('auto')}
-                            className={`px-3 py-1 rounded-full text-[11px] font-semibold transition-all ${
-                              scoutFaceSelection === 'auto'
-                                ? 'bg-[#FF9500] text-white shadow-sm'
-                                : 'bg-gray-100 dark:bg-white/10 text-[#86868b] dark:text-[#8e8e93] hover:bg-gray-200 dark:hover:bg-white/20'
-                            }`}
-                          >
-                            Auto-detect
-                          </button>
-                        )}
+                        {/* Auto-detect removed: vision-matching on a video frame
+                            guessed the wrong person. The creator picks explicitly;
+                            the first face is pre-selected by default. */}
                         {faceModels.map(m => (
                           <button
                             key={m.id}
