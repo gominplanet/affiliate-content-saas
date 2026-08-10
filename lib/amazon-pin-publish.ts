@@ -23,6 +23,33 @@ export interface PinIntegration {
   amazon_associates_tag?: string | null
 }
 
+// FTC + Amazon Associates Operating Agreement: affiliate posts must disclose.
+// This is the exact wording the Associates agreement requires.
+const AFFILIATE_DISCLOSURE = 'As an Amazon Associate I earn from qualifying purchases.'
+
+/**
+ * Guarantee every published caption carries the affiliate disclosure and the
+ * #ad / #sponsored tags, WITHOUT duplicating them if the copy already has them.
+ * Runs at publish time so it can't be edited away, and keeps any niche discovery
+ * hashtags the copy already includes. Budgeted to stay under `max` chars.
+ */
+export function finalizeSocialCaption(text: string, max = 500): string {
+  let body = (text || '').trim()
+  const needDisclosure = !/amazon associate/i.test(body)
+  const needAd = !/(^|\s)#ad\b/i.test(body)
+  const needSponsored = !/(^|\s)#sponsored\b/i.test(body)
+
+  const bits: string[] = []
+  if (needDisclosure) bits.push(AFFILIATE_DISCLOSURE)
+  const tags = [needAd ? '#ad' : '', needSponsored ? '#sponsored' : ''].filter(Boolean).join(' ')
+  const suffix = [bits.join(' '), tags].filter(Boolean).join(' ')
+  if (!suffix) return body.slice(0, max)
+
+  const maxBody = Math.max(0, max - suffix.length - 2)
+  if (body.length > maxBody) body = body.slice(0, maxBody).trim()
+  return `${body} ${suffix}`.trim().slice(0, max)
+}
+
 /** Best-effort product title from an ASIN (for grounding the copy). */
 async function productTitleFor(asin: string, given?: string): Promise<string> {
   const t = (given || '').trim()
@@ -51,17 +78,18 @@ export async function writePinCopy(opts: {
     const msg = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 400,
-      system: 'You write high-CTR Pinterest Pins for product finds. Return STRICT JSON {"title","description"}. title ≤ 90 chars, punchy and keyword-rich. description ≤ 400 chars, benefit-led, ending with 2–4 relevant hashtags. No price claims, no "cheap", no fake urgency. No markdown, JSON only.',
+      system: 'You write high-CTR Pinterest Pins for product finds. Return STRICT JSON {"title","description"}. title ≤ 90 chars, punchy and keyword-rich. description ≤ 350 chars, benefit-led, then 4–6 relevant NICHE hashtags for discovery (specific to the product category, e.g. #skincareroutine #vitaminc), then #ad #sponsored, then the exact text "As an Amazon Associate I earn from qualifying purchases." No price claims, no "cheap", no fake urgency. No markdown, JSON only.',
       messages: [{ role: 'user', content: `PRODUCT: ${productTitle || opts.productUrl || 'a great find'}\n\nWrite the Pin JSON now.` }],
     })
     recordAnthropicUsage(msg, { userId: opts.userId, tier: opts.tier, feature: 'amazon_pin_caption', model: 'claude-haiku-4-5-20251001' })
     const raw = (msg.content[0] as { type: string; text?: string }).text || ''
     const j = JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1)) as { title?: string; description?: string }
     title = scrubBanned(String(j.title || '').trim()).slice(0, 100)
-    description = scrubBanned(String(j.description || '').trim()).slice(0, 500)
+    description = scrubBanned(String(j.description || '').trim())
   } catch { /* fall back below */ }
   if (!title) title = (productTitle || 'Great find').slice(0, 100)
-  if (!description) description = (productTitle || '').slice(0, 500)
+  // Guarantee the disclosure + #ad #sponsored no matter what the model returned.
+  description = finalizeSocialCaption(description || productTitle || '')
   return { title, description }
 }
 
@@ -130,6 +158,10 @@ export async function publishAmazonPin(opts: {
     if (!title) title = written.title
     if (!description) description = written.description
   }
+
+  // Compliance: every published pin carries the disclosure + #ad #sponsored,
+  // even if the creator edited the box or a scheduled row stored older copy.
+  description = finalizeSocialCaption(description)
 
   // Publish.
   const pinterest = new PinterestService(intRow.pinterest_access_token)
