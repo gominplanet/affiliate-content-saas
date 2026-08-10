@@ -1085,9 +1085,10 @@ export async function POST(request: Request) {
     //   1. Extension-captured frame (capturedFrames) — highest resolution
     //   2. Storyboard frame (gfxStoryboardPromise) — server-side, no friction
     //   3. Photobooth face model — fallback when no video context
-    // Renders at quality:'high' — the Co-Pilot thumbnail is the visible output
-    // and the bar is ChatGPT-grade richness (crisp text, real badges, bold
-    // backgrounds); medium came out too soft/flat.
+    // Renders at quality:'medium' — high made the two-variant + QC path heavy
+    // enough to error/time out, and this block silently falls through to the old
+    // NB engine on ANY failure, which is worse than medium. The richness comes
+    // from the design-language prompt, not the render quality.
     // Falls through to the NB path on any failure so generation never blanks.
     const gfxStoryboardFrame = textMode === 'graphic' ? await gfxStoryboardPromise : null
     const hasVideoFrame = !!(capturedFrames?.length) || !!gfxStoryboardFrame
@@ -1148,7 +1149,7 @@ export async function POST(request: Request) {
                 `SCENE: ${bg}. Compose it naturally like a real top-creator product thumbnail — the product is the clear focus, background softly out of focus. Bright, clean, high contrast, natural lighting.`,
               ].join('\n')
               const refs = [{ data: productBytesP, filename: 'product.png', mime: 'image/png' as const }]
-              const b64 = await openaiGfxP.generateWithReferences({ prompt, images: refs, size: '1536x1024', quality: 'high' })
+              const b64 = await openaiGfxP.generateWithReferences({ prompt, images: refs, size: '1536x1024', quality: 'medium' })
               recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'yt_thumb_graphic', model: gfxModelP, images: 1 })
               const copyDec = (copy as { decoration?: ThumbDecoration }).decoration
               const gfxDec: ThumbDecoration =
@@ -1499,11 +1500,13 @@ export async function POST(request: Request) {
             ]
             if (productBytes) refs.push({ data: productBytes, filename: 'product.png', mime: 'image/png' })
 
-            // HIGH quality — this is the visible Co-Pilot person+product output
-            // and the target is ChatGPT-grade richness. Medium came out softer,
-            // flatter, with weaker text/badge rendering; high is what closes the
-            // "ChatGPT vibe" gap (crisper text, richer backgrounds, real badges).
-            const b64 = await openaiGfx.generateWithReferences({ prompt, images: refs, size: '1536x1024', quality: 'high' })
+            // MEDIUM quality — deliberate. HIGH made each render heavy enough
+            // that the two-variant + product-QC path started erroring/timing out,
+            // and this whole block silently falls through to the OLD Nano Banana
+            // engine on ANY error (rim-glow cutouts, flat yellow/white baked text,
+            // wrong face source). Medium keeps gpt-image reliably in play; the
+            // "ChatGPT vibe" comes from the design-language prompt, not the quality.
+            const b64 = await openaiGfx.generateWithReferences({ prompt, images: refs, size: '1536x1024', quality: 'medium' })
             recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'yt_thumb_graphic', model: gfxModel, images: 1 })
             // Badge the creator chose (5 stars / hot / etc). The GFX path bakes its
             // own headline via gpt-image and never runs bakeSimpleHeadline, so the
