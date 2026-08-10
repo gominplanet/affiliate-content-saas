@@ -793,6 +793,11 @@ export async function POST(request: Request) {
     const tier = normalizeTier(tierRow?.tier)
     TELEMETRY = { userId: user.id, tier }
 
+    // gpt-image render quality is tier-gated: Pro (and admin) get HIGH for the
+    // crispest, most ChatGPT-grade output; every other paid tier gets MEDIUM.
+    // High costs ~3× more per image (~$0.22 vs ~$0.08), so it's a Pro perk.
+    const gfxQuality: 'medium' | 'high' = (tier === 'pro' || tier === 'admin') ? 'high' : 'medium'
+
     // Per-user thumbnail badge preference (Thumbnail style → Save as my default).
     // `decoration`: 'auto' (or unset) → let the model/angle pick per thumbnail;
     // 'none' → never draw one; a specific badge ('check'|'stars'|'arrow'|
@@ -1185,10 +1190,9 @@ export async function POST(request: Request) {
     //   1. Extension-captured frame (capturedFrames) — highest resolution
     //   2. Storyboard frame (gfxStoryboardPromise) — server-side, no friction
     //   3. Photobooth face model — fallback when no video context
-    // Renders at quality:'medium' — high made the two-variant + QC path heavy
-    // enough to error/time out, and this block silently falls through to the old
-    // NB engine on ANY failure, which is worse than medium. The richness comes
-    // from the design-language prompt, not the render quality.
+    // Render quality is tier-gated (gfxQuality, set above): Pro/admin → high,
+    // other paid tiers → medium. Co-Pilot generates one variant, so a single
+    // high render stays under the timeout.
     // Falls through to the NB path on any failure so generation never blanks.
     const gfxStoryboardFrame = textMode === 'graphic' ? await gfxStoryboardPromise : null
     const hasVideoFrame = !!(capturedFrames?.length) || !!gfxStoryboardFrame
@@ -1250,7 +1254,7 @@ export async function POST(request: Request) {
                 'FRAMING (critical): compose for 16:9 with a safe margin — keep the whole product and all text fully inside the frame with clear space from every edge. The outer ~8% is bleed; nothing important there. The image is cropped slightly top and bottom, so never place text hard against the top or bottom edge.',
               ].join('\n')
               const refs = [{ data: productBytesP, filename: 'product.png', mime: 'image/png' as const }]
-              const b64 = await openaiGfxP.generateWithReferences({ prompt, images: refs, size: '1536x1024', quality: 'medium' })
+              const b64 = await openaiGfxP.generateWithReferences({ prompt, images: refs, size: '1536x1024', quality: gfxQuality })
               recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'yt_thumb_graphic', model: gfxModelP, images: 1 })
               const copyDec = (copy as { decoration?: ThumbDecoration }).decoration
               const gfxDec: ThumbDecoration =
@@ -1644,13 +1648,10 @@ export async function POST(request: Request) {
             ]
             if (productBytes) refs.push({ data: productBytes, filename: 'product.png', mime: 'image/png' })
 
-            // MEDIUM quality — deliberate. HIGH made each render heavy enough
-            // that the two-variant + product-QC path started erroring/timing out,
-            // and this whole block silently falls through to the OLD Nano Banana
-            // engine on ANY error (rim-glow cutouts, flat yellow/white baked text,
-            // wrong face source). Medium keeps gpt-image reliably in play; the
-            // "ChatGPT vibe" comes from the design-language prompt, not the quality.
-            const b64 = await openaiGfx.generateWithReferences({ prompt, images: refs, size: '1536x1024', quality: 'medium' })
+            // Tier-gated quality (gfxQuality): Pro/admin get HIGH for the crispest
+            // ChatGPT-grade render; other paid tiers get MEDIUM. Co-Pilot generates
+            // one variant, so a single high render stays well under the timeout.
+            const b64 = await openaiGfx.generateWithReferences({ prompt, images: refs, size: '1536x1024', quality: gfxQuality })
             recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'yt_thumb_graphic', model: gfxModel, images: 1 })
             // Badge the creator chose (5 stars / hot / etc). The GFX path bakes its
             // own headline via gpt-image and never runs bakeSimpleHeadline, so the
@@ -1729,6 +1730,7 @@ export async function POST(request: Request) {
           // Diagnostics: did the art director actually design this, and what did it say?
           artDirected: !!(gfxCopies[0] as ThumbBrief)?.concept,
           artConcept: ((gfxCopies[0] as ThumbBrief)?.concept || '').slice(0, 400),
+          gfxQuality,
         })
       } catch (gfxErr) {
         console.warn('[generate-thumbnail] graphic path failed, falling through to NB:', gfxErr instanceof Error ? gfxErr.message : String(gfxErr))

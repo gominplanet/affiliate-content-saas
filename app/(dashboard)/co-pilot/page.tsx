@@ -1129,6 +1129,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
       const fellBack = typeof data.gfxFallbackReason === 'string' && data.gfxFallbackReason.length > 0
       const parts = [
         `engine: ${isGpt ? 'gpt-image ✓' : engine}`,
+        isGpt && data.gfxQuality ? `quality: ${data.gfxQuality as string}` : '',
         isGpt ? (data.artDirected ? 'art-director: ON' : 'art-director: OFF (fallback copy)') : '',
         fellBack ? `gpt-image FELL BACK → ${data.gfxFallbackReason as string}` : '',
       ].filter(Boolean)
