@@ -538,7 +538,7 @@ export default function PhotoboothPage() {
         <div>
           <div className="flex items-center gap-2 mb-3">
             <Camera size={18} className="text-[#7C3AED]" />
-            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Photobooth — generate headshots</p>
+            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Photobooth — headshots for profiles &amp; socials</p>
           </div>
 
           {!hasFace ? (
@@ -658,17 +658,17 @@ export default function PhotoboothPage() {
                         <select
                           value={s.expression || 'neutral'}
                           onChange={(e) => updateShotExpression(s, e.target.value)}
-                          title="Expression tag — only Excited / Surprised / Laughing are cast onto your thumbnails; everything else (incl. Happy & Neutral) stays a headshot."
+                          title="Expression tag for this headshot."
                           className="mt-2 w-full text-[11px] px-2 py-1 rounded-md bg-white dark:bg-[#0a0a0a] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] focus:border-[#7C3AED] focus:outline-none"
                         >
                           {EXPRESSION_OPTS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
                         </select>
                         <button
                           onClick={() => updateShotStarred(s, !s.starred)}
-                          title="When on, Co-Pilot may cast this shot as your face on thumbnails. Star a few of your best — it uses only the starred ones."
+                          title="Mark your favorite headshots."
                           className={`mt-1.5 inline-flex items-center justify-center gap-1.5 w-full px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${s.starred ? 'bg-[#7C3AED] border-[#7C3AED] text-white' : 'bg-transparent border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:border-[#7C3AED]'}`}
                         >
-                          {s.starred ? '★ Used on thumbnails' : '☆ Use on thumbnails'}
+                          {s.starred ? '★ Favorite' : '☆ Favorite'}
                         </button>
                         <button
                           onClick={() => downloadShot(s)}
