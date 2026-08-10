@@ -2441,10 +2441,12 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                         )}
                         {thumbnailModel === 'gpt-image-graphic' && (
                           <>
-                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#FF6B00]/10 text-[#FF6B00] font-medium">🎨 Graphic Design</span>
-                            <button onClick={() => generateThumbnail({ textMode: 'clean' })} disabled={generatingThumbnail}
+                            {/* "New scene" regenerates on the SAME gpt-image engine (fresh
+                                background + expression each time) — it used to secretly drop to
+                                the old Nano Banana 'clean' engine. */}
+                            <button onClick={() => generateThumbnail({ textMode: 'graphic' })} disabled={generatingThumbnail}
                               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 dark:border-white/10 hover:border-[#7C3AED] text-[#1d1d1f] dark:text-[#f5f5f7] transition disabled:opacity-60">
-                              <RefreshCw size={12} /> Scene
+                              <RefreshCw size={12} /> New scene
                             </button>
                             <div className="flex items-center gap-1.5 w-full">
                               <input type="text" value={gfxTitleInput} onChange={e => setGfxTitleInput(e.target.value)}
