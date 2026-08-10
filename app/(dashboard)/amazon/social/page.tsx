@@ -9,6 +9,7 @@ import type { Metadata } from 'next'
 import { Share2, Sparkles } from 'lucide-react'
 import SocialComposer from '@/components/amazon/SocialComposer'
 import SocialConnections from '@/components/amazon/SocialConnections'
+import AffiliateSetup from '@/components/amazon/AffiliateSetup'
 
 export const metadata: Metadata = {
   title: 'Social Influencer — Amazon Influencer',
@@ -57,6 +58,9 @@ export default function AmazonSocialPage() {
 
       {/* Connect strip — all three accounts in one place, above the columns */}
       <SocialConnections />
+
+      {/* Affiliate IDs — Amazon tag / Geniuslink, via a setup modal */}
+      <AffiliateSetup />
 
       {/* Saved research finds + the Pinterest composer */}
       <SocialComposer />
