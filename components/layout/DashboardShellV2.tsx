@@ -53,6 +53,7 @@ import WpConnectionDoctorButton from './WpConnectionDoctorButton'
 import PurgeCacheTopbarButton from './PurgeCacheTopbarButton'
 import ScoutTopbarButton from './ScoutTopbarButton'
 import SocialHealthTopbarButton from './SocialHealthTopbarButton'
+import UsageMeterTopbar from './UsageMeterTopbar'
 import SiteSwitcherChip from './SiteSwitcherChip'
 import { HelpDeskButton } from '@/components/HelpDeskSidebar'
 
@@ -966,6 +967,11 @@ export default function DashboardShellV2({
           <TopbarSearch isAdmin={isAdmin} />
 
           <div className="ml-auto flex items-center gap-3">
+            {/* Plan usage meter — on EVERY page so users always see how much of
+                their limits (thumbnails / pins / IG / FB, or their Generations
+                allowance) they've used this period. Self-hides for unlimited
+                plans. */}
+            <UsageMeterTopbar />
             {/* Get / Update SCOUT — a load-unpacked extension never auto-
                 updates, so the latest zip is reachable here next to the WP
                 theme-update button. Renders nothing when SCOUT is current. */}
