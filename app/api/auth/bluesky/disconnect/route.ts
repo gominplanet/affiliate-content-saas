@@ -1,17 +1,20 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { checkedWrite } from '@/lib/db-error'
 
 export async function POST() {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await supabase.from('integrations').update({
-    bluesky_handle: null,
-    bluesky_app_password: null,
-    bluesky_did: null,
-  }).eq('user_id', user.id)
+  const ok = await checkedWrite('bluesky.disconnect',
+    supabase.from('integrations').update({
+      bluesky_handle: null,
+      bluesky_app_password: null,
+      bluesky_did: null,
+    }).eq('user_id', user.id),
+    { userId: user.id })
+  if (!ok) return NextResponse.json({ error: 'Could not disconnect. Try again.' }, { status: 500 })
 
   return NextResponse.json({ ok: true })
 }
