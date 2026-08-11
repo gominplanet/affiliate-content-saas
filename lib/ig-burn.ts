@@ -8,6 +8,7 @@ import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { extractAsin, fetchAmazonProduct } from '@/services/amazon'
 import { researchProductFromUrl } from '@/services/research'
+import { selectHashtags, mergeHashtags, extractHashtags, stripHashtags } from '@/lib/hashtag-map'
 
 export interface IgBurnCtx { userId: string; tier: string | null }
 
@@ -72,23 +73,31 @@ ${productContext.slice(0, 1500)}
 RULES:
 - Strong hook on line 1 (max 7 words), then 1-2 short punchy value lines.
 - Conversational creator voice, a couple of emojis max.
-- Then 5-7 hashtags on one line, a smart MIX (no duplicates):
-  • If the product has a clear brand name, include it as a hashtag (e.g. HOVERAir X1 → #hoverair). Skip this if there's no real brand.
-  • 2 SPECIFIC and niche to this exact product/topic (e.g. #selfflyingdrone, #followmecamera).
-  • 2-3 BROADER category/audience tags this product fits, so it reaches beyond the niche (e.g. a creator drone → #contentcreator #filmmaking #tech; a coffee gadget → #coffeelover #homebarista).
-  • NEVER generic spam (#amazonfinds, #musthave, #viral, #fyp).
+- End with 2-3 hashtags that are SPECIFIC and niche to this exact product/topic
+  (e.g. #selfflyingdrone, #followmecamera). Just the specific ones — broader
+  category and brand tags are added automatically, so don't add generic tags.
+- NEVER generic spam (#amazonfinds, #musthave, #viral, #fyp).
 - Do NOT include any URL (not clickable on IG). You may say "link in bio".
 - Never use the word "honest".
 - Under 600 characters total.
 
-Return ONLY the caption text + the hashtags.`,
+Return ONLY the caption text + the 2-3 specific hashtags.`,
       }],
     })
     recordAnthropicUsage(msg, { userId: ctx.userId, tier: ctx.tier, feature: 'ig_burn_caption', model: 'claude-haiku-4-5-20251001' })
     let text = ((msg.content[0] as { type: string; text: string }).text || '').trim()
-    text = text.replace(/\bhonest(ly)?\b/gi, '').replace(/https?:\/\/\S+/g, '').replace(/\s{2,}/g, ' ').trim()
-    if (!/#ad\b/i.test(text)) text = `${text}\n\n#ad`
-    return text || null
+    text = text.replace(/\bhonest(ly)?\b/gi, '').replace(/https?:\/\/\S+/g, '').replace(/[ \t]{2,}/g, ' ').trim()
+
+    // Own the hashtag line: the AI supplies 2-3 specific tags, we add the vetted
+    // brand + broad-reach category mix and drop any spam, so every caption gets a
+    // deliberate spread instead of whatever the model happened to invent.
+    const aiSpecific = extractHashtags(text).filter(t => t !== '#ad')
+    const body = stripHashtags(text)
+    const title = productContext.split('\n')[0] || productContext
+    const curated = selectHashtags({ text: productContext, brand: title, max: 6 })
+    const tags = mergeHashtags([...aiSpecific.slice(0, 2), ...curated], [], 7)
+    const finalCaption = `${body}${tags.length ? `\n\n${tags.join(' ')}` : ''}\n\n#ad`
+    return finalCaption.trim() || null
   } catch {
     return null
   }

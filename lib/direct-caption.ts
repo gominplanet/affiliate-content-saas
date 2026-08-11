@@ -26,6 +26,7 @@
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import type { Tier } from '@/lib/tier'
+import { selectHashtags, mergeHashtags } from '@/lib/hashtag-map'
 
 const MODEL = 'claude-haiku-4-5-20251001'
 
@@ -310,13 +311,16 @@ Return ONLY a JSON object shaped EXACTLY:
 
   const hook = scrub((parsed.hook || input.productName).slice(0, 200))
   const body = scrub((parsed.body || '').slice(0, 400))
-  const hashtags = (Array.isArray(parsed.hashtags) ? parsed.hashtags : [])
-    .map(t => String(t).trim())
-    .filter(Boolean)
-    .map(t => (t.startsWith('#') ? t : `#${t}`))
-    .map(t => t.replace(/\s+/g, ''))
-    .filter((t, i, arr) => arr.indexOf(t) === i)
-    .slice(0, rules.hashtagCount)
+  // Curated brand + broad category mix leads (reliable, vetted), then the AI's
+  // product-specific tags fill the rest — deduped, spam-filtered, capped.
+  const curated = selectHashtags({
+    text: `${input.productName} ${input.description || ''}`,
+    brand: input.productName,
+    niches: input.niches,
+    max: rules.hashtagCount,
+  })
+  const aiTags = Array.isArray(parsed.hashtags) ? parsed.hashtags.map(t => String(t)) : []
+  const hashtags = mergeHashtags(curated, aiTags, rules.hashtagCount)
 
   // hook · value · CTA (with trigger word) · hashtags · disclaimer
   const caption = [hook, body, cta, hashtags.join(' '), disclaimer]
