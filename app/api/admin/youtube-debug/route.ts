@@ -37,15 +37,16 @@ export async function GET(request: Request) {
       youtube_oauth_refresh_token: null,
       youtube_oauth_token_expiry: null,
       youtube_channel_id: null,
-      youtube_channel_url: null,
     }).eq('user_id', user.id)
     try { await admin.from('youtube_channels').delete().eq('user_id', user.id) } catch { /* ignore */ }
     try { await admin.from('youtube_sync_cache').delete().eq('user_id', user.id) } catch { /* ignore */ }
   }
 
-  const { data: intRow } = await admin
+  // Select ONLY columns that definitely exist. A nonexistent column
+  // (youtube_channel_url) errors the whole select and returns a false "null".
+  const { data: intRow, error: intErr } = await admin
     .from('integrations')
-    .select('youtube_channel_id, youtube_channel_url, youtube_oauth_access_token, youtube_oauth_refresh_token')
+    .select('youtube_channel_id, youtube_oauth_access_token, youtube_oauth_refresh_token')
     .eq('user_id', user.id)
     .maybeSingle()
 
@@ -58,9 +59,9 @@ export async function GET(request: Request) {
 
   return NextResponse.json({
     reset,
+    integrations_read_error: intErr?.message ?? null,
     integrations: {
       youtube_channel_id: intRow?.youtube_channel_id ?? null,
-      youtube_channel_url: intRow?.youtube_channel_url ?? null,
       has_access_token: !!intRow?.youtube_oauth_access_token,
       has_refresh_token: !!intRow?.youtube_oauth_refresh_token,
     },
