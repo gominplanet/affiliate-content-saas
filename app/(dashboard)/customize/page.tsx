@@ -259,6 +259,10 @@ export default function CustomizePage() {
   const [userId, setUserId] = useState('')
   // Published posts for the Featured-posts dropdowns (title + live URL).
   const [pubPosts, setPubPosts] = useState<Array<{ title: string; url: string }>>([])
+  // Newsletter master switch (managed in Newsletter, mirrored here so the
+  // comment opt-in can be turned on in the same place). null = still loading.
+  const [newsletterOn, setNewsletterOn] = useState<boolean | null>(null)
+  const [newsletterSaving, setNewsletterSaving] = useState(false)
 
   // (Logo upload / bio / socials editing was removed — those are managed in Brand Profile now.)
 
@@ -281,6 +285,15 @@ export default function CustomizePage() {
         .filter(p => p.title && p.wordpress_url)
         .map(p => ({ title: p.title as string, url: p.wordpress_url as string })))
     } catch { /* non-fatal */ }
+    // Newsletter master switch — mirrored into the Comments section so it can be
+    // enabled right beside the comment toggle. Best-effort.
+    try {
+      const nlRes = await fetch('/api/newsletter/settings')
+      if (nlRes.ok) {
+        const nl = await nlRes.json()
+        setNewsletterOn(nl?.settings?.enabled === true)
+      }
+    } catch { /* non-fatal — leave null, the row just won't prefill */ }
     // Pull the canonical logo URL from brand_profiles — that's the single source
     // of truth (set in Brand Profile). We only use blog_customizations.about
     // for blog-specific layout choices (the banner background color).
@@ -772,9 +785,41 @@ export default function CustomizePage() {
             </button>
           </div>
           {data.layout.enableComments && (
-            <p className="text-xs text-[var(--text-3)] mt-2 px-1">
-              When your Newsletter is on, the comment form also shows an “add me to the newsletter” opt-in. Commenters who tick it get your double opt-in confirmation and land in your Subscribers list. Their email is never published with the comment.
-            </p>
+            <label className="flex items-start gap-3 p-3 mt-2 rounded-xl bg-[var(--surface-2)] border border-[var(--border-2)] cursor-pointer">
+              <input
+                type="checkbox"
+                className="mt-0.5 h-4 w-4 accent-[#7C3AED] cursor-pointer"
+                checked={newsletterOn === true}
+                disabled={newsletterOn === null || newsletterSaving}
+                onChange={async e => {
+                  const next = e.target.checked
+                  setNewsletterSaving(true)
+                  const prev = newsletterOn
+                  setNewsletterOn(next) // optimistic
+                  try {
+                    const res = await fetch('/api/newsletter/settings', {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ enabled: next }),
+                    })
+                    if (!res.ok) throw new Error('failed')
+                  } catch {
+                    setNewsletterOn(prev) // revert on failure
+                  } finally {
+                    setNewsletterSaving(false)
+                  }
+                }}
+              />
+              <span>
+                <span className="block text-sm font-medium text-[var(--text)]">
+                  Also turn on the newsletter to keep these emails
+                  {newsletterSaving && <span className="ml-2 text-xs text-[var(--text-3)]">saving…</span>}
+                </span>
+                <span className="block text-xs text-[var(--text-3)] mt-0.5">
+                  Adds an opt-in checkbox to the comment form. Commenters who tick it get a confirmation email and land in your Subscribers list. You email them the best product reviews just a few times a month, never every post. Their email is never published with the comment.
+                </span>
+              </span>
+            </label>
           )}
         </Section>
 
