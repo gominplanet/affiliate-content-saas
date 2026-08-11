@@ -160,6 +160,87 @@ export async function renderStoryImage(
   }
 }
 
+/**
+ * Compose a 1080×1080 square DEAL CARD from a product image: the product padded
+ * on a dark canvas, a bold deal-hook banner at the top (e.g. "HOT DEAL",
+ * "LOWEST PRICE"), an optional supporting line under it, and an optional brand
+ * chip. Used by the Deal Radar / Walmart / Wayward "Quick post to socials" so
+ * the image on Facebook / Threads / LinkedIn / Telegram / Bluesky reads as a
+ * designed offer, not a bare product photo.
+ *
+ * Square (1080×1080) so ONE render works everywhere those platforms show it.
+ * Headlines are QUALITATIVE on purpose — never a specific % or price — because
+ * the post is evergreen and the number changes (same rule as the deal caption).
+ *
+ * Returns a ready-to-post JPEG URL, or null if Cloudinary isn't configured /
+ * anything fails (caller falls back to the raw product photo).
+ */
+export async function renderDealCard(
+  productImageUrl: string,
+  opts: { headline?: string; subline?: string; brandName?: string; logoUrl?: string } = {},
+): Promise<string | null> {
+  if (!ensureConfig()) return null
+  if (!productImageUrl || !/^https?:\/\//i.test(productImageUrl)) return null
+  try {
+    const up = await cloudinary.uploader.upload(productImageUrl, {
+      folder: 'deal-cards', resource_type: 'image', overwrite: false,
+    })
+    const publicId = up.public_id as string
+    const headline = overlayText(opts.headline).toUpperCase().slice(0, 22)
+    const subline = overlayText(opts.subline).slice(0, 40)
+    const brand = overlayText(opts.brandName).slice(0, 28)
+
+    // Brand logo — best-effort, FLAT folder (nested ids break the overlay ref).
+    let logoId: string | null = null
+    if (opts.logoUrl && /^https?:\/\//i.test(opts.logoUrl)) {
+      try {
+        const l = await cloudinary.uploader.upload(opts.logoUrl, { folder: 'deal-cards', resource_type: 'image', overwrite: false })
+        logoId = l.public_id as string
+      } catch { /* no logo this time */ }
+    }
+
+    // Product padded to a square on white, then the square framed on dark.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const base: any[] = [
+      { width: 940, height: 940, crop: 'pad', background: 'white' },
+      { width: 1080, height: 1080, crop: 'pad', background: '#0e0e11', gravity: 'center' },
+    ]
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const headlineLayer = (y: number): any[] => headline
+      ? [{ overlay: { font_family: 'Arial', font_size: 72, font_weight: 'bold', letter_spacing: 2, text: headline }, color: '#ffffff', background: '#7C3AED', gravity: 'north', y, radius: 14 }]
+      : []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sublineLayer = (y: number): any[] => subline
+      ? [{ overlay: { font_family: 'Arial', font_size: 38, font_weight: 'bold', text: subline }, color: '#111114', background: '#ffffff', gravity: 'north', y, radius: 10 }]
+      : []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const brandLayer = (y: number): any[] => brand
+      ? [{ overlay: { font_family: 'Arial', font_size: 34, font_weight: 'bold', text: brand }, color: '#ffffff', background: '#111114', gravity: 'south', y, radius: 20 }]
+      : []
+
+    // RICH: logo + headline + subline + brand chip.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rich: any[] = [...base]
+    if (logoId) rich.push({ overlay: { public_id: logoId }, width: 92, height: 92, crop: 'thumb', radius: 'max', gravity: 'north_west', x: 44, y: 44 })
+    rich.push(...headlineLayer(56))
+    rich.push(...sublineLayer(148))
+    rich.push(...brandLayer(48))
+    const richUrl = cloudinary.url(publicId, { transformation: rich, secure: true, format: 'jpg' })
+    if (await urlIsImage(richUrl)) return richUrl
+
+    // SIMPLE fallback: text-only overlays (no logo) — maximally reliable.
+    const simple = [...base, ...headlineLayer(56), ...sublineLayer(148), ...brandLayer(48)]
+    const simpleUrl = cloudinary.url(publicId, { transformation: simple, secure: true, format: 'jpg' })
+    if (await urlIsImage(simpleUrl)) return simpleUrl
+
+    lastOverlayError = 'Cloudinary did not return a valid deal card'
+    return null
+  } catch (e) {
+    lastOverlayError = e instanceof Error ? e.message : String(e)
+    return null
+  }
+}
+
 export interface OverlaidVideo { url: string; publicId: string }
 
 /**

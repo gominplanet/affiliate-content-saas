@@ -11,6 +11,7 @@ import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { scrubBanned } from '@/lib/scrub'
 import { AFFILIATE_DISCLAIMER_DEFAULT } from '@/lib/social-disclaimer'
 import { publishDealToSocials, QUICK_POST_PLATFORMS, type QuickPostPlatform } from '@/lib/deal-social-publish'
+import { buildDealCardImage } from '@/lib/deal-card'
 import { buildPlatformGeniuslinks } from '@/lib/deal-quick-post'
 import { createWaywardLink } from '@/services/wayward'
 import type { Tier } from '@/lib/tier'
@@ -60,7 +61,7 @@ export async function executeWaywardQuickPost(input: WaywardQuickPostInput): Pro
     console.warn('[wayward-quick-post] geniuslink step failed — using the Wayward link:', err instanceof Error ? err.message : err)
   }
 
-  const { data: brand } = await db.from('brand_profiles').select('affiliate_disclaimer').eq('user_id', userId).maybeSingle()
+  const { data: brand } = await db.from('brand_profiles').select('affiliate_disclaimer,name,logo_url').eq('user_id', userId).maybeSingle()
   const disclaimer = (brand?.affiliate_disclaimer as string | null)?.trim() || AFFILIATE_DISCLAIMER_DEFAULT
 
   let cap = (input.caption || '').trim()
@@ -92,9 +93,17 @@ Return ONLY the caption text.` }],
   cap = scrubBanned(cap).slice(0, 600)
   if (!cap) cap = name.slice(0, 200)
 
+  // Designed product card — Wayward is a product share, not a discount, so the
+  // hook is "TOP PICK", never "ON SALE". Best-effort → falls back to raw photo.
+  const postImage = (await buildDealCardImage(imageUrl || null, {
+    headline: 'TOP PICK',
+    brandName: (brand?.name as string | null),
+    logoUrl: brand?.logo_url as string | null,
+  })) || imageUrl || null
+
   const results = await publishDealToSocials({
     supabase: db, userId,
-    deal: { asin, title: name, imageUrl: imageUrl || null },
+    deal: { asin, title: name, imageUrl: postImage },
     link, links: built.links, baseCaption: cap, disclaimer, platforms,
     retailerLabel: 'Amazon',
   })

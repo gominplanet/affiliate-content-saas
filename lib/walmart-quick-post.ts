@@ -11,6 +11,7 @@ import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { scrubBanned } from '@/lib/scrub'
 import { AFFILIATE_DISCLAIMER_DEFAULT } from '@/lib/social-disclaimer'
 import { publishDealToSocials, QUICK_POST_PLATFORMS, type QuickPostPlatform } from '@/lib/deal-social-publish'
+import { buildDealCardImage } from '@/lib/deal-card'
 import { buildPlatformGeniuslinks } from '@/lib/deal-quick-post'
 import { getWalmartProductLinks } from '@/services/partnerboost'
 import type { Tier } from '@/lib/tier'
@@ -64,7 +65,7 @@ export async function executeWalmartQuickPost(input: WalmartQuickPostInput): Pro
     console.warn('[walmart-quick-post] geniuslink step failed — using the minted link:', err instanceof Error ? err.message : err)
   }
 
-  const { data: brand } = await db.from('brand_profiles').select('affiliate_disclaimer').eq('user_id', userId).maybeSingle()
+  const { data: brand } = await db.from('brand_profiles').select('affiliate_disclaimer,name,logo_url').eq('user_id', userId).maybeSingle()
   const disclaimer = (brand?.affiliate_disclaimer as string | null)?.trim() || AFFILIATE_DISCLAIMER_DEFAULT
 
   let cap = (input.caption || '').trim()
@@ -96,9 +97,15 @@ Return ONLY the caption text.` }],
   cap = scrubBanned(cap).slice(0, 600)
   if (!cap) cap = name.slice(0, 200)
 
+  // Designed deal card (best-effort → falls back to the raw product photo).
+  const postImage = (await buildDealCardImage(imageUrl || null, {
+    brandName: (brand?.name as string | null),
+    logoUrl: brand?.logo_url as string | null,
+  })) || imageUrl || null
+
   const results = await publishDealToSocials({
     supabase: db, userId,
-    deal: { asin: itemId, title: name, imageUrl: imageUrl || null },
+    deal: { asin: itemId, title: name, imageUrl: postImage },
     link, links: built.links, baseCaption: cap, disclaimer, platforms,
     retailerLabel: 'Walmart',
   })
