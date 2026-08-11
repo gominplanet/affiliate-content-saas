@@ -48,6 +48,83 @@ interface DraftVideo {
   uploadPosition?: number | null
 }
 
+/**
+ * "Which product did we detect?" confirmation. Shows the product MVP resolved
+ * for this video and lets the creator correct it in one step by pasting the
+ * right Amazon link or ASIN. The correction is stored on the video, and every
+ * generator (thumbnails, blog, pins) reads it — so fixing it here fixes the
+ * "wrong product" everywhere at once. Renders only inside an expanded card.
+ */
+function ProductConfirm({ youtubeVideoId, detectedAsin }: { youtubeVideoId: string; detectedAsin: string | null }) {
+  const [open, setOpen] = useState(false)
+  const [link, setLink] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const [fixed, setFixed] = useState<{ title: string; imageUrl: string | null } | null>(null)
+
+  async function submit() {
+    const v = link.trim()
+    if (!v) return
+    setBusy(true); setErr(null)
+    try {
+      const res = await fetch('/api/youtube/videos/set-product', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoId: youtubeVideoId, link: v }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(d.error || 'Could not set the product')
+      setFixed({ title: d.title, imageUrl: d.imageUrl ?? null })
+      setOpen(false); setLink('')
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="mb-2 rounded-lg border border-[#7C3AED]/20 bg-[#7C3AED]/[0.04] px-2.5 py-1.5 text-[11px]">
+      {fixed ? (
+        <div className="flex items-center gap-1.5 text-[#1d1d1f] dark:text-[#f5f5f7]">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          {fixed.imageUrl && <img src={fixed.imageUrl} alt="" className="w-6 h-6 rounded object-cover flex-shrink-0" />}
+          <span className="font-medium truncate">Product set: {fixed.title}</span>
+        </div>
+      ) : (
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-[#6e6e73] dark:text-[#8e8e93]">
+            {detectedAsin ? <>Product detected: <span className="font-mono">{detectedAsin}</span></> : 'No product detected for this video'}
+          </span>
+          <button type="button" onClick={() => setOpen(o => !o)} className="font-semibold text-[#7C3AED] hover:underline">
+            {detectedAsin ? 'Wrong? Fix it →' : 'Set the product →'}
+          </button>
+        </div>
+      )}
+      {open && !fixed && (
+        <div className="mt-1.5 flex items-center gap-1.5">
+          <input
+            value={link}
+            onChange={(e) => setLink(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') submit() }}
+            placeholder="Paste the Amazon product link or its ASIN"
+            className="flex-1 min-w-0 px-2 py-1 rounded-md border border-[var(--border-2,#e5e5e7)] bg-white dark:bg-[#1c1c1e] text-[11px] outline-none focus:border-[#7C3AED]"
+          />
+          <button
+            type="button"
+            onClick={submit}
+            disabled={busy}
+            className="px-2.5 py-1 rounded-md text-[11px] font-semibold text-white bg-[#7C3AED] hover:opacity-90 disabled:opacity-50"
+          >
+            {busy ? '…' : 'Set'}
+          </button>
+        </div>
+      )}
+      {err && <p className="mt-1 text-[10px] text-[#ff3b30]">{err}</p>}
+    </div>
+  )
+}
+
 // ── Tab classification (2026-06-08, simplified 2026-06-20) ─────────────────
 // TWO workflow buckets the YouTube Co-Pilot surfaces:
 //   - todo  ("Needs metadata"):  a FRESH upload — just its filename title with
@@ -1889,6 +1966,9 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
             )}
           </div>
           <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] leading-snug line-clamp-2 mb-2">{video.title}</p>
+          {video.detectedAsin && (
+            <ProductConfirm youtubeVideoId={video.youtubeVideoId} detectedAsin={video.detectedAsin} />
+          )}
           <div className="flex items-center gap-2 flex-wrap">
             {generating ? (
               <div className="flex flex-col gap-1">
