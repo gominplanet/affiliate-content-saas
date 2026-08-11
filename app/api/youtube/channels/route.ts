@@ -21,6 +21,10 @@ import { resolveYouTubeChannel } from '@/services/youtube'
 import { normalizeTier } from '@/lib/tier'
 
 export const runtime = 'nodejs'
+// Never cache — this must reflect a connect/disconnect the instant it happens,
+// or the list shows a channel the DB no longer has (ghost after disconnect).
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
 export async function GET() {
   const supabase = await createServerClient()
