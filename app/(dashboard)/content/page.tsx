@@ -2683,7 +2683,15 @@ export default function ContentPage() {
       // fork (which is what let Scott accidentally re-schedule the same video).
       const _schedFor = p.scheduled_for as string | null | undefined
       const _isFutureScheduled = !!_schedFor && new Date(_schedFor).getTime() > Date.now()
-      if (liveIds && p.wordpress_post_id != null && !liveIds.has(p.wordpress_post_id as number) && !_isFutureScheduled) continue  // deleted/trashed in WordPress
+      // A JUST-published post may not be in the live-site ID set yet (WordPress
+      // caching / REST propagation lag, or a WAF hiccup on the live-ids read).
+      // Dropping it as "deleted" would flash its video back to "needs posting"
+      // moments after a successful publish — the exact "posted item reappears"
+      // bug. Give a 20-minute grace: never reconcile-drop a fresh post. After
+      // that, if it's genuinely gone from WordPress, reconciliation resumes.
+      const _publishedTs = (p.published_at || p.created_at) as string | null | undefined
+      const _isRecent = !!_publishedTs && (Date.now() - new Date(_publishedTs).getTime()) < 20 * 60 * 1000
+      if (liveIds && p.wordpress_post_id != null && !liveIds.has(p.wordpress_post_id as number) && !_isFutureScheduled && !_isRecent) continue  // deleted/trashed in WordPress
       if (p.video_id && p.wordpress_url) {
         const idx = seoByPostId.get(p.id as string)
         postMap[p.video_id as string] = {
