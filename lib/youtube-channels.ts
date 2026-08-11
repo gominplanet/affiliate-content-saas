@@ -101,19 +101,24 @@ export async function listYouTubeChannels(
     .order('created_at', { ascending: true })
   if (data && data.length) return (data as ChannelRow[]).map(rowToChannel)
 
-  // Legacy bridge — synthesize from integrations.
+  // Legacy bridge — synthesize from integrations, but ONLY when there's still a
+  // live OAuth token. A youtube_channel_id with no token is a disconnect
+  // leftover (older disconnects cleared tokens but not the id), and surfacing it
+  // showed a "ghost" channel that couldn't be removed and kept the sync resolver
+  // pointed at the wrong account. Link-only connections live in youtube_channels
+  // (handled above), so gating the synthetic row on the token is safe.
   const { data: legacy } = await supabase
     .from('integrations')
     .select('youtube_channel_id, youtube_oauth_access_token')
     .eq('user_id', userId)
     .maybeSingle()
-  if (legacy?.youtube_channel_id) {
+  if (legacy?.youtube_channel_id && legacy?.youtube_oauth_access_token) {
     return [{
       id: 'legacy',
       channelId: legacy.youtube_channel_id,
       channelTitle: legacy.youtube_channel_id,
       isDefault: true,
-      hasOAuth: !!legacy.youtube_oauth_access_token,
+      hasOAuth: true,
     }]
   }
   return []
@@ -197,13 +202,15 @@ export async function resolveSyncChannelId(
   }
   const forSite = await getChannelForSite(supabase, userId, opts.siteId)
   if (forSite) return forSite.channelId
-  // Final legacy fallback.
+  // Final legacy fallback — only when a live OAuth token backs it, so a
+  // disconnect leftover (id kept, token cleared by an older disconnect) never
+  // silently syncs the wrong account's videos.
   const { data: legacy } = await supabase
     .from('integrations')
-    .select('youtube_channel_id')
+    .select('youtube_channel_id, youtube_oauth_access_token')
     .eq('user_id', userId)
     .maybeSingle()
-  return legacy?.youtube_channel_id || null
+  return (legacy?.youtube_channel_id && legacy?.youtube_oauth_access_token) ? legacy.youtube_channel_id : null
 }
 
 /** Return a valid OAuth access token for PUSHING to a specific channel,
