@@ -193,10 +193,12 @@ export async function POST(request: Request) {
       } catch { /* non-fatal */ }
       // The only path here was the YouTube segment fetch (no uploaded source), and
       // YouTube frequently blocks server-side downloads. Point the user at the
-      // reliable fix (upload the source) instead of a dead-end error.
+      // reliable fix (upload the source) instead of a dead-end error. The raw
+      // service reason is kept in render_error above for debugging; the user gets
+      // one clean, actionable line.
       if (!hasSource) {
         return NextResponse.json({
-          error: `We couldn't pull this clip from YouTube automatically (${detail}). Upload the source video and render again.`,
+          error: 'YouTube didn’t let us grab this clip automatically (it does this sometimes). Click “Upload or pick a short” to add the video once, then every clip from it renders reliably.',
           needsUpload: true, videoId: short.video_id,
         }, { status: 412 })
       }

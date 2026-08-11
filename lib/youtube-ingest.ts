@@ -156,41 +156,62 @@ async function renderShortReq(
   if (!base || !(endSec > startSec) || (!source.videoUrl && !source.youtubeVideoId)) return null
   setIngestError(null)
   const fromYouTube = !!source.youtubeVideoId && !source.videoUrl
-  try {
-    const res = await fetch(`${base}/render-short`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(process.env.YOUTUBE_INGEST_SECRET ? { 'x-ingest-secret': process.env.YOUTUBE_INGEST_SECRET } : {}),
-      },
-      // reframe is ignored by older service builds (backward-compatible).
-      body: JSON.stringify({
-        ...source, startSec, endSec, words: words || [],
-        ...(userId ? { userId } : {}),
-        ...(opts?.reframe ? { reframe: opts.reframe } : {}),
-      }),
-      signal: AbortSignal.timeout(280_000),
-    })
-    if (!res.ok) {
-      let body = ''
-      try { body = (await res.text()).slice(0, 200) } catch { /* ignore */ }
-      // Only call it a YouTube block when the body actually looks like one (bot
-      // check / sign-in wall / 403). Other failures (e.g. the render step running
-      // out of memory and getting SIGKILL'd) were being mislabelled as a YouTube
-      // block, which sent users down the wrong path — surface the real reason.
-      const looksBlocked = /confirm you|not a bot|sign in|403|429|consent|login/i.test(body)
-      setIngestError(fromYouTube && looksBlocked
-        ? `YouTube blocked the automatic download (${res.status})`
-        : `render service ${res.status}${body ? `: ${body}` : ''}`)
+
+  // On the YouTube-segment path the render can fail because YouTube intermittently
+  // blocks the server-side download (the service then reports it as a generic
+  // "ffmpeg exited with code 1" once the empty stream reaches ffmpeg). These blocks
+  // are often transient, so give the fetch a second attempt before we bail. A real
+  // timeout is NOT retried (it would just double a 280s wait). The uploaded-source
+  // path renders locally and never needs a retry.
+  const maxAttempts = fromYouTube ? 2 : 1
+  let lastDetail = 'render request failed'
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const res = await fetch(`${base}/render-short`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(process.env.YOUTUBE_INGEST_SECRET ? { 'x-ingest-secret': process.env.YOUTUBE_INGEST_SECRET } : {}),
+        },
+        // reframe is ignored by older service builds (backward-compatible).
+        body: JSON.stringify({
+          ...source, startSec, endSec, words: words || [],
+          ...(userId ? { userId } : {}),
+          ...(opts?.reframe ? { reframe: opts.reframe } : {}),
+        }),
+        signal: AbortSignal.timeout(280_000),
+      })
+      if (!res.ok) {
+        let body = ''
+        try { body = (await res.text()).slice(0, 200) } catch { /* ignore */ }
+        // Keep the raw service reason (status + ffmpeg/yt-dlp text) in the logs
+        // for debugging, but NEVER show it to the user. On the YouTube path any
+        // failure means "we couldn't grab the clip from YouTube" — the fix is
+        // always the same (upload the source once), so give one clean message
+        // instead of a scary "ffmpeg exited with code 1" dump.
+        console.warn('[youtube-ingest] render-short failed', { attempt, status: res.status, fromYouTube, body })
+        lastDetail = fromYouTube
+          ? 'YouTube didn’t let us grab this clip automatically'
+          : `render service ${res.status}${body ? `: ${body}` : ''}`
+        if (attempt < maxAttempts) { await new Promise(r => setTimeout(r, 1500)); continue }
+        setIngestError(lastDetail)
+        return null
+      }
+      const data = await res.json() as { url?: string; durationSeconds?: number }
+      if (!data?.url || !/^https:\/\//i.test(data.url)) { setIngestError('render service returned no video url'); return null }
+      return { url: data.url, durationSeconds: Number.isFinite(Number(data.durationSeconds)) ? Number(data.durationSeconds) : (endSec - startSec) }
+    } catch (e) {
+      const isTimeout = e instanceof Error && e.name === 'TimeoutError'
+      lastDetail = isTimeout ? 'the render timed out' : (e instanceof Error ? e.message : 'render request failed')
+      // Don't retry a genuine timeout — it already ate the full budget.
+      if (!isTimeout && attempt < maxAttempts) { await new Promise(r => setTimeout(r, 1500)); continue }
+      setIngestError(lastDetail)
       return null
     }
-    const data = await res.json() as { url?: string; durationSeconds?: number }
-    if (!data?.url || !/^https:\/\//i.test(data.url)) { setIngestError('render service returned no video url'); return null }
-    return { url: data.url, durationSeconds: Number.isFinite(Number(data.durationSeconds)) ? Number(data.durationSeconds) : (endSec - startSec) }
-  } catch (e) {
-    setIngestError(e instanceof Error && e.name === 'TimeoutError' ? 'the render timed out' : (e instanceof Error ? e.message : 'render request failed'))
-    return null
   }
+  setIngestError(lastDetail)
+  return null
 }
 
 /**
