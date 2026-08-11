@@ -29,7 +29,6 @@ import { useTheme } from 'next-themes'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { getViewAsTier, setViewAsTier } from '@/lib/view-as'
 import { tierBadge } from '@/lib/tier-badge'
-import UsageChip from '@/components/dashboard/UsageChip'
 import { canUpgradeTier } from '@/lib/tier'
 import { canSeeNav, canBrowseDealRadar } from '@/lib/feature-access'
 import type { Tier } from '@/lib/tier'
@@ -53,7 +52,7 @@ import WpConnectionDoctorButton from './WpConnectionDoctorButton'
 import PurgeCacheTopbarButton from './PurgeCacheTopbarButton'
 import ScoutTopbarButton from './ScoutTopbarButton'
 import SocialHealthTopbarButton from './SocialHealthTopbarButton'
-import UsageMeterTopbar from './UsageMeterTopbar'
+import UsageMeterSidebar from './UsageMeterSidebar'
 import SiteSwitcherChip from './SiteSwitcherChip'
 import { HelpDeskButton } from '@/components/HelpDeskSidebar'
 
@@ -910,9 +909,10 @@ export default function DashboardShellV2({
           )}
         </nav>
 
-        {/* Post allowance — always visible so users know what's left before
-            they run out. Hidden for unlimited plans. */}
-        <UsageChip collapsed={collapsed} />
+        {/* Plan usage — every limit that applies to this plan (Thumbnails /
+            Pins / IG / FB, or the Generations allowance), always visible above
+            the account pill so users know what's left before they run out. */}
+        <UsageMeterSidebar collapsed={collapsed} />
 
         {/* User pill */}
         <div className="border-t p-3" style={{ borderColor: 'var(--border)' }}>
@@ -967,11 +967,6 @@ export default function DashboardShellV2({
           <TopbarSearch isAdmin={isAdmin} />
 
           <div className="ml-auto flex items-center gap-3">
-            {/* Plan usage meter — on EVERY page so users always see how much of
-                their limits (thumbnails / pins / IG / FB, or their Generations
-                allowance) they've used this period. Self-hides for unlimited
-                plans. */}
-            <UsageMeterTopbar />
             {/* Get / Update SCOUT — a load-unpacked extension never auto-
                 updates, so the latest zip is reachable here next to the WP
                 theme-update button. Renders nothing when SCOUT is current. */}
