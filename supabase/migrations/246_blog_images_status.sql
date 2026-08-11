@@ -1,0 +1,15 @@
+-- In-article image status, so the dashboard can tell the difference between a
+-- post that never asked for images, one whose image pass is still running, one
+-- that succeeded, and one that FAILED (asked for images, produced none).
+--
+-- Before this, we only had body_images_count: null (never ran / not requested)
+-- vs 0 (ran, produced nothing) vs N. null and 0 were ambiguous, so a genuinely
+-- failed image pass looked identical to an intentional text-only post and the
+-- user got no signal to retry. This column removes that ambiguity.
+--
+-- Values (nullable; old rows stay null):
+--   'pending'  image pass started, not finished
+--   'ready'    images produced and inserted
+--   'failed'   images requested but none produced (the retry-me state)
+--   'skipped'  user explicitly chose text-only
+alter table blog_posts add column if not exists images_status text;

@@ -77,7 +77,7 @@ export function GenerateButton({
    *  capture; kept on the call-site signature for backwards compat
    *  but no longer read here (storyboards path handles it server-side). */
   youtubeVideoId?: string
-  existingPost?: { url: string; title: string; postId?: string; wpPostId?: number; indexed?: boolean | null; coverage?: string | null; bodyImagesCount?: number | null } | null
+  existingPost?: { url: string; title: string; postId?: string; wpPostId?: number; indexed?: boolean | null; coverage?: string | null; bodyImagesCount?: number | null; imagesStatus?: string | null } | null
   /** Drives whether the Rewrite button shows at all (Pro/Admin only). */
   userTier: Tier
   /** The user's saved Brand Profile → "Images per article" preference
@@ -128,7 +128,7 @@ export function GenerateButton({
       }
       const count = typeof j.count === 'number' ? j.count : 0
       const similarPairs = typeof j.similarPairsCount === 'number' ? j.similarPairsCount : 0
-      setResult((prev) => prev ? { ...prev, bodyImagesCount: count } : prev)
+      setResult((prev) => prev ? { ...prev, bodyImagesCount: count, imagesStatus: count > 0 ? 'ready' : 'failed' } : prev)
       if (count > 0 && similarPairs > 0) {
         toast.warning(`Added ${count} image${count === 1 ? '' : 's'}, but ${similarPairs} pair${similarPairs === 1 ? '' : 's'} look similar — consider Re-rolling`, { duration: 7000 })
       } else if (count > 0) {
@@ -474,9 +474,18 @@ export function GenerateButton({
             <span aria-hidden>🖼</span><span className="text-[10px] font-semibold">{result.bodyImagesCount}</span>
           </span>
         )}
-        {result.bodyImagesCount === 0 && (
-          <span className="inline-flex items-center gap-0.5 text-[#ff9500]" title="‘Include photos’ was on but no in-article images made it in. Try ‘Refresh images’ on the post, or check your WordPress media upload (Hostinger WAF on POST /wp-json/wp/v2/media is the usual cause).">
-            <span aria-hidden>🖼</span><span className="text-[10px] font-semibold">!</span>
+        {/* Image-pass state — now driven by images_status (migration 246) so we
+            can tell "failed" (asked for images, got none → retry me) apart from a
+            deliberate text-only post, which the old count-only check couldn't.
+            Falls back to the count for legacy rows written before the column. */}
+        {result.imagesStatus === 'pending' && (
+          <span className="inline-flex items-center gap-1 text-[#86868b] dark:text-[#8e8e93]" title="In-article images are still generating — this can take 1-3 minutes.">
+            <Loader2 size={11} className="animate-spin" /><span className="text-[10px] font-semibold">Images…</span>
+          </span>
+        )}
+        {(result.imagesStatus === 'failed' || (!result.imagesStatus && result.bodyImagesCount === 0)) && (
+          <span className="inline-flex items-center gap-0.5 text-[#ff9500] font-semibold" title="You asked for in-article images but none made it in. Click ‘Retry images’. If it keeps failing, check WordPress media upload (a Hostinger/WAF block on POST /wp-json/wp/v2/media is the usual cause).">
+            <span aria-hidden>🖼</span><span className="text-[10px]">Images failed</span>
           </span>
         )}
         {/* "Add images" — visible on EVERY published row (not just rows
@@ -494,7 +503,7 @@ export function GenerateButton({
           >
             {addingImages
               ? <><Loader2 size={11} className="animate-spin" /> Adding…</>
-              : <><Wand2 size={11} /> {result.bodyImagesCount && result.bodyImagesCount > 0 ? 'Re-roll images' : 'Add images'}</>
+              : <><Wand2 size={11} /> {result.imagesStatus === 'failed' || (!result.imagesStatus && result.bodyImagesCount === 0) ? 'Retry images' : result.bodyImagesCount && result.bodyImagesCount > 0 ? 'Re-roll images' : 'Add images'}</>
             }
           </button>
         )}
