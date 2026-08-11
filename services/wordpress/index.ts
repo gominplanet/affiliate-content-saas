@@ -326,6 +326,12 @@ export class WordPressService {
           path: innerPath,
           body: bodyParsed,
         }),
+        // Bound the proxy write the SAME as the legacy post path (45s). Without
+        // this the fetch was unbounded, so a stalled shared host / WAF could
+        // hang the whole request until the platform killed it — surfacing to the
+        // user as "That took too long". On timeout we fall through to the legacy
+        // auth chain (or the caller's own retry) instead of hanging forever.
+        signal: AbortSignal.timeout(45_000),
       })
       // Treat any non-2xx as "proxy unavailable, fall through to legacy auth":
       //   - 404 → plugin too old (no /proxy route)
@@ -484,6 +490,7 @@ export class WordPressService {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(45_000),
     })
     if (res.status === 401 || res.status === 403) {
       const nonce = await this.loginAndGetNonce()
@@ -495,6 +502,7 @@ export class WordPressService {
           'X-WP-Nonce': nonce.nonce,
         },
         body: JSON.stringify(body),
+        signal: AbortSignal.timeout(45_000),
       })
     }
     if (!res.ok) {
