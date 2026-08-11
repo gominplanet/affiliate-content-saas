@@ -274,7 +274,7 @@ export async function generateDmCampaignCaption(
 
 1. A punchy hook line — under 80 characters — built around the product.
 2. 1-2 lines of concrete value: what the product is and one specific reason it's worth it. ${input.description ? 'Polish the creator\'s description below; keep their facts, tighten the wording.' : 'Write this from the product name — but stay generic; never invent specs, numbers, or features you can\'t verify.'}
-3. Then ${rules.hashtagCount} hashtags on one line, #lowercase, no duplicates: 2-3 tied to ${input.niches.slice(0, 4).join(', ') || 'the topic'}, 1-2 from the product, 1 general Instagram tag.
+3. Then up to ${rules.hashtagCount} hashtags on one line, #lowercase, no duplicates, as a smart MIX: if the product has a clear brand name include it as a tag (e.g. HOVERAir X1 → #hoverair; skip if there's no real brand), 2-3 tied to ${input.niches.slice(0, 4).join(', ') || 'the topic'}, 1-2 specific to the product, and 2-3 BROADER category/audience tags this product fits so it reaches beyond the niche (e.g. a creator drone → #contentcreator #filmmaking #tech). Never generic spam (#amazonfinds, #musthave, #viral, #fyp).
 
 Do NOT write the call-to-action or the disclaimer — those are appended separately. Do NOT use the word "honest" in any form, and avoid hype clichés (game-changer, mind-blowing, next-level).${input.wordsToAvoid.length ? `\nCreator's banned words: ${input.wordsToAvoid.slice(0, 30).join(', ')}` : ''}
 

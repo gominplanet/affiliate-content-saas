@@ -420,7 +420,7 @@ export default function InstagramBurnerPage() {
       {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
       <video src={resultUrl} controls playsInline className="w-full rounded-lg bg-black max-h-[60vh]" />
 
-      {igCaption && (
+      {igCaption !== null && (
         <div className="rounded-lg border border-gray-200 dark:border-white/10 p-2.5">
           <div className="flex items-center justify-between mb-1">
             <span className="text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Reel caption</span>
@@ -428,7 +428,15 @@ export default function InstagramBurnerPage() {
               {copied ? <><CheckCircle size={11} /> Copied!</> : <><Copy size={11} /> Copy</>}
             </button>
           </div>
-          <pre className="text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7] whitespace-pre-wrap font-sans leading-relaxed max-h-40 overflow-y-auto">{igCaption}</pre>
+          <textarea
+            value={igCaption}
+            onChange={(e) => setIgCaption(e.target.value)}
+            rows={7}
+            maxLength={2200}
+            spellCheck={false}
+            className="w-full resize-y rounded-md bg-transparent text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7] whitespace-pre-wrap font-sans leading-relaxed min-h-28 max-h-64 outline-none focus:ring-1 focus:ring-[#7C3AED]/40 p-1 -m-1"
+          />
+          <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-1">Edit the caption or add your own hashtags before you post, copy or download.</p>
         </div>
       )}
 
