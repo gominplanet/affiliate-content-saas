@@ -23,16 +23,24 @@
 import { NextResponse } from 'next/server'
 import { maybeDecrypt } from '@/lib/secrets'
 import { createServerClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 export async function POST() {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  // The `integrations` row holds secrets and has layered RLS (VA sharing), under
+  // which a plain user-context UPDATE can silently affect ZERO rows — which is
+  // why "Disconnect" appeared to work but the token/channel came right back. Do
+  // the actual clears with the service-role client (RLS-bypassing), always
+  // scoped to THIS authenticated user's id.
+  const admin = createAdminClient()
+
   // .maybeSingle() so disconnect doesn't 500 when there's no integrations row
   // yet (fresh trial user clicked Disconnect on a never-connected account).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: row } = await supabase
+  const { data: row } = await (admin as any)
     .from('integrations')
     .select('youtube_oauth_access_token,youtube_oauth_refresh_token')
     .eq('user_id', user.id)
@@ -52,7 +60,7 @@ export async function POST() {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const sb = supabase as any
+  const sb = admin as any
 
   // 1. Clear the legacy integrations connection: tokens AND the channel identity
   //    (the id/url that made the old channel linger as "connected" + the sync
