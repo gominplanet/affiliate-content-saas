@@ -23,6 +23,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { maybeDecrypt, maybeEncrypt } from '@/lib/secrets'
 import { TIERS, normalizeTier, type Tier } from '@/lib/tier'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 // youtube_channels + wordpress_sites.default_youtube_channel_id aren't in the
 // generated types yet (Phase 1) — use a loose client so queries compile until
@@ -103,11 +104,16 @@ export async function listYouTubeChannels(
 
   // Legacy bridge — synthesize from integrations, but ONLY when there's still a
   // live OAuth token. A youtube_channel_id with no token is a disconnect
-  // leftover (older disconnects cleared tokens but not the id), and surfacing it
-  // showed a "ghost" channel that couldn't be removed and kept the sync resolver
-  // pointed at the wrong account. Link-only connections live in youtube_channels
-  // (handled above), so gating the synthetic row on the token is safe.
-  const { data: legacy } = await supabase
+  // leftover, and surfacing it showed a "ghost" channel that couldn't be removed
+  // and kept the sync resolver pointed at the wrong account. Link-only
+  // connections live in youtube_channels (handled above), so gating on the token
+  // is safe.
+  //
+  // Read this via the SERVICE-ROLE client, the same path disconnect WRITES with.
+  // The user-context client's read of this row was coming back stale after a
+  // disconnect (pooler/replica lag), so it resurrected a ghost the DB no longer
+  // had. Reading from primary keeps the list consistent with the actual state.
+  const { data: legacy } = await createAdminClient()
     .from('integrations')
     .select('youtube_channel_id, youtube_oauth_access_token')
     .eq('user_id', userId)
@@ -203,9 +209,10 @@ export async function resolveSyncChannelId(
   const forSite = await getChannelForSite(supabase, userId, opts.siteId)
   if (forSite) return forSite.channelId
   // Final legacy fallback — only when a live OAuth token backs it, so a
-  // disconnect leftover (id kept, token cleared by an older disconnect) never
-  // silently syncs the wrong account's videos.
-  const { data: legacy } = await supabase
+  // disconnect leftover never silently syncs the wrong account's videos. Read
+  // from the service-role (primary) path so a stale user-context read can't
+  // resurrect a just-disconnected channel.
+  const { data: legacy } = await createAdminClient()
     .from('integrations')
     .select('youtube_channel_id, youtube_oauth_access_token')
     .eq('user_id', userId)
