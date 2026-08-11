@@ -1,6 +1,6 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 /**
- * Speech-to-text for Shorts Studio — the vidIQ-style path.
+ * Speech-to-text for Shorts Studio — the bold-style path.
  *
  * Instead of depending on YouTube's caption endpoints (blocked from cloud IPs,
  * and often missing), we transcribe the creator's OWN uploaded video with

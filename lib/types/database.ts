@@ -878,8 +878,6 @@ export type Database = {
           twitter_user_id: string | null
           updated_at: string
           user_id: string
-          vidiq_api_key: string | null
-          vidiq_snapshot: Json | null
           wordpress_api_token: string | null
           wordpress_app_password: string | null
           wordpress_url: string | null
@@ -957,8 +955,6 @@ export type Database = {
           twitter_user_id?: string | null
           updated_at?: string
           user_id: string
-          vidiq_api_key?: string | null
-          vidiq_snapshot?: Json | null
           wordpress_api_token?: string | null
           wordpress_app_password?: string | null
           wordpress_url?: string | null
@@ -1036,8 +1032,6 @@ export type Database = {
           twitter_user_id?: string | null
           updated_at?: string
           user_id?: string
-          vidiq_api_key?: string | null
-          vidiq_snapshot?: Json | null
           wordpress_api_token?: string | null
           wordpress_app_password?: string | null
           wordpress_url?: string | null

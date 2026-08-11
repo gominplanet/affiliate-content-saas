@@ -29,7 +29,7 @@ export interface OverlayStyle {
   gradient: boolean
   /** Banner block — draws a SOLID colored rectangle behind one specific line
    *  (the line at `highlightLineIdx`). The line's text uses `colors[i]` as
-   *  the fill on top of the block. Canonical vidIQ "yellow callout" look. */
+   *  the fill on top of the block. Canonical bold "yellow callout" look. */
   blockBg?: string | null
   highlightLineIdx?: number | null
   highlightColor?: string | null
@@ -43,7 +43,7 @@ export interface OverlayStyle {
   heightCap?: number | null
   /** Selection weight before per-user feedback. Default 1. */
   baseWeight?: number
-  /** vidIQ-style accent: colour the FIRST word of the headline differently
+  /** bold-style accent: colour the FIRST word of the headline differently
    *  (e.g. yellow "WINE" + white rest). When set, `accentColor` is used. */
   accentWord?: 'first' | null
   accentColor?: string | null
@@ -56,7 +56,7 @@ export interface OverlayStyle {
    *  inside a black outline). Skip with null. */
   innerStroke?: { color: string; width: number } | null
   /** Rotation in degrees applied to the whole headline block (-5 to +5).
-   *  Slight tilt adds dynamism; matches MrBeast / vidIQ thumbnail energy. */
+   *  Slight tilt adds dynamism; matches MrBeast / bold thumbnail energy. */
   tilt?: number | null
 }
 
@@ -143,7 +143,7 @@ export const OVERLAY_STYLES: OverlayStyle[] = [
     hardShadow: { dx: 6, dy: 7, color: '#000' },
     baseWeight: 0.05,
   },
-  // vidIQ signature: first word YELLOW, rest white — the highest-converting
+  // bold signature: first word YELLOW, rest white — the highest-converting
   // look in the references. Weighted heavy so it's picked most often.
   {
     id: 'firstword-yellow',
@@ -181,7 +181,7 @@ export const OVERLAY_STYLES: OverlayStyle[] = [
     baseWeight: 0.05,
   },
   // ──────────────────────────────────────────────────────────────────────
-  // vidIQ tier. Four solid-color styles. The shared formula:
+  // bold tier. Four solid-color styles. The shared formula:
   //   • Height cap raised to 20% of image height (was 15% — text was too
   //     small to "pop" against a busy bg).
   //   • Per-line offsets so line 2 sits ~24px right of line 1 (the
@@ -191,11 +191,11 @@ export const OVERLAY_STYLES: OverlayStyle[] = [
   //     dual-tone styles stay 0° to keep the cleanest split.
   //   • All SOLID colors. No vertical gradient (muddied both lines).
   {
-    id: 'vidiq-dual-white-yellow',
+    id: 'bold-dual-white-yellow',
     fontName: 'Anton',
     fontStack: '"Anton", Impact, "Arial Black", sans-serif',
     weight: '400',
-    colors: ['#FFFFFF', '#FFD700'], // L1 white, L2 yellow — classic vidIQ
+    colors: ['#FFFFFF', '#FFD700'], // L1 white, L2 yellow — classic bold
     outlineColor: '#000',
     outlineW: 30,
     shadowAlpha: 0.95,
@@ -212,7 +212,7 @@ export const OVERLAY_STYLES: OverlayStyle[] = [
   // Reverse dual-tone — L1 YELLOW, L2 WHITE. Variety without breaking
   // the "high-contrast solid colours" rule.
   {
-    id: 'vidiq-dual-yellow-white',
+    id: 'bold-dual-yellow-white',
     fontName: 'Anton',
     fontStack: '"Anton", Impact, "Arial Black", sans-serif',
     weight: '400',
@@ -232,7 +232,7 @@ export const OVERLAY_STYLES: OverlayStyle[] = [
   },
   // First-word yellow accent — works on single-line headlines too.
   {
-    id: 'vidiq-firstword-yellow',
+    id: 'bold-firstword-yellow',
     fontName: 'Anton',
     fontStack: '"Anton", Impact, "Arial Black", sans-serif',
     weight: '400',
@@ -254,11 +254,11 @@ export const OVERLAY_STYLES: OverlayStyle[] = [
   },
   // YELLOW BANNER — the explicit "banner" callout from the brand
   // calibration note. Line 1 in white text, line 2 sits inside a solid
-  // YELLOW rectangle with BLACK text on top (the vidIQ "block" look).
+  // YELLOW rectangle with BLACK text on top (the bold "block" look).
   // The block is sized to the line's measured width + padding, drawn
   // BEFORE the text so the text overlays it cleanly.
   {
-    id: 'vidiq-yellow-banner',
+    id: 'bold-yellow-banner',
     fontName: 'Anton',
     fontStack: '"Anton", Impact, "Arial Black", sans-serif',
     weight: '400',
@@ -458,7 +458,7 @@ export function drawHeadline(
   const ZONE_W = zoneW
   const { outlineW: OUTLINE, colors: LINE_COLORS, outlineColor, shadowAlpha } = style
   // Per-style height cap. Default 15% kept legacy MrBeast styles at their old
-  // size; the vidIQ tier overrides this to 20% so headlines actually pop.
+  // size; the bold tier overrides this to 20% so headlines actually pop.
   const heightCapFrac = style.heightCap ?? 0.15
   const maxPxScaled = Math.min(style.maxPx, Math.round(height * heightCapFrac))
 
@@ -477,7 +477,7 @@ export function drawHeadline(
   const startY = position.startsWith('top') ? MARGIN_EDGE : height - MARGIN_EDGE - totalH
 
   // Position manually (textAlign 'left') so we can colour individual words —
-  // the vidIQ "first word yellow" look needs per-word fills, which a single
+  // the bold "first word yellow" look needs per-word fills, which a single
   // aligned fillText can't do.
   ctx.textAlign = 'left'
   ctx.textBaseline = 'top'

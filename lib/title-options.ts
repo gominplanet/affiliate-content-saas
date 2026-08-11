@@ -49,7 +49,7 @@ ${description ? `DESCRIPTION (first 500 chars): "${description}"` : ''}
 ${asin ? `Product ASIN: ${asin}` : ''}
 
 RULES (each title):
-- 2 OR 3 WORDS MAXIMUM. Hard ceiling — 4 words is a fail. Big poppy thumbnails (vidIQ / MrBeast / Smart-Toaster style) live on 2–3 huge words; longer phrases render tiny on a 1280×720 canvas. ALL CAPS.
+- 2 OR 3 WORDS MAXIMUM. Hard ceiling — 4 words is a fail. Big poppy thumbnails (bold / MrBeast / Smart-Toaster style) live on 2–3 huge words; longer phrases render tiny on a 1280×720 canvas. ALL CAPS.
 - Every word EARNS its slot. NO filler — no articles (A / AN / THE), no copulas (IS / ARE / WAS), no pronouns (IT / I / WE / YOU / MY), no connectors (AND / OR / BUT / FOR / TO / OF / WITH / IN / ON).
 - MUST mention or directly evoke this exact product/topic. The product noun should appear in at least 3 of the ${count} options (e.g. "ROCKER" for a swivel rocker chair, "WINE BAG" for a wine protector). A reader who has never seen the video should be able to guess what it's about.
 - DIFFERENT angles across the ${count} — product callout, curiosity, value, comparison, surprise. Mix product-naming titles with one or two punchy reactions ("WORTH IT?", "WHOA").

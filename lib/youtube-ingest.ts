@@ -1,7 +1,7 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 /**
  * Server-side video ingestion — the piece that lets Shorts Studio work WITHOUT
- * an upload (the vidIQ "select a video → Get clips" flow).
+ * an upload (the bold "select a video → Get clips" flow).
  *
  * YouTube's ToS-respecting reality: we can't pull the video from a Vercel
  * serverless function (blocked IPs, no yt-dlp binary, no long-running process).
