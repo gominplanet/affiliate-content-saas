@@ -140,37 +140,39 @@ export async function POST(request: Request) {
         const r = await renderShort(sourceUrl, startSec, endSec, withCaptions ? cuesWithHl : [], user.id, style, renderOpts)
         if (r?.url) renderedUrl = r.url
       } else {
-        // (a) Cheap path: download ONLY this clip's window. Fast + low bandwidth,
-        //     but it's an on-the-fly fetch that YouTube blocks intermittently.
-        const seg = await renderShortSegment(ytId, startSec, endSec, withCaptions ? cuesWithHl : [], user.id, style, renderOpts)
-        if (seg?.url) renderedUrl = seg.url
-
-        // (b) Segment blocked → fall back to the RELIABLE full-video download
-        //     (the same yt-dlp + residential-proxy + PO-token path Clip Factory
-        //     uses via /ingest), cache it on the video, and render from that.
-        //     Cached, so every other clip from this video then renders instantly
-        //     with no YouTube fetch at all. Skip the fallback for very long
-        //     videos where a full download would be wasteful — the upload prompt
-        //     is the better answer there.
-        if (!renderedUrl) {
-          const durationSec = Number(video?.duration_seconds) || 0
-          const withinIngestCap = durationSec === 0 || durationSec <= 1800 // ≤30 min
-          if (withinIngestCap) {
-            const ing = await ingestYouTubeVideo(ytId, user.id)
-            if (ing?.url) {
-              sourceUrl = ing.url
-              hasSource = true
-              try {
-                await sb.from('youtube_videos').update({
-                  source_video_url: ing.url,
-                  source_video_uploaded_at: new Date().toISOString(),
-                  ...(ing.durationSeconds ? { duration_seconds: ing.durationSeconds } : {}),
-                }).eq('id', short.video_id).eq('user_id', user.id)
-              } catch { /* the URL still works this render; a failed cache write isn't fatal */ }
-              const r = await renderShort(sourceUrl, startSec, endSec, withCaptions ? cuesWithHl : [], user.id, style, renderOpts)
-              if (r?.url) renderedUrl = r.url
-            }
+        // (a) PRIORITIZE the reliable proxy download (the same yt-dlp +
+        //     residential-proxy + PO-token path Clip Factory uses via /ingest).
+        //     Downloading the whole video once and caching it on the video row is
+        //     both the robust option AND the efficient one for Shorts Studio,
+        //     where you cut several clips from one video — every other clip then
+        //     renders instantly with no YouTube fetch at all. Skipped for very
+        //     long videos (>30 min) where a full download would be wasteful; those
+        //     use the on-the-fly segment fetch below instead.
+        const durationSec = Number(video?.duration_seconds) || 0
+        const withinIngestCap = durationSec === 0 || durationSec <= 1800 // ≤30 min
+        if (withinIngestCap) {
+          const ing = await ingestYouTubeVideo(ytId, user.id)
+          if (ing?.url) {
+            sourceUrl = ing.url
+            hasSource = true
+            try {
+              await sb.from('youtube_videos').update({
+                source_video_url: ing.url,
+                source_video_uploaded_at: new Date().toISOString(),
+                ...(ing.durationSeconds ? { duration_seconds: ing.durationSeconds } : {}),
+              }).eq('id', short.video_id).eq('user_id', user.id)
+            } catch { /* the URL still works this render; a failed cache write isn't fatal */ }
+            const r = await renderShort(sourceUrl, startSec, endSec, withCaptions ? cuesWithHl : [], user.id, style, renderOpts)
+            if (r?.url) renderedUrl = r.url
           }
+        }
+
+        // (b) Fallback: on-the-fly segment fetch — for videos too long to fully
+        //     download, or if the proxy download itself failed. Cheap but the
+        //     less reliable path (YouTube blocks it more often).
+        if (!renderedUrl) {
+          const seg = await renderShortSegment(ytId, startSec, endSec, withCaptions ? cuesWithHl : [], user.id, style, renderOpts)
+          if (seg?.url) renderedUrl = seg.url
         }
       }
     }
