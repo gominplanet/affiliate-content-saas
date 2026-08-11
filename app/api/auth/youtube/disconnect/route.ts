@@ -62,16 +62,22 @@ export async function POST() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = admin as any
 
-  // 1. Clear the legacy integrations connection: tokens AND the channel identity
-  //    (the id/url that made the old channel linger as "connected" + the sync
-  //    resolver's fallback).
-  await sb.from('integrations').update({
+  // 1. Clear the legacy integrations connection: tokens + the channel id (the
+  //    sync resolver's fallback + what made the channel linger as "connected").
+  //    ONLY columns that definitely exist — a nonexistent column (e.g.
+  //    youtube_channel_url, which isn't in the live schema) makes Postgres reject
+  //    the WHOLE update, silently clearing nothing. That was the real bug behind
+  //    "disconnect doesn't stick". We check the error now instead of ignoring it.
+  const { error: clearErr } = await sb.from('integrations').update({
     youtube_oauth_access_token: null,
     youtube_oauth_refresh_token: null,
     youtube_oauth_token_expiry: null,
     youtube_channel_id: null,
-    youtube_channel_url: null,
   }).eq('user_id', user.id)
+  if (clearErr) {
+    console.error('[youtube disconnect] integrations clear failed:', clearErr.message)
+    return NextResponse.json({ error: `Disconnect failed: ${clearErr.message}` }, { status: 500 })
+  }
 
   // 2. Remove every connected-channel row (multi-channel table). Safe:
   //    wordpress_sites.default_youtube_channel_id is ON DELETE SET NULL, so a
