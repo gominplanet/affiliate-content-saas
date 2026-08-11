@@ -2035,7 +2035,7 @@ export async function POST(request: Request) {
             faceRefs = primaryFace ? [primaryFace, ...rawRefs] : rawRefs
           }
           // Product image(s) as references so the product(s) render accurately
-          // (the vidIQ look). The prompt scopes the product refs to the
+          // (the bold look). The prompt scopes the product refs to the
           // product(s) ONLY — the person is taken from the frame + face photos.
           // 3C — When the user supplied custom product photos, all of them go in
           // as refs so Nano Banana Pro can see every angle / both products.

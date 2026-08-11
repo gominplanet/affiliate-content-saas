@@ -81,7 +81,7 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({})) as {
       videoId?: string
       youtubeVideoId?: string
-      /** A pasted YouTube link (vidIQ-style). We extract the id, and — gated by
+      /** A pasted YouTube link (bold-style). We extract the id, and — gated by
        *  ownershipConfirmed — create the video row if it isn't synced yet. */
       youtubeUrl?: string
       ownershipConfirmed?: boolean

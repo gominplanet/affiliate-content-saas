@@ -105,7 +105,7 @@ export function buildCaptionChunks(
   opts: { maxWords?: number; maxChunks?: number } = {},
 ): CaptionChunk[] {
   const wordLevel = isWordLevel(windowCues)
-  // Punchier lines for word-level (vidIQ-style ≤3 words); a touch longer when we
+  // Punchier lines for word-level (bold-style ≤3 words); a touch longer when we
   // only have phrase timings and must approximate.
   const maxWords = Math.max(1, opts.maxWords ?? (wordLevel ? 3 : 5))
   const maxChunks = Math.max(1, opts.maxChunks ?? 40)

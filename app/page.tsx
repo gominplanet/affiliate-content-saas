@@ -2488,7 +2488,7 @@ const PLATFORMS = [
  *  single MVP hub on the right, an arrow between.
  *
  *  Why no competitor names: the user has flagged repeatedly never to
- *  name competitors (vidIQ, Tubebuddy, etc.) in user-facing copy. So
+ *  name competitors in user-facing copy. So
  *  the "before" side uses generic role labels (Writing tool, Scheduler,
  *  Designer, Publisher, etc.) instead — readers fill in their own
  *  current stack.

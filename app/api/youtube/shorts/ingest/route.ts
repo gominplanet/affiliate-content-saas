@@ -5,7 +5,7 @@
  * fetch the video from YouTube, host the MP4, and store it — so nobody ever has
  * to download from YouTube Studio and re-upload. Two targets:
  *   - target 'source' (default): store on source_video_url — the long-form file
- *     Find Shorts (transcribe) + Render cut clips from (vidIQ "select → clips").
+ *     Find Shorts (transcribe) + Render cut clips from (bold "select → clips").
  *   - target 'short': store on instagram_video_url — a finished vertical Short
  *     that lacks a stored MP4, so the burner / Enhance can use it directly.
  *
