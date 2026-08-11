@@ -3560,22 +3560,31 @@ export default function ContentPage() {
   // recomputes when its real inputs change — not on every keystroke elsewhere.
   const visibleVideos = useMemo(
     () => {
+      // Connected channels (UC… ids). When we know them, the "All" view hides
+      // videos left over from a channel the user has since DISCONNECTED — the
+      // rows stay in the DB (scheduled posts / shorts reference them) but they
+      // no longer clutter the list or read as "pulling the wrong channel". A
+      // video with no channel_id (legacy sync) is always kept; if we don't know
+      // the channels yet, nothing is hidden.
+      const connectedIds = new Set(ytChannels.map(c => c.channelId).filter(Boolean))
+      const inScope = (v: Record<string, unknown>) => {
+        if (channelFilter !== 'all') return (v.channel_id as string | null) === channelFilter
+        if (connectedIds.size === 0) return true
+        const cid = v.channel_id as string | null
+        return !cid || connectedIds.has(cid)
+      }
       const base = videos.filter(v =>
-        (showHidden || !dismissed.has(v.id as string)) &&
-        (channelFilter === 'all' || (v.channel_id as string | null) === channelFilter),
+        (showHidden || !dismissed.has(v.id as string)) && inScope(v),
       )
       // Fold in server-side search hits that live beyond the loaded slice so a
       // big catalogue stays searchable. Deduped by id; only present while a
       // query is active (videoSearchExtra is cleared otherwise).
       if (!videoSearchExtra.length) return base
       const seen = new Set(base.map(v => v.id as string))
-      const extra = videoSearchExtra.filter(v =>
-        !seen.has(v.id as string) &&
-        (channelFilter === 'all' || (v.channel_id as string | null) === channelFilter),
-      )
+      const extra = videoSearchExtra.filter(v => !seen.has(v.id as string) && inScope(v))
       return extra.length ? [...base, ...extra] : base
     },
-    [videos, showHidden, dismissed, channelFilter, videoSearchExtra],
+    [videos, showHidden, dismissed, channelFilter, videoSearchExtra, ytChannels],
   )
 
   // Batch "which of these posts' products have a live Creator Connections
