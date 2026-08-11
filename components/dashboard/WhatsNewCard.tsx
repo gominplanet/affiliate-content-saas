@@ -17,7 +17,7 @@ import Link from 'next/link'
 import { Sparkles, ArrowUpRight, X } from 'lucide-react'
 
 // Bump this whenever UPDATES changes — auto-opens the modal once for everyone.
-const RELEASE_ID = '2026-08-09'
+const RELEASE_ID = '2026-08-11'
 const STORAGE_KEY = 'mvp_whats_new_seen'
 
 interface Update {
@@ -32,77 +32,50 @@ const UPDATES: Update[] = [
   {
     badge: 'NEW',
     tone: '#7C3AED',
-    title: 'Clip Factory — Shorts that actually work',
-    desc: 'Turn a long video into vertical Shorts, pulled straight from a YouTube link or your own upload. Pick Standard or Split screen, get word-for-word captions burned in, then add a shoppable CTA and publish to Instagram, TikTok and YouTube.',
-    href: '/clip-factory',
-  },
-  {
-    badge: 'IMPROVED',
-    tone: '#34c759',
-    title: 'Sharper, more accurate thumbnails',
-    desc: 'The generator now double-checks the rendered product matches your real one and re-does it if it drifted — far fewer “wrong product” thumbnails, on every style including Graphic Design.',
-    href: '/co-pilot',
+    title: 'Comments on your blog',
+    desc: 'Turn on reader comments per post from Customize Blog. WordPress handles the spam (email required, first comments held for you to approve, Akismet if you enable it). When your newsletter is on, the comment form also shows an opt-in, so readers can join your list. Off by default.',
+    href: '/customize',
   },
   {
     badge: 'NEW',
-    tone: '#FF9500',
-    title: 'Thumbnail badges',
-    desc: 'Add one badge to every thumbnail: a green check, five gold stars, or a red arrow pointing at your product. Or none — that’s the default. Set it once in Co-Pilot.',
-    href: '/co-pilot',
-  },
-  {
-    badge: 'IMPROVED',
     tone: '#0a84ff',
-    title: 'Co-Pilot, tidied up',
-    desc: 'The big “Create my MVP Thumbnail” button now sits below your options, so you choose your method, border and badge first, then generate.',
-    href: '/co-pilot',
-  },
-  {
-    badge: 'NEW',
-    tone: '#bc1888',
-    title: 'Rotating banner ads',
-    desc: 'In Ads, switch banners on or off without deleting them, shuffle their order on every page load, and show only 2, 3 or 4 at a time in the sidebar. Labels now appear above each banner too.',
-    href: '/ads',
-  },
-  {
-    badge: 'NEW',
-    tone: '#30d158',
-    title: 'Wayward placement builder',
-    desc: 'Answer a few tick-box questions and MVP writes your whole sponsorship pitch for you. Copy it, paste it into Wayward, done.',
-    href: '/wayward',
-  },
-  {
-    badge: 'IMPROVED',
-    tone: '#5856d6',
-    title: 'Support is a real conversation now',
-    desc: 'Tickets are an open thread between you and us — back-and-forth in one place, screenshots included, so nothing gets lost.',
-    href: '/support',
+    title: 'See your plan usage at a glance',
+    desc: 'A usage bar now sits right under the search on every page. It shows exactly how much of each limit you have used this period (thumbnails, pins, Instagram, Facebook and more), so you always know where you stand before you run out.',
   },
   {
     badge: 'IMPROVED',
     tone: '#FF6B00',
-    title: 'Cleaner, faster blog',
-    desc: 'The Clear Cache button now fully clears your site (a true full purge), your read counter shows live on posts, and there’s a quick batch-redirect to send old or broken links to your homepage.',
+    title: 'Deal posts go out as designed cards',
+    desc: 'Quick posts from Deal Radar, Walmart and Wayward now attach a designed offer card (your product on a clean frame with a bold hook and your brand chip) instead of a plain product photo. Automatic, no extra steps.',
+    href: '/deal-radar',
   },
   {
-    badge: 'FIXED',
-    tone: '#ff3b30',
-    title: 'Link-in-Bio',
-    desc: 'The colour-picker error is gone, and there’s a new “I may earn a commission” disclaimer line under your tagline.',
-    href: '/link-in-bio',
-  },
-  {
-    badge: 'IMPROVED',
-    tone: '#0a84ff',
-    title: 'Everything social in one place',
-    desc: 'External Integrations now lives under Connect Socials, so all your platform connections are together.',
-    href: '/connect-socials',
+    badge: 'NEW',
+    tone: '#bc1888',
+    title: 'Guide pins show every product',
+    desc: 'For a buying guide or comparison, your Pinterest pin now lays out all the real products together on one designed board, pulled from the actual product photos. Not a guess, the real items.',
+    href: '/content',
   },
   {
     badge: 'IMPROVED',
     tone: '#34c759',
-    title: 'Safer Instagram auto-posting',
-    desc: 'MVP now paces your automatic Instagram posts to help keep your account in good standing.',
+    title: 'Pins find the product from your link',
+    desc: 'Social Push pins now read the product straight from your post’s own affiliate link, so the design is grounded on the real product photo even when there is no linked video.',
+    href: '/content',
+  },
+  {
+    badge: 'IMPROVED',
+    tone: '#5856d6',
+    title: 'MVP Art Director, everywhere it counts',
+    desc: 'The Art Director now designs your graphics across the board: Pinterest pins, Instagram, Facebook, Stories and thumbnails. Product-accurate and on-brand every time, with no retailer logos or names.',
+    href: '/co-pilot',
+  },
+  {
+    badge: 'FIXED',
+    tone: '#ff3b30',
+    title: 'Switching YouTube channels works',
+    desc: 'Disconnecting and reconnecting a different channel now works cleanly. No more old channel hanging around or pulling videos from the wrong account.',
+    href: '/connect-youtube',
   },
 ]
 
