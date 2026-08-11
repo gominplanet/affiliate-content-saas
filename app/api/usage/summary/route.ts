@@ -36,8 +36,9 @@ interface Bucket {
   key: string
   label: string
   used: number
-  limit: number
-  remaining: number
+  /** null = unlimited on this plan (show the running count, no bar). */
+  limit: number | null
+  remaining: number | null
 }
 
 export async function GET() {
@@ -79,7 +80,12 @@ export async function GET() {
   }
 
   try {
-    if (tier === 'amazon') {
+    // Admin is unlimited, so it would normally show no meter. Render it against
+    // the Amazon tier's caps as a REFERENCE so the founder can see the visual
+    // (real usage counts, sample limits) — admin isn't actually gated by these.
+    if (tier === 'amazon' || tier === 'admin') {
+      const isAdminPreview = tier === 'admin'
+      const capPlan = isAdminPreview ? TIERS.amazon : plan
       // The four Art Director format caps — each counted on its own feature.
       const [thumb, pin, igCount, fb] = await Promise.all([
         countFeatures(THUMB_FEATURES),
@@ -87,10 +93,14 @@ export async function GET() {
         countFeatures(['amazon_ig']),
         countFeatures(['amazon_fb']),
       ])
-      push('thumbnails', 'Thumbnails', thumb, plan.thumbnailsPerMonth)
-      push('pins', 'Pins', pin, plan.pinsPerMonth)
-      push('instagram', 'Instagram', igCount, plan.igPostsPerMonth)
-      push('facebook', 'Facebook', fb, plan.facebookPostsPerMonth)
+      // Admin is unlimited and usually has 0 real usage, so seed a varied sample
+      // (calm / amber / near-full) purely so the founder can SEE the meter. Real
+      // usage still wins if it's higher. Paid tiers always use their real counts.
+      const preview = (real: number, sample: number) => isAdminPreview ? Math.max(real, sample) : real
+      push('thumbnails', 'Thumbnails', preview(thumb, 128), capPlan.thumbnailsPerMonth)
+      push('pins', 'Pins', preview(pin, 271), capPlan.pinsPerMonth)
+      push('instagram', 'Instagram', preview(igCount, 84), capPlan.igPostsPerMonth)
+      push('facebook', 'Facebook', preview(fb, 12), capPlan.facebookPostsPerMonth)
     } else {
       // Shared Generations bundle = blog posts + thumbnails + metadata, the same
       // three sources try_consume_generation_quota sums.
