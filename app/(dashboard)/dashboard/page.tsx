@@ -24,6 +24,7 @@ import type { Metadata } from 'next'
 import { createServerClient } from '@/lib/supabase/server'
 import { DEALS_HUB_PAUSED } from '@/lib/deal-occasion'
 import SetupChecklist from '@/components/dashboard/SetupChecklist'
+import FirstWinChecklist from '@/components/dashboard/FirstWinChecklist'
 import ChannelStats from '@/components/dashboard/ChannelStats'
 import NewsBanner from '@/components/dashboard/NewsBanner'
 import WhatsNewCard from '@/components/dashboard/WhatsNewCard'
@@ -157,6 +158,25 @@ export default async function DashboardPage() {
   const platformsTotal = platformFlags.length
   const platformsConnected = platformFlags.filter(Boolean).length
 
+  // First-win onboarding state — read from the same real signals as above so
+  // the checklist ticks itself off as the user connects and publishes.
+  const brandReady = !!(
+    (brandRow?.author_name as string | null)?.trim() ||
+    (brandRow?.name as string | null)?.trim()
+  )
+  const youtubeConnected = !!(int?.youtube_oauth_access_token)
+  const hasContent = publishedCount > 0
+  const socialConnected = !!(
+    int?.facebook_page_id ||
+    int?.pinterest_access_token ||
+    int?.instagram_user_id ||
+    int?.threads_access_token ||
+    int?.twitter_access_token ||
+    int?.linkedin_access_token ||
+    int?.bluesky_handle ||
+    int?.telegram_channel_id
+  )
+
   // Newly-live channels — Meta (Facebook/Instagram/Threads, 2026-06-15) and
   // Pinterest (2026-06-16), both App Review approved. Nudge paid users to connect
   // the ones their tier unlocks that they haven't connected yet. Per-platform
@@ -264,6 +284,16 @@ export default async function DashboardPage() {
       </section>
 
       <div className="px-6 sm:px-8 py-8 flex flex-col gap-8">
+        {/* First-win onboarding — reads real state and points at the single next
+            step to a first published post. Self-hides once done or dismissed. */}
+        <FirstWinChecklist
+          brandReady={brandReady}
+          wpConnected={wpConnected}
+          youtubeConnected={youtubeConnected}
+          hasContent={hasContent}
+          socialConnected={socialConnected}
+        />
+
         {/* Amazon Deal Radar launch — pinned to the very top of the body, above
             "What do you want to do?", so paid users see it first. Dismissible. */}
         {canUseDealRadar(tier) && <DealRadarLaunchBanner />}
