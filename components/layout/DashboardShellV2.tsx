@@ -52,7 +52,7 @@ import WpConnectionDoctorButton from './WpConnectionDoctorButton'
 import PurgeCacheTopbarButton from './PurgeCacheTopbarButton'
 import ScoutTopbarButton from './ScoutTopbarButton'
 import SocialHealthTopbarButton from './SocialHealthTopbarButton'
-import UsageMeterSidebar from './UsageMeterSidebar'
+import UsageBar from './UsageBar'
 import SiteSwitcherChip from './SiteSwitcherChip'
 import { HelpDeskButton } from '@/components/HelpDeskSidebar'
 
@@ -909,10 +909,6 @@ export default function DashboardShellV2({
           )}
         </nav>
 
-        {/* Plan usage — every limit that applies to this plan (Thumbnails /
-            Pins / IG / FB, or the Generations allowance), always visible above
-            the account pill so users know what's left before they run out. */}
-        <UsageMeterSidebar collapsed={collapsed} />
 
         {/* User pill */}
         <div className="border-t p-3" style={{ borderColor: 'var(--border)' }}>
@@ -1087,6 +1083,11 @@ export default function DashboardShellV2({
             <NotificationBell />
           </div>
         </div>
+
+        {/* Plan-usage strip — every metered action for this plan, directly
+            under the topbar so nothing capped is invisible. Self-hides on
+            unlimited plans. */}
+        <UsageBar />
 
         {/* Page content. Generous max-width so the new chrome doesn't
             crush wide content (e.g. the comparison table on /comparison

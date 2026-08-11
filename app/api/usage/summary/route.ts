@@ -64,13 +64,26 @@ export async function GET() {
   })
   const windowStart = lifetime ? null : startISO
 
-  // Count ai_usage rows for a feature set within the window (or lifetime).
+  // Count ai_usage rows for a feature set within the window (or lifetime). Each
+  // count is isolated — a failure returns 0 rather than breaking the whole meter.
   const countFeatures = async (features: string[]): Promise<number> => {
-    let q = sb.from('ai_usage').select('id', { count: 'exact', head: true })
-      .eq('user_id', user.id).in('feature', features)
-    if (windowStart) q = q.gte('created_at', windowStart)
-    const { count } = await q
-    return count ?? 0
+    try {
+      let q = sb.from('ai_usage').select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id).in('feature', features)
+      if (windowStart) q = q.gte('created_at', windowStart)
+      const { count } = await q
+      return count ?? 0
+    } catch { return 0 }
+  }
+  // Count rows in an arbitrary table (collaborations, deal posts) in the window.
+  const countRows = async (table: string, dateCol: string, extra?: { col: string; val: string }): Promise<number> => {
+    try {
+      let q = sb.from(table).select('id', { count: 'exact', head: true }).eq('user_id', user.id)
+      if (extra) q = q.eq(extra.col, extra.val)
+      if (windowStart) q = q.gte(dateCol, windowStart)
+      const { count } = await q
+      return count ?? 0
+    } catch { return 0 }
   }
 
   const buckets: Bucket[] = []
@@ -79,52 +92,53 @@ export async function GET() {
     buckets.push({ key, label, used, limit, remaining: Math.max(0, limit - used) })
   }
 
+  // Admin is unlimited, so nothing is finite — render it against the Amazon
+  // tier's caps as a REFERENCE with a varied sample so the founder sees the full
+  // visual. Real usage still wins if higher; paid tiers always use real counts.
+  const isAdminPreview = tier === 'admin'
+  const refPlan = isAdminPreview ? TIERS.amazon : plan
+  const preview = (real: number, sample: number) => isAdminPreview ? Math.max(real, sample) : real
+
   try {
-    // Admin is unlimited, so it would normally show no meter. Render it against
-    // the Amazon tier's caps as a REFERENCE so the founder can see the visual
-    // (real usage counts, sample limits) — admin isn't actually gated by these.
+    // ── Primary buckets (tier-shaped) ──
     if (tier === 'amazon' || tier === 'admin') {
-      const isAdminPreview = tier === 'admin'
-      const capPlan = isAdminPreview ? TIERS.amazon : plan
-      // The four Art Director format caps — each counted on its own feature.
       const [thumb, pin, igCount, fb] = await Promise.all([
         countFeatures(THUMB_FEATURES),
         countFeatures(['amazon_pin']),
         countFeatures(['amazon_ig']),
         countFeatures(['amazon_fb']),
       ])
-      // Admin is unlimited and usually has 0 real usage, so seed a varied sample
-      // (calm / amber / near-full) purely so the founder can SEE the meter. Real
-      // usage still wins if it's higher. Paid tiers always use their real counts.
-      const preview = (real: number, sample: number) => isAdminPreview ? Math.max(real, sample) : real
-      push('thumbnails', 'Thumbnails', preview(thumb, 128), capPlan.thumbnailsPerMonth)
-      push('pins', 'Pins', preview(pin, 271), capPlan.pinsPerMonth)
-      push('instagram', 'Instagram', preview(igCount, 84), capPlan.igPostsPerMonth)
-      push('facebook', 'Facebook', preview(fb, 12), capPlan.facebookPostsPerMonth)
+      push('thumbnails', 'Thumbnails', preview(thumb, 128), refPlan.thumbnailsPerMonth)
+      push('pins', 'Pins', preview(pin, 271), refPlan.pinsPerMonth)
+      push('instagram', 'Instagram', preview(igCount, 84), refPlan.igPostsPerMonth)
+      push('facebook', 'Facebook', preview(fb, 12), refPlan.facebookPostsPerMonth)
     } else {
-      // Shared Generations bundle = blog posts + thumbnails + metadata, the same
-      // three sources try_consume_generation_quota sums.
+      // Shared Generations bundle = blog posts + thumbnails + metadata.
       const genLimit = lifetime ? plan.lifetimeMax : effectivePostCap(tier, startISO)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const applyWindow = (q: any, col: string) => (windowStart ? q.gte(col, windowStart) : q)
       const [blog, thumb, meta] = await Promise.all([
-        applyWindow(sb.from('blog_posts').select('id', { count: 'exact', head: true }).eq('user_id', user.id), 'published_at'),
-        applyWindow(sb.from('ai_usage').select('id', { count: 'exact', head: true }).eq('user_id', user.id).in('feature', THUMB_FEATURES), 'created_at'),
-        applyWindow(sb.from('ai_usage').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('feature', META_FEATURE), 'created_at'),
+        countRows('blog_posts', 'published_at'),
+        countFeatures(THUMB_FEATURES),
+        countFeatures([META_FEATURE]),
       ])
-      const genUsed = (blog.count ?? 0) + (thumb.count ?? 0) + (meta.count ?? 0)
-      push('generations', lifetime ? 'Generations (trial)' : 'Generations', genUsed, genLimit)
-
-      // Pro-only separate caps.
+      push('generations', lifetime ? 'Generations (trial)' : 'Generations', blog + thumb + meta, genLimit)
       if (tier === 'pro') {
-        const [shorts, x] = await Promise.all([
-          countFeatures(['shorts_render']),
-          countFeatures(['x_post']),
-        ])
+        const [shorts, x] = await Promise.all([countFeatures(['shorts_render']), countFeatures(['x_post'])])
         push('shorts', 'Shorts', shorts, SHORTS_MONTHLY_CAP)
         push('x', 'X posts', x, X_MONTHLY_CAP)
       }
     }
+
+    // ── Shared extra caps (shown on any tier where the cap is finite) ──
+    const [asst, photo, collabs, deals] = await Promise.all([
+      countFeatures(['assistant_message']),
+      countFeatures(['photobooth_image']),
+      countRows('collaborations', 'created_at'),
+      countRows('blog_posts', 'published_at', { col: 'post_type', val: 'deal' }),
+    ])
+    push('deals', 'Deals', preview(deals, 63), refPlan.dealsPerMonth)
+    push('collabs', 'Collabs', preview(collabs, 41), refPlan.collabsPerMonth)
+    push('assistant', 'Ask Me', preview(asst, 372), refPlan.assistantMessagesPerMonth)
+    push('photobooth', 'Photobooth', preview(photo, 4), refPlan.photoboothPerMonth)
   } catch {
     return NextResponse.json({ tier, buckets: [], resetLabel: null, lifetime })
   }
