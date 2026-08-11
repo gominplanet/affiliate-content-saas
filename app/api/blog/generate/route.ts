@@ -2071,6 +2071,14 @@ async function handleGenerate(request: Request) {
     let schemaProductImage: string | null = initialProductImage
     console.log('[blog-images] after() running', { includeImages, userImgs: userImageUrls.length, hasFal: !!process.env.FAL_KEY })
 
+    // Mark the image pass as in-flight so the dashboard can show "generating…"
+    // and, if this pass dies before writing a terminal status, the row stays
+    // 'pending' (retryable) rather than silently null. Best-effort.
+    if (includeImages && savedPost?.id) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      try { await (supabase as any).from('blog_posts').update({ images_status: 'pending' }).eq('id', savedPost.id) } catch { /* non-fatal */ }
+    }
+
     // ── User-supplied in-article images ───────────────────────────────────
     // When the user uploaded their own images, place THOSE throughout the
     // article (re-hosted on WP for a permanent URL) and skip AI generation.
@@ -2104,7 +2112,7 @@ async function handleGenerate(request: Request) {
           try { await wpService.updatePost(wpPost.id, { content: finalContent }) } catch { /* keep text-only post */ }
           if (savedPost?.id) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            try { await supabase.from('blog_posts').update({ content: finalContent, body_images_count: uploaded.length }).eq('id', savedPost.id) } catch { /* non-fatal */ }
+            try { await (supabase as any).from('blog_posts').update({ content: finalContent, body_images_count: uploaded.length, images_status: uploaded.length > 0 ? 'ready' : 'failed' }).eq('id', savedPost.id) } catch { /* non-fatal */ }
           }
         }
       } catch { /* non-fatal — the published text post stands */ }
@@ -2205,7 +2213,7 @@ async function handleGenerate(request: Request) {
             console.warn('[generate] image count resolved to 0 despite includeImages=true', { userId: user.id })
             if (savedPost?.id) {
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              try { await supabase.from('blog_posts').update({ body_images_count: 0 }).eq('id', savedPost.id) } catch { /* non-fatal */ }
+              try { await (supabase as any).from('blog_posts').update({ body_images_count: 0, images_status: 'skipped' }).eq('id', savedPost.id) } catch { /* non-fatal */ }
             }
             throw new Error('__skip_in_body_images__')
           }
@@ -2426,7 +2434,7 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
           // stop having to grep Vercel logs to know if image-gen worked.
           if (savedPost?.id) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            try { await supabase.from('blog_posts').update({ body_images_count: uploaded.length }).eq('id', savedPost.id) } catch { /* non-fatal */ }
+            try { await (supabase as any).from('blog_posts').update({ body_images_count: uploaded.length, images_status: uploaded.length > 0 ? 'ready' : 'failed' }).eq('id', savedPost.id) } catch { /* non-fatal */ }
           }
         }
       } catch (e) {
@@ -2441,7 +2449,7 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
           console.warn('[blog-images] AI-generation branch threw:', e instanceof Error ? e.message : String(e))
           if (savedPost?.id) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            try { await supabase.from('blog_posts').update({ body_images_count: 0 }).eq('id', savedPost.id) } catch { /* non-fatal */ }
+            try { await (supabase as any).from('blog_posts').update({ body_images_count: 0, images_status: 'failed' }).eq('id', savedPost.id) } catch { /* non-fatal */ }
           }
         }
       }

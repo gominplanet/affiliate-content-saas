@@ -210,7 +210,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: `WordPress update failed: ${err instanceof Error ? err.message : 'unknown'}` }, { status: 502 })
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    try { await supabase.from('blog_posts').update({ content: finalContent, body_images_count: uploaded.length }).eq('id', post.id) } catch { /* non-fatal */ }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    try { await (supabase as any).from('blog_posts').update({ content: finalContent, body_images_count: uploaded.length, images_status: 'ready' }).eq('id', post.id) } catch { /* non-fatal */ }
     return NextResponse.json({ ok: true, count: uploaded.length, placed: offsets.length, similarPairs: [], userImages: true })
   }
 
@@ -432,7 +433,8 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
   // post whose initial generation died at 0 images would keep showing the
   // orange ⚠ even after the user successfully re-rolled them.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  try { await supabase.from('blog_posts').update({ content: finalContent, body_images_count: uploaded.length }).eq('id', post.id) } catch { /* non-fatal */ }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  try { await (supabase as any).from('blog_posts').update({ content: finalContent, body_images_count: uploaded.length, images_status: 'ready' }).eq('id', post.id) } catch { /* non-fatal */ }
 
   return NextResponse.json({
     ok: true,

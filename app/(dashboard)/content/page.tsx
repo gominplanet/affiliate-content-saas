@@ -782,7 +782,7 @@ const VideoCard = memo(function VideoCardImpl({
   onGenerated, onDismiss, onDelete, onPinPreview, hidden,
 }: {
   video: Record<string, unknown>
-  post?: { url: string; title: string; postId?: string; wpPostId?: number; indexed?: boolean | null; coverage?: string | null; bodyImagesCount?: number | null; scheduledFor?: string | null; scheduleMode?: string | null; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string; instagramReelId?: string; instagramStoryId?: string } | null
+  post?: { url: string; title: string; postId?: string; wpPostId?: number; indexed?: boolean | null; coverage?: string | null; bodyImagesCount?: number | null; imagesStatus?: string | null; scheduledFor?: string | null; scheduleMode?: string | null; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string; instagramReelId?: string; instagramStoryId?: string } | null
   /** Platforms whose MOST RECENT scheduled push for this post FAILED.
    *  Drives the ⚠ on the social pill so the user can spot broken
    *  cascades at a glance. Populated by the parent Library load(). */
@@ -2259,7 +2259,7 @@ export default function ContentPage() {
   // "CC campaign" badge. Filled by a batched, server-side check that resolves
   // each video's ASIN (stored, direct link, or by resolving its geni.us).
   const [ccVideoSet, setCcVideoSet] = useState<Set<string>>(new Set())
-  const [posts, setPosts] = useState<Record<string, { url: string; title: string; postId?: string; wpPostId?: number; indexed?: boolean | null; coverage?: string | null; bodyImagesCount?: number | null; scheduledFor?: string | null; scheduleMode?: string | null; /** Real WP/DB publish timestamp — used to sort the Recent section by blog publish date instead of video publish date. 2026-06-07. */ publishedAt?: string | null; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string; instagramReelId?: string; instagramStoryId?: string }>>({})
+  const [posts, setPosts] = useState<Record<string, { url: string; title: string; postId?: string; wpPostId?: number; indexed?: boolean | null; coverage?: string | null; bodyImagesCount?: number | null; imagesStatus?: string | null; scheduledFor?: string | null; scheduleMode?: string | null; /** Real WP/DB publish timestamp — used to sort the Recent section by blog publish date instead of video publish date. 2026-06-07. */ publishedAt?: string | null; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string; instagramReelId?: string; instagramStoryId?: string }>>({})
   // Per-post map of platforms whose MOST RECENT scheduled push failed.
   // Drives the ⚠ warning next to the social pill in VideoCard. Filled
   // by load() from scheduled_posts. 2026-06-07 UX fix — previously the
@@ -2587,7 +2587,7 @@ export default function ContentPage() {
       // regenerated yet — same pattern as other post-migration selects
       // in the codebase. Drop after `gen types` runs.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (sb.from('blog_posts') as any).select('id,video_id,wordpress_url,title,wordpress_post_id,body_images_count,scheduled_for,schedule_mode,published_at,created_at,facebook_post_id,pinterest_pin_id,threads_post_id,linkedin_post_id,twitter_post_id,bluesky_post_uri,telegram_message_id,instagram_reel_id,instagram_story_id').eq('user_id', user.id).eq('status', 'published'),
+      (sb.from('blog_posts') as any).select('id,video_id,wordpress_url,title,wordpress_post_id,body_images_count,images_status,scheduled_for,schedule_mode,published_at,created_at,facebook_post_id,pinterest_pin_id,threads_post_id,linkedin_post_id,twitter_post_id,bluesky_post_uri,telegram_message_id,instagram_reel_id,instagram_story_id').eq('user_id', user.id).eq('status', 'published'),
       // Which posts still exist (published) on the live WP site — to reconcile
       // away phantoms (deleted/trashed posts still linger in blog_posts).
       fetch('/api/blog/live-post-ids').then(r => r.ok ? r.json() : null).catch(() => null),
@@ -2674,7 +2674,7 @@ export default function ContentPage() {
       seoByPostId.set(r.post_id, { indexed, coverage: r.coverage_state })
     }
 
-    const postMap: Record<string, { url: string; title: string; postId?: string; wpPostId?: number; indexed?: boolean | null; coverage?: string | null; bodyImagesCount?: number | null; scheduledFor?: string | null; scheduleMode?: string | null; publishedAt?: string | null; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string; instagramReelId?: string; instagramStoryId?: string }> = {}
+    const postMap: Record<string, { url: string; title: string; postId?: string; wpPostId?: number; indexed?: boolean | null; coverage?: string | null; bodyImagesCount?: number | null; imagesStatus?: string | null; scheduledFor?: string | null; scheduleMode?: string | null; publishedAt?: string | null; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string; instagramReelId?: string; instagramStoryId?: string }> = {}
     for (const p of blogPosts as Record<string, unknown>[] ?? []) {
       // A post SCHEDULED for the future isn't live in WordPress yet (its WP
       // status is 'future'/'draft', so its id isn't in liveIds). Don't drop it
@@ -2700,6 +2700,7 @@ export default function ContentPage() {
           // at a glance whether their "Include photos" tick actually produced
           // images, instead of needing to open the post.
           bodyImagesCount: (p.body_images_count as number | null | undefined) ?? null,
+          imagesStatus: (p.images_status as string | null | undefined) ?? null,
           // Schedule fields (migration 104) — null unless the post was
           // queued via /api/blog/schedule-publish. The Library uses
           // them to render the "Scheduled · Sat Jun 6 at 10:20 AM" pill
