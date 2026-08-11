@@ -21,6 +21,9 @@ export default function ConnectYouTubePage() {
   const [loading, setLoading] = useState(true)
   const [connected, setConnected] = useState(false)
   const [channelId, setChannelId] = useState<string | null>(null)
+  // Bumped after connect/disconnect so the channels list below re-fetches
+  // instead of showing a stale row.
+  const [channelsNonce, setChannelsNonce] = useState(0)
   const [disconnecting, setDisconnecting] = useState(false)
 
   const load = useCallback(async () => {
@@ -80,7 +83,7 @@ export default function ConnectYouTubePage() {
     setDisconnecting(true)
     try {
       const res = await fetch('/api/auth/youtube/disconnect', { method: 'POST' })
-      if (res.ok) { toast.success('YouTube disconnected.'); setConnected(false); setChannelId(null) }
+      if (res.ok) { toast.success('YouTube disconnected.'); setConnected(false); setChannelId(null); setChannelsNonce(n => n + 1) }
       else toast.error('Could not disconnect. Try again.')
     } catch { toast.error('Something went wrong. Try again.') }
     finally { setDisconnecting(false) }
@@ -148,7 +151,7 @@ export default function ConnectYouTubePage() {
             a channel by its URL (the reliable path for Brand Accounts OAuth can't
             pick). Rendered regardless of OAuth state so the URL-connect option is
             always reachable; it self-hides while loading. */}
-        {!loading && <YouTubeChannelsManager />}
+        {!loading && <YouTubeChannelsManager refreshNonce={channelsNonce} />}
 
         <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-3">
           Need to connect Instagram, TikTok, Pinterest, X and the rest? Those live on{' '}

@@ -18,7 +18,7 @@ import { toast } from 'sonner'
 interface Channel { id: string; channelId: string; channelTitle: string; isDefault: boolean; hasOAuth: boolean }
 interface SiteRow { id: string; label: string; channelRowId: string | null }
 
-export function YouTubeChannelsManager() {
+export function YouTubeChannelsManager({ refreshNonce = 0 }: { refreshNonce?: number }) {
   const [loading, setLoading] = useState(true)
   const [channels, setChannels] = useState<Channel[]>([])
   const [sites, setSites] = useState<SiteRow[]>([])
@@ -41,7 +41,9 @@ export function YouTubeChannelsManager() {
     finally { setLoading(false) }
   }, [])
 
-  useEffect(() => { load() }, [load])
+  // Re-fetch when the parent signals a change (e.g. the user hit Disconnect on
+  // the card above) so this list never shows a stale/ghost channel.
+  useEffect(() => { load() }, [load, refreshNonce])
 
   async function post(body: Record<string, unknown>, busyKey: string) {
     setBusy(busyKey)
