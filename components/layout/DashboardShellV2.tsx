@@ -53,6 +53,7 @@ import PurgeCacheTopbarButton from './PurgeCacheTopbarButton'
 import ScoutTopbarButton from './ScoutTopbarButton'
 import SocialHealthTopbarButton from './SocialHealthTopbarButton'
 import UsageBar from './UsageBar'
+import UsageNudge from './UsageNudge'
 import SiteSwitcherChip from './SiteSwitcherChip'
 import { HelpDeskButton } from '@/components/HelpDeskSidebar'
 
@@ -1088,6 +1089,9 @@ export default function DashboardShellV2({
             under the topbar so nothing capped is invisible. Self-hides on
             unlimited plans. */}
         <UsageBar />
+        {/* Proactive nudge when a limit is 80%+ this period. Dismissible per
+            period; self-hides otherwise. */}
+        <UsageNudge />
 
         {/* Page content. Generous max-width so the new chrome doesn't
             crush wide content (e.g. the comparison table on /comparison
