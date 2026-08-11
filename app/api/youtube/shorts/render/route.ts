@@ -18,7 +18,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { normalizeTier, billingWindow, type Tier } from '@/lib/tier'
 import { cloudinaryConfigured, renderVerticalShort, getLastShortError } from '@/services/cloudinary'
-import { ingestConfigured, clipSegment, renderShort, renderShortSegment, getLastIngestError } from '@/lib/youtube-ingest'
+import { ingestConfigured, clipSegment, renderShort, renderShortSegment, ingestYouTubeVideo, getLastIngestError } from '@/lib/youtube-ingest'
 import { buildCaptionChunks, isPowerWord } from '@/lib/shorts-captions'
 import { recordUsage } from '@/lib/ai-usage'
 import { rowToShort } from '@/lib/shorts-row'
@@ -105,10 +105,10 @@ export async function POST(request: Request) {
     // Two ways to render: (a) a source MP4 the creator uploaded, or (b) fetch
     // ONLY this clip's window from YouTube (bandwidth-saving segment download).
     const { data: video } = await sb.from('youtube_videos')
-      .select('id,source_video_url,cloudinary_source_id,youtube_video_id')
+      .select('id,source_video_url,cloudinary_source_id,youtube_video_id,duration_seconds')
       .eq('id', short.video_id).eq('user_id', user.id).maybeSingle()
-    const sourceUrl = (video?.source_video_url as string | null) || ''
-    const hasSource = /^https:\/\//i.test(sourceUrl)
+    let sourceUrl = (video?.source_video_url as string | null) || ''
+    let hasSource = /^https:\/\//i.test(sourceUrl)
     const ytId = (short.youtube_video_id as string | null) || (video?.youtube_video_id as string | null) || ''
     const canSegment = /^[A-Za-z0-9_-]{11}$/.test(ytId) && ingestConfigured()
     if (!hasSource && !canSegment) {
@@ -134,13 +134,45 @@ export async function POST(request: Request) {
 
     // PRIMARY: FFmpeg + libass on the ingest service — trim + reframe to 9:16 +
     // burn Hormozi word-by-word captions in one pass. Cloudinary can't animate
-    // text, so this is what makes the captions look pro. Uses the uploaded
-    // source when present, else downloads ONLY this clip's window from YouTube.
+    // text, so this is what makes the captions look pro.
     if (ingestConfigured()) {
-      const r = hasSource
-        ? await renderShort(sourceUrl, startSec, endSec, withCaptions ? cuesWithHl : [], user.id, style, renderOpts)
-        : await renderShortSegment(ytId, startSec, endSec, withCaptions ? cuesWithHl : [], user.id, style, renderOpts)
-      if (r?.url) renderedUrl = r.url
+      if (hasSource) {
+        const r = await renderShort(sourceUrl, startSec, endSec, withCaptions ? cuesWithHl : [], user.id, style, renderOpts)
+        if (r?.url) renderedUrl = r.url
+      } else {
+        // (a) Cheap path: download ONLY this clip's window. Fast + low bandwidth,
+        //     but it's an on-the-fly fetch that YouTube blocks intermittently.
+        const seg = await renderShortSegment(ytId, startSec, endSec, withCaptions ? cuesWithHl : [], user.id, style, renderOpts)
+        if (seg?.url) renderedUrl = seg.url
+
+        // (b) Segment blocked → fall back to the RELIABLE full-video download
+        //     (the same yt-dlp + residential-proxy + PO-token path Clip Factory
+        //     uses via /ingest), cache it on the video, and render from that.
+        //     Cached, so every other clip from this video then renders instantly
+        //     with no YouTube fetch at all. Skip the fallback for very long
+        //     videos where a full download would be wasteful — the upload prompt
+        //     is the better answer there.
+        if (!renderedUrl) {
+          const durationSec = Number(video?.duration_seconds) || 0
+          const withinIngestCap = durationSec === 0 || durationSec <= 1800 // ≤30 min
+          if (withinIngestCap) {
+            const ing = await ingestYouTubeVideo(ytId, user.id)
+            if (ing?.url) {
+              sourceUrl = ing.url
+              hasSource = true
+              try {
+                await sb.from('youtube_videos').update({
+                  source_video_url: ing.url,
+                  source_video_uploaded_at: new Date().toISOString(),
+                  ...(ing.durationSeconds ? { duration_seconds: ing.durationSeconds } : {}),
+                }).eq('id', short.video_id).eq('user_id', user.id)
+              } catch { /* the URL still works this render; a failed cache write isn't fatal */ }
+              const r = await renderShort(sourceUrl, startSec, endSec, withCaptions ? cuesWithHl : [], user.id, style, renderOpts)
+              if (r?.url) renderedUrl = r.url
+            }
+          }
+        }
+      }
     }
 
     // FALLBACK: Cloudinary (static captions) — only possible with a hosted
