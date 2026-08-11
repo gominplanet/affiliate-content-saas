@@ -13,6 +13,7 @@ import { scrubBanned } from '@/lib/scrub'
 import { AFFILIATE_DISCLAIMER_DEFAULT } from '@/lib/social-disclaimer'
 import { publishDealToSocials, QUICK_POST_PLATFORMS, type QuickPostPlatform, type PlatformResult } from '@/lib/deal-social-publish'
 import { publishDealStory } from '@/lib/deal-story-publish'
+import { buildDealCardImage } from '@/lib/deal-card'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import type { Tier } from '@/lib/tier'
 
@@ -95,7 +96,7 @@ export async function executeDealQuickPost(input: DealQuickPostInput): Promise<D
     geniuslinkNote = built.note
 
     const { data: brand } = await db.from('brand_profiles')
-      .select('affiliate_disclaimer').eq('user_id', userId).maybeSingle()
+      .select('affiliate_disclaimer,name,logo_url').eq('user_id', userId).maybeSingle()
     const disclaimer = (brand?.affiliate_disclaimer as string | null)?.trim() || AFFILIATE_DISCLAIMER_DEFAULT
 
     let cap = (input.caption || '').trim()
@@ -129,9 +130,19 @@ Return ONLY the caption text.` }],
     if (!cap) cap = (deal.title as string).slice(0, 200)
     baseCaption = cap
 
+    // Turn the bare product photo into a designed deal card (product + a bold
+    // qualitative hook + brand chip). Best-effort — falls back to the raw photo.
+    const postImage = (await buildDealCardImage(dealImage, {
+      dealQuality: deal.deal_quality as string | null,
+      lowestLabel: deal.lowest_label as string | null,
+      discountPct: deal.discount_pct as number | null,
+      brandName: (brand?.name as string | null) ?? (deal.brand as string | null),
+      logoUrl: brand?.logo_url as string | null,
+    })) || dealImage
+
     const textResults: PlatformResult[] = await publishDealToSocials({
       supabase: db, userId,
-      deal: { asin, title: deal.title as string, imageUrl: dealImage },
+      deal: { asin, title: deal.title as string, imageUrl: postImage },
       link, links: built.links, baseCaption: cap, disclaimer, platforms,
     })
     results.push(...textResults)
