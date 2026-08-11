@@ -72,12 +72,16 @@ ${productContext.slice(0, 1500)}
 RULES:
 - Strong hook on line 1 (max 7 words), then 1-2 short punchy value lines.
 - Conversational creator voice, a couple of emojis max.
-- Then EXACTLY 3 hashtags — SPECIFIC and niche to this product/topic (e.g. #coldbrewmaker), NOT generic spam (#amazonfinds, #musthave).
+- Then 5-7 hashtags on one line, a smart MIX (no duplicates):
+  • If the product has a clear brand name, include it as a hashtag (e.g. HOVERAir X1 → #hoverair). Skip this if there's no real brand.
+  • 2 SPECIFIC and niche to this exact product/topic (e.g. #selfflyingdrone, #followmecamera).
+  • 2-3 BROADER category/audience tags this product fits, so it reaches beyond the niche (e.g. a creator drone → #contentcreator #filmmaking #tech; a coffee gadget → #coffeelover #homebarista).
+  • NEVER generic spam (#amazonfinds, #musthave, #viral, #fyp).
 - Do NOT include any URL (not clickable on IG). You may say "link in bio".
 - Never use the word "honest".
 - Under 600 characters total.
 
-Return ONLY the caption text + the 3 hashtags.`,
+Return ONLY the caption text + the hashtags.`,
       }],
     })
     recordAnthropicUsage(msg, { userId: ctx.userId, tier: ctx.tier, feature: 'ig_burn_caption', model: 'claude-haiku-4-5-20251001' })
