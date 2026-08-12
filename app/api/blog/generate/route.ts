@@ -30,6 +30,7 @@ import { maybeDistillFeedback } from '@/lib/feedback-distill'
 import { maybeLearnFromEdits } from '@/lib/edit-learning'
 import { gutenbergImageBlock, pickBodyImageOffsets, insertImagesAtOffsets } from '@/lib/blog-body-images'
 import { composeWithNanoBanana, rehostToFal } from '@/lib/thumbnail-generators'
+import { generateArtDirectorBlogHero } from '@/lib/art-director-pin'
 import { fetchStoryboardFrames } from '@/lib/youtube-storyboards'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 import { pickRelatedPosts, renderRelatedLinksBlock, insertRelatedLinks, type LinkCandidate } from '@/lib/internal-links'
@@ -193,6 +194,10 @@ async function handleGenerate(request: Request) {
     videoId?: string
     rewriteFeedback?: string
     includeImages?: boolean
+    /** Optional: replace the post's featured image with an Art Director-designed
+     *  16:9 blog hero (uses a thumbnail token). For old videos whose YouTube
+     *  thumb the creator wants upgraded. */
+    artDirectorThumbnail?: boolean
     /** Optional: user-supplied in-article image URLs (public). When present,
      *  these are placed throughout the article INSTEAD of AI-generated ones. */
     userImageUrls?: string[]
@@ -264,6 +269,7 @@ async function handleGenerate(request: Request) {
   // full set of fal images every time. The Content page's "Include photos"
   // box sends the explicit choice; the SEO rebuild sends includeImages:true.
   const includeImages = body.includeImages === true
+  const artDirectorThumb = body.artDirectorThumbnail === true
   const userImageUrls = Array.isArray(body.userImageUrls)
     ? body.userImageUrls.filter(u => typeof u === 'string' && /^https?:\/\//.test(u)).slice(0, 3)
     : []
@@ -2070,6 +2076,50 @@ async function handleGenerate(request: Request) {
     let schemaProductName = generated.title
     let schemaProductImage: string | null = initialProductImage
     console.log('[blog-images] after() running', { includeImages, userImgs: userImageUrls.length, hasFal: !!process.env.FAL_KEY })
+
+    // ── Art Director blog hero (opt-in; uses a thumbnail token) ────────────────
+    // Replace the default (YouTube) featured image with a designed 16:9 product
+    // hero. Runs deferred so publish stays fast; on ANY failure the YouTube thumb
+    // set synchronously above stands, so the post is never left thumbnail-less.
+    if (artDirectorThumb && !existingWpPostId) {
+      try {
+        const adTag = `[blog-adthumb:${v.id?.toString().slice(0, 8) ?? 'video'}]`
+        const ref = await resolveProductReference({
+          uploadedUrl: (v.product_image_url as string | null)?.trim() || null,
+          title: (v.title as string | null) ?? null,
+          description: rawDescription,
+          asin: effectiveAsin ?? null,
+          wordpressUrl: site.wordpress_url ?? null,
+          traceTag: adTag,
+          userId: user.id,
+          tier: (wp?.tier as string) ?? null,
+        })
+        if (ref.productImageUrl) {
+          const hero = await generateArtDirectorBlogHero({
+            productImageUrl: ref.productImageUrl,
+            productTitle: ref.productTitle || generated.title,
+            productContext: rawDescription?.slice(0, 700),
+            userId: user.id,
+            tier: (wp?.tier as string) ?? null,
+          })
+          if (hero) {
+            const media = await wpService.uploadImageFromBase64(hero.data, `${youtubeVideoId || slug}-adhero.jpg`, hero.mediaType)
+            if (media?.id) {
+              await wpService.updatePost(wpPost.id, { featured_media: media.id })
+              heroImageUrl = media.source_url || heroImageUrl
+              schemaProductImage = media.source_url || schemaProductImage
+              console.log(`${adTag} set Art Director hero`, { mediaId: media.id })
+            }
+          } else {
+            console.warn(`${adTag} hero generation returned null — keeping YouTube thumb`)
+          }
+        } else {
+          console.warn(`${adTag} no product image resolved — keeping YouTube thumb`)
+        }
+      } catch (e) {
+        console.warn('[blog-adthumb] failed — keeping YouTube thumb:', e instanceof Error ? e.message : String(e))
+      }
+    }
 
     // Mark the image pass as in-flight so the dashboard can show "generating…"
     // and, if this pass dies before writing a terminal status, the row stays

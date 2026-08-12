@@ -97,6 +97,62 @@ export async function generateArtDirectorPin(opts: {
   } catch { return null }
 }
 
+/**
+ * Generate a designed 16:9 BLOG HERO thumbnail (1280×720) from a product photo +
+ * title — the Art Director look, landscape, for a blog post's featured image.
+ * Same engine as the pin, just reframed to 16:9 with a thumbnail-style brief.
+ * Returns base64 JPEG (data + mediaType) or null on any failure (caller keeps
+ * the existing thumbnail). Counts a landscape-thumbnail token when it succeeds.
+ */
+export async function generateArtDirectorBlogHero(opts: {
+  productImageUrl: string
+  productTitle: string
+  productContext?: string
+  userId?: string | null
+  tier?: string | null
+}): Promise<{ data: string; mediaType: string } | null> {
+  try {
+    if (!opts.productImageUrl || !opts.productTitle) return null
+
+    const ab = await fetch(opts.productImageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(12000) })
+      .then((r) => (r.ok ? r.arrayBuffer() : null)).catch(() => null)
+    if (!ab) return null
+    const productPng = await normalizeToPng(new Uint8Array(ab)).catch(() => null)
+    if (!productPng) return null
+
+    // Reuse the pin brief (headline + callouts, grounded in the product).
+    const brief = await designPinBrief(opts.productTitle, opts.productContext || '', opts.userId, opts.tier)
+    const line1 = brief?.line1 || stripDesignBrands(opts.productTitle).toUpperCase().slice(0, 16)
+    const line2 = brief?.line2 || ''
+    const callouts = brief?.callouts?.length ? brief.callouts : []
+
+    const prompt = [
+      'FORMAT — READ FIRST: a 16:9 LANDSCAPE blog article hero image (1536×864, wide). A polished, high-contrast product-review header graphic: the product as the hero, a big bold designed headline, small benefit callouts. Vibrant and modern, never flat or template-like. Fill the wide frame with a clean layout.',
+      brief?.concept ? `DESIGN CONCEPT: ${brief.concept}` : '',
+      brief?.palette ? `COLOUR PALETTE: ${brief.palette}.` : '',
+      'PRODUCT (the hero): recreate the product from Image 1 accurately and prominently — its true shape, colours and its own printed branding. Light it naturally with a grounded shadow; no glow ring.',
+      'ABSOLUTELY NO PEOPLE — HARD RULE: zero humans, faces, hands, body parts, silhouettes or reflections. If Image 1 shows a model or hands, keep ONLY the product.',
+      `MAIN HEADLINE — render EXACTLY, spelling perfect: "${line1} ${line2}". A designed, layered look (mixed colour/size/weight), placed where it does NOT cover the product.`,
+      callouts.length ? `CALLOUTS: work these in as small bright checkmark chips or spec pills, correctly spelled: ${callouts.join(' · ')}.` : '',
+      NO_BRAND_IMAGE_CLAUSE,
+      'FRAMING: the entire canvas is shown — nothing cropped. Keep every headline, badge, callout and the whole product inside a ~5% safe margin on all four sides.',
+    ].filter(Boolean).join('\n')
+
+    const openai = createOpenAIService()
+    const b64 = await openai.generateWithReferences({
+      prompt,
+      images: [{ data: productPng, filename: 'product.png', mime: 'image/png' }],
+      size: '1536x864',
+      quality: 'medium',
+    })
+    if (!b64) return null
+    if (opts.userId) recordUsage({ userId: opts.userId, tier: opts.tier ?? null, feature: 'yt_thumb_graphic', model: 'gpt-image-2', images: 1 })
+
+    const jpeg = await sharp(Buffer.from(b64, 'base64')).resize(1280, 720, { fit: 'cover', position: 'centre' }).jpeg({ quality: 92 }).toBuffer()
+    return { data: jpeg.toString('base64'), mediaType: 'image/jpeg' }
+  } catch { return null }
+}
+
 const COLLAGE_SYSTEM = `You are a world-class product-review ART DIRECTOR designing ONE scroll-stopping vertical Pinterest pin for a MULTI-PRODUCT buying guide / comparison (a "top picks" roundup). Return STRICT JSON: {"headline","subhead","palette"}.
 - headline: a punchy ALL-CAPS roundup headline (≤ 22 chars) — e.g. the category + a "best of" angle. Specific to the category, never generic.
 - subhead: a short supporting line (≤ 26 chars), e.g. "COMPARED & RANKED" or a benefit angle. May be empty.
