@@ -57,6 +57,14 @@ const TikTokDirectModal = dynamic(
   () => import('@/components/TikTokDirectModal').then(m => ({ default: m.TikTokDirectModal })),
   { ssr: false },
 )
+// Clip Factory in a popup — the same "plan moments → render (captions / split
+// screen) → CTA overlay → post to TikTok" flow as the standalone Shorts Studio,
+// opened inline from the TikTok social pill so creators never bounce to a
+// separate upload page and get confused. Client-only, only loads on click.
+const ShortsStudioModal = dynamic(
+  () => import('@/components/content/ShortsStudioModal').then(m => ({ default: m.ShortsStudioModal })),
+  { ssr: false },
+)
 // From-link generator — create a post from a product link/ASIN, no video.
 const FromLinkModal = dynamic(
   () => import('@/components/content/FromLinkModal').then(m => ({ default: m.FromLinkModal })),
@@ -924,6 +932,8 @@ const VideoCard = memo(function VideoCardImpl({
   const [tgPosted, setTgPosted] = useState(!!post?.telegramMessageId)
   const [igModalOpen, setIgModalOpen] = useState(false)
   const [igCoverOpen, setIgCoverOpen] = useState(false)
+  // Clip Factory popup opened from the TikTok pill (plan → render → CTA → post).
+  const [shortsMakerOpen, setShortsMakerOpen] = useState(false)
   const [igPosting, setIgPosting] = useState(false)
   const [igReelPosted, setIgReelPosted] = useState(!!post?.instagramReelId)
   const [igStoryPosted, setIgStoryPosted] = useState(!!post?.instagramStoryId)
@@ -1686,12 +1696,15 @@ const VideoCard = memo(function VideoCardImpl({
                   <ImagePlus size={12} /> Reel cover
                 </button>
               )}
-              {/* TikTok pill — clicking opens the dedicated /tiktok-publish
-                  screen in a new tab. The screen handles every TikTok-mandated
-                  control (live privacy dropdown, Music Usage Confirmation,
-                  commercial-content toggle, etc.). Not a modal — the screen
-                  must NOT share UI with the IG/Pinterest composer per
-                  TikTok's app-review guidelines. */}
+              {/* TikTok pill — opens the Clip Factory popup (ShortsStudioModal):
+                  plan the best moments, render a 9:16 clip with captions / split
+                  screen, add the CTA overlay, then post. The actual TikTok post
+                  still happens on TikTokDirectModal (its own dedicated screen
+                  with the live privacy dropdown, Music Usage Confirmation and
+                  commercial-content toggle) so we stay inside TikTok's
+                  app-review rules — the composer never shares UI with IG/Pinterest.
+                  Falls back to the /tiktok-publish page only when there's no
+                  source YouTube video to clip from. */}
               {tiktokConnected && post?.postId && (
                 <SocialPill
                   brand="#000000"
@@ -1700,8 +1713,19 @@ const VideoCard = memo(function VideoCardImpl({
                   postedLabel="On TikTok"
                   posted={false}
                   loading={false}
-                  onClick={() => window.open(`/tiktok-publish/${post.postId}`, '_blank', 'noopener')}
+                  onClick={() => {
+                    if (video.youtube_video_id) setShortsMakerOpen(true)
+                    else window.open(`/tiktok-publish/${post.postId}`, '_blank', 'noopener')
+                  }}
                   locked={!tierAllowsSocial(userTier, 'tiktok')}
+                />
+              )}
+              {shortsMakerOpen && (
+                <ShortsStudioModal
+                  videoId={id}
+                  youtubeVideoId={(video.youtube_video_id as string) || null}
+                  videoTitle={title || ''}
+                  onClose={() => setShortsMakerOpen(false)}
                 />
               )}
             </div>
