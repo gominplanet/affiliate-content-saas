@@ -455,6 +455,9 @@ export default function DashboardShellV2({
         // Graduated from Labs 2026-08; Pro-only (page + APIs already Pro-gated,
         // capped at 50 finished Shorts/month, source videos capped at 10 min).
         { href: '/clip-factory', icon: <Rocket size={15} />, label: 'Clip Factory', gate: isPro },
+        // Pulse — which hashtags actually earn reach, learned from your posts +
+        // pooled across MVP per niche. Feeds proven tags back into captions.
+        { href: '/pulse', icon: <Activity size={15} />, label: 'Pulse', gate: isPro },
         // Deal Radar moved to the RESEARCH section (2026-07-30) — it's a
         // product-discovery tool, so it lives with the other research finders.
         // Link in Bio — a shoppable affiliate "Shop Grid" page at /s/<handle>,
