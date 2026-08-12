@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.86
+ * Version: 1.0.87
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -3284,14 +3284,15 @@ if (!function_exists('mvp_affiliate_rest_proxy')) {
             return new WP_REST_Response(['code' => 'forbidden_path', 'message' => 'Proxy route not in allowlist.'], 403);
         }
 
-        // ── Media upload over the proxy (v1.0.69+) ───────────────────────────
+        // ── Media upload over the proxy (v1.0.69+; URL-fetch since v1.0.87) ──
         // A REST media upload needs FILE params, which rest_do_request() can't
-        // carry from a JSON envelope. So when the dashboard sends a base64 image
-        // for /wp/v2/media, create the attachment directly (as the admin set
-        // above). This lets image uploads ride the same header-strip-proof,
-        // App-Password-independent path as post writes — fixing thumbnail-less
-        // posts on hosts that strip Authorization or where the App Password went
-        // stale (the proxy authenticates with the separate posting key).
+        // carry from a JSON envelope. So when the dashboard sends an image URL
+        // for /wp/v2/media, the site downloads it and creates the attachment
+        // directly (as the admin set above). This lets image uploads ride the
+        // same header-strip-proof, App-Password-independent path as post writes
+        // — fixing thumbnail-less posts on hosts that strip Authorization or
+        // where the App Password went stale (the proxy authenticates with the
+        // separate posting key).
         if ($method === 'POST' && $path === '/wp/v2/media' && !empty($body['media']) && is_array($body['media'])) {
             return mvp_affiliate_proxy_media_upload($body['media']);
         }
@@ -3319,21 +3320,35 @@ if (!function_exists('mvp_affiliate_rest_proxy')) {
 
 if (!function_exists('mvp_affiliate_proxy_media_upload')) {
     /**
-     * Create a media attachment from a base64 payload sent through /proxy.
-     * Runs as the administrator already established by the proxy caller, so
-     * capability checks pass exactly as a real admin upload would. Returns the
-     * same { id, source_url } shape the REST media controller returns, so the
-     * dashboard's existing response parsing is unchanged. (v1.0.69+)
+     * Create a media attachment by DOWNLOADING an image URL sent through /proxy.
+     * The dashboard hosts every image on a public CDN/Storage URL before it asks
+     * us to attach it, so we fetch the bytes with WordPress's own HTTP API rather
+     * than carrying them inline. Runs as the administrator already established by
+     * the proxy caller, so capability checks pass exactly as a real admin upload
+     * would. Returns the same { id, source_url } shape the REST media controller
+     * returns, so the dashboard's existing response parsing is unchanged.
+     * (v1.0.69+; switched from inline payload to URL fetch in v1.0.87.)
      */
     function mvp_affiliate_proxy_media_upload($media) {
         $filename = isset($media['filename']) ? sanitize_file_name((string) $media['filename']) : '';
-        $b64      = isset($media['data']) ? (string) $media['data'] : '';
-        if ($filename === '' || $b64 === '') {
-            return new WP_REST_Response(['code' => 'bad_media', 'message' => 'filename and data are required.'], 400);
+        $url      = isset($media['url']) ? esc_url_raw((string) $media['url']) : '';
+        if ($filename === '' || $url === '') {
+            return new WP_REST_Response(['code' => 'bad_media', 'message' => 'filename and url are required.'], 400);
         }
-        $bytes = base64_decode($b64, true);
-        if ($bytes === false || strlen($bytes) === 0) {
-            return new WP_REST_Response(['code' => 'bad_media', 'message' => 'data is not valid base64.'], 400);
+        if (stripos($url, 'https://') !== 0) {
+            return new WP_REST_Response(['code' => 'bad_media', 'message' => 'url must be https.'], 400);
+        }
+        // Fetch the image via WordPress's HTTP API — no auth, a public URL.
+        $resp = wp_remote_get($url, ['timeout' => 60, 'redirection' => 3]);
+        if (is_wp_error($resp)) {
+            return new WP_REST_Response(['code' => 'fetch_failed', 'message' => $resp->get_error_message()], 502);
+        }
+        if ((int) wp_remote_retrieve_response_code($resp) !== 200) {
+            return new WP_REST_Response(['code' => 'fetch_failed', 'message' => 'Source returned ' . (int) wp_remote_retrieve_response_code($resp)], 502);
+        }
+        $bytes = (string) wp_remote_retrieve_body($resp);
+        if (strlen($bytes) === 0) {
+            return new WP_REST_Response(['code' => 'bad_media', 'message' => 'Source returned no data.'], 502);
         }
         // Size cap — hero/thumbnail images only. 12 MB is generous.
         if (strlen($bytes) > 12 * 1024 * 1024) {
