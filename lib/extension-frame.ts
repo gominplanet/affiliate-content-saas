@@ -1051,6 +1051,26 @@ export async function requestYtApplyDisclosures(
   return { ok: !!resp.ok, detail: resp.detail, error: resp.error, debug: resp.debug }
 }
 
+/**
+ * Set the disclosure fields by INJECTING them into Studio's own signed
+ * metadata_update (SCOUT opens the video's edit page, dirties it, hits Save; the
+ * hook rewrites the outgoing request to carry paid-promotion / AI / monetization).
+ * This carries YouTube's real BotGuard token, so the change actually sticks.
+ */
+export async function requestYtInjectDisclosures(
+  videoId: string,
+  opts: YtDisclosureOpts,
+): Promise<{ ok: boolean; detail?: string; error?: string; debug?: Record<string, unknown> }> {
+  if (!videoId) return { ok: false, error: 'no-video-id' }
+  if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
+  const resp = await sendToExtension<{ ok?: boolean; detail?: string; error?: string; debug?: Record<string, unknown> }>(
+    { type: 'MVP_YT_INJECT_DISCLOSURES', videoId, opts },
+    60000,
+  )
+  if (!resp) return { ok: false, error: 'timeout' }
+  return { ok: !!resp.ok, detail: resp.detail, error: resp.error, debug: resp.debug }
+}
+
 export interface VideoDownloadResult {
   ok: boolean
   /** The Short's MP4 as a data URL (data:video/mp4;base64,…). */

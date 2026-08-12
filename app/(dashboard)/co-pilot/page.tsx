@@ -10,7 +10,7 @@ import HeroVideo from '@/components/layout/HeroVideo'
 import { CapReachedBanner } from '@/components/CapReachedBanner'
 import { useConfirm } from '@/components/ui/useConfirm'
 import { pickWeightedStyleIndex, OVERLAY_STYLES, drawHeadline, type HeadlinePosition, type FaceBox } from '@/lib/thumbnail-overlay'
-import { isExtensionAvailable, requestVideoFrames, requestAmazonProduct, requestVideoTranscript, requestStudioSchedule, requestStudioVideos, requestStudioFinish, requestYtSaveRecipes, requestYtApplyDisclosures, type StudioFinishResult, type YtSaveRecipe } from '@/lib/extension-frame'
+import { isExtensionAvailable, requestVideoFrames, requestAmazonProduct, requestVideoTranscript, requestStudioSchedule, requestStudioVideos, requestStudioFinish, requestYtSaveRecipes, requestYtApplyDisclosures, requestYtInjectDisclosures, type StudioFinishResult, type YtSaveRecipe } from '@/lib/extension-frame'
 import { SCOUT_STORE_LISTING_URL } from '@/lib/scout-version'
 import { effectiveTier } from '@/lib/view-as'
 import type { Tier } from '@/lib/tier'
@@ -3641,9 +3641,16 @@ export default function StudioPage() {
             <button
               onClick={async () => { if (!ytApplyVideoId) return; setYtApplyLoading(true); setYtApplyResult(null); try { setYtApplyResult(await requestYtApplyDisclosures(ytApplyVideoId, { paidPromotion: true, aiDisclosure: true, hasAlteredContent: false, monetize: true })) } finally { setYtApplyLoading(false) } }}
               disabled={ytApplyLoading || !ytApplyVideoId}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold text-white bg-[#8e8e93] hover:opacity-90 disabled:opacity-50"
+            >
+              {ytApplyLoading ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />} API (200 but no-save)
+            </button>
+            <button
+              onClick={async () => { if (!ytApplyVideoId) return; setYtApplyLoading(true); setYtApplyResult(null); try { setYtApplyResult(await requestYtInjectDisclosures(ytApplyVideoId, { paidPromotion: true, aiDisclosure: true, hasAlteredContent: false, monetize: true })) } finally { setYtApplyLoading(false) } }}
+              disabled={ytApplyLoading || !ytApplyVideoId}
               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold text-white bg-[#34c759] hover:opacity-90 disabled:opacity-50"
             >
-              {ytApplyLoading ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />} Test: apply disclosures via API
+              {ytApplyLoading ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />} Test: inject via Studio save
             </button>
           </div>
           {ytApplyResult && (
