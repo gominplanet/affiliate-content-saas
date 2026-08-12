@@ -21,6 +21,10 @@ export interface PinPreviewData {
   boardName: string
   /** The post's vertical render, when it has one — enables a VIDEO pin. */
   videoUrl?: string | null
+  /** The direct product link (Geniuslink when the user has one, else the tagged
+   *  Amazon URL). When present, the modal offers a Blog/Product destination
+   *  toggle. null → no product to link to, pin stays on the blog link. */
+  productUrl?: string | null
 }
 
 /** Editable Pinterest pin preview. Shared by Library & Social Push and
@@ -31,7 +35,7 @@ export function PinterestPreviewModal({
   onClose,
 }: {
   data: PinPreviewData
-  onPublish: (description: string, title: string) => Promise<{ ok: boolean; error?: string }>
+  onPublish: (description: string, title: string, linkTarget: 'blog' | 'product') => Promise<{ ok: boolean; error?: string }>
   onClose: () => void
 }) {
   const [title, setTitle] = useState(data.title)
@@ -41,6 +45,13 @@ export function PinterestPreviewModal({
   // Pin as a VIDEO (when the post has a render). Defaults on if a render exists,
   // since a video pin generally outperforms a still.
   const [asVideo, setAsVideo] = useState(!!data.videoUrl)
+  // Where the pin links: the blog post (default, safest) or the direct product
+  // link. Only offered when a product link resolved. Pinterest allows affiliate
+  // links WITH disclosure (always appended below), and uses the user's
+  // Geniuslink when they have one.
+  const [linkTarget, setLinkTarget] = useState<'blog' | 'product'>('blog')
+  const hasProduct = !!(data.productUrl && data.productUrl.trim())
+  const destLink = linkTarget === 'product' && hasProduct ? (data.productUrl as string) : data.link
 
   const tagLine = data.hashtags.length ? data.hashtags.map(t => `#${t}`).join(' ') : ''
 
@@ -63,7 +74,7 @@ export function PinterestPreviewModal({
           body: JSON.stringify({
             videoUrl: data.videoUrl,
             coverImageUrl: data.fallbackImageUrl || undefined,
-            link: data.link,
+            link: destLink,
             title: title.trim() || data.title,
             description: composed,
           }),
@@ -77,7 +88,7 @@ export function PinterestPreviewModal({
       return
     }
 
-    const result = await onPublish(composed, title.trim() || data.title)
+    const result = await onPublish(composed, title.trim() || data.title, linkTarget)
     if (!result.ok) {
       setPubError(result.error || 'Publish failed. Try again.')
       setPublishing(false)
@@ -191,13 +202,35 @@ export function PinterestPreviewModal({
               <p className="text-xs font-semibold mt-1.5" style={{ color: '#c0001a' }}>{data.complianceTags}</p>
             </div>
 
-            {/* Pin destination — always the blog post itself */}
+            {/* Pin destination — blog post (default) or the direct product link.
+                The product option only shows when a product link resolved. */}
             <div>
-              <p className="text-[10px] font-semibold text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide mb-1">Links to (blog post)</p>
-              {data.link ? (
-                <a href={data.link} target="_blank" rel="noopener noreferrer" className="text-[11px] text-[#7C3AED] hover:underline break-all">{data.link}</a>
+              <p className="text-[10px] font-semibold text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide mb-1.5">Pin links to</p>
+              {hasProduct && (
+                <div className="inline-flex rounded-lg border border-gray-200 dark:border-white/10 p-0.5 mb-2">
+                  <button
+                    type="button"
+                    onClick={() => setLinkTarget('blog')}
+                    className={`px-3 py-1 text-[11px] font-semibold rounded-md transition-colors ${linkTarget === 'blog' ? 'bg-[#E60023] text-white' : 'text-[#86868b] dark:text-[#8e8e93] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]'}`}
+                  >
+                    Blog post
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLinkTarget('product')}
+                    className={`px-3 py-1 text-[11px] font-semibold rounded-md transition-colors ${linkTarget === 'product' ? 'bg-[#E60023] text-white' : 'text-[#86868b] dark:text-[#8e8e93] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]'}`}
+                  >
+                    Product link
+                  </button>
+                </div>
+              )}
+              {destLink ? (
+                <a href={destLink} target="_blank" rel="noopener noreferrer" className="block text-[11px] text-[#7C3AED] hover:underline break-all">{destLink}</a>
               ) : (
                 <p className="text-[11px] text-[#ff3b30]">No blog URL — this post can&apos;t be pinned.</p>
+              )}
+              {linkTarget === 'product' && (
+                <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-1">Links straight to the product. The affiliate disclosure above is always included.</p>
               )}
             </div>
 

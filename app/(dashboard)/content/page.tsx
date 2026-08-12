@@ -2926,7 +2926,7 @@ export default function ContentPage() {
     return () => window.removeEventListener('mvp-social-posted', onSocialPosted)
   }, [])
 
-  async function handlePublishPin(description: string, title: string): Promise<{ ok: boolean; error?: string }> {
+  async function handlePublishPin(description: string, title: string, linkTarget: 'blog' | 'product' = 'blog'): Promise<{ ok: boolean; error?: string }> {
     if (!pinPreview) return { ok: false, error: 'No pin to publish' }
     setPinPublishingFor(pinPreview.postId)
     const ctrl = new AbortController()
@@ -2943,6 +2943,7 @@ export default function ContentPage() {
           imageBase64: pinPreview.imageBase64,
           mediaType: pinPreview.mediaType,
           fallbackImageUrl: pinPreview.fallbackImageUrl,
+          linkTarget,
         }),
         signal: ctrl.signal,
       })

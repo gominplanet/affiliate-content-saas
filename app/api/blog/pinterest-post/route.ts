@@ -15,6 +15,7 @@ import { resolveBlogPostId } from '@/lib/resolve-post-id'
 import { recordSocialPermalink } from '@/lib/social-permalink'
 import { socialPermalink } from '@/lib/brand-recap'
 import { syntheticWpPost } from '@/lib/wp-post-fallback'
+import { resolvePinProductLink } from '@/lib/pin-product-link'
 
 export const maxDuration = 60
 
@@ -34,7 +35,7 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const { postId: rawPostId, title, description, imageBase64, mediaType, fallbackImageUrl, postUrl } = await request.json()
+  const { postId: rawPostId, title, description, imageBase64, mediaType, fallbackImageUrl, postUrl, linkTarget } = await request.json()
   if (!rawPostId) return NextResponse.json({ error: 'postId required' }, { status: 400 })
   if (!description) return NextResponse.json({ error: 'description required' }, { status: 400 })
   // Video-less rows send the WordPress post id — resolve to the blog_posts UUID.
@@ -44,8 +45,8 @@ export async function POST(request: NextRequest) {
   // the synthetic-post path) rather than erroring.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [{ data: post }, { data: integration }] = await Promise.all([
-    supabase.from('blog_posts').select('id,title,wordpress_url,wordpress_post_id,wordpress_site_id,social_publish_counts').eq('id', postId).eq('user_id', user.id).maybeSingle(),
-    supabase.from('integrations').select('pinterest_access_token,pinterest_board_id,pinterest_fallback_board').eq('user_id', user.id).single(),
+    supabase.from('blog_posts').select('id,title,wordpress_url,wordpress_post_id,wordpress_site_id,social_publish_counts,video_id').eq('id', postId).eq('user_id', user.id).maybeSingle(),
+    supabase.from('integrations').select('pinterest_access_token,pinterest_board_id,pinterest_fallback_board,amazon_associates_tag,geniuslink_api_key,geniuslink_api_secret').eq('user_id', user.id).single(),
   ])
   // No MVP record → pin straight from the WordPress post. `hasRow` gates the
   // post-publish DB writes (there's no row to persist pin id / cap counts on).
@@ -97,9 +98,19 @@ export async function POST(request: NextRequest) {
   try {
     // Decrypt the integrations row before handing it to publishPinForPost
     // (2026-06-02 rollout — the pin lib reads pinterest_access_token raw).
+    const decIg = decryptIntegrationRow(integration)
+    // Blog/Product toggle: when the creator chose "Product", resolve the direct
+    // product link server-side (Geniuslink when configured, else the tagged
+    // Amazon URL) so the pin links there instead of the blog. The disclosure is
+    // already in `description`. Falls back to the blog link if none resolves.
+    let linkOverride: string | null = null
+    if (linkTarget === 'product') {
+      linkOverride = await resolvePinProductLink(supabase, user.id, p, decIg).catch(() => null)
+    }
     const { pinId } = await publishPinForPost({
-      p, ig: decryptIntegrationRow(integration), site: wpSite, title, description,
+      p, ig: decIg, site: wpSite, title, description,
       imageBase64: effImageBase64, mediaType: effMediaType, fallbackImageUrl,
+      linkOverride,
     })
     // Persist pin id + bump the per-post cap counter — only when there's a real
     // blog_posts row (a synthetic WP-only post has no id to write to).

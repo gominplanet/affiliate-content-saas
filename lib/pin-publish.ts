@@ -36,6 +36,11 @@ interface PublishArgs {
   imageBase64?: string | null
   mediaType?: string | null
   fallbackImageUrl?: string | null
+  /** Explicit destination the creator chose in the preview modal. When set to a
+   *  valid https URL (the direct product link), the pin links there instead of
+   *  the blog post. Default (unset) keeps the blog-post link. The creator opts
+   *  into this per pin, so it overrides the blog-only default. */
+  linkOverride?: string | null
 }
 
 export async function publishPinForPost(args: PublishArgs): Promise<{ pinId: string }> {
@@ -45,12 +50,16 @@ export async function publishPinForPost(args: PublishArgs): Promise<{ pinId: str
   // then the saved board, then a default we create). Fresh and sandbox
   // accounts have zero boards, so hard-failing here was wrong.
 
-  // Pin must link DIRECTLY to the blog post — never an Amazon/affiliate
-  // redirect (Amazon Associates + Pinterest ToS).
+  // Destination: the blog post by default (safest for Amazon Associates +
+  // Pinterest ToS). The creator can opt a single pin to the direct product link
+  // via the preview modal's toggle — linkOverride then carries that URL and wins.
+  const override = (args.linkOverride || '').trim()
+  const useOverride = /^https?:\/\//i.test(override)
   const blogLink = (p.wordpress_url as string | null) || ''
-  if (!/^https?:\/\//i.test(blogLink)) {
+  if (!useOverride && !/^https?:\/\//i.test(blogLink)) {
     throw new PinPublishError('This post has no blog URL to link the pin to.', 400)
   }
+  const destLink = useOverride ? override : blogLink
 
   // Never fall back to a raw (unscrubbed) value — that would leak the
   // banned word in the edge case where the scrubbed string is empty.

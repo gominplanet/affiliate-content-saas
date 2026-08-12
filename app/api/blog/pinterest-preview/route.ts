@@ -13,6 +13,7 @@ import { syntheticWpPost } from '@/lib/wp-post-fallback'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { createWordPressService } from '@/services/wordpress'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
+import { resolvePinProductLink } from '@/lib/pin-product-link'
 
 // The Art Director pin does a Claude brief + a slow gpt-image-2 render + product-
 // image fetches, which routinely runs past 60s. At 60 Vercel killed the function
@@ -128,9 +129,14 @@ export async function POST(request: NextRequest) {
     }
   } catch { /* fall back to the saved board below */ }
 
+  // The direct product link for the Blog/Product toggle (Geniuslink when the
+  // user has it, else the tagged direct Amazon URL). null → modal keeps Blog only.
+  const productUrl = await resolvePinProductLink(supabase, user.id, p, ig).catch(() => null)
+
   return NextResponse.json({
     ...a,
     videoUrl,
+    productUrl,
     // Category board (what publish will use) → the user's named fallback board
     // → saved board → "Reviews". Mirrors the publish-time resolution order.
     boardName: predictedBoard
