@@ -79,6 +79,40 @@ export async function pooledTagStats(niche: string | null, minSamples = 5): Prom
   return aggregate((data ?? []) as SampleRow[], minSamples)
 }
 
+/**
+ * The blended list of proven tags to inject into a fresh caption, most-earning
+ * first. Personal winners lead (your audience is specific), pooled-per-niche
+ * winners fill the rest (the network effect gives new creators proven tags on
+ * day one). Only tags meaningfully above baseline (lift ≥ 1.1) qualify.
+ *
+ * Deliberately small (default 3): the caption engine still adds the brand tag,
+ * broad category tags, and AI-written specifics around these, so fresh tags keep
+ * getting trialled — that's the exploration that keeps the data honest and stops
+ * the whole platform collapsing onto the same handful of tags. And because the
+ * rankings are computed over RECENT posts, a tag whose lift fades drops out on
+ * its own (decay). Best-effort: returns [] on any error, never blocks a caption.
+ */
+export async function pulseTrendingTags(userId: string, niche: string | null, max = 3): Promise<string[]> {
+  try {
+    const [personal, pooled] = await Promise.all([
+      personalTagStats(userId, 2),
+      pooledTagStats(niche, 5),
+    ])
+    const winners = (arr: TagStat[]) => arr.filter(t => t.avgLift >= 1.1).map(t => t.tag)
+    const out: string[] = []
+    const seen = new Set<string>()
+    const add = (t: string) => {
+      const x = String(t || '').toLowerCase()
+      if (x && !seen.has(x)) { seen.add(x); out.push(x) }
+    }
+    for (const t of winners(personal)) { if (out.length >= max) break; add(t) }
+    for (const t of winners(pooled)) { if (out.length >= max) break; add(t) }
+    return out.slice(0, max)
+  } catch {
+    return []
+  }
+}
+
 /** Count of a user's collected samples — drives the panel's "still collecting" state. */
 export async function collectedSampleCount(userId: string): Promise<number> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
