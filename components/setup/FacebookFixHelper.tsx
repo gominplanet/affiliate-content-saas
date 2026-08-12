@@ -1,10 +1,14 @@
 'use client'
 
 // In-product, self-service troubleshooter for "my Facebook Page won't connect /
-// the wrong one connected." Walks the user through their exact situation and, for
-// the Business-Manager case Facebook can't surface via OAuth (needs
-// business_management, pending App Review), lets them connect the Page directly
-// with a token. No support involvement required.
+// the wrong one connected." Walks the user through their exact situation. For the
+// Business-Manager case Facebook can't surface via OAuth (needs
+// business_management, in App Review), it points them at the reliable fix:
+// message support so we enable it for their account (add them as an app tester)
+// while the review lands. The direct-token box is kept as an advanced fallback,
+// but we no longer send people through the System Users flow — Meta now requires
+// an app to be added to the Business portfolio before a System User can be
+// created, so those steps dead-end at a grayed-out "Add".
 
 import { useState } from 'react'
 import { ChevronDown, Loader2, Wrench } from 'lucide-react'
@@ -137,23 +141,24 @@ export function FacebookFixHelper({
                   <Step n={3}>Come back here and do <strong>Step 1</strong> again. Your Page will now show up.</Step>
                 </ol>
 
+                <p className="font-medium mt-1">Still not showing? We&rsquo;ll switch it on for you.</p>
+                <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mb-2">
+                  Business-Manager Pages need a Meta permission (<code>business_management</code>) that we&rsquo;re getting approved right now. Message us on the <strong>Help</strong> button (bottom-right of the app) and we&rsquo;ll enable it for your account the same day, then your Page appears here. Nothing technical needed on your end.
+                </p>
+
                 <button
                   type="button"
                   onClick={() => setShowManual(s => !s)}
                   className="text-[11px] font-medium text-[#7C3AED] hover:underline"
                 >
-                  {showManual ? 'Hide Option B' : 'Option B — connect it directly with a token (advanced)'}
+                  {showManual ? 'Hide advanced option' : 'Advanced: connect directly with a Page token'}
                 </button>
 
                 {showManual && (
                   <div className="mt-2 flex flex-col gap-2">
-                    <ol className="flex flex-col gap-1.5">
-                      <Step n={1}>Go to <strong>business.facebook.com → Settings → Users → System users</strong>.</Step>
-                      <Step n={2}>Click <strong>Add</strong>, name it “MVP”, role <strong>Admin</strong>, create.</Step>
-                      <Step n={3}><strong>Assign assets → Pages</strong>, pick your Page, turn on <strong>Manage Page</strong>, save.</Step>
-                      <Step n={4}>Click <strong>Generate token</strong>, select your Page, tick <strong>pages_manage_posts</strong> and <strong>pages_read_engagement</strong>, generate, and copy it.</Step>
-                      <Step n={5}>Paste it below and click Connect.</Step>
-                    </ol>
+                    <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">
+                      Only if you already have a <strong>Page access token</strong> (e.g. from Facebook&rsquo;s Graph API Explorer with <strong>pages_manage_posts</strong>). Most people should use the Help route above instead.
+                    </p>
                     <input
                       type="text"
                       value={pageId}
