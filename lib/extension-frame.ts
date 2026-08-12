@@ -1029,6 +1029,9 @@ export interface YtDisclosureOpts {
   aiDisclosure?: boolean
   hasAlteredContent?: boolean
   monetize?: boolean
+  /** Publish to subscriptions feed & notify subscribers (drives it via Studio's
+   *  own save, since the Data API path for this is unreliable). */
+  notify?: boolean
 }
 
 /**

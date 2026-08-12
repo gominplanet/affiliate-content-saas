@@ -63,7 +63,23 @@
       if (!b || b.encryptedVideoId !== inj.videoId) return bodyStr
       if (inj.paidPromotion) b.productPlacement = { newHasPaidProductPlacement: true, newShowPaidProductPlacementOverlay: true, newIsPaidProductPlacementSelfDeclaredDefinitive: true }
       if (inj.aiDisclosure) b.alteredContent = { operation: 'MDE_ALTERED_CONTENT_UPDATE_OPERATION_SET', newCreatorDisclosedHasAlteredContent: inj.hasAlteredContent ? 'MDE_HAS_ALTERED_CONTENT_YES' : 'MDE_HAS_ALTERED_CONTENT_NO' }
-      if (inj.monetize) { b.monetizationSettings = { newMonetizeWithAds: true }; b.adSettings = { adBreaks: { newHasPrerolls: 'ENABLED', newHasMidrollAds: 'ENABLED', newHasPostrolls: 'ENABLED' }, autoAdSettings: 'AUTO_AD_SETTINGS_TYPE_OFF' } }
+      if (inj.monetize) {
+        b.monetizationSettings = { newMonetizeWithAds: true }
+        b.adSettings = { adBreaks: { newHasPrerolls: 'ENABLED', newHasMidrollAds: 'ENABLED', newHasPostrolls: 'ENABLED' }, autoAdSettings: 'AUTO_AD_SETTINGS_TYPE_OFF' }
+        // Submit the ad-suitability self-certification too — all questions
+        // "skipped" (= None of the above → suitable for all advertisers), the
+        // default a creator gets by clicking through. Shape from the capture.
+        b.selfCertification = {
+          newSelfCertificationData: {
+            questionnaireAnswers: ['PY', 'SC', 'VG', 'HD', 'DG', 'HH', 'FM', 'SE', 'SK', 'CI', 'DB', 'AT', 'NB', 'SM'].map((q) => ({ question: 'VIDEO_SELF_CERTIFICATION_QUESTION_' + q, answer: 'VIDEO_SELF_CERTIFICATION_ANSWER_SKIPPED' })),
+            certificationMethod: 'VIDEO_SELF_CERTIFICATION_METHOD_DEFAULT_NONE',
+            questionnaireVersion: 'VIDEO_SELF_CERTIFICATION_QUESTIONNAIRE_VERSION_15',
+          },
+        }
+      }
+      // Publish-to-subscriptions-feed & notify subscribers (the API path for this
+      // is unreliable, so drive it here too when a choice was passed).
+      if (typeof inj.notify === 'boolean') b.publishingOptions = { newPostToFeed: inj.notify }
       window.__mvpYtInjected = (window.__mvpYtInjected || 0) + 1
       return JSON.stringify(b)
     } catch (e) { return bodyStr }
