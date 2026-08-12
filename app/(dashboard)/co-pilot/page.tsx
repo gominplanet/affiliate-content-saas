@@ -3657,7 +3657,7 @@ export default function StudioPage() {
               {ytApplyLoading ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />} API (200 but no-save)
             </button>
             <button
-              onClick={async () => { if (!ytApplyVideoId) return; setYtApplyLoading(true); setYtApplyResult(null); try { setYtApplyResult(await requestYtInjectDisclosures(ytApplyVideoId, { paidPromotion: true, aiDisclosure: true, hasAlteredContent: false, monetize: true })) } finally { setYtApplyLoading(false) } }}
+              onClick={async () => { if (!ytApplyVideoId) return; setYtApplyLoading(true); setYtApplyResult(null); try { setYtApplyResult(await requestYtInjectDisclosures(ytApplyVideoId, { paidPromotion: true, aiDisclosure: true, hasAlteredContent: false, monetize: true, notify: false })) } finally { setYtApplyLoading(false) } }}
               disabled={ytApplyLoading || !ytApplyVideoId}
               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold text-white bg-[#34c759] hover:opacity-90 disabled:opacity-50"
             >
