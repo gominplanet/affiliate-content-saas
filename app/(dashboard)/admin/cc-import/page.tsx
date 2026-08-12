@@ -283,7 +283,7 @@ export default function AdminCcImportPage() {
 
       {/* Counts */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
-        <StatCard label="Staged (ready to merge)" value={approx(counts?.staged)} icon={<Database size={16} />} accent="#7C3AED" />
+        <StatCard label="Staged (this week's upload)" value={approx(counts?.staged)} icon={<Database size={16} />} accent="#7C3AED" hint="Total rows in staging. Merging flags them in place — this doesn't count down. Clears when you upload next week's CSV." />
         <StatCard label="Live catalog" value={approx(counts?.live)} icon={<CheckCircle2 size={16} />} accent="#34c759" />
         <StatCard
           label="Enriched (of enrichable)"
@@ -369,6 +369,16 @@ export default function AdminCcImportPage() {
             style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
             Stop
           </button>
+        </div>
+      )}
+
+      {/* Background merge finished (flag left with phase 'done'). */}
+      {drain && !drain.active && drain.phase === 'done' && (
+        <div className="card p-4 mb-5 flex items-start gap-2.5" style={{ borderColor: 'rgba(52,199,89,0.4)' }}>
+          <CheckCircle2 size={16} className="flex-shrink-0 mt-0.5" style={{ color: '#34c759' }} />
+          <p className="text-[13px]" style={{ color: 'var(--text-soft)' }}>
+            <b style={{ color: '#1f8a3a' }}>Background merge finished.</b> {typeof drain.purged === 'number' && drain.purged > 0 ? `Removed ${drain.purged.toLocaleString()} fallen-out campaigns. ` : 'No campaigns fell out. '}New campaigns enrich over the next cron runs; survivors kept their signals.
+          </p>
         </div>
       )}
 
@@ -557,11 +567,12 @@ export default function AdminCcImportPage() {
   )
 }
 
-function StatCard({ label, value, icon, accent }: { label: string; value: string; icon: React.ReactNode; accent: string }) {
+function StatCard({ label, value, icon, accent, hint }: { label: string; value: string; icon: React.ReactNode; accent: string; hint?: string }) {
   return (
     <div className="card p-4">
       <div className="flex items-center gap-2 mb-1.5" style={{ color: accent }}>{icon}<span className="text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-faint)' }}>{label}</span></div>
       <p className="text-[22px] font-extrabold" style={{ color: 'var(--text)' }}>{value}</p>
+      {hint && <p className="text-[11px] mt-1 leading-snug" style={{ color: 'var(--text-faint)' }}>{hint}</p>}
     </div>
   )
 }
