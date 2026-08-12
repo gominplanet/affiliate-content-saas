@@ -3386,47 +3386,65 @@ function studioInjectSaveInPage(videoId, opts) {
     const vis = (el) => { try { return !!(el.offsetParent || (el.getClientRects && el.getClientRects().length)) } catch (e) { return false } }
     const visText = (el) => { try { const a = el.getAttribute && (el.getAttribute('aria-label') || el.getAttribute('title')); return (a || el.textContent || '').replace(/\s+/g, ' ').trim() } catch (e) { return '' } }
     const isBtn = (el) => { const t = (el.tagName || '').toLowerCase(); return /button|ytcp-button/.test(t) || (el.getAttribute && el.getAttribute('role') === 'button') }
-    try {
-      // Arm the hook.
-      window.__mvpYtInject = { videoId, paidPromotion: !!opts.paidPromotion, aiDisclosure: !!opts.aiDisclosure, hasAlteredContent: !!opts.hasAlteredContent, monetize: !!opts.monetize, notify: (typeof opts.notify === 'boolean' ? opts.notify : undefined) }
-      window.__mvpYtInjected = 0
-      window.__mvpYtInjectResp = null
-      await sleep(1800)
-
-      // Dirty the description contenteditable so Save enables.
-      const editors = deepAll().filter((el) => el.isContentEditable && vis(el))
-      out.debug.editors = editors.length
-      const desc = editors.find((el) => /description/i.test((el.id || '') + ' ' + ((el.getAttribute && el.getAttribute('aria-label')) || ''))) || editors[1] || editors[0]
-      out.debug.foundDesc = !!desc
-      if (desc) {
-        desc.focus()
-        try { const sel = window.getSelection(); const rng = document.createRange(); rng.selectNodeContents(desc); rng.collapse(false); sel.removeAllRanges(); sel.addRange(rng) } catch (e) {}
-        try { document.execCommand('insertText', false, ' ') } catch (e) {}
-        try { desc.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: ' ' })) } catch (e) {}
-        await sleep(1400)
-      }
-
-      // Find an ENABLED Save button and click it.
+    const findSave = () => {
       let save = null, len = 1e9
       for (const el of deepAll().filter(isBtn)) {
         if (!vis(el)) continue
         const tx = visText(el)
         if (/^save$/i.test(tx) && tx.length < len) { const dis = (el.getAttribute && el.getAttribute('aria-disabled')) || (el.disabled ? 'true' : ''); if (dis !== 'true') { save = el; len = tx.length } }
       }
-      out.debug.foundSave = !!save
-      if (save) {
-        try { save.scrollIntoView({ block: 'center' }) } catch (e) {}
-        try { save.click() } catch (e) {}
-        try {['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach((t) => save.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, view: window }))) } catch (e) {}
+      return save
+    }
+    const dirtyDescription = () => {
+      const editors = deepAll().filter((el) => el.isContentEditable && vis(el))
+      out.debug.editors = editors.length
+      const desc = editors.find((el) => /description/i.test((el.id || '') + ' ' + ((el.getAttribute && el.getAttribute('aria-label')) || ''))) || editors[1] || editors[0]
+      out.debug.foundDesc = !!desc
+      if (!desc) return false
+      desc.focus()
+      try { const sel = window.getSelection(); const rng = document.createRange(); rng.selectNodeContents(desc); rng.collapse(false); sel.removeAllRanges(); sel.addRange(rng) } catch (e) {}
+      try { document.execCommand('insertText', false, ' ') } catch (e) {}
+      try { desc.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: ' ' })) } catch (e) {}
+      return true
+    }
+    try {
+      // Arm the hook + reset diagnostics.
+      window.__mvpYtInject = { videoId, paidPromotion: !!opts.paidPromotion, aiDisclosure: !!opts.aiDisclosure, hasAlteredContent: !!opts.hasAlteredContent, monetize: !!opts.monetize, notify: (typeof opts.notify === 'boolean' ? opts.notify : undefined) }
+      window.__mvpYtInjected = 0
+      window.__mvpYtInjectResp = null
+      window.__mvpYtSawMeta = 0
+      window.__mvpYtSawVideoId = null
+      await sleep(2200) // let the editor fully render before touching it
+
+      // Retry dirty → wait-for-enabled-Save → click → wait-for-response, since a
+      // freshly-pushed video's editor can be slow to accept the edit.
+      let saveFound = false
+      for (let attempt = 0; attempt < 3 && !window.__mvpYtInjectResp; attempt++) {
+        dirtyDescription()
+        let save = null
+        for (let i = 0; i < 12 && !save; i++) { save = findSave(); if (!save) await sleep(400) }
+        if (save) {
+          saveFound = true
+          try { save.scrollIntoView({ block: 'center' }) } catch (e) {}
+          try { save.click() } catch (e) {}
+          try {['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach((t) => save.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, view: window }))) } catch (e) {}
+        }
+        for (let i = 0; i < 15 && !window.__mvpYtInjectResp; i++) { await sleep(400) }
       }
 
-      // Wait for the metadata_update to fire + resolve.
-      for (let i = 0; i < 25 && !window.__mvpYtInjectResp; i++) { await sleep(400) }
+      out.debug.foundSave = saveFound
       out.debug.injected = window.__mvpYtInjected || 0
+      out.debug.sawMeta = window.__mvpYtSawMeta || 0
+      out.debug.sawVideoId = window.__mvpYtSawVideoId || null
+      out.debug.wantVideoId = videoId
       out.debug.resp = window.__mvpYtInjectResp
       const r = window.__mvpYtInjectResp
       out.ok = !!(r && r.status >= 200 && r.status < 300 && (window.__mvpYtInjected > 0))
-      out.detail = out.ok ? 'Injected into Studio save ✓' : (!save ? 'Save button never enabled (dirty failed)' : !window.__mvpYtInjected ? 'Save fired but no metadata_update injected' : 'metadata_update ' + (r ? r.status : 'no-response'))
+      out.detail = out.ok ? 'Injected into Studio save ✓'
+        : !saveFound ? 'Save never enabled — couldn’t dirty the form'
+          : (window.__mvpYtSawMeta && !window.__mvpYtInjected) ? ('save was for a different video id (saw ' + window.__mvpYtSawVideoId + ')')
+            : !window.__mvpYtSawMeta ? 'Save fired but no metadata_update was sent'
+              : ('metadata_update ' + (r ? r.status : 'no-response'))
       window.__mvpYtInject = null
       return out
     } catch (e) { window.__mvpYtInject = null; out.error = (e && e.message) || 'threw'; out.detail = 'threw'; return out }
