@@ -2862,7 +2862,7 @@ function studioFinishMonetizeInPage() {
 
       // 1) Open the Monetization on/off dropdown (currently reads "Off") and
       //    choose the "On" option.
-      const trigger = find([/monetization (is )?off/i, /^off$/i, /turn on monetization/i, /watch page ads/i])
+      const trigger = find([/edit video monetization/i, /monetization status/i, /monetization (is )?off/i, /^off$/i, /turn on monetization/i, /watch page ads/i])
       out.debug.triggerText = trigger ? visText(trigger) : null
       if (!trigger) {
         out.debug.controlsAfter = sample()
@@ -3102,10 +3102,25 @@ function studioFinishDetailsInPage(notifySubscribers) {
       out.debug.formReady = formReady
 
       // Paid promotion, embedding, subs-feed and AI-use live under "Show more".
-      // It lazy-renders and is often a plain div (not a <button>), so match the
-      // leaf whose whole text is exactly "Show more", scroll it in, click, and
-      // retry until a hidden control (paid promotion) actually appears.
-      const findShowMore = () => deepAll().find((el) => /^show more$/i.test((el.textContent || '').replace(/\s+/g, ' ').trim()))
+      // Studio's expander is a DIV id="toggle-button" (or a ytcp-button); a
+      // matching leaf inside it won't always fire the handler, so target the
+      // real toggle: the #toggle-button, else a button ancestor of a "Show more"
+      // leaf, else the leaf itself. (Clicking a stray "Show more" is why it
+      // clicked 4x and nothing expanded.)
+      const findShowMore = () => {
+        const byId = deepAll().find((el) => el.id === 'toggle-button' && /show more/i.test((el.textContent || '').replace(/\s+/g, ' ').trim()))
+        if (byId) return byId
+        const leaves = deepAll().filter((el) => /^show more$/i.test((el.textContent || '').replace(/\s+/g, ' ').trim()))
+        for (const leaf of leaves) {
+          let e = leaf
+          for (let i = 0; i < 4 && e; i++) {
+            const tag = (e.tagName || '').toLowerCase()
+            if (e.id === 'toggle-button' || /ytcp-button|paper-button/.test(tag) || tag === 'button' || (e.getAttribute && e.getAttribute('role') === 'button')) return e
+            e = e.parentElement
+          }
+        }
+        return leaves[0] || null
+      }
       const paidThere = () => !!findCtrl(/paid promotion|product placement|sponsorship/i)
       let expanded = paidThere()
       for (let tries = 0; tries < 4 && !expanded; tries++) {
