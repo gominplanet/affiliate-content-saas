@@ -237,8 +237,8 @@ export const TIERS = {
     instagramAiThumbnailsPerMonth: 0 as number | null,
     /** Deal / product social posts (their core publishing action). */
     dealsPerMonth: 100 as number | null,
-    /** Max 5 professional Photobooth shots. */
-    photoboothPerMonth: 5 as number | null,
+    /** Max 3 professional Photobooth shots. */
+    photoboothPerMonth: 3 as number | null,
     /** One face model, up to 20 selfies (the source_images cap is 20). */
     maxFaces: 1 as number | null,
     blogImagesPerPost: 0,
