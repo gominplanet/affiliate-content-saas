@@ -3064,28 +3064,6 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                         <Youtube size={11} /> Open this video on YouTube <ExternalLink size={10} />
                       </a>
                     </div>
-
-                    {/* DEV: learn the real Studio save request. Toggle paid
-                        promotion + altered-content on a video and Save in Studio
-                        (a real, trusted save) — SCOUT captures the InnerTube
-                        request. Click here to read it back and hand it over so
-                        the replay is built from the true payload. */}
-                    {isPro && extensionInstalled === true && (
-                      <div className="mt-1 border-t border-dashed border-[#86868b]/20 pt-2 flex flex-col gap-1.5">
-                        <button
-                          onClick={async () => { setYtRecipeLoading(true); try { setYtRecipes(await requestYtSaveRecipes()) } finally { setYtRecipeLoading(false) } }}
-                          disabled={ytRecipeLoading}
-                          className="inline-flex items-center gap-1.5 self-start px-2.5 py-1 rounded-lg text-[10px] font-semibold text-[#6e6e73] dark:text-[#a1a1a6] border border-[#86868b]/30 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
-                        >
-                          {ytRecipeLoading ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />} Dev: load captured Studio save
-                        </button>
-                        {ytRecipes && (
-                          ytRecipes.length === 0
-                            ? <p className="text-[10px] text-[#86868b]">Nothing captured yet. In YouTube Studio, toggle <strong>paid promotion</strong> + <strong>altered content</strong> on a video and click <strong>Save</strong>, then load again.</p>
-                            : <pre className="text-[9px] leading-snug text-[#6e6e73] dark:text-[#a1a1a6] bg-black/5 dark:bg-white/5 rounded p-2 overflow-auto whitespace-pre-wrap break-words max-h-56">{JSON.stringify(ytRecipes, null, 1)}</pre>
-                        )}
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
@@ -3266,6 +3244,11 @@ export default function StudioPage() {
   const [ytApplyVideoId, setYtApplyVideoId] = useState('')
   const [ytApplyResult, setYtApplyResult] = useState<{ ok: boolean; detail?: string; error?: string; debug?: Record<string, unknown> } | null>(null)
   const [ytApplyLoading, setYtApplyLoading] = useState(false)
+  // Dev tools (Studio save capture + injection test) are hidden behind ?dev=1
+  // so they don't clutter the page for normal Pro users. Set in an effect to
+  // avoid an SSR/hydration mismatch reading window during render.
+  const [devMode, setDevMode] = useState(false)
+  useEffect(() => { try { setDevMode(new URLSearchParams(window.location.search).get('dev') === '1') } catch { /* noop */ } }, [])
   // Pagination — single cursor. When non-null, more drafts can be fetched
   // via "Load more". When null, we've walked the entire uploads playlist.
   const [nextPageToken, setNextPageToken] = useState<string | undefined>(undefined)
@@ -3619,7 +3602,7 @@ export default function StudioPage() {
           (yt-hook), so the real InnerTube request shape can be handed over to
           build the disclosure/monetization/tag-product replay. Always visible
           for admins so it doesn't require pushing a video first. */}
-      {(userTier === 'admin' || userTier === 'pro') && (
+      {devMode && (
         <div className="mb-4 rounded-xl border border-dashed border-[#7C3AED]/30 bg-[#7C3AED]/5 px-4 py-3 flex flex-col gap-2">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs font-bold text-[#7C3AED]">Dev · Studio save capture</span>
