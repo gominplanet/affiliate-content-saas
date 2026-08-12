@@ -2962,33 +2962,43 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
 
                         {finishResult && (
                           <div className="flex flex-col gap-1 text-[11px]">
-                            {finishResult.steps.map((s, i) => (
-                              <div key={i} className="flex flex-col gap-0.5">
-                                <div className="flex items-start gap-1.5">
-                                  <span className={s.ok ? 'text-[#34c759]' : s.skipped ? 'text-[#86868b]' : s.partial ? 'text-[#ff9500]' : 'text-[#ff3b30]'}>
-                                    {s.ok ? '✓' : s.skipped ? 'ℹ' : s.partial ? '◐' : '✗'}
-                                  </span>
-                                  <span className="text-[#1d1d1f] dark:text-[#f5f5f7]">
-                                    <strong>{s.step === 'details' ? 'Details & disclosures' : s.step === 'monetization' ? 'Monetization + ad rating' : s.step === 'endscreen' ? 'End screen' : s.step === 'tagproduct' ? 'Tag product' : s.step}</strong>
-                                    {s.detail ? ` — ${s.detail}` : ''}
-                                  </span>
+                            {finishResult.steps.map((s, i) => {
+                              // Details is the compliance gate — a real ✗ if it
+                              // fails (it blocks publish). Monetization, end screen
+                              // and product tagging are OPTIONAL: YouTube's own
+                              // pages are flaky, so a miss degrades to a neutral
+                              // "do it by hand" note, not an alarming failure.
+                              const optional = s.step === 'monetization' || s.step === 'endscreen' || s.step === 'tagproduct'
+                              const manual = !s.ok && !s.skipped && optional
+                              const icon = s.ok ? '✓' : s.skipped ? 'ℹ' : (s.partial || manual) ? '◐' : '✗'
+                              const color = s.ok ? 'text-[#34c759]' : (s.skipped || manual || s.partial) ? 'text-[#ff9500]' : 'text-[#ff3b30]'
+                              const label = s.step === 'details' ? 'Details & disclosures' : s.step === 'monetization' ? 'Monetization + ad rating' : s.step === 'endscreen' ? 'End screen' : s.step === 'tagproduct' ? 'Tag product' : s.step
+                              return (
+                                <div key={i} className="flex flex-col gap-0.5">
+                                  <div className="flex items-start gap-1.5">
+                                    <span className={color}>{icon}</span>
+                                    <span className="text-[#1d1d1f] dark:text-[#f5f5f7]">
+                                      <strong>{label}</strong>
+                                      {manual ? ' — optional, finish this one by hand (steps below)' : s.detail ? ` — ${s.detail}` : ''}
+                                    </span>
+                                  </div>
+                                  {/* Expose SCOUT's DOM debug map on a real miss so
+                                      the layout it saw can be tuned to. */}
+                                  {!s.ok && !s.skipped && s.debug && Object.keys(s.debug).length > 0 && (
+                                    <details className="ml-5">
+                                      <summary className="text-[10px] text-[#86868b] cursor-pointer select-none">Show debug (send us this screenshot)</summary>
+                                      <pre className="mt-1 text-[9px] leading-snug text-[#6e6e73] dark:text-[#a1a1a6] bg-black/5 dark:bg-white/5 rounded p-2 overflow-x-auto whitespace-pre-wrap break-words max-h-40">{JSON.stringify(s.debug, null, 1)}</pre>
+                                    </details>
+                                  )}
                                 </div>
-                                {/* When a step fails, expose SCOUT's DOM debug map so
-                                    the layout it actually saw can be tuned to. */}
-                                {!s.ok && !s.skipped && s.debug && Object.keys(s.debug).length > 0 && (
-                                  <details className="ml-5">
-                                    <summary className="text-[10px] text-[#86868b] cursor-pointer select-none">Show debug (send us this screenshot)</summary>
-                                    <pre className="mt-1 text-[9px] leading-snug text-[#6e6e73] dark:text-[#a1a1a6] bg-black/5 dark:bg-white/5 rounded p-2 overflow-x-auto whitespace-pre-wrap break-words max-h-40">{JSON.stringify(s.debug, null, 1)}</pre>
-                                  </details>
-                                )}
-                              </div>
-                            ))}
+                              )
+                            })}
                             <div className="flex items-start gap-1.5">
                               <span className="text-[#34c759]">{'✓'}</span>
                               <span className="text-[#1d1d1f] dark:text-[#f5f5f7]"><strong>Subscriber bell</strong> {'—'} set to match your choice above</span>
                             </div>
                             <p className="text-[10px] text-[#86868b] mt-0.5 leading-relaxed">
-                              Anything not ticked ✓ didn&apos;t complete — open the video below and finish it by hand. YouTube Studio changes its layout often; tell us what was left and we tune SCOUT to match.
+                              The disclosures (paid promotion + AI) are the ones that matter for going public — SCOUT sets those. Monetization, end screen and product tagging are optional; YouTube&apos;s own pages are flaky to automate, so finish any that didn&apos;t tick by hand below.
                             </p>
                           </div>
                         )}
