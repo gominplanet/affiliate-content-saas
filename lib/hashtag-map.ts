@@ -31,67 +31,188 @@ interface TagCategory {
   niche: string[]
 }
 
-// Ordered roughly by how common these are in affiliate catalogs. Detection is
-// substring-based, so keep `match` terms distinctive.
+// Grounded in Amazon's real department/sub-category tree (Electronics, Home &
+// Kitchen, Tools, Beauty, Health, Sports & Outdoors, Toys & Games, Baby, Pets,
+// Clothing, Automotive, Musical Instruments, Arts & Crafts, Garden, …) so a
+// product lands in the RIGHT audience instead of the nearest keyword.
+//
+// ORDER MATTERS: on a score tie the EARLIER category wins (see scoreCategories),
+// so specific/hobby categories are listed before generic ones — that's what
+// keeps an "RC car" out of Automotive (rc-hobby matches 'rc' before 'car' can
+// pull it to auto). `match` terms are word-boundary matched (see COMPILED), so
+// 'car' no longer fires inside 'carbon' and single short words are safe.
 const TAXONOMY: TagCategory[] = [
+  // ── Content-creation gear (a distinct creator audience, before generic tech) ──
   { key: 'creator-gear',
-    match: ['drone', 'gimbal', 'camera', 'webcam', 'gopro', 'microphone', ' mic ', 'tripod', 'ring light', 'lighting', 'vlog', 'teleprompter', 'lens', 'capture card', 'follow me'],
+    match: ['drone', 'gimbal', 'action camera', 'webcam', 'gopro', 'microphone', 'lav mic', 'shotgun mic', 'tripod', 'ring light', 'softbox', 'vlog', 'vlogging', 'teleprompter', 'capture card', 'follow me camera', 'streaming'],
     broad: ['contentcreator', 'tech'], mid: ['filmmaking', 'videography', 'creatorgear'], niche: ['vlogging', 'filmmakingtools', 'contentcreatortips', 'gearreview'] },
+  { key: 'camera-photo',
+    match: ['camera', 'mirrorless', 'dslr', 'camera lens', 'photography', 'sd card', 'memory card', 'camera bag', 'flash'],
+    broad: ['photography', 'tech'], mid: ['photographer', 'cameragear'], niche: ['photographylovers', 'phototips', 'mirrorless'] },
+  // ── Toys & Games (incl. RC/hobby — listed BEFORE auto so 'rc car' stays here) ──
+  { key: 'rc-hobby',
+    match: ['rc', 'rc car', 'rc truck', 'remote control', 'radio control', 'rc crawler', 'rc drift', 'rc boat', 'rc plane', 'hobby grade', 'brushless motor', 'quadcopter'],
+    broad: ['rccars', 'hobby'], mid: ['rchobby', 'rccrawler'], niche: ['rccars', 'hobbygrade', 'rclife'] },
+  { key: 'building-toys',
+    match: ['building blocks', 'building set', 'brick set', 'lego', 'model kit', 'stem toy'],
+    broad: ['toys', 'buildingtoys'], mid: ['legobuilds', 'brickart'], niche: ['legolover', 'toycollector', 'stemtoys'] },
+  { key: 'board-games',
+    match: ['board game', 'card game', 'jigsaw puzzle', 'tabletop', 'dice game', 'party game'],
+    broad: ['boardgames', 'games'], mid: ['tabletopgames', 'gamenight'], niche: ['boardgamegeek', 'familygamenight', 'puzzles'] },
+  { key: 'toys',
+    match: ['toy', 'toys', 'action figure', 'doll', 'playset', 'plush', 'stuffed animal', 'kids toy'],
+    broad: ['toys', 'kids'], mid: ['toysofinstagram', 'kidstoys'], niche: ['toycollector', 'toyreview', 'playtime'] },
+  // ── Electronics ──
   { key: 'audio',
-    match: ['headphone', 'earbud', 'earphone', 'speaker', 'soundbar', 'noise cancel', 'airpods', 'audio'],
+    match: ['headphone', 'headphones', 'earbud', 'earbuds', 'earphone', 'speaker', 'soundbar', 'noise cancelling', 'airpods', 'bluetooth speaker', 'turntable'],
     broad: ['audio', 'tech'], mid: ['headphones', 'musiclovers'], niche: ['audiophile', 'soundquality', 'wirelessearbuds'] },
   { key: 'phone-accessories',
-    match: ['phone case', 'iphone', 'magsafe', 'phone mount', 'screen protector', 'phone grip', 'popsocket', 'charging station', 'wireless charg'],
+    match: ['phone case', 'iphone', 'magsafe', 'phone mount', 'screen protector', 'phone grip', 'popsocket', 'phone holder', 'wireless charger', 'charging station'],
     broad: ['tech', 'gadgets'], mid: ['iphone', 'phoneaccessories'], niche: ['magsafe', 'techaccessories', 'everydaycarry'] },
+  { key: 'computers',
+    match: ['laptop', 'keyboard', 'mechanical keyboard', 'mouse', 'monitor', 'ssd', 'hard drive', 'usb hub', 'docking station', 'graphics card', 'router'],
+    broad: ['tech', 'pcsetup'], mid: ['pcbuild', 'techsetup'], niche: ['desksetup', 'pcgaming', 'techtok'] },
+  { key: 'wearables',
+    match: ['smartwatch', 'smart watch', 'fitness tracker', 'fitness watch', 'smart ring', 'activity tracker'],
+    broad: ['tech', 'wearabletech'], mid: ['smartwatch', 'fitnesstech'], niche: ['wearables', 'techwatch', 'quantifiedself'] },
   { key: 'smart-home',
-    match: ['smart home', 'alexa', 'echo', 'smart bulb', 'smart plug', 'thermostat', 'robot vacuum', 'security camera', 'doorbell', 'smart light'],
+    match: ['smart home', 'alexa', 'smart bulb', 'smart plug', 'thermostat', 'robot vacuum', 'security camera', 'video doorbell', 'smart light', 'smart lock'],
     broad: ['smarthome', 'home'], mid: ['homeautomation', 'smarthometech'], niche: ['smarthomegadgets', 'homeupgrade'] },
   { key: 'gaming',
-    match: ['gaming', 'gamer', 'console', 'controller', 'gaming keyboard', 'gaming mouse', 'headset', 'pc build', 'rgb', 'twitch'],
+    match: ['gaming', 'gamer', 'game console', 'controller', 'gaming keyboard', 'gaming mouse', 'gaming headset', 'pc build', 'rgb', 'twitch', 'nintendo', 'playstation', 'xbox'],
     broad: ['gaming', 'tech'], mid: ['gamer', 'gamingsetup'], niche: ['gaminggear', 'pcgaming', 'setupgoals'] },
+  { key: 'tv-video',
+    match: ['tv', 'television', 'projector', 'streaming stick', 'roku', 'fire tv', 'home theater', 'hdmi'],
+    broad: ['tech', 'hometheater'], mid: ['homecinema', 'techtok'], niche: ['hometheater', 'moviesetup', 'techfinds'] },
   { key: 'tech-gadgets',
-    match: ['gadget', 'charger', 'power bank', 'cable', 'usb', 'bluetooth', 'adapter', 'electronic', ' hub ', 'projector', 'tablet', 'laptop'],
+    match: ['gadget', 'gadgets', 'power bank', 'usb cable', 'adapter', 'portable charger', 'tablet', 'e-reader', 'label maker'],
     broad: ['tech', 'gadgets'], mid: ['techtok', 'coolgadgets'], niche: ['techfinds', 'techreview', 'gadgetgeek'] },
+  // ── Kitchen & Home ──
   { key: 'coffee',
-    match: ['coffee', 'espresso', 'cold brew', 'barista', 'latte', 'french press', 'grinder'],
+    match: ['coffee', 'espresso', 'cold brew', 'barista', 'latte', 'french press', 'coffee grinder', 'coffee maker'],
     broad: ['coffee'], mid: ['coffeelover', 'coffeetime'], niche: ['homebarista', 'coffeegear', 'coffeeaddict'] },
   { key: 'kitchen',
-    match: ['kitchen', 'blender', 'air fryer', 'cookware', 'knife', 'kettle', 'mixer', 'instant pot', 'mug', 'utensil', 'cutting board'],
+    match: ['kitchen', 'blender', 'air fryer', 'cookware', 'knife set', 'kettle', 'stand mixer', 'instant pot', 'utensil', 'cutting board', 'cast iron', 'food processor'],
     broad: ['kitchen', 'home'], mid: ['kitchengadgets', 'homecooking'], niche: ['kitchenessentials', 'cookingtools', 'foodie'] },
-  { key: 'beauty',
-    match: ['skincare', 'makeup', 'serum', 'moisturizer', 'beauty', 'cosmetic', 'lipstick', 'foundation', 'facial', 'hair '],
-    broad: ['beauty', 'skincare'], mid: ['beautytips', 'skincareroutine'], niche: ['skincarecommunity', 'beautyfinds', 'glowup'] },
-  { key: 'fitness',
-    match: ['fitness', 'workout', ' gym', 'dumbbell', 'yoga', 'resistance', 'protein', 'treadmill', 'exercise', 'running'],
-    broad: ['fitness', 'health'], mid: ['workout', 'fitnessmotivation'], niche: ['homegym', 'fitnessgear', 'gymtok'] },
-  { key: 'wellness',
-    match: ['wellness', 'sleep', 'massage', 'supplement', 'vitamin', 'meditation', 'posture', 'hydration', 'aromatherapy'],
-    broad: ['wellness', 'selfcare'], mid: ['healthylifestyle', 'selfcaretips'], niche: ['wellnessjourney', 'sleepbetter'] },
   { key: 'home-decor',
-    match: ['decor', ' lamp', ' rug', 'cushion', 'wall art', 'furniture', 'organizer', 'storage', 'candle', 'curtain'],
-    broad: ['home', 'decor'], mid: ['homedecor', 'interiordesign'], niche: ['homedecorideas', 'roomdecor', 'homeorganization'] },
+    match: ['decor', 'lamp', 'rug', 'throw pillow', 'wall art', 'curtain', 'vase', 'mirror', 'candle', 'string lights'],
+    broad: ['home', 'decor'], mid: ['homedecor', 'interiordesign'], niche: ['homedecorideas', 'roomdecor', 'cozyhome'] },
+  { key: 'furniture',
+    match: ['sofa', 'couch', 'sectional', 'bed frame', 'mattress', 'dresser', 'bookshelf', 'nightstand', 'dining table'],
+    broad: ['home', 'furniture'], mid: ['interiordesign', 'homestyle'], niche: ['furnituredesign', 'homemakeover', 'smallspaces'] },
+  { key: 'bedding',
+    match: ['bedding', 'comforter', 'duvet', 'bed sheets', 'pillow', 'weighted blanket', 'mattress topper'],
+    broad: ['home', 'bedroom'], mid: ['bedroomdecor', 'cozyhome'], niche: ['bedroomgoals', 'sleepbetter', 'homecomfort'] },
+  { key: 'organization',
+    match: ['organizer', 'storage bin', 'closet organizer', 'shelving', 'drawer organizer', 'storage box', 'label maker'],
+    broad: ['home', 'organization'], mid: ['homeorganization', 'declutter'], niche: ['organizedhome', 'storagesolutions', 'cleantok'] },
+  { key: 'cleaning',
+    match: ['vacuum', 'cordless vacuum', 'mop', 'steam cleaner', 'cleaning supplies', 'pressure washer', 'air purifier'],
+    broad: ['home', 'cleaning'], mid: ['cleantok', 'cleaningmotivation'], niche: ['cleaninghacks', 'satisfyingcleaning', 'homecare'] },
   { key: 'office',
-    match: [' desk', 'office', 'chair', 'monitor', 'laptop stand', 'ergonomic', 'planner', 'workspace', 'standing desk'],
+    match: ['desk', 'office chair', 'standing desk', 'monitor arm', 'laptop stand', 'ergonomic', 'planner', 'notebook', 'desk mat'],
     broad: ['office', 'productivity'], mid: ['desksetup', 'workfromhome'], niche: ['deskorganization', 'workspacegoals', 'productivitytools'] },
-  { key: 'pets',
-    match: [' dog', ' cat', ' pet', 'puppy', 'kitten', 'leash', 'aquarium', 'litter'],
-    broad: ['pets', 'dogs'], mid: ['petlovers', 'doglife'], niche: ['petproducts', 'dogsofinstagram', 'catsofinstagram'] },
-  { key: 'baby-parenting',
-    match: ['baby', 'toddler', 'stroller', 'diaper', 'nursery', 'infant', 'parenting'],
-    broad: ['parenting', 'baby'], mid: ['momlife', 'parentinghacks'], niche: ['babyessentials', 'newmom', 'toddlerlife'] },
-  { key: 'outdoors-travel',
-    match: ['travel', 'camping', 'hiking', 'backpack', ' tent', 'outdoor', 'luggage', 'adventure', 'cooler'],
-    broad: ['travel', 'outdoors'], mid: ['traveltips', 'travelgear'], niche: ['travelessentials', 'campinggear', 'adventuretravel'] },
-  { key: 'auto',
-    match: [' car ', 'auto ', 'vehicle', 'dash cam', ' tire', 'motorcycle', 'driving'],
-    broad: ['cars', 'auto'], mid: ['caraccessories', 'cartok'], niche: ['caressentials', 'cargadgets', 'carlife'] },
+  // ── Tools, Garden & Home Improvement ──
   { key: 'tools-diy',
-    match: [' tool', 'drill', ' diy', 'workshop', 'garage', 'hardware', 'repair', 'measuring', 'power tool'],
-    broad: ['diy', 'tools'], mid: ['diyprojects', 'toolsofthetrade'], niche: ['diyhome', 'powertools', 'workshopgadgets'] },
+    match: ['power tool', 'drill', 'impact driver', 'saw', 'sander', 'hand tool', 'tool set', 'workshop', 'hardware', 'workbench', 'tool box'],
+    broad: ['diy', 'tools'], mid: ['diyprojects', 'toolsofthetrade'], niche: ['diyhome', 'powertools', 'woodworking'] },
+  { key: 'garden',
+    match: ['garden', 'gardening', 'planter', 'raised bed', 'lawn', 'grill', 'bbq', 'smoker', 'patio', 'greenhouse', 'hose'],
+    broad: ['garden', 'outdoorliving'], mid: ['gardening', 'backyard'], niche: ['gardeningtips', 'grilling', 'patiogoals'] },
+  // ── Beauty & Personal Care ──
+  { key: 'skincare',
+    match: ['skincare', 'serum', 'moisturizer', 'face wash', 'cleanser', 'sunscreen', 'retinol', 'toner', 'face mask', 'eye cream'],
+    broad: ['skincare', 'beauty'], mid: ['skincareroutine', 'skintok'], niche: ['skincarecommunity', 'glowup', 'skincaretips'] },
+  { key: 'makeup',
+    match: ['makeup', 'lipstick', 'foundation', 'mascara', 'eyeshadow', 'concealer', 'blush', 'lip gloss', 'setting spray'],
+    broad: ['makeup', 'beauty'], mid: ['makeuptutorial', 'mua'], niche: ['makeuplover', 'beautyfinds', 'makeuptips'] },
+  { key: 'haircare',
+    match: ['hair', 'shampoo', 'conditioner', 'hair dryer', 'hair straightener', 'curling iron', 'hair mask', 'hair oil', 'wig'],
+    broad: ['hair', 'beauty'], mid: ['hairtok', 'haircare'], niche: ['hairstyles', 'hairtutorial', 'haircaretips'] },
+  { key: 'grooming',
+    match: ['beard', 'beard trimmer', 'shaver', 'electric razor', 'grooming', 'aftershave', 'nose trimmer'],
+    broad: ['grooming', 'mensstyle'], mid: ['mensgrooming', 'beardcare'], niche: ['beardgang', 'groomingtips', 'menscare'] },
+  { key: 'fragrance',
+    match: ['perfume', 'cologne', 'fragrance', 'eau de parfum', 'body mist'],
+    broad: ['fragrance', 'perfume'], mid: ['perfumetok', 'fragrancecommunity'], niche: ['perfumelover', 'fragrancereview', 'scentoftheday'] },
+  // ── Health & Household ──
+  { key: 'supplements',
+    match: ['supplement', 'vitamin', 'protein powder', 'collagen', 'probiotic', 'creatine', 'electrolyte', 'omega'],
+    broad: ['health', 'wellness'], mid: ['supplements', 'healthylifestyle'], niche: ['wellnessjourney', 'nutrition', 'gymsupplements'] },
+  { key: 'wellness',
+    match: ['massage gun', 'sleep', 'meditation', 'posture corrector', 'aromatherapy', 'essential oil', 'red light therapy', 'recovery', 'sauna'],
+    broad: ['wellness', 'selfcare'], mid: ['selfcaretips', 'healthylifestyle'], niche: ['wellnessjourney', 'sleepbetter', 'recovery'] },
+  // ── Sports & Outdoors ──
+  { key: 'fitness',
+    match: ['fitness', 'workout', 'gym', 'dumbbell', 'kettlebell', 'yoga mat', 'resistance band', 'treadmill', 'exercise', 'weight bench', 'jump rope'],
+    broad: ['fitness', 'health'], mid: ['workout', 'fitnessmotivation'], niche: ['homegym', 'fitnessgear', 'gymtok'] },
+  { key: 'camping-outdoors',
+    match: ['camping', 'hiking', 'tent', 'sleeping bag', 'backpacking', 'cooler', 'hammock', 'campfire', 'trekking', 'headlamp'],
+    broad: ['outdoors', 'camping'], mid: ['campinggear', 'hiking'], niche: ['campvibes', 'outdooradventure', 'backpacking'] },
+  { key: 'cycling',
+    match: ['bike', 'bicycle', 'cycling', 'mountain bike', 'road bike', 'bike helmet', 'e-bike'],
+    broad: ['cycling', 'bike'], mid: ['cyclinglife', 'biketok'], niche: ['mtb', 'roadcycling', 'bikelife'] },
+  { key: 'fishing-hunting',
+    match: ['fishing', 'fishing rod', 'tackle', 'fishing reel', 'lure', 'hunting', 'trail camera'],
+    broad: ['fishing', 'outdoors'], mid: ['fishinglife', 'anglerlife'], niche: ['bassfishing', 'fishingtrip', 'huntinglife'] },
+  { key: 'travel',
+    match: ['luggage', 'suitcase', 'carry on', 'travel backpack', 'packing cubes', 'travel accessories', 'passport holder'],
+    broad: ['travel', 'wanderlust'], mid: ['traveltips', 'travelgear'], niche: ['travelessentials', 'traveltok', 'packinghacks'] },
+  // ── Baby & Pets ──
+  { key: 'baby',
+    match: ['baby', 'toddler', 'stroller', 'diaper', 'nursery', 'infant', 'baby carrier', 'high chair', 'car seat', 'baby monitor'],
+    broad: ['parenting', 'baby'], mid: ['momlife', 'parentinghacks'], niche: ['babyessentials', 'newmom', 'toddlerlife'] },
+  { key: 'pets-dogs',
+    match: ['dog', 'puppy', 'dog bed', 'dog toy', 'leash', 'dog crate', 'dog food', 'dog harness'],
+    broad: ['dogs', 'pets'], mid: ['doglife', 'dogsofinstagram'], niche: ['dogmom', 'dogproducts', 'puppylove'] },
+  { key: 'pets-cats',
+    match: ['cat', 'kitten', 'litter box', 'cat tree', 'cat toy', 'cat food', 'scratching post'],
+    broad: ['cats', 'pets'], mid: ['catlife', 'catsofinstagram'], niche: ['catmom', 'catproducts', 'catlovers'] },
+  { key: 'pets-other',
+    match: ['aquarium', 'fish tank', 'reptile', 'terrarium', 'bird cage', 'hamster', 'rabbit hutch'],
+    broad: ['pets', 'petsofinstagram'], mid: ['petlovers', 'petcare'], niche: ['aquariumlife', 'reptilesofinstagram', 'smallpets'] },
+  // ── Clothing, Shoes & Accessories ──
+  { key: 'shoes',
+    match: ['shoes', 'sneakers', 'boots', 'running shoes', 'sandals', 'heels', 'loafers'],
+    broad: ['shoes', 'style'], mid: ['sneakerhead', 'shoegame'], niche: ['sneakers', 'shoelover', 'ootd'] },
+  { key: 'jewelry-watches',
+    match: ['jewelry', 'necklace', 'bracelet', 'earrings', 'ring', 'watch', 'wristwatch', 'pendant'],
+    broad: ['jewelry', 'style'], mid: ['jewelrylover', 'accessories'], niche: ['jewelrygram', 'watchesofinstagram', 'styleinspo'] },
+  { key: 'bags-accessories',
+    match: ['handbag', 'purse', 'backpack', 'wallet', 'tote bag', 'crossbody', 'sunglasses', 'belt'],
+    broad: ['fashion', 'accessories'], mid: ['bagsofinstagram', 'styletips'], niche: ['fashionfinds', 'accessorize', 'ootd'] },
   { key: 'fashion',
-    match: ['dress', ' shirt', 'jacket', 'shoes', 'sneaker', ' watch', ' bag', 'jewelry', 'sunglasses', 'wallet', 'outfit', 'apparel'],
-    broad: ['fashion', 'style'], mid: ['ootd', 'styletips'], niche: ['fashionfinds', 'accessories', 'styleinspo'] },
+    match: ['dress', 'shirt', 'jacket', 'jeans', 'hoodie', 'outfit', 'apparel', 'leggings', 'sweater', 'coat'],
+    broad: ['fashion', 'style'], mid: ['ootd', 'styletips'], niche: ['fashionfinds', 'styleinspo', 'outfitinspo'] },
+  // ── Automotive (AFTER rc-hobby so RC products don't land here) ──
+  { key: 'auto',
+    match: ['car accessory', 'car care', 'dash cam', 'car detailing', 'tire', 'car seat cover', 'car mount', 'motorcycle', 'jump starter', 'obd'],
+    broad: ['cars', 'auto'], mid: ['caraccessories', 'cartok'], niche: ['caressentials', 'cargadgets', 'cardetailing'] },
+  // ── Musical Instruments ──
+  { key: 'music-instruments',
+    match: ['guitar', 'electric guitar', 'bass guitar', 'keyboard piano', 'drum', 'ukulele', 'synthesizer', 'midi', 'amplifier', 'violin'],
+    broad: ['music', 'musician'], mid: ['guitarist', 'musicgear'], niche: ['guitarsofinstagram', 'musicproducer', 'bedroommusician'] },
+  // ── Arts & Crafts ──
+  { key: 'crafts',
+    match: ['sewing', 'sewing machine', 'knitting', 'crochet', 'embroidery', 'scrapbook', 'craft', 'diamond painting', 'cricut', 'paint by numbers'],
+    broad: ['crafts', 'diy'], mid: ['crafting', 'handmade'], niche: ['craftsofinstagram', 'diycrafts', 'makersgonnamake'] },
 ]
+
+// Precompiled WORD-BOUNDARY matcher per category. \b anchors on alphanumeric
+// edges, so 'car' matches "car" but never "carbon"/"scar", and short terms like
+// 'rc' or 'tv' are safe (they won't fire inside "search" or "start"). Multi-word
+// phrases ("air fryer") match verbatim. Built once at module load.
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const COMPILED = TAXONOMY.map(c => ({
+  cat: c,
+  re: new RegExp(`\\b(?:${c.match.map(escapeRe).join('|')})\\b`, 'gi'),
+}))
+
+/** How many category terms appear in `hay` (occurrence count). */
+function scoreWith(hay: string, re: RegExp): number {
+  const m = hay.match(re)
+  return m ? m.length : 0
+}
 
 // Never emit these — low-value spam that hurts reach and looks desperate.
 const SPAM = new Set<string>([
@@ -126,9 +247,12 @@ const WEAK_WORD = new Set<string>([
 export function detectNiche(text: string): string | null {
   const hay = ` ${String(text || '')} `.toLowerCase()
   let best: { key: string; score: number } | null = null
-  for (const c of TAXONOMY) {
-    const score = c.match.reduce((s, k) => s + (hay.includes(k) ? 1 : 0), 0)
-    if (score > 0 && (!best || score > best.score)) best = { key: c.key, score }
+  // COMPILED preserves TAXONOMY order and we replace only on a STRICTLY higher
+  // score, so ties go to the earlier (more specific) category — which is why
+  // rc-hobby beats auto for an "RC car".
+  for (const { cat, re } of COMPILED) {
+    const score = scoreWith(hay, re)
+    if (score > 0 && (!best || score > best.score)) best = { key: cat.key, score }
   }
   return best?.key ?? null
 }
@@ -199,10 +323,10 @@ export function selectHashtags(opts: SelectHashtagsOpts): string[] {
   if (push(deriveBrandTag(brand))) return out
   for (const t of trending) if (push(t)) return out
 
-  const cats = TAXONOMY
-    .map(c => ({ c, score: c.match.reduce((s, k) => s + (hay.includes(k) ? 1 : 0), 0) }))
+  const cats = COMPILED
+    .map(x => ({ c: x.cat, score: scoreWith(hay, x.re) }))
     .filter(x => x.score > 0)
-    .sort((a, b) => b.score - a.score)
+    .sort((a, b) => b.score - a.score)   // stable → ties keep taxonomy order
     .map(x => x.c)
 
   // Interleave tiers across the top 2 categories to guarantee a size mix
