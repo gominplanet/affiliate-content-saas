@@ -1173,6 +1173,9 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
         monetize: finishDoMonetize,
         selfCert: finishDoMonetize,
         endScreen: finishDoEndScreen,
+        // Honor the same Yes/No the API path uses, so SCOUT's Details pass sets
+        // the "publish to subs feed & notify" box to match instead of forcing off.
+        notifySubscribers: proSettings.notifySubscribers,
       })
       setFinishResult(res)
       if (!res.ok && res.error) {
@@ -2734,14 +2737,22 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                       />
                       <span className="text-[#1d1d1f] dark:text-[#f5f5f7]">Made for kids</span>
                     </label>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={proSettings.notifySubscribers}
-                        onChange={e => setProSettings(s => ({ ...s, notifySubscribers: e.target.checked }))}
-                      />
-                      <span className="text-[#1d1d1f] dark:text-[#f5f5f7]">Notify subscribers <span className="text-[#86868b]">(off = no bell spam)</span></span>
-                    </label>
+                    <div className="flex items-center justify-between gap-2 pt-0.5">
+                      <span className="text-[#1d1d1f] dark:text-[#f5f5f7]">Notify subscribers when this goes public?</span>
+                      <div className="inline-flex rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+                        {([['Yes', true], ['No', false]] as const).map(([lbl, val]) => (
+                          <button
+                            key={lbl}
+                            type="button"
+                            onClick={() => setProSettings(s => ({ ...s, notifySubscribers: val }))}
+                            className={`px-3 py-1 text-[11px] font-semibold transition-colors ${proSettings.notifySubscribers === val ? 'bg-[#7C3AED] text-white' : 'text-[#6e6e73] dark:text-[#a1a1a6] hover:bg-black/5 dark:hover:bg-white/10'}`}
+                          >
+                            {lbl}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] -mt-0.5">Applies whether MVP publishes it or SCOUT finishes it in Studio.</p>
                   </div>
                 </div>
               )}
@@ -2819,7 +2830,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                             className="mt-0.5 flex-shrink-0"
                           />
                           <span className="text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7] leading-relaxed">
-                            <strong>I want MVP to finish this video in YouTube Studio for me.</strong> SCOUT will open YouTube Studio in your own logged-in browser and apply only the items I tick below, on this video only. Your subscriber <strong>bell stays off</strong>, and nothing else on your channel is changed.
+                            <strong>I want MVP to finish this video in YouTube Studio for me.</strong> SCOUT will open YouTube Studio in your own logged-in browser and apply only the items I tick below, on this video only. It follows your <strong>notify-subscribers</strong> choice above, and nothing else on your channel is changed.
                           </span>
                         </label>
 
@@ -2830,7 +2841,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                         <div className={`flex flex-col gap-1.5 pl-6 ${finishOptIn ? '' : 'opacity-50 pointer-events-none'}`}>
                           <label className="flex items-start gap-2 cursor-pointer text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7]">
                             <input type="checkbox" checked={finishDoDetails} disabled={finishRunning} onChange={e => setFinishDoDetails(e.target.checked)} className="mt-0.5 flex-shrink-0" />
-                            <span>Set <strong>Details</strong>: tick <strong>paid promotion</strong>, force <strong>off</strong> &ldquo;publish to subs feed &amp; notify&rdquo;, turn <strong>on</strong> embedding, answer <strong>AI&nbsp;use&nbsp;→&nbsp;No</strong> <span className="text-[#86868b]">— uncheck if any video is AI-generated/altered</span></span>
+                            <span>Set <strong>Details</strong>: tick <strong>paid promotion</strong>, set &ldquo;publish to subs feed &amp; notify&rdquo; to match your choice above, turn <strong>on</strong> embedding, answer <strong>AI&nbsp;use&nbsp;→&nbsp;No</strong> <span className="text-[#86868b]">— uncheck if any video is AI-generated/altered</span></span>
                           </label>
                           <label className="flex items-start gap-2 cursor-pointer text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7]">
                             <input type="checkbox" checked={finishDoMonetize} disabled={finishRunning} onChange={e => setFinishDoMonetize(e.target.checked)} className="mt-0.5 flex-shrink-0" />
