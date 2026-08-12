@@ -10,7 +10,7 @@ import HeroVideo from '@/components/layout/HeroVideo'
 import { CapReachedBanner } from '@/components/CapReachedBanner'
 import { useConfirm } from '@/components/ui/useConfirm'
 import { pickWeightedStyleIndex, OVERLAY_STYLES, drawHeadline, type HeadlinePosition, type FaceBox } from '@/lib/thumbnail-overlay'
-import { isExtensionAvailable, requestVideoFrames, requestAmazonProduct, requestVideoTranscript, requestStudioSchedule, requestStudioVideos, requestStudioFinish, requestYtSaveRecipes, type StudioFinishResult, type YtSaveRecipe } from '@/lib/extension-frame'
+import { isExtensionAvailable, requestVideoFrames, requestAmazonProduct, requestVideoTranscript, requestStudioSchedule, requestStudioVideos, requestStudioFinish, requestYtSaveRecipes, requestYtApplyDisclosures, type StudioFinishResult, type YtSaveRecipe } from '@/lib/extension-frame'
 import { SCOUT_STORE_LISTING_URL } from '@/lib/scout-version'
 import { effectiveTier } from '@/lib/view-as'
 import type { Tier } from '@/lib/tier'
@@ -3252,6 +3252,9 @@ export default function StudioPage() {
   // learn the real InnerTube disclosure/monetization/tag-product request shapes.
   const [ytRecipes, setYtRecipes] = useState<YtSaveRecipe[] | null>(null)
   const [ytRecipeLoading, setYtRecipeLoading] = useState(false)
+  const [ytApplyVideoId, setYtApplyVideoId] = useState('')
+  const [ytApplyResult, setYtApplyResult] = useState<{ ok: boolean; detail?: string; error?: string; debug?: Record<string, unknown> } | null>(null)
+  const [ytApplyLoading, setYtApplyLoading] = useState(false)
   // Pagination — single cursor. When non-null, more drafts can be fetched
   // via "Load more". When null, we've walked the entire uploads playlist.
   const [nextPageToken, setNextPageToken] = useState<string | undefined>(undefined)
@@ -3622,6 +3625,29 @@ export default function StudioPage() {
             ytRecipes.length === 0
               ? <p className="text-[11px] text-[#86868b]">Nothing captured yet. Make sure SCOUT 1.16.5+ is loaded, then change + Save a field in YouTube Studio and load again.</p>
               : <pre className="text-[9px] leading-snug text-[#6e6e73] dark:text-[#a1a1a6] bg-black/5 dark:bg-white/5 rounded p-2 overflow-auto whitespace-pre-wrap break-words max-h-72">{JSON.stringify(ytRecipes, null, 1)}</pre>
+          )}
+
+          {/* Replay TEST: hit YouTube's own metadata_update to set paid-promotion
+              + AI + monetization via the internal API (no clicking). Paste a
+              draft video id and run — the raw HTTP status/response comes back so
+              we can tell if auth/attestation is accepted. */}
+          <div className="flex items-center gap-2 flex-wrap border-t border-dashed border-[#7C3AED]/20 pt-2 mt-1">
+            <input
+              value={ytApplyVideoId}
+              onChange={e => setYtApplyVideoId(e.target.value.trim())}
+              placeholder="video id (e.g. qAO5DPFdrzo)"
+              className="text-[11px] px-2 py-1 rounded-lg border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] w-52"
+            />
+            <button
+              onClick={async () => { if (!ytApplyVideoId) return; setYtApplyLoading(true); setYtApplyResult(null); try { setYtApplyResult(await requestYtApplyDisclosures(ytApplyVideoId, { paidPromotion: true, aiDisclosure: true, hasAlteredContent: false, monetize: true })) } finally { setYtApplyLoading(false) } }}
+              disabled={ytApplyLoading || !ytApplyVideoId}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold text-white bg-[#34c759] hover:opacity-90 disabled:opacity-50"
+            >
+              {ytApplyLoading ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />} Test: apply disclosures via API
+            </button>
+          </div>
+          {ytApplyResult && (
+            <pre className={`text-[10px] leading-snug rounded p-2 overflow-auto whitespace-pre-wrap break-words max-h-56 ${ytApplyResult.ok ? 'bg-[#34c759]/10 text-[#1d7d3f]' : 'bg-[#ff3b30]/5 text-[#b3261e] dark:text-[#ff6a5f]'}`}>{JSON.stringify(ytApplyResult, null, 1)}</pre>
           )}
         </div>
       )}

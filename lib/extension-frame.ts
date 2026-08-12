@@ -1024,6 +1024,33 @@ export async function requestYtSaveRecipes(): Promise<YtSaveRecipe[]> {
   return resp && resp.ok && Array.isArray(resp.recipes) ? resp.recipes : []
 }
 
+export interface YtDisclosureOpts {
+  paidPromotion?: boolean
+  aiDisclosure?: boolean
+  hasAlteredContent?: boolean
+  monetize?: boolean
+}
+
+/**
+ * Replay YouTube Studio's own metadata_update to set the disclosure fields
+ * (paid promotion, AI/altered content, monetization) via the internal API in the
+ * user's logged-in session — no DOM clicking. Returns the raw result incl. the
+ * HTTP status/response body so the request can be tuned against YouTube's answer.
+ */
+export async function requestYtApplyDisclosures(
+  videoId: string,
+  opts: YtDisclosureOpts,
+): Promise<{ ok: boolean; detail?: string; error?: string; debug?: Record<string, unknown> }> {
+  if (!videoId) return { ok: false, error: 'no-video-id' }
+  if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
+  const resp = await sendToExtension<{ ok?: boolean; detail?: string; error?: string; debug?: Record<string, unknown> }>(
+    { type: 'MVP_YT_APPLY_DISCLOSURES', videoId, opts },
+    60000,
+  )
+  if (!resp) return { ok: false, error: 'timeout' }
+  return { ok: !!resp.ok, detail: resp.detail, error: resp.error, debug: resp.debug }
+}
+
 export interface VideoDownloadResult {
   ok: boolean
   /** The Short's MP4 as a data URL (data:video/mp4;base64,…). */
