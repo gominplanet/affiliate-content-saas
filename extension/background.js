@@ -3388,7 +3388,7 @@ function studioInjectSaveInPage(videoId, opts) {
     const isBtn = (el) => { const t = (el.tagName || '').toLowerCase(); return /button|ytcp-button/.test(t) || (el.getAttribute && el.getAttribute('role') === 'button') }
     try {
       // Arm the hook.
-      window.__mvpYtInject = { videoId, paidPromotion: !!opts.paidPromotion, aiDisclosure: !!opts.aiDisclosure, hasAlteredContent: !!opts.hasAlteredContent, monetize: !!opts.monetize }
+      window.__mvpYtInject = { videoId, paidPromotion: !!opts.paidPromotion, aiDisclosure: !!opts.aiDisclosure, hasAlteredContent: !!opts.hasAlteredContent, monetize: !!opts.monetize, notify: (typeof opts.notify === 'boolean' ? opts.notify : undefined) }
       window.__mvpYtInjected = 0
       window.__mvpYtInjectResp = null
       await sleep(1800)
