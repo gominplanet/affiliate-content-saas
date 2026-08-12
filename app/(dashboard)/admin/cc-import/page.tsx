@@ -228,6 +228,9 @@ export default function AdminCcImportPage() {
           <li>Confirm the <b>Staged</b> count looks right (tens of thousands).</li>
           <li>Click <b>Merge into live catalog</b>. Enriched images/sales/ratings survive; campaigns that fell out are purged.</li>
         </ol>
+        <div className="mt-3 rounded-lg px-3 py-2 text-[12.5px] leading-relaxed" style={{ background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.35)', color: 'var(--text)' }}>
+          <b>Upload the COMPLETE current catalog every week, not just the new opportunities.</b> The merge replaces the catalog: whatever is in your CSV is kept, and every campaign <i>not</i> in it is purged. Uploading only this week&rsquo;s new ones would delete last week&rsquo;s. Re-uploading ones that already exist is safe : their enrichment is preserved.
+        </div>
       </div>
 
       {/* Uploader — parses the CSV in the browser and streams it to staging. */}
