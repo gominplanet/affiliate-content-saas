@@ -14,7 +14,12 @@ import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { createWordPressService } from '@/services/wordpress'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 
-export const maxDuration = 60
+// The Art Director pin does a Claude brief + a slow gpt-image-2 render + product-
+// image fetches, which routinely runs past 60s. At 60 Vercel killed the function
+// (504) before it finished — no catch, no log, just a generic "failed" toast for
+// the user. 300 matches the other gpt-image-2 routes (generate-thumbnail,
+// refresh-images) so a normal render has room to finish.
+export const maxDuration = 300
 
 export async function POST(request: NextRequest) {
   const supabase = await createServerClient()
