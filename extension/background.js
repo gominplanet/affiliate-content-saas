@@ -2832,23 +2832,41 @@ function studioFinishMonetizeInPage() {
       out.debug.controlsBefore = sample()
 
       // Non-monetized / not-in-YPP channels have no On toggle and no ad-rating
-      // here — the page invites you to APPLY to the Partner Program instead.
-      // Detect that so we report "not monetized" (neutral) rather than a failure.
+      // here. Navigating to /monetization on such a channel silently BOUNCES to
+      // the Studio dashboard (that's the dashboard chrome we saw in debug), or
+      // the page invites you to APPLY to the Partner Program. Detect all three —
+      // redirect-away, dashboard chrome, or the YPP-invite copy — so we report
+      // "not monetized" (neutral skip) instead of a scary failure.
       const bodyTxt = (document.body ? document.body.innerText : '').toLowerCase()
-      out.debug.notMonetizedSignal = /partner program|isn'?t eligible|not eligible|monetization (is )?(not|isn'?t) available|apply (now|to join)|join the youtube partner|once you'?re eligible/i.test(bodyTxt)
+      out.debug.finalUrl = location.href.slice(0, 160)
+      // Navigating to /monetization sometimes BOUNCES to the Studio dashboard
+      // (SPA deep-link race) even on a fully monetized channel — that's a
+      // transient we should RETRY, not a "not monetized" state. Only the
+      // explicit YPP-invite copy means the channel truly can't monetize.
+      const redirectedAway = !/\/video\/[^/]+\/monetization/i.test(location.href)
+      const dashboardSignal = /your feed|studio dashboard|channel dashboard|latest video performance|analytics for the last/i.test(bodyTxt)
+      const yppInvite = /you'?re not in the youtube partner program|not eligible for monetization|apply to the youtube partner|join the youtube partner program|once you'?re eligible/i.test(bodyTxt)
+      out.debug.bounced = redirectedAway || dashboardSignal
+      out.debug.yppInvite = yppInvite
 
       // 1) Open the Monetization on/off dropdown (currently reads "Off") and
       //    choose the "On" option.
       const trigger = find([/monetization (is )?off/i, /^off$/i, /turn on monetization/i, /watch page ads/i])
       out.debug.triggerText = trigger ? visText(trigger) : null
       if (!trigger) {
-        // No toggle. If the page is clearly a not-monetized invite, that's
-        // expected for this channel — neutral skip, not an error.
-        out.skipped = !!out.debug.notMonetizedSignal
-        out.detail = out.skipped
-          ? 'Channel isn’t monetized — nothing to turn on (end screen still applies)'
-          : 'Monetization toggle not found — see debug'
         out.debug.controlsAfter = sample()
+        if (yppInvite) {
+          // Genuinely not in YPP — neutral note, nothing to do.
+          out.skipped = true
+          out.detail = 'This channel isn’t in the YouTube Partner Program — nothing to turn on'
+        } else if (out.debug.bounced) {
+          // Bounced to the dashboard mid-navigation — ask the orchestrator to
+          // re-open the monetization page and try again.
+          out.needsReload = true
+          out.detail = 'Monetization page bounced to the dashboard — retrying'
+        } else {
+          out.detail = 'Monetization toggle not found — see debug'
+        }
         return out
       }
       click(trigger)
@@ -2932,6 +2950,28 @@ function studioFinishEndScreenInPage() {
       await sleep(2200) // end-screen editor is heavy
       out.debug.url = location.href.slice(0, 160)
       out.debug.controlsBefore = sample()
+
+      // The end-screen editor sometimes throws YouTube's own "Oops, something
+      // went wrong" page (SPA deep-link race), which has a Retry button. Click
+      // it and wait for the editor to recover before looking for controls.
+      const errPage = () => {
+        const t = (document.body ? document.body.innerText : '').toLowerCase()
+        return /something went wrong/i.test(t)
+      }
+      for (let tries = 0; tries < 3 && errPage(); tries++) {
+        out.debug.hitErrorPage = true
+        const retry = find([/^retry$/i, /^try again$/i, /^reload$/i])
+        out.debug.retryText = retry ? visText(retry) : null
+        if (retry) { click(retry) } else { break }
+        await sleep(2500)
+      }
+      if (errPage()) {
+        // Still erroring after retries — bounce it up for a full reload.
+        out.needsReload = true
+        out.detail = 'YouTube’s end-screen editor errored — retrying'
+        out.debug.controlsAfter = sample()
+        return out
+      }
 
       // Prefer the "Import from video" / copy-from-previous template — that's
       // the "same as last video" action.
@@ -3110,22 +3150,35 @@ function studioFinishTagProductInPage(productUrl) {
     try {
       if (!productUrl) { out.detail = 'no product url'; return out }
       await sleep(1500)
-      // 1) Open the "Tag products" / Products area.
-      const openBtn = deepAll().filter(isBtn).find((el) => /tag products|add products|^products$/i.test(visText(el)))
+      // 1) Open the "Tag products" / Products area. Scope to Studio's OWN
+      //    controls (ytcp-*) so a third-party extension's injected button can't
+      //    be mistaken for it.
+      const openBtn = deepAll().filter(isBtn).find((el) => /^(tag products|add products|products)$/i.test(visText(el)))
       out.debug.openBtn = openBtn ? visText(openBtn).slice(0, 40) : null
       if (openBtn) { click(openBtn); await sleep(1800) }
-      // 2) The search / paste-a-link input.
+      // 2) The product search / paste-a-link input. Must be an ACTUAL product
+      //    box — matched by its own placeholder/label. NEVER fall back to
+      //    "the first input on the page" (that grabbed the video-title field
+      //    and produced a false success). No product box = report it, don't
+      //    pretend it worked.
       const inputs = deepAll().filter((el) => { const t = (el.tagName || '').toLowerCase(); return t === 'input' || t === 'textarea' })
-      const input = inputs.find((el) => /search products|paste a product|product link/i.test(visText(el))) || inputs[0]
+      const input = inputs.find((el) => /search (for )?products|paste a product|product link|add a product|find a product/i.test(visText(el)))
       out.debug.foundInput = !!input
-      if (!input) { out.detail = 'search input not found'; return out }
+      out.debug.inputCandidates = inputs.map((el) => visText(el).slice(0, 40)).filter(Boolean).slice(0, 12)
+      if (!input) {
+        out.detail = openBtn
+          ? 'Opened Products, but couldn’t find the product search box — see debug'
+          : 'Couldn’t find the Tag-products control on this page — see debug'
+        return out
+      }
       try { input.focus() } catch (e) {}
       setInput(input, productUrl)
       try { input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true })) } catch (e) {}
       await sleep(2800) // let YouTube resolve the pasted link to a product
-      // 3) Add the first resolved product (a + / Add control).
-      const addBtn = deepAll().filter(isBtn).find((el) => /^add$/i.test(visText(el)) || /add product|tag product/i.test(visText(el)))
-        || deepAll().filter((el) => el.getAttribute && /add/i.test(el.getAttribute('aria-label') || '')).find(Boolean)
+      // 3) Add the first resolved product. Only a real, short "Add"/"Add
+      //    product" button — dropped the loose aria*="add" fallback that
+      //    matched the channel's "Add a title that describes you" CTA.
+      const addBtn = deepAll().filter(isBtn).find((el) => { const t = visText(el); return /^add$/i.test(t) || /^add product$/i.test(t) || /^tag product$/i.test(t) })
       out.debug.addBtn = addBtn ? visText(addBtn).slice(0, 30) : null
       if (addBtn) { click(addBtn); await sleep(1200) }
       // 4) Next / Done / Save through the confirm step.
@@ -3136,7 +3189,7 @@ function studioFinishTagProductInPage(productUrl) {
         click(go); await sleep(1400)
       }
       out.ok = !!(input && addBtn)
-      out.detail = `input:${!!input} · add:${out.debug.addBtn || '?'}`
+      out.detail = out.ok ? 'Product tagged' : `product box found, but the Add button didn’t appear — see debug`
       return out
     } catch (e) { out.detail = (e && e.message) || 'threw'; return out }
   })()
@@ -3150,13 +3203,31 @@ async function scanStudioFinish(videoId, opts, callerTabId) {
   // First panel we need to land on (open the tab there directly).
   const startPanel = (want.details || want.tagProduct) ? 'edit' : (want.monetize || want.selfCert) ? 'monetization' : 'endscreens'
   let current = startPanel
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   // Navigate the SAME tab between Studio panels, only reloading when the panel
   // actually changes (re-assigning the same URL wouldn't fire 'complete').
-  const goto = async (panel) => {
-    if (current === panel) return
+  // `fresh` forces a real re-navigation even when we think we're already on the
+  // panel — used to recover from a bounce (Studio deep-link race dumped us on
+  // the dashboard) where our tracked `current` no longer matches the real URL.
+  const goto = async (panel, fresh) => {
+    if (current === panel && !fresh) return
     await chrome.tabs.update(tabId, { url: STUDIO_VIDEO(videoId, panel) })
     await waitForTabLoad(tabId, 30000)
+    await sleep(1500) // let the SPA finish client-side routing + data fetch
     current = panel
+  }
+  // Run a panel's in-page script, and if it reports needsReload (bounced to the
+  // dashboard / hit YouTube's error page), re-navigate fresh and try again.
+  const runPanel = async (panel, func, args, stepName) => {
+    let res = null
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await goto(panel, attempt > 0)
+      const r = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func, args: args || [] })
+      res = (r && r[0] && r[0].result) || { step: stepName, ok: false, error: 'no-result' }
+      if (!res.needsReload) break
+    }
+    if (res && res.needsReload) { res.detail = (res.detail || '') + ' (still failing after retries)' }
+    return res
   }
   try {
     // FOREGROUND: Studio is a heavy SPA and DOM interaction is far more reliable
@@ -3177,14 +3248,10 @@ async function scanStudioFinish(videoId, opts, callerTabId) {
       steps.push((r && r[0] && r[0].result) || { step: 'tagproduct', ok: false, error: 'no-result' })
     }
     if (want.monetize || want.selfCert) {
-      await goto('monetization')
-      const r = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: studioFinishMonetizeInPage })
-      steps.push((r && r[0] && r[0].result) || { step: 'monetization', ok: false, error: 'no-result' })
+      steps.push(await runPanel('monetization', studioFinishMonetizeInPage, [], 'monetization'))
     }
     if (want.endScreen) {
-      await goto('endscreens')
-      const r = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: studioFinishEndScreenInPage })
-      steps.push((r && r[0] && r[0].result) || { step: 'endscreen', ok: false, error: 'no-result' })
+      steps.push(await runPanel('endscreens', studioFinishEndScreenInPage, [], 'endscreen'))
     }
     return { ok: steps.some((s) => s && s.ok), steps }
   } catch (e) {
