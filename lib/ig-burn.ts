@@ -8,7 +8,8 @@ import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { extractAsin, fetchAmazonProduct } from '@/services/amazon'
 import { researchProductFromUrl } from '@/services/research'
-import { selectHashtags, mergeHashtags, extractHashtags, stripHashtags } from '@/lib/hashtag-map'
+import { selectHashtags, mergeHashtags, extractHashtags, stripHashtags, detectNiche } from '@/lib/hashtag-map'
+import { pulseTrendingTags } from '@/lib/pulse-rank'
 
 export interface IgBurnCtx { userId: string; tier: string | null }
 
@@ -94,7 +95,9 @@ Return ONLY the caption text + the 2-3 specific hashtags.`,
     const aiSpecific = extractHashtags(text).filter(t => t !== '#ad')
     const body = stripHashtags(text)
     const title = productContext.split('\n')[0] || productContext
-    const curated = selectHashtags({ text: productContext, brand: title, max: 6 })
+    // Pulse: proven tags for this creator/niche lead the mix (best-effort).
+    const trending = await pulseTrendingTags(ctx.userId, detectNiche(productContext), 3)
+    const curated = selectHashtags({ text: productContext, brand: title, trending, max: 6 })
     const tags = mergeHashtags([...aiSpecific.slice(0, 2), ...curated], [], 7)
     const finalCaption = `${body}${tags.length ? `\n\n${tags.join(' ')}` : ''}\n\n#ad`
     return finalCaption.trim() || null

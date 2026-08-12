@@ -26,7 +26,8 @@
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import type { Tier } from '@/lib/tier'
-import { selectHashtags, mergeHashtags } from '@/lib/hashtag-map'
+import { selectHashtags, mergeHashtags, detectNiche } from '@/lib/hashtag-map'
+import { pulseTrendingTags } from '@/lib/pulse-rank'
 
 const MODEL = 'claude-haiku-4-5-20251001'
 
@@ -313,10 +314,14 @@ Return ONLY a JSON object shaped EXACTLY:
   const body = scrub((parsed.body || '').slice(0, 400))
   // Curated brand + broad category mix leads (reliable, vetted), then the AI's
   // product-specific tags fill the rest — deduped, spam-filtered, capped.
+  // Pulse: proven tags for this creator/niche lead the mix (best-effort).
+  const pulseNiche = detectNiche(`${input.productName} ${input.description || ''} ${input.niches.join(' ')}`)
+  const trending = await pulseTrendingTags(ctx.userId, pulseNiche, 3)
   const curated = selectHashtags({
     text: `${input.productName} ${input.description || ''}`,
     brand: input.productName,
     niches: input.niches,
+    trending,
     max: rules.hashtagCount,
   })
   const aiTags = Array.isArray(parsed.hashtags) ? parsed.hashtags.map(t => String(t)) : []
