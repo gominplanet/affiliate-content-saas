@@ -782,14 +782,41 @@ export function TikTokDirectModal({
               and don't know they have to choose "Who can see this" — the Lisa
               ticket ("the post to tiktok button doesn't become live"). */}
           {!canPost && !publishId && (
-            <p className="px-5 pt-3 text-[12px] text-[#ff3b30] text-right">
-              {!info ? 'Loading your TikTok settings…'
-                : !meta?.videoUrl ? 'Preparing your video…'
-                : privacy === '' ? 'Choose who can see this in the “Who can see this video” dropdown above to enable posting.'
-                : commercialNeedsChoice ? 'Tell TikTok whether this promotes you, a brand, or both.'
-                : brandedNoPrivate ? "Branded content can't be set to private — pick a public or friends option."
-                : 'Finish the required fields above to post.'}
-            </p>
+            privacy === '' && info && meta?.videoUrl ? (
+              // The #1 support confusion (Lisa): the button is dead until a
+              // privacy is picked, but that dropdown is up top and users don't
+              // scroll back to it. Put the choice RIGHT HERE, above the button,
+              // as big tap targets so there's nothing to hunt for.
+              <div className="mx-5 mt-3 rounded-xl border-2 border-[#ff0050]/40 bg-[#ff0050]/5 px-4 py-3">
+                <p className="text-[13px] font-bold text-[#1d1d1f] dark:text-[#f5f5f7] mb-0.5">One more step — who can see this video?</p>
+                <p className="text-[11px] text-[#86868b] mb-2.5">TikTok requires you to choose. Tap one to turn on the Post button.</p>
+                <div className="flex flex-wrap gap-2">
+                  {info.privacyLevelOptions.map(opt => {
+                    const blockedForBranded = opt === 'SELF_ONLY' && isCommercial && brandedPartnership
+                    return (
+                      <button
+                        key={opt}
+                        type="button"
+                        disabled={blockedForBranded}
+                        onClick={() => setPrivacy(opt)}
+                        className="px-4 py-2 rounded-lg text-sm font-semibold border-2 border-[#ff0050]/50 text-[#ff0050] hover:bg-[#ff0050] hover:text-white disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-[#ff0050] transition-colors"
+                        title={blockedForBranded ? 'Not allowed for branded content' : undefined}
+                      >
+                        {PRIVACY_LABELS[opt] || opt}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            ) : (
+              <p className="px-5 pt-3 text-[12px] text-[#ff3b30] text-right">
+                {!info ? 'Loading your TikTok settings…'
+                  : !meta?.videoUrl ? 'Preparing your video…'
+                  : commercialNeedsChoice ? 'Tell TikTok whether this promotes you, a brand, or both.'
+                  : brandedNoPrivate ? "Branded content can't be set to private — pick a public or friends option."
+                  : 'Finish the required fields above to post.'}
+              </p>
+            )
           )}
           <div className="flex items-center justify-end gap-2 p-5 border-t border-gray-100 dark:border-white/10">
             <button onClick={onClose} disabled={!closeAllowed} className="btn-secondary text-sm">Cancel</button>
