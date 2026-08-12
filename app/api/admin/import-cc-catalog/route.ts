@@ -85,13 +85,13 @@ export async function GET() {
   ])
   // Background-drain status (migration 251) so the UI can show "merging in the
   // background" progress even with the tab closed. Best-effort; absent → null.
-  let drain: { active: boolean; phase?: string; upserted?: number; purged?: number } | null = null
+  let drain: { active: boolean; phase?: string; upserted?: number; purged?: number; scanned?: number } | null = null
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: f } = await (admin as any).from('system_flags').select('active,value').eq('key', 'cc_import_drain').maybeSingle()
     if (f) {
-      const v = (f.value || {}) as { phase?: string; upserted?: number; purged?: number }
-      drain = { active: !!f.active, phase: v.phase, upserted: v.upserted, purged: v.purged }
+      const v = (f.value || {}) as { phase?: string; upserted?: number; purged?: number; scanned?: number }
+      drain = { active: !!f.active, phase: v.phase, upserted: v.upserted, purged: v.purged, scanned: v.scanned }
     }
   } catch { /* pre-251 DB — no background status */ }
 

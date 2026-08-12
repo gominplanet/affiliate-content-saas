@@ -116,12 +116,12 @@ export async function publishPinForPost(args: PublishArgs): Promise<{ pinId: str
     if (args.imageBase64 && args.mediaType) {
       pin = await pinterest.createPinWithBase64({
         boardId: targetBoardId, title: safeTitle, description: safeDescription,
-        imageBase64: args.imageBase64, mediaType: args.mediaType, link: blogLink,
+        imageBase64: args.imageBase64, mediaType: args.mediaType, link: destLink,
       })
     } else if (args.fallbackImageUrl) {
       pin = await pinterest.createPin({
         boardId: targetBoardId, title: safeTitle, description: safeDescription,
-        imageUrl: args.fallbackImageUrl, link: blogLink,
+        imageUrl: args.fallbackImageUrl, link: destLink,
       })
     } else {
       throw new PinPublishError('No image available for pin', 400)
