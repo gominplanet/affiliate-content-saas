@@ -35,6 +35,9 @@ export default function AdminCcImportPage() {
   const [backfilling, setBackfilling] = useState(false)
   const [backfillFilled, setBackfillFilled] = useState<number | null>(null)
   const [backfillDone, setBackfillDone] = useState(false)
+  // Server-side background drain (cron): status + start/stop.
+  const [drain, setDrain] = useState<{ active: boolean; phase?: string; upserted?: number; purged?: number } | null>(null)
+  const [bgStarting, setBgStarting] = useState(false)
 
   const loadCounts = useCallback(async () => {
     setLoading(true); setErr(null)
@@ -43,12 +46,54 @@ export default function AdminCcImportPage() {
       const d = await r.json()
       if (!r.ok) throw new Error(d.error || 'Failed to load')
       setCounts({ staged: d.staged, live: d.live, enriched: d.enriched, enrichable: d.enrichable ?? null, hasStaged: d.hasStaged ?? null, keepa: d.keepa ?? null })
+      setDrain(d.drain ?? null)
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed to load')
     } finally { setLoading(false) }
   }, [])
 
   useEffect(() => { loadCounts() }, [loadCounts])
+
+  // While a background drain is running, poll the counts so the page reflects
+  // progress live (the cron does the actual work — the tab can be closed).
+  useEffect(() => {
+    if (!drain?.active) return
+    const t = setInterval(loadCounts, 5000)
+    return () => clearInterval(t)
+  }, [drain?.active, loadCounts])
+
+  // Kick off (or stop) the server-side drain. Same partial-upload confirm guard
+  // as the foreground merge.
+  const startBackground = useCallback(async () => {
+    if (bgStarting) return
+    setBgStarting(true); setErr(null)
+    try {
+      let confirm = false
+      for (let i = 0; i < 2; i++) {
+        const r = await fetch('/api/admin/import-cc-catalog', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'background', confirm }),
+        })
+        const d = await r.json().catch(() => ({}))
+        if (r.status === 409 && d?.needsConfirm) {
+          const ok = window.confirm(`${d.error}\n\nMerge anyway and remove ~${Number(d.wouldPurgeApprox).toLocaleString()} campaigns?`)
+          if (!ok) break
+          confirm = true; continue
+        }
+        if (!r.ok) throw new Error(d.error || 'Could not start the background merge.')
+        break
+      }
+      await loadCounts()
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Could not start the background merge.')
+    } finally { setBgStarting(false) }
+  }, [bgStarting, loadCounts])
+
+  const stopBackground = useCallback(async () => {
+    try {
+      await fetch('/api/admin/import-cc-catalog', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'stop-background' }) })
+    } catch { /* best-effort */ }
+    await loadCounts()
+  }, [loadCounts])
 
   const merge = useCallback(async () => {
     if (merging) return
@@ -276,15 +321,25 @@ export default function AdminCcImportPage() {
         </div>
       )}
 
-      <div className="flex items-center gap-3 mb-5">
+      <div className="flex flex-wrap items-center gap-3 mb-3">
         <button
           onClick={() => merge()}
-          disabled={!canMerge || merging}
+          disabled={!canMerge || merging || !!drain?.active}
           className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-[14px] font-semibold text-white disabled:opacity-50"
           style={{ background: '#7C3AED' }}>
           {merging
             ? <><Loader2 size={16} className="animate-spin" /> Merging{remaining != null ? ` — ${remaining.toLocaleString()} left` : '…'}</>
             : <>Merge into live catalog <ArrowRight size={16} /></>}
+        </button>
+        {/* Background drain: kick it off and close the tab — a cron finishes it
+            server-side (no throttled-tab crawl). */}
+        <button
+          onClick={() => startBackground()}
+          disabled={!canMerge || merging || bgStarting || !!drain?.active}
+          title="Kick off the merge on the server and close the tab — a cron drains it to completion, no need to keep this open."
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-semibold border disabled:opacity-50"
+          style={{ borderColor: '#7C3AED', color: '#7C3AED' }}>
+          {bgStarting ? <><Loader2 size={16} className="animate-spin" /> Starting…</> : <>Merge in background</>}
         </button>
         <button onClick={loadCounts} disabled={loading || merging}
           className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-[13px] font-medium border disabled:opacity-50"
@@ -292,6 +347,26 @@ export default function AdminCcImportPage() {
           <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
         </button>
       </div>
+
+      {/* Background-drain status — the cron owns the work; the tab can be closed. */}
+      {drain?.active && (
+        <div className="card p-4 mb-5 flex items-start gap-2.5" style={{ borderColor: 'rgba(124,58,237,0.4)' }}>
+          <Loader2 size={16} className="flex-shrink-0 mt-0.5 animate-spin" style={{ color: '#7C3AED' }} />
+          <div className="flex-1">
+            <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>
+              Merging in the background{drain.phase === 'purge' ? ' — purging fall-outs' : ''}. You can close this tab.
+            </p>
+            <p className="text-[12px] mt-0.5" style={{ color: 'var(--text-soft)' }}>
+              Merged <b>{Number(drain.upserted ?? 0).toLocaleString()}</b>{typeof drain.purged === 'number' && drain.purged > 0 ? ` · purged ${drain.purged.toLocaleString()}` : ''} so far. A cron continues every minute until done. Staged / Live counts above update live.
+            </p>
+          </div>
+          <button onClick={stopBackground}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium border"
+            style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
+            Stop
+          </button>
+        </div>
+      )}
 
       {result && (
         <div className="card p-4 mb-5" style={{ borderColor: 'rgba(52,199,89,0.4)' }}>

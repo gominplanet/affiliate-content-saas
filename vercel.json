@@ -9,6 +9,10 @@
       "schedule": "*/10 * * * *"
     },
     {
+      "path": "/api/cron/drain-cc-import",
+      "schedule": "* * * * *"
+    },
+    {
       "path": "/api/cron/process-scheduled",
       "schedule": "* * * * *"
     },
