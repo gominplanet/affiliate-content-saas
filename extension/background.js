@@ -3297,13 +3297,16 @@ function studioApplyDisclosuresInPage(videoId, opts) {
       out.debug.hasDelegated = !!delegated
       if (!sapisid || !ictx.client) { out.detail = 'missing auth/context on page'; return out }
 
-      // Fresh SAPISIDHASH (matches Studio's ts_hash_u triple-hash format).
+      // Fresh SAPISIDHASH — canonical Google format: SHA1("{ts} {SAPISID}
+      // {origin}"). (The earlier build appended a stray "_u" copied from the
+      // capture, which is NOT part of the hash and caused a 401.) Send the same
+      // hash under all three scheme names, as Studio does.
       const origin = 'https://studio.youtube.com'
       const ts = Math.floor(Date.now() / 1000)
       const enc = new TextEncoder().encode(ts + ' ' + sapisid + ' ' + origin)
       const digest = await crypto.subtle.digest('SHA-1', enc)
       const hex = Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('')
-      const one = ts + '_' + hex + '_u'
+      const one = ts + '_' + hex
       const auth = 'SAPISIDHASH ' + one + ' SAPISID1PHASH ' + one + ' SAPISID3PHASH ' + one
 
       // Build the update body with only the disclosure mutations set.
