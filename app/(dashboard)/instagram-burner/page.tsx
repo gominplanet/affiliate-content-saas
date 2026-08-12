@@ -15,6 +15,7 @@ import { ShopBurnerGuide } from '@/components/guide/tool-guides'
 import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
 import { metaEnabled } from '@/lib/feature-flags'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
+import PulsePanel from '@/components/pulse/PulsePanel'
 import { TikTokDirectModal } from '@/components/TikTokDirectModal'
 import { CTA_STICKERS, ctaStickerUrl } from '@/lib/cta-stickers'
 import type { Tier } from '@/lib/tier'
@@ -570,6 +571,9 @@ export default function InstagramBurnerPage() {
       />
 
       <div className="max-w-6xl">
+        {/* Pulse — which hashtags are actually earning reach. Self-hides until
+            there's data. */}
+        <div className="mb-4"><PulsePanel /></div>
         {loading ? (
           <div className="flex items-center gap-2 text-sm text-[#86868b] py-12 justify-center"><Loader2 size={14} className="animate-spin" /> Loading…</div>
         ) : (
