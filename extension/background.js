@@ -2767,8 +2767,9 @@ async function scanStudioVideos() {
 // visible/aria text, and return a `debug` map of the controls they saw — so the
 // inevitable selector tuning is fast (same philosophy as the schedule read).
 //
-// NOT touched here: the notify-subscribers bell. MVP already sends
-// notifySubscribers=false through the Data API, so it's off by construction.
+// The notify-subscribers bell follows the user's Yes/No choice: the API publish
+// path passes it through to the Data API, and the Details pass below sets the
+// Studio "publish to subs feed & notify" checkbox to match.
 const STUDIO_VIDEO = (id, panel) => `https://studio.youtube.com/video/${id}/${panel}`
 
 // Shared, self-contained in-page toolkit. Injected functions can't reference
@@ -2971,10 +2972,10 @@ function studioFinishEndScreenInPage() {
 
 // Details page (/edit): the disclosures + feed settings the Data API can't set.
 // Sets paid-promotion ON, AI-use = No (genuine footage — the user owns this in
-// the opt-in copy), Allow embedding ON, and FORCES "Publish to subscriptions
-// feed and notify subscribers" OFF (YouTube defaults it ON — the user
-// explicitly wants no bell on this persistent setting too). Then Saves.
-function studioFinishDetailsInPage() {
+// the opt-in copy), Allow embedding ON, and sets "Publish to subscriptions feed
+// and notify subscribers" to the user's Yes/No choice (`notifySubscribers`) —
+// the same choice the API publish path uses. Then Saves.
+function studioFinishDetailsInPage(notifySubscribers) {
   return (async () => {
     const out = { step: 'details', ok: false, detail: '', actions: {}, debug: {} }
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -3050,8 +3051,9 @@ function studioFinishDetailsInPage() {
       // 2) Allow embedding ON
       setCheckbox(/allow embedding/i, true, 'embedding')
       await sleep(300)
-      // 3) Publish to subscriptions feed & notify subscribers — OFF (critical)
-      setCheckbox(/publish to subscriptions feed|notify subscribers/i, false, 'notify')
+      // 3) Publish to subscriptions feed & notify subscribers — match the user's
+      //    Yes/No choice (defaults OFF when not supplied).
+      setCheckbox(/publish to subscriptions feed|notify subscribers/i, notifySubscribers === true, 'notify')
       await sleep(300)
       // 4) AI use / altered content → "No"
       const noRadio = findCtrl(/\bai\b|alter|synthetic|realistic-looking|didn'?t actually occur|generate or edit/i, /^no$/i)
@@ -3103,7 +3105,7 @@ async function scanStudioFinish(videoId, opts, callerTabId) {
     await waitForTabLoad(tabId, 30000)
     if (want.details) {
       await goto('edit')
-      const r = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: studioFinishDetailsInPage })
+      const r = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: studioFinishDetailsInPage, args: [want.notifySubscribers === true] })
       steps.push((r && r[0] && r[0].result) || { step: 'details', ok: false, error: 'no-result' })
     }
     if (want.monetize || want.selfCert) {

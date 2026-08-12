@@ -960,12 +960,15 @@ export interface StudioFinishResult {
 
 /** Which Studio-only actions the user opted into. */
 export interface StudioFinishOpts {
-  /** Details page: paid-promotion ✓, AI-use = No, embedding on, and force
-   *  "Publish to subscriptions feed & notify subscribers" OFF. */
+  /** Details page: paid-promotion ✓, AI-use = No, embedding on, and set
+   *  "Publish to subscriptions feed & notify subscribers" to `notifySubscribers`. */
   details: boolean
   monetize: boolean
   selfCert: boolean
   endScreen: boolean
+  /** Whether SCOUT should leave the subscriber notification ON (true) or off
+   *  (false/undefined). Mirrors the API publish path's Yes/No choice. */
+  notifySubscribers?: boolean
 }
 
 /**
