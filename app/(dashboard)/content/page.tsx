@@ -952,6 +952,25 @@ const VideoCard = memo(function VideoCardImpl({
   )
   const [igStorySticker, setIgStorySticker] = useState<string | null>(null) // shown after Story publish
 
+  // Keep the "posted" pills in sync when the parent posts-map updates this row's
+  // `post` prop AFTER mount — a pin published via the preview modal, a Publish-All
+  // broadcast, or a background reload. The flags above use useState initializers,
+  // which run ONCE at mount, so without this the "Published · X" badge would flip
+  // on while the pill stayed grey ("change colors when posted.. always"). It also
+  // stops Publish-All re-offering an already-posted channel. One-way: only ever
+  // turns a flag ON, so an in-flight optimistic update is never clobbered.
+  useEffect(() => {
+    if (post?.facebookPostId) setFbPosted(true)
+    if (post?.pinterestPinId) setPinPosted(true)
+    if (post?.threadsPostId) setThPosted(true)
+    if (post?.linkedInPostId) setLiPosted(true)
+    if (post?.twitterPostId) setTwPosted(true)
+    if (post?.blueskyPostUri) setBsPosted(true)
+    if (post?.telegramMessageId) setTgPosted(true)
+    if (post?.instagramReelId) setIgReelPosted(true)
+    if (post?.instagramStoryId) setIgStoryPosted(true)
+  }, [post?.facebookPostId, post?.pinterestPinId, post?.threadsPostId, post?.linkedInPostId, post?.twitterPostId, post?.blueskyPostUri, post?.telegramMessageId, post?.instagramReelId, post?.instagramStoryId])
+
   /** Which social preview modal is open (null = none). Only one at a time. */
   const [previewPlatform, setPreviewPlatform] = useState<null | 'facebook' | 'threads' | 'twitter' | 'linkedin' | 'bluesky' | 'telegram'>(null)
 
