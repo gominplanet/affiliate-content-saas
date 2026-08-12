@@ -3373,6 +3373,85 @@ async function ytApplyDisclosures(videoId, opts) {
   }
 }
 
+// In-flight injection trigger: set the injection payload, then make Studio dirty
+// + Save so it fires its own (signed) metadata_update that our hook rewrites to
+// carry the disclosure fields. Dirtying is done by appending a space to the
+// description via execCommand (contenteditable bindings read the DOM on input,
+// so this registers where a checkbox click doesn't).
+function studioInjectSaveInPage(videoId, opts) {
+  return (async () => {
+    const out = { ok: false, step: 'inject', detail: '', debug: {} }
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+    const deepAll = () => { const acc = []; const w = (r) => { let e; try { e = r.querySelectorAll('*') } catch (x) { return } for (const el of e) { acc.push(el); if (el.shadowRoot) w(el.shadowRoot) } }; w(document); return acc }
+    const vis = (el) => { try { return !!(el.offsetParent || (el.getClientRects && el.getClientRects().length)) } catch (e) { return false } }
+    const visText = (el) => { try { const a = el.getAttribute && (el.getAttribute('aria-label') || el.getAttribute('title')); return (a || el.textContent || '').replace(/\s+/g, ' ').trim() } catch (e) { return '' } }
+    const isBtn = (el) => { const t = (el.tagName || '').toLowerCase(); return /button|ytcp-button/.test(t) || (el.getAttribute && el.getAttribute('role') === 'button') }
+    try {
+      // Arm the hook.
+      window.__mvpYtInject = { videoId, paidPromotion: !!opts.paidPromotion, aiDisclosure: !!opts.aiDisclosure, hasAlteredContent: !!opts.hasAlteredContent, monetize: !!opts.monetize }
+      window.__mvpYtInjected = 0
+      window.__mvpYtInjectResp = null
+      await sleep(1800)
+
+      // Dirty the description contenteditable so Save enables.
+      const editors = deepAll().filter((el) => el.isContentEditable && vis(el))
+      out.debug.editors = editors.length
+      const desc = editors.find((el) => /description/i.test((el.id || '') + ' ' + ((el.getAttribute && el.getAttribute('aria-label')) || ''))) || editors[1] || editors[0]
+      out.debug.foundDesc = !!desc
+      if (desc) {
+        desc.focus()
+        try { const sel = window.getSelection(); const rng = document.createRange(); rng.selectNodeContents(desc); rng.collapse(false); sel.removeAllRanges(); sel.addRange(rng) } catch (e) {}
+        try { document.execCommand('insertText', false, ' ') } catch (e) {}
+        try { desc.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: ' ' })) } catch (e) {}
+        await sleep(1400)
+      }
+
+      // Find an ENABLED Save button and click it.
+      let save = null, len = 1e9
+      for (const el of deepAll().filter(isBtn)) {
+        if (!vis(el)) continue
+        const tx = visText(el)
+        if (/^save$/i.test(tx) && tx.length < len) { const dis = (el.getAttribute && el.getAttribute('aria-disabled')) || (el.disabled ? 'true' : ''); if (dis !== 'true') { save = el; len = tx.length } }
+      }
+      out.debug.foundSave = !!save
+      if (save) {
+        try { save.scrollIntoView({ block: 'center' }) } catch (e) {}
+        try { save.click() } catch (e) {}
+        try {['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach((t) => save.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, view: window }))) } catch (e) {}
+      }
+
+      // Wait for the metadata_update to fire + resolve.
+      for (let i = 0; i < 25 && !window.__mvpYtInjectResp; i++) { await sleep(400) }
+      out.debug.injected = window.__mvpYtInjected || 0
+      out.debug.resp = window.__mvpYtInjectResp
+      const r = window.__mvpYtInjectResp
+      out.ok = !!(r && r.status >= 200 && r.status < 300 && (window.__mvpYtInjected > 0))
+      out.detail = out.ok ? 'Injected into Studio save ✓' : (!save ? 'Save button never enabled (dirty failed)' : !window.__mvpYtInjected ? 'Save fired but no metadata_update injected' : 'metadata_update ' + (r ? r.status : 'no-response'))
+      window.__mvpYtInject = null
+      return out
+    } catch (e) { window.__mvpYtInject = null; out.error = (e && e.message) || 'threw'; out.detail = 'threw'; return out }
+  })()
+}
+
+async function ytInjectDisclosures(videoId, opts, callerTabId) {
+  if (!videoId || !/^[a-zA-Z0-9_-]{6,20}$/.test(videoId)) return { ok: false, error: 'bad-video-id' }
+  let tabId = null
+  try {
+    // Foreground — contenteditable edits + Save are far more reliable focused.
+    const tab = await chrome.tabs.create({ url: STUDIO_VIDEO(videoId, 'edit'), active: true })
+    tabId = tab.id
+    await waitForTabLoad(tabId, 30000)
+    await new Promise((r) => setTimeout(r, 2500))
+    const r = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: studioInjectSaveInPage, args: [videoId, opts || {}] })
+    return (r && r[0] && r[0].result) || { ok: false, error: 'no-result' }
+  } catch (e) {
+    return { ok: false, error: (e && e.message) || 'inject-failed' }
+  } finally {
+    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+    if (callerTabId != null) { try { await chrome.tabs.update(callerTabId, { active: true }) } catch (e) {} }
+  }
+}
+
 async function scanStudioFinish(videoId, opts, callerTabId) {
   if (!videoId || !/^[a-zA-Z0-9_-]{6,20}$/.test(videoId)) return { ok: false, error: 'bad-video-id', steps: [] }
   const want = opts || { details: true, monetize: true, selfCert: true, endScreen: true }
@@ -3493,6 +3572,15 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'MVP_PING') {
     sendResponse({ ok: true, version: chrome.runtime.getManifest().version })
     return // sync response
+  }
+  if (msg.type === 'MVP_YT_INJECT_DISCLOSURES') {
+    // Inject disclosures into Studio's OWN signed metadata_update (dirty + Save).
+    const callerTabId = sender && sender.tab ? sender.tab.id : null
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 60000)
+    ytInjectDisclosures(msg.videoId, msg.opts || {}, callerTabId)
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true
   }
   if (msg.type === 'MVP_YT_APPLY_DISCLOSURES') {
     // Replay YouTube's own metadata_update to set paid-promotion / AI / monetize

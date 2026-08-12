@@ -1,28 +1,26 @@
 /* MVP Affiliate — SCOUT YouTube Studio network hook (MAIN world)
  *
- * WHY: driving YouTube Studio's disclosure controls (paid promotion, altered/AI
- * content) by clicking is a dead end — Studio is a Polymer app and an extension's
- * synthetic clicks are UNTRUSTED (isTrusted:false), so the app ticks the box
- * visually but ignores it in its data model, then Save persists the unchanged
- * model. Nothing sticks.
+ * Two jobs, both because extension-injected clicks are untrusted and Studio's
+ * Polymer app ignores them:
  *
- * The reliable way is the same one SCOUT uses for Amazon Creator Connections:
- * REPLAY the exact network request Studio fires when the user saves. But the
- * request shape (endpoint + InnerTube field names) is YouTube-internal and drifts,
- * so we LEARN it. This hook runs in the PAGE's own JS context (MAIN world),
- * patches fetch + XMLHttpRequest, and whenever Studio POSTs a video metadata
- * update it forwards {url, headers, body} to the content script (ISOLATED world)
- * via window.postMessage. The content script stores it as a reusable recipe that
- * the replay path swaps the video id + disclosure fields into.
+ *  1. CAPTURE — record the real metadata_update save request so we know its
+ *     exact InnerTube shape (endpoint + field names).
+ *  2. INJECT — when window.__mvpYtInject is set, merge the disclosure fields
+ *     (paid promotion / altered-content / monetization) INTO Studio's own
+ *     outgoing metadata_update before it's sent. Studio built and SIGNED that
+ *     request (fresh SAPISIDHASH + BotGuard attestation + full readMask), so our
+ *     fields ride along on a request YouTube actually honors — the thing a
+ *     hand-rolled replay can't do (YouTube 200s but silently drops it).
+ *
+ * A content script (yt-content.js, isolated world) injects this into the MAIN
+ * world and relays captures to chrome.storage.
  */
 ;(function () {
   if (window.__mvpYtHook) return
   window.__mvpYtHook = true
 
-  // A save is a POST to Studio's InnerTube that carries a video id — the
-  // metadata_update endpoint is the primary target, but we also keep any
-  // youtubei POST whose body references a video so a renamed endpoint is still
-  // captured. The content script + human do the real picking.
+  const isMetaUpdate = (url) => { try { return /\/youtubei\/v1\/video_manager\/metadata_update/.test(new URL(url, location.href).pathname) } catch (e) { return false } }
+
   const looksLikeSave = (url, method, body) => {
     try {
       if (!/^post$/i.test(String(method || ''))) return false
@@ -32,7 +30,6 @@
       if (!/\/youtubei\/v1\//.test(path)) return false
       const b = typeof body === 'string' ? body : ''
       if (/metadata_update|video_manager|update_video|monetization/.test(path)) return true
-      // Fallback: any youtubei POST that mentions a video id + a disclosure-ish field.
       return /encryptedvideoid|externalvideoid/i.test(b) && /paid|disclosure|sponsor|altered|synthetic|promotion/i.test(b)
     } catch (e) { return false }
   }
@@ -51,10 +48,25 @@
   const emit = (rec) => {
     try {
       window.postMessage({ __mvpYt: true, rec }, location.origin)
-      // Console breadcrumb so a save can be grabbed straight from DevTools too.
       // eslint-disable-next-line no-console
       console.log('[MVP-SCOUT] captured Studio save request:', rec.url)
     } catch (e) {}
+  }
+
+  // Merge the disclosure mutations into a metadata_update body, in place, for the
+  // targeted video only. Returns the (possibly rewritten) body string.
+  const injectDisclosures = (bodyStr) => {
+    const inj = window.__mvpYtInject
+    if (!inj || typeof bodyStr !== 'string') return bodyStr
+    try {
+      const b = JSON.parse(bodyStr)
+      if (!b || b.encryptedVideoId !== inj.videoId) return bodyStr
+      if (inj.paidPromotion) b.productPlacement = { newHasPaidProductPlacement: true, newShowPaidProductPlacementOverlay: true, newIsPaidProductPlacementSelfDeclaredDefinitive: true }
+      if (inj.aiDisclosure) b.alteredContent = { operation: 'MDE_ALTERED_CONTENT_UPDATE_OPERATION_SET', newCreatorDisclosedHasAlteredContent: inj.hasAlteredContent ? 'MDE_HAS_ALTERED_CONTENT_YES' : 'MDE_HAS_ALTERED_CONTENT_NO' }
+      if (inj.monetize) { b.monetizationSettings = { newMonetizeWithAds: true }; b.adSettings = { adBreaks: { newHasPrerolls: 'ENABLED', newHasMidrollAds: 'ENABLED', newHasPostrolls: 'ENABLED' }, autoAdSettings: 'AUTO_AD_SETTINGS_TYPE_OFF' } }
+      window.__mvpYtInjected = (window.__mvpYtInjected || 0) + 1
+      return JSON.stringify(b)
+    } catch (e) { return bodyStr }
   }
 
   const origFetch = window.fetch
@@ -63,9 +75,19 @@
       try {
         const url = typeof input === 'string' ? input : (input && input.url) || ''
         const method = (init && init.method) || (input && input.method) || 'GET'
-        const body = init && init.body
+        let body = init && init.body
         if (looksLikeSave(url, method, body)) {
           emit({ via: 'fetch', url, method, headers: headersToObj(init && init.headers), body: typeof body === 'string' ? body : null, ts: Date.now() })
+        }
+        // Injection: rewrite Studio's own metadata_update body in flight.
+        if (window.__mvpYtInject && isMetaUpdate(url) && /^post$/i.test(String(method)) && typeof body === 'string') {
+          const merged = injectDisclosures(body)
+          if (merged !== body) {
+            const newInit = Object.assign({}, init, { body: merged })
+            const p = origFetch.call(this, input, newInit)
+            p.then((resp) => { try { window.__mvpYtInjectResp = { status: resp.status, injected: true } } catch (e) {} }).catch(() => {})
+            return p
+          }
         }
       } catch (e) {}
       return origFetch.apply(this, arguments)
@@ -83,6 +105,14 @@
         const m = this.__mvpYt
         if (m && looksLikeSave(m.url, m.method, body)) {
           emit({ via: 'xhr', url: m.url, method: m.method, headers: m.headers, body: typeof body === 'string' ? body : null, ts: Date.now() })
+        }
+        // Injection: Studio sends metadata_update over XHR — rewrite the body.
+        if (m && window.__mvpYtInject && isMetaUpdate(m.url) && typeof body === 'string') {
+          const merged = injectDisclosures(body)
+          if (merged !== body) {
+            this.addEventListener('load', function () { try { window.__mvpYtInjectResp = { status: this.status, injected: true } } catch (e) {} })
+            return XS.apply(this, [merged])
+          }
         }
       } catch (e) {}
       return XS.apply(this, arguments)
