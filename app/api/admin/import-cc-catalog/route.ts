@@ -83,7 +83,19 @@ export async function GET() {
     // the Product Finder all draw from. /token doesn't cost product tokens.
     fetchKeepaTokenStatus(),
   ])
-  return NextResponse.json({ ok: true, staged, live, enriched, enrichable, hasStaged, keepa })
+  // Background-drain status (migration 251) so the UI can show "merging in the
+  // background" progress even with the tab closed. Best-effort; absent → null.
+  let drain: { active: boolean; phase?: string; upserted?: number; purged?: number } | null = null
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: f } = await (admin as any).from('system_flags').select('active,value').eq('key', 'cc_import_drain').maybeSingle()
+    if (f) {
+      const v = (f.value || {}) as { phase?: string; upserted?: number; purged?: number }
+      drain = { active: !!f.active, phase: v.phase, upserted: v.upserted, purged: v.purged }
+    }
+  } catch { /* pre-251 DB — no background status */ }
+
+  return NextResponse.json({ ok: true, staged, live, enriched, enrichable, hasStaged, keepa, drain })
 }
 
 export async function POST(request: Request) {
@@ -158,6 +170,30 @@ export async function POST(request: Request) {
           error: `Only ~${stagedCount.toLocaleString()} campaigns are staged, but the live catalog has ~${liveCount.toLocaleString()}. Merging now would remove roughly ${Math.max(0, liveCount - stagedCount).toLocaleString()} campaigns — including still-live ones if this isn't your complete CSV. Upload ALL your CSV files first, then merge. Only confirm if you're sure staging holds every current campaign.`,
         }, { status: 409 })
       }
+    }
+
+    // Background drain: instead of the tab driving the merge, arm a flag the
+    // /api/cron/drain-cc-import worker picks up and drains server-side (merge →
+    // purge) over successive one-minute ticks. The admin can close the tab. Same
+    // safety guards above still gate this. Requires migration 251 (value column).
+    if ((body as { mode?: string }).mode === 'background') {
+      try {
+        await (admin as unknown as { from: (t: string) => any }).from('system_flags').upsert( // eslint-disable-line @typescript-eslint/no-explicit-any
+          { key: 'cc_import_drain', active: true, value: { phase: 'merge', cursor: '', upserted: 0, purged: 0, startedAt: new Date().toISOString() }, updated_at: new Date().toISOString() },
+          { onConflict: 'key' },
+        )
+      } catch (e) {
+        return NextResponse.json({ error: toUserMessage(e, 'Could not start the background merge. Run migration 251, then try again.') }, { status: 500 })
+      }
+      return NextResponse.json({ ok: true, background: true, message: 'Merging in the background — you can close this tab. Progress shows on the counts.' })
+    }
+    // Stop a running background drain (admin cancels).
+    if ((body as { mode?: string }).mode === 'stop-background') {
+      try {
+        await (admin as unknown as { from: (t: string) => any }).from('system_flags') // eslint-disable-line @typescript-eslint/no-explicit-any
+          .update({ active: false, updated_at: new Date().toISOString() }).eq('key', 'cc_import_drain')
+      } catch { /* best-effort */ }
+      return NextResponse.json({ ok: true, backgroundStopped: true })
     }
 
     // Chunked, resumable merge (migration 202). Small batches so no single RPC
