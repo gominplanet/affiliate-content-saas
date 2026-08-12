@@ -36,7 +36,7 @@ function TagRow({ t, tone }: { t: TagStat; tone: 'up' | 'down' | 'neutral' }) {
   )
 }
 
-export default function PulsePanel() {
+export default function PulsePanel({ alwaysShow = false }: { alwaysShow?: boolean } = {}) {
   const [data, setData] = useState<Summary | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -54,10 +54,10 @@ export default function PulsePanel() {
   if (!data) return null
 
   const hasAnything = data.personalTop.length > 0 || data.personalBottom.length > 0 || data.pooled.length > 0
-  // Nothing at all yet and nothing pooled to show → stay out of the way.
-  if (data.collecting && !hasAnything) {
-    if (data.sampleCount === 0) return null
-  }
+  // On embedded surfaces, stay out of the way until there's something to show.
+  // The dedicated /pulse page passes alwaysShow so the "collecting" state is
+  // still visible at zero data.
+  if (!alwaysShow && data.collecting && !hasAnything && data.sampleCount === 0) return null
 
   return (
     <div className="rounded-2xl border overflow-hidden" style={{ borderColor: 'rgba(124,58,237,0.25)', background: 'rgba(124,58,237,0.04)' }}>
