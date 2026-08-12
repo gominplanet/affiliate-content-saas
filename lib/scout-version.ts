@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.16.1'
+export const SCOUT_LATEST_VERSION = '1.16.2'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Auto-finish reliability: retries the monetization/end-screen pages when Studio bounces or errors, ignores other extensions’ injected buttons, and no longer false-reports product tagging.'
+  'Auto-finish reliability: waits for the Details form to render and reliably expands the “Show more” disclosures, plus retries the monetization/end-screen pages when Studio bounces or errors.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
