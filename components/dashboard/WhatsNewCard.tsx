@@ -17,7 +17,7 @@ import Link from 'next/link'
 import { Sparkles, ArrowUpRight, X } from 'lucide-react'
 
 // Bump this whenever UPDATES changes — auto-opens the modal once for everyone.
-const RELEASE_ID = '2026-08-11'
+const RELEASE_ID = '2026-08-12'
 const STORAGE_KEY = 'mvp_whats_new_seen'
 
 interface Update {
@@ -32,50 +32,49 @@ const UPDATES: Update[] = [
   {
     badge: 'NEW',
     tone: '#7C3AED',
-    title: 'Comments on your blog',
-    desc: 'Turn on reader comments per post from Customize Blog. WordPress handles the spam (email required, first comments held for you to approve, Akismet if you enable it). When your newsletter is on, the comment form also shows an opt-in, so readers can join your list. Off by default.',
-    href: '/customize',
+    title: 'Pulse — hashtags that actually work',
+    desc: 'Pulse learns which hashtags earn the most reach, from your own posts and pooled across every MVP creator in your niche, then leads with those proven tags in every caption it writes. It sharpens the more you post. Find it under Grow.',
+    href: '/pulse',
   },
   {
-    badge: 'NEW',
+    badge: 'IMPROVED',
     tone: '#0a84ff',
-    title: 'See your plan usage at a glance',
-    desc: 'A usage bar now sits right under the search on every page. It shows exactly how much of each limit you have used this period (thumbnails, pins, Instagram, Facebook and more), so you always know where you stand before you run out.',
-  },
-  {
-    badge: 'IMPROVED',
-    tone: '#FF6B00',
-    title: 'Deal posts go out as designed cards',
-    desc: 'Quick posts from Deal Radar, Walmart and Wayward now attach a designed offer card (your product on a clean frame with a bold hook and your brand chip) instead of a plain product photo. Automatic, no extra steps.',
-    href: '/deal-radar',
+    title: 'Sharper hashtags on every post',
+    desc: 'Captions now build a deliberate tag mix: your brand, tags specific to the exact product, and broad reach tags matched to the real product category (grounded in Amazon’s own category tree), with spammy tags filtered out. So an RC car reaches RC fans, not random car enthusiasts.',
   },
   {
     badge: 'NEW',
-    tone: '#bc1888',
-    title: 'Guide pins show every product',
-    desc: 'For a buying guide or comparison, your Pinterest pin now lays out all the real products together on one designed board, pulled from the actual product photos. Not a guess, the real items.',
-    href: '/content',
-  },
-  {
-    badge: 'IMPROVED',
     tone: '#34c759',
-    title: 'Pins find the product from your link',
-    desc: 'Social Push pins now read the product straight from your post’s own affiliate link, so the design is grounded on the real product photo even when there is no linked video.',
-    href: '/content',
-  },
-  {
-    badge: 'IMPROVED',
-    tone: '#5856d6',
-    title: 'MVP Art Director, everywhere it counts',
-    desc: 'The Art Director now designs your graphics across the board: Pinterest pins, Instagram, Facebook, Stories and thumbnails. Product-accurate and on-brand every time, with no retailer logos or names.',
-    href: '/co-pilot',
+    title: 'Edit your Reel caption before you post',
+    desc: 'The Reel caption is now an editable box. Tweak the wording or add your own hashtags before you post, copy or download. Whatever you leave in is exactly what goes out.',
   },
   {
     badge: 'FIXED',
     tone: '#ff3b30',
-    title: 'Switching YouTube channels works',
-    desc: 'Disconnecting and reconnecting a different channel now works cleanly. No more old channel hanging around or pulling videos from the wrong account.',
-    href: '/connect-youtube',
+    title: 'Know when a post’s images didn’t make it',
+    desc: 'If in-article images don’t come through, the post now clearly flags it with a one-click “Retry images”, instead of quietly publishing without them. No more finding out on the live site.',
+    href: '/content',
+  },
+  {
+    badge: 'IMPROVED',
+    tone: '#FF6B00',
+    title: 'Shorts recover on their own',
+    desc: 'When YouTube blocks a clip download, Shorts now fall back to the reliable download path automatically and cache the video, so the rest of your clips from that video render instantly. Fewer dead-ends, less re-uploading.',
+    href: '/clip-factory',
+  },
+  {
+    badge: 'NEW',
+    tone: '#5856d6',
+    title: 'A guided start on your dashboard',
+    desc: 'New accounts get a simple checklist that points at the single next step to your first published post, so you always know what to do instead of facing every menu at once. It ticks itself off and disappears once you’re rolling.',
+    href: '/dashboard',
+  },
+  {
+    badge: 'FIXED',
+    tone: '#bc1888',
+    title: 'Posted items leave your to-do list',
+    desc: 'Once a post publishes, its video reliably moves out of “needs posting” and won’t bounce back a minute later. And Refresh Price and other one-tap actions no longer hang when your site is slow.',
+    href: '/content',
   },
 ]
 
