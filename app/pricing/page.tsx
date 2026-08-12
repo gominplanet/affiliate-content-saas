@@ -19,7 +19,7 @@ import { CheckoutButton } from './CheckoutButton'
 export const metadata: Metadata = { title: 'Pricing · MVP Affiliate' }
 
 type Plan = {
-  tier: 'trial' | 'creator' | 'studio' | 'pro'
+  tier: 'trial' | 'creator' | 'studio' | 'pro' | 'amazon'
   label: string
   price: number
   regularPrice: number
@@ -279,6 +279,54 @@ export default function PricingPage() {
         Telegram, and Pinterest. TikTok is built and switches on automatically, at no extra cost, once it
         completes its platform review.
       </p>
+
+      {/* ───────────────────────────────────────────────────────────────────
+          Amazon Influencer — a DIFFERENT buyer from the blog ladder above (no
+          blog, no YouTube). Its own card so it reads as an alternative track,
+          not a rung between Creator/Studio/Pro. Orange to match its in-app hub.
+          ─────────────────────────────────────────────────────────────── */}
+      <section className="mt-14 w-full max-w-5xl px-4">
+        <div className="rounded-2xl border p-6 sm:p-8" style={{ borderColor: 'rgba(234,88,12,0.35)', background: 'rgba(234,88,12,0.06)' }}>
+          <div className="flex flex-col lg:flex-row lg:items-center gap-6 lg:gap-10">
+            <div className="lg:w-[42%]">
+              <p className="text-xs font-semibold uppercase tracking-widest mb-2" style={{ color: '#C2410C' }}>
+                No blog? No YouTube? Start here
+              </p>
+              <h3 className="text-2xl font-bold tracking-tight text-[#1d1d1f] dark:text-[#f5f5f7]">Amazon Influencer</h3>
+              <div className="mt-2 flex items-baseline gap-2">
+                <span className="text-3xl font-extrabold text-[#1d1d1f] dark:text-[#f5f5f7]">$79</span>
+                <span className="text-sm text-[#86868b] dark:text-[#8e8e93]">/mo</span>
+                <span className="text-sm line-through text-[#b0b0b5]">$129</span>
+              </div>
+              <p className="mt-3 text-sm text-[#6e6e73] dark:text-[#ebebf0]">
+                Built for Amazon storefront creators. Turn any product into scroll-stopping thumbnails and
+                ready-to-post pins, Reels and Facebook designs, and land brand deals through Creator
+                Connections. No website, no video required.
+              </p>
+              <div className="mt-5 max-w-xs">
+                <CheckoutButton tier="amazon" highlight={true} salesPaused={SALES_PAUSED} ctaLabel="Get Amazon Influencer" />
+              </div>
+            </div>
+            <ul className="lg:w-[58%] grid sm:grid-cols-2 gap-x-6 gap-y-2.5 text-sm text-[#1d1d1f] dark:text-[#f5f5f7]">
+              {[
+                '200 Art Director product thumbnails / month',
+                '300 Pinterest + 150 Instagram + 45 Facebook designs / month',
+                '100 product / deal social posts, published for you',
+                'Creator Connections: land + manage 50 brand deals / month',
+                'Publish to Facebook, Pinterest & Instagram — all three at once',
+                'Your face on every design: 1 face model + 3 studio headshots',
+                'Amazon Product Research + live Deal Radar (browse)',
+                'Priority render queue + priority support',
+              ].map((f) => (
+                <li key={f} className="flex items-start gap-2">
+                  <CheckCircle size={15} className="mt-0.5 flex-shrink-0" style={{ color: '#C2410C' }} />
+                  <span>{f}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </section>
 
       {/* ───────────────────────────────────────────────────────────────────
           Bundle math — the killer pitch. Show prospects exactly what MVP

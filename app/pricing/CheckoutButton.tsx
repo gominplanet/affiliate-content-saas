@@ -39,7 +39,7 @@ declare global {
   }
 }
 
-type Tier = 'trial' | 'creator' | 'studio' | 'pro'
+type Tier = 'trial' | 'creator' | 'studio' | 'pro' | 'amazon'
 
 export function CheckoutButton({
   tier,
