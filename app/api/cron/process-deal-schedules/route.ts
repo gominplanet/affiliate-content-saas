@@ -46,12 +46,19 @@ export async function GET(request: Request) {
   const nowIso = new Date().toISOString()
 
   // Stuck-claim recovery: rows stuck in 'processing' for >5 min were claimed by a
-  // tick that died mid-publish. Flip them back to 'pending' so this tick retries.
+  // tick that died mid-publish. Reclaim them for another try — but with an
+  // attempt cap so a row whose publish reliably outlives the function's
+  // wall-clock (a hung scrape / Cloudinary stall) is terminal-failed instead of
+  // re-claimed → re-billed on every tick forever (migration 248). Best-effort:
+  // if the RPC/column isn't live yet, the tick still proceeds to the claim below.
   const fiveMinAgo = new Date(Date.now() - 5 * 60_000).toISOString()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (admin as any).from('deal_scheduled_posts')
-    .update({ status: 'pending', updated_at: nowIso })
-    .eq('status', 'processing').lt('claimed_at', fiveMinAgo)
+  const { error: reclaimErr } = await (admin as any).rpc('reclaim_stuck_scheduled_posts', {
+    p_table: 'deal_scheduled_posts',
+    p_stuck_before: fiveMinAgo,
+    p_max_attempts: 3,
+  })
+  if (reclaimErr) console.error('[cron/process-deal-schedules] reclaim failed', reclaimErr.message)
 
   // Atomic claim — flip due+pending rows to 'processing' in one update.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

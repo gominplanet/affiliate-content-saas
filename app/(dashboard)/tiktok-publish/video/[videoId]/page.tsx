@@ -113,24 +113,57 @@ export default function TikTokDirectVideoPublishPage() {
     return () => { cancelled = true }
   }, [videoId])
 
+  // TikTok can leave a job in PROCESSING_DOWNLOAD forever when it can't pull the
+  // video, so the status endpoint returns 'processing' indefinitely. Cap the
+  // poll on a wall-clock deadline and a run of failed checks so the spinner
+  // resolves to an actionable 'failed' state instead of spinning forever.
   useEffect(() => {
     if (!publishId || publishStatus === 'published' || publishStatus === 'failed') return
+    const MAX_TICKS = 84            // ~7 min at 5s (banner promises 1-3 min)
+    const MAX_ERR_STREAK = 4        // ~20s of consecutive failed status checks
+    let ticks = 0
+    let errStreak = 0
+    let settled = false
     const tick = async () => {
+      ticks++
       try {
         const res = await fetch(`/api/blog/tiktok-post/video/status?videoId=${encodeURIComponent(videoId!)}`)
         const json = await res.json()
         if (!res.ok) {
-          setPublishError(json.error || 'Status check failed.')
+          errStreak++
+          if (errStreak >= MAX_ERR_STREAK) {
+            settled = true
+            setPublishStatus('failed')
+            setPublishError(json.error || 'TikTok never confirmed the post. Open the TikTok app to check, or try posting again.')
+          } else {
+            setPublishError(json.error || 'Status check failed — retrying.')
+          }
           return
         }
+        errStreak = 0
         if (json.status === 'published') {
+          settled = true
           setPublishStatus('published')
           setShareUrl(json.shareUrl ?? null)
         } else if (json.status === 'failed') {
+          settled = true
           setPublishStatus('failed')
           setPublishError(json.errorMessage || 'TikTok rejected the post.')
         }
-      } catch { /* one tick missed; next tick covers it */ }
+      } catch {
+        errStreak++
+        if (errStreak >= MAX_ERR_STREAK) {
+          settled = true
+          setPublishStatus('failed')
+          setPublishError('Lost connection while checking the post status. Open the TikTok app to confirm it went out.')
+        }
+      } finally {
+        if (!settled && ticks >= MAX_TICKS) {
+          settled = true
+          setPublishStatus('failed')
+          setPublishError('TikTok is still processing after several minutes — it may have stalled pulling the video. Check the TikTok app; if nothing appears, post again.')
+        }
+      }
     }
     const id = setInterval(tick, 5000)
     void tick()
