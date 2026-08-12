@@ -1678,7 +1678,14 @@ const VideoCard = memo(function VideoCardImpl({
                   label="Instagram" postedLabel={igReelPosted && igStoryPosted ? 'On Instagram' : igReelPosted ? 'Reel posted' : 'Story posted'}
                   posted={igReelPosted || igStoryPosted}
                   loading={igPosting}
-                  onClick={() => setIgModalOpen(true)}
+                  onClick={() => {
+                    // Same Clip Factory popup as TikTok — plan, render 9:16 with
+                    // captions / split-screen, add the CTA overlay, then post as
+                    // a Reel. Falls back to the classic IG composer only when
+                    // there's no source YouTube video to clip from.
+                    if (video.youtube_video_id) setShortsMakerOpen(true)
+                    else setIgModalOpen(true)
+                  }}
                   locked={!tierAllowsSocial(userTier, 'instagram')}
                 />
               )}
