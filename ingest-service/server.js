@@ -75,6 +75,9 @@ if (!SECRET) {
 // fits in a single var.
 const COOKIES_FILE = path.join(os.tmpdir(), 'yt-cookies.txt')
 let cookiesReady = false
+// When the cookies file was last written (boot load or a live SCOUT push), so
+// /health can show freshness and the app can auto-refresh before they go stale.
+let cookiesUpdatedAt = null
 
 // Decode a base64 (optionally gzip-compressed) blob to utf8 text. gzip is
 // auto-detected from its magic bytes (0x1f 0x8b), so a plain OR gzipped base64
@@ -109,6 +112,7 @@ async function loadCookies() {
         ? zlib.gunzipSync(buf).toString('utf8') : buf.toString('utf8')
       fs.writeFileSync(COOKIES_FILE, text)
       cookiesReady = true
+      cookiesUpdatedAt = Date.now()
       console.log(`yt-dlp cookies loaded from URL (${text.split('\n').filter(Boolean).length} lines)`)
       return
     } catch (e) {
@@ -121,6 +125,7 @@ async function loadCookies() {
       const text = decodeCookieBlob(b64)
       fs.writeFileSync(COOKIES_FILE, text)
       cookiesReady = true
+      cookiesUpdatedAt = Date.now()
       console.log(`yt-dlp cookies loaded (${text.split('\n').filter(Boolean).length} lines)`)
       return
     } catch (e) {
@@ -177,9 +182,38 @@ async function selfUpdateYtDlp() {
 }
 
 const app = express()
-app.use(express.json())
+app.use(express.json({ limit: '6mb' })) // cookies.txt pushes can be a few hundred KB
 
-app.get('/health', (_req, res) => res.json({ ok: true, cookies: cookiesReady, ytDlp: ytDlpVersion, ytDlpChannel: YT_DLP_CHANNEL, potProvider: !!POT_BASE_URL, build: BUILD }))
+app.get('/health', (_req, res) => res.json({ ok: true, cookies: cookiesReady, cookiesUpdatedAt, proxy: !!PROXY, ytDlp: ytDlpVersion, ytDlpChannel: YT_DLP_CHANNEL, potProvider: !!POT_BASE_URL, build: BUILD }))
+
+// Hot-swap the yt-dlp cookies at runtime — SCOUT reads the operator's fresh
+// youtube.com/google.com cookies in-browser and pushes them here (via the MVP
+// app, which holds the secret), so they never go stale without a redeploy or a
+// manual export. Secret-guarded like every other route.
+app.post('/cookies', (req, res) => {
+  if (!SECRET || req.get('x-ingest-secret') !== SECRET) return res.status(401).json({ error: 'unauthorized' })
+  try {
+    const b = req.body || {}
+    let text = ''
+    if (typeof b.cookiesB64 === 'string' && b.cookiesB64) text = decodeCookieBlob(b.cookiesB64)
+    else if (typeof b.cookies === 'string' && b.cookies) text = b.cookies
+    text = String(text || '').trim()
+    // Must look like a real cookies.txt with YouTube/Google auth lines.
+    if (!text || !/(^|\.)((youtube|google)\.com)\b/im.test(text)) {
+      return res.status(400).json({ error: 'no valid youtube/google cookies in payload' })
+    }
+    // yt-dlp wants the Netscape header; add it if SCOUT didn't.
+    if (!/^# (Netscape|HTTP Cookie File)/i.test(text)) text = '# Netscape HTTP Cookie File\n' + text
+    fs.writeFileSync(COOKIES_FILE, text + '\n')
+    cookiesReady = true
+    cookiesUpdatedAt = Date.now()
+    const lines = text.split('\n').filter((l) => l && !l.startsWith('#')).length
+    console.log(`yt-dlp cookies hot-updated via push (${lines} cookie lines)`)
+    res.json({ ok: true, lines, cookiesUpdatedAt })
+  } catch (e) {
+    res.status(500).json({ error: (e && e.message) || 'cookie update failed' })
+  }
+})
 
 function ytDlp(args) {
   // Every yt-dlp call gets: proxy (if set) + cookies (if set) + alternate
