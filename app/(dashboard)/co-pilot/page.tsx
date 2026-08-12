@@ -3248,6 +3248,10 @@ export default function StudioPage() {
   const [hasGeniuslink, setHasGeniuslink] = useState(false)
   const [userTier, setUserTier] = useState<Tier>('trial')
   const [playlists, setPlaylists] = useState<Array<{ id: string; title: string }>>([])
+  // Admin-only: read back the YouTube Studio save requests SCOUT captured, to
+  // learn the real InnerTube disclosure/monetization/tag-product request shapes.
+  const [ytRecipes, setYtRecipes] = useState<YtSaveRecipe[] | null>(null)
+  const [ytRecipeLoading, setYtRecipeLoading] = useState(false)
   // Pagination — single cursor. When non-null, more drafts can be fetched
   // via "Load more". When null, we've walked the entire uploads playlist.
   const [nextPageToken, setNextPageToken] = useState<string | undefined>(undefined)
@@ -3596,6 +3600,31 @@ export default function StudioPage() {
         subtitle="Generate titles, descriptions, tags, hashtags and thumbnails for any video, then push it all back to YouTube in one click."
         media={<HeroVideo videoId={WALKTHROUGH_ID} title="YouTube Co-Pilot walkthrough" />}
       />
+
+      {/* ADMIN dev tool: read back the Studio save requests SCOUT captured
+          (yt-hook), so the real InnerTube request shape can be handed over to
+          build the disclosure/monetization/tag-product replay. Always visible
+          for admins so it doesn't require pushing a video first. */}
+      {userTier === 'admin' && (
+        <div className="mb-4 rounded-xl border border-dashed border-[#7C3AED]/30 bg-[#7C3AED]/5 px-4 py-3 flex flex-col gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-bold text-[#7C3AED]">Dev · Studio save capture</span>
+            <button
+              onClick={async () => { setYtRecipeLoading(true); try { setYtRecipes(await requestYtSaveRecipes()) } finally { setYtRecipeLoading(false) } }}
+              disabled={ytRecipeLoading}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold text-white bg-[#7C3AED] hover:bg-[#6d28d9] disabled:opacity-50"
+            >
+              {ytRecipeLoading ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />} Load captured Studio save
+            </button>
+            <span className="text-[10px] text-[#86868b]">In Studio: change paid-promotion / AI / monetization / tag-product on a test draft, Save, then load here.</span>
+          </div>
+          {ytRecipes && (
+            ytRecipes.length === 0
+              ? <p className="text-[11px] text-[#86868b]">Nothing captured yet. Make sure SCOUT 1.16.5+ is loaded, then change + Save a field in YouTube Studio and load again.</p>
+              : <pre className="text-[9px] leading-snug text-[#6e6e73] dark:text-[#a1a1a6] bg-black/5 dark:bg-white/5 rounded p-2 overflow-auto whitespace-pre-wrap break-words max-h-72">{JSON.stringify(ytRecipes, null, 1)}</pre>
+          )}
+        </div>
+      )}
 
       {/* Top planning row — TWO columns: the month calendar takes 2/3 (left),
           and the right 1/3 stacks the Refresh control over the how-it-works
