@@ -741,18 +741,10 @@ export class WordPressService {
         signal: AbortSignal.timeout(90_000),
       })
 
-    // Body-auth proxy FIRST (plugin v1.0.69+): image uploads ride the SAME
-    // header-strip-proof, App-Password-independent path post writes already
-    // use. This fixes thumbnail-less posts on hosts that strip the
-    // Authorization header (Basic auth never reaches WP → 401) or where the
-    // App Password went stale (both the Basic and nonce fallbacks below depend
-    // on it, but the proxy authenticates with the separate posting key). On an
-    // older plugin or if the proxy can't handle it, this returns null and we
-    // fall through to the legacy Basic-auth + nonce flow.
-    if (this.apiToken) {
-      const viaProxy = await this.tryProxyMediaUpload(buffer, filename, contentType)
-      if (viaProxy) return viaProxy
-    }
+    // NOTE: the body-auth proxy path is URL-based now (see uploadImageFromUrl →
+    // tryProxyMediaUploadFromUrl). This buffer path is the legacy Basic+nonce
+    // upload, used only when the caller has raw bytes and no source URL, or when
+    // the proxy URL-fetch missed.
 
     // Pace media uploads alongside post writes — they hit /wp/v2/media on the
     // same host and add to the burst a WAF rate-limiter counts. (mediaUpload
@@ -782,15 +774,17 @@ export class WordPressService {
     return parseWpJson<WPMediaResponse>(res)
   }
 
-  /** Upload an image through the body-auth proxy (plugin v1.0.69+): the bytes
-   *  ride in a base64 JSON field, so no Authorization header and no App
-   *  Password is involved — the proxy authenticates with the posting key and
-   *  creates the attachment as the site admin. Returns null (→ caller falls
-   *  back to Basic+nonce) whenever the proxy can't do it: no posting key, plugin
-   *  too old (no media handler → dispatches an empty /wp/v2/media call that
-   *  errors without an id), a WAF/HTML challenge, or a bad token. */
-  private async tryProxyMediaUpload(buffer: Buffer, filename: string, contentType: string): Promise<WPMediaResponse | null> {
-    if (!this.apiToken) return null
+  /** Upload an image through the body-auth proxy (plugin v1.0.87+): we hand the
+   *  proxy the image's public URL and the site downloads it itself, so no
+   *  Authorization header, no App Password, and no image bytes ride inline (the
+   *  base64 transfer was dropped in v1.0.87 — it made host malware scanners flag
+   *  the plugin as a false positive). The proxy authenticates with the posting
+   *  key and creates the attachment as the site admin. Returns null (→ caller
+   *  falls back to Basic+nonce) whenever the proxy can't do it: no posting key,
+   *  a plugin too old to fetch URLs (returns a non-id error), a WAF/HTML
+   *  challenge, or a bad token. */
+  private async tryProxyMediaUploadFromUrl(imageUrl: string, filename: string): Promise<WPMediaResponse | null> {
+    if (!this.apiToken || !/^https:\/\//i.test(imageUrl)) return null
     await paceWrite(this.siteUrl)
     try {
       const res = await fetch(`${this.siteUrl}/wp-json/affiliateos/v1/proxy`, {
@@ -803,7 +797,7 @@ export class WordPressService {
           token: this.apiToken,
           method: 'POST',
           path: '/wp/v2/media',
-          media: { filename, content_type: contentType, data: buffer.toString('base64') },
+          media: { filename, url: imageUrl },
         }),
         signal: AbortSignal.timeout(90_000),
       })
@@ -811,9 +805,9 @@ export class WordPressService {
       const ct = res.headers.get('content-type') || ''
       if (!ct.includes('application/json')) return null
       const data = await res.json() as WPMediaResponse
-      // Older plugins ignore `media`, dispatch an empty POST /wp/v2/media, and
-      // return an error object with no id — treat a missing numeric id as a
-      // miss so we fall back to the legacy path.
+      // An older plugin (base64-era or pre-media) ignores `url`, dispatches an
+      // empty POST /wp/v2/media, and returns an error with no id — treat a
+      // missing numeric id as a miss so we fall back to the legacy path.
       return (data && typeof (data as { id?: number }).id === 'number') ? data : null
     } catch {
       return null
@@ -825,6 +819,15 @@ export class WordPressService {
   }
 
   async uploadImageFromUrl(imageUrl: string, filename: string): Promise<WPMediaResponse> {
+    // Body-auth proxy FIRST (plugin v1.0.87+): hand the site the image URL and
+    // it downloads + attaches it itself. Header-strip-proof + App-Password-
+    // independent (authenticates with the posting key), which fixes thumbnail-
+    // less posts on hosts that strip Authorization or where the App Password
+    // went stale. Returns null on an older plugin / WAF / bad token → we fall
+    // through to fetching the bytes and the legacy Basic+nonce upload below.
+    const viaProxy = await this.tryProxyMediaUploadFromUrl(imageUrl, filename)
+    if (viaProxy) return viaProxy
+
     // 30s timeout on the source-side fetch (YouTube thumb / fal CDN /
     // Supabase Storage URL). Without it, a slow upstream pinned the whole
     // /api/blog/generate route at its 300s max for 2026-06-08-reported
