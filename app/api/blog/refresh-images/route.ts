@@ -92,7 +92,11 @@ export async function POST(request: Request) {
   if (!site) {
     return NextResponse.json({ error: 'WordPress not connected.' }, { status: 400 })
   }
-  const wpService = createWordPressService(site.wordpress_url ?? '', site.wordpress_username ?? '', site.wordpress_app_password ?? '')
+  // Pass the proxy secret (4th arg) so the updatePost write takes the header-safe
+  // proxy path — without it, proxy-only hosts (header-stripping WAF/LiteSpeed)
+  // fail the write AFTER the images were generated and billed. Matches every
+  // other write route.
+  const wpService = createWordPressService(site.wordpress_url ?? '', site.wordpress_username ?? '', site.wordpress_app_password ?? '', site.wordpress_api_token ?? undefined)
 
   // ── Resolve the product image (uploaded photo → Amazon → linked store page) ─
   let productTitle = (post.title as string) || ''

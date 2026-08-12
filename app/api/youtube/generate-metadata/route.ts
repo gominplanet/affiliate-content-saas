@@ -10,7 +10,7 @@ import { getOrCreateAmazonGeniuslink } from '@/lib/geniuslink-cache'
 import Anthropic from '@anthropic-ai/sdk'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { YoutubeTranscript } from 'youtube-transcript'
-import { recordAnthropicUsage } from '@/lib/ai-usage'
+import { recordAnthropicUsage, recordUsage } from '@/lib/ai-usage'
 import { TIERS, nextTierFor, normalizeTier, type Tier } from '@/lib/tier'
 import { spendGate } from '@/lib/ai-spend'
 import { getAuthAndOwner } from '@/lib/agency-auth'
@@ -314,7 +314,13 @@ async function titleStrategistAgent(
   const raw = await runAgent(anthropic, {
     model: 'claude-sonnet-4-6',
     maxTokens: 700,
-    feature: 'yt_meta_title_strategist',
+    // Cost-only feature. The CAP counter `yt_meta_title_strategist` must be
+    // written exactly once per SUCCESSFUL generation (recorded at the end of the
+    // route), not here — the strategist runs before the content/engagement
+    // agents, so counting the cap here charged failed generations and let the
+    // client's overload-retry double- and triple-count. This keeps the real
+    // token spend tracked without touching the cap.
+    feature: 'yt_meta_title_strategist_cost',
     system: 'You are a viral YouTube title strategist. You write titles that dominate search and maximise click-through rate. Your titles READ LIKE A REAL CREATOR WROTE THEM ABOUT THIS SPECIFIC PRODUCT — never templated, never generic. Return ONLY valid JSON.',
     user: `Write 5 viral YouTube title options for this ${isProduct ? 'product review' : 'video (not a product review — it is general content)'}.
 
@@ -1147,6 +1153,12 @@ export async function POST(request: Request) {
         console.warn('[generate-metadata] generated-marker upsert failed (non-fatal):', err instanceof Error ? err.message : String(err))
       }
     }
+
+    // Charge the monthly metadata cap EXACTLY ONCE, now that the full swarm
+    // succeeded. `yt_meta_title_strategist` is PRIMARY_FEATURE.metadata (the cap
+    // counter); writing it only on success means a failed generation never burns
+    // a unit and the client's retry-on-overload can't double-count.
+    recordUsage({ userId: user.id, tier, feature: 'yt_meta_title_strategist', model: 'claude-sonnet-4-6', input: 0, output: 0 })
 
     return NextResponse.json({
       ok: true,
