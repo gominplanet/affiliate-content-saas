@@ -2126,7 +2126,7 @@ async function handleGenerate(request: Request) {
     // 'pending' (retryable) rather than silently null. Best-effort.
     if (includeImages && savedPost?.id) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      try { await (supabase as any).from('blog_posts').update({ images_status: 'pending' }).eq('id', savedPost.id) } catch { /* non-fatal */ }
+      try { await (supabase as any).from('blog_posts').update({ images_status: 'pending', images_status_at: new Date().toISOString() }).eq('id', savedPost.id) } catch { /* non-fatal */ }
     }
 
     // ── User-supplied in-article images ───────────────────────────────────
@@ -2165,7 +2165,14 @@ async function handleGenerate(request: Request) {
             try { await (supabase as any).from('blog_posts').update({ content: finalContent, body_images_count: uploaded.length, images_status: uploaded.length > 0 ? 'ready' : 'failed' }).eq('id', savedPost.id) } catch { /* non-fatal */ }
           }
         }
-      } catch { /* non-fatal — the published text post stands */ }
+      } catch {
+        // The published text post stands, but the user's images didn't attach —
+        // write a terminal status so the row doesn't sit on 'pending' forever.
+        if (savedPost?.id) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          try { await (supabase as any).from('blog_posts').update({ images_status: 'failed' }).eq('id', savedPost.id) } catch { /* non-fatal */ }
+        }
+      }
     } else if (includeImages) {
       try {
         const falKey = process.env.FAL_KEY
@@ -2486,6 +2493,12 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             try { await (supabase as any).from('blog_posts').update({ body_images_count: uploaded.length, images_status: uploaded.length > 0 ? 'ready' : 'failed' }).eq('id', savedPost.id) } catch { /* non-fatal */ }
           }
+        } else if (savedPost?.id) {
+          // No FAL_KEY on the server — the image pass can't run. Write a terminal
+          // status so the row never sits on 'pending' forever (eternal "Images…"
+          // spinner). Best-effort.
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          try { await (supabase as any).from('blog_posts').update({ body_images_count: 0, images_status: 'failed' }).eq('id', savedPost.id) } catch { /* non-fatal */ }
         }
       } catch (e) {
         // Sentinel "user set 0 images" — already handled above (count

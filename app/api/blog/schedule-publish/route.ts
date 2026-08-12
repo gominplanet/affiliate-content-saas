@@ -292,6 +292,17 @@ export async function POST(request: Request) {
               .eq('id', blogPostId)
               .eq('user_id', user.id)
               .catch(() => { /* non-fatal */ })
+          } else {
+            // No WP credentials to flip the draft to 'future', and migration 103
+            // isn't applied so there's no MVP cron row to publish it either.
+            // Falling through would return ok while the post strands as a
+            // permanent draft and its social children fire at a 404 draft URL.
+            // Fail loudly so the user reconnects and retries instead.
+            console.error('[schedule-publish] degrade-to-wp-native: no WordPress credentials resolved')
+            return NextResponse.json(
+              { error: 'Could not resolve your WordPress connection to schedule this post. Reconnect WordPress under Setup → Integrations, then try again.' },
+              { status: 400 },
+            )
           }
         } catch (degradeErr) {
           console.error('[schedule-publish] degrade-to-wp-native failed:', degradeErr instanceof Error ? degradeErr.message : String(degradeErr))
