@@ -999,6 +999,31 @@ export async function requestStudioFinish(
   return { ok: !!resp.ok, steps: Array.isArray(resp.steps) ? resp.steps : [], error: resp.error }
 }
 
+export interface YtSaveRecipe {
+  via?: string
+  url: string
+  headerKeys?: string[]
+  headers?: Record<string, string>
+  body?: string
+  ts?: number
+}
+
+/**
+ * Read back the YouTube Studio "save" requests SCOUT captured (yt-hook), newest
+ * first. Used to LEARN the real InnerTube metadata_update shape (endpoint +
+ * disclosure field names) so the paid-promotion / AI-disclosure replay is exact
+ * rather than guessed. Returns [] when the extension isn't installed or nothing
+ * has been captured yet.
+ */
+export async function requestYtSaveRecipes(): Promise<YtSaveRecipe[]> {
+  if (!(await isExtensionAvailable())) return []
+  const resp = await sendToExtension<{ ok?: boolean; recipes?: YtSaveRecipe[]; error?: string }>(
+    { type: 'MVP_YT_RECIPE' },
+    8000,
+  )
+  return resp && resp.ok && Array.isArray(resp.recipes) ? resp.recipes : []
+}
+
 export interface VideoDownloadResult {
   ok: boolean
   /** The Short's MP4 as a data URL (data:video/mp4;base64,…). */

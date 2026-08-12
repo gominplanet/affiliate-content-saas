@@ -10,7 +10,7 @@ import HeroVideo from '@/components/layout/HeroVideo'
 import { CapReachedBanner } from '@/components/CapReachedBanner'
 import { useConfirm } from '@/components/ui/useConfirm'
 import { pickWeightedStyleIndex, OVERLAY_STYLES, drawHeadline, type HeadlinePosition, type FaceBox } from '@/lib/thumbnail-overlay'
-import { isExtensionAvailable, requestVideoFrames, requestAmazonProduct, requestVideoTranscript, requestStudioSchedule, requestStudioVideos, requestStudioFinish, type StudioFinishResult } from '@/lib/extension-frame'
+import { isExtensionAvailable, requestVideoFrames, requestAmazonProduct, requestVideoTranscript, requestStudioSchedule, requestStudioVideos, requestStudioFinish, requestYtSaveRecipes, type StudioFinishResult, type YtSaveRecipe } from '@/lib/extension-frame'
 import { SCOUT_STORE_LISTING_URL } from '@/lib/scout-version'
 import { effectiveTier } from '@/lib/view-as'
 import type { Tier } from '@/lib/tier'
@@ -549,6 +549,10 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
   const [finishDoTagProduct, setFinishDoTagProduct] = useState(true)
   const [finishRunning, setFinishRunning] = useState(false)
   const [finishResult, setFinishResult] = useState<StudioFinishResult | null>(null)
+  // Dev: captured YouTube Studio save requests (yt-hook) — used to learn the
+  // real InnerTube disclosure request shape for the replay build.
+  const [ytRecipes, setYtRecipes] = useState<YtSaveRecipe[] | null>(null)
+  const [ytRecipeLoading, setYtRecipeLoading] = useState(false)
   const [finishError, setFinishError] = useState<string | null>(null)
   const [generated, setGenerated] = useState<GeneratedMetadata | null>(null)
   const [agentInsights, setAgentInsights] = useState<AgentInsights | null>(null)
@@ -3049,6 +3053,28 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                         <Youtube size={11} /> Open this video on YouTube <ExternalLink size={10} />
                       </a>
                     </div>
+
+                    {/* DEV: learn the real Studio save request. Toggle paid
+                        promotion + altered-content on a video and Save in Studio
+                        (a real, trusted save) — SCOUT captures the InnerTube
+                        request. Click here to read it back and hand it over so
+                        the replay is built from the true payload. */}
+                    {userTier === 'admin' && extensionInstalled === true && (
+                      <div className="mt-1 border-t border-dashed border-[#86868b]/20 pt-2 flex flex-col gap-1.5">
+                        <button
+                          onClick={async () => { setYtRecipeLoading(true); try { setYtRecipes(await requestYtSaveRecipes()) } finally { setYtRecipeLoading(false) } }}
+                          disabled={ytRecipeLoading}
+                          className="inline-flex items-center gap-1.5 self-start px-2.5 py-1 rounded-lg text-[10px] font-semibold text-[#6e6e73] dark:text-[#a1a1a6] border border-[#86868b]/30 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50"
+                        >
+                          {ytRecipeLoading ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />} Dev: load captured Studio save
+                        </button>
+                        {ytRecipes && (
+                          ytRecipes.length === 0
+                            ? <p className="text-[10px] text-[#86868b]">Nothing captured yet. In YouTube Studio, toggle <strong>paid promotion</strong> + <strong>altered content</strong> on a video and click <strong>Save</strong>, then load again.</p>
+                            : <pre className="text-[9px] leading-snug text-[#6e6e73] dark:text-[#a1a1a6] bg-black/5 dark:bg-white/5 rounded p-2 overflow-auto whitespace-pre-wrap break-words max-h-56">{JSON.stringify(ytRecipes, null, 1)}</pre>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

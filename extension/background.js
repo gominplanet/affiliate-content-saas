@@ -3391,6 +3391,20 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     sendResponse({ ok: true, version: chrome.runtime.getManifest().version })
     return // sync response
   }
+  if (msg.type === 'MVP_YT_RECIPE') {
+    // Return the Studio save requests the yt-hook captured (newest first), so
+    // the co-pilot "Learn Studio save" flow can surface the real request shape
+    // we build the disclosure replay from. Truncate bodies so the message stays
+    // small.
+    try {
+      chrome.storage.local.get(['mvp_yt_recipes'], (o) => {
+        const list = Array.isArray(o && o.mvp_yt_recipes) ? o.mvp_yt_recipes : []
+        const trunc = (s, n) => { const t = typeof s === 'string' ? s : ''; return t.length > n ? t.slice(0, n) + `…(+${t.length - n})` : t }
+        sendResponse({ ok: true, recipes: list.map((r) => ({ via: r.via, url: r.url, headerKeys: Object.keys(r.headers || {}), headers: r.headers, body: trunc(r.body, 12000), ts: r.ts })) })
+      })
+    } catch (e) { sendResponse({ ok: false, error: e && e.message ? e.message : 'recipe-failed' }) }
+    return true // async (storage) response
+  }
   if (msg.type === 'MVP_AMZ_SCAN') {
     // With an ASIN → piggyback on OINK via the product page (the reliable path).
     // Without → legacy Manage Content scrape. Allow up to 2 minutes.
