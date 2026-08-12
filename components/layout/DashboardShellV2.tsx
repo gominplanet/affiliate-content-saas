@@ -22,7 +22,7 @@
 // commit once we're confident.
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, Fragment } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useTheme } from 'next-themes'
@@ -649,6 +649,24 @@ export default function DashboardShellV2({
     }] : []),
   ]
 
+  // Amazon-tier sidebar: pull their hub (Amazon Influencer) to the top, then a
+  // divider, then the rest of MVP — with a small "unlock" pill on the sections
+  // their plan doesn't include. Amazon ONLY; every other tier keeps the default
+  // order untouched.
+  const amazonView = effectiveTier === 'amazon'
+  // Section label → the tier that unlocks it. Shown as a pill (amazon view only)
+  // on sections this plan can't use. 'Create' is the blog/YouTube content area,
+  // which the Amazon Influencer plan intentionally excludes.
+  const AMAZON_LOCKED_SECTION: Record<string, string> = { Create: 'Creator+' }
+  const orderedGroups: NavGroupDef[] = (() => {
+    if (!amazonView) return NAV_GROUPS
+    const ai = NAV_GROUPS.find((g) => g.label === 'Amazon Influencer')
+    if (!ai) return NAV_GROUPS
+    const dash = NAV_GROUPS.find((g) => !g.label) // headerless Dashboard row stays on top
+    const rest = NAV_GROUPS.filter((g) => g !== ai && g !== dash)
+    return [dash, ai, ...rest].filter(Boolean) as NavGroupDef[]
+  })()
+
   // ── Active-route detection. Match by prefix so a child route still
   // highlights its parent (e.g. /admin/users/123 lights /admin/users).
   const isActive = useCallback((href: string) => {
@@ -795,9 +813,14 @@ export default function DashboardShellV2({
 
         {/* Nav groups */}
         <nav className="flex-1 px-2 flex flex-col gap-5 overflow-y-auto pb-3">
-          {NAV_GROUPS.map((group) => {
+          {orderedGroups.map((group) => {
             const visibleItems = group.items.filter((it) => it.gate !== false)
             if (visibleItems.length === 0) return null
+            // Amazon view: a labelled divider after their hub separates "your
+            // plan" from the rest of MVP.
+            const showDividerAfter = amazonView && group.label === 'Amazon Influencer'
+            // Amazon view: "unlock with X" pill on sections this plan can't use.
+            const lockPill = amazonView ? AMAZON_LOCKED_SECTION[group.label] : undefined
             // Per-section header identity (colour + icon), theme-aware, keyed by
             // label. group.accent/group.icon win if a group sets them explicitly.
             const palette = group.label ? SECTION_ACCENTS[group.label] : undefined
@@ -825,8 +848,8 @@ export default function DashboardShellV2({
             const collapsibleSection = isAdminGroup && !collapsed
             const sectionOpen = !collapsibleSection || adminOpen || pathname.startsWith('/admin')
             return (
+              <Fragment key={group.label || 'dashboard'}>
               <div
-                key={group.label}
                 className={cn(isCard && 'rounded-xl border p-2')}
                 style={cardStyle}
               >
@@ -855,6 +878,15 @@ export default function DashboardShellV2({
                     >
                       {headerIcon}
                       {group.label}
+                      {lockPill && (
+                        <span
+                          className="ml-auto text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
+                          title={`Included on ${lockPill.replace('+', ' and up')} plans`}
+                          style={{ background: hexToRgba(headerAccent || '#7C3AED', isDark ? 0.22 : 0.14), color: headerAccent || 'var(--text-faint)' }}
+                        >
+                          {lockPill}
+                        </span>
+                      )}
                     </p>
                   )
                 )}
@@ -871,6 +903,14 @@ export default function DashboardShellV2({
                   </div>
                 )}
               </div>
+              {showDividerAfter && (
+                <div className="flex items-center gap-2 px-1 pt-0.5">
+                  <span className="h-px flex-1" style={{ background: 'var(--border)' }} />
+                  <span className="text-[9px] uppercase tracking-[0.14em] font-semibold" style={{ color: 'var(--text-faint)' }}>More in MVP</span>
+                  <span className="h-px flex-1" style={{ background: 'var(--border)' }} />
+                </div>
+              )}
+              </Fragment>
             )
           })}
 
