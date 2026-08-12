@@ -72,6 +72,9 @@ export async function POST(request: NextRequest) {
       /** ISO 8601 timestamp. When set, video is scheduled (private until then). */
       publishAt?: string | null
       privacyStatus?: 'public' | 'unlisted' | 'private'
+      /** Allow embedding (status.embeddable). Passed explicitly so a status PUT
+       *  doesn't reset it — matters for the two-phase finish flow. */
+      embeddable?: boolean
     }
     if (!body.videoId) return NextResponse.json({ error: 'videoId required' }, { status: 400 })
 
@@ -147,6 +150,7 @@ export async function POST(request: NextRequest) {
       privacyStatus: body.privacyStatus,
       publishAt: body.publishAt ?? null,
       notifySubscribers: body.notifySubscribers,
+      embeddable: body.embeddable,
     })
 
     // 3. Playlist add — independent, run in parallel with status.

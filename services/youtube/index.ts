@@ -747,10 +747,14 @@ export class YouTubeOAuthService {
       privacyStatus?: 'public' | 'unlisted' | 'private'
       publishAt?: string | null
       notifySubscribers?: boolean
+      /** Allow embedding. Set explicitly so a `part=status` PUT can't silently
+       *  reset it to YouTube's default (the omitted-field reset gotcha). */
+      embeddable?: boolean
     },
   ): Promise<void> {
     const status: Record<string, unknown> = {}
     if (typeof args.madeForKids === 'boolean') status.selfDeclaredMadeForKids = args.madeForKids
+    if (typeof args.embeddable === 'boolean') status.embeddable = args.embeddable
 
     if (args.publishAt) {
       // YouTube requires privacyStatus=private to schedule.
