@@ -2849,6 +2849,17 @@ function studioFinishMonetizeInPage() {
       out.debug.bounced = redirectedAway || dashboardSignal
       out.debug.yppInvite = yppInvite
 
+      // Cold-loading /monetization can also drop you on YouTube's own "something
+      // went wrong" page (Retry button). Click it and wait for recovery.
+      const errPage = () => /something went wrong/i.test((document.body ? document.body.innerText : '').toLowerCase())
+      for (let tries = 0; tries < 3 && errPage(); tries++) {
+        out.debug.hitErrorPage = true
+        const rb = find([/^retry$/i, /^try again$/i, /^reload$/i])
+        out.debug.retryText = rb ? visText(rb) : null
+        if (rb) { click(rb); await sleep(2500) } else break
+      }
+      if (errPage()) { out.needsReload = true; out.detail = 'Monetization page errored — retrying'; out.debug.controlsAfter = sample(); return out }
+
       // 1) Open the Monetization on/off dropdown (currently reads "Off") and
       //    choose the "On" option.
       const trigger = find([/monetization (is )?off/i, /^off$/i, /turn on monetization/i, /watch page ads/i])
@@ -2865,7 +2876,10 @@ function studioFinishMonetizeInPage() {
           out.needsReload = true
           out.detail = 'Monetization page bounced to the dashboard — retrying'
         } else {
-          out.detail = 'Monetization toggle not found — see debug'
+          // Shell loaded but the On/Off toggle never rendered (cold-load race) —
+          // retry the whole panel before giving up.
+          out.needsReload = true
+          out.detail = 'Monetization controls didn’t render — retrying'
         }
         return out
       }
@@ -3077,13 +3091,42 @@ function studioFinishDetailsInPage(notifySubscribers) {
     const snapshot = () => Array.from(new Set(deepAll().filter(isCtrl).map((el) => `${visText(el).slice(0, 40)}=${isChecked(el) ? 'on' : 'off'}`))).slice(0, 60)
 
     try {
-      await sleep(2200)
+      await sleep(1800)
       out.debug.url = location.href.slice(0, 160)
-      // Embedding + subs-feed live under "Show more" — expand it first.
-      const showMore = deepAll().filter(isBtn).find((el) => /show more/i.test(visText(el)))
-      out.debug.showMore = !!showMore
-      if (showMore) { click(showMore); await sleep(1200) }
+
+      // Wait for the details form to actually render. Private / first-edit
+      // videos render slower, and scanning too early is what made paid-promotion
+      // etc. come back "not-found". Poll for a known control before touching it.
+      const waitCtrl = async (re, ms) => { const end = Date.now() + ms; while (Date.now() < end) { if (findCtrl(re)) return true; await sleep(300) } return false }
+      const formReady = await waitCtrl(/made for kids|paid promotion|allow embedding|restrict my video/i, 12000)
+      out.debug.formReady = formReady
+
+      // Paid promotion, embedding, subs-feed and AI-use live under "Show more".
+      // It lazy-renders and is often a plain div (not a <button>), so match the
+      // leaf whose whole text is exactly "Show more", scroll it in, click, and
+      // retry until a hidden control (paid promotion) actually appears.
+      const findShowMore = () => deepAll().find((el) => /^show more$/i.test((el.textContent || '').replace(/\s+/g, ' ').trim()))
+      const paidThere = () => !!findCtrl(/paid promotion|product placement|sponsorship/i)
+      let expanded = paidThere()
+      for (let tries = 0; tries < 4 && !expanded; tries++) {
+        const sm = findShowMore()
+        out.debug['showMore' + tries] = !!sm
+        if (sm) { try { sm.scrollIntoView({ block: 'center' }) } catch (e) {} click(sm); await sleep(1500) }
+        else { await sleep(1000) }
+        expanded = paidThere()
+      }
+      out.debug.expanded = expanded
       out.debug.controlsBefore = snapshot()
+
+      // If the form or its disclosures never rendered, this is the cold-load
+      // race — ask the orchestrator to reload and run the whole step again
+      // rather than saving a half-empty Details tab.
+      if (!formReady || !expanded) {
+        out.needsReload = true
+        out.detail = !formReady ? 'Details form didn’t render — retrying' : 'Couldn’t open the “Show more” disclosures — retrying'
+        out.debug.controlsAfter = snapshot()
+        return out
+      }
 
       // 1) Paid promotion ON
       setCheckbox(/paid promotion|product placement|sponsorship|endorsement/i, true, 'paidPromotion')
@@ -3237,9 +3280,7 @@ async function scanStudioFinish(videoId, opts, callerTabId) {
     tabId = tab.id
     await waitForTabLoad(tabId, 30000)
     if (want.details) {
-      await goto('edit')
-      const r = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: studioFinishDetailsInPage, args: [want.notifySubscribers === true] })
-      steps.push((r && r[0] && r[0].result) || { step: 'details', ok: false, error: 'no-result' })
+      steps.push(await runPanel('edit', studioFinishDetailsInPage, [want.notifySubscribers === true], 'details'))
     }
     if (want.tagProduct && want.productUrl) {
       // Product tagging lives on the video's edit page (YouTube Shopping only).
