@@ -546,6 +546,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
   const [finishDoDetails, setFinishDoDetails] = useState(true)
   const [finishDoMonetize, setFinishDoMonetize] = useState(true)
   const [finishDoEndScreen, setFinishDoEndScreen] = useState(true)
+  const [finishDoTagProduct, setFinishDoTagProduct] = useState(true)
   const [finishRunning, setFinishRunning] = useState(false)
   const [finishResult, setFinishResult] = useState<StudioFinishResult | null>(null)
   const [finishError, setFinishError] = useState<string | null>(null)
@@ -1162,7 +1163,10 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
 
   async function runStudioFinish() {
     if (!video.youtubeVideoId || !finishOptIn) return
-    if (!finishDoDetails && !finishDoMonetize && !finishDoEndScreen) return
+    // Product tagging only fires when we actually have a product to tag.
+    const tagUrl = video.detectedAsin ? `https://www.amazon.com/dp/${video.detectedAsin}` : ''
+    const doTag = finishDoTagProduct && !!tagUrl
+    if (!finishDoDetails && !finishDoMonetize && !finishDoEndScreen && !doTag) return
     setFinishRunning(true)
     setFinishError(null)
     setFinishResult(null)
@@ -1176,6 +1180,8 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
         // Honor the same Yes/No the API path uses, so SCOUT's Details pass sets
         // the "publish to subs feed & notify" box to match instead of forcing off.
         notifySubscribers: proSettings.notifySubscribers,
+        // Tag the reviewed product (YouTube Shopping creators only).
+        ...(doTag ? { tagProduct: true, productUrl: tagUrl } : {}),
       })
       setFinishResult(res)
       if (!res.ok && res.error) {
@@ -2851,12 +2857,18 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                             <input type="checkbox" checked={finishDoEndScreen} disabled={finishRunning} onChange={e => setFinishDoEndScreen(e.target.checked)} className="mt-0.5 flex-shrink-0" />
                             <span>Copy the <strong>end screen</strong> from your last video</span>
                           </label>
+                          {video.detectedAsin && (
+                            <label className="flex items-start gap-2 cursor-pointer text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7]">
+                              <input type="checkbox" checked={finishDoTagProduct} disabled={finishRunning} onChange={e => setFinishDoTagProduct(e.target.checked)} className="mt-0.5 flex-shrink-0" />
+                              <span><strong>Tag the reviewed product</strong> on the video <span className="text-[#86868b]">— uncheck if you&apos;re not in YouTube Shopping</span></span>
+                            </label>
+                          )}
                         </div>
 
                         <button
                           onClick={runStudioFinish}
-                          disabled={!finishOptIn || finishRunning || (!finishDoDetails && !finishDoMonetize && !finishDoEndScreen)}
-                          title={!finishOptIn ? 'Tick the box above to allow this' : (!finishDoDetails && !finishDoMonetize && !finishDoEndScreen) ? 'Pick at least one action' : undefined}
+                          disabled={!finishOptIn || finishRunning || (!finishDoDetails && !finishDoMonetize && !finishDoEndScreen && !(finishDoTagProduct && !!video.detectedAsin))}
+                          title={!finishOptIn ? 'Tick the box above to allow this' : (!finishDoDetails && !finishDoMonetize && !finishDoEndScreen && !(finishDoTagProduct && !!video.detectedAsin)) ? 'Pick at least one action' : undefined}
                           className="inline-flex items-center justify-center gap-1.5 self-start px-3 py-1.5 rounded-lg text-[11px] font-semibold text-white bg-[#7C3AED] hover:bg-[#6d28d9] disabled:opacity-50 transition-colors"
                         >
                           {finishRunning
