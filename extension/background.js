@@ -3270,6 +3270,89 @@ function studioFinishTagProductInPage(productUrl) {
   })()
 }
 
+// ── Disclosure replay via YouTube's OWN internal API ─────────────────────────
+// Runs in the Studio page's MAIN world so it can read fresh INNERTUBE context +
+// compute a fresh SAPISIDHASH from the user's cookie, then POST the real
+// metadata_update with the disclosure fields set (shapes learned from a captured
+// save). This sidesteps the untrusted-click problem entirely. First pass sends
+// WITHOUT the BotGuard attestationResponseData — the response tells us whether
+// YouTube enforces it (if so we fall back to in-flight injection).
+function studioApplyDisclosuresInPage(videoId, opts) {
+  return (async () => {
+    const out = { ok: false, step: 'apidisclosures', detail: '', debug: {} }
+    try {
+      const getCookie = (n) => { const m = document.cookie.match(new RegExp('(^|; )' + n + '=([^;]+)')); return m ? decodeURIComponent(m[2]) : '' }
+      const sapisid = getCookie('SAPISID') || getCookie('__Secure-3PAPISID')
+      out.debug.hasSapisid = !!sapisid
+      const cfg = window.ytcfg
+      const get = (k) => { try { return cfg && cfg.get ? cfg.get(k) : (cfg && cfg.data_ ? cfg.data_[k] : undefined) } catch (e) { return undefined } }
+      const ictx = get('INNERTUBE_CONTEXT') || {}
+      const clientName = get('INNERTUBE_CONTEXT_CLIENT_NAME') || (ictx.client && ictx.client.clientName) || 62
+      const clientVersion = get('INNERTUBE_CONTEXT_CLIENT_VERSION') || (ictx.client && ictx.client.clientVersion) || ''
+      const visitor = get('VISITOR_DATA') || (ictx.client && ictx.client.visitorData) || ''
+      const delegated = get('DELEGATED_SESSION_ID') || ''
+      const sessionIndex = String(get('SESSION_INDEX') || '0')
+      out.debug.clientVersion = String(clientVersion)
+      out.debug.hasCtx = !!(ictx && ictx.client)
+      out.debug.hasDelegated = !!delegated
+      if (!sapisid || !ictx.client) { out.detail = 'missing auth/context on page'; return out }
+
+      // Fresh SAPISIDHASH (matches Studio's ts_hash_u triple-hash format).
+      const origin = 'https://studio.youtube.com'
+      const ts = Math.floor(Date.now() / 1000)
+      const enc = new TextEncoder().encode(ts + ' ' + sapisid + ' ' + origin)
+      const digest = await crypto.subtle.digest('SHA-1', enc)
+      const hex = Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('')
+      const one = ts + '_' + hex + '_u'
+      const auth = 'SAPISIDHASH ' + one + ' SAPISID1PHASH ' + one + ' SAPISID3PHASH ' + one
+
+      // Build the update body with only the disclosure mutations set.
+      const context = Object.assign({}, ictx)
+      const body = { encryptedVideoId: videoId, flowType: 'MDE_FLOW_TYPE_UPLOAD', context }
+      if (opts.paidPromotion) body.productPlacement = { newHasPaidProductPlacement: true, newShowPaidProductPlacementOverlay: true, newIsPaidProductPlacementSelfDeclaredDefinitive: true }
+      if (opts.aiDisclosure) body.alteredContent = { operation: 'MDE_ALTERED_CONTENT_UPDATE_OPERATION_SET', newCreatorDisclosedHasAlteredContent: opts.hasAlteredContent ? 'MDE_HAS_ALTERED_CONTENT_YES' : 'MDE_HAS_ALTERED_CONTENT_NO' }
+      if (opts.monetize) { body.monetizationSettings = { newMonetizeWithAds: true }; body.adSettings = { adBreaks: { newHasPrerolls: 'ENABLED', newHasMidrollAds: 'ENABLED', newHasPostrolls: 'ENABLED' }, autoAdSettings: 'AUTO_AD_SETTINGS_TYPE_OFF' } }
+      out.debug.fields = Object.keys(body).filter((k) => k !== 'context' && k !== 'encryptedVideoId' && k !== 'flowType')
+
+      const headers = {
+        'Content-Type': 'application/json',
+        'Authorization': auth,
+        'X-Origin': origin,
+        'X-Goog-AuthUser': sessionIndex,
+        'X-YouTube-Client-Name': String(clientName),
+        'X-YouTube-Client-Version': String(clientVersion),
+      }
+      if (visitor) headers['X-Goog-Visitor-Id'] = visitor
+
+      const res = await fetch('/youtubei/v1/video_manager/metadata_update?alt=json', { method: 'POST', credentials: 'include', headers, body: JSON.stringify(body) })
+      out.debug.status = res.status
+      const txt = await res.text()
+      out.debug.resp = (txt || '').slice(0, 1800)
+      out.ok = res.status >= 200 && res.status < 300 && !/"error"/.test(txt.slice(0, 400))
+      out.detail = out.ok ? 'Disclosures applied via API ✓' : ('API ' + res.status)
+      return out
+    } catch (e) { out.error = (e && e.message) || 'threw'; out.detail = 'threw'; return out }
+  })()
+}
+
+async function ytApplyDisclosures(videoId, opts) {
+  if (!videoId || !/^[a-zA-Z0-9_-]{6,20}$/.test(videoId)) return { ok: false, error: 'bad-video-id' }
+  let tabId = null
+  try {
+    // Background tab is fine — this is a direct fetch, no DOM interaction.
+    const tab = await chrome.tabs.create({ url: STUDIO_VIDEO(videoId, 'edit'), active: false })
+    tabId = tab.id
+    await waitForTabLoad(tabId, 30000)
+    await new Promise((r) => setTimeout(r, 2500)) // let ytcfg populate
+    const r = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: studioApplyDisclosuresInPage, args: [videoId, opts || {}] })
+    return (r && r[0] && r[0].result) || { ok: false, error: 'no-result' }
+  } catch (e) {
+    return { ok: false, error: (e && e.message) || 'apply-failed' }
+  } finally {
+    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+  }
+}
+
 async function scanStudioFinish(videoId, opts, callerTabId) {
   if (!videoId || !/^[a-zA-Z0-9_-]{6,20}$/.test(videoId)) return { ok: false, error: 'bad-video-id', steps: [] }
   const want = opts || { details: true, monetize: true, selfCert: true, endScreen: true }
@@ -3390,6 +3473,15 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'MVP_PING') {
     sendResponse({ ok: true, version: chrome.runtime.getManifest().version })
     return // sync response
+  }
+  if (msg.type === 'MVP_YT_APPLY_DISCLOSURES') {
+    // Replay YouTube's own metadata_update to set paid-promotion / AI / monetize
+    // via the internal API (no clicking). Admin test path.
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 60000)
+    ytApplyDisclosures(msg.videoId, msg.opts || {})
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true
   }
   if (msg.type === 'MVP_YT_RECIPE') {
     // Return the Studio save requests the yt-hook captured (newest first), so
