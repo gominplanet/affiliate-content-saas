@@ -1038,6 +1038,21 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
         // which the apply route enforces when publishAt is set.
         const publishAt = computePublishAt(proSettings.scheduleMode, proSettings.scheduleAt)
         const isDraft = proSettings.privacyStatus === 'draft' && !publishAt
+
+        // Will SCOUT finish the Studio-only fields after this push?
+        const wantsFinish = extensionInstalled === true && finishOptIn &&
+          (finishDoDetails || finishDoMonetize || finishDoEndScreen || (finishDoTagProduct && !!video.detectedAsin))
+
+        // COMPLIANCE ORDERING. Paid-promotion and AI-disclosure MUST be set
+        // before a video is public — otherwise it goes live undisclosed. When
+        // SCOUT will finish an *immediately public/unlisted* push, we land the
+        // video PRIVATE first, let SCOUT set those fields, then flip to the
+        // chosen visibility below. Drafts stay draft; scheduled videos are
+        // already private-until-publish, so both are safe to finish in place.
+        const goingLiveNow = !publishAt && (proSettings.privacyStatus === 'public' || proSettings.privacyStatus === 'unlisted')
+        const deferPublish = wantsFinish && goingLiveNow
+        const firstPrivacy = deferPublish ? 'private' : (isDraft || publishAt ? undefined : proSettings.privacyStatus)
+
         const res = await fetch('/api/youtube/apply', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1049,9 +1064,15 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
             thumbnailDataUri: thumbnailUrl ?? undefined,
             playlistId: proSettings.playlistId,
             madeForKids: isDraft ? undefined : proSettings.madeForKids,
-            notifySubscribers: proSettings.notifySubscribers,
+            // Embedding is API-settable — drive it here (not just via SCOUT) so a
+            // later status PUT can't reset it. Only when the user opted into the
+            // Details finish (which is what turns embedding on).
+            embeddable: wantsFinish && finishDoDetails ? true : undefined,
+            // Don't notify on the private landing push — the real notification
+            // fires on the visibility flip below (going private→public).
+            notifySubscribers: deferPublish ? false : proSettings.notifySubscribers,
             publishAt,
-            privacyStatus: isDraft || publishAt ? undefined : proSettings.privacyStatus,
+            privacyStatus: firstPrivacy,
           }),
         })
         const data = await safeJson(res)
@@ -1082,15 +1103,50 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           )
         }
         // One-button flow: if the user opted SCOUT in up in Studio Settings,
-        // finish the Studio-only fields right now, chained off the push. The
-        // push already flipped the metadata live; this drives paid promotion,
-        // AI disclosure, monetization, end screen and product tag in the user's
-        // own logged-in browser. applying just flipped off in `finally`, so
-        // clear it first, then run — runStudioFinish owns finishRunning.
-        if (extensionInstalled === true && finishOptIn &&
-          (finishDoDetails || finishDoMonetize || finishDoEndScreen || (finishDoTagProduct && !!video.detectedAsin))) {
+        // finish the Studio-only fields now — while the video is still private
+        // (deferPublish) / draft / scheduled, never already public. This drives
+        // paid promotion, AI disclosure, embedding, monetization, end screen and
+        // product tag in the user's own logged-in browser. applying just flipped
+        // off in `finally`, so clear it first; runStudioFinish owns finishRunning.
+        if (wantsFinish) {
           setApplying(false)
-          await runStudioFinish()
+          const fin = await runStudioFinish()
+
+          // Now flip to the requested visibility — but only if the compliance
+          // step actually landed. If Details couldn't be confirmed, KEEP the
+          // video private so it never goes public without its paid-promotion /
+          // AI disclosure; the user finishes by hand, then publishes.
+          if (deferPublish) {
+            const detailsStep = fin?.steps?.find(s => s.step === 'details')
+            const detailsConfirmed = !finishDoDetails || !!(detailsStep && detailsStep.ok)
+            if (detailsConfirmed) {
+              setApplying(true)
+              try {
+                const res2 = await fetch('/api/youtube/apply', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    videoId: video.youtubeVideoId,
+                    madeForKids: proSettings.madeForKids,
+                    // Re-assert embedding so this status PUT preserves it.
+                    embeddable: finishDoDetails ? true : undefined,
+                    notifySubscribers: proSettings.notifySubscribers,
+                    privacyStatus: proSettings.privacyStatus,
+                  }),
+                })
+                const d2 = await safeJson(res2)
+                if (!res2.ok || d2.statusOk === false) {
+                  setApplyError(`Studio settings applied, but flipping the video to ${proSettings.privacyStatus} didn't go through. Open it on YouTube and set visibility to ${proSettings.privacyStatus}.`)
+                }
+              } catch {
+                setApplyError(`Studio settings applied, but the publish step failed. Open the video on YouTube and set it to ${proSettings.privacyStatus}.`)
+              } finally {
+                setApplying(false)
+              }
+            } else {
+              setApplyError(`Kept PRIVATE on purpose: SCOUT couldn't confirm the paid-promotion / disclosure settings, and the video shouldn't go public without them. Finish the Details tab on YouTube, then set visibility to ${proSettings.privacyStatus}.`)
+            }
+          }
         }
         // Leave the panel EXPANDED so the post-apply "Finish on YouTube" card
         // stays visible and usable. Auto-collapsing + reclassifying here was
@@ -1172,12 +1228,12 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
     if (onApplied) onApplied(video.youtubeVideoId)
   }
 
-  async function runStudioFinish() {
-    if (!video.youtubeVideoId || !finishOptIn) return
+  async function runStudioFinish(): Promise<StudioFinishResult | null> {
+    if (!video.youtubeVideoId || !finishOptIn) return null
     // Product tagging only fires when we actually have a product to tag.
     const tagUrl = video.detectedAsin ? `https://www.amazon.com/dp/${video.detectedAsin}` : ''
     const doTag = finishDoTagProduct && !!tagUrl
-    if (!finishDoDetails && !finishDoMonetize && !finishDoEndScreen && !doTag) return
+    if (!finishDoDetails && !finishDoMonetize && !finishDoEndScreen && !doTag) return null
     setFinishRunning(true)
     setFinishError(null)
     setFinishResult(null)
@@ -1204,8 +1260,10 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
               : `Couldn’t finish in Studio: ${res.error}`,
         )
       }
+      return res
     } catch (e) {
       setFinishError(e instanceof Error ? e.message : 'Failed to run the Studio finish')
+      return null
     } finally {
       setFinishRunning(false)
     }
@@ -2905,14 +2963,24 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                         {finishResult && (
                           <div className="flex flex-col gap-1 text-[11px]">
                             {finishResult.steps.map((s, i) => (
-                              <div key={i} className="flex items-start gap-1.5">
-                                <span className={s.ok ? 'text-[#34c759]' : s.skipped ? 'text-[#86868b]' : s.partial ? 'text-[#ff9500]' : 'text-[#ff3b30]'}>
-                                  {s.ok ? '✓' : s.skipped ? 'ℹ' : s.partial ? '◐' : '✗'}
-                                </span>
-                                <span className="text-[#1d1d1f] dark:text-[#f5f5f7]">
-                                  <strong>{s.step === 'details' ? 'Details & disclosures' : s.step === 'monetization' ? 'Monetization + ad rating' : s.step === 'endscreen' ? 'End screen' : s.step}</strong>
-                                  {s.detail ? ` — ${s.detail}` : ''}
-                                </span>
+                              <div key={i} className="flex flex-col gap-0.5">
+                                <div className="flex items-start gap-1.5">
+                                  <span className={s.ok ? 'text-[#34c759]' : s.skipped ? 'text-[#86868b]' : s.partial ? 'text-[#ff9500]' : 'text-[#ff3b30]'}>
+                                    {s.ok ? '✓' : s.skipped ? 'ℹ' : s.partial ? '◐' : '✗'}
+                                  </span>
+                                  <span className="text-[#1d1d1f] dark:text-[#f5f5f7]">
+                                    <strong>{s.step === 'details' ? 'Details & disclosures' : s.step === 'monetization' ? 'Monetization + ad rating' : s.step === 'endscreen' ? 'End screen' : s.step === 'tagproduct' ? 'Tag product' : s.step}</strong>
+                                    {s.detail ? ` — ${s.detail}` : ''}
+                                  </span>
+                                </div>
+                                {/* When a step fails, expose SCOUT's DOM debug map so
+                                    the layout it actually saw can be tuned to. */}
+                                {!s.ok && !s.skipped && s.debug && Object.keys(s.debug).length > 0 && (
+                                  <details className="ml-5">
+                                    <summary className="text-[10px] text-[#86868b] cursor-pointer select-none">Show debug (send us this screenshot)</summary>
+                                    <pre className="mt-1 text-[9px] leading-snug text-[#6e6e73] dark:text-[#a1a1a6] bg-black/5 dark:bg-white/5 rounded p-2 overflow-x-auto whitespace-pre-wrap break-words max-h-40">{JSON.stringify(s.debug, null, 1)}</pre>
+                                  </details>
+                                )}
                               </div>
                             ))}
                             <div className="flex items-start gap-1.5">
