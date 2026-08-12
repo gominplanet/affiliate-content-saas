@@ -969,6 +969,11 @@ export interface StudioFinishOpts {
   /** Whether SCOUT should leave the subscriber notification ON (true) or off
    *  (false/undefined). Mirrors the API publish path's Yes/No choice. */
   notifySubscribers?: boolean
+  /** Tag the reviewed product on the video via YouTube Shopping's "Tag products"
+   *  flow (only works for enrolled creators). Requires `productUrl`. */
+  tagProduct?: boolean
+  /** The product link SCOUT pastes into the Tag-products search box. */
+  productUrl?: string
 }
 
 /**

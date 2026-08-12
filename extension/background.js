@@ -3080,13 +3080,75 @@ function studioFinishDetailsInPage(notifySubscribers) {
   })()
 }
 
+// Tag the reviewed PRODUCT on the video via Studio's "Tag products" flow (only
+// works for creators enrolled in YouTube Shopping). Opens the Products area,
+// pastes the product URL MVP resolved, adds the first match, and saves. Best-
+// effort and self-contained (piercing Studio's shadow DOM); returns a `debug`
+// map so the selectors can be tuned against live Studio like the other steps.
+function studioFinishTagProductInPage(productUrl) {
+  return (async () => {
+    const out = { step: 'tagproduct', ok: false, detail: '', debug: {} }
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+    const deepAll = () => {
+      const acc = []
+      const walk = (root) => { let els; try { els = root.querySelectorAll('*') } catch (e) { return } for (const el of els) { acc.push(el); if (el.shadowRoot) walk(el.shadowRoot) } }
+      walk(document); return acc
+    }
+    const visText = (el) => { try { const a = el.getAttribute && (el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.getAttribute('title')); return (a || el.textContent || '').replace(/\s+/g, ' ').trim() } catch (e) { return '' } }
+    const isBtn = (el) => { const t = (el.tagName || '').toLowerCase(); return /button|ytcp-button/.test(t) || (el.getAttribute && el.getAttribute('role') === 'button') }
+    const click = (el) => { if (!el) return false; try { el.scrollIntoView({ block: 'center' }) } catch (e) {} try { el.click() } catch (e) {} try { ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach((t) => el.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, view: window }))) } catch (e) {} return true }
+    const setInput = (el, val) => {
+      try {
+        const proto = (el.tagName === 'TEXTAREA') ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype
+        const setter = Object.getOwnPropertyDescriptor(proto, 'value').set
+        setter.call(el, val)
+        el.dispatchEvent(new Event('input', { bubbles: true }))
+        el.dispatchEvent(new Event('change', { bubbles: true }))
+        return true
+      } catch (e) { try { el.value = val; el.dispatchEvent(new Event('input', { bubbles: true })); return true } catch (e2) { return false } }
+    }
+    try {
+      if (!productUrl) { out.detail = 'no product url'; return out }
+      await sleep(1500)
+      // 1) Open the "Tag products" / Products area.
+      const openBtn = deepAll().filter(isBtn).find((el) => /tag products|add products|^products$/i.test(visText(el)))
+      out.debug.openBtn = openBtn ? visText(openBtn).slice(0, 40) : null
+      if (openBtn) { click(openBtn); await sleep(1800) }
+      // 2) The search / paste-a-link input.
+      const inputs = deepAll().filter((el) => { const t = (el.tagName || '').toLowerCase(); return t === 'input' || t === 'textarea' })
+      const input = inputs.find((el) => /search products|paste a product|product link/i.test(visText(el))) || inputs[0]
+      out.debug.foundInput = !!input
+      if (!input) { out.detail = 'search input not found'; return out }
+      try { input.focus() } catch (e) {}
+      setInput(input, productUrl)
+      try { input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true })) } catch (e) {}
+      await sleep(2800) // let YouTube resolve the pasted link to a product
+      // 3) Add the first resolved product (a + / Add control).
+      const addBtn = deepAll().filter(isBtn).find((el) => /^add$/i.test(visText(el)) || /add product|tag product/i.test(visText(el)))
+        || deepAll().filter((el) => el.getAttribute && /add/i.test(el.getAttribute('aria-label') || '')).find(Boolean)
+      out.debug.addBtn = addBtn ? visText(addBtn).slice(0, 30) : null
+      if (addBtn) { click(addBtn); await sleep(1200) }
+      // 4) Next / Done / Save through the confirm step.
+      for (let i = 0; i < 2; i++) {
+        const go = deepAll().filter(isBtn).find((el) => /^(next|done|save|add products)$/i.test(visText(el)))
+        if (!go) break
+        out.debug['step' + i] = visText(go)
+        click(go); await sleep(1400)
+      }
+      out.ok = !!(input && addBtn)
+      out.detail = `input:${!!input} · add:${out.debug.addBtn || '?'}`
+      return out
+    } catch (e) { out.detail = (e && e.message) || 'threw'; return out }
+  })()
+}
+
 async function scanStudioFinish(videoId, opts, callerTabId) {
   if (!videoId || !/^[a-zA-Z0-9_-]{6,20}$/.test(videoId)) return { ok: false, error: 'bad-video-id', steps: [] }
   const want = opts || { details: true, monetize: true, selfCert: true, endScreen: true }
   const steps = []
   let tabId = null
   // First panel we need to land on (open the tab there directly).
-  const startPanel = want.details ? 'edit' : (want.monetize || want.selfCert) ? 'monetization' : 'endscreens'
+  const startPanel = (want.details || want.tagProduct) ? 'edit' : (want.monetize || want.selfCert) ? 'monetization' : 'endscreens'
   let current = startPanel
   // Navigate the SAME tab between Studio panels, only reloading when the panel
   // actually changes (re-assigning the same URL wouldn't fire 'complete').
@@ -3107,6 +3169,12 @@ async function scanStudioFinish(videoId, opts, callerTabId) {
       await goto('edit')
       const r = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: studioFinishDetailsInPage, args: [want.notifySubscribers === true] })
       steps.push((r && r[0] && r[0].result) || { step: 'details', ok: false, error: 'no-result' })
+    }
+    if (want.tagProduct && want.productUrl) {
+      // Product tagging lives on the video's edit page (YouTube Shopping only).
+      await goto('edit')
+      const r = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: studioFinishTagProductInPage, args: [String(want.productUrl)] })
+      steps.push((r && r[0] && r[0].result) || { step: 'tagproduct', ok: false, error: 'no-result' })
     }
     if (want.monetize || want.selfCert) {
       await goto('monetization')
@@ -3165,6 +3233,18 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     scanStudioVideos()
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true // async response — keep the channel open
+  }
+  if (msg.type === 'MVP_STUDIO_FINISH') {
+    // Drive the Studio-only fields the Data API can't set (paid promotion,
+    // notify-subscribers, monetization + ad self-cert, end screen), on the ONE
+    // video, only the items the user ticked. Opens up to 3 Studio panels, so
+    // allow the full 185s the dashboard waits.
+    const callerTabId = sender && sender.tab ? sender.tab.id : null
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 185000)
+    scanStudioFinish(msg.videoId, msg.opts || {}, callerTabId)
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, steps: [], error: e && e.message ? e.message : 'error' }) })
     return true // async response — keep the channel open
   }
   if (msg.type === 'MVP_PING') {
