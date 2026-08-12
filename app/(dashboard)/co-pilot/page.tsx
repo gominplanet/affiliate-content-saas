@@ -1251,7 +1251,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           // the Yes/No from Studio Settings.
           notify: proSettings.notifySubscribers,
         })
-        if (finishDoDetails) steps.push({ step: 'details', ok: inj.ok, detail: inj.ok ? 'Paid promotion + AI disclosure set' : (inj.detail || inj.error || 'failed') })
+        if (finishDoDetails) steps.push({ step: 'details', ok: inj.ok, detail: inj.ok ? 'Paid promotion + AI disclosure set' : (inj.detail || inj.error || 'failed'), debug: inj.debug })
         if (finishDoMonetize) steps.push({ step: 'monetization', ok: inj.ok, detail: inj.ok ? 'Monetization on + ad rating submitted' : (inj.detail || inj.error || 'failed') })
         if (!inj.ok) {
           setFinishError(

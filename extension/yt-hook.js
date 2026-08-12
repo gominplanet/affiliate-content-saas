@@ -60,6 +60,9 @@
     if (!inj || typeof bodyStr !== 'string') return bodyStr
     try {
       const b = JSON.parse(bodyStr)
+      // Record what we saw so a "nothing injected" can be diagnosed: is the
+      // save for a different video id, or did no metadata_update fire at all?
+      try { window.__mvpYtSawMeta = (window.__mvpYtSawMeta || 0) + 1; window.__mvpYtSawVideoId = b && b.encryptedVideoId } catch (e) {}
       if (!b || b.encryptedVideoId !== inj.videoId) return bodyStr
       if (inj.paidPromotion) b.productPlacement = { newHasPaidProductPlacement: true, newShowPaidProductPlacementOverlay: true, newIsPaidProductPlacementSelfDeclaredDefinitive: true }
       if (inj.aiDisclosure) b.alteredContent = { operation: 'MDE_ALTERED_CONTENT_UPDATE_OPERATION_SET', newCreatorDisclosedHasAlteredContent: inj.hasAlteredContent ? 'MDE_HAS_ALTERED_CONTENT_YES' : 'MDE_HAS_ALTERED_CONTENT_NO' }
