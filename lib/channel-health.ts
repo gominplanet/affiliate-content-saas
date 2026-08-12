@@ -20,6 +20,11 @@ export const DEAD_CHANNEL_THRESHOLD = 3
  *  noticed promptly without retrying on every single scheduled post. */
 export const PROBE_INTERVAL_MS = 24 * 60 * 60 * 1000
 export const AUTO_SKIP_PREFIX = '[auto-skipped]'
+/** Stamped by the stuck-claim reclaim (reclaim_stuck_scheduled_posts, migration
+ *  248/249) when a row is terminal-failed for repeatedly timing out mid-publish.
+ *  That's the job hard-crashing, NOT evidence the channel connection is broken,
+ *  so it's excluded from the dead-channel streak like an auto-skip. */
+export const AUTO_FAILED_PREFIX = '[auto-failed]'
 /** Stamped on old failures when a channel is successfully (re)connected, so the
  *  streak resets AT ONCE. Without it, reconnecting looks like it did nothing:
  *  the old failures are still the newest outcomes on record, so the "needs
@@ -152,7 +157,7 @@ export async function getDeadChannels(
       // failures already resolved by a reconnect. Neither is evidence that the
       // channel is currently broken.
       const em = r.error_message || ''
-      if (em.startsWith(AUTO_SKIP_PREFIX) || em.startsWith(RESOLVED_PREFIX)) continue
+      if (em.startsWith(AUTO_SKIP_PREFIX) || em.startsWith(RESOLVED_PREFIX) || em.startsWith(AUTO_FAILED_PREFIX)) continue
       if (!byPlatform.has(r.platform)) byPlatform.set(r.platform, [])
       byPlatform.get(r.platform)!.push(r)
     }

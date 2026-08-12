@@ -100,10 +100,11 @@ export async function publishDealToSocials(opts: PublishOpts): Promise<PlatformR
       if (platform === 'twitter') {
         let token = ig.twitter_access_token as string | undefined
         if (!token) throw new Error('X is not connected.')
-        // X is the only paid-per-post channel — reserve a slot atomically before
-        // posting so concurrent posts can't overspend the cap. Refund on failure.
-        const xres = await reserveXPost(supabase, userId)
-        if (!xres.ok) throw new Error(xCapMessage(xres.resetLabel))
+        // Refresh the token BEFORE reserving the paid slot. A refresh failure
+        // (expired refresh token) must not burn a cap unit — reserving first, as
+        // this used to, leaked a slot on every failed refresh because the outer
+        // catch doesn't refund. Sibling paths (process-scheduled, blog/twitter-
+        // post) also refresh-then-reserve.
         const expiry = ig.twitter_expires_at ? new Date(ig.twitter_expires_at).getTime() : 0
         if (expiry && Date.now() > expiry - 60_000 && ig.twitter_refresh_token) {
           const r = await refreshTwitter(ig.twitter_refresh_token as string)
@@ -114,6 +115,10 @@ export async function publishDealToSocials(opts: PublishOpts): Promise<PlatformR
             twitter_expires_at: new Date(Date.now() + r.expires_in * 1000).toISOString(),
           })).eq('user_id', userId)
         }
+        // X is the only paid-per-post channel — reserve a slot atomically before
+        // posting so concurrent posts can't overspend the cap. Refund on failure.
+        const xres = await reserveXPost(supabase, userId)
+        if (!xres.ok) throw new Error(xCapMessage(xres.resetLabel))
         let t
         try {
           t = await createTweet(token!, composeText(baseCaption, 'twitter', link, disclaimer, retailer))

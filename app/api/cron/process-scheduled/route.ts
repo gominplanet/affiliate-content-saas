@@ -135,16 +135,21 @@ export async function GET(request: Request) {
 
   // 0. Stuck-claim recovery (audit 2026-06-06). Rows stuck in 'processing'
   // for >5 min were claimed by a tick that crashed mid-publish — they
-  // block their slot forever unless an admin manually retries. Flip them
-  // back to 'pending' so the current tick can pick them up. The 5-min
-  // threshold matches /admin/cron's "stuck" definition for consistency.
+  // block their slot forever unless an admin manually retries. Reclaim them
+  // for the current tick, but with an attempt cap (via retry_count) so a
+  // publish that hard-crashes the function BEFORE its try/catch every time
+  // (e.g. a call that hangs to the 60s ceiling) is terminal-failed instead of
+  // re-claimed forever — MAX_PUBLISH_RETRIES only covers the caught-error path.
+  // Best-effort: if the RPC isn't live yet (migration 249) the tick still
+  // proceeds to the claim below.
   const fiveMinAgo = new Date(Date.now() - 5 * 60_000).toISOString()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (admin as any)
-    .from('scheduled_posts')
-    .update({ status: 'pending', updated_at: nowIso })
-    .eq('status', 'processing')
-    .lt('claimed_at', fiveMinAgo)
+  const { error: reclaimErr } = await (admin as any).rpc('reclaim_stuck_scheduled_posts', {
+    p_table: 'scheduled_posts',
+    p_stuck_before: fiveMinAgo,
+    p_max_attempts: MAX_PUBLISH_RETRIES,
+  })
+  if (reclaimErr) console.error('[cron/process-scheduled] reclaim failed', reclaimErr.message)
 
   // 1. Atomic claim — flip due+pending rows to 'processing' in one update.
   // Schema-agnostic: we DON'T select `kind` here because that column was

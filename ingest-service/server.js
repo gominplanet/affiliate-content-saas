@@ -74,6 +74,31 @@ if (!SECRET) {
 // your whole browser jar. yt-dlp doesn't use the rest, and the trimmed file
 // fits in a single var.
 const COOKIES_FILE = path.join(os.tmpdir(), 'yt-cookies.txt')
+
+// Remove a temp file AND any yt-dlp sibling fragments/partials that share its
+// name stem — e.g. for "<stem>.mp4": "<stem>.f140.m4a", "<stem>.f248.webm",
+// "<stem>.part", "<stem>.mp4.part", and --download-sections intermediates.
+// yt-dlp only deletes these after a SUCCESSFUL merge; on a SIGKILL timeout (the
+// EXPECTED failure here — bot-wall / slow residential proxy) or a mid-download
+// error they orphan in os.tmpdir() and, on the small Railway disk, accumulate
+// until every ingest/render fails on write. Deleting by name stem catches them
+// all. Best-effort; never throws.
+function cleanupTmp(...paths) {
+  for (const p of paths) {
+    if (!p) continue
+    try {
+      const dir = path.dirname(p)
+      const name = path.basename(p)
+      const stem = name.replace(/\.[^.]+$/, '') // drop final extension → name stem
+      for (const f of fs.readdirSync(dir)) {
+        if (f === name || f.startsWith(stem + '.')) {
+          try { fs.unlinkSync(path.join(dir, f)) } catch { /* ignore */ }
+        }
+      }
+    } catch { /* ignore */ }
+  }
+}
+
 let cookiesReady = false
 // When the cookies file was last written (boot load or a live SCOUT push), so
 // /health can show freshness and the app can auto-refresh before they go stale.
@@ -403,7 +428,7 @@ app.post('/ingest', async (req, res) => {
     console.error('[ingest] failed', videoId, e && e.message)
     return res.status(502).json({ error: String((e && e.message) || e).slice(0, 300) })
   } finally {
-    try { if (fs.existsSync(tmp)) fs.unlinkSync(tmp) } catch { /* ignore */ }
+    cleanupTmp(tmp)
   }
 })
 
@@ -439,8 +464,7 @@ app.post('/clip', async (req, res) => {
     console.error('[clip] failed', e && e.message)
     return res.status(502).json({ error: String((e && e.message) || e).slice(0, 300) })
   } finally {
-    try { if (fs.existsSync(srcTmp)) fs.unlinkSync(srcTmp) } catch { /* ignore */ }
-    try { if (fs.existsSync(outTmp)) fs.unlinkSync(outTmp) } catch { /* ignore */ }
+    cleanupTmp(srcTmp, outTmp)
   }
 })
 
@@ -596,7 +620,7 @@ app.post('/audio', async (req, res) => {
     console.error('[audio] failed', videoId, e && e.message)
     return res.status(502).json({ error: String((e && e.message) || e).slice(0, 300) })
   } finally {
-    try { if (fs.existsSync(tmp)) fs.unlinkSync(tmp) } catch { /* ignore */ }
+    cleanupTmp(tmp)
   }
 })
 
@@ -696,7 +720,7 @@ app.post('/render-short', async (req, res) => {
     console.error('[render-short] failed', e && e.message)
     return res.status(502).json({ error: String((e && e.message) || e).slice(0, 300) })
   } finally {
-    for (const f of [srcTmp, assTmp, outTmp]) { try { if (fs.existsSync(f)) fs.unlinkSync(f) } catch { /* ignore */ } }
+    cleanupTmp(srcTmp, assTmp, outTmp)
   }
 })
 

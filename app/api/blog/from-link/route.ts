@@ -377,7 +377,11 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
   }
 
   // ── 4. Assemble the WordPress (Gutenberg) HTML ──────────────────────────────
-  const wpService = createWordPressService(site.wordpress_url ?? '', site.wordpress_username ?? '', site.wordpress_app_password ?? '')
+  // Pass the proxy secret (4th arg) so writes take the header-safe proxy path.
+  // Omitting it forced the legacy Basic-Auth/nonce path, which fails to publish
+  // on header-stripping hosts (Hostinger LiteSpeed / WAF) after the AI cost was
+  // already billed — every other write route passes this.
+  const wpService = createWordPressService(site.wordpress_url ?? '', site.wordpress_username ?? '', site.wordpress_app_password ?? '', site.wordpress_api_token ?? undefined)
   const scrub = (s: string) => scrubBanned(s || '')
   // Enforce the canonical product name in the title (belt-and-braces on the
   // prompt): if the model's title dropped the brand AND the product's core
