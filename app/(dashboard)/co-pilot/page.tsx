@@ -3059,7 +3059,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                         (a real, trusted save) — SCOUT captures the InnerTube
                         request. Click here to read it back and hand it over so
                         the replay is built from the true payload. */}
-                    {userTier === 'admin' && extensionInstalled === true && (
+                    {isPro && extensionInstalled === true && (
                       <div className="mt-1 border-t border-dashed border-[#86868b]/20 pt-2 flex flex-col gap-1.5">
                         <button
                           onClick={async () => { setYtRecipeLoading(true); try { setYtRecipes(await requestYtSaveRecipes()) } finally { setYtRecipeLoading(false) } }}
@@ -3605,7 +3605,7 @@ export default function StudioPage() {
           (yt-hook), so the real InnerTube request shape can be handed over to
           build the disclosure/monetization/tag-product replay. Always visible
           for admins so it doesn't require pushing a video first. */}
-      {userTier === 'admin' && (
+      {(userTier === 'admin' || userTier === 'pro') && (
         <div className="mb-4 rounded-xl border border-dashed border-[#7C3AED]/30 bg-[#7C3AED]/5 px-4 py-3 flex flex-col gap-2">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs font-bold text-[#7C3AED]">Dev · Studio save capture</span>
