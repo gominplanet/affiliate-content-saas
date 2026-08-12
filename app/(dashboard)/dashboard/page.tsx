@@ -356,7 +356,6 @@ export default async function DashboardPage() {
                 per user request. Standalone card; the detailed per-bucket bars
                 still live in the "Plan & usage" section below. */}
             <ConsumptionGauge />
-            <DashboardLiveCards />
           </>
         )}
 
@@ -410,130 +409,6 @@ export default async function DashboardPage() {
         <SetupChecklist />
         <ChannelStats />
 
-        {/* ── Stat tiles ────────────────────────────────────────────── */}
-        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          <StatTile icon={<PlaySquare size={14} />} label="Videos tracked" value={String(videoCount)} />
-          <StatTile icon={<FileText size={14} />} label="Posts published" value={String(publishedCount)} />
-          <StatTile
-            icon={<Layers size={14} />}
-            label="Platforms connected"
-            value={`${platformsConnected}/${platformsTotal}`}
-          />
-          <StatTile
-            icon={<Gauge size={14} />}
-            label={plan.lifetimeMax !== null ? 'Posts (lifetime)' : 'Posts this period'}
-            value={String(postsUsed)}
-            sublabel={postsLimit === null ? '∞ unlimited' : `of ${postsLimit}`}
-          />
-        </section>
-
-        {/* ── Plan & usage ──────────────────────────────────────────── */}
-        <section
-          className="rounded-2xl border p-5"
-          style={{
-            backgroundColor: 'var(--surface)',
-            borderColor: 'var(--border)',
-            boxShadow: 'var(--card-shadow)',
-          }}
-        >
-          <div className="flex items-center justify-between mb-5">
-            <div className="flex items-center gap-2">
-              <Gauge size={15} className="text-[#7C3AED]" />
-              <h2 className="text-[13px] font-semibold tracking-tight" style={{ color: 'var(--text)' }}>Plan &amp; usage</h2>
-              <span
-                className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full"
-                style={{ background: 'rgba(124, 58, 237, 0.18)', color: 'var(--nav-active-text)' }}
-              >
-                {plan.label}
-              </span>
-            </div>
-            <Link href="/billing" className="text-[12px] font-medium text-[#7C3AED] hover:text-[#9D6BFF] inline-flex items-center gap-1">
-              {tier === 'pro' || tier === 'admin' ? 'Manage plan' : 'Upgrade'} <ArrowUpRight size={11} />
-            </Link>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-            {usage.map(({ label, used, limit }) => {
-              const unlimited = limit === null
-              const remaining = unlimited ? null : Math.max(0, (limit as number) - used)
-              const pct = unlimited ? 0 : Math.min(100, Math.round((used / Math.max(1, limit as number)) * 100))
-              const out = !unlimited && remaining === 0
-              const near = !unlimited && !out && pct >= 60
-              const accent = out ? '#FF3B30' : near ? '#FF9500' : '#7C3AED'
-              return (
-                <div key={label}>
-                  <div className="flex items-center justify-between text-[12px] mb-2">
-                    <span className="font-medium" style={{ color: 'var(--text-soft)' }}>{label}</span>
-                    {/* Lead with what's LEFT — clearer than "used / cap" for deciding
-                        whether to upgrade. Amber as the cap nears, red when spent. */}
-                    <span className="tabular-nums font-semibold" style={{ color: (out || near) ? accent : 'var(--text)' }}>
-                      {unlimited ? `${used} / ∞` : `${remaining} left`}
-                    </span>
-                  </div>
-                  <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--surface-bright)' }}>
-                    <div
-                      className="h-full rounded-full transition-[width] duration-500"
-                      style={{
-                        width: unlimited ? '100%' : `${pct}%`,
-                        backgroundColor: unlimited ? '#10B981' : accent,
-                      }}
-                    />
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-          {usage.some(u => u.limit !== null) && (
-            <p className="text-[11px] mt-4" style={{ color: 'var(--text-faint)' }}>
-              {plan.lifetimeMax !== null
-                ? 'Free plan posts are a one-time lifetime allowance.'
-                : onBillingCycle
-                  ? `Your billing period resets ${resetsOn}.`
-                  : `Limits reset ${resetsOn}.`}
-            </p>
-          )}
-        </section>
-
-        {/* ── Recent videos as a 3-card grid + activity column ──────── */}
-        <section>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-[13px] font-semibold tracking-tight" style={{ color: 'var(--text)' }}>
-              Recent videos
-            </h2>
-            <Link href="/content" className="text-[12px] inline-flex items-center gap-1" style={{ color: 'var(--text-soft)' }}>
-              View all <ArrowUpRight size={11} />
-            </Link>
-          </div>
-
-          {!recentVideos || recentVideos.length === 0 ? (
-            <div
-              className="rounded-2xl border p-8 text-center"
-              style={{
-                backgroundColor: 'var(--surface)',
-                borderColor: 'var(--border)',
-              }}
-            >
-              <PlaySquare size={28} className="mx-auto mb-3 opacity-40" style={{ color: 'var(--text-soft)' }} />
-              <p className="text-[14px] font-medium" style={{ color: 'var(--text)' }}>No videos synced yet</p>
-              <p className="text-[12px] mt-1" style={{ color: 'var(--text-soft)' }}>Connect YouTube and we&apos;ll pull every draft with an Amazon ASIN in the title.</p>
-              <Link href="/content" className="text-[12px] font-medium text-[#7C3AED] hover:text-[#9D6BFF] mt-3 inline-flex items-center gap-1">
-                Sync your YouTube channel <ArrowRight size={12} />
-              </Link>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-              {(recentVideos as any[]).slice(0, 6).map((video: any) => (
-                <VideoCard
-                  key={video.id}
-                  title={video.title}
-                  thumbnail={video.thumbnail_url}
-                  publishedAt={video.published_at}
-                  isVertical={video.is_vertical === true}
-                />
-              ))}
-            </div>
-          )}
-        </section>
       </div>
     </div>
   )
