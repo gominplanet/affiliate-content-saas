@@ -3102,35 +3102,52 @@ function studioFinishDetailsInPage(notifySubscribers) {
       out.debug.formReady = formReady
 
       // Paid promotion, embedding, subs-feed and AI-use live under "Show more".
-      // Studio's expander is a DIV id="toggle-button" (or a ytcp-button); a
-      // matching leaf inside it won't always fire the handler, so target the
-      // real toggle: the #toggle-button, else a button ancestor of a "Show more"
-      // leaf, else the leaf itself. (Clicking a stray "Show more" is why it
-      // clicked 4x and nothing expanded.)
-      const findShowMore = () => {
-        const byId = deepAll().find((el) => el.id === 'toggle-button' && /show more/i.test((el.textContent || '').replace(/\s+/g, ' ').trim()))
-        if (byId) return byId
-        const leaves = deepAll().filter((el) => /^show more$/i.test((el.textContent || '').replace(/\s+/g, ' ').trim()))
-        for (const leaf of leaves) {
-          let e = leaf
-          for (let i = 0; i < 4 && e; i++) {
-            const tag = (e.tagName || '').toLowerCase()
-            if (e.id === 'toggle-button' || /ytcp-button|paper-button/.test(tag) || tag === 'button' || (e.getAttribute && e.getAttribute('role') === 'button')) return e
-            e = e.parentElement
-          }
+      // Previous builds found a "Show more" and clicked it, but nothing
+      // expanded — so we were clicking a non-interactive leaf. Collect EVERY
+      // plausible toggle (its interactive ancestor), log what they are, and
+      // click each visible one until the paid-promotion control appears.
+      const isVisible = (el) => { try { return !!(el.offsetParent || (el.getClientRects && el.getClientRects().length)) } catch (e) { return true } }
+      const tagId = (el) => `${(el.tagName || '').toLowerCase()}#${el.id || ''}[${(el.getAttribute && el.getAttribute('aria-expanded')) || ''}]`
+      const interactiveAncestor = (leaf) => {
+        let e = leaf
+        for (let i = 0; i < 5 && e; i++) {
+          const tag = (e.tagName || '').toLowerCase()
+          if (e.id === 'toggle-button' || /ytcp-button|paper-button|tp-yt-paper-button/.test(tag) || tag === 'button' || (e.getAttribute && (e.getAttribute('role') === 'button' || e.getAttribute('aria-expanded') != null))) return e
+          e = e.parentElement
         }
-        return leaves[0] || null
+        return leaf
       }
-      const paidThere = () => !!findCtrl(/paid promotion|product placement|sponsorship/i)
+      const showMoreToggles = () => {
+        const seen = new Set(), out2 = []
+        for (const el of deepAll()) {
+          const t = (el.textContent || '').replace(/\s+/g, ' ').trim()
+          if (!/^show more$/i.test(t)) continue
+          const target = interactiveAncestor(el)
+          if (target && isVisible(target) && !seen.has(target)) { seen.add(target); out2.push(target) }
+        }
+        return out2
+      }
+      // The paid-promotion control label in Studio is long ("This video
+      // contains paid promotion like a paid product placement, sponsorship, or
+      // endorsement"); match broadly so we know when it's rendered.
+      const paidThere = () => !!findCtrl(/paid promotion|product placement|sponsorship|endorsement|contains paid/i)
       let expanded = paidThere()
       for (let tries = 0; tries < 4 && !expanded; tries++) {
-        const sm = findShowMore()
-        out.debug['showMore' + tries] = !!sm
-        if (sm) { try { sm.scrollIntoView({ block: 'center' }) } catch (e) {} click(sm); await sleep(1500) }
-        else { await sleep(1000) }
+        const toggles = showMoreToggles()
+        out.debug['smToggles' + tries] = toggles.map(tagId).slice(0, 6)
+        for (const tg of toggles) {
+          try { tg.scrollIntoView({ block: 'center' }) } catch (e) {}
+          click(tg)
+          await sleep(700)
+          if (paidThere()) break
+        }
         expanded = paidThere()
+        if (!expanded) { try { (document.scrollingElement || document.body).scrollBy(0, 700) } catch (e) {} ; await sleep(600); expanded = paidThere() }
       }
       out.debug.expanded = expanded
+      // On failure, record every button label on the page so we can see what
+      // the expander is actually called this layout.
+      if (!expanded) out.debug.allButtons = Array.from(new Set(deepAll().filter(isBtn).map(visText).filter((t) => t && t.length < 30))).slice(0, 40)
       out.debug.controlsBefore = snapshot()
 
       // If the form or its disclosures never rendered, this is the cold-load
