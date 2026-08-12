@@ -29,6 +29,10 @@
       "schedule": "15 6 * * *"
     },
     {
+      "path": "/api/cron/collect-reach",
+      "schedule": "45 6 * * *"
+    },
+    {
       "path": "/api/cron/reset-stuck-campaigns",
       "schedule": "*/5 * * * *"
     },

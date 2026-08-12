@@ -15,6 +15,7 @@ import { maybeDecrypt } from '@/lib/secrets'
 import { overlayCaptionOnVideo, getLastOverlayError, type OverlayPosition, type CaptionStyle } from '@/services/cloudinary'
 import { researchProductContext, composeReelCaption } from '@/lib/ig-burn'
 import { publishMedia } from '@/services/instagram'
+import { recordReachSample } from '@/lib/reach-pulse'
 import { recordUsage } from '@/lib/ai-usage'
 import { metaEnabled } from '@/lib/feature-flags'
 
@@ -108,13 +109,21 @@ export async function GET(request: Request) {
 
     // 3. Publish the Reel to the user's connected Instagram (default account).
     //    Credentials were resolved in step 0.
-    await publishMedia({
+    const reelMediaId = await publishMedia({
       userId: igUserId,
       accessToken: igToken,
       mediaType: 'REELS',
       videoUrl: burned.url,
       caption: reelCaption ?? job.caption_text,
       shareToFeed: true,
+    })
+
+    // Pulse: learn which tags this Reel used (best-effort, non-blocking).
+    void recordReachSample({
+      userId: job.user_id,
+      mediaId: reelMediaId,
+      caption: reelCaption ?? job.caption_text,
+      productText: productContext || null,
     })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

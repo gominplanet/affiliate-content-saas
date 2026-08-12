@@ -12,6 +12,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { recordReachSample } from '@/lib/reach-pulse'
 import { maybeDecrypt } from '@/lib/secrets'
 import { normalizeTier, tierAllowsSocial, type Tier } from '@/lib/tier'
 import { resolveSocialAccount } from '@/lib/social-accounts'
@@ -106,6 +107,15 @@ export async function POST(request: Request) {
         // Make sure this account receives comment webhooks (idempotent).
         try { await subscribeToComments({ igUserId: igAccount.externalId, accessToken: igAccount.accessToken }) } catch { /* non-fatal */ }
       }
+
+      // Pulse: record this Reel + its hashtags so the insights job can learn
+      // which tags actually earn reach. Best-effort, never blocks the response.
+      void recordReachSample({
+        userId: user.id,
+        mediaId,
+        caption,
+        productText: (body.autoDm?.productName || '').trim() || null,
+      })
 
       return NextResponse.json({ ok: true, published: true, mediaId, autoDm })
     } catch (e) {

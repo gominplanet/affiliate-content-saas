@@ -169,6 +169,48 @@ export async function refreshLongLivedToken(currentToken: string): Promise<{ acc
  * restricted for posting via an API. Used only to WARN the user, never to block.
  * Returns null on any failure.
  */
+export interface MediaInsights {
+  reach: number | null
+  plays: number | null
+  likes: number | null
+  comments: number | null
+  saves: number | null
+  shares: number | null
+}
+
+/**
+ * Pull a published Reel's performance metrics. Powers Pulse (reach-based
+ * hashtag learning). Returns null when the media is gone (deleted) or the token
+ * lacks insights permission; returns partial (some fields null) when Instagram
+ * omits a metric. `views` replaced `plays` in the Graph API — we request both
+ * and take whichever comes back.
+ */
+export async function getMediaInsights(opts: { mediaId: string; accessToken: string }): Promise<MediaInsights | null> {
+  try {
+    const metrics = 'reach,likes,comments,saved,shares,views'
+    const res = await fetch(
+      `${GRAPH_BASE}/${GRAPH_VERSION}/${encodeURIComponent(opts.mediaId)}/insights?metric=${metrics}&access_token=${encodeURIComponent(opts.accessToken)}`,
+    )
+    const data = await res.json() as { data?: Array<{ name: string; values?: Array<{ value: number }> }>; error?: { message?: string } }
+    if (!res.ok || !Array.isArray(data.data)) return null
+    const val = (name: string): number | null => {
+      const row = data.data!.find(d => d.name === name)
+      const v = row?.values?.[0]?.value
+      return typeof v === 'number' ? v : null
+    }
+    return {
+      reach: val('reach'),
+      plays: val('views'),
+      likes: val('likes'),
+      comments: val('comments'),
+      saves: val('saved'),
+      shares: val('shares'),
+    }
+  } catch {
+    return null
+  }
+}
+
 export async function getMediaCount(opts: { userId: string; accessToken: string }): Promise<number | null> {
   try {
     const res = await fetch(`${GRAPH_BASE}/${GRAPH_VERSION}/${opts.userId}?fields=media_count&access_token=${encodeURIComponent(opts.accessToken)}`)

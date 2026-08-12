@@ -119,6 +119,20 @@ const WEAK_WORD = new Set<string>([
   'best', 'free', 'shipping', 'compatible', 'includes', 'features', 'perfect',
 ])
 
+/** The single best-matching product category key for a piece of text (title +
+ *  description + niches), or null if nothing matches. Used to tag a captured
+ *  post's niche so tag performance can be ranked per-category. Same keyword
+ *  matching selectHashtags() uses. */
+export function detectNiche(text: string): string | null {
+  const hay = ` ${String(text || '')} `.toLowerCase()
+  let best: { key: string; score: number } | null = null
+  for (const c of TAXONOMY) {
+    const score = c.match.reduce((s, k) => s + (hay.includes(k) ? 1 : 0), 0)
+    if (score > 0 && (!best || score > best.score)) best = { key: c.key, score }
+  }
+  return best?.key ?? null
+}
+
 /** Normalize any string into a clean `#lowercasetag`, or '' if nothing usable. */
 export function hashify(raw: string): string {
   const clean = String(raw || '').replace(/^#/, '').toLowerCase().replace(/[^a-z0-9]+/g, '')

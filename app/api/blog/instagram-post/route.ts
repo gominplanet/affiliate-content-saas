@@ -20,6 +20,7 @@ import { resolveBlogPostId } from '@/lib/resolve-post-id'
 import { scrubBanned } from '@/lib/scrub'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { publishMedia, refreshLongLivedToken, getMediaCount } from '@/services/instagram'
+import { recordReachSample } from '@/lib/reach-pulse'
 import { checkInstagramPace, logSocialPublish } from '@/lib/social-pace'
 import { cloudinaryConfigured, overlayCaptionOnVideo } from '@/services/cloudinary'
 import { createGeniuslinkService } from '@/services/geniuslink'
@@ -325,6 +326,8 @@ Return ONLY the caption text + hashtags.`,
           results.reelCaption = feedCaption ?? undefined
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           await supabase.from('blog_posts').update({ instagram_reel_id: reelId }).eq('id', postId)
+          // Pulse: learn which tags this Reel used (best-effort, non-blocking).
+          void recordReachSample({ userId: user.id, mediaId: reelId, caption: feedCaption ?? '' })
         } catch (err) {
           results.warnings.push(`Reel publish failed: ${err instanceof Error ? err.message : String(err)}`)
         }
