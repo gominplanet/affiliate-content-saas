@@ -17,7 +17,7 @@ import Link from 'next/link'
 import { Sparkles, ArrowUpRight, X } from 'lucide-react'
 
 // Bump this whenever UPDATES changes — auto-opens the modal once for everyone.
-const RELEASE_ID = '2026-08-12'
+const RELEASE_ID = '2026-08-12b'
 const STORAGE_KEY = 'mvp_whats_new_seen'
 
 interface Update {
@@ -29,6 +29,13 @@ interface Update {
 }
 
 const UPDATES: Update[] = [
+  {
+    badge: 'NEW',
+    tone: '#EC4899',
+    title: 'Make a vertical clip right where you post',
+    desc: 'Click TikTok or Instagram on any video in your Library and the clip maker opens right there. It finds the best moments, renders a 9:16 clip with captions (or split screen), and adds your call-to-action overlay before you post. No more bouncing to a separate upload page.',
+    href: '/content',
+  },
   {
     badge: 'NEW',
     tone: '#7C3AED',
