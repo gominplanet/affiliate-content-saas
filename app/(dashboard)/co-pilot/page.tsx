@@ -10,7 +10,7 @@ import HeroVideo from '@/components/layout/HeroVideo'
 import { CapReachedBanner } from '@/components/CapReachedBanner'
 import { useConfirm } from '@/components/ui/useConfirm'
 import { pickWeightedStyleIndex, OVERLAY_STYLES, drawHeadline, type HeadlinePosition, type FaceBox } from '@/lib/thumbnail-overlay'
-import { isExtensionAvailable, requestVideoFrames, requestAmazonProduct, requestVideoTranscript, requestStudioSchedule, requestStudioVideos, requestStudioFinish, requestYtSaveRecipes, requestYtApplyDisclosures, requestYtInjectDisclosures, type StudioFinishResult, type YtSaveRecipe } from '@/lib/extension-frame'
+import { isExtensionAvailable, requestVideoFrames, requestAmazonProduct, requestVideoTranscript, requestStudioSchedule, requestStudioVideos, requestStudioFinish, requestYtSaveRecipes, requestYtApplyDisclosures, requestYtInjectDisclosures, type StudioFinishResult, type StudioFinishStep, type YtSaveRecipe } from '@/lib/extension-frame'
 import { SCOUT_STORE_LISTING_URL } from '@/lib/scout-version'
 import { effectiveTier } from '@/lib/view-as'
 import type { Tier } from '@/lib/tier'
@@ -1242,29 +1242,37 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
     setFinishError(null)
     setFinishResult(null)
     try {
-      const res = await requestStudioFinish(video.youtubeVideoId, {
-        details: finishDoDetails,
-        // Self-cert is part of the monetization flow — they ride together.
-        monetize: finishDoMonetize,
-        selfCert: finishDoMonetize,
-        endScreen: finishDoEndScreen,
-        // Honor the same Yes/No the API path uses, so SCOUT's Details pass sets
-        // the "publish to subs feed & notify" box to match instead of forcing off.
-        notifySubscribers: proSettings.notifySubscribers,
-        // Tag the reviewed product (YouTube Shopping creators only).
-        ...(doTag ? { tagProduct: true, productUrl: tagUrl } : {}),
-      })
-      setFinishResult(res)
-      if (!res.ok && res.error) {
-        setFinishError(
-          res.error === 'not-installed'
-            ? 'SCOUT isn’t installed or didn’t respond. Install/reload SCOUT and try again.'
-            : res.error === 'timeout'
-              ? 'YouTube Studio took too long to respond. Try again.'
-              : `Couldn’t finish in Studio: ${res.error}`,
-        )
+      const steps: StudioFinishStep[] = []
+      // Paid promotion + AI disclosure + monetization go through INJECTION into
+      // Studio's own signed save — the only path YouTube honors (a hand-rolled
+      // API replay 200s but silently drops these protected fields).
+      if (finishDoDetails || finishDoMonetize) {
+        const inj = await requestYtInjectDisclosures(video.youtubeVideoId, {
+          paidPromotion: finishDoDetails,
+          aiDisclosure: finishDoDetails,
+          hasAlteredContent: false,
+          monetize: finishDoMonetize,
+        })
+        if (finishDoDetails) steps.push({ step: 'details', ok: inj.ok, detail: inj.ok ? 'Paid promotion + AI disclosure set' : (inj.detail || inj.error || 'failed') })
+        if (finishDoMonetize) steps.push({ step: 'monetization', ok: inj.ok, detail: inj.ok ? 'Monetization on' : (inj.detail || inj.error || 'failed') })
+        if (!inj.ok) {
+          setFinishError(
+            inj.error === 'not-installed'
+              ? 'SCOUT isn’t installed or didn’t respond. Reload SCOUT and try again.'
+              : inj.error === 'timeout'
+                ? 'YouTube Studio took too long to respond. Try again.'
+                : `Couldn’t finish in Studio: ${inj.detail || inj.error || 'unknown'}`,
+          )
+        }
       }
-      return res
+      // End screen + product tag can't be injected (not metadata_update fields /
+      // YouTube blocks them) — surface as the optional manual step.
+      if (finishDoEndScreen) steps.push({ step: 'endscreen', ok: false, skipped: true, detail: 'add by hand — YouTube blocks automating the end-screen editor' })
+      if (doTag) steps.push({ step: 'tagproduct', ok: false, skipped: true, detail: 'tag by hand in YouTube Shopping' })
+
+      const result: StudioFinishResult = { ok: steps.some(s => s.ok), steps }
+      setFinishResult(result)
+      return result
     } catch (e) {
       setFinishError(e instanceof Error ? e.message : 'Failed to run the Studio finish')
       return null
