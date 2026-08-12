@@ -62,7 +62,29 @@ export async function POST(request: NextRequest) {
   // Preview is a single, user-initiated pin → render the designed MVP Art
   // Director pin when the post has a real product photo. Falls back to the cheap
   // hero-composite when there's no product photo (no extra generation cost).
-  const a = await buildPinAssets(p, { userId: user.id, tier: ig?.tier ?? null }, { artDirector: true })
+  //
+  // buildPinAssets degrades image-gen failures internally (returns a
+  // fallbackImageUrl), but if it throws outright the whole preview used to hard-
+  // fail with an unhelpful generic toast and NO server log. Wrap it: log the real
+  // reason, and still open the preview using the post's existing image so the
+  // user can pin, instead of a dead button.
+  let a: Awaited<ReturnType<typeof buildPinAssets>>
+  try {
+    a = await buildPinAssets(p, { userId: user.id, tier: ig?.tier ?? null }, { artDirector: true })
+  } catch (err) {
+    console.error('[pinterest-preview] buildPinAssets threw:', err instanceof Error ? (err.stack || err.message) : err)
+    a = {
+      title: (p.title as string) || 'Take a look',
+      description: (p.title as string) || '',
+      hashtags: [],
+      disclaimer: '',
+      complianceTags: '',
+      link: (p.permalink as string) || (p.url as string) || postUrl || '',
+      imageBase64: null,
+      mediaType: null,
+      fallbackImageUrl: (p.featured_image_url as string) || (p.thumbnail_url as string) || postImage || null,
+    }
+  }
 
   // The post's vertical render (if any) — lets the preview offer a VIDEO pin
   // instead of the still image. Resolved from the linked Short.
