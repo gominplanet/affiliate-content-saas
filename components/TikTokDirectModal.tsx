@@ -178,9 +178,20 @@ export function TikTokDirectModal({
   useEffect(() => { void loadMeta() }, [loadMeta])
 
   // Poll publish status after kicking off Direct Post.
+  // TikTok can park a job in PROCESSING_DOWNLOAD indefinitely when it can't pull
+  // the video from our URL — the status endpoint then returns 'processing'
+  // forever. Without a ceiling the "Processing…" spinner would never resolve, so
+  // we cap the poll on both a wall-clock deadline and a run of failed checks and
+  // flip to a terminal 'failed' state the user can act on.
   useEffect(() => {
     if (!publishId || publishStatus === 'published' || publishStatus === 'failed' || publishStatus === 'inbox') return
+    const MAX_TICKS = 84            // ~7 min at 5s (banner promises 1-3 min)
+    const MAX_ERR_STREAK = 4        // ~20s of consecutive failed status checks
+    let ticks = 0
+    let errStreak = 0
+    let settled = false
     const tick = async () => {
+      ticks++
       try {
         const statusUrl = isBurned
           ? `/api/tiktok/publish-burned/status?publishId=${encodeURIComponent(publishId)}`
@@ -188,23 +199,50 @@ export function TikTokDirectModal({
         const res = await fetch(statusUrl)
         const json = await res.json()
         if (!res.ok) {
-          setPublishError(json.error || 'Status check failed.')
+          errStreak++
+          if (errStreak >= MAX_ERR_STREAK) {
+            settled = true
+            setPublishStatus('failed')
+            setPublishError(json.error || 'TikTok never confirmed the post. Open the TikTok app to check, or try posting again.')
+          } else {
+            setPublishError(json.error || 'Status check failed — retrying.')
+          }
           return
         }
+        errStreak = 0
         setRawStatus((json.rawStatus as string) || null)
         if (json.status === 'published') {
+          settled = true
           setPublishStatus('published')
           setShareUrl(json.shareUrl ?? null)
           if (onPosted) onPosted()
         } else if (json.status === 'inbox') {
+          settled = true
           setPublishStatus('inbox')
           setPublishError(json.errorMessage || 'TikTok routed it to your app inbox — open the TikTok app to publish.')
           if (onPosted) onPosted()
         } else if (json.status === 'failed') {
+          settled = true
           setPublishStatus('failed')
           setPublishError(json.errorMessage || 'TikTok rejected the post.')
         }
-      } catch { /* tick again on next interval */ }
+      } catch {
+        /* network hiccup — count it toward the error streak, tick again */
+        errStreak++
+        if (errStreak >= MAX_ERR_STREAK) {
+          settled = true
+          setPublishStatus('failed')
+          setPublishError('Lost connection while checking the post status. Open the TikTok app to confirm it went out.')
+        }
+      } finally {
+        // Wall-clock ceiling: a job that never leaves 'processing' becomes a
+        // timed-out failure instead of an eternal spinner.
+        if (!settled && ticks >= MAX_TICKS) {
+          settled = true
+          setPublishStatus('failed')
+          setPublishError('TikTok is still processing after several minutes — it may have stalled pulling the video. Check the TikTok app; if nothing appears, post again.')
+        }
+      }
     }
     const id = setInterval(tick, 5000)
     void tick()

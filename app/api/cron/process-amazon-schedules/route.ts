@@ -43,11 +43,18 @@ export async function GET(request: Request) {
   const admin: any = createAdminClient()
   const nowIso = new Date().toISOString()
 
-  // Stuck-claim recovery: rows stuck 'processing' >5 min → back to 'pending'.
+  // Stuck-claim recovery: rows stuck 'processing' >5 min → reclaimed for another
+  // try, but with an attempt cap so a row that keeps outliving the function's
+  // wall-clock is terminal-failed instead of re-claimed/re-billed forever
+  // (migration 248). Best-effort: if the RPC/column isn't live yet the tick
+  // still proceeds to the claim below.
   const fiveMinAgo = new Date(Date.now() - 5 * 60_000).toISOString()
-  await admin.from('amazon_scheduled_posts')
-    .update({ status: 'pending', updated_at: nowIso })
-    .eq('status', 'processing').lt('claimed_at', fiveMinAgo)
+  const { error: reclaimErr } = await admin.rpc('reclaim_stuck_scheduled_posts', {
+    p_table: 'amazon_scheduled_posts',
+    p_stuck_before: fiveMinAgo,
+    p_max_attempts: 3,
+  })
+  if (reclaimErr) console.error('[cron/process-amazon-schedules] reclaim failed', reclaimErr.message)
 
   // Atomic claim of due + pending rows. Only platforms we can publish today.
   const { data: claimed, error: claimErr } = await admin

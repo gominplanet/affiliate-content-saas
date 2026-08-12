@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
 import { LegacyCapsNotice } from '@/components/newsletter/LegacyCapsNotice'
@@ -94,6 +94,25 @@ export default function BillingPage() {
       window.history.replaceState({}, '', '/billing')
     }
   }, [])
+
+  // Deep-link from a locked-feature "Upgrade to X" CTA (FeatureLockedCard sends
+  // ?plan=creator|studio|pro). Highlight that plan's card and scroll to it once
+  // the page has loaded, so the button actually lands the user on the plan they
+  // asked for instead of a generic picker.
+  const planPickerRef = useRef<HTMLDivElement>(null)
+  const [highlightPlan, setHighlightPlan] = useState<string | null>(null)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const p = new URLSearchParams(window.location.search).get('plan')
+    if (p && ['creator', 'studio', 'pro'].includes(p)) {
+      setHighlightPlan(p)
+      window.history.replaceState({}, '', '/billing')
+    }
+  }, [])
+  useEffect(() => {
+    if (loading || !highlightPlan) return
+    planPickerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [loading, highlightPlan])
 
   const currentTier = TIERS[tier]
   const isPaid = tier !== 'trial' && tier !== 'admin'
@@ -343,13 +362,13 @@ export default function BillingPage() {
 
           {/* Plans */}
           {tier !== 'admin' && (
-            <div className="card p-6">
+            <div ref={planPickerRef} className="card p-6">
               <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-4">
                 {isPaid ? 'Change plan' : 'Upgrade your plan'}
               </h2>
               <div className="flex flex-col gap-3">
                 {planDetails.filter(p => p.tier !== tier).map((plan) => (
-                  <div key={plan.tier} className="rounded-xl border border-gray-200 dark:border-white/10 hover:border-[#7C3AED]/40 transition-colors overflow-hidden">
+                  <div key={plan.tier} className={`rounded-xl border transition-colors overflow-hidden ${highlightPlan === plan.tier ? 'border-[#7C3AED] ring-2 ring-[#7C3AED]/40' : 'border-gray-200 dark:border-white/10 hover:border-[#7C3AED]/40'}`}>
                     <div className="flex items-center justify-between p-4">
                       <div>
                         <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{TIERS[plan.tier].label}</p>

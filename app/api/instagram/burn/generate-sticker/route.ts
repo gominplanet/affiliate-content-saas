@@ -123,7 +123,11 @@ The badge must be a self-contained graphic centred on a PLAIN SOLID FLAT WHITE b
     const generated = await composeWithNanoBananaPro({ prompt, referenceImageUrls: refUrls, aspectRatio: '4:3', numImages: 1 })
     const rawUrl = generated[0]
     if (!rawUrl) return NextResponse.json({ error: 'Could not generate the badge — try again or tweak the wording.' }, { status: 502 })
-    recordUsage({ userId: user.id, tier, feature: 'cta_sticker_gen', model: NANO_BANANA_PRO_COST_MODEL, images: 1 })
+    // Track the real AI spend now (it happened), but DON'T advance the cap yet —
+    // background-removal / fetch / storage can still fail below and leave the user
+    // with no usable sticker. The cap feature `cta_sticker_gen` is recorded only
+    // once we've saved a real stickerUrl (just before the success response).
+    recordUsage({ userId: user.id, tier, feature: 'cta_sticker_cost', model: NANO_BANANA_PRO_COST_MODEL, images: 1 })
 
     // Strip the solid background → transparent PNG via fal rembg.
     const cutoutUrl = await removeBackground(rawUrl)
@@ -173,6 +177,10 @@ The badge must be a self-contained graphic centred on a PLAIN SOLID FLAT WHITE b
         .single()
       savedId = (row?.id as string) ?? null
     } catch { /* table may not exist yet — non-fatal */ }
+
+    // Sticker is saved and downloadable — NOW charge the cap (the user got a
+    // usable badge). A failure anywhere above returned early without this row.
+    recordUsage({ userId: user.id, tier, feature: 'cta_sticker_gen', model: NANO_BANANA_PRO_COST_MODEL, images: 1 })
 
     return NextResponse.json({ ok: true, stickerUrl, tag, id: savedId })
   } catch (err) {

@@ -2323,10 +2323,19 @@ Ultra-sharp, professional, photorealistic.`
           }
 
           if (nbUrls.length > 0) {
-            for (let i = 0; i < nbUrls.length; i++) {
+            // Cap counter must appear EXACTLY ONCE per generation (see
+            // PRIMARY_FEATURE.thumbnail in lib/usage-cap.ts and migration 101 —
+            // multiple model calls for one generation must not multiply the
+            // count). Record the primary feature once; log the extra variants'
+            // real spend under a cost-only feature the cap doesn't count.
+            recordUsage({
+              userId: TELEMETRY.userId, tier: TELEMETRY.tier,
+              feature: 'yt_thumb_nanobanana_image', model: nbModelKey, images: 1,
+            })
+            for (let i = 1; i < nbUrls.length; i++) {
               recordUsage({
                 userId: TELEMETRY.userId, tier: TELEMETRY.tier,
-                feature: 'yt_thumb_nanobanana_image', model: nbModelKey, images: 1,
+                feature: 'yt_thumb_nanobanana_cost', model: nbModelKey, images: 1,
               })
             }
             // ── IMAGE QC GATE (per variant) ──────────────────────────────
@@ -2369,8 +2378,10 @@ Ultra-sharp, professional, photorealistic.`
                   ),
                 )).flat().filter(Boolean).slice(0, variantCount)
                 const retryGraded = retry.length > 0 ? await Promise.all(retry.map(applyMoodyGrade)) : []
+                // QC retry is real spend but the SAME generation — track cost
+                // only, never advance the cap again (it was counted above).
                 for (let i = 0; i < retryGraded.length; i++) {
-                  recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'yt_thumb_nanobanana_image', model: NANO_BANANA_PRO_COST_MODEL, images: 1 })
+                  recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'yt_thumb_nanobanana_cost', model: NANO_BANANA_PRO_COST_MODEL, images: 1 })
                 }
                 if (retryGraded.length > 0) {
                   nbUrls = retryGraded // remap auditVariant's index space to the retry set

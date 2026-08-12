@@ -483,7 +483,11 @@ Ultra-sharp, photorealistic, 4:5 portrait.`
             const retry = await composeWithNanoBananaPro({ prompt: igPrompt, referenceImageUrls: refs, aspectRatio: '4:5', numImages: 1 })
             if (retry[0]) {
               imageUrl = retry[0]
-              recordUsage({ userId: user.id, tier, feature: 'ig_ai_thumbnail_image', model: NANO_BANANA_PRO_COST_MODEL, images: 1 })
+              // Cost-only feature so the QC retry's real spend is still tracked
+              // WITHOUT advancing the monthly cap — `ig_ai_thumbnail_image` must
+              // appear exactly once per delivered image (see PRIMARY_FEATURE in
+              // lib/usage-cap.ts), else one image would burn two of the cap.
+              recordUsage({ userId: user.id, tier, feature: 'ig_ai_thumbnail_retry_cost', model: NANO_BANANA_PRO_COST_MODEL, images: 1 })
             }
           }
         }
