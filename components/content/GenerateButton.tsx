@@ -168,6 +168,9 @@ export function GenerateButton({
   )
   const includeImages = includeImagesProp ?? internalIncludeImages
   const setIncludeImages = (v: boolean) => (onIncludeImagesChange ?? setInternalIncludeImages)(v)
+  // Opt-in: swap the featured image for an Art Director-designed blog hero
+  // (uses a thumbnail credit). Off by default. 2026-08.
+  const [artThumb, setArtThumb] = useState(false)
   // Optional: bring-your-own in-article images. Three fixed slots (image 1, 2,
   // 3), each optional, one photo per slot. When any are filled, THOSE are placed
   // through the post INSTEAD of AI-generated photos. Fixed-length array so each
@@ -254,6 +257,7 @@ export function GenerateButton({
           const r = await generateBlogRequest({
             videoId,
             includeImages,
+            ...(artThumb ? { artDirectorThumbnail: true } : {}),
             ...(siteId ? { siteId } : {}),
             ...(includeImages && userImages.some(Boolean) ? { userImageUrls: userImages.filter((u): u is string => !!u) } : {}),
             ...(opts?.rewriteFeedback ? { rewriteFeedback: opts.rewriteFeedback } : {}),
@@ -591,6 +595,18 @@ export function GenerateButton({
             className="accent-[#7C3AED] w-3.5 h-3.5"
           />
           Include photos in the article
+        </label>
+        <label
+          className="flex items-center gap-1.5 text-[11px] text-[#6e6e73] dark:text-[#ebebf0] cursor-pointer select-none"
+          title="Replace the post's featured image with an Art Director-designed thumbnail built from the real product. Great for older videos with a plain YouTube thumb. Uses one thumbnail credit."
+        >
+          <input
+            type="checkbox"
+            checked={artThumb}
+            onChange={(e) => setArtThumb(e.target.checked)}
+            className="accent-[#7C3AED] w-3.5 h-3.5"
+          />
+          Update my post thumbnail with Art Director <span className="text-[#86868b]">(1 thumbnail)</span>
         </label>
       </div>
 
