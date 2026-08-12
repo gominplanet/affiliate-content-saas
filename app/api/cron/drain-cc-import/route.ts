@@ -51,11 +51,12 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, aborted: 'staging empty' })
   }
 
-  const s = (flag.value || {}) as { phase?: string; cursor?: string; upserted?: number; purged?: number }
+  const s = (flag.value || {}) as { phase?: string; cursor?: string; upserted?: number; purged?: number; scanned?: number }
   let phase: 'merge' | 'purge' = s.phase === 'purge' ? 'purge' : 'merge'
   let cursor = typeof s.cursor === 'string' ? s.cursor : ''
   let upserted = Number(s.upserted || 0)
   let purged = Number(s.purged || 0)
+  let scannedTotal = Number(s.scanned || 0)
 
   // Keep enrichment paused while we work (refresh so a stale flag can't linger).
   try {
@@ -68,7 +69,7 @@ export async function GET(request: Request) {
   const save = async (extra: any = {}) => {
     try {
       await admin.from('system_flags')
-        .update({ value: { phase, cursor, upserted, purged, ...extra }, updated_at: new Date().toISOString() })
+        .update({ value: { phase, cursor, upserted, purged, scanned: scannedTotal, ...extra }, updated_at: new Date().toISOString() })
         .eq('key', DRAIN_KEY)
     } catch { /* best-effort */ }
   }
@@ -108,6 +109,7 @@ export async function GET(request: Request) {
       }
       const row = Array.isArray(data) ? data[0] : data
       const scanned = Number(row?.scanned ?? 0)
+      scannedTotal += scanned
       purged += Number(row?.deleted ?? 0)
       if (row?.last_id != null) cursor = String(row.last_id)
       if (scanned < PURGE_SCAN) { done = true; break } // reached the end of the catalog

@@ -36,7 +36,7 @@ export default function AdminCcImportPage() {
   const [backfillFilled, setBackfillFilled] = useState<number | null>(null)
   const [backfillDone, setBackfillDone] = useState(false)
   // Server-side background drain (cron): status + start/stop.
-  const [drain, setDrain] = useState<{ active: boolean; phase?: string; upserted?: number; purged?: number } | null>(null)
+  const [drain, setDrain] = useState<{ active: boolean; phase?: string; upserted?: number; purged?: number; scanned?: number } | null>(null)
   const [bgStarting, setBgStarting] = useState(false)
 
   const loadCounts = useCallback(async () => {
@@ -354,10 +354,14 @@ export default function AdminCcImportPage() {
           <Loader2 size={16} className="flex-shrink-0 mt-0.5 animate-spin" style={{ color: '#7C3AED' }} />
           <div className="flex-1">
             <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>
-              Merging in the background{drain.phase === 'purge' ? ' — purging fall-outs' : ''}. You can close this tab.
+              {drain.phase === 'purge'
+                ? 'Merge done — cleaning up campaigns that fell out of the CSV. You can close this tab.'
+                : 'Merging in the background. You can close this tab.'}
             </p>
             <p className="text-[12px] mt-0.5" style={{ color: 'var(--text-soft)' }}>
-              Merged <b>{Number(drain.upserted ?? 0).toLocaleString()}</b>{typeof drain.purged === 'number' && drain.purged > 0 ? ` · purged ${drain.purged.toLocaleString()}` : ''} so far. A cron continues every minute until done. Staged / Live counts above update live.
+              {drain.phase === 'purge'
+                ? <>Checked <b>{Number(drain.scanned ?? 0).toLocaleString()}</b> campaigns{typeof drain.purged === 'number' && drain.purged > 0 ? `, removed ${drain.purged.toLocaleString()}` : ''}. This final sweep walks the whole catalog once (a few minutes) — most stay, so the number to watch is &ldquo;Checked&rdquo;, not &ldquo;removed&rdquo;.</>
+                : <>Merged <b>{Number(drain.upserted ?? 0).toLocaleString()}</b> so far. A cron continues every minute until done. Staged / Live counts above update live.</>}
             </p>
           </div>
           <button onClick={stopBackground}
