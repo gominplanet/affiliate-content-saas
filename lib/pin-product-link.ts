@@ -9,7 +9,7 @@
 // managed, disclosed affiliate link); otherwise use the tagged direct Amazon URL.
 // Returns null when there's no product to link to (the modal then disables the
 // Product option and the pin stays on the blog link).
-import { asinFromAmazonUrl } from '@/lib/product-link'
+import { asinFromAmazonUrl, firstProductUrl } from '@/lib/product-link'
 import { extractAsin } from '@/services/amazon'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { getOrCreateAmazonGeniuslink } from '@/lib/geniuslink-cache'
@@ -23,7 +23,11 @@ export async function resolvePinProductLink(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ig: any,
 ): Promise<string | null> {
-  // The product this post is about lives on its linked video (product_url/title).
+  // The product this post is about: prefer its linked video's product_url
+  // (single-product reviews), else the first product link in the article body
+  // (guides / comparisons / from-link posts have no video but DO carry the
+  // affiliate link in their content — often already the user's geni.us/tagged
+  // link, which is exactly the direct product destination we want).
   let productUrl: string | null = null
   let title = (p?.title as string) || ''
   const videoId = (p as { video_id?: string | null })?.video_id
@@ -33,7 +37,13 @@ export async function resolvePinProductLink(
         .from('youtube_videos').select('product_url,title').eq('id', videoId).maybeSingle()
       productUrl = (v?.product_url as string | null)?.trim() || null
       title = (v?.title as string) || title
-    } catch { /* fall through to title-based ASIN */ }
+    } catch { /* fall through to content / title-based ASIN */ }
+  }
+  if (!productUrl) {
+    const content = (p?.content as string | null) || ''
+    if (content) {
+      try { productUrl = firstProductUrl(content, (p?.wordpress_url as string | null) || null) } catch { /* none in body */ }
+    }
   }
 
   const asin = (productUrl ? asinFromAmazonUrl(productUrl) : null)

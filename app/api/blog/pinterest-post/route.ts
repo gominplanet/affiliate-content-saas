@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
   // the synthetic-post path) rather than erroring.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [{ data: post }, { data: integration }] = await Promise.all([
-    supabase.from('blog_posts').select('id,title,wordpress_url,wordpress_post_id,wordpress_site_id,social_publish_counts,video_id').eq('id', postId).eq('user_id', user.id).maybeSingle(),
+    supabase.from('blog_posts').select('id,title,wordpress_url,wordpress_post_id,wordpress_site_id,social_publish_counts,video_id,content').eq('id', postId).eq('user_id', user.id).maybeSingle(),
     supabase.from('integrations').select('pinterest_access_token,pinterest_board_id,pinterest_fallback_board,amazon_associates_tag,geniuslink_api_key,geniuslink_api_secret').eq('user_id', user.id).single(),
   ])
   // No MVP record → pin straight from the WordPress post. `hasRow` gates the
