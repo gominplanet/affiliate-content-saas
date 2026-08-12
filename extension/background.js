@@ -3277,7 +3277,7 @@ function studioFinishTagProductInPage(productUrl) {
 // save). This sidesteps the untrusted-click problem entirely. First pass sends
 // WITHOUT the BotGuard attestationResponseData — the response tells us whether
 // YouTube enforces it (if so we fall back to in-flight injection).
-function studioApplyDisclosuresInPage(videoId, opts) {
+function studioApplyDisclosuresInPage(videoId, opts, readMask) {
   return (async () => {
     const out = { ok: false, step: 'apidisclosures', detail: '', debug: {} }
     try {
@@ -3312,6 +3312,11 @@ function studioApplyDisclosuresInPage(videoId, opts) {
       // Build the update body with only the disclosure mutations set.
       const context = Object.assign({}, ictx)
       const body = { encryptedVideoId: videoId, flowType: 'MDE_FLOW_TYPE_UPLOAD', context }
+      // The real save request carried a big videoReadMask; a 200 without it may
+      // silently drop the mutations. Include the real mask (passed in from a
+      // captured save) to test whether that's the gate vs BotGuard attestation.
+      if (readMask && typeof readMask === 'object') body.videoReadMask = readMask
+      out.debug.hasReadMask = !!(readMask && typeof readMask === 'object')
       if (opts.paidPromotion) body.productPlacement = { newHasPaidProductPlacement: true, newShowPaidProductPlacementOverlay: true, newIsPaidProductPlacementSelfDeclaredDefinitive: true }
       if (opts.aiDisclosure) body.alteredContent = { operation: 'MDE_ALTERED_CONTENT_UPDATE_OPERATION_SET', newCreatorDisclosedHasAlteredContent: opts.hasAlteredContent ? 'MDE_HAS_ALTERED_CONTENT_YES' : 'MDE_HAS_ALTERED_CONTENT_NO' }
       if (opts.monetize) { body.monetizationSettings = { newMonetizeWithAds: true }; body.adSettings = { adBreaks: { newHasPrerolls: 'ENABLED', newHasMidrollAds: 'ENABLED', newHasPostrolls: 'ENABLED' }, autoAdSettings: 'AUTO_AD_SETTINGS_TYPE_OFF' } }
@@ -3340,6 +3345,18 @@ function studioApplyDisclosuresInPage(videoId, opts) {
 
 async function ytApplyDisclosures(videoId, opts) {
   if (!videoId || !/^[a-zA-Z0-9_-]{6,20}$/.test(videoId)) return { ok: false, error: 'bad-video-id' }
+  // Pull the real videoReadMask out of a captured metadata_update save, if we
+  // have one, and pass it into the replay.
+  let readMask = null
+  try {
+    const store = await chrome.storage.local.get(['mvp_yt_recipes'])
+    const recs = Array.isArray(store.mvp_yt_recipes) ? store.mvp_yt_recipes : []
+    for (const r of recs) {
+      if (r && /metadata_update/.test(r.url || '') && typeof r.body === 'string') {
+        try { const b = JSON.parse(r.body); if (b && b.videoReadMask) { readMask = b.videoReadMask; break } } catch (e) {}
+      }
+    }
+  } catch (e) {}
   let tabId = null
   try {
     // Background tab is fine — this is a direct fetch, no DOM interaction.
@@ -3347,7 +3364,7 @@ async function ytApplyDisclosures(videoId, opts) {
     tabId = tab.id
     await waitForTabLoad(tabId, 30000)
     await new Promise((r) => setTimeout(r, 2500)) // let ytcfg populate
-    const r = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: studioApplyDisclosuresInPage, args: [videoId, opts || {}] })
+    const r = await chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func: studioApplyDisclosuresInPage, args: [videoId, opts || {}, readMask] })
     return (r && r[0] && r[0].result) || { ok: false, error: 'no-result' }
   } catch (e) {
     return { ok: false, error: (e && e.message) || 'apply-failed' }
