@@ -545,8 +545,6 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
   // channel, monetized or not.
   const [finishDoDetails, setFinishDoDetails] = useState(true)
   const [finishDoMonetize, setFinishDoMonetize] = useState(true)
-  const [finishDoEndScreen, setFinishDoEndScreen] = useState(true)
-  const [finishDoTagProduct, setFinishDoTagProduct] = useState(true)
   const [finishRunning, setFinishRunning] = useState(false)
   const [finishResult, setFinishResult] = useState<StudioFinishResult | null>(null)
   // Dev: captured YouTube Studio save requests (yt-hook) — used to learn the
@@ -1045,7 +1043,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
 
         // Will SCOUT finish the Studio-only fields after this push?
         const wantsFinish = extensionInstalled === true && finishOptIn &&
-          (finishDoDetails || finishDoMonetize || finishDoEndScreen || (finishDoTagProduct && !!video.detectedAsin))
+          (finishDoDetails || finishDoMonetize)
 
         // COMPLIANCE ORDERING. Paid-promotion and AI-disclosure MUST be set
         // before a video is public — otherwise it goes live undisclosed. When
@@ -1234,10 +1232,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
 
   async function runStudioFinish(): Promise<StudioFinishResult | null> {
     if (!video.youtubeVideoId || !finishOptIn) return null
-    // Product tagging only fires when we actually have a product to tag.
-    const tagUrl = video.detectedAsin ? `https://www.amazon.com/dp/${video.detectedAsin}` : ''
-    const doTag = finishDoTagProduct && !!tagUrl
-    if (!finishDoDetails && !finishDoMonetize && !finishDoEndScreen && !doTag) return null
+    if (!finishDoDetails && !finishDoMonetize) return null
     setFinishRunning(true)
     setFinishError(null)
     setFinishResult(null)
@@ -1268,10 +1263,10 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           )
         }
       }
-      // End screen + product tag can't be injected (not metadata_update fields /
-      // YouTube blocks them) — surface as the optional manual step.
-      if (finishDoEndScreen) steps.push({ step: 'endscreen', ok: false, skipped: true, detail: 'add by hand — YouTube blocks automating the end-screen editor' })
-      if (doTag) steps.push({ step: 'tagproduct', ok: false, skipped: true, detail: 'tag by hand in YouTube Shopping' })
+      // End screen + product tag can't be injected (YouTube blocks automating
+      // them) — always surface as the optional "do by hand" reminder.
+      steps.push({ step: 'endscreen', ok: false, skipped: true, detail: 'add by hand — YouTube blocks automating the end-screen editor' })
+      if (video.detectedAsin) steps.push({ step: 'tagproduct', ok: false, skipped: true, detail: 'tag by hand in YouTube Shopping' })
 
       const result: StudioFinishResult = { ok: steps.some(s => s.ok), steps }
       setFinishResult(result)
@@ -2845,50 +2840,57 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                     <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] -mt-0.5">Applies whether MVP publishes it or SCOUT finishes it in Studio.</p>
                   </div>
 
-                  {/* SCOUT auto-finish — the Studio-only fields YouTube's API
+                  {/* SCOUT auto-finish — the compliance fields YouTube's API
                       can't set (paid promotion, AI disclosure, monetization +
-                      ad rating, end screen, product tag). Gathered HERE, before
-                      the push, so ONE button does push → finish in Studio.
-                      Only shown when the extension is installed (it's the only
-                      thing that can drive Studio). */}
+                      ad rating). Explicit opt-in, OFF by default. Only shown
+                      when the extension is installed. Gathered HERE so ONE
+                      button does push → finish in Studio. */}
                   {extensionInstalled === true && (
-                    <div className="rounded-lg border border-[#7C3AED]/30 bg-[#7C3AED]/5 px-3 py-2.5 flex flex-col gap-2.5">
-                      <label className="flex items-start gap-2 cursor-pointer">
+                    <div className="rounded-xl border border-[#7C3AED]/25 bg-[#7C3AED]/[0.04] overflow-hidden">
+                      <label className="flex items-start gap-2.5 cursor-pointer px-3.5 py-3 hover:bg-[#7C3AED]/[0.03] transition-colors">
                         <input
                           type="checkbox"
                           checked={finishOptIn}
                           disabled={finishRunning || applying}
                           onChange={e => setFinishOptIn(e.target.checked)}
-                          className="mt-0.5 flex-shrink-0"
+                          className="mt-0.5 flex-shrink-0 w-4 h-4 accent-[#7C3AED]"
                         />
-                        <span className="text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7] leading-relaxed">
-                          <strong>Also finish this video in YouTube Studio for me.</strong> Right after the push, SCOUT opens Studio in your own logged-in browser and applies only the items I tick below, on this video only. Nothing else on your channel is changed.
+                        <span className="flex flex-col gap-0.5 min-w-0">
+                          <span className="text-xs font-bold text-[#1d1d1f] dark:text-[#f5f5f7] flex items-center gap-1.5 flex-wrap">
+                            <Sparkles size={12} className="text-[#7C3AED] flex-shrink-0" /> Also finish this video in YouTube Studio
+                            <span className="text-[9px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-[#7C3AED]/15 text-[#7C3AED]">Optional</span>
+                          </span>
+                          <span className="text-[11px] text-[#6e6e73] dark:text-[#8e8e93] leading-relaxed">
+                            The few settings YouTube&apos;s API can&apos;t touch. Right after you push, SCOUT opens Studio in your own logged-in browser and sets them on this video only. Nothing else on your channel changes.
+                          </span>
                         </span>
                       </label>
 
-                      {/* Per-action scope. Monetization isn't available on
-                          non-monetized / non-YPP channels, so it's a separate
-                          opt-out; details + end screen apply to everyone. */}
-                      <div className={`flex flex-col gap-1.5 pl-6 ${finishOptIn ? '' : 'opacity-50 pointer-events-none'}`}>
-                        <label className="flex items-start gap-2 cursor-pointer text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7]">
-                          <input type="checkbox" checked={finishDoDetails} disabled={finishRunning || applying} onChange={e => setFinishDoDetails(e.target.checked)} className="mt-0.5 flex-shrink-0" />
-                          <span>Set <strong>Details</strong>: tick <strong>paid promotion</strong>, set &ldquo;publish to subs feed &amp; notify&rdquo; to match your choice above, turn <strong>on</strong> embedding, answer <strong>AI&nbsp;use&nbsp;→&nbsp;No</strong> <span className="text-[#86868b]">— uncheck if any video is AI-generated/altered</span></span>
-                        </label>
-                        <label className="flex items-start gap-2 cursor-pointer text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7]">
-                          <input type="checkbox" checked={finishDoMonetize} disabled={finishRunning || applying} onChange={e => setFinishDoMonetize(e.target.checked)} className="mt-0.5 flex-shrink-0" />
-                          <span>Turn on <strong>Monetization</strong> + submit the <strong>ad-suitability rating</strong> <span className="text-[#86868b]">— uncheck if this channel isn&apos;t monetized</span></span>
-                        </label>
-                        <label className="flex items-start gap-2 cursor-pointer text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7]">
-                          <input type="checkbox" checked={finishDoEndScreen} disabled={finishRunning || applying} onChange={e => setFinishDoEndScreen(e.target.checked)} className="mt-0.5 flex-shrink-0" />
-                          <span>Copy the <strong>end screen</strong> from your last video</span>
-                        </label>
-                        {video.detectedAsin && (
-                          <label className="flex items-start gap-2 cursor-pointer text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7]">
-                            <input type="checkbox" checked={finishDoTagProduct} disabled={finishRunning || applying} onChange={e => setFinishDoTagProduct(e.target.checked)} className="mt-0.5 flex-shrink-0" />
-                            <span><strong>Tag the reviewed product</strong> on the video <span className="text-[#86868b]">— uncheck if you&apos;re not in YouTube Shopping</span></span>
-                          </label>
-                        )}
-                      </div>
+                      {finishOptIn && (
+                        <div className="px-3.5 pb-3 flex flex-col gap-3 border-t border-[#7C3AED]/10 pt-2.5">
+                          {/* Automated zone */}
+                          <div className="flex flex-col gap-1.5">
+                            <p className="text-[10px] font-bold uppercase tracking-wide text-[#34c759] flex items-center gap-1"><CheckCircle size={10} /> SCOUT sets these automatically</p>
+                            <label className="flex items-start gap-2 cursor-pointer text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7] pl-1">
+                              <input type="checkbox" checked={finishDoDetails} disabled={finishRunning || applying} onChange={e => setFinishDoDetails(e.target.checked)} className="mt-0.5 flex-shrink-0 accent-[#34c759]" />
+                              <span><strong>Paid promotion</strong> disclosure + <strong>AI / altered-content</strong> answer <span className="text-[#86868b]">(kept as &ldquo;No&rdquo; — uncheck if this video is AI-generated/altered)</span></span>
+                            </label>
+                            <label className="flex items-start gap-2 cursor-pointer text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7] pl-1">
+                              <input type="checkbox" checked={finishDoMonetize} disabled={finishRunning || applying} onChange={e => setFinishDoMonetize(e.target.checked)} className="mt-0.5 flex-shrink-0 accent-[#34c759]" />
+                              <span>Turn on <strong>Monetization</strong> + submit the <strong>ad-suitability rating</strong> <span className="text-[#86868b]">(uncheck if this channel isn&apos;t monetized)</span></span>
+                            </label>
+                            <p className="text-[10px] text-[#86868b] pl-1">Notify subscribers follows your <strong>{proSettings.notifySubscribers ? 'Yes' : 'No'}</strong> choice above.</p>
+                          </div>
+
+                          {/* By-hand zone */}
+                          <div className="flex flex-col gap-1">
+                            <p className="text-[10px] font-bold uppercase tracking-wide text-[#ff9500] flex items-center gap-1"><AlertCircle size={10} /> You finish these by hand</p>
+                            <p className="text-[11px] text-[#6e6e73] dark:text-[#8e8e93] leading-relaxed pl-1">
+                              <strong>End screen</strong>{video.detectedAsin ? <> and <strong>product tagging</strong></> : ''} — YouTube blocks automating {video.detectedAsin ? 'these' : 'this'}. A one-click link to the right Studio tab appears after you push.
+                            </p>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -2903,7 +2905,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                     // When Pro opts SCOUT in, this one button pushes THEN finishes
                     // in Studio — so the label + spinner cover both phases.
                     const willFinish = isPro && extensionInstalled === true && finishOptIn &&
-                      (finishDoDetails || finishDoMonetize || finishDoEndScreen || (finishDoTagProduct && !!video.detectedAsin))
+                      (finishDoDetails || finishDoMonetize)
                     const busySuffix = willFinish ? ' + finishing in Studio…' : '…'
                     const idleSuffix = willFinish ? ' + Finish in Studio' : ''
                     const verb = (busyBase: string, done: string, idleBase: string) =>
