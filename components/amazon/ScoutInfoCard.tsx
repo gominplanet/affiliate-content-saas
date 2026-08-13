@@ -27,16 +27,25 @@ const POINTS: { icon: React.ReactNode; title: string; body: string }[] = [
 export default function ScoutInfoCard() {
   const [status, setStatus] = useState<{ kind: 'store' | 'sideload' | 'none' } | null>(null)
   const [expanded, setExpanded] = useState(false)
+  const [sync, setSync] = useState<{ products: number; lastSyncedAt: string | null } | null>(null)
 
   useEffect(() => {
     let cancelled = false
     getScoutInstallKind()
       .then((s) => { if (!cancelled) setStatus({ kind: s.kind }) })
       .catch(() => { if (!cancelled) setStatus({ kind: 'none' }) })
+    // Earnings-sync status (how many products SCOUT has landed).
+    fetch('/api/storefront/ingest')
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (!cancelled && d) setSync({ products: d.products ?? 0, lastSyncedAt: d.lastSyncedAt ?? null }) })
+      .catch(() => { /* best-effort */ })
     return () => { cancelled = true }
   }, [])
 
   const installed = status?.kind === 'store' || status?.kind === 'sideload'
+  const syncLabel = sync && sync.products > 0
+    ? `${sync.products} product${sync.products === 1 ? '' : 's'} synced`
+    : 'No products synced yet — open your Amazon report page'
 
   // Connected + collapsed → one slim confirmation row.
   if (installed && !expanded) {
@@ -50,7 +59,7 @@ export default function ScoutInfoCard() {
         </span>
         <p className="text-[13px] font-semibold flex-shrink-0" style={{ color: 'var(--text)' }}>SCOUT connected</p>
         <span className="text-[12.5px] truncate hidden sm:inline" style={{ color: 'var(--text-soft)' }}>
-          Keeping your Creator Connections and storefront earnings in sync.
+          {syncLabel}
         </span>
         <button
           onClick={() => setExpanded(true)}
