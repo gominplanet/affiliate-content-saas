@@ -62,6 +62,7 @@ const PANELS: Panel[] = [
     eyebrow: 'Creators & Marketers · full suite',
     forWho: 'You have a blog or a YouTube channel',
     icon: <Rocket size={22} />,
+    logo: '/png/mvp-affiliate-pro.png',
     headline: 'The whole content pipeline,\nin your voice.',
     blurb: 'One tool to run everything, from a single video to a blog post, thumbnails, a newsletter and a week of social, all written in your own voice.',
     price: '$49',
