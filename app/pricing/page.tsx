@@ -14,6 +14,7 @@
 import type { Metadata } from 'next'
 import { CheckCircle, Zap, PackageSearch, Radar, ShoppingBag, Store, Wand2, LayoutTemplate, Handshake, MessageSquare, Share2, UserSquare, Send } from 'lucide-react'
 import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
+import NextImage from 'next/image'
 import { CheckoutButton } from './CheckoutButton'
 
 export const metadata: Metadata = { title: 'Pricing · MVP Affiliate' }
@@ -292,6 +293,7 @@ export default function PricingPage() {
               sitting in the blog-ladder grid above. */}
           <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6 mb-8">
             <div className="max-w-2xl">
+              <NextImage src="/png/mvp-affiliate-amz.png" alt="MVP Amazon Influencer" width={56} height={56} className="w-14 h-14 rounded-2xl shadow-sm mb-3" />
               <p className="text-xs font-semibold uppercase tracking-widest mb-2" style={{ color: '#C2410C' }}>
                 For Amazon storefront creators · no blog · no YouTube
               </p>
