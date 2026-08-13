@@ -2110,7 +2110,7 @@ function Nav() {
       }}
     >
       <a href="/" className="flex items-center gap-2">
-        <span className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#7C3AED] to-[#C026D3] flex items-center justify-center font-semibold text-white text-[14px]">M</span>
+        <NextImage src="/png/mvp-affiliate-trial.png" alt="MVP Affiliate" width={32} height={32} priority className="w-8 h-8 rounded-lg" />
         <span className="font-semibold text-[15px] tracking-tight" style={{ color: 'var(--text)' }}>
           MVP Affiliate
         </span>
