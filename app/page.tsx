@@ -1467,8 +1467,31 @@ function PricingSection() {
           ))}
         </div>
 
-        {/* Link to the full pricing page (all four tiers, the bundle math and the
-            free-research breakdown). */}
+        {/* Amazon Influencer — a DIFFERENT track (no blog, no YouTube). Own band
+            below the blog ladder so storefront creators see there's a plan built
+            for them without hunting on a second page. Orange to match its hub. */}
+        <a
+          href="/amazon-influencer"
+          className="group mt-5 rounded-2xl border p-6 sm:p-7 flex flex-col lg:flex-row lg:items-center gap-5 transition-all hover:-translate-y-0.5"
+          style={{ borderColor: 'rgba(234,88,12,0.35)', background: 'linear-gradient(180deg, rgba(234,88,12,0.10), rgba(234,88,12,0.03))' }}
+        >
+          <div className="flex items-center gap-3 lg:w-[32%]">
+            <span className="w-11 h-11 rounded-xl grid place-items-center flex-shrink-0 text-white" style={{ backgroundColor: '#C2410C' }}><ShoppingBag size={20} /></span>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: '#C2410C' }}>Amazon Associates & Influencers</p>
+              <p className="text-[19px] font-extrabold" style={{ color: 'var(--text)' }}>No blog? No YouTube? Start here.</p>
+            </div>
+          </div>
+          <p className="text-[13.5px] leading-relaxed lg:flex-1" style={{ color: 'var(--text-soft)' }}>
+            Incredible Amazon video-review thumbnails in one click, ready-to-post pins, Reels & Facebook
+            designs with your face on them, and paid brand deals. <span style={{ color: 'var(--text)' }}>From $79/mo.</span>
+          </p>
+          <span className="inline-flex items-center gap-1.5 px-5 py-3 rounded-xl text-[13.5px] font-semibold text-white whitespace-nowrap transition-all group-hover:gap-2.5" style={{ backgroundColor: '#C2410C' }}>
+            See the Amazon plan <ArrowRight size={14} />
+          </span>
+        </a>
+
+        {/* Link to the full pricing page (bundle math + free-research breakdown). */}
         <div className="mt-6 text-center">
           <a href="/pricing" className="inline-flex items-center gap-1.5 text-[14px] font-semibold" style={{ color: '#9D6BFF' }}>
             See the full breakdown, plus what MVP replaces
@@ -2293,6 +2316,7 @@ const COMPARE_ROWS: { label: string; mvp: boolean; others: 'no' | 'partial'; hig
   { label: 'Clean up + migrate your existing site (404s, duplicates, old affiliate links)', mvp: true, others: 'no' },
   { label: 'Display-ad + affiliate-banner revenue on your own site', mvp: true, others: 'no' },
   { label: 'A beautiful blog on your own site that you keep forever', mvp: true, others: 'no' },
+  { label: 'Never mines your sales data or storefront picks to build its own tools', mvp: true, others: 'no', highlight: true },
   { label: 'Never uses or sells your personal data', mvp: true, others: 'no', highlight: true },
 ]
 
@@ -2370,7 +2394,10 @@ function ComparisonSection() {
           <div>
             <p className="text-[16px] font-bold" style={{ color: 'var(--text)' }}>Your data is never the product.</p>
             <p className="mt-1 text-[14px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
-              We don&apos;t harvest, sell, or train on your personal data — not your audience, not your earnings, not your content. Your accounts stay connected to <span style={{ color: 'var(--text)' }}>you</span>, and your site is yours to keep forever. That&apos;s a promise most tools can&apos;t make.
+              We don&apos;t harvest, sell, or train on your personal data — not your audience, not your earnings, not your content. Your accounts stay connected to <span style={{ color: 'var(--text)' }}>you</span>, and your site is yours to keep forever.
+            </p>
+            <p className="mt-2 text-[14px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
+              And we&apos;ll never quietly vacuum up your sales numbers or your winning storefront picks to power our own tools, the way some &ldquo;research&rdquo; apps do. <span style={{ color: 'var(--text)' }}>Your winners stay your winners.</span> Novel concept, we know.
             </p>
           </div>
         </div>
