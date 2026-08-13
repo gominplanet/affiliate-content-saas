@@ -26,6 +26,7 @@ import { BrainstormGuide } from '@/components/guide/tool-guides'
 import { MessageMarkdown } from '@/components/assistant/MessageMarkdown'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { useEffectiveTier } from '@/lib/useEffectiveTier'
+import AmazonBrainstorm from '@/components/amazon/AmazonBrainstorm'
 
 interface YouTubeVideo {
   youtube_video_id: string
@@ -202,6 +203,15 @@ export default function BrainstormPage() {
     } finally {
       setBrainstorming(false)
     }
+  }
+
+  // ── Amazon Influencer → the storefront-grounded Brainstorm ─────────
+  // Amazon-tier creators have no blog/YouTube/Search Console for the default
+  // brainstorm to read, so they get the storefront version: proven sellers +
+  // open campaigns + niche → actionable next posts. (Rendered before data
+  // loads; it has its own fetch.)
+  if (gateTier === 'amazon') {
+    return <AmazonBrainstorm />
   }
 
   // ── Tier gate ────────────────────────────────────────────────────

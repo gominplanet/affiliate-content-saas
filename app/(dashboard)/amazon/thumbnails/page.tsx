@@ -42,6 +42,15 @@ export default function AmazonThumbnailsPage() {
     })()
   }, [])
 
+  // Prefill the product from ?asin= — lets Brainstorm's "Make the thumbnail"
+  // land here ready to generate for that exact product.
+  useEffect(() => {
+    try {
+      const asin = new URLSearchParams(window.location.search).get('asin')
+      if (asin && /^[A-Z0-9]{10}$/i.test(asin)) setProduct(asin.toUpperCase())
+    } catch { /* no query param */ }
+  }, [])
+
   const generate = useCallback(async () => {
     const raw = product.trim()
     if (!raw) { setError('Paste an Amazon product link or ASIN first.'); return }
