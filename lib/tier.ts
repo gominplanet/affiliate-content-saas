@@ -215,12 +215,12 @@ export const TIERS = {
      *  gpt-image-2 (~$0.14 real, logged $0.19); the bulk social formats
      *  (pin/IG/FB) render on gpt-image-1 medium (~$0.06) — see the Path B model
      *  swap in generate-thumbnail. Fully maxed — 200 thumbs + 495 social — is
-     *  ~$72 of real AI. The average user spends ~$12. The ceiling is deliberately
-     *  set high (2026-08-13) so the few big players who max the tier can actually
-     *  reach ~90% of their advertised caps before it trips, rather than being
-     *  cut off at a third; it stays a runaway circuit-breaker, not the real cap
-     *  (the per-format caps are). Whales are worth serving. */
-    monthlyAiSpendCeilingUsd: 75 as number | null,
+     *  ~$72 of real AI. The average user spends ~$12. Set to 60 (2026-08-13):
+     *  even a user who maxes the tier still leaves ~$19 of gross margin on the
+     *  $79 plan, while $60 covers ~83% of the advertised caps before the breaker
+     *  trips, so ordinary use never comes near it. It stays a runaway
+     *  circuit-breaker, not the real cap (the per-format caps are). */
+    monthlyAiSpendCeilingUsd: 60 as number | null,
     /** No blog. Thumbnails have their own cap below; this stays 0. */
     postsPerMonth: 0,
     lifetimeMax: null as number | null,
@@ -240,8 +240,8 @@ export const TIERS = {
     instagramAiThumbnailsPerMonth: 0 as number | null,
     /** Deal / product social posts (their core publishing action). */
     dealsPerMonth: 100 as number | null,
-    /** Max 3 professional Photobooth shots. */
-    photoboothPerMonth: 3 as number | null,
+    /** Max 6 professional Photobooth shots. */
+    photoboothPerMonth: 6 as number | null,
     /** One face model, up to 20 selfies (the source_images cap is 20). */
     maxFaces: 1 as number | null,
     blogImagesPerPost: 0,
@@ -305,8 +305,10 @@ export const TIERS = {
     metadataGensPerMonth: 100 as number | null,
     /** IG AI thumbnails open to Studio at 30/mo (was Pro-only). */
     instagramAiThumbnailsPerMonth: 30 as number | null,
-    /** Studio gets 5 deal posts / mo. Separate counter from blog. */
-    dealsPerMonth: 5 as number | null,
+    /** Studio gets 15 deal posts / mo (bumped 5 → 15, 2026-08-13, so the Deals
+     *  Hub feels real rather than a taster; deal posts are cheap, mostly text +
+     *  one image). Separate counter from blog. */
+    dealsPerMonth: 15 as number | null,
     pinsPerMonth: null as number | null,
     igPostsPerMonth: null as number | null,
     facebookPostsPerMonth: null as number | null,

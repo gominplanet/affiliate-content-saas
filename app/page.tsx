@@ -1703,7 +1703,7 @@ const PRICING_TIERS: PricingTier[] = [
       'Everything in Creator, plus:',
       '45 generations / month',
       'Pinterest, Instagram & Telegram auto-post',
-      'Deals Hub — 5 deal posts / month + Amazon CSV bulk import',
+      'Deals Hub — 15 deal posts / month + Amazon CSV bulk import',
       'Topic hubs + Refresh Images on published posts',
       '2 faces + 3 LoRA retrains, 15 Photobooth headshots',
       '30 video scripts, 15 brand pitches / month',
