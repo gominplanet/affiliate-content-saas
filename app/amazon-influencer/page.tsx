@@ -29,12 +29,12 @@ const ACCENT = '#C2410C'
 const FEATURES: { icon: React.ReactNode; title: string; tag: string; desc: string }[] = [
   { icon: <Wand2 size={20} />, title: 'One-click video-review thumbnails', tag: '200 / month', desc: 'Drop in any Amazon product and get an incredible video-review thumbnail in one click, the scroll-stopping cover that makes shoppers hit play on your storefront review. The same Art Director engine our top video creators use.' },
   { icon: <LayoutTemplate size={20} />, title: 'Ready-to-post designs', tag: '300 pins · 150 Reels · 45 FB', desc: 'Finished Pinterest pins, Instagram Reels covers and Facebook posts, laid out and captioned for you. No Canva, no templates to fight. Post them as they are.' },
-  { icon: <Handshake size={20} />, title: 'Creator Connections deals', tag: '50 brand deals / month', desc: 'Browse the full campaign catalogue and land the brand collabs worth your time. Every day MVP sends you a fresh digest of campaigns auto-matched to your content and research, done for you, so you never miss a fit.' },
-  { icon: <MessageSquare size={20} />, title: 'Message brands direct', tag: 'Built in', desc: 'Pitch and negotiate with brands inside MVP. Draft the outreach, keep every conversation in one place, and turn a browse into a paid collaboration.' },
+  { icon: <Handshake size={20} />, title: 'Daily brand-deal digest', tag: 'Picked for you', desc: 'Every day MVP sends you a fresh, ranked list of Creator Connections campaigns auto-matched to your storefront, your niche and what you actually post, each scored on payout and how full the roster is. The deals worth your time, surfaced for you, so you stop digging through the whole catalogue.' },
+  { icon: <MessageSquare size={20} />, title: 'Outreach written for you', tag: '50 pitches / month', desc: 'For any campaign, MVP drafts a personalized pitch from your media kit and drops it straight into Amazon’s own Message Brand box. You review the wording and hit send.' },
   { icon: <PackageSearch size={20} />, title: 'Amazon Product Research', tag: 'Unlimited browse', desc: 'Filter the whole Amazon catalogue by sales, rating, price, review ratio and competition. Find the products worth posting before you spend a design on them.' },
   { icon: <Radar size={20} />, title: 'Deal Radar', tag: 'Unlimited browse', desc: 'Live, price-history-verified Amazon deals. Jump on a real price drop the day it happens and turn it into a post while it is still hot.' },
   { icon: <Send size={20} />, title: 'Publish for you', tag: '100 posts / month', desc: 'Push product and deal posts straight to Facebook, Pinterest and Instagram, all three at once, from one screen. Copy written, design done, you approve and it goes.' },
-  { icon: <UserSquare size={20} />, title: 'Your face on every design', tag: '1 model · 6 headshots', desc: 'Add one face model and MVP puts you in the designs. Run the photobooth for 6 studio-quality headshots so your posts look like you, not stock.' },
+  { icon: <UserSquare size={20} />, title: 'Your face on every design', tag: '1 model · 6 headshots', desc: 'Add one face model and MVP puts you in the designs. Run the photobooth for 6 studio-quality headshots so your posts look like you, not stock. Prefer not to? Switch to product-only designs anytime.' },
   { icon: <Zap size={20} />, title: 'Priority queue + support', tag: 'Included', desc: 'Your renders jump the line and your questions get answered first. When a deal is live you are not waiting behind the free tier.' },
 ]
 
@@ -73,7 +73,7 @@ export default function AmazonInfluencerPage() {
           <p className="mt-5 text-lg text-[#6e6e73] dark:text-[#ebebf0] max-w-2xl mx-auto leading-relaxed">
             No blog. No YouTube. Generate incredible Amazon video-review thumbnails in one click, turn
             any product into ready-to-post pins, Reels and Facebook designs with your face on them,
-            publish everywhere at once, and land paid brand deals, all from one place.
+            publish everywhere at once, and get matched to paid brand deals, all from one place.
           </p>
           <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
             <div className="w-full sm:w-64">
