@@ -14,7 +14,7 @@
 
 import Link from 'next/link'
 import {
-  FileText, Youtube, Search, Mail, Handshake, Lightbulb,
+  FileText, Youtube, Search, Mail, Handshake,
   Layers, Users, Plug, MessageSquare, Code, Sparkles, Share2,
   Radar, ShoppingBag, Scissors, FlaskConical,
   ArrowRight, CheckCircle2, ArrowUpRight,
@@ -37,7 +37,6 @@ const SECTIONS: Array<{ id: string; label: string }> = [
   { id: 'collabs',      label: 'Brand outreach' },
   { id: 'finders',      label: 'Source & Earn — product finders' },
   { id: 'deals',        label: 'Deals Hub' },
-  { id: 'brainstorm',   label: 'Brainstorm' },
   { id: 'multisite',    label: 'Multi-site WordPress' },
   { id: 'vas',          label: 'Virtual Assistants' },
   { id: 'plugin',       label: 'WordPress plugin + theme' },
@@ -532,26 +531,6 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
           {isApp && <SectionCta href="/deals" label="Open Deals Hub" />}
         </Section>
 
-        {/* ── 7. Brainstorm ────────────────────────────────────────── */}
-        <Section id="brainstorm" icon={<Lightbulb size={18} />} title="Brainstorm — performance-driven idea engine">
-          <p>
-            Open the Brainstorm page and MVP shows you the last 90 days of your YouTube + WordPress performance side-by-side.
-          </p>
-          <ul>
-            <li>Top 5 + bottom 5 YouTube videos by views (with thumbnails).</li>
-            <li>Top 5 + bottom 5 blog posts by clicks (with GSC data merged in).</li>
-            <li>Niche performance grid: every niche you&apos;ve published in, ranked by total clicks and average CTR.</li>
-            <li>
-              <strong>Coverage gaps:</strong> niches you claim on your Brand Profile but haven&apos;t actually published
-              in over the window. The &quot;you said you do this but you haven&apos;t&quot; signal.
-            </li>
-            <li>
-              One-click AI idea generation that reads your performance data and proposes specific next videos to
-              record — not generic ideas, but the ones our coaching model thinks fit <em>your</em> channel&apos;s pattern.
-            </li>
-          </ul>
-          {isApp && <SectionCta href="/brainstorm" label="Open Brainstorm" />}
-        </Section>
 
         {/* ── 8. Multi-site ────────────────────────────────────────── */}
         <Section id="multisite" icon={<Layers size={18} />} title="Multi-site WordPress + multi-channel (Pro)">
