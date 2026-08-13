@@ -26,6 +26,7 @@ export interface TierBadge {
 export const TIER_BADGES: Partial<Record<Tier, TierBadge>> = {
   trial: { src: '/tier-badges/trial.webp', label: 'Trial' },
   creator: { src: '/tier-badges/creator.webp', label: 'Creator' },
+  amazon: { src: '/tier-badges/amazon.webp', label: 'Amazon' },
   studio: { src: '/tier-badges/studio.webp', label: 'Studio' },
   pro: { src: '/tier-badges/pro.webp', label: 'Pro' },
   admin: { src: '/tier-badges/admin.webp', label: 'Admin' },
