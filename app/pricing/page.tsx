@@ -324,7 +324,7 @@ export default function PricingPage() {
               the designs, publishing, face models, priority. */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {[
-              { icon: <Wand2 size={20} />, title: 'Art Director thumbnails', tag: '200 / month', desc: 'Drop in any Amazon product and get scroll-stopping, storefront-ready thumbnails built around it. The same engine our video creators use, tuned for product shots.' },
+              { icon: <Wand2 size={20} />, title: 'One-click video-review thumbnails', tag: '200 / month', desc: 'Drop in any Amazon product and get an incredible video-review thumbnail in one click, the scroll-stopping cover that makes shoppers hit play on your storefront review. The same Art Director engine our top video creators use.' },
               { icon: <LayoutTemplate size={20} />, title: 'Ready-to-post designs', tag: '300 pins · 150 Reels · 45 FB', desc: 'Finished Pinterest pins, Instagram Reels covers and Facebook posts, laid out and captioned for you. No Canva, no templates to fight. Post them as they are.' },
               { icon: <Handshake size={20} />, title: 'Creator Connections deals', tag: '50 brand deals / month', desc: 'Browse the full Creator Connections campaign catalogue and land the brand collabs worth your time. Track what you have applied to and what has come back.' },
               { icon: <MessageSquare size={20} />, title: 'Message brands direct', tag: 'Built in', desc: 'Pitch and negotiate with brands inside MVP. Draft the outreach, keep every conversation in one place, and turn a browse into a paid collaboration.' },
