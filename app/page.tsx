@@ -596,7 +596,7 @@ const ROLES: Role[] = [
   {
     icon: <Share2 size={18} />,
     label: 'Social generator',
-    line: 'Native posts for Facebook, Instagram, Threads, Pinterest, X, LinkedIn, Bluesky & Telegram — each written for that feed. TikTok is next.',
+    line: 'Native posts for Facebook, Instagram, Threads, Pinterest, X, LinkedIn, Bluesky, Telegram & TikTok — each written for that feed.',
   },
   {
     icon: <Globe size={18} />,
@@ -656,7 +656,7 @@ const ASIN_OUTPUTS: { icon: React.ReactNode; title: string; body: string; tag: s
     icon: <Scale size={18} />,
     title: 'Comparison articles',
     body: 'Drop two or more ASINs and MVP researches each, ranks them, and writes the head-to-head — verdict box, pros & cons, and a spec table. The exact article shoppers search for right before they buy.',
-    tag: 'Every plan',
+    tag: 'Pro',
   },
   {
     icon: <BadgePercent size={18} />,
@@ -668,7 +668,7 @@ const ASIN_OUTPUTS: { icon: React.ReactNode; title: string; body: string; tag: s
     icon: <Bookmark size={18} />,
     title: 'Buying guides',
     body: '“Best [category]” round-ups MVP assembles from your catalogue plus fresh research — the format Google ranks at the top for buyer-intent searches.',
-    tag: 'Unlocks as your library grows',
+    tag: 'Pro',
   },
 ]
 
@@ -1532,7 +1532,7 @@ function PricingSection() {
             className="text-[16px] sm:text-[17px] leading-relaxed max-w-2xl mx-auto"
             style={{ color: 'var(--text-soft)' }}
           >
-            Every plan includes the full Central Hub. Cancel anytime. Your WordPress site stays yours forever.
+            Every blog plan includes the full Central Hub. Cancel anytime. Your WordPress site stays yours forever.
           </p>
         </div>
 
@@ -1672,7 +1672,7 @@ const PRICING_TIERS: PricingTier[] = [
     features: [
       '⚡ Amazon Deal Radar + all-deals & full-catalogue research',
       'Creator Connections finder + daily picked-for-you campaign digest',
-      'Shoppable Link-in-Bio + auto Instagram Stories',
+      'Shoppable Link-in-Bio page',
       '20 generations / month — blog + thumbnail + metadata bundle',
       'Video-to-Blog + Blog-to-Social, written in your voice',
       'Auto-post to Facebook, Threads, LinkedIn & Bluesky',
