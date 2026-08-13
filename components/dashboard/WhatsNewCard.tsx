@@ -17,7 +17,7 @@ import Link from 'next/link'
 import { Sparkles, ArrowUpRight, X } from 'lucide-react'
 
 // Bump this whenever UPDATES changes — auto-opens the modal once for everyone.
-const RELEASE_ID = '2026-08-12b'
+const RELEASE_ID = '2026-08-13'
 const STORAGE_KEY = 'mvp_whats_new_seen'
 
 interface Update {
@@ -31,56 +31,41 @@ interface Update {
 const UPDATES: Update[] = [
   {
     badge: 'NEW',
-    tone: '#EC4899',
-    title: 'Make a vertical clip right where you post',
-    desc: 'Click TikTok or Instagram on any video in your Library and the clip maker opens right there. It finds the best moments, renders a 9:16 clip with captions (or split screen), and adds your call-to-action overlay before you post. No more bouncing to a separate upload page.',
-    href: '/content',
+    tone: '#C2410C',
+    title: 'A plan built just for Amazon Influencers',
+    desc: 'New Amazon Influencer plan for storefront creators. Turn any product into a one-click video-review thumbnail, ready-to-post pins, Reels and Facebook designs with your face on them, publish to all three at once, and land paid brand deals. No blog or YouTube needed.',
+    href: '/pricing',
   },
   {
     badge: 'NEW',
+    tone: '#E60023',
+    title: 'Pin to your blog or straight to the product',
+    desc: 'The pin preview now lets you choose where a pin points: your blog post or the product page. It works out the right product even from guides and comparison posts, so a roundup pins to the item you actually meant.',
+    href: '/content',
+  },
+  {
+    badge: 'IMPROVED',
     tone: '#7C3AED',
-    title: 'Pulse — hashtags that actually work',
-    desc: 'Pulse learns which hashtags earn the most reach, from your own posts and pooled across every MVP creator in your niche, then leads with those proven tags in every caption it writes. It sharpens the more you post. Find it under Grow.',
-    href: '/pulse',
+    title: 'Import your Creator Connections catalog and walk away',
+    desc: 'Catalog imports now merge on our servers in the background. Start it, close the tab, and it finishes on its own with a clear note when the merge is done. Live progress shows while it scans, and it reminds you to upload the complete catalog so nothing gets dropped.',
   },
   {
-    badge: 'IMPROVED',
+    badge: 'FIXED',
     tone: '#0a84ff',
-    title: 'Sharper hashtags on every post',
-    desc: 'Captions now build a deliberate tag mix: your brand, tags specific to the exact product, and broad reach tags matched to the real product category (grounded in Amazon’s own category tree), with spammy tags filtered out. So an RC car reaches RC fans, not random car enthusiasts.',
-  },
-  {
-    badge: 'NEW',
-    tone: '#34c759',
-    title: 'Edit your Reel caption before you post',
-    desc: 'The Reel caption is now an editable box. Tweak the wording or add your own hashtags before you post, copy or download. Whatever you leave in is exactly what goes out.',
-  },
-  {
-    badge: 'FIXED',
-    tone: '#ff3b30',
-    title: 'Know when a post’s images didn’t make it',
-    desc: 'If in-article images don’t come through, the post now clearly flags it with a one-click “Retry images”, instead of quietly publishing without them. No more finding out on the live site.',
-    href: '/content',
+    title: 'Pinterest previews no longer dead-end',
+    desc: 'When the Art Director design takes a moment, the pin preview now waits it out instead of failing with a generic error, and gives detailed renders more time to finish. Fewer retries, more finished pins.',
   },
   {
     badge: 'IMPROVED',
-    tone: '#FF6B00',
-    title: 'Shorts recover on their own',
-    desc: 'When YouTube blocks a clip download, Shorts now fall back to the reliable download path automatically and cache the video, so the rest of your clips from that video render instantly. Fewer dead-ends, less re-uploading.',
-    href: '/clip-factory',
-  },
-  {
-    badge: 'NEW',
-    tone: '#5856d6',
-    title: 'A guided start on your dashboard',
-    desc: 'New accounts get a simple checklist that points at the single next step to your first published post, so you always know what to do instead of facing every menu at once. It ticks itself off and disappears once you’re rolling.',
-    href: '/dashboard',
+    tone: '#1877F2',
+    title: 'Simpler Facebook connection help',
+    desc: 'The Facebook fix guide drops the dead-end System Users steps for Business Manager pages, so the walkthrough matches what you actually see on screen and gets you connected faster.',
   },
   {
     badge: 'FIXED',
-    tone: '#bc1888',
-    title: 'Posted items leave your to-do list',
-    desc: 'Once a post publishes, its video reliably moves out of “needs posting” and won’t bounce back a minute later. And Refresh Price and other one-tap actions no longer hang when your site is slow.',
+    tone: '#34c759',
+    title: 'The “posted” badge sticks',
+    desc: 'Once a post goes out, its social button reliably flips to “posted” even when the status lands a moment after the page loads. No more wondering whether it actually sent.',
     href: '/content',
   },
 ]
