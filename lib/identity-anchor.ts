@@ -19,13 +19,18 @@ export const ANCHOR_EXPRESSIONS: Record<string, string> = {
   angry:     'an intense, fired-up reaction — furrowed brow, strong emotion',
 }
 
+/** Bump when buildAnchorPrompt changes so every cached anchor regenerates with
+ *  the new prompt (otherwise the old cached portrait is served forever for the
+ *  same photo set). v2 = wardrobe-neutral anchor (2026-08-13). */
+const ANCHOR_PROMPT_VERSION = 'v2'
+
 /** Stable cache key for a face's photo set + expression — changes when the
  *  photos change, so a re-uploaded "Your Face" regenerates anchors next time.
- *  Neutral keeps the bare key, backward-compatible with already-cached anchors. */
+ *  The prompt-version suffix busts the cache whenever the anchor prompt changes. */
 function anchorKey(userId: string, sourceImages: string[], expression: string): string {
   const h = createHash('sha1').update(sourceImages.join('|')).digest('hex').slice(0, 12)
   const suffix = expression && expression !== 'neutral' ? `-${expression}` : ''
-  return `${userId}/anchors/${h}${suffix}.png`
+  return `${userId}/anchors/${h}${suffix}-${ANCHOR_PROMPT_VERSION}.png`
 }
 
 // Same identity-lock discipline as the Photobooth, distilled to a clean,
@@ -36,6 +41,7 @@ function buildAnchorPrompt(expression: string): string {
 
 REFERENCE IMAGES: use these ONLY to capture the MAIN subject's exact facial identity, hair, and likeness. The photos may also contain OTHER people — IGNORE everyone else; lock onto the single most prominent main subject (the largest, most central face).
 IDENTITY (critical): render EXACTLY that one person, completely ALONE. Do NOT blend, merge, average, or mix in any other face. ONLY ONE person in the output — no second person, partner, companion, or any extra face/head/shoulder/arm anywhere in the frame. It must be unmistakably the same individual — flattering but clearly them.
+WARDROBE: use the reference photos ONLY for the face, hair and likeness — NOT for clothing. Dress the person in a plain, simple, solid neutral-tone crew-neck top (a muted grey, charcoal or navy). Do NOT copy the exact shirt, collar, top style or colour worn in the reference photos. This is an identity reference, so keep the clothing generic and understated.
 SHOT: head-and-shoulders, person centred, facing the camera, ${expr}, natural realistic skin texture (NOT plastic or over-retouched), flattering even studio lighting, sharp focus on the eyes, on a clean evenly-lit neutral light-grey backdrop.
 Do NOT render any text, captions, watermarks, or logos.`
 }
