@@ -26,7 +26,41 @@ const UNLOCKS: string[] = [
   'SEO and indexing tools to get every post found on Google',
 ]
 
-export default function AmazonUpgradeGate({ feature }: { feature: string }) {
+export default function AmazonUpgradeGate({
+  feature,
+  redirect,
+}: {
+  feature: string
+  /** When set, this feature isn't an upgrade — the Amazon plan does it, just on
+   *  a different page (e.g. Connect Socials → Social Influencer). Render a
+   *  "do it here instead" pointer rather than an upsell. */
+  redirect?: { href: string; cta: string; body: string }
+}) {
+  if (redirect) {
+    return (
+      <div className="max-w-3xl mx-auto pt-6">
+        <div className="rounded-2xl border p-8" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', boxShadow: 'var(--card-shadow)' }}>
+          <div className="flex items-start gap-4 mb-5">
+            <div className="w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `${ACCENT}1F`, color: ACCENT }}>
+              <ArrowRight size={24} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h2 className="text-[22px] font-semibold leading-tight mb-1.5" style={{ color: 'var(--text)' }}>{feature}</h2>
+              <p className="text-[13.5px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>{redirect.body}</p>
+            </div>
+          </div>
+          <Link
+            href={redirect.href}
+            className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-[13px] font-semibold text-white shadow-sm transition-all hover:shadow-md hover:-translate-y-0.5"
+            style={{ backgroundColor: ACCENT }}
+          >
+            {redirect.cta}
+            <ArrowRight size={13} />
+          </Link>
+        </div>
+      </div>
+    )
+  }
   return (
     <div className="max-w-3xl mx-auto pt-6">
       <div
