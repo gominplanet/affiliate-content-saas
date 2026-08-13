@@ -39,7 +39,6 @@ import type { Components } from 'react-markdown'
 const IN_APP_ROUTES = [
   '/setup/wp-doctor',
   '/newsletter/compose',
-  '/newsletter/subscribers',
   '/newsletter',
   '/setup',
   '/co-pilot',

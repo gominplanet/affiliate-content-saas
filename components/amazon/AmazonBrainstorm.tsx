@@ -329,7 +329,7 @@ export default function AmazonBrainstorm() {
           <p className="text-[13px] max-w-md mx-auto mb-4" style={{ color: 'var(--text-soft)' }}>
             Install SCOUT and open your Amazon earnings report once. It reads your own report in your browser and syncs your per-product sales here. Amazon only reports products with a few shipments, so everything that lands is a proven seller.
           </p>
-          <Link href="/amazon" className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[13px] font-semibold text-white" style={{ backgroundColor: ACCENT }}>
+          <Link href="/amazon/research" className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[13px] font-semibold text-white" style={{ backgroundColor: ACCENT }}>
             Set up SCOUT <ArrowRight size={14} />
           </Link>
         </div>

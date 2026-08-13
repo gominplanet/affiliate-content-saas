@@ -138,7 +138,7 @@ export default function WordPressSitesManager() {
               connected and your WordPress content is untouched — MVP just won&rsquo;t publish or refresh
               them until you reactivate. The <strong>active</strong> {data.cap.max === 1 ? 'site is the one marked default below' : 'sites are the first below'}.
               To keep a different blog active instead, press its <Star size={11} className="inline align-text-bottom text-[#7C3AED]" /> star to make it the default.
-              {' '}<a href="/upgrade" className="text-[#7C3AED] font-medium hover:underline">Upgrade to Pro</a> to reactivate all {data.sites.length}.
+              {' '}<a href="/billing" className="text-[#7C3AED] font-medium hover:underline">Upgrade to Pro</a> to reactivate all {data.sites.length}.
             </p>
           </div>
         </div>
