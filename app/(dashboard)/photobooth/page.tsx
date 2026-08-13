@@ -139,7 +139,10 @@ export default function PhotoboothPage() {
     return () => clearInterval(t)
   }, [faces])
 
-  const isPaid = tier === 'creator' || tier === 'pro' || tier === 'admin'
+  // Every paid tier gets face models (trial is the only one with maxFaces 0).
+  // Was an explicit list that omitted 'amazon' and 'studio', locking them out
+  // of a feature they pay for (amazon: "your face on every design").
+  const isPaid = tier !== 'trial'
   const isAdmin = tier === 'admin'
   const MAX_FACES = 2
   const atFaceCap = !isAdmin && faces.length >= MAX_FACES

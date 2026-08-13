@@ -24,6 +24,7 @@ import {
   Radar, Coins, Scissors, Megaphone, Users, Inbox, Signpost,
 } from 'lucide-react'
 import { FAQSection, StickyBottomBar } from '@/components/landing/islands'
+import AudienceSplit from '@/components/landing/AudienceSplit'
 
 // Local CSS-var override for a DARK emphasis band inside the otherwise-light
 // page. Any section wrapped in <DarkBand> flips its text/surface tokens so
@@ -89,6 +90,11 @@ export default function LandingPreview() {
       {/* Hub-animation keyframes + smooth scroll now live in globals.css so
           this page can render as a Server Component (styled-jsx is client-only). */}
       <Nav />
+      {/* Audience splitter — the first thing a cold visitor sees. Routes the two
+          very different buyers (Amazon storefront creators vs full-suite
+          marketers) before the generic hero, so neither reads copy meant for the
+          other. Amazon side jumps to its own sales page; suite side scrolls on. */}
+      <AudienceSplit />
       {/* One accent (purple) + lots of white, logie5-style — with a few dark
           emphasis bands to break up the page and make the flagship features
           punch. The banded sections were designed for a dark background. */}
