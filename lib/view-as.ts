@@ -18,10 +18,10 @@ const EVENT = 'mvp:view-as-changed'
 export function getViewAsTier(): Tier | null {
   if (typeof window === 'undefined') return null
   const v = window.localStorage.getItem(KEY)
-  // Studio is a real tier between Creator + Pro. Was missing here, so a
-  // 'studio' selection would round-trip to null and silently behave as
-  // 'My view (Admin)'.
-  return v === 'trial' || v === 'creator' || v === 'studio' || v === 'pro' || v === 'admin' ? v : null
+  // Every real tier must be listed here, or a selection round-trips to null and
+  // silently snaps back to 'My view (Admin)'. Happened to Studio once, and again
+  // to Amazon Influencer (2026-08-13) — keep this in sync with the Tier union.
+  return v === 'trial' || v === 'creator' || v === 'amazon' || v === 'studio' || v === 'pro' || v === 'admin' ? v : null
 }
 
 export function setViewAsTier(t: Tier | null) {
