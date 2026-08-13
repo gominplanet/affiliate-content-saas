@@ -13,7 +13,7 @@ import Link from 'next/link'
 import NextImage from 'next/image'
 import {
   Wand2, LayoutTemplate, Handshake, MessageSquare, PackageSearch, Radar,
-  Send, UserSquare, Zap, Check, ArrowRight, ShoppingBag,
+  Send, UserSquare, Zap, Check, ArrowRight, ShoppingBag, ShieldCheck,
 } from 'lucide-react'
 import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
 import { CheckoutButton } from '../pricing/CheckoutButton'
@@ -112,6 +112,17 @@ export default function AmazonInfluencerPage() {
         <div className="mt-10 text-center">
           <div className="inline-block w-full sm:w-72">
             <CheckoutButton tier="amazon" highlight={true} salesPaused={SALES_PAUSED} ctaLabel="Get Amazon Influencer" />
+          </div>
+        </div>
+
+        {/* No-sleaze rule — privacy dig, subtle and unnamed. */}
+        <div className="mt-12 max-w-3xl mx-auto rounded-2xl border p-6 flex items-start gap-4" style={{ borderColor: 'rgba(234,88,12,0.30)', background: 'linear-gradient(180deg, rgba(234,88,12,0.06), transparent)' }}>
+          <span className="w-10 h-10 rounded-xl grid place-items-center flex-shrink-0 text-white" style={{ backgroundColor: ACCENT }}><ShieldCheck size={20} /></span>
+          <div>
+            <p className="font-bold text-[15px] mb-1">Our no-sleaze rule</p>
+            <p className="text-[13.5px] leading-relaxed text-[#6e6e73] dark:text-[#ebebf0]">
+              Some of these tools quietly turn your sales into their research, and their next product. MVP Affiliate never touches your numbers for anything but you.
+            </p>
           </div>
         </div>
       </section>
