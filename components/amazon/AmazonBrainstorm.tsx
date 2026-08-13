@@ -14,10 +14,11 @@ import Link from 'next/link'
 import {
   Loader2, Sparkles, Wand2, Share2, Handshake, PackageSearch, ArrowRight, ArrowUpRight, ArrowDownRight,
   AlertCircle, DollarSign, MousePointerClick, Package, Percent, TrendingUp, ExternalLink,
-  FileText, ChevronDown, Star,
+  FileText, ChevronDown, Star, Check, Layers, X, CheckCircle2,
 } from 'lucide-react'
 import PageHero from '@/components/layout/PageHero'
 import { useEffectiveTier } from '@/lib/useEffectiveTier'
+import { acceptCampaignViaScout } from '@/lib/accept-campaign'
 
 const ACCENT = '#C2410C'
 const GREEN = '#15803d'
@@ -25,7 +26,7 @@ const RED = '#b91c1c'
 
 // ── Types mirrored from /api/storefront/analytics ────────────────────────────
 interface Totals { earnings: number; revenue: number; units: number; clicks: number; products: number; conversion: number; epc: number }
-interface Campaign { name: string | null; status: string | null }
+interface Campaign { name: string | null; status: string | null; campaignId: string | null; detailsUrl: string | null; brand: string | null; accepted: boolean }
 interface Product {
   asin: string; title: string; earnings: number; revenue: number; units: number; clicks: number
   conversion: number; epc: number; commissionPct: number | null
@@ -106,8 +107,28 @@ function ActionBtn({ href, external, icon, label, sub, primary }: { href: string
 }
 
 function ProductDrawer({ p, hasBlog }: { p: Product; hasBlog: boolean }) {
-  const dealStatus = p.campaign?.status
-  const dealLabel = dealStatus === 'accepted' ? 'View brand deal' : dealStatus === 'messaged' ? 'Brand deal · messaged' : 'Chase brand deal'
+  const camp = p.campaign
+  const [accepted, setAccepted] = useState(!!camp?.accepted)
+  const [accepting, setAccepting] = useState(false)
+
+  async function accept() {
+    if (!camp) return
+    setAccepting(true)
+    try {
+      const ok = await acceptCampaignViaScout({
+        detailsUrl: camp.detailsUrl || '',
+        asin: p.asin,
+        campaignId: camp.campaignId,
+        brand: camp.brand,
+        commissionPct: p.commissionPct,
+        productTitle: p.title,
+      })
+      if (ok) setAccepted(true)
+    } finally {
+      setAccepting(false)
+    }
+  }
+
   return (
     <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
       {/* Stat chips — full set, so it reads on mobile where columns are hidden */}
@@ -125,12 +146,39 @@ function ProductDrawer({ p, hasBlog }: { p: Product; hasBlog: boolean }) {
         {p.commissionPct != null && <StatChip label="Your commission" value={`${p.commissionPct}%`} />}
       </div>
 
-      {/* Actions — turn this product into content, or chase its brand deal */}
+      {/* Brand deal — accept inline via SCOUT, no bouncing to CC Campaigns */}
+      {camp && (
+        <div className="rounded-xl border p-3 mb-3 flex items-center gap-3 flex-wrap" style={{ borderColor: 'rgba(234,88,12,0.3)', background: 'rgba(234,88,12,0.05)' }}>
+          <span className="w-8 h-8 rounded-lg grid place-items-center text-white flex-shrink-0" style={{ backgroundColor: ACCENT }}><Handshake size={15} /></span>
+          <div className="min-w-0 flex-1">
+            <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>
+              Open brand deal{camp.brand ? ` · ${camp.brand}` : ''}
+            </p>
+            <p className="text-[12px]" style={{ color: 'var(--text-soft)' }}>{camp.name || 'Creator Connections campaign for this product'}</p>
+          </div>
+          {accepted ? (
+            <span className="inline-flex items-center gap-1 text-[12.5px] font-semibold px-3 py-1.5 rounded-lg" style={{ background: 'rgba(52,199,89,0.14)', color: GREEN }}>
+              <CheckCircle2 size={14} /> Accepted
+            </span>
+          ) : (
+            <button
+              onClick={accept}
+              disabled={accepting || !camp.detailsUrl}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-[13px] font-semibold text-white whitespace-nowrap disabled:opacity-60"
+              style={{ backgroundColor: ACCENT }}
+              title={camp.detailsUrl ? 'Accept this campaign on Amazon via SCOUT' : 'No campaign link yet — open it in CC Campaigns'}
+            >
+              {accepting ? <><Loader2 size={13} className="animate-spin" /> Accepting…</> : <><Handshake size={13} /> Accept on Amazon</>}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Actions — turn this product into content */}
       <div className="flex flex-wrap gap-2">
         <ActionBtn primary href={`/amazon/thumbnails?asin=${p.asin}`} icon={<Wand2 size={14} />} label="Make thumbnail" />
         <ActionBtn href={`/amazon/social?asin=${p.asin}`} icon={<Share2 size={14} />} label="Quick social" />
         {hasBlog && <ActionBtn href={`/deals?asin=${p.asin}`} icon={<FileText size={14} />} label="Write blog post" />}
-        {p.campaign && <ActionBtn href="/cc-campaigns" icon={<Handshake size={14} />} label={dealLabel} sub={p.campaign.name || undefined} />}
         <ActionBtn external href={p.amazonUrl} icon={<ExternalLink size={14} />} label="Visit Amazon" />
       </div>
     </div>
@@ -146,6 +194,33 @@ export default function AmazonBrainstorm() {
   const [openAsin, setOpenAsin] = useState<string | null>(null)
   const tier = useEffectiveTier()
   const hasBlog = tier !== 'amazon' // Amazon tier has no blog sites; others do.
+
+  // Roundup: pick winners → one "my top N" blog post (deal-radar roundup engine).
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [roundupBusy, setRoundupBusy] = useState(false)
+  const [roundupMsg, setRoundupMsg] = useState<{ ok: boolean; text: string; url?: string } | null>(null)
+  const toggleSelect = (asin: string) => setSelected(prev => {
+    const n = new Set(prev); if (n.has(asin)) n.delete(asin); else n.add(asin); return n
+  })
+  async function createRoundup() {
+    const asins = [...selected]
+    if (asins.length < 2) return
+    setRoundupBusy(true); setRoundupMsg(null)
+    try {
+      const res = await fetch('/api/deal-radar/roundup', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ asins }),
+      })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok || j.ok === false) { setRoundupMsg({ ok: false, text: j.error || 'Could not build the roundup.' }); return }
+      setRoundupMsg({ ok: true, text: `Roundup published (${j.count ?? asins.length} products).`, url: j.url })
+      setSelected(new Set())
+    } catch {
+      setRoundupMsg({ ok: false, text: 'Could not build the roundup.' })
+    } finally {
+      setRoundupBusy(false)
+    }
+  }
 
   // AI next-moves
   const [aiBusy, setAiBusy] = useState(false)
@@ -312,11 +387,22 @@ export default function AmazonBrainstorm() {
                 <tbody>
                   {sorted.map((p, i) => {
                     const open = openAsin === p.asin
+                    const sel = selected.has(p.asin)
                     return (
                     <Fragment key={p.asin}>
                     <tr className="border-t cursor-pointer hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors" style={{ borderColor: 'var(--border)' }} onClick={() => setOpenAsin(open ? null : p.asin)}>
                       <td className="px-4 py-2.5">
                         <div className="flex items-center gap-2.5 min-w-0">
+                          {hasBlog && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); toggleSelect(p.asin) }}
+                              className="w-4 h-4 rounded flex-shrink-0 grid place-items-center border transition-colors"
+                              style={sel ? { background: ACCENT, borderColor: ACCENT } : { borderColor: 'var(--border)' }}
+                              title={sel ? 'Remove from roundup' : 'Add to roundup post'}
+                            >
+                              {sel && <Check size={11} className="text-white" />}
+                            </button>
+                          )}
                           <span className="text-[11px] font-bold w-4 flex-shrink-0 text-center" style={{ color: 'var(--text-soft)' }}>{i + 1}</span>
                           <span className="w-9 h-9 rounded-lg border flex-shrink-0 grid place-items-center overflow-hidden" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
                             {p.image
@@ -438,6 +524,43 @@ export default function AmazonBrainstorm() {
               </ol>
             </>
           )}
+        </div>
+      )}
+
+      {/* Roundup result toast (inline, not a lib) */}
+      {roundupMsg && (
+        <div
+          className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 rounded-xl border px-4 py-3 shadow-lg flex items-center gap-3 text-[13px] max-w-[92vw]"
+          style={{ borderColor: roundupMsg.ok ? 'rgba(52,199,89,0.4)' : 'rgba(255,59,48,0.4)', background: 'var(--surface)' }}
+        >
+          {roundupMsg.ok ? <CheckCircle2 size={16} style={{ color: GREEN }} /> : <AlertCircle size={16} style={{ color: RED }} />}
+          <span style={{ color: 'var(--text)' }}>{roundupMsg.text}</span>
+          {roundupMsg.ok && roundupMsg.url && (
+            <a href={roundupMsg.url} target="_blank" rel="noreferrer" className="font-semibold hover:underline" style={{ color: ACCENT }}>View post</a>
+          )}
+          <button onClick={() => setRoundupMsg(null)} className="ml-1" style={{ color: 'var(--text-soft)' }}><X size={15} /></button>
+        </div>
+      )}
+
+      {/* Floating roundup bar — appears once winners are picked (blog tiers only) */}
+      {hasBlog && selected.size >= 1 && (
+        <div
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 rounded-2xl border shadow-xl px-4 py-3 flex items-center gap-3 max-w-[92vw]"
+          style={{ borderColor: 'rgba(234,88,12,0.35)', background: 'var(--surface)' }}
+        >
+          <span className="text-[13px] font-semibold inline-flex items-center gap-1.5" style={{ color: 'var(--text)' }}>
+            <Layers size={15} style={{ color: ACCENT }} /> {selected.size} selected
+          </span>
+          <button
+            onClick={createRoundup}
+            disabled={selected.size < 2 || roundupBusy}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-[13px] font-semibold text-white whitespace-nowrap disabled:opacity-50"
+            style={{ backgroundColor: ACCENT }}
+            title={selected.size < 2 ? 'Pick at least 2 products' : 'Publish a “my top picks” roundup blog post'}
+          >
+            {roundupBusy ? <><Loader2 size={14} className="animate-spin" /> Building…</> : <><FileText size={14} /> Publish top {selected.size} roundup</>}
+          </button>
+          <button onClick={() => setSelected(new Set())} className="text-[12px] font-semibold" style={{ color: 'var(--text-soft)' }}>Clear</button>
         </div>
       )}
     </div>
