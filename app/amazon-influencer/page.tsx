@@ -10,6 +10,7 @@
 
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import NextImage from 'next/image'
 import {
   Wand2, LayoutTemplate, Handshake, MessageSquare, PackageSearch, Radar,
   Send, UserSquare, Zap, Check, ArrowRight, ShoppingBag,
@@ -50,7 +51,7 @@ export default function AmazonInfluencerPage() {
       <header className="sticky top-0 z-30 backdrop-blur border-b border-gray-200 dark:border-white/10 bg-white/80 dark:bg-[#0b0b0d]/80">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2 font-bold">
-            <span className="w-7 h-7 rounded-lg grid place-items-center text-white" style={{ backgroundColor: ACCENT }}><ShoppingBag size={15} /></span>
+            <NextImage src="/png/mvp-affiliate-amz.png" alt="MVP Amazon Influencer" width={28} height={28} className="w-7 h-7 rounded-lg" />
             MVP Affiliate
           </Link>
           <div className="flex items-center gap-4 text-sm">
@@ -64,6 +65,7 @@ export default function AmazonInfluencerPage() {
       <section className="relative overflow-hidden border-b border-gray-200 dark:border-white/10">
         <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(60% 80% at 20% 10%, rgba(234,88,12,0.16), transparent 60%), radial-gradient(50% 60% at 90% 20%, rgba(234,88,12,0.10), transparent 65%)' }} />
         <div className="relative max-w-6xl mx-auto px-4 sm:px-6 pt-16 pb-14 text-center">
+          <NextImage src="/png/mvp-affiliate-amz.png" alt="MVP Amazon Influencer" width={96} height={96} priority className="mx-auto mb-5 w-20 h-20 sm:w-24 sm:h-24 rounded-3xl shadow-lg" />
           <p className="text-xs font-bold uppercase tracking-[0.14em] mb-3" style={{ color: ACCENT }}>For Amazon Associates & Influencers</p>
           <h1 className="text-4xl sm:text-5xl font-bold tracking-tight leading-[1.05] max-w-3xl mx-auto">
             Your storefront, running itself.

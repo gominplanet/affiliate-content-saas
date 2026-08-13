@@ -9,6 +9,7 @@
 //
 // Static (just links), so it renders as a Server Component — no client JS.
 
+import NextImage from 'next/image'
 import {
   ShoppingBag, Rocket, Wand2, Share2, BadgePercent, Radar, UserSquare, Store,
   FileText, Youtube, Scale, Mail, TrendingUp, ArrowRight,
@@ -20,6 +21,8 @@ type Panel = {
   eyebrow: string
   forWho: string
   icon: React.ReactNode
+  /** Brand logo (app-icon) shown instead of the colored-square lucide icon. */
+  logo?: string
   headline: string
   blurb: string
   price: string
@@ -37,6 +40,7 @@ const PANELS: Panel[] = [
     eyebrow: 'Amazon Associates & Influencers',
     forWho: 'You sell on your Amazon storefront and socials',
     icon: <ShoppingBag size={22} />,
+    logo: '/png/mvp-affiliate-amz.png',
     headline: 'No blog. No YouTube.\nJust your storefront.',
     blurb: 'Generate incredible Amazon video-review thumbnails in one click, turn any product into scroll-stopping designs, publish everywhere at once, and land paid brand deals.',
     price: '$79',
@@ -104,7 +108,11 @@ export default function AudienceSplit() {
               {/* Accent header band */}
               <div className="px-7 sm:px-8 pt-7 pb-6" style={{ background: `linear-gradient(180deg, ${p.tint}0.12), ${p.tint}0.03))` }}>
                 <div className="flex items-center gap-3 mb-4">
-                  <span className="w-12 h-12 rounded-2xl grid place-items-center flex-shrink-0 text-white shadow-sm" style={{ backgroundColor: p.accent }}>{p.icon}</span>
+                  {p.logo ? (
+                    <NextImage src={p.logo} alt={p.eyebrow} width={48} height={48} className="w-12 h-12 rounded-2xl flex-shrink-0 shadow-sm" />
+                  ) : (
+                    <span className="w-12 h-12 rounded-2xl grid place-items-center flex-shrink-0 text-white shadow-sm" style={{ backgroundColor: p.accent }}>{p.icon}</span>
+                  )}
                   <div className="min-w-0">
                     <p className="text-[10.5px] font-bold uppercase tracking-[0.13em]" style={{ color: p.accent }}>{p.eyebrow}</p>
                     <p className="text-[12px]" style={{ color: 'var(--text-soft)' }}>{p.forWho}</p>
