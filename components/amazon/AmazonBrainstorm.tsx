@@ -9,13 +9,15 @@
 // data into specific posts to make. Weekly/monthly toggle; both are SCOUT-synced.
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, Fragment } from 'react'
 import Link from 'next/link'
 import {
   Loader2, Sparkles, Wand2, Share2, Handshake, PackageSearch, ArrowRight, ArrowUpRight, ArrowDownRight,
   AlertCircle, DollarSign, MousePointerClick, Package, Percent, TrendingUp, ExternalLink,
+  FileText, ChevronDown, Star,
 } from 'lucide-react'
 import PageHero from '@/components/layout/PageHero'
+import { useEffectiveTier } from '@/lib/useEffectiveTier'
 
 const ACCENT = '#C2410C'
 const GREEN = '#15803d'
@@ -23,10 +25,15 @@ const RED = '#b91c1c'
 
 // ── Types mirrored from /api/storefront/analytics ────────────────────────────
 interface Totals { earnings: number; revenue: number; units: number; clicks: number; products: number; conversion: number; epc: number }
+interface Campaign { name: string | null; status: string | null }
 interface Product {
   asin: string; title: string; earnings: number; revenue: number; units: number; clicks: number
   conversion: number; epc: number; commissionPct: number | null
   earningsPrev: number | null; earningsDelta: number | null; isNew: boolean; amazonUrl: string
+  // Garnish (deal_radar_cache + campaigns)
+  image: string | null; priceNow: number | null; monthlySold: number | null
+  rating: number | null; reviewCount: number | null; discountPct: number | null
+  campaign: Campaign | null
 }
 interface Analytics {
   period: 'weekly' | 'monthly'; hasData: boolean
@@ -78,12 +85,67 @@ function Delta({ pct }: { pct: number | null }) {
 
 type SortKey = 'earnings' | 'revenue' | 'units' | 'clicks' | 'conversion' | 'epc'
 
+// ── Expandable per-product command center ────────────────────────────────────
+function StatChip({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border px-2.5 py-1.5" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+      <p className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-soft)' }}>{label}</p>
+      <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>{value}</p>
+    </div>
+  )
+}
+
+function ActionBtn({ href, external, icon, label, sub, primary }: { href: string; external?: boolean; icon: React.ReactNode; label: string; sub?: string; primary?: boolean }) {
+  const cls = 'inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-[13px] font-semibold whitespace-nowrap transition-transform hover:-translate-y-0.5'
+  const style: React.CSSProperties = primary
+    ? { backgroundColor: ACCENT, color: '#fff' }
+    : { border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }
+  const inner = <><span style={{ color: primary ? '#fff' : ACCENT }}>{icon}</span> {label}{sub ? <span className="font-normal opacity-70">· {sub}</span> : null}</>
+  if (external) return <a href={href} target="_blank" rel="noreferrer" className={cls} style={style}>{inner}</a>
+  return <Link href={href} className={cls} style={style}>{inner}</Link>
+}
+
+function ProductDrawer({ p, hasBlog }: { p: Product; hasBlog: boolean }) {
+  const dealStatus = p.campaign?.status
+  const dealLabel = dealStatus === 'accepted' ? 'View brand deal' : dealStatus === 'messaged' ? 'Brand deal · messaged' : 'Chase brand deal'
+  return (
+    <div className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+      {/* Stat chips — full set, so it reads on mobile where columns are hidden */}
+      <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2 mb-4">
+        <StatChip label="Earnings" value={usd(p.earnings)} />
+        <StatChip label="Revenue" value={usd(p.revenue)} />
+        <StatChip label="Units" value={int(p.units)} />
+        <StatChip label="Clicks" value={int(p.clicks)} />
+        <StatChip label="Conversion" value={`${p.conversion}%`} />
+        <StatChip label="Earn/click" value={usd(p.epc)} />
+        {p.priceNow != null && <StatChip label="Price" value={usd(p.priceNow)} />}
+        {p.monthlySold != null && p.monthlySold > 0 && <StatChip label="Demand" value={`~${int(p.monthlySold)}/mo`} />}
+        {p.rating != null && <StatChip label="Rating" value={`${p.rating}★${p.reviewCount ? ` (${int(p.reviewCount)})` : ''}`} />}
+        {p.discountPct != null && p.discountPct > 0 && <StatChip label="Discount" value={`${p.discountPct}% off`} />}
+        {p.commissionPct != null && <StatChip label="Your commission" value={`${p.commissionPct}%`} />}
+      </div>
+
+      {/* Actions — turn this product into content, or chase its brand deal */}
+      <div className="flex flex-wrap gap-2">
+        <ActionBtn primary href={`/amazon/thumbnails?asin=${p.asin}`} icon={<Wand2 size={14} />} label="Make thumbnail" />
+        <ActionBtn href={`/amazon/social?asin=${p.asin}`} icon={<Share2 size={14} />} label="Quick social" />
+        {hasBlog && <ActionBtn href={`/deals?asin=${p.asin}`} icon={<FileText size={14} />} label="Write blog post" />}
+        {p.campaign && <ActionBtn href="/cc-campaigns" icon={<Handshake size={14} />} label={dealLabel} sub={p.campaign.name || undefined} />}
+        <ActionBtn external href={p.amazonUrl} icon={<ExternalLink size={14} />} label="Visit Amazon" />
+      </div>
+    </div>
+  )
+}
+
 export default function AmazonBrainstorm() {
   const [period, setPeriod] = useState<'weekly' | 'monthly'>('monthly')
   const [data, setData] = useState<Analytics | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [sortKey, setSortKey] = useState<SortKey>('earnings')
+  const [openAsin, setOpenAsin] = useState<string | null>(null)
+  const tier = useEffectiveTier()
+  const hasBlog = tier !== 'amazon' // Amazon tier has no blog sites; others do.
 
   // AI next-moves
   const [aiBusy, setAiBusy] = useState(false)
@@ -217,7 +279,7 @@ export default function AmazonBrainstorm() {
           {/* Per-product table */}
           <div className="rounded-2xl border overflow-hidden mb-8" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
             <div className="px-4 py-3 border-b flex items-center justify-between gap-2 flex-wrap" style={{ borderColor: 'var(--border)' }}>
-              <p className="font-bold text-[14px]" style={{ color: 'var(--text)' }}>Your products this period <span className="font-normal" style={{ color: 'var(--text-soft)' }}>({products.length})</span></p>
+              <p className="font-bold text-[14px]" style={{ color: 'var(--text)' }}>Your products this period <span className="font-normal" style={{ color: 'var(--text-soft)' }}>({products.length}) · tap a row for stats &amp; actions</span></p>
               <div className="flex items-center gap-1.5 text-[11px]" style={{ color: 'var(--text-soft)' }}>
                 Sort by:
                 {(['earnings', 'revenue', 'units', 'clicks', 'conversion', 'epc'] as SortKey[]).map((k) => (
@@ -248,16 +310,36 @@ export default function AmazonBrainstorm() {
                   </tr>
                 </thead>
                 <tbody>
-                  {sorted.map((p, i) => (
-                    <tr key={p.asin} className="border-t" style={{ borderColor: 'var(--border)' }}>
+                  {sorted.map((p, i) => {
+                    const open = openAsin === p.asin
+                    return (
+                    <Fragment key={p.asin}>
+                    <tr className="border-t cursor-pointer hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors" style={{ borderColor: 'var(--border)' }} onClick={() => setOpenAsin(open ? null : p.asin)}>
                       <td className="px-4 py-2.5">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="text-[11px] font-bold w-5 flex-shrink-0" style={{ color: 'var(--text-soft)' }}>{i + 1}</span>
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className="text-[11px] font-bold w-4 flex-shrink-0 text-center" style={{ color: 'var(--text-soft)' }}>{i + 1}</span>
+                          <span className="w-9 h-9 rounded-lg border flex-shrink-0 grid place-items-center overflow-hidden" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+                            {p.image
+                              // eslint-disable-next-line @next/next/no-img-element
+                              ? <img src={p.image} alt="" className="w-full h-full object-contain" />
+                              : <Package size={15} style={{ color: 'var(--text-soft)' }} />}
+                          </span>
                           <div className="min-w-0">
-                            <a href={p.amazonUrl} target="_blank" rel="noreferrer" className="font-medium hover:underline inline-flex items-center gap-1 max-w-[280px] truncate align-bottom" style={{ color: 'var(--text)' }} title={p.title}>
-                              <span className="truncate">{p.title}</span><ExternalLink size={11} className="flex-shrink-0 opacity-60" />
-                            </a>
-                            <div className="text-[11px]" style={{ color: 'var(--text-soft)' }}>{p.asin}{p.isNew ? ' · new this period' : ''}</div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-medium truncate max-w-[240px]" style={{ color: 'var(--text)' }} title={p.title}>{p.title}</span>
+                              {p.campaign && (
+                                <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0" style={{ background: 'rgba(234,88,12,0.14)', color: ACCENT }} title="You have an open Creator Connections campaign for this product">
+                                  <Handshake size={10} /> Deal
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] flex items-center gap-1.5 flex-wrap" style={{ color: 'var(--text-soft)' }}>
+                              <span>{p.asin}</span>
+                              {p.priceNow != null && <span>· {usd(p.priceNow)}</span>}
+                              {p.monthlySold != null && p.monthlySold > 0 && <span>· ~{int(p.monthlySold)}/mo</span>}
+                              {p.rating != null && <span className="inline-flex items-center gap-0.5">· <Star size={10} className="fill-current" style={{ color: '#f59e0b' }} />{p.rating}</span>}
+                              {p.isNew && <span>· new</span>}
+                            </div>
                           </div>
                         </div>
                       </td>
@@ -279,12 +361,21 @@ export default function AmazonBrainstorm() {
                       <td className="px-3 py-2.5 text-right whitespace-nowrap hidden lg:table-cell" style={{ color: 'var(--text-soft)' }}>{p.conversion}%</td>
                       <td className="px-3 py-2.5 text-right whitespace-nowrap hidden lg:table-cell" style={{ color: 'var(--text-soft)' }}>{usd(p.epc)}</td>
                       <td className="px-3 py-2.5 text-right">
-                        <Link href={`/amazon/thumbnails?asin=${p.asin}`} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold text-white whitespace-nowrap" style={{ backgroundColor: ACCENT }} title="Make a thumbnail for this product">
-                          <Wand2 size={12} /> Post
-                        </Link>
+                        <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg" style={{ background: open ? 'rgba(234,88,12,0.12)' : 'transparent', color: open ? ACCENT : 'var(--text-soft)' }}>
+                          <ChevronDown size={15} className="transition-transform" style={{ transform: open ? 'rotate(180deg)' : 'none' }} />
+                        </span>
                       </td>
                     </tr>
-                  ))}
+                    {open && (
+                      <tr style={{ borderColor: 'var(--border)' }}>
+                        <td colSpan={9} className="px-4 pb-4 pt-0" style={{ background: 'rgba(234,88,12,0.03)' }}>
+                          <ProductDrawer p={p} hasBlog={hasBlog} />
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
