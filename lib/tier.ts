@@ -127,7 +127,6 @@ export const TIERS = {
      *  schedule-cascade-only route enforces this server-side (2026-06-07). */
     cascadeOnlySchedulesPerMonth: 5 as number | null,
     /** Power-user / Pro-only gates. */
-    campaigns: false,
     apiAccess: false,
     whiteLabel: false,
     vaSeats: 0,
@@ -194,7 +193,6 @@ export const TIERS = {
     maxSocialAccountsPerPlatform: 1 as number | null,
     publishAll: false,
     cascadeOnlySchedulesPerMonth: 30 as number | null,
-    campaigns: false,
     apiAccess: false,
     whiteLabel: false,
     vaSeats: 0,
@@ -269,7 +267,6 @@ export const TIERS = {
     publishAll: true,
     cascadeOnlySchedulesPerMonth: null as number | null,
     /** Creator Connections (brand deals) — a headline value for this buyer. */
-    campaigns: true,
     apiAccess: false,
     whiteLabel: false,
     vaSeats: 0,
@@ -335,7 +332,6 @@ export const TIERS = {
     maxSocialAccountsPerPlatform: 1 as number | null,
     publishAll: false,
     cascadeOnlySchedulesPerMonth: null as number | null,
-    campaigns: false,
     apiAccess: false,
     whiteLabel: false,
     vaSeats: 0,
@@ -413,7 +409,6 @@ export const TIERS = {
     maxSocialAccountsPerPlatform: 5 as number | null,
     publishAll: true,
     cascadeOnlySchedulesPerMonth: null as number | null,
-    campaigns: true,
     /** API access HIDDEN from nav for now (link commented out in
      *  DashboardShellV2 until real demand surfaces). White-label is OFF —
      *  not offered or on the roadmap for now (2026-06-10): the /branding UI
@@ -467,7 +462,6 @@ export const TIERS = {
     maxSocialAccountsPerPlatform: null as number | null,
     publishAll: true,
     cascadeOnlySchedulesPerMonth: null as number | null,
-    campaigns: true,
     apiAccess: true,
     whiteLabel: true,
     vaSeats: 999,
@@ -610,7 +604,7 @@ export function effectivePostCap(tier: Tier, windowStartISO: string): number | n
  *  checks across routes; reads one source of truth. Use for boolean gates:
  *    tierHas(tier, 'comparisonPosts') / 'buyingGuides' / 'rebuildFromVideo' /
  *    'topicHubs' / 'refreshImages' / 'newsletterScheduling' /
- *    'newsletterABTesting' / 'newsletterSegmentedSends' / 'campaigns' /
+ *    'newsletterABTesting' / 'newsletterSegmentedSends' /
  *    'apiAccess' / 'whiteLabel' / 'multiAccountSocial' / 'publishAll' /
  *    'priorityQueue' / 'prioritySupport'.
  *
@@ -627,7 +621,6 @@ export function tierHas(
     | 'newsletterScheduling'
     | 'newsletterABTesting'
     | 'newsletterSegmentedSends'
-    | 'campaigns'
     | 'apiAccess'
     | 'whiteLabel'
     | 'multiAccountSocial'

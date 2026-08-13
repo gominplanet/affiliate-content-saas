@@ -28,7 +28,11 @@
 
 import type { Tier } from '@/lib/tier'
 
-const PAID = ['creator', 'studio', 'pro', 'admin'] as const
+// 'amazon' belongs in PAID: it's a paid plan whose whole pitch is Amazon
+// product research, Deal Radar, Link in Bio and product-post publishing — all of
+// which gate on canUseDealRadar()/the finders list below. Leaving it out 403'd
+// Amazon subscribers on features they were sold (2026-08-13).
+const PAID = ['creator', 'amazon', 'studio', 'pro', 'admin'] as const
 const PRO = ['pro', 'admin'] as const
 const STUDIO_UP = ['studio', 'pro', 'admin'] as const
 
