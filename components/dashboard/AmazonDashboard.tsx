@@ -13,6 +13,7 @@
 
 import Link from 'next/link'
 import type { ReactNode } from 'react'
+import ScoutInfoCard from '@/components/amazon/ScoutInfoCard'
 import {
   Wand2, PackageSearch, Share2, Handshake, Radar, UserSquare,
   FileText, Youtube, Scale, Mail, TrendingUp, Check, ArrowRight, Sparkles,
@@ -64,8 +65,14 @@ export default function AmazonDashboard({ firstName, today }: { firstName: strin
         </div>
       </section>
 
+      {/* SCOUT — the extension that powers Creator Connections + earnings. Shown
+          right under the hero so new storefront users set it up first. */}
+      <div className="px-6 sm:px-8 pt-8">
+        <ScoutInfoCard />
+      </div>
+
       {/* Split: toolkit (left) + upgrade pitch (right) */}
-      <div className="px-6 sm:px-8 py-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="px-6 sm:px-8 pb-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* LEFT — what they're getting */}
         <div>
           <div className="flex items-center gap-2 mb-4">
