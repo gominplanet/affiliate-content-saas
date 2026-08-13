@@ -307,6 +307,9 @@ export default function PricingPage() {
                 It finds the products, writes the copy, designs the posts with your face on them,
                 publishes them, and opens the door to paid brand deals. Here is exactly what you get.
               </p>
+              <p className="mt-3 text-[13px] font-medium rounded-lg px-3 py-2 inline-block" style={{ background: 'rgba(124,58,237,0.08)', color: '#7C3AED' }}>
+                Already on Studio or Pro? This whole toolkit is already included in your plan, on top of the blog + YouTube engine.
+              </p>
             </div>
             <div className="lg:text-right shrink-0">
               <div className="flex items-baseline gap-2 lg:justify-end">

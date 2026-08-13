@@ -1598,6 +1598,9 @@ function PricingSection() {
             See the Amazon plan <ArrowRight size={14} />
           </span>
         </a>
+        <p className="mt-3 text-center text-[12.5px]" style={{ color: 'var(--text-soft)' }}>
+          Already on <span className="font-semibold" style={{ color: 'var(--text)' }}>Studio</span> or <span className="font-semibold" style={{ color: 'var(--text)' }}>Pro</span>? The full Amazon toolkit is already in your plan, on top of the blog + YouTube engine. This plan is for storefront creators who don’t want the website side.
+        </p>
 
         {/* Link to the full pricing page (bundle math + free-research breakdown). */}
         <div className="mt-6 text-center">
