@@ -56,6 +56,7 @@ import UsageBar from './UsageBar'
 import UsageNudge from './UsageNudge'
 import SiteSwitcherChip from './SiteSwitcherChip'
 import { HelpDeskButton } from '@/components/HelpDeskSidebar'
+import AmazonUpgradeGate from '@/components/upgrade/AmazonUpgradeGate'
 
 // Wrapper to handle context safely
 function HelpDeskButtonWrapper() {
@@ -654,6 +655,35 @@ export default function DashboardShellV2({
   // their plan doesn't include. Amazon ONLY; every other tier keeps the default
   // order untouched.
   const amazonView = effectiveTier === 'amazon'
+  // Walled garden (2026-08-13): an Amazon Influencer opening anything outside
+  // their plan (blog / YouTube / newsletter / SEO / blog-tools) gets the upgrade
+  // panel instead of the page. Denylist of PATH PREFIXES rather than an
+  // allowlist, so account/billing/admin/support + every Amazon and shared
+  // research-deal tool stay reachable by default (locking billing would trap the
+  // user off the upgrade flow). Gated in the shell so it covers the sidebar
+  // click, a dashboard card, and a pasted deep link from one place.
+  const AMAZON_LOCKED_PREFIXES: { prefix: string; label: string }[] = [
+    { prefix: '/setup', label: 'WordPress & Blog Setup' },
+    { prefix: '/connect-youtube', label: 'YouTube' },
+    { prefix: '/learn', label: 'Voice Training' },
+    { prefix: '/customize', label: 'Customize Blog' },
+    { prefix: '/co-pilot', label: 'YouTube Co-Pilot' },
+    { prefix: '/content', label: 'Blog Post Generator' },
+    { prefix: '/clip-factory', label: 'Clip Factory' },
+    { prefix: '/comparison', label: 'Comparison Posts' },
+    { prefix: '/buying-guides', label: 'Buying Guides' },
+    { prefix: '/deals', label: 'Deals Hub' },
+    { prefix: '/script', label: 'Scriptwriter' },
+    { prefix: '/newsletter', label: 'Newsletter' },
+    { prefix: '/instagram-burner', label: 'Shop Burner' },
+    { prefix: '/ads', label: 'Ads' },
+    { prefix: '/seo', label: 'SEO & Indexing' },
+    { prefix: '/pulse', label: 'Pulse' },
+    { prefix: '/tools', label: 'Blog Tools' },
+  ]
+  const amazonLocked = amazonView
+    ? AMAZON_LOCKED_PREFIXES.find((l) => pathname === l.prefix || pathname.startsWith(`${l.prefix}/`) || pathname.startsWith(`${l.prefix}?`))
+    : undefined
   // Section label → the tier that unlocks it. Shown as a pill (amazon view only)
   // on sections this plan can't use. 'Create' is the blog/YouTube content area,
   // which the Amazon Influencer plan intentionally excludes.
@@ -1142,7 +1172,7 @@ export default function DashboardShellV2({
             or the catalogue grid on /content). */}
         <main className="flex-1 overflow-y-auto w-full">
           <div className="max-w-7xl px-4 sm:px-6 lg:px-8 pt-6 pb-12">
-            {children}
+            {amazonLocked ? <AmazonUpgradeGate feature={amazonLocked.label} /> : children}
           </div>
         </main>
       </div>
