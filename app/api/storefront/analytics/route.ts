@@ -120,7 +120,7 @@ export async function GET(request: NextRequest) {
     // action (chase the brand deal, or just post).
     const asins = products.map(p => p.asin)
     const keepa = new Map<string, { image_url: string | null; price_now_cents: number | null; monthly_sold: number | null; rating: number | null; review_count: number | null; discount_pct: number | null }>()
-    const campByAsin = new Map<string, { name: string | null; status: string | null }>()
+    const campByAsin = new Map<string, { name: string | null; status: string | null; campaignId: string | null; detailsUrl: string | null; brand: string | null; accepted: boolean }>()
     if (asins.length) {
       for (let i = 0; i < asins.length; i += 300) {
         const chunk = asins.slice(i, i + 300)
@@ -134,11 +134,20 @@ export async function GET(request: NextRequest) {
       }
       const { data: camps } = await sb
         .from('campaigns')
-        .select('asin,campaign_name,status')
+        .select('asin,campaign_name,status,cc_campaign_id,details_url,brand_name,accepted_at')
         .eq('user_id', user.id)
         .in('asin', asins)
-      for (const c of (camps ?? []) as Array<{ asin: string | null; campaign_name: string | null; status: string | null }>) {
-        if (c.asin && !campByAsin.has(c.asin)) campByAsin.set(c.asin, { name: c.campaign_name, status: c.status })
+      for (const c of (camps ?? []) as Array<{ asin: string | null; campaign_name: string | null; status: string | null; cc_campaign_id: string | null; details_url: string | null; brand_name: string | null; accepted_at: string | null }>) {
+        if (c.asin && !campByAsin.has(c.asin)) {
+          campByAsin.set(c.asin, {
+            name: c.campaign_name,
+            status: c.status,
+            campaignId: c.cc_campaign_id,
+            detailsUrl: c.details_url,
+            brand: c.brand_name,
+            accepted: !!c.accepted_at,
+          })
+        }
       }
     }
 
