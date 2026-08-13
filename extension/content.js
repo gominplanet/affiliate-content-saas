@@ -2103,7 +2103,7 @@ setInterval(() => {
     if (existing) removePanel(existing)
   } catch (e) {}
 }, 2000)
-})()
+})();
 
 // ─── Storefront Stats v2: Amazon Influencer earnings scraper ─────────────────
 // Self-contained (runs after the main IIFE). On affiliate-program.amazon.com
@@ -2117,7 +2117,7 @@ setInterval(() => {
 // fixed. It never throws and no-ops when it can't confidently find a table or a
 // date range — so a markup change degrades to "no sync", never bad data. Needs
 // one validation pass against the live report DOM to confirm the header words.
-(function mvpEarningsScout() {
+;(function mvpEarningsScout() {
   try {
     if (!/affiliate-program\.amazon\.com/.test(location.host)) return
     if (!/report|earning|order|performance/i.test(location.href)) return
@@ -2200,16 +2200,22 @@ setInterval(() => {
   }
 
   async function syncIfDue() {
-    const earnings = parse(); if (!earnings.length) return
+    const earnings = parse()
+    if (!earnings.length) { console.debug('[SCOUT earnings] no rows parsed yet (waiting for the report table)'); return }
     const key = 'mvpEarnSync:' + earnings[0].periodType + ':' + earnings[0].periodStart
     const last = await new Promise((r) => { try { chrome.storage.local.get([key], (o) => r((o && o[key]) || 0)) } catch (e) { r(0) } })
-    if (Date.now() - last < 4 * 3600 * 1000) return // at most every 4h per range
+    if (Date.now() - last < 4 * 3600 * 1000) { console.debug('[SCOUT earnings] throttled (synced within the last 4h for', key + ')'); return }
     try {
       // Pushed over the session bridge — the worker fetch carries the MVP cookie,
       // so /api/storefront/ingest authenticates via the signed-in session (no token).
       const res = await chrome.runtime.sendMessage({ type: 'SCOUT_PUSH_EARNINGS', earnings })
-      if (res && res.ok) { try { chrome.storage.local.set({ [key]: Date.now() }) } catch (e) {} }
-    } catch (e) {}
+      if (res && res.ok) {
+        console.debug('[SCOUT earnings] synced', earnings.length, 'products →', res.upserted, 'upserted')
+        try { chrome.storage.local.set({ [key]: Date.now() }) } catch (e) {}
+      } else {
+        console.debug('[SCOUT earnings] push failed', res)
+      }
+    } catch (e) { console.debug('[SCOUT earnings] push error', e) }
   }
 
   let t = null
