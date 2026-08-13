@@ -26,7 +26,6 @@ import { renderDesignerOverlay } from '@/lib/thumbnail-text-templates'
 import { bakeSimpleHeadline, compositeBadgeOnly, NEON_BORDER_STYLE_COUNT, type ThumbDecoration } from '@/lib/thumbnail-simple-bake'
 import { analyzeTextZone } from '@/lib/thumbnail-textzone'
 import { scrubBanned } from '@/lib/scrub'
-import { getThumbnailFaceRef } from '@/lib/identity-anchor'
 import { verifyFaceIdentity, verifyFaceIdentityConsensus, verifyNoBrandLeak, verifyBakedText, verifyProductMatch } from '@/lib/product-image'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
 import { fetchStoryboardFrames } from '@/lib/youtube-storyboards'
@@ -1739,7 +1738,7 @@ export async function POST(request: Request) {
                 `★ CREATOR'S SCENE DIRECTION (highest priority — build the whole thumbnail around this): "${sceneDirection}".`,
                 "Match that direction for the SETTING / background, the creator's pose, expression and action, and any props described. The creator is the main subject of the scene.",
                 '',
-                `★ CREATOR IDENTITY (never compromise, even to fit the direction): ${identityInstruction} Reproduce this EXACT person's face with pixel-level accuracy — same facial structure, skin tone, hair colour and style, age, and distinctive features. A viewer who knows them must recognise them INSTANTLY. Show them HEAD-AND-SHOULDERS to CHEST-UP only — the references are head-and-chest selfies, so never invent their full body, legs or body build.`,
+                `★ CREATOR IDENTITY (never compromise, even to fit the direction): ${identityInstruction} Reproduce this EXACT person's face with pixel-level accuracy — same facial structure, skin tone, hair colour and style, age, and distinctive features. A viewer who knows them must recognise them INSTANTLY. WARDROBE: use the references for the face and identity ONLY, not the clothing — dress them in a fresh, natural everyday outfit that suits the scene, and do NOT copy the exact top, collar or colour worn in the reference photos. Show them HEAD-AND-SHOULDERS to CHEST-UP only — the references are head-and-chest selfies, so never invent their full body, legs or body build.`,
                 '',
                 productRefNum
                   ? `PRODUCT: feature ${productLabel} (from Image ${productRefNum}) clearly and recognisably in the scene exactly as the direction implies (held, beside them, in use…). Keep its true shape, colours and its own printed branding. Do NOT invent retail packaging or marketing text.`
@@ -1788,7 +1787,7 @@ export async function POST(request: Request) {
               '',
               'INTEGRATION (important): the person and the product must sit NATURALLY in the scene with realistic lighting and grounded shadows, like a real photo. Do NOT put a glowing outline, rim-light halo, coloured aura or cut-out edge around the person or the product — no haloing, nothing that makes them look pasted on. Keep edges clean and photographic.',
               '',
-              `PERSON: ${creatorRefLabel}. ${identityInstruction} Use this exact person — you MUST change their expression to fit this thumbnail (do NOT copy the reference photo's expression) and may lightly retouch them, but do NOT change their inherent look (same face, skin tone, hair, age, distinctive features); they must be instantly recognisable as the same person. ${personAction} Place them on one side of the frame. Show them HEAD-AND-SHOULDERS to roughly CHEST-UP only. The references are head-and-chest selfies, so do NOT invent or show their full body, legs, waist-down, or overall body build — keep it an upper-body shot (they can still react, point, or gesture with hands near the frame).`,
+              `PERSON: ${creatorRefLabel}. ${identityInstruction} Use this exact person — you MUST change their expression to fit this thumbnail (do NOT copy the reference photo's expression) and may lightly retouch them, but do NOT change their inherent look (same face, skin tone, hair, age, distinctive features); they must be instantly recognisable as the same person. WARDROBE: use the references for the face and identity ONLY, not the clothing — dress them in a fresh, natural everyday outfit (a plain tee, casual shirt, polo or light sweater) that suits the scene, and do NOT copy the exact top, collar or colour worn in the reference photos. ${personAction} Place them on one side of the frame. Show them HEAD-AND-SHOULDERS to roughly CHEST-UP only. The references are head-and-chest selfies, so do NOT invent or show their full body, legs, waist-down, or overall body build — keep it an upper-body shot (they can still react, point, or gesture with hands near the frame).`,
               '',
               productRefNum
                 ? `PRODUCT: feature the product from Image ${productRefNum} accurately as the hero — its true shape, colours and its own printed branding (never invent packaging or fake logos). Light it naturally with a grounded shadow so it belongs in the scene; no glow ring or aura behind it. Show it however fits the design: hero shot, in-use, or lifestyle.`
@@ -2037,19 +2036,13 @@ export async function POST(request: Request) {
           if (noHuman) {
             console.log('[thumb] noHuman mode — skipping face references')
           } else if (faceModel?.source_images?.length) {
-            // Identity references = the creator's own uploaded selfies (the
-            // original/optimized set). We no longer prefer Photobooth headshots
-            // (decoupled 2026-08-10): gpt-image is the primary engine and this NB
-            // path is only a fallback; either way the varied selfies are the
-            // ground truth for what the person looks like. An excited-expression
-            // anchor (derived from those same selfies) plus several raw uploads
-            // gives NB Pro multiple angles to lock identity to.
-            const primaryFace = await Promise.race([
-              getThumbnailFaceRef(supabase, user.id, { faceId: faceModel.id, sourceImages: faceModel.source_images, expression: 'excited', tier }),
-              new Promise<null>(res => setTimeout(() => res(null), 120_000)),
-            ])
-            const rawRefs = await rehostFacePhotos(supabase, faceModel.source_images, primaryFace ? 4 : 7)
-            faceRefs = primaryFace ? [primaryFace, ...rawRefs] : rawRefs
+            // Identity references = the creator's own uploaded selfies, the bank
+            // they gave us — nothing else. We do NOT use generated Photobooth
+            // headshots or a synthetic identity anchor here (2026-08-13): the
+            // uploaded selfies are the ground truth for the face, and handing NB
+            // several raw uploads gives it multiple real angles to lock identity
+            // to. Wardrobe is re-dressed downstream (see outfitNote).
+            faceRefs = await rehostFacePhotos(supabase, faceModel.source_images, 7)
           }
           // Product image(s) as references so the product(s) render accurately
           // (the bold look). The prompt scopes the product refs to the

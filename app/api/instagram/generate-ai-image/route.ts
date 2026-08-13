@@ -29,7 +29,6 @@ import { TIERS, nextTierFor, type Tier } from '@/lib/tier'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 import { analyzeTextZone } from '@/lib/thumbnail-textzone'
 import { composeWithNanoBananaPro, composeWithNanoBanana, rehostToFal, rehostFacePhotos, applyMoodyGrade, NANO_BANANA_PRO_COST_MODEL, NANO_BANANA_COST_MODEL } from '@/lib/thumbnail-generators'
-import { getThumbnailFaceRef } from '@/lib/identity-anchor'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 
 /**
@@ -438,16 +437,14 @@ export async function POST(request: Request) {
     // IG image with the host's true likeness, text-free (the title is overlaid
     // crisply client-side). Mirrors the YouTube composed path. Only when the
     // face model has source photos (the instant, no-LoRA models).
-    // Primary likeness reference, mirroring the YouTube path: getThumbnailFaceRef
-    // casts the creator's STARRED Photobooth shot (or an energetic excited/surprised/
-    // laughing one) — instant, no generation, and the source of that lively look —
-    // and falls back to a cached "excited" identity anchor when they have no eligible
-    // shot. A couple of raw photos ride along for extra angles.
+    // Likeness references = the creator's own uploaded selfies, the bank they
+    // gave us — nothing else. We do NOT use generated Photobooth headshots or a
+    // synthetic identity anchor (2026-08-13): the uploaded selfies are the ground
+    // truth for the face, and several real angles give a strong identity lock.
+    // Wardrobe is re-dressed by the prompt's WARDROBE clause below.
     let igFaceRefs: string[] = []
     if (faceModel?.source_images?.length) {
-      const igFace = await getThumbnailFaceRef(sb, user.id, { faceId: faceModel.id, sourceImages: faceModel.source_images, expression: 'excited', tier })
-      const igRaw = await rehostFacePhotos(sb, faceModel.source_images, igFace ? 2 : 5)
-      igFaceRefs = igFace ? [igFace, ...igRaw] : igRaw
+      igFaceRefs = await rehostFacePhotos(sb, faceModel.source_images, 5)
     }
     if (igFaceRefs.length > 0) {
       try {
