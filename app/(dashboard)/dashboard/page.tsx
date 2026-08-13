@@ -39,6 +39,8 @@ import RecommendedToolsCard from '@/components/dashboard/RecommendedToolsCard'
 import MetaLiveBanner from '@/components/dashboard/MetaLiveBanner'
 import DealRadarLaunchBanner from '@/components/dashboard/DealRadarLaunchBanner'
 import { DashboardLiveCards } from '@/components/dashboard/DashboardLiveCards'
+import AmazonDashboard from '@/components/dashboard/AmazonDashboard'
+import DashboardTierGate from '@/components/dashboard/DashboardTierGate'
 import PriceAlertsPanel from '@/components/dashboard/PriceAlertsPanel'
 import DailyCcDigest from '@/components/dashboard/DailyCcDigest'
 import TrialResearchRow from '@/components/dashboard/TrialResearchRow'
@@ -219,7 +221,16 @@ export default async function DashboardPage() {
     postsThisPeriod ? `${postsThisPeriod} post${postsThisPeriod === 1 ? '' : 's'} this period` : null,
   ].filter(Boolean) as string[]
 
+  // Amazon Influencer gets a purpose-built dashboard: their toolkit on one side,
+  // the upgrade pitch on the other. Real amazon users branch here server-side
+  // (no flash); admins previewing via the view-as switcher get it client-side
+  // through DashboardTierGate wrapping the default return below.
+  if (tier === 'amazon') {
+    return <AmazonDashboard firstName={firstName} today={todayLabel} />
+  }
+
   return (
+    <DashboardTierGate isAdmin={tier === 'admin'} amazon={<AmazonDashboard firstName={firstName} today={todayLabel} />}>
     <div className="-mx-4 sm:-mx-6 lg:-mx-8 -mt-6">
       {/* ── Hero ────────────────────────────────────────────────────── */}
       <section
@@ -411,6 +422,7 @@ export default async function DashboardPage() {
 
       </div>
     </div>
+    </DashboardTierGate>
   )
 }
 
