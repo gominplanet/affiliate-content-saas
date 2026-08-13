@@ -143,6 +143,25 @@ const FREE_TOOLS = [
   { icon: <Store size={18} />, label: 'Creator Connections', line: 'Already have CC access? Search the full campaign catalogue in one place, with our free Scout extension.' },
 ]
 
+/** A full-width feature illustration placed inside a section, between its header
+ *  and its content. Used to drop the marketing banners into their matching
+ *  sections (curated — not every banner, to keep the page uncluttered). */
+function FeatureBanner({ src, w, h, alt }: { src: string; w: number; h: number; alt: string }) {
+  return (
+    <div className="max-w-4xl mx-auto mb-12">
+      <NextImage
+        src={src}
+        alt={alt}
+        width={w}
+        height={h}
+        loading="lazy"
+        className="w-full h-auto rounded-2xl border"
+        style={{ borderColor: 'var(--border)', boxShadow: 'var(--card-shadow)' }}
+      />
+    </div>
+  )
+}
+
 function FreeResearchSection() {
   return (
     <section id="free-research" className="px-6 lg:px-8 pt-16 sm:pt-24 pb-16 sm:pb-28 relative">
@@ -176,6 +195,8 @@ function FreeResearchSection() {
             <RoleCard key={t.label} icon={t.icon} label={t.label} line={t.line} />
           ))}
         </div>
+        <FeatureBanner src="/png/mvppicks.png" w={1536} h={1024} alt="MVP Picks is a shortlist filter — real demand, decent rating, price worth your commission, open video slot" />
+
         {/* Hard number — what this research stack costs everywhere else vs $0 here. */}
         <div className="mt-9 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-[14px]" style={{ color: 'var(--text-soft)' }}>
           <span>Everywhere else you&apos;d pay</span>
@@ -316,6 +337,8 @@ function BusinessLayerSection() {
             Discoverable content earns. MVP closes the loop — the products worth promoting, the brands you pitch, the deals worth your time, and the team that scales it.
           </p>
         </div>
+
+        <FeatureBanner src="/png/cc-mvpblock.png" w={1536} h={1024} alt="Amazon Creator Connections inside MVP — connect your account, get verified, unlock invited-creator brand campaigns" />
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
           {BUSINESS_CARDS.map((c) => (
@@ -723,6 +746,8 @@ function PartnerNetworksSection() {
             Connect your affiliate networks and MVP turns your partnered brands&apos; products into published reviews — with a real commissionable link, written in your voice. Included on every paid plan.
           </p>
         </div>
+
+        <FeatureBanner src="/png/levanta-pb.png" w={1672} h={941} alt="Levanta and PartnerBoost live inside MVP — search products across multiple affiliate networks in one place" />
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           {networks.map((o) => (
             <div key={o.title} className="rounded-2xl border p-6 flex flex-col" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}>
@@ -801,6 +826,8 @@ function WorkflowSection() {
             From a video — or just a product or service link — to a full content set, fact-grounded and in your voice.
           </p>
         </div>
+
+        <FeatureBanner src="/png/mvp-blogposts.png" w={1536} h={1024} alt="MVP turns a YouTube video into a full blog post, the smart way — pick the video, MVP writes it, you skim and publish" />
 
         {/* Timeline container — relative so the line can be absolutely
             positioned. The line lives in two flavors that toggle by media
