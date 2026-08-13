@@ -12,7 +12,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createWordPressService } from '@/services/wordpress'
 import { isStalePostError, WP_STALE_POST_MESSAGE } from '@/lib/wp-errors'
-import { composeWithGptImage, rehostToFal, GPT_IMAGE_COMPOSE_COST_MODEL } from '@/lib/thumbnail-generators'
+import { composeWithGptImage, rehostToFal, GPT_IMAGE_COMPOSE_LOW_COST_MODEL } from '@/lib/thumbnail-generators'
 import { fetchStoryboardFrames } from '@/lib/youtube-storyboards'
 import { verifyProductMatch } from '@/lib/product-image'
 import { resolveProductReference } from '@/lib/resolve-product-reference'
@@ -261,7 +261,7 @@ export async function POST(request: Request) {
     try {
       let url: string | undefined
       // Track the engine that actually produced the image for cost telemetry.
-      let bodyModel: string = GPT_IMAGE_COMPOSE_COST_MODEL
+      let bodyModel: string = GPT_IMAGE_COMPOSE_LOW_COST_MODEL
       // Primary: re-render the REAL product photo (from the affiliate/Amazon
       // link) into a fitting setting — accurate product, not a guessed frame.
       if (falProductRef) {
@@ -286,6 +286,7 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
           referenceImageUrls: [falProductRef],
           aspectRatio: '4:3',
           numImages: 1,
+          quality: 'low',
         })
         url = out[0]
 
@@ -311,6 +312,7 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
                 referenceImageUrls: [falProductRef],
                 aspectRatio: '4:3',
                 numImages: 1,
+                quality: 'low',
               })
               const retryUrl = retry[0]
               if (retryUrl) {
@@ -336,7 +338,7 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
       // Fallback: retouch a real video frame only if no product photo resolved.
       if (!url && frameRefs.length > 0) {
         const prompt = `Turn this REAL video frame into a polished, magazine-quality editorial photo for a product-review article. Keep the SAME real people, product and scene EXACTLY — do not change identities, swap the product, or invent anything. Enhance: sharpen + add clarity, boost colour vibrancy and contrast, bright clean lighting, tidy/blur the background into a premium look. Frame as a ${perspective}. Make it clearly distinct from the article's other photos. Remove any burned-in text, captions, watermarks or player UI. ${NO_BRAND_IMAGE_CLAUSE} Photorealistic, landscape 4:3, no added text.`
-        const out = await composeWithGptImage({ prompt, referenceImageUrls: [frameRefs[i % frameRefs.length]], aspectRatio: '4:3', numImages: 1 })
+        const out = await composeWithGptImage({ prompt, referenceImageUrls: [frameRefs[i % frameRefs.length]], aspectRatio: '4:3', numImages: 1, quality: 'low' })
         url = out[0]
       }
       if (!url) {

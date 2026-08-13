@@ -47,6 +47,10 @@ export const IDEOGRAM_COST_MODEL = 'fal-ideogram-v3'
  *  PRICING), which undercuts Nano Banana Pro ($0.13) while unifying every
  *  designed-image surface on gpt-image. */
 export const GPT_IMAGE_COMPOSE_COST_MODEL = 'gpt-image-1-medium'
+/** Low-quality gpt-image compose — $0.02/image (see lib/ai-usage PRICING).
+ *  Used for product / in-article / sticker renders where softness is fine and
+ *  speed + cost win; the face surfaces (thumbnails, IG portraits) stay medium. */
+export const GPT_IMAGE_COMPOSE_LOW_COST_MODEL = 'gpt-image-1-low'
 
 const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
 

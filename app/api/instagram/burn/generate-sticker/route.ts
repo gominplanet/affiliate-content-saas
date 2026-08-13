@@ -25,7 +25,7 @@ import { recordUsage } from '@/lib/ai-usage'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 import {
   composeWithGptImage, composeWithNanoBananaPro, rehostAll, removeBackground,
-  GPT_IMAGE_COMPOSE_COST_MODEL, NANO_BANANA_PRO_COST_MODEL,
+  GPT_IMAGE_COMPOSE_LOW_COST_MODEL, NANO_BANANA_PRO_COST_MODEL,
 } from '@/lib/thumbnail-generators'
 import { CTA_STICKERS, ctaStickerUrl } from '@/lib/cta-stickers'
 
@@ -123,8 +123,8 @@ The badge must be a self-contained graphic centred on a PLAIN SOLID FLAT WHITE b
 
     // PRIMARY: gpt-image (unified 2026-08-13); NB Pro stays as a resilience
     // fallback. Rendered on a solid white background, then rembg'd below.
-    let generated = await composeWithGptImage({ prompt, referenceImageUrls: refUrls, aspectRatio: '4:3', numImages: 1 })
-    let stickerModel = GPT_IMAGE_COMPOSE_COST_MODEL
+    let generated = await composeWithGptImage({ prompt, referenceImageUrls: refUrls, aspectRatio: '4:3', numImages: 1, quality: 'low' })
+    let stickerModel = GPT_IMAGE_COMPOSE_LOW_COST_MODEL
     if (!generated[0]) {
       generated = await composeWithNanoBananaPro({ prompt, referenceImageUrls: refUrls, aspectRatio: '4:3', numImages: 1 })
       stickerModel = NANO_BANANA_PRO_COST_MODEL
