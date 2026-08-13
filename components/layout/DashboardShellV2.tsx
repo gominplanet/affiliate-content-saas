@@ -662,7 +662,11 @@ export default function DashboardShellV2({
   // research-deal tool stay reachable by default (locking billing would trap the
   // user off the upgrade flow). Gated in the shell so it covers the sidebar
   // click, a dashboard card, and a pasted deep link from one place.
-  const AMAZON_LOCKED_PREFIXES: { prefix: string; label: string }[] = [
+  const AMAZON_LOCKED_PREFIXES: { prefix: string; label: string; redirect?: { href: string; cta: string; body: string } }[] = [
+    // Connect Socials isn't an upgrade for Amazon — they connect their approved
+    // networks (Facebook, Pinterest, Instagram) from Social Influencer, so point
+    // them there instead of showing the generic upsell.
+    { prefix: '/connect-socials', label: 'Connect your socials', redirect: { href: '/amazon/social', cta: 'Go to Social Influencer', body: 'Amazon Influencers connect their approved networks (Facebook, Pinterest and Instagram) right inside Social Influencer, where you also publish your designs. Connect them there in one place.' } },
     { prefix: '/setup', label: 'WordPress & Blog Setup' },
     { prefix: '/connect-youtube', label: 'YouTube' },
     { prefix: '/learn', label: 'Voice Training' },
@@ -1172,7 +1176,7 @@ export default function DashboardShellV2({
             or the catalogue grid on /content). */}
         <main className="flex-1 overflow-y-auto w-full">
           <div className="max-w-7xl px-4 sm:px-6 lg:px-8 pt-6 pb-12">
-            {amazonLocked ? <AmazonUpgradeGate feature={amazonLocked.label} /> : children}
+            {amazonLocked ? <AmazonUpgradeGate feature={amazonLocked.label} redirect={amazonLocked.redirect} /> : children}
           </div>
         </main>
       </div>
