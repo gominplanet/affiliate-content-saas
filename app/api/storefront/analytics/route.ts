@@ -113,6 +113,49 @@ export async function GET(request: NextRequest) {
       })
       .sort((a, b) => b.earnings - a.earnings)
 
+    // ── Garnish: Keepa demand/price (deal_radar_cache) + open CC campaign ──────
+    // Enrich each product with a catalogue snapshot (image, price, ~monthly
+    // demand, rating, discount) and whether the creator has an open Creator
+    // Connections campaign for that ASIN — so the row can offer the right next
+    // action (chase the brand deal, or just post).
+    const asins = products.map(p => p.asin)
+    const keepa = new Map<string, { image_url: string | null; price_now_cents: number | null; monthly_sold: number | null; rating: number | null; review_count: number | null; discount_pct: number | null }>()
+    const campByAsin = new Map<string, { name: string | null; status: string | null }>()
+    if (asins.length) {
+      for (let i = 0; i < asins.length; i += 300) {
+        const chunk = asins.slice(i, i + 300)
+        const { data: dr } = await sb
+          .from('deal_radar_cache')
+          .select('asin,image_url,price_now_cents,monthly_sold,rating,review_count,discount_pct')
+          .in('asin', chunk)
+        for (const r of (dr ?? []) as Array<{ asin: string; image_url: string | null; price_now_cents: number | null; monthly_sold: number | null; rating: number | null; review_count: number | null; discount_pct: number | null }>) {
+          keepa.set(r.asin, r)
+        }
+      }
+      const { data: camps } = await sb
+        .from('campaigns')
+        .select('asin,campaign_name,status')
+        .eq('user_id', user.id)
+        .in('asin', asins)
+      for (const c of (camps ?? []) as Array<{ asin: string | null; campaign_name: string | null; status: string | null }>) {
+        if (c.asin && !campByAsin.has(c.asin)) campByAsin.set(c.asin, { name: c.campaign_name, status: c.status })
+      }
+    }
+
+    const enriched = products.map(p => {
+      const e = keepa.get(p.asin)
+      return {
+        ...p,
+        image: e?.image_url ?? null,
+        priceNow: e?.price_now_cents != null ? Math.round(e.price_now_cents) / 100 : null,
+        monthlySold: e?.monthly_sold ?? null,
+        rating: e?.rating != null ? Number(e.rating) : null,
+        reviewCount: e?.review_count ?? null,
+        discountPct: e?.discount_pct != null ? Number(e.discount_pct) : null,
+        campaign: campByAsin.get(p.asin) ?? null,
+      }
+    })
+
     const end = latestRows[0]?.period_end ?? null
     return NextResponse.json({
       period: wanted,
@@ -122,7 +165,7 @@ export async function GET(request: NextRequest) {
       previous: prevStart ? { start: prevStart } : null,
       totals,
       totalsPrev,
-      products,
+      products: enriched,
     })
   } catch (e) {
     console.warn('[storefront/analytics] error:', e instanceof Error ? e.message : String(e))

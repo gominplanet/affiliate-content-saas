@@ -53,6 +53,15 @@ export default function SocialComposer() {
 
   useEffect(() => { load() }, [load])
 
+  // Prefill from ?asin= — lets AMZ Storefront's "Quick social" land here ready
+  // to compose for that exact product.
+  useEffect(() => {
+    try {
+      const asin = new URLSearchParams(window.location.search).get('asin')
+      if (asin && /^[A-Z0-9]{10}$/i.test(asin)) setPreset({ value: asin.toUpperCase(), nonce: Date.now() })
+    } catch { /* no query param */ }
+  }, [])
+
   const use = useCallback((it: SavedItem) => {
     setPreset({ value: it.asin, nonce: Date.now() })
     // Bring the composer's product field into view.
