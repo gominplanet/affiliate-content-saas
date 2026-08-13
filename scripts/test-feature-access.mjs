@@ -29,7 +29,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
-const VALID_TIERS = ['trial', 'creator', 'studio', 'pro', 'admin']
+const VALID_TIERS = ['trial', 'creator', 'amazon', 'studio', 'pro', 'admin']
 
 const failures = []
 const warnings = []
