@@ -6,6 +6,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { PackageSearch, Radar, BadgePercent, Bookmark, ArrowRight } from 'lucide-react'
+import PageExplainer from '@/components/amazon/PageExplainer'
 
 export const metadata: Metadata = {
   title: 'Research — Amazon Influencer',
@@ -56,6 +57,19 @@ export default function AmazonResearchPage() {
           Everything you need to source products and brand deals worth making content about, in one place.
         </p>
       </header>
+
+      <PageExplainer
+        eyebrow="New here? Start with what to post"
+        heading="Decide what to feature before you make it"
+        intro="This is where you pick your next winner. Instead of guessing, you can see what is actually selling, catch real price drops, and find brands paying a bounty. Browsing all of it is unlimited and free, you only spend a design once you have found something worth posting."
+        steps={[
+          { title: 'Find a product', body: 'Use AMZ Research to search the whole catalogue by sales, rating, price and commission, and find products worth reviewing.' },
+          { title: 'Catch a live deal', body: 'Deal Radar shows real Amazon markdowns with price history, so you post a genuine drop the day it happens, not a fake “was” price.' },
+          { title: 'Check brand deals', body: 'CC Campaigns lists Amazon Creator Connections offers, brands paying a bounty on top of commission, ranked by payout and how full the roster is.' },
+          { title: 'Shortlist & make it', body: 'Bookmark the good ones to Saved Campaigns, then send a product straight into the Thumbnail Generator to design the post.' },
+        ]}
+        footnote="Rule of thumb: research is free, so browse as much as you like. Only turn a find into a design and a post once you are sure it is worth it."
+      />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {TOOLS.map((t) => {

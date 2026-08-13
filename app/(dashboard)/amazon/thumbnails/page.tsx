@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Sparkles, Download, Loader2, User, Package, AlertCircle, Wand2 } from 'lucide-react'
+import PageExplainer from '@/components/amazon/PageExplainer'
 
 interface FaceModel { id: string; name: string }
 
@@ -95,6 +96,18 @@ export default function AmazonThumbnailsPage() {
           Paste an Amazon product link or ASIN. The Art Director resolves the real product and designs a scroll-stopping 1280×720 thumbnail, with you in it or product-only.
         </p>
       </header>
+
+      <PageExplainer
+        heading="Turn any product into a click-worthy thumbnail"
+        intro="A thumbnail is the cover image that makes shoppers stop and click, on your storefront video reviews, your idea lists, and every social post. MVP designs a professional one from just the product link. No video, no Canva, no design skills."
+        steps={[
+          { title: 'Paste a product', body: 'Copy any Amazon product link (or its 10-character ASIN) and paste it in. That is your source, no video needed.' },
+          { title: 'Choose who’s in it', body: 'Star your own face in the design, or pick “Product only.” Add your face once under Face Models and it is reused every time.' },
+          { title: 'Add a headline (optional)', body: 'Type a punchy line like “WORTH IT?!”, or leave it blank and the Art Director writes one that fits the product.' },
+          { title: 'Generate & use it', body: 'MVP designs the full 1280×720 thumbnail in seconds. Download it, or send it to Social Influencer to post everywhere.' },
+        ]}
+        footnote={<>Want your face in designs? Set it up once under <Link href="/photobooth" className="font-semibold" style={{ color: '#d97706' }}>Face Models</Link>. Ready to post? Head to <Link href="/amazon/social" className="font-semibold" style={{ color: '#d97706' }}>Social Influencer</Link>.</>}
+      />
 
       <div className="rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/[0.03] p-5 flex flex-col gap-5">
         {/* Product input */}
