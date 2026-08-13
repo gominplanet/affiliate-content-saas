@@ -44,13 +44,17 @@ async function pushCampaignsToMvp(token, campaigns) {
 // POST scraped Amazon Influencer earnings into MVP (Storefront Stats v2), from
 // the worker (same CSP-avoidance reason as pushCampaignsToMvp). Returns
 // { reached, ok, upserted, error }.
-async function pushEarningsToMvp(token, earnings) {
-  if (!token) return { reached: false, ok: false, error: 'no token' }
+async function pushEarningsToMvp(earnings) {
   if (!Array.isArray(earnings) || earnings.length === 0) return { reached: true, ok: true, upserted: 0 }
   try {
+    // Session bridge: the worker fetch carries the user's mvpaffiliate.io cookie
+    // (www.mvpaffiliate.io is in host_permissions), so the revived
+    // /api/storefront/ingest authenticates via the signed-in session — no token
+    // (the old cc_ingest_token was removed in 2026-08).
     const res = await fetch(`${MVP_ORIGIN}/api/storefront/ingest`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       body: JSON.stringify({ earnings }),
     })
     let body = null
@@ -1294,7 +1298,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true // async response
   }
   if (msg && msg.type === 'SCOUT_PUSH_EARNINGS') {
-    pushEarningsToMvp(msg.token, msg.earnings).then(sendResponse)
+    pushEarningsToMvp(msg.earnings).then(sendResponse)
     return true // async response
   }
   if (msg && msg.type === 'SCOUT_OUTREACH') {
