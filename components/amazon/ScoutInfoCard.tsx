@@ -3,15 +3,20 @@
 // ScoutInfoCard — a plain-English explainer for SCOUT, the free MVP Chrome
 // extension. New Amazon storefront users see "SCOUT" in a few places and have
 // no idea what it is or why they need it; this card removes that confusion and
-// shows their live install state (Get SCOUT vs already connected).
+// shows their live install state.
+//
+// Once SCOUT is CONNECTED the full explainer is noise, so it collapses to a
+// single slim "SCOUT connected" row (with a "What's this?" toggle to expand the
+// details again). Not-installed users always get the full card + install CTA.
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Download, CheckCircle2, ScanSearch, LineChart, ShieldCheck } from 'lucide-react'
+import { Download, CheckCircle2, ScanSearch, LineChart, ShieldCheck, ChevronUp } from 'lucide-react'
 import { getScoutInstallKind } from '@/lib/extension-frame'
 import { SCOUT_STORE_LISTING_URL } from '@/lib/scout-version'
 
 const ACCENT = '#C2410C'
+const GREEN = '#2c9c4a'
 
 const POINTS: { icon: React.ReactNode; title: string; body: string }[] = [
   { icon: <ScanSearch size={16} />, title: 'Reads your Creator Connections', body: 'SCOUT scans the brand campaigns you qualify for on Amazon, so MVP can match them to your content and build your daily digest.' },
@@ -21,6 +26,7 @@ const POINTS: { icon: React.ReactNode; title: string; body: string }[] = [
 
 export default function ScoutInfoCard() {
   const [status, setStatus] = useState<{ kind: 'store' | 'sideload' | 'none' } | null>(null)
+  const [expanded, setExpanded] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -31,6 +37,31 @@ export default function ScoutInfoCard() {
   }, [])
 
   const installed = status?.kind === 'store' || status?.kind === 'sideload'
+
+  // Connected + collapsed → one slim confirmation row.
+  if (installed && !expanded) {
+    return (
+      <section
+        className="mb-6 rounded-xl border px-4 py-2.5 flex items-center gap-3"
+        style={{ borderColor: 'rgba(52,199,89,0.30)', background: 'rgba(52,199,89,0.06)' }}
+      >
+        <span className="w-7 h-7 rounded-lg grid place-items-center text-white flex-shrink-0" style={{ backgroundColor: GREEN }}>
+          <CheckCircle2 size={15} />
+        </span>
+        <p className="text-[13px] font-semibold flex-shrink-0" style={{ color: 'var(--text)' }}>SCOUT connected</p>
+        <span className="text-[12.5px] truncate hidden sm:inline" style={{ color: 'var(--text-soft)' }}>
+          Keeping your Creator Connections and storefront earnings in sync.
+        </span>
+        <button
+          onClick={() => setExpanded(true)}
+          className="ml-auto text-[12px] font-semibold whitespace-nowrap hover:opacity-80 transition-opacity"
+          style={{ color: ACCENT }}
+        >
+          What’s this?
+        </button>
+      </section>
+    )
+  }
 
   return (
     <section
@@ -51,15 +82,23 @@ export default function ScoutInfoCard() {
             earnings so the brand-deal matching and earnings tracking actually work. Without it, those two features have nothing to read.
           </p>
         </div>
-        {status && (
-          <span
-            className="text-[11px] font-semibold px-2.5 py-1 rounded-full whitespace-nowrap inline-flex items-center gap-1"
-            style={installed
-              ? { background: 'rgba(52,199,89,0.12)', color: '#2c9c4a' }
-              : { background: 'rgba(234,88,12,0.12)', color: ACCENT }}
+        {installed ? (
+          <button
+            onClick={() => setExpanded(false)}
+            className="text-[11px] font-semibold px-2.5 py-1 rounded-full whitespace-nowrap inline-flex items-center gap-1 hover:opacity-80 transition-opacity"
+            style={{ background: 'rgba(52,199,89,0.12)', color: GREEN }}
           >
-            {installed ? <><CheckCircle2 size={12} /> SCOUT connected</> : 'Not installed yet'}
-          </span>
+            <ChevronUp size={12} /> Minimize
+          </button>
+        ) : (
+          status && (
+            <span
+              className="text-[11px] font-semibold px-2.5 py-1 rounded-full whitespace-nowrap"
+              style={{ background: 'rgba(234,88,12,0.12)', color: ACCENT }}
+            >
+              Not installed yet
+            </span>
+          )
         )}
       </div>
 
