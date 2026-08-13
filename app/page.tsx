@@ -1607,6 +1607,8 @@ interface PricingTier {
   regularPrice: number
   highlight: boolean
   icon: React.ReactNode
+  /** Brand tier logo (app-icon) shown instead of the gradient icon chip. */
+  logo?: string
   features: string[]
   cta: string
   /** Per-tier accent so each card has its own identity while violet stays the
@@ -1633,6 +1635,7 @@ const PRICING_TIERS: PricingTier[] = [
     regularPrice: 99,
     highlight: false,
     icon: <Sparkles size={16} />,
+    logo: '/png/mvp-affiliate-3-creator.png',
     accent: {
       grad: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
       solid: '#059669',
@@ -1662,6 +1665,7 @@ const PRICING_TIERS: PricingTier[] = [
     regularPrice: 199,
     highlight: true,
     icon: <Crown size={16} />,
+    logo: '/png/mvp-affiliate-studio.png',
     accent: {
       grad: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)',
       solid: '#7C3AED',
@@ -1689,6 +1693,7 @@ const PRICING_TIERS: PricingTier[] = [
     regularPrice: 499,
     highlight: false,
     icon: <Rocket size={16} />,
+    logo: '/png/mvp-affiliate-pro.png',
     accent: {
       grad: 'linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%)',
       solid: '#4F46E5',
@@ -1752,12 +1757,16 @@ function PricingCard({ tier }: { tier: PricingTier }) {
           {/* Header — icon + tier name + tagline. */}
           <div>
             <div className="flex items-center gap-2.5 mb-2">
-              <span
-                className="inline-flex items-center justify-center w-9 h-9 rounded-xl text-white flex-shrink-0"
-                style={{ background: a.grad, boxShadow: `0 4px 14px ${a.ring}` }}
-              >
-                {tier.icon}
-              </span>
+              {tier.logo ? (
+                <NextImage src={tier.logo} alt={`MVP ${tier.name}`} width={40} height={40} className="w-10 h-10 rounded-xl flex-shrink-0 shadow-sm" />
+              ) : (
+                <span
+                  className="inline-flex items-center justify-center w-9 h-9 rounded-xl text-white flex-shrink-0"
+                  style={{ background: a.grad, boxShadow: `0 4px 14px ${a.ring}` }}
+                >
+                  {tier.icon}
+                </span>
+              )}
               <h3 className="text-[22px] font-bold tracking-tight" style={{ color: 'var(--text)' }}>
                 {tier.name}
               </h3>
