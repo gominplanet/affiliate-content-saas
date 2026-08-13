@@ -527,10 +527,13 @@ export default function DashboardShellV2({
       label: 'Grow',
       items: [
         { href: '/seo', icon: <TrendingUp size={15} />, label: 'SEO & Indexing' },
+        // Storefront — SCOUT-synced Amazon earnings analytics (units, revenue,
+        // commission, clicks per product, weekly/monthly trend). Any paid tier
+        // can sync earnings via SCOUT, so it's open to all paid tiers.
+        { href: '/brainstorm', icon: <BarChart3 size={15} />, label: 'Storefront', gate: isPaid },
         // Pulse — which hashtags actually earn reach, learned from your posts +
         // pooled across MVP per niche. Feeds proven tags back into captions.
         { href: '/pulse', icon: <Activity size={15} />, label: 'Pulse', gate: isPro },
-        // Storefront Stats moved into Labs 2026-08 (still being figured out).
       ],
     },
     {
