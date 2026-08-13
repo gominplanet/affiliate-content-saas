@@ -2504,9 +2504,9 @@ function ThumbnailShowcase() {
 const WHY_MVP: Array<{ icon: React.ReactNode; title: string; body: string; tag: string }> = [
   {
     icon: <ShieldCheck size={20} />,
-    tag: 'Your data stays yours',
+    tag: 'Our no-sleaze rule',
     title: 'Your data isn\'t the product.',
-    body: 'We don\'t sell, rent, or hand off your data — not your audience, not your earnings, not your content. Your accounts stay yours, and your site is yours to keep forever, even if you cancel.',
+    body: 'Some tools quietly turn your sales into their research, and their next product. We don\'t. MVP never touches your numbers for anything but you, and never sells, rents, or hands off your data, audience, earnings or content.',
   },
   {
     icon: <LayoutTemplate size={20} />,
