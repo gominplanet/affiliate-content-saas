@@ -1055,6 +1055,16 @@ export async function POST(request: Request) {
         `(affiliate link)`,
         `----------`,
         disclosureLine,
+      )
+      // Blog backlink, promoted HIGH — right under the disclosure, above the
+      // hashtags — with an arrow so it lands above YouTube's "...more" fold
+      // where viewers actually see it. A shorter punchy version up here; the
+      // fuller line still appears lower down. Only when a Blog URL is saved.
+      if (websiteUrl) {
+        descParts.push(`----------`, `👉 For more in-depth reviews, check out my blog: ${websiteUrl}`)
+      }
+      descParts.push(
+        `----------`,
         seoData.hashtags,
         `----------`,
         `Thank you for watching! If you enjoyed this video review and found it useful, please subscribe and like for more product reviews :)`,
