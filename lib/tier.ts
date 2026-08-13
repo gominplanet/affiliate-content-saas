@@ -293,9 +293,12 @@ export const TIERS = {
     postsPerMonth: 45,
     lifetimeMax: null as number | null,
     collabsPerMonth: 15 as number | null,
-    // Bumped 45 → 150 (2026-08) so the ladder stays monotonic above the Amazon
-    // section's 200 medium thumbnails. Medium is ~$0.08, so the headroom is cheap.
-    thumbnailsPerMonth: 150 as number | null,
+    // Bumped 45 → 250 (2026-08) so the ladder stays monotonic ABOVE the Amazon
+    // section's 200 medium thumbnails (Studio + Pro both surface the same Art
+    // Director, so a Studio user must never get fewer renders than a cheaper
+    // Amazon plan). Medium is ~$0.08, so 250 ≈ $20 — cheap headroom under the
+    // $90 ceiling. (Was 150, which sat below Amazon's 200 despite the intent.)
+    thumbnailsPerMonth: 250 as number | null,
     // Metadata (Co-Pilot re-titling/description) is its OWN cap, sized well above
     // posts/thumbnails: it's ~$0.05 a gen (35× cheaper than a post), and creators
     // clearing an old back-catalog want to run a lot of them early on.
@@ -349,13 +352,13 @@ export const TIERS = {
     price: 199,
     regularPrice: 499,
     /** Monthly AI-spend circuit breaker (USD of real ai_usage cost) — see trial.
-     *  Raised 90 → 200 on 2026-07-13. POLICY CHANGE: postsPerMonth is now the
-     *  real limit; this ceiling sits ABOVE the full 100-post allotment cost
-     *  (image-heavy posts ~$1.7 each → ~$171) so it only ever trips on a
-     *  runaway loop/bug, never a Pro using the posts they paid for. (The old
-     *  "$90 ceiling is the true cap" logic silently gated heavy users at ~half
-     *  their posts.) */
-    monthlyAiSpendCeilingUsd: 200 as number | null,
+     *  Set to 185 (2026-08-13, down from 200). POLICY: postsPerMonth is the real
+     *  limit; this ceiling sits ABOVE the full 100-post allotment cost
+     *  (image-heavy posts ~$1.7 each → ~$171) so a Pro can always use every post
+     *  they paid for, yet stays BELOW the $199 plan price so the plan can never
+     *  run underwater on a pathological all-image-heavy month. (The old 200 sat
+     *  $1 above the price — a maxed month could break even or lose money.) */
+    monthlyAiSpendCeilingUsd: 185 as number | null,
     /** Shared counter: 100 generations/mo (lowered 200 → 100, 2026-06-14).
      *  Honest cap: 100 image-posts (~$62) + 150 scripts (~$15) sits under the
      *  $90 ceiling, so a Pro user can consume the FULL advertised allowance
