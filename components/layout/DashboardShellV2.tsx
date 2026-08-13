@@ -86,6 +86,10 @@ interface NavItemDef {
    *  highest-converting partner link). Tints the label + icon; background
    *  stays normal. Persists through hover/active. */
   highlight?: string
+  /** Optional small sub-label rendered ABOVE this item, starting a visual
+   *  sub-group inside a section (with a little top spacing). Used by the Amazon
+   *  consolidated hub to break its long list into Create / Find & earn / etc. */
+  subheading?: string
 }
 
 interface NavGroupDef {
@@ -699,13 +703,45 @@ export default function DashboardShellV2({
   // on sections this plan can't use. 'Create' is the blog/YouTube content area,
   // which the Amazon Influencer plan intentionally excludes.
   const AMAZON_LOCKED_SECTION: Record<string, string> = { Create: 'Creator+' }
+  // Amazon view: the orange hub holds ALL the plan's tools, sub-grouped (Create
+  // / Find & earn / Your brand / Account & help). Everything the Amazon plan
+  // includes lives here; the rest of MVP still renders below (with the walled
+  // garden showing an upgrade panel on access). Items moved into the hub — plus
+  // the research finders surfaced inside the Research hub page — are stripped
+  // from the groups below so nothing shows twice.
+  const AMAZON_HUB: NavGroupDef = {
+    label: 'Amazon Influencer',
+    items: [
+      { href: '/amazon/thumbnails', icon: <Sparkles size={15} />, label: 'Thumbnail Generator', subheading: 'Create' },
+      { href: '/amazon/social', icon: <Share2 size={15} />, label: 'Social Influencer' },
+      { href: '/social-launch-kit', icon: <Rocket size={15} />, label: 'Social Launch Kit' },
+      { href: '/link-in-bio', icon: <Link2 size={15} />, label: 'Link in Bio' },
+      { href: '/brainstorm', icon: <Lightbulb size={15} />, label: 'Brainstorm' },
+      { href: '/amazon/research', icon: <PackageSearch size={15} />, label: 'Research', subheading: 'Find & earn' },
+      { href: '/collaborations', icon: <Handshake size={15} />, label: 'Brand Deals' },
+      { href: '/brand-inquiries', icon: <Inbox size={15} />, label: 'Brand Inquiries', badge: unreadBrand > 0 ? unreadBrand : undefined },
+      { href: '/brand', icon: <Palette size={15} />, label: 'Brand Profile', subheading: 'Your brand' },
+      { href: '/photobooth', icon: <UserSquare size={15} />, label: 'Face Models' },
+      { href: '/assistant', icon: <Bot size={15} />, label: 'MVP Help Desk', subheading: 'Account & help' },
+      { href: '/support', icon: <LifeBuoy size={15} />, label: 'Create a Help Ticket' },
+      { href: '/community', icon: <MessageCircle size={15} />, label: 'Community' },
+      { href: '/billing', icon: <CreditCard size={15} />, label: 'Plan & Billing' },
+    ],
+  }
+  const AMAZON_HUB_HREFS = new Set<string>(
+    AMAZON_HUB.items.map((i) => i.href).concat([
+      // Surfaced INSIDE the Research hub page, so no duplicate sidebar rows.
+      '/amz-finder', '/deal-radar', '/cc-campaigns', '/saved-campaigns',
+    ]),
+  )
   const orderedGroups: NavGroupDef[] = (() => {
     if (!amazonView) return NAV_GROUPS
-    const ai = NAV_GROUPS.find((g) => g.label === 'Amazon Influencer')
-    if (!ai) return NAV_GROUPS
     const dash = NAV_GROUPS.find((g) => !g.label) // headerless Dashboard row stays on top
-    const rest = NAV_GROUPS.filter((g) => g !== ai && g !== dash)
-    return [dash, ai, ...rest].filter(Boolean) as NavGroupDef[]
+    const rest = NAV_GROUPS
+      .filter((g) => g !== dash && g.label !== 'Amazon Influencer')
+      .map((g) => ({ ...g, items: g.items.filter((it) => !AMAZON_HUB_HREFS.has(it.href)) }))
+      .filter((g) => g.items.length > 0)
+    return [dash, AMAZON_HUB, ...rest].filter(Boolean) as NavGroupDef[]
   })()
 
   // ── Active-route detection. Match by prefix so a child route still
@@ -933,13 +969,22 @@ export default function DashboardShellV2({
                 )}
                 {sectionOpen && (
                   <div className="flex flex-col gap-0.5">
-                    {visibleItems.map((item) => (
-                      <NavItem
-                        key={item.href + item.label}
-                        item={item}
-                        active={isActive(item.href)}
-                        collapsed={collapsed}
-                      />
+                    {visibleItems.map((item, idx) => (
+                      <Fragment key={item.href + item.label}>
+                        {!collapsed && item.subheading && (
+                          <p
+                            className={cn('px-2.5 pb-0.5 text-[9.5px] uppercase tracking-[0.12em] font-semibold', idx > 0 && 'pt-2')}
+                            style={{ color: 'var(--text-faint)' }}
+                          >
+                            {item.subheading}
+                          </p>
+                        )}
+                        <NavItem
+                          item={item}
+                          active={isActive(item.href)}
+                          collapsed={collapsed}
+                        />
+                      </Fragment>
                     ))}
                   </div>
                 )}
