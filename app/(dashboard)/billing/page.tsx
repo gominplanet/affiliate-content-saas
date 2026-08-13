@@ -254,6 +254,7 @@ export default function BillingPage() {
                   <option value="admin">My view (Admin)</option>
                   <option value="pro">Pro</option>
                   <option value="studio">Studio</option>
+                  <option value="amazon">Amazon Influencer</option>
                   <option value="creator">Creator</option>
                   <option value="trial">Free Trial</option>
                 </select>
