@@ -1061,6 +1061,23 @@ export async function POST(request: Request) {
     // against its own monthly cap (below) rather than lumped as "thumbnail".
     const gfxFeature = isPin ? 'amazon_pin' : (isIg || isStory) ? 'amazon_ig' : isFb ? 'amazon_fb' : 'yt_thumb_graphic'
 
+    // ── Amazon-tier bulk-social model swap (2026-08-13, "Path B") ───────────
+    // gpt-image-2 really costs ~$0.14/render (measured against the OpenAI bill),
+    // which makes the Amazon tier's high-volume pin/IG/FB caps unaffordable at
+    // $79. Those social formats render on gpt-image-1 medium instead (~$0.06,
+    // and no visible drop at social sizes). The hero YouTube thumbnail
+    // (yt_thumb_graphic, the CTR money-shot) stays on gpt-image-2. Amazon tier
+    // ONLY for now — Studio/Pro keep the env default; we revisit every tier
+    // later. Passed as the per-call `model`; undefined => the service's env
+    // default (gpt-image-2) is used, so non-Amazon behaviour is unchanged.
+    const isSocialFormat = isPin || isIg || isFb || isStory
+    const gfxModelOverride: string | undefined =
+      tier === 'amazon' && isSocialFormat ? 'gpt-image-1' : undefined
+    // What we LOG for the render: the priced medium variant when overridden
+    // (gpt-image-1-medium = $0.06 in PRICING), else the bare env model.
+    const gfxRecordOverride: string | undefined =
+      gfxModelOverride ? 'gpt-image-1-medium' : undefined
+
     // ── Hard monthly per-format cap ────────────────────────────────────────
     // pin/ig/fb are finite ONLY on the Amazon tier (null = unlimited on Studio/
     // Pro, so they never block); the landscape-thumbnail cap is enforced only
@@ -1388,8 +1405,8 @@ export async function POST(request: Request) {
                 `FRAMING: the canvas is a full ${isPortrait ? 'tall vertical portrait' : '16:9 landscape (1536×864)'} and the entire canvas is shown — nothing is cropped. Compose within it with a small, even safe margin (about 5%) on all four sides: every headline, banner, badge, callout and the whole product must sit fully inside the frame, not touching or running off any edge. Fill the frame nicely — no big empty dead bands — just keep that clean margin all around.`,
               ].filter(Boolean).join('\n')
               const refs = [{ data: productBytesP, filename: 'product.png', mime: 'image/png' as const }]
-              const b64 = await openaiGfxP.generateWithReferences({ prompt, images: refs, size: gfxSize, quality: gfxQuality })
-              recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: gfxFeature, model: gfxModelP, images: 1 })
+              const b64 = await openaiGfxP.generateWithReferences({ prompt, images: refs, size: gfxSize, quality: gfxQuality, model: gfxModelOverride })
+              recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: gfxFeature, model: gfxRecordOverride ?? gfxModelP, images: 1 })
               const copyDec = (copy as { decoration?: ThumbDecoration }).decoration
               const gfxDec: ThumbDecoration =
                 forcedDecoration === 'none' ? 'none'
@@ -1795,8 +1812,8 @@ export async function POST(request: Request) {
             // Tier-gated quality (gfxQuality): Pro/admin get HIGH for the crispest
             // ChatGPT-grade render; other paid tiers get MEDIUM. Co-Pilot generates
             // one variant, so a single high render stays well under the timeout.
-            const b64 = await openaiGfx.generateWithReferences({ prompt, images: refs, size: gfxSize, quality: gfxQuality })
-            recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: gfxFeature, model: gfxModel, images: 1 })
+            const b64 = await openaiGfx.generateWithReferences({ prompt, images: refs, size: gfxSize, quality: gfxQuality, model: gfxModelOverride })
+            recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: gfxFeature, model: gfxRecordOverride ?? gfxModel, images: 1 })
             // Badge the creator chose (5 stars / hot / etc). The GFX path bakes its
             // own headline via gpt-image and never runs bakeSimpleHeadline, so the
             // badge must be composited here or it never shows. forcedDecoration:
