@@ -13,8 +13,11 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { fetchKeepaProductCard, keepaConfigured } from '@/services/keepa'
 
 export const dynamic = 'force-dynamic'
+export const maxDuration = 60
 
 const money = (cents: number | null | undefined) => (cents == null ? 0 : Math.round(cents) / 100)
 const ratio = (num: number, den: number) => (den > 0 ? num / den : 0)
@@ -124,14 +127,54 @@ export async function GET(request: NextRequest) {
     if (asins.length) {
       for (let i = 0; i < asins.length; i += 300) {
         const chunk = asins.slice(i, i + 300)
-        const { data: dr } = await sb
-          .from('deal_radar_cache')
-          .select('asin,image_url,price_now_cents,monthly_sold,rating,review_count,discount_pct')
-          .in('asin', chunk)
-        for (const r of (dr ?? []) as Array<{ asin: string; image_url: string | null; price_now_cents: number | null; monthly_sold: number | null; rating: number | null; review_count: number | null; discount_pct: number | null }>) {
-          keepa.set(r.asin, r)
+        // Our own storefront card cache first, then opportunistically the global
+        // Deal Radar cache (a product the user also scanned there).
+        const [{ data: cards }, { data: dr }] = await Promise.all([
+          sb.from('storefront_product_cards').select('asin,image_url,price_now_cents,monthly_sold,rating,review_count,discount_pct').in('asin', chunk),
+          sb.from('deal_radar_cache').select('asin,image_url,price_now_cents,monthly_sold,rating,review_count,discount_pct').in('asin', chunk),
+        ])
+        for (const r of (dr ?? []) as Array<{ asin: string; image_url: string | null; price_now_cents: number | null; monthly_sold: number | null; rating: number | null; review_count: number | null; discount_pct: number | null }>) keepa.set(r.asin, r)
+        for (const r of (cards ?? []) as Array<{ asin: string; image_url: string | null; price_now_cents: number | null; monthly_sold: number | null; rating: number | null; review_count: number | null; discount_pct: number | null }>) keepa.set(r.asin, r) // prefer our fresher card
+      }
+
+      // Enrich anything still missing via Keepa (one /product call each, capped),
+      // and cache it in storefront_product_cards so later loads are instant. This
+      // is the first-load cost; after that it's a free read.
+      const missing = asins.filter(a => !keepa.has(a)).slice(0, 30)
+      if (keepaConfigured() && missing.length) {
+        const titleByAsin = new Map(products.map(p => [p.asin, p.title]))
+        const CONC = 6
+        const nowIso = new Date().toISOString()
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const upserts: any[] = []
+        for (let i = 0; i < missing.length; i += CONC) {
+          const batch = missing.slice(i, i + CONC)
+          const cards = await Promise.all(batch.map(a => fetchKeepaProductCard(a).catch(() => null)))
+          batch.forEach((a, idx) => {
+            const c = cards[idx]
+            if (!c) return
+            keepa.set(a, { image_url: c.imageUrl, price_now_cents: c.priceNowCents, monthly_sold: c.monthlySold, rating: c.rating, review_count: c.reviewCount, discount_pct: c.discountPct })
+            upserts.push({
+              asin: a,
+              title: (titleByAsin.get(a) || a).slice(0, 300),
+              image_url: c.imageUrl,
+              price_now_cents: c.priceNowCents,
+              price_was_cents: c.priceWasCents,
+              discount_pct: c.discountPct,
+              rating: c.rating,
+              review_count: c.reviewCount,
+              monthly_sold: c.monthlySold,
+              refreshed_at: nowIso,
+            })
+          })
+        }
+        if (upserts.length) {
+          // Service-role write (RLS only grants SELECT to users — see migration 253).
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          try { await (createAdminClient() as any).from('storefront_product_cards').upsert(upserts, { onConflict: 'asin' }) } catch { /* cache best-effort */ }
         }
       }
+
       const { data: camps } = await sb
         .from('campaigns')
         .select('asin,campaign_name,status,cc_campaign_id,details_url,brand_name,accepted_at')

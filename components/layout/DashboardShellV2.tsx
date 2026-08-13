@@ -530,7 +530,7 @@ export default function DashboardShellV2({
         // Storefront — SCOUT-synced Amazon earnings analytics (units, revenue,
         // commission, clicks per product, weekly/monthly trend). Any paid tier
         // can sync earnings via SCOUT, so it's open to all paid tiers.
-        { href: '/brainstorm', icon: <BarChart3 size={15} />, label: 'AMZ Storefront', gate: isPaid },
+        { href: '/storefront', icon: <BarChart3 size={15} />, label: 'AMZ Storefront', gate: isPaid },
         // Pulse — which hashtags actually earn reach, learned from your posts +
         // pooled across MVP per niche. Feeds proven tags back into captions.
         { href: '/pulse', icon: <Activity size={15} />, label: 'Pulse', gate: isPro },
@@ -718,7 +718,7 @@ export default function DashboardShellV2({
       { href: '/amazon/social', icon: <Share2 size={15} />, label: 'Social Influencer' },
       { href: '/social-launch-kit', icon: <Rocket size={15} />, label: 'Social Launch Kit' },
       { href: '/link-in-bio', icon: <Link2 size={15} />, label: 'Link in Bio' },
-      { href: '/brainstorm', icon: <BarChart3 size={15} />, label: 'AMZ Storefront', subheading: 'Find & earn' },
+      { href: '/storefront', icon: <BarChart3 size={15} />, label: 'AMZ Storefront', subheading: 'Find & earn' },
       { href: '/amazon/research', icon: <PackageSearch size={15} />, label: 'Research' },
       { href: '/collaborations', icon: <Handshake size={15} />, label: 'Brand Deals' },
       { href: '/brand-inquiries', icon: <Inbox size={15} />, label: 'Brand Inquiries', badge: unreadBrand > 0 ? unreadBrand : undefined },

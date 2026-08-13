@@ -390,7 +390,11 @@ export default function AmazonBrainstorm() {
                     const sel = selected.has(p.asin)
                     return (
                     <Fragment key={p.asin}>
-                    <tr className="border-t cursor-pointer hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors" style={{ borderColor: 'var(--border)' }} onClick={() => setOpenAsin(open ? null : p.asin)}>
+                    <tr
+                      className="border-t cursor-pointer transition-colors"
+                      style={{ borderColor: 'var(--border)', ...(p.campaign ? { background: 'rgba(234,88,12,0.06)', boxShadow: `inset 3px 0 0 ${ACCENT}` } : {}) }}
+                      onClick={() => setOpenAsin(open ? null : p.asin)}
+                    >
                       <td className="px-4 py-2.5">
                         <div className="flex items-center gap-2.5 min-w-0">
                           {hasBlog && (

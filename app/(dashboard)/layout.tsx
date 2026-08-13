@@ -18,7 +18,7 @@ const CONTENT_ROUTES = [
   '/content', '/co-pilot', '/script', '/comparison', '/buying-guides', '/ltk',
   '/deals', '/newsletter', '/social-launch-kit', '/link-in-bio', '/clip-factory',
   '/shorts-studio', '/customize', '/photobooth', '/instagram-burner',
-  '/instagram-dm', '/tiktok-publish', '/walmart-pb', '/brainstorm',
+  '/instagram-dm', '/tiktok-publish', '/walmart-pb', '/storefront',
 ]
 function isContentRoute(pathname: string): boolean {
   return CONTENT_ROUTES.some((r) => pathname === r || pathname.startsWith(r + '/'))

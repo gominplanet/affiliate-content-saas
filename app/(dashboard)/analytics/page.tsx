@@ -14,7 +14,7 @@ import { Loader2 } from 'lucide-react'
 
 export default function AnalyticsRedirect() {
   const router = useRouter()
-  useEffect(() => { router.replace('/brainstorm') }, [router])
+  useEffect(() => { router.replace('/storefront') }, [router])
   return (
     <div className="flex items-center justify-center py-24 text-sm text-[#86868b] dark:text-[#8e8e93]">
       <Loader2 size={16} className="animate-spin" />
