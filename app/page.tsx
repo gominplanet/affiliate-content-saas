@@ -743,7 +743,7 @@ function PartnerNetworksSection() {
             </span>
           </h2>
           <p className="text-[16px] sm:text-[17px] leading-relaxed max-w-2xl mx-auto" style={{ color: 'var(--text-soft)' }}>
-            Connect your affiliate networks and MVP turns your partnered brands&apos; products into published reviews — with a real commissionable link, written in your voice. Included on every paid plan.
+            Connect your affiliate networks and MVP turns your partnered brands&apos; products into published reviews — with a real commissionable link, written in your voice. Included on the Creator, Studio &amp; Pro plans.
           </p>
         </div>
 
@@ -2446,7 +2446,6 @@ const COMPARE_ROWS: { label: string; mvp: boolean; others: 'no' | 'partial'; hig
   { label: 'Clean up + migrate your existing site (404s, duplicates, old affiliate links)', mvp: true, others: 'no' },
   { label: 'Display-ad + affiliate-banner revenue on your own site', mvp: true, others: 'no' },
   { label: 'A beautiful blog on your own site that you keep forever', mvp: true, others: 'no' },
-  { label: 'Never mines your sales data or storefront picks to build its own tools', mvp: true, others: 'no', highlight: true },
   { label: 'Never uses or sells your personal data', mvp: true, others: 'no', highlight: true },
 ]
 
@@ -2503,8 +2502,8 @@ const WHY_MVP: Array<{ icon: React.ReactNode; title: string; body: string; tag: 
   {
     icon: <ShieldCheck size={20} />,
     tag: 'Your data stays yours',
-    title: 'We never mine your winners.',
-    body: 'Other "research" tools quietly vacuum up your sales numbers and best storefront picks to power their own products. We never touch yours. Your winners stay your winners. Novel concept, we know.',
+    title: 'Your data isn\'t the product.',
+    body: 'We don\'t sell, rent, or hand off your data — not your audience, not your earnings, not your content. Your accounts stay yours, and your site is yours to keep forever, even if you cancel.',
   },
   {
     icon: <LayoutTemplate size={20} />,
@@ -2640,9 +2639,6 @@ function ComparisonSection() {
             <p className="text-[16px] font-bold" style={{ color: 'var(--text)' }}>Your data is never the product.</p>
             <p className="mt-1 text-[14px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
               We don&apos;t harvest, sell, or train on your personal data — not your audience, not your earnings, not your content. Your accounts stay connected to <span style={{ color: 'var(--text)' }}>you</span>, and your site is yours to keep forever.
-            </p>
-            <p className="mt-2 text-[14px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
-              And we&apos;ll never quietly vacuum up your sales numbers or your winning storefront picks to power our own tools, the way some &ldquo;research&rdquo; apps do. <span style={{ color: 'var(--text)' }}>Your winners stay your winners.</span> Novel concept, we know.
             </p>
           </div>
         </div>
