@@ -24,7 +24,8 @@ import { spendGate } from '@/lib/ai-spend'
 import { recordUsage } from '@/lib/ai-usage'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 import {
-  composeWithNanoBananaPro, rehostAll, removeBackground, NANO_BANANA_PRO_COST_MODEL,
+  composeWithGptImage, composeWithNanoBananaPro, rehostAll, removeBackground,
+  GPT_IMAGE_COMPOSE_COST_MODEL, NANO_BANANA_PRO_COST_MODEL,
 } from '@/lib/thumbnail-generators'
 import { CTA_STICKERS, ctaStickerUrl } from '@/lib/cta-stickers'
 
@@ -120,14 +121,21 @@ Match the visual style of the reference badges: bold chunky display lettering wi
 Spell the text PERFECTLY and make every word large and legible — "${tag}" — no other words, no extra letters, no brand names, no logos.
 The badge must be a self-contained graphic centred on a PLAIN SOLID FLAT WHITE background with NOTHING else around it (no scene, no device, no hands, no photo). Crisp vector-sticker look, high contrast, vivid colors.`
 
-    const generated = await composeWithNanoBananaPro({ prompt, referenceImageUrls: refUrls, aspectRatio: '4:3', numImages: 1 })
+    // PRIMARY: gpt-image (unified 2026-08-13); NB Pro stays as a resilience
+    // fallback. Rendered on a solid white background, then rembg'd below.
+    let generated = await composeWithGptImage({ prompt, referenceImageUrls: refUrls, aspectRatio: '4:3', numImages: 1 })
+    let stickerModel = GPT_IMAGE_COMPOSE_COST_MODEL
+    if (!generated[0]) {
+      generated = await composeWithNanoBananaPro({ prompt, referenceImageUrls: refUrls, aspectRatio: '4:3', numImages: 1 })
+      stickerModel = NANO_BANANA_PRO_COST_MODEL
+    }
     const rawUrl = generated[0]
     if (!rawUrl) return NextResponse.json({ error: 'Could not generate the badge — try again or tweak the wording.' }, { status: 502 })
     // Track the real AI spend now (it happened), but DON'T advance the cap yet —
     // background-removal / fetch / storage can still fail below and leave the user
     // with no usable sticker. The cap feature `cta_sticker_gen` is recorded only
     // once we've saved a real stickerUrl (just before the success response).
-    recordUsage({ userId: user.id, tier, feature: 'cta_sticker_cost', model: NANO_BANANA_PRO_COST_MODEL, images: 1 })
+    recordUsage({ userId: user.id, tier, feature: 'cta_sticker_cost', model: stickerModel, images: 1 })
 
     // Strip the solid background → transparent PNG via fal rembg.
     const cutoutUrl = await removeBackground(rawUrl)

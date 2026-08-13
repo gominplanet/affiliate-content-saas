@@ -29,7 +29,7 @@ import { maybeEvolveLearnProfile } from '@/lib/learn-evolve'
 import { maybeDistillFeedback } from '@/lib/feedback-distill'
 import { maybeLearnFromEdits } from '@/lib/edit-learning'
 import { gutenbergImageBlock, pickBodyImageOffsets, insertImagesAtOffsets } from '@/lib/blog-body-images'
-import { composeWithNanoBanana, rehostToFal } from '@/lib/thumbnail-generators'
+import { composeWithGptImage, rehostToFal, GPT_IMAGE_COMPOSE_COST_MODEL } from '@/lib/thumbnail-generators'
 import { generateArtDirectorBlogHero } from '@/lib/art-director-pin'
 import { fetchStoryboardFrames } from '@/lib/youtube-storyboards'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
@@ -2326,14 +2326,14 @@ Realistic shadows and lighting. This must read as a COMPLETELY different photo f
 
 ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photography, no added text/captions/watermarks/badges/callouts/labels.`
                 try {
-                  const out = await composeWithNanoBanana({
+                  const out = await composeWithGptImage({
                     prompt: nanoBananaInstruction,
                     referenceImageUrls: [falProductImageUrl],
                     aspectRatio: '4:3',
                     numImages: 1,
                   })
                   falUrl = out[0]
-                  if (falUrl) recordUsage({ userId: user.id, tier: tier2, feature: 'blog_body_image', model: 'nano-banana', images: 1 })
+                  if (falUrl) recordUsage({ userId: user.id, tier: tier2, feature: 'blog_body_image', model: GPT_IMAGE_COMPOSE_COST_MODEL, images: 1 })
 
                   // ── Vision verification — second line of defense against the
                   // "wrong product" bug. The image model occasionally drifts
@@ -2355,7 +2355,7 @@ Place the product in a COMPLETELY NEW real-world scene — do NOT copy the refer
 
 ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photography, no added text/captions/badges/callouts.`
                       try {
-                        const retry = await composeWithNanoBanana({
+                        const retry = await composeWithGptImage({
                           prompt: stricter,
                           referenceImageUrls: [falProductImageUrl],
                           aspectRatio: '4:3',
@@ -2363,7 +2363,7 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
                         })
                         const retryUrl = retry[0]
                         if (retryUrl) {
-                          recordUsage({ userId: user.id, tier: tier2, feature: 'blog_body_image_retry', model: 'nano-banana', images: 1 })
+                          recordUsage({ userId: user.id, tier: tier2, feature: 'blog_body_image_retry', model: GPT_IMAGE_COMPOSE_COST_MODEL, images: 1 })
                           const v2 = await verifyProductMatch(falProductImageUrl, retryUrl, productTitleForPrompts, { userId: user.id, tier: tier2 })
                           console.log('[blog-images] verify-retry', { i, match: v2.match, reason: v2.reason })
                           if (v2.match) {
@@ -2398,9 +2398,9 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
                 const frame = frameRefs[i % frameRefs.length]
                 const retouchPrompt = `Turn this REAL video frame into a polished, magazine-quality editorial photo for a product-review article. Keep the SAME real people, the SAME product and the SAME scene EXACTLY — do not change anyone's identity, swap the product, or invent anything new. Enhance it: substantially sharpen + add clarity, boost colour vibrancy, saturation and contrast, add bright clean cinematic lighting so the subject pops, and tidy/softly blur the background into a premium look. Frame it as a ${perspective}. REMOVE any burned-in on-screen text, captions, channel names, watermarks or video-player UI. ${NO_BRAND_IMAGE_CLAUSE} Photorealistic, landscape 4:3, no added text.`
                 try {
-                  const out = await composeWithNanoBanana({ prompt: retouchPrompt, referenceImageUrls: [frame], aspectRatio: '4:3', numImages: 1 })
+                  const out = await composeWithGptImage({ prompt: retouchPrompt, referenceImageUrls: [frame], aspectRatio: '4:3', numImages: 1 })
                   falUrl = out[0]
-                  if (falUrl) recordUsage({ userId: user.id, tier: tier2, feature: 'blog_body_image', model: 'nano-banana', images: 1 })
+                  if (falUrl) recordUsage({ userId: user.id, tier: tier2, feature: 'blog_body_image', model: GPT_IMAGE_COMPOSE_COST_MODEL, images: 1 })
                 } catch { /* fall through to text-to-image */ }
               }
               // ── Last resort: text-to-image (no product photo, no frame). Make

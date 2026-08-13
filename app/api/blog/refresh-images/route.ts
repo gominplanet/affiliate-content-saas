@@ -12,7 +12,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createWordPressService } from '@/services/wordpress'
 import { isStalePostError, WP_STALE_POST_MESSAGE } from '@/lib/wp-errors'
-import { composeWithNanoBanana, rehostToFal } from '@/lib/thumbnail-generators'
+import { composeWithGptImage, rehostToFal, GPT_IMAGE_COMPOSE_COST_MODEL } from '@/lib/thumbnail-generators'
 import { fetchStoryboardFrames } from '@/lib/youtube-storyboards'
 import { verifyProductMatch } from '@/lib/product-image'
 import { resolveProductReference } from '@/lib/resolve-product-reference'
@@ -260,6 +260,8 @@ export async function POST(request: Request) {
     const altForThisImage = (slot?.alt && slot.alt.trim()) || `${altBase} — ${shot}`
     try {
       let url: string | undefined
+      // Track the engine that actually produced the image for cost telemetry.
+      let bodyModel: string = GPT_IMAGE_COMPOSE_COST_MODEL
       // Primary: re-render the REAL product photo (from the affiliate/Amazon
       // link) into a fitting setting — accurate product, not a guessed frame.
       if (falProductRef) {
@@ -279,7 +281,7 @@ Render as a polished magazine-quality editorial photo shown as a ${perspective}$
 Realistic shadows and lighting. This must read as a COMPLETELY different photo from the article's other images — different background and environment, different surface, different lighting and time of day, different camera distance and angle. Do NOT reuse the reference photo's pose, framing, or background.
 
 ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photography, no added text/captions/watermarks/badges/callouts/labels.`
-        const out = await composeWithNanoBanana({
+        const out = await composeWithGptImage({
           prompt,
           referenceImageUrls: [falProductRef],
           aspectRatio: '4:3',
@@ -304,7 +306,7 @@ Place the product in a COMPLETELY NEW real-world scene — do NOT copy the refer
 
 ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photography, no added text/captions/badges/callouts.`
             try {
-              const retry = await composeWithNanoBanana({
+              const retry = await composeWithGptImage({
                 prompt: stricter,
                 referenceImageUrls: [falProductRef],
                 aspectRatio: '4:3',
@@ -334,7 +336,7 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
       // Fallback: retouch a real video frame only if no product photo resolved.
       if (!url && frameRefs.length > 0) {
         const prompt = `Turn this REAL video frame into a polished, magazine-quality editorial photo for a product-review article. Keep the SAME real people, product and scene EXACTLY — do not change identities, swap the product, or invent anything. Enhance: sharpen + add clarity, boost colour vibrancy and contrast, bright clean lighting, tidy/blur the background into a premium look. Frame as a ${perspective}. Make it clearly distinct from the article's other photos. Remove any burned-in text, captions, watermarks or player UI. ${NO_BRAND_IMAGE_CLAUSE} Photorealistic, landscape 4:3, no added text.`
-        const out = await composeWithNanoBanana({ prompt, referenceImageUrls: [frameRefs[i % frameRefs.length]], aspectRatio: '4:3', numImages: 1 })
+        const out = await composeWithGptImage({ prompt, referenceImageUrls: [frameRefs[i % frameRefs.length]], aspectRatio: '4:3', numImages: 1 })
         url = out[0]
       }
       if (!url) {
@@ -347,6 +349,7 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
         })
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         url = ((r.data as any)?.images as Array<{ url: string }> | undefined)?.[0]?.url
+        bodyModel = 'fal-flux-pro-v1.1'
       }
       if (!url) return null
       // Try WP media upload first; if it throws (Hostinger / WAF blocking the
@@ -360,7 +363,7 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
         console.warn(`[refresh-images] item ${i} WP media upload failed, embedding fal URL directly:`, e instanceof Error ? e.message : String(e))
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      recordUsageSafe(user.id, tier, falProductRef ? 'fal-flux-pro-kontext' : (frameRefs.length > 0 ? 'nano-banana' : 'fal-flux-pro-v1.1'))
+      recordUsageSafe(user.id, tier, bodyModel)
       return { url: finalUrl, alt: altForThisImage }
     } catch { return null }
   }))
