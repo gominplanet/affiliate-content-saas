@@ -211,11 +211,16 @@ export const TIERS = {
     label: 'Amazon',
     price: 79,
     regularPrice: 129,
-    /** Medium designs are ~$0.08 (or ~$0.07 when a batch shares one art-director
-     *  brief across formats). Fully maxed — 200 thumbs + 300 pins + 150 IG + 45
-     *  FB — is ~$49 of AI. $55 sits just above that hard max so the ceiling is
-     *  reachable but still a circuit-breaker; the average user spends ~$15. */
-    monthlyAiSpendCeilingUsd: 55 as number | null,
+    /** Measured cost (2026-08-13, real OpenAI bill): the hero thumbnail runs on
+     *  gpt-image-2 (~$0.14 real, logged $0.19); the bulk social formats
+     *  (pin/IG/FB) render on gpt-image-1 medium (~$0.06) — see the Path B model
+     *  swap in generate-thumbnail. Fully maxed — 200 thumbs + 495 social — is
+     *  ~$72 of real AI. The average user spends ~$12. The ceiling is deliberately
+     *  set high (2026-08-13) so the few big players who max the tier can actually
+     *  reach ~90% of their advertised caps before it trips, rather than being
+     *  cut off at a third; it stays a runaway circuit-breaker, not the real cap
+     *  (the per-format caps are). Whales are worth serving. */
+    monthlyAiSpendCeilingUsd: 75 as number | null,
     /** No blog. Thumbnails have their own cap below; this stays 0. */
     postsPerMonth: 0,
     lifetimeMax: null as number | null,
