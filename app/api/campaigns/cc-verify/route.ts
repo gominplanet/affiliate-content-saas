@@ -14,7 +14,9 @@ import { createServerClient } from '@/lib/supabase/server'
 
 export const dynamic = 'force-dynamic'
 
-export const VERIFY_TTL_DAYS = 180
+// Module-local (NOT exported): a route file may only export request handlers +
+// route config, so exporting these tripped Next's route-type validator.
+const VERIFY_TTL_DAYS = 180
 
 export async function GET() {
   const supabase = await createServerClient()
@@ -33,11 +35,17 @@ export async function POST() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (supabase as any)
     .from('integrations').update({ cc_verified_at: new Date().toISOString() }).eq('user_id', user.id)
-  if (error) return NextResponse.json({ ok: false }, { status: 200 }) // best-effort
+  if (error) {
+    // Best-effort UX (never block the browse flow), but LOG it — a silent
+    // failure here makes CC verification "not stick" and re-prompt forever with
+    // no trace. Surfacing it lets us see the real DB error.
+    console.warn('[cc-verify] stamp failed:', error.message)
+    return NextResponse.json({ ok: false }, { status: 200 })
+  }
   return NextResponse.json({ ok: true, verified: true })
 }
 
-export function isFresh(ts: string | null | undefined): boolean {
+function isFresh(ts: string | null | undefined): boolean {
   if (!ts) return false
   const age = Date.now() - new Date(ts).getTime()
   return Number.isFinite(age) && age >= 0 && age < VERIFY_TTL_DAYS * 86_400_000

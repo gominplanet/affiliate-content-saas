@@ -39,18 +39,35 @@ export async function POST() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sb = supabase as any
 
-    // 1. Proven sellers — latest period, ranked by earnings.
-    const { data: earnRows } = await sb
-      .from('storefront_earnings')
-      .select('asin,product_title,period_type,period_start,units,revenue_cents,commission_cents,clicks')
-      .eq('user_id', user.id)
+    // 1. Proven sellers — the LATEST period, ranked by earnings. Order by
+    //    period_start DESC first so the newest period wins the "latest" pick
+    //    (ordering by commission first let an older, higher-earning period
+    //    masquerade as latest, and mixed weekly+monthly starts made "latest"
+    //    usually the latest week). Prefer monthly (the dashboard's default
+    //    view); fall back to weekly only if no monthly is synced yet.
+    const EARN_COLS = 'asin,product_title,period_type,period_start,units,revenue_cents,commission_cents,clicks'
+    type EarnRow = { asin: string; product_title: string | null; period_type: string; period_start: string; units: number | null; revenue_cents: number | null; commission_cents: number | null; clicks: number | null }
+    let { data: earnRows } = await sb
+      .from('storefront_earnings').select(EARN_COLS)
+      .eq('user_id', user.id).eq('period_type', 'monthly')
+      .order('period_start', { ascending: false })
       .order('commission_cents', { ascending: false, nullsFirst: false })
-      .limit(60)
-    const earnings = (earnRows ?? []) as Array<{ asin: string; product_title: string | null; period_type: string; period_start: string; units: number | null; revenue_cents: number | null; commission_cents: number | null; clicks: number | null }>
-    // Keep the most recent period only, then top 15 by earnings.
-    const latestPeriod = earnings.length ? earnings.map(e => e.period_start).sort().reverse()[0] : null
+      .limit(300)
+    if (!earnRows || earnRows.length === 0) {
+      const wk = await sb
+        .from('storefront_earnings').select(EARN_COLS)
+        .eq('user_id', user.id).eq('period_type', 'weekly')
+        .order('period_start', { ascending: false })
+        .order('commission_cents', { ascending: false, nullsFirst: false })
+        .limit(300)
+      earnRows = wk.data
+    }
+    const earnings = (earnRows ?? []) as EarnRow[]
+    // Rows are already period_start DESC then commission DESC, so the first row
+    // is the latest period's best earner. Keep that period, top 15 by earnings.
+    const latestPeriod = earnings.length ? earnings[0].period_start : null
     const topSellers = earnings
-      .filter(e => !latestPeriod || e.period_start === latestPeriod)
+      .filter(e => e.period_start === latestPeriod)
       .slice(0, 15)
       .map(e => ({
         asin: e.asin,

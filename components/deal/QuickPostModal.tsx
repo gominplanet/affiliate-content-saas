@@ -128,7 +128,7 @@ export default function QuickPostModal({
 
         <div className="p-4 space-y-4">
           <div className="flex gap-3">
-            {deal.imageUrl && <img src={deal.imageUrl} alt="" className="h-16 w-16 object-contain rounded border bg-white shrink-0" />}
+            {deal.imageUrl && <img loading="lazy" decoding="async" src={deal.imageUrl} alt="" className="h-16 w-16 object-contain rounded border bg-white shrink-0" />}
             <div className="text-sm font-medium line-clamp-3">{deal.title}</div>
           </div>
 

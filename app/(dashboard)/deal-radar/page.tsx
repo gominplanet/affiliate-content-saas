@@ -696,7 +696,7 @@ function DealCard({ deal: d, onQuickPost, selected = false, onToggleSelect, lock
     <div className="rounded-xl border bg-card overflow-hidden flex flex-col transition-shadow hover:shadow-md">
       <a href={d.amazonUrl} target="_blank" rel="noopener noreferrer" className="relative flex items-center justify-center bg-white h-44 p-3">
         {d.imageUrl
-          ? <img src={d.imageUrl} alt="" className="max-h-full max-w-full object-contain" />
+          ? <img loading="lazy" decoding="async" src={d.imageUrl} alt="" className="max-h-full max-w-full object-contain" />
           : <div className="flex items-center justify-center text-muted-foreground"><BadgePercent size={28} /></div>}
         {d.discountPct != null && (
           <span className="absolute top-2 left-2 text-xs font-bold bg-red-600 text-white rounded px-1.5 py-0.5">-{d.discountPct}%</span>
@@ -859,7 +859,7 @@ function TickerCard({ deal: d, onQuickPost, locked = false, socialOnly = false }
   return (
     <div className="shrink-0 w-48 rounded-lg bg-card text-[color:var(--text)] border border-emerald-500/20 p-2 flex flex-col">
       <a href={d.amazonUrl} target="_blank" rel="noopener noreferrer" className="block">
-        {d.imageUrl && <img src={d.imageUrl} alt="" className="h-20 w-full object-contain mb-1.5 rounded bg-white" />}
+        {d.imageUrl && <img loading="lazy" decoding="async" src={d.imageUrl} alt="" className="h-20 w-full object-contain mb-1.5 rounded bg-white" />}
         <div className="text-xs font-medium line-clamp-2 leading-snug min-h-[2rem]">{d.title}</div>
       </a>
       <div className="flex items-center gap-1.5 mt-1 mb-2">

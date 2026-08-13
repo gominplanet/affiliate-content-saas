@@ -411,7 +411,7 @@ export default function AmazonBrainstorm() {
                           <span className="w-9 h-9 rounded-lg border flex-shrink-0 grid place-items-center overflow-hidden" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
                             {p.image
                               // eslint-disable-next-line @next/next/no-img-element
-                              ? <img src={p.image} alt="" className="w-full h-full object-contain" />
+                              ? <img loading="lazy" decoding="async" src={p.image} alt="" className="w-full h-full object-contain" />
                               : <Package size={15} style={{ color: 'var(--text-soft)' }} />}
                           </span>
                           <div className="min-w-0">

@@ -250,7 +250,7 @@ export default function WalmartOffers({ embedded = false, autoRun = false, minDi
                   <div key={o.key} className="rounded-xl border bg-card overflow-hidden flex flex-col transition-shadow hover:shadow-md" style={{ borderColor: 'var(--border)' }}>
                     <a href={o.url} target="_blank" rel="noopener noreferrer" className="relative flex items-center justify-center bg-white h-40 p-3">
                       {o.image
-                        ? <img src={o.image} alt="" className="max-h-full max-w-full object-contain" />
+                        ? <img loading="lazy" decoding="async" src={o.image} alt="" className="max-h-full max-w-full object-contain" />
                         : <div className="flex items-center justify-center text-muted-foreground"><Package size={26} /></div>}
                       {o.discountPct != null && o.discountPct > 0 && (
                         <span className="absolute top-2 left-2 text-xs font-bold bg-red-600 text-white rounded px-1.5 py-0.5">-{Math.round(o.discountPct)}%</span>
