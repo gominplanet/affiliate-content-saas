@@ -1,10 +1,11 @@
 /**
- * /brainstorm — Amazon Influencer storefront analytics.
+ * /brainstorm — Storefront analytics (all paid tiers).
  *
  * The old blog/YouTube Brainstorm (90-day performance snapshot + AI idea
- * generator) was retired. This route now serves ONE thing: the Amazon tier's
- * storefront analytics dashboard (SCOUT-synced earnings). Every other tier is
- * redirected to the dashboard — Brainstorm no longer exists for them.
+ * generator) was retired. This route now serves ONE thing: the storefront
+ * analytics dashboard (SCOUT-synced earnings). Available to every PAID tier —
+ * anyone with the Amazon toolkit can sync earnings, so anyone paid can see them.
+ * Trial users are redirected to the dashboard.
  */
 'use client'
 
@@ -18,14 +19,14 @@ export default function BrainstormPage() {
   const gateTier = useEffectiveTier()
   const router = useRouter()
 
-  // Non-Amazon tiers no longer have a Brainstorm — send them to the dashboard.
+  // Trial has no Storefront — send them to the dashboard. Every paid tier stays.
   useEffect(() => {
-    if (gateTier !== null && gateTier !== 'amazon') {
+    if (gateTier === 'trial') {
       router.replace('/dashboard')
     }
   }, [gateTier, router])
 
-  if (gateTier === 'amazon') return <AmazonBrainstorm />
+  if (gateTier !== null && gateTier !== 'trial') return <AmazonBrainstorm />
 
   return (
     <div className="flex items-center justify-center py-24 text-sm text-[#86868b] dark:text-[#8e8e93]">
