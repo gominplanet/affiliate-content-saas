@@ -25,6 +25,32 @@ export function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS })
 }
 
+// GET — lightweight sync status for the SCOUT card: how many products SCOUT has
+// landed and when it last synced. Session-authed (owner reads their own rows).
+export async function GET() {
+  try {
+    const supabase = await createServerClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'Not signed in' }, { status: 401 })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sb = supabase as any
+    const { count } = await sb
+      .from('storefront_earnings')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id)
+    const { data: latest } = await sb
+      .from('storefront_earnings')
+      .select('synced_at')
+      .eq('user_id', user.id)
+      .order('synced_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    return NextResponse.json({ products: count ?? 0, lastSyncedAt: latest?.synced_at ?? null })
+  } catch {
+    return NextResponse.json({ products: 0, lastSyncedAt: null })
+  }
+}
+
 interface EarningRow {
   asin?: string
   productTitle?: string
