@@ -81,7 +81,7 @@ export const APP_SEARCH_INDEX: AppSearchEntry[] = [
   { label: 'Virtual Assistant', href: '/agency', group: 'Collaborate', keywords: 'virtual assistant va agency seats team permissions sub account' },
 
   // ── Help & Community ─────────────────────────────────────────────────────
-  { label: 'AMZ Storefront', href: '/brainstorm', group: 'Find & Earn', keywords: 'storefront analytics earnings sales revenue units clicks conversion best sellers amazon influencer scout amz' },
+  { label: 'AMZ Storefront', href: '/storefront', group: 'Find & Earn', keywords: 'storefront analytics earnings sales revenue units clicks conversion best sellers amazon influencer scout amz' },
   { label: 'MVP Help Desk', href: '/assistant', group: 'Help & Community', keywords: 'help desk assistant ai chat ask question support bot how do i' },
   { label: 'Create a Help Ticket', href: '/support', group: 'Help & Community', keywords: 'support ticket contact help problem issue bug report' },
   { label: 'Community', href: '/community', group: 'Help & Community', keywords: 'community forum discord group' },
