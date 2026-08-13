@@ -119,6 +119,7 @@ export default function LandingPreview() {
       <PartnerNetworksSection />
       <CapabilitiesSection />
       <PricingSection />
+      <BundleMathSection />
       <ProofSection />
       <FAQSection />
       <DarkBand bg="linear-gradient(160deg, #16091E 0%, #2A0E3A 55%, #3A0E22 100%)">
@@ -1381,6 +1382,83 @@ const SITE_COST_STACK: ReadonlyArray<readonly [string, string]> = [
  *  founder-pricing window without making it feel like a permanent
  *  discount.
  */
+/** Bundle math — the "one subscription replaces a whole stack" pitch, folded
+ *  onto the main page (2026-08-13) so it's self-contained and nobody has to
+ *  click through to /pricing to see the value. Studio + Pro stacks with real
+ *  published competitor prices. Token-styled to match the landing. */
+const BUNDLE_STUDIO: Array<[string, number]> = [
+  ['Cuppa Solo (AI blog writer)', 99],
+  ['Jungle Scout (product research)', 49],
+  ['Keepa (price history & deal tracking)', 19],
+  ['thumbnailcreator.com (Creator)', 41],
+  ['OpusClip Pro (vertical clips)', 29],
+  ['Beehiiv Grow (newsletter)', 43],
+]
+const BUNDLE_PRO: Array<[string, number]> = [
+  ['Cuppa Studio (multi-niche AI writer)', 199],
+  ['Jungle Scout + Helium 10 (research)', 128],
+  ['Keepa (price history & deals)', 19],
+  ['Frase (SEO briefs)', 97],
+  ['thumbnailcreator.com (Creator)', 41],
+  ['OpusClip Pro (vertical clips)', 29],
+  ['Beehiiv Scale (newsletter)', 43],
+  ['Lasso Pro (affiliate analytics)', 29],
+]
+function BundleCard({ plan, price, rows, best }: { plan: string; price: string; rows: Array<[string, number]>; best?: boolean }) {
+  const total = rows.reduce((s, [, p]) => s + p, 0)
+  const save = total - parseInt(price.replace(/\D/g, ''), 10)
+  return (
+    <div
+      className="rounded-3xl border p-7 relative overflow-hidden"
+      style={{ backgroundColor: 'var(--surface)', borderColor: best ? 'rgba(124,58,237,0.35)' : 'var(--border)', boxShadow: 'var(--card-shadow)' }}
+    >
+      {best && (
+        <span className="absolute top-4 right-4 inline-flex items-center px-2.5 py-1 rounded-full text-white text-[10px] font-bold uppercase tracking-wider" style={{ background: 'linear-gradient(135deg, #7C3AED, #C026D3)' }}>Best deal</span>
+      )}
+      <p className="text-[11px] font-bold uppercase tracking-[0.12em]" style={{ color: 'var(--accent-text)' }}>MVP {plan} · {price}/mo</p>
+      <p className="text-[17px] font-bold mt-0.5 mb-5" style={{ color: 'var(--text)' }}>replaces this stack:</p>
+      <ul className="flex flex-col gap-2.5 mb-5 text-[13.5px]">
+        {rows.map(([tool, p]) => (
+          <li key={tool} className="flex items-baseline justify-between border-b border-dashed pb-1.5" style={{ borderColor: 'var(--border)' }}>
+            <span style={{ color: 'var(--text-muted)' }}>{tool}</span>
+            <span className="font-mono" style={{ color: 'var(--text-faint)' }}>${p}/mo</span>
+          </li>
+        ))}
+      </ul>
+      <div className="flex items-baseline justify-between text-[14px] font-semibold pt-1" style={{ color: 'var(--text)' }}>
+        <span>Total replaced</span><span className="font-mono">${total}/mo</span>
+      </div>
+      <div className="mt-4 rounded-xl px-4 py-3 flex items-baseline justify-between" style={{ background: 'rgba(52,199,89,0.10)', border: '1px solid rgba(52,199,89,0.25)' }}>
+        <span className="text-[14px] font-semibold" style={{ color: 'var(--text)' }}>You save</span>
+        <span className="font-mono text-[18px] font-bold" style={{ color: '#34c759' }}>${save}/mo</span>
+      </div>
+    </div>
+  )
+}
+function BundleMathSection() {
+  return (
+    <section id="bundle-math" className="px-6 lg:px-8 pt-4 pb-16 sm:pb-24 relative">
+      <div className="max-w-5xl mx-auto">
+        <div className="text-center max-w-2xl mx-auto mb-9">
+          <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-semibold uppercase tracking-[0.18em] mb-4" style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent-text)', border: '1px solid var(--border)' }}>
+            <Coins size={11} /> The bundle math
+          </span>
+          <h2 className="text-[32px] sm:text-[44px] font-extrabold tracking-[-0.03em] leading-[1.03]" style={{ color: 'var(--text)' }}>
+            One plan replaces the whole stack.
+          </h2>
+          <p className="mt-4 text-[15px] sm:text-[16px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
+            Everyone else sells you one tool at a time. MVP runs the whole pipeline, from a video to a blog, thumbnails, clips, social and a newsletter, for less than the tools it replaces.
+          </p>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <BundleCard plan="Studio" price="$99" rows={BUNDLE_STUDIO} />
+          <BundleCard plan="Pro" price="$199" rows={BUNDLE_PRO} best />
+        </div>
+      </div>
+    </section>
+  )
+}
+
 function PricingSection() {
   return (
     <section id="pricing" className="px-6 lg:px-8 pt-12 pb-16 sm:pb-28 relative overflow-hidden">
