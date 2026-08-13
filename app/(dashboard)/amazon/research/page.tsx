@@ -7,6 +7,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { PackageSearch, Radar, BadgePercent, Bookmark, ArrowRight } from 'lucide-react'
 import PageExplainer from '@/components/amazon/PageExplainer'
+import ScoutInfoCard from '@/components/amazon/ScoutInfoCard'
 
 export const metadata: Metadata = {
   title: 'Research — Amazon Influencer',
@@ -93,6 +94,11 @@ export default function AmazonResearchPage() {
             </Link>
           )
         })}
+      </div>
+
+      {/* SCOUT explainer — Creator Connections + earnings need the extension. */}
+      <div className="mt-6">
+        <ScoutInfoCard />
       </div>
     </div>
   )

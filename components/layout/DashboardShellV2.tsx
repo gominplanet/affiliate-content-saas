@@ -684,6 +684,13 @@ export default function DashboardShellV2({
     { prefix: '/seo', label: 'SEO & Indexing' },
     { prefix: '/pulse', label: 'Pulse' },
     { prefix: '/tools', label: 'Blog Tools' },
+    // Partner-network finders are Creator/Studio/Pro only (the Amazon plan is
+    // Amazon-only, and these publish to a WordPress blog the plan doesn't have).
+    // External Integrations only holds these finders' API keys, so it locks too.
+    { prefix: '/levanta', label: 'MVP Levanta' },
+    { prefix: '/partnerboost', label: 'MVP PartnerBoost' },
+    { prefix: '/wayward', label: 'MVP Wayward' },
+    { prefix: '/external-integrations', label: 'External Integrations' },
   ]
   const amazonLocked = amazonView
     ? AMAZON_LOCKED_PREFIXES.find((l) => pathname === l.prefix || pathname.startsWith(`${l.prefix}/`) || pathname.startsWith(`${l.prefix}?`))
@@ -1035,7 +1042,10 @@ export default function DashboardShellV2({
               users it links to /setup (the multi-site manager). For Pro users
               with 2+ connected sites it becomes a real switcher: picking a blog
               sets it as the default, which the whole app follows. */}
-          <SiteSwitcherChip currentHostname={wpHostname} />
+          {/* The site chip is a WordPress switcher. Amazon Influencers have no
+              WP site (sites: 0), so it would render "No WordPress yet" linking to
+              a walled-off /setup — a confusing dead-end. Hide it for Amazon. */}
+          {!amazonView && <SiteSwitcherChip currentHostname={wpHostname} />}
 
           {/* Search MVP — jump to any page or section (Geniuslink, upload
               brand logo, AdSense…). ⌘K focuses it from anywhere. */}
