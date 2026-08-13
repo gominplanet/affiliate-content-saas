@@ -27,13 +27,13 @@ const SIDES = {
     icon: <ShoppingBag size={18} />,
     headline: 'No blog. No YouTube. Just your storefront.',
     blurb:
-      'Built for creators who live on their Amazon storefront and socials. Turn any product into scroll-stopping designs, publish everywhere at once, and land paid brand deals, no website required.',
+      'Built for creators who live on their Amazon storefront and socials. Generate incredible Amazon video-review thumbnails in one click, turn any product into scroll-stopping designs, publish everywhere at once, and land paid brand deals, no website required.',
     price: '$79',
     cta: 'See the Amazon plan',
     href: '/amazon-influencer',
     secondary: null as { label: string; href: string } | null,
     bullets: [
-      { icon: <Wand2 size={15} />, text: '200 Art Director product thumbnails / month' },
+      { icon: <Wand2 size={15} />, text: 'Incredible Amazon video-review thumbnails, one click (200/mo)' },
       { icon: <Share2 size={15} />, text: 'Pins, Reels & Facebook designs, posted to all three at once' },
       { icon: <BadgePercent size={15} />, text: 'Creator Connections: land + message brand deals' },
       { icon: <Radar size={15} />, text: 'Amazon product research + live, verified Deal Radar' },
