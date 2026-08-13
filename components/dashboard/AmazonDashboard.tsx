@@ -26,7 +26,7 @@ const TOOLKIT: { href: string; icon: ReactNode; title: string; desc: string }[] 
   { href: '/amazon/research', icon: <PackageSearch size={18} />, title: 'Product Research', desc: 'Filter the whole Amazon catalogue by sales, rating, price and competition.' },
   { href: '/cc-campaigns', icon: <Handshake size={18} />, title: 'Creator Connections', desc: 'A daily digest of brand campaigns auto-matched to your content. Land + message deals. 50/mo.' },
   { href: '/deal-radar', icon: <Radar size={18} />, title: 'Deal Radar', desc: 'Live, price-history-verified Amazon deals to post while they are hot.' },
-  { href: '/photobooth', icon: <UserSquare size={18} />, title: 'Face Models', desc: 'Put your own face on every design. 1 model + 3 studio photobooth shots.' },
+  { href: '/photobooth', icon: <UserSquare size={18} />, title: 'Face Models', desc: 'Put your own face on every design. 1 model + 6 studio photobooth shots.' },
 ]
 
 const UPGRADE: { icon: ReactNode; title: string; desc: string }[] = [

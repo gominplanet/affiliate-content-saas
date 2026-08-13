@@ -94,7 +94,7 @@ const plans: PlanExt[] = [
       '45 full reviews per month (blog + thumbnail + metadata bundle)',
       'Adds Pinterest, Instagram & Telegram auto-post on top of Creator',
       'Publish from Levanta + PartnerBoost: turn any campaign you find into a commissionable post (searching them is free on every plan)',
-      'Deals Hub: 5 deal posts / month with countdown banners + Amazon CSV bulk import',
+      'Deals Hub: 15 deal posts / month with countdown banners + Amazon CSV bulk import',
       'Refresh Images on any published post (re-renders the in-body shots)',
       'Topic hubs auto-aggregate your reviews into category pages (built-in WP plugin)',
       '2 saved faces + 3 LoRA retrains / month',
@@ -333,7 +333,7 @@ export default function PricingPage() {
               { icon: <PackageSearch size={20} />, title: 'Amazon Product Research', tag: 'Unlimited browse', desc: 'Filter the whole Amazon catalogue by sales, rating, price, review ratio and competition. Find the products actually worth posting before you spend a design on them.' },
               { icon: <Radar size={20} />, title: 'Deal Radar', tag: 'Unlimited browse', desc: 'Live, price-history-verified Amazon deals. Jump on a real price drop the day it happens and turn it into a post while it is still hot.' },
               { icon: <Send size={20} />, title: 'Publish for you', tag: '100 posts / month', desc: 'Push product and deal posts straight to Facebook, Pinterest and Instagram, all three at once, from one screen. The copy is written, the design is done, you approve and it goes.' },
-              { icon: <UserSquare size={20} />, title: 'Your face on every design', tag: '1 model · 3 headshots', desc: 'Add one face model and MVP puts you in the designs. Run the photobooth for 3 studio-quality headshots so your posts look like you, not stock.' },
+              { icon: <UserSquare size={20} />, title: 'Your face on every design', tag: '1 model · 6 headshots', desc: 'Add one face model and MVP puts you in the designs. Run the photobooth for 6 studio-quality headshots so your posts look like you, not stock.' },
               { icon: <Zap size={20} />, title: 'Priority queue + support', tag: 'Included', desc: 'Your renders jump the line and your questions get answered first. When a deal is live you are not waiting behind the free tier.' },
             ].map((t) => (
               <div key={t.title} className="rounded-2xl bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 p-5 flex flex-col">
