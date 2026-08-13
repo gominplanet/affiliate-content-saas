@@ -68,7 +68,7 @@ export default function AmazonInfluencerPage() {
           <NextImage src="/png/mvp-affiliate-amz.png" alt="MVP Amazon Influencer" width={96} height={96} priority className="mx-auto mb-5 w-20 h-20 sm:w-24 sm:h-24 rounded-3xl shadow-lg" />
           <p className="text-xs font-bold uppercase tracking-[0.14em] mb-3" style={{ color: ACCENT }}>For Amazon Associates & Influencers</p>
           <h1 className="text-4xl sm:text-5xl font-bold tracking-tight leading-[1.05] max-w-3xl mx-auto">
-            Your storefront, running itself.
+            Every product, post-ready in one click.
           </h1>
           <p className="mt-5 text-lg text-[#6e6e73] dark:text-[#ebebf0] max-w-2xl mx-auto leading-relaxed">
             No blog. No YouTube. Generate incredible Amazon video-review thumbnails in one click, turn
@@ -147,7 +147,7 @@ export default function AmazonInfluencerPage() {
 
       {/* Final CTA */}
       <section className="max-w-3xl mx-auto px-4 sm:px-6 py-16 text-center">
-        <h2 className="text-3xl font-bold tracking-tight">Start turning products into posts.</h2>
+        <h2 className="text-3xl font-bold tracking-tight">From storefront to scroll-stopping, without the studio.</h2>
         <p className="mt-3 text-[15px] text-[#6e6e73] dark:text-[#ebebf0]">
           $79/mo, locked for life. Cancel anytime.
         </p>
