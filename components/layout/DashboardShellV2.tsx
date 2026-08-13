@@ -40,7 +40,7 @@ import {
   Flame, KeyRound, Users, LogOut, ExternalLink,
   UserCog, AlertTriangle, DollarSign, Newspaper, Plug, Wrench,
   Camera, MessageCircle, Activity, BarChart3, Wand2, ShieldCheck,
-  Share2, UserSquare, Lightbulb, LifeBuoy, Link2, FlaskConical, Store, Send, ShoppingBag, Megaphone,
+  Share2, UserSquare, LifeBuoy, Link2, FlaskConical, Store, Send, ShoppingBag, Megaphone,
   Inbox, PackageSearch, Copy, Signpost, Code2, Rocket, Database,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -607,7 +607,6 @@ export default function DashboardShellV2({
       // nav entry is added then.
       label: 'Help & Community',
       items: [
-        { href: '/brainstorm', icon: <Lightbulb size={15} />, label: 'Brainstorm', gate: isPaid },
         { href: '/assistant', icon: <Bot size={15} />, label: 'MVP Help Desk' },
         { href: '/support', icon: <LifeBuoy size={15} />, label: 'Create a Help Ticket' },
         { href: '/community', icon: <MessageCircle size={15} />, label: 'Community' },
