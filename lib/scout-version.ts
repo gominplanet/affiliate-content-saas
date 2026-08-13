@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.16.11'
+export const SCOUT_LATEST_VERSION = '1.16.12'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Learns YouTube Studio’s own save request so the paid-promotion / AI-disclosure replay is exact (extension clicks are untrusted and Studio ignores them).'
+  'Revives Amazon storefront earnings sync over the signed-in session bridge (no more token), feeding Storefront Stats + the Amazon Brainstorm from your Linked-Product report.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar

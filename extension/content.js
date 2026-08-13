@@ -2126,7 +2126,6 @@ setInterval(() => {
   const num = (s) => { const n = parseFloat(String(s || '').replace(/[^0-9.\-]/g, '')); return isFinite(n) ? n : null }
   const ASIN_RE = /\b([A-Z0-9]{10})\b/
   const toISO = (s) => { const d = new Date(s); return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10) }
-  const getToken = () => new Promise((r) => { try { chrome.storage.local.get(['ccToken'], (o) => r(((o && o.ccToken) || '').trim() || null)) } catch (e) { r(null) } })
 
   function pickPeriod() {
     const txt = document.body.innerText || ''
@@ -2201,13 +2200,14 @@ setInterval(() => {
   }
 
   async function syncIfDue() {
-    const token = await getToken(); if (!token) return
     const earnings = parse(); if (!earnings.length) return
     const key = 'mvpEarnSync:' + earnings[0].periodType + ':' + earnings[0].periodStart
     const last = await new Promise((r) => { try { chrome.storage.local.get([key], (o) => r((o && o[key]) || 0)) } catch (e) { r(0) } })
     if (Date.now() - last < 4 * 3600 * 1000) return // at most every 4h per range
     try {
-      const res = await chrome.runtime.sendMessage({ type: 'SCOUT_PUSH_EARNINGS', token, earnings })
+      // Pushed over the session bridge — the worker fetch carries the MVP cookie,
+      // so /api/storefront/ingest authenticates via the signed-in session (no token).
+      const res = await chrome.runtime.sendMessage({ type: 'SCOUT_PUSH_EARNINGS', earnings })
       if (res && res.ok) { try { chrome.storage.local.set({ [key]: Date.now() }) } catch (e) {} }
     } catch (e) {}
   }
