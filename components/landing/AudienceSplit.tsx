@@ -35,7 +35,7 @@ const SIDES = {
     bullets: [
       { icon: <Wand2 size={15} />, text: 'Incredible Amazon video-review thumbnails, one click (200/mo)' },
       { icon: <Share2 size={15} />, text: 'Pins, Reels & Facebook designs, posted to all three at once' },
-      { icon: <BadgePercent size={15} />, text: 'Creator Connections: land + message brand deals' },
+      { icon: <BadgePercent size={15} />, text: 'Creator Connections: a daily brand-deal digest matched to you' },
       { icon: <Radar size={15} />, text: 'Amazon product research + live, verified Deal Radar' },
       { icon: <UserSquare size={15} />, text: 'Your own face on every design (1 model + photobooth)' },
       { icon: <Store size={15} />, text: 'Publish to Facebook, Pinterest & Instagram together' },

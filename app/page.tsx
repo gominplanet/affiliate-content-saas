@@ -100,6 +100,7 @@ export default function LandingPreview() {
           punch. The banded sections were designed for a dark background. */}
       <Hero />
       <PlatformBar />
+      <WhyMvpSection />
       <ComparisonSection />
       <FreeResearchSection />
       <RolesSection />
@@ -2310,7 +2311,7 @@ const COMPARE_ROWS: { label: string; mvp: boolean; others: 'no' | 'partial'; hig
   { label: 'Finish the upload: description, tags, affiliate links & a CTR-tested thumbnail', mvp: true, others: 'no' },
   { label: 'Auto-syndicate every post to all your socials (FB, IG, X, LinkedIn, Threads, Bluesky, Telegram, Pinterest)', mvp: true, others: 'partial' },
   { label: 'Price-history-verified Amazon Deal Radar', mvp: true, others: 'no' },
-  { label: 'Creator Connections: find, accept & message brands', mvp: true, others: 'no' },
+  { label: 'Creator Connections: a daily brand-deal digest auto-matched to your content, plus accept & message', mvp: true, others: 'no' },
   { label: 'Levanta, PartnerBoost & Walmart campaigns in one place', mvp: true, others: 'no' },
   { label: 'Turn one long video into vertical Reels, TikToks & YouTube Shorts', mvp: true, others: 'no' },
   { label: 'Clean up + migrate your existing site (404s, duplicates, old affiliate links)', mvp: true, others: 'no' },
@@ -2319,6 +2320,76 @@ const COMPARE_ROWS: { label: string; mvp: boolean; others: 'no' | 'partial'; hig
   { label: 'Never mines your sales data or storefront picks to build its own tools', mvp: true, others: 'no', highlight: true },
   { label: 'Never uses or sells your personal data', mvp: true, others: 'no', highlight: true },
 ]
+
+/** Why MVP vs the others — punchy differentiator cards that lead the page's
+ *  "why us" story before the detailed comparison table. Four sharp angles:
+ *  privacy (the cheeky one), all-in-one, your-voice, you-own-it. logie5-clean:
+ *  big type, one accent, lots of air. */
+const WHY_MVP: Array<{ icon: React.ReactNode; title: string; body: string; tag: string }> = [
+  {
+    icon: <ShieldCheck size={20} />,
+    tag: 'Your data stays yours',
+    title: 'We never mine your winners.',
+    body: 'Other "research" tools quietly vacuum up your sales numbers and best storefront picks to power their own products. We never touch yours. Your winners stay your winners. Novel concept, we know.',
+  },
+  {
+    icon: <LayoutTemplate size={20} />,
+    tag: 'One tool, not four',
+    title: 'The whole job, one subscription.',
+    body: 'Research, write, design, thumbnail, publish, syndicate to every network, and get paid, all in one place. Everyone else makes you stitch together a stack and pay four bills to do what MVP does in one.',
+  },
+  {
+    icon: <PenLine size={20} />,
+    tag: 'It sounds like you',
+    title: 'Your voice, not generic AI slop.',
+    body: 'Every review, post, script and caption is written from your brand profile in your voice. Readers can\'t tell it\'s AI, because it reads like you wrote it, not like a template everyone else is also using.',
+  },
+  {
+    icon: <Globe size={20} />,
+    tag: 'You keep everything',
+    title: 'Your site, your audience, forever.',
+    body: 'Your blog lives on your own WordPress and your audience is yours. Cancel any time and you keep the site, the posts and the list. No rented reach, no walled garden, nothing held hostage.',
+  },
+]
+
+function WhyMvpSection() {
+  return (
+    <section id="why-mvp" className="px-5 sm:px-8 pt-16 sm:pt-24 pb-6 relative">
+      <div className="max-w-5xl mx-auto">
+        <div className="text-center max-w-3xl mx-auto mb-11">
+          <span
+            className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-semibold uppercase tracking-[0.18em] mb-5"
+            style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent-text)', border: '1px solid var(--border)' }}
+          >
+            <Zap size={11} /> Why MVP, not the rest
+          </span>
+          <h2 className="text-[36px] sm:text-[52px] font-extrabold tracking-[-0.03em] leading-[1.0]" style={{ color: 'var(--text)' }}>
+            Built different.<br />
+            <span style={{ background: 'linear-gradient(120deg, #F97316 0%, #C026D3 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
+              On purpose.
+            </span>
+          </h2>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5">
+          {WHY_MVP.map((c) => (
+            <div
+              key={c.title}
+              className="rounded-3xl border p-7 sm:p-8"
+              style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', boxShadow: 'var(--card-shadow)' }}
+            >
+              <div className="flex items-center gap-2.5 mb-4">
+                <span className="w-11 h-11 rounded-2xl grid place-items-center flex-shrink-0 text-white" style={{ background: 'linear-gradient(135deg, #7C3AED, #C026D3)' }}>{c.icon}</span>
+                <span className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--accent-text)' }}>{c.tag}</span>
+              </div>
+              <h3 className="text-[21px] sm:text-[23px] font-bold tracking-tight mb-2" style={{ color: 'var(--text)' }}>{c.title}</h3>
+              <p className="text-[14px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>{c.body}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
 
 function ComparisonSection() {
   return (
