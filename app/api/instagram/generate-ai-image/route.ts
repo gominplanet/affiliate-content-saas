@@ -28,7 +28,7 @@ import { spendGate } from '@/lib/ai-spend'
 import { TIERS, nextTierFor, type Tier } from '@/lib/tier'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 import { analyzeTextZone } from '@/lib/thumbnail-textzone'
-import { composeWithNanoBananaPro, composeWithNanoBanana, rehostToFal, rehostFacePhotos, applyMoodyGrade, NANO_BANANA_PRO_COST_MODEL, NANO_BANANA_COST_MODEL } from '@/lib/thumbnail-generators'
+import { composeWithGptImage, composeWithNanoBananaPro, composeWithNanoBanana, rehostToFal, rehostFacePhotos, applyMoodyGrade, GPT_IMAGE_COMPOSE_COST_MODEL, NANO_BANANA_PRO_COST_MODEL, NANO_BANANA_COST_MODEL } from '@/lib/thumbnail-generators'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 
 /**
@@ -462,14 +462,21 @@ BACKGROUND: a MOODY, cinematic setting that fits the video — richer, HIGHER-CO
 HEADLINE SPACE: leave a generous CLEAN, uncluttered area at the TOP for a headline to be added afterwards. Render ABSOLUTELY NO text, letters, words, numbers or captions anywhere.
 ${NO_BRAND_IMAGE_CLAUSE}
 Ultra-sharp, photorealistic, 4:5 portrait.`
-        const composed = await composeWithNanoBananaPro({ prompt: igPrompt, referenceImageUrls: refs, aspectRatio: '4:5', numImages: 1 })
+        // PRIMARY: gpt-image (unified 2026-08-13). Nano Banana Pro → NB stay as
+        // resilience fallbacks so a gpt hiccup never fails the render.
+        let composed = await composeWithGptImage({ prompt: igPrompt, referenceImageUrls: refs, aspectRatio: '4:5', numImages: 1 })
+        let igUsedModel = GPT_IMAGE_COMPOSE_COST_MODEL
+        if (!composed[0]) {
+          composed = await composeWithNanoBananaPro({ prompt: igPrompt, referenceImageUrls: refs, aspectRatio: '4:5', numImages: 1 })
+          igUsedModel = NANO_BANANA_PRO_COST_MODEL
+        }
+        if (!composed[0]) {
+          composed = await composeWithNanoBanana({ prompt: igPrompt, referenceImageUrls: refs, aspectRatio: '4:5', numImages: 1 })
+          igUsedModel = NANO_BANANA_COST_MODEL
+        }
         imageUrl = composed[0] || null
         if (imageUrl) {
-          recordUsage({ userId: user.id, tier, feature: 'ig_ai_thumbnail_image', model: NANO_BANANA_PRO_COST_MODEL, images: 1 })
-        } else {
-          const fb = await composeWithNanoBanana({ prompt: igPrompt, referenceImageUrls: refs, aspectRatio: '4:5', numImages: 1 })
-          imageUrl = fb[0] || null
-          if (imageUrl) recordUsage({ userId: user.id, tier, feature: 'ig_ai_thumbnail_image', model: NANO_BANANA_COST_MODEL, images: 1 })
+          recordUsage({ userId: user.id, tier, feature: 'ig_ai_thumbnail_image', model: igUsedModel, images: 1 })
         }
         // Vision QC (Claude): confirm the rendered product matches the real one.
         // On a confident mismatch, regenerate ONCE and keep the retry. Compares
@@ -477,14 +484,14 @@ Ultra-sharp, photorealistic, 4:5 portrait.`
         if (imageUrl && productImageUrl) {
           const verdict = await verifyProductMatch(productImageUrl, imageUrl, productTitle || (video.title as string), { userId: user.id, tier })
           if (!verdict.match) {
-            const retry = await composeWithNanoBananaPro({ prompt: igPrompt, referenceImageUrls: refs, aspectRatio: '4:5', numImages: 1 })
+            const retry = await composeWithGptImage({ prompt: igPrompt, referenceImageUrls: refs, aspectRatio: '4:5', numImages: 1 })
             if (retry[0]) {
               imageUrl = retry[0]
               // Cost-only feature so the QC retry's real spend is still tracked
               // WITHOUT advancing the monthly cap — `ig_ai_thumbnail_image` must
               // appear exactly once per delivered image (see PRIMARY_FEATURE in
               // lib/usage-cap.ts), else one image would burn two of the cap.
-              recordUsage({ userId: user.id, tier, feature: 'ig_ai_thumbnail_retry_cost', model: NANO_BANANA_PRO_COST_MODEL, images: 1 })
+              recordUsage({ userId: user.id, tier, feature: 'ig_ai_thumbnail_retry_cost', model: GPT_IMAGE_COMPOSE_COST_MODEL, images: 1 })
             }
           }
         }

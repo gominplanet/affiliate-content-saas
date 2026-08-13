@@ -19,6 +19,7 @@
  */
 import { fal } from '@fal-ai/client'
 import sharp from 'sharp'
+import { createOpenAIService } from '@/services/openai'
 
 export const NANO_BANANA_EDIT = 'fal-ai/nano-banana/edit'
 // Nano Banana Pro = Google Gemini 3 Pro Image. Higher fidelity and — crucially
@@ -41,6 +42,11 @@ if (process.env.FAL_KEY) {
 export const NANO_BANANA_COST_MODEL = 'fal-nano-banana'
 export const NANO_BANANA_PRO_COST_MODEL = 'fal-nano-banana-pro'
 export const IDEOGRAM_COST_MODEL = 'fal-ideogram-v3'
+/** Cost/telemetry model key for the unified gpt-image compose path (2026-08-13
+ *  migration off Nano Banana). Medium quality — $0.06/image (see lib/ai-usage
+ *  PRICING), which undercuts Nano Banana Pro ($0.13) while unifying every
+ *  designed-image surface on gpt-image. */
+export const GPT_IMAGE_COMPOSE_COST_MODEL = 'gpt-image-1-medium'
 
 const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
 
@@ -292,6 +298,106 @@ export async function composeWithNanoBananaPro(opts: {
     return (images ?? []).map(i => i.url).filter(Boolean)
   } catch (err) {
     console.warn('[nano-banana-pro] compose failed:', err instanceof Error ? err.message : String(err))
+    return []
+  }
+}
+
+/**
+ * gpt-image compose — the unified replacement for Nano Banana / NB Pro
+ * (2026-08-13 migration). Same call shape as composeWithNanoBanana (prompt +
+ * fal-reachable reference URLs + aspectRatio + numImages) so call sites swap
+ * with a one-line change and keep getting fal URLs back.
+ *
+ * gpt-image-1 renders only 1024×1024, 1024×1536 and 1536×1024, so for a
+ * non-square target we render the nearest standard size and centre-crop to the
+ * exact aspect ratio (sharp). Quality defaults to 'medium' ($0.06/image) — the
+ * cost-smart tier that still beats NB Pro. Returns fal URLs, [] on failure so
+ * callers keep their existing fallbacks.
+ */
+const GPT_SIZE_DIMS: Record<string, { w: number; h: number }> = {
+  '1024x1024': { w: 1024, h: 1024 },
+  '1024x1536': { w: 1024, h: 1536 },
+  '1536x1024': { w: 1536, h: 1024 },
+}
+/** Map a Nano-Banana aspect string to a gpt-image render size + exact crop. */
+function gptSizeForAspect(aspect: string): {
+  size: '1024x1024' | '1024x1536' | '1536x1024'
+  cropW: number
+  cropH: number
+} {
+  switch (aspect) {
+    case '1:1':  return { size: '1024x1024', cropW: 1024, cropH: 1024 }
+    case '3:2':  return { size: '1536x1024', cropW: 1536, cropH: 1024 }
+    case '2:3':  return { size: '1024x1536', cropW: 1024, cropH: 1536 }
+    case '16:9': return { size: '1536x1024', cropW: 1536, cropH: 864 }
+    case '9:16': return { size: '1024x1536', cropW: 864,  cropH: 1536 }
+    case '4:5':  return { size: '1024x1536', cropW: 1024, cropH: 1280 }
+    case '5:4':  return { size: '1536x1024', cropW: 1280, cropH: 1024 }
+    case '4:3':  return { size: '1536x1024', cropW: 1364, cropH: 1024 }
+    case '3:4':  return { size: '1024x1536', cropW: 1024, cropH: 1364 }
+    default:     return { size: '1536x1024', cropW: 1536, cropH: 1024 }
+  }
+}
+async function fetchRefImage(
+  url: string,
+  idx: number,
+): Promise<{ data: Uint8Array; filename: string; mime: string } | null> {
+  try {
+    const res = await fetch(url, { headers: { 'User-Agent': BROWSER_UA }, signal: AbortSignal.timeout(15000) })
+    if (!res.ok) return null
+    const data = new Uint8Array(await res.arrayBuffer())
+    const isPng = (res.headers.get('content-type') || '').includes('png')
+    return { data, filename: `ref_${idx}.${isPng ? 'png' : 'jpg'}`, mime: isPng ? 'image/png' : 'image/jpeg' }
+  } catch { return null }
+}
+export async function composeWithGptImage(opts: {
+  prompt: string
+  referenceImageUrls: string[]
+  aspectRatio?: string
+  numImages?: number
+  quality?: 'low' | 'medium' | 'high'
+  /** transparent → PNG with alpha (for die-cut stickers / cut-outs). */
+  transparent?: boolean
+}): Promise<string[]> {
+  if (opts.referenceImageUrls.length === 0) return []
+  const n = Math.min(10, Math.max(1, opts.numImages ?? 1))
+  const { size, cropW, cropH } = gptSizeForAspect(opts.aspectRatio ?? '16:9')
+  const full = GPT_SIZE_DIMS[size]
+  try {
+    const refs = (await Promise.all(opts.referenceImageUrls.slice(0, 8).map((u, i) => fetchRefImage(u, i))))
+      .filter((r): r is { data: Uint8Array; filename: string; mime: string } => !!r)
+    if (refs.length === 0) return []
+    const openai = createOpenAIService()
+    const out: string[] = []
+    for (let i = 0; i < n; i++) {
+      try {
+        const b64 = await openai.generateWithReferences({
+          prompt: opts.prompt,
+          images: refs,
+          size,
+          quality: opts.quality ?? 'medium',
+          model: 'gpt-image-1',
+          ...(opts.transparent ? { background: 'transparent' as const } : {}),
+        })
+        let bytes: Buffer = Buffer.from(b64, 'base64')
+        // Centre-crop to the exact target aspect when it differs from the render size.
+        if (cropW !== full.w || cropH !== full.h) {
+          const left = Math.max(0, Math.round((full.w - cropW) / 2))
+          const top = Math.max(0, Math.round((full.h - cropH) / 2))
+          bytes = await sharp(bytes)
+            .extract({ left, top, width: cropW, height: cropH })
+            .png()
+            .toBuffer()
+        }
+        const url = await fal.storage.upload(new Blob([new Uint8Array(bytes)], { type: 'image/png' }))
+        if (url) out.push(url)
+      } catch (e) {
+        console.warn('[gpt-image-compose] render failed:', e instanceof Error ? e.message : String(e))
+      }
+    }
+    return out
+  } catch (err) {
+    console.warn('[gpt-image-compose] compose failed:', err instanceof Error ? err.message : String(err))
     return []
   }
 }

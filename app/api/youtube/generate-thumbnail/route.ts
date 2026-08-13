@@ -15,7 +15,7 @@ import { rankThumbnails, pickBestFrame, type ThumbnailScore } from '@/lib/thumbn
 import { type TextPosition } from '@/lib/thumbnail-textzone'
 import { NO_BRAND_IMAGE_CLAUSE, stripDesignBrands } from '@/lib/image-guard'
 import { getOrCreateBriefs } from '@/lib/art-director-cache'
-import { composeWithNanoBanana, composeWithNanoBananaPro, generateWithIdeogram, rehostToFal, rehostFacePhotos, rehostStyleRefs, applyMoodyGrade, NANO_BANANA_COST_MODEL, NANO_BANANA_PRO_COST_MODEL, IDEOGRAM_COST_MODEL } from '@/lib/thumbnail-generators'
+import { composeWithGptImage, composeWithNanoBanana, composeWithNanoBananaPro, generateWithIdeogram, rehostToFal, rehostFacePhotos, rehostStyleRefs, applyMoodyGrade, GPT_IMAGE_COMPOSE_COST_MODEL, NANO_BANANA_COST_MODEL, NANO_BANANA_PRO_COST_MODEL, IDEOGRAM_COST_MODEL } from '@/lib/thumbnail-generators'
 // renderDesignerOverlay (Satori-based, template-driven) was the previous
 // clean-path renderer. Now superseded by bakeSimpleHeadline which uses
 // Resvg directly with raw SVG + paint-order: stroke fill for razor-sharp
@@ -2292,10 +2292,11 @@ Ultra-sharp, professional, photorealistic.`
           // Representative prompt for telemetry / the response payload.
           const nbPrompt = promptFor(0)
 
-          // Composed scene always runs on Nano Banana PRO (best identity +
-          // composition). Title is overlaid (default) or baked (toggle).
-          let nbModelKey = NANO_BANANA_PRO_COST_MODEL
-          let nbModelUsed = wantClean ? 'nano-banana-pro' : 'nano-banana-pro-baked'
+          // Composed scene: gpt-image primary (unified 2026-08-13); Nano Banana
+          // Pro → NB stay as resilience fallbacks. Title is overlaid (default)
+          // or baked into the image (toggle).
+          let nbModelKey: string = GPT_IMAGE_COMPOSE_COST_MODEL
+          let nbModelUsed = wantClean ? 'gpt-image-compose' : 'gpt-image-compose-baked'
           // Image-QC telemetry. faceIdentityChecked = the face dimension ran (a
           // creator-face thumbnail). qcWarning = the QC gate (face + brand-leak +
           // baked-text) couldn't be satisfied even after a regenerate, so the set
@@ -2307,13 +2308,22 @@ Ultra-sharp, professional, photorealistic.`
           // own prompt (rotating host side + title style) so variants differ.
           const nbBatches = await Promise.all(
             Array.from({ length: variantCount }, (_, i) =>
-              composeWithNanoBananaPro({ prompt: promptFor(i), referenceImageUrls: refs, aspectRatio: '16:9', numImages: 1 }),
+              composeWithGptImage({ prompt: promptFor(i), referenceImageUrls: refs, aspectRatio: '16:9', numImages: 1 }),
             ),
           )
           let nbUrls = nbBatches.flat().filter(Boolean).slice(0, variantCount)
 
-          // Fallback: if Pro returned nothing, retry on regular Nano Banana so we
-          // still produce a thumbnail rather than failing.
+          // Fallback 1: Nano Banana Pro if gpt-image returned nothing.
+          if (nbUrls.length === 0) {
+            const fbPro = await Promise.all(
+              Array.from({ length: variantCount }, (_, i) =>
+                composeWithNanoBananaPro({ prompt: promptFor(i), referenceImageUrls: refs, aspectRatio: '16:9', numImages: 1 }),
+              ),
+            )
+            nbUrls = fbPro.flat().filter(Boolean).slice(0, variantCount)
+            if (nbUrls.length > 0) { nbModelKey = NANO_BANANA_PRO_COST_MODEL; nbModelUsed = wantClean ? 'nano-banana-pro' : 'nano-banana-pro-baked' }
+          }
+          // Fallback 2: regular Nano Banana so we still produce a thumbnail.
           if (nbUrls.length === 0) {
             const fb = await Promise.all(
               Array.from({ length: variantCount }, (_, i) =>
@@ -2384,14 +2394,14 @@ Ultra-sharp, professional, photorealistic.`
               if (surviving.length === 0) {
                 const retry = (await Promise.all(
                   Array.from({ length: variantCount }, (_, i) =>
-                    composeWithNanoBananaPro({ prompt: promptFor(i), referenceImageUrls: refs, aspectRatio: '16:9', numImages: 1 }),
+                    composeWithGptImage({ prompt: promptFor(i), referenceImageUrls: refs, aspectRatio: '16:9', numImages: 1 }),
                   ),
                 )).flat().filter(Boolean).slice(0, variantCount)
                 const retryGraded = retry.length > 0 ? await Promise.all(retry.map(applyMoodyGrade)) : []
                 // QC retry is real spend but the SAME generation — track cost
                 // only, never advance the cap again (it was counted above).
                 for (let i = 0; i < retryGraded.length; i++) {
-                  recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'yt_thumb_nanobanana_cost', model: NANO_BANANA_PRO_COST_MODEL, images: 1 })
+                  recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'yt_thumb_nanobanana_cost', model: GPT_IMAGE_COMPOSE_COST_MODEL, images: 1 })
                 }
                 if (retryGraded.length > 0) {
                   nbUrls = retryGraded // remap auditVariant's index space to the retry set

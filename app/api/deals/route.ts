@@ -45,7 +45,7 @@ import { extractAsin, fetchAmazonProduct, isValidAsin, type AmazonProduct } from
 import { fetchKeepaProductStats, buildPriceContext, buildPriceSnapshotHtml } from '@/services/keepa'
 import { resolveFinalUrl } from '@/lib/product-link'
 import { createGeniuslinkService } from '@/services/geniuslink'
-import { composeWithNanoBanana, composeWithNanoBananaPro, rehostToFal } from '@/lib/thumbnail-generators'
+import { composeWithGptImage, composeWithNanoBanana, composeWithNanoBananaPro, rehostToFal, GPT_IMAGE_COMPOSE_COST_MODEL } from '@/lib/thumbnail-generators'
 import { recordUsage } from '@/lib/ai-usage'
 import { scrubDealHtml, DEAL_VOICE_RULES } from '@/lib/deal-scrub'
 import { scrubEmDashes } from '@/lib/html-scrub'
@@ -647,29 +647,22 @@ export async function POST(req: Request) {
     badgeBg: occasion.badgeBg,
     badgeFg: occasion.badgeFg,
   })
+  // PRIMARY: gpt-image (unified 2026-08-13). NB Pro → NB stay as resilience
+  // fallbacks so a gpt hiccup never fails the render.
   const thumbPromise: Promise<string | null> = productRefForFal
-    ? composeWithNanoBananaPro({
+    ? composeWithGptImage({
         prompt: thumbPrompt,
         referenceImageUrls: [productRefForFal],
         aspectRatio: '16:9',
         numImages: 1,
       })
-        .then(arr => arr[0] || null)
-        .then(async url => {
-          if (url) recordUsage({ userId: user.id, tier, feature: 'deal_thumbnail', model: 'nano-banana-pro', images: 1 })
-          // Pro endpoint occasionally fails the legible-text contract; fall
-          // back to regular NB if it returned nothing.
-          if (!url) {
-            const arr = await composeWithNanoBanana({
-              prompt: thumbPrompt,
-              referenceImageUrls: [productRefForFal],
-              aspectRatio: '16:9',
-              numImages: 1,
-            })
-            if (arr[0]) recordUsage({ userId: user.id, tier, feature: 'deal_thumbnail_fallback', model: 'nano-banana', images: 1 })
-            return arr[0] || null
-          }
-          return url
+        .then(async arr => {
+          if (arr[0]) { recordUsage({ userId: user.id, tier, feature: 'deal_thumbnail', model: GPT_IMAGE_COMPOSE_COST_MODEL, images: 1 }); return arr[0] }
+          const pro = await composeWithNanoBananaPro({ prompt: thumbPrompt, referenceImageUrls: [productRefForFal], aspectRatio: '16:9', numImages: 1 })
+          if (pro[0]) { recordUsage({ userId: user.id, tier, feature: 'deal_thumbnail_fallback', model: 'nano-banana-pro', images: 1 }); return pro[0] }
+          const nb = await composeWithNanoBanana({ prompt: thumbPrompt, referenceImageUrls: [productRefForFal], aspectRatio: '16:9', numImages: 1 })
+          if (nb[0]) { recordUsage({ userId: user.id, tier, feature: 'deal_thumbnail_fallback', model: 'nano-banana', images: 1 }); return nb[0] }
+          return null
         })
         .catch(() => null)
     : Promise.resolve(null)
@@ -681,16 +674,17 @@ export async function POST(req: Request) {
       productTitle: product.title || `the product (ASIN ${product.asin})`,
       slotIndex: i,
     })
-    return composeWithNanoBanana({
+    return composeWithGptImage({
       prompt,
       referenceImageUrls: [productRefForFal],
       aspectRatio: '4:3',
       numImages: 1,
     })
-      .then(arr => arr[0] || null)
-      .then(url => {
-        if (url) recordUsage({ userId: user.id, tier, feature: 'deal_body_image', model: 'nano-banana', images: 1 })
-        return url
+      .then(async arr => {
+        if (arr[0]) { recordUsage({ userId: user.id, tier, feature: 'deal_body_image', model: GPT_IMAGE_COMPOSE_COST_MODEL, images: 1 }); return arr[0] }
+        const nb = await composeWithNanoBanana({ prompt, referenceImageUrls: [productRefForFal], aspectRatio: '4:3', numImages: 1 })
+        if (nb[0]) { recordUsage({ userId: user.id, tier, feature: 'deal_body_image', model: 'nano-banana', images: 1 }); return nb[0] }
+        return null
       })
       .catch(() => null)
   })
