@@ -97,6 +97,38 @@ export function assertPublicHttpUrl(raw: string, opts: { allowHttp?: boolean } =
   return url
 }
 
+/**
+ * Stronger async guard: the sync checks PLUS DNS resolution — resolve the
+ * hostname and re-run the private-range check against EVERY resolved address,
+ * closing the "hostname whose A record points at 169.254.169.254 / RFC1918"
+ * gap the sync guard documents. Use this on paths that fetch a fully
+ * user-supplied URL (a pasted product/article link).
+ *
+ * Fail-open ONLY on DNS resolution error: if the host can't be resolved the
+ * real fetch would fail anyway, and blocking here would break transient-DNS
+ * cases. A host that resolves to a private/reserved IP is a hard block.
+ */
+export async function assertPublicHttpUrlResolved(raw: string, opts: { allowHttp?: boolean } = {}): Promise<URL> {
+  const url = assertPublicHttpUrl(raw, opts) // scheme + IP-literal + metadata-host checks
+  const host = url.hostname.toLowerCase()
+  // Already an IP literal → the sync check settled it; nothing to resolve.
+  if (host.includes(':') || /^\d{1,3}(\.\d{1,3}){3}$/.test(host)) return url
+  let addrs: Array<{ address: string }>
+  try {
+    const { lookup } = await import('dns/promises')
+    addrs = await lookup(host, { all: true })
+  } catch {
+    return url // DNS failure → don't block; the fetch will fail on its own.
+  }
+  for (const a of addrs) {
+    const ip = (a.address || '').toLowerCase().replace(/^::ffff:/, '') // unwrap IPv4-mapped IPv6
+    if (isPrivateIpLiteral(ip)) {
+      throw new SsrfBlocked(`URL host "${host}" resolves to a private/reserved address and cannot be reached from MVP.`)
+    }
+  }
+  return url
+}
+
 const METADATA_HOSTS = new Set([
   'metadata.google.internal',
   'metadata.azure.com',

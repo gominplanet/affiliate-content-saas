@@ -110,12 +110,21 @@ export async function POST(req: NextRequest) {
     return json({ ok: false, error: 'This signup form is misconfigured or the signature has expired. Try refreshing the page.' }, { status: 400 })
   }
   if (hmac.valid === null) {
-    // No sig / no proxy_secret / no wordpress_sites row. Old plugin
-    // version, or pre-multi-site install. ACCEPT but log so we can track
-    // which sites still need to update. Once 100% of installs are on
-    // v1.0.27+ this branch should become a hard reject.
+    // No sig / no proxy_secret / no wordpress_sites row. Old plugin version,
+    // or pre-multi-site install. Without a signature there's nothing binding
+    // this request to the real WP site, so it's the abuse path (mailbombing a
+    // creator's Resend sender). Two protections:
+    //   - Hard reject when NEWSLETTER_REQUIRE_HMAC=true — flip this on once
+    //     every install is on the signed plugin (it fully closes the hole).
+    //   - Until then, accept-but-warn, and enforce a per-creator hourly signup
+    //     cap below (IP-rotation-proof) so an unsigned flood is bounded.
+    if (process.env.NEWSLETTER_REQUIRE_HMAC === 'true') {
+      console.warn('[newsletter-subscribe] unsigned request rejected (NEWSLETTER_REQUIRE_HMAC)', { creatorUserId, reason: hmac.reason })
+      return json({ ok: false, error: 'This signup form needs to be updated. Please contact the site owner.' }, { status: 400 })
+    }
     console.warn('[newsletter-subscribe] accept-but-warn (HMAC unavailable)', { creatorUserId, reason: hmac.reason })
   }
+  const unsignedRequest = hmac.valid === null
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: settings } = await admin
     .from('newsletter_settings')
@@ -192,6 +201,25 @@ export async function POST(req: NextRequest) {
       .gte('created_at', oneHourAgo)
     if ((recent ?? 0) >= 5) {
       return json({ ok: false, error: 'Too many signups from this network. Try again in a bit.' }, { status: 429 })
+    }
+  }
+
+  // ── 4.6. Per-creator hourly cap on UNSIGNED signups ───────────────────────
+  // The per-IP limit above is defeated by IP rotation. For unsigned requests
+  // (no HMAC binding them to the real WP site — the mailbomb path), also bound
+  // how many new signups a single creator's list can take in an hour, so a
+  // rotating flood can't fire unlimited confirmation emails from their sender.
+  // Well above any legitimate form's volume; signed requests skip this.
+  if (unsignedRequest) {
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()
+    const { count: creatorRecent } = await admin
+      .from('newsletter_subscribers')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', creatorUserId)
+      .gte('created_at', oneHourAgo)
+    if ((creatorRecent ?? 0) >= 30) {
+      console.warn('[newsletter-subscribe] unsigned per-creator hourly cap hit', { creatorUserId })
+      return json({ ok: false, error: 'This newsletter is getting a lot of signups right now. Please try again shortly.' }, { status: 429 })
     }
   }
 
