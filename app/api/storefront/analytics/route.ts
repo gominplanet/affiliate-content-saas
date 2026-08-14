@@ -208,6 +208,21 @@ export async function GET(request: NextRequest) {
       }
     })
 
+    // Time-series: totals per period (oldest→newest, last 12) for the trend
+    // chart. Grouped from the same period-type rows.
+    const byPeriod = new Map<string, Row[]>()
+    for (const r of ofType) {
+      const arr = byPeriod.get(r.period_start)
+      if (arr) arr.push(r); else byPeriod.set(r.period_start, [r])
+    }
+    const series = [...byPeriod.entries()]
+      .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+      .slice(-12)
+      .map(([start, rows]) => {
+        const t = totalsFor(rows)
+        return { start, earnings: t.earnings, revenue: t.revenue, units: t.units, clicks: t.clicks, conversion: t.conversion, epc: t.epc }
+      })
+
     const end = latestRows[0]?.period_end ?? null
     return NextResponse.json({
       period: wanted,
@@ -217,6 +232,7 @@ export async function GET(request: NextRequest) {
       previous: prevStart ? { start: prevStart } : null,
       totals,
       totalsPrev,
+      series,
       products: enriched,
     })
   } catch (e) {

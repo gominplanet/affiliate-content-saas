@@ -19,6 +19,7 @@ import {
 import PageHero from '@/components/layout/PageHero'
 import { useEffectiveTier } from '@/lib/useEffectiveTier'
 import { acceptCampaignViaScout } from '@/lib/accept-campaign'
+import StorefrontCharts from '@/components/amazon/StorefrontCharts'
 
 const ACCENT = '#C2410C'
 const GREEN = '#15803d'
@@ -36,12 +37,14 @@ interface Product {
   rating: number | null; reviewCount: number | null; discountPct: number | null
   campaign: Campaign | null
 }
+interface SeriesPoint { start: string; earnings: number; revenue: number; units: number; clicks: number; conversion: number; epc: number }
 interface Analytics {
   period: 'weekly' | 'monthly'; hasData: boolean
   available: { weekly: number; monthly: number }
   latest: { start: string; end: string | null } | null
   previous: { start: string } | null
   totals: Totals | null; totalsPrev: Totals | null; products: Product[]
+  series?: SeriesPoint[]
 }
 
 // ── AI next-moves (unchanged endpoint) ───────────────────────────────────────
@@ -350,6 +353,9 @@ export default function AmazonBrainstorm() {
               </div>
             ))}
           </div>
+
+          {/* Charts & visuals — collapsible so the table stays the default view */}
+          <StorefrontCharts period={period} series={data.series ?? []} products={products} />
 
           {/* Per-product table */}
           <div className="rounded-2xl border overflow-hidden mb-8" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
