@@ -24,7 +24,7 @@ const RED = '#b91c1c'
 interface SeriesPoint { start: string; earnings: number; revenue: number; units: number; clicks: number; conversion: number; epc: number }
 interface Product {
   asin: string; title: string; earnings: number; revenue: number; units: number; clicks: number
-  conversion: number; epc: number; earningsDelta: number | null
+  conversion: number; epc: number; earningsDelta: number | null; category?: string | null
 }
 interface Props {
   period: 'weekly' | 'monthly'
@@ -221,40 +221,61 @@ function Movers({ products }: { products: Product[] }) {
   )
 }
 
-// ── 6. Revenue mix (ranked share, single-hue ramp + Other) ───────────────────
-function RevenueMix({ products }: { products: Product[] }) {
-  const rows = [...products].filter(p => p.revenue > 0).sort((a, b) => b.revenue - a.revenue)
-  const total = rows.reduce((s, r) => s + r.revenue, 0)
-  if (total <= 0) return <Empty msg="No revenue to break down yet." />
-  const top = rows.slice(0, 6)
-  const otherVal = rows.slice(6).reduce((s, r) => s + r.revenue, 0)
-  const segs = [...top.map(r => ({ label: r.title, val: r.revenue })), ...(otherVal > 0 ? [{ label: 'Other', val: otherVal }] : [])]
+// ── Ranked-share bar + legend (single-hue ramp + neutral "Other") ────────────
+function ShareBar({ segs, otherLabel = 'Other', emptyMsg }: { segs: { label: string; val: number }[]; otherLabel?: string; emptyMsg: string }) {
+  const total = segs.reduce((s, r) => s + r.val, 0)
+  if (total <= 0) return <Empty msg={emptyMsg} />
+  const isNeutral = (label: string) => label === otherLabel || label === 'Uncategorized'
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex w-full h-7 rounded-lg overflow-hidden" style={{ gap: '2px' }}>
-        {segs.map((s, i) => {
-          const isOther = s.label === 'Other'
-          const opacity = isOther ? 0.25 : 1 - (i * 0.12)
-          return (
-            <div key={i} title={`${s.label}: ${usd(s.val)} (${((s.val / total) * 100).toFixed(0)}%)`}
-              style={{ width: `${(s.val / total) * 100}%`, background: isOther ? 'var(--text-soft)' : ACCENT, opacity }} />
-          )
-        })}
+        {segs.map((s, i) => (
+          <div key={i} title={`${s.label}: ${usd(s.val)} (${((s.val / total) * 100).toFixed(0)}%)`}
+            style={{ width: `${(s.val / total) * 100}%`, background: isNeutral(s.label) ? 'var(--text-soft)' : ACCENT, opacity: isNeutral(s.label) ? 0.25 : 1 - (i * 0.12) }} />
+        ))}
       </div>
       <ul className="grid grid-cols-2 gap-x-4 gap-y-1 mt-1">
-        {segs.map((s, i) => {
-          const isOther = s.label === 'Other'
-          return (
-            <li key={i} className="flex items-center gap-1.5 text-[11.5px] min-w-0" style={{ color: 'var(--text-soft)' }}>
-              <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: isOther ? 'var(--text-soft)' : ACCENT, opacity: isOther ? 0.25 : 1 - (i * 0.12) }} />
-              <span className="truncate" style={{ color: 'var(--text)' }}>{short(s.label, 24)}</span>
-              <span className="ml-auto flex-shrink-0">{((s.val / total) * 100).toFixed(0)}%</span>
-            </li>
-          )
-        })}
+        {segs.map((s, i) => (
+          <li key={i} className="flex items-center gap-1.5 text-[11.5px] min-w-0" style={{ color: 'var(--text-soft)' }}>
+            <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: isNeutral(s.label) ? 'var(--text-soft)' : ACCENT, opacity: isNeutral(s.label) ? 0.25 : 1 - (i * 0.12) }} />
+            <span className="truncate" style={{ color: 'var(--text)' }}>{short(s.label, 24)}</span>
+            <span className="ml-auto flex-shrink-0">{((s.val / total) * 100).toFixed(0)}%</span>
+          </li>
+        ))}
       </ul>
     </div>
   )
+}
+
+// ── 6. Revenue mix by product (ranked share) ─────────────────────────────────
+function RevenueMix({ products }: { products: Product[] }) {
+  const rows = [...products].filter(p => p.revenue > 0).sort((a, b) => b.revenue - a.revenue)
+  const top = rows.slice(0, 6)
+  const otherVal = rows.slice(6).reduce((s, r) => s + r.revenue, 0)
+  const segs = [...top.map(r => ({ label: r.title, val: r.revenue })), ...(otherVal > 0 ? [{ label: 'Other', val: otherVal }] : [])]
+  return <ShareBar segs={segs} emptyMsg="No revenue to break down yet." />
+}
+
+// ── 7. Revenue by category (ranked share) ────────────────────────────────────
+function RevenueByCategory({ products }: { products: Product[] }) {
+  const byCat = new Map<string, number>()
+  for (const p of products) {
+    if (p.revenue <= 0) continue
+    const cat = (p.category && p.category.trim()) || 'Uncategorized'
+    byCat.set(cat, (byCat.get(cat) ?? 0) + p.revenue)
+  }
+  const enriched = [...byCat.entries()].filter(([c]) => c !== 'Uncategorized').length
+  if (enriched === 0) return <Empty msg="Category data is still syncing from Keepa — this fills in over the next few loads as your products get categorized." />
+  const rows = [...byCat.entries()].map(([label, val]) => ({ label, val })).sort((a, b) => b.val - a.val)
+  const top = rows.filter(r => r.label !== 'Uncategorized').slice(0, 6)
+  const rest = rows.filter(r => r.label !== 'Uncategorized').slice(6).reduce((s, r) => s + r.val, 0)
+  const uncat = byCat.get('Uncategorized') ?? 0
+  const segs = [
+    ...top,
+    ...(rest > 0 ? [{ label: 'Other', val: rest }] : []),
+    ...(uncat > 0 ? [{ label: 'Uncategorized', val: uncat }] : []),
+  ]
+  return <ShareBar segs={segs} emptyMsg="No revenue to break down yet." />
 }
 
 export default function StorefrontCharts({ period, series, products }: Props) {
@@ -270,6 +291,20 @@ export default function StorefrontCharts({ period, series, products }: Props) {
         <span className="text-[12px]" style={{ color: ACCENT }}>{open ? 'Hide' : 'Show'}</span>
       </button>
       {open && (
+        <>
+        {/* How to read these — plain-English guide so the charts are useful, not
+            decorative. */}
+        <div className="rounded-2xl border p-4 sm:p-5 mb-3" style={{ borderColor: 'rgba(234,88,12,0.25)', background: 'linear-gradient(180deg, rgba(234,88,12,0.05), transparent)' }}>
+          <p className="font-bold text-[13.5px] mb-2" style={{ color: 'var(--text)' }}>How to read these</p>
+          <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 text-[12.5px]" style={{ color: 'var(--text-soft)' }}>
+            <li><b style={{ color: 'var(--text)' }}>Earnings trend</b> — your earnings per period over time. Line going up = you're growing. The single "am I winning?" chart.</li>
+            <li><b style={{ color: 'var(--text)' }}>Top earners</b> — the products that actually pay you, biggest first. Post more of what's at the top.</li>
+            <li><b style={{ color: 'var(--text)' }}>Conversion vs clicks</b> — each bubble is a product (size = earnings). Far right + low = lots of clicks but few buy → change the angle or creative. High up = converts well; if it's also small, push more traffic to it.</li>
+            <li><b style={{ color: 'var(--text)' }}>Earnings concentration</b> — the line shows what % of earnings your top few products make. A line that shoots up fast = you're reliant on 2–3 winners (risky if one dies).</li>
+            <li><b style={{ color: 'var(--text)' }}>Biggest movers</b> — what changed most vs last period. Green = grew, red = dropped. Chase the greens, check why the reds fell.</li>
+            <li><b style={{ color: 'var(--text)' }}>Revenue mix / by category</b> — where your sales volume comes from, by product and by category. Shows if you're a one-category shop or spread out.</li>
+          </ul>
+        </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           <ChartCard wide title="Earnings trend" hint="Your earnings per period. The headline: are you growing?">
             <EarningsTrend period={period} series={series} />
@@ -286,10 +321,14 @@ export default function StorefrontCharts({ period, series, products }: Props) {
           <ChartCard title="Biggest movers" hint="Largest earnings changes vs the prior period.">
             <Movers products={products} />
           </ChartCard>
-          <ChartCard title="Revenue mix" hint="Where your revenue comes from.">
+          <ChartCard title="Revenue mix" hint="Where your revenue comes from, by product.">
             <RevenueMix products={products} />
           </ChartCard>
+          <ChartCard title="Revenue by category" hint="Which categories drive your sales — one-category shop, or spread out?">
+            <RevenueByCategory products={products} />
+          </ChartCard>
         </div>
+        </>
       )}
     </div>
   )

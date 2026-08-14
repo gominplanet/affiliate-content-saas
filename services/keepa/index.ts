@@ -393,12 +393,15 @@ export interface KeepaProductCard {
   /** Number of brand/carousel (non-community) videos on the listing. */
   videoCount: number
   hasCarouselVideo: boolean | null
+  /** Coarse Amazon product group (e.g. "Kitchen", "Health & Household") for
+   *  revenue-by-category grouping. Null when Keepa doesn't return one. */
+  category: string | null
   /** Keepa token balance from this response, for the cron to pace on. */
   tokensLeft: number | null
 }
 
 export async function fetchKeepaProductCard(asin: string, domainId = KEEPA_DOMAIN_US): Promise<KeepaProductCard> {
-  const empty: KeepaProductCard = { imageUrl: null, priceNowCents: null, priceWasCents: null, discountPct: null, rating: null, reviewCount: null, monthlySold: null, videoCount: 0, hasCarouselVideo: null, tokensLeft: null }
+  const empty: KeepaProductCard = { imageUrl: null, priceNowCents: null, priceWasCents: null, discountPct: null, rating: null, reviewCount: null, monthlySold: null, videoCount: 0, hasCarouselVideo: null, category: null, tokensLeft: null }
   const key = process.env.KEEPA_API_KEY
   if (!key || !/^[A-Za-z0-9]{10}$/.test(asin)) return empty
   // stats=90 (current + 90-day avg for a discount read), rating=1 (current stars
@@ -430,7 +433,14 @@ export async function fetchKeepaProductCard(asin: string, domainId = KEEPA_DOMAI
     const ms = Number(p.monthlySold)
     const monthlySold = Number.isFinite(ms) && ms > 0 ? ms : null
     const { count, has } = countCarouselVideos(p.videos)
-    return { imageUrl: keepaProductImageUrl(p.images), priceNowCents, priceWasCents, discountPct, rating, reviewCount, monthlySold, videoCount: count, hasCarouselVideo: has, tokensLeft }
+    // Coarse category for revenue grouping: prefer Amazon's productGroup (a
+    // single readable string), fall back to the root of the category tree.
+    const rootCat = Array.isArray(p.categoryTree) && p.categoryTree.length
+      ? String((p.categoryTree[0] as { name?: unknown } | undefined)?.name || '') : ''
+    const category = (typeof p.productGroup === 'string' && p.productGroup.trim())
+      ? p.productGroup.trim().slice(0, 80)
+      : (rootCat.trim() ? rootCat.trim().slice(0, 80) : null)
+    return { imageUrl: keepaProductImageUrl(p.images), priceNowCents, priceWasCents, discountPct, rating, reviewCount, monthlySold, videoCount: count, hasCarouselVideo: has, category, tokensLeft }
   } catch {
     return empty
   }
