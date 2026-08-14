@@ -35,6 +35,7 @@ interface Product {
   // Garnish (deal_radar_cache + campaigns)
   image: string | null; priceNow: number | null; monthlySold: number | null
   rating: number | null; reviewCount: number | null; discountPct: number | null
+  category?: string | null
   campaign: Campaign | null
 }
 interface SeriesPoint { start: string; earnings: number; revenue: number; units: number; clicks: number; conversion: number; epc: number }

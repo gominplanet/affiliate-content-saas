@@ -122,7 +122,7 @@ export async function GET(request: NextRequest) {
     // Connections campaign for that ASIN — so the row can offer the right next
     // action (chase the brand deal, or just post).
     const asins = products.map(p => p.asin)
-    const keepa = new Map<string, { image_url: string | null; price_now_cents: number | null; monthly_sold: number | null; rating: number | null; review_count: number | null; discount_pct: number | null }>()
+    const keepa = new Map<string, { image_url: string | null; price_now_cents: number | null; monthly_sold: number | null; rating: number | null; review_count: number | null; discount_pct: number | null; category: string | null }>()
     const campByAsin = new Map<string, { name: string | null; status: string | null; campaignId: string | null; detailsUrl: string | null; brand: string | null; accepted: boolean }>()
     if (asins.length) {
       for (let i = 0; i < asins.length; i += 300) {
@@ -130,17 +130,18 @@ export async function GET(request: NextRequest) {
         // Our own storefront card cache first, then opportunistically the global
         // Deal Radar cache (a product the user also scanned there).
         const [{ data: cards }, { data: dr }] = await Promise.all([
-          sb.from('storefront_product_cards').select('asin,image_url,price_now_cents,monthly_sold,rating,review_count,discount_pct').in('asin', chunk),
+          sb.from('storefront_product_cards').select('asin,image_url,price_now_cents,monthly_sold,rating,review_count,discount_pct,category').in('asin', chunk),
           sb.from('deal_radar_cache').select('asin,image_url,price_now_cents,monthly_sold,rating,review_count,discount_pct').in('asin', chunk),
         ])
-        for (const r of (dr ?? []) as Array<{ asin: string; image_url: string | null; price_now_cents: number | null; monthly_sold: number | null; rating: number | null; review_count: number | null; discount_pct: number | null }>) keepa.set(r.asin, r)
-        for (const r of (cards ?? []) as Array<{ asin: string; image_url: string | null; price_now_cents: number | null; monthly_sold: number | null; rating: number | null; review_count: number | null; discount_pct: number | null }>) keepa.set(r.asin, r) // prefer our fresher card
+        for (const r of (dr ?? []) as Array<{ asin: string; image_url: string | null; price_now_cents: number | null; monthly_sold: number | null; rating: number | null; review_count: number | null; discount_pct: number | null }>) keepa.set(r.asin, { ...r, category: null })
+        for (const r of (cards ?? []) as Array<{ asin: string; image_url: string | null; price_now_cents: number | null; monthly_sold: number | null; rating: number | null; review_count: number | null; discount_pct: number | null; category: string | null }>) keepa.set(r.asin, r) // prefer our fresher card
       }
 
-      // Enrich anything still missing via Keepa (one /product call each, capped),
-      // and cache it in storefront_product_cards so later loads are instant. This
-      // is the first-load cost; after that it's a free read.
-      const missing = asins.filter(a => !keepa.has(a)).slice(0, 30)
+      // Enrich via Keepa (one /product call each, capped) anything MISSING, plus
+      // cached rows that predate the category column (so category backfills over
+      // a few loads). Cached in storefront_product_cards so later loads are free.
+      const needsCategory = [...keepa.entries()].filter(([, v]) => v.category == null).map(([a]) => a)
+      const missing = [...new Set([...asins.filter(a => !keepa.has(a)), ...needsCategory])].slice(0, 30)
       if (keepaConfigured() && missing.length) {
         const titleByAsin = new Map(products.map(p => [p.asin, p.title]))
         const CONC = 6
@@ -153,7 +154,7 @@ export async function GET(request: NextRequest) {
           batch.forEach((a, idx) => {
             const c = cards[idx]
             if (!c) return
-            keepa.set(a, { image_url: c.imageUrl, price_now_cents: c.priceNowCents, monthly_sold: c.monthlySold, rating: c.rating, review_count: c.reviewCount, discount_pct: c.discountPct })
+            keepa.set(a, { image_url: c.imageUrl, price_now_cents: c.priceNowCents, monthly_sold: c.monthlySold, rating: c.rating, review_count: c.reviewCount, discount_pct: c.discountPct, category: c.category })
             upserts.push({
               asin: a,
               title: (titleByAsin.get(a) || a).slice(0, 300),
@@ -164,6 +165,7 @@ export async function GET(request: NextRequest) {
               rating: c.rating,
               review_count: c.reviewCount,
               monthly_sold: c.monthlySold,
+              category: c.category,
               refreshed_at: nowIso,
             })
           })
@@ -204,6 +206,7 @@ export async function GET(request: NextRequest) {
         rating: e?.rating != null ? Number(e.rating) : null,
         reviewCount: e?.review_count ?? null,
         discountPct: e?.discount_pct != null ? Number(e.discount_pct) : null,
+        category: e?.category ?? null,
         campaign: campByAsin.get(p.asin) ?? null,
       }
     })
