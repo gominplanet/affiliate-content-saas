@@ -38,7 +38,7 @@ import { effectiveTier } from '@/lib/view-as'
 import { metaEnabled } from '@/lib/feature-flags'
 import {
   Youtube, Wand2, ExternalLink, CheckCircle, AlertCircle,
-  RefreshCw, Loader2, ChevronRight, Sparkles, X, Facebook, Pin, MessageCircle, Save, Upload, Search, Calendar, Handshake, ImagePlus, Link2, Tags, Wrench, Shuffle,
+  RefreshCw, Loader2, ChevronRight, Sparkles, X, Facebook, Pin, MessageCircle, Save, Upload, Search, Calendar, Handshake, ImagePlus, Link2, Tags, Wrench, Shuffle, Pencil,
 } from 'lucide-react'
 import type { PinPreviewData } from '@/components/PinterestPreviewModal'
 
@@ -906,6 +906,7 @@ const VideoCard = memo(function VideoCardImpl({
   // "Share with brand" modal — assembles every published link for this post
   // into a ready-to-send recap message the creator sends the brand.
   const [shareBrandOpen, setShareBrandOpen] = useState(false)
+  const [blogEditOpen, setBlogEditOpen] = useState(false)
   // Per-post Facebook Page choice (Pro multi-account). Defaults to the
   // user's default page. The picker renders whenever the user has at least
   // one connected Page (Pro loads the list) so it's discoverable/testable —
@@ -1769,7 +1770,14 @@ const VideoCard = memo(function VideoCardImpl({
               page for Creator Connections). Shown for any post; sits under the
               social pills as the user requested. */}
           {post?.postId && (
-            <div className="mt-1">
+            <div className="mt-1 flex items-center gap-2 flex-wrap">
+              <button
+                onClick={() => setBlogEditOpen(true)}
+                title="Edit this post's title and body inside MVP (saves to your site)"
+                className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-lg whitespace-nowrap border border-[var(--border-2)] bg-[var(--surface)] text-[var(--text)] hover:bg-[var(--surface-2)] transition-colors"
+              >
+                <Pencil size={12} /> Edit post
+              </button>
               <button
                 onClick={() => setShareBrandOpen(true)}
                 title="Send the brand a recap of everywhere this content is live"
@@ -1781,6 +1789,9 @@ const VideoCard = memo(function VideoCardImpl({
           )}
           {shareBrandOpen && post?.postId && (
             <ShareWithBrandModal postId={post.postId} wpUrl={post.url} onClose={() => setShareBrandOpen(false)} />
+          )}
+          {blogEditOpen && post?.postId && (
+            <BlogEditModal postId={post.postId} onClose={() => setBlogEditOpen(false)} />
           )}
 
           {/* Social preview/edit modal — shown when previewBeforePublish is on
