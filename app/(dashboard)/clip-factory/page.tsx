@@ -886,10 +886,20 @@ export default function ClipFactoryPage() {
 
             {/* Position + duration */}
             <div className="flex flex-wrap gap-4">
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-[#3a3a3c] dark:text-[#d2d2d7] mb-2">Position {overlayType === 'sticker' && <span className="normal-case font-normal text-[#86868b]">· or drag on the preview</span>}</p>
-                <div className="flex gap-2">{POSITIONS.map(p => <button key={p.key} onClick={() => { setPosition(p.key); setBadgePos({ x: (1 - badgeWidthPct) / 2, y: p.key === 'upper-left' ? 0.10 : 0.66 }) }} className={`rounded-lg border px-3 py-1.5 text-[12px] font-semibold transition-colors ${position === p.key ? PILL_SEL : PILL_IDLE}`} title={p.desc}>{p.label}</button>)}</div>
-              </div>
+              {overlayType === 'sticker' ? (
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-[#3a3a3c] dark:text-[#d2d2d7] mb-2">Position</p>
+                  <div className="inline-flex items-start gap-2 rounded-lg border border-[#7C3AED]/25 bg-[#7C3AED]/5 px-3 py-2 text-[11px] text-[#4b4b4f] dark:text-[#d2d2d7] max-w-[240px]">
+                    <Wand2 size={13} className="mt-0.5 shrink-0 text-[#7C3AED]" />
+                    <span><span className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Drag the badge</span> on the preview to place it anywhere, and use the <span className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Size</span> slider to resize. It burns exactly where you leave it.</span>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-[#3a3a3c] dark:text-[#d2d2d7] mb-2">Position</p>
+                  <div className="flex gap-2">{POSITIONS.map(p => <button key={p.key} onClick={() => setPosition(p.key)} className={`rounded-lg border px-3 py-1.5 text-[12px] font-semibold transition-colors ${position === p.key ? PILL_SEL : PILL_IDLE}`} title={p.desc}>{p.label}</button>)}</div>
+                </div>
+              )}
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-[#3a3a3c] dark:text-[#d2d2d7] mb-2">How long it shows</p>
                 <div className="flex gap-2">{DURATIONS.map(d => <button key={d.key} onClick={() => setBurnDuration(d.key)} className={`rounded-lg border px-3 py-1.5 text-[12px] font-semibold transition-colors ${burnDuration === d.key ? PILL_SEL : PILL_IDLE}`}>{d.label}</button>)}</div>
@@ -940,7 +950,7 @@ export default function ClipFactoryPage() {
                   <span className="text-[10px] font-semibold uppercase tracking-wide text-[#86868b]">Size</span>
                   <input type="range" min={0.25} max={0.9} step={0.01} value={badgeWidthPct} onChange={e => setBadgeWidthPct(Number(e.target.value))} className="flex-1 accent-[#7C3AED]" />
                 </div>
-                <p className="text-[11px] text-[#86868b] text-center mt-0.5">Drag the badge to place it. It burns exactly where you leave it.</p>
+                <p className="text-[11px] text-[#86868b] text-center mt-0.5">Drag the badge to move it.</p>
               </div>
             )}
             <p className="text-[11px] text-[#86868b] text-center truncate max-w-full">{clip.title}</p>
