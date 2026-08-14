@@ -337,6 +337,10 @@ export async function overlayCaptionOnVideo(
     stickerUrl?: string
     /** Sticker width as a fraction of video width (0–1, default 0.85). */
     stickerWidthPct?: number
+    /** Free placement: the overlay's TOP-LEFT as a fraction of the 1080×1920
+     *  frame (0–1). When set, it wins over `position` and the width is used
+     *  as-is (no extra down-scale) so the burn matches the drag preview. */
+    placement?: { xPct: number; yPct: number }
     /** How long (seconds from the start) the overlay stays on screen. Omit / 0
      *  → the whole video. Cloudinary time-boxes the overlay via so_0,eo_<n>. */
     stickerDurationSec?: number
@@ -367,17 +371,20 @@ export async function overlayCaptionOnVideo(
     // The overlay layer: a fetched PNG (CTA sticker) when stickerUrl is given,
     // else the styled text caption. Cloudinary needs the remote URL passed as
     // `{ overlay: { url } }`, which it encodes to l_fetch:<base64url>.
+    // Free placement (drag preview) → anchor the overlay's top-left at the given
+    // fraction of the 1080×1920 frame; the client already sized the badge, so use
+    // its width as-is. Otherwise fall back to the preset gravity + the 0.75
+    // "badge, not banner" down-scale.
+    const free = opts?.placement
     const overlayLayer = opts?.stickerUrl
       ? {
           overlay: { url: opts.stickerUrl },
-          // Global 0.75 down-scale — every CTA box burns at 75% of its nominal
-          // width so it sits as a badge, not a banner across the frame.
-          width: (opts?.stickerWidthPct ?? 0.85) * 0.75,
+          width: (opts?.stickerWidthPct ?? 0.85) * (free ? 1 : 0.75),
           crop: 'scale',
           flags: 'relative', // size relative to the base video width
-          gravity,
-          ...(x ? { x } : {}),
-          y,
+          ...(free
+            ? { gravity: 'north_west', x: Math.round(Math.min(1, Math.max(0, free.xPct)) * 1080), y: Math.round(Math.min(1, Math.max(0, free.yPct)) * 1920) }
+            : { gravity, ...(x ? { x } : {}), y }),
           ...timing,
         }
       : {

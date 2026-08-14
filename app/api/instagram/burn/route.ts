@@ -51,6 +51,7 @@ export async function POST(request: Request) {
       videoUrl?: string; caption?: string; position?: string; style?: string
       product?: string; productName?: string; stickerId?: string; customStickerUrl?: string
       stickerDurationSec?: number
+      placement?: { xPct?: number; yPct?: number }; stickerWidthPct?: number
     }
     // How long the CTA stays on screen: 5 / 10 / 30s, or 0 = the whole video.
     // Clamp to the allowed set so a bad value can't produce a weird transform.
@@ -75,11 +76,20 @@ export async function POST(request: Request) {
     // links (which we never scrape) and as a fallback when a store URL won't parse.
     const productName = (body.productName || '').trim()
 
+    // Free placement + size from the drag preview (WYSIWYG). Both clamped so a
+    // bad client value can't produce a broken transform.
+    const px = Number(body.placement?.xPct), py = Number(body.placement?.yPct)
+    const placement = Number.isFinite(px) && Number.isFinite(py)
+      ? { xPct: Math.min(1, Math.max(0, px)), yPct: Math.min(1, Math.max(0, py)) }
+      : undefined
+    const cw = Number(body.stickerWidthPct)
+    const clientWidthPct = Number.isFinite(cw) && cw >= 0.1 && cw <= 0.95 ? cw : undefined
+
     // ── 1. Burn the overlay into the video (1080×1920) ────────────────────────
     // A CTA sticker (PNG) takes precedence over the text caption when picked.
     const stickerOverlayUrl = customOk ? customStickerUrl : sticker ? ctaStickerUrl(sticker.file) : null
     const burned = await overlayCaptionOnVideo(videoUrl, overlayText, stickerOverlayUrl
-      ? { position, stickerUrl: stickerOverlayUrl, stickerWidthPct: customOk ? 0.55 : sticker?.widthPct, stickerDurationSec }
+      ? { position, placement, stickerUrl: stickerOverlayUrl, stickerWidthPct: clientWidthPct ?? (customOk ? 0.55 : sticker?.widthPct), stickerDurationSec }
       : { position, style, stickerDurationSec })
     if (!burned?.url) {
       return NextResponse.json({ error: `Could not burn the caption: ${getLastOverlayError() || 'unknown error'}` }, { status: 500 })

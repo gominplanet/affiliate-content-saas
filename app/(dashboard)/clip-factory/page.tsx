@@ -105,6 +105,48 @@ function PostPill({ posted, label, color, icon, onClick, busy, disabled }: {
   )
 }
 
+// The video preview with the selected CTA badge overlaid and draggable. Position
+// is a top-left fraction of the frame; width is a fraction of frame width — the
+// exact values sent to the burn, so what you drag is what you get.
+function BadgeStage({ videoUrl, badgeUrl, pos, widthPct, onChange }: {
+  videoUrl: string; badgeUrl: string | null
+  pos: { x: number; y: number }; widthPct: number
+  onChange: (p: { x: number; y: number }) => void
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  const grab = useRef<{ dx: number; dy: number } | null>(null)
+  const onDown = (e: React.PointerEvent) => {
+    if (!ref.current) return
+    e.preventDefault(); e.stopPropagation()
+    const r = ref.current.getBoundingClientRect()
+    grab.current = { dx: e.clientX - (r.left + pos.x * r.width), dy: e.clientY - (r.top + pos.y * r.height) }
+    ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+  }
+  const onMove = (e: React.PointerEvent) => {
+    if (!grab.current || !ref.current) return
+    const r = ref.current.getBoundingClientRect()
+    const x = Math.min(1 - widthPct, Math.max(0, (e.clientX - r.left - grab.current.dx) / r.width))
+    const y = Math.min(0.98, Math.max(0, (e.clientY - r.top - grab.current.dy) / r.height))
+    onChange({ x, y })
+  }
+  const onUp = () => { grab.current = null }
+  return (
+    <div ref={ref} className="relative rounded-xl overflow-hidden bg-black aspect-[9/16] w-full max-w-[260px] select-none">
+      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+      <video src={videoUrl} controls playsInline className="w-full h-full object-cover" />
+      {badgeUrl && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={badgeUrl} alt="" draggable={false}
+          onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}
+          className="absolute touch-none cursor-move drop-shadow-lg"
+          style={{ left: `${pos.x * 100}%`, top: `${pos.y * 100}%`, width: `${widthPct * 100}%` }}
+        />
+      )}
+    </div>
+  )
+}
+
 export default function ClipFactoryPage() {
   const supabase = useMemo(() => createBrowserClient(), [])
   const [tier, setTier] = useState<Tier | string>('trial')
@@ -162,6 +204,10 @@ export default function ClipFactoryPage() {
   const [style, setStyle] = useState<typeof STYLES[number]['key']>('white-pill')
   const [position, setPosition] = useState<typeof POSITIONS[number]['key']>('lower-left')
   const [burnDuration, setBurnDuration] = useState<number>(10)
+  // Free placement of the badge on the preview: top-left fraction + width
+  // fraction of the frame. What you drag is exactly what gets burned.
+  const [badgePos, setBadgePos] = useState<{ x: number; y: number }>({ x: 0.19, y: 0.66 })
+  const [badgeWidthPct, setBadgeWidthPct] = useState<number>(0.42)
   const [product, setProduct] = useState('')
   const [productName, setProductName] = useState('')
   const [burning, setBurning] = useState(false)
@@ -402,6 +448,14 @@ export default function ClipFactoryPage() {
     const s = CTA_STICKERS.find(x => x.id === stickerId)
     return s ? { url: ctaStickerUrl(s.file), label: s.label } : null
   }, [customStickerUrl, myStickers, stickerId])
+  // When the selected badge changes, seed a sensible on-video size from its
+  // registry width (0.75 = the old "badge, not banner" scale). The user can
+  // still resize + drag from there.
+  useEffect(() => {
+    const s = CTA_STICKERS.find(x => x.id === stickerId)
+    const base = customStickerUrl ? 0.55 : (s?.widthPct ?? 0.55)
+    setBadgeWidthPct(Math.min(0.9, Math.max(0.25, base * 0.75)))
+  }, [stickerId, customStickerUrl])
 
   const runBurn = useCallback(async () => {
     if (!clip) return
@@ -419,6 +473,9 @@ export default function ClipFactoryPage() {
           stickerId: sticker?.id,
           customStickerUrl: useCustom ? customStickerUrl : undefined,
           position,
+          // Free placement + size from the drag preview (sticker overlays only).
+          placement: overlayType === 'sticker' ? { xPct: badgePos.x, yPct: badgePos.y } : undefined,
+          stickerWidthPct: overlayType === 'sticker' ? badgeWidthPct : undefined,
           product: product.trim() || undefined,
           productName: productName.trim() || undefined,
           stickerDurationSec: burnDuration,
@@ -436,7 +493,7 @@ export default function ClipFactoryPage() {
       toast.success('Overlay burned')
     } catch (e) { toast.error(errText(e)) }
     finally { setBurning(false) }
-  }, [clip, overlayType, stickerId, customStickerUrl, caption, style, position, product, productName, burnDuration, fallbackCaption])
+  }, [clip, overlayType, stickerId, customStickerUrl, caption, style, position, badgePos, badgeWidthPct, product, productName, burnDuration, fallbackCaption])
 
   // Skip Enhance: publish the raw clip, but keep the clip's AI caption (don't
   // wipe it to empty — that's what left Publish caption-less).
@@ -830,8 +887,8 @@ export default function ClipFactoryPage() {
             {/* Position + duration */}
             <div className="flex flex-wrap gap-4">
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-[#3a3a3c] dark:text-[#d2d2d7] mb-2">Position</p>
-                <div className="flex gap-2">{POSITIONS.map(p => <button key={p.key} onClick={() => setPosition(p.key)} className={`rounded-lg border px-3 py-1.5 text-[12px] font-semibold transition-colors ${position === p.key ? PILL_SEL : PILL_IDLE}`} title={p.desc}>{p.label}</button>)}</div>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-[#3a3a3c] dark:text-[#d2d2d7] mb-2">Position {overlayType === 'sticker' && <span className="normal-case font-normal text-[#86868b]">· or drag on the preview</span>}</p>
+                <div className="flex gap-2">{POSITIONS.map(p => <button key={p.key} onClick={() => { setPosition(p.key); setBadgePos({ x: (1 - badgeWidthPct) / 2, y: p.key === 'upper-left' ? 0.10 : 0.66 }) }} className={`rounded-lg border px-3 py-1.5 text-[12px] font-semibold transition-colors ${position === p.key ? PILL_SEL : PILL_IDLE}`} title={p.desc}>{p.label}</button>)}</div>
               </div>
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-[#3a3a3c] dark:text-[#d2d2d7] mb-2">How long it shows</p>
@@ -868,12 +925,24 @@ export default function ClipFactoryPage() {
             </div>
           </div>
 
-          {/* Preview */}
+          {/* Preview — badge overlaid on the clip, drag to place it */}
           <div className="flex flex-col items-center gap-2">
-            <div className="rounded-xl overflow-hidden bg-black aspect-[9/16] w-full max-w-[220px]">
-              {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-              <video src={clip.url} controls playsInline className="w-full h-full" />
-            </div>
+            <BadgeStage
+              videoUrl={clip.url}
+              badgeUrl={overlayType === 'sticker' ? (selectedBox?.url ?? null) : null}
+              pos={badgePos}
+              widthPct={badgeWidthPct}
+              onChange={setBadgePos}
+            />
+            {overlayType === 'sticker' && selectedBox && (
+              <div className="w-full max-w-[260px]">
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-[#86868b]">Size</span>
+                  <input type="range" min={0.25} max={0.9} step={0.01} value={badgeWidthPct} onChange={e => setBadgeWidthPct(Number(e.target.value))} className="flex-1 accent-[#7C3AED]" />
+                </div>
+                <p className="text-[11px] text-[#86868b] text-center mt-0.5">Drag the badge to place it. It burns exactly where you leave it.</p>
+              </div>
+            )}
             <p className="text-[11px] text-[#86868b] text-center truncate max-w-full">{clip.title}</p>
           </div>
         </div>
