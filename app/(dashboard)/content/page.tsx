@@ -2508,7 +2508,6 @@ export default function ContentPage() {
   // searchable. Merged into visibleVideos when a query is active.
   const [videoSearchExtra, setVideoSearchExtra] = useState<Record<string, unknown>[]>([])
   const [videoChannel, setVideoChannel] = useState<string>('') // '' = all channels
-  const [videoGenFilter, setVideoGenFilter] = useState<'all' | 'ungenerated' | 'generated' | 'scheduled'>('all')
   // Debounced server-side video search: when the user types ≥2 chars, query the
   // FULL youtube_videos table (not just the loaded newest-4k slice) so any video
   // in an 8k+ catalogue is findable. Cleared when the box empties.
@@ -3746,17 +3745,6 @@ export default function ContentPage() {
   const displayVideos = useMemo(() => currentTabVideos
     .filter(v => {
       if (videoChannel && (v.channel_title as string) !== videoChannel) return false
-      if (videoGenFilter !== 'all') {
-        const p = posts[v.id as string]
-        const has = !!p
-        // A post still queued for a future publish is "Scheduled", not "Already
-        // posted" — split them so a creator whose posts are all scheduled can
-        // actually find them (the "already posted = blank" report).
-        const isScheduled = !!(p?.scheduledFor && new Date(p.scheduledFor).getTime() > Date.now())
-        if (videoGenFilter === 'generated' && (!has || isScheduled)) return false
-        if (videoGenFilter === 'scheduled' && !isScheduled) return false
-        if (videoGenFilter === 'ungenerated' && has) return false
-      }
       if (search) {
         const hay = `${v.title || ''} ${v.channel_title || ''} ${v.description || ''}`.toLowerCase()
         if (!hay.includes(search)) return false
@@ -3775,28 +3763,8 @@ export default function ContentPage() {
         default:
           return new Date(b.published_at as string).getTime() - new Date(a.published_at as string).getTime()
       }
-    }), [currentTabVideos, videoChannel, videoGenFilter, posts, search, videoSort])
-  const filtersActive = !!(search || videoChannel || videoGenFilter !== 'all' || videoSort !== 'newest')
-
-  // Per-status counts for the filter pills — computed over the SAME set the
-  // status filter runs on (channel + search applied, status NOT applied), so
-  // the pills honestly show how many videos are in each state instead of a
-  // silent dropdown that reads as broken when a bucket is empty.
-  const statusCounts = useMemo(() => {
-    let notPosted = 0, scheduled = 0, posted = 0
-    for (const v of currentTabVideos) {
-      if (videoChannel && (v.channel_title as string) !== videoChannel) continue
-      if (search) {
-        const hay = `${v.title || ''} ${v.channel_title || ''} ${v.description || ''}`.toLowerCase()
-        if (!hay.includes(search)) continue
-      }
-      const p = posts[v.id as string]
-      if (!p) { notPosted++; continue }
-      const isScheduled = !!(p.scheduledFor && new Date(p.scheduledFor).getTime() > Date.now())
-      if (isScheduled) scheduled++; else posted++
-    }
-    return { all: notPosted + scheduled + posted, notPosted, scheduled, posted }
-  }, [currentTabVideos, posts, videoChannel, search])
+    }), [currentTabVideos, videoChannel, search, videoSort])
+  const filtersActive = !!(search || videoChannel || videoSort !== 'newest')
 
   // Posts-tab search query (lowercased; HTML entities stripped at match time
   // for a forgiving title match). Drives the single merged Published Posts
@@ -4482,29 +4450,9 @@ export default function ContentPage() {
                 {tabChannels.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             )}
-            {/* Status filter as count-bearing pills — transparent about how many
-                videos are in each state (an empty bucket reads as "(0)", not a
-                dropdown that looks broken). */}
-            <div className="inline-flex items-center rounded-md border border-gray-200 dark:border-white/10 overflow-hidden text-xs">
-              {([
-                { key: 'all', label: 'All', n: statusCounts.all },
-                { key: 'ungenerated', label: 'Not posted', n: statusCounts.notPosted },
-                { key: 'scheduled', label: 'Scheduled', n: statusCounts.scheduled },
-                { key: 'generated', label: 'Posted', n: statusCounts.posted },
-              ] as const).map((o) => {
-                const active = videoGenFilter === o.key
-                return (
-                  <button
-                    key={o.key}
-                    onClick={() => setVideoGenFilter(o.key)}
-                    title={`Show ${o.label.toLowerCase()}`}
-                    className={`px-2.5 py-1.5 font-medium transition-colors ${active ? 'bg-[#7C3AED] text-white' : 'text-[#1d1d1f] dark:text-[#f5f5f7] hover:bg-gray-100 dark:hover:bg-white/10'}`}
-                  >
-                    {o.label} <span className={active ? 'opacity-90' : 'opacity-60'}>{o.n}</span>
-                  </button>
-                )
-              })}
-            </div>
+            {/* Status filter removed 2026-08: the video→post map isn't populated
+                on this tab, so the pills always read 0. The Scheduled / Blog to
+                Social tabs are the reliable source of post state. */}
             {/* Channel filter — only when more than one channel is connected.
                 View/blog a single channel's videos at a time. */}
             {ytChannels.length > 1 && (
@@ -4533,7 +4481,7 @@ export default function ContentPage() {
             </select>
             {filtersActive && (
               <button
-                onClick={() => { setVideoSearch(''); setVideoChannel(''); setVideoGenFilter('all'); setVideoSort('newest') }}
+                onClick={() => { setVideoSearch(''); setVideoChannel(''); setVideoSort('newest') }}
                 className="text-xs text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] underline px-1"
               >
                 Reset
