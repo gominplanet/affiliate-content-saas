@@ -34,6 +34,7 @@ import { buildYouTubeShortTitle } from '@/lib/youtube-title'
 import { buildYouTubeTags } from '@/lib/youtube-tags'
 import { CTA_STICKERS, ctaStickerUrl } from '@/lib/cta-stickers'
 import type { Tier } from '@/lib/tier'
+import BatchBurner from '@/components/burn/BatchBurner'
 
 const TikTokDirectModal = dynamic(
   () => import('@/components/TikTokDirectModal').then(m => ({ default: m.TikTokDirectModal })),
@@ -109,6 +110,9 @@ export default function ClipFactoryPage() {
   const isPro = tier === 'pro' || tier === 'admin'
 
   const [stage, setStage] = useState<Stage>('create')
+  // Single clip (Create → Enhance → Publish) vs Batch (burn + schedule up to 5,
+  // ported from Shop Burner).
+  const [flow, setFlow] = useState<'single' | 'batch'>('single')
   const [clip, setClip] = useState<WorkingClip | null>(null)
   // Monthly Shorts usage (X / 50). null limit = unlimited (admin).
   const [usage, setUsage] = useState<{ used: number; limit: number | null; resetLabel: string } | null>(null)
@@ -500,7 +504,17 @@ export default function ClipFactoryPage() {
         TikTok and YouTube. Shorts Studio and Shop Burner, one flow.
       </p>
 
+      {/* Single vs Batch flow */}
+      <div className="inline-flex rounded-xl border border-black/10 dark:border-white/15 overflow-hidden mb-5">
+        <button onClick={() => setFlow('single')} className={`px-4 py-2 text-[13px] font-semibold transition-colors ${flow === 'single' ? 'text-white' : 'text-[#4b4b4f] dark:text-[#b0b0b5]'}`} style={flow === 'single' ? { backgroundColor: PURPLE } : undefined}>Single clip</button>
+        <button onClick={() => setFlow('batch')} className={`px-4 py-2 text-[13px] font-semibold transition-colors ${flow === 'batch' ? 'text-white' : 'text-[#4b4b4f] dark:text-[#b0b0b5]'}`} style={flow === 'batch' ? { backgroundColor: PURPLE } : undefined}>Batch &amp; schedule · up to 5</button>
+      </div>
+
+      {/* Batch flow — burn a CTA onto up to 5 clips and schedule them to IG. */}
+      {flow === 'batch' && <BatchBurner />}
+
       {/* Stepper */}
+      {flow === 'single' && (
       <div className="flex items-center gap-2 mb-6">
         {STEPS.map((s, i) => {
           const active = s.key === stage
@@ -528,9 +542,10 @@ export default function ClipFactoryPage() {
           )
         })}
       </div>
+      )}
 
       {/* ---------------- CREATE ---------------- */}
-      {stage === 'create' && (
+      {flow === 'single' && stage === 'create' && (
         <div>
           <div className="flex gap-2 mb-4">
             <button onClick={() => setOnramp('long')} className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-semibold border transition-colors ${onramp === 'long' ? PILL_ON : PILL_IDLE}`} style={onramp === 'long' ? { backgroundColor: PURPLE } : undefined}>
@@ -658,7 +673,7 @@ export default function ClipFactoryPage() {
       )}
 
       {/* ---------------- ENHANCE ---------------- */}
-      {stage === 'enhance' && clip && (
+      {flow === 'single' && stage === 'enhance' && clip && (
         <div className="grid md:grid-cols-[1fr_240px] gap-6">
           <div className="flex flex-col gap-5">
             {/* Overlay type */}
@@ -792,7 +807,7 @@ export default function ClipFactoryPage() {
       )}
 
       {/* ---------------- PUBLISH ---------------- */}
-      {stage === 'publish' && publishUrl && (
+      {flow === 'single' && stage === 'publish' && publishUrl && (
         <div className="grid md:grid-cols-[1fr_240px] gap-6">
           <div className="flex flex-col gap-4">
             <p className="text-[13px] text-[#4b4b4f] dark:text-[#b0b0b5]">

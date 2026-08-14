@@ -37,7 +37,7 @@ import {
   Settings, CreditCard, Bot, ChevronsLeft, ChevronsRight,
   Bell, ChevronDown, Sparkles, PenLine, Scale, Calendar,
   Sun, Moon, BookOpen, BadgePercent, Handshake, Radar, Bookmark,
-  Flame, KeyRound, Users, LogOut, ExternalLink,
+  KeyRound, Users, LogOut, ExternalLink,
   UserCog, AlertTriangle, DollarSign, Newspaper, Plug, Wrench,
   Camera, MessageCircle, Activity, BarChart3, Wand2, ShieldCheck,
   Share2, UserSquare, LifeBuoy, Link2, FlaskConical, Store, Send, ShoppingBag, Megaphone,
@@ -476,11 +476,9 @@ export default function DashboardShellV2({
         { href: '/deals', icon: <BadgePercent size={15} />, label: 'Deals Hub', gate: showDealsEff, badge: DEALS_HUB_PAUSED ? 'Paused' : undefined },
         { href: '/script', icon: <PenLine size={15} />, label: 'Scriptwriter' },
         { href: '/newsletter', icon: <Mail size={15} />, label: 'Newsletter' },
-        // Shop Burner — sidelined 2026-07-25: Clip Factory now covers the
-        // burn→publish flow (plus creating clips from scratch). The page + APIs
-        // still work if you hit the URL directly; just no longer in the nav.
-        // Re-add with `gate: showBurner` to bring it back.
-        { href: '/instagram-burner', icon: <Flame size={15} />, label: 'Shop Burner', gate: false },
+        // Shop Burner retired 2026-08 → /instagram-burner redirects to
+        // /clip-factory, which now hosts the single-clip flow AND the ported
+        // batch/schedule mode.
       ],
     },
     {
@@ -685,7 +683,6 @@ export default function DashboardShellV2({
     { prefix: '/deals', label: 'Deals Hub' },
     { prefix: '/script', label: 'Scriptwriter' },
     { prefix: '/newsletter', label: 'Newsletter' },
-    { prefix: '/instagram-burner', label: 'Shop Burner' },
     { prefix: '/ads', label: 'Ads' },
     { prefix: '/seo', label: 'SEO & Indexing' },
     { prefix: '/pulse', label: 'Pulse' },
