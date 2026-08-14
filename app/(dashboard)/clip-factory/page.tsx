@@ -392,6 +392,16 @@ export default function ClipFactoryPage() {
   )
   // The older hand-made badges (no destination tag) live under Gallery now.
   const galleryBadges = useMemo(() => CTA_STICKERS.filter(s => !s.destination), [])
+  // The box that's currently selected (custom wins over gallery id), shown big
+  // in a preview so you can actually check it before burning.
+  const selectedBox = useMemo(() => {
+    if (customStickerUrl) {
+      const m = myStickers.find(x => x.url === customStickerUrl)
+      return { url: customStickerUrl, label: m?.tag || 'Your box' }
+    }
+    const s = CTA_STICKERS.find(x => x.id === stickerId)
+    return s ? { url: ctaStickerUrl(s.file), label: s.label } : null
+  }, [customStickerUrl, myStickers, stickerId])
 
   const runBurn = useCallback(async () => {
     if (!clip) return
@@ -789,6 +799,18 @@ export default function ClipFactoryPage() {
                         </button>
                       </div>
                       <p className="text-[10px] text-[#86868b] mt-1.5">1–6 words work best. New boxes are saved to My boxes and selected automatically.</p>
+                    </div>
+                  )}
+
+                  {/* Big preview of the selected box so it's easy to check
+                      before burning (thumbnails are small on purpose). */}
+                  {selectedBox && (
+                    <div className="mt-3">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-[#86868b] mb-1.5">Selected box</p>
+                      <div className="rounded-xl border border-black/5 dark:border-white/10 bg-[#f2f2f7] dark:bg-[#161617] p-4 flex items-center justify-center">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={selectedBox.url} alt={selectedBox.label} className="max-h-40 w-auto max-w-full object-contain" />
+                      </div>
                     </div>
                   )}
                 </div>
