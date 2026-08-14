@@ -2497,7 +2497,7 @@ export default function ContentPage() {
   // searchable. Merged into visibleVideos when a query is active.
   const [videoSearchExtra, setVideoSearchExtra] = useState<Record<string, unknown>[]>([])
   const [videoChannel, setVideoChannel] = useState<string>('') // '' = all channels
-  const [videoGenFilter, setVideoGenFilter] = useState<'all' | 'ungenerated' | 'generated'>('all')
+  const [videoGenFilter, setVideoGenFilter] = useState<'all' | 'ungenerated' | 'generated' | 'scheduled'>('all')
   // Debounced server-side video search: when the user types ≥2 chars, query the
   // FULL youtube_videos table (not just the loaded newest-4k slice) so any video
   // in an 8k+ catalogue is findable. Cleared when the box empties.
@@ -3736,8 +3736,14 @@ export default function ContentPage() {
     .filter(v => {
       if (videoChannel && (v.channel_title as string) !== videoChannel) return false
       if (videoGenFilter !== 'all') {
-        const has = !!posts[v.id as string]
-        if (videoGenFilter === 'generated' && !has) return false
+        const p = posts[v.id as string]
+        const has = !!p
+        // A post still queued for a future publish is "Scheduled", not "Already
+        // posted" — split them so a creator whose posts are all scheduled can
+        // actually find them (the "already posted = blank" report).
+        const isScheduled = !!(p?.scheduledFor && new Date(p.scheduledFor).getTime() > Date.now())
+        if (videoGenFilter === 'generated' && (!has || isScheduled)) return false
+        if (videoGenFilter === 'scheduled' && !isScheduled) return false
         if (videoGenFilter === 'ungenerated' && has) return false
       }
       if (search) {
@@ -4447,12 +4453,13 @@ export default function ContentPage() {
             )}
             <select
               value={videoGenFilter}
-              onChange={e => setVideoGenFilter(e.target.value as 'all' | 'ungenerated' | 'generated')}
+              onChange={e => setVideoGenFilter(e.target.value as 'all' | 'ungenerated' | 'generated' | 'scheduled')}
               className="text-xs px-2 py-1.5 rounded-md bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] focus:border-[#7C3AED] focus:outline-none"
               title="Filter by post status"
             >
               <option value="all">All status</option>
               <option value="ungenerated">Not yet posted</option>
+              <option value="scheduled">Scheduled</option>
               <option value="generated">Already posted</option>
             </select>
             {/* Channel filter — only when more than one channel is connected.
