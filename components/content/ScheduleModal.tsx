@@ -136,8 +136,10 @@ function ScheduleDayCalendar({ selectedYmd, onPickDay }: { selectedYmd: string; 
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         if (cancelled || !d) return
+        // The endpoint returns { scheduled: [...] } (not { items }). Read that
+        // key first — reading the wrong one left every day dot-less.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const items: any[] = Array.isArray(d.items) ? d.items : Array.isArray(d) ? d : []
+        const items: any[] = Array.isArray(d.scheduled) ? d.scheduled : Array.isArray(d.items) ? d.items : Array.isArray(d) ? d : []
         const perDay: Record<string, Set<string>> = {}
         for (const it of items) {
           if (it.status && it.status !== 'pending' && it.status !== 'processing') continue
