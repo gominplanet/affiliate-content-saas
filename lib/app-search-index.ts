@@ -56,7 +56,6 @@ export const APP_SEARCH_INDEX: AppSearchEntry[] = [
   { label: 'Deals Hub', href: '/deals', group: 'Create', keywords: 'deals sale prime day discount occasion' },
   { label: 'Scriptwriter', href: '/script', group: 'Create', keywords: 'script video script write scriptwriter' },
   { label: 'Newsletter', href: '/newsletter', group: 'Create', keywords: 'newsletter email broadcast subscribers compose segments a/b subject' },
-  { label: 'Shop Burner', href: '/instagram-burner', group: 'Create', keywords: 'instagram burner reels vertical video cta sticker burn' },
 
   // ── Source & Earn ────────────────────────────────────────────────────────
   { label: 'AMZ Product Finder', href: '/amz-finder', group: 'Source & Earn', keywords: 'amazon product finder creator connections campaigns epc smart scan find products commission' },
