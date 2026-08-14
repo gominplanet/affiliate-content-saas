@@ -111,6 +111,13 @@ const ScheduleModal = dynamic(
   { ssr: false },
 )
 
+// BlogEditModal — edit a scheduled/published post's title + body inside MVP
+// (saves to blog_posts + re-pushes to WordPress). Lazy-loaded like the others.
+const BlogEditModal = dynamic(
+  () => import('@/components/content/BlogEditModal'),
+  { ssr: false },
+)
+
 // Shape returned by /api/blog/scheduled-list — flat enough that we don't
 // need a separate type module.
 //
@@ -2063,6 +2070,8 @@ function ScheduledList({
   // "stuck". Default to pending-only with a toggle to see history. Same
   // mental model as Gmail's "Unread"/"All" split.
   const [showHistory, setShowHistory] = useState(false)
+  // Edit a scheduled post's article right here (title + body), no WP admin.
+  const [editPostId, setEditPostId] = useState<string | null>(null)
   if (loading) {
     return (
       <div className="flex items-center gap-2 text-sm text-[#86868b] dark:text-[#8e8e93] py-12 justify-center">
@@ -2143,6 +2152,9 @@ function ScheduledList({
   const historyCount = items.length - pendingCount
   return (
     <div className="flex flex-col gap-2">
+      {editPostId && (
+        <BlogEditModal postId={editPostId} onClose={() => setEditPostId(null)} onSaved={onRefresh} />
+      )}
       <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
         <div className="flex items-center gap-3 text-xs">
           <p className="text-[#6e6e73] dark:text-[#ebebf0]">
@@ -2261,19 +2273,27 @@ function ScheduledList({
                 <p className="text-[11px] text-[#ff3b30] mt-2 break-all">⚠ {item.error_message}</p>
               )}
             </div>
-            {item.status === 'pending' && !item.synthetic && (
-              <button
-                onClick={() => onCancel(item.id)}
-                className="text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] transition-colors flex-shrink-0"
-              >
-                Cancel
-              </button>
-            )}
-            {item.status === 'pending' && item.synthetic && (
-              <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93] flex-shrink-0 text-right leading-tight">
-                Manage in<br />Video to Blog
-              </span>
-            )}
+            <div className="flex items-center gap-3 flex-shrink-0">
+              {/* Edit the article right here (title + body) — saves to MVP and
+                  re-pushes to WordPress. Replaces the old dead-end "Manage in
+                  Video to Blog" label so scheduled posts are actually editable. */}
+              {item.kind === 'blog_publish' && item.blog_post_id && (
+                <button
+                  onClick={() => setEditPostId(item.blog_post_id)}
+                  className="text-xs font-medium text-[#7C3AED] hover:underline"
+                >
+                  Edit post
+                </button>
+              )}
+              {item.status === 'pending' && !item.synthetic && (
+                <button
+                  onClick={() => onCancel(item.id)}
+                  className="text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] transition-colors"
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
           </div>
         )
       })}
