@@ -65,6 +65,39 @@ const STYLE_REF_FILES = ['burner07.png', 'burner08.png', 'burner013.png']
 // period; admin is unlimited. One number to tune.
 const CTA_BOX_MONTHLY_CAP = 50
 
+// ── Style vibes ──────────────────────────────────────────────────────────────
+// The badge design should SUIT the message, not be one comic burst for
+// everything. We infer a vibe from the CTA text (or take an explicit override),
+// and each vibe drives a tailored prompt. Comic-family vibes reuse our example
+// badges as style refs; the clean vibes (luxe/tech) drop the refs so gpt-image
+// isn't dragged back to comic.
+type Vibe = 'urgency' | 'luxe' | 'tech' | 'fun'
+const VIBES: Record<Vibe, { useRefs: boolean; style: string }> = {
+  urgency: {
+    useRefs: true,
+    style: `Style: a high-energy SALE-FLASH badge — an explosive comic starburst / sunburst shape, hot red-orange-yellow gradient, ultra-bold condensed impact lettering with a thick white or black outline, motion lines and a few spark accents. Screams urgency and "act now".`,
+  },
+  luxe: {
+    useRefs: false,
+    style: `Style: an elegant, premium badge — a clean rounded shape or thin ribbon, soft tasteful gradient (blush/gold, or muted pastel), refined modern sans-serif or a tasteful script, a subtle sparkle or shine, generous spacing, minimal and expensive-looking. NOT comic, no confetti, no harsh outlines.`,
+  },
+  tech: {
+    useRefs: false,
+    style: `Style: a sleek modern tech badge — a crisp geometric pill or chip shape on a deep base, glossy neon gradient (electric blue/purple/teal), clean bold geometric sans-serif, a soft glow/light-edge. Modern and premium, NOT comic, no confetti.`,
+  },
+  fun: {
+    useRefs: true,
+    style: `Style: a playful pop-art badge — a punchy comic banner/burst/speech-bubble shape, vibrant multi-color gradient, bold chunky display lettering with a thick contrasting outline, small confetti shapes, halftone dots and sparkle accents, soft drop shadow so it pops.`,
+  },
+}
+function detectVibe(tag: string): Vibe {
+  const t = tag.toLowerCase()
+  if (/\b(sale|deal|deals|now|last|gone|hurry|ends?|today|only|limited|save|\d+%|off|before|fast|quick|clearance|final)\b/.test(t)) return 'urgency'
+  if (/\b(shop|look|style|glow|beauty|skin|luxe|chic|elegant|glam|self.?care|routine|aesthetic|soft|clean)\b/.test(t)) return 'luxe'
+  if (/\b(link|bio|code|app|gadget|tech|new|drop|smart|device|setup|upgrade|review)\b/.test(t)) return 'tech'
+  return 'fun'
+}
+
 export async function POST(request: Request) {
   try {
     const supabase = await createServerClient()
@@ -103,23 +136,31 @@ export async function POST(request: Request) {
       }, { status: 429 })
     }
 
-    const body = await request.json() as { tag?: string }
+    const body = await request.json() as { tag?: string; vibe?: string }
     const tag = (body.tag || '').replace(/\s+/g, ' ').trim().slice(0, 40)
     if (!tag || tag.split(' ').length > 6) {
       return NextResponse.json({ error: 'Enter a short tag (1–6 words, e.g. “BUY BEFORE IT’S GONE”).' }, { status: 400 })
     }
+    // Vibe: explicit override (from the UI, later) or inferred from the text so
+    // the badge design matches the message.
+    const vibeKey: Vibe = (['urgency', 'luxe', 'tech', 'fun'] as const).includes(body.vibe as Vibe)
+      ? (body.vibe as Vibe) : detectVibe(tag)
+    const vibe = VIBES[vibeKey]
 
     if (!process.env.FAL_KEY) return NextResponse.json({ error: 'Image generation is not configured.' }, { status: 503 })
     fal.config({ credentials: process.env.FAL_KEY })
 
-    // Style references — our own example badges, rehosted so fal can fetch them.
+    // Style references — our example badges, rehosted so fal can fetch them.
+    // gpt-image needs at least one reference (compose-with adapter), so we always
+    // pass them; the per-vibe prompt does the styling work (for the clean vibes
+    // the prompt explicitly says "NOT comic, no confetti" to pull away from them).
     const refUrls = await rehostAll(STYLE_REF_FILES.map(f => ctaStickerUrl(f)))
     if (refUrls.length === 0) return NextResponse.json({ error: 'Could not load style references.' }, { status: 502 })
 
     const prompt = `Design a single die-cut "call to action" sticker badge that reads EXACTLY: "${tag}".
-Match the visual style of the reference badges: bold chunky display lettering with a thick contrasting outline, vibrant gradient fill, a punchy comic/pop-art shape behind the text (banner, burst or speech-bubble), small confetti shapes / halftone dots / sparkles as accents, and a soft drop shadow so it pops.
+${vibe.style}
 Spell the text PERFECTLY and make every word large and legible — "${tag}" — no other words, no extra letters, no brand names, no logos.
-The badge must be a self-contained graphic centred on a PLAIN SOLID FLAT WHITE background with NOTHING else around it (no scene, no device, no hands, no photo). Crisp vector-sticker look, high contrast, vivid colors.`
+The badge must be a self-contained graphic centred on a PLAIN SOLID FLAT WHITE background with NOTHING else around it (no scene, no device, no hands, no photo). Crisp, polished, professional sticker look with clean edges, high contrast and vivid, harmonious colors — make it look premium.`
 
     // PRIMARY: gpt-image (unified 2026-08-13); NB Pro stays as a resilience
     // fallback. Rendered on a solid white background, then rembg'd below.
