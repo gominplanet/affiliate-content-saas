@@ -19,6 +19,14 @@
 
 export type CtaStickerPosition = 'lower-third' | 'center' | 'bottom' | 'top' | 'lower-left' | 'lower-right'
 
+// Where the finished clip is going, and how the viewer buys. This drives BOTH
+// the ready-made platform badges below and the AI generator's per-combo prompt:
+//   shop → the platform's in-app shop (TikTok orange cart / IG product tag),
+//          badge points a DOWNWARD arrow at the on-screen buy button.
+//   bio  → no in-app shop; badge says "LINK IN BIO" with a link icon.
+export type CtaDestination = 'tiktok' | 'instagram'
+export type CtaMode = 'shop' | 'bio'
+
 export interface CtaSticker {
   /** Stable id (sent from the UI, resolved server-side). */
   id: string
@@ -30,6 +38,33 @@ export interface CtaSticker {
   position?: CtaStickerPosition
   /** Overlay width as a fraction of the video width (0–1, default 0.85). */
   widthPct?: number
+  /** Set on the finalized platform badges so the gallery can group them. */
+  destination?: CtaDestination
+  mode?: CtaMode
+}
+
+/**
+ * Finalized, on-brand platform badges (the six hand-picked designs). These are
+ * ready to burn as-is AND double as the style references the AI generator is
+ * conditioned on for each destination+mode, so a generated badge matches the
+ * look of the real platform's shop UI. Grouped by destination × mode.
+ */
+export const PLATFORM_BADGES: CtaSticker[] = [
+  // TikTok — Shop (downward arrow → TikTok orange cart)
+  { id: 'tt-shop-bar',  label: 'TikTok Shop — bar',   file: 'tiktok-shop-001.png', destination: 'tiktok',    mode: 'shop', widthPct: 0.82 },
+  { id: 'tt-shop-cart', label: 'TikTok Shop — cart',  file: 'tiktok-shop-002.png', destination: 'tiktok',    mode: 'shop', widthPct: 0.5 },
+  // TikTok — Link in bio
+  { id: 'tt-bio-tap',   label: 'TikTok — Tap to shop', file: 'tiktok-bio-001.png', destination: 'tiktok',    mode: 'bio',  widthPct: 0.82 },
+  // Instagram — Shop (downward arrow → product tag)
+  { id: 'ig-shop-bag',  label: 'Instagram Shop — bag', file: 'instagram-shop-001.png', destination: 'instagram', mode: 'shop', widthPct: 0.5 },
+  // Instagram — Link in bio (Reels / Stories)
+  { id: 'ig-bio-link',  label: 'Instagram — Link in bio', file: 'instagram-bio-001.png', destination: 'instagram', mode: 'bio', widthPct: 0.82 },
+  { id: 'ig-bio-click', label: 'Instagram — Click here',  file: 'instagram-stories-001.png', destination: 'instagram', mode: 'bio', widthPct: 0.5 },
+]
+
+/** The finalized badges for a destination+mode — used as AI style references. */
+export function platformBadges(destination: CtaDestination, mode: CtaMode): CtaSticker[] {
+  return PLATFORM_BADGES.filter(b => b.destination === destination && b.mode === mode)
 }
 
 /**
@@ -43,6 +78,8 @@ export interface CtaSticker {
 // (01–05, 500×500) sit ~half-width; the wide banners (06–017, 1536×1024 with
 // transparent margins) read best a bit larger.
 export const CTA_STICKERS: CtaSticker[] = [
+  // Finalized platform badges first — the best-looking, on-brand picks.
+  ...PLATFORM_BADGES,
   // Square badges
   { id: 'shop-below-burst',   label: 'Shop below — burst',   file: 'burner01.png', widthPct: 0.52 },
   { id: 'shop-here-circle',   label: 'Shop here — circle',   file: 'burner02.png', widthPct: 0.5 },

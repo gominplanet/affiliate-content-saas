@@ -27,7 +27,10 @@ import {
   composeWithGptImage, composeWithNanoBananaPro, rehostAll, removeBackground,
   GPT_IMAGE_COMPOSE_COST_MODEL, NANO_BANANA_PRO_COST_MODEL,
 } from '@/lib/thumbnail-generators'
-import { CTA_STICKERS, ctaStickerUrl } from '@/lib/cta-stickers'
+import {
+  ctaStickerUrl, platformBadges,
+  type CtaDestination, type CtaMode,
+} from '@/lib/cta-stickers'
 
 export const maxDuration = 120
 
@@ -58,44 +61,39 @@ async function whiteBgToTransparent(buf: Buffer): Promise<Buffer> {
   return await sharp(data, { raw: { width: w, height: h, channels: c } }).png().toBuffer()
 }
 
-// Example badges whose comic/pop look anchors the generated style.
-const STYLE_REF_FILES = ['burner07.png', 'burner08.png', 'burner013.png']
+// Fallback style refs (used only if a destination+mode has no finalized badge).
+const FALLBACK_REF_FILES = ['burner07.png', 'burner08.png', 'burner013.png']
 // Monthly cap on AI CTA-box generation (the only paid step in the burner —
 // ~$0.13/box on Nano Banana Pro). Pro gets this many designs per billing
 // period; admin is unlimited. One number to tune.
 const CTA_BOX_MONTHLY_CAP = 50
 
-// ── Style vibes ──────────────────────────────────────────────────────────────
-// The badge design should SUIT the message, not be one comic burst for
-// everything. We infer a vibe from the CTA text (or take an explicit override),
-// and each vibe drives a tailored prompt. Comic-family vibes reuse our example
-// badges as style refs; the clean vibes (luxe/tech) drop the refs so gpt-image
-// isn't dragged back to comic.
-type Vibe = 'urgency' | 'luxe' | 'tech' | 'fun'
-const VIBES: Record<Vibe, { useRefs: boolean; style: string }> = {
-  urgency: {
-    useRefs: true,
-    style: `Style: a high-energy SALE-FLASH badge — an explosive comic starburst / sunburst shape, hot red-orange-yellow gradient, ultra-bold condensed impact lettering with a thick white or black outline, motion lines and a few spark accents. Screams urgency and "act now".`,
+// ── Destination × mode badge styles ──────────────────────────────────────────
+// The badge is built for WHERE the clip is going and HOW the viewer buys:
+//   shop → the platform's in-app shop (TikTok orange cart / IG product tag);
+//          a big DOWNWARD arrow points at that on-screen buy button.
+//   bio  → no in-app shop; a "LINK IN BIO" message + link icon sends them to
+//          the profile link.
+// Each combo is conditioned on the matching finalized platform badge(s) so the
+// AI output looks like the genuine platform shop UI, not generic comic art.
+type BadgeStyle = { defaultTag: string; style: string }
+const BADGE_STYLES: Record<`${CtaDestination}-${CtaMode}`, BadgeStyle> = {
+  'tiktok-shop': {
+    defaultTag: 'SHOP NOW',
+    style: `Style: a premium TikTok Shop badge — a glossy 3D neon pill/pennant with TikTok's signature cyan-and-magenta glow on a deep glossy black body, the TikTok music-note logo, bold chrome / gradient display lettering, and a BIG bold DOWNWARD-pointing arrow (bright yellow or white) that clearly points DOWN toward the on-screen TikTok orange shopping cart. High energy, "buy it now".`,
   },
-  luxe: {
-    useRefs: false,
-    style: `Style: an elegant, premium badge — a clean rounded shape or thin ribbon, soft tasteful gradient (blush/gold, or muted pastel), refined modern sans-serif or a tasteful script, a subtle sparkle or shine, generous spacing, minimal and expensive-looking. NOT comic, no confetti, no harsh outlines.`,
+  'tiktok-bio': {
+    defaultTag: 'LINK IN BIO',
+    style: `Style: a premium TikTok "link in bio" badge — a glossy 3D neon pill with TikTok's cyan-and-magenta glow on glossy black, the TikTok music-note logo, bold display lettering, and a small link / chain icon. It tells the viewer to tap the profile link; include an arrow curving UP toward the bio (NOT a downward shop arrow).`,
   },
-  tech: {
-    useRefs: false,
-    style: `Style: a sleek modern tech badge — a crisp geometric pill or chip shape on a deep base, glossy neon gradient (electric blue/purple/teal), clean bold geometric sans-serif, a soft glow/light-edge. Modern and premium, NOT comic, no confetti.`,
+  'instagram-shop': {
+    defaultTag: 'SHOP NOW',
+    style: `Style: a premium Instagram Shop badge — a glossy 3D shape in Instagram's orange-to-magenta-to-purple gradient, the Instagram camera logo, a white shopping-bag icon, bold display lettering, and a BIG bold DOWNWARD-pointing arrow at the on-screen product / shop tag. Vibrant and shoppable.`,
   },
-  fun: {
-    useRefs: true,
-    style: `Style: a playful pop-art badge — a punchy comic banner/burst/speech-bubble shape, vibrant multi-color gradient, bold chunky display lettering with a thick contrasting outline, small confetti shapes, halftone dots and sparkle accents, soft drop shadow so it pops.`,
+  'instagram-bio': {
+    defaultTag: 'LINK IN BIO',
+    style: `Style: a premium Instagram Reels/Stories "link in bio" badge — a glossy 3D shape in Instagram's orange-magenta-purple gradient, the Instagram camera logo, a small link / chain icon, and bold display lettering telling the viewer the link is in the bio (NOT a downward shop arrow).`,
   },
-}
-function detectVibe(tag: string): Vibe {
-  const t = tag.toLowerCase()
-  if (/\b(sale|deal|deals|now|last|gone|hurry|ends?|today|only|limited|save|\d+%|off|before|fast|quick|clearance|final)\b/.test(t)) return 'urgency'
-  if (/\b(shop|look|style|glow|beauty|skin|luxe|chic|elegant|glam|self.?care|routine|aesthetic|soft|clean)\b/.test(t)) return 'luxe'
-  if (/\b(link|bio|code|app|gadget|tech|new|drop|smart|device|setup|upgrade|review)\b/.test(t)) return 'tech'
-  return 'fun'
 }
 
 export async function POST(request: Request) {
@@ -136,31 +134,35 @@ export async function POST(request: Request) {
       }, { status: 429 })
     }
 
-    const body = await request.json() as { tag?: string; vibe?: string }
-    const tag = (body.tag || '').replace(/\s+/g, ' ').trim().slice(0, 40)
-    if (!tag || tag.split(' ').length > 6) {
-      return NextResponse.json({ error: 'Enter a short tag (1–6 words, e.g. “BUY BEFORE IT’S GONE”).' }, { status: 400 })
+    const body = await request.json() as { tag?: string; destination?: string; mode?: string }
+    // Destination + mode drive the design. Default TikTok Shop (the most common
+    // one-time-purchase case). Legacy callers that send neither still work.
+    const destination: CtaDestination = body.destination === 'instagram' ? 'instagram' : 'tiktok'
+    const mode: CtaMode = body.mode === 'bio' ? 'bio' : 'shop'
+    const badgeStyle = BADGE_STYLES[`${destination}-${mode}`]
+    // The words on the badge. Optional — fall back to the combo's default
+    // ("SHOP NOW" / "LINK IN BIO") so a one-tap generate still works.
+    const tag = ((body.tag || '').replace(/\s+/g, ' ').trim() || badgeStyle.defaultTag).slice(0, 40)
+    if (tag.split(' ').length > 6) {
+      return NextResponse.json({ error: 'Keep the CTA short — 1 to 6 words.' }, { status: 400 })
     }
-    // Vibe: explicit override (from the UI, later) or inferred from the text so
-    // the badge design matches the message.
-    const vibeKey: Vibe = (['urgency', 'luxe', 'tech', 'fun'] as const).includes(body.vibe as Vibe)
-      ? (body.vibe as Vibe) : detectVibe(tag)
-    const vibe = VIBES[vibeKey]
 
     if (!process.env.FAL_KEY) return NextResponse.json({ error: 'Image generation is not configured.' }, { status: 503 })
     fal.config({ credentials: process.env.FAL_KEY })
 
-    // Style references — our example badges, rehosted so fal can fetch them.
-    // gpt-image needs at least one reference (compose-with adapter), so we always
-    // pass them; the per-vibe prompt does the styling work (for the clean vibes
-    // the prompt explicitly says "NOT comic, no confetti" to pull away from them).
-    const refUrls = await rehostAll(STYLE_REF_FILES.map(f => ctaStickerUrl(f)))
+    // Style references — the finalized badge(s) for this destination+mode, so the
+    // AI output matches the real platform shop look. gpt-image needs at least one
+    // reference (compose-with adapter). Fall back to the generic examples if a
+    // combo somehow has no finalized badge yet.
+    const refFiles = platformBadges(destination, mode).map(b => b.file)
+    const refUrls = await rehostAll((refFiles.length ? refFiles : FALLBACK_REF_FILES).map(f => ctaStickerUrl(f)))
     if (refUrls.length === 0) return NextResponse.json({ error: 'Could not load style references.' }, { status: 502 })
 
     const prompt = `Design a single die-cut "call to action" sticker badge that reads EXACTLY: "${tag}".
-${vibe.style}
-Spell the text PERFECTLY and make every word large and legible — "${tag}" — no other words, no extra letters, no brand names, no logos.
-The badge must be a self-contained graphic centred on a PLAIN SOLID FLAT WHITE background with NOTHING else around it (no scene, no device, no hands, no photo). Crisp, polished, professional sticker look with clean edges, high contrast and vivid, harmonious colors — make it look premium.`
+${badgeStyle.style}
+Match the look, shape and finish of the reference badge(s): the same neon/glossy 3D treatment, the platform logo/icon, and the same arrow direction.
+Spell the text PERFECTLY and make it large and legible — "${tag}". Besides that text and the platform's short label, no extra sentences, no watermark.
+The badge must be a self-contained graphic centred on a PLAIN SOLID FLAT WHITE background with NOTHING else around it (no scene, no phone, no hands, no photo). Crisp, polished, professional sticker with clean edges, high contrast and vivid, harmonious colors — premium.`
 
     // PRIMARY: gpt-image (unified 2026-08-13); NB Pro stays as a resilience
     // fallback. Rendered on a solid white background, then rembg'd below.

@@ -23,7 +23,7 @@ import { toast } from 'sonner'
 import {
   Rocket, Scissors, Flame, Send, Loader2, Search, Youtube, Link2,
   Sparkles, UploadCloud, Video, Check, Download, Instagram, Music2, ArrowRight, ArrowLeft,
-  Trash2, Wand2, Package, ExternalLink, ImageIcon,
+  Trash2, Wand2, Package, ExternalLink, ImageIcon, ArrowDown,
 } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { ShortsCreatePanel } from '@/components/vertical/ShortsCreatePanel'
@@ -32,7 +32,10 @@ import { dispatchCapReached } from '@/components/CapReachedBanner'
 import { errText } from '@/lib/err-text'
 import { buildYouTubeShortTitle } from '@/lib/youtube-title'
 import { buildYouTubeTags } from '@/lib/youtube-tags'
-import { CTA_STICKERS, ctaStickerUrl } from '@/lib/cta-stickers'
+import {
+  CTA_STICKERS, PLATFORM_BADGES, ctaStickerUrl,
+  type CtaDestination, type CtaMode,
+} from '@/lib/cta-stickers'
 import type { Tier } from '@/lib/tier'
 
 const TikTokDirectModal = dynamic(
@@ -144,8 +147,12 @@ export default function ClipFactoryPage() {
 
   // ---- Enhance ----
   const [overlayType, setOverlayType] = useState<'sticker' | 'text'>('sticker')
-  const [stickerTab, setStickerTab] = useState<'gallery' | 'mine' | 'make'>('gallery')
-  const [stickerId, setStickerId] = useState<string>(CTA_STICKERS[0]?.id ?? '')
+  const [stickerTab, setStickerTab] = useState<'recommended' | 'gallery' | 'mine' | 'make'>('recommended')
+  // Where the clip is going + how the viewer buys — drives the recommended
+  // badges and the "make your own" generation style.
+  const [destination, setDestination] = useState<CtaDestination>('tiktok')
+  const [mode, setMode] = useState<CtaMode>('shop')
+  const [stickerId, setStickerId] = useState<string>(PLATFORM_BADGES[0]?.id ?? CTA_STICKERS[0]?.id ?? '')
   // A custom (AI-generated / saved) box URL. When set, it wins over stickerId.
   const [customStickerUrl, setCustomStickerUrl] = useState<string | null>(null)
   const [myStickers, setMyStickers] = useState<Array<{ id: string; url: string; tag: string }>>([])
@@ -338,15 +345,16 @@ export default function ClipFactoryPage() {
     } catch { /* non-fatal */ }
   }, [])
 
-  // Generate a custom CTA box from a typed tag (AI badge -> transparent PNG).
+  // Generate a custom CTA box from a typed tag (AI badge -> transparent PNG),
+  // styled for the selected destination + mode. Tag is optional — the API
+  // defaults to "SHOP NOW" / "LINK IN BIO" for the combo.
   const generateSticker = useCallback(async () => {
     const tag = tagText.trim()
-    if (!tag) { toast.error('Type a few words for your CTA box.'); return }
     setGenLoading(true)
     try {
       const res = await fetch('/api/instagram/burn/generate-sticker', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tag }),
+        body: JSON.stringify({ tag, destination, mode }),
       })
       const data = await res.json()
       if (!res.ok || !data.ok) {
@@ -369,6 +377,21 @@ export default function ClipFactoryPage() {
   }, [customStickerUrl])
 
   useEffect(() => { void loadMyStickers() }, [loadMyStickers])
+
+  // Switch destination/mode, jump to the Recommended tab, and pre-select the
+  // first matching platform badge so the pick is never left pointing at a badge
+  // from the other platform.
+  const applyDestMode = (d: CtaDestination, m: CtaMode) => {
+    setDestination(d); setMode(m); setStickerTab('recommended')
+    const first = PLATFORM_BADGES.find(b => b.destination === d && b.mode === m)
+    if (first) { setStickerId(first.id); setCustomStickerUrl(null) }
+  }
+  const recommendedBadges = useMemo(
+    () => PLATFORM_BADGES.filter(b => b.destination === destination && b.mode === mode),
+    [destination, mode],
+  )
+  // The older hand-made badges (no destination tag) live under Gallery now.
+  const galleryBadges = useMemo(() => CTA_STICKERS.filter(s => !s.destination), [])
 
   const runBurn = useCallback(async () => {
     if (!clip) return
@@ -670,16 +693,56 @@ export default function ClipFactoryPage() {
               </div>
               {overlayType === 'sticker' ? (
                 <div>
-                  {/* Gallery / My boxes / Make your own */}
+                  {/* Where the clip is going + how they buy — two taps set the
+                      recommended badges and the "make your own" style. */}
+                  <div className="rounded-xl border border-black/5 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.03] p-2.5 mb-3 flex flex-col gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-[#86868b] w-[52px] shrink-0">Post to</span>
+                      <div className="flex gap-1.5">
+                        <button onClick={() => applyDestMode('tiktok', mode)} className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ${destination === 'tiktok' ? PILL_SEL : PILL_IDLE}`}><Music2 size={12} /> TikTok</button>
+                        <button onClick={() => applyDestMode('instagram', mode)} className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ${destination === 'instagram' ? PILL_SEL : PILL_IDLE}`}><Instagram size={12} /> Instagram</button>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-[#86868b] w-[52px] shrink-0">Buy via</span>
+                      <div className="flex gap-1.5">
+                        <button onClick={() => applyDestMode(destination, 'shop')} className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ${mode === 'shop' ? PILL_SEL : PILL_IDLE}`} title="In-app shop — badge points a downward arrow at the shop button"><ArrowDown size={12} /> In-app shop</button>
+                        <button onClick={() => applyDestMode(destination, 'bio')} className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ${mode === 'bio' ? PILL_SEL : PILL_IDLE}`} title="No in-app shop — badge says Link in bio"><Link2 size={12} /> Link in bio</button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Source tabs */}
                   <div className="flex gap-2 mb-3">
+                    <button onClick={() => setStickerTab('recommended')} className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ${stickerTab === 'recommended' ? PILL_SEL : PILL_IDLE}`}><Sparkles size={12} /> Recommended</button>
                     <button onClick={() => setStickerTab('gallery')} className={`rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ${stickerTab === 'gallery' ? PILL_SEL : PILL_IDLE}`}>Gallery</button>
                     <button onClick={() => setStickerTab('mine')} className={`rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ${stickerTab === 'mine' ? PILL_SEL : PILL_IDLE}`}>My boxes{myStickers.length ? ` (${myStickers.length})` : ''}</button>
                     <button onClick={() => setStickerTab('make')} className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors ${stickerTab === 'make' ? PILL_SEL : PILL_IDLE}`}><Wand2 size={12} /> Make your own</button>
                   </div>
 
+                  {/* Recommended — the finalized platform badges for this combo.
+                      Shown big on a neutral tile so the transparent art reads. */}
+                  {stickerTab === 'recommended' && (
+                    recommendedBadges.length === 0 ? (
+                      <p className="text-[12px] text-[#86868b] py-4">No ready-made badge for this combo yet. Try <span className="font-medium text-[#7C3AED]">Make your own</span>.</p>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        {recommendedBadges.map(s => {
+                          const on = !customStickerUrl && stickerId === s.id
+                          return (
+                            <button key={s.id} onClick={() => { setStickerId(s.id); setCustomStickerUrl(null) }} className="rounded-xl border-2 overflow-hidden p-3 bg-[#f2f2f7] dark:bg-[#161617] transition-colors flex items-center justify-center" style={{ borderColor: on ? PURPLE : 'rgba(128,128,128,0.25)' }} title={s.label}>
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={ctaStickerUrl(s.file)} alt={s.label} className="w-full h-20 object-contain" />
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )
+                  )}
+
                   {stickerTab === 'gallery' && (
                     <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                      {CTA_STICKERS.map(s => {
+                      {galleryBadges.map(s => {
                         const on = !customStickerUrl && stickerId === s.id
                         return (
                           <button key={s.id} onClick={() => { setStickerId(s.id); setCustomStickerUrl(null) }} className="rounded-lg border-2 overflow-hidden p-1.5 bg-white dark:bg-[#2c2c2e] transition-colors" style={{ borderColor: on ? PURPLE : 'rgba(128,128,128,0.25)' }} title={s.label}>
@@ -714,10 +777,13 @@ export default function ClipFactoryPage() {
 
                   {stickerTab === 'make' && (
                     <div className="rounded-xl border border-[#7C3AED]/25 bg-[#7C3AED]/5 p-3">
-                      <p className="text-[12px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">Describe your CTA box in a few words — we design a transparent badge for it.</p>
+                      <p className="text-[12px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">
+                        Design a <span className="font-semibold text-[#7C3AED]">{destination === 'tiktok' ? 'TikTok' : 'Instagram'} · {mode === 'shop' ? 'in-app shop' : 'link in bio'}</span> badge.
+                      </p>
+                      <p className="text-[11px] text-[#86868b] mb-2">Type your words, or leave it blank for &ldquo;{mode === 'shop' ? 'SHOP NOW' : 'LINK IN BIO'}&rdquo;. It comes out in that platform&apos;s style with the right {mode === 'shop' ? 'downward shop arrow' : 'link-in-bio message'}.</p>
                       <div className="flex gap-2">
-                        <input value={tagText} onChange={e => setTagText(e.target.value.slice(0, 40))} onKeyDown={e => { if (e.key === 'Enter') void generateSticker() }} placeholder="e.g. Grab yours today" className="flex-1 rounded-lg border border-black/10 dark:border-white/15 bg-white dark:bg-[#2c2c2e] px-3 py-2 text-sm text-[#1d1d1f] dark:text-[#f5f5f7]" />
-                        <button onClick={generateSticker} disabled={genLoading || !tagText.trim()} className="shrink-0 inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-[12px] font-semibold text-white disabled:opacity-50" style={{ backgroundColor: PURPLE }}>
+                        <input value={tagText} onChange={e => setTagText(e.target.value.slice(0, 40))} onKeyDown={e => { if (e.key === 'Enter') void generateSticker() }} placeholder={mode === 'shop' ? 'e.g. Grab yours today' : 'e.g. Tap the link'} className="flex-1 rounded-lg border border-black/10 dark:border-white/15 bg-white dark:bg-[#2c2c2e] px-3 py-2 text-sm text-[#1d1d1f] dark:text-[#f5f5f7]" />
+                        <button onClick={generateSticker} disabled={genLoading} className="shrink-0 inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-[12px] font-semibold text-white disabled:opacity-50" style={{ backgroundColor: PURPLE }}>
                           {genLoading ? <Loader2 size={13} className="animate-spin" /> : <Wand2 size={13} />}
                           {genLoading ? 'Designing…' : 'Create box'}
                         </button>
