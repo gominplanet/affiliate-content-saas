@@ -10,7 +10,7 @@
 //     linked the product directly. Prefer the link that's actually there.
 
 import { extractAsin } from '@/services/amazon'
-import { assertPublicHttpUrl } from '@/lib/ssrf-guard'
+import { assertPublicHttpUrlResolved } from '@/lib/ssrf-guard'
 
 /** Pull a 10-char Amazon ASIN out of an Amazon product URL path. */
 export function asinFromAmazonUrl(url: string): string | null {
@@ -115,7 +115,7 @@ export async function resolveFinalUrl(url: string): Promise<string> {
   // URL is simply returned un-resolved (callers then fail to extract an ASIN
   // and fall back to discovery), never fetched.
   try {
-    assertPublicHttpUrl(url)
+    await assertPublicHttpUrlResolved(url)
   } catch {
     return url
   }
