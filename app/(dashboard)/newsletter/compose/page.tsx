@@ -868,7 +868,7 @@ export default function NewsletterComposePage() {
                     <p className="text-[11px] opacity-80 mb-1.5">Tags (subscriber matches if any tag matches)</p>
                     {availableTags.length === 0 && segTags.size === 0 ? (
                       <p className="text-[11px] opacity-60 italic">
-                        You haven&apos;t tagged any subscribers yet. Add tags on the <Link href="/newsletter/subscribers" className="text-[#7C3AED] hover:underline">subscribers page</Link> to segment by them.
+                        You haven&apos;t tagged any subscribers yet. Add tags on the <Link href="/newsletter" className="text-[#7C3AED] hover:underline">subscribers section</Link> to segment by them.
                       </p>
                     ) : (
                       <div className="flex flex-wrap gap-1.5">

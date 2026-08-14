@@ -38,7 +38,7 @@ import { effectiveTier } from '@/lib/view-as'
 import { metaEnabled } from '@/lib/feature-flags'
 import {
   Youtube, Wand2, ExternalLink, CheckCircle, AlertCircle,
-  RefreshCw, Loader2, ChevronRight, Sparkles, X, Facebook, Pin, MessageCircle, Save, Upload, Search, Calendar, Handshake, ImagePlus, Link2, Tags, Wrench, Shuffle,
+  RefreshCw, Loader2, ChevronRight, Sparkles, X, Facebook, Pin, MessageCircle, Save, Upload, Search, Calendar, Handshake, ImagePlus, Link2, Tags, Wrench, Shuffle, Pencil,
 } from 'lucide-react'
 import type { PinPreviewData } from '@/components/PinterestPreviewModal'
 
@@ -108,6 +108,13 @@ const BulkScheduleVideosModal = dynamic(
 // content page initial JS lean.
 const ScheduleModal = dynamic(
   () => import('@/components/content/ScheduleModal'),
+  { ssr: false },
+)
+
+// BlogEditModal — edit a scheduled/published post's title + body inside MVP
+// (saves to blog_posts + re-pushes to WordPress). Lazy-loaded like the others.
+const BlogEditModal = dynamic(
+  () => import('@/components/content/BlogEditModal'),
   { ssr: false },
 )
 
@@ -899,6 +906,7 @@ const VideoCard = memo(function VideoCardImpl({
   // "Share with brand" modal — assembles every published link for this post
   // into a ready-to-send recap message the creator sends the brand.
   const [shareBrandOpen, setShareBrandOpen] = useState(false)
+  const [blogEditOpen, setBlogEditOpen] = useState(false)
   // Per-post Facebook Page choice (Pro multi-account). Defaults to the
   // user's default page. The picker renders whenever the user has at least
   // one connected Page (Pro loads the list) so it's discoverable/testable —
@@ -1762,7 +1770,14 @@ const VideoCard = memo(function VideoCardImpl({
               page for Creator Connections). Shown for any post; sits under the
               social pills as the user requested. */}
           {post?.postId && (
-            <div className="mt-1">
+            <div className="mt-1 flex items-center gap-2 flex-wrap">
+              <button
+                onClick={() => setBlogEditOpen(true)}
+                title="Edit this post's title and body inside MVP (saves to your site)"
+                className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-lg whitespace-nowrap border border-[var(--border-2)] bg-[var(--surface)] text-[var(--text)] hover:bg-[var(--surface-2)] transition-colors"
+              >
+                <Pencil size={12} /> Edit post
+              </button>
               <button
                 onClick={() => setShareBrandOpen(true)}
                 title="Send the brand a recap of everywhere this content is live"
@@ -1774,6 +1789,9 @@ const VideoCard = memo(function VideoCardImpl({
           )}
           {shareBrandOpen && post?.postId && (
             <ShareWithBrandModal postId={post.postId} wpUrl={post.url} onClose={() => setShareBrandOpen(false)} />
+          )}
+          {blogEditOpen && post?.postId && (
+            <BlogEditModal postId={post.postId} onClose={() => setBlogEditOpen(false)} />
           )}
 
           {/* Social preview/edit modal — shown when previewBeforePublish is on
@@ -2063,6 +2081,8 @@ function ScheduledList({
   // "stuck". Default to pending-only with a toggle to see history. Same
   // mental model as Gmail's "Unread"/"All" split.
   const [showHistory, setShowHistory] = useState(false)
+  // Edit a scheduled post's article right here (title + body), no WP admin.
+  const [editPostId, setEditPostId] = useState<string | null>(null)
   if (loading) {
     return (
       <div className="flex items-center gap-2 text-sm text-[#86868b] dark:text-[#8e8e93] py-12 justify-center">
@@ -2143,6 +2163,9 @@ function ScheduledList({
   const historyCount = items.length - pendingCount
   return (
     <div className="flex flex-col gap-2">
+      {editPostId && (
+        <BlogEditModal postId={editPostId} onClose={() => setEditPostId(null)} onSaved={onRefresh} />
+      )}
       <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
         <div className="flex items-center gap-3 text-xs">
           <p className="text-[#6e6e73] dark:text-[#ebebf0]">
@@ -2261,19 +2284,27 @@ function ScheduledList({
                 <p className="text-[11px] text-[#ff3b30] mt-2 break-all">⚠ {item.error_message}</p>
               )}
             </div>
-            {item.status === 'pending' && !item.synthetic && (
-              <button
-                onClick={() => onCancel(item.id)}
-                className="text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] transition-colors flex-shrink-0"
-              >
-                Cancel
-              </button>
-            )}
-            {item.status === 'pending' && item.synthetic && (
-              <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93] flex-shrink-0 text-right leading-tight">
-                Manage in<br />Video to Blog
-              </span>
-            )}
+            <div className="flex items-center gap-3 flex-shrink-0">
+              {/* Edit the article right here (title + body) — saves to MVP and
+                  re-pushes to WordPress. Replaces the old dead-end "Manage in
+                  Video to Blog" label so scheduled posts are actually editable. */}
+              {item.kind === 'blog_publish' && item.blog_post_id && (
+                <button
+                  onClick={() => setEditPostId(item.blog_post_id)}
+                  className="text-xs font-medium text-[#7C3AED] hover:underline"
+                >
+                  Edit post
+                </button>
+              )}
+              {item.status === 'pending' && !item.synthetic && (
+                <button
+                  onClick={() => onCancel(item.id)}
+                  className="text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] transition-colors"
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
           </div>
         )
       })}
@@ -2477,7 +2508,7 @@ export default function ContentPage() {
   // searchable. Merged into visibleVideos when a query is active.
   const [videoSearchExtra, setVideoSearchExtra] = useState<Record<string, unknown>[]>([])
   const [videoChannel, setVideoChannel] = useState<string>('') // '' = all channels
-  const [videoGenFilter, setVideoGenFilter] = useState<'all' | 'ungenerated' | 'generated'>('all')
+  const [videoGenFilter, setVideoGenFilter] = useState<'all' | 'ungenerated' | 'generated' | 'scheduled'>('all')
   // Debounced server-side video search: when the user types ≥2 chars, query the
   // FULL youtube_videos table (not just the loaded newest-4k slice) so any video
   // in an 8k+ catalogue is findable. Cleared when the box empties.
@@ -3716,8 +3747,14 @@ export default function ContentPage() {
     .filter(v => {
       if (videoChannel && (v.channel_title as string) !== videoChannel) return false
       if (videoGenFilter !== 'all') {
-        const has = !!posts[v.id as string]
-        if (videoGenFilter === 'generated' && !has) return false
+        const p = posts[v.id as string]
+        const has = !!p
+        // A post still queued for a future publish is "Scheduled", not "Already
+        // posted" — split them so a creator whose posts are all scheduled can
+        // actually find them (the "already posted = blank" report).
+        const isScheduled = !!(p?.scheduledFor && new Date(p.scheduledFor).getTime() > Date.now())
+        if (videoGenFilter === 'generated' && (!has || isScheduled)) return false
+        if (videoGenFilter === 'scheduled' && !isScheduled) return false
         if (videoGenFilter === 'ungenerated' && has) return false
       }
       if (search) {
@@ -4427,12 +4464,13 @@ export default function ContentPage() {
             )}
             <select
               value={videoGenFilter}
-              onChange={e => setVideoGenFilter(e.target.value as 'all' | 'ungenerated' | 'generated')}
+              onChange={e => setVideoGenFilter(e.target.value as 'all' | 'ungenerated' | 'generated' | 'scheduled')}
               className="text-xs px-2 py-1.5 rounded-md bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] focus:border-[#7C3AED] focus:outline-none"
               title="Filter by post status"
             >
               <option value="all">All status</option>
               <option value="ungenerated">Not yet posted</option>
+              <option value="scheduled">Scheduled</option>
               <option value="generated">Already posted</option>
             </select>
             {/* Channel filter — only when more than one channel is connected.

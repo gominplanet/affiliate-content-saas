@@ -48,8 +48,11 @@ export async function buildDealCardImage(
   const headline = (signals.headline || '').trim()
     || dealCardHeadline(signals.dealQuality, signals.lowestLabel, signals.discountPct)
   // Only use the lowest-price label as a supporting line — a short, evergreen
-  // phrase like "Lowest in 90 days". Skip anything with a raw number/price.
-  const subline = (signals.lowestLabel || '').trim().slice(0, 40) || undefined
+  // phrase like "Lowest in 90 days". Skip anything with a raw number/price/%
+  // (e.g. "32% below its usual price"): the card is evergreen and the number
+  // drifts after posting, so a bare digit or % in the subline is disallowed.
+  const rawSubline = (signals.lowestLabel || '').trim().slice(0, 40)
+  const subline = (rawSubline && !/[\d%$]/.test(rawSubline)) ? rawSubline : undefined
   return renderDealCard(imageUrl, {
     headline,
     subline,

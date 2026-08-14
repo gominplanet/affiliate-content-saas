@@ -235,7 +235,7 @@ export default function LevantaFinder({ onSavedChange }: { onSavedChange?: () =>
               <div key={m.asin} className="px-4 py-3 flex gap-3 items-start">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 {m.image
-                  ? <img src={m.image} alt="" className="w-12 h-12 rounded-lg object-contain bg-white flex-shrink-0" />
+                  ? <img loading="lazy" decoding="async" src={m.image} alt="" className="w-12 h-12 rounded-lg object-contain bg-white flex-shrink-0" />
                   : <div className="w-12 h-12 rounded-lg flex-shrink-0" style={{ background: 'rgba(14,116,144,0.08)' }} />}
                 <div className="flex-1 min-w-0">
                   <p className="text-[13px] font-semibold leading-snug line-clamp-2" style={{ color: 'var(--text)' }}>

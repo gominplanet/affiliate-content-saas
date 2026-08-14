@@ -30,7 +30,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
-import { Calendar, Loader2, X, SlidersHorizontal } from 'lucide-react'
+import { Calendar, Loader2, X, SlidersHorizontal, ChevronLeft, ChevronRight } from 'lucide-react'
 import type { SchedulableSocial, ScheduleMode } from '@/lib/schedule-types'
 import { DEFAULT_SOCIAL_OFFSETS_MIN } from '@/lib/schedule-types'
 import { tierAllowsSocial, minTierForSocial, tierLabel, type Tier } from '@/lib/tier'
@@ -111,6 +111,105 @@ function defaultScheduleIso(): string {
   // <input type="datetime-local"> wants YYYY-MM-DDTHH:mm (local, no Z).
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+// Month calendar with a yellow dot per day that ALREADY has a scheduled post
+// (up to 3 dots), so a creator can see their queue at a glance and avoid
+// stacking everything on one day. Mirrors the co-pilot content calendar, but
+// scoped to the schedule modal. Clicking a day sets the publish DATE (the time
+// input keeps the time). Data: /api/blog/scheduled-list, pending rows only,
+// deduped by blog post per local day.
+const CAL_WEEKDAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
+function ScheduleDayCalendar({ selectedYmd, onPickDay }: { selectedYmd: string; onPickDay: (y: number, m: number, d: number) => void }) {
+  const [counts, setCounts] = useState<Record<string, number>>({})
+  const sel = /^\d{4}-\d{2}-\d{2}/.test(selectedYmd)
+    ? { y: +selectedYmd.slice(0, 4), m: +selectedYmd.slice(5, 7), d: +selectedYmd.slice(8, 10) }
+    : null
+  const [view, setView] = useState<{ y: number; m: number }>(() => {
+    if (sel) return { y: sel.y, m: sel.m }
+    const n = new Date(); return { y: n.getFullYear(), m: n.getMonth() + 1 }
+  })
+
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/blog/scheduled-list')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (cancelled || !d) return
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const items: any[] = Array.isArray(d.items) ? d.items : Array.isArray(d) ? d : []
+        const perDay: Record<string, Set<string>> = {}
+        for (const it of items) {
+          if (it.status && it.status !== 'pending' && it.status !== 'processing') continue
+          const at = it.scheduled_at
+          if (!at) continue
+          const dt = new Date(at)
+          if (isNaN(dt.getTime())) continue
+          const key = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
+          ;(perDay[key] ||= new Set()).add(String(it.blog_post_id || it.id))
+        }
+        const c: Record<string, number> = {}
+        for (const k in perDay) c[k] = perDay[k].size
+        if (!cancelled) setCounts(c)
+      })
+      .catch(() => { /* best-effort */ })
+    return () => { cancelled = true }
+  }, [])
+
+  const first = new Date(view.y, view.m - 1, 1)
+  const startPad = first.getDay()
+  const daysInMonth = new Date(view.y, view.m, 0).getDate()
+  const cells: (number | null)[] = [...Array(startPad).fill(null), ...Array.from({ length: daysInMonth }, (_, i) => i + 1)]
+  const monthLabel = first.toLocaleString('en-US', { month: 'long', year: 'numeric' })
+  const shift = (delta: number) => setView((v) => { let m = v.m + delta, y = v.y; if (m < 1) { m = 12; y-- } if (m > 12) { m = 1; y++ } return { y, m } })
+  const now = new Date()
+  const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+
+  return (
+    <div className="rounded-lg border p-2.5 mb-2" style={{ borderColor: 'var(--border-bright, rgba(255,255,255,0.14))' }}>
+      <div className="flex items-center justify-between mb-1.5 px-1">
+        <button type="button" onClick={() => shift(-1)} className="w-6 h-6 grid place-items-center rounded hover:bg-white/10" style={{ color: 'var(--text, #F5F5F7)' }}><ChevronLeft size={15} /></button>
+        <span className="text-[12.5px] font-semibold" style={{ color: 'var(--text, #F5F5F7)' }}>{monthLabel}</span>
+        <button type="button" onClick={() => shift(1)} className="w-6 h-6 grid place-items-center rounded hover:bg-white/10" style={{ color: 'var(--text, #F5F5F7)' }}><ChevronRight size={15} /></button>
+      </div>
+      <div className="grid grid-cols-7 gap-0.5 text-center">
+        {CAL_WEEKDAYS.map((w) => <div key={w} className="text-[10px] font-medium py-0.5" style={{ color: 'var(--text-faint, rgba(255,255,255,0.5))' }}>{w}</div>)}
+        {cells.map((day, i) => {
+          if (day == null) return <div key={`e${i}`} />
+          const key = `${view.y}-${String(view.m).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+          const n = counts[key] || 0
+          const isSel = !!sel && sel.y === view.y && sel.m === view.m && sel.d === day
+          const isToday = key === todayKey
+          const isPast = new Date(view.y, view.m - 1, day, 23, 59).getTime() < now.getTime()
+          return (
+            <button
+              key={key}
+              type="button"
+              onClick={() => onPickDay(view.y, view.m, day)}
+              className="relative h-8 rounded text-[12px] transition-colors disabled:opacity-30"
+              disabled={isPast}
+              style={isSel
+                ? { background: '#7C3AED', color: '#fff', fontWeight: 700 }
+                : { color: isToday ? '#7C3AED' : 'var(--text, #F5F5F7)', fontWeight: isToday ? 700 : 400 }}
+              title={n > 0 ? `${n} post${n === 1 ? '' : 's'} scheduled` : undefined}
+            >
+              {day}
+              {n > 0 && (
+                <span className="absolute bottom-1 left-0 right-0 flex items-center justify-center gap-0.5">
+                  {Array.from({ length: Math.min(3, n) }).map((_, j) => (
+                    <span key={j} className="w-1 h-1 rounded-full" style={{ background: isSel ? '#fff' : '#eab308' }} />
+                  ))}
+                </span>
+              )}
+            </button>
+          )
+        })}
+      </div>
+      <p className="text-[10.5px] mt-1.5 px-1 flex items-center gap-1.5" style={{ color: 'var(--text-faint, rgba(255,255,255,0.5))' }}>
+        <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: '#eab308' }} /> days with a post already scheduled
+      </p>
+    </div>
+  )
 }
 
 export default function ScheduleModal({
@@ -402,6 +501,14 @@ export default function ScheduleModal({
             <label htmlFor="schedule-when" className="block text-sm font-medium mb-1.5">
               Publish on
             </label>
+            <ScheduleDayCalendar
+              selectedYmd={scheduledFor}
+              onPickDay={(y, m, d) => {
+                const pad = (n: number) => String(n).padStart(2, '0')
+                const time = /T(\d{2}:\d{2})/.test(scheduledFor) ? scheduledFor.slice(11, 16) : '09:00'
+                setScheduledFor(`${y}-${pad(m)}-${pad(d)}T${time}`)
+              }}
+            />
             <input
               id="schedule-when"
               type="datetime-local"

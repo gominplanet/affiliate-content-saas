@@ -676,7 +676,9 @@ export function tierAllowsPublishAll(tier: Tier): boolean {
  *  ALL PAID tiers (Creator, Studio, Pro, admin) — everyone EXCEPT the free
  *  Trial (2026-07-07). Single source of truth for all three finders + routes. */
 export function tierAllowsFinders(tier: Tier): boolean {
-  return tier !== 'trial'
+  // normalizeTier so a legacy stored value ('free'/'starter'/'growth') can't
+  // slip past the gate: a raw 'free' is !== 'trial' and would wrongly pass.
+  return normalizeTier(tier) !== 'trial'
 }
 
 /** Whether a tier can use Creator Campaigns (Amazon Creator Connections +
@@ -693,7 +695,9 @@ export function tierAllowsCampaigns(tier: Tier): boolean {
  * routes both clamp the chosen account list to this number.
  */
 export function socialAccountCap(tier: Tier): number | null {
-  const t = TIERS[tier]
+  // normalizeTier so a legacy stored value ('free'/'starter'/'growth') doesn't
+  // make TIERS[tier] undefined and throw when a post/fan-out route calls this.
+  const t = TIERS[normalizeTier(tier)]
   if (!t.multiAccountSocial) return 1
   return t.maxSocialAccountsPerPlatform ?? null
 }

@@ -200,7 +200,7 @@ URL: /newsletter · Sidebar: Create → Newsletter
 A built-in email list. Subscribers opt in via forms on the user's blog.
 
 ### Subscriber management
-URL: /newsletter/subscribers — view, tag, export, delete subscribers.
+URL: /newsletter — view, tag, export, delete subscribers.
 Tags are user-defined free-text labels (e.g. "paying", "lead", "archived")
 used for segmenting later.
 
@@ -508,14 +508,14 @@ clearing.
 domains resolve within an hour of Hostinger sign-up.
 
 **"Can I import subscribers from ConvertKit / Substack / Mailchimp?"** —
-Yes. /newsletter/subscribers has a CSV import. Takes the first column of
+Yes. /newsletter has a CSV import. Takes the first column of
 every line + a possible header row.
 
 **"How do I disconnect a WordPress site without losing my posts?"** —
 Click the trash icon on the site in /setup. It removes the connection
 from MVP only; the WordPress posts stay on the WordPress site.
 
-**"How do I tag subscribers?"** — /newsletter/subscribers, click a row,
+**"How do I tag subscribers?"** — /newsletter, click a row,
 add tags. Tags are free-text — anything you want (e.g. "paying", "lead").
 Then use them on /newsletter/compose → "Send to a segment only" → Tags.
 

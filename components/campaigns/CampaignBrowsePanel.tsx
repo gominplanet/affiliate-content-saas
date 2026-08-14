@@ -444,7 +444,7 @@ function BrowseCard({ c, saved, covered, onToggleSave, onMessageBrand, onDeepDiv
           // stretch the card taller than the rest (object-contain still shows
           // the whole product, letterboxed inside the fixed square).
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={c.imageUrl} alt="" className="absolute inset-0 w-full h-full object-contain p-3" />
+          <img loading="lazy" decoding="async" src={c.imageUrl} alt="" className="absolute inset-0 w-full h-full object-contain p-3" />
         ) : (
           <div className="w-full h-full grid place-items-center" style={{ background: 'rgba(124,58,237,0.04)' }} title="Preview appears once this product is scanned (Smart Scan)">
             <ImageOff size={24} style={{ color: 'rgba(124,58,237,0.3)' }} />
