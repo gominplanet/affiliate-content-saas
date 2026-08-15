@@ -8,10 +8,10 @@
 'use client'
 
 import { useState } from 'react'
-import Link from 'next/link'
 import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
-import { Loader2, Copy, ExternalLink, RefreshCw, ChevronLeft, CheckCircle2, Info, GitMerge } from 'lucide-react'
+import SeoHubTabs from '@/components/seo/SeoHubTabs'
+import { Loader2, Copy, ExternalLink, RefreshCw, CheckCircle2, Info, GitMerge } from 'lucide-react'
 
 interface DupPost {
   id: string
@@ -109,13 +109,11 @@ export default function DuplicatesPage() {
       />
 
       <div className="max-w-4xl">
+        <SeoHubTabs />
         <DuplicateCategoriesCard />
 
         <h2 className="text-[15px] font-semibold mb-3" style={{ color: 'var(--text)' }}>Duplicate posts</h2>
         <div className="flex items-center gap-3 mb-4 flex-wrap">
-          <Link href="/seo" className="inline-flex items-center gap-1 text-sm text-[#86868b] hover:text-[#7C3AED]">
-            <ChevronLeft size={15} /> SEO
-          </Link>
           <button onClick={runScan} disabled={scanning || anyMerging}
             className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white bg-[#7C3AED] hover:bg-[#6d28d9] disabled:opacity-60">
             {scanning ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}

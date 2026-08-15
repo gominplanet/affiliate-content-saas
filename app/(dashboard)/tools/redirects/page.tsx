@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
+import SeoHubTabs from '@/components/seo/SeoHubTabs'
 import { gscPageIndexingUrl } from '@/lib/gsc-links'
 import { Loader2, ExternalLink, ChevronLeft, ArrowRight, Upload, Signpost, CheckCircle2, Home } from 'lucide-react'
 
@@ -171,6 +172,7 @@ export default function RedirectsPage() {
       />
 
       <div className="max-w-4xl">
+        <SeoHubTabs />
         <div className="flex items-center gap-3 mb-3">
           <Link href="/seo" className="inline-flex items-center gap-1 text-sm text-[#86868b] hover:text-[#7C3AED]"><ChevronLeft size={15} /> SEO</Link>
           <Link href="/tools/duplicates" className="text-sm text-[#86868b] hover:text-[#7C3AED]">Duplicates →</Link>
