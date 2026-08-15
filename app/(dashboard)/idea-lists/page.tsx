@@ -95,8 +95,11 @@ export default function IdeaListsPage() {
   }
 
   // How many products we can actually pick from.
-  const available = active ? (active.source === 'synced' ? (synced.find(s => s.id === active.listId)?.syncedItems || active.count || 15) : active.items.length) : 15
-  const maxPicks = Math.min(15, available || 15)
+  const available = active ? (active.source === 'synced' ? (synced.find(s => s.id === active.listId)?.syncedItems || active.count || 20) : active.items.length) : 20
+  const maxPicks = Math.min(20, available || 20)
+  // Clean presets — "Top 10 / 12 / 15 / 20", capped at what's available.
+  const presets = [10, 12, 15, 20].filter(n => n <= maxPicks)
+  if (presets.length === 0 && maxPicks >= 3) presets.push(maxPicks)
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-6">
@@ -172,12 +175,13 @@ export default function IdeaListsPage() {
           )}
           <div className="flex flex-col sm:flex-row sm:items-end gap-3 rounded-xl border border-[#7C3AED]/25 bg-[#7C3AED]/5 p-4">
             <div className="flex-1">
-              <p className="text-[12px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">How many picks in the guide?</p>
-              <div className="flex items-center gap-3">
-                <input type="range" min={3} max={maxPicks} value={Math.min(count, maxPicks)} onChange={e => setCount(Number(e.target.value))} className="flex-1 accent-[#7C3AED]" />
-                <span className="text-[13px] font-bold text-[#7C3AED] tabular-nums w-6 text-center">{Math.min(count, maxPicks)}</span>
+              <p className="text-[12px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">How big is the guide?</p>
+              <div className="flex flex-wrap gap-1.5">
+                {presets.map(n => (
+                  <button key={n} onClick={() => setCount(n)} className={`rounded-full border px-3 py-1 text-[12px] font-semibold transition-colors ${Math.min(count, maxPicks) === n ? 'text-white border-transparent bg-[#7C3AED]' : 'text-[#4b4b4f] dark:text-[#b0b0b5] border-black/10 dark:border-white/15 hover:border-[#7C3AED]/60'}`}>Top {n}</button>
+                ))}
               </div>
-              <p className="text-[11px] text-[#86868b] mt-1">Scored by your sales, demand, deals, campaigns and ratings.</p>
+              <p className="text-[11px] text-[#86868b] mt-1.5">MVP checks every product in the list and ranks by your sales, demand, deals, campaigns and ratings.</p>
             </div>
             <button onClick={generate} disabled={generating} className="shrink-0 inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-[14px] font-bold text-white disabled:opacity-60" style={{ backgroundColor: PURPLE }}>
               {generating ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
