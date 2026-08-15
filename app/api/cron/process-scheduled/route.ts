@@ -777,7 +777,11 @@ async function publishOne(
       let assets: Awaited<ReturnType<typeof buildPinAssets>> | null = null
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        assets = await buildPinAssets(fullPost ?? post, { userId: row.user_id, tier: (integration as any).tier ?? null })
+        // artDirector: true — use the SAME polished generator the preview uses.
+        // Without it, buildPinAssets skips the art-director path and composites
+        // text over the post thumbnail, so scheduled pins looked off-brand vs
+        // the preview (the exact mismatch a creator reported).
+        assets = await buildPinAssets(fullPost ?? post, { userId: row.user_id, tier: (integration as any).tier ?? null }, { artDirector: true })
       } catch (e) {
         console.warn('[cron/pinterest] buildPinAssets failed — falling back to thumbnail:', e instanceof Error ? e.message : String(e))
       }
