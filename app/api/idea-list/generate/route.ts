@@ -25,6 +25,7 @@ import { fetchKeepaProductCard } from '@/services/keepa'
 import { resolveAffiliateUrl } from '@/lib/weekly-digest'
 import { fetchIdeaList, normalizeListUrl, cleanListName } from '@/lib/amazon-idea-list'
 import { buildCampaignHero } from '@/lib/hero-image'
+import { generateArtDirectorBlogHero } from '@/lib/art-director-pin'
 import { scrubAiHtml } from '@/lib/html-scrub'
 import { toUserMessage } from '@/lib/friendly-error'
 
@@ -223,18 +224,31 @@ ${fullListCta}`)
 
     let featuredMedia: number | undefined
     try {
-      const hero = await buildCampaignHero({
-        heroPrompt: parsed.hero_prompt || `A clean, aspirational magazine-style editorial hero photo representing ${angle} — a styled scene of the product category, no people, no text, no logos`,
-        productImageUrl: picks.find(p => p.image)?.image ?? null,
-        productTitle: angle,
-        // A guide's hero is a category SCENE, not one product — don't reject it
-        // for failing to match a single pick (that's what forced a bare product
-        // photo before). The product image stays only as a last-resort floor.
-        verifyProduct: false,
-        ctx: { userId: user.id, tier },
-      })
-      if (hero?.b64) {
-        const media = await wp.uploadImageFromBase64(hero.b64, `${slug || 'shopping-guide'}.jpg`, 'image/jpeg')
+      const topImg = picks.find(p => p.image)?.image ?? null
+      let heroB64: string | null = null
+      // Primary: the Art Director engine (gpt-image) — the SAME designed-thumbnail
+      // look MVP uses for its posts (bold headline + the product, on a styled
+      // background), grounded on the top pick and titled with the guide.
+      if (topImg) {
+        try {
+          const ad = await generateArtDirectorBlogHero({
+            productImageUrl: topImg, productTitle: postTitle || angle, productContext: angle,
+            userId: user.id, tier,
+          })
+          if (ad?.data) heroB64 = ad.data
+        } catch { /* fall through */ }
+      }
+      // Fallback: an editorial category scene (no product-match requirement).
+      if (!heroB64) {
+        const hero = await buildCampaignHero({
+          heroPrompt: parsed.hero_prompt || `A clean, aspirational magazine-style editorial hero photo representing ${angle} — a styled scene of the product category, no people, no text, no logos`,
+          productImageUrl: topImg, productTitle: angle, verifyProduct: false,
+          ctx: { userId: user.id, tier },
+        })
+        if (hero?.b64) heroB64 = hero.b64
+      }
+      if (heroB64) {
+        const media = await wp.uploadImageFromBase64(heroB64, `${slug || 'shopping-guide'}.jpg`, 'image/jpeg')
         featuredMedia = (media?.id as number | undefined) ?? undefined
       }
     } catch (err) { console.warn('[idea-list] hero image failed:', err instanceof Error ? err.message : err) }
