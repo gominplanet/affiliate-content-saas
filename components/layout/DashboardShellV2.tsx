@@ -57,6 +57,7 @@ import UsageNudge from './UsageNudge'
 import SiteSwitcherChip from './SiteSwitcherChip'
 import { HelpDeskButton } from '@/components/HelpDeskSidebar'
 import AmazonUpgradeGate from '@/components/upgrade/AmazonUpgradeGate'
+import PermalinkAutoHeal from '@/components/PermalinkAutoHeal'
 
 // Wrapper to handle context safely
 function HelpDeskButtonWrapper() {
@@ -1233,6 +1234,8 @@ export default function DashboardShellV2({
             crush wide content (e.g. the comparison table on /comparison
             or the catalogue grid on /content). */}
         <main className="flex-1 overflow-y-auto w-full">
+          {/* Silent daily self-heal for stale post URLs after a permalink change. */}
+          <PermalinkAutoHeal />
           <div className="max-w-7xl px-4 sm:px-6 lg:px-8 pt-6 pb-12">
             {amazonLocked ? <AmazonUpgradeGate feature={amazonLocked.label} redirect={amazonLocked.redirect} /> : children}
           </div>
