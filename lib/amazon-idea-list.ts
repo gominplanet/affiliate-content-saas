@@ -27,10 +27,10 @@ export function parseIdeaListHtml(html: string): IdeaListParse {
   // that isn't the profile name, else fall back to the item-count section label.
   let title: string | null = null
   const h1 = html.match(/<h1[^>]*>([^<]{3,120})<\/h1>/i)
-  if (h1) title = decodeEntities(h1[1].trim())
+  if (h1) title = cleanListName(decodeEntities(h1[1]))
   if (!title) {
-    const og = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']{3,140})["']/i)
-    if (og) title = decodeEntities(og[1].replace(/['’]s Amazon Page$/i, '').trim())
+    const og = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']{3,180})["']/i)
+    if (og) title = cleanListName(decodeEntities(og[1]))
   }
 
   const declaredMatch = html.match(/itemcount["'][^>]*>\s*([\d,]+)\s*Items?/i)
@@ -107,6 +107,23 @@ function extractTileTitle(tileHtml: string): string | null {
   if (w.length > 2 && w[0].toLowerCase() === w[1].toLowerCase()) txt = w.slice(1).join(' ')
   txt = txt.slice(0, 200).trim()
   return txt.length >= 3 ? txt : null
+}
+
+/**
+ * Turn "⚠️ GominPlanet Reviews ⚠️'s Amazon Page – Office & Studio Essentials …"
+ * into "Office & Studio Essentials – Upgrade Your Workspace" — strip emoji, and
+ * drop the "<handle>'s Amazon Page" prefix so we're left with the list's name.
+ */
+export function cleanListName(raw: string): string | null {
+  let s = (raw || '')
+    // Emoji, dingbats, arrows, warning signs, variation selectors, ZWJ.
+    .replace(/[\u{1F000}-\u{1FAFF}\u{2190}-\u{21FF}\u{2300}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}\u{200D}]/gu, '')
+    .replace(/\s+/g, ' ').trim()
+  // Everything up to and including "Amazon Page" is the profile chrome — drop it.
+  const ap = s.match(/Amazon Page/i)
+  if (ap) s = s.slice((ap.index || 0) + ap[0].length)
+  s = s.replace(/^['’]s\b/i, '').replace(/^[\s\-–—:|,]+/, '').trim()
+  return s.length >= 3 ? s.slice(0, 140) : null
 }
 
 function decodeEntities(s: string): string {
