@@ -9,6 +9,7 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
+import SeoHubTabs from '@/components/seo/SeoHubTabs'
 import { Button } from '@/components/ui/button'
 import { Loader2, Wand2, ExternalLink, CheckCircle2, ShieldCheck } from 'lucide-react'
 
@@ -59,6 +60,7 @@ export default function FixFormattingPage() {
         title="Fix broken post formatting"
         subtitle="Repairs posts that show raw code instead of clean text. Free — no rewriting, no images, no AI."
       />
+      <SeoHubTabs />
 
       <div className="card p-5 mt-4">
         <div className="flex items-start gap-2.5 rounded-xl bg-[#34c759]/10 border border-[#34c759]/30 p-3 mb-4">

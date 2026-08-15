@@ -10,10 +10,10 @@
 'use client'
 
 import { useState } from 'react'
-import Link from 'next/link'
 import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
-import { Loader2, AlertTriangle, CheckCircle2, ExternalLink, RefreshCw, ChevronLeft, ShieldCheck, EyeOff, Info } from 'lucide-react'
+import SeoHubTabs from '@/components/seo/SeoHubTabs'
+import { Loader2, AlertTriangle, CheckCircle2, ExternalLink, RefreshCw, ShieldCheck, EyeOff, Info } from 'lucide-react'
 
 interface Mismatch {
   postId: string
@@ -185,12 +185,7 @@ export default function TitleAuditPage() {
         subtitle="Find published posts whose title names the wrong product — then fix each title in one click, without touching the rest of the post."
       />
 
-      <Link
-        href="/seo"
-        className="inline-flex items-center gap-1 text-xs font-medium text-[#7C3AED] hover:underline mb-4"
-      >
-        <ChevronLeft size={13} /> Back to SEO &amp; Indexing
-      </Link>
+      <SeoHubTabs />
 
       {/* What this is + why it's here — written for the creator, not for us.
           The old subtitle leaned on internal jargon ("WagComb-class

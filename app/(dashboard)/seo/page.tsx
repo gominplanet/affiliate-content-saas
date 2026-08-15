@@ -12,6 +12,8 @@ import { generateBlogRequest } from '@/lib/blog-generate-client'
 import OpportunitiesPanel from '@/components/seo/OpportunitiesPanel'
 import Link from 'next/link'
 import PageHero from '@/components/layout/PageHero'
+import SeoHubTabs from '@/components/seo/SeoHubTabs'
+import GetFound404Upload from '@/components/seo/GetFound404Upload'
 import { SeoGuide } from '@/components/guide/tool-guides'
 import { Gauge, Loader2, RefreshCw, ExternalLink, CheckCircle, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight, Wand2, X, Zap, Youtube, DollarSign, ImageOff, Link2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -80,6 +82,13 @@ export default function SeoPage() {
   const [bulkPreview, setBulkPreview] = useState<{ total: number; toFix: number; totalFixes: number; preview: { postId: string; title: string; fixes: number }[] } | null>(null)
   const [bulkLoading, setBulkLoading] = useState(false)
   const [bulkApplying, setBulkApplying] = useState(false)
+  // One-click "Get my blog found" — runs the whole visibility loop (sitemap +
+  // ping Google/Bing/AI, heal changed links, auto-fix SEO) with a plain
+  // checklist. step = which stage is running; null = idle.
+  const [getFound, setGetFound] = useState<{
+    step: number; done: boolean
+    results: { purged: boolean; pinged: number; links: number; posts: number }
+  } | null>(null)
   // Per-row "Check" button — set of postIds currently being rechecked, so we
   // can show a spinner on the right row(s) while the GSC call is in flight.
   const [rechecking, setRechecking] = useState<Set<string>>(new Set())
@@ -530,6 +539,45 @@ export default function SeoPage() {
     setPinging(false)
   }, [load])
 
+  // The dummy-proof button: one click runs the whole get-found loop so a
+  // non-technical creator never has to know which tool does what. Every step
+  // reuses an existing, non-destructive endpoint.
+  const runGetFound = useCallback(async () => {
+    const results = { purged: false, pinged: 0, links: 0, posts: 0 }
+    setGetFound({ step: 0, done: false, results: { ...results } })
+    // 1 — refresh the sitemap + ping Google's cache, Bing, Copilot & AI crawlers.
+    try {
+      const pr = await fetch('/api/seo/purge-sitemap', { method: 'POST' })
+      if (pr.ok) results.purged = true
+      const ir = await fetch('/api/seo/indexnow', { method: 'POST' })
+      const id = await ir.json().catch(() => ({}))
+      results.pinged = id.submitted || 0
+    } catch { /* best-effort */ }
+    setGetFound({ step: 1, done: false, results: { ...results } })
+    // 2 — heal any changed permalinks so old URLs 301 instead of 404.
+    try {
+      const rr = await fetch('/api/blog/resync-permalinks', { method: 'POST' })
+      const rd = await rr.json().catch(() => ({}))
+      results.links = rd.redirected || 0
+    } catch { /* best-effort */ }
+    setGetFound({ step: 2, done: false, results: { ...results } })
+    // 3 — auto-fix every post's fixable SEO issues (same engine as "Fix all").
+    try {
+      for (let guard = 0; guard < 20; guard++) {
+        const res = await fetch('/api/seo/fix-all', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) })
+        const d = await res.json().catch(() => ({})) as { error?: string; fixed?: number; remaining?: number }
+        if (d.error) break
+        results.posts += d.fixed || 0
+        if (!d.remaining || d.fixed === 0) break
+      }
+    } catch { /* best-effort */ }
+    setGetFound({ step: 3, done: false, results: { ...results } })
+    // 4 — re-read the freshened sitemap + refresh what's indexed.
+    await new Promise(r => setTimeout(r, 1500))
+    await load()
+    setGetFound({ step: 4, done: true, results: { ...results } })
+  }, [load])
+
   const previewFixAll = useCallback(async () => {
     setBulkLoading(true); setFixMsg(null)
     try {
@@ -735,6 +783,93 @@ export default function SeoPage() {
           </>
         }
       />
+
+      <SeoHubTabs />
+
+      {/* Super dummy-proof hero: explains it in plain words, one button does the
+          whole get-found loop, and a drop zone fixes 404s straight from a Search
+          Console export. All the links they need are right here. */}
+      <div className="rounded-2xl border border-[#34c759]/30 bg-[#34c759]/[0.06] p-4 sm:p-5 mb-5">
+        <div className="flex items-center gap-2 mb-1">
+          <Zap size={18} className="text-[#34c759]" />
+          <h2 className="text-[16px] font-bold text-[#1d1d1f] dark:text-[#f5f5f7]">Get found on Google, Bing &amp; AI</h2>
+        </div>
+        <p className="text-[13px] text-[#4b4b4f] dark:text-[#b0b0b5] mb-4 max-w-2xl">
+          Google, Bing and AI models can only show pages they&apos;ve crawled. This does the whole job for you, no SEO knowledge needed. Run step 1 anytime; do step 2 once to win back rankings from old broken links.
+        </p>
+
+        {/* Step 1 — one button does everything */}
+        <div className="rounded-xl bg-white/70 dark:bg-white/[0.03] border border-black/5 dark:border-white/10 p-3.5 mb-3">
+          {!getFound ? (
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+              <div className="flex-1 min-w-0">
+                <p className="text-[14px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]"><span className="text-[#34c759]">1.</span> One click — we handle the rest</p>
+                <p className="text-[12px] text-[#4b4b4f] dark:text-[#b0b0b5] mt-0.5">Refreshes your sitemap, pings Google, Bing &amp; AI crawlers, heals broken links, and auto-fixes SEO issues on every post.</p>
+              </div>
+              <button onClick={runGetFound} className="shrink-0 inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-[15px] font-bold text-white bg-[#34c759] hover:bg-[#2fb350] transition-colors shadow-sm">
+                <Zap size={18} /> Get my blog found
+              </button>
+            </div>
+          ) : (
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                {getFound.done ? <CheckCircle2 size={18} className="text-[#34c759]" /> : <Loader2 size={18} className="animate-spin text-[#34c759]" />}
+                <p className="text-[14px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{getFound.done ? 'Done — your blog is set up to be found' : 'Getting your blog found…'}</p>
+              </div>
+              <div className="space-y-1.5">
+                {['Refreshing your sitemap + pinging Google, Bing & AI', 'Healing changed links so nothing 404s', 'Auto-fixing SEO issues on your posts', 'Re-checking what search engines see'].map((label, i) => {
+                  const st = getFound.step > i ? 'done' : getFound.step === i ? 'active' : 'todo'
+                  return (
+                    <div key={i} className="flex items-center gap-2 text-[13px]">
+                      {st === 'done' ? <CheckCircle2 size={15} className="text-[#34c759]" />
+                        : st === 'active' ? <Loader2 size={15} className="animate-spin text-[#34c759]" />
+                        : <span className="w-[15px] h-[15px] rounded-full border border-black/15 dark:border-white/20 inline-block" />}
+                      <span className={st === 'todo' ? 'text-[#86868b]' : 'text-[#1d1d1f] dark:text-[#f5f5f7]'}>{label}</span>
+                    </div>
+                  )
+                })}
+              </div>
+              {getFound.done && (() => {
+                const r = getFound.results
+                const parts = [
+                  r.purged ? 'refreshed your sitemap' : null,
+                  r.pinged ? `pinged Bing/Copilot with ${r.pinged} pages` : null,
+                  r.links ? `healed ${r.links} link${r.links === 1 ? '' : 's'}` : null,
+                  r.posts ? `improved ${r.posts} post${r.posts === 1 ? '' : 's'}` : null,
+                ].filter(Boolean)
+                const summary = parts.length ? parts.join(' · ') : 'Everything was already in good shape'
+                return (
+                  <div className="mt-3 pt-3 border-t border-[#34c759]/20">
+                    <p className="text-[13px] text-[#4b4b4f] dark:text-[#b0b0b5]">
+                      {summary.charAt(0).toUpperCase() + summary.slice(1)}. Google and Bing re-crawl over the next few days.
+                    </p>
+                    <button onClick={() => setGetFound(null)} className="mt-2 text-[13px] font-medium text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]">Run again</button>
+                  </div>
+                )
+              })()}
+            </div>
+          )}
+        </div>
+
+        {/* Step 2 — fix 404s from a Search Console export (drop the file, we do the rest) */}
+        <div className="rounded-xl bg-white/70 dark:bg-white/[0.03] border border-black/5 dark:border-white/10 p-3.5">
+          <p className="text-[14px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]"><span className="text-[#34c759]">2.</span> Win back rankings from broken links <span className="font-normal text-[#86868b]">— one-time, worth it</span></p>
+          <ol className="text-[12px] text-[#4b4b4f] dark:text-[#b0b0b5] mt-1.5 mb-2.5 space-y-1 list-none pl-0">
+            <li>
+              <strong>a.</strong>{' '}
+              {data?.connected ? (
+                <a href={data.property ? `https://search.google.com/search-console/index?resource_id=${encodeURIComponent(data.property)}` : 'https://search.google.com/search-console'} target="_blank" rel="noreferrer" className="font-medium text-[#7C3AED] hover:underline inline-flex items-center gap-1">Open your Pages report in Search Console <ExternalLink size={11} /></a>
+              ) : (
+                <a href="/api/auth/gsc" className="font-medium text-[#7C3AED] hover:underline">Connect Google Search Console first</a>
+              )}
+              , then click the <strong>Not found (404)</strong> row.
+            </li>
+            <li><strong>b.</strong> Hit <strong>Export</strong> (top-right) and download the file (.zip or .csv).</li>
+            <li><strong>c.</strong> Drop it below. We match each dead URL to the right live post and 301-redirect it, recovering the rankings Google already found.</li>
+          </ol>
+          <GetFound404Upload onDone={load} />
+        </div>
+      </div>
 
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-[#86868b] dark:text-[#8e8e93] py-12 justify-center">
