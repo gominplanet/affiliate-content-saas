@@ -31,6 +31,7 @@ export default function IdeaListsPage() {
   const [active, setActive] = useState<Active | null>(null)
   const [count, setCount] = useState(10)
   const [generating, setGenerating] = useState(false)
+  const [syncing, setSyncing] = useState(false)
   const [done, setDone] = useState<{ url: string; title: string; picked: number; postId: string | null; wpPostId: number | null } | null>(null)
   const [editOpen, setEditOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -89,8 +90,42 @@ export default function IdeaListsPage() {
     finally { setScanning(false) }
   }
 
+  // Poll the sync endpoint until this list's products land (SCOUT captures them
+  // in the tab we opened). Returns true once synced, false after ~70s.
+  const pollForProducts = async (listId: string): Promise<boolean> => {
+    for (let i = 0; i < 23; i++) {
+      await new Promise(r => setTimeout(r, 3000))
+      try {
+        const res = await fetch('/api/idea-list/ingest')
+        const d = await res.json()
+        if (res.ok) {
+          const lists = (d.lists || []) as SyncedList[]
+          setSynced(lists)
+          const l = lists.find(x => x.id === listId)
+          if (l && l.hasItems) return true
+        }
+      } catch { /* keep polling */ }
+    }
+    return false
+  }
+
   const generate = async () => {
     if (!active) return
+    // If a synced list has no products yet, open it on Amazon so SCOUT captures
+    // them, wait for them to land, THEN build the guide — no manual refresh.
+    if (active.source === 'synced') {
+      const l = synced.find(s => s.id === active.listId)
+      if (l && !l.hasItems) {
+        if (!active.url) { toast.error('No Amazon link for this list — paste its URL above instead.'); return }
+        // Open synchronously inside the click so the popup isn't blocked.
+        window.open(active.url, '_blank', 'noopener,noreferrer')
+        setSyncing(true)
+        const ok = await pollForProducts(active.listId!)
+        setSyncing(false)
+        if (!ok) { toast.error('Amazon is still loading this list. Keep that tab open a few seconds, then click Create again.'); return }
+        toast.success('Products synced — building your guide')
+      }
+    }
     setGenerating(true); setDone(null)
     try {
       const payload = active.source === 'synced'
@@ -231,8 +266,8 @@ export default function IdeaListsPage() {
             </div>
           )}
           {active.source === 'synced' && !synced.find(s => s.id === active.listId)?.hasItems && (
-            <div className="rounded-lg border border-[#ff9500]/40 bg-[#ff9500]/10 p-2.5 text-[11px] text-[#9a5d00] dark:text-[#ffcf8f] mb-3">
-              This list&apos;s products aren&apos;t synced yet. Open it on Amazon with SCOUT installed{active.url ? <> (<a href={active.url} target="_blank" rel="noreferrer" className="underline">open list</a>)</> : ''}, then hit Refresh.
+            <div className="rounded-lg border border-[#7C3AED]/40 bg-[#7C3AED]/10 p-2.5 text-[11px] text-[#5b3aa6] dark:text-[#c9b6ff] mb-3">
+              This list&apos;s products load on demand. When you click <strong>Create shopping guide</strong>, MVP opens it on Amazon so SCOUT reads every product, then builds the guide automatically. Keep the Amazon tab open until it finishes (SCOUT needs it visible).
             </div>
           )}
           <div className="flex flex-col sm:flex-row sm:items-end gap-3 rounded-xl border border-[#7C3AED]/25 bg-[#7C3AED]/5 p-4">
@@ -245,9 +280,9 @@ export default function IdeaListsPage() {
               </div>
               <p className="text-[11px] text-[#86868b] mt-1.5">MVP checks every product in the list and ranks by your sales, demand, deals, campaigns and ratings.</p>
             </div>
-            <button onClick={generate} disabled={generating} className="shrink-0 inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-[14px] font-bold text-white disabled:opacity-60" style={{ backgroundColor: PURPLE }}>
-              {generating ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-              {generating ? 'Writing your guide…' : 'Create shopping guide'}
+            <button onClick={generate} disabled={generating || syncing} className="shrink-0 inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-[14px] font-bold text-white disabled:opacity-60" style={{ backgroundColor: PURPLE }}>
+              {(generating || syncing) ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+              {syncing ? 'Syncing products from Amazon…' : generating ? 'Writing your guide…' : 'Create shopping guide'}
             </button>
           </div>
         </div>
