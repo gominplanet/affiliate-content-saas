@@ -78,9 +78,11 @@ async function pushIdeaListToMvp(payload) {
     })
     let body = null
     try { body = await res.json() } catch (e) {}
-    if (res.ok) return { reached: true, ok: true, upserted: body && body.upserted }
+    if (res.ok) { try { console.debug('[SCOUT] idea-list sync ok →', body) } catch (e) {} ; return { reached: true, ok: true, upserted: body && body.upserted } }
+    try { console.warn('[SCOUT] idea-list sync failed', res.status, body) } catch (e) {}
     return { reached: true, ok: false, status: res.status, error: (body && body.error) || `HTTP ${res.status}` }
   } catch (e) {
+    try { console.warn('[SCOUT] idea-list sync network error', e && e.message) } catch (er) {}
     return { reached: false, ok: false, error: (e && e.message) || 'network error' }
   }
 }

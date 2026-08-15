@@ -2233,14 +2233,19 @@ setInterval(() => {
 //       and push the full set. Then MVP scores + writes a shopping guide.
 // Everything is self-guarded and no-ops on any DOM it doesn't recognize.
 ;(function mvpIdeaListsScout() {
-  try { if (!/^\/shop\//.test(location.pathname)) return } catch (e) { return }
-
+  // The Amazon influencer storefront is a single-page app: navigating from the
+  // storefront index into a list (or between lists) does NOT reload the page, so
+  // a one-shot capture at document_idle misses everything the user clicks into.
+  // We run on ANY amazon.com page and react to URL changes ourselves.
   const MVP = 'SCOUT_PUSH_IDEA_LISTS'
   const MVP_ITEMS = 'SCOUT_PUSH_IDEA_LIST_ITEMS'
+  const LOG = '[SCOUT idea-lists]'
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const send = (type, payload) => { try { const p = chrome.runtime.sendMessage(Object.assign({ type: type }, payload)); if (p && p.catch) p.catch(() => {}) } catch (e) {} }
-  const listIdFromHref = (href) => { const m = String(href || '').match(/\/shop\/[^/]+\/list\/([A-Z0-9]+)/i); return m ? m[1] : null }
-  const currentListId = () => { const m = location.pathname.match(/\/shop\/[^/]+\/list\/([A-Z0-9]+)/i); return m ? m[1] : null }
+  // Tolerant of both /shop/<handle>/list/<id> and the newer /list/<id> shapes.
+  const listIdFromHref = (href) => { const m = String(href || '').match(/\/(?:shop\/[^/]+\/)?list\/([A-Za-z0-9]{6,})/i); return m ? m[1] : null }
+  const currentListId = () => listIdFromHref(location.pathname)
+  const onStorefront = () => { try { return /(^|\.)amazon\./i.test(location.hostname) && /\/(shop|list)\//i.test(location.pathname) } catch (e) { return false } }
 
   function tileTitle(el) {
     let s = (el.innerText || '').replace(/\s+/g, ' ').trim()
@@ -2268,27 +2273,31 @@ setInterval(() => {
     return t.replace(/^['’]s\b/i, '').replace(/^[\s\-–—:|,]+/, '').replace(/[\u{1F000}-\u{1FAFF}\u{2190}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}]/gu, '').trim().slice(0, 160) || null
   }
 
-  // (b) Single list — scroll to load every product, then push once.
-  const onListId = currentListId()
-  if (onListId) {
-    let sent = false
-    ;(async () => {
+  // (b) Single list — scroll to load every product, then push once per list id.
+  const capturing = new Set()   // ids currently being captured (dedupe re-entry)
+  const captured = new Set()    // ids already sent this page-load
+  async function captureList() {
+    const id = currentListId()
+    if (!id || capturing.has(id) || captured.has(id)) return
+    capturing.add(id)
+    try {
       // Load lazily-appended tiles by scrolling to the bottom until the count settles.
       let last = -1, stable = 0
       for (let i = 0; i < 40 && stable < 3; i++) {
         try { window.scrollTo(0, document.body.scrollHeight) } catch (e) {}
         await sleep(1200)
+        // Bail if the user navigated away mid-scroll (SPA).
+        if (currentListId() !== id) { return }
         const n = document.querySelectorAll('[data-asin]').length
         if (n === last) stable++; else { stable = 0; last = n }
       }
       try { window.scrollTo(0, 0) } catch (e) {}
-      if (sent) return
       const items = collectItems()
-      if (!items.length) return
-      sent = true
-      send(MVP_ITEMS, { list: { amazonListId: onListId, title: listTitle(), url: location.href.split('?')[0], itemCount: declaredCount(), coverImage: (items[0] && items[0].image) || null, items: items } })
-    })()
-    return
+      if (!items.length) { try { console.debug(LOG, 'list', id, 'no products found yet — will retry') } catch (e) {} ; return }
+      captured.add(id)
+      try { console.debug(LOG, 'captured list', id, '→', items.length, 'products') } catch (e) {}
+      send(MVP_ITEMS, { list: { amazonListId: id, title: listTitle(), url: location.href.split('?')[0], itemCount: declaredCount(), coverImage: (items[0] && items[0].image) || null, items: items } })
+    } finally { capturing.delete(id) }
   }
 
   // (a) Storefront index — collect every idea-list card's metadata.
@@ -2301,19 +2310,45 @@ setInterval(() => {
       const img = card.querySelector('img')
       const label = (a.textContent || '').replace(/\s+/g, ' ').trim() || (card.querySelector('h2,h3,[class*=title]') || {}).textContent || ''
       const cnt = (card.innerText || '').match(/([\d,]+)\s+Items?\b/i)
+      const rawHref = a.getAttribute('href') || a.href || ''
+      const absUrl = /^https?:/i.test(rawHref) ? rawHref : ('https://www.amazon.com' + (rawHref.startsWith('/') ? rawHref : '/' + rawHref))
       byId.set(id, {
         amazonListId: id,
         title: (label || '').replace(/\s+/g, ' ').trim().slice(0, 200) || null,
-        url: ('https://www.amazon.com/shop' + (a.getAttribute('href') || '').replace(/^.*\/shop/, '')).split('?')[0],
+        url: absUrl.split('?')[0],
         itemCount: cnt ? parseInt(cnt[1].replace(/,/g, ''), 10) : null,
         coverImage: (img && (img.getAttribute('src') || img.getAttribute('data-src'))) || null,
       })
     })
     const lists = Array.from(byId.values())
-    if (lists.length) send(MVP, { lists: lists })
+    if (!lists.length) return
+    // Only push when the set of lists actually changed (the storefront mutates
+    // constantly — ads, carousels — and we don't want a POST on every tick).
+    const sig = lists.map(l => l.amazonListId).sort().join(',')
+    if (sig === lastSig) return
+    lastSig = sig
+    try { console.debug(LOG, 'storefront index →', lists.length, 'lists') } catch (e) {}
+    send(MVP, { lists: lists })
   }
+  let lastSig = ''
+
+  // One debounced runner that picks the right capture for the CURRENT url.
   let lt = null
-  const lkick = () => { clearTimeout(lt); lt = setTimeout(() => { try { syncLists() } catch (e) {} }, 2500) }
-  lkick()
-  try { new MutationObserver(lkick).observe(document.body, { childList: true, subtree: true }) } catch (e) {}
+  const kick = () => { clearTimeout(lt); lt = setTimeout(() => { try { if (!onStorefront()) return; if (currentListId()) captureList(); else syncLists() } catch (e) {} }, 2000) }
+
+  // React to SPA navigation: patch history + listen to popstate + poll as a
+  // backstop, and re-kick on DOM mutations (covers tab switches and lazy loads).
+  let lastHref = location.href
+  const onNav = () => { if (location.href !== lastHref) { lastHref = location.href; kick() } }
+  try {
+    const wrap = (fn) => function () { const r = fn.apply(this, arguments); try { onNav() } catch (e) {} ; return r }
+    history.pushState = wrap(history.pushState)
+    history.replaceState = wrap(history.replaceState)
+    window.addEventListener('popstate', onNav)
+  } catch (e) {}
+  try { new MutationObserver(() => { onNav(); kick() }).observe(document.documentElement, { childList: true, subtree: true }) } catch (e) {}
+  // Backstop: catch URL changes we didn't hook, and re-run on a slow cadence so a
+  // constantly-mutating page (which keeps resetting the debounce) still syncs.
+  try { setInterval(() => { onNav(); kick() }, 5000) } catch (e) {}
+  kick()
 })();
