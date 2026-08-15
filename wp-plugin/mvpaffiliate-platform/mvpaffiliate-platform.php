@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.89
+ * Version: 1.0.90
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -39,11 +39,18 @@ unset($mvp_affiliate_self_meta);
 // only when WP_DEBUG is on, leave a one-line note in the log. \Throwable covers
 // both \Exception and \Error (type errors, calls to missing methods, etc.), so
 // this is a true safety net, not just an exception guard.
+// NOTE: do NOT type-hint $fn as `callable`. Some hooks are registered with a
+// function NAME string whose function is defined LATER in this file (inside a
+// `function_exists` guard). At the moment add_filter() calls this wrapper, that
+// name is not callable yet, and a `callable` hint would throw a TypeError at
+// plugin load — taking the whole site down. We accept anything and resolve it
+// at hook-run time, when the target is guaranteed to exist.
 if (!function_exists('mvp_affiliate_safe')) {
-    function mvp_affiliate_safe(callable $fn) {
+    function mvp_affiliate_safe($fn) {
         return function (...$args) use ($fn) {
             try {
-                return $fn(...$args);
+                if (!is_callable($fn)) { return $args[0] ?? null; }
+                return call_user_func_array($fn, $args);
             } catch (\Throwable $e) {
                 if (defined('WP_DEBUG') && WP_DEBUG) {
                     error_log('[MVP Affiliate] hook skipped: ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
