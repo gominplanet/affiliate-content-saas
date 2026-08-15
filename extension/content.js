@@ -2223,3 +2223,97 @@ setInterval(() => {
   kick()
   try { new MutationObserver(kick).observe(document.body, { childList: true, subtree: true }) } catch (e) {}
 })();
+
+// ─── Idea Lists: storefront + full-list capture ──────────────────────────────
+// Runs on the creator's own Amazon influencer storefront (www.amazon.com/shop/*).
+//   (a) On the storefront index: sync the METADATA of every idea list (id,
+//       title, url, item count, cover) so the MVP dashboard can list them.
+//   (b) On a single list page (/shop/<handle>/list/<id>): scroll to load EVERY
+//       product (beating the ~20 a server fetch gets), scrape asin/title/image,
+//       and push the full set. Then MVP scores + writes a shopping guide.
+// Everything is self-guarded and no-ops on any DOM it doesn't recognize.
+;(function mvpIdeaListsScout() {
+  try { if (!/^\/shop\//.test(location.pathname)) return } catch (e) { return }
+
+  const MVP = 'SCOUT_PUSH_IDEA_LISTS'
+  const MVP_ITEMS = 'SCOUT_PUSH_IDEA_LIST_ITEMS'
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  const send = (type, payload) => { try { const p = chrome.runtime.sendMessage(Object.assign({ type: type }, payload)); if (p && p.catch) p.catch(() => {}) } catch (e) {} }
+  const listIdFromHref = (href) => { const m = String(href || '').match(/\/shop\/[^/]+\/list\/([A-Z0-9]+)/i); return m ? m[1] : null }
+  const currentListId = () => { const m = location.pathname.match(/\/shop\/[^/]+\/list\/([A-Z0-9]+)/i); return m ? m[1] : null }
+
+  function tileTitle(el) {
+    let s = (el.innerText || '').replace(/\s+/g, ' ').trim()
+    const price = s.search(/\$\s?\d/); if (price > 0) s = s.slice(0, price)
+    s = s.replace(/^(Best ?Seller|Amazon['’]?s Choice|Overall Pick|Editor['’]?s Pick|Limited time deal|Sponsored|New|Popular pick)\s*/i, '').trim()
+    const w = s.split(' '); if (w.length > 2 && w[0].toLowerCase() === w[1].toLowerCase()) s = w.slice(1).join(' ')
+    return s.slice(0, 200)
+  }
+  function tileImage(el) { const img = el.querySelector('img'); const src = img && (img.getAttribute('src') || img.getAttribute('data-src')); return src && /\.(jpg|jpeg|png|webp)/i.test(src) ? src : null }
+  function collectItems() {
+    const out = [], seen = new Set()
+    document.querySelectorAll('[data-asin]').forEach((el) => {
+      const asin = (el.getAttribute('data-asin') || '').trim().toUpperCase()
+      if (!/^[A-Z0-9]{10}$/.test(asin) || seen.has(asin)) return
+      seen.add(asin)
+      out.push({ asin: asin, title: tileTitle(el) || null, image: tileImage(el) })
+    })
+    return out
+  }
+  function declaredCount() { const m = (document.body.innerText || '').match(/([\d,]+)\s+Items?\b/i); return m ? parseInt(m[1].replace(/,/g, ''), 10) : null }
+  function listTitle() {
+    const h1 = document.querySelector('h1'); let t = (h1 && h1.textContent || '').replace(/\s+/g, ' ').trim()
+    // Strip the "<handle>'s Amazon Page –" chrome so the list's own name is left.
+    const ap = t.search(/Amazon Page/i); if (ap >= 0) t = t.slice(ap + 'Amazon Page'.length)
+    return t.replace(/^['’]s\b/i, '').replace(/^[\s\-–—:|,]+/, '').replace(/[\u{1F000}-\u{1FAFF}\u{2190}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}]/gu, '').trim().slice(0, 160) || null
+  }
+
+  // (b) Single list — scroll to load every product, then push once.
+  const onListId = currentListId()
+  if (onListId) {
+    let sent = false
+    ;(async () => {
+      // Load lazily-appended tiles by scrolling to the bottom until the count settles.
+      let last = -1, stable = 0
+      for (let i = 0; i < 40 && stable < 3; i++) {
+        try { window.scrollTo(0, document.body.scrollHeight) } catch (e) {}
+        await sleep(1200)
+        const n = document.querySelectorAll('[data-asin]').length
+        if (n === last) stable++; else { stable = 0; last = n }
+      }
+      try { window.scrollTo(0, 0) } catch (e) {}
+      if (sent) return
+      const items = collectItems()
+      if (!items.length) return
+      sent = true
+      send(MVP_ITEMS, { list: { amazonListId: onListId, title: listTitle(), url: location.href.split('?')[0], itemCount: declaredCount(), coverImage: (items[0] && items[0].image) || null, items: items } })
+    })()
+    return
+  }
+
+  // (a) Storefront index — collect every idea-list card's metadata.
+  function syncLists() {
+    const byId = new Map()
+    document.querySelectorAll('a[href*="/list/"]').forEach((a) => {
+      const id = listIdFromHref(a.getAttribute('href') || a.href)
+      if (!id || byId.has(id)) return
+      const card = a.closest('li, [data-testid], article, div') || a
+      const img = card.querySelector('img')
+      const label = (a.textContent || '').replace(/\s+/g, ' ').trim() || (card.querySelector('h2,h3,[class*=title]') || {}).textContent || ''
+      const cnt = (card.innerText || '').match(/([\d,]+)\s+Items?\b/i)
+      byId.set(id, {
+        amazonListId: id,
+        title: (label || '').replace(/\s+/g, ' ').trim().slice(0, 200) || null,
+        url: ('https://www.amazon.com/shop' + (a.getAttribute('href') || '').replace(/^.*\/shop/, '')).split('?')[0],
+        itemCount: cnt ? parseInt(cnt[1].replace(/,/g, ''), 10) : null,
+        coverImage: (img && (img.getAttribute('src') || img.getAttribute('data-src'))) || null,
+      })
+    })
+    const lists = Array.from(byId.values())
+    if (lists.length) send(MVP, { lists: lists })
+  }
+  let lt = null
+  const lkick = () => { clearTimeout(lt); lt = setTimeout(() => { try { syncLists() } catch (e) {} }, 2500) }
+  lkick()
+  try { new MutationObserver(lkick).observe(document.body, { childList: true, subtree: true }) } catch (e) {}
+})();

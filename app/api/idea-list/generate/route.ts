@@ -72,14 +72,23 @@ export async function POST(request: Request) {
     if (!gen.allowed) return NextResponse.json({ error: gen.reason, limitReached: true, cap: 'generations', currentTier: gen.tier, upgrade: gen.upgrade }, { status: 429 })
 
     const body = await request.json().catch(() => ({})) as {
-      url?: string; items?: InItem[]; listTitle?: string; listUrl?: string; count?: number
+      url?: string; items?: InItem[]; listTitle?: string; listUrl?: string; count?: number; listId?: string
     }
     const count = Math.max(3, Math.min(15, Number(body.count) || 10))
 
-    // 1. Resolve the source products (SCOUT items, or read the URL).
+    // 1. Resolve the source products, in order of preference:
+    //    a synced list (SCOUT, full set) → inline items → read the URL (first ~20).
     let inItems: InItem[] = Array.isArray(body.items) ? body.items : []
     let listTitle = (body.listTitle || '').trim()
-    const listUrl = normalizeListUrl(body.listUrl || body.url || '')
+    let listUrl = normalizeListUrl(body.listUrl || body.url || '')
+    if (inItems.length === 0 && (body.listId || '').trim()) {
+      const { data: row } = await sb.from('idea_lists')
+        .select('title,url,items').eq('id', body.listId!.trim()).eq('user_id', user.id).maybeSingle()
+      if (!row) return NextResponse.json({ error: 'That synced list is no longer available.' }, { status: 404 })
+      inItems = Array.isArray(row.items) ? row.items : []
+      if (!listTitle && row.title) listTitle = row.title
+      if (!listUrl && row.url) listUrl = normalizeListUrl(row.url)
+    }
     if (inItems.length === 0 && (body.url || '').trim()) {
       const parsed = await fetchIdeaList(body.url!.trim())
       inItems = parsed.items
