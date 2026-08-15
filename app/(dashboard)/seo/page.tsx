@@ -887,80 +887,50 @@ export default function SeoPage() {
               <button onClick={() => setFixMsg(null)} className="text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] flex-shrink-0 mt-0.5"><X size={14} /></button>
             </div>
           )}
-          {/* Connect-GSC prompt when not connected — scores still work without it */}
-          {!data.connected && (
-            <div className="card p-5 border border-[#4285F4]/25 bg-[#4285F4]/5 flex items-start gap-4">
-              <Gauge size={18} className="text-[#4285F4] mt-0.5 flex-shrink-0" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Connect Google Search Console for indexing + traffic data</p>
-                <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3 leading-relaxed">
-                  Your SEO scores below are live. Connect Search Console (read-only) to also see whether Google has indexed each post, its ranking, and the searches people use to find it.
-                </p>
-                <a href="/api/auth/gsc?returnTo=/seo" className="inline-flex items-center gap-1.5 text-xs font-semibold text-white px-3 py-1.5 rounded-lg bg-[#4285F4] hover:opacity-90 transition-opacity">
-                  Connect Search Console
-                </a>
+          {/* Needs attention — every actionable warning folded into ONE compact
+              strip (connect GSC, de-indexed drops, missing from sitemap, missing
+              thumbnails) so five possible banners never stack into a wall. */}
+          {(() => {
+            const F = 'font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]'
+            const actBtn = 'shrink-0 text-[12px] font-semibold px-2.5 py-1 rounded-md text-white transition-opacity hover:opacity-90 disabled:opacity-60'
+            const rows: Array<{ key: string; icon: React.ReactNode; text: React.ReactNode; action?: React.ReactNode }> = []
+            if (!data.connected) rows.push({
+              key: 'gsc', icon: <Gauge size={15} className="text-[#4285F4] flex-shrink-0" />,
+              text: <><span className={F}>Connect Search Console</span> to see indexing, rankings and traffic (scores work without it).</>,
+              action: <a href="/api/auth/gsc?returnTo=/seo" className={`${actBtn} bg-[#4285F4]`}>Connect</a>,
+            })
+            if (data.connected && data.summary.recentlyDropped > 0) rows.push({
+              key: 'dropped', icon: <AlertCircle size={15} className="text-[#ff3b30] flex-shrink-0" />,
+              text: <><span className={F}>{data.summary.recentlyDropped} post{data.summary.recentlyDropped !== 1 ? 's' : ''} dropped from Google&apos;s index</span> in the last 7 days (broken canonical, a 404, or accidental noindex).</>,
+              action: <button onClick={() => setFilterNotIndexed(true)} className={`${actBtn} bg-[#ff3b30]`}>Show</button>,
+            })
+            if (data.summary.sitemapFound && data.summary.notInSitemap > 0) rows.push({
+              key: 'sitemap', icon: <AlertCircle size={15} className="text-[#ff9500] flex-shrink-0" />,
+              text: <><span className={F}>{data.summary.notInSitemap} post{data.summary.notInSitemap !== 1 ? 's' : ''} missing from your sitemap.</span> The green <span className="font-semibold text-[#34c759]">Get my blog found</span> button up top fixes this.</>,
+            })
+            if (data.summary.thumbnailBlocked > 0) rows.push({
+              key: 'thumb', icon: <ImageOff size={15} className="text-[#ff9500] flex-shrink-0" />,
+              text: <><span className={F}>{data.summary.thumbnailBlocked} post{data.summary.thumbnailBlocked !== 1 ? 's' : ''} published without a thumbnail</span> — usually your host blocking image uploads via the API. Safe to re-run.</>,
+              action: <button onClick={reattachThumbnails} disabled={reattaching} className={`${actBtn} bg-[#ff9500]`}>{reattaching ? 'Fixing…' : 'Re-attach'}</button>,
+            })
+            if (rows.length === 0) return null
+            return (
+              <div className="rounded-xl border border-gray-200 dark:border-white/10 overflow-hidden">
+                <div className="px-4 py-2 border-b border-gray-100 dark:border-white/10">
+                  <p className="text-[13px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Needs attention</p>
+                </div>
+                <div className="divide-y divide-gray-100 dark:divide-white/5">
+                  {rows.map(r => (
+                    <div key={r.key} className="flex items-center gap-2.5 px-4 py-2.5">
+                      {r.icon}
+                      <span className="text-[13px] text-[#4b4b4f] dark:text-[#d2d2d7] flex-1 min-w-0">{r.text}</span>
+                      {r.action}
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
-
-          {/* Recently dropped — posts Google had indexed but de-indexed in the
-              last 7 days. This is the rare-but-real alert that warrants action
-              (canonical, broken link, quality drop, manual action). The nightly
-              cron stamps droppedAt the moment a post flips indexed → not_indexed. */}
-          {data.connected && data.summary.recentlyDropped > 0 && (
-            <div className="card p-4 border border-[#ff3b30]/30 bg-[#ff3b30]/5 flex items-start gap-3">
-              <AlertCircle size={16} className="text-[#ff3b30] mt-0.5 flex-shrink-0" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-0.5">
-                  {data.summary.recentlyDropped} post{data.summary.recentlyDropped !== 1 ? 's' : ''} dropped from Google’s index in the last 7 days
-                </p>
-                <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-2 leading-relaxed">
-                  Google removed {data.summary.recentlyDropped === 1 ? 'a previously-indexed post' : 'previously-indexed posts'} from its index. Common causes: a broken canonical, a 404, accidental noindex, or a manual quality flag. Filter the list to <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Not indexed</strong> below to see which ones — rows with a red “Dropped” pill are the affected posts.
-                </p>
-                <button
-                  onClick={() => setFilterNotIndexed(true)}
-                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-white px-3 py-1.5 rounded-lg bg-[#ff3b30] hover:opacity-90 transition-opacity"
-                >
-                  <AlertCircle size={12} /> Show the affected posts
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Missing-from-sitemap warning — Google can't discover what isn't there */}
-          {data.summary.sitemapFound && data.summary.notInSitemap > 0 && (
-            <div className="card p-3 border border-[#ff9500]/30 bg-[#ff9500]/5 flex items-center gap-2.5">
-              <AlertCircle size={15} className="text-[#ff9500] flex-shrink-0" />
-              <p className="text-[13px] text-[#4b4b4f] dark:text-[#d2d2d7]">
-                <span className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{data.summary.notInSitemap} post{data.summary.notInSitemap !== 1 ? 's' : ''} missing from your sitemap.</span> The green <span className="font-semibold text-[#34c759]">Get my blog found</span> button up top refreshes it and pings Google, Bing &amp; AI.
-              </p>
-            </div>
-          )}
-
-          {/* Missing-thumbnail warning — posts that published without a featured
-              image because the host blocked the upload (WAF/plugin on /wp/v2/media,
-              or the connected WP user losing upload permission). One click heals
-              the whole backlog once the host is unblocked. */}
-          {data.summary.thumbnailBlocked > 0 && (
-            <div className="card p-4 border border-[#ff9500]/30 bg-[#ff9500]/5 flex items-start gap-3">
-              <ImageOff size={16} className="text-[#ff9500] mt-0.5 flex-shrink-0" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-0.5">
-                  {data.summary.thumbnailBlocked} post{data.summary.thumbnailBlocked !== 1 ? 's' : ''} published without a thumbnail
-                </p>
-                <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-2 leading-relaxed">
-                  The post{data.summary.thumbnailBlocked !== 1 ? 's' : ''} published fine, but the featured image couldn’t be uploaded — usually your host’s firewall or a security plugin blocking image uploads via the API. First test it: in <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">wp-admin → Media → Add New</strong>, try uploading any image. If that’s blocked, allowlist the <code>/wp-json/wp/v2/media</code> endpoint (or confirm your connected WordPress user can upload files). Then re-attach — it skips anything already fixed, so it’s safe to run anytime.
-                </p>
-                <button
-                  onClick={reattachThumbnails}
-                  disabled={reattaching}
-                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-white px-3 py-1.5 rounded-lg bg-[#ff9500] hover:opacity-90 disabled:opacity-60 transition-opacity"
-                >
-                  {reattaching ? <><Loader2 size={12} className="animate-spin" /> Re-attaching…</> : <><ImageOff size={12} /> Re-attach missing thumbnails</>}
-                </button>
-              </div>
-            </div>
-          )}
+            )
+          })()}
 
           {/* Summary cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
