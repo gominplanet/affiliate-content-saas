@@ -74,7 +74,7 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({})) as {
       url?: string; items?: InItem[]; listTitle?: string; listUrl?: string; count?: number; listId?: string
     }
-    const count = Math.max(3, Math.min(15, Number(body.count) || 10))
+    const count = Math.max(3, Math.min(20, Number(body.count) || 10))
 
     // 1. Resolve the source products, in order of preference:
     //    a synced list (SCOUT, full set) → inline items → read the URL (first ~20).
@@ -94,7 +94,7 @@ export async function POST(request: Request) {
       inItems = parsed.items
       if (!listTitle && parsed.title) listTitle = parsed.title
     }
-    const asins = Array.from(new Set(inItems.map(i => String(i.asin || '').trim().toUpperCase()).filter(a => /^[A-Z0-9]{10}$/.test(a)))).slice(0, 50)
+    const asins = Array.from(new Set(inItems.map(i => String(i.asin || '').trim().toUpperCase()).filter(a => /^[A-Z0-9]{10}$/.test(a)))).slice(0, 60)
     if (asins.length < 3) return NextResponse.json({ error: 'Need at least 3 products from the list.' }, { status: 400 })
     const titleByAsin = new Map(inItems.map(i => [String(i.asin).toUpperCase(), (i.title || '').trim()]))
     const imageByAsin = new Map(inItems.map(i => [String(i.asin).toUpperCase(), i.image || null]))
@@ -155,22 +155,22 @@ Return ONLY JSON with these fields:
   "title": string  — a compelling, SEO-friendly blog TITLE for a shopping guide (e.g. "The 10 Best Office & Studio Essentials for ${year}"). Do NOT reuse the raw list name, and NEVER include "Amazon Page", a person's handle, warning symbols, or emojis.
   "hero_prompt": string — one vivid sentence describing a clean, aspirational, magazine-style HERO photo representing this guide's theme (a styled scene of the product category; NO people, NO text, NO logos). e.g. "A tidy modern home-office desk at golden hour with a monitor, desk lamp and ergonomic chair".
   "intro": string — 2-4 warm sentences setting up the guide and who it's for.
-  "outro": string — 1-2 sentences wrapping up.
+  "conclusion": string — 3-4 sentences wrapping up the whole guide: recap the theme, remind the reader how to choose between the picks (who each is best for), and end on an encouraging note. This is the closing section of the post, so make it feel like a real sign-off, not a throwaway line.
   "picks": [{
     "asin": string,
     "heading": string — short, the product's ROLE (e.g. "Best budget monitor", "Best ergonomic chair"),
     "superlative": string — 2-4 words (e.g. "Best Value", "Editor's Pick", "Best for small spaces"),
-    "blurb": string — 4-5 sentences. Lead with what it IS, then 2-3 concrete FEATURES each tied to a BENEFIT (feature → why it matters to the buyer), then who it's best for. Specific and persuasive, never generic filler.
+    "blurb": string — 5-6 sentences. Lead with what it IS in one line, then 3-4 concrete FEATURES each tied to a BENEFIT (feature → why it actually matters to the buyer in daily use), then close with who it's best for. Warm, specific and persuasive. Never generic filler, never repeat the heading.
   }]
 }
 Match each picks[].asin to one of these: ${picks.map(p => p.asin).join(', ')}. Do not invent products, prices, or specs you don't see above. No markdown — JSON only.`
     const msg = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6', max_tokens: 6000,
+      model: 'claude-sonnet-4-6', max_tokens: 10000,
       messages: [{ role: 'user', content: prompt }],
     })
     recordAnthropicUsage(msg, { userId: user.id, tier, feature: 'idea_list_guide', model: 'claude-sonnet-4-6' })
     const raw = msg.content.map(c => (c.type === 'text' ? c.text : '')).join('')
-    let parsed: { title?: string; hero_prompt?: string; intro?: string; outro?: string; picks?: Array<{ asin: string; heading?: string; superlative?: string; blurb?: string }> } = {}
+    let parsed: { title?: string; hero_prompt?: string; intro?: string; conclusion?: string; outro?: string; picks?: Array<{ asin: string; heading?: string; superlative?: string; blurb?: string }> } = {}
     try { parsed = JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1)) } catch { /* fall back below */ }
     const proseByAsin = new Map((parsed.picks || []).map(p => [String(p.asin).toUpperCase(), p]))
 
@@ -202,10 +202,16 @@ ${meta ? `<p style="margin:0 0 .85rem;color:#555;">${esc(meta)}</p>` : ''}
 </div>`
       : ''
 
+    const conclusionText = (parsed.conclusion || parsed.outro || '').trim()
+    const conclusionHtml = conclusionText
+      ? `<h2 style="margin:2.5rem 0 .75rem;">The bottom line</h2>
+<p style="margin:0 0 1rem;">${esc(conclusionText)}</p>`
+      : ''
+
     const content = scrubAiHtml(`<p><em>${DISCLOSURE}</em></p>
 <p>${esc(parsed.intro || `Here are my top ${picks.length} picks from ${angle}.`)}</p>
 ${cardsHtml}
-${parsed.outro ? `<p>${esc(parsed.outro)}</p>` : ''}
+${conclusionHtml}
 ${fullListCta}`)
 
     // 6. Featured image — a fresh AI hero for the guide's theme, grounded on the
