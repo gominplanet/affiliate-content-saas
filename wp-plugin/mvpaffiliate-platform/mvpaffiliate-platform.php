@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.87
+ * Version: 1.0.88
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -3132,7 +3132,25 @@ add_action('rest_api_init', function () {
             if (function_exists('mvp_affiliate_purge_sitemap_cache')) {
                 mvp_affiliate_purge_sitemap_cache();
             }
-            return new WP_REST_Response(['ok' => true], 200);
+            // Also re-ping IndexNow with the most recent posts so Bing/Copilot
+            // re-crawl the freshened set immediately (Google can't be pinged —
+            // its sitemap-ping endpoint was retired in 2023 — it re-reads the
+            // sitemap on its own schedule once the host cache is cleared above).
+            $pinged = 0;
+            if (function_exists('mvp_affiliate_indexnow_submit')) {
+                $recent = get_posts(array(
+                    'post_type'      => 'post',
+                    'post_status'    => 'publish',
+                    'posts_per_page' => 50,
+                    'orderby'        => 'modified',
+                    'order'          => 'DESC',
+                    'fields'         => 'ids',
+                ));
+                $urls = array();
+                foreach ($recent as $pid) { $u = get_permalink($pid); if ($u) $urls[] = $u; }
+                if (!empty($urls)) { mvp_affiliate_indexnow_submit($urls); $pinged = count($urls); }
+            }
+            return new WP_REST_Response(['ok' => true, 'indexnow_pinged' => $pinged], 200);
         },
         'permission_callback' => function () { return current_user_can('manage_options'); },
     ]);

@@ -40,7 +40,7 @@ interface PostRow {
 }
 interface Overview {
   connected: boolean; property: string | null
-  summary: { total: number; avgScore: number; indexed: number; notIndexed: number; unknown: number; notInSitemap: number; recentlyDropped: number; thumbnailBlocked: number; sitemapFound: boolean; totalClicks: number; totalImpressions: number }
+  summary: { total: number; avgScore: number; indexed: number; notIndexed: number; unknown: number; notInSitemap: number; recentlyDropped: number; thumbnailBlocked: number; sitemapFound: boolean; reasons?: Array<{ reason: string; fixable: 'redirect' | 'benign' | 'wait' | 'other'; count: number }>; totalClicks: number; totalImpressions: number }
   posts: PostRow[]
 }
 
@@ -868,6 +868,44 @@ export default function SeoPage() {
               <SummaryCard label="Posts" value={String(data.summary.total)} accent="#7C3AED" />
             )}
           </div>
+
+          {/* Why aren't they indexed — mirrors GSC's breakdown so the user knows
+              which pile is worth acting on. 404/soft-404 → fixable with redirects;
+              noindex/canonical → benign (archives); discovered/crawled → just
+              waiting on Google. */}
+          {data.connected && (data.summary.reasons?.length ?? 0) > 0 && (() => {
+            const meta: Record<string, { dot: string; note: string }> = {
+              redirect: { dot: '#ff3b30', note: 'Fixable — send these to a live page with Fix 404s' },
+              other:    { dot: '#ff9500', note: 'Worth a look' },
+              wait:     { dot: '#5856d6', note: 'Waiting on Google — keep the sitemap fresh' },
+              benign:   { dot: '#8e8e93', note: 'Expected — archive/duplicate pages, nothing to do' },
+            }
+            const order = { redirect: 0, other: 1, wait: 2, benign: 3 } as const
+            const reasons = [...(data.summary.reasons || [])].sort((a, b) => (order[a.fixable] - order[b.fixable]) || (b.count - a.count))
+            const fixable = reasons.filter(r => r.fixable === 'redirect').reduce((s, r) => s + r.count, 0)
+            return (
+              <div className="rounded-xl border border-gray-200 dark:border-white/10 overflow-hidden">
+                <div className="px-4 py-2.5 border-b border-gray-100 dark:border-white/10 flex items-center justify-between">
+                  <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Why posts aren&apos;t indexed</p>
+                  {fixable > 0 && (
+                    <Link href="/tools/redirects" className="text-xs font-medium text-[#7C3AED] hover:underline inline-flex items-center gap-1">
+                      Fix {fixable} with redirects →
+                    </Link>
+                  )}
+                </div>
+                <div className="divide-y divide-gray-100 dark:divide-white/5">
+                  {reasons.map(r => (
+                    <div key={r.reason} className="flex items-center gap-3 px-4 py-2">
+                      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: meta[r.fixable].dot }} />
+                      <span className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7] flex-shrink-0 w-40 truncate">{r.reason}</span>
+                      <span className="text-xs text-[#86868b] flex-1 truncate hidden sm:block">{meta[r.fixable].note}</span>
+                      <span className="text-sm font-semibold tabular-nums text-[#1d1d1f] dark:text-[#f5f5f7]">{r.count}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          })()}
 
           {/* Missed demand (Phase 3 GSC loop) — queries the site already gets
               impressions for with no post squarely targeting them. */}
