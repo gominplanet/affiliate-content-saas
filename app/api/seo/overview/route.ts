@@ -359,6 +359,37 @@ export async function GET(request: Request) {
     thumbnailBlocked = count || 0
   } catch { /* column may not exist yet */ }
 
+  // Why aren't they indexed? Bucket the not-indexed posts by Google's own
+  // coverage_state (from URL Inspection) so the page can mirror GSC's "Why pages
+  // aren't indexed" breakdown — the user sees which pile is fixable (404 →
+  // redirect) vs benign (noindex archives) vs waiting (discovered/crawled).
+  const REASON_META: Record<string, { label: string; fixable: 'redirect' | 'benign' | 'wait' | 'other' }> = {
+    'not found (404)':                     { label: 'Not found (404)',            fixable: 'redirect' },
+    'soft 404':                            { label: 'Soft 404',                   fixable: 'redirect' },
+    'page with redirect':                  { label: 'Page with redirect',         fixable: 'other' },
+    'redirect error':                      { label: 'Redirect error',             fixable: 'other' },
+    "excluded by 'noindex' tag":           { label: 'Excluded by noindex',        fixable: 'benign' },
+    'blocked by robots.txt':               { label: 'Blocked by robots.txt',      fixable: 'other' },
+    'alternate page with proper canonical tag': { label: 'Alternate w/ canonical', fixable: 'benign' },
+    'duplicate without user-selected canonical': { label: 'Duplicate, no canonical', fixable: 'other' },
+    'discovered - currently not indexed':  { label: 'Discovered, not indexed',    fixable: 'wait' },
+    'crawled - currently not indexed':     { label: 'Crawled, not indexed',       fixable: 'wait' },
+  }
+  const reasonCounts = new Map<string, number>()
+  for (const r of out) {
+    if (r.indexed !== false) continue
+    const raw = String(r.coverageState || '').trim().toLowerCase()
+    const key = raw || 'unknown'
+    reasonCounts.set(key, (reasonCounts.get(key) || 0) + 1)
+  }
+  const reasons = Array.from(reasonCounts.entries())
+    .map(([key, count]) => ({
+      reason: REASON_META[key]?.label || (key === 'unknown' ? 'Not yet checked' : key.replace(/\b\w/g, c => c.toUpperCase())),
+      fixable: REASON_META[key]?.fixable || 'other',
+      count,
+    }))
+    .sort((a, b) => b.count - a.count)
+
   const summary = {
     total,
     avgScore,
@@ -369,6 +400,7 @@ export async function GET(request: Request) {
     recentlyDropped,
     thumbnailBlocked,
     sitemapFound: anySitemapFound,
+    reasons,
     totalClicks: out.reduce((s, r) => s + (r.clicks as number), 0),
     totalImpressions: out.reduce((s, r) => s + (r.impressions as number), 0),
   }
