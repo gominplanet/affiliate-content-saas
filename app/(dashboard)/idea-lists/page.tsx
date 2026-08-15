@@ -179,18 +179,26 @@ export default function IdeaListsPage() {
             {synced.map(l => {
               const on = active?.source === 'synced' && active.listId === l.id
               return (
-                <button key={l.id} onClick={() => pickSynced(l)} className="text-left rounded-xl border-2 overflow-hidden bg-white dark:bg-[#1c1c1e] transition-colors" style={{ borderColor: on ? PURPLE : 'rgba(128,128,128,0.2)' }}>
-                  <div className="aspect-[4/3] bg-black/5 dark:bg-white/5">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    {l.coverImage ? <img src={l.coverImage} alt={l.title || ''} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-[#c7c7cc]"><ListChecks size={22} /></div>}
-                  </div>
-                  <div className="p-2">
-                    <p className="text-[12px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] line-clamp-2">{l.title || 'Untitled list'}</p>
-                    <p className="text-[10px] text-[#86868b] mt-0.5">
-                      {l.hasItems ? `${l.syncedItems} products synced` : `${l.itemCount ?? '?'} items · open on Amazon to sync`}
-                    </p>
-                  </div>
-                </button>
+                <div key={l.id} className="relative">
+                  <button onClick={() => pickSynced(l)} className="w-full text-left rounded-xl border-2 overflow-hidden bg-white dark:bg-[#1c1c1e] transition-colors" style={{ borderColor: on ? PURPLE : 'rgba(128,128,128,0.2)' }}>
+                    <div className="aspect-[4/3] bg-black/5 dark:bg-white/5">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      {l.coverImage ? <img src={l.coverImage} alt={l.title || ''} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-[#c7c7cc]"><ListChecks size={22} /></div>}
+                    </div>
+                    <div className="p-2">
+                      <p className="text-[12px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] line-clamp-2">{l.title || 'Untitled list'}</p>
+                      <p className="text-[10px] text-[#86868b] mt-0.5">
+                        {l.hasItems ? `${l.syncedItems} products synced` : `${l.itemCount ?? '?'} items · open on Amazon to sync`}
+                      </p>
+                    </div>
+                  </button>
+                  {l.url && (
+                    <a href={l.url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} title="Open this list on Amazon to view or edit it"
+                       className="absolute top-1.5 right-1.5 inline-flex items-center gap-1 rounded-md bg-black/65 hover:bg-black/80 text-white text-[10px] font-semibold px-1.5 py-1 backdrop-blur-sm">
+                      <ExternalLink size={11} /> Amazon
+                    </a>
+                  )}
+                </div>
               )
             })}
           </div>
