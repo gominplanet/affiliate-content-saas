@@ -11,6 +11,7 @@ import PageHero from '@/components/layout/PageHero'
 import { toast } from 'sonner'
 import { Loader2, Search, Sparkles, ExternalLink, ListChecks, Pencil, Trash2, RefreshCw } from 'lucide-react'
 import { errText } from '@/lib/err-text'
+import { createBrowserClient } from '@/lib/supabase/client'
 
 const BlogEditModal = dynamic(() => import('@/components/content/BlogEditModal'), { ssr: false })
 
@@ -23,6 +24,8 @@ const PURPLE = '#7C3AED'
 export default function IdeaListsPage() {
   const [synced, setSynced] = useState<SyncedList[]>([])
   const [loadingSynced, setLoadingSynced] = useState(true)
+  const [storefrontUrl, setStorefrontUrl] = useState<string | null>(null)
+  const [storefrontInput, setStorefrontInput] = useState('')
   const [url, setUrl] = useState('')
   const [scanning, setScanning] = useState(false)
   const [active, setActive] = useState<Active | null>(null)
@@ -37,11 +40,35 @@ export default function IdeaListsPage() {
     try {
       const res = await fetch('/api/idea-list/ingest')
       const d = await res.json()
-      if (res.ok) setSynced((d.lists || []) as SyncedList[])
+      if (res.ok) {
+        setSynced((d.lists || []) as SyncedList[])
+        setStorefrontUrl((d.storefrontUrl as string | null) || null)
+      }
     } catch { /* non-fatal */ }
     finally { setLoadingSynced(false) }
   }, [])
   useEffect(() => { void loadSynced() }, [loadSynced])
+
+  // Open the creator's Amazon storefront in a new tab so SCOUT can enumerate
+  // their idea lists. `raw` is either the saved storefront or a URL they type;
+  // we reduce it to the /shop/<handle> root and, if they typed it, save it to
+  // the brand profile so next time it's a one-click button.
+  const openStorefront = async (raw: string, persist: boolean) => {
+    const m = (raw || '').match(/amazon\.[a-z.]+\/shop\/([^/?#\s]+)/i) || (raw || '').trim().match(/^@?([A-Za-z0-9._-]{2,})$/)
+    if (!m) { toast.error('Enter your Amazon storefront link (amazon.com/shop/yourhandle).'); return }
+    const root = `https://www.amazon.com/shop/${m[1]}`
+    window.open(root, '_blank', 'noopener,noreferrer')
+    setStorefrontUrl(root)
+    if (persist) {
+      try {
+        const supabase = createBrowserClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        // Update only — never insert a bare brand_profiles row (it has required
+        // columns). If the profile doesn't exist yet this is a harmless no-op.
+        if (user) await supabase.from('brand_profiles').update({ amazon_storefront_url: root } as never).eq('user_id', user.id)
+      } catch { /* best-effort — the tab already opened */ }
+    }
+  }
 
   const pickSynced = (l: SyncedList) => {
     setDone(null)
@@ -112,13 +139,40 @@ export default function IdeaListsPage() {
       <div className="mt-4">
         <div className="flex items-center justify-between mb-2">
           <p className="text-[13px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] inline-flex items-center gap-1.5"><ListChecks size={14} /> Your idea lists</p>
-          <button onClick={loadSynced} className="text-[12px] font-medium text-[#7C3AED] hover:underline inline-flex items-center gap-1"><RefreshCw size={12} /> Refresh</button>
+          <div className="flex items-center gap-3">
+            {storefrontUrl && (
+              <button onClick={() => openStorefront(storefrontUrl, false)} className="text-[12px] font-semibold text-white inline-flex items-center gap-1.5 rounded-full px-3 py-1.5" style={{ backgroundColor: PURPLE }}>
+                <ExternalLink size={12} /> Open my storefront
+              </button>
+            )}
+            <button onClick={loadSynced} className="text-[12px] font-medium text-[#7C3AED] hover:underline inline-flex items-center gap-1"><RefreshCw size={12} /> Refresh</button>
+          </div>
         </div>
         {loadingSynced ? (
           <div className="flex items-center gap-2 text-[13px] text-[#86868b] py-4"><Loader2 size={14} className="animate-spin" /> Loading…</div>
         ) : synced.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-black/10 dark:border-white/15 p-4 text-[12px] text-[#4b4b4f] dark:text-[#b0b0b5]">
-            No lists synced yet. Open your Amazon storefront with the SCOUT extension installed and it&apos;ll sync your idea lists here. Or paste a list link below.
+          <div className="rounded-xl border border-dashed border-black/10 dark:border-white/15 p-4">
+            <p className="text-[12px] text-[#4b4b4f] dark:text-[#b0b0b5]">
+              No lists synced yet. Open your Amazon storefront with the SCOUT extension installed and it&apos;ll sync your idea lists here. Or paste a list link below.
+            </p>
+            {storefrontUrl ? (
+              <button onClick={() => openStorefront(storefrontUrl, false)} className="mt-3 inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-semibold text-white" style={{ backgroundColor: PURPLE }}>
+                <ExternalLink size={12} /> Open my storefront so SCOUT can sync
+              </button>
+            ) : (
+              <div className="mt-3 flex flex-col sm:flex-row gap-2">
+                <input
+                  value={storefrontInput}
+                  onChange={e => setStorefrontInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') openStorefront(storefrontInput, true) }}
+                  placeholder="amazon.com/shop/yourhandle"
+                  className="flex-1 rounded-lg border border-black/10 dark:border-white/15 bg-white dark:bg-[#1c1c1e] px-3 py-2 text-[13px] outline-none focus:border-[#7C3AED]"
+                />
+                <button onClick={() => openStorefront(storefrontInput, true)} className="shrink-0 inline-flex items-center justify-center gap-1.5 rounded-lg px-3.5 py-2 text-[13px] font-semibold text-white" style={{ backgroundColor: PURPLE }}>
+                  <ExternalLink size={13} /> Open storefront
+                </button>
+              </div>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
