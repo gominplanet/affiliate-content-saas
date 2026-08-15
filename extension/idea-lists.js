@@ -23,8 +23,6 @@
   const MVP_ITEMS = 'SCOUT_PUSH_IDEA_LIST_ITEMS'
   const LOG = '[SCOUT idea-lists]'
   const MAX_LISTS = 40            // safety cap on discovery
-  const EAGER_CAP = 12           // product-scrape at most this many per visit; the rest load on open
-  const RESCRAPE_MS = 3 * 24 * 60 * 60 * 1000
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const send = (type, payload) => { try { const p = chrome.runtime.sendMessage(Object.assign({ type: type }, payload)); if (p && p.catch) p.catch(() => {}) } catch (e) {} }
 
@@ -121,50 +119,6 @@
     return Array.from(byId.values()).slice(0, MAX_LISTS)
   }
 
-  // ── Background capture: load a list in a hidden iframe, scroll, scrape ───────
-  function captureListInIframe(meta) {
-    return new Promise((resolve) => {
-      let done = false
-      const iframe = document.createElement('iframe')
-      iframe.setAttribute('aria-hidden', 'true')
-      iframe.style.cssText = 'position:fixed;left:-10000px;top:0;width:1280px;height:2400px;opacity:0;border:0;pointer-events:none'
-      const finish = (items) => { if (done) return; done = true; try { iframe.remove() } catch (e) {} ; resolve(items || []) }
-      const hardTimeout = setTimeout(() => finish([]), 28000)
-      iframe.onload = async () => {
-        try {
-          const doc = iframe.contentDocument
-          const win = iframe.contentWindow
-          if (!doc || !win) { clearTimeout(hardTimeout); return finish([]) } // framing blocked
-          let last = -1, stable = 0
-          for (let i = 0; i < 30 && stable < 3; i++) {
-            try { win.scrollTo(0, doc.body.scrollHeight) } catch (e) {}
-            await sleep(900)
-            const n = doc.querySelectorAll('[data-asin]').length
-            if (n === last) stable++; else { stable = 0; last = n }
-          }
-          const items = collectItemsFrom(doc)
-          const title = meta.title || listTitleIn(doc)
-          const itemCount = meta.itemCount || declaredCountIn(doc)
-          clearTimeout(hardTimeout)
-          finish(items.length ? { items, title, itemCount } : [])
-        } catch (e) { clearTimeout(hardTimeout); finish([]) } // cross-origin / blocked
-      }
-      iframe.src = meta.url
-      document.documentElement.appendChild(iframe)
-    })
-  }
-
-  // ── chrome.storage throttle: don't re-scrape a list within RESCRAPE_MS ───────
-  function recentlySynced(id) {
-    return new Promise((resolve) => {
-      try {
-        chrome.storage.local.get(['mvpIdeaSynced'], (o) => {
-          const map = (o && o.mvpIdeaSynced) || {}
-          resolve(map[id] && (Date.now() - map[id]) < RESCRAPE_MS)
-        })
-      } catch (e) { resolve(false) }
-    })
-  }
   function markSynced(id) {
     try { chrome.storage.local.get(['mvpIdeaSynced'], (o) => { const map = (o && o.mvpIdeaSynced) || {}; map[id] = Date.now(); try { chrome.storage.local.set({ mvpIdeaSynced: map }) } catch (e) {} }) } catch (e) {}
   }
@@ -189,45 +143,48 @@
     return lists
   }
 
-  // ── The zero-click storefront run ───────────────────────────────────────────
+  // Switch the storefront to its "Idea Lists" tab so we read ONLY idea lists,
+  // never the thousands of videos/posts a big creator has. Returns true if a tab
+  // was clicked. Idempotent-ish: once filtered, re-clicking is harmless.
+  function activateIdeaListsTab() {
+    try {
+      const els = document.querySelectorAll('a,button,[role="tab"],[role="button"],li,span')
+      for (const el of els) {
+        const t = (el.textContent || '').replace(/\s+/g, ' ').trim()
+        if (/^idea lists$/i.test(t) && el.offsetParent !== null) { try { el.click() } catch (e) {} ; return true }
+      }
+    } catch (e) {}
+    return false
+  }
+
+  // ── The zero-click storefront run: discover idea lists ONLY (no product crawl).
+  // Metadata for every list syncs instantly; a list's products load the moment
+  // the creator opens it (foreground capture below) or from MVP's Amazon link.
   let running = false
   async function runStorefront() {
     if (running) return
     running = true
     try {
+      const onTab = activateIdeaListsTab()
+      await sleep(1500)
       let lists = pushMetadata()
-      if (!lists.length) { try { console.debug(LOG, 'no lists found on storefront yet') } catch (e) {} ; running = false; return }
-      try { console.debug(LOG, 'discovered', lists.length, 'lists') } catch (e) {}
-      // Re-scan a few times so lazy-loaded cover thumbnails get pushed too.
-      for (const d of [2500, 6000, 10000]) { setTimeout(() => { try { pushMetadata() } catch (e) {} }, d) }
-
-      // Which still need a product scrape?
-      const todo = []
-      for (const l of lists) { if (!(await recentlySynced(l.amazonListId))) todo.push(l) }
-      if (!todo.length) { badge('Your ' + lists.length + ' idea list' + (lists.length === 1 ? '' : 's') + ' are synced and ready.', 'ok'); running = false; return }
-
-      const mk = (meta, cap) => ({ amazonListId: meta.amazonListId, title: cap.title || meta.title, url: meta.url, itemCount: cap.itemCount || meta.itemCount, coverImage: meta.coverImage || (cap.items[0] && cap.items[0].image) || null, items: cap.items })
-
-      // Probe with the FIRST list. Amazon may refuse to render a list page inside
-      // a hidden frame; if so, bail immediately instead of hanging on all 35 —
-      // those lists still load their products the instant the creator opens one.
-      badge('Reading your first list in the background…', 'work')
-      const probe = await captureListInIframe(todo[0])
-      if (!(probe && probe.items && probe.items.length)) {
-        badge(lists.length + ' lists synced. Open any list once and its products load automatically.', 'ok')
-        running = false; return
+      // Only scroll to load more when we're on the filtered Idea Lists tab —
+      // then we're paging through lists, not the whole storefront.
+      if (onTab) {
+        let stable = 0, lastN = -1
+        for (let i = 0; i < 15 && stable < 3; i++) {
+          try { window.scrollTo(0, document.body.scrollHeight) } catch (e) {}
+          await sleep(1000)
+          const n = document.querySelectorAll('a[href*="/list/"]').length
+          if (n === lastN) stable++; else { stable = 0; lastN = n }
+          pushMetadata()
+        }
+        try { window.scrollTo(0, 0) } catch (e) {}
       }
-      let ok = (await sendItems(mk(todo[0], probe))) ? 1 : 0
-
-      // Framing works — capture the rest, capped so a big storefront stays snappy.
-      const rest = todo.slice(1, EAGER_CAP)
-      for (let i = 0; i < rest.length; i++) {
-        badge('Reading your lists in the background… (' + (i + 2) + '/' + Math.min(todo.length, EAGER_CAP) + ')', 'work')
-        const cap = await captureListInIframe(rest[i])
-        if (cap && cap.items && cap.items.length && await sendItems(mk(rest[i], cap))) ok++
-      }
-      const remaining = todo.length - Math.min(todo.length, EAGER_CAP)
-      badge('Synced products for ' + ok + ' list' + (ok === 1 ? '' : 's') + (remaining > 0 ? ' · ' + remaining + ' more load as you open them' : '') + '. Open MVP → Idea Lists.', 'ok')
+      lists = pushMetadata()
+      if (!lists.length) { badge('Couldn’t find idea lists here. Click the “Idea Lists” tab on your storefront, then reload.', 'err'); running = false; return }
+      try { console.debug(LOG, 'synced', lists.length, 'lists (metadata)') } catch (e) {}
+      badge(lists.length + ' idea list' + (lists.length === 1 ? '' : 's') + ' synced to MVP. Products load when you open a list.', 'ok')
     } catch (e) { try { console.debug(LOG, 'run error', e && e.message) } catch (er) {} }
     running = false
   }
