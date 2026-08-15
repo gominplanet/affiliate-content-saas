@@ -41,7 +41,7 @@ import {
   UserCog, AlertTriangle, DollarSign, Newspaper, Plug, Wrench,
   Camera, MessageCircle, Activity, BarChart3, Wand2, ShieldCheck,
   Share2, UserSquare, LifeBuoy, Link2, FlaskConical, Store, Send, ShoppingBag, Megaphone,
-  Inbox, PackageSearch, Copy, Signpost, Code2, Rocket, Database,
+  Inbox, PackageSearch, Rocket, Database,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { DEALS_HUB_PAUSED } from '@/lib/deal-occasion'
@@ -121,7 +121,6 @@ const SECTION_ACCENTS: Record<string, { dark: string; light: string }> = {
   'Grow':              { dark: '#C084FC', light: '#7E22CE' }, // purple    — growth
   'Research':          { dark: '#A3E635', light: '#4D7C0F' }, // green     — find products & campaigns
   'Source & Earn':     { dark: '#A3E635', light: '#4D7C0F' }, // green     — find & monetize (legacy key)
-  'Site Tools':        { dark: '#FB923C', light: '#C2410C' }, // orange    — post-publish fixes
   'Collaborate':       { dark: '#F472B6', light: '#BE185D' }, // pink      — deals / people
   'Labs':              { dark: '#F87171', light: '#DC2626' }, // red       — experimental
   'Help & Community':  { dark: '#5EEAD4', light: '#0D9488' }, // turquoise — support
@@ -138,7 +137,6 @@ const SECTION_ICONS: Record<string, React.ReactNode> = {
   'Research': <PackageSearch size={12} />,
   'Source & Earn': <DollarSign size={12} />,
   'Grow': <BarChart3 size={12} />,
-  'Site Tools': <Wrench size={12} />,
   'Collaborate': <Share2 size={12} />,
   'Labs': <FlaskConical size={12} />,
   'Help & Community': <LifeBuoy size={12} />,
@@ -538,29 +536,11 @@ export default function DashboardShellV2({
         { href: '/pulse', icon: <Activity size={15} />, label: 'Pulse', gate: isPro },
       ],
     },
-    {
-      // Site Tools — the post-publish fix/clean utilities (all /tools/*), split
-      // out of Grow 2026-07-08 so they have their own home and Grow stays about
-      // growth. Each is a free, no-AI text fix on the user's own posts.
-      label: 'Site Tools',
-      items: [
-        // Title Check — title-vs-body accuracy (SEO hygiene; also reached from
-        // the SEO page's "Fix title" CTA).
-        { href: '/tools/title-audit', icon: <ShieldCheck size={15} />, label: 'Title Check' },
-        // Clean Links — removes duplicate affiliate-tag leftovers from old
-        // plugins (Lasso).
-        { href: '/tools/clean-links', icon: <Wand2 size={15} />, label: 'Clean Links' },
-        // Duplicates — same product reviewed twice (WP -2/-3 slugs) that split
-        // rankings + cause "crawled, not indexed".
-        { href: '/tools/duplicates', icon: <Copy size={15} />, label: 'Duplicates' },
-        // Fix 404s — paste GSC "Not found (404)" export, match each dead URL to a
-        // live post, write 301 redirects via the plugin.
-        { href: '/tools/redirects', icon: <Signpost size={15} />, label: 'Fix 404s' },
-        // Fix Formatting — self-serve repair for posts that render raw block code
-        // (`<!, wp:… , >`); fixes the live post + stored copy + queued drafts.
-        { href: '/tools/fix-formatting', icon: <Code2 size={15} />, label: 'Fix Formatting' },
-      ],
-    },
+    // Site Tools nav group removed 2026-08-15 — the five post-publish utilities
+    // (Title Check, Clean Links, Duplicates, Fix 404s, Fix Formatting) all live
+    // under SEO & Indexing now, reached via the shared SeoHubTabs bar on /seo
+    // and each /tools/* page. A separate top-level group just duplicated them.
+    // The /tools/* routes still exist; they're only no longer a second nav home.
     {
       label: 'Collaborate',
       items: [
