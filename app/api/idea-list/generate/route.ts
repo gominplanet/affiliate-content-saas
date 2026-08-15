@@ -224,9 +224,13 @@ ${fullListCta}`)
     let featuredMedia: number | undefined
     try {
       const hero = await buildCampaignHero({
-        heroPrompt: parsed.hero_prompt || `An editorial hero photo representing ${angle}`,
+        heroPrompt: parsed.hero_prompt || `A clean, aspirational magazine-style editorial hero photo representing ${angle} — a styled scene of the product category, no people, no text, no logos`,
         productImageUrl: picks.find(p => p.image)?.image ?? null,
         productTitle: angle,
+        // A guide's hero is a category SCENE, not one product — don't reject it
+        // for failing to match a single pick (that's what forced a bare product
+        // photo before). The product image stays only as a last-resort floor.
+        verifyProduct: false,
         ctx: { userId: user.id, tier },
       })
       if (hero?.b64) {

@@ -117,12 +117,15 @@ export default function IdeaListsPage() {
       const l = synced.find(s => s.id === active.listId)
       if (l && !l.hasItems) {
         if (!active.url) { toast.error('No Amazon link for this list — paste its URL above instead.'); return }
-        // Open synchronously inside the click so the popup isn't blocked.
-        window.open(active.url, '_blank', 'noopener,noreferrer')
+        // Open synchronously inside the click so the popup isn't blocked. No
+        // `noopener` here on purpose — we keep the handle so we can auto-close
+        // the tab once SCOUT has read the products (least friction for the user).
+        const tab = window.open(active.url, '_blank')
         setSyncing(true)
         const ok = await pollForProducts(active.listId!)
         setSyncing(false)
-        if (!ok) { toast.error('Amazon is still loading this list. Keep that tab open a few seconds, then click Create again.'); return }
+        try { tab?.close() } catch { /* user can close it */ }
+        if (!ok) { toast.error('Amazon didn’t finish loading this list in time. Click Create again to retry.'); return }
         toast.success('Products synced — building your guide')
       }
     }
