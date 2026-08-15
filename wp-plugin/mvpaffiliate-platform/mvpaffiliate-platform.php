@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.88
+ * Version: 1.0.89
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -27,6 +27,35 @@ $mvp_affiliate_self_meta = function_exists('get_file_data')
     : ['Version' => '1.0.48'];
 define('MVP_AFFILIATE_VERSION', (string) ($mvp_affiliate_self_meta['Version'] ?: '1.0.48'));
 unset($mvp_affiliate_self_meta);
+
+// ─── Fail-safe hook wrapper ───────────────────────────────────────────────────
+// Wrap a frontend hook callback so an uncaught error inside MVP code can never
+// take down the page. WordPress runs `the_content` filters inside a single
+// apply_filters() call — if any one of ours throws, PHP aborts the whole render
+// and the visitor gets the "critical error" screen (which then names THIS file,
+// even when the real trigger is the host's PHP config or another plugin's data).
+// Catching \Throwable turns that into a graceful skip: on failure we return the
+// untouched input (so `the_content` filters hand back the original article) and,
+// only when WP_DEBUG is on, leave a one-line note in the log. \Throwable covers
+// both \Exception and \Error (type errors, calls to missing methods, etc.), so
+// this is a true safety net, not just an exception guard.
+if (!function_exists('mvp_affiliate_safe')) {
+    function mvp_affiliate_safe(callable $fn) {
+        return function (...$args) use ($fn) {
+            try {
+                return $fn(...$args);
+            } catch (\Throwable $e) {
+                if (defined('WP_DEBUG') && WP_DEBUG) {
+                    error_log('[MVP Affiliate] hook skipped: ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
+                }
+                // Filters pass the value being filtered as the first arg — hand it
+                // back untouched so the content flows through unchanged. Actions
+                // (wp_footer/wp_head) get no args, so this is simply null (a no-op).
+                return $args[0] ?? null;
+            }
+        };
+    }
+}
 
 // ─── Self-heal corrupted Gutenberg block delimiters on save ───────────────────
 // An old MVP text-cleanup step once rewrote the `--` inside block-comment
@@ -859,7 +888,7 @@ add_action('dynamic_sidebar_after', function () {
 }, 10, 2);
 
 // ─── 7. In-content blocks ─────────────────────────────────────────────────────
-add_filter('the_content', function ($content) {
+add_filter('the_content', mvp_affiliate_safe(function ($content) {
     $incontent = mvp_affiliate_get_data()['incontent'] ?? [];
     if (empty($incontent) || !is_single()) return $content;
 
@@ -884,7 +913,7 @@ add_filter('the_content', function ($content) {
         }
     }
     return $output;
-});
+}));
 
 // ─── 7c. Mid-article newsletter form (every single post, configurable) ───────
 // Inline email-capture form rendered at a chosen paragraph position on every
@@ -923,7 +952,7 @@ if (!function_exists('mvp_affiliate_after_verdict_box')) {
     }
 }
 
-add_filter('the_content', function ($content) {
+add_filter('the_content', mvp_affiliate_safe(function ($content) {
     if (!is_singular('post')) return $content;
     $data = mvp_affiliate_get_data();
     $nl = is_array($data['newsletter'] ?? null) ? $data['newsletter'] : [];
@@ -1000,7 +1029,7 @@ add_filter('the_content', function ($content) {
     // end of the body (still before the FAQ) so the form has a shot.
     if (!$inserted) $output .= $form;
     return $prefix . $output;
-}, 8);
+}), 8);
 
 // ─── 7b. Reviewer Trust Block (top of every single post) ──────────────────────
 // Renders an inline author byline directly above the post content based on
@@ -1010,7 +1039,7 @@ add_filter('the_content', function ($content) {
 // instantly when the user changes their config (no post re-generation).
 //
 // Disable: customize → Reviewer Trust Block → toggle off.
-add_filter('the_content', function ($content) {
+add_filter('the_content', mvp_affiliate_safe(function ($content) {
     if (!is_singular('post')) return $content;
     $data = mvp_affiliate_get_data();
     $ab = $data['authorBlock'] ?? null;
@@ -1036,7 +1065,7 @@ add_filter('the_content', function ($content) {
 </div>
     <?php
     return ob_get_clean() . $content;
-}, 5);  // priority 5 so this runs BEFORE the in-content ads filter at 10
+}), 5);  // priority 5 so this runs BEFORE the in-content ads filter at 10
 
 // ─── 7c. Updated/Edited meta line + Author bio card (bottom of every post) ────
 // Two trust signals every major review site (Tom's Guide / TechRadar / PCMag /
@@ -1054,7 +1083,7 @@ add_filter('the_content', function ($content) {
 //
 // Disable: customize → Reviewer Trust Block → toggle off (same toggle —
 // both the top byline and the bottom bio card live or die together).
-add_filter('the_content', function ($content) {
+add_filter('the_content', mvp_affiliate_safe(function ($content) {
     if (!is_singular('post')) return $content;
     $data = mvp_affiliate_get_data();
     $ab = $data['authorBlock'] ?? null;
@@ -1126,7 +1155,7 @@ add_filter('the_content', function ($content) {
 </div>
     <?php
     return $content . ob_get_clean();
-}, 20);  // priority 20 so this runs AFTER the in-content ads filter at 10
+}), 20);  // priority 20 so this runs AFTER the in-content ads filter at 10
          // and AFTER any other content modifiers — we want the bio card to
          // be literally the last thing before the comments / related posts.
 
@@ -1144,7 +1173,7 @@ add_filter('the_content', function ($content) {
 // Filter priority 6 so it runs AFTER the author block (priority 5) but
 // BEFORE the in-content ads (priority 10). End result: byline → pros/cons
 // hero → ads → main content.
-add_filter('the_content', function ($content) {
+add_filter('the_content', mvp_affiliate_safe(function ($content) {
     if (!is_singular('post')) return $content;
 
     // Match "<h2>Pros</h2><ul>...</ul>" — case-insensitive, tolerant of
@@ -1193,7 +1222,7 @@ add_filter('the_content', function ($content) {
 </style>
     <?php
     return ob_get_clean() . $content;
-}, 6);
+}), 6);
 
 // ─── 7e. "Editors' Pick" badge on high-scoring reviews (≥ 4.5) ────────────────
 //
@@ -1250,7 +1279,7 @@ add_action('wp_footer', function () {
 //
 // Filter priority 22 — runs AFTER the author bio card at 20 so the row
 // sits below it, just before comments / sidebar widgets.
-add_filter('the_content', function ($content) {
+add_filter('the_content', mvp_affiliate_safe(function ($content) {
     if (!is_singular('post')) return $content;
     $current_id = get_the_ID();
     if (!$current_id) return $content;
@@ -1354,7 +1383,7 @@ add_filter('the_content', function ($content) {
 </style>
     <?php
     return $content . ob_get_clean();
-}, 22);  // after 7c (priority 20 — author bio card) so this sits below it
+}), 22);  // after 7c (priority 20 — author bio card) so this sits below it
 
 // ─── 7g. "Recently Updated" homepage strip ───────────────────────────────────
 //
@@ -4601,7 +4630,7 @@ if (!function_exists('mvp_affiliate_render_reader_ux')) {
 // The generator emits `<div class="gr-verdict-box">` but doesn't include an
 // id. Rather than re-prompt the AI, we filter the content and prepend an
 // invisible anchor div right before the verdict box.
-add_filter('the_content', function ($content) {
+add_filter('the_content', mvp_affiliate_safe(function ($content) {
     if (!is_singular('post')) return $content;
     if (strpos($content, 'id="mvp-verdict-anchor"') !== false) return $content; // already added
     $anchor = '<div id="mvp-verdict-anchor" aria-hidden="true" style="position:relative;top:-80px"></div>';
@@ -4613,7 +4642,7 @@ add_filter('the_content', function ($content) {
         $content,
         1
     ) ?: $content;
-}, 25);
+}), 25);
 
 // ─── 20c. Clickable video timestamps (#10, v1.0.44, 2026-06-08) ────────────
 //
@@ -4626,7 +4655,7 @@ add_filter('the_content', function ($content) {
 //      id="mvp-yt-player" so the YT IFrame API can address it.
 // Footer JS (in mvp_affiliate_render_reader_ux_timestamps below) loads the
 // API on first timestamp click — zero cost on posts without timestamps.
-add_filter('the_content', 'mvp_affiliate_inject_timestamps', 30);
+add_filter('the_content', mvp_affiliate_safe('mvp_affiliate_inject_timestamps'), 30);
 if (!function_exists('mvp_affiliate_inject_timestamps')) {
     function mvp_affiliate_inject_timestamps($content) {
         if (!is_singular('post')) return $content;
@@ -4780,7 +4809,7 @@ if (!function_exists('mvp_affiliate_render_timestamp_js')) {
 // strip — now rewrites "Get Yours Today..." (the previous attempt) too,
 // and widened Amazon detection so Geniuslink (geni.us) products no
 // longer fall through to the "Here" variant.
-add_filter('the_content', 'mvp_affiliate_rewrite_legacy_cta', 35);
+add_filter('the_content', mvp_affiliate_safe('mvp_affiliate_rewrite_legacy_cta'), 35);
 if (!function_exists('mvp_affiliate_rewrite_legacy_cta')) {
     function mvp_affiliate_rewrite_legacy_cta($content) {
         if (!is_singular('post')) return $content;
