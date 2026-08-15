@@ -66,6 +66,25 @@ async function pushEarningsToMvp(earnings) {
   }
 }
 
+// POST idea-list metadata / captured items into MVP, from the worker (same
+// session-cookie bridge as earnings). One helper, two shapes (lists | list).
+async function pushIdeaListToMvp(payload) {
+  try {
+    const res = await fetch(`${MVP_ORIGIN}/api/idea-list/ingest`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(payload),
+    })
+    let body = null
+    try { body = await res.json() } catch (e) {}
+    if (res.ok) return { reached: true, ok: true, upserted: body && body.upserted }
+    return { reached: true, ok: false, status: res.status, error: (body && body.error) || `HTTP ${res.status}` }
+  } catch (e) {
+    return { reached: false, ok: false, error: (e && e.message) || 'network error' }
+  }
+}
+
 // Draft an outreach message via MVP, from the WORKER (not the content script):
 // a content-script fetch amazon.com→mvpaffiliate.io is subject to Amazon's page
 // CSP `connect-src` and can be silently blocked. Same worker-first pattern as
@@ -1299,6 +1318,14 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
   if (msg && msg.type === 'SCOUT_PUSH_EARNINGS') {
     pushEarningsToMvp(msg.earnings).then(sendResponse)
+    return true // async response
+  }
+  if (msg && msg.type === 'SCOUT_PUSH_IDEA_LISTS') {
+    pushIdeaListToMvp({ lists: msg.lists }).then(sendResponse)
+    return true // async response
+  }
+  if (msg && msg.type === 'SCOUT_PUSH_IDEA_LIST_ITEMS') {
+    pushIdeaListToMvp({ list: msg.list }).then(sendResponse)
     return true // async response
   }
   if (msg && msg.type === 'SCOUT_OUTREACH') {
