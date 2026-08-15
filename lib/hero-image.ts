@@ -37,9 +37,16 @@ export async function buildCampaignHero(opts: {
   productImageUrl: string | null | undefined
   /** Product name — used to ground the Claude vision right-product check. */
   productTitle?: string | null
+  /** Require the AI hero to depict the reference product (default true). Set
+   *  false for a multi-product piece (e.g. a shopping guide) where the hero is a
+   *  styled scene of the CATEGORY, not one product — otherwise the match check
+   *  rejects a perfectly good editorial hero and we fall back to a lone product
+   *  photo. productImageUrl is still used as the last-resort floor. */
+  verifyProduct?: boolean
   ctx?: { userId?: string | null; tier?: string | null }
 }): Promise<HeroImage | null> {
   const { heroPrompt, productImageUrl, productTitle, ctx } = opts
+  const verifyProduct = opts.verifyProduct !== false
 
   // ── Primary: AI hero ──────────────────────────────────────────────
   if (heroPrompt && process.env.OPENAI_API_KEY) {
@@ -73,7 +80,7 @@ export async function buildCampaignHero(opts: {
         // Right-product check — DOUBLE-VERIFIED (2-of-3 consensus) on this hero
         // since it's the image that publishes. Skipped when there's no reference
         // photo to compare against.
-        const productOk = !productImageUrl
+        const productOk = (!productImageUrl || !verifyProduct)
           ? true
           : (await verifyProductMatchConsensus(productImageUrl, gen, productTitle || 'this product', idCtx)).match
 
