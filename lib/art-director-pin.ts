@@ -19,7 +19,7 @@ const BRIEF_SYSTEM = `You are a world-class product-review ART DIRECTOR designin
 - callouts: 3 short benefit/spec chips (2-4 words each), grounded in the product.
 - concept: one sentence describing the layout + vibe.
 - palette: the colour direction, tuned to the product.
-HARD RULES: never the word "Amazon" or a retailer name/logo. No people. Do NOT use "HIDDEN GEM", "GAME CHANGER", "MUST-HAVE", "YOU NEED THIS" — be specific and fresh. JSON only, no markdown.`
+HARD RULES: never the word "Amazon" or a retailer name/logo. No people. NEVER a year or date (no "2025", "2026", "THIS YEAR") — keep it evergreen so the graphic never looks dated. Do NOT use "HIDDEN GEM", "GAME CHANGER", "MUST-HAVE", "YOU NEED THIS" — be specific and fresh. JSON only, no markdown.`
 
 async function designPinBrief(productTitle: string, productContext: string, userId?: string | null, tier?: string | null): Promise<Brief | null> {
   try {
@@ -78,6 +78,7 @@ export async function generateArtDirectorPin(opts: {
       'ABSOLUTELY NO PEOPLE — HARD RULE: zero humans, faces, hands, body parts, silhouettes or reflections. If Image 1 shows a model or hands, keep ONLY the product.',
       `MAIN HEADLINE — render EXACTLY, spelling perfect: "${line1} ${line2}". A designed, layered look (mixed colour/size/weight), placed where it does NOT cover the product.`,
       callouts.length ? `CALLOUTS: work these in as small bright checkmark chips or spec pills, correctly spelled: ${callouts.join(' · ')}.` : '',
+      'NO YEARS OR DATES anywhere in the image (no "2025", "2026") — keep it evergreen so it never looks dated.',
       NO_BRAND_IMAGE_CLAUSE,
       'FRAMING: the entire canvas is shown — nothing cropped. Keep every headline, badge, callout and the whole product inside a ~5% safe margin on all four sides.',
     ].filter(Boolean).join('\n')
@@ -134,6 +135,7 @@ export async function generateArtDirectorBlogHero(opts: {
       'ABSOLUTELY NO PEOPLE — HARD RULE: zero humans, faces, hands, body parts, silhouettes or reflections. If Image 1 shows a model or hands, keep ONLY the product.',
       `MAIN HEADLINE — render EXACTLY, spelling perfect: "${line1} ${line2}". A designed, layered look (mixed colour/size/weight), placed where it does NOT cover the product.`,
       callouts.length ? `CALLOUTS: work these in as small bright checkmark chips or spec pills, correctly spelled: ${callouts.join(' · ')}.` : '',
+      'NO YEARS OR DATES anywhere in the image (no "2025", "2026") — keep it evergreen so it never looks dated.',
       NO_BRAND_IMAGE_CLAUSE,
       'FRAMING: the entire canvas is shown — nothing cropped. Keep every headline, badge, callout and the whole product inside a ~5% safe margin on all four sides.',
     ].filter(Boolean).join('\n')

@@ -213,7 +213,7 @@ export default function IdeaListsPage() {
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2">
             {synced.map(l => {
               const on = active?.source === 'synced' && active.listId === l.id
               return (
@@ -223,17 +223,17 @@ export default function IdeaListsPage() {
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       {l.coverImage ? <img src={l.coverImage} alt={l.title || ''} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-[#c7c7cc]"><ListChecks size={22} /></div>}
                     </div>
-                    <div className="p-2">
-                      <p className="text-[12px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] line-clamp-2">{l.title || 'Untitled list'}</p>
-                      <p className="text-[10px] text-[#86868b] mt-0.5">
-                        {l.hasItems ? `${l.syncedItems} products synced` : `${l.itemCount ?? '?'} items · open on Amazon to sync`}
+                    <div className="p-1.5">
+                      <p className="text-[11px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] leading-tight line-clamp-2">{l.title || 'Untitled list'}</p>
+                      <p className="text-[9px] text-[#86868b] mt-0.5 line-clamp-1">
+                        {l.hasItems ? `${l.syncedItems} synced` : `${l.itemCount ?? '?'} items`}
                       </p>
                     </div>
                   </button>
                   {l.url && (
                     <a href={l.url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} title="Open this list on Amazon to view or edit it"
-                       className="absolute top-1.5 right-1.5 inline-flex items-center gap-1 rounded-md bg-black/65 hover:bg-black/80 text-white text-[10px] font-semibold px-1.5 py-1 backdrop-blur-sm">
-                      <ExternalLink size={11} /> Amazon
+                       className="absolute top-1 right-1 inline-flex items-center justify-center rounded-md bg-black/65 hover:bg-black/80 text-white p-1 backdrop-blur-sm">
+                      <ExternalLink size={11} />
                     </a>
                   )}
                 </div>
