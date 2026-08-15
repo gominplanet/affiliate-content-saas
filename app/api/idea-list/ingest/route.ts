@@ -69,18 +69,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, upserted: 1, items: items.length })
     }
 
-    // Shape 1 — the storefront index (metadata only). Never overwrite items here.
+    // Shape 1 — the storefront index (metadata only). Never overwrite items here,
+    // and never wipe a title/cover we already have with a null from a later,
+    // thinner scan (storefront thumbnails lazy-load, so early scans lack covers).
     const lists = Array.isArray(body.lists) ? body.lists : []
     for (const l of lists.slice(0, 200)) {
       const id = listId(l.amazonListId)
       if (!id) continue
-      const { error } = await admin.from('idea_lists').upsert({
-        user_id: user.id, amazon_list_id: id,
-        title: clean(l.title, 200), url: clean(l.url, 600),
-        item_count: Number.isFinite(Number(l.itemCount)) ? Number(l.itemCount) : null,
-        cover_image: clean(l.coverImage, 500),
-        updated_at: now,
-      }, { onConflict: 'user_id,amazon_list_id', ignoreDuplicates: false })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const row: any = { user_id: user.id, amazon_list_id: id, url: clean(l.url, 600), updated_at: now }
+      const title = clean(l.title, 200); if (title) row.title = title
+      const cover = clean(l.coverImage, 500); if (cover) row.cover_image = cover
+      if (Number.isFinite(Number(l.itemCount))) row.item_count = Number(l.itemCount)
+      const { error } = await admin.from('idea_lists').upsert(row, { onConflict: 'user_id,amazon_list_id', ignoreDuplicates: false })
       if (!error) upserted++
     }
     return NextResponse.json({ ok: true, upserted })
@@ -117,12 +118,19 @@ export async function GET() {
     ])
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rows = (data ?? []) as any[]
-    const lists = rows.map((r) => ({
-      id: r.id, amazonListId: r.amazon_list_id, title: r.title, url: r.url,
-      itemCount: r.item_count, coverImage: r.cover_image,
-      syncedItems: Array.isArray(r.items) ? r.items.length : 0,
-      hasItems: Array.isArray(r.items) && r.items.length > 0,
-    }))
+    const lists = rows.map((r) => {
+      const items = Array.isArray(r.items) ? r.items : []
+      // Cover: the storefront thumbnail if we have it, else the first captured
+      // product image — so a list shows a picture as soon as either exists.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const firstImg = (items.find((it: any) => it && it.image) || {}).image || null
+      return {
+        id: r.id, amazonListId: r.amazon_list_id, title: r.title, url: r.url,
+        itemCount: r.item_count, coverImage: r.cover_image || firstImg,
+        syncedItems: items.length,
+        hasItems: items.length > 0,
+      }
+    })
     // Prefer the storefront saved on the brand profile; fall back to the root of
     // any list SCOUT already synced.
     const storefrontUrl = storefrontRoot(brand?.amazon_storefront_url) || storefrontRoot(rows.find(r => r.url)?.url) || null

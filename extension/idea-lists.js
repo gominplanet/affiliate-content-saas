@@ -22,7 +22,8 @@
   const MVP = 'SCOUT_PUSH_IDEA_LISTS'
   const MVP_ITEMS = 'SCOUT_PUSH_IDEA_LIST_ITEMS'
   const LOG = '[SCOUT idea-lists]'
-  const MAX_LISTS = 30            // safety cap per visit
+  const MAX_LISTS = 40            // safety cap on discovery
+  const EAGER_CAP = 12           // product-scrape at most this many per visit; the rest load on open
   const RESCRAPE_MS = 3 * 24 * 60 * 60 * 1000
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const send = (type, payload) => { try { const p = chrome.runtime.sendMessage(Object.assign({ type: type }, payload)); if (p && p.catch) p.catch(() => {}) } catch (e) {} }
@@ -75,13 +76,27 @@
     return t.replace(/^['’]s\b/i, '').replace(/^[\s\-–—:|,]+/, '').replace(/[\u{1F000}-\u{1FAFF}\u{2190}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}]/gu, '').trim().slice(0, 160) || null
   }
 
+  // Pick the first real image inside a scope (skips tracking pixels / sprites),
+  // checking every place Amazon stashes a lazy image URL.
+  function bestImg(scope) {
+    if (!scope || !scope.querySelectorAll) return null
+    const imgs = scope.querySelectorAll('img')
+    for (const img of imgs) {
+      let src = img.currentSrc || img.getAttribute('src') || img.getAttribute('data-src') || img.getAttribute('data-a-hires') || ''
+      if (!src && img.getAttribute('srcset')) src = (img.getAttribute('srcset').split(',')[0] || '').trim().split(' ')[0]
+      if (src && /^https?:/i.test(src) && /\.(jpg|jpeg|png|webp)/i.test(src) && !/sprite|transparent-pixel|grey-pixel|-pixel\.|\/G\/01\//i.test(src)) return src
+    }
+    return null
+  }
+
   // ── Discover the lists on the storefront (anchors + a raw-HTML fallback) ─────
   function discoverLists() {
     const byId = new Map()
     document.querySelectorAll('a[href*="/list/"]').forEach((a) => {
       const id = listIdFromHref(a.getAttribute('href') || a.href); if (!id || byId.has(id)) return
-      const card = a.closest('li, [data-testid], article, div') || a
-      const img = card.querySelector('img')
+      // Walk up a couple of levels — Amazon's list thumbnail often sits in a
+      // sibling of the titled anchor, not inside it.
+      const card = a.closest('li, [role="listitem"], [data-testid], article') || a.parentElement || a
       const label = (a.textContent || '').replace(/\s+/g, ' ').trim() || ((card.querySelector('h2,h3,[class*=title]') || {}).textContent || '')
       const cnt = (card.innerText || '').match(/([\d,]+)\s+Items?\b/i)
       byId.set(id, {
@@ -89,7 +104,7 @@
         title: (label || '').replace(/\s+/g, ' ').trim().slice(0, 200) || null,
         url: listUrlFor(id),
         itemCount: cnt ? parseInt(cnt[1].replace(/,/g, ''), 10) : null,
-        coverImage: (img && (img.getAttribute('src') || img.getAttribute('data-src'))) || null,
+        coverImage: bestImg(card) || bestImg(card.parentElement),
       })
     })
     // Fallback: some storefront layouts embed list ids in inline JSON, not anchors.
@@ -114,7 +129,7 @@
       iframe.setAttribute('aria-hidden', 'true')
       iframe.style.cssText = 'position:fixed;left:-10000px;top:0;width:1280px;height:2400px;opacity:0;border:0;pointer-events:none'
       const finish = (items) => { if (done) return; done = true; try { iframe.remove() } catch (e) {} ; resolve(items || []) }
-      const hardTimeout = setTimeout(() => finish([]), 45000)
+      const hardTimeout = setTimeout(() => finish([]), 28000)
       iframe.onload = async () => {
         try {
           const doc = iframe.contentDocument
@@ -163,33 +178,56 @@
     } catch (e) { return false }
   }
 
+  // Push list metadata; re-push when the set of lists OR their covers change
+  // (storefront thumbnails lazy-load after the first read).
+  let lastSig = ''
+  function pushMetadata() {
+    const lists = discoverLists()
+    if (!lists.length) return []
+    const sig = lists.map(l => l.amazonListId + '|' + (l.coverImage ? 1 : 0)).sort().join(',')
+    if (sig !== lastSig) { lastSig = sig; send(MVP, { lists: lists }) }
+    return lists
+  }
+
   // ── The zero-click storefront run ───────────────────────────────────────────
   let running = false
   async function runStorefront() {
     if (running) return
     running = true
     try {
-      const lists = discoverLists()
+      let lists = pushMetadata()
       if (!lists.length) { try { console.debug(LOG, 'no lists found on storefront yet') } catch (e) {} ; running = false; return }
       try { console.debug(LOG, 'discovered', lists.length, 'lists') } catch (e) {}
-      send(MVP, { lists: lists })   // metadata first — they show in MVP right away
+      // Re-scan a few times so lazy-loaded cover thumbnails get pushed too.
+      for (const d of [2500, 6000, 10000]) { setTimeout(() => { try { pushMetadata() } catch (e) {} }, d) }
 
       // Which still need a product scrape?
       const todo = []
       for (const l of lists) { if (!(await recentlySynced(l.amazonListId))) todo.push(l) }
-      if (!todo.length) { badge('Your ' + lists.length + ' idea list' + (lists.length === 1 ? '' : 's') + ' are already synced.', 'ok'); running = false; return }
+      if (!todo.length) { badge('Your ' + lists.length + ' idea list' + (lists.length === 1 ? '' : 's') + ' are synced and ready.', 'ok'); running = false; return }
 
-      let ok = 0
-      for (let i = 0; i < todo.length; i++) {
-        badge('Reading your lists in the background… (' + (i + 1) + '/' + todo.length + ')', 'work')
-        const cap = await captureListInIframe(todo[i])
-        if (cap && cap.items && cap.items.length) {
-          const saved = await sendItems({ amazonListId: todo[i].amazonListId, title: cap.title || todo[i].title, url: todo[i].url, itemCount: cap.itemCount || todo[i].itemCount, coverImage: todo[i].coverImage || (cap.items[0] && cap.items[0].image) || null, items: cap.items })
-          if (saved) ok++
-        }
+      const mk = (meta, cap) => ({ amazonListId: meta.amazonListId, title: cap.title || meta.title, url: meta.url, itemCount: cap.itemCount || meta.itemCount, coverImage: meta.coverImage || (cap.items[0] && cap.items[0].image) || null, items: cap.items })
+
+      // Probe with the FIRST list. Amazon may refuse to render a list page inside
+      // a hidden frame; if so, bail immediately instead of hanging on all 35 —
+      // those lists still load their products the instant the creator opens one.
+      badge('Reading your first list in the background…', 'work')
+      const probe = await captureListInIframe(todo[0])
+      if (!(probe && probe.items && probe.items.length)) {
+        badge(lists.length + ' lists synced. Open any list once and its products load automatically.', 'ok')
+        running = false; return
       }
-      if (ok > 0) badge('Synced ' + ok + ' list' + (ok === 1 ? '' : 's') + ' to MVP. Open MVP → Idea Lists.', 'ok')
-      else badge('Found your lists but couldn’t read the products automatically. Tell MVP support.', 'err')
+      let ok = (await sendItems(mk(todo[0], probe))) ? 1 : 0
+
+      // Framing works — capture the rest, capped so a big storefront stays snappy.
+      const rest = todo.slice(1, EAGER_CAP)
+      for (let i = 0; i < rest.length; i++) {
+        badge('Reading your lists in the background… (' + (i + 2) + '/' + Math.min(todo.length, EAGER_CAP) + ')', 'work')
+        const cap = await captureListInIframe(rest[i])
+        if (cap && cap.items && cap.items.length && await sendItems(mk(rest[i], cap))) ok++
+      }
+      const remaining = todo.length - Math.min(todo.length, EAGER_CAP)
+      badge('Synced products for ' + ok + ' list' + (ok === 1 ? '' : 's') + (remaining > 0 ? ' · ' + remaining + ' more load as you open them' : '') + '. Open MVP → Idea Lists.', 'ok')
     } catch (e) { try { console.debug(LOG, 'run error', e && e.message) } catch (er) {} }
     running = false
   }
