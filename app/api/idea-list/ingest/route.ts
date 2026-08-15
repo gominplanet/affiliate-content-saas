@@ -89,6 +89,16 @@ export async function POST(request: Request) {
   }
 }
 
+// Reduce any Amazon storefront/list URL to its /shop/<handle> root, so the
+// dashboard's "Open my storefront" button lands on the storefront index where
+// SCOUT can enumerate every idea list.
+function storefrontRoot(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null
+  const m = raw.match(/amazon\.[a-z.]+\/shop\/([^/?#]+)/i)
+  if (!m) return null
+  return `https://www.amazon.com/shop/${m[1]}`
+}
+
 // GET — the creator's synced lists, for the dashboard grid.
 export async function GET() {
   try {
@@ -96,20 +106,27 @@ export async function GET() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data } = await (supabase as any)
-      .from('idea_lists')
-      .select('id,amazon_list_id,title,url,item_count,cover_image,items,items_synced_at,updated_at')
-      .eq('user_id', user.id)
-      .order('updated_at', { ascending: false })
-      .limit(100)
+    const sb = supabase as any
+    const [{ data }, { data: brand }] = await Promise.all([
+      sb.from('idea_lists')
+        .select('id,amazon_list_id,title,url,item_count,cover_image,items,items_synced_at,updated_at')
+        .eq('user_id', user.id)
+        .order('updated_at', { ascending: false })
+        .limit(100),
+      sb.from('brand_profiles').select('amazon_storefront_url').eq('user_id', user.id).maybeSingle(),
+    ])
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const lists = ((data ?? []) as any[]).map((r) => ({
+    const rows = (data ?? []) as any[]
+    const lists = rows.map((r) => ({
       id: r.id, amazonListId: r.amazon_list_id, title: r.title, url: r.url,
       itemCount: r.item_count, coverImage: r.cover_image,
       syncedItems: Array.isArray(r.items) ? r.items.length : 0,
       hasItems: Array.isArray(r.items) && r.items.length > 0,
     }))
-    return NextResponse.json({ ok: true, lists })
+    // Prefer the storefront saved on the brand profile; fall back to the root of
+    // any list SCOUT already synced.
+    const storefrontUrl = storefrontRoot(brand?.amazon_storefront_url) || storefrontRoot(rows.find(r => r.url)?.url) || null
+    return NextResponse.json({ ok: true, lists, storefrontUrl })
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Failed' }, { status: 500 })
   }
