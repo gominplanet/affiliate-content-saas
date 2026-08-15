@@ -2242,6 +2242,33 @@ setInterval(() => {
   const LOG = '[SCOUT idea-lists]'
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const send = (type, payload) => { try { const p = chrome.runtime.sendMessage(Object.assign({ type: type }, payload)); if (p && p.catch) p.catch(() => {}) } catch (e) {} }
+
+  // Visible on-page confirmation so the creator can SEE SCOUT working without
+  // opening any console. Bottom-right toast; green = synced, purple = working,
+  // red = a problem they can act on.
+  function badge(text, kind) {
+    try {
+      let el = document.getElementById('mvp-scout-badge')
+      if (!el) {
+        el = document.createElement('div'); el.id = 'mvp-scout-badge'
+        el.style.cssText = 'position:fixed;z-index:2147483647;right:16px;bottom:16px;max-width:340px;padding:11px 15px;border-radius:11px;font:600 13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#fff;box-shadow:0 10px 30px rgba(0,0,0,.28);transition:opacity .3s ease'
+        document.documentElement.appendChild(el)
+      }
+      el.style.background = kind === 'err' ? '#dc2626' : (kind === 'work' ? '#7C3AED' : '#16a34a')
+      el.textContent = 'MVP SCOUT · ' + text
+      el.style.opacity = '1'
+      clearTimeout(el._t); el._t = setTimeout(() => { try { el.style.opacity = '0' } catch (e) {} }, kind === 'work' ? 90000 : 7000)
+    } catch (e) {}
+  }
+  // Send captured items and reflect the worker's result back to the creator.
+  async function sendItems(list) {
+    try {
+      const res = await chrome.runtime.sendMessage({ type: MVP_ITEMS, list: list })
+      if (res && res.ok) badge('Synced “' + (list.title || 'your list') + '” · ' + list.items.length + ' products. Open MVP → Idea Lists.', 'ok')
+      else if (res && res.status === 401) badge('Sign in to mvpaffiliate.io in THIS browser, then reopen this list.', 'err')
+      else badge('Couldn’t save to MVP: ' + ((res && res.error) || 'unknown error') + '.', 'err')
+    } catch (e) { badge('Couldn’t reach the extension worker. Reload the page and try again.', 'err') }
+  }
   // Tolerant of both /shop/<handle>/list/<id> and the newer /list/<id> shapes.
   const listIdFromHref = (href) => { const m = String(href || '').match(/\/(?:shop\/[^/]+\/)?list\/([A-Za-z0-9]{6,})/i); return m ? m[1] : null }
   const currentListId = () => listIdFromHref(location.pathname)
@@ -2281,6 +2308,7 @@ setInterval(() => {
     if (!id || capturing.has(id) || captured.has(id)) return
     capturing.add(id)
     try {
+      badge('Reading this list…', 'work')
       // Load lazily-appended tiles by scrolling to the bottom until the count settles.
       let last = -1, stable = 0
       for (let i = 0; i < 40 && stable < 3; i++) {
@@ -2296,7 +2324,7 @@ setInterval(() => {
       if (!items.length) { try { console.debug(LOG, 'list', id, 'no products found yet — will retry') } catch (e) {} ; return }
       captured.add(id)
       try { console.debug(LOG, 'captured list', id, '→', items.length, 'products') } catch (e) {}
-      send(MVP_ITEMS, { list: { amazonListId: id, title: listTitle(), url: location.href.split('?')[0], itemCount: declaredCount(), coverImage: (items[0] && items[0].image) || null, items: items } })
+      await sendItems({ amazonListId: id, title: listTitle(), url: location.href.split('?')[0], itemCount: declaredCount(), coverImage: (items[0] && items[0].image) || null, items: items })
     } finally { capturing.delete(id) }
   }
 
@@ -2328,6 +2356,7 @@ setInterval(() => {
     if (sig === lastSig) return
     lastSig = sig
     try { console.debug(LOG, 'storefront index →', lists.length, 'lists') } catch (e) {}
+    badge('Found ' + lists.length + ' idea list' + (lists.length === 1 ? '' : 's') + '. Open one to sync its products.', 'ok')
     send(MVP, { lists: lists })
   }
   let lastSig = ''
