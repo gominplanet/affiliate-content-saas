@@ -146,14 +146,13 @@ export async function POST(request: Request) {
     // 4. Claude writes the prose (JSON only — we own the HTML + links).
     const anthropic = createAnthropicClient()
     const angle = cleanListName(listTitle) || listTitle || 'a curated Amazon shopping list'
-    const year = new Date().getUTCFullYear()
     const prompt = `You are writing a SHOPPING GUIDE blog post — a curated "here are the best picks" listicle, NOT a head-to-head comparison. The Amazon list this is based on is themed: "${angle}".
 Here are the ${picks.length} products, already chosen, in order:
 ${picks.map((p, i) => `${i + 1}. ${p.title}${p.priceCents ? ` (${dollars(p.priceCents)})` : ''}${p.rating ? ` ${p.rating}★ ${p.reviews || 0} reviews` : ''}`).join('\n')}
 
 Return ONLY JSON with these fields:
 {
-  "title": string  — a compelling, SEO-friendly blog TITLE for a shopping guide (e.g. "The 10 Best Office & Studio Essentials for ${year}"). Do NOT reuse the raw list name, and NEVER include "Amazon Page", a person's handle, warning symbols, or emojis.
+  "title": string  — a compelling, SEO-friendly blog TITLE for a shopping guide (e.g. "The 10 Best Office & Studio Essentials for a Pro Setup"). Keep it EVERGREEN — NEVER include a year or a date (no "2025", "in 2026", "this year"). Do NOT reuse the raw list name, and NEVER include "Amazon Page", a person's handle, warning symbols, or emojis.
   "hero_prompt": string — one vivid sentence describing a clean, aspirational, magazine-style HERO photo representing this guide's theme (a styled scene of the product category; NO people, NO text, NO logos). e.g. "A tidy modern home-office desk at golden hour with a monitor, desk lamp and ergonomic chair".
   "intro": string — 2-4 warm sentences setting up the guide and who it's for.
   "conclusion": string — 3-4 sentences wrapping up the whole guide: recap the theme, remind the reader how to choose between the picks (who each is best for), and end on an encouraging note. This is the closing section of the post, so make it feel like a real sign-off, not a throwaway line.
