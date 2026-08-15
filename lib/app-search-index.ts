@@ -52,6 +52,7 @@ export const APP_SEARCH_INDEX: AppSearchEntry[] = [
   { label: 'Social Push', href: '/content?tab=posts', group: 'Create', keywords: 'social push publish schedule posts pinterest tiktok instagram facebook cascade share' },
   { label: 'Comparisons', href: '/comparison', group: 'Create', keywords: 'comparison vs versus compare products roundup' },
   { label: 'Buying Guides', href: '/buying-guides', group: 'Create', keywords: 'buying guide best of top picks' },
+  { label: 'Idea Lists', href: '/idea-lists', group: 'Create', keywords: 'idea list amazon storefront shopping guide list to blog roundup shoppable list top picks curated products' },
   { label: 'MVP x LTK', href: '/ltk', group: 'Create', keywords: 'ltk liketoknowit shopltk rewardstyle link post' },
   { label: 'Deals Hub', href: '/deals', group: 'Create', keywords: 'deals sale prime day discount occasion' },
   { label: 'Scriptwriter', href: '/script', group: 'Create', keywords: 'script video script write scriptwriter' },

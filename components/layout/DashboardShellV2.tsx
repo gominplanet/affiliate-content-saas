@@ -469,6 +469,9 @@ export default function DashboardShellV2({
         // not a create action). YouTube has its own SET UP > "YouTube" entry.
         { href: '/comparison', icon: <Scale size={15} />, label: 'Comparisons' },
         { href: '/buying-guides', icon: <BookOpen size={15} />, label: 'Buying Guides', gate: showBuyingGuidesEff },
+        // Idea Lists → Shopping Guide — read an Amazon idea list, score the
+        // products, publish a curated shopping-guide post. Paid tiers.
+        { href: '/idea-lists', icon: <ShoppingBag size={15} />, label: 'Idea Lists', gate: canUseFinders },
         // MVP x LTK — paste an LTK link → SEO blog post with the LTK link as the
         // CTA. Graduated OUT of Labs into Create (right under Buying Guides) and
         // opened to ALL PAID tiers (canUseFinders = tier !== 'trial'), 2026-07-08.
@@ -680,6 +683,7 @@ export default function DashboardShellV2({
     { prefix: '/clip-factory', label: 'Clip Factory' },
     { prefix: '/comparison', label: 'Comparison Posts' },
     { prefix: '/buying-guides', label: 'Buying Guides' },
+    { prefix: '/idea-lists', label: 'Idea Lists' },
     { prefix: '/deals', label: 'Deals Hub' },
     { prefix: '/script', label: 'Scriptwriter' },
     { prefix: '/newsletter', label: 'Newsletter' },
