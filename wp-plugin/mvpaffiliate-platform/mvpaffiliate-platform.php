@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.90
+ * Version: 1.0.91
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -27,6 +27,35 @@ $mvp_affiliate_self_meta = function_exists('get_file_data')
     : ['Version' => '1.0.48'];
 define('MVP_AFFILIATE_VERSION', (string) ($mvp_affiliate_self_meta['Version'] ?: '1.0.48'));
 unset($mvp_affiliate_self_meta);
+
+// ─── Boot guard: a load-time fatal must never white-screen the whole site ─────
+// If MVP throws while this file is still LOADING (as a bad release once did),
+// every request fatals — including wp-admin, so the plugin can't even be
+// updated from the dashboard. This catches exactly that case: a shutdown
+// handler notices a fatal that happened IN THIS PLUGIN before it finished
+// booting, and silently deactivates MVP so the very next request renders the
+// site normally instead of "There has been a critical error on this website".
+// It is scoped to load time on purpose — a fatal AFTER a clean boot (some
+// per-request hook) does NOT trip it, so one bad post can never disable the
+// whole plugin; the the_content filters already guard those. Registered here,
+// before any risky code, so it's in place if the rest of the file blows up.
+$GLOBALS['mvp_affiliate_boot_ok'] = false;
+if (!function_exists('mvp_affiliate_boot_guard')) {
+    function mvp_affiliate_boot_guard() {
+        if (!empty($GLOBALS['mvp_affiliate_boot_ok'])) return;               // booted cleanly — stand down
+        $e = error_get_last();
+        if (!$e || !in_array($e['type'], array(E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR), true)) return;
+        if (empty($e['file']) || strpos($e['file'], 'mvpaffiliate-platform') === false) return; // not our fatal
+        if (!function_exists('deactivate_plugins') && defined('ABSPATH')) { require_once ABSPATH . 'wp-admin/includes/plugin.php'; }
+        if (function_exists('deactivate_plugins')) {
+            deactivate_plugins(plugin_basename(__FILE__), true);            // silent — skip deactivation hooks
+            if (function_exists('update_option')) {
+                update_option('mvp_affiliate_autodisabled', array('at' => time(), 'msg' => (string) $e['message'], 'line' => (int) $e['line']), false);
+            }
+        }
+    }
+    register_shutdown_function('mvp_affiliate_boot_guard');
+}
 
 // ─── Fail-safe hook wrapper ───────────────────────────────────────────────────
 // Wrap a frontend hook callback so an uncaught error inside MVP code can never
@@ -5073,3 +5102,12 @@ add_action('init', function () {
     echo $body;
     exit;
 }, 1);
+
+// ─── Boot succeeded ───────────────────────────────────────────────────────────
+// Execution reached the end of the plugin file, so loading did NOT fatal. Tell
+// the boot guard above to stand down (from here on, only pre-boot fatals would
+// self-heal). Clear any prior auto-disable record since we're loading cleanly.
+$GLOBALS['mvp_affiliate_boot_ok'] = true;
+if (function_exists('get_option') && get_option('mvp_affiliate_autodisabled')) {
+    if (function_exists('delete_option')) { delete_option('mvp_affiliate_autodisabled'); }
+}
