@@ -6,10 +6,13 @@
 'use client'
 
 import { useState } from 'react'
+import dynamic from 'next/dynamic'
 import PageHero from '@/components/layout/PageHero'
 import { toast } from 'sonner'
-import { Loader2, Search, Sparkles, ExternalLink, ListChecks } from 'lucide-react'
+import { Loader2, Search, Sparkles, ExternalLink, ListChecks, Pencil, Trash2 } from 'lucide-react'
 import { errText } from '@/lib/err-text'
+
+const BlogEditModal = dynamic(() => import('@/components/content/BlogEditModal'), { ssr: false })
 
 interface Item { asin: string; title: string | null; image: string | null }
 const PURPLE = '#7C3AED'
@@ -20,7 +23,9 @@ export default function IdeaListsPage() {
   const [scan, setScan] = useState<{ title: string | null; declaredCount: number | null; items: Item[]; partial: boolean } | null>(null)
   const [count, setCount] = useState(10)
   const [generating, setGenerating] = useState(false)
-  const [done, setDone] = useState<{ url: string; title: string; picked: number } | null>(null)
+  const [done, setDone] = useState<{ url: string; title: string; picked: number; postId: string | null; wpPostId: number | null } | null>(null)
+  const [editOpen, setEditOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   const runScan = async () => {
     if (!url.trim()) { toast.error('Paste your Amazon idea-list link.'); return }
@@ -45,10 +50,27 @@ export default function IdeaListsPage() {
       })
       const d = await res.json()
       if (!res.ok || !d.ok) throw new Error(d.error || 'Could not build the guide.')
-      setDone({ url: d.url, title: d.title, picked: d.picked })
+      setDone({ url: d.url, title: d.title, picked: d.picked, postId: d.postId ?? null, wpPostId: d.wpPostId ?? null })
       toast.success('Shopping guide published')
     } catch (e) { toast.error(errText(e)) }
     finally { setGenerating(false) }
+  }
+
+  const removePost = async () => {
+    if (!done) return
+    if (!confirm('Delete this post? It will be removed from your blog.')) return
+    setDeleting(true)
+    try {
+      const res = await fetch('/api/blog/delete', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(done.postId ? { postId: done.postId } : { wpPostId: done.wpPostId }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(d.error || 'Delete failed.')
+      toast.success('Post deleted')
+      setDone(null)
+    } catch (e) { toast.error(errText(e)) }
+    finally { setDeleting(false) }
   }
 
   const maxPicks = Math.min(15, scan?.items.length ?? 15)
@@ -115,9 +137,21 @@ export default function IdeaListsPage() {
       {done && (
         <div className="mt-4 rounded-xl border border-[#34c759]/30 bg-[#34c759]/[0.06] p-4">
           <p className="text-[14px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Published: {done.title}</p>
-          <p className="text-[12px] text-[#4b4b4f] dark:text-[#b0b0b5] mt-0.5 mb-2">{done.picked} picks + a link to your full list.</p>
-          <a href={done.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-[#7C3AED] hover:underline">View the post <ExternalLink size={13} /></a>
+          <p className="text-[12px] text-[#4b4b4f] dark:text-[#b0b0b5] mt-0.5 mb-2.5">{done.picked} picks, a fresh thumbnail, and a link to your full list.</p>
+          <div className="flex flex-wrap items-center gap-3">
+            <a href={done.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-[#7C3AED] hover:underline">View the post <ExternalLink size={13} /></a>
+            {done.postId && (
+              <button onClick={() => setEditOpen(true)} className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] hover:text-[#7C3AED]"><Pencil size={13} /> Edit</button>
+            )}
+            <button onClick={removePost} disabled={deleting} className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[#ff3b30] hover:underline disabled:opacity-50">
+              {deleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />} Delete
+            </button>
+          </div>
         </div>
+      )}
+
+      {editOpen && done?.postId && (
+        <BlogEditModal postId={done.postId} onClose={() => setEditOpen(false)} onSaved={() => toast.success('Saved to your blog')} />
       )}
     </div>
   )

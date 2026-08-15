@@ -23,7 +23,8 @@ import { createWordPressService } from '@/services/wordpress'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { fetchKeepaProductCard } from '@/services/keepa'
 import { resolveAffiliateUrl } from '@/lib/weekly-digest'
-import { fetchIdeaList, normalizeListUrl } from '@/lib/amazon-idea-list'
+import { fetchIdeaList, normalizeListUrl, cleanListName } from '@/lib/amazon-idea-list'
+import { buildCampaignHero } from '@/lib/hero-image'
 import { scrubAiHtml } from '@/lib/html-scrub'
 import { toUserMessage } from '@/lib/friendly-error'
 
@@ -134,20 +135,33 @@ export async function POST(request: Request) {
 
     // 4. Claude writes the prose (JSON only — we own the HTML + links).
     const anthropic = createAnthropicClient()
-    const angle = listTitle || 'a curated Amazon shopping list'
-    const prompt = `You are writing a SHOPPING GUIDE blog post (a curated "these are the picks" listicle — NOT a head-to-head comparison) titled around: "${angle}".
+    const angle = cleanListName(listTitle) || listTitle || 'a curated Amazon shopping list'
+    const year = new Date().getUTCFullYear()
+    const prompt = `You are writing a SHOPPING GUIDE blog post — a curated "here are the best picks" listicle, NOT a head-to-head comparison. The Amazon list this is based on is themed: "${angle}".
 Here are the ${picks.length} products, already chosen, in order:
 ${picks.map((p, i) => `${i + 1}. ${p.title}${p.priceCents ? ` (${dollars(p.priceCents)})` : ''}${p.rating ? ` ${p.rating}★ ${p.reviews || 0} reviews` : ''}`).join('\n')}
 
-Return ONLY JSON: {"title": string, "intro": string (2-3 sentences, warm, sets up the guide), "outro": string (1-2 sentences wrapping up), "picks": [{"asin": string, "heading": string (short, the product's role e.g. "Best budget monitor"), "superlative": string (2-4 words, e.g. "Best Value"), "blurb": string (2-3 sentences on why it's worth buying and who it's for)}]}.
-Match each picks[].asin to one of these: ${picks.map(p => p.asin).join(', ')}. Do not invent products, prices, or specs. No markdown, JSON only.`
+Return ONLY JSON with these fields:
+{
+  "title": string  — a compelling, SEO-friendly blog TITLE for a shopping guide (e.g. "The 10 Best Office & Studio Essentials for ${year}"). Do NOT reuse the raw list name, and NEVER include "Amazon Page", a person's handle, warning symbols, or emojis.
+  "hero_prompt": string — one vivid sentence describing a clean, aspirational, magazine-style HERO photo representing this guide's theme (a styled scene of the product category; NO people, NO text, NO logos). e.g. "A tidy modern home-office desk at golden hour with a monitor, desk lamp and ergonomic chair".
+  "intro": string — 2-4 warm sentences setting up the guide and who it's for.
+  "outro": string — 1-2 sentences wrapping up.
+  "picks": [{
+    "asin": string,
+    "heading": string — short, the product's ROLE (e.g. "Best budget monitor", "Best ergonomic chair"),
+    "superlative": string — 2-4 words (e.g. "Best Value", "Editor's Pick", "Best for small spaces"),
+    "blurb": string — 4-5 sentences. Lead with what it IS, then 2-3 concrete FEATURES each tied to a BENEFIT (feature → why it matters to the buyer), then who it's best for. Specific and persuasive, never generic filler.
+  }]
+}
+Match each picks[].asin to one of these: ${picks.map(p => p.asin).join(', ')}. Do not invent products, prices, or specs you don't see above. No markdown — JSON only.`
     const msg = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6', max_tokens: 4000,
+      model: 'claude-sonnet-4-6', max_tokens: 6000,
       messages: [{ role: 'user', content: prompt }],
     })
     recordAnthropicUsage(msg, { userId: user.id, tier, feature: 'idea_list_guide', model: 'claude-sonnet-4-6' })
     const raw = msg.content.map(c => (c.type === 'text' ? c.text : '')).join('')
-    let parsed: { title?: string; intro?: string; outro?: string; picks?: Array<{ asin: string; heading?: string; superlative?: string; blurb?: string }> } = {}
+    let parsed: { title?: string; hero_prompt?: string; intro?: string; outro?: string; picks?: Array<{ asin: string; heading?: string; superlative?: string; blurb?: string }> } = {}
     try { parsed = JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1)) } catch { /* fall back below */ }
     const proseByAsin = new Map((parsed.picks || []).map(p => [String(p.asin).toUpperCase(), p]))
 
@@ -156,7 +170,7 @@ Match each picks[].asin to one of these: ${picks.map(p => p.asin).join(', ')}. D
     const links = await pool(picks, 5, async (p) => ({ asin: p.asin, url: await resolveAffiliateUrl(p.asin, p.title, tag, intRow?.geniuslink_api_key ?? null, intRow?.geniuslink_api_secret ?? null) }))
     const linkByAsin = new Map(links.map(l => [l.asin, l.url]))
 
-    const postTitle = (parsed.title || listTitle || 'My Top Picks').slice(0, 120)
+    const postTitle = (parsed.title || cleanListName(listTitle) || 'My Top Picks').slice(0, 120)
     const cardsHtml = picks.map((p, i) => {
       const pr: { heading?: string; superlative?: string; blurb?: string } = proseByAsin.get(p.asin) || {}
       const url = linkByAsin.get(p.asin) || `https://www.amazon.com/dp/${p.asin}`
@@ -185,14 +199,45 @@ ${cardsHtml}
 ${parsed.outro ? `<p>${esc(parsed.outro)}</p>` : ''}
 ${fullListCta}`)
 
-    // 6. Publish.
+    // 6. Featured image — a fresh AI hero for the guide's theme, grounded on the
+    //    top pick's photo. Best-effort; a failed hero must never block publishing.
     const creds = await getWordPressCredentials(supabase, user.id)
     if (!creds) return NextResponse.json({ error: 'Connect your WordPress site first.' }, { status: 400 })
     const wp = createWordPressService(creds.wordpress_url, creds.wordpress_username, creds.wordpress_app_password || '', creds.wordpress_api_token || undefined)
     const slug = postTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 70)
-    const wpPost = await wp.createPost({ title: postTitle, content, excerpt: (parsed.intro || '').slice(0, 160), slug, status: 'publish' })
 
-    return NextResponse.json({ ok: true, url: wpPost.link, title: postTitle, picked: picks.length })
+    let featuredMedia: number | undefined
+    try {
+      const hero = await buildCampaignHero({
+        heroPrompt: parsed.hero_prompt || `An editorial hero photo representing ${angle}`,
+        productImageUrl: picks.find(p => p.image)?.image ?? null,
+        productTitle: angle,
+        ctx: { userId: user.id, tier },
+      })
+      if (hero?.b64) {
+        const media = await wp.uploadImageFromBase64(hero.b64, `${slug || 'shopping-guide'}.jpg`, 'image/jpeg')
+        featuredMedia = (media?.id as number | undefined) ?? undefined
+      }
+    } catch (err) { console.warn('[idea-list] hero image failed:', err instanceof Error ? err.message : err) }
+
+    // 7. Publish + save so it's editable/deletable in MVP.
+    const wpPost = await wp.createPost({
+      title: postTitle, content, excerpt: (parsed.intro || '').slice(0, 160), slug, status: 'publish',
+      ...(featuredMedia ? { featured_media: featuredMedia } : {}),
+    })
+
+    let postId: string | null = null
+    try {
+      const { data: saved } = await sb.from('blog_posts').insert({
+        user_id: user.id, video_id: null, title: postTitle, slug, content, excerpt: (parsed.intro || '').slice(0, 160),
+        wordpress_post_id: wpPost.id, wordpress_url: wpPost.link, wordpress_site_id: (creds as { site_id?: string }).site_id ?? null,
+        status: 'published', post_type: 'guide', seo_keyword: angle,
+        published_at: new Date().toISOString(),
+      }).select('id').single()
+      postId = (saved?.id as string) ?? null
+    } catch { /* non-fatal — the post is live on WP regardless */ }
+
+    return NextResponse.json({ ok: true, url: wpPost.link, title: postTitle, picked: picks.length, postId, wpPostId: wpPost.id })
   } catch (err) {
     return NextResponse.json({ error: toUserMessage(err, "Couldn't build the guide just now. Please try again in a moment.") }, { status: 500 })
   }
