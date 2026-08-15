@@ -89,7 +89,7 @@ export async function POST(request: NextRequest) {
       const { data: fullPost } = await (supabase as any)
         .from('blog_posts').select('*').eq('id', postId).eq('user_id', user.id).maybeSingle()
       if (fullPost) {
-        const a = await buildPinAssets(fullPost, { userId: user.id, tier: null })
+        const a = await buildPinAssets(fullPost, { userId: user.id, tier: null }, { artDirector: true })
         if (a.imageBase64) { effImageBase64 = a.imageBase64; effMediaType = a.mediaType }
       }
     } catch { /* compose failed — fall back to fallbackImageUrl (thumbnail) */ }
