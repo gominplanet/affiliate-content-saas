@@ -95,16 +95,20 @@ export async function POST(request: Request) {
       inItems = parsed.items
       if (!listTitle && parsed.title) listTitle = parsed.title
     }
-    const asins = Array.from(new Set(inItems.map(i => String(i.asin || '').trim().toUpperCase()).filter(a => /^[A-Z0-9]{10}$/.test(a)))).slice(0, 60)
-    if (asins.length < 3) return NextResponse.json({ error: 'Need at least 3 products from the list.' }, { status: 400 })
+    // Every valid ASIN in the list (deduped). We check earnings + CC campaigns
+    // across the WHOLE list first, so a Creator Connections product never gets
+    // missed just because it sits deep in the list.
+    const allAsins = Array.from(new Set(inItems.map(i => String(i.asin || '').trim().toUpperCase()).filter(a => /^[A-Z0-9]{10}$/.test(a)))).slice(0, 500)
+    if (allAsins.length < 3) return NextResponse.json({ error: 'Need at least 3 products from the list.' }, { status: 400 })
     const titleByAsin = new Map(inItems.map(i => [String(i.asin).toUpperCase(), (i.title || '').trim()]))
     const imageByAsin = new Map(inItems.map(i => [String(i.asin).toUpperCase(), i.image || null]))
 
     // 2. Which of these already earn for the creator (SCOUT), and which are in a
-    //    CC campaign — both boost the score.
+    //    CC campaign — a campaign match earns the creator a bounty, so those get
+    //    first priority in the guide.
     const [{ data: earnRows }, { data: campRows }] = await Promise.all([
-      sb.from('storefront_earnings').select('asin,commission').eq('user_id', user.id).in('asin', asins),
-      sb.from('campaigns').select('asin').eq('user_id', user.id).in('asin', asins),
+      sb.from('storefront_earnings').select('asin,commission').eq('user_id', user.id).in('asin', allAsins),
+      sb.from('campaigns').select('asin').eq('user_id', user.id).in('asin', allAsins),
     ])
     const earnByAsin = new Map<string, number>()
     for (const r of (earnRows || []) as Array<{ asin: string; commission: number | null }>) {
@@ -112,7 +116,13 @@ export async function POST(request: Request) {
     }
     const campaignAsins = new Set((campRows || []).map((r: { asin: string }) => r.asin))
 
-    // 3. Keepa-enrich (paced), then score.
+    // 3. Build the Keepa candidate set: EVERY campaign product first (never
+    //    dropped by the cap), then fill up to 100 with the rest in list order.
+    const campFirst = allAsins.filter(a => campaignAsins.has(a))
+    const rest = allAsins.filter(a => !campaignAsins.has(a))
+    const asins = [...campFirst, ...rest].slice(0, Math.max(100, campFirst.length))
+
+    // 3b. Keepa-enrich the candidate set (paced), then score.
     const cards = await pool(asins, 6, async (asin) => {
       let k = null
       try { k = await fetchKeepaProductCard(asin) } catch { /* degrade */ }
@@ -141,29 +151,40 @@ export async function POST(request: Request) {
       const trust = ((e.rating || 0) / 5) * (Math.log10((e.reviews || 0) + 1) / mRev)
       e.score = earn * 0.34 + demand * 0.26 + trust * 0.20 + deal * 0.12 + (e.hasCampaign ? 0.08 : 0)
     }
-    const picks = enriched.sort((a, b) => b.score - a.score).slice(0, count)
+    // Candidate pool: campaign products first, then by score. The WRITER picks the
+    // final line-up from this pool with THEME RELEVANCE in mind — a numeric score
+    // can't tell that a kids' backpack doesn't belong in a creator guide.
+    const candidatePool = enriched.sort((a, b) => {
+      if (a.hasCampaign !== b.hasCampaign) return a.hasCampaign ? -1 : 1
+      return b.score - a.score
+    }).slice(0, Math.min(enriched.length, count + 12))
 
-    // 4. Claude writes the prose (JSON only — we own the HTML + links).
+    // 4. Claude SELECTS the on-theme picks AND writes the prose (JSON only).
     const anthropic = createAnthropicClient()
     const angle = cleanListName(listTitle) || listTitle || 'a curated Amazon shopping list'
-    const prompt = `You are writing a SHOPPING GUIDE blog post — a curated "here are the best picks" listicle, NOT a head-to-head comparison. The Amazon list this is based on is themed: "${angle}".
-Here are the ${picks.length} products, already chosen, in order:
-${picks.map((p, i) => `${i + 1}. ${p.title}${p.priceCents ? ` (${dollars(p.priceCents)})` : ''}${p.rating ? ` ${p.rating}★ ${p.reviews || 0} reviews` : ''}`).join('\n')}
+    const prompt = `You are writing a SHOPPING GUIDE blog post — a curated "best picks" listicle. The guide's theme is: "${angle}".
 
-Return ONLY JSON with these fields:
+CANDIDATE PRODUCTS — choose the line-up from THESE ONLY. "[CC]" marks a product the creator earns a campaign bounty on:
+${candidatePool.map((p, i) => `${i + 1}. [ASIN ${p.asin}]${p.hasCampaign ? ' [CC]' : ''} ${p.title}${p.priceCents ? ` — ${dollars(p.priceCents)}` : ''}${p.rating ? ` — ${p.rating}★ (${p.reviews || 0} reviews)` : ''}`).join('\n')}
+
+SELECT the picks — this is the most important step:
+- Choose up to ${count} products that GENUINELY FIT the theme "${angle}". LEAVE OUT anything that doesn't belong in this specific guide, no matter how highly rated — e.g. a child's school backpack has NO place in a content-creator guide. Returning fewer strong, on-theme picks beats padding with off-theme ones. Only reach ${count} if that many truly fit.
+- Among products that fit, PREFER [CC] ones, then higher rating and demand. Order best-first.
+
+Return ONLY JSON:
 {
-  "title": string  — a compelling, SEO-friendly blog TITLE for a shopping guide (e.g. "The 10 Best Office & Studio Essentials for a Pro Setup"). Keep it EVERGREEN — NEVER include a year or a date (no "2025", "in 2026", "this year"). Do NOT reuse the raw list name, and NEVER include "Amazon Page", a person's handle, warning symbols, or emojis.
-  "hero_prompt": string — one vivid sentence describing a clean, aspirational, magazine-style HERO photo representing this guide's theme (a styled scene of the product category; NO people, NO text, NO logos). e.g. "A tidy modern home-office desk at golden hour with a monitor, desk lamp and ergonomic chair".
+  "title": string — compelling, SEO-friendly, EVERGREEN (NEVER a year or date), no "Amazon Page"/handle/warning symbols/emojis, and don't reuse the raw list name.
+  "hero_prompt": string — one vivid sentence: a clean, aspirational, magazine-style HERO photo of the guide's product category (no people, no text, no logos).
   "intro": string — 2-4 warm sentences setting up the guide and who it's for.
-  "conclusion": string — 3-4 sentences wrapping up the whole guide: recap the theme, remind the reader how to choose between the picks (who each is best for), and end on an encouraging note. This is the closing section of the post, so make it feel like a real sign-off, not a throwaway line.
+  "conclusion": string — 3-4 sentences: recap the theme, how to choose between the picks, an encouraging sign-off.
   "picks": [{
-    "asin": string,
-    "heading": string — short, the product's ROLE (e.g. "Best budget monitor", "Best ergonomic chair"),
-    "superlative": string — 2-4 words (e.g. "Best Value", "Editor's Pick", "Best for small spaces"),
-    "blurb": string — 5-6 sentences. Lead with what it IS in one line, then 3-4 concrete FEATURES each tied to a BENEFIT (feature → why it actually matters to the buyer in daily use), then close with who it's best for. Warm, specific and persuasive. Never generic filler, never repeat the heading.
+    "asin": string — copied EXACTLY from a candidate above,
+    "heading": string — names the REAL product and its role, taken from its title (e.g. "Best wireless lav mic", "Best ring light for video"). NEVER a vague label like "niche creator tool".
+    "superlative": string — 2-4 words (e.g. "Best Value", "Best for small spaces"). NEVER "Hidden Gem", "Game Changer", "Must-Have", "You Need This".
+    "blurb": string — 5-6 sentences. The FIRST sentence MUST say what the product actually IS (its real category, read from its title). Then specific points a buyer cares about, drawn from the real product and its title — what it does, key features, who it's for.
   }]
 }
-Match each picks[].asin to one of these: ${picks.map(p => p.asin).join(', ')}. Do not invent products, prices, or specs you don't see above. No markdown — JSON only.`
+HARD BAN — generic filler that could describe ANY product. Never write "punches above its price class", "delivers on its promises", "fills a specific role", "just works", "maximum satisfaction per dollar", "consistently delivers", or similar. If all you have is the title, describe the product concretely FROM the title — do not invent specs, but ALWAYS name what it actually is. No markdown — JSON only.`
     const msg = await anthropic.messages.create({
       model: 'claude-sonnet-4-6', max_tokens: 10000,
       messages: [{ role: 'user', content: prompt }],
@@ -173,6 +194,16 @@ Match each picks[].asin to one of these: ${picks.map(p => p.asin).join(', ')}. D
     let parsed: { title?: string; hero_prompt?: string; intro?: string; conclusion?: string; outro?: string; picks?: Array<{ asin: string; heading?: string; superlative?: string; blurb?: string }> } = {}
     try { parsed = JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1)) } catch { /* fall back below */ }
     const proseByAsin = new Map((parsed.picks || []).map(p => [String(p.asin).toUpperCase(), p]))
+
+    // Final line-up = the writer's on-theme selection, mapped back to our enriched
+    // data in the order returned. Fall back to score order only if it returned too
+    // few (never publish a guide with fewer than 3 picks).
+    const byAsin = new Map(enriched.map(e => [e.asin, e]))
+    let picks = (parsed.picks || [])
+      .map(p => byAsin.get(String(p.asin).toUpperCase()))
+      .filter((e): e is Enriched => !!e)
+      .slice(0, count)
+    if (picks.length < 3) picks = candidatePool.slice(0, count)
 
     // 5. Assemble the post: intro, a card per pick, outro, full-list CTA + disclosure.
     const tag = (intRow?.amazon_associates_tag as string) || null
