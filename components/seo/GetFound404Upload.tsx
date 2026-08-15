@@ -26,6 +26,7 @@ interface Match { fromUrl: string; from: string; to: string | null; confidence: 
 export default function GetFound404Upload({ onDone }: { onDone?: () => void }) {
   const ref = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState<string | null>(null)
+  const [dragOver, setDragOver] = useState(false)
   const [result, setResult] = useState<{ fixed: number; total: number; leftover: number } | null>(null)
 
   const handleFile = async (file: File) => {
@@ -47,7 +48,13 @@ export default function GetFound404Upload({ onDone }: { onDone?: () => void }) {
       }
       const urls = extractUrls(text)
       if (urls.length === 0) {
-        toast.error('No URLs in that file. Export from inside "Not found (404)" (the report with the page list), not the summary.')
+        // The top-level Page-indexing export is COUNTS only (Chart / Critical
+        // issues / Metadata) — no page URLs. Detect it and point the user at the
+        // right export instead of a vague "no URLs".
+        const isSummary = /reason,\s*source,\s*validation,\s*pages/i.test(text) || /not indexed,\s*indexed,\s*impressions/i.test(text)
+        toast.error(isSummary
+          ? "That's the summary export (just the counts). In Search Console, click the \"Not found (404)\" row to open the page list, THEN hit Export — that file has the URLs."
+          : 'No page URLs found in that file. Make sure you exported from inside the "Not found (404)" report.')
         setBusy(null); return
       }
       setBusy(`Matching ${urls.length} dead URLs to your live posts…`)
@@ -83,13 +90,23 @@ export default function GetFound404Upload({ onDone }: { onDone?: () => void }) {
   return (
     <div>
       <input ref={ref} type="file" accept=".zip,.csv,text/csv,text/plain" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) void handleFile(f) }} />
-      <button
-        onClick={() => ref.current?.click()}
-        disabled={!!busy}
-        className="w-full inline-flex items-center justify-center gap-2 rounded-xl border-2 border-dashed border-[#7C3AED]/40 bg-[#7C3AED]/5 px-4 py-3 text-[13px] font-semibold text-[#7C3AED] hover:bg-[#7C3AED]/10 disabled:opacity-60 transition-colors"
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => { if (!busy) ref.current?.click() }}
+        onKeyDown={e => { if ((e.key === 'Enter' || e.key === ' ') && !busy) ref.current?.click() }}
+        onDragOver={e => { e.preventDefault(); if (!busy) setDragOver(true) }}
+        onDragLeave={e => { e.preventDefault(); setDragOver(false) }}
+        onDrop={e => {
+          e.preventDefault(); setDragOver(false)
+          const f = e.dataTransfer.files?.[0]
+          if (f && !busy) void handleFile(f)
+        }}
+        aria-disabled={!!busy}
+        className={`w-full cursor-pointer inline-flex items-center justify-center gap-2 rounded-xl border-2 border-dashed px-4 py-3 text-[13px] font-semibold text-[#7C3AED] transition-colors ${busy ? 'opacity-60 cursor-default' : ''} ${dragOver ? 'border-[#7C3AED] bg-[#7C3AED]/15' : 'border-[#7C3AED]/40 bg-[#7C3AED]/5 hover:bg-[#7C3AED]/10'}`}
       >
-        {busy ? <><Loader2 size={15} className="animate-spin" /> {busy}</> : <><UploadCloud size={15} /> Drop your Search Console export here (.zip or .csv)</>}
-      </button>
+        {busy ? <><Loader2 size={15} className="animate-spin" /> {busy}</> : <><UploadCloud size={15} /> {dragOver ? 'Drop to upload' : 'Drop your Search Console export here, or click to choose (.zip or .csv)'}</>}
+      </div>
       {result && (
         <div className="mt-2 flex items-start gap-2 text-[13px] text-[#1d1d1f] dark:text-[#f5f5f7]">
           <CheckCircle2 size={15} className="text-[#34c759] mt-0.5 flex-shrink-0" />
