@@ -78,10 +78,13 @@ export default function SeoPage() {
   const [filterNotIndexed, setFilterNotIndexed] = useState(false)  // "Request indexing" worklist
   const [fixing, setFixing] = useState<string | null>(null)   // `${postId}:${fix}`
   const [fixMsg, setFixMsg] = useState<{ ok: boolean; text: string; postId?: string } | null>(null)
-  const [pinging, setPinging] = useState(false)
   const [bulkPreview, setBulkPreview] = useState<{ total: number; toFix: number; totalFixes: number; preview: { postId: string; title: string; fixes: number }[] } | null>(null)
   const [bulkLoading, setBulkLoading] = useState(false)
   const [bulkApplying, setBulkApplying] = useState(false)
+  // Header "Tools" disclosure — the green "Get my blog found" button now covers
+  // fix-all + URL refresh + sitemap, so the individual actions are tucked away
+  // to keep the header calm. Off by default.
+  const [toolsOpen, setToolsOpen] = useState(false)
   // One-click "Get my blog found" — runs the whole visibility loop (sitemap +
   // ping Google/Bing/AI, heal changed links, auto-fix SEO) with a plain
   // checklist. step = which stage is running; null = idle.
@@ -514,30 +517,6 @@ export default function SeoPage() {
 
   // One click: purge the host sitemap cache (so Google's sitemap is complete)
   // + push URLs to Bing/Copilot via IndexNow + re-check.
-  const fixSitemap = useCallback(async () => {
-    setPinging(true); setFixMsg(null)
-    let purged = false, submitted = 0, err: string | null = null
-    try {
-      const pr = await fetch('/api/seo/purge-sitemap', { method: 'POST' })
-      const pd = await pr.json().catch(() => ({}))
-      if (pr.ok) purged = true; else err = pd.error || `Sitemap refresh failed (${pr.status}).`
-    } catch { err = 'Sitemap refresh failed.' }
-    try {
-      const ir = await fetch('/api/seo/indexnow', { method: 'POST' })
-      const id = await ir.json().catch(() => ({}))
-      if (ir.ok) submitted = id.submitted || 0
-    } catch { /* Bing ping is best-effort */ }
-    // Give the host a moment to regenerate the just-purged sitemap, then re-check.
-    await new Promise(r => setTimeout(r, 2000))
-    await load()
-    const parts: string[] = []
-    if (purged) parts.push('refreshed Google’s sitemap cache')
-    if (submitted) parts.push(`pushed ${submitted} URLs to Bing/Copilot`)
-    setFixMsg(parts.length
-      ? { ok: true, text: `Done — ${parts.join(' + ')}. If any still show missing, give Google a minute and hit Refresh.` }
-      : { ok: false, text: err || 'Something went wrong.' })
-    setPinging(false)
-  }, [load])
 
   // The dummy-proof button: one click runs the whole get-found loop so a
   // non-technical creator never has to know which tool does what. Every step
@@ -744,33 +723,46 @@ export default function SeoPage() {
         }
         actions={
           <>
+            {toolsOpen && (
+              <>
+                <button
+                  onClick={previewFixAll}
+                  disabled={loading || bulkLoading || bulkApplying}
+                  className="px-3.5 py-2 rounded-lg border text-[13px] font-semibold inline-flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                  style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border-bright)', color: 'var(--text)' }}
+                  title="Auto-fix every post's fixable SEO issues"
+                >
+                  {bulkLoading ? <><Loader2 size={13} className="animate-spin" /> Scanning…</> : <><Wand2 size={13} /> Fix all posts</>}
+                </button>
+                <button
+                  onClick={refreshPrices}
+                  disabled={!!refreshPriceProgress}
+                  className="px-3.5 py-2 rounded-lg border text-[13px] font-semibold inline-flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                  style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border-bright)', color: 'var(--text)' }}
+                  title="Re-fetch current Amazon prices and update all posts' product schema"
+                >
+                  {refreshPriceProgress
+                    ? <><Loader2 size={13} className="animate-spin" /> {refreshPriceProgress.total > 0 ? `${refreshPriceProgress.done}/${refreshPriceProgress.total}` : 'Scanning…'}</>
+                    : <><DollarSign size={13} /> Refresh prices</>}
+                </button>
+                <button
+                  onClick={resyncUrls}
+                  disabled={resyncingUrls}
+                  className="px-3.5 py-2 rounded-lg border text-[13px] font-semibold inline-flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                  style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border-bright)', color: 'var(--text)' }}
+                  title="Re-fetch each post's current WordPress permalink and update stored links"
+                >
+                  {resyncingUrls ? <><Loader2 size={13} className="animate-spin" /> Syncing URLs…</> : <><Link2 size={13} /> Refresh post URLs</>}
+                </button>
+              </>
+            )}
             <button
-              onClick={previewFixAll}
-              disabled={loading || bulkLoading || bulkApplying}
-              className="px-3.5 py-2 rounded-lg bg-[#7C3AED] hover:bg-[#6D28D9] disabled:opacity-50 text-[13px] font-semibold text-white inline-flex items-center gap-1.5 transition-colors"
-              title="Auto-fix every post's fixable SEO issues"
-            >
-              {bulkLoading ? <><Loader2 size={13} className="animate-spin" /> Scanning…</> : <><Wand2 size={13} /> Fix all posts</>}
-            </button>
-            <button
-              onClick={refreshPrices}
-              disabled={!!refreshPriceProgress}
-              className="px-3.5 py-2 rounded-lg border text-[13px] font-semibold inline-flex items-center gap-1.5 transition-colors disabled:opacity-50"
+              onClick={() => setToolsOpen(v => !v)}
+              className="px-3 py-2 rounded-lg border text-[13px] font-semibold inline-flex items-center gap-1 transition-colors"
               style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border-bright)', color: 'var(--text)' }}
-              title="Re-fetch current Amazon prices and update all posts' product schema"
+              title="More tools"
             >
-              {refreshPriceProgress
-                ? <><Loader2 size={13} className="animate-spin" /> {refreshPriceProgress.total > 0 ? `${refreshPriceProgress.done}/${refreshPriceProgress.total}` : 'Scanning…'}</>
-                : <><DollarSign size={13} /> Refresh prices</>}
-            </button>
-            <button
-              onClick={resyncUrls}
-              disabled={resyncingUrls}
-              className="px-3.5 py-2 rounded-lg border text-[13px] font-semibold inline-flex items-center gap-1.5 transition-colors disabled:opacity-50"
-              style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border-bright)', color: 'var(--text)' }}
-              title="Re-fetch each post's current WordPress permalink and update stored links — fixes leftover ?p=123 URLs after switching permalinks"
-            >
-              {resyncingUrls ? <><Loader2 size={13} className="animate-spin" /> Syncing URLs…</> : <><Link2 size={13} /> Refresh post URLs</>}
+              Tools <ChevronDown size={13} className={toolsOpen ? 'rotate-180 transition-transform' : 'transition-transform'} />
             </button>
             <button
               onClick={load}
@@ -937,23 +929,11 @@ export default function SeoPage() {
 
           {/* Missing-from-sitemap warning — Google can't discover what isn't there */}
           {data.summary.sitemapFound && data.summary.notInSitemap > 0 && (
-            <div className="card p-4 border border-[#ff9500]/30 bg-[#ff9500]/5 flex items-start gap-3">
-              <AlertCircle size={16} className="text-[#ff9500] mt-0.5 flex-shrink-0" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-0.5">
-                  {data.summary.notInSitemap} post{data.summary.notInSitemap !== 1 ? 's' : ''} missing from your sitemap
-                </p>
-                <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-2 leading-relaxed">
-                  Google discovers pages through your sitemap — posts not in it can sit unindexed (often a stale sitemap cache). Push them straight to Bing/Copilot now, and re-save the post in WordPress to refresh the sitemap for Google.
-                </p>
-                <button
-                  onClick={fixSitemap}
-                  disabled={pinging}
-                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-white px-3 py-1.5 rounded-lg bg-[#ff9500] hover:opacity-90 disabled:opacity-60 transition-opacity"
-                >
-                  {pinging ? <><Loader2 size={12} className="animate-spin" /> Refreshing…</> : <><Zap size={12} /> Refresh sitemap &amp; ping engines</>}
-                </button>
-              </div>
+            <div className="card p-3 border border-[#ff9500]/30 bg-[#ff9500]/5 flex items-center gap-2.5">
+              <AlertCircle size={15} className="text-[#ff9500] flex-shrink-0" />
+              <p className="text-[13px] text-[#4b4b4f] dark:text-[#d2d2d7]">
+                <span className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{data.summary.notInSitemap} post{data.summary.notInSitemap !== 1 ? 's' : ''} missing from your sitemap.</span> The green <span className="font-semibold text-[#34c759]">Get my blog found</span> button up top refreshes it and pings Google, Bing &amp; AI.
+              </p>
             </div>
           )}
 
