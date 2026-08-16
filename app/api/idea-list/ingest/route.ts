@@ -99,6 +99,10 @@ function storefrontRoot(raw: unknown): string | null {
   if (!m) return null
   return `https://www.amazon.com/shop/${m[1]}`
 }
+const shopHandle = (raw: unknown): string | null => {
+  const m = typeof raw === 'string' ? raw.match(/\/shop\/([^/?#]+)/i) : null
+  return m ? m[1].toLowerCase() : null
+}
 
 // GET — the creator's synced lists, for the dashboard grid.
 export async function GET() {
@@ -119,8 +123,15 @@ export async function GET() {
     // Hide non-list junk that older SCOUT builds occasionally captured (a
     // "Subtotal"/"Cart" element that matched a /list/ link).
     const JUNK_TITLE = /^(subtotal|total|cart|checkout|save[d]? for later|buy again|your orders?|wish ?list|see more|view all|add to list)$/i
+    // Only show the creator's OWN lists. Older SCOUT could import another
+    // storefront's lists if you browsed it; hide anything whose URL handle isn't
+    // yours (when we know your handle from your brand profile).
+    const myHandle = shopHandle(brand?.amazon_storefront_url)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rows = ((data ?? []) as any[]).filter((r) => !JUNK_TITLE.test(String(r.title || '').trim()))
+    const rows = ((data ?? []) as any[]).filter((r) =>
+      !JUNK_TITLE.test(String(r.title || '').trim()) &&
+      (!myHandle || !r.url || shopHandle(r.url) === myHandle),
+    )
     const lists = rows.map((r) => {
       const items = Array.isArray(r.items) ? r.items : []
       // Cover: the storefront thumbnail if we have it, else the first captured

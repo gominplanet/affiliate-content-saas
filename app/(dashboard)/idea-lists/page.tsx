@@ -117,10 +117,22 @@ export default function IdeaListsPage() {
   }
 
   // Manual mode: rank every product in the list so the creator can hand-pick.
+  // If a synced list hasn't pulled its products yet, sync it first (open Amazon,
+  // SCOUT reads it) — no auto→create→manual round-trip.
   const loadRanking = async () => {
     if (!active || ranking) return
     setRanking(true); setRanked(null)
     try {
+      if (active.source === 'synced') {
+        const l = synced.find(s => s.id === active.listId)
+        if (l && !l.hasItems) {
+          if (!active.url) { toast.error('No Amazon link for this list.'); setRanking(false); return }
+          const tab = window.open(active.url + '#mvp-sync', '_blank')   // #mvp-sync authorizes SCOUT (your own list)
+          const ok = await pollForProducts(active.listId!)
+          try { tab?.close() } catch { /* user can close */ }
+          if (!ok) { toast.error('Amazon didn’t finish loading this list in time. Try Manual again.'); setRanking(false); return }
+        }
+      }
       const payload = active.source === 'synced' ? { listId: active.listId } : { items: active.items }
       const res = await fetch('/api/idea-list/rank', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       const d = await res.json()
@@ -172,7 +184,7 @@ export default function IdeaListsPage() {
         // Open synchronously inside the click so the popup isn't blocked. No
         // `noopener` here on purpose — we keep the handle so we can auto-close
         // the tab once SCOUT has read the products (least friction for the user).
-        const tab = window.open(active.url, '_blank')
+        const tab = window.open(active.url + '#mvp-sync', '_blank')   // #mvp-sync authorizes SCOUT (your own list)
         setSyncing(true)
         const ok = await pollForProducts(active.listId!)
         setSyncing(false)
@@ -247,6 +259,105 @@ export default function IdeaListsPage() {
         <p className="text-[11px] text-[#86868b] mt-2">Quickest way in. A pasted link reads the first ~20 products. To use every product in a list, sync it with SCOUT below.</p>
       </div>
 
+      {/* Selected list → pick count → generate */}
+      {active && (
+        <div className="mt-4">
+          <div className="flex items-baseline justify-between mb-2">
+            <p className="text-[15px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{active.title || 'Your list'}</p>
+            <p className="text-[12px] text-[#86868b]">{available} products available</p>
+          </div>
+          {active.source === 'url' && active.partial && (
+            <div className="rounded-lg border border-[#ff9500]/40 bg-[#ff9500]/10 p-2.5 text-[11px] text-[#9a5d00] dark:text-[#ffcf8f] mb-3">
+              Amazon lazy-loads long lists, so this pasted link read the first {active.items.length}. Sync via SCOUT to use all {active.count}.
+            </div>
+          )}
+          {active.source === 'synced' && !synced.find(s => s.id === active.listId)?.hasItems && (
+            <div className="rounded-lg border border-[#7C3AED]/40 bg-[#7C3AED]/10 p-2.5 text-[11px] text-[#5b3aa6] dark:text-[#c9b6ff] mb-3">
+              This list&apos;s products load on demand. When you click <strong>Create shopping guide</strong>, MVP opens it on Amazon so SCOUT reads every product, then builds the guide automatically. Keep the Amazon tab open until it finishes (SCOUT needs it visible).
+            </div>
+          )}
+          {/* Mode: MVP picks (auto) vs I choose (manual) */}
+          <div className="flex gap-1.5 mb-3">
+            <button onClick={() => setMode('auto')} className={`rounded-full border px-3.5 py-1.5 text-[12px] font-semibold transition-colors ${mode === 'auto' ? 'text-white border-transparent bg-[#7C3AED]' : 'text-[#4b4b4f] dark:text-[#b0b0b5] border-black/10 dark:border-white/15 hover:border-[#7C3AED]/60'}`}>MVP picks (auto)</button>
+            <button onClick={goManual} className={`rounded-full border px-3.5 py-1.5 text-[12px] font-semibold transition-colors ${mode === 'manual' ? 'text-white border-transparent bg-[#7C3AED]' : 'text-[#4b4b4f] dark:text-[#b0b0b5] border-black/10 dark:border-white/15 hover:border-[#7C3AED]/60'}`}>I choose (manual)</button>
+          </div>
+
+          {mode === 'auto' ? (
+            <div className="flex flex-col sm:flex-row sm:items-end gap-3 rounded-xl border border-[#7C3AED]/25 bg-[#7C3AED]/5 p-4">
+              <div className="flex-1">
+                <p className="text-[12px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">How big is the guide?</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {presets.map(n => (
+                    <button key={n} onClick={() => setCount(n)} className={`rounded-full border px-3 py-1 text-[12px] font-semibold transition-colors ${Math.min(count, maxPicks) === n ? 'text-white border-transparent bg-[#7C3AED]' : 'text-[#4b4b4f] dark:text-[#b0b0b5] border-black/10 dark:border-white/15 hover:border-[#7C3AED]/60'}`}>Top {n}</button>
+                  ))}
+                </div>
+                <p className="text-[11px] text-[#86868b] mt-1.5">MVP checks every product in the list and ranks by your sales, demand, deals, campaigns and ratings, then picks the best.</p>
+              </div>
+              <button onClick={generate} disabled={generating || syncing} className="shrink-0 inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-[14px] font-bold text-white disabled:opacity-60" style={{ backgroundColor: PURPLE }}>
+                {(generating || syncing) ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                {syncing ? 'Syncing products from Amazon…' : generating ? 'Writing your guide…' : 'Create shopping guide'}
+              </button>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-[#7C3AED]/25 bg-[#7C3AED]/5 p-4">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[12px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Tick the products you want <span className="font-normal text-[#86868b]">— ranked by MVP to help you choose</span></p>
+                <p className="text-[12px] font-bold text-[#7C3AED]">{selected.size} selected</p>
+              </div>
+              {ranking ? (
+                <div className="flex items-center gap-2 text-[13px] text-[#86868b] py-6"><Loader2 size={14} className="animate-spin" /> Loading this list&apos;s products and ranking them… (if an Amazon tab opens, leave it until this finishes)</div>
+              ) : !ranked ? (
+                <div className="text-[12px] text-[#86868b] py-3">
+                  <button onClick={loadRanking} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-semibold text-white" style={{ backgroundColor: PURPLE }}>Load &amp; rank products</button>
+                </div>
+              ) : (
+                <>
+                  <div className="max-h-[420px] overflow-y-auto rounded-lg border border-black/5 dark:border-white/10 divide-y divide-black/5 dark:divide-white/10">
+                    {ranked.map(p => {
+                      const on = selected.has(p.asin)
+                      const meta = [dollars(p.priceCents), p.rating ? `${p.rating}★${p.reviews ? ` (${p.reviews.toLocaleString()})` : ''}` : null].filter(Boolean).join(' · ')
+                      return (
+                        <label key={p.asin} className="flex items-center gap-2.5 p-2 cursor-pointer hover:bg-black/[0.02] dark:hover:bg-white/[0.03]">
+                          <input type="checkbox" checked={on} onChange={() => toggleSelect(p.asin)} className="accent-[#7C3AED] w-4 h-4 shrink-0" />
+                          <span className="text-[10px] font-bold text-[#86868b] w-6 text-center shrink-0">#{p.rank}</span>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          {p.image ? <img src={p.image} alt="" className="w-9 h-9 rounded object-cover bg-black/5 shrink-0" /> : <span className="w-9 h-9 rounded bg-black/5 dark:bg-white/5 shrink-0" />}
+                          <span className="flex-1 min-w-0">
+                            <span className="block text-[12px] text-[#1d1d1f] dark:text-[#f5f5f7] line-clamp-1">{p.title}</span>
+                            <span className="block text-[11px] text-[#86868b] line-clamp-1">{meta || 'No price/rating data'}</span>
+                          </span>
+                          {p.hasCampaign && <span className="shrink-0 text-[9px] font-bold text-white bg-[#7C3AED] rounded px-1.5 py-0.5">CC</span>}
+                        </label>
+                      )
+                    })}
+                  </div>
+                  <div className="flex items-center justify-between mt-3 gap-3">
+                    <div className="flex gap-3 text-[11px]">
+                      <button onClick={() => setSelected(new Set(ranked.slice(0, 10).map(p => p.asin)))} className="text-[#7C3AED] hover:underline font-medium">MVP&apos;s top 10</button>
+                      <button onClick={() => setSelected(new Set())} className="text-[#86868b] hover:underline">Clear</button>
+                    </div>
+                    <button onClick={generate} disabled={generating || selected.size < 3} className="shrink-0 inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-[14px] font-bold text-white disabled:opacity-60" style={{ backgroundColor: PURPLE }}>
+                      {generating ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                      {generating ? 'Writing your guide…' : `Create guide (${selected.size})`}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {done && (
+        <div className="mt-4 rounded-xl border border-[#34c759]/30 bg-[#34c759]/[0.06] p-4">
+          <p className="text-[14px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Published: {done.title}</p>
+          <p className="text-[12px] text-[#4b4b4f] dark:text-[#b0b0b5] mt-0.5 mb-2.5">{done.picked} picks, a fresh thumbnail, and a link to your full list.</p>
+          <div className="flex flex-wrap items-center gap-4">
+            <a href={done.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-[#7C3AED] hover:underline">View the post <ExternalLink size={13} /></a>
+            <a href="https://www.mvpaffiliate.io/content?tab=posts" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] hover:text-[#7C3AED]"><Pencil size={13} /> Edit or delete in Posts <ExternalLink size={12} /></a>
+          </div>
+        </div>
+      )}
       {/* Your synced idea lists (from SCOUT) */}
       <div className="mt-4">
         <div className="flex items-center justify-between mb-2">
@@ -317,107 +428,6 @@ export default function IdeaListsPage() {
         )}
       </div>
 
-      {/* Selected list → pick count → generate */}
-      {active && (
-        <div className="mt-4">
-          <div className="flex items-baseline justify-between mb-2">
-            <p className="text-[15px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{active.title || 'Your list'}</p>
-            <p className="text-[12px] text-[#86868b]">{available} products available</p>
-          </div>
-          {active.source === 'url' && active.partial && (
-            <div className="rounded-lg border border-[#ff9500]/40 bg-[#ff9500]/10 p-2.5 text-[11px] text-[#9a5d00] dark:text-[#ffcf8f] mb-3">
-              Amazon lazy-loads long lists, so this pasted link read the first {active.items.length}. Sync via SCOUT to use all {active.count}.
-            </div>
-          )}
-          {active.source === 'synced' && !synced.find(s => s.id === active.listId)?.hasItems && (
-            <div className="rounded-lg border border-[#7C3AED]/40 bg-[#7C3AED]/10 p-2.5 text-[11px] text-[#5b3aa6] dark:text-[#c9b6ff] mb-3">
-              This list&apos;s products load on demand. When you click <strong>Create shopping guide</strong>, MVP opens it on Amazon so SCOUT reads every product, then builds the guide automatically. Keep the Amazon tab open until it finishes (SCOUT needs it visible).
-            </div>
-          )}
-          {/* Mode: MVP picks (auto) vs I choose (manual) */}
-          <div className="flex gap-1.5 mb-3">
-            <button onClick={() => setMode('auto')} className={`rounded-full border px-3.5 py-1.5 text-[12px] font-semibold transition-colors ${mode === 'auto' ? 'text-white border-transparent bg-[#7C3AED]' : 'text-[#4b4b4f] dark:text-[#b0b0b5] border-black/10 dark:border-white/15 hover:border-[#7C3AED]/60'}`}>MVP picks (auto)</button>
-            <button onClick={goManual} className={`rounded-full border px-3.5 py-1.5 text-[12px] font-semibold transition-colors ${mode === 'manual' ? 'text-white border-transparent bg-[#7C3AED]' : 'text-[#4b4b4f] dark:text-[#b0b0b5] border-black/10 dark:border-white/15 hover:border-[#7C3AED]/60'}`}>I choose (manual)</button>
-          </div>
-
-          {mode === 'auto' ? (
-            <div className="flex flex-col sm:flex-row sm:items-end gap-3 rounded-xl border border-[#7C3AED]/25 bg-[#7C3AED]/5 p-4">
-              <div className="flex-1">
-                <p className="text-[12px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">How big is the guide?</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {presets.map(n => (
-                    <button key={n} onClick={() => setCount(n)} className={`rounded-full border px-3 py-1 text-[12px] font-semibold transition-colors ${Math.min(count, maxPicks) === n ? 'text-white border-transparent bg-[#7C3AED]' : 'text-[#4b4b4f] dark:text-[#b0b0b5] border-black/10 dark:border-white/15 hover:border-[#7C3AED]/60'}`}>Top {n}</button>
-                  ))}
-                </div>
-                <p className="text-[11px] text-[#86868b] mt-1.5">MVP checks every product in the list and ranks by your sales, demand, deals, campaigns and ratings, then picks the best.</p>
-              </div>
-              <button onClick={generate} disabled={generating || syncing} className="shrink-0 inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-[14px] font-bold text-white disabled:opacity-60" style={{ backgroundColor: PURPLE }}>
-                {(generating || syncing) ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-                {syncing ? 'Syncing products from Amazon…' : generating ? 'Writing your guide…' : 'Create shopping guide'}
-              </button>
-            </div>
-          ) : (
-            <div className="rounded-xl border border-[#7C3AED]/25 bg-[#7C3AED]/5 p-4">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-[12px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Tick the products you want <span className="font-normal text-[#86868b]">— ranked by MVP to help you choose</span></p>
-                <p className="text-[12px] font-bold text-[#7C3AED]">{selected.size} selected</p>
-              </div>
-              {ranking ? (
-                <div className="flex items-center gap-2 text-[13px] text-[#86868b] py-6"><Loader2 size={14} className="animate-spin" /> MVP is ranking every product in this list…</div>
-              ) : !ranked ? (
-                <div className="text-[12px] text-[#86868b] py-3">
-                  {active.source === 'synced' && !synced.find(s => s.id === active.listId)?.hasItems
-                    ? <>Products aren&apos;t loaded yet. Switch to <strong>Auto</strong> and hit Create once (or open the list on Amazon), then come back to Manual.</>
-                    : <button onClick={loadRanking} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-semibold text-white" style={{ backgroundColor: PURPLE }}>Load &amp; rank products</button>}
-                </div>
-              ) : (
-                <>
-                  <div className="max-h-[420px] overflow-y-auto rounded-lg border border-black/5 dark:border-white/10 divide-y divide-black/5 dark:divide-white/10">
-                    {ranked.map(p => {
-                      const on = selected.has(p.asin)
-                      const meta = [dollars(p.priceCents), p.rating ? `${p.rating}★${p.reviews ? ` (${p.reviews.toLocaleString()})` : ''}` : null].filter(Boolean).join(' · ')
-                      return (
-                        <label key={p.asin} className="flex items-center gap-2.5 p-2 cursor-pointer hover:bg-black/[0.02] dark:hover:bg-white/[0.03]">
-                          <input type="checkbox" checked={on} onChange={() => toggleSelect(p.asin)} className="accent-[#7C3AED] w-4 h-4 shrink-0" />
-                          <span className="text-[10px] font-bold text-[#86868b] w-6 text-center shrink-0">#{p.rank}</span>
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          {p.image ? <img src={p.image} alt="" className="w-9 h-9 rounded object-cover bg-black/5 shrink-0" /> : <span className="w-9 h-9 rounded bg-black/5 dark:bg-white/5 shrink-0" />}
-                          <span className="flex-1 min-w-0">
-                            <span className="block text-[12px] text-[#1d1d1f] dark:text-[#f5f5f7] line-clamp-1">{p.title}</span>
-                            <span className="block text-[11px] text-[#86868b] line-clamp-1">{meta || 'No price/rating data'}</span>
-                          </span>
-                          {p.hasCampaign && <span className="shrink-0 text-[9px] font-bold text-white bg-[#7C3AED] rounded px-1.5 py-0.5">CC</span>}
-                        </label>
-                      )
-                    })}
-                  </div>
-                  <div className="flex items-center justify-between mt-3 gap-3">
-                    <div className="flex gap-3 text-[11px]">
-                      <button onClick={() => setSelected(new Set(ranked.slice(0, 10).map(p => p.asin)))} className="text-[#7C3AED] hover:underline font-medium">MVP&apos;s top 10</button>
-                      <button onClick={() => setSelected(new Set())} className="text-[#86868b] hover:underline">Clear</button>
-                    </div>
-                    <button onClick={generate} disabled={generating || selected.size < 3} className="shrink-0 inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-[14px] font-bold text-white disabled:opacity-60" style={{ backgroundColor: PURPLE }}>
-                      {generating ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-                      {generating ? 'Writing your guide…' : `Create guide (${selected.size})`}
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {done && (
-        <div className="mt-4 rounded-xl border border-[#34c759]/30 bg-[#34c759]/[0.06] p-4">
-          <p className="text-[14px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Published: {done.title}</p>
-          <p className="text-[12px] text-[#4b4b4f] dark:text-[#b0b0b5] mt-0.5 mb-2.5">{done.picked} picks, a fresh thumbnail, and a link to your full list.</p>
-          <div className="flex flex-wrap items-center gap-4">
-            <a href={done.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-[#7C3AED] hover:underline">View the post <ExternalLink size={13} /></a>
-            <a href="https://www.mvpaffiliate.io/content?tab=posts" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] hover:text-[#7C3AED]"><Pencil size={13} /> Edit or delete in Posts <ExternalLink size={12} /></a>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
