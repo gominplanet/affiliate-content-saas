@@ -6,14 +6,12 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import dynamic from 'next/dynamic'
 import PageHero from '@/components/layout/PageHero'
 import { toast } from 'sonner'
-import { Loader2, Search, Sparkles, ExternalLink, ListChecks, Pencil, Trash2, RefreshCw } from 'lucide-react'
+import { Loader2, Search, Sparkles, ExternalLink, ListChecks, Pencil, RefreshCw } from 'lucide-react'
 import { errText } from '@/lib/err-text'
 import { createBrowserClient } from '@/lib/supabase/client'
 
-const BlogEditModal = dynamic(() => import('@/components/content/BlogEditModal'), { ssr: false })
 
 interface Item { asin: string; title: string | null; image: string | null }
 interface SyncedList { id: string; title: string | null; url: string | null; itemCount: number | null; coverImage: string | null; syncedItems: number; hasItems: boolean }
@@ -33,8 +31,6 @@ export default function IdeaListsPage() {
   const [generating, setGenerating] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [done, setDone] = useState<{ url: string; title: string; picked: number; postId: string | null; wpPostId: number | null } | null>(null)
-  const [editOpen, setEditOpen] = useState(false)
-  const [deleting, setDeleting] = useState(false)
 
   const loadSynced = useCallback(async () => {
     setLoadingSynced(true)
@@ -58,7 +54,9 @@ export default function IdeaListsPage() {
     const m = (raw || '').match(/amazon\.[a-z.]+\/shop\/([^/?#\s]+)/i) || (raw || '').trim().match(/^@?([A-Za-z0-9._-]{2,})$/)
     if (!m) { toast.error('Enter your Amazon storefront link (amazon.com/shop/yourhandle).'); return }
     const root = `https://www.amazon.com/shop/${m[1]}`
-    window.open(root, '_blank', 'noopener,noreferrer')
+    // #mvp-sync tells SCOUT this visit is MVP-initiated, so it runs the idea-list
+    // scan. A plain storefront visit (no marker) leaves idea lists alone.
+    window.open(`${root}#mvp-sync`, '_blank', 'noopener,noreferrer')
     setStorefrontUrl(root)
     if (persist) {
       try {
@@ -143,22 +141,6 @@ export default function IdeaListsPage() {
     finally { setGenerating(false) }
   }
 
-  const removePost = async () => {
-    if (!done) return
-    if (!confirm('Delete this post? It will be removed from your blog.')) return
-    setDeleting(true)
-    try {
-      const res = await fetch('/api/blog/delete', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(done.postId ? { postId: done.postId } : { wpPostId: done.wpPostId }),
-      })
-      const d = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(d.error || 'Delete failed.')
-      toast.success('Post deleted'); setDone(null)
-    } catch (e) { toast.error(errText(e)) }
-    finally { setDeleting(false) }
-  }
-
   // How many products we can actually pick from.
   const available = active ? (active.source === 'synced' ? (synced.find(s => s.id === active.listId)?.syncedItems || active.count || 20) : active.items.length) : 20
   const maxPicks = Math.min(20, available || 20)
@@ -186,7 +168,7 @@ export default function IdeaListsPage() {
           </div>
           <div>
             <p className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">2. MVP ranks it</p>
-            <p className="text-[#4b4b4f] dark:text-[#b0b0b5] leading-snug">Every product is checked on Keepa (price, rating, reviews, demand, deals) and against your Creator Connections campaigns. Campaign products get priority; off-theme products are left out.</p>
+            <p className="text-[#4b4b4f] dark:text-[#b0b0b5] leading-snug">MVP scores every product against its own ranking criteria — live price, rating, reviews, demand and current deals — and against your Creator Connections campaigns. Campaign products get priority; off-theme products are left out.</p>
           </div>
           <div>
             <p className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">3. It writes the post</p>
@@ -320,18 +302,11 @@ export default function IdeaListsPage() {
         <div className="mt-4 rounded-xl border border-[#34c759]/30 bg-[#34c759]/[0.06] p-4">
           <p className="text-[14px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Published: {done.title}</p>
           <p className="text-[12px] text-[#4b4b4f] dark:text-[#b0b0b5] mt-0.5 mb-2.5">{done.picked} picks, a fresh thumbnail, and a link to your full list.</p>
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-4">
             <a href={done.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-[#7C3AED] hover:underline">View the post <ExternalLink size={13} /></a>
-            {done.postId && <button onClick={() => setEditOpen(true)} className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] hover:text-[#7C3AED]"><Pencil size={13} /> Edit</button>}
-            <button onClick={removePost} disabled={deleting} className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[#ff3b30] hover:underline disabled:opacity-50">
-              {deleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />} Delete
-            </button>
+            <a href="https://www.mvpaffiliate.io/content?tab=posts" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] hover:text-[#7C3AED]"><Pencil size={13} /> Edit or delete in Posts <ExternalLink size={12} /></a>
           </div>
         </div>
-      )}
-
-      {editOpen && done?.postId && (
-        <BlogEditModal postId={done.postId} onClose={() => setEditOpen(false)} onSaved={() => toast.success('Saved to your blog')} />
       )}
     </div>
   )
