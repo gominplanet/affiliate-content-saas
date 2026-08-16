@@ -64,11 +64,13 @@ export async function POST(request: Request) {
   let pageToken: string | undefined
   let bodyChannelId: string | undefined
   let bodySiteId: string | undefined
+  let bodyFresh = false
   try {
     const body = await request.json().catch(() => ({}))
     pageToken = body.pageToken || undefined
     bodyChannelId = body.channelId || undefined
     bodySiteId = body.siteId || undefined
+    bodyFresh = body.fresh === true
   } catch { /* no body */ }
 
   // Resolve which channel to sync. Multi-channel (Pro, migration 127): the
@@ -88,8 +90,10 @@ export async function POST(request: Request) {
 
   // The sync cache is keyed per-user (not per-channel), so only the DEFAULT
   // channel path uses it. An explicit channel pick bypasses the cache to avoid
-  // returning another channel's cached page.
-  const useCache = !bodyChannelId
+  // returning another channel's cached page. A `fresh` request (the header
+  // "Refresh" pulling brand-new uploads) also bypasses it so a video posted
+  // seconds ago isn't hidden behind the 5-min TTL.
+  const useCache = !bodyChannelId && !bodyFresh
 
   try {
     // Check cache for this page (only when no pageToken — first page)

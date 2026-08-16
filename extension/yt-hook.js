@@ -19,7 +19,18 @@
   if (window.__mvpYtHook) return
   window.__mvpYtHook = true
 
-  const isMetaUpdate = (url) => { try { return /\/youtubei\/v1\/video_manager\/metadata_update/.test(new URL(url, location.href).pathname) } catch (e) { return false } }
+  // The Studio "Details" save family. YouTube periodically renames the endpoint
+  // tail (metadata_update → update_video, moves it under a different node), so
+  // match the family rather than one exact path. If we only matched the old
+  // path, a renamed save would look like "no metadata_update was sent" even
+  // though it saved fine — injection is still gated on a video-id match below,
+  // so widening this can't corrupt an unrelated request.
+  const isMetaUpdate = (url) => {
+    try {
+      const p = new URL(url, location.href).pathname.toLowerCase()
+      return /\/youtubei\/v1\//.test(p) && /metadata_update|update_video|video_manager/.test(p)
+    } catch (e) { return false }
+  }
 
   const looksLikeSave = (url, method, body) => {
     try {
