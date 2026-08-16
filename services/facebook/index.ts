@@ -229,9 +229,17 @@ export async function verifyPageToken(
     const body: any = await res.json().catch(() => ({}))
     if (res.ok && body?.id) return { ok: true, pageName: body.name || undefined }
     const err = body?.error || {}
-    // 190 = access token expired/invalidated; 10/200 = permission missing; type
-    // OAuthException all mean "reconnect", not "try again later".
-    const expired = err.code === 190 || err.type === 'OAuthException' || [10, 200, 2500].includes(err.code)
+    // Meta's rate-limit / temporary errors ALSO carry type "OAuthException"
+    // (code 4 app limit, 17 user limit, 32 page limit, 613 custom limit, 1/2
+    // transient). Those must NOT be read as "reconnect" — they're "try again
+    // later". A nightly batch probing thousands of tokens can trip the app-level
+    // limit and flag a swath of still-connected users otherwise (false nudges).
+    const RATE_LIMIT_OR_TRANSIENT = [1, 2, 4, 17, 32, 341, 368, 613]
+    const transient = RATE_LIMIT_OR_TRANSIENT.includes(err.code)
+    // 190 = token expired/invalidated; 10/200 = permission missing; 2500 = invalid
+    // token — genuine "reconnect". OAuthException otherwise = reconnect, EXCEPT
+    // the transient codes above.
+    const expired = !transient && (err.code === 190 || err.type === 'OAuthException' || [10, 200, 2500].includes(err.code))
     return { ok: false, expired, error: (err.message as string) || `HTTP ${res.status}` }
   } catch (e) {
     // Network/transient — NOT an auth failure, so don't tell the user to reconnect.

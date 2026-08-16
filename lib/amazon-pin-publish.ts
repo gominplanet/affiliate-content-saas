@@ -194,13 +194,17 @@ export async function publishAmazonPin(opts: {
   // at connect time during Pinterest trial access). On the sandbox error this
   // retries once on a fresh real board and heals the stored id.
   const pin = await pinterest.createPinResilient({ boardId, title, description, imageUrl: opts.imageUrl, link: linkUrl })
-  if (pin.recovered && intRow.user_id) {
+  const healUserId = intRow.user_id || opts.userId
+  if (pin.recovered && healUserId) {
     try {
+      // Move a sandbox pin_target onto the recovered board too, so the failed
+      // create+recover doesn't repeat on every publish.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const heal: any = { pinterest_board_id: pin.boardId, pinterest_board_name: PinterestService.RECOVERY_BOARD }
+      if ((intRow.pinterest_pin_target || '').trim()) heal.pinterest_pin_target = pin.boardId
       const { createAdminClient } = await import('@/lib/supabase/admin')
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (createAdminClient() as any).from('integrations')
-        .update({ pinterest_board_id: pin.boardId, pinterest_board_name: PinterestService.RECOVERY_BOARD })
-        .eq('user_id', intRow.user_id)
+      await (createAdminClient() as any).from('integrations').update(heal).eq('user_id', healUserId)
     } catch { /* best-effort heal — pin already published */ }
   }
   const pinId = pin.id

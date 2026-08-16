@@ -23,7 +23,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { maybeDecrypt, maybeEncrypt } from '@/lib/secrets'
+import { maybeDecrypt as maybeDecryptRaw, maybeEncrypt } from '@/lib/secrets'
 import { encryptIntegrationWrite } from '@/lib/integration-secrets'
 import { refreshThreadsToken } from '@/services/threads'
 import { refreshLongLivedToken as refreshInstagramToken } from '@/services/instagram'
@@ -31,6 +31,16 @@ import { refreshPinterestToken } from '@/services/pinterest'
 import { probeAndStoreConnections } from '@/lib/connection-probe'
 
 export const maxDuration = 300
+
+// maybeDecrypt THROWS on malformed/tampered ciphertext or a key mismatch. The
+// per-platform try/catch below doesn't cover the decrypt calls (they run before
+// the try), so one corrupt token would reject the whole Promise.all slice and
+// 500 the entire nightly run — the tail rows, the social_accounts phase, and the
+// connection-health probe would all be skipped. Wrap it so a bad row is a null,
+// never a batch-killer.
+const maybeDecrypt = (v: string | null | undefined): string | null => {
+  try { return maybeDecryptRaw(v) ?? null } catch { return null }
+}
 
 // Refresh Instagram only when it's within this window of expiry (the token must
 // be >24h old to refresh, and refreshing daily is wasteful). Threads/Pinterest
