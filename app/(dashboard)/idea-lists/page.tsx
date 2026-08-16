@@ -230,7 +230,7 @@ export default function IdeaListsPage() {
         <div className="grid sm:grid-cols-3 gap-3 text-[12px]">
           <div>
             <p className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">1. Load a list</p>
-            <p className="text-[#4b4b4f] dark:text-[#b0b0b5] leading-snug"><strong>Paste a link</strong> (below) for a quick read of the first ~20 products, or <strong>sync with SCOUT</strong> (grid below) to pull <em>every</em> product from your storefront.</p>
+            <p className="text-[#4b4b4f] dark:text-[#b0b0b5] leading-snug"><strong>Paste a link</strong> (below) for a quick read of the first ~20 products, or <strong>choose from the list below</strong> (synced by SCOUT) to pull <em>every</em> product from your storefront.</p>
           </div>
           <div>
             <p className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">2. MVP ranks it</p>
