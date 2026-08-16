@@ -17,6 +17,22 @@ export interface RankedProduct {
   earnings: number; hasCampaign: boolean; score: number
 }
 
+// Junk "titles" that are really promo badges / cart chrome / recommendation
+// widgets an older SCOUT scooped up (e.g. a sponsored backpack that renders on
+// every list page). These aren't real list products — drop them everywhere.
+export function isJunkProductTitle(t: string | null | undefined): boolean {
+  const s = String(t || '').trim()
+  if (!s) return false // empty is not junk — a real product SCOUT just missed the title for
+  return (
+    /^(limited time( deal)?|subtotal|total|sponsored|best ?seller|overall pick|amazon'?s choice|editor'?s pick|new|popular pick|deal|today'?s deal|add to cart|see more|view all)$/i.test(s) ||
+    /quantity\s+is\s+\d+/i.test(s) ||
+    /^\$\s?\d/.test(s) ||               // starts with a price
+    /^only\s+\d+\s+left/i.test(s) ||
+    /^\d+%\s*off/i.test(s) ||
+    /^(save|coupon|clip)\b/i.test(s)
+  )
+}
+
 async function pool<T, R>(items: T[], size: number, fn: (t: T) => Promise<R>): Promise<R[]> {
   const out: R[] = []; let i = 0
   const workers = Array.from({ length: Math.min(size, items.length) }, async () => {
@@ -40,6 +56,9 @@ export async function enrichAndRankIdeaList(
 ): Promise<{ ranked: RankedProduct[]; byAsin: Map<string, RankedProduct> }> {
   const cap = Math.max(3, opts?.cap ?? 150)
   const priority = new Set((opts?.priorityAsins || []).map(a => String(a || '').trim().toUpperCase()))
+  // Drop mis-captured non-products (promo badges, cart chrome, the sponsored
+  // widget that rides along on every list page) before anything else.
+  inItems = inItems.filter(i => !isJunkProductTitle(i.title))
   const allAsins = Array.from(new Set(
     inItems.map(i => String(i.asin || '').trim().toUpperCase()).filter(a => /^[A-Z0-9]{10}$/.test(a)),
   )).slice(0, 500)

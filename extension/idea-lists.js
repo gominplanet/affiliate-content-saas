@@ -34,6 +34,28 @@
 
   const onStorefront = () => { try { return /\/(shop|list)\//i.test(location.pathname) } catch (e) { return false } }
   const handle = () => { const m = location.pathname.match(/\/shop\/([^/?#]+)/i); return m ? m[1] : null }
+
+  // ── Own-storefront guard ────────────────────────────────────────────────────
+  // SCOUT captures idea lists ONLY from the creator's OWN storefront — never
+  // someone else's you happen to browse. MVP opens your storefront/list with the
+  // #mvp-sync marker, which both authorizes the capture AND teaches SCOUT your
+  // handle, so later manual visits to your own storefront still sync while other
+  // people's storefronts are ignored.
+  let ownerHandle = null
+  function loadOwner() {
+    return new Promise((resolve) => {
+      try { chrome.storage.local.get(['mvpOwnerHandle'], (o) => { ownerHandle = (o && o.mvpOwnerHandle) || null; resolve(ownerHandle) }) }
+      catch (e) { resolve(null) }
+    })
+  }
+  function rememberOwner(h) {
+    if (!h) return
+    ownerHandle = h
+    try { chrome.storage.local.set({ mvpOwnerHandle: h }) } catch (e) {}
+  }
+  // Safe to capture the CURRENT page? MVP opened it (marker) OR it's the owner's
+  // own storefront/list (handle matches what MVP taught us). Never otherwise.
+  function ownsCurrent() { return MVP_TRIGGERED || (!!ownerHandle && handle() === ownerHandle) }
   const listIdFromHref = (href) => { const m = String(href || '').match(/\/(?:shop\/[^/]+\/)?list\/([A-Za-z0-9]{6,})/i); return m ? m[1] : null }
   const currentListId = () => listIdFromHref(location.pathname)
   const listUrlFor = (id) => { const h = handle(); return h ? `https://www.amazon.com/shop/${h}/list/${id}` : `https://www.amazon.com/list/${id}` }
@@ -218,12 +240,17 @@
     if (saved) badge('Synced this list · ' + items.length + ' products. Open MVP → Idea Lists.', 'ok')
   }
 
+  // If MVP opened this page, that IS the owner's storefront/list — remember it.
+  if (MVP_TRIGGERED) rememberOwner(handle())
+
   // ── Runner: react to SPA navigation, debounce, backstop ─────────────────────
   let lt = null
-  const kick = () => { clearTimeout(lt); lt = setTimeout(() => { try {
+  const kick = () => { clearTimeout(lt); lt = setTimeout(async () => { try {
     if (!onStorefront()) return
-    if (currentListId()) { captureCurrentList(); return }   // a single list page — always capture (intentional)
-    if (MVP_TRIGGERED) runStorefront()                       // full storefront scan ONLY when MVP asked
+    await loadOwner()                                        // know the owner before deciding
+    if (!ownsCurrent()) { try { console.debug(LOG, 'not the owner storefront — skipping', handle()) } catch (e) {} ; return }
+    if (currentListId()) { captureCurrentList(); return }    // owner's single list page — capture
+    if (MVP_TRIGGERED) runStorefront()                        // full storefront scan ONLY when MVP asked
   } catch (e) {} }, 2500) }
   let lastHref = location.href
   const onNav = () => { if (location.href !== lastHref) { lastHref = location.href; running = false; kick() } }
