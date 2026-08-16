@@ -112,19 +112,33 @@ export async function publishPinForPost(args: PublishArgs): Promise<{ pinId: str
   }
 
   try {
-    let pin: { id: string }
+    // Resilient create: if targetBoardId turns out to be a stale sandbox board
+    // (created while the app was in Pinterest trial access), the call retries
+    // once on a freshly-created real board instead of failing the publish.
+    let pin: { id: string; boardId: string; recovered: boolean }
     if (args.imageBase64 && args.mediaType) {
-      pin = await pinterest.createPinWithBase64({
+      pin = await pinterest.createPinWithBase64Resilient({
         boardId: targetBoardId, title: safeTitle, description: safeDescription,
         imageBase64: args.imageBase64, mediaType: args.mediaType, link: destLink,
       })
     } else if (args.fallbackImageUrl) {
-      pin = await pinterest.createPin({
+      pin = await pinterest.createPinResilient({
         boardId: targetBoardId, title: safeTitle, description: safeDescription,
         imageUrl: args.fallbackImageUrl, link: destLink,
       })
     } else {
       throw new PinPublishError('No image available for pin', 400)
+    }
+    // If we recovered onto a fresh board, heal the stored board id so the stale
+    // sandbox board is never reached for this user again.
+    if (pin.recovered && ig.user_id) {
+      try {
+        const { createAdminClient } = await import('@/lib/supabase/admin')
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (createAdminClient() as any).from('integrations')
+          .update({ pinterest_board_id: pin.boardId, pinterest_board_name: PinterestService.RECOVERY_BOARD })
+          .eq('user_id', ig.user_id)
+      } catch { /* best-effort heal — the pin already published */ }
     }
     return { pinId: pin.id }
   } catch (e) {

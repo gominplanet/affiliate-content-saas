@@ -16,6 +16,7 @@ import { scrubBanned } from '@/lib/scrub'
 import type { Tier } from '@/lib/tier'
 
 export interface PinIntegration {
+  user_id?: string | null
   pinterest_access_token?: string | null
   pinterest_board_id?: string | null
   geniuslink_api_key?: string | null
@@ -186,6 +187,19 @@ export async function publishAmazonPin(opts: {
   const pinterest = new PinterestService(intRow.pinterest_access_token)
   const boardId = (opts.boardId || intRow.pinterest_board_id || '').trim()
     || (await pinterest.findOrCreateBoard('Reviews')).id
-  const { id: pinId } = await pinterest.createPin({ boardId, title, description, imageUrl: opts.imageUrl, link: linkUrl })
+  // Resilient: the stored pinterest_board_id can be a stale sandbox board (frozen
+  // at connect time during Pinterest trial access). On the sandbox error this
+  // retries once on a fresh real board and heals the stored id.
+  const pin = await pinterest.createPinResilient({ boardId, title, description, imageUrl: opts.imageUrl, link: linkUrl })
+  if (pin.recovered && intRow.user_id) {
+    try {
+      const { createAdminClient } = await import('@/lib/supabase/admin')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (createAdminClient() as any).from('integrations')
+        .update({ pinterest_board_id: pin.boardId, pinterest_board_name: PinterestService.RECOVERY_BOARD })
+        .eq('user_id', intRow.user_id)
+    } catch { /* best-effort heal — pin already published */ }
+  }
+  const pinId = pin.id
   return { pinId, pinUrl: `https://www.pinterest.com/pin/${pinId}/`, title, description, linkUrl, geniuslinkNote }
 }

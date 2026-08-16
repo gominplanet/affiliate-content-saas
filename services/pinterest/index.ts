@@ -72,6 +72,49 @@ export class PinterestService {
     }
     return res.json() as Promise<{ id: string }>
   }
+  // Pinterest rejects a real pin on a board that was created while the app was
+  // in Trial/Sandbox access ("Cannot add non-sandbox pins on sandbox boards").
+  // Those boards stay sandbox forever, so even a Standard-approved app fails on
+  // them. MVP froze the first board at connect time, which for anyone who
+  // connected during trial is a permanent sandbox board.
+  static isSandboxBoardError(msg: string): boolean {
+    return /non-?sandbox pins on sandbox boards|sandbox board/i.test(String(msg || ''))
+  }
+
+  // A dedicated recovery board. Created fresh (so it's a real, non-sandbox board
+  // on a Standard app) and reused by name thereafter, so we never spam boards.
+  static RECOVERY_BOARD = 'MVP Picks'
+
+  /** createPin, but if the target board is a stale sandbox board, retry once on a
+   *  freshly-created real board. Returns the board id actually used so the caller
+   *  can persist it and skip the failing board next time. */
+  async createPinResilient(opts: { boardId: string; title: string; description: string; imageUrl: string; link: string }): Promise<{ id: string; boardId: string; recovered: boolean }> {
+    try {
+      const r = await this.createPin(opts)
+      return { id: r.id, boardId: opts.boardId, recovered: false }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      if (!PinterestService.isSandboxBoardError(msg)) throw e
+      const board = await this.findOrCreateBoard(PinterestService.RECOVERY_BOARD)
+      const r = await this.createPin({ ...opts, boardId: board.id })
+      return { id: r.id, boardId: board.id, recovered: true }
+    }
+  }
+
+  /** Base64 variant of createPinResilient. */
+  async createPinWithBase64Resilient(opts: { boardId: string; title: string; description: string; imageBase64: string; mediaType: string; link: string }): Promise<{ id: string; boardId: string; recovered: boolean }> {
+    try {
+      const r = await this.createPinWithBase64(opts)
+      return { id: r.id, boardId: opts.boardId, recovered: false }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      if (!PinterestService.isSandboxBoardError(msg)) throw e
+      const board = await this.findOrCreateBoard(PinterestService.RECOVERY_BOARD)
+      const r = await this.createPinWithBase64({ ...opts, boardId: board.id })
+      return { id: r.id, boardId: board.id, recovered: true }
+    }
+  }
+
   async createPinWithBase64(opts: {
     boardId: string
     title: string
