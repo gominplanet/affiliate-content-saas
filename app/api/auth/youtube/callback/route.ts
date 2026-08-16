@@ -123,6 +123,9 @@ export async function GET(request: NextRequest) {
         { onConflict: 'user_id' },
       )
       if (saveErr) throw new Error(saveErr.message || 'token save failed')
+      // A fresh, working token — drop any "YouTube needs reconnecting" flag so
+      // the dashboard banner clears at once instead of waiting for the next probe.
+      try { const { clearConnectionHealth } = await import('@/lib/connection-probe'); await clearConnectionHealth(supabase, userId, 'youtube') } catch { /* non-fatal */ }
     }
 
     if (!channelId) {

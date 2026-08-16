@@ -27,6 +27,7 @@ import SetupChecklist from '@/components/dashboard/SetupChecklist'
 import FirstWinChecklist from '@/components/dashboard/FirstWinChecklist'
 import ChannelStats from '@/components/dashboard/ChannelStats'
 import NewsBanner from '@/components/dashboard/NewsBanner'
+import ReconnectBanner from '@/components/dashboard/ReconnectBanner'
 import WhatsNewCard from '@/components/dashboard/WhatsNewCard'
 import ReferralBanner from '@/components/dashboard/ReferralBanner'
 import WpUpdateBanner from '@/components/dashboard/WpUpdateBanner'
@@ -378,6 +379,10 @@ export default async function DashboardPage() {
         {showMetaNudge && <MetaLiveBanner platforms={metaNudgePlatforms} />}
 
         {/* ── Banners + welcome (preserved functional widgets) ──────── */}
+        {/* Loud "reconnect needed" alert — a silently-dead Facebook/YouTube token
+            surfaces here (proactive probe) so a creator fixes it in one click
+            instead of churning over posts that quietly stopped going out. */}
+        <ReconnectBanner />
         <NewsBanner />
         <WpUpdateBanner />
         {int?.wordpress_url ? <AmazonSitesReminder siteUrl={int.wordpress_url as string} /> : null}

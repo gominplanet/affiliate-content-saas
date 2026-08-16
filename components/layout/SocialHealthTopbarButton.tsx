@@ -23,6 +23,7 @@ interface DeadChannel {
   consecutiveFailures: number
   reason: 'not_connected' | 'expired' | 'failing'
   message: string
+  href?: string
 }
 
 export default function SocialHealthTopbarButton() {
@@ -93,7 +94,9 @@ export default function SocialHealthTopbarButton() {
           </p>
 
           <Link
-            href="/connect-socials"
+            href={Array.from(new Set(dead.map(d => d.href || '/connect-socials'))).length === 1
+              ? (dead[0].href || '/connect-socials')
+              : '/connect-socials'}
             onClick={() => setOpen(false)}
             className="flex items-center justify-center gap-1.5 w-full text-xs font-semibold text-white px-3 py-2 rounded-lg bg-[#7C3AED] hover:opacity-90 transition-opacity"
           >

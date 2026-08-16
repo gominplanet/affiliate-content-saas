@@ -983,6 +983,41 @@ export async function refreshYouTubeToken(refreshToken: string): Promise<{
   return res.json()
 }
 
+// Probe a stored refresh token WITHOUT throwing, to tell a genuinely-dead
+// connection (Google returned invalid_grant → the user revoked us, changed their
+// password, or the token aged out) apart from a transient failure (network, a
+// 5xx, quota). Only `dead: true` should ever tell a creator to reconnect — a
+// transient blip must NOT nag them. Used by the proactive connection-health
+// probe (lib/connection-probe) and the daily cron.
+export async function classifyYouTubeRefresh(refreshToken: string): Promise<{ ok: boolean; dead: boolean; reason?: string }> {
+  if (!refreshToken) return { ok: false, dead: true, reason: 'no refresh token' }
+  try {
+    const res = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        refresh_token: refreshToken,
+        client_id: process.env.GOOGLE_CLIENT_ID!,
+        client_secret: process.env.GOOGLE_CLIENT_SECRET!,
+        grant_type: 'refresh_token',
+      }).toString(),
+    })
+    if (res.ok) return { ok: true, dead: false }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const body: any = await res.json().catch(() => ({}))
+    const err = String(body?.error || '')
+    // invalid_grant = the refresh token is permanently dead (revoked / expired /
+    // password change). unauthorized_client / invalid_client = our app config,
+    // not the user — treat as transient so we don't tell everyone to reconnect
+    // over a server-side lapse.
+    const dead = err === 'invalid_grant'
+    return { ok: false, dead, reason: err || `HTTP ${res.status}` }
+  } catch (e) {
+    // Network/transient — never a reconnect signal.
+    return { ok: false, dead: false, reason: e instanceof Error ? e.message : 'network error' }
+  }
+}
+
 // Get a valid access token, refreshing if needed.
 //
 // Defensively decrypts the token columns (2026-06-02 rollout). Most

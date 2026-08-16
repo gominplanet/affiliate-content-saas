@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { clearChannelFailures } from '@/lib/channel-health'
+import { clearConnectionHealth } from '@/lib/connection-probe'
 import { exchangeCodeForToken, getLongLivedToken, getPages } from '@/services/facebook'
 import { syncFacebookAccounts } from '@/lib/social-accounts'
 import { encryptIntegrationWrite } from '@/lib/integration-secrets'
@@ -86,6 +87,7 @@ export async function GET(request: NextRequest) {
     // Reconnecting must clear the "needs reconnecting" alert immediately —
     // otherwise the old failures stay the newest outcomes and it keeps nagging.
     await clearChannelFailures(supabase, user.id, 'facebook')
+    await clearConnectionHealth(supabase, user.id, 'facebook')
     return NextResponse.redirect(`${setupUrl}?fb_connected=1`)
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown error'
