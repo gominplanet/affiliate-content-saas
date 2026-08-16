@@ -183,7 +183,10 @@ export async function GET(request: NextRequest) {
     if (joinedOnly) {
       query = query.in('rep_asin', joinedAsins.length ? joinedAsins : ['__none__'])
     } else {
-      if (hasSpots) query = query.or('available_slot.is.null,available_slot.gt.0')
+      // Strict: only campaigns we KNOW have open spots (available_slot > 0).
+      // A null slot count is "unknown", not "has spots", so it must NOT pass the
+      // filter (this is the bulletproof behaviour — the toggle promises open spots).
+      if (hasSpots) query = query.gt('available_slot', 0)
       // Null-safe exclusion: `rep_asin NOT IN (...)` is NULL (→ dropped) for
       // rows with a null rep_asin, which would silently hide untouched campaigns.
       // Keep null-rep_asin rows in with an explicit OR.
@@ -272,13 +275,12 @@ export async function GET(request: NextRequest) {
     else if (sort === 'perSale') enriched.sort((a, b) => (b.perSale ?? 0) - (a.perSale ?? 0))
     else if (payingOnly) { /* keep DB order */ }
 
-    // "Paying brands only" hides brands we can POSITIVELY prove aren't paying —
-    // budget committed but sitting unspent → 'risky'. Brands we simply can't
-    // judge (no budget data → 'unknown') stay visible: we never blank the page
-    // on a signal we don't have. Today the catalog carries budget_remaining but
-    // no total `budget`, so nothing scores 'risky' yet and this is a soft filter;
-    // once total-budget data flows in it starts excluding proven non-spenders.
-    const filtered = payingOnly ? enriched.filter((e) => e.trust.tier !== 'risky') : enriched
+    // "Paying brands only" is STRICT: it shows ONLY brands that positively read
+    // as paying — tier 'reliable', exactly the ones that carry the green
+    // "Pays out" badge. 'mixed', 'risky' and 'unknown' (unproven) are all hidden,
+    // so a filtered card always matches its badge. (Previously this only dropped
+    // 'risky', letting mixed/unknown brands through — the leak being fixed here.)
+    const filtered = payingOnly ? enriched.filter((e) => e.trust.tier === 'reliable') : enriched
 
     // Collapse same-product campaigns (one product listed under several campaign
     // ids / marketing headlines) so the browser shows each item once — the same
