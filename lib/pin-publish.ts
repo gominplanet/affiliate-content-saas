@@ -74,24 +74,29 @@ export async function publishPinForPost(args: PublishArgs): Promise<{ pinId: str
   // saved board id, or it would shadow the user's explicit fallback
   // name for uncategorized posts. Never hard-fail: sandbox/new
   // accounts start with zero boards.
-  let targetBoardId = ''
+  // Explicit board pick (board picker) wins over everything: the creator chose
+  // exactly where their pins go. NULL target → fall through to per-category.
+  let targetBoardId = (ig.pinterest_pin_target || '').trim()
   try {
-    // Multi-site: category lookup must hit the SAME WP install the post
-    // lives on. Use the per-site credentials passed in; fall back to ig's
-    // legacy fields when no site was resolved (covers single-site users).
-    const wpUrl = site?.wordpress_url ?? ig.wordpress_url
-    const wpUser = site?.wordpress_username ?? ig.wordpress_username
-    const wpPass = site?.wordpress_app_password ?? ig.wordpress_app_password
-    const wpToken = site?.wordpress_api_token ?? ig.wordpress_api_token
-    if (p.wordpress_post_id && wpUrl) {
-      const wpSvc = createWordPressService(
-        wpUrl, wpUser, wpPass, wpToken || undefined,
-      )
-      const cats = await wpSvc.getPostCategoryNames(p.wordpress_post_id)
-      const cat = cats.map((c: string) => (c || '').trim()).find((c: string) => c && !GENERIC.test(c))
-      if (cat) {
-        const board = await pinterest.findOrCreateBoard(cat)
-        targetBoardId = board.id
+    // Only auto-resolve a category board when the creator hasn't picked one.
+    if (!targetBoardId) {
+      // Multi-site: category lookup must hit the SAME WP install the post
+      // lives on. Use the per-site credentials passed in; fall back to ig's
+      // legacy fields when no site was resolved (covers single-site users).
+      const wpUrl = site?.wordpress_url ?? ig.wordpress_url
+      const wpUser = site?.wordpress_username ?? ig.wordpress_username
+      const wpPass = site?.wordpress_app_password ?? ig.wordpress_app_password
+      const wpToken = site?.wordpress_api_token ?? ig.wordpress_api_token
+      if (p.wordpress_post_id && wpUrl) {
+        const wpSvc = createWordPressService(
+          wpUrl, wpUser, wpPass, wpToken || undefined,
+        )
+        const cats = await wpSvc.getPostCategoryNames(p.wordpress_post_id)
+        const cat = cats.map((c: string) => (c || '').trim()).find((c: string) => c && !GENERIC.test(c))
+        if (cat) {
+          const board = await pinterest.findOrCreateBoard(cat)
+          targetBoardId = board.id
+        }
       }
     }
   } catch { /* keep selected board as fallback */ }

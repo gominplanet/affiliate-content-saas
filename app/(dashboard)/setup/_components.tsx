@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { FacebookFixHelper } from '@/components/setup/FacebookFixHelper'
+import { PinterestBoardPicker } from '@/components/setup/PinterestBoardPicker'
 import { socialEnabled, type GatedSocialPlatform } from '@/lib/feature-flags'
 import { effectiveTier } from '@/lib/view-as'
 
@@ -1210,6 +1211,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
         {ptNotice && <p className={`text-xs mb-3 ${ptNotice.ok ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>{ptNotice.msg}</p>}
         {pinterest.connected ? (
           <div className="flex flex-col gap-3">
+            <PinterestBoardPicker />
             <div>
               <label className="block text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Board for posts with no category</label>
               <input

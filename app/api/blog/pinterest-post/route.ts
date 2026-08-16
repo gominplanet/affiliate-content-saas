@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [{ data: post }, { data: integration }] = await Promise.all([
     supabase.from('blog_posts').select('id,title,wordpress_url,wordpress_post_id,wordpress_site_id,social_publish_counts,video_id,content').eq('id', postId).eq('user_id', user.id).maybeSingle(),
-    supabase.from('integrations').select('pinterest_access_token,pinterest_board_id,pinterest_fallback_board,amazon_associates_tag,geniuslink_api_key,geniuslink_api_secret').eq('user_id', user.id).single(),
+    supabase.from('integrations').select('user_id,pinterest_access_token,pinterest_board_id,pinterest_pin_target,pinterest_fallback_board,amazon_associates_tag,geniuslink_api_key,geniuslink_api_secret').eq('user_id', user.id).single(),
   ])
   // No MVP record → pin straight from the WordPress post. `hasRow` gates the
   // post-publish DB writes (there's no row to persist pin id / cap counts on).
@@ -99,7 +99,8 @@ export async function POST(request: NextRequest) {
   try {
     // Decrypt the integrations row before handing it to publishPinForPost
     // (2026-06-02 rollout — the pin lib reads pinterest_access_token raw).
-    const decIg = decryptIntegrationRow(integration)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const decIg = decryptIntegrationRow(integration as any)
     // Blog/Product toggle: when the creator chose "Product", resolve the direct
     // product link server-side (Geniuslink when configured, else the tagged
     // Amazon URL) so the pin links there instead of the blog. The disclosure is
