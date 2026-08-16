@@ -15,9 +15,12 @@ import { createBrowserClient } from '@/lib/supabase/client'
 
 interface Item { asin: string; title: string | null; image: string | null }
 interface SyncedList { id: string; title: string | null; url: string | null; itemCount: number | null; coverImage: string | null; syncedItems: number; hasItems: boolean }
+// A ranked product for the manual checklist.
+interface RankedItem { asin: string; title: string; image: string | null; priceCents: number | null; rating: number | null; reviews: number | null; discountPct: number | null; hasCampaign: boolean; rank: number }
 // The active list to generate from: either a synced list (by id) or a pasted-URL scan.
 interface Active { source: 'synced' | 'url'; listId?: string; title: string | null; count: number | null; items: Item[]; url: string | null; partial: boolean }
 const PURPLE = '#7C3AED'
+const dollars = (c: number | null) => (c == null ? null : `$${(c / 100).toFixed(2)}`)
 
 export default function IdeaListsPage() {
   const [synced, setSynced] = useState<SyncedList[]>([])
@@ -31,6 +34,10 @@ export default function IdeaListsPage() {
   const [generating, setGenerating] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [done, setDone] = useState<{ url: string; title: string; picked: number; postId: string | null; wpPostId: number | null } | null>(null)
+  const [mode, setMode] = useState<'auto' | 'manual'>('auto')
+  const [ranked, setRanked] = useState<RankedItem[] | null>(null)
+  const [ranking, setRanking] = useState(false)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
 
   const loadSynced = useCallback(async () => {
     setLoadingSynced(true)
@@ -69,15 +76,17 @@ export default function IdeaListsPage() {
     }
   }
 
+  const resetManual = () => { setMode('auto'); setRanked(null); setSelected(new Set()) }
+
   const pickSynced = (l: SyncedList) => {
-    setDone(null)
+    setDone(null); resetManual()
     setActive({ source: 'synced', listId: l.id, title: l.title, count: l.itemCount, items: [], url: l.url, partial: false })
     setCount(Math.min(10, Math.max(3, Math.min(l.syncedItems || l.itemCount || 10, 10))))
   }
 
   const runScan = async () => {
     if (!url.trim()) { toast.error('Paste your Amazon idea-list link.'); return }
-    setScanning(true); setActive(null); setDone(null)
+    setScanning(true); setActive(null); setDone(null); resetManual()
     try {
       const res = await fetch('/api/idea-list/scan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: url.trim() }) })
       const d = await res.json()
@@ -107,8 +116,53 @@ export default function IdeaListsPage() {
     return false
   }
 
+  // Manual mode: rank every product in the list so the creator can hand-pick.
+  const loadRanking = async () => {
+    if (!active || ranking) return
+    setRanking(true); setRanked(null)
+    try {
+      const payload = active.source === 'synced' ? { listId: active.listId } : { items: active.items }
+      const res = await fetch('/api/idea-list/rank', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      const d = await res.json()
+      if (!res.ok || !d.ok) throw new Error(d.error || 'Could not rank this list.')
+      const items = (d.products || []) as RankedItem[]
+      setRanked(items)
+      // Pre-tick MVP's top picks as a starting point.
+      setSelected(new Set(items.slice(0, Math.min(count, 20)).map(p => p.asin)))
+    } catch (e) { toast.error(errText(e)) }
+    finally { setRanking(false) }
+  }
+  const toggleSelect = (asin: string) => {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(asin)) next.delete(asin)
+      else if (next.size >= 20) { toast.error('A guide can hold up to 20 products.'); return prev }
+      else next.add(asin)
+      return next
+    })
+  }
+  const goManual = () => { setMode('manual'); if (!ranked && !ranking) void loadRanking() }
+
   const generate = async () => {
     if (!active) return
+    // Manual mode: build from exactly the ticked products (MVP-ranked order).
+    if (mode === 'manual') {
+      if (selected.size < 3) { toast.error('Pick at least 3 products.'); return }
+      const asins = (ranked || []).filter(p => selected.has(p.asin)).map(p => p.asin).slice(0, 20)
+      setGenerating(true); setDone(null)
+      try {
+        const payload = active.source === 'synced'
+          ? { listId: active.listId, asins, count: asins.length, listTitle: active.title, listUrl: active.url }
+          : { items: active.items, asins, count: asins.length, listTitle: active.title, listUrl: active.url }
+        const res = await fetch('/api/idea-list/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+        const d = await res.json()
+        if (!res.ok || !d.ok) throw new Error(d.error || 'Could not build the guide.')
+        setDone({ url: d.url, title: d.title, picked: d.picked, postId: d.postId ?? null, wpPostId: d.wpPostId ?? null })
+        toast.success('Shopping guide published')
+      } catch (e) { toast.error(errText(e)) }
+      finally { setGenerating(false) }
+      return
+    }
     // If a synced list has no products yet, open it on Amazon so SCOUT captures
     // them, wait for them to land, THEN build the guide — no manual refresh.
     if (active.source === 'synced') {
@@ -280,21 +334,77 @@ export default function IdeaListsPage() {
               This list&apos;s products load on demand. When you click <strong>Create shopping guide</strong>, MVP opens it on Amazon so SCOUT reads every product, then builds the guide automatically. Keep the Amazon tab open until it finishes (SCOUT needs it visible).
             </div>
           )}
-          <div className="flex flex-col sm:flex-row sm:items-end gap-3 rounded-xl border border-[#7C3AED]/25 bg-[#7C3AED]/5 p-4">
-            <div className="flex-1">
-              <p className="text-[12px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">How big is the guide?</p>
-              <div className="flex flex-wrap gap-1.5">
-                {presets.map(n => (
-                  <button key={n} onClick={() => setCount(n)} className={`rounded-full border px-3 py-1 text-[12px] font-semibold transition-colors ${Math.min(count, maxPicks) === n ? 'text-white border-transparent bg-[#7C3AED]' : 'text-[#4b4b4f] dark:text-[#b0b0b5] border-black/10 dark:border-white/15 hover:border-[#7C3AED]/60'}`}>Top {n}</button>
-                ))}
-              </div>
-              <p className="text-[11px] text-[#86868b] mt-1.5">MVP checks every product in the list and ranks by your sales, demand, deals, campaigns and ratings.</p>
-            </div>
-            <button onClick={generate} disabled={generating || syncing} className="shrink-0 inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-[14px] font-bold text-white disabled:opacity-60" style={{ backgroundColor: PURPLE }}>
-              {(generating || syncing) ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-              {syncing ? 'Syncing products from Amazon…' : generating ? 'Writing your guide…' : 'Create shopping guide'}
-            </button>
+          {/* Mode: MVP picks (auto) vs I choose (manual) */}
+          <div className="flex gap-1.5 mb-3">
+            <button onClick={() => setMode('auto')} className={`rounded-full border px-3.5 py-1.5 text-[12px] font-semibold transition-colors ${mode === 'auto' ? 'text-white border-transparent bg-[#7C3AED]' : 'text-[#4b4b4f] dark:text-[#b0b0b5] border-black/10 dark:border-white/15 hover:border-[#7C3AED]/60'}`}>MVP picks (auto)</button>
+            <button onClick={goManual} className={`rounded-full border px-3.5 py-1.5 text-[12px] font-semibold transition-colors ${mode === 'manual' ? 'text-white border-transparent bg-[#7C3AED]' : 'text-[#4b4b4f] dark:text-[#b0b0b5] border-black/10 dark:border-white/15 hover:border-[#7C3AED]/60'}`}>I choose (manual)</button>
           </div>
+
+          {mode === 'auto' ? (
+            <div className="flex flex-col sm:flex-row sm:items-end gap-3 rounded-xl border border-[#7C3AED]/25 bg-[#7C3AED]/5 p-4">
+              <div className="flex-1">
+                <p className="text-[12px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">How big is the guide?</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {presets.map(n => (
+                    <button key={n} onClick={() => setCount(n)} className={`rounded-full border px-3 py-1 text-[12px] font-semibold transition-colors ${Math.min(count, maxPicks) === n ? 'text-white border-transparent bg-[#7C3AED]' : 'text-[#4b4b4f] dark:text-[#b0b0b5] border-black/10 dark:border-white/15 hover:border-[#7C3AED]/60'}`}>Top {n}</button>
+                  ))}
+                </div>
+                <p className="text-[11px] text-[#86868b] mt-1.5">MVP checks every product in the list and ranks by your sales, demand, deals, campaigns and ratings, then picks the best.</p>
+              </div>
+              <button onClick={generate} disabled={generating || syncing} className="shrink-0 inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-[14px] font-bold text-white disabled:opacity-60" style={{ backgroundColor: PURPLE }}>
+                {(generating || syncing) ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                {syncing ? 'Syncing products from Amazon…' : generating ? 'Writing your guide…' : 'Create shopping guide'}
+              </button>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-[#7C3AED]/25 bg-[#7C3AED]/5 p-4">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[12px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Tick the products you want <span className="font-normal text-[#86868b]">— ranked by MVP to help you choose</span></p>
+                <p className="text-[12px] font-bold text-[#7C3AED]">{selected.size} selected</p>
+              </div>
+              {ranking ? (
+                <div className="flex items-center gap-2 text-[13px] text-[#86868b] py-6"><Loader2 size={14} className="animate-spin" /> MVP is ranking every product in this list…</div>
+              ) : !ranked ? (
+                <div className="text-[12px] text-[#86868b] py-3">
+                  {active.source === 'synced' && !synced.find(s => s.id === active.listId)?.hasItems
+                    ? <>Products aren&apos;t loaded yet. Switch to <strong>Auto</strong> and hit Create once (or open the list on Amazon), then come back to Manual.</>
+                    : <button onClick={loadRanking} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-semibold text-white" style={{ backgroundColor: PURPLE }}>Load &amp; rank products</button>}
+                </div>
+              ) : (
+                <>
+                  <div className="max-h-[420px] overflow-y-auto rounded-lg border border-black/5 dark:border-white/10 divide-y divide-black/5 dark:divide-white/10">
+                    {ranked.map(p => {
+                      const on = selected.has(p.asin)
+                      const meta = [dollars(p.priceCents), p.rating ? `${p.rating}★${p.reviews ? ` (${p.reviews.toLocaleString()})` : ''}` : null].filter(Boolean).join(' · ')
+                      return (
+                        <label key={p.asin} className="flex items-center gap-2.5 p-2 cursor-pointer hover:bg-black/[0.02] dark:hover:bg-white/[0.03]">
+                          <input type="checkbox" checked={on} onChange={() => toggleSelect(p.asin)} className="accent-[#7C3AED] w-4 h-4 shrink-0" />
+                          <span className="text-[10px] font-bold text-[#86868b] w-6 text-center shrink-0">#{p.rank}</span>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          {p.image ? <img src={p.image} alt="" className="w-9 h-9 rounded object-cover bg-black/5 shrink-0" /> : <span className="w-9 h-9 rounded bg-black/5 dark:bg-white/5 shrink-0" />}
+                          <span className="flex-1 min-w-0">
+                            <span className="block text-[12px] text-[#1d1d1f] dark:text-[#f5f5f7] line-clamp-1">{p.title}</span>
+                            <span className="block text-[11px] text-[#86868b] line-clamp-1">{meta || 'No price/rating data'}</span>
+                          </span>
+                          {p.hasCampaign && <span className="shrink-0 text-[9px] font-bold text-white bg-[#7C3AED] rounded px-1.5 py-0.5">CC</span>}
+                        </label>
+                      )
+                    })}
+                  </div>
+                  <div className="flex items-center justify-between mt-3 gap-3">
+                    <div className="flex gap-3 text-[11px]">
+                      <button onClick={() => setSelected(new Set(ranked.slice(0, 10).map(p => p.asin)))} className="text-[#7C3AED] hover:underline font-medium">MVP&apos;s top 10</button>
+                      <button onClick={() => setSelected(new Set())} className="text-[#86868b] hover:underline">Clear</button>
+                    </div>
+                    <button onClick={generate} disabled={generating || selected.size < 3} className="shrink-0 inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-[14px] font-bold text-white disabled:opacity-60" style={{ backgroundColor: PURPLE }}>
+                      {generating ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                      {generating ? 'Writing your guide…' : `Create guide (${selected.size})`}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
       )}
 

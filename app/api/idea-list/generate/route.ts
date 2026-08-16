@@ -21,7 +21,7 @@ import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { createWordPressService } from '@/services/wordpress'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
-import { fetchKeepaProductCard } from '@/services/keepa'
+import { enrichAndRankIdeaList, type RankedProduct } from '@/lib/idea-list-rank'
 import { resolveAffiliateUrl } from '@/lib/weekly-digest'
 import { fetchIdeaList, normalizeListUrl, cleanListName } from '@/lib/amazon-idea-list'
 import { buildCampaignHero } from '@/lib/hero-image'
@@ -37,12 +37,6 @@ const esc = (s: string) => String(s || '').replace(/&/g, '&amp;').replace(/</g, 
 const dollars = (cents: number | null) => (cents == null ? null : `$${(cents / 100).toFixed(2)}`)
 
 interface InItem { asin: string; title?: string | null; image?: string | null }
-interface Enriched {
-  asin: string; title: string; image: string | null
-  priceCents: number | null; rating: number | null; reviews: number | null
-  discountPct: number | null; monthlySold: number | null
-  earnings: number; hasCampaign: boolean; score: number
-}
 
 async function pool<T, R>(items: T[], size: number, fn: (t: T) => Promise<R>): Promise<R[]> {
   const out: R[] = []; let i = 0
@@ -73,7 +67,7 @@ export async function POST(request: Request) {
     if (!gen.allowed) return NextResponse.json({ error: gen.reason, limitReached: true, cap: 'generations', currentTier: gen.tier, upgrade: gen.upgrade }, { status: 429 })
 
     const body = await request.json().catch(() => ({})) as {
-      url?: string; items?: InItem[]; listTitle?: string; listUrl?: string; count?: number; listId?: string
+      url?: string; items?: InItem[]; listTitle?: string; listUrl?: string; count?: number; listId?: string; asins?: string[]
     }
     const count = Math.max(3, Math.min(20, Number(body.count) || 10))
 
@@ -95,81 +89,40 @@ export async function POST(request: Request) {
       inItems = parsed.items
       if (!listTitle && parsed.title) listTitle = parsed.title
     }
-    // Every valid ASIN in the list (deduped). We check earnings + CC campaigns
-    // across the WHOLE list first, so a Creator Connections product never gets
-    // missed just because it sits deep in the list.
-    const allAsins = Array.from(new Set(inItems.map(i => String(i.asin || '').trim().toUpperCase()).filter(a => /^[A-Z0-9]{10}$/.test(a)))).slice(0, 500)
-    if (allAsins.length < 3) return NextResponse.json({ error: 'Need at least 3 products from the list.' }, { status: 400 })
-    const titleByAsin = new Map(inItems.map(i => [String(i.asin).toUpperCase(), (i.title || '').trim()]))
-    const imageByAsin = new Map(inItems.map(i => [String(i.asin).toUpperCase(), i.image || null]))
+    // Manual mode: the creator hand-picked ASINs — use exactly those, in their
+    // order, and the writer keeps every one. We flag them as priority so they're
+    // always enriched even if they sit deep in the list.
+    const rawManual = Array.isArray(body.asins)
+      ? Array.from(new Set(body.asins.map(a => String(a || '').trim().toUpperCase()))).filter(a => /^[A-Z0-9]{10}$/.test(a))
+      : []
 
-    // 2. Which of these already earn for the creator (SCOUT), and which are in a
-    //    CC campaign — a campaign match earns the creator a bounty, so those get
-    //    first priority in the guide.
-    const [{ data: earnRows }, { data: campRows }] = await Promise.all([
-      sb.from('storefront_earnings').select('asin,commission').eq('user_id', user.id).in('asin', allAsins),
-      sb.from('campaigns').select('asin').eq('user_id', user.id).in('asin', allAsins),
-    ])
-    const earnByAsin = new Map<string, number>()
-    for (const r of (earnRows || []) as Array<{ asin: string; commission: number | null }>) {
-      earnByAsin.set(r.asin, (earnByAsin.get(r.asin) || 0) + (Number(r.commission) || 0))
-    }
-    const campaignAsins = new Set((campRows || []).map((r: { asin: string }) => r.asin))
+    // 2. Rank the whole list with MVP's criteria (CC-campaign products first,
+    //    then price / rating / reviews / demand / deal). Shared with the manual
+    //    checklist preview so what the creator sees matches what MVP would pick.
+    const { ranked, byAsin } = await enrichAndRankIdeaList(sb, user.id, inItems, { cap: 100, priorityAsins: rawManual })
+    if (ranked.length < 3) return NextResponse.json({ error: 'Need at least 3 products from the list.' }, { status: 400 })
 
-    // 3. Build the Keepa candidate set: EVERY campaign product first (never
-    //    dropped by the cap), then fill up to 100 with the rest in list order.
-    const campFirst = allAsins.filter(a => campaignAsins.has(a))
-    const rest = allAsins.filter(a => !campaignAsins.has(a))
-    const asins = [...campFirst, ...rest].slice(0, Math.max(100, campFirst.length))
+    const manualAsins = rawManual.filter(a => byAsin.has(a))
+    const isManual = manualAsins.length >= 3
+    const candidatePool: RankedProduct[] = isManual
+      ? manualAsins.map(a => byAsin.get(a)!).slice(0, count)
+      : ranked.slice(0, Math.min(ranked.length, count + 12))
 
-    // 3b. Keepa-enrich the candidate set (paced), then score.
-    const cards = await pool(asins, 6, async (asin) => {
-      let k = null
-      try { k = await fetchKeepaProductCard(asin) } catch { /* degrade */ }
-      return { asin, k }
-    })
-    const enriched: Enriched[] = cards.map(({ asin, k }) => ({
-      asin,
-      title: titleByAsin.get(asin) || `Amazon product ${asin}`,
-      image: imageByAsin.get(asin) || (k?.imageUrl ?? null),
-      priceCents: k?.priceNowCents ?? null,
-      rating: k?.rating ?? null,
-      reviews: k?.reviewCount ?? null,
-      discountPct: k?.discountPct ?? null,
-      monthlySold: k?.monthlySold ?? null,
-      earnings: earnByAsin.get(asin) || 0,
-      hasCampaign: campaignAsins.has(asin),
-      score: 0,
-    }))
-    // Normalize each signal 0..1 across the set, then weight.
-    const max = (f: (e: Enriched) => number) => Math.max(1, ...enriched.map(f))
-    const mSold = max(e => e.monthlySold || 0), mEarn = max(e => e.earnings), mRev = max(e => Math.log10((e.reviews || 0) + 1))
-    for (const e of enriched) {
-      const demand = (e.monthlySold || 0) / mSold
-      const earn = e.earnings / mEarn
-      const deal = Math.min(1, (e.discountPct || 0) / 40)
-      const trust = ((e.rating || 0) / 5) * (Math.log10((e.reviews || 0) + 1) / mRev)
-      e.score = earn * 0.34 + demand * 0.26 + trust * 0.20 + deal * 0.12 + (e.hasCampaign ? 0.08 : 0)
-    }
-    // Candidate pool: campaign products first, then by score. The WRITER picks the
-    // final line-up from this pool with THEME RELEVANCE in mind — a numeric score
-    // can't tell that a kids' backpack doesn't belong in a creator guide.
-    const candidatePool = enriched.sort((a, b) => {
-      if (a.hasCampaign !== b.hasCampaign) return a.hasCampaign ? -1 : 1
-      return b.score - a.score
-    }).slice(0, Math.min(enriched.length, count + 12))
-
-    // 4. Claude SELECTS the on-theme picks AND writes the prose (JSON only).
+    // 3. Claude writes the prose. In auto mode it also SELECTS the on-theme
+    //    line-up; in manual mode it writes for exactly what the creator chose.
     const anthropic = createAnthropicClient()
     const angle = cleanListName(listTitle) || listTitle || 'a curated Amazon shopping list'
+    const selectRules = isManual
+      ? `The creator has ALREADY chosen these ${candidatePool.length} products. Write about EVERY one, in this exact order — do not drop, add or reorder any.`
+      : `SELECT the picks — this is the most important step:
+- Choose up to ${count} products that GENUINELY FIT the theme "${angle}". LEAVE OUT anything that doesn't belong in this specific guide, no matter how highly rated — e.g. a child's school backpack has NO place in a content-creator guide. Fewer strong, on-theme picks beats padding with off-theme ones. Only reach ${count} if that many truly fit.
+- Among products that fit, PREFER [CC] ones, then higher rating and demand. Order best-first.`
     const prompt = `You are writing a SHOPPING GUIDE blog post — a curated "best picks" listicle. The guide's theme is: "${angle}".
 
-CANDIDATE PRODUCTS — choose the line-up from THESE ONLY. "[CC]" marks a product the creator earns a campaign bounty on:
+${isManual ? 'PRODUCTS (already chosen by the creator)' : 'CANDIDATE PRODUCTS — choose the line-up from THESE ONLY'}. "[CC]" marks a product the creator earns a campaign bounty on:
 ${candidatePool.map((p, i) => `${i + 1}. [ASIN ${p.asin}]${p.hasCampaign ? ' [CC]' : ''} ${p.title}${p.priceCents ? ` — ${dollars(p.priceCents)}` : ''}${p.rating ? ` — ${p.rating}★ (${p.reviews || 0} reviews)` : ''}`).join('\n')}
 
-SELECT the picks — this is the most important step:
-- Choose up to ${count} products that GENUINELY FIT the theme "${angle}". LEAVE OUT anything that doesn't belong in this specific guide, no matter how highly rated — e.g. a child's school backpack has NO place in a content-creator guide. Returning fewer strong, on-theme picks beats padding with off-theme ones. Only reach ${count} if that many truly fit.
-- Among products that fit, PREFER [CC] ones, then higher rating and demand. Order best-first.
+${selectRules}
 
 Return ONLY JSON:
 {
@@ -178,7 +131,7 @@ Return ONLY JSON:
   "intro": string — 2-4 warm sentences setting up the guide and who it's for.
   "conclusion": string — 3-4 sentences: recap the theme, how to choose between the picks, an encouraging sign-off.
   "picks": [{
-    "asin": string — copied EXACTLY from a candidate above,
+    "asin": string — copied EXACTLY from a product above,
     "heading": string — names the REAL product and its role, taken from its title (e.g. "Best wireless lav mic", "Best ring light for video"). NEVER a vague label like "niche creator tool".
     "superlative": string — 2-4 words (e.g. "Best Value", "Best for small spaces"). NEVER "Hidden Gem", "Game Changer", "Must-Have", "You Need This".
     "blurb": string — 5-6 sentences. The FIRST sentence MUST say what the product actually IS (its real category, read from its title). Then specific points a buyer cares about, drawn from the real product and its title — what it does, key features, who it's for.
@@ -195,15 +148,15 @@ HARD BAN — generic filler that could describe ANY product. Never write "punche
     try { parsed = JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1)) } catch { /* fall back below */ }
     const proseByAsin = new Map((parsed.picks || []).map(p => [String(p.asin).toUpperCase(), p]))
 
-    // Final line-up = the writer's on-theme selection, mapped back to our enriched
-    // data in the order returned. Fall back to score order only if it returned too
-    // few (never publish a guide with fewer than 3 picks).
-    const byAsin = new Map(enriched.map(e => [e.asin, e]))
-    let picks = (parsed.picks || [])
-      .map(p => byAsin.get(String(p.asin).toUpperCase()))
-      .filter((e): e is Enriched => !!e)
-      .slice(0, count)
-    if (picks.length < 3) picks = candidatePool.slice(0, count)
+    // Final line-up: manual = exactly the creator's picks; auto = the writer's
+    // on-theme selection. Fall back to top-ranked only if too few (never < 3).
+    let picks: RankedProduct[] = isManual
+      ? candidatePool
+      : (parsed.picks || [])
+          .map(p => byAsin.get(String(p.asin).toUpperCase()))
+          .filter((e): e is RankedProduct => !!e)
+          .slice(0, count)
+    if (picks.length < 3) picks = ranked.slice(0, count)
 
     // 5. Assemble the post: intro, a card per pick, outro, full-list CTA + disclosure.
     const tag = (intRow?.amazon_associates_tag as string) || null
