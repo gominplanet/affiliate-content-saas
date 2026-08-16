@@ -59,7 +59,8 @@ export async function POST(request: Request) {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [{ data: integration }, { count: postCount }, { data: profile }] = await Promise.all([
-      admin.from('integrations').select('tier,wordpress_url').eq('user_id', targetId).maybeSingle(),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (admin as any).from('integrations').select('tier,wordpress_url,last_seen_at').eq('user_id', targetId).maybeSingle(),
       admin.from('blog_posts').select('id', { count: 'exact', head: true }).eq('user_id', targetId),
       admin.from('brand_profiles').select('name,author_name').eq('user_id', targetId).maybeSingle(),
     ])
@@ -70,7 +71,7 @@ export async function POST(request: Request) {
         id: targetId,
         email: target.email,
         createdAt: target.created_at,
-        lastSignInAt: target.last_sign_in_at,
+        lastSignInAt: (integration as { last_seen_at?: string | null } | null)?.last_seen_at ?? target.last_sign_in_at,
         tier: integration?.tier ?? 'trial',
         wordpressUrl: integration?.wordpress_url ?? null,
         brandName: profile?.name ?? null,

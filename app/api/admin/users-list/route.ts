@@ -46,13 +46,13 @@ export async function GET(request: Request) {
     const inIds = ids.length ? ids : [NO_MATCH]
 
     const [{ data: integs }, { data: brands }] = await Promise.all([
-      admin.from('integrations').select('user_id,tier,wordpress_url').in('user_id', inIds),
+      admin.from('integrations').select('user_id,tier,wordpress_url,last_seen_at').in('user_id', inIds),
       admin.from('brand_profiles').select('user_id,name').in('user_id', inIds),
     ])
 
-    const integByUser = new Map<string, { tier: string; wordpress_url: string | null }>()
+    const integByUser = new Map<string, { tier: string; wordpress_url: string | null; last_seen_at: string | null }>()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    for (const r of (integs ?? []) as any[]) integByUser.set(r.user_id, { tier: r.tier, wordpress_url: r.wordpress_url })
+    for (const r of (integs ?? []) as any[]) integByUser.set(r.user_id, { tier: r.tier, wordpress_url: r.wordpress_url, last_seen_at: r.last_seen_at ?? null })
     const brandByUser = new Map<string, string>()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     for (const r of (brands ?? []) as any[]) if (r.name) brandByUser.set(r.user_id, r.name)
@@ -61,7 +61,10 @@ export async function GET(request: Request) {
       id: u.id,
       email: u.email ?? '',
       createdAt: u.created_at,
-      lastSignInAt: u.last_sign_in_at ?? null,
+      // Real activity when we have it (heartbeat), else the auth last-sign-in as
+      // a floor. last_sign_in_at alone only moves on an explicit sign-in, so it
+      // read as "== signed up" for anyone who stays logged in.
+      lastSignInAt: integByUser.get(u.id)?.last_seen_at ?? u.last_sign_in_at ?? null,
       tier: integByUser.get(u.id)?.tier ?? 'trial',
       wordpressUrl: integByUser.get(u.id)?.wordpress_url ?? null,
       brandName: brandByUser.get(u.id) ?? null,
