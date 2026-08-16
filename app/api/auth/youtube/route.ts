@@ -61,8 +61,15 @@ export async function GET(req: Request) {
     ...((wantUpload || youtubeUploadEnabled()) ? ['https://www.googleapis.com/auth/youtube.upload'] : []),
   ].join(' '))
   url.searchParams.set('access_type', 'offline')
-  // Merge any newly granted scope with the ones already granted (incremental).
-  url.searchParams.set('include_granted_scopes', 'true')
+  // Incremental authorization ONLY for the on-demand upload upgrade: there we
+  // want to keep the scopes the user already granted and just add youtube.upload.
+  // For a NORMAL connect we deliberately DON'T send include_granted_scopes —
+  // otherwise Google re-merges any scope this account granted in the past (e.g.
+  // the old `youtube` / `youtube.upload` we've since dropped), and because those
+  // are no longer in our verified set the "Google hasn't verified this app"
+  // warning comes back even though we only request the verified force-ssl scope.
+  // Omitting it makes every reconnect request strictly the verified scope(s).
+  if (wantUpload) url.searchParams.set('include_granted_scopes', 'true')
   // 'consent' forces a refresh token; 'select_account' shows the account/channel
   // chooser so a creator with multiple YouTube channels picks the right one. For
   // an upload-scope upgrade we skip the chooser — just add the scope to the
