@@ -14,6 +14,17 @@ import { scrubBanned } from '@/lib/scrub'
 
 interface Brief { line1: string; line2: string; callouts: string[]; concept: string; palette: string }
 
+/** Thumbnail headline style. 'statement' = the current polished benefit
+ *  headline (default). 'question' = a curiosity question about the product
+ *  ("DOES IT ACTUALLY WORK?") that earns the click. Threaded through every
+ *  thumbnail generator so the user's toggle reaches all of them. */
+export type HeadlineStyle = 'statement' | 'question'
+
+// Words/angles the QUESTION headline must never use (Seb's rule): no money /
+// price / value framing, no retailer name, no "buy", no "game changer". Applied
+// as a hard prompt rule AND a post-check that rejects a violating question.
+const BANNED_Q = /\b(money|price|pricing|priced|cost|costs|costly|cheap|cheaper|expensive|amazon|purchase|purchasing|buy|buys|buying|bought|worth\s+(?:it|the)|game[-\s]?changer)\b/i
+
 const BRIEF_SYSTEM = `You are a world-class product-review ART DIRECTOR designing ONE scroll-stopping vertical Pinterest pin for a product. Return STRICT JSON: {"line1","line2","callouts","concept","palette"}.
 - line1 / line2: a punchy 2-line ALL-CAPS headline for the product (line1 ≤ 15 chars, line2 ≤ 20 chars). Specific to THIS product's category, standout feature or benefit.
 - callouts: 3 short benefit/spec chips (2-4 words each), grounded in the product.
@@ -21,22 +32,38 @@ const BRIEF_SYSTEM = `You are a world-class product-review ART DIRECTOR designin
 - palette: the colour direction, tuned to the product.
 HARD RULES: never the word "Amazon" or a retailer name/logo. No people. NEVER a year or date (no "2025", "2026", "THIS YEAR") — keep it evergreen so the graphic never looks dated. Do NOT use "HIDDEN GEM", "GAME CHANGER", "MUST-HAVE", "YOU NEED THIS" — be specific and fresh. JSON only, no markdown.`
 
-async function designPinBrief(productTitle: string, productContext: string, userId?: string | null, tier?: string | null): Promise<Brief | null> {
+// Question-hook variant: same designed look, but the headline is a short,
+// specific curiosity QUESTION about the product's real claim/effect/experience.
+const BRIEF_SYSTEM_QUESTION = `You are a world-class product-review ART DIRECTOR designing ONE scroll-stopping thumbnail for a product, in the CURIOSITY-QUESTION style. The headline is a short, punchy QUESTION that makes someone need to click to find the answer. Return STRICT JSON: {"line1","line2","callouts","concept","palette"}.
+- line1 / line2: split ONE question across two ALL-CAPS lines (line1 ≤ 16 chars, line2 ≤ 20 chars). Make it SPECIFIC to THIS product's real claim, effect, taste/feel or result — not generic. Examples of the vibe: a fat-burner → "DOES IT REALLY" / "BURN FAT???"; fish oil → "ANY FISHY" / "AFTERTASTE?"; a testosterone complex → "DOES THIS" / "ACTUALLY WORK???"; a shaver → "IS IT REALLY" / "THAT CLOSE?". End with a question mark ("?" or "???" for punch).
+- callouts: 3 short benefit/spec chips (2-4 words each), grounded in the product.
+- concept: one sentence describing the layout + vibe.
+- palette: the colour direction, tuned to the product.
+HARD RULES for the QUESTION: NEVER mention money, price, cost, "cheap", "expensive", value, "worth it", "amazon", "purchase", or "buy"/"buying"/"bought"/"should I buy". NEVER say "game changer". Ask about performance, results, taste/feel, quality, or whether it lives up to the hype — NEVER about price or buying. Never a retailer name/logo, no people described here, NEVER a year or date. JSON only, no markdown.`
+
+async function designPinBrief(productTitle: string, productContext: string, userId?: string | null, tier?: string | null, headlineStyle: HeadlineStyle = 'statement'): Promise<Brief | null> {
   try {
+    const isQuestion = headlineStyle === 'question'
     const anthropic = createAnthropicClient()
     const msg = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 700,
-      system: BRIEF_SYSTEM,
-      messages: [{ role: 'user', content: `PRODUCT: ${productTitle}\n${productContext ? `DETAILS:\n${productContext.slice(0, 700)}` : ''}\n\nDesign the pin brief now.` }],
+      system: isQuestion ? BRIEF_SYSTEM_QUESTION : BRIEF_SYSTEM,
+      messages: [{ role: 'user', content: `PRODUCT: ${productTitle}\n${productContext ? `DETAILS:\n${productContext.slice(0, 700)}` : ''}\n\nDesign the ${isQuestion ? 'curiosity-question ' : ''}pin brief now.` }],
     })
     if (userId) { const u = usageFromAnthropic(msg); recordUsage({ userId, tier: tier ?? null, feature: 'pinterest_art_director', model: 'claude-sonnet-4-6', input: u.input, output: u.output }) }
     const raw = (msg.content[0] as { type: string; text?: string }).text || ''
     const j = JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1)) as Partial<Brief>
     const clean = (s: unknown, n: number) => stripDesignBrands(scrubBanned(String(s || '').trim())).slice(0, n)
+    let line1 = clean(j.line1, 16).toUpperCase()
+    let line2 = clean(j.line2, 22).toUpperCase()
+    // Question mode: enforce the banned-word rule (no money/price/buy/amazon/
+    // "game changer"). If the model slipped one in, fall back to a safe generic
+    // curiosity question rather than shipping a banned headline.
+    if (isQuestion && BANNED_Q.test(`${line1} ${line2}`)) { line1 = 'DOES IT'; line2 = 'ACTUALLY WORK?' }
     return {
-      line1: clean(j.line1, 16).toUpperCase(),
-      line2: clean(j.line2, 22).toUpperCase(),
+      line1,
+      line2,
       callouts: Array.isArray(j.callouts) ? j.callouts.map((c) => clean(c, 24)).filter(Boolean).slice(0, 3) : [],
       concept: String(j.concept || '').trim().slice(0, 400),
       palette: String(j.palette || '').trim().slice(0, 140),
@@ -54,6 +81,7 @@ export async function generateArtDirectorPin(opts: {
   productContext?: string
   userId?: string | null
   tier?: string | null
+  headlineStyle?: HeadlineStyle
 }): Promise<{ data: string; mediaType: string } | null> {
   try {
     if (!opts.productImageUrl || !opts.productTitle) return null
@@ -65,7 +93,7 @@ export async function generateArtDirectorPin(opts: {
     const productPng = await normalizeToPng(new Uint8Array(ab)).catch(() => null)
     if (!productPng) return null
 
-    const brief = await designPinBrief(opts.productTitle, opts.productContext || '', opts.userId, opts.tier)
+    const brief = await designPinBrief(opts.productTitle, opts.productContext || '', opts.userId, opts.tier, opts.headlineStyle)
     const line1 = brief?.line1 || stripDesignBrands(opts.productTitle).toUpperCase().slice(0, 16)
     const line2 = brief?.line2 || ''
     const callouts = brief?.callouts?.length ? brief.callouts : []
@@ -111,6 +139,7 @@ export async function generateArtDirectorBlogHero(opts: {
   productContext?: string
   userId?: string | null
   tier?: string | null
+  headlineStyle?: HeadlineStyle
 }): Promise<{ data: string; mediaType: string } | null> {
   try {
     if (!opts.productImageUrl || !opts.productTitle) return null
@@ -122,7 +151,7 @@ export async function generateArtDirectorBlogHero(opts: {
     if (!productPng) return null
 
     // Reuse the pin brief (headline + callouts, grounded in the product).
-    const brief = await designPinBrief(opts.productTitle, opts.productContext || '', opts.userId, opts.tier)
+    const brief = await designPinBrief(opts.productTitle, opts.productContext || '', opts.userId, opts.tier, opts.headlineStyle)
     const line1 = brief?.line1 || stripDesignBrands(opts.productTitle).toUpperCase().slice(0, 16)
     const line2 = brief?.line2 || ''
     const callouts = brief?.callouts?.length ? brief.callouts : []
