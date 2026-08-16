@@ -10,6 +10,7 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Sparkles, Download, Loader2, User, Package, AlertCircle, Wand2 } from 'lucide-react'
 import PageExplainer from '@/components/amazon/PageExplainer'
+import { HeadlineStyleToggle, useHeadlineStyle, headlineStyleValue } from '@/components/thumbnails/HeadlineStyleToggle'
 
 interface FaceModel { id: string; name: string }
 
@@ -25,6 +26,7 @@ export default function AmazonThumbnailsPage() {
   const [status, setStatus] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<{ url: string; hook: string } | null>(null)
+  const [question, setQuestion] = useHeadlineStyle()
 
   useEffect(() => {
     (async () => {
@@ -66,6 +68,7 @@ export default function AmazonThumbnailsPage() {
       ...(isUrl ? { productUrl: raw } : isAsin ? { asin: raw.toUpperCase() } : { productUrl: raw }),
       ...(mode === 'product' ? { noHuman: true } : { faceModelId: faceId }),
       ...(headline.trim() ? { customHeadline: headline.trim() } : {}),
+      headlineStyle: headlineStyleValue(question),
     }
 
     try {
@@ -87,7 +90,7 @@ export default function AmazonThumbnailsPage() {
     } finally {
       setBusy(false); setStatus('')
     }
-  }, [product, headline, mode, faceId])
+  }, [product, headline, mode, faceId, question])
 
   return (
     <div className="max-w-3xl mx-auto">
@@ -178,6 +181,13 @@ export default function AmazonThumbnailsPage() {
             className="w-full px-3 py-2 rounded-lg text-sm border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] placeholder:text-[#a1a1a6]"
           />
         </label>
+
+        {/* Headline style — Polished (default) vs Question hook (curiosity
+            question + matching face). Only meaningful when the Art Director
+            writes the headline (no custom headline typed above). */}
+        {!headline.trim() && (
+          <HeadlineStyleToggle question={question} onChange={setQuestion} disabled={busy} />
+        )}
 
         <button
           onClick={generate}

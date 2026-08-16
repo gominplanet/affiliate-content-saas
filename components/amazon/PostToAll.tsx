@@ -9,6 +9,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Loader2, User, Package, Rocket, Check, AlertCircle, ExternalLink } from 'lucide-react'
+import { HeadlineStyleToggle, useHeadlineStyle, headlineStyleValue } from '@/components/thumbnails/HeadlineStyleToggle'
 
 interface FaceModel { id: string; name: string }
 type NetKey = 'pinterest' | 'instagram' | 'facebook'
@@ -27,6 +28,7 @@ export default function PostToAll({ presetProduct }: { presetProduct?: { value: 
   const [faces, setFaces] = useState<FaceModel[]>([])
   const [faceId, setFaceId] = useState('')
   const [busy, setBusy] = useState(false)
+  const [question, setQuestion] = useHeadlineStyle()
   const [nets, setNets] = useState<Record<NetKey, NetState>>({
     pinterest: { label: 'Pinterest', accent: '#E60023', connected: false, status: 'idle' },
     instagram: { label: 'Instagram', accent: '#E1306C', connected: false, status: 'idle' },
@@ -78,6 +80,7 @@ export default function PostToAll({ presetProduct }: { presetProduct?: { value: 
           signal: AbortSignal.timeout(290000),
           body: JSON.stringify({
             videoTitle: 'Product spotlight', textMode: 'graphic', format: n.format, briefKey: bk,
+            headlineStyle: headlineStyleValue(question),
             ...(n.extra || {}), ...productField, ...(mode === 'product' ? { noHuman: true } : { faceModelId: faceId }),
           }),
         })
@@ -100,7 +103,7 @@ export default function PostToAll({ presetProduct }: { presetProduct?: { value: 
       }
     }
     setBusy(false)
-  }, [product, mode, faceId, nets])
+  }, [product, mode, faceId, nets, question])
 
   const anyConnected = NETS.some(n => nets[n.key].connected)
 
@@ -146,6 +149,8 @@ export default function PostToAll({ presetProduct }: { presetProduct?: { value: 
           {faces.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
         </select>
       )}
+
+      <HeadlineStyleToggle question={question} onChange={setQuestion} disabled={busy} compact />
 
       {/* Per-network status */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
