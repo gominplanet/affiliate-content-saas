@@ -173,6 +173,44 @@ export default function IdeaListsPage() {
         subtitle="Turn an Amazon idea list into a curated shopping-guide post. MVP scores the products, picks the best, and links each one plus your full list."
       />
 
+      {/* How it works — explainer */}
+      <div className="rounded-xl border border-[#7C3AED]/25 bg-[#7C3AED]/[0.06] p-4 mt-4">
+        <p className="text-[13px] font-bold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">How it works</p>
+        <p className="text-[12px] text-[#4b4b4f] dark:text-[#b0b0b5] mb-3">
+          Turn any Amazon idea list into a ready-to-publish <strong>shopping guide</strong> on your blog. MVP reads the products, checks each one, ranks them and writes the whole post for you.
+        </p>
+        <div className="grid sm:grid-cols-3 gap-3 text-[12px]">
+          <div>
+            <p className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">1. Load a list</p>
+            <p className="text-[#4b4b4f] dark:text-[#b0b0b5] leading-snug"><strong>Paste a link</strong> (below) for a quick read of the first ~20 products, or <strong>sync with SCOUT</strong> (grid below) to pull <em>every</em> product from your storefront.</p>
+          </div>
+          <div>
+            <p className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">2. MVP ranks it</p>
+            <p className="text-[#4b4b4f] dark:text-[#b0b0b5] leading-snug">Every product is checked on Keepa (price, rating, reviews, demand, deals) and against your Creator Connections campaigns. Campaign products get priority; off-theme products are left out.</p>
+          </div>
+          <div>
+            <p className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">3. It writes the post</p>
+            <p className="text-[#4b4b4f] dark:text-[#b0b0b5] leading-snug">You pick the size (Top 10–20). MVP writes an SEO title, intro, a real blurb per product, a conclusion and a designed thumbnail — each pick with your affiliate link, plus a CTA to your full list.</p>
+          </div>
+        </div>
+        <p className="text-[11px] text-[#86868b] mt-3 leading-snug">
+          <strong>What to expect:</strong> the guide publishes straight to your blog (editable and deletable right here). A synced list pulls its products the moment you hit Create (a tab opens, reads it, closes itself). Each guide counts against your monthly generation limit.
+        </p>
+      </div>
+
+      {/* Paste a list URL — primary path */}
+      <div className="rounded-xl border border-black/5 dark:border-white/10 bg-white dark:bg-[#1c1c1e] p-4 mt-4">
+        <p className="text-[13px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">Paste an idea-list link</p>
+        <div className="flex flex-col sm:flex-row gap-2">
+          <input value={url} onChange={e => setUrl(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') void runScan() }} placeholder="https://www.amazon.com/shop/yourhandle/list/…" className="flex-1 rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm text-[#1d1d1f] dark:text-[#f5f5f7]" />
+          <button onClick={runScan} disabled={scanning || !url.trim()} className="shrink-0 inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" style={{ backgroundColor: PURPLE }}>
+            {scanning ? <Loader2 size={15} className="animate-spin" /> : <Search size={15} />}
+            {scanning ? 'Reading…' : 'Read list'}
+          </button>
+        </div>
+        <p className="text-[11px] text-[#86868b] mt-2">Quickest way in. A pasted link reads the first ~20 products. To use every product in a list, sync it with SCOUT below.</p>
+      </div>
+
       {/* Your synced idea lists (from SCOUT) */}
       <div className="mt-4">
         <div className="flex items-center justify-between mb-2">
@@ -191,7 +229,7 @@ export default function IdeaListsPage() {
         ) : synced.length === 0 ? (
           <div className="rounded-xl border border-dashed border-black/10 dark:border-white/15 p-4">
             <p className="text-[12px] text-[#4b4b4f] dark:text-[#b0b0b5]">
-              No lists synced yet. Open your Amazon storefront with the SCOUT extension installed and it&apos;ll sync your idea lists here. Or paste a list link below.
+              No lists synced yet. Open your Amazon storefront with the SCOUT extension installed and it&apos;ll sync your idea lists here. Or paste a list link above.
             </p>
             {storefrontUrl ? (
               <button onClick={() => openStorefront(storefrontUrl, false)} className="mt-3 inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-semibold text-white" style={{ backgroundColor: PURPLE }}>
@@ -241,19 +279,6 @@ export default function IdeaListsPage() {
             })}
           </div>
         )}
-      </div>
-
-      {/* Paste a list URL (fallback) */}
-      <div className="rounded-xl border border-black/5 dark:border-white/10 bg-white dark:bg-[#1c1c1e] p-4 mt-4">
-        <p className="text-[13px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">…or paste an idea-list link</p>
-        <div className="flex flex-col sm:flex-row gap-2">
-          <input value={url} onChange={e => setUrl(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') void runScan() }} placeholder="https://www.amazon.com/shop/yourhandle/list/…" className="flex-1 rounded-lg border border-black/10 dark:border-white/15 bg-transparent px-3 py-2 text-sm text-[#1d1d1f] dark:text-[#f5f5f7]" />
-          <button onClick={runScan} disabled={scanning || !url.trim()} className="shrink-0 inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" style={{ backgroundColor: PURPLE }}>
-            {scanning ? <Loader2 size={15} className="animate-spin" /> : <Search size={15} />}
-            {scanning ? 'Reading…' : 'Read list'}
-          </button>
-        </div>
-        <p className="text-[11px] text-[#86868b] mt-2">A pasted link reads the first ~20 items. Synced lists (via SCOUT) carry every product.</p>
       </div>
 
       {/* Selected list → pick count → generate */}
