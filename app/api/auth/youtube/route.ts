@@ -46,11 +46,18 @@ export async function GET(req: Request) {
   url.searchParams.set('redirect_uri', redirectUri)
   url.searchParams.set('response_type', 'code')
   url.searchParams.set('scope', [
-    'https://www.googleapis.com/auth/youtube',
+    // force-ssl is a full read+write SUPERSET of the plain `youtube` scope, so it
+    // alone covers every read (incl. caption download) and every write MVP does
+    // (videos.update metadata/status, thumbnails.set, playlistItems.insert). We
+    // request ONLY force-ssl so the restricted-scope footprint for Google
+    // verification is a single scope. The plain `youtube` scope was redundant and
+    // was dropped 2026-08 (existing grants are unaffected).
     'https://www.googleapis.com/auth/youtube.force-ssl',
     // Sensitive: lets MVP publish a video TO the creator's channel (Shorts
-    // cross-post). Requested on demand via intent=upload (incremental auth), or
-    // for everyone once the flag is flipped after Google verifies the scope.
+    // cross-post). Added ONLY on demand via intent=upload (incremental auth), or
+    // for everyone once the flag is flipped after Google verifies the scope — so
+    // a normal connect never requests upload and verification needs no upload
+    // demo video.
     ...((wantUpload || youtubeUploadEnabled()) ? ['https://www.googleapis.com/auth/youtube.upload'] : []),
   ].join(' '))
   url.searchParams.set('access_type', 'offline')
