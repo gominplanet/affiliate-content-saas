@@ -705,6 +705,17 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
   /** "Break frame" effect: run rembg to cut out the creator and composite
    *  them OVER the neon border. Off by default — enables in ~20s. */
   const [breakFrame, setBreakFrame] = useState(false)
+  /** Headline style toggle: false = polished statement headline (default),
+   *  true = curiosity question about the product + a matching facial reaction.
+   *  Remembered per browser so a creator who prefers questions keeps it. */
+  const [thumbQuestionMode, setThumbQuestionMode] = useState(false)
+  useEffect(() => {
+    try { setThumbQuestionMode(localStorage.getItem('mvp_thumb_question') === '1') } catch { /* ignore */ }
+  }, [])
+  const toggleThumbQuestion = (on: boolean) => {
+    setThumbQuestionMode(on)
+    try { localStorage.setItem('mvp_thumb_question', on ? '1' : '0') } catch { /* ignore */ }
+  }
   /** null = still checking (ping in progress), true/false = known state. */
   const [extensionInstalled, setExtensionInstalled] = useState<boolean | null>(null)
   /** Live status shown inside the Card 4 button while generating. */
@@ -1700,6 +1711,9 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           // "Break frame" effect: composites the creator OVER the neon border.
           // Off by default (costs ~20s for the rembg pass).
           breakFrame: breakFrame || undefined,
+          // Headline style: 'question' composes a curiosity question about the
+          // product + a matching facial reaction; default polished statement.
+          headlineStyle: thumbQuestionMode ? 'question' : 'statement',
         }),
       })
       const data = await safeJson(res)
@@ -1779,6 +1793,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           // gpt-image is the only engine now (matches the manual Generate button).
           textMode: 'graphic',
           breakFrame: breakFrame || undefined,
+          headlineStyle: thumbQuestionMode ? 'question' : 'statement',
         }),
       })
       const data = await safeJson(res)
@@ -2337,6 +2352,36 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                       </div>
                     </div>
                   )}
+
+                  {/* Headline style toggle — Polished (default) vs Question hook.
+                      Question mode makes the headline a curiosity question about
+                      the product + a matching facial reaction. Persists per browser. */}
+                  <div className="flex flex-col gap-1.5 px-1">
+                    <span className="text-[11px] font-semibold text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide">Headline style</span>
+                    <div className="inline-flex rounded-lg border border-[#d2d2d7] dark:border-[#3a3a3c] p-0.5 bg-white dark:bg-[#1c1c1e] w-full">
+                      <button
+                        type="button"
+                        disabled={generatingThumbnail}
+                        onClick={() => toggleThumbQuestion(false)}
+                        className={`flex-1 text-[12px] font-semibold px-3 py-1.5 rounded-md transition disabled:opacity-60 ${!thumbQuestionMode ? 'bg-[#7C3AED] text-white' : 'text-[#6e6e73] dark:text-[#ebebf0] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]'}`}
+                      >
+                        Polished
+                      </button>
+                      <button
+                        type="button"
+                        disabled={generatingThumbnail}
+                        onClick={() => toggleThumbQuestion(true)}
+                        className={`flex-1 text-[12px] font-semibold px-3 py-1.5 rounded-md transition disabled:opacity-60 ${thumbQuestionMode ? 'bg-[#7C3AED] text-white' : 'text-[#6e6e73] dark:text-[#ebebf0] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]'}`}
+                      >
+                        Question hook
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">
+                      {thumbQuestionMode
+                        ? 'MVP writes a curiosity question about the product (e.g. "Does it actually work?") and matches your expression to it.'
+                        : 'Your current polished benefit headline. Switch to Question hook for a clickier, question-style title.'}
+                    </p>
+                  </div>
 
                   {/* Describe your thumbnail — free-text creator direction folded
                       into the AI prompt (route's creatorDirectionClause). Optional:

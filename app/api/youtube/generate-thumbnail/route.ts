@@ -516,6 +516,15 @@ ANTI-CLICHÉ (non-negotiable): do NOT default to overused, generic hype phrases 
 
 OUTPUT: a strict JSON array of N_BRIEFS objects with keys line1, line2, emphasisWord, banner, palette, callouts (array of strings), concept, expression, pose. No prose, no markdown fences — just the JSON array.`
 
+// Curiosity-question override for the art-director briefs: every headline
+// becomes a short question, with a matching facial reaction, and hard-bans the
+// money/price/buy/amazon/"game changer" angles.
+const QUESTION_DIRECTIVE = `HEADLINE STYLE — CURIOSITY QUESTION (this overrides the headline guidance above): For EVERY brief, line1 + line2 must together form ONE short, punchy QUESTION about THIS product's real claim, effect, taste/feel, quality or result — the kind that makes someone need to click to find the answer. Examples of the vibe: a fat-burner → "DOES IT REALLY" / "BURN FAT???"; fish oil → "ANY FISHY" / "AFTERTASTE?"; a testosterone complex → "DOES THIS" / "ACTUALLY WORK???"; a shaver → "IS IT REALLY" / "THAT CLOSE?". End with a question mark ("?" or "???"). Set each brief's "expression" to a reaction that MATCHES its question — skeptical, doubtful, unsure, curious/intrigued, or wide-eyed surprised — so the face sells the question. The "banner" may be a short question or "".
+BANNED IN THE QUESTION (non-negotiable): NEVER mention money, price, cost, "cheap", "expensive", value, "worth it", "amazon", "purchase", or "buy"/"buying"/"bought"/"should I buy", and NEVER "game changer". Ask about performance, results, taste/feel, quality or living up to the hype — never about price or buying.`
+
+// Banned words for question headlines (mirrors art-director-pin.ts BANNED_Q).
+const BANNED_Q_THUMB = /\b(money|price|pricing|priced|cost|costs|costly|cheap|cheaper|expensive|amazon|purchase|purchasing|buy|buys|buying|bought|worth\s+(?:it|the)|game[-\s]?changer)\b/i
+
 async function designThumbnailBriefs(input: {
   count: number
   videoTitle: string
@@ -525,12 +534,17 @@ async function designThumbnailBriefs(input: {
   claimsSheet?: string
   lockedHeadline?: string | null
   noHuman?: boolean
+  headlineStyle?: 'statement' | 'question'
 }): Promise<ThumbBrief[]> {
   const n = Math.max(1, Math.min(5, Math.floor(input.count)))
+  const isQuestion = input.headlineStyle === 'question'
   const anthropic = createAnthropicClient()
   const clampBrief = (o: Record<string, unknown>, i: number): ThumbBrief => {
-    const l1 = stripDesignBrands(scrubBanned(String(o.line1 || '').trim())).toUpperCase().slice(0, 16)
-    const l2 = stripDesignBrands(scrubBanned(String(o.line2 || '').trim())).toUpperCase().slice(0, 22)
+    let l1 = stripDesignBrands(scrubBanned(String(o.line1 || '').trim())).toUpperCase().slice(0, 16)
+    let l2 = stripDesignBrands(scrubBanned(String(o.line2 || '').trim())).toUpperCase().slice(0, 22)
+    // Question mode: enforce the banned-word rule; fall back to a safe generic
+    // question if the model slipped a money/buy/amazon angle in.
+    if (isQuestion && BANNED_Q_THUMB.test(`${l1} ${l2}`)) { l1 = 'DOES IT'; l2 = 'ACTUALLY WORK?' }
     const calls = Array.isArray(o.callouts)
       ? (o.callouts as unknown[]).filter((c): c is string => typeof c === 'string' && c.trim().length > 0).map(c => stripDesignBrands(scrubBanned(c.trim())).slice(0, 28)).filter(Boolean).slice(0, 3)
       : []
@@ -563,7 +577,7 @@ async function designThumbnailBriefs(input: {
     const msg = await withAnthropicRetry(() => anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 1600,
-      system: ART_DIRECTOR_SYSTEM.replace(/N_BRIEFS/g, String(n)),
+      system: ART_DIRECTOR_SYSTEM.replace(/N_BRIEFS/g, String(n)) + (isQuestion ? `\n\n${QUESTION_DIRECTIVE}` : ''),
       messages: [{ role: 'user', content: userMsg }],
     }))
     recordAnthropicUsage(msg, {
@@ -922,6 +936,10 @@ export async function POST(request: Request) {
       // IG/story: when true (default for those formats) bake a bold "LINK IN BIO"
       // call-to-action into the design; false → keep the design clean of it.
       ctaLinkInBio,
+      // Thumbnail headline style. 'statement' (default) = the current polished
+      // benefit headline. 'question' = a curiosity question about the product,
+      // with a matching facial reaction. User toggle, off by default.
+      headlineStyle,
     } = await request.json() as {
       quickMode?: boolean
       videoTitle: string
@@ -1022,11 +1040,17 @@ export async function POST(request: Request) {
       format?: 'landscape' | 'pin' | 'ig' | 'fb' | 'story'
       briefKey?: string
       ctaLinkInBio?: boolean
+      headlineStyle?: 'statement' | 'question'
     }
 
-    // Sanitize the shared-brief key (opt-in; social composers only).
+    // Headline style: 'question' composes a curiosity question + matching face;
+    // anything else = the current polished statement style (default).
+    const wantQuestion = headlineStyle === 'question'
+    // Sanitize the shared-brief key (opt-in; social composers only). The style is
+    // folded in so a question brief is never served from a statement cache entry
+    // (or vice versa) for the same post set.
     const sharedBriefKey = typeof briefKey === 'string' && briefKey.trim()
-      ? briefKey.trim().slice(0, 200)
+      ? `${briefKey.trim().slice(0, 196)}${wantQuestion ? ':q' : ''}`
       : undefined
 
     const variantCount = Math.min(10, Math.max(1, Number(rawVariantCount) || 1))
@@ -1361,6 +1385,7 @@ export async function POST(request: Request) {
             claimsSheet: claimsSheetP,
             lockedHeadline: lockedHeadline || undefined,
             noHuman: true,
+            headlineStyle: wantQuestion ? 'question' : 'statement',
           }),
         })
         const productAbP = productImageUrl
@@ -1507,6 +1532,7 @@ export async function POST(request: Request) {
             productContext: gfxArtCtx,
             claimsSheet: claimsSheetGfx,
             lockedHeadline: lockedHeadline || undefined,
+            headlineStyle: wantQuestion ? 'question' : 'statement',
           }),
         })
 
