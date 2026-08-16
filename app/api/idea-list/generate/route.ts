@@ -68,8 +68,10 @@ export async function POST(request: Request) {
 
     const body = await request.json().catch(() => ({})) as {
       url?: string; items?: InItem[]; listTitle?: string; listUrl?: string; count?: number; listId?: string; asins?: string[]
+      headlineStyle?: 'statement' | 'question'
     }
     const count = Math.max(3, Math.min(20, Number(body.count) || 10))
+    const heroHeadlineStyle = body.headlineStyle === 'question' ? 'question' : 'statement'
 
     // 1. Resolve the source products, in order of preference:
     //    a synced list (SCOUT, full set) → inline items → read the URL (first ~20).
@@ -216,7 +218,7 @@ ${fullListCta}`)
         try {
           const ad = await generateArtDirectorBlogHero({
             productImageUrl: topImg, productTitle: postTitle || angle, productContext: angle,
-            userId: user.id, tier,
+            userId: user.id, tier, headlineStyle: heroHeadlineStyle,
           })
           if (ad?.data) heroB64 = ad.data
         } catch { /* fall through */ }
