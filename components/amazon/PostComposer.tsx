@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Loader2, User, Package, Wand2, Send, AlertCircle, ExternalLink, Check, CalendarClock } from 'lucide-react'
+import { HeadlineStyleToggle, useHeadlineStyle, headlineStyleValue } from '@/components/thumbnails/HeadlineStyleToggle'
 
 interface FaceModel { id: string; name: string }
 type Network = 'instagram' | 'facebook'
@@ -35,6 +36,7 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
   const [genError, setGenError] = useState<string | null>(null)
   const [postType, setPostType] = useState<'feed' | 'story'>('story') // IG only — story (9:16) is the link-in-bio default
   const [linkInBioCta, setLinkInBioCta] = useState(true) // IG only — bake "LINK IN BIO" into the design
+  const [question, setQuestion] = useHeadlineStyle()
 
   const [connected, setConnected] = useState<boolean | null>(null)
   const [caption, setCaption] = useState('')
@@ -88,6 +90,7 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
       ...(network === 'instagram' ? { ctaLinkInBio: linkInBioCta } : {}),
       ...(isUrl ? { productUrl: raw } : isAsin ? { asin: raw.toUpperCase() } : { productUrl: raw }),
       ...(mode === 'product' ? { noHuman: true } : { faceModelId: faceId }),
+      headlineStyle: headlineStyleValue(question),
     }
     try {
       const res = await fetch('/api/youtube/generate-thumbnail', {
@@ -102,7 +105,7 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
     } catch (err) {
       setGenError(err instanceof Error ? err.message : 'Design failed. Try again.')
     } finally { setGenBusy(false) }
-  }, [product, mode, faceId, network, cfg.format, postType, linkInBioCta])
+  }, [product, mode, faceId, network, cfg.format, postType, linkInBioCta, question])
 
   const publish = useCallback(async () => {
     if (!thumbUrl) return
@@ -190,6 +193,7 @@ export default function PostComposer({ network, presetProduct }: { network: Netw
             </span>
           </button>
         )}
+        <HeadlineStyleToggle question={question} onChange={setQuestion} disabled={genBusy} compact />
         <button onClick={generate} disabled={genBusy}
           className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-[#d2d2d7] dark:border-[#3a3a3c] text-sm font-semibold transition disabled:opacity-60" style={{ color: 'var(--text)' }}>
           {genBusy ? <><Loader2 size={16} className="animate-spin" /> Designing…</> : <><Wand2 size={16} /> {thumbUrl ? 'Regenerate design' : 'Generate design'}</>}

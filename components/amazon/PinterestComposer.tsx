@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Loader2, User, Package, Wand2, Send, AlertCircle, ExternalLink, Check, CalendarClock } from 'lucide-react'
+import { HeadlineStyleToggle, useHeadlineStyle, headlineStyleValue } from '@/components/thumbnails/HeadlineStyleToggle'
 
 const PIN_RED = '#E60023'
 interface FaceModel { id: string; name: string }
@@ -29,6 +30,7 @@ export default function PinterestComposer({ presetProduct }: { presetProduct?: {
   const [genBusy, setGenBusy] = useState(false)
   const [thumbUrl, setThumbUrl] = useState<string | null>(null)
   const [genError, setGenError] = useState<string | null>(null)
+  const [question, setQuestion] = useHeadlineStyle()
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [briefKey, setBriefKey] = useState('') // reused when cross-posting this design to IG/FB
 
@@ -103,6 +105,7 @@ export default function PinterestComposer({ presetProduct }: { presetProduct?: {
       briefKey: bk,
       ...(isUrl ? { productUrl: raw } : isAsin ? { asin: raw.toUpperCase() } : { productUrl: raw }),
       ...(mode === 'product' ? { noHuman: true } : { faceModelId: faceId }),
+      headlineStyle: headlineStyleValue(question),
     }
     try {
       const res = await fetch('/api/youtube/generate-thumbnail', {
@@ -117,7 +120,7 @@ export default function PinterestComposer({ presetProduct }: { presetProduct?: {
     } catch (err) {
       setGenError(err instanceof Error ? err.message : 'Thumbnail failed. Try again.')
     } finally { setGenBusy(false) }
-  }, [product, mode, faceId])
+  }, [product, mode, faceId, question])
 
   const publish = useCallback(async () => {
     if (!thumbUrl) return
@@ -190,6 +193,7 @@ export default function PinterestComposer({ presetProduct }: { presetProduct?: {
             {faces.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
           </select>
         )}
+        <HeadlineStyleToggle question={question} onChange={setQuestion} disabled={genBusy} compact />
         <button onClick={generate} disabled={genBusy}
           className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-[#d2d2d7] dark:border-[#3a3a3c] text-sm font-semibold transition disabled:opacity-60" style={{ color: 'var(--text)' }}>
           {genBusy ? <><Loader2 size={16} className="animate-spin" /> Designing…</> : <><Wand2 size={16} /> {thumbUrl ? 'Regenerate thumbnail' : 'Generate thumbnail'}</>}
