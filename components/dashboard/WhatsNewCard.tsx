@@ -17,7 +17,7 @@ import Link from 'next/link'
 import { Sparkles, ArrowUpRight, X } from 'lucide-react'
 
 // Bump this whenever UPDATES changes — auto-opens the modal once for everyone.
-const RELEASE_ID = '2026-08-13'
+const RELEASE_ID = '2026-08-16'
 const STORAGE_KEY = 'mvp_whats_new_seen'
 
 interface Update {
@@ -32,41 +32,42 @@ const UPDATES: Update[] = [
   {
     badge: 'NEW',
     tone: '#C2410C',
-    title: 'A plan built just for Amazon Influencers',
-    desc: 'New Amazon Influencer plan for storefront creators. Turn any product into a one-click video-review thumbnail, ready-to-post pins, Reels and Facebook designs with your face on them, publish to all three at once, and land paid brand deals. No blog or YouTube needed.',
-    href: '/pricing',
+    title: 'Turn any idea list into a shopping guide',
+    desc: 'Paste an Amazon idea list link, or pick one of your synced lists, and MVP builds a full ranked shopping guide. It scores every product on live price, rating, reviews, demand and current deals, writes an SEO title, intro, a real blurb per product and a conclusion, and designs the thumbnail. You pick the size, Top 10 to 20.',
+    href: '/idea-lists',
   },
   {
     badge: 'NEW',
-    tone: '#E60023',
-    title: 'Pin to your blog or straight to the product',
-    desc: 'The pin preview now lets you choose where a pin points: your blog post or the product page. It works out the right product even from guides and comparison posts, so a roundup pins to the item you actually meant.',
-    href: '/content',
+    tone: '#7C3AED',
+    title: 'You pick, or MVP picks',
+    desc: 'Run a guide on full auto and let MVP choose the best products, or switch to manual and tick the ones you want yourself. Either way it ranks every item in the list (not just the first 20) so you can see what is worth featuring. Products tied to your brand deals get priority.',
+    href: '/idea-lists',
   },
   {
     badge: 'IMPROVED',
-    tone: '#7C3AED',
-    title: 'Import your Creator Connections catalog and walk away',
-    desc: 'Catalog imports now merge on our servers in the background. Start it, close the tab, and it finishes on its own with a clear note when the merge is done. Live progress shows while it scans, and it reminds you to upload the complete catalog so nothing gets dropped.',
+    tone: '#E60023',
+    title: 'No more years in your titles',
+    desc: 'Post titles and thumbnails no longer stamp the year, so a guide you publish today still reads fresh next year. Evergreen by default, no re-editing later.',
   },
   {
     badge: 'FIXED',
     tone: '#0a84ff',
-    title: 'Pinterest previews no longer dead-end',
-    desc: 'When the Art Director design takes a moment, the pin preview now waits it out instead of failing with a generic error, and gives detailed renders more time to finish. Fewer retries, more finished pins.',
-  },
-  {
-    badge: 'IMPROVED',
-    tone: '#1877F2',
-    title: 'Simpler Facebook connection help',
-    desc: 'The Facebook fix guide drops the dead-end System Users steps for Business Manager pages, so the walkthrough matches what you actually see on screen and gets you connected faster.',
+    title: 'Refresh actually pulls new videos',
+    desc: 'On Video to Blog, the Refresh button now pulls your newest YouTube uploads and reloads, so a video you posted after your last sync shows up right away instead of staying hidden.',
+    href: '/content',
   },
   {
     badge: 'FIXED',
     tone: '#34c759',
-    title: 'The “posted” badge sticks',
-    desc: 'Once a post goes out, its social button reliably flips to “posted” even when the status lands a moment after the page loads. No more wondering whether it actually sent.',
-    href: '/content',
+    title: 'Campaign filters you can trust',
+    desc: '“Paying brands only” and “Has open spots” in CC Campaigns now filter exactly, no campaigns slipping through that do not fit what you asked for.',
+    href: '/cc-campaigns',
+  },
+  {
+    badge: 'IMPROVED',
+    tone: '#1877F2',
+    title: 'SCOUT stays on your own storefront',
+    desc: 'SCOUT now imports idea lists from your storefront only, never from other creators’ storefronts you happen to browse. Update to the latest SCOUT to get it.',
   },
 ]
 
