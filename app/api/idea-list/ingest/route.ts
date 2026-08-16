@@ -116,8 +116,11 @@ export async function GET() {
         .limit(100),
       sb.from('brand_profiles').select('amazon_storefront_url').eq('user_id', user.id).maybeSingle(),
     ])
+    // Hide non-list junk that older SCOUT builds occasionally captured (a
+    // "Subtotal"/"Cart" element that matched a /list/ link).
+    const JUNK_TITLE = /^(subtotal|total|cart|checkout|save[d]? for later|buy again|your orders?|wish ?list|see more|view all|add to list)$/i
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rows = (data ?? []) as any[]
+    const rows = ((data ?? []) as any[]).filter((r) => !JUNK_TITLE.test(String(r.title || '').trim()))
     const lists = rows.map((r) => {
       const items = Array.isArray(r.items) ? r.items : []
       // Cover: the storefront thumbnail if we have it, else the first captured

@@ -23,6 +23,12 @@
   const MVP_ITEMS = 'SCOUT_PUSH_IDEA_LIST_ITEMS'
   const LOG = '[SCOUT idea-lists]'
   const MAX_LISTS = 40            // safety cap on discovery
+  // Only sweep the whole storefront for idea lists when MVP asked us to (it opens
+  // the storefront with a #mvp-sync marker). A plain storefront visit does NOT
+  // trigger the full idea-list scan. Captured once at load so SPA nav can't lose it.
+  const MVP_TRIGGERED = /mvp-sync/i.test(location.hash + location.search)
+  // Non-list junk labels that occasionally match an a[href*="/list/"] on the page.
+  const JUNK_TITLE = /^(subtotal|total|cart|checkout|save[d]? for later|buy again|your orders?|wish ?list|see more|view all|add to list)$/i
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const send = (type, payload) => { try { const p = chrome.runtime.sendMessage(Object.assign({ type: type }, payload)); if (p && p.catch) p.catch(() => {}) } catch (e) {} }
 
@@ -96,10 +102,12 @@
       // sibling of the titled anchor, not inside it.
       const card = a.closest('li, [role="listitem"], [data-testid], article') || a.parentElement || a
       const label = (a.textContent || '').replace(/\s+/g, ' ').trim() || ((card.querySelector('h2,h3,[class*=title]') || {}).textContent || '')
+      const cleanLabel = (label || '').replace(/\s+/g, ' ').trim()
+      if (JUNK_TITLE.test(cleanLabel)) return   // e.g. a "Subtotal"/"Cart" link that isn't a real idea list
       const cnt = (card.innerText || '').match(/([\d,]+)\s+Items?\b/i)
       byId.set(id, {
         amazonListId: id,
-        title: (label || '').replace(/\s+/g, ' ').trim().slice(0, 200) || null,
+        title: cleanLabel.slice(0, 200) || null,
         url: listUrlFor(id),
         itemCount: cnt ? parseInt(cnt[1].replace(/,/g, ''), 10) : null,
         coverImage: bestImg(card) || bestImg(card.parentElement),
@@ -212,7 +220,11 @@
 
   // ── Runner: react to SPA navigation, debounce, backstop ─────────────────────
   let lt = null
-  const kick = () => { clearTimeout(lt); lt = setTimeout(() => { try { if (!onStorefront()) return; if (currentListId()) captureCurrentList(); else runStorefront() } catch (e) {} }, 2500) }
+  const kick = () => { clearTimeout(lt); lt = setTimeout(() => { try {
+    if (!onStorefront()) return
+    if (currentListId()) { captureCurrentList(); return }   // a single list page — always capture (intentional)
+    if (MVP_TRIGGERED) runStorefront()                       // full storefront scan ONLY when MVP asked
+  } catch (e) {} }, 2500) }
   let lastHref = location.href
   const onNav = () => { if (location.href !== lastHref) { lastHref = location.href; running = false; kick() } }
   try {
@@ -223,6 +235,6 @@
   } catch (e) {}
   try { new MutationObserver(() => onNav()).observe(document.documentElement, { childList: true, subtree: true }) } catch (e) {}
   try { setInterval(() => { onNav() }, 4000) } catch (e) {}
-  if (onStorefront()) badge('Active on your storefront — finding your idea lists…', 'work')
+  if (MVP_TRIGGERED && onStorefront() && !currentListId()) badge('Active on your storefront — finding your idea lists…', 'work')
   kick()
 })();
