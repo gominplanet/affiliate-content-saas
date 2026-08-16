@@ -86,9 +86,8 @@ export default function PrivacyPage() {
             &quot;Save as draft&quot;, or &quot;Publish to YouTube&quot;):
           </p>
           <ul className="list-disc ml-5 space-y-1 mt-2">
-            <li><strong>https://www.googleapis.com/auth/youtube</strong> — read your channel/videos and update your own video metadata, thumbnail, privacy and schedule.</li>
-            <li><strong>https://www.googleapis.com/auth/youtube.force-ssl</strong> — perform those same read/update operations over a secure connection, as required by the YouTube Data API.</li>
-            <li><strong>https://www.googleapis.com/auth/youtube.upload</strong> — publish a short clip you edited inside the App to your own channel (a single <code>videos.insert</code> call), only when you click &quot;Publish to YouTube&quot;. Nothing is ever uploaded automatically or to any channel other than the one you authorized.</li>
+            <li><strong>https://www.googleapis.com/auth/youtube.force-ssl</strong> — read your own channel and videos (including captions, to draft a post from what you said) and update the title, description, tags, thumbnail, privacy or schedule on your own videos, over a secure connection. This is the only scope a normal connection requests.</li>
+            <li><strong>https://www.googleapis.com/auth/youtube.upload</strong> — <em>optional, requested only if you turn on publishing short clips to YouTube.</em> Publishes a short clip you edited inside the App to your own channel (a single <code>videos.insert</code> call), only when you click &quot;Publish to YouTube&quot;. Nothing is ever uploaded automatically or to any channel other than the one you authorized.</li>
           </ul>
           <p className="mt-3">
             We never access channels other than the authenticated user&apos;s own, never post,
