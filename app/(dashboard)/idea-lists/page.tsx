@@ -11,6 +11,7 @@ import { toast } from 'sonner'
 import { Loader2, Search, Sparkles, ExternalLink, ListChecks, Pencil, RefreshCw } from 'lucide-react'
 import { errText } from '@/lib/err-text'
 import { createBrowserClient } from '@/lib/supabase/client'
+import { HeadlineStyleToggle, useHeadlineStyle, headlineStyleValue } from '@/components/thumbnails/HeadlineStyleToggle'
 
 
 interface Item { asin: string; title: string | null; image: string | null }
@@ -31,6 +32,7 @@ export default function IdeaListsPage() {
   const [scanning, setScanning] = useState(false)
   const [active, setActive] = useState<Active | null>(null)
   const [count, setCount] = useState(10)
+  const [question, setQuestion] = useHeadlineStyle()
   const [generating, setGenerating] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [done, setDone] = useState<{ url: string; title: string; picked: number; postId: string | null; wpPostId: number | null } | null>(null)
@@ -164,8 +166,8 @@ export default function IdeaListsPage() {
       setGenerating(true); setDone(null)
       try {
         const payload = active.source === 'synced'
-          ? { listId: active.listId, asins, count: asins.length, listTitle: active.title, listUrl: active.url }
-          : { items: active.items, asins, count: asins.length, listTitle: active.title, listUrl: active.url }
+          ? { listId: active.listId, asins, count: asins.length, listTitle: active.title, listUrl: active.url, headlineStyle: headlineStyleValue(question) }
+          : { items: active.items, asins, count: asins.length, listTitle: active.title, listUrl: active.url, headlineStyle: headlineStyleValue(question) }
         const res = await fetch('/api/idea-list/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
         const d = await res.json()
         if (!res.ok || !d.ok) throw new Error(d.error || 'Could not build the guide.')
@@ -196,8 +198,8 @@ export default function IdeaListsPage() {
     setGenerating(true); setDone(null)
     try {
       const payload = active.source === 'synced'
-        ? { listId: active.listId, count }
-        : { items: active.items, listTitle: active.title, listUrl: active.url, count }
+        ? { listId: active.listId, count, headlineStyle: headlineStyleValue(question) }
+        : { items: active.items, listTitle: active.title, listUrl: active.url, count, headlineStyle: headlineStyleValue(question) }
       const res = await fetch('/api/idea-list/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       const d = await res.json()
       if (!res.ok || !d.ok) throw new Error(d.error || 'Could not build the guide.')
@@ -292,6 +294,9 @@ export default function IdeaListsPage() {
                   ))}
                 </div>
                 <p className="text-[11px] text-[#86868b] mt-1.5">MVP checks every product in the list and ranks by your sales, demand, deals, campaigns and ratings, then picks the best.</p>
+                <div className="mt-3 max-w-xs">
+                  <HeadlineStyleToggle question={question} onChange={setQuestion} disabled={generating || syncing} />
+                </div>
               </div>
               <button onClick={generate} disabled={generating || syncing} className="shrink-0 inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-[14px] font-bold text-white disabled:opacity-60" style={{ backgroundColor: PURPLE }}>
                 {(generating || syncing) ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
