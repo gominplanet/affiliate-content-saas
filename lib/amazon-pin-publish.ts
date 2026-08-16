@@ -201,7 +201,11 @@ export async function publishAmazonPin(opts: {
       // create+recover doesn't repeat on every publish.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const heal: any = { pinterest_board_id: pin.boardId, pinterest_board_name: PinterestService.RECOVERY_BOARD }
-      if ((intRow.pinterest_pin_target || '').trim()) heal.pinterest_pin_target = pin.boardId
+      // Only heal pinterest_pin_target when IT was the board that actually failed
+      // — i.e. no explicit opts.boardId override took precedence in resolution.
+      // Otherwise a per-post/scheduled boardId failing would wrongly overwrite a
+      // still-good saved default.
+      if (!(opts.boardId || '').trim() && (intRow.pinterest_pin_target || '').trim()) heal.pinterest_pin_target = pin.boardId
       const { createAdminClient } = await import('@/lib/supabase/admin')
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await (createAdminClient() as any).from('integrations').update(heal).eq('user_id', healUserId)
