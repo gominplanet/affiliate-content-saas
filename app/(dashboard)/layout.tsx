@@ -4,6 +4,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { canSeeNav } from '@/lib/feature-access'
 import type { Tier } from '@/lib/tier'
 import DashboardShellV2 from '@/components/layout/DashboardShellV2'
+import LastSeenHeartbeat from '@/components/layout/LastSeenHeartbeat'
 import { Toaster } from '@/components/ui/toaster'
 import MigrationDriftBanner from '@/components/admin/MigrationDriftBanner'
 import { HelpDeskProvider, HelpDeskPanel } from '@/components/HelpDeskSidebar'
@@ -107,6 +108,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <Toaster />
       {/* Help Desk panel — persists across all dashboard pages */}
       <HelpDeskPanel />
+      {/* Throttled activity ping so the admin Users list shows real last-seen. */}
+      <LastSeenHeartbeat />
     </HelpDeskProvider>
   )
 }
