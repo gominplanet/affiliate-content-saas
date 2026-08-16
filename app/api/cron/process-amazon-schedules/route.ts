@@ -73,7 +73,7 @@ export async function GET(request: Request) {
     try {
       const { data: intRaw } = await admin
         .from('integrations')
-        .select('tier,pinterest_access_token,pinterest_board_id,instagram_user_id,instagram_access_token,facebook_page_id,facebook_page_access_token,geniuslink_api_key,geniuslink_api_secret,amazon_associates_tag')
+        .select('tier,user_id,pinterest_access_token,pinterest_board_id,pinterest_pin_target,instagram_user_id,instagram_access_token,facebook_page_id,facebook_page_access_token,geniuslink_api_key,geniuslink_api_secret,amazon_associates_tag')
         .eq('user_id', row.user_id).maybeSingle()
       const intRow = decryptIntegrationRow(intRaw) as (SocialIntegration & { tier?: string }) | null
       const tier = normalizeTier(intRow?.tier) as Tier

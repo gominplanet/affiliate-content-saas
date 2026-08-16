@@ -30,9 +30,10 @@ export async function POST(request: Request) {
 
   const { data: rawInt } = await supabase
     .from('integrations')
-    .select('tier,pinterest_access_token,pinterest_board_id,geniuslink_api_key,geniuslink_api_secret,amazon_associates_tag')
+    .select('tier,user_id,pinterest_access_token,pinterest_board_id,pinterest_pin_target,geniuslink_api_key,geniuslink_api_secret,amazon_associates_tag')
     .eq('user_id', user.id).single()
-  const intRow = decryptIntegrationRow(rawInt) as (PinIntegration & { tier?: string }) | null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const intRow = decryptIntegrationRow(rawInt as any) as (PinIntegration & { tier?: string }) | null
   const tier = (intRow?.tier as Tier) ?? 'trial'
 
   if (!tierAllowsSocial(tier, 'pinterest')) {

@@ -19,6 +19,7 @@ export interface PinIntegration {
   user_id?: string | null
   pinterest_access_token?: string | null
   pinterest_board_id?: string | null
+  pinterest_pin_target?: string | null
   geniuslink_api_key?: string | null
   geniuslink_api_secret?: string | null
   amazon_associates_tag?: string | null
@@ -185,7 +186,9 @@ export async function publishAmazonPin(opts: {
 
   // Publish.
   const pinterest = new PinterestService(intRow.pinterest_access_token)
-  const boardId = (opts.boardId || intRow.pinterest_board_id || '').trim()
+  // Explicit board pick (board picker) wins; else the legacy stored id; else a
+  // default board we create on demand.
+  const boardId = (opts.boardId || intRow.pinterest_pin_target || intRow.pinterest_board_id || '').trim()
     || (await pinterest.findOrCreateBoard('Reviews')).id
   // Resilient: the stored pinterest_board_id can be a stale sandbox board (frozen
   // at connect time during Pinterest trial access). On the sandbox error this
