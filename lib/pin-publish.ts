@@ -138,11 +138,15 @@ export async function publishPinForPost(args: PublishArgs): Promise<{ pinId: str
     // sandbox board is never reached for this user again.
     if (pin.recovered && ig.user_id) {
       try {
+        // Also move an explicit pin_target that turned out to be a sandbox board
+        // onto the recovered one, so the failed create+recover doesn't repeat
+        // every publish (the pin_target shadows pinterest_board_id in resolution).
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const heal: any = { pinterest_board_id: pin.boardId, pinterest_board_name: PinterestService.RECOVERY_BOARD }
+        if ((ig.pinterest_pin_target || '').trim()) heal.pinterest_pin_target = pin.boardId
         const { createAdminClient } = await import('@/lib/supabase/admin')
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (createAdminClient() as any).from('integrations')
-          .update({ pinterest_board_id: pin.boardId, pinterest_board_name: PinterestService.RECOVERY_BOARD })
-          .eq('user_id', ig.user_id)
+        await (createAdminClient() as any).from('integrations').update(heal).eq('user_id', ig.user_id)
       } catch { /* best-effort heal — the pin already published */ }
     }
     return { pinId: pin.id }
