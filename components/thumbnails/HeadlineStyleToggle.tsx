@@ -13,15 +13,38 @@ import { useEffect, useState } from 'react'
 
 const STORAGE_KEY = 'mvp_thumb_question'
 
-/** Persisted boolean: true = question hook, false = polished statement. */
+/**
+ * Persisted boolean: true = question hook, false = polished statement.
+ *
+ * Syncs with the ACCOUNT default (integrations.thumbnail_headline_style) so the
+ * choice also reaches the automatic surfaces (blog hero, background Social Push
+ * pins). localStorage gives an instant initial value; the account fetch then
+ * reconciles, and every change writes both localStorage and the account.
+ */
 export function useHeadlineStyle(): [boolean, (on: boolean) => void] {
   const [question, setQuestion] = useState(false)
   useEffect(() => {
+    // Instant: last known browser value.
     try { setQuestion(localStorage.getItem(STORAGE_KEY) === '1') } catch { /* ignore */ }
+    // Reconcile with the account default (authoritative across devices).
+    let alive = true
+    fetch('/api/settings/thumbnail-style')
+      .then(r => r.json())
+      .then(d => {
+        if (!alive || typeof d?.question !== 'boolean') return
+        setQuestion(d.question)
+        try { localStorage.setItem(STORAGE_KEY, d.question ? '1' : '0') } catch { /* ignore */ }
+      })
+      .catch(() => { /* keep the localStorage value */ })
+    return () => { alive = false }
   }, [])
   const set = (on: boolean) => {
     setQuestion(on)
     try { localStorage.setItem(STORAGE_KEY, on ? '1' : '0') } catch { /* ignore */ }
+    // Persist as the account default (fire-and-forget) so the automatic surfaces honour it.
+    fetch('/api/settings/thumbnail-style', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: on }),
+    }).catch(() => { /* non-fatal — localStorage still drives the interactive surfaces */ })
   }
   return [question, set]
 }

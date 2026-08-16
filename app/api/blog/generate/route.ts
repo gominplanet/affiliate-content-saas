@@ -2,6 +2,7 @@ import { NextResponse, after } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getAuthAndOwner } from '@/lib/agency-auth'
+import { getAccountHeadlineStyle } from '@/lib/thumbnail-style'
 import { maybeCreateBlogGeniuslink } from '@/lib/blog-share-url'
 import { createClaudeService } from '@/services/claude'
 import { createWordPressService } from '@/services/wordpress'
@@ -2101,6 +2102,7 @@ async function handleGenerate(request: Request) {
             productContext: rawDescription?.slice(0, 700),
             userId: user.id,
             tier: (wp?.tier as string) ?? null,
+            headlineStyle: await getAccountHeadlineStyle(supabase, user.id),
           })
           if (hero) {
             const media = await wpService.uploadImageFromBase64(hero.data, `${youtubeVideoId || slug}-adhero.jpg`, hero.mediaType)

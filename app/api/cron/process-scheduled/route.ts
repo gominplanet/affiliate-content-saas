@@ -48,6 +48,7 @@ import { ensureAffiliateGeniuslink } from '@/lib/blog-share-url'
 import { resolveGeniuslinkGroupId } from '@/lib/geniuslink-group'
 import { parseLinkPrefs, linkPrefFor, composeCaption, primaryCardUrl, effectiveDisclosure, youtubeWatchUrl } from '@/lib/social-link-mode'
 import { buildPinAssets, composePinDescription } from '@/lib/pin-assets'
+import { getAccountHeadlineStyle } from '@/lib/thumbnail-style'
 import { ensureDisclaimer, AFFILIATE_DISCLAIMER_DEFAULT } from '@/lib/social-disclaimer'
 
 // Vercel cron functions run with a generous timeout but we still want
@@ -781,7 +782,7 @@ async function publishOne(
         // Without it, buildPinAssets skips the art-director path and composites
         // text over the post thumbnail, so scheduled pins looked off-brand vs
         // the preview (the exact mismatch a creator reported).
-        assets = await buildPinAssets(fullPost ?? post, { userId: row.user_id, tier: (integration as any).tier ?? null }, { artDirector: true })
+        assets = await buildPinAssets(fullPost ?? post, { userId: row.user_id, tier: (integration as any).tier ?? null }, { artDirector: true, headlineStyle: await getAccountHeadlineStyle(admin, row.user_id) })
       } catch (e) {
         console.warn('[cron/pinterest] buildPinAssets failed — falling back to thumbnail:', e instanceof Error ? e.message : String(e))
       }

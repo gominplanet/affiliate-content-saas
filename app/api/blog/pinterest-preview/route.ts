@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { buildPinAssets } from '@/lib/pin-assets'
+import { getAccountHeadlineStyle } from '@/lib/thumbnail-style'
 import { resolveBlogPostId } from '@/lib/resolve-post-id'
 import { syntheticWpPost } from '@/lib/wp-post-fallback'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
@@ -76,7 +77,7 @@ export async function POST(request: NextRequest) {
   // user can pin, instead of a dead button.
   let a: Awaited<ReturnType<typeof buildPinAssets>>
   try {
-    a = await buildPinAssets(p, { userId: user.id, tier: ig?.tier ?? null }, { artDirector: true })
+    a = await buildPinAssets(p, { userId: user.id, tier: ig?.tier ?? null }, { artDirector: true, headlineStyle: await getAccountHeadlineStyle(supabase, user.id) })
   } catch (err) {
     console.error('[pinterest-preview] buildPinAssets threw:', err instanceof Error ? (err.stack || err.message) : err)
     a = {

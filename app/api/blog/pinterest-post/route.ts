@@ -8,6 +8,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { publishPinForPost, PinPublishError } from '@/lib/pin-publish'
 import { buildPinAssets } from '@/lib/pin-assets'
+import { getAccountHeadlineStyle } from '@/lib/thumbnail-style'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } from '@/lib/social-cap'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
@@ -89,7 +90,7 @@ export async function POST(request: NextRequest) {
       const { data: fullPost } = await (supabase as any)
         .from('blog_posts').select('*').eq('id', postId).eq('user_id', user.id).maybeSingle()
       if (fullPost) {
-        const a = await buildPinAssets(fullPost, { userId: user.id, tier: null }, { artDirector: true })
+        const a = await buildPinAssets(fullPost, { userId: user.id, tier: null }, { artDirector: true, headlineStyle: await getAccountHeadlineStyle(supabase, user.id) })
         if (a.imageBase64) { effImageBase64 = a.imageBase64; effMediaType = a.mediaType }
       }
     } catch { /* compose failed — fall back to fallbackImageUrl (thumbnail) */ }

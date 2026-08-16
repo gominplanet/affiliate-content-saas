@@ -54,7 +54,7 @@ export async function buildPinAssets(
   // single pin). DEFAULT is the cheap path — composite the post's EXISTING
   // image into the vertical pin, no fresh gen — which is what scheduled/bulk
   // pushes use so a burst of N pins doesn't fire N image generations.
-  opts?: { aiScene?: boolean; artDirector?: boolean },
+  opts?: { aiScene?: boolean; artDirector?: boolean; headlineStyle?: 'statement' | 'question' },
 ): Promise<PinAssets> {
   // Apply the user's LEARN voice profile to the pin copy too (whatever
   // parts they filled in). Best-effort — a fetch failure must not block
@@ -256,6 +256,7 @@ Return ONLY valid JSON with these exact keys:
       productContext: [fields.main_benefit, fields.trust_factor].filter(Boolean).join(' · '),
       userId: ctx.userId,
       tier: ctx.tier,
+      headlineStyle: opts?.headlineStyle,
     })
   }
 
