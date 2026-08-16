@@ -28,6 +28,7 @@ import { encryptIntegrationWrite } from '@/lib/integration-secrets'
 import { refreshThreadsToken } from '@/services/threads'
 import { refreshLongLivedToken as refreshInstagramToken } from '@/services/instagram'
 import { refreshPinterestToken } from '@/services/pinterest'
+import { probeAndStoreConnections } from '@/lib/connection-probe'
 
 export const maxDuration = 300
 
@@ -194,5 +195,33 @@ export async function GET(request: Request) {
   }
   await mapPool(accounts, REFRESH_CONCURRENCY, processAcc)
 
-  return NextResponse.json({ ok: true, scanned: rows.length, tally })
+  // ── Proactive connection health: Facebook + YouTube ────────────────────────
+  // These two die SILENTLY (Meta/Google invalidate the token; the UI keeps a
+  // false green because it only checks "is a token stored"). The reactive
+  // dead-channel alert only trips after N failed scheduled posts, so a creator
+  // can sit disconnected for weeks and churn before it fires. Probe the REAL
+  // tokens here nightly and stamp connection_health, so the dashboard banner can
+  // flag a dead connection the day it dies — for every user, not just the ones
+  // who happen to open the dashboard.
+  const health = { facebook: { dead: 0, ok: 0 }, youtube: { dead: 0, ok: 0 } }
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: connRows } = await (admin as any)
+      .from('integrations')
+      .select('user_id,facebook_page_id,facebook_page_access_token,youtube_oauth_refresh_token,youtube_oauth_access_token,connection_health')
+      .or('facebook_page_access_token.not.is.null,youtube_oauth_refresh_token.not.is.null')
+      .limit(5000)
+    const probeRows = (connRows ?? []) as Array<{ user_id: string } & Record<string, unknown>>
+    await mapPool(probeRows, REFRESH_CONCURRENCY, async (r) => {
+      try {
+        const result = await probeAndStoreConnections(admin, r.user_id, r as unknown as import('@/lib/connection-probe').ProbeRow)
+        if (result.facebook) (result.facebook.dead ? health.facebook.dead++ : health.facebook.ok++)
+        if (result.youtube) (result.youtube.dead ? health.youtube.dead++ : health.youtube.ok++)
+      } catch { /* per-user probe never breaks the batch */ }
+    })
+  } catch (e) {
+    console.error('[cron/refresh-social-tokens] connection health probe failed', e instanceof Error ? e.message : String(e))
+  }
+
+  return NextResponse.json({ ok: true, scanned: rows.length, tally, health })
 }

@@ -71,6 +71,7 @@ export async function POST(request: Request) {
     // A manual reconnect is a fresh, working connection — clear any dead-channel
     // streak so the "reconnect Facebook" nag and auto-skip stop immediately.
     try { await clearChannelFailures(supabase, user.id, 'facebook') } catch { /* non-fatal */ }
+    try { const { clearConnectionHealth } = await import('@/lib/connection-probe'); await clearConnectionHealth(supabase, user.id, 'facebook') } catch { /* non-fatal */ }
   } catch (e) {
     return NextResponse.json({ error: `Could not save the connection: ${e instanceof Error ? e.message : 'unknown error'}` }, { status: 500 })
   }
