@@ -2379,6 +2379,9 @@ export default function ContentPage() {
   const [fromLinkOpen, setFromLinkOpen] = useState(false)
   const [syncProgress, setSyncProgress] = useState<{ pulled: number; pages: number } | null>(null)
   const [loadingMore, setLoadingMore] = useState(false)
+  // Header "Refresh" busy state — set while it pulls newly-uploaded videos from
+  // YouTube (the incremental sync below), so the button shows it's working.
+  const [refreshing, setRefreshing] = useState(false)
   const [loading, setLoading] = useState(true)
   const [nextPageToken, setNextPageToken] = useState<string | null>(null)
   const [dismissed, setDismissed] = useState<Set<string>>(new Set())
@@ -2878,7 +2881,21 @@ export default function ContentPage() {
   const refreshActiveTabRef = useRef<() => void>(() => {})
   const lastAutoRefreshRef = useRef<number>(0)
   refreshActiveTabRef.current = () => {
-    load() // always reload underlying videos — drives the Horizontal/Vertical tabs
+    // On the video tabs, Refresh should actually pull newly-uploaded YouTube
+    // videos (not just re-read the DB) — that's what a user expects "Refresh"
+    // to do here. Pull the newest from YouTube first, then reload the grid.
+    if (activeTab === 'horizontal' || activeTab === 'vertical') {
+      if (refreshing || syncing) return
+      setRefreshing(true)
+      void (async () => {
+        const got = await syncNewVideos()
+        await load()
+        if (got > 0) toast.success(`Pulled ${got} new video${got === 1 ? '' : 's'} from YouTube.`)
+        setRefreshing(false)
+      })()
+    } else {
+      load() // reload underlying videos anyway (drives counts on other tabs)
+    }
     if (activeTab === 'posts' && !postsLoading) loadWpPosts()
     if (activeTab === 'scheduled' && !scheduledLoading) loadScheduled()
   }
@@ -3411,6 +3428,37 @@ export default function ContentPage() {
     })
   }
 
+  // Incremental "get my newest videos" pull, wired to the header Refresh on the
+  // video tabs. New uploads always sort to the TOP of the channel feed, so we
+  // grab the newest page(s) and stop the moment a page brings nothing new —
+  // a 3,000-video channel refreshes in one or two API calls instead of a full
+  // 60-page back-catalogue crawl (that's what the separate "Sync videos" button
+  // is for). `fresh: true` skips the 5-min first-page cache so a video uploaded
+  // seconds ago actually comes through.
+  async function syncNewVideos(): Promise<number> {
+    let token: string | null = null
+    let pages = 0
+    let totalNew = 0
+    try {
+      do {
+        const res = await fetch('/api/youtube/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fresh: true, ...(token ? { pageToken: token } : {}) }),
+        })
+        const data: { newCount?: number; synced?: number; nextPageToken?: string | null; error?: string } =
+          await res.json().catch(() => ({}))
+        if (data.error) break
+        totalNew += Number(data.newCount || 0)
+        token = data.nextPageToken ?? null
+        pages += 1
+        // Reached the already-synced part of the catalogue — stop.
+        if (!data.newCount) break
+      } while (token && pages < 5)
+    } catch { /* non-fatal — the DB reload still runs */ }
+    return totalNew
+  }
+
   async function syncVideos(channelId?: string) {
     setSyncing(true)
     setSyncProgress({ pulled: 0, pages: 0 })
@@ -3890,13 +3938,15 @@ export default function ContentPage() {
             <SitePicker value={siteId} onChange={setSiteId} compact />
             <button
               onClick={() => refreshActiveTabRef.current()}
-              disabled={loading || postsLoading || scheduledLoading}
-              title="Reload the active tab from the database / WordPress"
+              disabled={loading || postsLoading || scheduledLoading || refreshing || syncing}
+              title={(activeTab === 'horizontal' || activeTab === 'vertical')
+                ? 'Pull your newest YouTube videos and reload'
+                : 'Reload the active tab from the database / WordPress'}
               className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border text-[13px] font-medium disabled:opacity-50"
               style={{ borderColor: 'var(--border)', color: 'var(--text-soft)', background: 'var(--surface)' }}
             >
-              <RefreshCw size={14} className={(loading || postsLoading || scheduledLoading) ? 'animate-spin' : ''} />
-              {(loading || postsLoading || scheduledLoading) ? 'Refreshing…' : 'Refresh'}
+              <RefreshCw size={14} className={(loading || postsLoading || scheduledLoading || refreshing) ? 'animate-spin' : ''} />
+              {(loading || postsLoading || scheduledLoading || refreshing) ? 'Refreshing…' : 'Refresh'}
             </button>
           </div>
         }

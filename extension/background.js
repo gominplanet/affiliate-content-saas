@@ -3473,10 +3473,16 @@ function studioInjectSaveInPage(videoId, opts) {
       out.debug.resp = window.__mvpYtInjectResp
       const r = window.__mvpYtInjectResp
       out.ok = !!(r && r.status >= 200 && r.status < 300 && (window.__mvpYtInjected > 0))
+      // "Uncertain" = Studio's Save DID fire, but our hook never observed the
+      // matching save request (YouTube can send it over a transport we don't see,
+      // or complete it just after our wait window). The save itself usually
+      // persisted — Studio shows the fields set — so this must NOT read as a hard
+      // failure. The page renders it as an amber "check Studio" note, not a red X.
+      out.uncertain = !out.ok && saveFound && !window.__mvpYtSawMeta
       out.detail = out.ok ? 'Injected into Studio save ✓'
         : !saveFound ? 'Save never enabled — couldn’t dirty the form'
           : (window.__mvpYtSawMeta && !window.__mvpYtInjected) ? ('save was for a different video id (saw ' + window.__mvpYtSawVideoId + ')')
-            : !window.__mvpYtSawMeta ? 'Save fired but no metadata_update was sent'
+            : !window.__mvpYtSawMeta ? 'Studio saved, but SCOUT couldn’t confirm the disclosure fields — open the video’s Details tab in Studio to check (it’s usually already set).'
               : ('metadata_update ' + (r ? r.status : 'no-response'))
       window.__mvpYtInject = null
       return out

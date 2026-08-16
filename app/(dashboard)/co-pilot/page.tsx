@@ -1251,9 +1251,14 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           // the Yes/No from Studio Settings.
           notify: proSettings.notifySubscribers,
         })
-        if (finishDoDetails) steps.push({ step: 'details', ok: inj.ok, detail: inj.ok ? 'Paid promotion + AI disclosure set' : (inj.detail || inj.error || 'failed'), debug: inj.debug })
-        if (finishDoMonetize) steps.push({ step: 'monetization', ok: inj.ok, detail: inj.ok ? 'Monetization on + ad rating submitted' : (inj.detail || inj.error || 'failed') })
-        if (!inj.ok) {
+        // `uncertain` = Studio's Save fired but SCOUT couldn't confirm our fields
+        // rode along (YouTube sent the save over a path we don't observe, or it
+        // landed just after our wait). The save itself almost always persisted —
+        // Studio shows the fields set — so treat it as a soft note, not a failure.
+        const softOk = inj.ok || inj.uncertain
+        if (finishDoDetails) steps.push({ step: 'details', ok: inj.ok, skipped: inj.uncertain, detail: inj.ok ? 'Paid promotion + AI disclosure set' : (inj.detail || inj.error || 'failed'), debug: inj.debug })
+        if (finishDoMonetize) steps.push({ step: 'monetization', ok: inj.ok, skipped: inj.uncertain, detail: inj.ok ? 'Monetization on + ad rating submitted' : (inj.detail || inj.error || 'failed') })
+        if (!softOk) {
           setFinishError(
             inj.error === 'not-installed'
               ? 'SCOUT isn’t installed or didn’t respond. Reload SCOUT and try again.'

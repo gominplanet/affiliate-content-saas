@@ -1063,15 +1063,17 @@ export async function requestYtApplyDisclosures(
 export async function requestYtInjectDisclosures(
   videoId: string,
   opts: YtDisclosureOpts,
-): Promise<{ ok: boolean; detail?: string; error?: string; debug?: Record<string, unknown> }> {
+): Promise<{ ok: boolean; uncertain?: boolean; detail?: string; error?: string; debug?: Record<string, unknown> }> {
   if (!videoId) return { ok: false, error: 'no-video-id' }
   if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
-  const resp = await sendToExtension<{ ok?: boolean; detail?: string; error?: string; debug?: Record<string, unknown> }>(
+  const resp = await sendToExtension<{ ok?: boolean; uncertain?: boolean; detail?: string; error?: string; debug?: Record<string, unknown> }>(
     { type: 'MVP_YT_INJECT_DISCLOSURES', videoId, opts },
     60000,
   )
   if (!resp) return { ok: false, error: 'timeout' }
-  return { ok: !!resp.ok, detail: resp.detail, error: resp.error, debug: resp.debug }
+  // `uncertain` = Studio saved but SCOUT couldn't confirm the fields rode along.
+  // Not a failure — the caller renders it as a soft "check Studio" note.
+  return { ok: !!resp.ok, uncertain: !!resp.uncertain, detail: resp.detail, error: resp.error, debug: resp.debug }
 }
 
 export interface VideoDownloadResult {
