@@ -28,6 +28,7 @@ import FirstWinChecklist from '@/components/dashboard/FirstWinChecklist'
 import ChannelStats from '@/components/dashboard/ChannelStats'
 import NewsBanner from '@/components/dashboard/NewsBanner'
 import ReconnectBanner from '@/components/dashboard/ReconnectBanner'
+import YouTubeVerifiedNudge from '@/components/dashboard/YouTubeVerifiedNudge'
 import WhatsNewCard from '@/components/dashboard/WhatsNewCard'
 import ReferralBanner from '@/components/dashboard/ReferralBanner'
 import WpUpdateBanner from '@/components/dashboard/WpUpdateBanner'
@@ -383,6 +384,10 @@ export default async function DashboardPage() {
             surfaces here (proactive probe) so a creator fixes it in one click
             instead of churning over posts that quietly stopped going out. */}
         <ReconnectBanner />
+        {/* One-time, positive nudge for users who connected YouTube before we
+            were Google-verified — reconnect once for the verified, durable link.
+            Only shown when YouTube is actually connected. */}
+        <YouTubeVerifiedNudge show={youtubeConnected} />
         <NewsBanner />
         <WpUpdateBanner />
         {int?.wordpress_url ? <AmazonSitesReminder siteUrl={int.wordpress_url as string} /> : null}
