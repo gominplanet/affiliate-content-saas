@@ -2082,7 +2082,11 @@ async function handleGenerate(request: Request) {
     // Replace the default (YouTube) featured image with a designed 16:9 product
     // hero. Runs deferred so publish stays fast; on ANY failure the YouTube thumb
     // set synchronously above stands, so the post is never left thumbnail-less.
-    if (artDirectorThumb && !existingWpPostId) {
+    // Runs on BOTH new AND existing posts — the checkbox literally says "Update
+    // my post thumbnail", so a re-generate against a live post must apply it too
+    // (it was previously gated to new posts only, which silently did nothing on
+    // regenerations — the "it didn't work" report).
+    if (artDirectorThumb) {
       try {
         const adTag = `[blog-adthumb:${v.id?.toString().slice(0, 8) ?? 'video'}]`
         const ref = await resolveProductReference({
