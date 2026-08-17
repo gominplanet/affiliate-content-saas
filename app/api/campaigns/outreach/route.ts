@@ -19,6 +19,7 @@ import { createAnthropicClient } from '@/lib/anthropic'
 import { scrubBanned, BANNED_RULE } from '@/lib/scrub'
 import { recordUsage, usageFromAnthropic } from '@/lib/ai-usage'
 import { tierAllowsCampaigns, normalizeTier, type Tier } from '@/lib/tier'
+import { spendGate } from '@/lib/ai-spend'
 
 export const maxDuration = 60
 
@@ -78,6 +79,9 @@ export async function POST(request: Request) {
     if (!tierAllowsCampaigns(tier)) {
       return NextResponse.json({ error: 'Brand messaging is a Pro feature.' }, { status: 403, headers: CORS })
     }
+
+    const gate = await spendGate(userId, tier)
+    if (gate) return gate
 
     const body = await request.json().catch(() => ({})) as OutreachBody
     const brandRaw = (body.brand || '').toString().trim()

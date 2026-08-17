@@ -17,6 +17,7 @@ import { recordSocialPermalink } from '@/lib/social-permalink'
 import { socialPermalink } from '@/lib/brand-recap'
 import { syntheticWpPost } from '@/lib/wp-post-fallback'
 import { resolvePinProductLink } from '@/lib/pin-product-link'
+import { spendGate } from '@/lib/ai-spend'
 
 export const maxDuration = 60
 
@@ -35,6 +36,9 @@ export async function POST(request: NextRequest) {
       { status: 403 },
     )
   }
+
+  const gate = await spendGate(user.id, tier)
+  if (gate) return gate
 
   const { postId: rawPostId, title, description, imageBase64, mediaType, fallbackImageUrl, postUrl, linkTarget } = await request.json()
   if (!rawPostId) return NextResponse.json({ error: 'postId required' }, { status: 400 })

@@ -20,6 +20,7 @@ import { getWalmartProductLinks } from '@/services/partnerboost'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { getExternalKey } from '@/lib/external-keys'
 import { toUserMessage } from '@/lib/friendly-error'
+import { spendGate } from '@/lib/ai-spend'
 
 export const runtime = 'nodejs'
 export const maxDuration = 120
@@ -95,6 +96,9 @@ export async function POST(request: Request) {
         affiliateUrl,
       }
     }))
+
+    const gate = await spendGate(user.id, tier)
+    if (gate) return gate
 
     const client = createAnthropicClient()
     const nicheLabel = nicheLabelFrom(niches)

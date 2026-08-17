@@ -16,6 +16,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createWordPressService } from '@/services/wordpress'
 import { applyPostFixes, fixableFailing, type FixablePost } from '@/lib/seo-fix'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
+import { spendGate } from '@/lib/ai-spend'
 
 export const maxDuration = 300
 
@@ -140,6 +141,9 @@ export async function POST(request: Request) {
       })),
     })
   }
+
+  const gate = await spendGate(user.id, wp?.tier)
+  if (gate) return gate
 
   // Apply — batched so we stay under the time budget. Per-post outcomes are
   // surfaced so the UI can show WHY nothing was fixed when fixed=0 (the

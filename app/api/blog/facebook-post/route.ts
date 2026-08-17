@@ -20,6 +20,7 @@ import { ensureAffiliateGeniuslink } from '@/lib/blog-share-url'
 import { resolveGeniuslinkGroupId } from '@/lib/geniuslink-group'
 import { parseLinkPrefs, linkPrefFor, composeCaption, primaryCardUrl, effectiveDisclosure, youtubeWatchUrl } from '@/lib/social-link-mode'
 import { blogShareUrl } from '@/lib/blog-share-url'
+import { spendGate } from '@/lib/ai-spend'
 
 export const maxDuration = 60
 
@@ -122,6 +123,9 @@ export async function POST(request: NextRequest) {
     if (!dryRun && fbAccounts.length === 0) {
       return NextResponse.json({ error: 'Facebook not connected' }, { status: 400 })
     }
+
+    const gate = await spendGate(user.id, tier)
+    if (gate) return gate
 
     // ── 5. Resolve Facebook review — override or fresh Claude gen ─────────────
     let reviewText: string

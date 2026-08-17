@@ -13,6 +13,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { getAuthAndOwner } from '@/lib/agency-auth'
+import { spendGate } from '@/lib/ai-spend'
 import {
   VOICE_QUESTIONS,
   STYLE_AXES,
@@ -79,6 +80,9 @@ export async function POST() {
     .join('\n\n') ?? ''
 
   const ctx = { userId: user.id, tier: (intRow?.tier as string) ?? null }
+
+  const gate = await spendGate(user.id, intRow?.tier)
+  if (gate) return gate
 
   // Run both inferences in parallel: the structured voice/style profile
   // and the narrative text fields.

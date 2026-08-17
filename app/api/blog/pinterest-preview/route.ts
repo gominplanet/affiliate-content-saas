@@ -15,6 +15,7 @@ import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { createWordPressService } from '@/services/wordpress'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { resolvePinProductLink } from '@/lib/pin-product-link'
+import { spendGate } from '@/lib/ai-spend'
 
 // The Art Director pin does a Claude brief + a slow gpt-image-2 render + product-
 // image fetches, which routinely runs past 60s. At 60 Vercel killed the function
@@ -63,6 +64,8 @@ export async function POST(request: NextRequest) {
       { status: 403 },
     )
   }
+  const gate = await spendGate(user.id, ig?.tier)
+  if (gate) return gate
   // No board required to PREVIEW — the publish step resolves a board
   // (per-category, auto-created). Fresh/sandbox accounts have none yet.
 

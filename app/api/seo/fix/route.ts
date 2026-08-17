@@ -12,6 +12,7 @@ import { createWordPressService } from '@/services/wordpress'
 import { applyPostFixes, SEO_FIX_TYPES, type SeoFixType, type FixablePost } from '@/lib/seo-fix'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { getAuthAndOwner } from '@/lib/agency-auth'
+import { spendGate } from '@/lib/ai-spend'
 
 export const maxDuration = 120
 
@@ -76,6 +77,9 @@ export async function POST(request: Request) {
     // row stops showing the misleading near-zero score).
     await supabase.from('blog_posts').update({ content: live.content, ...(post.title ? {} : { title: live.title }) }).eq('id', post.id)
   }
+
+  const gate = await spendGate(ownerId, wp?.tier)
+  if (gate) return gate
 
   try {
     const result = await applyPostFixes({
