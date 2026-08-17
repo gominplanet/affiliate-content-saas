@@ -75,8 +75,10 @@ export default function SocialComposer() {
 
   return (
     <div className="flex flex-col gap-5">
-      {/* Saved finds shelf */}
-      <div className="rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/[0.03] p-5">
+      {/* Saved finds shelf — order-last so it sits at the BOTTOM, under the
+          composer + network tabs (which now sit right under the connections
+          strip). Clicking "Make post" scrolls up to the composer. */}
+      <div className="order-last rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/[0.03] p-5">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <Bookmark size={15} className="text-[#d97706]" />
