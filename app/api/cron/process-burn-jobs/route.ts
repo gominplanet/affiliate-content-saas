@@ -17,6 +17,7 @@ import { researchProductContext, composeReelCaption } from '@/lib/ig-burn'
 import { publishMedia } from '@/services/instagram'
 import { recordReachSample } from '@/lib/reach-pulse'
 import { recordUsage } from '@/lib/ai-usage'
+import { checkSpendCeiling } from '@/lib/ai-spend'
 import { metaEnabled } from '@/lib/feature-flags'
 
 export const maxDuration = 300
@@ -73,13 +74,25 @@ export async function GET(request: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: integ } = await admin
       .from('integrations')
-      .select('instagram_user_id,instagram_access_token')
+      .select('instagram_user_id,instagram_access_token,tier')
       .eq('user_id', job.user_id)
       .single()
     const igUserId = integ?.instagram_user_id as string | undefined
     const igToken = maybeDecrypt(integ?.instagram_access_token) as string | undefined
     if (!igUserId || !igToken) {
       throw new Error('Instagram not connected')
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const tier = ((integ as any)?.tier as string | null) ?? null
+
+    // Per-user AI-spend ceiling — a burn is a paid Cloudinary render + 2 LLM
+    // calls, so an over-ceiling account must not keep burning. Fail the job with
+    // a clear message (rather than loop it) — the ceiling resets on the 1st.
+    const spend = await checkSpendCeiling(job.user_id, tier)
+    if (!spend.allowed) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await admin.from('ig_burn_jobs').update({ status: 'failed', error_message: 'Monthly usage limit reached — resets on the 1st. Re-queue after that.' }).eq('id', job.id)
+      return NextResponse.json({ ok: true, processed: 0, skipped: 'over_spend_ceiling', jobId: job.id })
     }
 
     // 1. Burn the overlay — a CTA box sticker (PNG) when set, else the caption
@@ -100,10 +113,10 @@ export async function GET(request: Request) {
           stickerDurationSec: burnDurationSec,
         })
     if (!burned?.url) throw new Error(`burn failed: ${getLastOverlayError() || 'unknown'}`)
-    recordUsage({ userId: job.user_id, tier: null, feature: 'instagram_burn', model: 'cloudinary', images: 1 })
+    recordUsage({ userId: job.user_id, tier, feature: 'instagram_burn', model: 'cloudinary', images: 1 })
 
     // 2. Research + compose Reel caption.
-    const ctx = { userId: job.user_id, tier: null as string | null }
+    const ctx = { userId: job.user_id, tier }
     const productContext = job.product ? await researchProductContext(job.product, ctx) : ''
     const reelCaption = productContext ? await composeReelCaption(productContext, ctx) : null
 

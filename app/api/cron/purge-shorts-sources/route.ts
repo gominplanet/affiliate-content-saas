@@ -56,8 +56,14 @@ export async function GET(request: Request) {
       if (!rmErr) storageDeleted++
     }
     if (r.cloudinary_source_id) {
-      await deleteVideoAsset(r.cloudinary_source_id as string)
-      cloudinaryDeleted++
+      // Wrap so one Cloudinary error doesn't throw out of the loop and abort the
+      // remaining purges this tick, and count only on a real success.
+      try {
+        await deleteVideoAsset(r.cloudinary_source_id as string)
+        cloudinaryDeleted++
+      } catch (e) {
+        console.warn('[purge-shorts] cloudinary delete failed', { id: r.id, error: e instanceof Error ? e.message : String(e) })
+      }
     }
     const { error: upErr } = await sb.from('youtube_videos')
       .update({ source_video_url: null, source_video_uploaded_at: null, cloudinary_source_id: null })

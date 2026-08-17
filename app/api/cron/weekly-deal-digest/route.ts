@@ -20,6 +20,7 @@ import { createWordPressService } from '@/services/wordpress'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { applyPostFixes } from '@/lib/seo-fix'
+import { checkSpendCeiling } from '@/lib/ai-spend'
 import { pickDigestDeals, resolveAffiliateUrl, generateDigestContent, nicheLabelFrom, keywordSlug, type DigestDeal } from '@/lib/weekly-digest'
 
 export const runtime = 'nodejs'
@@ -77,6 +78,20 @@ export async function GET(req: Request) {
 
       const rows = await pickDigestDeals(admin, niches, 5)
       if (rows.length < 3) { skipped++; results.push({ user: u.user_id, status: 'too_few_deals' }); await stamp(); continue }
+
+      // Per-user AI-spend ceiling — a cron must honor the same dollar cap the
+      // interactive routes do, or an over-ceiling account keeps getting billed
+      // for digests. Stamp so we don't re-select them daily for the rest of the
+      // month (the ceiling resets on the 1st).
+      const spend = await checkSpendCeiling(u.user_id, u.tier)
+      if (!spend.allowed) { skipped++; results.push({ user: u.user_id, status: 'over_spend_ceiling' }); await stamp(); continue }
+
+      // Claim this user NOW, before the AI generation + WordPress publish. If the
+      // function is killed mid-publish (the 270s deadline or a crash), the post
+      // may already be live; without an up-front claim the next daily run would
+      // re-select the same user and publish a SECOND identical digest + re-bill.
+      // A weekly digest missed on a rare mid-run failure is the acceptable cost.
+      await stamp()
 
       const tag = (u.amazon_associates_tag || '').trim() || null
       const deals: DigestDeal[] = []
@@ -139,13 +154,13 @@ export async function GET(req: Request) {
         } catch (err) { console.warn('[weekly-digest] SEO fix failed (post live):', err instanceof Error ? err.message : err) }
       }
 
-      await stamp()
       published++
       results.push({ user: u.user_id, status: 'published' })
     } catch (err) {
+      // Already claimed up front, so a failure here just means this cycle is lost
+      // for the user (no duplicate, no re-bill); they're picked up next week.
       console.error('[weekly-digest] failed for', u.user_id, err instanceof Error ? err.message : err)
       results.push({ user: u.user_id, status: 'error' })
-      await stamp() // don't retry a hard failure until next cycle
     }
   }
 
