@@ -27,15 +27,17 @@ export async function GET(request: Request) {
   if (auth !== `Bearer ${secret}`) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const admin = createAdminClient()
-  // Pull every integration that has a WP URL. Limited to 500/run so a
-  // huge user base doesn't OOM the function; we'll process the rest
-  // on the next tick (a chunk_offset would be more correct but at
-  // current scale this is fine).
+  // Pull WP-connected integrations, STALEST cache first (nulls = never
+  // refreshed) so successive daily runs rotate through everyone. Without the
+  // ordering the default row order meant the same first-500 refreshed every run
+  // and the tail past 500 never updated once the base grew beyond 500 sites.
+  // Capped at 500/run so a huge base doesn't OOM the function.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: rows, error } = await admin
     .from('integrations')
     .select('user_id,wordpress_url')
     .not('wordpress_url', 'is', null)
+    .order('wp_post_count_updated_at', { ascending: true, nullsFirst: true })
     .limit(500)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
