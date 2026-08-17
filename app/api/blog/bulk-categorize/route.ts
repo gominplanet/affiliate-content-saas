@@ -4,6 +4,7 @@ import { createWordPressService } from '@/services/wordpress'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
+import { spendGate } from '@/lib/ai-spend'
 
 export const maxDuration = 300
 
@@ -123,6 +124,14 @@ export async function POST(request: Request) {
       })
     }
 
+    // Tier comes from per-user integrations (separate from per-site creds) —
+    // needed for the spend gate below AND the usage telemetry after the call.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: tierRow } = await supabase
+      .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+    const gate = await spendGate(user.id, (tierRow as { tier?: string } | null)?.tier)
+    if (gate) return gate
+
     // ── Ask Claude to classify each title into ONE of the brand niches ─
     const client = createAnthropicClient()
     const titlesList = needsCat
@@ -151,11 +160,6 @@ ${titlesList}`,
       }],
     })
 
-    // Tier comes from per-user integrations (separate from per-site creds).
-    // Fetched lazily here because the rest of bulk-categorize doesn't need it.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: tierRow } = await supabase
-      .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
     recordAnthropicUsage(response, {
       userId: user.id, tier: (tierRow as { tier?: string } | null)?.tier,
       feature: 'bulk_categorize', model: 'claude-haiku-4-5-20251001',

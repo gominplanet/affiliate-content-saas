@@ -30,6 +30,7 @@ import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } from '@/lib/social-cap'
 import { resolveSocialAccount } from '@/lib/social-accounts'
 import { metaEnabledForUser } from '@/lib/feature-flags'
+import { spendGate } from '@/lib/ai-spend'
 
 const ASIN_RE = /\b([A-Z0-9]{10})\b/
 
@@ -218,6 +219,8 @@ export async function POST(request: NextRequest) {
         if (feedCaption.length > 2200) feedCaption = feedCaption.slice(0, 2199) + '…'
       } else {
         const plainContent = (post.content as string ?? '').replace(/<[^>]+>/g, '').slice(0, 1500)
+        const gate = await spendGate(user.id, tier)
+        if (gate) return gate
         const anthropic = createAnthropicClient()
         const postTypeLabel = kind === 'image' ? 'IMAGE FEED POST' : 'REEL'
         const msg = await anthropic.messages.create({

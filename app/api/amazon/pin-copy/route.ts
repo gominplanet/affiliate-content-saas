@@ -9,6 +9,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { writePinCopy } from '@/lib/amazon-pin-publish'
+import { spendGate } from '@/lib/ai-spend'
 
 export const maxDuration = 30
 
@@ -24,6 +25,9 @@ export async function POST(request: Request) {
   if (!tierAllowsSocial(tier, 'pinterest')) {
     return NextResponse.json({ error: 'Not on your plan.' }, { status: 403 })
   }
+
+  const gate = await spendGate(user.id, tier)
+  if (gate) return gate
 
   const copy = await writePinCopy({ userId: user.id, tier, productTitle: body.productTitle, productUrl: body.productUrl, asin: body.asin })
   return NextResponse.json({ ok: true, ...copy })

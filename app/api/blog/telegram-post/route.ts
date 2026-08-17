@@ -24,6 +24,7 @@ import { learnProfileToPrompt } from '@/lib/learn'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } from '@/lib/social-cap'
 import { resolveBlogPostId } from '@/lib/resolve-post-id'
+import { spendGate } from '@/lib/ai-spend'
 
 export const maxDuration = 60
 
@@ -121,6 +122,8 @@ export async function POST(request: NextRequest) {
         : ''
       const learnBlock = learnProfileToPrompt(brand?.learn_profile)
 
+      const gate = await spendGate(user.id, tier)
+      if (gate) return gate
       const anthropic = createAnthropicClient()
       const msg = await anthropic.messages.create({
         model: 'claude-haiku-4-5-20251001',

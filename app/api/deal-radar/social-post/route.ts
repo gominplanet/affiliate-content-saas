@@ -21,6 +21,7 @@ import { canUseDealRadar } from '@/lib/feature-access'
 import { QUICK_POST_PLATFORMS, type QuickPostPlatform } from '@/lib/deal-social-publish'
 import { executeDealQuickPost } from '@/lib/deal-quick-post'
 import { toUserMessage } from '@/lib/friendly-error'
+import { spendGate } from '@/lib/ai-spend'
 
 export const runtime = 'nodejs'
 export const maxDuration = 120
@@ -107,6 +108,9 @@ export async function POST(request: Request) {
     }
 
     // ── Post now ────────────────────────────────────────────────────────────
+    const gate = await spendGate(user.id, tier)
+    if (gate) return gate
+
     const out = await executeDealQuickPost({
       db: supabase, userId: user.id, tier, intRow: intRow ?? null,
       asin, platforms, story: wantStory,

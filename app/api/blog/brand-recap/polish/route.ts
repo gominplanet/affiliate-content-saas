@@ -12,6 +12,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { recordUsage } from '@/lib/ai-usage'
 import { scrubBanned } from '@/lib/scrub'
 import { toUserMessage } from '@/lib/friendly-error'
+import { spendGate } from '@/lib/ai-spend'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -36,6 +37,13 @@ export async function POST(request: Request) {
     // Pull out every URL so we can verify the model kept them all intact.
     const urls = message.match(/https?:\/\/[^\s)]+/g) ?? []
     const toneHint = TONE_HINT[tone || 'warm'] || TONE_HINT.warm
+
+    // Spend gate — this route has no tier of its own, so read it here (the only
+    // integrations lookup in the route) to apply the per-tier ceiling.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: intRow } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+    const gate = await spendGate(user.id, (intRow as { tier?: string } | null)?.tier)
+    if (gate) return gate
 
     const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
     const resp = await client.messages.create({

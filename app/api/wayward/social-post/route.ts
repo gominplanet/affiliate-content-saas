@@ -16,6 +16,7 @@ import { QUICK_POST_PLATFORMS, type QuickPostPlatform } from '@/lib/deal-social-
 import { executeWaywardQuickPost } from '@/lib/wayward-quick-post'
 import { getExternalKey } from '@/lib/external-keys'
 import { toUserMessage } from '@/lib/friendly-error'
+import { spendGate } from '@/lib/ai-spend'
 
 export const runtime = 'nodejs'
 export const maxDuration = 120
@@ -47,6 +48,9 @@ export async function POST(request: Request) {
     const platforms = (Array.isArray(body.platforms) ? body.platforms : [])
       .map((p) => String(p)).filter((p): p is QuickPostPlatform => QUICK_POST_PLATFORMS.includes(p as QuickPostPlatform))
     if (!platforms.length) return NextResponse.json({ error: 'Pick at least one platform.' }, { status: 400 })
+
+    const gate = await spendGate(user.id, tier)
+    if (gate) return gate
 
     const out = await executeWaywardQuickPost({
       db: supabase, userId: user.id, tier, intRow: intRow ?? null, waywardToken,

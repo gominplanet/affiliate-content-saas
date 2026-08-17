@@ -12,6 +12,7 @@ import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } 
 import { metaEnabledForUser } from '@/lib/feature-flags'
 import { resolveBlogPostId } from '@/lib/resolve-post-id'
 import { recordSocialPermalink } from '@/lib/social-permalink'
+import { spendGate } from '@/lib/ai-spend'
 
 const DISCLAIMER = '#ad — As an Amazon Associate I earn from qualifying purchases.'
 
@@ -84,6 +85,8 @@ export async function POST(request: NextRequest) {
     if (overrideText) {
       bodyText = overrideText
     } else {
+      const gate = await spendGate(user.id, tier)
+      if (gate) return gate
       const anthropic = createAnthropicClient()
       const learnBlock = learnProfileToPrompt(brand?.learn_profile)
       const msg = await anthropic.messages.create({

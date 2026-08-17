@@ -17,6 +17,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordUsage, usageFromAnthropic } from '@/lib/ai-usage'
 import { normalizeTier, type Tier } from '@/lib/tier'
+import { spendGate } from '@/lib/ai-spend'
 
 export const maxDuration = 60
 
@@ -108,6 +109,9 @@ export async function POST() {
       ]
       return NextResponse.json({ suggestions, grounded: false })
     }
+
+    const gate = await spendGate(user.id, tier)
+    if (gate) return gate
 
     // AI: turn the real data into actionable next moves.
     const client = createAnthropicClient()

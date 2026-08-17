@@ -17,6 +17,7 @@ import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { applyPostFixes } from '@/lib/seo-fix'
 import { resolveAffiliateUrl, generateDigestContent, nicheLabelFrom, keywordSlug, type DigestDeal, type DigestDealRow } from '@/lib/weekly-digest'
 import { toUserMessage } from '@/lib/friendly-error'
+import { spendGate } from '@/lib/ai-spend'
 
 export const runtime = 'nodejs'
 export const maxDuration = 120
@@ -72,6 +73,9 @@ export async function POST(request: Request) {
         affiliateUrl: await resolveAffiliateUrl(r.asin, r.title, tag, intRow?.geniuslink_api_key ?? null, intRow?.geniuslink_api_secret ?? null),
       })),
     )
+
+    const gate = await spendGate(user.id, tier)
+    if (gate) return gate
 
     const client = createAnthropicClient()
     const nicheLabel = nicheLabelFrom(niches)

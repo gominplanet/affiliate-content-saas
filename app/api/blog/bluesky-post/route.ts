@@ -14,6 +14,7 @@ import { resolvePostAffiliateLink } from '@/lib/ig-dm'
 import { ensureAffiliateGeniuslink } from '@/lib/blog-share-url'
 import { resolveGeniuslinkGroupId } from '@/lib/geniuslink-group'
 import { parseLinkPrefs, linkPrefFor, primaryCardUrl, youtubeWatchUrl } from '@/lib/social-link-mode'
+import { spendGate } from '@/lib/ai-spend'
 
 export const maxDuration = 60
 
@@ -125,6 +126,8 @@ export async function POST(request: NextRequest) {
     if (overrideText) {
       postText = overrideText
     } else {
+      const gate = await spendGate(user.id, tier)
+      if (gate) return gate
       const anthropic = createAnthropicClient()
       const plainContent = (post.content as string ?? '')
         .replace(/<[^>]+>/g, '')

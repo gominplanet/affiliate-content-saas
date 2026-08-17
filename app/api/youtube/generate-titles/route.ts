@@ -14,6 +14,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { generateProductTitleOptions } from '@/lib/title-options'
+import { spendGate } from '@/lib/ai-spend'
 
 export const maxDuration = 30
 
@@ -34,6 +35,9 @@ export async function POST(request: Request) {
     .from('integrations')
     .select('tier').eq('user_id', user.id).single()
   const tier = (integ?.tier as string) ?? 'trial'
+
+  const gate = await spendGate(user.id, tier)
+  if (gate) return gate
 
   const titles = await generateProductTitleOptions({
     videoTitle,
