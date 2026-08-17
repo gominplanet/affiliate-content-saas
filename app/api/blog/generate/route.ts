@@ -9,6 +9,7 @@ import { createWordPressService } from '@/services/wordpress'
 import { getValidYouTubeToken, createYouTubeOAuthService } from '@/services/youtube'
 import { YoutubeTranscript } from 'youtube-transcript'
 import { checkUsageLimit, checkGenerationLimit, TIERS, nextTierFor, allowedBlogImages, normalizeTier, type Tier } from '@/lib/tier'
+import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 import { spendGate } from '@/lib/ai-spend'
 import { saveJobCheckpoint, loadJobCheckpoint } from '@/lib/generation-jobs'
 import { scrubBanned } from '@/lib/scrub'
@@ -2089,38 +2090,59 @@ async function handleGenerate(request: Request) {
     if (artDirectorThumb) {
       try {
         const adTag = `[blog-adthumb:${v.id?.toString().slice(0, 8) ?? 'video'}]`
-        const ref = await resolveProductReference({
-          uploadedUrl: (v.product_image_url as string | null)?.trim() || null,
-          title: (v.title as string | null) ?? null,
-          description: rawDescription,
-          asin: effectiveAsin ?? null,
-          wordpressUrl: site.wordpress_url ?? null,
-          traceTag: adTag,
-          userId: user.id,
-          tier: (wp?.tier as string) ?? null,
-        })
-        if (ref.productImageUrl) {
-          const hero = await generateArtDirectorBlogHero({
-            productImageUrl: ref.productImageUrl,
-            productTitle: ref.productTitle || generated.title,
-            productContext: rawDescription?.slice(0, 700),
+        // Paid action (gpt-image render) → must consume from the user's per-tier
+        // thumbnail allowance, same counter the Thumbnail Generator enforces
+        // (PRIMARY_FEATURE.thumbnail + yt_thumb_graphic; the hero records
+        // yt_thumb_graphic below so it's counted). Over cap → skip the AD hero,
+        // keep the YouTube thumb; the post still publishes.
+        const thumbCapLimit = TIERS[tier]?.thumbnailsPerMonth ?? null
+        let overThumbCap = false
+        if (typeof thumbCapLimit === 'number') {
+          const cap = await checkUsageCap(
+            supabase, user.id,
+            [...PRIMARY_FEATURE.thumbnail, 'yt_thumb_graphic'],
+            thumbCapLimit,
+            (wp?.subscription_period_start as string | undefined) ?? null,
+            (wp?.subscription_period_end as string | undefined) ?? null,
+          )
+          overThumbCap = !!cap?.exceeded
+        }
+        if (overThumbCap) {
+          console.warn(`${adTag} thumbnail cap reached for tier ${tier} — keeping YouTube thumb`)
+        } else {
+          const ref = await resolveProductReference({
+            uploadedUrl: (v.product_image_url as string | null)?.trim() || null,
+            title: (v.title as string | null) ?? null,
+            description: rawDescription,
+            asin: effectiveAsin ?? null,
+            wordpressUrl: site.wordpress_url ?? null,
+            traceTag: adTag,
             userId: user.id,
             tier: (wp?.tier as string) ?? null,
-            headlineStyle: await getAccountHeadlineStyle(supabase, user.id),
           })
-          if (hero) {
-            const media = await wpService.uploadImageFromBase64(hero.data, `${youtubeVideoId || slug}-adhero.jpg`, hero.mediaType)
-            if (media?.id) {
-              await wpService.updatePost(wpPost.id, { featured_media: media.id })
-              heroImageUrl = media.source_url || heroImageUrl
-              schemaProductImage = media.source_url || schemaProductImage
-              console.log(`${adTag} set Art Director hero`, { mediaId: media.id })
+          if (ref.productImageUrl) {
+            const hero = await generateArtDirectorBlogHero({
+              productImageUrl: ref.productImageUrl,
+              productTitle: ref.productTitle || generated.title,
+              productContext: rawDescription?.slice(0, 700),
+              userId: user.id,
+              tier: (wp?.tier as string) ?? null,
+              headlineStyle: await getAccountHeadlineStyle(supabase, user.id),
+            })
+            if (hero) {
+              const media = await wpService.uploadImageFromBase64(hero.data, `${youtubeVideoId || slug}-adhero.jpg`, hero.mediaType)
+              if (media?.id) {
+                await wpService.updatePost(wpPost.id, { featured_media: media.id })
+                heroImageUrl = media.source_url || heroImageUrl
+                schemaProductImage = media.source_url || schemaProductImage
+                console.log(`${adTag} set Art Director hero`, { mediaId: media.id })
+              }
+            } else {
+              console.warn(`${adTag} hero generation returned null — keeping YouTube thumb`)
             }
           } else {
-            console.warn(`${adTag} hero generation returned null — keeping YouTube thumb`)
+            console.warn(`${adTag} no product image resolved — keeping YouTube thumb`)
           }
-        } else {
-          console.warn(`${adTag} no product image resolved — keeping YouTube thumb`)
         }
       } catch (e) {
         console.warn('[blog-adthumb] failed — keeping YouTube thumb:', e instanceof Error ? e.message : String(e))
