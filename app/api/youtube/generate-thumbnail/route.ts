@@ -593,8 +593,31 @@ async function designThumbnailBriefs(input: {
     const briefs = arr.slice(0, n).map(clampBrief).filter(b => b.line1 || b.line2)
     if (briefs.length > 0) return briefs
   } catch { /* fall through to the copy-only fallback below */ }
-  // Fallback: no art direction — reuse the existing headline generator so the
-  // graphic path still gets valid line1/line2 and just uses the static brief.
+  // Question mode fallback: the statement copy generator below writes CTR
+  // headlines (one angle is money/price framing) and applies NO banned-word
+  // check, so using it here would silently drop the question style AND could
+  // ship a banned price headline. Return safe, varied generic questions instead
+  // — honors the toggle and can never emit a banned word.
+  if (isQuestion) {
+    const SAFE_Q: Array<{ line1: string; line2: string; expression: string }> = [
+      { line1: 'DOES IT', line2: 'ACTUALLY WORK?', expression: 'skeptical raised eyebrow' },
+      { line1: 'IS IT', line2: 'ANY GOOD?', expression: 'curious intrigued look' },
+      { line1: 'DOES IT', line2: 'REALLY WORK?', expression: 'doubtful unsure' },
+      { line1: 'DOES IT', line2: 'LIVE UP?', expression: 'wide-eyed surprised' },
+      { line1: 'LEGIT', line2: 'OR HYPE?', expression: 'skeptical raised eyebrow' },
+    ]
+    return Array.from({ length: n }, (_, i): ThumbBrief => {
+      const q = SAFE_Q[i % SAFE_Q.length]
+      return {
+        angle: ANGLE_ROTATION[i % ANGLE_ROTATION.length],
+        line1: q.line1, line2: q.line2, emphasisWord: '',
+        decoration: 'none', concept: '', palette: '', callouts: [], banner: '',
+        expression: input.noHuman ? '' : q.expression, pose: '',
+      }
+    })
+  }
+  // Statement-mode fallback: reuse the existing headline generator so the graphic
+  // path still gets valid line1/line2 and just uses the static brief.
   const copies = await generateThumbCopies(input.videoTitle, n, input.productContext, input.claimsSheet)
   return copies.map<ThumbBrief>(c => ({ ...c, concept: '', palette: '', callouts: [], banner: '', expression: '', pose: '' }))
 }

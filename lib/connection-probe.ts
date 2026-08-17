@@ -89,9 +89,20 @@ export async function probeAndStoreConnections(
   ])
   // Merge onto any prior health so a platform we didn't probe this pass (e.g. not
   // connected) keeps its last state rather than vanishing.
-  const health: ConnectionHealth = { ...(row.connection_health || {}) }
-  if (fb) health.facebook = fb; else delete health.facebook
-  if (yt) health.youtube = yt; else delete health.youtube
+  const prior: ConnectionHealth = { ...(row.connection_health || {}) }
+  const health: ConnectionHealth = { ...prior }
+  // A TRANSIENT result (ok:false, dead:false — a rate-limit/network blip, not an
+  // auth verdict) must NOT overwrite a prior definitive state. Without this, one
+  // rate-limited probe run clears a genuine `dead:true` back to `dead:false` and
+  // re-hides the reconnect banner (false green) — the exact failure this system
+  // exists to prevent. On a transient result we keep whatever we last knew.
+  const isTransient = (e: HealthEntry) => !e.ok && !e.dead
+  const merge = (next: HealthEntry | null, previous: HealthEntry | undefined) =>
+    next ? (isTransient(next) && previous ? previous : next) : undefined
+  const fbMerged = merge(fb, prior.facebook)
+  const ytMerged = merge(yt, prior.youtube)
+  if (fbMerged) health.facebook = fbMerged; else delete health.facebook
+  if (ytMerged) health.youtube = ytMerged; else delete health.youtube
   try {
     await sb.from('integrations')
       .update({ connection_health: health, connection_health_at: new Date().toISOString() })
