@@ -31,8 +31,67 @@ import { recordAnthropicUsage, recordUsage } from '@/lib/ai-usage'
 import { spendGate } from '@/lib/ai-spend'
 import { checkArticlesUsage, normalizeTier, TIERS } from '@/lib/tier'
 import { scrubAiHtml } from '@/lib/html-scrub'
+import { pickRelatedPosts, type LinkCandidate } from '@/lib/internal-links'
 import { fal } from '@fal-ai/client'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
+
+const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+
+/**
+ * "Related reading" — MVP picks the user's 3 most topically-related published
+ * posts and renders their thumbnails in one row below the article. Selection is
+ * the same free token-overlap scorer reviews use (pickRelatedPosts). Thumbnails
+ * come from youtube_videos.thumbnail_url (the stored image for a creator's
+ * posts). Best-effort: returns the html unchanged when there aren't ≥2 related
+ * posts with a thumbnail. KSES-safe (table + a/img/strong + safe inline CSS) so
+ * it survives WordPress.
+ */
+async function appendRelatedThumbs(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  sb: any, userId: string, currentUrl: string | null,
+  current: { title: string; keyword: string; snippet: string },
+  html: string,
+): Promise<string> {
+  try {
+    const { data: rows } = await sb
+      .from('blog_posts')
+      .select('title,seo_keyword,wordpress_url,post_type,youtube_videos(thumbnail_url)')
+      .eq('user_id', userId)
+      .eq('status', 'published')
+      .not('wordpress_url', 'is', null)
+      .order('published_at', { ascending: false, nullsFirst: false })
+      .limit(60)
+    if (!Array.isArray(rows)) return html
+
+    const thumbByUrl = new Map<string, string>()
+    const candidates: LinkCandidate[] = []
+    for (const r of rows) {
+      const url = (r.wordpress_url as string | null) || ''
+      const thumb = (r.youtube_videos as { thumbnail_url?: string | null } | null)?.thumbnail_url || null
+      // Only posts with a real thumbnail and not the article itself.
+      if (!url || !thumb || url === currentUrl) continue
+      thumbByUrl.set(url, thumb)
+      candidates.push({ title: r.title as string, url, keyword: r.seo_keyword as string | null, postType: r.post_type as string | null })
+    }
+    if (candidates.length < 2) return html
+
+    const picked = pickRelatedPosts(
+      { title: current.title, keyword: current.keyword, contentSnippet: current.snippet },
+      candidates, 3,
+    )
+    if (picked.length < 2) return html
+
+    const cells = picked.map(p => {
+      const thumb = thumbByUrl.get(p.url) || ''
+      return `<td style="width:33%;padding:6px;vertical-align:top;text-align:center"><a href="${esc(p.url)}" style="color:#1d1d1f;text-decoration:none"><img src="${esc(thumb)}" alt="" style="width:100%;border-radius:10px;margin-bottom:8px" /><strong style="font-size:13px;line-height:1.35">${esc(p.title)}</strong></a></td>`
+    }).join('')
+
+    const block = `\n<h2>Related reading</h2>\n<table style="width:100%;border-collapse:collapse;margin:16px 0"><tbody><tr>${cells}</tr></tbody></table>\n`
+    return html + block
+  } catch {
+    return html
+  }
+}
 
 export const maxDuration = 300
 
@@ -237,6 +296,17 @@ VOICE / STYLE RULES:
 
   if (!html || html.length < 300) {
     return NextResponse.json({ error: 'Generation returned an empty article body' }, { status: 500 })
+  }
+
+  // Related reading — MVP's 3 most-related existing posts as a thumbnail row
+  // below the conclusion. Only on a fresh generation (a preview-republish keeps
+  // the exact bytes it already showed). Best-effort; never blocks publish.
+  if (!preHtml) {
+    html = await appendRelatedThumbs(
+      supabase, user.id, null,
+      { title, keyword: `${topic} ${keywords}`.trim(), snippet: html.replace(/<[^>]+>/g, ' ').slice(0, 800) },
+      html,
+    )
   }
 
   // ── Hero image (editorial, text-free) ─────────────────────────────────────
