@@ -14,7 +14,11 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends ffmpeg ca-certificates curl unzip python3 python3-pip fontconfig \
   && pip3 install --no-cache-dir --break-system-packages "yt-dlp[default]" bgutil-ytdlp-pot-provider \
   && mkdir -p /usr/share/fonts/truetype/caption \
-  && curl -L https://github.com/google/fonts/raw/main/ofl/anton/Anton-Regular.ttf -o /usr/share/fonts/truetype/caption/Anton-Regular.ttf \
+  # Canonical raw host — github.com/<owner>/<repo>/raw/... now 403s (GitHub
+  # tightened that redirect), which was silently saving an HTML error page as
+  # the font. Non-fatal (|| true): if GitHub rate-limits the raw fetch during a
+  # build, captions fall back to a default font rather than failing the deploy.
+  && (curl -fSL https://raw.githubusercontent.com/google/fonts/main/ofl/anton/Anton-Regular.ttf -o /usr/share/fonts/truetype/caption/Anton-Regular.ttf || echo "WARN: Anton font fetch failed; captions will use a fallback font") \
   && fc-cache -f \
   && rm -rf /var/lib/apt/lists/*
 
