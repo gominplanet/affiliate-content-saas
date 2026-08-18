@@ -55,6 +55,8 @@ export default function ArticlesPage() {
   const [length, setLength] = useState<'short' | 'medium' | 'long'>('medium')
   const [keywords, setKeywords] = useState('')
   const [notes, setNotes] = useState('')
+  const [heroStyle, setHeroStyle] = useState<'generic' | 'face' | 'product'>('generic')
+  const [productImageUrl, setProductImageUrl] = useState('')
 
   // 'preview' = Generate preview button, 'publish' = Generate & publish,
   // 'publishing' = the preview's "Publish to my blog" button. null = idle.
@@ -95,7 +97,7 @@ export default function ArticlesPage() {
       const r = await fetch('/api/articles/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic: cleaned, angle, sections, tone, length, keywords, notes, publish }),
+        body: JSON.stringify({ topic: cleaned, angle, sections, tone, length, keywords, notes, publish, heroStyle, productImageUrl }),
       })
       const j = await r.json()
       if (!r.ok) throw new Error(j.error || 'Generation failed')
@@ -341,6 +343,43 @@ export default function ArticlesPage() {
             className="w-full rounded-lg px-4 py-3 text-sm outline-none border resize-y"
             style={{ background: 'var(--bg)', color: 'var(--fg)', borderColor: 'var(--border)' }}
           />
+        </div>
+
+        {/* Hero image style */}
+        <div>
+          <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--fg)' }}>Hero image</label>
+          <div className="inline-flex items-center rounded-lg border p-1 w-full max-w-md" style={{ background: 'var(--bg)', borderColor: 'var(--border)' }}>
+            {([
+              { key: 'generic', label: 'Generic' },
+              { key: 'face', label: 'With my face' },
+              { key: 'product', label: 'Product' },
+            ] as const).map(h => (
+              <button
+                key={h.key}
+                type="button"
+                onClick={() => setHeroStyle(h.key)}
+                disabled={generating}
+                className="flex-1 inline-flex items-center justify-center px-3 py-1.5 rounded-md text-xs font-semibold transition"
+                style={{ background: heroStyle === h.key ? '#7C3AED' : 'transparent', color: heroStyle === h.key ? '#fff' : 'var(--fg-muted)' }}
+              >
+                {h.label}
+              </button>
+            ))}
+          </div>
+          {heroStyle === 'face' && (
+            <p className="text-[11px] mt-1.5" style={{ color: 'var(--fg-muted)' }}>Uses your Face Model. If you haven&rsquo;t set one up, it falls back to a generic image.</p>
+          )}
+          {heroStyle === 'product' && (
+            <input
+              type="url"
+              value={productImageUrl}
+              onChange={e => setProductImageUrl(e.target.value)}
+              placeholder="Paste a product image URL (used as the hero subject)"
+              disabled={generating}
+              className="w-full rounded-lg px-4 py-2.5 text-sm outline-none border mt-2"
+              style={{ background: 'var(--bg)', color: 'var(--fg)', borderColor: 'var(--border)' }}
+            />
+          )}
         </div>
 
         {/* Actions */}

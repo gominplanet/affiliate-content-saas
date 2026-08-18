@@ -35,6 +35,7 @@ import { scorePostSeo } from '@/lib/seo-score'
 import { pickRelatedPosts, type LinkCandidate } from '@/lib/internal-links'
 import { fal } from '@fal-ai/client'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
+import { composeWithGptImage, composeWithNanoBananaPro, rehostToFal, rehostFacePhotos, GPT_IMAGE_COMPOSE_COST_MODEL, NANO_BANANA_PRO_COST_MODEL } from '@/lib/thumbnail-generators'
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
@@ -151,6 +152,10 @@ export async function POST(req: Request) {
     keywords?: string
     notes?: string
     publish?: boolean
+    // Hero image style: 'generic' (default), 'face' (creator's Face Model), or
+    // 'product' (built around productImageUrl).
+    heroStyle?: string
+    productImageUrl?: string
     // When publishing straight from a preview, the client sends back the exact
     // HTML + title it showed, so we publish those bytes instead of re-running
     // the (costly, non-deterministic) writer and shipping something different.
@@ -362,26 +367,69 @@ VOICE / STYLE RULES:
     seoScore = scorePostSeo({ title, metaDescription: metaDesc || null, contentHtml: html, seoKeyword: topic, postType: 'article', siteHost }).score
   } catch { /* non-fatal */ }
 
-  // ── Hero image (editorial, text-free) ─────────────────────────────────────
-  // Drawn from the same paid image pipeline the other post types use (Flux Pro
-  // via fal) and recorded so it counts. On a republish from preview we reuse the
-  // exact image URL the user saw instead of generating a new one.
+  // ── Hero image ────────────────────────────────────────────────────────────
+  // Three styles (toggle): 'generic' (editorial Flux photo of the topic),
+  // 'face' (the creator composed into an editorial scene, from their Face Model),
+  // or 'product' (an editorial hero built around a product image the user gives).
+  // Face/product compose with gpt-image (+ nano-banana fallbacks); all record the
+  // single 'article_hero_image' feature with the real model so cost is accurate.
+  // On a republish from preview we reuse the exact image URL the user saw.
+  const heroStyle: 'generic' | 'face' | 'product' =
+    body.heroStyle === 'face' || body.heroStyle === 'product' ? body.heroStyle : 'generic'
   let heroUrl: string | null = preHtml
     ? (typeof body.heroUrl === 'string' && body.heroUrl.trim() ? body.heroUrl.trim() : null)
     : null
-  if (!preHtml && process.env.FAL_KEY) {
+  let heroModel: string | null = null
+  if (!preHtml) {
     try {
-      fal.config({ credentials: process.env.FAL_KEY })
-      const heroPrompt = `An editorial hero photo representing ${topic}. Bright, aspirational, magazine-style editorial photography, clean composition, premium lighting, photorealistic. ${NO_BRAND_IMAGE_CLAUSE} No text, no words, no letters, no logos anywhere.`
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const r = await fal.subscribe('fal-ai/flux-pro/v1.1' as any, {
-        input: { prompt: heroPrompt, image_size: 'landscape_16_9', num_inference_steps: 28, guidance_scale: 3.5, num_images: 1, output_format: 'jpeg', safety_tolerance: '2' },
-        pollInterval: 3000,
-      })
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      heroUrl = ((r.data as any)?.images as Array<{ url: string }> | undefined)?.[0]?.url ?? null
-      if (heroUrl) recordUsage({ userId: user.id, tier, feature: 'article_hero_image', model: 'fal-flux-pro-v1.1', images: 1 })
-    } catch { heroUrl = null /* article still publishes without a hero */ }
+      // With my face → compose the creator into an editorial scene.
+      if (heroStyle === 'face') {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: fm } = await (supabase as any)
+          .from('face_models').select('source_images')
+          .eq('user_id', user.id).eq('status', 'ready')
+          .not('source_images', 'is', null)
+          .order('created_at', { ascending: false }).limit(1).maybeSingle()
+        const srcs: string[] = Array.isArray(fm?.source_images) ? fm.source_images : []
+        const refs = srcs.length ? await rehostFacePhotos(supabase, srcs, 5) : []
+        if (refs.length) {
+          const prompt = `A bright, aspirational EDITORIAL MAGAZINE hero photo (16:9) for an article about ${topic}. Feature the SAME real person shown in the reference photos — reproduce their EXACT face and identity (bone structure, features, skin tone, hair, apparent age), photorealistic and naturally flattering, never generic or altered. Dress them in a fresh, natural casual outfit that suits the scene (do NOT copy clothing from the reference photos). Place them naturally in a real setting that fits the topic, relaxed and engaged, premium editorial lighting. ${NO_BRAND_IMAGE_CLAUSE} Render ABSOLUTELY NO text, letters, words, numbers or logos anywhere.`
+          let composed = await composeWithGptImage({ prompt, referenceImageUrls: refs, aspectRatio: '16:9', numImages: 1 })
+          heroModel = GPT_IMAGE_COMPOSE_COST_MODEL
+          if (!composed[0]) { composed = await composeWithNanoBananaPro({ prompt, referenceImageUrls: refs, aspectRatio: '16:9', numImages: 1 }); heroModel = NANO_BANANA_PRO_COST_MODEL }
+          heroUrl = composed[0] || null
+        }
+        // No usable face model → fall through to the generic Flux hero below.
+      }
+
+      // Product → editorial hero built around the product image the user gave.
+      if (!heroUrl && heroStyle === 'product') {
+        const purl = (typeof body.productImageUrl === 'string' ? body.productImageUrl.trim() : '')
+        const ref = purl ? await rehostToFal(purl) : null
+        if (ref) {
+          const prompt = `A bright, aspirational EDITORIAL MAGAZINE hero photo (16:9) for an article about ${topic}. Feature the ACTUAL product from the reference image as a clean hero object — true shape, colour and materials, never its retail box or packaging, and with no printed text, badges or callouts on it. Style it in a premium editorial scene that fits the topic. ${NO_BRAND_IMAGE_CLAUSE} Render NO text, letters, words, numbers or logos anywhere.`
+          const composed = await composeWithGptImage({ prompt, referenceImageUrls: [ref], aspectRatio: '16:9', numImages: 1 })
+          heroUrl = composed[0] || null
+          if (heroUrl) heroModel = GPT_IMAGE_COMPOSE_COST_MODEL
+        }
+      }
+
+      // Generic (default, or a face/product fallback) → editorial Flux photo.
+      if (!heroUrl && process.env.FAL_KEY) {
+        fal.config({ credentials: process.env.FAL_KEY })
+        const heroPrompt = `An editorial hero photo representing ${topic}. Bright, aspirational, magazine-style editorial photography, clean composition, premium lighting, photorealistic. ${NO_BRAND_IMAGE_CLAUSE} No text, no words, no letters, no logos anywhere.`
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const r = await fal.subscribe('fal-ai/flux-pro/v1.1' as any, {
+          input: { prompt: heroPrompt, image_size: 'landscape_16_9', num_inference_steps: 28, guidance_scale: 3.5, num_images: 1, output_format: 'jpeg', safety_tolerance: '2' },
+          pollInterval: 3000,
+        })
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        heroUrl = ((r.data as any)?.images as Array<{ url: string }> | undefined)?.[0]?.url ?? null
+        if (heroUrl) heroModel = 'fal-flux-pro-v1.1'
+      }
+
+      if (heroUrl && heroModel) recordUsage({ userId: user.id, tier, feature: 'article_hero_image', model: heroModel, images: 1 })
+    } catch { /* article still publishes without a hero */ }
   }
 
   // ── Preview only — no WordPress write ─────────────────────────────────────
