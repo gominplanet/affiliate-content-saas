@@ -58,7 +58,7 @@ export default function ArticlesPage() {
   // 'preview' = Generate preview button, 'publish' = Generate & publish,
   // 'publishing' = the preview's "Publish to my blog" button. null = idle.
   const [busy, setBusy] = useState<null | 'preview' | 'publish' | 'publishing'>(null)
-  const [preview, setPreview] = useState<{ title: string; html: string } | null>(null)
+  const [preview, setPreview] = useState<{ title: string; html: string; heroUrl: string | null } | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -104,7 +104,7 @@ export default function ArticlesPage() {
         })
         setPreview(null)
       } else {
-        setPreview({ title: j.title, html: j.html })
+        setPreview({ title: j.title, html: j.html, heroUrl: j.heroUrl ?? null })
         toast.success('Preview ready — review it below.')
       }
     } catch (err) {
@@ -124,7 +124,7 @@ export default function ArticlesPage() {
       const r = await fetch('/api/articles/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic: topic.trim(), sections, publish: true, title: preview.title, html: preview.html }),
+        body: JSON.stringify({ topic: topic.trim(), sections, publish: true, title: preview.title, html: preview.html, heroUrl: preview.heroUrl }),
       })
       const j = await r.json()
       if (!r.ok) throw new Error(j.error || 'Publish failed')
@@ -390,6 +390,15 @@ export default function ArticlesPage() {
                 : <><ExternalLink className="w-4 h-4 mr-2" /> Publish to my blog</>}
             </Button>
           </div>
+          {preview.heroUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={preview.heroUrl}
+              alt=""
+              className="w-full rounded-lg border mb-4 object-cover"
+              style={{ borderColor: 'var(--border)', maxHeight: 360 }}
+            />
+          )}
           <div
             className="mvp-article-preview rounded-lg border p-5 overflow-x-auto"
             style={{ background: 'var(--bg)', borderColor: 'var(--border)', color: 'var(--fg)', lineHeight: 1.7 }}
