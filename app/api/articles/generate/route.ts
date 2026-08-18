@@ -77,9 +77,13 @@ async function appendRelatedThumbs(
     }
     if (candidates.length < 2) return html
 
+    // minOverlap=2: these thumbnails are prominent (a full row below the
+    // conclusion), so a single incidental shared word isn't enough — require at
+    // least two shared topical tokens or the post doesn't show. Better to show
+    // fewer (the row only renders at ≥2) than an off-topic thumbnail.
     const picked = pickRelatedPosts(
       { title: current.title, keyword: current.keyword, contentSnippet: current.snippet },
-      candidates, 3,
+      candidates, 3, 2,
     )
     if (picked.length < 2) return html
 
