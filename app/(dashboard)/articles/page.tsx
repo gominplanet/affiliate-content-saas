@@ -57,6 +57,12 @@ export default function ArticlesPage() {
   const [notes, setNotes] = useState('')
   const [heroStyle, setHeroStyle] = useState<'generic' | 'face' | 'product'>('generic')
   const [productImageUrl, setProductImageUrl] = useState('')
+  // Monetization: mention the creator's products/reviews THROUGHOUT the body, or
+  // keep the article purely informational and only surface them at the end.
+  const [productMode, setProductMode] = useState<'throughout' | 'end'>('end')
+  // Topic suggestions (tied to the creator's existing reviews + niche).
+  const [suggesting, setSuggesting] = useState(false)
+  const [suggestions, setSuggestions] = useState<{ topic: string; angle: string; keywords: string }[]>([])
 
   // 'preview' = Generate preview button, 'publish' = Generate & publish,
   // 'publishing' = the preview's "Publish to my blog" button. null = idle.
@@ -98,7 +104,7 @@ export default function ArticlesPage() {
       const r = await fetch('/api/articles/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic: cleaned, angle, sections, tone, length, keywords, notes, publish, heroStyle, productImageUrl }),
+        body: JSON.stringify({ topic: cleaned, angle, sections, tone, length, keywords, notes, publish, heroStyle, productImageUrl, productMode }),
       })
       const j = await r.json()
       if (!r.ok) throw new Error(j.error || 'Generation failed')
@@ -117,6 +123,33 @@ export default function ArticlesPage() {
     } finally {
       setBusy(null)
     }
+  }
+
+  /** Ask MVP for informational article topics tied to the creator's own
+   *  reviews + niche. Picking one fills the topic / angle / keywords fields. */
+  async function suggest() {
+    setSuggesting(true)
+    try {
+      const r = await fetch('/api/articles/suggest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+      const j = await r.json()
+      if (!r.ok) throw new Error(j.error || 'Could not suggest topics')
+      const list = Array.isArray(j.suggestions) ? j.suggestions : []
+      setSuggestions(list)
+      if (j.empty) toast.message(j.reason || 'Publish a few reviews or set your niche first.')
+      else if (!list.length) toast.message('No suggestions right now — try again in a moment.')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not suggest topics')
+    } finally {
+      setSuggesting(false)
+    }
+  }
+
+  function useSuggestion(s: { topic: string; angle: string; keywords: string }) {
+    setTopic(s.topic)
+    setAngle(s.angle || '')
+    if (s.keywords) setKeywords(s.keywords)
+    setSuggestions([])
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   /** Publish the exact article shown in the preview box — sends back the
@@ -223,6 +256,32 @@ export default function ArticlesPage() {
             className="w-full rounded-lg px-4 py-3 text-sm outline-none border"
             style={{ background: 'var(--bg)', color: 'var(--fg)', borderColor: 'var(--border)' }}
           />
+          {/* Suggest topics tied to the creator's own reviews + niche */}
+          <button
+            type="button"
+            onClick={suggest}
+            disabled={generating || suggesting}
+            className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium rounded-md px-3 py-1.5 border disabled:opacity-50"
+            style={{ background: 'transparent', color: '#7C3AED', borderColor: '#7C3AED' }}
+          >
+            {suggesting ? 'Thinking…' : '✨ Suggest topics from my content'}
+          </button>
+          {suggestions.length > 0 && (
+            <div className="mt-3 space-y-2">
+              {suggestions.map((s, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => useSuggestion(s)}
+                  className="w-full text-left rounded-lg border px-3.5 py-2.5 transition hover:border-[#7C3AED]"
+                  style={{ background: 'var(--bg)', borderColor: 'var(--border)' }}
+                >
+                  <div className="text-sm font-medium" style={{ color: 'var(--fg)' }}>{s.topic}</div>
+                  {s.angle && <div className="text-xs mt-0.5" style={{ color: 'var(--fg-muted)' }}>{s.angle}</div>}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Angle */}
@@ -344,6 +403,33 @@ export default function ArticlesPage() {
             className="w-full rounded-lg px-4 py-3 text-sm outline-none border resize-y"
             style={{ background: 'var(--bg)', color: 'var(--fg)', borderColor: 'var(--border)' }}
           />
+        </div>
+
+        {/* Products / monetization mode */}
+        <div>
+          <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--fg)' }}>Your products</label>
+          <div className="inline-flex items-center rounded-lg border p-1 w-full max-w-md" style={{ background: 'var(--bg)', borderColor: 'var(--border)' }}>
+            {([
+              { key: 'end', label: 'Only at the end' },
+              { key: 'throughout', label: 'Throughout' },
+            ] as const).map(m => (
+              <button
+                key={m.key}
+                type="button"
+                onClick={() => setProductMode(m.key)}
+                disabled={generating}
+                className="flex-1 inline-flex items-center justify-center px-3 py-1.5 rounded-md text-xs font-semibold transition"
+                style={{ background: productMode === m.key ? '#7C3AED' : 'transparent', color: productMode === m.key ? '#fff' : 'var(--fg-muted)' }}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+          <p className="text-[11px] mt-1.5" style={{ color: 'var(--fg-muted)' }}>
+            {productMode === 'throughout'
+              ? 'MVP links your most relevant reviews inline where they fit the article.'
+              : 'Keeps the article informational; your related reviews appear in a block at the end.'}
+          </p>
         </div>
 
         {/* Hero image style */}
