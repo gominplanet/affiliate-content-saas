@@ -50,7 +50,7 @@ import { recordUsage } from '@/lib/ai-usage'
 import { scrubDealHtml, DEAL_VOICE_RULES } from '@/lib/deal-scrub'
 import { scrubEmDashes } from '@/lib/html-scrub'
 import { getOccasion, detectOccasion, listOccasions, type DealOccasionSlug } from '@/lib/deal-occasion'
-import { normalizeTier, checkGenerationLimit } from '@/lib/tier'
+import { normalizeTier, checkGenerationLimit, checkDealsUsage, TIERS } from '@/lib/tier'
 import { canUseDealRadar } from '@/lib/feature-access'
 import { toUserMessage } from '@/lib/friendly-error'
 import { spendGate } from '@/lib/ai-spend'
@@ -335,9 +335,25 @@ export async function POST(req: Request) {
   if (!canUseDealRadar(tier)) {
     return NextResponse.json({ error: 'Deal posts are available on paid plans.', code: 'tier_not_allowed', currentTier: tier }, { status: 403 })
   }
-  const dealUsage = await checkGenerationLimit(supabase, user.id)
-  if (!dealUsage.allowed) {
-    return NextResponse.json({ error: dealUsage.reason, limitReached: true, cap: 'generations', currentTier: dealUsage.tier, upgrade: dealUsage.upgrade }, { status: 429 })
+  // Most paid tiers draw deals from the unified content-piece pool
+  // (postsPerMonth). But a deals-first tier like Amazon has postsPerMonth: 0 by
+  // design (it isn't sold blog generations) while still being sold a deal
+  // allowance (dealsPerMonth) — routing it through the generations gate meant
+  // (0 + 1) <= 0 = false, so it was blocked from EVERY deal despite the plan
+  // selling 100. When the tier has no generations allowance, gate on its own
+  // deal cap (checkDealsUsage) instead. Tiers with a generations pool are
+  // unchanged.
+  const usesDealCap = TIERS[tier]?.postsPerMonth === 0
+  if (usesDealCap) {
+    const d = await checkDealsUsage(supabase, user.id)
+    if (!d.allowed) {
+      return NextResponse.json({ error: d.reason, limitReached: true, cap: 'deals', currentTier: d.tier, upgrade: d.upgrade }, { status: 429 })
+    }
+  } else {
+    const dealUsage = await checkGenerationLimit(supabase, user.id)
+    if (!dealUsage.allowed) {
+      return NextResponse.json({ error: dealUsage.reason, limitReached: true, cap: 'generations', currentTier: dealUsage.tier, upgrade: dealUsage.upgrade }, { status: 429 })
+    }
   }
 
   // Monthly AI-spend circuit breaker (Sonnet writer + nano-banana thumbnails).
