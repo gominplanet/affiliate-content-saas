@@ -8,16 +8,22 @@
  * Buckets are tier-shaped:
  *   • Amazon tier → the four Art Director format caps (Thumbnails, Pins,
  *     Instagram, Facebook) — each its own bucket, exactly what the plan sells.
- *   • Everyone else → the shared "Generations" allowance (blog + thumbnails +
- *     metadata) and, for Pro, Shorts + X, which have their own separate caps.
+ *   • Everyone else → "Generations" (NEW content pieces = blog_posts rows, the
+ *     one thing RPC 131 counts) and, for Pro, Shorts + X.
+ *   • Every tier also shows the enforced shared caps that apply to it: Deals,
+ *     Collabs, Ask Me, Photobooth, YT metadata, Scripts, IG AI images,
+ *     Newsletters, and Scheduled (cascade-only) — each counted against the SAME
+ *     window its gate uses (billing cycle for ai_usage caps; calendar month for
+ *     scripts / newsletters / cascade).
  *
- * Only finite caps (> 0) are returned. Unlimited/zero buckets are omitted so the
- * meter stays clean. On any DB hiccup we return an empty bucket list — the meter
- * hides rather than showing a wrong number.
+ * Thumbnails/metadata are NOT summed into Generations (that over-reported and
+ * hid metadata's own cap). Only finite caps (> 0) are returned; unlimited/zero
+ * buckets are omitted so the meter stays clean. On any DB hiccup we return an
+ * empty bucket list — the meter hides rather than showing a wrong number.
  */
 import { NextResponse } from 'next/server'
 import {
-  TIERS, billingWindow, effectivePostCap, normalizeTier, type Tier,
+  TIERS, billingWindow, effectivePostCap, allowedNewsletterBroadcasts, normalizeTier, type Tier,
 } from '@/lib/tier'
 import { SHORTS_MONTHLY_CAP, X_MONTHLY_CAP } from '@/lib/usage-cap'
 import { createServerClient } from '@/lib/supabase/server'
@@ -50,7 +56,7 @@ export async function GET() {
   const sb = supabase as any
   const { data: ig } = await sb
     .from('integrations')
-    .select('tier,subscription_period_start,subscription_period_end')
+    .select('tier,subscription_period_start,subscription_period_end,legacy_creator_newsletter')
     .eq('user_id', user.id)
     .maybeSingle()
 
@@ -63,6 +69,11 @@ export async function GET() {
     periodEnd: (ig?.subscription_period_end as string | null) ?? null,
   })
   const windowStart = lifetime ? null : startISO
+  // Some caps (scripts, newsletter broadcasts, cascade-only schedules) reset on
+  // the CALENDAR month, independent of the billing cycle — count those against
+  // it so each meter matches the exact gate that enforces it.
+  const now = new Date()
+  const calStartISO = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString()
 
   // Count ai_usage rows for a feature set within the window (or lifetime). Each
   // count is isolated — a failure returns 0 rather than breaking the whole meter.
@@ -83,6 +94,27 @@ export async function GET() {
       if (windowStart) q = q.gte(dateCol, windowStart)
       const { count } = await q
       return count ?? 0
+    } catch { return 0 }
+  }
+  // Count rows since an EXPLICIT start (for the calendar-month caps above),
+  // optionally filtered to a set of statuses (newsletter broadcasts).
+  const countSince = async (table: string, dateCol: string, sinceISO: string, statusIn?: string[]): Promise<number> => {
+    try {
+      let q = sb.from(table).select('id', { count: 'exact', head: true }).eq('user_id', user.id).gte(dateCol, sinceISO)
+      if (statusIn) q = q.in('status', statusIn)
+      const { count } = await q
+      return count ?? 0
+    } catch { return 0 }
+  }
+  // Cascade-only schedules are capped by DISTINCT posts scheduled this calendar
+  // month (kind='social', parent_id IS NULL) — count exactly what the gate does.
+  const countCascade = async (): Promise<number> => {
+    try {
+      const { data } = await sb.from('scheduled_posts')
+        .select('blog_post_id').eq('user_id', user.id).eq('kind', 'social').is('parent_id', null)
+        .gte('created_at', calStartISO).limit(2000)
+      if (!Array.isArray(data)) return 0
+      return new Set((data as { blog_post_id?: string }[]).map(r => r.blog_post_id ?? '').filter(Boolean)).size
     } catch { return 0 }
   }
 
@@ -113,14 +145,15 @@ export async function GET() {
       push('instagram', 'Instagram', preview(igCount, 84), refPlan.igPostsPerMonth)
       push('facebook', 'Facebook', preview(fb, 12), refPlan.facebookPostsPerMonth)
     } else {
-      // Shared Generations bundle = blog posts + thumbnails + metadata.
+      // Generations = NEW content pieces only (blog_posts rows in the window),
+      // matching the gate (RPC 131). Thumbnails + metadata are intentionally NOT
+      // summed in here: thumbnails are $-gated free enrichment off the Amazon
+      // tier (no count cap), and metadata has its OWN cap, shown as its own
+      // bucket below. Before, the meter summed all three and over-reported —
+      // a user could see "20/20" while the real blog gate still had room.
       const genLimit = lifetime ? plan.lifetimeMax : effectivePostCap(tier, startISO)
-      const [blog, thumb, meta] = await Promise.all([
-        countRows('blog_posts', 'published_at'),
-        countFeatures(THUMB_FEATURES),
-        countFeatures([META_FEATURE]),
-      ])
-      push('generations', lifetime ? 'Generations (trial)' : 'Generations', blog + thumb + meta, genLimit)
+      const blog = await countRows('blog_posts', 'published_at')
+      push('generations', lifetime ? 'Generations (trial)' : 'Generations', blog, genLimit)
       if (tier === 'pro') {
         const [shorts, x] = await Promise.all([countFeatures(['shorts_render']), countFeatures(['x_post'])])
         push('shorts', 'Shorts', shorts, SHORTS_MONTHLY_CAP)
@@ -129,16 +162,33 @@ export async function GET() {
     }
 
     // ── Shared extra caps (shown on any tier where the cap is finite) ──
-    const [asst, photo, collabs, deals] = await Promise.all([
-      countFeatures(['assistant_message']),
-      countFeatures(['photobooth_image']),
-      countRows('collaborations', 'created_at'),
+    // Every one of these is an ENFORCED per-feature cap; surfacing them here is
+    // what lets a user see where they stand before they hit a wall.
+    const [asst, photo, collabs, deals, meta, igAi, scripts, broadcasts, cascade] = await Promise.all([
+      countFeatures(['assistant_message']),                                   // billing window (checkUsageCap)
+      countFeatures(['photobooth_image']),                                    // billing window
+      countRows('collaborations', 'created_at'),                              // billing window
       countRows('blog_posts', 'published_at', { col: 'post_type', val: 'deal' }),
+      countFeatures([META_FEATURE]),                                          // billing window (own cap)
+      countFeatures(['ig_ai_thumbnail_image']),                               // billing window
+      countSince('video_scripts', 'created_at', calStartISO),                 // calendar month
+      countSince('newsletter_broadcasts', 'created_at', calStartISO, ['sending', 'sent', 'scheduled', 'ab_testing']),
+      countCascade(),                                                         // calendar month, distinct posts
     ])
     push('deals', 'Deals', preview(deals, 63), refPlan.dealsPerMonth)
     push('collabs', 'Collabs', preview(collabs, 41), refPlan.collabsPerMonth)
     push('assistant', 'Ask Me', preview(asst, 372), refPlan.assistantMessagesPerMonth)
     push('photobooth', 'Photobooth', preview(photo, 4), refPlan.photoboothPerMonth)
+    // Metadata has its own enforced cap (was previously hidden inside the
+    // Generations sum, which both over-reported generations AND hid this cap).
+    push('metadata', 'YT metadata', preview(meta, 60), refPlan.metadataGensPerMonth)
+    push('scripts', 'Scripts', preview(scripts, 8), refPlan.scriptsPerMonth)
+    push('igai', 'IG AI images', preview(igAi, 22), refPlan.instagramAiThumbnailsPerMonth)
+    // Newsletter cap can be raised for legacy Creator accounts — use the same
+    // helper the send gate uses so the meter matches the enforced number.
+    push('newsletter', 'Newsletters', preview(broadcasts, 2),
+      allowedNewsletterBroadcasts(tier, { legacyCreatorNewsletter: !!(ig as { legacy_creator_newsletter?: boolean } | null)?.legacy_creator_newsletter }))
+    push('cascade', 'Scheduled', preview(cascade, 12), refPlan.cascadeOnlySchedulesPerMonth)
   } catch {
     return NextResponse.json({ tier, buckets: [], resetLabel: null, lifetime })
   }
