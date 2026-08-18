@@ -95,11 +95,14 @@ export async function GET(req: Request) {
       await stamp()
 
       const tag = (u.amazon_associates_tag || '').trim() || null
-      const deals: DigestDeal[] = []
-      for (const r of rows) {
-        const affiliateUrl = await resolveAffiliateUrl(r.asin, r.title, tag, u.geniuslink_api_key, u.geniuslink_api_secret)
-        deals.push({ ...r, affiliateUrl })
-      }
+      // Resolve the (few) affiliate URLs concurrently — they're independent
+      // Geniuslink calls; a serial loop stacked their latency. Order preserved.
+      const deals: DigestDeal[] = await Promise.all(
+        rows.map(async (r) => ({
+          ...r,
+          affiliateUrl: await resolveAffiliateUrl(r.asin, r.title, tag, u.geniuslink_api_key, u.geniuslink_api_secret),
+        })),
+      )
 
       const nicheLabel = nicheLabelFrom(niches)
       const monthYear = new Date().toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' })

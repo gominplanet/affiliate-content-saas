@@ -225,6 +225,11 @@ async function fetchPostedByAsin(
       .eq('user_id', userId)
       .eq('post_type', 'deal')
       .not('deal_meta->asins', 'is', null)
+      // Bounded + newest-first: this runs on every deal-radar paint and can't
+      // filter the ASIN array server-side, so cap it rather than pulling the
+      // user's entire roundup history each time. 200 covers recent roundups.
+      .order('created_at', { ascending: false })
+      .limit(200)
     for (const row of (rounds ?? []) as Array<{ wordpress_url: string | null; deal_meta: { asins?: unknown } | null }>) {
       const arr = Array.isArray(row.deal_meta?.asins) ? row.deal_meta!.asins as unknown[] : []
       for (const raw of arr) {

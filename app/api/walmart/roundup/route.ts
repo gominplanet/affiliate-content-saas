@@ -8,7 +8,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { normalizeTier, type Tier } from '@/lib/tier'
+import { normalizeTier, checkGenerationLimit, checkDealsUsage, TIERS, type Tier } from '@/lib/tier'
 import { canUseDealRadar } from '@/lib/feature-access'
 import { createWordPressService } from '@/services/wordpress'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
@@ -100,6 +100,17 @@ export async function POST(request: Request) {
 
     const gate = await spendGate(user.id, tier)
     if (gate) return gate
+
+    // Monthly cap — a roundup is one published deal post, so it counts against
+    // the tier's allowance like a single deal (previously uncapped). Pooled
+    // tiers consume a generation unit; Amazon-style tiers consume their deal cap.
+    if (TIERS[tier]?.postsPerMonth === 0) {
+      const d = await checkDealsUsage(supabase, user.id)
+      if (!d.allowed) return NextResponse.json({ error: d.reason, limitReached: true, cap: 'deals', currentTier: d.tier, upgrade: d.upgrade }, { status: 429 })
+    } else {
+      const g = await checkGenerationLimit(supabase, user.id)
+      if (!g.allowed) return NextResponse.json({ error: g.reason, limitReached: true, cap: 'generations', currentTier: g.tier, upgrade: g.upgrade }, { status: 429 })
+    }
 
     const client = createAnthropicClient()
     const nicheLabel = nicheLabelFrom(niches)

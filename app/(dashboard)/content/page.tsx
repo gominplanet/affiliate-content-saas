@@ -2684,7 +2684,10 @@ export default function ContentPage() {
       // fallback, so a pre-migration DB (column absent) would empty the whole
       // Library. This self-catches — on any error the tags just start blank.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (async () => { try { const { data } = await (sb.from('youtube_videos') as any).select('id,brand_tags').eq('user_id', user.id); return (data as Record<string, unknown>[]) || [] } catch { return [] } })(),
+      // Bounded to the same newest-MAX_VIDEOS window the main list loads (same
+      // published_at desc order), so we never pull the user's entire catalog a
+      // second time just for tags, and every loaded video still gets its tag.
+      (async () => { try { const { data } = await (sb.from('youtube_videos') as any).select('id,brand_tags').eq('user_id', user.id).order('published_at', { ascending: false }).limit(4000); return (data as Record<string, unknown>[]) || [] } catch { return [] } })(),
     ])
 
     // Merge brand_tags into the video rows by id (best-effort; absent → null).
