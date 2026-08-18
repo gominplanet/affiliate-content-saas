@@ -66,6 +66,15 @@ export interface SeoSchemaInput {
     sameAs?: string[] | null
   }
 
+  /** Page node type. 'BlogPosting' (default) for reviews/blog posts, 'Article'
+   *  for pure informational articles (the Articles generator). Both are valid
+   *  Article subtypes; the label just describes the content honestly. */
+  pageType?: 'BlogPosting' | 'Article'
+  /** CSS selectors for SpeakableSpecification (voice / AI-answer surfacing).
+   *  Point these at the on-page elements that hold the most quotable summary
+   *  (e.g. the Key Takeaways box). Emitted only when non-empty. */
+  speakableSelectors?: string[] | null
+
   /** Approx word count of the post body → BlogPosting.wordCount. */
   wordCount?: number | null
   /** Category/section label → BlogPosting.articleSection. */
@@ -265,7 +274,7 @@ export function buildReviewSchemaGraph(input: SeoSchemaInput): { '@context': str
 
   // ── BlogPosting (the page node) ──────────────────────────────────────────
   const article: Node = {
-    '@type': 'BlogPosting',
+    '@type': input.pageType || 'BlogPosting',
     '@id': id.article,
     headline: input.title.slice(0, 110),
     description: input.description,
@@ -280,6 +289,10 @@ export function buildReviewSchemaGraph(input: SeoSchemaInput): { '@context': str
   if (input.wordCount && input.wordCount > 0) article.wordCount = input.wordCount
   if (input.imageUrl) article.image = [input.imageUrl]
   if (hasVideo) article.video = { '@id': id.video }
+  // Speakable — tells voice assistants / answer engines which on-page blocks are
+  // the most quotable (we point it at the Key Takeaways box). Additive AEO win.
+  const speak = (input.speakableSelectors || []).filter(Boolean)
+  if (speak.length) article.speakable = { '@type': 'SpeakableSpecification', cssSelector: speak }
   graph.push(article)
 
   // ── Review → Product (self-serving guardrail) ────────────────────────────
@@ -376,3 +389,13 @@ export function buildReviewSchemaGraph(input: SeoSchemaInput): { '@context': str
 
   return { '@context': 'https://schema.org', '@graph': graph }
 }
+
+/**
+ * Semantic alias for non-review content (informational articles, guides, deal
+ * posts). Same builder — pass `pageType: 'Article'` and leave product/rating/
+ * video null so it emits Article + Person + Organization + FAQPage +
+ * BreadcrumbList without any Review/Product nodes. Every piece of content MVP
+ * publishes should carry a graph; this is the entry point for the non-review
+ * generators.
+ */
+export const buildContentSchemaGraph = buildReviewSchemaGraph

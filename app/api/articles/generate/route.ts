@@ -32,6 +32,7 @@ import { spendGate } from '@/lib/ai-spend'
 import { checkArticlesUsage, normalizeTier, TIERS } from '@/lib/tier'
 import { scrubAiHtml } from '@/lib/html-scrub'
 import { scorePostSeo } from '@/lib/seo-score'
+import { buildContentSchemaGraph, extractFaqFromHtml } from '@/lib/seo-schema'
 import { pickRelatedPosts, type LinkCandidate } from '@/lib/internal-links'
 import { fal } from '@fal-ai/client'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
@@ -97,6 +98,54 @@ async function appendRelatedThumbs(
   } catch {
     return html
   }
+}
+
+/**
+ * Key Takeaways box — a KSES-safe callout of the 3-6 most useful facts, rendered
+ * at the top of the article (right after the answer-first intro). This is the
+ * block AI answer engines lift verbatim, so it doubles as an AEO asset (the
+ * schema's `speakable` selector points at `.mvp-takeaways`). Returns '' when
+ * there aren't at least 2 takeaways.
+ */
+function renderTakeaways(items: string[]): string {
+  const li = items.map(t => (t || '').trim()).filter(Boolean).slice(0, 6)
+  if (li.length < 2) return ''
+  const lis = li.map(t => `<li style="margin:6px 0">${esc(t)}</li>`).join('')
+  return `\n<div class="mvp-takeaways" style="background:#f3efff;border-left:4px solid #7C3AED;border-radius:10px;padding:16px 20px;margin:20px 0"><p style="font-weight:700;margin:0 0 8px;color:#4c1d95;font-size:15px">Key takeaways</p><ul style="margin:0;padding-left:18px;font-size:15px;line-height:1.6">${lis}</ul></div>\n`
+}
+
+/**
+ * Add stable anchor ids to every <h2> in the body and build a KSES-safe
+ * "On this page" table of contents that jump-links to them. Only worth showing
+ * on a multi-section article, so it returns an empty TOC (but still adds ids)
+ * when there are fewer than 3 headings. Headings that already carry an id are
+ * respected. No <nav> (WordPress KSES strips it) — a plain <div> + <ul>.
+ */
+function addAnchorsAndToc(html: string): { html: string; toc: string } {
+  const seen = new Set<string>()
+  const heads: Array<{ id: string; text: string }> = []
+  const slug = (s: string): string => {
+    let base = s.toLowerCase().replace(/<[^>]+>/g, '').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 60) || 'section'
+    let out = base, n = 2
+    while (seen.has(out)) out = `${base}-${n++}`
+    seen.add(out)
+    return out
+  }
+  const withIds = html.replace(/<h2(\b[^>]*)>([\s\S]*?)<\/h2>/gi, (m, attrs: string, inner: string) => {
+    const text = inner.replace(/<[^>]+>/g, '').trim()
+    if (!text) return m
+    const existing = attrs.match(/\bid="([^"]+)"/)
+    if (existing) { heads.push({ id: existing[1], text }); return m }
+    const id = slug(text)
+    heads.push({ id, text })
+    return `<h2${attrs} id="${id}">${inner}</h2>`
+  })
+  if (heads.length < 3) return { html: withIds, toc: '' }
+  const items = heads
+    .map(h => `<li style="margin:4px 0"><a href="#${esc(h.id)}" style="color:#7C3AED;text-decoration:none">${esc(h.text)}</a></li>`)
+    .join('')
+  const toc = `\n<div class="mvp-toc" style="background:#faf7ff;border-radius:12px;padding:16px 20px;margin:20px 0"><p style="font-weight:700;margin:0 0 8px;color:#4c1d95;font-size:14px">On this page</p><ul style="margin:0;padding-left:18px;font-size:14px;line-height:1.7">${items}</ul></div>\n`
+  return { html: withIds, toc }
 }
 
 export const maxDuration = 300
@@ -212,7 +261,7 @@ export async function POST(req: Request) {
 
   const writerPrompt = `You are writing a researched, informational blog article about "${topic}". This is NOT a product review or a sales page. It is a genuine, opinionated, well-structured article a real blogger would publish to inform their readers.
 
-Use the web_search tool to ground the article in real facts, current figures, and concrete examples. Weave in the sources you find (as inline text like "according to <source>") where a stat or claim came from a search result.
+Use the web_search tool to ground the article in real facts, current figures, and concrete examples. When you state a specific statistic, price, percentage, dated figure, study finding, or a direct quote you pulled from research, cite it INLINE right there in the sentence with a real link to the source, e.g. <p>According to <a href="https://www.example.com/report" rel="nofollow">Consumer Reports</a>, ...</p>. Every hard number in the article should be traceable to a linked source in the prose, not only in a list at the end. Use the actual result URL, name the source, and keep rel="nofollow".
 
 ═══════════════════════════════════════
 TOPIC: ${topic}
@@ -253,16 +302,18 @@ SEO + AI-DISCOVERABILITY (REQUIRED — the article must score 80+ on-page and be
 - Use clear, specific <h2> headings, phrased as a question where it fits ("How does X actually work?") — question headings get pulled into AI answers.
 - DEPTH: at least 700 words of real substance.
 - Short, answer-first paragraphs and scannable lists — these are what AI engines cite.
+- INLINE CITATIONS: every hard number, stat, price, percentage or quoted claim must carry an inline linked attribution to its real source in the sentence itself (named source + rel="nofollow" link), as described above. Fact-dense pages with visible sourcing get cited far more by AI engines.
 - Any <img> you add MUST have descriptive alt text.
 
-OUTPUT FORMAT (follow EXACTLY — THREE tokens, each at the start of its own line):
+OUTPUT FORMAT (follow EXACTLY — FOUR tokens, each at the start of its own line):
 Line 1: ###TITLE### then a space then the headline (plain text, 40-65 characters, specific, includes the primary keyword).
 Line 2: ###META### then a space then a meta description (ONE sentence, 140-160 characters, includes the primary keyword, compelling in a search result).
+Then a line with ###TAKEAWAYS### on its own, followed by 3 to 5 lines, each starting with "- ", each ONE short plain-text sentence capturing the single most useful facts or conclusions a reader (or an AI answer engine) should walk away with. No HTML, no links, no bold.
 Then a line with ###ARTICLE### on its own.
 Then the article body as semantic HTML.
 
 The HTML body rules:
-- Semantic HTML only: <h2>, <h3>, <p>, <ul>/<li>, <table>, <div>, <blockquote>. Use ONE <blockquote> for a strong pull-quote or opinion if it fits. NEVER use <svg>, <canvas>, <script> or <style> — WordPress strips them (charts must be the <div>/CSS bars described above).
+- Semantic HTML only: <h2>, <h3>, <p>, <ul>/<li>, <ol>/<li>, <table>, <div>, <blockquote>, <a>. Use ONE <blockquote> for a strong pull-quote or opinion if it fits. NEVER use <svg>, <canvas>, <script> or <style> — WordPress strips them (charts must be the <div>/CSS bars described above).
 - Do NOT include an <h1> in the body (the headline is returned separately). Start the body with the answer-first intro <p>.
 - Do NOT output markdown. Do NOT wrap in <html>/<head>/<body>. Do NOT wrap in a code fence.
 - Concrete facts and real numbers wherever the research surfaced them.
@@ -287,6 +338,9 @@ VOICE / STYLE RULES:
   // Meta description (search snippet). Carried back from the preview on publish.
   let metaDesc = (publish && typeof body.meta === 'string') ? scrubAiHtml(body.meta.trim()).slice(0, 200) : ''
   let html = preHtml || ''
+  // Key takeaways (parsed from the writer output; empty on a preview republish
+  // since those bytes already contain the rendered box).
+  let takeaways: string[] = []
   if (!preHtml) try {
     const msg = await client.messages.create({
       model: 'claude-sonnet-4-6',
@@ -323,11 +377,21 @@ VOICE / STYLE RULES:
     if (titleMatch) title = titleMatch[1].split('\n')[0].trim().slice(0, 200) || title
     const metaMatch = raw.match(/###META###\s*(.+)/)
     if (metaMatch) metaDesc = metaMatch[1].split('\n')[0].trim().slice(0, 200)
+    // Key takeaways — the 3-5 lines between ###TAKEAWAYS### and ###ARTICLE###.
+    const takeIdx = raw.indexOf('###TAKEAWAYS###')
+    const artIdxForTake = raw.indexOf('###ARTICLE###')
+    if (takeIdx >= 0 && artIdxForTake > takeIdx) {
+      takeaways = raw.slice(takeIdx + '###TAKEAWAYS###'.length, artIdxForTake)
+        .split('\n')
+        .map(l => l.replace(/^\s*[-*•]\s*/, '').trim())
+        .filter(Boolean)
+        .slice(0, 6)
+    }
     const artIdx = raw.indexOf('###ARTICLE###')
     const bodyRaw = artIdx >= 0 ? raw.slice(artIdx + '###ARTICLE###'.length) : raw
     html = scrubAiHtml(bodyRaw)
     // Belt-and-braces: strip any stray delimiter tokens that survived.
-    html = html.replace(/###TITLE###.*$/m, '').replace(/###META###.*$/m, '').replace(/###ARTICLE###/g, '').trim()
+    html = html.replace(/###TITLE###.*$/m, '').replace(/###META###.*$/m, '').replace(/###TAKEAWAYS###[\s\S]*?(?=<)/m, '').replace(/###ARTICLE###/g, '').trim()
     title = scrubAiHtml(title)
     metaDesc = scrubAiHtml(metaDesc)
   } catch (err) {
@@ -340,15 +404,29 @@ VOICE / STYLE RULES:
   }
 
   if (!preHtml) {
+    // Key Takeaways box + Table of contents. Add anchor ids to the H2s and build
+    // the TOC first, then splice the takeaways box + TOC in right after the
+    // answer-first intro (before the first H2), so the intro AI quotes stays on
+    // top and the reader gets a scannable map next. Both are KSES-safe.
+    const { html: withIds, toc } = addAnchorsAndToc(html)
+    html = withIds
+    const takeBox = renderTakeaways(takeaways)
+    if (takeBox || toc) {
+      const at = html.search(/<h2\b/i)
+      const inject = takeBox + toc
+      html = at >= 0 ? html.slice(0, at) + inject + html.slice(at) : inject + html
+    }
+
     // Sources — cite the research. When the article leans on external data, list
-    // the pages the web search surfaced as linked references at the end (trust +
-    // AEO signal). Capped, deduped, KSES-safe. (A preview-republish keeps the
+    // the pages the web search surfaced as a NUMBERED reference list at the end
+    // (trust + AEO signal; the inline citations in the body link straight to the
+    // source URLs). Capped, deduped, KSES-safe. (A preview-republish keeps the
     // exact bytes it already showed, sources included.)
     if (sources.length) {
       const items = sources.slice(0, 8)
-        .map(s => `<li><a href="${esc(s.url)}" rel="nofollow noopener" target="_blank">${esc(s.title)}</a></li>`)
+        .map((s, i) => `<li id="mvp-src-${i + 1}" style="margin:4px 0"><a href="${esc(s.url)}" rel="nofollow noopener" target="_blank">${esc(s.title)}</a></li>`)
         .join('')
-      html += `\n<h2>Sources</h2>\n<ul>${items}</ul>\n`
+      html += `\n<h2>Sources</h2>\n<ol style="font-size:14px;line-height:1.6">${items}</ol>\n`
     }
 
     // Related reading — MVP's 3 most-related existing posts as a thumbnail row
@@ -488,6 +566,69 @@ VOICE / STYLE RULES:
   } catch (err) {
     console.error('[articles] wp publish', err instanceof Error ? err.message : err)
     return NextResponse.json({ error: toUserMessage(err, 'Couldn’t publish to WordPress just now. Please check your site connection and try again.') }, { status: 500 })
+  }
+
+  // ── SEO / AEO / GEO structured data ───────────────────────────────────────
+  // Every piece of content MVP publishes carries a JSON-LD @graph (the plugin
+  // renders it in <head>). Articles emit Article + Person (author) + Organization
+  // + FAQPage + BreadcrumbList + speakable — no Review/Product nodes (this is an
+  // informational article, not a product review). Best-effort; never blocks the
+  // publish. Mirrors the reviews' schema writer.
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: brand } = await (supabase as any)
+      .from('brand_profiles').select('*').eq('user_id', user.id).maybeSingle()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const b = (brand || {}) as Record<string, any>
+    const wpBase = (site.wordpress_url || '').replace(/\/$/, '')
+    const nowIso = new Date().toISOString()
+    const graph = buildContentSchemaGraph({
+      pageUrl: wpPost.link,
+      title,
+      description: metaDesc || title,
+      datePublished: nowIso,
+      dateModified: nowIso,
+      imageUrl: heroUrl || null,
+      pageType: 'Article',
+      author: {
+        name: (b.author_name as string) || (b.name as string) || 'Editor',
+        channelUrl: (b.youtube_url as string) || (b.website_url as string) || null,
+        bio: (b.author_bio as string) || null,
+        imageUrl: (b.headshot_url as string) || null,
+        jobTitle: 'Writer',
+        knowsAbout: Array.isArray(b.niches) ? (b.niches as string[]).slice(0, 8) : null,
+      },
+      publisher: {
+        name: (b.name as string) || 'MVP Affiliate',
+        url: site.wordpress_url,
+        logoUrl: (b.logo_url as string) || null,
+        sameAs: [b.youtube_url, b.instagram_url, b.tiktok_url, b.website_url]
+          .filter((u): u is string => typeof u === 'string' && /^https?:\/\//.test(u)),
+      },
+      wordCount: html.replace(/<[^>]+>/g, ' ').replace(/&[a-z#0-9]+;/gi, ' ').trim().split(/\s+/).filter(Boolean).length || null,
+      category: 'Articles',
+      inLanguage: 'en',
+      faq: extractFaqFromHtml(html),
+      breadcrumb: [
+        { name: 'Home', url: wpBase || site.wordpress_url },
+        { name: 'Articles', url: `${wpBase}/category/articles/` },
+        { name: title, url: wpPost.link },
+      ],
+      speakableSelectors: ['.mvp-takeaways', 'h1'],
+      product: null,
+      rating: null,
+      video: null,
+      thirdPartyProduct: false,
+    })
+    await wpService.updatePost(wpPost.id, {
+      meta: {
+        mvp_jsonld: JSON.stringify(graph),
+        mvp_meta_description: (metaDesc || title).slice(0, 300),
+        mvp_og_image: heroUrl || '',
+      },
+    })
+  } catch (e) {
+    console.warn('[articles] seo-schema skipped:', e instanceof Error ? e.message : String(e))
   }
 
   // ── Save the blog_posts row (post_type 'article') ─────────────────────────
