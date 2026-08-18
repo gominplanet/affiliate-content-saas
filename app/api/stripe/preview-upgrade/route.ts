@@ -47,8 +47,14 @@ export async function POST(request: NextRequest) {
     const nextPrice = (newPrice.unit_amount ?? 0) / 100
     const isUpgrade = (newPrice.unit_amount ?? 0) > (item.price?.unit_amount ?? 0)
 
-    // Downgrade → the proration is a CREDIT (deferred), nothing is charged now.
-    if (!isUpgrade) return NextResponse.json({ kind: 'downgrade', nextPrice })
+    // Downgrade → takes effect at PERIOD END. Nothing is charged now; the
+    // customer keeps their current plan until the paid period lapses, then moves
+    // to the lower one (the checkout route schedules this).
+    if (!isUpgrade) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const effectiveAt = (live as any).current_period_end ?? null
+      return NextResponse.json({ kind: 'downgrade', nextPrice, effectiveAt })
+    }
 
     // Upgrade → preview the invoice Stripe would raise immediately. amount_due
     // is the prorated charge (rest-of-cycle difference + the new period, as on

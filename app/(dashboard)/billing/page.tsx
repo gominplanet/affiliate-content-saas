@@ -26,7 +26,9 @@ export default function BillingPage() {
   const [promoCode, setPromoCode] = useState('')
   // Upgrade-cost preview (shown BEFORE we bill, so the charge is never a surprise).
   const [previewLoading, setPreviewLoading] = useState<string | null>(null)
-  const [preview, setPreview] = useState<{ tier: string; kind: string; chargeNow: number | null; nextPrice: number | null } | null>(null)
+  const [preview, setPreview] = useState<{ tier: string; kind: string; chargeNow: number | null; nextPrice: number | null; effectiveAt?: number | null } | null>(null)
+  // A queued end-of-period downgrade (Stripe schedule), if any — shown as a note.
+  const [pendingDowngrade, setPendingDowngrade] = useState<{ tier: string; effectiveAt: number } | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -77,6 +79,12 @@ export default function BillingPage() {
         supabase.from('blog_posts').select('id', { count: 'exact', head: true }).eq('user_id', user.id).not('pinterest_pin_id', 'is', null).gte('published_at', monthStart),
       ])
       setSocialCounts({ facebook: fbRes.count ?? 0, threads: thRes.count ?? 0, pinterest: pinRes.count ?? 0 })
+
+      // Any queued end-of-period downgrade? (read live from Stripe, best-effort)
+      try {
+        const ps = await fetch('/api/stripe/plan-status').then(r => (r.ok ? r.json() : null))
+        setPendingDowngrade(ps?.pendingDowngrade ?? null)
+      } catch { /* non-fatal — just don't show the note */ }
     } finally {
       // Always exit the loading state — without this finally a thrown
       // supabase error or `!user` early return left the page on the
@@ -154,7 +162,7 @@ export default function BillingPage() {
       if (data.error) { toast.error(data.error); return }
       if (data.kind === 'new') { void upgrade(t); return }
       if (data.kind === 'same') { toast.success("You're already on this plan."); return }
-      setPreview({ tier: t, kind: data.kind, chargeNow: data.chargeNow ?? null, nextPrice: data.nextPrice ?? null })
+      setPreview({ tier: t, kind: data.kind, chargeNow: data.chargeNow ?? null, nextPrice: data.nextPrice ?? null, effectiveAt: data.effectiveAt ?? null })
     } catch { toast.error('Something went wrong. Please try again.') }
     finally { setPreviewLoading(null) }
   }
@@ -171,17 +179,29 @@ export default function BillingPage() {
         // leave this blank.
         body: JSON.stringify({ tier: t, promoCode: promoCode.trim() || null }),
       })
-      const { url, updated, alreadyOnPlan, chargedNow, discountApplied, warning, error } = await res.json()
+      const { url, updated, alreadyOnPlan, chargedNow, discountApplied, warning, error, scheduledDowngrade, effectiveAt, downgradeCancelled } = await res.json()
       if (error) { toast.error(error, { duration: 8_000 }); return }
       // Existing subscriber → plan was switched in place (prorated), no
       // redirect. New subscriber → a Checkout URL to visit.
       if (updated) {
         const label = t.charAt(0).toUpperCase() + t.slice(1)
+        // Downgrade queued for period end — keep the current plan until then.
+        if (scheduledDowngrade) {
+          const when = effectiveAt
+            ? new Date(effectiveAt * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+            : 'the end of your billing period'
+          toast.success(`You'll keep your current plan until ${when}, then move to ${label}. Undo any time before then by re-selecting your current plan.`, { duration: 9_000 })
+          setTimeout(() => window.location.reload(), 2_200)
+          return
+        }
         // Say plainly when money just moved. Upgrades now bill the difference
         // immediately, and a charge nobody was told about is exactly what made
         // the next invoice look wrong to the customer who prompted this.
         const msg = alreadyOnPlan
-          ? discountApplied
+          ? downgradeCancelled
+            // Re-selecting the current plan released a queued downgrade.
+            ? `Your scheduled downgrade was cancelled — you're staying on ${label}.`
+            : discountApplied
             // They were already on the plan and redeemed a code — say the code
             // landed, not "nothing to do", which is what it used to report.
             ? `Promo code applied to your ${label} plan — you'll see it on your next invoice.`
@@ -208,6 +228,15 @@ export default function BillingPage() {
           users and Creators not on the legacy flag. Renders before the
           plan picker so it's the first thing they see when shopping. */}
       <LegacyCapsNotice />
+
+      {pendingDowngrade && (
+        <div className="mb-4 rounded-xl border border-[#FF9500]/30 bg-[#FF9500]/[0.08] px-4 py-3 text-[13px] text-[#1d1d1f] dark:text-[#f5f5f7]">
+          <strong>Scheduled change:</strong> your plan moves to{' '}
+          {TIERS[pendingDowngrade.tier as Tier]?.label ?? pendingDowngrade.tier} on{' '}
+          {new Date(pendingDowngrade.effectiveAt * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}.{' '}
+          You keep your current plan until then — re-select your current plan below to keep it.
+        </div>
+      )}
 
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-[#86868b] dark:text-[#8e8e93] py-8">
@@ -401,7 +430,7 @@ export default function BillingPage() {
                               <>You&apos;ll be charged the <strong>prorated difference</strong> for upgrading today, then <strong>${preview.nextPrice}/month</strong>.</>
                             )
                           ) : (
-                            <>Your plan changes to <strong>{TIERS[plan.tier].label}</strong> (<strong>${preview.nextPrice}/month</strong>). <strong>No charge today</strong> — your unused time is credited toward your next invoice.</>
+                            <>You keep your current plan until <strong>{preview.effectiveAt ? new Date(preview.effectiveAt * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'the end of this billing period'}</strong>, then move to <strong>{TIERS[plan.tier].label}</strong> (<strong>${preview.nextPrice}/month</strong>). <strong>No charge today</strong> — you keep everything you&apos;ve paid for until then.</>
                           )}
                         </p>
                         <div className="flex items-center gap-2 mt-3">

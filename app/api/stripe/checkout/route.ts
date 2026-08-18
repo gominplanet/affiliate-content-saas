@@ -90,6 +90,19 @@ export async function POST(request: NextRequest) {
           }
         }
 
+        // If a scheduled change is attached (e.g. a queued end-of-period
+        // downgrade), any new plan action supersedes it — release the schedule
+        // so we act on the live subscription. Re-selecting the CURRENT plan
+        // therefore simply CANCELS a pending downgrade.
+        let releasedSchedule = false
+        if (live.schedule) {
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            await stripe.subscriptionSchedules.release(typeof live.schedule === 'string' ? live.schedule : (live.schedule as any).id)
+            releasedSchedule = true
+          } catch { /* already released or completed — fine */ }
+        }
+
         // Already on this price → no plan change to make. Apply the discount
         // on its own if they supplied one, rather than saying nothing happened.
         if (item.price?.id === priceId) {
@@ -99,15 +112,54 @@ export async function POST(request: NextRequest) {
               // Don't re-prorate: the price isn't moving, only the discount.
               proration_behavior: 'none',
             })
-            return NextResponse.json({ updated: true, tier, alreadyOnPlan: true, discountApplied: true })
+            return NextResponse.json({ updated: true, tier, alreadyOnPlan: true, discountApplied: true, ...(releasedSchedule ? { downgradeCancelled: true } : {}) })
           }
-          return NextResponse.json({ updated: true, tier, alreadyOnPlan: true })
+          return NextResponse.json({ updated: true, tier, alreadyOnPlan: true, ...(releasedSchedule ? { downgradeCancelled: true } : {}) })
         }
 
         // Upgrade or downgrade? Compare real Stripe amounts rather than
         // assuming tier order, so a future price change can't invert this.
         const newPrice = await stripe.prices.retrieve(priceId)
         const isUpgrade = (newPrice.unit_amount ?? 0) > (item.price?.unit_amount ?? 0)
+        const canSchedule = ['active', 'trialing'].includes(live.status)
+
+        // ── DOWNGRADE (on a healthy sub) → take effect at PERIOD END ──────────
+        // The customer already paid for the current cycle at the higher plan, so
+        // they keep it until the period lapses, THEN drop to the lower tier —
+        // consistent with how cancellation behaves. Implemented with a Stripe
+        // subscription schedule: phase 1 keeps the current price to period end,
+        // phase 2 switches to the lower price (no proration — it's a clean swap
+        // at renewal). We deliberately do NOT flip the local tier now; the
+        // customer.subscription.updated webhook maps the lower tier when phase 2
+        // activates. Delinquent subs (past_due/unpaid) skip scheduling and
+        // downgrade immediately, since a schedule on a delinquent sub is fragile.
+        if (!isUpgrade && canSchedule) {
+          const schedule = await stripe.subscriptionSchedules.create({ from_subscription: live.id })
+          const p0 = schedule.phases[0]
+          const effectiveAt = p0?.end_date ?? null // unix seconds — current period end
+          await stripe.subscriptionSchedules.update(schedule.id, {
+            end_behavior: 'release', // hand control back to the subscription after phase 2 starts
+            phases: [
+              {
+                items: [{ price: item.price!.id, quantity: 1 }],
+                start_date: p0.start_date,
+                end_date: p0.end_date,
+              },
+              {
+                items: [{ price: priceId, quantity: 1 }],
+                proration_behavior: 'none',
+                // Stamp so the webhook resolves user + tier directly when this
+                // phase activates and fires customer.subscription.updated.
+                metadata: { user_id: user.id, tier },
+                ...(promotionCodeId ? { discounts: [{ promotion_code: promotionCodeId }] } : {}),
+              },
+            ],
+            metadata: { mvp_downgrade_to: tier, user_id: user.id },
+          })
+          // Local tier stays as-is until the schedule lands — access is unchanged
+          // until period end.
+          return NextResponse.json({ updated: true, scheduledDowngrade: true, tier, effectiveAt })
+        }
 
         const updated = await stripe.subscriptions.update(live.id, {
           items: [{ id: item.id, price: priceId }],
