@@ -18,6 +18,7 @@ import { toast } from 'sonner'
 import { Newspaper, Sparkles, Loader2, ExternalLink, UploadCloud, FlaskConical } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { createBrowserClient } from '@/lib/supabase/client'
+import { TIERS, normalizeTier } from '@/lib/tier'
 
 // The section toggles, in display order. Keys match the API's SECTION_ORDER.
 const SECTIONS: { key: string; label: string; hint: string }[] = [
@@ -44,8 +45,8 @@ const LENGTHS: { key: 'short' | 'medium' | 'long'; label: string; words: string 
 ]
 
 export default function ArticlesPage() {
-  // Admin gate — null = still loading (avoid flashing the notice to the admin).
-  const [isAdmin, setIsAdmin] = useState<boolean | null>(null)
+  // Entitlement gate — null = still loading (avoid flashing the notice).
+  const [canUse, setCanUse] = useState<boolean | null>(null)
 
   const [topic, setTopic] = useState('')
   const [angle, setAngle] = useState('')
@@ -66,13 +67,14 @@ export default function ArticlesPage() {
       try {
         const supabase = createBrowserClient()
         const { data: { user } } = await supabase.auth.getUser()
-        if (!user) { if (!cancelled) setIsAdmin(false); return }
+        if (!user) { if (!cancelled) setCanUse(false); return }
         const { data } = await supabase
           .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
-        const tier = (data as { tier?: string } | null)?.tier ?? 'trial'
-        if (!cancelled) setIsAdmin(tier === 'admin')
+        const tier = normalizeTier((data as { tier?: string } | null)?.tier)
+        // Entitled when the tier has an articles allowance (null = admin, or >0).
+        if (!cancelled) setCanUse((TIERS[tier]?.articlesPerMonth ?? 0) !== 0)
       } catch {
-        if (!cancelled) setIsAdmin(false)
+        if (!cancelled) setCanUse(false)
       }
     })()
     return () => { cancelled = true }
@@ -147,8 +149,8 @@ export default function ArticlesPage() {
 
   const generating = busy !== null
 
-  // ── Admin gate ────────────────────────────────────────────────────────
-  if (isAdmin === false) {
+  // ── Entitlement gate ──────────────────────────────────────────────────
+  if (canUse === false) {
     return (
       <div className="space-y-6">
         <div className="rounded-xl border p-8" style={{ background: 'var(--panel)', borderColor: 'var(--border)' }}>
@@ -159,7 +161,8 @@ export default function ArticlesPage() {
             <div>
               <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--fg)' }}>Articles</h1>
               <p className="text-sm mt-2" style={{ color: 'var(--fg-muted)' }}>
-                This tool is in early testing. It&rsquo;ll open up soon.
+                Articles is a Creator, Studio and Pro feature. Upgrade to publish researched
+                informational articles alongside your reviews.
               </p>
             </div>
           </div>
@@ -168,7 +171,7 @@ export default function ArticlesPage() {
     )
   }
 
-  if (isAdmin === null) {
+  if (canUse === null) {
     return (
       <div className="rounded-xl border p-6 text-center text-sm" style={{ background: 'var(--panel)', borderColor: 'var(--border)', color: 'var(--fg-muted)' }}>
         <Loader2 className="w-4 h-4 animate-spin inline-block mr-2" /> Loading…
@@ -188,7 +191,7 @@ export default function ArticlesPage() {
             <div className="flex items-center gap-2.5 flex-wrap">
               <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--fg)' }}>Articles</h1>
               <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full" style={{ background: 'rgba(124,58,237,.12)', color: '#7C3AED' }}>
-                Admin · early testing
+                New
               </span>
             </div>
             <p className="text-sm mt-1.5" style={{ color: 'var(--fg-muted)' }}>
