@@ -32,7 +32,7 @@ import { spendGate } from '@/lib/ai-spend'
 import { checkArticlesUsage, normalizeTier, TIERS } from '@/lib/tier'
 import { scrubAiHtml } from '@/lib/html-scrub'
 import { scorePostSeo } from '@/lib/seo-score'
-import { buildContentSchemaGraph, extractFaqFromHtml } from '@/lib/seo-schema'
+import { writeContentSchema } from '@/lib/content-schema'
 import { pickRelatedPosts, type LinkCandidate } from '@/lib/internal-links'
 import { fal } from '@fal-ai/client'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
@@ -571,65 +571,21 @@ VOICE / STYLE RULES:
   // ── SEO / AEO / GEO structured data ───────────────────────────────────────
   // Every piece of content MVP publishes carries a JSON-LD @graph (the plugin
   // renders it in <head>). Articles emit Article + Person (author) + Organization
-  // + FAQPage + BreadcrumbList + speakable — no Review/Product nodes (this is an
-  // informational article, not a product review). Best-effort; never blocks the
-  // publish. Mirrors the reviews' schema writer.
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: brand } = await (supabase as any)
-      .from('brand_profiles').select('*').eq('user_id', user.id).maybeSingle()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const b = (brand || {}) as Record<string, any>
-    const wpBase = (site.wordpress_url || '').replace(/\/$/, '')
-    const nowIso = new Date().toISOString()
-    const graph = buildContentSchemaGraph({
-      pageUrl: wpPost.link,
-      title,
-      description: metaDesc || title,
-      datePublished: nowIso,
-      dateModified: nowIso,
-      imageUrl: heroUrl || null,
-      pageType: 'Article',
-      author: {
-        name: (b.author_name as string) || (b.name as string) || 'Editor',
-        channelUrl: (b.youtube_url as string) || (b.website_url as string) || null,
-        bio: (b.author_bio as string) || null,
-        imageUrl: (b.headshot_url as string) || null,
-        jobTitle: 'Writer',
-        knowsAbout: Array.isArray(b.niches) ? (b.niches as string[]).slice(0, 8) : null,
-      },
-      publisher: {
-        name: (b.name as string) || 'MVP Affiliate',
-        url: site.wordpress_url,
-        logoUrl: (b.logo_url as string) || null,
-        sameAs: [b.youtube_url, b.instagram_url, b.tiktok_url, b.website_url]
-          .filter((u): u is string => typeof u === 'string' && /^https?:\/\//.test(u)),
-      },
-      wordCount: html.replace(/<[^>]+>/g, ' ').replace(/&[a-z#0-9]+;/gi, ' ').trim().split(/\s+/).filter(Boolean).length || null,
-      category: 'Articles',
-      inLanguage: 'en',
-      faq: extractFaqFromHtml(html),
-      breadcrumb: [
-        { name: 'Home', url: wpBase || site.wordpress_url },
-        { name: 'Articles', url: `${wpBase}/category/articles/` },
-        { name: title, url: wpPost.link },
-      ],
-      speakableSelectors: ['.mvp-takeaways', 'h1'],
-      product: null,
-      rating: null,
-      video: null,
-      thirdPartyProduct: false,
-    })
-    await wpService.updatePost(wpPost.id, {
-      meta: {
-        mvp_jsonld: JSON.stringify(graph),
-        mvp_meta_description: (metaDesc || title).slice(0, 300),
-        mvp_og_image: heroUrl || '',
-      },
-    })
-  } catch (e) {
-    console.warn('[articles] seo-schema skipped:', e instanceof Error ? e.message : String(e))
-  }
+  // + FAQPage + BreadcrumbList + speakable (the Key Takeaways box). Best-effort;
+  // never blocks the publish.
+  await writeContentSchema(supabase, wpService, {
+    userId: user.id,
+    siteUrl: site.wordpress_url,
+    wpPostId: wpPost.id,
+    pageUrl: wpPost.link,
+    title,
+    description: metaDesc || title,
+    html,
+    imageUrl: heroUrl || null,
+    pageType: 'Article',
+    category: 'Articles',
+    speakableSelectors: ['.mvp-takeaways', 'h1'],
+  })
 
   // ── Save the blog_posts row (post_type 'article') ─────────────────────────
   // video_id is nullable (informational articles aren't tied to a video, same

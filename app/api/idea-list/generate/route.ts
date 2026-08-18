@@ -28,6 +28,7 @@ import { buildCampaignHero } from '@/lib/hero-image'
 import { generateArtDirectorBlogHero } from '@/lib/art-director-pin'
 import { scrubAiHtml } from '@/lib/html-scrub'
 import { toUserMessage } from '@/lib/friendly-error'
+import { writeContentSchema } from '@/lib/content-schema'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -254,6 +255,19 @@ ${fullListCta}`)
       }).select('id').single()
       postId = (saved?.id as string) ?? null
     } catch { /* non-fatal — the post is live on WP regardless */ }
+
+    await writeContentSchema(sb, wp, {
+      userId: user.id,
+      siteUrl: creds.wordpress_url,
+      wpPostId: wpPost.id,
+      pageUrl: wpPost.link,
+      title: postTitle,
+      description: (parsed.intro || '').slice(0, 160),
+      html: content,
+      imageUrl: picks.find(p => p.image)?.image ?? null,
+      pageType: 'BlogPosting',
+      category: 'Buying Guides',
+    })
 
     return NextResponse.json({ ok: true, url: wpPost.link, title: postTitle, picked: picks.length, postId, wpPostId: wpPost.id })
   } catch (err) {

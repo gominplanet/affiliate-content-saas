@@ -30,6 +30,7 @@ import { scrubBanned } from '@/lib/scrub'
 import { spendGate } from '@/lib/ai-spend'
 import { type Tier } from '@/lib/tier'
 import { freeTierGenerationBlock } from '@/lib/free-tier-gate'
+import { writeContentSchema } from '@/lib/content-schema'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -253,6 +254,19 @@ export async function POST(request: NextRequest) {
       })
       if (bpErr) console.error('[levanta] blog_posts insert failed:', bpErr.message)
     } catch (e) { console.error('[levanta] blog_posts insert threw:', e instanceof Error ? e.message : String(e)) }
+
+    await writeContentSchema(supabase, wpService, {
+      userId: user.id,
+      siteUrl: wpCreds.wordpress_url,
+      wpPostId: wpPost.id,
+      pageUrl: wpPost.link,
+      title,
+      description: excerpt,
+      html: content,
+      imageUrl: heroUrl,
+      pageType: 'BlogPosting',
+      category: generated.category || null,
+    })
 
     const editUrl = `${wpCreds.wordpress_url.replace(/\/+$/, '')}/wp-admin/post.php?post=${wpPost.id}&action=edit`
     return NextResponse.json({ ok: true, wordpressUrl: wpPost.link, editUrl, draft: status === 'draft', affiliateUrl, cloaked, linkSource, title })

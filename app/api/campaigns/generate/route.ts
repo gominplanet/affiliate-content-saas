@@ -37,6 +37,7 @@ import { spendGate } from '@/lib/ai-spend'
 import { scrubBanned } from '@/lib/scrub'
 import { buildCampaignHero } from '@/lib/hero-image'
 import { pingIndexNowForUrl } from '@/lib/seo-on-publish'
+import { writeContentSchema } from '@/lib/content-schema'
 
 // 600s to match /api/blog/generate. The pipeline (scrape → research → 32k-token
 // write → fact-check → hero image → WP publish) can stack past the old 300s cap,
@@ -634,6 +635,19 @@ export async function POST(request: Request) {
         updated_at: new Date().toISOString(),
       }).eq('id', campaignId)
     }
+
+    await writeContentSchema(supabase, wpService, {
+      userId: user.id,
+      siteUrl: wpCreds.wordpress_url,
+      wpPostId: wpPost.id,
+      pageUrl: wpPost.link,
+      title: generated.title,
+      description: generated.excerpt,
+      html: generated.content,
+      imageUrl: heroUrl,
+      pageType: 'BlogPosting',
+      category: chosenCategory,
+    })
 
     return NextResponse.json({
       ok: true,

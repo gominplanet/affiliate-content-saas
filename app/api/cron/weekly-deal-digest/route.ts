@@ -22,6 +22,7 @@ import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { applyPostFixes } from '@/lib/seo-fix'
 import { checkSpendCeiling } from '@/lib/ai-spend'
 import { pickDigestDeals, resolveAffiliateUrl, generateDigestContent, nicheLabelFrom, keywordSlug, type DigestDeal } from '@/lib/weekly-digest'
+import { writeContentSchema } from '@/lib/content-schema'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -153,6 +154,19 @@ export async function GET(req: Request) {
           })
         } catch (err) { console.warn('[weekly-digest] SEO fix failed (post live):', err instanceof Error ? err.message : err) }
       }
+
+      await writeContentSchema(admin, wpService, {
+        userId: u.user_id,
+        siteUrl: site.wordpress_url,
+        wpPostId: wpPost.id,
+        pageUrl: wpPost.link,
+        title,
+        description: excerpt,
+        html: body,
+        imageUrl: heroImage || null,
+        pageType: 'BlogPosting',
+        category: 'Deals',
+      })
 
       published++
       results.push({ user: u.user_id, status: 'published' })

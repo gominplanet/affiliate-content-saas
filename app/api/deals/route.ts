@@ -54,6 +54,7 @@ import { normalizeTier, checkGenerationLimit, checkDealsUsage, TIERS } from '@/l
 import { canUseDealRadar } from '@/lib/feature-access'
 import { toUserMessage } from '@/lib/friendly-error'
 import { spendGate } from '@/lib/ai-spend'
+import { writeContentSchema } from '@/lib/content-schema'
 
 export const maxDuration = 300
 
@@ -995,6 +996,18 @@ export async function POST(req: Request) {
       console.warn('[deals] SEO auto-fix failed (post is still live):', err instanceof Error ? err.message : err)
     }
   }
+
+  await writeContentSchema(supabase, wpService, {
+    userId: user.id,
+    siteUrl: site.wordpress_url,
+    wpPostId: wpPost.id,
+    pageUrl: wpPost.link,
+    title: wpTitle,
+    html: finalHtml,
+    imageUrl: product.imageUrl,
+    pageType: 'BlogPosting',
+    category: 'Deals',
+  })
 
   // ── Regenerate cleanup ────────────────────────────────────────────────
   // Now that the new post is safely published + the new row is in the DB,
