@@ -248,6 +248,35 @@ export async function POST(req: Request) {
   // article is kept), not on preview (spendGate above backstops preview spend).
   // Admin (cap null) is exempt.
   if (publish) {
+    // Idempotency guard against a double-submit (two tabs, a retry, a
+    // double-click). The articles cap is a COUNT of published rows checked
+    // before the ~30s writer runs, so two concurrent publishes could both pass
+    // the count and both insert, exceeding articlesPerMonth and paying twice for
+    // the AI. If this user already published an article on the SAME topic in the
+    // last 2 minutes, return that one instead of generating again.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: recentDupe } = await (supabase as any)
+      .from('blog_posts')
+      .select('id, wordpress_url, title, content')
+      .eq('user_id', user.id)
+      .eq('post_type', 'article')
+      .eq('seo_keyword', (body.topic || '').trim())
+      .not('wordpress_url', 'is', null)
+      .gte('created_at', new Date(Date.now() - 2 * 60 * 1000).toISOString())
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (recentDupe?.wordpress_url) {
+      return NextResponse.json({
+        ok: true,
+        title: (recentDupe.title as string) || (body.topic || '').trim(),
+        html: (recentDupe.content as string) || '',
+        url: recentDupe.wordpress_url as string,
+        postId: (recentDupe.id as string) ?? null,
+        deduped: true,
+      })
+    }
+
     const art = await checkArticlesUsage(supabase, user.id)
     if (!art.allowed) {
       return NextResponse.json({ error: art.reason, limitReached: true, cap: 'articles', currentTier: art.tier, upgrade: art.upgrade }, { status: 429 })

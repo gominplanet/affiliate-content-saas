@@ -193,9 +193,17 @@ export async function POST(request: NextRequest) {
         const chargeCleared = !isUpgrade || !inv || inv.status === 'paid' || (inv.amount_due ?? 0) === 0
         const chargedAmount = isUpgrade && inv?.amount_paid ? inv.amount_paid / 100 : 0
 
-        // Reflect the new tier immediately (webhook re-confirms it).
+        // Reflect the new tier immediately ONLY if the upgrade charge cleared
+        // (webhook re-confirms it). On a decline we DON'T grant the higher tier
+        // locally — that would hand the user the bigger limits (real AI spend)
+        // for free during Stripe's dunning window. We flag past_due so the UI
+        // warns, and the webhook grants the tier the moment payment succeeds
+        // (invoice.payment_succeeded). Downgrades and non-upgrades always have
+        // chargeCleared true, so their tier flip is unchanged.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (supabase as any).from('integrations').update({ tier }).eq('user_id', user.id)
+        await (supabase as any).from('integrations')
+          .update(chargeCleared ? { tier } : { subscription_status: 'past_due' })
+          .eq('user_id', user.id)
         return NextResponse.json({
           updated: true,
           tier,

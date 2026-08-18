@@ -147,6 +147,37 @@ async function isStaleSubEvent(
   }
 }
 
+/**
+ * Same stale-event guard as isStaleSubEvent, but keyed on the Stripe customer
+ * id (used on the fallback branch for subscriptions with no user_id metadata —
+ * Payment Link / dashboard / older subs). Without it a replayed or late event
+ * for a churn-and-return customer's OLD subscription could overwrite the row
+ * that already reflects their NEW one.
+ */
+async function isStaleSubEventByCustomer(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  admin: any, stripe: any, customerId: string, incomingSubId: string | null, incomingCreated: number | null,
+): Promise<boolean> {
+  try {
+    if (!incomingSubId) return false
+    const { data: row } = await admin
+      .from('integrations').select('stripe_subscription_id').eq('stripe_customer_id', customerId).maybeSingle()
+    const currentSubId = (row as { stripe_subscription_id?: string | null } | null)?.stripe_subscription_id || null
+    if (!currentSubId || currentSubId === incomingSubId) return false
+    let storedCreated = 0
+    try {
+      const s = await stripe.subscriptions.retrieve(currentSubId)
+      storedCreated = (s?.created as number) ?? 0
+    } catch {
+      return false
+    }
+    if (!storedCreated || !incomingCreated) return false
+    return incomingCreated < storedCreated
+  } catch {
+    return false
+  }
+}
+
 export async function POST(request: NextRequest) {
   const body = await request.text()
   const sig = request.headers.get('stripe-signature')!
@@ -179,15 +210,25 @@ export async function POST(request: NextRequest) {
   // since migration 086 was added (TODO: regenerate via
   // `npx supabase gen types` after applying the migration).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: claimed } = await (admin as any)
+  const { data: claimed, error: claimErr } = await (admin as any)
     .from('stripe_webhook_events')
     .insert({ event_id: event.id, event_type: event.type })
     .select('event_id')
     .maybeSingle()
+  if (claimErr) {
+    // ONLY a unique-violation (23505) means "already claimed" → safe to ack with
+    // 200 and stop Stripe's retries. ANY OTHER error (transient DB, pool
+    // exhaustion) must NOT be swallowed as a duplicate — returning 200 there
+    // would tell Stripe to stop retrying and the tier write would be lost
+    // forever. 500 so Stripe redelivers the event.
+    if ((claimErr as { code?: string }).code === '23505') {
+      return NextResponse.json({ ok: true, duplicate: true, event_id: event.id })
+    }
+    console.error('[stripe-webhook] claim insert failed (non-duplicate):', claimErr)
+    return NextResponse.json({ error: 'claim insert failed' }, { status: 500 })
+  }
   if (!claimed) {
-    // Already processed (or a concurrent retry won the race).
-    // Returning 200 tells Stripe "thanks, got it" and stops the retry
-    // loop — exactly what we want.
+    // No error but no row returned — treat as already-claimed (defensive).
     return NextResponse.json({ ok: true, duplicate: true, event_id: event.id })
   }
 
@@ -298,8 +339,7 @@ export async function POST(request: NextRequest) {
     if (tier) {
       // Catch a paid tier granted from a too-cheap price (e.g. Pro on $49).
       void alertIfTierPriceTooCheap(stripe, tier, priceId, sub.items.data[0]?.price?.unit_amount, sub.customer)
-      const fields = {
-        tier,
+      const baseFields = {
         stripe_customer_id: sub.customer,
         stripe_subscription_id: sub.id,
         subscription_status: sub.cancel_at_period_end ? 'canceling' : sub.status,
@@ -310,6 +350,30 @@ export async function POST(request: NextRequest) {
           ? new Date(sub.current_period_end * 1000).toISOString()
           : null,
       }
+
+      // Don't RAISE the tier while the subscription's money isn't settled. A
+      // failed upgrade proration (proration_behavior 'always_invoice' with a
+      // declined card) can leave sub.status='active' but with an OPEN, unpaid
+      // invoice — so status alone isn't enough; we check the latest invoice.
+      // When unsettled we still record status + period, but leave the tier at
+      // whatever's on file (the old, paid-for plan), so nobody gets the higher
+      // tier for free during dunning. invoice.payment_succeeded grants the tier
+      // the moment the charge clears. Never DOWNGRADES here — only withholds a
+      // raise — so a transient past_due on a normal renewal can't strip access.
+      const UNPAID = new Set(['past_due', 'unpaid', 'incomplete', 'incomplete_expired'])
+      let settled = !UNPAID.has(sub.status)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const latestInvoiceId = (sub as any).latest_invoice
+      if (settled && typeof latestInvoiceId === 'string' && latestInvoiceId) {
+        try {
+          const li = await stripe.invoices.retrieve(latestInvoiceId)
+          const owes = (li?.amount_due ?? 0) > 0 && (li?.status === 'open' || li?.status === 'uncollectible')
+          if (owes) settled = false
+        } catch { /* keep the status-based decision */ }
+      }
+      // Apply the tier only when settled; otherwise record status + period only.
+      const fields = settled ? { ...baseFields, tier } : baseFields
+
       // If we know the user_id (stamped on the subscription at checkout), upsert
       // by user_id — this links the row + applies the tier even when
       // checkout.session.completed hasn't run yet (no chicken-and-egg on the
@@ -325,8 +389,14 @@ export async function POST(request: NextRequest) {
           if (error) return releaseAndRetry(admin, event.id, event.type, error)
         }
       } else {
-        const { error } = await admin.from('integrations').update(fields).eq('stripe_customer_id', sub.customer)
-        if (error) return releaseAndRetry(admin, event.id, event.type, error)
+        // Same churn-and-return stale guard, keyed on the customer id (this
+        // branch has no user_id metadata). Previously unguarded.
+        if (await isStaleSubEventByCustomer(admin, stripe, sub.customer, sub.id, sub.created ?? null)) {
+          console.warn('[stripe-webhook] ignoring stale/out-of-order subscription event (by customer)', { incoming: sub.id, customer: sub.customer })
+        } else {
+          const { error } = await admin.from('integrations').update(fields).eq('stripe_customer_id', sub.customer)
+          if (error) return releaseAndRetry(admin, event.id, event.type, error)
+        }
       }
     } else {
       console.warn('[stripe-webhook] subscription event with no resolvable tier', { priceId, subId: sub.id, hasMetaTier: !!sub.metadata?.tier })
@@ -371,14 +441,38 @@ export async function POST(request: NextRequest) {
 
   // Payment recovered after a failed invoice — clear the past_due flag so the
   // UI stops warning. Only touches rows we actually marked past_due; leaves a
-  // 'canceling' or already-active status alone. Tier is not changed here.
+  // 'canceling' or already-active status alone.
   if (event.type === 'invoice.payment_succeeded') {
-    const invoice = event.data.object as { customer: string }
+    const invoice = event.data.object as { customer: string; subscription?: string | null }
     const { error } = await admin.from('integrations')
       .update({ subscription_status: 'active' })
       .eq('stripe_customer_id', invoice.customer)
       .eq('subscription_status', 'past_due')
     if (error) return releaseAndRetry(admin, event.id, 'invoice.payment_succeeded', error)
+
+    // Grant the tier the customer is actually paid for now. This lands an
+    // upgrade whose proration we WITHHELD until payment cleared (see the unpaid
+    // guard on subscription.updated), and self-heals any tier drift. Guarded to
+    // the row's CURRENT subscription so a replayed invoice for an old
+    // subscription can't overwrite a newer plan. Reads the real price → tier,
+    // so it can never grant more than what's paid.
+    const subId = invoice.subscription || null
+    if (subId) {
+      let paidTier: Tier | undefined
+      try {
+        const s = await stripe.subscriptions.retrieve(subId)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const pid = (s as any)?.items?.data?.[0]?.price?.id as string | undefined
+        paidTier = pid ? PRICE_TO_TIER[pid] : undefined
+      } catch { /* leave tier as-is on any lookup failure */ }
+      if (paidTier) {
+        const { error: tErr } = await admin.from('integrations')
+          .update({ tier: paidTier })
+          .eq('stripe_customer_id', invoice.customer)
+          .eq('stripe_subscription_id', subId)
+        if (tErr) return releaseAndRetry(admin, event.id, 'invoice.payment_succeeded', tErr)
+      }
+    }
   }
 
   return NextResponse.json({ received: true })
