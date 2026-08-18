@@ -336,26 +336,12 @@ export async function POST(req: Request) {
   if (!canUseDealRadar(tier)) {
     return NextResponse.json({ error: 'Deal posts are available on paid plans.', code: 'tier_not_allowed', currentTier: tier }, { status: 403 })
   }
-  // Most paid tiers draw deals from the unified content-piece pool
-  // (postsPerMonth). But a deals-first tier like Amazon has postsPerMonth: 0 by
-  // design (it isn't sold blog generations) while still being sold a deal
-  // allowance (dealsPerMonth) — routing it through the generations gate meant
-  // (0 + 1) <= 0 = false, so it was blocked from EVERY deal despite the plan
-  // selling 100. When the tier has no generations allowance, gate on its own
-  // deal cap (checkDealsUsage) instead. Tiers with a generations pool are
-  // unchanged.
+  // NOTE: the monthly generation/deal cap is CONSUMED on the real publish path
+  // only (just before the Sonnet writer runs, after the refresh + preview +
+  // duplicate short-circuits). checkGenerationLimit atomically consumes a unit,
+  // so running it here charged a full unit for a mere preview or an in-place
+  // price refresh — a post the user never got. See the consume block below.
   const usesDealCap = TIERS[tier]?.postsPerMonth === 0
-  if (usesDealCap) {
-    const d = await checkDealsUsage(supabase, user.id)
-    if (!d.allowed) {
-      return NextResponse.json({ error: d.reason, limitReached: true, cap: 'deals', currentTier: d.tier, upgrade: d.upgrade }, { status: 429 })
-    }
-  } else {
-    const dealUsage = await checkGenerationLimit(supabase, user.id)
-    if (!dealUsage.allowed) {
-      return NextResponse.json({ error: dealUsage.reason, limitReached: true, cap: 'generations', currentTier: dealUsage.tier, upgrade: dealUsage.upgrade }, { status: 429 })
-    }
-  }
 
   // Monthly AI-spend circuit breaker (Sonnet writer + nano-banana thumbnails).
   const spendBlocked = await spendGate(user.id, tier)
@@ -589,6 +575,24 @@ export async function POST(req: Request) {
       occasion: { slug: occasion.slug, label: occasion.longLabel, badgeLabel: occasion.badgeLabel },
       promo: { code: promoCode || null, url: promoUrl || null },
     })
+  }
+
+  // ── Consume the monthly cap — PUBLISH PATH ONLY ───────────────────────
+  // We're past every short-circuit that returns without publishing a post
+  // (refresh-price, preview, duplicate-ASIN prompt), so this is a genuine
+  // publish. checkGenerationLimit atomically consumes a unit; charging it here
+  // (not at the top) means a preview or a price refresh never burns a unit.
+  // Amazon-style deal tiers (postsPerMonth 0) gate on their own deal cap.
+  if (usesDealCap) {
+    const d = await checkDealsUsage(supabase, user.id)
+    if (!d.allowed) {
+      return NextResponse.json({ error: d.reason, limitReached: true, cap: 'deals', currentTier: d.tier, upgrade: d.upgrade }, { status: 429 })
+    }
+  } else {
+    const dealUsage = await checkGenerationLimit(supabase, user.id)
+    if (!dealUsage.allowed) {
+      return NextResponse.json({ error: dealUsage.reason, limitReached: true, cap: 'generations', currentTier: dealUsage.tier, upgrade: dealUsage.upgrade }, { status: 429 })
+    }
   }
 
   // ── 3. Writer (Sonnet) — parallel with the thumbnail + body image

@@ -2809,10 +2809,20 @@ Bright, flattering, high-contrast premium thumbnail look. Do NOT add any other p
         const imgs = (kontextResult.data as any)?.images as Array<{ url: string }> | undefined
         const urls = (imgs ?? []).map(i => i.url).filter(Boolean)
         if (urls.length > 0) {
-          for (let i = 0; i < urls.length; i++) {
+          // Cap counter must appear EXACTLY ONCE per generation (see
+          // PRIMARY_FEATURE.thumbnail in lib/usage-cap.ts) — recording the
+          // primary feature per variant charged a 2-variant generation as 2
+          // thumbnails, so users got half their marketed monthly count. Record
+          // the primary once; log the extra variants' real spend under a
+          // cost-only feature the cap does not count (mirrors the nano path).
+          recordUsage({
+            userId: TELEMETRY.userId, tier: TELEMETRY.tier,
+            feature: 'yt_thumb_kontext_image', model: 'fal-flux-pro-kontext', images: 1,
+          })
+          for (let i = 1; i < urls.length; i++) {
             recordUsage({
               userId: TELEMETRY.userId, tier: TELEMETRY.tier,
-              feature: 'yt_thumb_kontext_image', model: 'fal-flux-pro-kontext', images: 1,
+              feature: 'yt_thumb_kontext_cost', model: 'fal-flux-pro-kontext', images: 1,
             })
           }
           // Force-moody grade before ranking — every path gets a moody/contrasty
