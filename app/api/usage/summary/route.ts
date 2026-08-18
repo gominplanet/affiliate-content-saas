@@ -175,7 +175,12 @@ export async function GET() {
       countSince('newsletter_broadcasts', 'created_at', calStartISO, ['sending', 'sent', 'scheduled', 'ab_testing']),
       countCascade(),                                                         // calendar month, distinct posts
     ])
-    push('deals', 'Deals', preview(deals, 63), refPlan.dealsPerMonth)
+    // Deals: only tiers with NO generations pool (Amazon) gate on their own
+    // dealsPerMonth cap — for everyone else a deal is a content piece counted in
+    // Generations above, so a separate "Deals" cap would misrepresent the gate.
+    if (TIERS[tier]?.postsPerMonth === 0 || isAdminPreview) {
+      push('deals', 'Deals', preview(deals, 63), refPlan.dealsPerMonth)
+    }
     push('collabs', 'Collabs', preview(collabs, 41), refPlan.collabsPerMonth)
     push('assistant', 'Ask Me', preview(asst, 372), refPlan.assistantMessagesPerMonth)
     push('photobooth', 'Photobooth', preview(photo, 4), refPlan.photoboothPerMonth)
