@@ -196,14 +196,20 @@ export async function GET(request: Request) {
   }
   const connected = !!(property && token)
 
-  // Match a post's slug to a GSC page URL.
-  const findPageForSlug = (slug: string): string | null => {
-    if (!slug) return null
-    for (const page of perfByPage.keys()) {
-      if (page.includes('/' + slug)) return page
+  // Match a post's slug to a GSC page URL. Build a slug→page index ONCE (each
+  // path segment of each GSC URL maps to that URL), then look up in O(1). The
+  // old code linear-scanned all ~1000 GSC pages for every post (up to 300),
+  // ~300k substring checks per load. Exact-segment matching is also cleaner than
+  // the old substring test (which matched "/tv" inside "/tv-stand/").
+  const pageBySlug = new Map<string, string>()
+  for (const page of perfByPage.keys()) {
+    const path = page.replace(/^https?:\/\/[^/]+/, '')
+    for (const seg of path.split('/')) {
+      if (seg && !pageBySlug.has(seg)) pageBySlug.set(seg, page)
     }
-    return null
   }
+  const findPageForSlug = (slug: string): string | null =>
+    slug ? (pageBySlug.get(slug) ?? null) : null
 
   const out: Record<string, unknown>[] = []
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
