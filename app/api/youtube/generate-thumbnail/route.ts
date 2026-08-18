@@ -1126,9 +1126,12 @@ export async function POST(request: Request) {
 
     // ── Hard monthly per-format cap ────────────────────────────────────────
     // pin/ig/fb are finite ONLY on the Amazon tier (null = unlimited on Studio/
-    // Pro, so they never block); the landscape-thumbnail cap is enforced only
-    // for the Amazon tier so Studio/Pro co-pilot behaviour is unchanged. The
-    // monthly $-ceiling (spendGate, above) remains the universal cost backstop.
+    // Pro, so they never block). The landscape-thumbnail cap (thumbnailsPerMonth)
+    // is now enforced on EVERY tier as marketed — Creator 20 / Studio 250 / Pro
+    // 300 / trial 5 (admin = null = unlimited). It shares one counter with the
+    // blog Art Director hero (both record yt_thumb_graphic), so a plan's
+    // thumbnail allowance covers co-pilot + blog heroes together. The monthly
+    // $-ceiling (spendGate, above) remains the universal cost backstop.
     {
       const T = TIERS[tier]
       let capLimit: number | null = null
@@ -1137,7 +1140,7 @@ export async function POST(request: Request) {
       if (isPin) { capLimit = T.pinsPerMonth; capFeatures = ['amazon_pin']; capLabel = 'pins' }
       else if (isIg || isStory) { capLimit = T.igPostsPerMonth; capFeatures = ['amazon_ig']; capLabel = 'Instagram designs' }
       else if (isFb) { capLimit = T.facebookPostsPerMonth; capFeatures = ['amazon_fb']; capLabel = 'Facebook designs' }
-      else if (tier === 'amazon') { capLimit = T.thumbnailsPerMonth; capFeatures = [...PRIMARY_FEATURE.thumbnail, 'yt_thumb_graphic']; capLabel = 'thumbnails' }
+      else { capLimit = T.thumbnailsPerMonth; capFeatures = [...PRIMARY_FEATURE.thumbnail, 'yt_thumb_graphic']; capLabel = 'thumbnails' }
       if (typeof capLimit === 'number') {
         const cap = await checkUsageCap(supabase, user.id, capFeatures, capLimit, tierRow?.subscription_period_start ?? null, tierRow?.subscription_period_end ?? null)
         if (cap && cap.exceeded) {
