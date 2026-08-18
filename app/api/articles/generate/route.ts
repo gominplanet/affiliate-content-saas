@@ -77,24 +77,27 @@ async function appendRelatedThumbs(
       thumbByUrl.set(url, thumb)
       candidates.push({ title: r.title as string, url, keyword: r.seo_keyword as string | null, postType: r.post_type as string | null })
     }
-    if (candidates.length < 2) return html
+    if (candidates.length < 1) return html
 
-    // minOverlap=2: these thumbnails are prominent (a full row below the
-    // conclusion), so a single incidental shared word isn't enough — require at
-    // least two shared topical tokens or the post doesn't show. Better to show
-    // fewer (the row only renders at ≥2) than an off-topic thumbnail.
+    // Match ONLY on the article's title + keyword (the topic identity), NOT its
+    // body snippet — the body is full of generic words ("relief", "active",
+    // "daily"…) that create false matches (an elbow-brace review landing on a
+    // juicer article). minOverlap=2 shared topical tokens keeps it tight. Show
+    // whatever GENUINELY relates: one if only one relates, up to three. Never
+    // pad the row with something off-topic just to reach a count.
     const picked = pickRelatedPosts(
-      { title: current.title, keyword: current.keyword, contentSnippet: current.snippet },
+      { title: current.title, keyword: current.keyword },
       candidates, 3, 2,
     )
-    if (picked.length < 2) return html
+    if (picked.length < 1) return html
 
+    const w = picked.length >= 3 ? 33 : picked.length === 2 ? 50 : 60
     const cells = picked.map(p => {
       const thumb = thumbByUrl.get(p.url) || ''
-      return `<td style="width:33%;padding:6px;vertical-align:top;text-align:center"><a href="${esc(p.url)}" style="color:#1d1d1f;text-decoration:none"><img src="${esc(thumb)}" alt="${esc(p.title)}" style="width:100%;border-radius:10px;margin-bottom:8px" /><strong style="font-size:13px;line-height:1.35">${esc(p.title)}</strong></a></td>`
+      return `<td style="width:${w}%;padding:6px;vertical-align:top;text-align:center"><a href="${esc(p.url)}" style="color:#1d1d1f;text-decoration:none"><img src="${esc(thumb)}" alt="${esc(p.title)}" style="width:100%;border-radius:10px;margin-bottom:8px" /><strong style="font-size:13px;line-height:1.35">${esc(p.title)}</strong></a></td>`
     }).join('')
 
-    const block = `\n<h2>Related reading</h2>\n<table style="width:100%;border-collapse:collapse;margin:16px 0"><tbody><tr>${cells}</tr></tbody></table>\n`
+    const block = `\n<h2>Related reading</h2>\n<table style="width:100%;border-collapse:collapse;margin:16px 0;text-align:center"><tbody><tr>${cells}</tr></tbody></table>\n`
     return html + block
   } catch {
     return html
@@ -318,9 +321,11 @@ export async function POST(req: Request) {
           title: r.title, url: r.wordpress_url, keyword: r.seo_keyword, postType: r.post_type,
           contentSnippet: (r.content || '').replace(/<[^>]+>/g, ' ').slice(0, 300),
         }))
+      // Only genuinely related reviews (>=2 shared topical tokens on title +
+      // keyword). Better to offer the writer none than an off-topic product.
       const picked = pickRelatedPosts(
-        { title: topic, keyword: `${topic} ${keywords}`.trim(), contentSnippet: notes },
-        candidates, 5, 1,
+        { title: topic, keyword: `${topic} ${keywords}`.trim() },
+        candidates, 5, 2,
       )
       inlineReviews = picked.map(p => ({ title: p.title, url: p.url }))
     } catch { /* best-effort — fall back to no inline reviews */ }

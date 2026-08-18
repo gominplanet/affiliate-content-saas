@@ -1,15 +1,17 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// GET  /api/blog/autopilot  → { enabled, lastRunAt, pausedReason }
+// GET  /api/blog/autopilot  → { autopilot: { enabled, lastRunAt, pausedReason } }
 // PUT  /api/blog/autopilot  { enabled: boolean }
 //
 // Auto-pilot: when ON, a daily cron (/api/cron/auto-blog) turns the creator's
 // next un-blogged YouTube video into a published blog post (hero + internal
-// images), ONE per day, no social push. State lives in
-// brand_profiles.blog_customizations.autoBlog so there's no migration.
+// images), ONE per day, no social push. State lives PER SITE in
+// wordpress_sites.blog_customizations.autoBlog (that jsonb column already
+// exists — no migration), on the creator's default site.
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { normalizeTier, TIERS } from '@/lib/tier'
 
 export const runtime = 'nodejs'
@@ -19,6 +21,7 @@ interface AutoBlogState {
   lastRunAt: string | null
   pausedReason: string | null
   pausedAt: string | null
+  recentVideoIds?: string[]
 }
 
 function readState(customizations: unknown): AutoBlogState {
@@ -29,18 +32,24 @@ function readState(customizations: unknown): AutoBlogState {
     lastRunAt: typeof a.lastRunAt === 'string' ? a.lastRunAt : null,
     pausedReason: typeof a.pausedReason === 'string' ? a.pausedReason : null,
     pausedAt: typeof a.pausedAt === 'string' ? a.pausedAt : null,
+    recentVideoIds: Array.isArray(a.recentVideoIds) ? (a.recentVideoIds as string[]) : [],
   }
 }
+
+const OFF: AutoBlogState = { enabled: false, lastRunAt: null, pausedReason: null, pausedAt: null }
 
 export async function GET() {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  const site = await getWordPressCredentials(supabase, user.id)
+  if (!site || site.site_id === 'legacy') return NextResponse.json({ autopilot: OFF, noSite: !site })
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: brand } = await (supabase as any)
-    .from('brand_profiles').select('blog_customizations').eq('user_id', user.id).maybeSingle()
-  return NextResponse.json({ autopilot: readState(brand?.blog_customizations) })
+  const { data: row } = await (supabase as any)
+    .from('wordpress_sites').select('blog_customizations').eq('id', site.site_id).maybeSingle()
+  return NextResponse.json({ autopilot: readState(row?.blog_customizations) })
 }
 
 export async function PUT(req: Request) {
@@ -56,30 +65,40 @@ export async function PUT(req: Request) {
     return NextResponse.json({ error: 'Auto-pilot is available on paid plans.', code: 'tier_not_allowed' }, { status: 403 })
   }
 
+  const site = await getWordPressCredentials(supabase, user.id)
+  if (!site) return NextResponse.json({ error: 'Connect a WordPress site first.' }, { status: 400 })
+  if (site.site_id === 'legacy') {
+    return NextResponse.json({ error: 'Reconnect your WordPress site (Setup → WordPress) to use auto-pilot.' }, { status: 400 })
+  }
+
   let body: { enabled?: boolean }
   try { body = await req.json() } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }) }
   const enabled = body.enabled === true
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: brand } = await (supabase as any)
-    .from('brand_profiles').select('blog_customizations').eq('user_id', user.id).maybeSingle()
-  const current = (brand?.blog_customizations && typeof brand.blog_customizations === 'object' ? brand.blog_customizations : {}) as Record<string, unknown>
-  const prev = readState(brand?.blog_customizations)
+  const { data: row } = await (supabase as any)
+    .from('wordpress_sites').select('blog_customizations').eq('id', site.site_id).maybeSingle()
+  const current = (row?.blog_customizations && typeof row.blog_customizations === 'object' ? row.blog_customizations : {}) as Record<string, unknown>
+  const prev = readState(row?.blog_customizations)
 
   const autoBlog: AutoBlogState = {
     enabled,
-    // Preserve the last-run stamp so toggling off then on doesn't fire twice
-    // in one day. Clear any pause when the user explicitly re-enables.
     lastRunAt: prev.lastRunAt,
     pausedReason: enabled ? null : prev.pausedReason,
     pausedAt: enabled ? null : prev.pausedAt,
+    recentVideoIds: prev.recentVideoIds ?? [],
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (supabase as any)
-    .from('brand_profiles')
-    .upsert({ user_id: user.id, blog_customizations: { ...current, autoBlog } }, { onConflict: 'user_id' })
-  if (error) return NextResponse.json({ error: 'Could not save.' }, { status: 500 })
+    .from('wordpress_sites')
+    .update({ blog_customizations: { ...current, autoBlog } })
+    .eq('id', site.site_id)
+    .eq('user_id', user.id)
+  if (error) {
+    console.error('[autopilot] save failed:', error.message)
+    return NextResponse.json({ error: 'Could not save.' }, { status: 500 })
+  }
 
   return NextResponse.json({ autopilot: autoBlog })
 }
