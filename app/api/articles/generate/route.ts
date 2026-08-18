@@ -27,9 +27,12 @@ import { createWordPressService } from '@/services/wordpress'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { toUserMessage } from '@/lib/friendly-error'
-import { recordAnthropicUsage } from '@/lib/ai-usage'
+import { recordAnthropicUsage, recordUsage } from '@/lib/ai-usage'
 import { spendGate } from '@/lib/ai-spend'
+import { checkGenerationLimit } from '@/lib/tier'
 import { scrubAiHtml } from '@/lib/html-scrub'
+import { fal } from '@fal-ai/client'
+import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 
 export const maxDuration = 300
 
@@ -92,6 +95,9 @@ export async function POST(req: Request) {
     // the (costly, non-deterministic) writer and shipping something different.
     html?: string
     title?: string
+    // The previewed hero image URL, sent back on publish so we upload the same
+    // image the user saw rather than generating a new one.
+    heroUrl?: string
   }
   try { body = await req.json() } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }) }
 
@@ -113,6 +119,18 @@ export async function POST(req: Request) {
   const sections = SECTION_ORDER.filter(k => requested.includes(k))
   if (sections.length === 0) {
     return NextResponse.json({ error: 'Pick at least one section to include.' }, { status: 400 })
+  }
+
+  // Count against the monthly generation allowance — an article is one content
+  // piece, same as a review or buying guide. Charged on PUBLISH (the piece is
+  // kept), not on preview (spendGate above already backstops preview spend).
+  // Admin is exempt inside checkGenerationLimit, so this is a no-op while the
+  // tool is admin-only, and correctly meters it once it opens to paid tiers.
+  if (publish) {
+    const gen = await checkGenerationLimit(supabase, user.id)
+    if (!gen.allowed) {
+      return NextResponse.json({ error: gen.reason, limitReached: true, cap: 'generations', currentTier: gen.tier, upgrade: gen.upgrade }, { status: 429 })
+    }
   }
 
   // ── Build the writer prompt ──────────────────────────────────────────────
@@ -214,9 +232,31 @@ VOICE / STYLE RULES:
     return NextResponse.json({ error: 'Generation returned an empty article body' }, { status: 500 })
   }
 
+  // ── Hero image (editorial, text-free) ─────────────────────────────────────
+  // Drawn from the same paid image pipeline the other post types use (Flux Pro
+  // via fal) and recorded so it counts. On a republish from preview we reuse the
+  // exact image URL the user saw instead of generating a new one.
+  let heroUrl: string | null = preHtml
+    ? (typeof body.heroUrl === 'string' && body.heroUrl.trim() ? body.heroUrl.trim() : null)
+    : null
+  if (!preHtml && process.env.FAL_KEY) {
+    try {
+      fal.config({ credentials: process.env.FAL_KEY })
+      const heroPrompt = `An editorial hero photo representing ${topic}. Bright, aspirational, magazine-style editorial photography, clean composition, premium lighting, photorealistic. ${NO_BRAND_IMAGE_CLAUSE} No text, no words, no letters, no logos anywhere.`
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const r = await fal.subscribe('fal-ai/flux-pro/v1.1' as any, {
+        input: { prompt: heroPrompt, image_size: 'landscape_16_9', num_inference_steps: 28, guidance_scale: 3.5, num_images: 1, output_format: 'jpeg', safety_tolerance: '2' },
+        pollInterval: 3000,
+      })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      heroUrl = ((r.data as any)?.images as Array<{ url: string }> | undefined)?.[0]?.url ?? null
+      if (heroUrl) recordUsage({ userId: user.id, tier, feature: 'article_hero_image', model: 'fal-flux-pro-v1.1', images: 1 })
+    } catch { heroUrl = null /* article still publishes without a hero */ }
+  }
+
   // ── Preview only — no WordPress write ─────────────────────────────────────
   if (!publish) {
-    return NextResponse.json({ ok: true, title, html })
+    return NextResponse.json({ ok: true, title, html, heroUrl })
   }
 
   // ── Publish to WordPress ──────────────────────────────────────────────────
@@ -240,6 +280,15 @@ VOICE / STYLE RULES:
     wpService.resolveTagIds(['article']).catch(() => [] as number[]),
   ])
 
+  // Upload the hero as the featured image (best-effort — publish regardless).
+  let featuredMedia: number | undefined
+  if (heroUrl) {
+    try {
+      const media = await wpService.uploadImageFromUrl(heroUrl, `${slug}-hero.jpg`)
+      if (media?.id) featuredMedia = media.id
+    } catch { /* publish without a featured image */ }
+  }
+
   let wpPost: { id: number; link: string }
   try {
     wpPost = await wpService.createPost({
@@ -249,6 +298,7 @@ VOICE / STYLE RULES:
       status: 'publish',
       ...(categoryId ? { categories: [categoryId] } : {}),
       ...(tagIds.length ? { tags: tagIds } : {}),
+      ...(featuredMedia ? { featured_media: featuredMedia } : {}),
       comment_status: 'closed',
       ping_status: 'closed',
     })
