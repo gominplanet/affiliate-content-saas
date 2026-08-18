@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.91
+ * Version: 1.0.92
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -292,9 +292,14 @@ add_action('rest_api_init', function () {
 //   - LiteSpeed (some configs): REDIRECT_REDIRECT_HTTP_AUTHORIZATION (double-redirect)
 //   - PHP-CGI hosts: apache_request_headers() carries it but $_SERVER does not
 // We probe all four locations so users on ANY of these hosts never need
-// to manually patch their .htaccess. The activation hook (below) still
-// also writes the .htaccess rule as belt-and-suspenders for hosts where
-// even this PHP-level shim can't see the header.
+// to hand-edit a server-config file — this PHP-level shim is the sole
+// mechanism now. We deliberately do NOT have the plugin modify any
+// server-config file on disk: a plugin that rewrites those files is a
+// common false-positive trigger for host malware scanners (e.g. the
+// SiteGround Site Scanner), which can quarantine the whole plugin over
+// it. The probe above covers every host we've seen; the rare host it
+// can't is handled by a one-line manual note in our docs, not by the
+// plugin editing files.
 if (!isset($_SERVER['HTTP_AUTHORIZATION'])) {
     if (isset($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) {
         $_SERVER['HTTP_AUTHORIZATION'] = $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
@@ -313,24 +318,14 @@ if (!isset($_SERVER['HTTP_AUTHORIZATION'])) {
     }
 }
 
-// ─── 2. Activation: patch .htaccess for hosts where PHP-level fix isn't enough ─
+// ─── 2. Activation: performance config only (no file edits) ───────────────────
+// NOTE: this hook deliberately does NOT modify any server-config file on disk.
+// The Authorization header is handled entirely in PHP above. Having a plugin
+// rewrite server-config files is unnecessary here and a malware-scanner red
+// flag, so we don't.
 register_activation_hook(__FILE__, 'mvp_affiliate_activate');
 if (!function_exists('mvp_affiliate_activate')) {
     function mvp_affiliate_activate() {
-        $htaccess = ABSPATH . '.htaccess';
-        if (file_exists($htaccess) && is_writable($htaccess)) {
-            $content = file_get_contents($htaccess);
-            if (strpos($content, 'MVP Affiliate — forward Authorization') === false) {
-                $fix = "# MVP Affiliate — forward Authorization header to PHP\n"
-                    . "<IfModule mod_rewrite.c>\n"
-                    . "RewriteEngine On\n"
-                    . "RewriteCond %{HTTP:Authorization} .\n"
-                    . "RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]\n"
-                    . "</IfModule>\n\n";
-                file_put_contents($htaccess, $fix . $content);
-            }
-        }
-
         // ── Auto-configure LiteSpeed Cache for performance ────────────────────
         // Most Hostinger / SiteGround / cPanel hosts ship LiteSpeed Cache with
         // factory defaults that leave 30-50% page-speed gains on the table.
