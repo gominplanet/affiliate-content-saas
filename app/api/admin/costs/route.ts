@@ -48,6 +48,14 @@ export async function GET(request: Request) {
     const byFeature: Record<string, { cost: number; calls: number }> = {}
     let total = 0
     let calls = 0
+    // Collapse related sub-features into one dashboard line. Articles logs two
+    // features per publish — 'article_generate' (Sonnet writer + web search) and
+    // 'article_hero_image' (the Flux hero) — so show them as a single 'articles'
+    // line rather than two rows the reader has to add up.
+    const FEATURE_GROUP: Record<string, string> = {
+      article_generate: 'articles',
+      article_hero_image: 'articles',
+    }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     for (const g of ((rollupRes.data ?? []) as any[])) {
       const t = g.tier || 'unknown'
@@ -63,7 +71,7 @@ export async function GET(request: Request) {
       })
       const n = Number(g.calls) || 0
       total += c; calls += n
-      const f = g.feature || 'unknown'
+      const f = FEATURE_GROUP[g.feature as string] || g.feature || 'unknown'
       ;(byTier[t] ??= { cost: 0, calls: 0 }).cost += c
       byTier[t].calls += n
       ;(byFeature[f] ??= { cost: 0, calls: 0 }).cost += c
