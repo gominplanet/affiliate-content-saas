@@ -210,6 +210,10 @@ export async function POST(req: Request) {
     // 'product' (built around productImageUrl).
     heroStyle?: string
     productImageUrl?: string
+    // Monetization mode: 'throughout' weaves inline links to the creator's own
+    // relevant reviews into the body; 'end' (default) keeps the article purely
+    // informational and only surfaces related posts in the end block.
+    productMode?: string
     // When publishing straight from a preview, the client sends back the exact
     // HTML + title it showed, so we publish those bytes instead of re-running
     // the (costly, non-deterministic) writer and shipping something different.
@@ -236,6 +240,7 @@ export async function POST(req: Request) {
   const length = (['short', 'medium', 'long'].includes(body.length || '')
     ? body.length : 'medium') as string
   const publish = body.publish === true
+  const productMode: 'throughout' | 'end' = body.productMode === 'throughout' ? 'throughout' : 'end'
 
   // Only honor known section keys, in the canonical order.
   const requested = Array.isArray(body.sections) ? body.sections : []
@@ -289,6 +294,44 @@ export async function POST(req: Request) {
   const wantsStats = sections.includes('stats')
   const wantsFaq = sections.includes('faq')
 
+  // Monetization: when the creator wants products woven THROUGHOUT, pull their
+  // most topically-relevant published reviews so the writer can link them inline
+  // where they genuinely fit. 'end' mode skips this (the article stays purely
+  // informational; the end-of-post related block still surfaces their reviews).
+  let inlineReviews: { title: string; url: string }[] = []
+  const isRepublish = publish && typeof body.html === 'string' && body.html.trim().length > 300
+  if (productMode === 'throughout' && !isRepublish) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: rows } = await (supabase as any)
+        .from('blog_posts')
+        .select('title,seo_keyword,wordpress_url,post_type,content')
+        .eq('user_id', user.id)
+        .eq('status', 'published')
+        .not('wordpress_url', 'is', null)
+        .in('post_type', ['review', 'comparison', 'guide'])
+        .order('published_at', { ascending: false, nullsFirst: false })
+        .limit(60)
+      const candidates: LinkCandidate[] = (Array.isArray(rows) ? rows : [])
+        .filter((r: { wordpress_url?: string | null }) => r.wordpress_url)
+        .map((r: { title: string; seo_keyword: string | null; wordpress_url: string; post_type: string | null; content: string | null }) => ({
+          title: r.title, url: r.wordpress_url, keyword: r.seo_keyword, postType: r.post_type,
+          contentSnippet: (r.content || '').replace(/<[^>]+>/g, ' ').slice(0, 300),
+        }))
+      const picked = pickRelatedPosts(
+        { title: topic, keyword: `${topic} ${keywords}`.trim(), contentSnippet: notes },
+        candidates, 5, 1,
+      )
+      inlineReviews = picked.map(p => ({ title: p.title, url: p.url }))
+    } catch { /* best-effort — fall back to no inline reviews */ }
+  }
+  const inlineReviewsBlock = inlineReviews.length ? `
+═══════════════════════════════════════
+LINK THE CREATOR'S OWN REVIEWS (monetization — the reader should meet these products IN CONTEXT, not just at the end):
+Where it genuinely helps a point you're making, link to these existing reviews by this creator using natural anchor text, as ordinary <a href="URL"> links inside the body. Use 2 to 4 of them, only where they fit the flow. Never dump them in a list, never force a mention, never invent a URL.
+${inlineReviews.map(r => `- ${r.title} — ${r.url}`).join('\n')}
+` : ''
+
   const writerPrompt = `You are writing a researched, informational blog article about "${topic}". This is NOT a product review or a sales page. It is a genuine, opinionated, well-structured article a real blogger would publish to inform their readers.
 
 Use the web_search tool to ground the article in real facts, current figures, and concrete examples. When you state a specific statistic, price, percentage, dated figure, study finding, or a direct quote you pulled from research, cite it INLINE right there in the sentence with a real link to the source, e.g. <p>According to <a href="https://www.example.com/report" rel="nofollow">Consumer Reports</a>, ...</p>. Every hard number in the article should be traceable to a linked source in the prose, not only in a list at the end. Use the actual result URL, name the source, and keep rel="nofollow".
@@ -325,6 +368,7 @@ ${wantsFaq ? `
 FOR THE FAQ SECTION: use an H2 "Frequently Asked Questions", then 4-6 questions as H3, each answered in 2-3 answer-first sentences specific to ${topic}.
 ` : ''}
 
+${inlineReviewsBlock}
 ═══════════════════════════════════════
 SEO + AI-DISCOVERABILITY (REQUIRED — the article must score 80+ on-page and be quotable by AI Overviews / ChatGPT / Perplexity):
 - ANSWER-FIRST INTRO: open with a direct, self-contained 2-3 sentence answer to "${topic}" BEFORE the first <h2> — the kind of summary an AI engine can quote verbatim. No preamble or throat-clearing.
