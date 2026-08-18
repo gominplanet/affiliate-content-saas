@@ -127,15 +127,18 @@ export default function IdeaListsPage() {
     try {
       if (active.source === 'synced') {
         const l = synced.find(s => s.id === active.listId)
-        if (l && !l.hasItems) {
-          if (!active.url) { toast.error('No Amazon link for this list.'); setRanking(false); return }
+        // No items synced yet → try SCOUT (opens Amazon, reads the FULL list).
+        // If it doesn't finish, don't dead-end: fall through and let the rank
+        // call read the list URL server-side (~first 20) so there's always
+        // something to pick from.
+        if (l && !l.hasItems && active.url) {
           const tab = window.open(active.url + '#mvp-sync', '_blank')   // #mvp-sync authorizes SCOUT (your own list)
           const ok = await pollForProducts(active.listId!)
           try { tab?.close() } catch { /* user can close */ }
-          if (!ok) { toast.error('Amazon didn’t finish loading this list in time. Try Manual again.'); setRanking(false); return }
+          if (!ok) toast('Loaded the first products from Amazon — open the list with SCOUT for the full set.')
         }
       }
-      const payload = active.source === 'synced' ? { listId: active.listId } : { items: active.items }
+      const payload = active.source === 'synced' ? { listId: active.listId, listUrl: active.url } : { items: active.items }
       const res = await fetch('/api/idea-list/rank', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       const d = await res.json()
       if (!res.ok || !d.ok) throw new Error(d.error || 'Could not rank this list.')
