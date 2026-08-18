@@ -10,6 +10,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier, type Tier } from '@/lib/tier'
 import { enrichAndRankIdeaList, type RankInItem } from '@/lib/idea-list-rank'
+import { fetchIdeaList } from '@/lib/amazon-idea-list'
 import { toUserMessage } from '@/lib/friendly-error'
 
 export const runtime = 'nodejs'
@@ -27,16 +28,28 @@ export async function POST(request: Request) {
     const tier = normalizeTier(intRow?.tier) as Tier
     if (tier === 'trial') return NextResponse.json({ error: 'Turning idea lists into posts is a paid feature.' }, { status: 403 })
 
-    const body = await request.json().catch(() => ({})) as { listId?: string; items?: RankInItem[] }
+    const body = await request.json().catch(() => ({})) as { listId?: string; items?: RankInItem[]; listUrl?: string }
 
     let inItems: RankInItem[] = Array.isArray(body.items) ? body.items : []
     let title: string | null = null
+    let listUrl = (body.listUrl || '').trim()
     if (inItems.length === 0 && (body.listId || '').trim()) {
       const { data: row } = await sb.from('idea_lists')
-        .select('title,items').eq('id', body.listId!.trim()).eq('user_id', user.id).maybeSingle()
+        .select('title,url,items').eq('id', body.listId!.trim()).eq('user_id', user.id).maybeSingle()
       if (!row) return NextResponse.json({ error: 'That synced list is no longer available.' }, { status: 404 })
       inItems = Array.isArray(row.items) ? row.items : []
       title = row.title ?? null
+      if (!listUrl && row.url) listUrl = String(row.url)
+    }
+    // On-demand list with nothing synced yet → read the list URL server-side
+    // (first ~20 products), mirroring the generate route. Without this the manual
+    // "Load & rank" dead-ended whenever SCOUT hadn't pre-populated the items.
+    if (inItems.length === 0 && listUrl) {
+      try {
+        const parsed = await fetchIdeaList(listUrl)
+        inItems = Array.isArray(parsed.items) ? parsed.items : []
+        if (!title && parsed.title) title = parsed.title
+      } catch { /* fall through to the empty-list message below */ }
     }
     if (inItems.length < 1) return NextResponse.json({ error: 'This list has no products synced yet. Open it on Amazon with SCOUT first.' }, { status: 400 })
 
