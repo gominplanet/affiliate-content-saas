@@ -35,6 +35,7 @@ import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { spendGate } from '@/lib/ai-spend'
 import { checkGenerationLimit } from '@/lib/tier'
 import { scrubAiHtml } from '@/lib/html-scrub'
+import { enforceSeoBasics } from '@/lib/seo-autofix'
 import { writeContentSchema } from '@/lib/content-schema'
 
 export const maxDuration = 300
@@ -684,12 +685,14 @@ ${picksContext}
 OUTPUT: one block of valid WordPress block-HTML (Gutenberg comments OK). No prose before or after the HTML.
 ═══════════════════════════════════════
 
-1. INTRO (H2 "Quick recap" + 2-3 short first-person paragraphs)
+1. ANSWER-FIRST LEAD — 2-3 plain <p> sentences that come FIRST, BEFORE any <h2> or heading of any kind. Open with a direct answer to "what's the best ${topic}": name the top pick and, in one line, who the other picks suit. This is the summary an AI Overview quotes, so it must be self-contained prose (40+ words) and the very first thing in the post. NO heading above it.
+
+2. QUICK RECAP (H2 "Quick recap" + 1-2 short first-person paragraphs)
    - Who this guide is for, one sentence
    - What ${reviewerName} actually tested to compile it
    - How many ended up worth recommending (${picks.length})
 
-2. QUICK PICKS TABLE (HTML, one row per pick with name, label, "Read full review" link):
+3. QUICK PICKS TABLE (HTML, one row per pick with name, label, "Read full review" link):
 <table class="gr-picks" style="width:100%;border-collapse:collapse;margin:24px 0;font-size:14px;border:1px solid #e5e5e7;border-radius:6px;overflow:hidden">
   <thead><tr style="background:#fafafa">
     <th style="text-align:left;padding:10px 14px;font-weight:700;color:#86868b;text-transform:uppercase;font-size:11px;letter-spacing:.8px;border-bottom:1px solid #e5e5e7">Pick</th>
@@ -702,19 +705,19 @@ OUTPUT: one block of valid WordPress block-HTML (Gutenberg comments OK). No pros
   </tbody>
 </table>
 
-3. PER-PICK SECTIONS (one H2 per pick, in order):
+4. PER-PICK SECTIONS (one H2 per pick, in order):
    - H2: "{N}. {product name from title}, {label}" (e.g. "1. Step to Bed, Best Overall")
    - One <figure> at top with the linked review's image (from Image: field) wrapped in an <a> to the review URL; if no image, OMIT the figure
    - 3-4 short FIRST-PERSON paragraphs covering: why this pick wins its slot, the specific feature that seals it, one trade-off, one quick "pick this over the others when…" scenario
    - End the pick's section with this CTA (use the pick's URL):
      <p style="margin:18px 0 32px"><a href="{review URL}" style="display:inline-flex;align-items:center;gap:8px;background:#7C3AED;color:#fff;font-size:14px;font-weight:700;padding:12px 22px;border-radius:8px;text-decoration:none">Read the full review →</a></p>
 
-4. FAQ (H2 "Frequently Asked Questions" + 4-6 H3 questions):
+5. FAQ (H2 "Frequently Asked Questions" + 4-6 H3 questions):
    - Each answer 2-3 sentences, ANSWER-FIRST
    - Cover: how to choose, compatibility/returns/warranty, who shouldn't buy a ${topic} at all
    - Each question must reference something specific to ${topic} (not generic)
 
-5. WRAP-UP (H2 "Which one should you pick?"):
+6. WRAP-UP (H2 "Which one should you pick?"):
    - Two short paragraphs pointing to the #1 pick + one scenario where an
      alternative wins
    - End with a soft CTA inviting readers to read the full review of their top match
@@ -811,6 +814,9 @@ VOICE / STYLE RULES:
     //   2. Replace every em-dash with a comma — the user's hard rule
     //      that the prompt repeats but models still ignore.
     html = scrubAiHtml(raw)
+    // Guarantee the mechanical SEO checks (answer-first lead + image alt) before
+    // publish, so a guide never lands with a fixable SEO gap.
+    html = enforceSeoBasics(html, { title: wpTitle, seoKeyword: topic })
   } catch (err) {
     console.error('[buying-guides] writer', err instanceof Error ? err.message : err)
     return NextResponse.json({ error: toUserMessage(err, 'Couldn’t write the guide just now. Please try again in a moment.') }, { status: 500 })

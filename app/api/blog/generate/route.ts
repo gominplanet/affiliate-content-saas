@@ -14,6 +14,7 @@ import { spendGate } from '@/lib/ai-spend'
 import { saveJobCheckpoint, loadJobCheckpoint } from '@/lib/generation-jobs'
 import { scrubBanned } from '@/lib/scrub'
 import { scrubAiHtml } from '@/lib/html-scrub'
+import { enforceSeoBasics } from '@/lib/seo-autofix'
 import { scrubVoicePatterns } from '@/lib/blog-voice-scrub'
 import { selfCheckBlogPost, selfCritiqueBlogPost } from '@/lib/blog-self-check'
 import { discoverProductForVideo } from '@/lib/product-detect'
@@ -1491,6 +1492,10 @@ async function handleGenerate(request: Request) {
       }
     } catch { /* lookup failed — fall through to a normal create */ }
   }
+
+  // Guarantee the mechanical SEO checks (answer-first lead + image alt) on the
+  // final body before publish, so a review never lands with a fixable SEO gap.
+  content = enforceSeoBasics(content, { title: generated.title, seoKeyword: generated.seoKeyword })
 
   // ── 8. Publish text post to WordPress ────────────────────────────────────
   // For posts that already exist on WP (legacy posts attached via

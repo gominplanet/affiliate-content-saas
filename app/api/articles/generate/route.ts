@@ -32,6 +32,7 @@ import { spendGate } from '@/lib/ai-spend'
 import { checkArticlesUsage, normalizeTier, TIERS } from '@/lib/tier'
 import { scrubAiHtml } from '@/lib/html-scrub'
 import { scorePostSeo } from '@/lib/seo-score'
+import { enforceSeoBasics } from '@/lib/seo-autofix'
 import { writeContentSchema } from '@/lib/content-schema'
 import { pickRelatedPosts, type LinkCandidate } from '@/lib/internal-links'
 import { fal } from '@fal-ai/client'
@@ -466,6 +467,10 @@ VOICE / STYLE RULES:
       html,
     )
   }
+
+  // Guarantee the mechanical SEO checks (answer-first lead + image alt) before
+  // we score or publish — so the preview the user approves already complies.
+  html = enforceSeoBasics(html, { title, seoKeyword: topic })
 
   // On-page SEO / AEO score (same scorer the reviews use) — surfaced in the
   // preview so the creator sees it clears 80 before publishing. siteHost is taken
