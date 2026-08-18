@@ -35,6 +35,7 @@ import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { spendGate } from '@/lib/ai-spend'
 import { checkGenerationLimit } from '@/lib/tier'
 import { scrubAiHtml } from '@/lib/html-scrub'
+import { writeContentSchema } from '@/lib/content-schema'
 
 export const maxDuration = 300
 
@@ -879,6 +880,18 @@ VOICE / STYLE RULES:
     })
     .select('id')
     .single()
+
+  await writeContentSchema(supabase, wpService, {
+    userId: user.id,
+    siteUrl: site.wordpress_url,
+    wpPostId: wpPost.id,
+    pageUrl: wpPost.link,
+    title: wpTitle,
+    html,
+    imageUrl: heroSrc,
+    pageType: 'BlogPosting',
+    category: 'Buying Guides',
+  })
 
   return NextResponse.json({
     ok: true,

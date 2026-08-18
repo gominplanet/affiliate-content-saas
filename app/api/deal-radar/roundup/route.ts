@@ -18,6 +18,7 @@ import { applyPostFixes } from '@/lib/seo-fix'
 import { resolveAffiliateUrl, generateDigestContent, nicheLabelFrom, keywordSlug, type DigestDeal, type DigestDealRow } from '@/lib/weekly-digest'
 import { toUserMessage } from '@/lib/friendly-error'
 import { spendGate } from '@/lib/ai-spend'
+import { writeContentSchema } from '@/lib/content-schema'
 
 export const runtime = 'nodejs'
 export const maxDuration = 120
@@ -132,6 +133,19 @@ export async function POST(request: Request) {
         })
       } catch (err) { console.warn('[deal-radar/roundup] SEO fix failed (post live):', err instanceof Error ? err.message : err) }
     }
+
+    await writeContentSchema(sb, wpService, {
+      userId: user.id,
+      siteUrl: site.wordpress_url,
+      wpPostId: wpPost.id,
+      pageUrl: wpPost.link,
+      title,
+      description: excerpt,
+      html: bodyHtml,
+      imageUrl: heroImage || null,
+      pageType: 'BlogPosting',
+      category: 'Deals',
+    })
 
     return NextResponse.json({ ok: true, url: wpPost.link, count: deals.length })
   } catch (err) {
