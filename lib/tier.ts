@@ -13,8 +13,13 @@
 //     via checkUsageCap(PRIMARY_FEATURE.metadata) — its own bucket, never the
 //     post/thumbnail quota.
 //   - Scripts open to Creator (10/mo), Studio (30/mo), Pro (150/mo).
-//   - LoRA training opens to Creator + Studio (was Pro-only).
-//   - Deals Hub gets its own counter: Studio 5/mo, Pro 30/mo.
+//   - Face models: LoRA training was retired 2026-05-22 — the Art Director now
+//     uses the uploaded selfies directly (gpt-image). Faces are capped by
+//     maxFaces (1/1/2/3), NOT a train-job cap. (faceTrainJobs removed.)
+//   - Deals: a deal is a content piece drawn from the shared postsPerMonth pool
+//     for tiers that have one (Creator/Studio/Pro). Amazon has no blog pool, so
+//     it uses its own dealsPerMonth (100) via checkDealsUsage. dealsPerMonth is
+//     null for the shared-pool tiers so it never advertises a cap that isn't real.
 //   - IG AI thumbnails opens to Studio (30/mo, was Pro-only).
 //   - Topic hubs / Refresh images go to Studio+.
 //   - Comparison posts / Buying guides / Rebuild-from-video → Pro-only.
@@ -91,7 +96,6 @@ export const TIERS = {
     maxFaces: 0 as number | null,
     blogImagesPerPost: 2,
     assistantMessagesPerMonth: 20 as number | null,
-    faceTrainJobs: 0 as number | null,
     /** Newsletter is Creator-min as of 2026-06-04 tier restructure. Trial
      *  loses the 100 subs / 1 broadcast taster — sees FeatureLockedCard. */
     newsletterSubscribers: 0 as number | null,
@@ -156,7 +160,9 @@ export const TIERS = {
     // without hitting the wall (metadata is ~$0.05 a gen).
     metadataGensPerMonth: 75 as number | null,
     instagramAiThumbnailsPerMonth: 0 as number | null,
-    dealsPerMonth: 0 as number | null,
+    /** Deals draw from this tier's shared content pool (postsPerMonth), not a
+     *  separate cap — null so nothing advertises a deal limit that isn't gated. */
+    dealsPerMonth: null as number | null,
     pinsPerMonth: 0 as number | null,
     igPostsPerMonth: 0 as number | null,
     facebookPostsPerMonth: 0 as number | null,
@@ -164,10 +170,6 @@ export const TIERS = {
     maxFaces: 1 as number | null,
     blogImagesPerPost: 3,
     assistantMessagesPerMonth: 200 as number | null,
-    /** Creator gets 1 LoRA retrain/mo — train your face once, the LoRA
-     *  reused freely across all 20 thumbnails. Retrain cap protects MVP
-     *  from someone hammering trainer dozens of times. */
-    faceTrainJobs: 1 as number | null,
     /** Taster newsletter: 500 subs, 1 send/mo. Subs at the cap = upsell
      *  pull to Studio (5k subs). */
     newsletterSubscribers: 500 as number | null,
@@ -246,8 +248,6 @@ export const TIERS = {
     maxFaces: 1 as number | null,
     blogImagesPerPost: 0,
     assistantMessagesPerMonth: 500 as number | null,
-    /** LoRA is retired; the Art Director uses the uploaded selfies directly. */
-    faceTrainJobs: 0 as number | null,
     newsletterSubscribers: 0 as number | null,
     newsletterBroadcastsPerMonth: 0 as number | null,
     newsletterScheduling: false,
@@ -305,10 +305,10 @@ export const TIERS = {
     metadataGensPerMonth: 100 as number | null,
     /** IG AI thumbnails open to Studio at 30/mo (was Pro-only). */
     instagramAiThumbnailsPerMonth: 30 as number | null,
-    /** Studio gets 15 deal posts / mo (bumped 5 → 15, 2026-08-13, so the Deals
-     *  Hub feels real rather than a taster; deal posts are cheap, mostly text +
-     *  one image). Separate counter from blog. */
-    dealsPerMonth: 15 as number | null,
+    /** Deals draw from Studio's shared content pool (postsPerMonth: 45), not a
+     *  separate cap — a deal is one content piece. null so we don't advertise a
+     *  standalone deal limit that isn't enforced. */
+    dealsPerMonth: null as number | null,
     pinsPerMonth: null as number | null,
     igPostsPerMonth: null as number | null,
     facebookPostsPerMonth: null as number | null,
@@ -316,8 +316,6 @@ export const TIERS = {
     maxFaces: 2 as number | null,
     blogImagesPerPost: 3,
     assistantMessagesPerMonth: 1000 as number | null,
-    /** LoRA training opens to Studio at 3/mo (was Pro-only). */
-    faceTrainJobs: 3 as number | null,
     /** Weekly newsletter cadence: 5k subs, 4 sends/mo. */
     newsletterSubscribers: 5000 as number | null,
     newsletterBroadcastsPerMonth: 4 as number | null,
@@ -377,8 +375,10 @@ export const TIERS = {
     // full use that's ~$12/mo of AI against a $200 spend ceiling — comfortably safe.
     metadataGensPerMonth: 250 as number | null,
     instagramAiThumbnailsPerMonth: 100 as number | null,
-    /** Pro: 30 deal posts/mo (revised down from 90 → 60 → 30 for COGS). */
-    dealsPerMonth: 30 as number | null,
+    /** Deals draw from Pro's shared content pool (postsPerMonth: 100), not a
+     *  separate cap — a deal is one content piece. null so we don't advertise a
+     *  standalone deal limit that isn't enforced. */
+    dealsPerMonth: null as number | null,
     pinsPerMonth: null as number | null,
     igPostsPerMonth: null as number | null,
     facebookPostsPerMonth: null as number | null,
@@ -386,8 +386,6 @@ export const TIERS = {
     maxFaces: 3 as number | null,
     blogImagesPerPost: 4,
     assistantMessagesPerMonth: 2500 as number | null,
-    /** Pro: 3 LoRA retrains/mo (lowered from 5 — 2026-06-10 COGS tune). */
-    faceTrainJobs: 3 as number | null,
     /** Weekly cadence: 10k subs, 4 sends/mo. Lowered 8 → 4 (2026-06-14): at
      *  10k subs, 8 sends = 80k Resend emails/mo (~$30) — a real cash cost that
      *  sits OUTSIDE the AI-spend ceiling. 4 sends (weekly) is still generous
@@ -451,7 +449,6 @@ export const TIERS = {
     maxFaces: null as number | null,
     blogImagesPerPost: 6,
     assistantMessagesPerMonth: null as number | null,
-    faceTrainJobs: null as number | null,
     newsletterSubscribers: null as number | null,
     newsletterBroadcastsPerMonth: null as number | null,
     newsletterScheduling: true,
