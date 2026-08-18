@@ -73,8 +73,9 @@ export default function ArticlesPage() {
         const { data } = await supabase
           .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
         const tier = normalizeTier((data as { tier?: string } | null)?.tier)
-        // Entitled when the tier has an articles allowance (null = admin, or >0).
-        if (!cancelled) setCanUse((TIERS[tier]?.articlesPerMonth ?? 0) !== 0)
+        // Entitled when the tier has an articles allowance: null (admin) or >0.
+        // Only 0 (trial, Amazon) is blocked. Don't coalesce null→0 (that blocked admin).
+        if (!cancelled) setCanUse(TIERS[tier]?.articlesPerMonth !== 0)
       } catch {
         if (!cancelled) setCanUse(false)
       }
