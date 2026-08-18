@@ -468,6 +468,10 @@ export default function DashboardShellV2({
         // not a create action). YouTube has its own SET UP > "YouTube" entry.
         { href: '/comparison', icon: <Scale size={15} />, label: 'Comparisons' },
         { href: '/buying-guides', icon: <BookOpen size={15} />, label: 'Buying Guides', gate: showBuyingGuidesEff },
+        // Articles — informational (non-product) long-form article generator.
+        // v1 is admin-only while we test it, so it's gated on isAdmin (the REAL
+        // tier, never re-gated by "view as").
+        { href: '/articles', icon: <Newspaper size={15} />, label: 'Articles', gate: isAdmin },
         // Idea Lists → Shopping Guide — read an Amazon idea list, score the
         // products, publish a curated shopping-guide post. Paid tiers.
         { href: '/idea-lists', icon: <ShoppingBag size={15} />, label: 'Idea Lists', gate: canUseFinders },
