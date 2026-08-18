@@ -107,6 +107,9 @@ export const TIERS = {
     /** Pre-production: video script & shot list. Separate counter from
      *  postsPerMonth (different point in the workflow — before video). */
     scriptsPerMonth: 0 as number | null,
+    /** Informational Articles (Create → Articles). Its OWN monthly cap, separate
+     *  from the postsPerMonth content pool. Creator 5 / Studio 10 / Pro 15. */
+    articlesPerMonth: 0 as number | null,
     /** Content-type gates. */
     comparisonPosts: false,
     buyingGuides: false,
@@ -179,6 +182,7 @@ export const TIERS = {
     newsletterSegmentedSends: false,
     /** Video Scripts open to Creator at 10/mo (was 0). */
     scriptsPerMonth: 10 as number | null,
+    articlesPerMonth: 5 as number | null,
     comparisonPosts: false,
     buyingGuides: false,
     topicHubs: false,
@@ -254,6 +258,7 @@ export const TIERS = {
     newsletterABTesting: false,
     newsletterSegmentedSends: false,
     scriptsPerMonth: 0 as number | null,
+    articlesPerMonth: 0 as number | null,
     comparisonPosts: false,
     buyingGuides: false,
     topicHubs: false,
@@ -324,6 +329,7 @@ export const TIERS = {
     newsletterABTesting: false,
     newsletterSegmentedSends: false,
     scriptsPerMonth: 30 as number | null,
+    articlesPerMonth: 10 as number | null,
     /** Studio gates. */
     comparisonPosts: false,
     buyingGuides: false,
@@ -398,6 +404,7 @@ export const TIERS = {
     newsletterABTesting: true,
     newsletterSegmentedSends: true,
     scriptsPerMonth: 150 as number | null,
+    articlesPerMonth: 15 as number | null,
     /** Pro content-type gates. */
     comparisonPosts: true,
     buyingGuides: true,
@@ -455,6 +462,7 @@ export const TIERS = {
     newsletterABTesting: true,
     newsletterSegmentedSends: true,
     scriptsPerMonth: null as number | null,
+    articlesPerMonth: null as number | null,
     comparisonPosts: true,
     buyingGuides: true,
     topicHubs: true,
@@ -644,7 +652,7 @@ export function tierHas(
  *  a user hits a cap. */
 export function nextTierFor(
   tier: Tier,
-  cap: 'postsPerMonth' | 'collabsPerMonth' | 'thumbnailsPerMonth' | 'metadataGensPerMonth' | 'instagramAiThumbnailsPerMonth' | 'scriptsPerMonth' | 'dealsPerMonth',
+  cap: 'postsPerMonth' | 'collabsPerMonth' | 'thumbnailsPerMonth' | 'metadataGensPerMonth' | 'instagramAiThumbnailsPerMonth' | 'scriptsPerMonth' | 'dealsPerMonth' | 'articlesPerMonth',
 ): { tier: Tier; label: string; limit: number | null } | null {
   tier = normalizeTier(tier)
   const order: Tier[] = ['trial', 'creator', 'studio', 'pro']
@@ -947,6 +955,70 @@ export async function checkDealsUsage(
       used,
       cap,
       upgrade: nextTierFor(tier, 'dealsPerMonth'),
+    }
+  }
+
+  return { allowed: true, tier, used, cap, resetLabel }
+}
+
+/**
+ * Informational-Articles monthly cap. Its OWN allowance (Creator 5 / Studio 10 /
+ * Pro 15), separate from the postsPerMonth content pool — an article does NOT
+ * consume a review/deal generation. Counts blog_posts rows with
+ * post_type='article' in the billing window. Mirrors checkDealsUsage.
+ */
+export async function checkArticlesUsage(
+  supabase: Awaited<ReturnType<typeof import('@/lib/supabase/server').createServerClient>>,
+  userId: string,
+): Promise<
+  | { allowed: true; tier: Tier; used: number; cap: number | null; resetLabel: string }
+  | { allowed: false; reason: string; tier: Tier; used: number; cap: number | null; upgrade: ReturnType<typeof nextTierFor> }
+> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: ig } = await supabase
+    .from('integrations')
+    .select('tier,subscription_period_start,subscription_period_end')
+    .eq('user_id', userId)
+    .single()
+  const tier = normalizeTier(ig?.tier)
+  const cap = TIERS[tier].articlesPerMonth
+  const { startISO, resetLabel } = billingWindow({
+    periodStart: ig?.subscription_period_start ?? null,
+    periodEnd: ig?.subscription_period_end ?? null,
+  })
+
+  // Admin — uncapped.
+  if (cap === null) return { allowed: true, tier, used: 0, cap: null, resetLabel }
+
+  // Creator/Studio/Pro have caps > 0. Trial + Amazon have cap 0 → upsell.
+  if (cap === 0) {
+    return {
+      allowed: false,
+      reason: 'Articles is a Creator, Studio and Pro feature. Upgrade to publish researched informational articles alongside your reviews.',
+      tier,
+      used: 0,
+      cap: 0,
+      upgrade: nextTierFor(tier, 'articlesPerMonth'),
+    }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { count } = await supabase
+    .from('blog_posts')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .eq('post_type', 'article')
+    .gte('created_at', startISO)
+  const used = count ?? 0
+
+  if (used >= cap) {
+    return {
+      allowed: false,
+      reason: `You've used all ${cap} articles this month on the ${TIERS[tier].label} plan. Resets ${resetLabel}.`,
+      tier,
+      used,
+      cap,
+      upgrade: nextTierFor(tier, 'articlesPerMonth'),
     }
   }
 

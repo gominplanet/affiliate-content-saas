@@ -29,7 +29,7 @@ import { useTheme } from 'next-themes'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { getViewAsTier, setViewAsTier } from '@/lib/view-as'
 import { tierBadge } from '@/lib/tier-badge'
-import { canUpgradeTier } from '@/lib/tier'
+import { canUpgradeTier, TIERS } from '@/lib/tier'
 import { canSeeNav, canBrowseDealRadar } from '@/lib/feature-access'
 import type { Tier } from '@/lib/tier'
 import {
@@ -308,6 +308,9 @@ export default function DashboardShellV2({
   // Server passes showBuyingGuides/showDeals for the REAL tier; recompute from
   // effectiveTier so the preview is accurate. Identical to the props when not
   // previewing (effectiveTier === tier then), so real users are unaffected.
+  // Articles (Create → Articles): its own cap, open to Creator/Studio/Pro (+admin).
+  // 0 = not entitled (trial, Amazon); null/>0 = entitled.
+  const canUseArticles = (TIERS[effectiveTier]?.articlesPerMonth ?? 0) !== 0
   const showBuyingGuidesEff = isAdmin ? canSeeNav('buyingGuides', effectiveTier) : showBuyingGuides
   const showDealsEff = isAdmin ? canSeeNav('deals', effectiveTier) : showDeals
   // The Amazon Influencer section (thumbnails + research + social) is the
@@ -471,7 +474,7 @@ export default function DashboardShellV2({
         // Articles — informational (non-product) long-form article generator.
         // v1 is admin-only while we test it, so it's gated on isAdmin (the REAL
         // tier, never re-gated by "view as").
-        { href: '/articles', icon: <Newspaper size={15} />, label: 'Articles', gate: isAdmin },
+        { href: '/articles', icon: <Newspaper size={15} />, label: 'Articles', gate: canUseArticles },
         // Idea Lists → Shopping Guide — read an Amazon idea list, score the
         // products, publish a curated shopping-guide post. Paid tiers.
         { href: '/idea-lists', icon: <ShoppingBag size={15} />, label: 'Idea Lists', gate: canUseFinders },

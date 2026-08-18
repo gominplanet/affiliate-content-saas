@@ -168,7 +168,7 @@ export async function GET() {
     // ── Shared extra caps (shown on any tier where the cap is finite) ──
     // Every one of these is an ENFORCED per-feature cap; surfacing them here is
     // what lets a user see where they stand before they hit a wall.
-    const [asst, photo, collabs, deals, meta, igAi, scripts, broadcasts, cascade] = await Promise.all([
+    const [asst, photo, collabs, deals, meta, igAi, scripts, broadcasts, cascade, articles] = await Promise.all([
       countFeatures(['assistant_message']),                                   // billing window (checkUsageCap)
       countFeatures(['photobooth_image']),                                    // billing window
       countRows('collaborations', 'created_at'),                              // billing window
@@ -178,6 +178,7 @@ export async function GET() {
       countSince('video_scripts', 'created_at', calStartISO),                 // calendar month
       countSince('newsletter_broadcasts', 'created_at', calStartISO, ['sending', 'sent', 'scheduled', 'ab_testing']),
       countCascade(),                                                         // calendar month, distinct posts
+      countRows('blog_posts', 'created_at', { col: 'post_type', val: 'article' }), // own cap (billing window)
     ])
     // Deals: only tiers with NO generations pool (Amazon) gate on their own
     // dealsPerMonth cap — for everyone else a deal is a content piece counted in
@@ -198,6 +199,7 @@ export async function GET() {
     push('newsletter', 'Newsletters', preview(broadcasts, 2),
       allowedNewsletterBroadcasts(tier, { legacyCreatorNewsletter: !!(ig as { legacy_creator_newsletter?: boolean } | null)?.legacy_creator_newsletter }))
     push('cascade', 'Scheduled', preview(cascade, 12), refPlan.cascadeOnlySchedulesPerMonth)
+    push('articles', 'Articles', preview(articles, 3), refPlan.articlesPerMonth)
   } catch {
     return NextResponse.json({ tier, buckets: [], resetLabel: null, lifetime })
   }

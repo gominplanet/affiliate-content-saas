@@ -29,7 +29,7 @@ import { createAnthropicClient } from '@/lib/anthropic'
 import { toUserMessage } from '@/lib/friendly-error'
 import { recordAnthropicUsage, recordUsage } from '@/lib/ai-usage'
 import { spendGate } from '@/lib/ai-spend'
-import { checkGenerationLimit } from '@/lib/tier'
+import { checkArticlesUsage, normalizeTier, TIERS } from '@/lib/tier'
 import { scrubAiHtml } from '@/lib/html-scrub'
 import { fal } from '@fal-ai/client'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
@@ -67,13 +67,14 @@ export async function POST(req: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  // ── ADMIN GATE ────────────────────────────────────────────────────────
-  // Articles is in early testing — only the admin/owner may use it.
+  // ── TIER GATE ─────────────────────────────────────────────────────────
+  // Articles is a Creator/Studio/Pro feature (its own monthly cap). Trial +
+  // Amazon (articlesPerMonth 0) can't use it; admin (null) is unlimited.
   const { data: integ } = await supabase
     .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
-  const tier = (integ?.tier as string | undefined) ?? 'trial'
-  if (tier !== 'admin') {
-    return NextResponse.json({ error: 'Articles is in early testing (admin only for now).' }, { status: 403 })
+  const tier = normalizeTier(integ?.tier)
+  if (TIERS[tier].articlesPerMonth === 0) {
+    return NextResponse.json({ error: 'Articles is a Creator, Studio and Pro feature.', code: 'tier_not_allowed', currentTier: tier }, { status: 403 })
   }
 
   // Monthly AI-spend circuit breaker (Sonnet writer + web search).
@@ -121,15 +122,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Pick at least one section to include.' }, { status: 400 })
   }
 
-  // Count against the monthly generation allowance — an article is one content
-  // piece, same as a review or buying guide. Charged on PUBLISH (the piece is
-  // kept), not on preview (spendGate above already backstops preview spend).
-  // Admin is exempt inside checkGenerationLimit, so this is a no-op while the
-  // tool is admin-only, and correctly meters it once it opens to paid tiers.
+  // Enforce the DEDICATED articles cap (Creator 5 / Studio 10 / Pro 15) — its
+  // own allowance, NOT the shared postsPerMonth pool. Charged on PUBLISH (the
+  // article is kept), not on preview (spendGate above backstops preview spend).
+  // Admin (cap null) is exempt.
   if (publish) {
-    const gen = await checkGenerationLimit(supabase, user.id)
-    if (!gen.allowed) {
-      return NextResponse.json({ error: gen.reason, limitReached: true, cap: 'generations', currentTier: gen.tier, upgrade: gen.upgrade }, { status: 429 })
+    const art = await checkArticlesUsage(supabase, user.id)
+    if (!art.allowed) {
+      return NextResponse.json({ error: art.reason, limitReached: true, cap: 'articles', currentTier: art.tier, upgrade: art.upgrade }, { status: 429 })
     }
   }
 
@@ -161,7 +161,14 @@ FOR THE STATS SECTION, you MUST include BOTH:
        <thead><tr style="background:#faf7ff"><th style="text-align:left;padding:8px 12px;border-bottom:2px solid #7C3AED">Label</th><th style="text-align:right;padding:8px 12px;border-bottom:2px solid #7C3AED">Value</th></tr></thead>
        <tbody><tr><td style="padding:8px 12px;border-bottom:1px solid #eee">…</td><td style="padding:8px 12px;text-align:right;border-bottom:1px solid #eee">…</td></tr></tbody>
      </table>
-  2. A simple, hand-built inline SVG BAR CHART of the SAME data — no external libraries, no <script>. Build it by hand with <svg><rect>/<text> so it renders anywhere. Use viewBox for responsiveness (e.g. viewBox="0 0 600 320"), bars in #7C3AED, labels + values in readable text, and a title. Scale the bar heights/widths to the real values. Keep it clean and minimal.
+  2. A hand-built HTML/CSS BAR CHART of the SAME numeric data. CRITICAL: build it ONLY from <div> and <p> with inline styles — DO NOT use <svg>, <canvas>, <script>, or <style> tags (WordPress strips those, so the chart would vanish). Use ONLY these CSS properties (WordPress allows them): background, background-color, width, height, margin, padding, border-radius, color, font-weight, font-size, text-align. Each bar's width MUST be the value scaled to the largest value in the set, as a percentage (widthPct = round(value / maxValue * 100)). Use EXACTLY this structure, one label+track pair per data point:
+     <div style="margin:24px 0;padding:16px;background:#faf7ff;border-radius:12px">
+       <p style="font-weight:700;color:#4c1d95;margin:0 0 16px;font-size:15px">CHART TITLE</p>
+       <p style="margin:0 0 5px;font-size:13px;color:#333">Label here — <strong>value</strong></p>
+       <div style="background:#e9e0ff;border-radius:7px;height:22px;margin:0 0 16px"><div style="background:#7C3AED;height:22px;width:WIDTHPCT%;border-radius:7px"></div></div>
+       <!-- repeat the label <p> + track <div> for every data point -->
+     </div>
+   Only compare like-for-like numbers in one chart (e.g. all percentages together, or all dollar values together). If the numbers aren't comparable, make two separate bar blocks.
 ` : ''}
 ${wantsFaq ? `
 FOR THE FAQ SECTION: use an H2 "Frequently Asked Questions", then 4-6 questions as H3, each answered in 2-3 answer-first sentences specific to ${topic}.
@@ -174,7 +181,7 @@ Then a line with the literal token  ###ARTICLE###  on its own.
 Then the article body as semantic HTML.
 
 The HTML body rules:
-- Semantic HTML only: <h2>, <h3>, <p>, <ul>/<li>, <table>, <svg>, <blockquote>. Use ONE <blockquote> for a strong pull-quote or opinion if it fits.
+- Semantic HTML only: <h2>, <h3>, <p>, <ul>/<li>, <table>, <div>, <blockquote>. Use ONE <blockquote> for a strong pull-quote or opinion if it fits. NEVER use <svg>, <canvas>, <script> or <style> — WordPress strips them (charts must be the <div>/CSS bars described above).
 - Do NOT include an <h1> in the body (the headline is returned separately). Start the body with a <p> or the first <h2>.
 - Do NOT output markdown. Do NOT wrap in <html>/<head>/<body>. Do NOT wrap in a code fence.
 - Concrete facts and real numbers wherever the research surfaced them.
