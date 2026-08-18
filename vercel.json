@@ -5,6 +5,10 @@
       "schedule": "* * * * *"
     },
     {
+      "path": "/api/cron/auto-blog",
+      "schedule": "0 13 * * *"
+    },
+    {
       "path": "/api/cron/reconcile-stuck-images",
       "schedule": "*/10 * * * *"
     },

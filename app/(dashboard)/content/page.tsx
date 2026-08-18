@@ -32,13 +32,14 @@ import { InfoTip } from '@/components/ui/InfoTip'
 import { InstagramPublishModal } from '@/components/content/InstagramPublishModal'
 import ShareWithBrandModal from '@/components/content/ShareWithBrandModal'
 import BrandRecapSettingsModal from '@/components/content/BrandRecapSettingsModal'
+import AutoPilotModal from '@/components/content/AutoPilotModal'
 import SocialLinkModeModal from '@/components/content/SocialLinkModeModal'
 import { renderThumbnailOverlay, pickWeightedStyleIndex } from '@/lib/thumbnail-overlay'
 import { effectiveTier } from '@/lib/view-as'
 import { metaEnabled } from '@/lib/feature-flags'
 import {
   Youtube, Wand2, ExternalLink, CheckCircle, AlertCircle,
-  RefreshCw, Loader2, ChevronRight, Sparkles, X, Facebook, Pin, MessageCircle, Save, Upload, Search, Calendar, Handshake, ImagePlus, Link2, Tags, Wrench, Shuffle, Pencil,
+  RefreshCw, Loader2, ChevronRight, Sparkles, X, Facebook, Pin, MessageCircle, Save, Upload, Search, Calendar, Handshake, ImagePlus, Link2, Tags, Wrench, Shuffle, Pencil, Rocket,
 } from 'lucide-react'
 import type { PinPreviewData } from '@/components/PinterestPreviewModal'
 
@@ -2400,6 +2401,7 @@ export default function ContentPage() {
   // Global "Brand message settings" — the recap template every per-post
   // "Share with brand" modal pre-fills from.
   const [brandSettingsOpen, setBrandSettingsOpen] = useState(false)
+  const [autoPilotOpen, setAutoPilotOpen] = useState(false)
   const [linkModeOpen, setLinkModeOpen] = useState(false)
   // Affiliate-link repair — dryRun finds posts with a broken affiliate link
   // (e.g. a dead amazon.com/dp/UNDERWATER) and previews old→new before writing.
@@ -3980,6 +3982,9 @@ export default function ContentPage() {
         <ToolButton tint="blue" icon={<Handshake size={18} />} label="Brand message" desc="Edit the recap you send"
           onClick={() => setBrandSettingsOpen(true)}
           title="Customize the recap message the &ldquo;Share with brand&rdquo; button sends — tone, sign-off, and template" />
+        <ToolButton tint="violet" icon={<Rocket size={18} />} label="Auto-pilot" desc="One post a day, hands-off"
+          onClick={() => setAutoPilotOpen(true)}
+          title="Turn on to auto-publish one blog post a day from your next un-blogged video (hero + images, no social)" />
         <ToolButton tint="violet" icon={<Link2 size={18} />} label="Link settings" desc="Blog / affiliate / both"
           onClick={() => setLinkModeOpen(true)}
           title="Choose where posted links point — blog, affiliate, or both — for Facebook, LinkedIn, and Bluesky" />
@@ -4755,6 +4760,8 @@ export default function ContentPage() {
 
       {/* Brand message settings — the recap template "Share with brand" uses. */}
       {brandSettingsOpen && <BrandRecapSettingsModal onClose={() => setBrandSettingsOpen(false)} />}
+      {/* Auto-pilot — one post a day from the next un-blogged video. */}
+      {autoPilotOpen && <AutoPilotModal onClose={() => setAutoPilotOpen(false)} />}
       <SocialLinkModeModal open={linkModeOpen} onClose={() => setLinkModeOpen(false)} />
 
       {/* Recategorize preview modal — dryRun first, apply on confirm. */}
