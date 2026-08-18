@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createServerClient } from '@/lib/supabase/server'
-import { getStripe, PRICE_IDS } from '@/lib/stripe'
+import { getStripe, PRICE_IDS, isValidPriceId } from '@/lib/stripe'
 import type { Tier } from '@/lib/tier'
 import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
+import { alertOps } from '@/lib/ops-alert'
 
 /**
  * Paid signup in ONE flow: create the account + send the user straight to
@@ -50,6 +51,17 @@ export async function POST(request: NextRequest) {
   const priceId = PRICE_IDS[tier as keyof typeof PRICE_IDS]
   if (!priceId) {
     return NextResponse.json({ error: 'Invalid plan.' }, { status: 400 })
+  }
+  // FAIL FAST on a misconfigured price env (mirrors /api/stripe/checkout). If
+  // STRIPE_PRICE_<TIER> isn't a real "price_…" id, refuse BEFORE creating the
+  // account so a first-time buyer gets a clear message + ops alert instead of a
+  // raw 500 out of Stripe on the most fragile (first-purchase) path.
+  if (!isValidPriceId(priceId)) {
+    void alertOps(
+      'Stripe price env misconfigured — paid signup blocked',
+      `Tier "${tier}" resolved to a non-price value ("${String(priceId).slice(0, 10)}…"). STRIPE_PRICE_* must be a price_… id. Fix it in Vercel and redeploy.`,
+    )
+    return NextResponse.json({ error: 'Billing for this plan is temporarily unavailable. Our team has been alerted — please try again shortly or contact support.' }, { status: 503 })
   }
 
   const admin = createAdminClient()

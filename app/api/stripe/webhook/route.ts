@@ -24,7 +24,9 @@ async function releaseAndRetry(
   return NextResponse.json({ error: 'write failed, will retry' }, { status: 500 })
 }
 
-export const config = { api: { bodyParser: false } }
+// NOTE: no `export const config = { api: { bodyParser: false } }` — that's a
+// Pages-Router directive and a no-op in the App Router. The raw body needed for
+// signature verification comes from `await request.text()` in POST below.
 
 // $49 Creator price = the existing STRIPE_PRICE_STARTER (renamable via
 // STRIPE_PRICE_CREATOR). $99 Studio = STRIPE_PRICE_STUDIO. $199 = Pro.
@@ -102,6 +104,49 @@ async function stripeCustomerEmail(stripe: any, customerId: string | null | unde
   return null
 }
 
+/**
+ * Guard against a REPLAYED or OUT-OF-ORDER subscription event overwriting the
+ * row with a subscription that is no longer the current one.
+ *
+ * Churn-and-return: a user on sub A cancels and resubscribes as sub B. The
+ * row now holds B. If Stripe then replays (or delivers late) an `.updated`
+ * event for the OLD sub A, the by-user_id upsert would flip the row back to
+ * A's tier/period — wrong tier, and it also re-points stripe_subscription_id at
+ * A so a later real cancel of B wouldn't match the `.deleted` guard.
+ *
+ * We compare Stripe's immutable `created` timestamps: the event is STALE only
+ * when its subscription was created BEFORE the subscription already on file.
+ * Same-sub events (renewals, in-place plan swaps) and first subscriptions are
+ * never stale. Fail-OPEN (returns false = apply) on any uncertainty so a real
+ * update is never dropped over a transient read error.
+ */
+async function isStaleSubEvent(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  admin: any, stripe: any, userId: string, incomingSubId: string | null, incomingCreated: number | null,
+): Promise<boolean> {
+  try {
+    if (!incomingSubId) return false
+    const { data: row } = await admin
+      .from('integrations').select('stripe_subscription_id').eq('user_id', userId).maybeSingle()
+    const currentSubId = (row as { stripe_subscription_id?: string | null } | null)?.stripe_subscription_id || null
+    // No subscription on file, or the SAME subscription → no conflict, apply.
+    if (!currentSubId || currentSubId === incomingSubId) return false
+    // A different subscription is on file. Apply only if the incoming one is
+    // NEWER (created later). Retrieve the stored sub's created timestamp.
+    let storedCreated = 0
+    try {
+      const s = await stripe.subscriptions.retrieve(currentSubId)
+      storedCreated = (s?.created as number) ?? 0
+    } catch {
+      return false // stored sub is gone/unreadable → treat the incoming as current
+    }
+    if (!storedCreated || !incomingCreated) return false
+    return incomingCreated < storedCreated // stale iff created before the current sub
+  } catch {
+    return false // never drop a real update over an unexpected error
+  }
+}
+
 export async function POST(request: NextRequest) {
   const body = await request.text()
   const sig = request.headers.get('stripe-signature')!
@@ -146,6 +191,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, duplicate: true, event_id: event.id })
   }
 
+  // Everything past the claim is wrapped so ANY throw (Stripe API error,
+  // unexpected exception) releases the claim and 500s for Stripe to retry —
+  // otherwise the event stays claimed-but-unprocessed and the retry is deduped
+  // to 200, silently losing the tier write. (A hard function timeout can't run
+  // the catch, but MVP's own checkouts carry user_id metadata and skip the
+  // expensive email scan that is the only realistic timeout source.)
+  try {
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object as unknown as {
       id: string
@@ -220,6 +272,7 @@ export async function POST(request: NextRequest) {
   if (event.type === 'customer.subscription.created' || event.type === 'customer.subscription.updated') {
     const sub = event.data.object as {
       id: string
+      created?: number
       customer: string
       items: { data: { price: { id: string; unit_amount?: number | null } }[] }
       status: string
@@ -262,10 +315,19 @@ export async function POST(request: NextRequest) {
       // checkout.session.completed hasn't run yet (no chicken-and-egg on the
       // stripe_customer_id). Otherwise fall back to matching by customer id
       // (renewals / older subscriptions without our metadata).
-      const { error } = userId
-        ? await admin.from('integrations').upsert({ user_id: userId, ...fields }, { onConflict: 'user_id' })
-        : await admin.from('integrations').update(fields).eq('stripe_customer_id', sub.customer)
-      if (error) return releaseAndRetry(admin, event.id, event.type, error)
+      if (userId) {
+        // Don't let a replayed/out-of-order event for an OLD subscription
+        // overwrite the current one (churn-and-return race).
+        if (await isStaleSubEvent(admin, stripe, userId, sub.id, sub.created ?? null)) {
+          console.warn('[stripe-webhook] ignoring stale/out-of-order subscription event', { incoming: sub.id, userId })
+        } else {
+          const { error } = await admin.from('integrations').upsert({ user_id: userId, ...fields }, { onConflict: 'user_id' })
+          if (error) return releaseAndRetry(admin, event.id, event.type, error)
+        }
+      } else {
+        const { error } = await admin.from('integrations').update(fields).eq('stripe_customer_id', sub.customer)
+        if (error) return releaseAndRetry(admin, event.id, event.type, error)
+      }
     } else {
       console.warn('[stripe-webhook] subscription event with no resolvable tier', { priceId, subId: sub.id, hasMetaTier: !!sub.metadata?.tier })
     }
@@ -307,5 +369,23 @@ export async function POST(request: NextRequest) {
     if (error) return releaseAndRetry(admin, event.id, 'invoice.payment_failed', error)
   }
 
+  // Payment recovered after a failed invoice — clear the past_due flag so the
+  // UI stops warning. Only touches rows we actually marked past_due; leaves a
+  // 'canceling' or already-active status alone. Tier is not changed here.
+  if (event.type === 'invoice.payment_succeeded') {
+    const invoice = event.data.object as { customer: string }
+    const { error } = await admin.from('integrations')
+      .update({ subscription_status: 'active' })
+      .eq('stripe_customer_id', invoice.customer)
+      .eq('subscription_status', 'past_due')
+    if (error) return releaseAndRetry(admin, event.id, 'invoice.payment_succeeded', error)
+  }
+
   return NextResponse.json({ received: true })
+  } catch (err) {
+    // A throw after the claim would otherwise leave the event claimed but
+    // unprocessed; Stripe's retry would be deduped to 200 and the write lost.
+    // Release the claim so the retry re-processes (all writes are idempotent).
+    return releaseAndRetry(admin, event.id, event.type, { message: err instanceof Error ? err.message : String(err) })
+  }
 }
