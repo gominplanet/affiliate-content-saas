@@ -154,6 +154,10 @@ export async function GET() {
       const genLimit = lifetime ? plan.lifetimeMax : effectivePostCap(tier, startISO)
       const blog = await countRows('blog_posts', 'published_at')
       push('generations', lifetime ? 'Generations (trial)' : 'Generations', blog, genLimit)
+      // Thumbnails are their OWN enforced cap on every tier (shared by co-pilot
+      // + blog heroes, both counted here) — show it so users see where they are.
+      const thumb = await countFeatures(THUMB_FEATURES)
+      push('thumbnails', 'Thumbnails', thumb, plan.thumbnailsPerMonth)
       if (tier === 'pro') {
         const [shorts, x] = await Promise.all([countFeatures(['shorts_render']), countFeatures(['x_post'])])
         push('shorts', 'Shorts', shorts, SHORTS_MONTHLY_CAP)
