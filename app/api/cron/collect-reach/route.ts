@@ -113,13 +113,18 @@ export async function GET(request: Request) {
     const med = median(all.map(r => r.reach))
     if (!med || med <= 0) continue
     // Only fill rows missing a lift; existing lifts stay stable (the baseline
-    // shifts slowly and we don't want to churn every row every run).
-    for (const r of all) {
-      if (r.lift == null) {
-        await admin.from('reach_samples')
+    // shifts slowly and we don't want to churn every row every run). Each row
+    // gets a different lift (reach/median), so we can't collapse this into one
+    // constant UPDATE, but we can run the writes with bounded concurrency
+    // instead of one serial round-trip per row (was the batch's wall-clock hog).
+    const missing = all.filter(r => r.lift == null)
+    const CONC = 10
+    for (let i = 0; i < missing.length; i += CONC) {
+      await Promise.all(missing.slice(i, i + CONC).map(r =>
+        admin.from('reach_samples')
           .update({ account_median_reach: med, lift: r.reach / med })
-          .eq('id', r.id)
-      }
+          .eq('id', r.id),
+      ))
     }
   }
 

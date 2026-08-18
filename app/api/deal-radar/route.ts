@@ -83,6 +83,12 @@ interface DealRow {
   has_video: boolean | null
 }
 
+// Explicit column list for every deal_radar_cache read — exactly the DealRow
+// fields. select('*') also shipped the generated `fts` tsvector (large, never
+// used client-side) on this frequently-polled feed; naming columns drops it.
+const DEAL_COLS =
+  'asin,title,brand,image_url,category_id,price_now_cents,price_was_cents,discount_pct,rating,review_count,sales_rank,deal_type,lightning_ends_at,campaign_id,campaign_commission_pct,campaign_brand,campaign_details_url,campaign_available_slot,campaign_total_slot,campaign_budget_remaining,campaign_ends_at,price_avg90_cents,price_low_cents,deal_quality,lowest_label,monthly_sold,opportunity_score,has_video'
+
 export async function GET(request: Request) {
   try {
     const supabase = await createServerClient()
@@ -131,7 +137,7 @@ export async function GET(request: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sb = supabase as any
     const build = () => {
-      let query = sb.from('deal_radar_cache').select('*')
+      let query = sb.from('deal_radar_cache').select(DEAL_COLS)
       if (q) query = query.textSearch('fts', q, { type: 'websearch', config: 'english' })
       if (category != null) query = query.eq('category_id', category)
       if (minDiscount != null) query = query.gte('discount_pct', minDiscount)
@@ -155,7 +161,7 @@ export async function GET(request: Request) {
       // textSearch against a generated `fts` column may not exist on older DBs —
       // fall back to a title ILIKE so search still works pre-migration.
       if (q) {
-        let fb = sb.from('deal_radar_cache').select('*').ilike('title', `%${q}%`)
+        let fb = sb.from('deal_radar_cache').select(DEAL_COLS).ilike('title', `%${q}%`)
         if (category != null) fb = fb.eq('category_id', category)
         if (minDiscount != null) fb = fb.gte('discount_pct', minDiscount)
         if (hasCampaign) fb = fb.not('campaign_commission_pct', 'is', null)
@@ -172,7 +178,7 @@ export async function GET(request: Request) {
     // Ticker (page 0 only): the double-wins — has a bounty, best commission first.
     let tickerRows: DealRow[] = []
     if (page === 0) {
-      const { data: tk } = await sb.from('deal_radar_cache').select('*')
+      const { data: tk } = await sb.from('deal_radar_cache').select(DEAL_COLS)
         .not('campaign_commission_pct', 'is', null)
         .order('campaign_commission_pct', { ascending: false, nullsFirst: false })
         .limit(TICKER_SIZE)
