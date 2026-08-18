@@ -31,6 +31,7 @@ import { recordAnthropicUsage, recordUsage } from '@/lib/ai-usage'
 import { spendGate } from '@/lib/ai-spend'
 import { checkArticlesUsage, normalizeTier, TIERS } from '@/lib/tier'
 import { scrubAiHtml } from '@/lib/html-scrub'
+import { scorePostSeo } from '@/lib/seo-score'
 import { pickRelatedPosts, type LinkCandidate } from '@/lib/internal-links'
 import { fal } from '@fal-ai/client'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
@@ -83,7 +84,7 @@ async function appendRelatedThumbs(
 
     const cells = picked.map(p => {
       const thumb = thumbByUrl.get(p.url) || ''
-      return `<td style="width:33%;padding:6px;vertical-align:top;text-align:center"><a href="${esc(p.url)}" style="color:#1d1d1f;text-decoration:none"><img src="${esc(thumb)}" alt="" style="width:100%;border-radius:10px;margin-bottom:8px" /><strong style="font-size:13px;line-height:1.35">${esc(p.title)}</strong></a></td>`
+      return `<td style="width:33%;padding:6px;vertical-align:top;text-align:center"><a href="${esc(p.url)}" style="color:#1d1d1f;text-decoration:none"><img src="${esc(thumb)}" alt="${esc(p.title)}" style="width:100%;border-radius:10px;margin-bottom:8px" /><strong style="font-size:13px;line-height:1.35">${esc(p.title)}</strong></a></td>`
     }).join('')
 
     const block = `\n<h2>Related reading</h2>\n<table style="width:100%;border-collapse:collapse;margin:16px 0"><tbody><tr>${cells}</tr></tbody></table>\n`
@@ -158,6 +159,9 @@ export async function POST(req: Request) {
     // The previewed hero image URL, sent back on publish so we upload the same
     // image the user saw rather than generating a new one.
     heroUrl?: string
+    // The previewed meta description, carried back so the published excerpt
+    // matches what was reviewed.
+    meta?: string
   }
   try { body = await req.json() } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }) }
 
@@ -234,14 +238,23 @@ FOR THE FAQ SECTION: use an H2 "Frequently Asked Questions", then 4-6 questions 
 ` : ''}
 
 ═══════════════════════════════════════
-OUTPUT FORMAT (follow EXACTLY):
-Line 1: the headline, prefixed with the literal token  ###TITLE###  then a single space then the headline text (plain text, no HTML, punchy, specific to the topic).
-Then a line with the literal token  ###ARTICLE###  on its own.
+SEO + AI-DISCOVERABILITY (REQUIRED — the article must score 80+ on-page and be quotable by AI Overviews / ChatGPT / Perplexity):
+- ANSWER-FIRST INTRO: open with a direct, self-contained 2-3 sentence answer to "${topic}" BEFORE the first <h2> — the kind of summary an AI engine can quote verbatim. No preamble or throat-clearing.
+- PRIMARY KEYWORD = "${topic}". Place it (or a very close variant) in ALL THREE of: the headline, the FIRST sentence of the intro, and at least ONE <h2> subheading. Natural, never stuffed.
+- Use clear, specific <h2> headings, phrased as a question where it fits ("How does X actually work?") — question headings get pulled into AI answers.
+- DEPTH: at least 700 words of real substance.
+- Short, answer-first paragraphs and scannable lists — these are what AI engines cite.
+- Any <img> you add MUST have descriptive alt text.
+
+OUTPUT FORMAT (follow EXACTLY — THREE tokens, each at the start of its own line):
+Line 1: ###TITLE### then a space then the headline (plain text, 40-65 characters, specific, includes the primary keyword).
+Line 2: ###META### then a space then a meta description (ONE sentence, 140-160 characters, includes the primary keyword, compelling in a search result).
+Then a line with ###ARTICLE### on its own.
 Then the article body as semantic HTML.
 
 The HTML body rules:
 - Semantic HTML only: <h2>, <h3>, <p>, <ul>/<li>, <table>, <div>, <blockquote>. Use ONE <blockquote> for a strong pull-quote or opinion if it fits. NEVER use <svg>, <canvas>, <script> or <style> — WordPress strips them (charts must be the <div>/CSS bars described above).
-- Do NOT include an <h1> in the body (the headline is returned separately). Start the body with a <p> or the first <h2>.
+- Do NOT include an <h1> in the body (the headline is returned separately). Start the body with the answer-first intro <p>.
 - Do NOT output markdown. Do NOT wrap in <html>/<head>/<body>. Do NOT wrap in a code fence.
 - Concrete facts and real numbers wherever the research surfaced them.
 
@@ -260,7 +273,10 @@ VOICE / STYLE RULES:
   const client = createAnthropicClient()
 
   // ── Generate ─────────────────────────────────────────────────────────────
+  const sources: { url: string; title: string }[] = []
   let title = preTitle || topic.replace(/\b\w/g, c => c.toUpperCase())
+  // Meta description (search snippet). Carried back from the preview on publish.
+  let metaDesc = (publish && typeof body.meta === 'string') ? scrubAiHtml(body.meta.trim()).slice(0, 200) : ''
   let html = preHtml || ''
   if (!preHtml) try {
     const msg = await client.messages.create({
@@ -272,23 +288,39 @@ VOICE / STYLE RULES:
     })
     recordAnthropicUsage(msg, { userId: user.id, tier, feature: 'article_generate', model: 'claude-sonnet-4-6' })
 
-    // Concatenate every text block (web_search interleaves tool blocks).
+    // Concatenate text blocks (web_search interleaves tool blocks) and collect
+    // the sources actually cited (text-block citations) plus any search results,
+    // deduped by URL, so we can list them at the end of the article.
     let raw = ''
+    const seenSrc = new Set<string>()
+    const pushSrc = (url?: string, t?: string) => {
+      if (!url || seenSrc.has(url) || !/^https?:\/\//i.test(url)) return
+      seenSrc.add(url); sources.push({ url, title: (t || url).slice(0, 140) })
+    }
     for (const b of msg.content) {
-      if (b.type === 'text') raw += b.text
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const any = b as any
+      if (b.type === 'text') {
+        raw += b.text
+        if (Array.isArray(any.citations)) for (const c of any.citations) pushSrc(c?.url, c?.title)
+      } else if (any.type === 'web_search_tool_result' && Array.isArray(any.content)) {
+        for (const r of any.content) pushSrc(r?.url, r?.title)
+      }
     }
     raw = raw.trim()
 
-    // Pull the headline off the ###TITLE### / ###ARTICLE### delimiters.
+    // Pull the headline + meta off the delimiter tokens.
     const titleMatch = raw.match(/###TITLE###\s*(.+)/)
     if (titleMatch) title = titleMatch[1].split('\n')[0].trim().slice(0, 200) || title
+    const metaMatch = raw.match(/###META###\s*(.+)/)
+    if (metaMatch) metaDesc = metaMatch[1].split('\n')[0].trim().slice(0, 200)
     const artIdx = raw.indexOf('###ARTICLE###')
     const bodyRaw = artIdx >= 0 ? raw.slice(artIdx + '###ARTICLE###'.length) : raw
     html = scrubAiHtml(bodyRaw)
-    // Belt-and-braces: if a stray title token survived, strip it.
-    html = html.replace(/###TITLE###.*$/m, '').replace(/###ARTICLE###/g, '').trim()
-    // Scrub em-dashes from the separated title too.
+    // Belt-and-braces: strip any stray delimiter tokens that survived.
+    html = html.replace(/###TITLE###.*$/m, '').replace(/###META###.*$/m, '').replace(/###ARTICLE###/g, '').trim()
     title = scrubAiHtml(title)
+    metaDesc = scrubAiHtml(metaDesc)
   } catch (err) {
     console.error('[articles] writer', err instanceof Error ? err.message : err)
     return NextResponse.json({ error: toUserMessage(err, 'Couldn’t write the article just now. Please try again in a moment.') }, { status: 500 })
@@ -298,16 +330,37 @@ VOICE / STYLE RULES:
     return NextResponse.json({ error: 'Generation returned an empty article body' }, { status: 500 })
   }
 
-  // Related reading — MVP's 3 most-related existing posts as a thumbnail row
-  // below the conclusion. Only on a fresh generation (a preview-republish keeps
-  // the exact bytes it already showed). Best-effort; never blocks publish.
   if (!preHtml) {
+    // Sources — cite the research. When the article leans on external data, list
+    // the pages the web search surfaced as linked references at the end (trust +
+    // AEO signal). Capped, deduped, KSES-safe. (A preview-republish keeps the
+    // exact bytes it already showed, sources included.)
+    if (sources.length) {
+      const items = sources.slice(0, 8)
+        .map(s => `<li><a href="${esc(s.url)}" rel="nofollow noopener" target="_blank">${esc(s.title)}</a></li>`)
+        .join('')
+      html += `\n<h2>Sources</h2>\n<ul>${items}</ul>\n`
+    }
+
+    // Related reading — MVP's 3 most-related existing posts as a thumbnail row
+    // below the conclusion. Best-effort; never blocks publish.
     html = await appendRelatedThumbs(
       supabase, user.id, null,
       { title, keyword: `${topic} ${keywords}`.trim(), snippet: html.replace(/<[^>]+>/g, ' ').slice(0, 800) },
       html,
     )
   }
+
+  // On-page SEO / AEO score (same scorer the reviews use) — surfaced in the
+  // preview so the creator sees it clears 80 before publishing. siteHost is taken
+  // from the LAST absolute link (the Related-reading row = the user's own blog),
+  // so those internal links are correctly counted.
+  let seoScore: number | null = null
+  try {
+    const hosts = [...html.matchAll(/href="https?:\/\/([^/"]+)/g)].map(m => m[1])
+    const siteHost = hosts.length ? hosts[hosts.length - 1] : null
+    seoScore = scorePostSeo({ title, metaDescription: metaDesc || null, contentHtml: html, seoKeyword: topic, postType: 'article', siteHost }).score
+  } catch { /* non-fatal */ }
 
   // ── Hero image (editorial, text-free) ─────────────────────────────────────
   // Drawn from the same paid image pipeline the other post types use (Flux Pro
@@ -333,7 +386,7 @@ VOICE / STYLE RULES:
 
   // ── Preview only — no WordPress write ─────────────────────────────────────
   if (!publish) {
-    return NextResponse.json({ ok: true, title, html, heroUrl })
+    return NextResponse.json({ ok: true, title, html, heroUrl, meta: metaDesc, seoScore })
   }
 
   // ── Publish to WordPress ──────────────────────────────────────────────────
@@ -373,6 +426,7 @@ VOICE / STYLE RULES:
       slug,
       content: html,
       status: 'publish',
+      ...(metaDesc ? { excerpt: metaDesc } : {}),
       ...(categoryId ? { categories: [categoryId] } : {}),
       ...(tagIds.length ? { tags: tagIds } : {}),
       ...(featuredMedia ? { featured_media: featuredMedia } : {}),
@@ -397,7 +451,7 @@ VOICE / STYLE RULES:
       title,
       slug,
       content: html,
-      excerpt: null,
+      excerpt: metaDesc || null,
       wordpress_post_id: wpPost.id,
       wordpress_url: wpPost.link,
       wordpress_site_id: site.site_id,

@@ -59,7 +59,7 @@ export default function ArticlesPage() {
   // 'preview' = Generate preview button, 'publish' = Generate & publish,
   // 'publishing' = the preview's "Publish to my blog" button. null = idle.
   const [busy, setBusy] = useState<null | 'preview' | 'publish' | 'publishing'>(null)
-  const [preview, setPreview] = useState<{ title: string; html: string; heroUrl: string | null } | null>(null)
+  const [preview, setPreview] = useState<{ title: string; html: string; heroUrl: string | null; meta: string; seoScore: number | null } | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -106,7 +106,7 @@ export default function ArticlesPage() {
         })
         setPreview(null)
       } else {
-        setPreview({ title: j.title, html: j.html, heroUrl: j.heroUrl ?? null })
+        setPreview({ title: j.title, html: j.html, heroUrl: j.heroUrl ?? null, meta: j.meta ?? '', seoScore: j.seoScore ?? null })
         toast.success('Preview ready — review it below.')
       }
     } catch (err) {
@@ -126,7 +126,7 @@ export default function ArticlesPage() {
       const r = await fetch('/api/articles/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic: topic.trim(), sections, publish: true, title: preview.title, html: preview.html, heroUrl: preview.heroUrl }),
+        body: JSON.stringify({ topic: topic.trim(), sections, publish: true, title: preview.title, html: preview.html, heroUrl: preview.heroUrl, meta: preview.meta }),
       })
       const j = await r.json()
       if (!r.ok) throw new Error(j.error || 'Publish failed')
@@ -379,7 +379,22 @@ export default function ArticlesPage() {
         <div className="rounded-xl border p-6" style={{ background: 'var(--panel)', borderColor: 'var(--border)' }}>
           <div className="flex items-start justify-between gap-3 mb-4 flex-wrap">
             <div className="min-w-0">
-              <h2 className="text-xl font-bold" style={{ color: 'var(--fg)' }}>{preview.title}</h2>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-xl font-bold" style={{ color: 'var(--fg)' }}>{preview.title}</h2>
+                {typeof preview.seoScore === 'number' && (
+                  <span
+                    className="text-[11px] font-bold px-2 py-0.5 rounded-full"
+                    title="On-page SEO / AI-discoverability score"
+                    style={{
+                      background: preview.seoScore >= 80 ? 'rgba(52,199,89,.15)' : preview.seoScore >= 60 ? 'rgba(255,149,0,.15)' : 'rgba(255,59,48,.15)',
+                      color: preview.seoScore >= 80 ? '#248a3d' : preview.seoScore >= 60 ? '#b26a00' : '#c0392b',
+                    }}
+                  >
+                    SEO {preview.seoScore}/100
+                  </span>
+                )}
+              </div>
+              {preview.meta && <p className="text-xs mt-1 italic" style={{ color: 'var(--fg-muted)' }}>{preview.meta}</p>}
               <p className="text-xs mt-1" style={{ color: 'var(--fg-muted)' }}>Preview — nothing has been published yet.</p>
             </div>
             <Button
