@@ -309,8 +309,9 @@ export default function DashboardShellV2({
   // effectiveTier so the preview is accurate. Identical to the props when not
   // previewing (effectiveTier === tier then), so real users are unaffected.
   // Articles (Create → Articles): its own cap, open to Creator/Studio/Pro (+admin).
-  // 0 = not entitled (trial, Amazon); null/>0 = entitled.
-  const canUseArticles = (TIERS[effectiveTier]?.articlesPerMonth ?? 0) !== 0
+  // Only 0 (trial, Amazon) is NOT entitled; null (admin, unlimited) and any
+  // positive cap ARE. Note: DON'T coalesce null→0 here — that hid it from admin.
+  const canUseArticles = TIERS[effectiveTier]?.articlesPerMonth !== 0
   const showBuyingGuidesEff = isAdmin ? canSeeNav('buyingGuides', effectiveTier) : showBuyingGuides
   const showDealsEff = isAdmin ? canSeeNav('deals', effectiveTier) : showDeals
   // The Amazon Influencer section (thumbnails + research + social) is the
