@@ -57,13 +57,17 @@ function tokenize(...parts: Array<string | null | undefined>): Set<string> {
 
 /**
  * Rank `candidates` by topical overlap with the current post and return the
- * top `max` with a non-zero score (most relevant first). Candidates with no
- * shared meaningful token are dropped — we never inject an unrelated link.
+ * top `max` most relevant (most relevant first). A candidate qualifies only
+ * when it shares at least `minOverlap` MEANINGFUL tokens with the current post
+ * (default 1). The same-post_type bump is a tiebreak for ordering ONLY — it can
+ * never make an off-topic post qualify on its own, so e.g. a juicer review does
+ * not attach to a suitcase article just because both are reviews.
  */
 export function pickRelatedPosts(
   current: CurrentTopic,
   candidates: LinkCandidate[],
   max = 3,
+  minOverlap = 1,
 ): LinkCandidate[] {
   // Tokenize the CURRENT post from every signal available. We deliberately
   // include the content snippet — many older posts have a null seo_keyword and
@@ -82,17 +86,19 @@ export function pickRelatedPosts(
   const scored = candidates
     .filter(c => c.title && c.url)
     .map(c => {
-      // Score each candidate by token overlap across title + keyword + body
-      // snippet (same widening on this side). Same post_type adds a small
-      // bump so reviews bond with other reviews, comparisons with comparisons.
+      // Real topical relevance = count of shared meaningful tokens across
+      // title + keyword + body snippet. This is what QUALIFIES a candidate.
       const ct = tokenize(c.title, c.keyword, c.contentSnippet)
-      let score = 0
-      for (const t of ct) if (currentTokens.has(t)) score++
-      if (current.postType && c.postType && current.postType === c.postType) score += 1
-      return { c, score }
+      let overlap = 0
+      for (const t of ct) if (currentTokens.has(t)) overlap++
+      // Same post_type is a tiebreak for ORDERING only (reviews bond with
+      // reviews). It must never qualify a post that shares no real topic, or an
+      // unrelated post sneaks in whenever two posts happen to share a type.
+      const sortScore = overlap + (current.postType && c.postType && current.postType === c.postType ? 0.5 : 0)
+      return { c, overlap, sortScore }
     })
-    .filter(s => s.score > 0)
-    .sort((a, b) => b.score - a.score)
+    .filter(s => s.overlap >= minOverlap)
+    .sort((a, b) => b.sortScore - a.sortScore)
 
   // De-dupe by URL while preserving best-first order.
   const seen = new Set<string>()
