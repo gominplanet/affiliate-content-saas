@@ -1,30 +1,28 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// Daily Auto-pilot: for each creator who turned the toggle ON, publish ONE blog
-// post that day from their next un-blogged YouTube video (full pipeline: hero +
-// internal images + schema, via the generation-job queue). No social push.
+// Daily Auto-pilot: for each site whose creator turned the toggle ON, publish
+// ONE blog post that day from their next un-blogged YouTube video (full
+// pipeline: hero + internal images + schema, via the generation-job queue). No
+// social push.
 //
-// HARD RULE: one post per user per day, for EVERY tier. Users who want more do
-// it manually. Underneath, the normal monthly cap + spend gate still apply — when
-// a user is out of monthly allowance, auto-pilot pauses and emails them once,
-// then resumes automatically next cycle.
+// HARD RULE: one post per USER per day, every tier (users who want more do it
+// manually). Underneath, the normal monthly cap + spend gate still apply — when
+// a user is out of monthly allowance, auto-pilot pauses, emails them once, and
+// resumes automatically next cycle.
 //
 // Auth: Vercel cron carries `Authorization: Bearer ${CRON_SECRET}`.
-// State: brand_profiles.blog_customizations.autoBlog (no migration).
+// State: wordpress_sites.blog_customizations.autoBlog (per site, no migration).
 
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { normalizeTier, TIERS, billingWindow, type Tier } from '@/lib/tier'
 import { spendGate } from '@/lib/ai-spend'
-import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { enqueueGenerationJob } from '@/lib/generation-jobs'
 import { sendEmail, isEmailConfigured } from '@/services/email'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
 
-// Don't fire twice in one calendar day if the cron runs more than once or a
-// deploy re-triggers it — 20h since the last run means "already went today".
 const MIN_HOURS_BETWEEN_RUNS = 20
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -47,30 +45,37 @@ export async function GET(request: Request) {
   const nowIso = new Date().toISOString()
   const results: Array<{ user: string; status: string; videoId?: string }> = []
 
-  // Everyone with the toggle on. The JSON filter matches only rows that set it.
-  const { data: rows } = await admin
-    .from('brand_profiles')
-    .select('user_id, blog_customizations')
+  // Every site with the toggle on. The JSON filter matches only rows that set it.
+  const { data: sites } = await admin
+    .from('wordpress_sites')
+    .select('id, user_id, blog_customizations')
     .eq('blog_customizations->autoBlog->>enabled', 'true')
     .limit(500)
 
-  for (const row of (rows ?? []) as Array<{ user_id: string; blog_customizations: any }>) {
-    const userId = row.user_id
-    const customizations = (row.blog_customizations && typeof row.blog_customizations === 'object' ? row.blog_customizations : {}) as Record<string, any>
+  // One post per USER per day — if a user has auto-pilot on for more than one
+  // site, only their first site runs today.
+  const handledUsers = new Set<string>()
+
+  for (const site of (sites ?? []) as Array<{ id: string; user_id: string; blog_customizations: any }>) {
+    const userId = site.user_id
+    const siteId = site.id
+    if (handledUsers.has(userId)) { results.push({ user: userId, status: 'user_already_handled' }); continue }
+
+    const customizations = (site.blog_customizations && typeof site.blog_customizations === 'object' ? site.blog_customizations : {}) as Record<string, any>
     const state: AutoBlogState = (customizations.autoBlog && typeof customizations.autoBlog === 'object' ? customizations.autoBlog : {})
 
-    // Persist a patch to this user's autoBlog state (best-effort).
     const save = async (patch: Partial<AutoBlogState>) => {
       const next = { ...state, ...patch }
-      await admin.from('brand_profiles')
-        .upsert({ user_id: userId, blog_customizations: { ...customizations, autoBlog: next } }, { onConflict: 'user_id' })
+      await admin.from('wordpress_sites')
+        .update({ blog_customizations: { ...customizations, autoBlog: next } })
+        .eq('id', siteId)
     }
 
     try {
       // Already published today?
       if (state.lastRunAt) {
         const hrs = (Date.now() - new Date(state.lastRunAt).getTime()) / 36e5
-        if (hrs < MIN_HOURS_BETWEEN_RUNS) { results.push({ user: userId, status: 'already_ran_today' }); continue }
+        if (hrs < MIN_HOURS_BETWEEN_RUNS) { handledUsers.add(userId); results.push({ user: userId, status: 'already_ran_today' }); continue }
       }
 
       const { data: integ } = await admin
@@ -92,26 +97,16 @@ export async function GET(request: Request) {
           .eq('user_id', userId)
           .gte('published_at', startISO)
         if ((count ?? 0) >= cap) {
-          if (state.pausedReason !== 'cap') {
-            await save({ pausedReason: 'cap', pausedAt: nowIso })
-            await notifyPaused(admin, userId, 'cap').catch(() => {})
-          }
-          results.push({ user: userId, status: 'paused_cap' })
-          continue
+          if (state.pausedReason !== 'cap') { await save({ pausedReason: 'cap', pausedAt: nowIso }); await notifyPaused(admin, userId, 'cap').catch(() => {}) }
+          handledUsers.add(userId); results.push({ user: userId, status: 'paused_cap' }); continue
         }
       }
 
-      // Spend circuit-breaker.
       const blocked = await spendGate(userId, tier)
       if (blocked) {
         if (state.pausedReason !== 'spend') { await save({ pausedReason: 'spend', pausedAt: nowIso }); await notifyPaused(admin, userId, 'spend').catch(() => {}) }
-        results.push({ user: userId, status: 'paused_spend' })
-        continue
+        handledUsers.add(userId); results.push({ user: userId, status: 'paused_spend' }); continue
       }
-
-      // WordPress must be connected to publish.
-      const site = await getWordPressCredentials(admin, userId)
-      if (!site) { results.push({ user: userId, status: 'no_wp' }); continue }
 
       // Pick the next un-blogged video, newest first, excluding any we recently
       // attempted (so one non-review video can't block auto-pilot forever).
@@ -123,16 +118,18 @@ export async function GET(request: Request) {
       ])
       const blogged = new Set((bloggedRows ?? []).map((b: any) => b.video_id as string))
       const nextVideo = (vids ?? []).find((v: any) => !blogged.has(v.id) && !recent.has(v.id)) as { id: string } | undefined
-      if (!nextVideo) { results.push({ user: userId, status: 'no_videos_left' }); continue }
+      if (!nextVideo) { handledUsers.add(userId); results.push({ user: userId, status: 'no_videos_left' }); continue }
 
-      // Enqueue the SAME blog pipeline the app uses (service-auth worker runs it).
+      // Enqueue the SAME blog pipeline the app uses (service-auth worker runs it),
+      // targeting THIS site.
       const jobId = await enqueueGenerationJob(admin, {
-        userId, ownerId: userId, kind: 'blog', input: { videoId: nextVideo.id },
+        userId, ownerId: userId, kind: 'blog', input: { videoId: nextVideo.id, siteId },
       })
       if (!jobId) { results.push({ user: userId, status: 'enqueue_failed' }); continue }
 
       const nextRecent = [nextVideo.id, ...(state.recentVideoIds ?? [])].slice(0, 10)
       await save({ lastRunAt: nowIso, pausedReason: null, pausedAt: null, recentVideoIds: nextRecent })
+      handledUsers.add(userId)
       results.push({ user: userId, status: 'enqueued', videoId: nextVideo.id })
     } catch (e) {
       console.error('[auto-blog] user', userId, e instanceof Error ? e.message : e)
