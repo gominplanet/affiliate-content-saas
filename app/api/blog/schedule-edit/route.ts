@@ -42,6 +42,9 @@ export async function PATCH(request: Request) {
       scheduledFor?: string
       addPlatforms?: string[]
       removePlatforms?: string[]
+      /** Per-channel caption edits: { facebook: "...", linkedin: "..." }. Applied
+       *  to both newly-added rows and existing pending rows for that platform. */
+      bodies?: Record<string, string>
       siteId?: string | null
     }
     const blogPostId = (body.blogPostId || '').trim()
@@ -49,6 +52,7 @@ export async function PATCH(request: Request) {
 
     const addPlatforms = [...new Set((Array.isArray(body.addPlatforms) ? body.addPlatforms : []).filter(p => SUPPORTED_SOCIALS.includes(p as SchedulableSocial)))] as SchedulableSocial[]
     const removePlatforms = [...new Set((Array.isArray(body.removePlatforms) ? body.removePlatforms : []).filter(Boolean))]
+    const bodies: Record<string, string> = (body.bodies && typeof body.bodies === 'object') ? body.bodies : {}
 
     // Load the post + confirm ownership + that it's actually scheduled.
     const { data: post } = await (supabase as any)
@@ -114,6 +118,25 @@ export async function PATCH(request: Request) {
         .in('platform', removePlatforms)
     }
 
+    // ── 2b. Edit captions on EXISTING queued platforms ─────────────────────
+    // (platforms that stay put — not being added this call, not removed).
+    {
+      const existingSocial = new Set(pending.filter(r => r.kind === 'social' && r.platform).map(r => r.platform as string))
+      const edits = Object.entries(bodies).filter(([p, text]) =>
+        typeof text === 'string' && text.trim() &&
+        existingSocial.has(p) &&
+        !addPlatforms.includes(p as SchedulableSocial) &&
+        !removePlatforms.includes(p),
+      )
+      if (edits.length) {
+        await Promise.all(edits.map(([p, text]) =>
+          (supabase as any).from('scheduled_posts')
+            .update({ body_text: text.trim().slice(0, 900) })
+            .eq('user_id', user.id).eq('blog_post_id', blogPostId).eq('status', 'pending').eq('kind', 'social').eq('platform', p),
+        ))
+      }
+    }
+
     // ── 3. Add platforms ───────────────────────────────────────────────────
     const skipped: string[] = []
     const added: string[] = []
@@ -131,12 +154,13 @@ export async function PATCH(request: Request) {
         if (!tierAllowsSocial(tier, p)) { skipped.push(`${p} (not on your plan)`); continue }
         if (!connected.has(p)) { skipped.push(`${p} (not connected)`); continue }
         const offset = DEFAULT_SOCIAL_OFFSETS_MIN[p] ?? 0
+        const caption = (typeof bodies[p] === 'string' && bodies[p].trim()) ? bodies[p].trim().slice(0, 900) : defaultBody
         rows.push({
           user_id: user.id,
           blog_post_id: blogPostId,
           platform: p,
           scheduled_at: new Date(newBaseMs + offset * 60_000).toISOString(),
-          body_text: defaultBody,
+          body_text: caption,
           status: 'pending',
           kind: 'social',
           parent_id: parentId,

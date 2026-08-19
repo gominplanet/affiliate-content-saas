@@ -40,18 +40,26 @@ export async function GET() {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  const rows = (data ?? []) as Array<{ blog_post_id: string | null; kind: string | null; platform: string | null; status: string | null }>
+  const rows = (data ?? []) as Array<{ blog_post_id: string | null; kind: string | null; platform: string | null; status: string | null; body_text?: string | null }>
 
   // Which socials will cascade after each blog post publishes — collected from
   // the pending kind='social' rows, keyed by blog_post_id. Used to summarize
   // "then posts to FB, IG, …" on the blog card so the creator can see the whole
   // plan (blog + socials) at a glance.
   const socialByBlog = new Map<string, string[]>()
+  // The current per-channel caption for each pending social row, so the "Edit
+  // schedule" modal can pre-fill each platform's copy for editing.
+  const socialBodiesByBlog = new Map<string, Record<string, string>>()
   for (const r of rows) {
     if (r.kind === 'social' && r.status === 'pending' && r.blog_post_id && r.platform) {
       const arr = socialByBlog.get(r.blog_post_id) ?? []
       if (!arr.includes(r.platform)) arr.push(r.platform)
       socialByBlog.set(r.blog_post_id, arr)
+      if (typeof r.body_text === 'string') {
+        const m = socialBodiesByBlog.get(r.blog_post_id) ?? {}
+        if (!(r.platform in m)) m[r.platform] = r.body_text
+        socialBodiesByBlog.set(r.blog_post_id, m)
+      }
     }
   }
 
@@ -131,6 +139,7 @@ export async function GET() {
         ...(socialByBlog.get(b.id) ?? []),
         ...((b.scheduled_social_platforms ?? []).filter((p): p is string => typeof p === 'string' && !!p)),
       ])],
+      cascadeBodies: socialBodiesByBlog.get(b.id) ?? {},
       // Managed from the Video-to-Blog tab (there's no scheduled_posts row to
       // cancel here) — the UI hides the Cancel action for these.
       synthetic: true,
@@ -139,7 +148,7 @@ export async function GET() {
   // Attach the same cascade summary to any REAL blog_publish rows (draft-flip).
   const withCascade = (data ?? []).map((d: { kind?: string | null; blog_post_id?: string | null }) =>
     d.kind === 'blog_publish' && d.blog_post_id
-      ? { ...d, cascade: socialByBlog.get(d.blog_post_id) ?? [] }
+      ? { ...d, cascade: socialByBlog.get(d.blog_post_id) ?? [], cascadeBodies: socialBodiesByBlog.get(d.blog_post_id) ?? {} }
       : d,
   )
 

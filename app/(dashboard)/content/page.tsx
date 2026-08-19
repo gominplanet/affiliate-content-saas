@@ -155,6 +155,9 @@ interface ScheduledItem {
   /** True for a synthesized "scheduled blog post" entry (wp-native schedule,
    *  no scheduled_posts row). View-only here — managed from Video to Blog. */
   synthetic?: boolean
+  /** On a blog_publish row: current per-channel captions for queued socials,
+   *  so the Edit-schedule modal can pre-fill each platform's copy. */
+  cascadeBodies?: Record<string, string>
   /** On a blog_publish row: the social platforms queued to cascade after the
    *  post publishes. Summarized as chips on the card. */
   cascade?: string[]
@@ -2182,6 +2185,8 @@ function ScheduledList({
           scheduledAt={editSchedule.scheduled_at}
           platforms={editSchedule.cascade ?? []}
           title={editSchedule.blog_posts?.title ?? null}
+          link={editSchedule.blog_posts?.wordpress_url ?? null}
+          bodies={editSchedule.cascadeBodies ?? {}}
           onClose={() => setEditSchedule(null)}
           onSaved={onRefresh}
         />

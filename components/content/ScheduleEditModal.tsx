@@ -30,24 +30,34 @@ function isoToLocalInput(iso: string): string {
 }
 
 export default function ScheduleEditModal({
-  blogPostId, scheduledAt, platforms, title, onClose, onSaved,
+  blogPostId, scheduledAt, platforms, title, link, bodies, onClose, onSaved,
 }: {
   blogPostId: string
   scheduledAt: string
   platforms: string[]
   title?: string | null
+  link?: string | null
+  /** Current per-channel captions for already-queued platforms. */
+  bodies?: Record<string, string>
   onClose: () => void
   onSaved: () => void
 }) {
   const original = new Set(platforms)
+  const defaultCaption = `${(title || 'New post').trim()}${link ? `\n\n${link}` : ''}`
   const [when, setWhen] = useState(isoToLocalInput(scheduledAt))
   const [selected, setSelected] = useState<Set<string>>(new Set(platforms))
+  // Per-channel caption text. Seeded from the current queued bodies; a newly
+  // toggled-on channel seeds with the default (title + link) so it's editable.
+  const [captions, setCaptions] = useState<Record<string, string>>(() => ({ ...(bodies || {}) }))
   const [saving, setSaving] = useState(false)
 
   function toggle(key: string) {
     setSelected(s => {
       const n = new Set(s)
-      if (n.has(key)) n.delete(key); else n.add(key)
+      if (n.has(key)) { n.delete(key) } else {
+        n.add(key)
+        setCaptions(c => (c[key] && c[key].trim()) ? c : { ...c, [key]: defaultCaption })
+      }
       return n
     })
   }
@@ -61,7 +71,16 @@ export default function ScheduleEditModal({
     const removePlatforms = [...original].filter(p => !selected.has(p))
     const rescheduled = iso && isoToLocalInput(scheduledAt) !== when
 
-    if (!rescheduled && addPlatforms.length === 0 && removePlatforms.length === 0) {
+    // Captions to send for every selected channel (new + edited existing).
+    const outBodies: Record<string, string> = {}
+    let captionChanged = false
+    for (const p of selected) {
+      const text = (captions[p] ?? '').trim()
+      if (text) outBodies[p] = text
+      if (text !== (bodies?.[p] ?? '').trim() && !addPlatforms.includes(p)) captionChanged = true
+    }
+
+    if (!rescheduled && addPlatforms.length === 0 && removePlatforms.length === 0 && !captionChanged) {
       toast.message('Nothing changed'); return
     }
 
@@ -75,6 +94,7 @@ export default function ScheduleEditModal({
           ...(rescheduled ? { scheduledFor: iso } : {}),
           addPlatforms,
           removePlatforms,
+          bodies: outBodies,
         }),
       })
       const d = await res.json()
@@ -120,28 +140,44 @@ export default function ScheduleEditModal({
 
           <div>
             <label className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Post to socials</label>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="flex flex-col gap-2">
               {PLATFORMS.map(p => {
                 const on = selected.has(p.key)
                 return (
-                  <button
-                    key={p.key}
-                    type="button"
-                    onClick={() => toggle(p.key)}
-                    className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm transition"
-                    style={{
-                      borderColor: on ? '#7C3AED' : 'var(--border-2,#e5e5e7)',
-                      background: on ? 'rgba(124,58,237,0.08)' : 'transparent',
-                      color: 'var(--text,#1d1d1f)',
-                    }}
-                  >
-                    <span>{p.label}</span>
-                    <span className="text-[10px] font-bold" style={{ color: on ? '#7C3AED' : '#c7c7cc' }}>{on ? 'ON' : ''}</span>
-                  </button>
+                  <div key={p.key} className="rounded-lg border" style={{ borderColor: on ? '#7C3AED' : 'var(--border-2,#e5e5e7)', background: on ? 'rgba(124,58,237,0.06)' : 'transparent' }}>
+                    <button
+                      type="button"
+                      onClick={() => toggle(p.key)}
+                      className="flex w-full items-center justify-between px-3 py-2 text-sm"
+                      style={{ color: 'var(--text,#1d1d1f)' }}
+                    >
+                      <span className="font-medium">{p.label}</span>
+                      <span className="text-[10px] font-bold" style={{ color: on ? '#7C3AED' : '#c7c7cc' }}>{on ? 'ON' : 'OFF'}</span>
+                    </button>
+                    {on && (
+                      <div className="px-3 pb-2.5">
+                        <textarea
+                          value={captions[p.key] ?? ''}
+                          onChange={e => setCaptions(c => ({ ...c, [p.key]: e.target.value }))}
+                          rows={2}
+                          placeholder={`Caption for ${p.label}…`}
+                          className="w-full px-2.5 py-2 rounded-md border text-[13px] leading-snug resize-y focus:outline-none focus:border-[#7C3AED]"
+                          style={{ borderColor: 'var(--border-2,#e5e5e7)', background: 'var(--surface,#fff)', color: 'var(--text,#1d1d1f)' }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setCaptions(c => ({ ...c, [p.key]: defaultCaption }))}
+                          className="text-[10px] text-[#86868b] hover:text-[#7C3AED] mt-1"
+                        >
+                          Reset to default
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 )
               })}
             </div>
-            <p className="text-[10px] text-[#86868b] mt-1.5">Newly added channels post with a default caption (title + link). Only connected channels on your plan will queue.</p>
+            <p className="text-[10px] text-[#86868b] mt-1.5">Edit each channel&rsquo;s caption above. Only connected channels on your plan will queue; the rest are skipped.</p>
           </div>
 
           <div className="flex items-center justify-end gap-2 border-t border-[var(--border-2,#e5e5e7)] pt-3">
