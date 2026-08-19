@@ -113,6 +113,90 @@ export async function pulseTrendingTags(userId: string, niche: string | null, ma
   }
 }
 
+// ── Best time to post ────────────────────────────────────────────────────────
+// The SAME reach_samples we score tags on also carry posted_at + lift, so we can
+// learn WHEN this creator's posts overperform — no new data collection. We group
+// each post's lift by weekday and by hour (shifted into the creator's local time
+// via the tz offset the client passes) and surface the windows that keep beating
+// their baseline. Gated on a minimum sample count so a couple of lucky posts
+// can't crown a time slot.
+
+export interface TimeBucket { key: number; avgLift: number; samples: number }
+export interface BestTimes {
+  samples: number
+  bestWeekday: TimeBucket | null
+  bestHour: TimeBucket | null
+  topWindows: Array<{ weekday: number; hour: number; avgLift: number; samples: number }>
+  byWeekday: TimeBucket[]  // all 7, weekday 0=Sun (0 samples allowed)
+}
+
+interface TimedRow { posted_at: string | null; lift: number | null }
+
+const mean = (a: number[]) => a.reduce((s, x) => s + x, 0) / a.length
+
+/**
+ * Learn this creator's best posting windows from their collected reach samples.
+ * `tzOffsetMinutes` is the client's Date.getTimezoneOffset() (minutes BEHIND UTC,
+ * e.g. 300 for UTC-5), so we report times in the creator's own clock. Returns
+ * null until there are enough samples to be more than noise.
+ */
+export async function bestPostingTimes(userId: string, tzOffsetMinutes = 0, minSamples = 6): Promise<BestTimes | null> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const admin = createAdminClient() as any
+  const { data } = await admin
+    .from('reach_samples')
+    .select('posted_at,lift')
+    .eq('user_id', userId)
+    .eq('status', 'collected')
+    .not('lift', 'is', null)
+    .not('posted_at', 'is', null)
+    .order('posted_at', { ascending: false })
+    .limit(500)
+  const rows = (data ?? []) as TimedRow[]
+
+  const wk = new Map<number, number[]>()
+  const hr = new Map<number, number[]>()
+  const combo = new Map<string, number[]>()
+  let n = 0
+  for (const r of rows) {
+    if (r.lift == null || !Number.isFinite(r.lift) || !r.posted_at) continue
+    const t = Date.parse(r.posted_at)
+    if (!Number.isFinite(t)) continue
+    // Shift UTC → the creator's local clock, then read fields via UTC getters.
+    const local = new Date(t - tzOffsetMinutes * 60000)
+    const weekday = local.getUTCDay()
+    const hour = local.getUTCHours()
+    ;(wk.get(weekday) || wk.set(weekday, []).get(weekday))!.push(r.lift)
+    ;(hr.get(hour) || hr.set(hour, []).get(hour))!.push(r.lift)
+    const ck = `${weekday}:${hour}`
+    ;(combo.get(ck) || combo.set(ck, []).get(ck))!.push(r.lift)
+    n++
+  }
+  if (n < minSamples) return null
+
+  const byWeekday: TimeBucket[] = []
+  for (let d = 0; d < 7; d++) {
+    const lifts = wk.get(d) || []
+    byWeekday.push({ key: d, avgLift: lifts.length ? mean(lifts) : 0, samples: lifts.length })
+  }
+  const pickBest = (m: Map<number, number[]>): TimeBucket | null => {
+    let best: TimeBucket | null = null
+    for (const [key, lifts] of m) {
+      if (lifts.length < 2) continue
+      const avgLift = mean(lifts)
+      if (!best || avgLift > best.avgLift) best = { key, avgLift, samples: lifts.length }
+    }
+    return best
+  }
+  const topWindows = [...combo.entries()]
+    .filter(([, lifts]) => lifts.length >= 2)
+    .map(([k, lifts]) => { const [weekday, hour] = k.split(':').map(Number); return { weekday, hour, avgLift: mean(lifts), samples: lifts.length } })
+    .sort((a, b) => b.avgLift - a.avgLift)
+    .slice(0, 3)
+
+  return { samples: n, bestWeekday: pickBest(wk), bestHour: pickBest(hr), topWindows, byWeekday }
+}
+
 /** Count of a user's collected samples — drives the panel's "still collecting" state. */
 export async function collectedSampleCount(userId: string): Promise<number> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

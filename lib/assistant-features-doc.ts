@@ -481,8 +481,10 @@ checks each post's reach about a day after publishing, ranks your tags by how
 far above your own baseline they perform, and automatically feeds the proven
 ones into future AI-generated captions. The panel shows your best tags, your
 underperformers, and what's working across MVP creators in your niche (numbers
-are aggregate — no other creator's posts are exposed). It needs a handful of
-posts before personal ranking unlocks.
+are aggregate — no other creator's posts are exposed). It also learns your
+BEST TIMES TO POST from the same data — the days and hours your posts tend to
+overperform, in your timezone. It needs a handful of posts before personal
+ranking and timing unlock.
 
 ---
 
