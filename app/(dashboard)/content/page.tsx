@@ -24,6 +24,7 @@ import { ManualEdit } from '@/components/content/ManualEdit'
 import { ChangeThumbnailButton } from '@/components/content/ChangeThumbnailButton'
 import { RewriteFeedbackModal } from '@/components/content/RewriteFeedbackModal'
 import { errText } from '@/lib/err-text'
+import { nudgeGeniuslinkAfterPublish } from '@/lib/geniuslink-nudge'
 import { formatScheduleTime } from '@/lib/format-schedule'
 import { generateBlogRequest } from '@/lib/blog-generate-client'
 import { GenerateButton } from '@/components/content/GenerateButton'
@@ -1155,6 +1156,9 @@ const VideoCard = memo(function VideoCardImpl({
     // hydrate from the DB on the next full load; this is the instant UI sync.
     if (postedKeys.length && currentPostId) {
       window.dispatchEvent(new CustomEvent('mvp-social-posted', { detail: { videoId: id, keys: postedKeys } }))
+      // Posted to social — if they're not on Geniuslink, nudge them once about
+      // per-channel click attribution (best-effort, never blocks).
+      void nudgeGeniuslinkAfterPublish()
     }
     setPublishingAll(false)
     setPublishAllStep('')

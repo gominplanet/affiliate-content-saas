@@ -12,6 +12,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { TrendingUp, MousePointerClick, ArrowUpRight, Loader2 } from 'lucide-react'
+import { GENIUSLINK_SIGNUP_URL } from '@/lib/geniuslink-signup'
 
 interface SeoSummary { decaying: number; striking: number; notIndexed: number; total: number }
 interface ClicksSummary { clicks: number; topTitle: string | null; topClicks: number }
@@ -71,9 +72,17 @@ export function DashboardLiveCards() {
         {clicks === null ? (
           <Skeleton />
         ) : clicks === 'error' || clicks.clicks === 0 ? (
-          <p className="text-[12px]" style={{ color: 'var(--text-faint)' }}>
-            Connect Geniuslink (Brand Profile) to track how many shoppers your links send to the store.
-          </p>
+          <div>
+            <p className="text-[12px]" style={{ color: 'var(--text-faint)' }}>
+              Connect Geniuslink to track your clicks — and see which channel (blog, Facebook, Pinterest, X…) drove each one.
+            </p>
+            <div className="flex items-center gap-3 mt-2">
+              <Link href="/brand" className="text-[11px] font-semibold text-[#7C3AED] hover:text-[#9D6BFF]">Connect</Link>
+              <a href={GENIUSLINK_SIGNUP_URL} target="_blank" rel="noopener noreferrer" className="text-[11px] font-semibold text-[#7C3AED] hover:text-[#9D6BFF] inline-flex items-center gap-1">
+                Get Geniuslink <ArrowUpRight size={11} />
+              </a>
+            </div>
+          </div>
         ) : (
           <div>
             <p className="text-[28px] font-semibold tracking-tight tabular-nums leading-none" style={{ color: 'var(--text)' }}>
