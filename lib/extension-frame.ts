@@ -390,10 +390,33 @@ export interface CcCatalogScanResult {
  * isn't installed so the caller can show the manual fallback.
  */
 export async function requestCcCatalogScan(): Promise<CcCatalogScanResult> {
-  if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
+  // This scan needs the MVP_SCAN_CC_CATALOG handler that shipped in 1.16.25. An
+  // older SCOUT answers the ping but has no handler for this message, so the
+  // channel closes with no reply and the bridge would report a bare "timeout".
+  // Gate on the version so the button says "update SCOUT" instead.
+  const status = await getScoutStatus()
+  if (!status.installed) return { ok: false, error: 'not-installed' }
+  if (_cmpVersion(status.version, CC_CATALOG_MIN_SCOUT) < 0) {
+    return { ok: false, error: `outdated-scout:${status.version || 'unknown'}` }
+  }
   const resp = await sendToExtension<CcCatalogScanResult>({ type: 'MVP_SCAN_CC_CATALOG' }, 780000)
   if (!resp) return { ok: false, error: 'timeout' }
   return resp
+}
+
+/** Minimum SCOUT version that carries the CC catalog scan handler. */
+export const CC_CATALOG_MIN_SCOUT = '1.16.25'
+
+/** -1 / 0 / 1 dotted-version compare; a null/unknown left side sorts oldest. */
+function _cmpVersion(a: string | null | undefined, b: string): number {
+  if (!a) return -1
+  const pa = a.split('.').map(n => parseInt(n, 10) || 0)
+  const pb = b.split('.').map(n => parseInt(n, 10) || 0)
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const x = pa[i] ?? 0, y = pb[i] ?? 0
+    if (x !== y) return x < y ? -1 : 1
+  }
+  return 0
 }
 
 /** Ping SCOUT, tolerant of a cold MV3 service worker.

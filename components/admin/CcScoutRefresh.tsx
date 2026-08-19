@@ -27,9 +27,17 @@ export default function CcScoutRefresh({ onDone }: { onDone?: () => void }) {
       const r = await requestCcCatalogScan()
       setRes(r)
       if (!r.ok) {
-        setErr(r.error === 'not-installed'
-          ? 'SCOUT isn’t installed or didn’t answer. Install/enable it, open Amazon Creator Connections once, then try again.'
-          : (r.error || 'Refresh failed.'))
+        const e = r.error || ''
+        if (e === 'not-installed') {
+          setErr('SCOUT isn’t installed or didn’t answer. Install/enable it, open Amazon Creator Connections once, then try again.')
+        } else if (e.startsWith('outdated-scout')) {
+          const have = e.split(':')[1] || 'older'
+          setErr(`Your SCOUT (${have}) is too old for this — it needs 1.16.25+. If you’re on the Chrome Web Store build, open chrome://extensions and click “Update”, then retry. (Store auto-update can lag a few hours.)`)
+        } else {
+          setErr(e === 'timeout'
+            ? 'SCOUT didn’t finish in time. Make sure you’re on 1.16.25+, signed into Amazon Creator Connections, then retry.'
+            : e)
+        }
       }
       onDone?.()
     } catch (e) {
