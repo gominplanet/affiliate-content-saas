@@ -185,12 +185,15 @@ export function buildBrandHub(
     acc.channels.add('pitch')
     acc.counts.pitches += 1
     acc.statuses.add('Pitched')
+    // NOTE: collaborations.website_url / youtube_url are the CREATOR's own links
+    // (from their outreach profile), not the brand's — so we deliberately don't
+    // surface an "Open" link here. It would just open the creator's own blog,
+    // which is useless in a per-brand timeline. The email body is the payload.
     acc.events.push({
       type: 'pitch',
       at: c.created_at || new Date(0).toISOString(),
       title: 'Pitch email sent',
       detail: (c.generated_email || '').trim() || undefined,
-      url: c.website_url || c.youtube_url || undefined,
       platforms: (c.platforms || []).filter(Boolean),
     })
   }
