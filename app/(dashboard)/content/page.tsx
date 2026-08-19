@@ -2539,6 +2539,13 @@ export default function ContentPage() {
   // to become interactive. 2026-06-07.
   const [recentPage, setRecentPage] = useState(1)
   const POSTS_PER_PAGE = 20
+  // Pagination — Videos tabs (horizontal + vertical). Same render-only trick as
+  // the Posts tab: the whole list still loads and every filter/select runs over
+  // the full set, we just slice what mounts. VideoCard is heavy (per-card state,
+  // platform buttons, dropdowns), so mounting hundreds at once was the biggest
+  // remaining jank on this page. 2026-08-19.
+  const [videosPage, setVideosPage] = useState(1)
+  const VIDEOS_PER_PAGE = 24
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [bulkRewriting, setBulkRewriting] = useState(false)
   const [bulkRewriteProgress, setBulkRewriteProgress] = useState<{ done: number; total: number } | null>(null)
@@ -2622,6 +2629,13 @@ export default function ContentPage() {
   useEffect(() => {
     setRecentPage(1)
   }, [postSearch])
+
+  // Reset the Videos-tab page whenever the visible set can change out from under
+  // it — a new search/channel/sort, or switching between horizontal/vertical —
+  // so the user never lands on a now-empty page.
+  useEffect(() => {
+    setVideosPage(1)
+  }, [videoSearch, videoChannel, videoSort, activeTab])
 
   const load = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -3871,6 +3885,15 @@ export default function ContentPage() {
       }
     }), [currentTabVideos, videoChannel, search, videoSort])
   const filtersActive = !!(search || videoChannel || videoSort !== 'newest')
+  // Slice the filtered videos to the current page. Selection, "select all",
+  // bulk actions and the count line all still read the full `displayVideos`;
+  // only what mounts as VideoCards is the page window.
+  const videosTotalPages = Math.max(1, Math.ceil(displayVideos.length / VIDEOS_PER_PAGE))
+  const videosSafePage = Math.min(videosPage, videosTotalPages)
+  const pagedVideos = useMemo(() => {
+    const start = (videosSafePage - 1) * VIDEOS_PER_PAGE
+    return displayVideos.slice(start, start + VIDEOS_PER_PAGE)
+  }, [displayVideos, videosSafePage])
 
   // Posts-tab search query (lowercased; HTML entities stripped at match time
   // for a forgiving title match). Drives the single merged Published Posts
@@ -4739,7 +4762,7 @@ export default function ContentPage() {
           {/* Two cards per row on wide screens (was a single full-width stack,
               which read as bland rows). Collapses to one column below xl. */}
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 items-start">
-          {displayVideos.map((video) => {
+          {pagedVideos.map((video) => {
             const isSelected = selectedVideoIds.has(video.id as string)
             return (
               <div key={video.id as string} className="flex items-start gap-2">
@@ -4794,6 +4817,16 @@ export default function ContentPage() {
             )
           })}
           </div>
+          {videosTotalPages > 1 && (
+            <Pagination
+              page={videosSafePage}
+              totalPages={videosTotalPages}
+              onChange={(p) => {
+                setVideosPage(p)
+                if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' })
+              }}
+            />
+          )}
           {nextPageToken && (
             <button onClick={loadMore} disabled={loadingMore} className="btn-secondary text-sm self-center mt-2">
               {loadingMore ? <><Loader2 size={14} className="animate-spin" /> Loading…</> : <><RefreshCw size={14} /> Load more videos</>}
