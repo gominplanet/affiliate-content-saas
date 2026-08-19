@@ -33,6 +33,8 @@ interface AutoBlogState {
   pausedReason?: string | null
   pausedAt?: string | null
   recentVideoIds?: string[]
+  /** Socials to auto-post when the daily post goes live. Empty = blog only. */
+  socials?: string[]
 }
 
 export async function GET(request: Request) {
@@ -123,7 +125,8 @@ export async function GET(request: Request) {
       // Enqueue the SAME blog pipeline the app uses (service-auth worker runs it),
       // targeting THIS site.
       const jobId = await enqueueGenerationJob(admin, {
-        userId, ownerId: userId, kind: 'blog', input: { videoId: nextVideo.id, siteId },
+        userId, ownerId: userId, kind: 'blog',
+        input: { videoId: nextVideo.id, siteId, autoSocials: Array.isArray(state.socials) ? state.socials : [] },
       })
       if (!jobId) { results.push({ user: userId, status: 'enqueue_failed' }); continue }
 
