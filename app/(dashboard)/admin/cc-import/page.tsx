@@ -13,6 +13,7 @@ import PageHero from '@/components/layout/PageHero'
 import { Loader2, RefreshCw, Database, ArrowRight, CheckCircle2, AlertTriangle, Tag } from 'lucide-react'
 import { toast } from 'sonner'
 import CcCatalogUploader from '@/components/admin/CcCatalogUploader'
+import CcScoutRefresh from '@/components/admin/CcScoutRefresh'
 
 interface KeepaStatus { tokensLeft: number | null; refillRate: number | null; refillIn: number | null }
 interface Counts { staged: number | null; live: number | null; enriched: number | null; enrichable: number | null; hasStaged: boolean | null; keepa: KeepaStatus | null }
@@ -277,6 +278,10 @@ export default function AdminCcImportPage() {
           <b>Upload the COMPLETE current catalog every week, not just the new opportunities.</b> The merge replaces the catalog: whatever is in your CSV is kept, and every campaign <i>not</i> in it is purged. Uploading only this week&rsquo;s new ones would delete last week&rsquo;s. Re-uploading ones that already exist is safe : their enrichment is preserved.
         </div>
       </div>
+
+      {/* One-click SCOUT refresh — the automated path (replaces steps 1-3 above
+          when SCOUT is installed). The manual uploader below stays as fallback. */}
+      <CcScoutRefresh onDone={loadCounts} />
 
       {/* Uploader — parses the CSV in the browser and streams it to staging. */}
       <CcCatalogUploader onDone={loadCounts} />

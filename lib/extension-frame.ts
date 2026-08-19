@@ -351,6 +351,51 @@ export async function requestEarningsScan(): Promise<IdeaScanResult> {
   return { ok: !!resp.ok, count: resp.count, upserted: resp.upserted, error: resp.error }
 }
 
+/** Compact per-export summary SCOUT returns for the CC catalog refresh — enough
+ *  to verify the header mapping landed without shipping back 700k rows. */
+export interface CcExportSummary {
+  ok: boolean
+  rows?: number
+  files?: string[]
+  headers?: string[]
+  headerMap?: Record<string, string>
+  sample?: Record<string, unknown>
+  error?: string
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  diag?: any
+}
+
+export interface CcCatalogScanResult {
+  ok: boolean
+  staged?: number
+  armed?: boolean
+  armMessage?: string
+  armError?: string
+  needsConfirm?: boolean
+  available?: CcExportSummary | null
+  accepted?: CcExportSummary | null
+  error?: string
+}
+
+/**
+ * Admin-only: refresh the SHARED Creator Connections catalog with one click.
+ * SCOUT opens the CC requests page in a BACKGROUND tab, clicks Amazon's two
+ * native "Download all …" exports (available + accepted), waits out the
+ * server-side build, captures + unzips + parses the CSV ZIPs, stages every row
+ * into cc_campaign_catalog_import, and arms the server-side background drain
+ * (merge → purge). Replaces the weekly manual download + Supabase upload.
+ *
+ * Long budget: Amazon can take minutes to build each export, so the channel is
+ * held open up to ~13 minutes. Best-effort — resolves { ok:false } when SCOUT
+ * isn't installed so the caller can show the manual fallback.
+ */
+export async function requestCcCatalogScan(): Promise<CcCatalogScanResult> {
+  if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
+  const resp = await sendToExtension<CcCatalogScanResult>({ type: 'MVP_SCAN_CC_CATALOG' }, 780000)
+  if (!resp) return { ok: false, error: 'timeout' }
+  return resp
+}
+
 /** Ping SCOUT, tolerant of a cold MV3 service worker.
  *
  *  Chrome unloads an extension's service worker after ~30s idle. A single short
