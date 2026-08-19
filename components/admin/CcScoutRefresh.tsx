@@ -73,9 +73,18 @@ export default function CcScoutRefresh({ onDone }: { onDone?: () => void }) {
       </div>
 
       {err && (
-        <div className="mt-3 rounded-lg px-3 py-2 text-[12.5px] leading-relaxed inline-flex items-start gap-2" style={{ background: 'rgba(255,59,48,0.10)', border: '1px solid rgba(255,59,48,0.35)', color: 'var(--text)' }}>
-          <AlertTriangle size={15} className="flex-shrink-0 mt-0.5" style={{ color: '#ff3b30' }} />
-          <span>{err}</span>
+        <div className="mt-3 rounded-lg px-3 py-2.5 text-[12.5px] leading-relaxed" style={{ background: 'rgba(255,59,48,0.10)', border: '1px solid rgba(255,59,48,0.35)', color: 'var(--text)' }}>
+          <div className="inline-flex items-start gap-2">
+            <AlertTriangle size={15} className="flex-shrink-0 mt-0.5" style={{ color: '#ff3b30' }} />
+            <span>{err}</span>
+          </div>
+          {/* Per-export diagnostics — what SCOUT actually saw on the page. */}
+          {(res?.available || res?.accepted) && (
+            <div className="mt-2">
+              <ExportLine label="Available" s={res?.available} />
+              <ExportLine label="Accepted" s={res?.accepted} />
+            </div>
+          )}
         </div>
       )}
 
@@ -105,10 +114,21 @@ export default function CcScoutRefresh({ onDone }: { onDone?: () => void }) {
 function ExportLine({ label, s }: { label: string; s?: CcExportSummary | null }) {
   if (!s) return null
   if (!s.ok) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const d = s.diag as any
     return (
-      <p className="mt-1.5" style={{ color: 'var(--text-soft)' }}>
-        <b>{label}:</b> failed — {s.error}
-      </p>
+      <div className="mt-1.5" style={{ color: 'var(--text-soft)' }}>
+        <p><b>{label}:</b> failed — {s.error}</p>
+        {d && (
+          <div className="mt-1 text-[11.5px]" style={{ color: 'var(--text-faint)' }}>
+            {d.campaignsCount != null && <div>Grid showed: {String(d.campaignsCount)} campaigns</div>}
+            {Array.isArray(d.sawDownload) && d.sawDownload.length > 0 && (
+              <div>Download-ish buttons seen: {d.sawDownload.join(' · ')}</div>
+            )}
+            {d.url && <div className="truncate">Page: {d.url}</div>}
+          </div>
+        )}
+      </div>
     )
   }
   const mapped = s.headerMap ? Object.keys(s.headerMap).length : 0

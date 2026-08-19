@@ -2320,24 +2320,52 @@ async function armCcDrainOnMvp() {
   }
 }
 
-// Click the CC download button in-page. `which` = 'available' | 'accepted'.
-// Selects the matching tab first (New Opportunities / Active), then clicks the
-// download control by its visible text. Returns { ok, clicked, tab, diag }.
-function clickCcDownloadInPage(which) {
+// In-page: select the New Opportunities / Active tab so the right export button
+// is the one on screen. Best-effort; returns light diag.
+function ccSelectTabInPage(which) {
   const wantTab = which === 'accepted' ? 'active' : 'new opportunities'
+  const norm = (s) => (s || '').replace(/\s+/g, ' ').trim().toLowerCase()
+  const els = Array.from(document.querySelectorAll('button, a, [role="tab"], [role="button"], span, div'))
+  let clicked = false
+  try {
+    // Prefer a short element (the tab label itself, not a big wrapper).
+    const cands = els.filter(el => norm(el.textContent) === wantTab)
+    cands.sort((a, b) => (a.textContent || '').length - (b.textContent || '').length)
+    if (cands[0]) { cands[0].click(); clicked = true }
+  } catch (e) {}
+  return { clicked, url: location.href.slice(0, 140) }
+}
+
+// In-page: find the "Download all …" button. If doClick, click it. ALWAYS
+// returns rich diagnostics (what download-ish text was on the page, and the
+// campaigns count the header shows) so a miss is debuggable from MVP. Matching
+// is contains-based (not exact) and picks the most specific element, so extra
+// icons/wrappers/whitespace don't hide the button. `which` = available|accepted.
+function ccDownloadButtonInPage(which, doClick) {
   const wantBtn = which === 'accepted' ? 'download all accepted campaigns' : 'download all available campaigns'
   const norm = (s) => (s || '').replace(/\s+/g, ' ').trim().toLowerCase()
-  const clickable = () => Array.from(document.querySelectorAll('button, a, [role="button"], span, div'))
-  // 1) Select the correct tab if it isn't already.
-  try {
-    const tabEl = clickable().find(el => norm(el.textContent) === wantTab && el.offsetParent !== null)
-    if (tabEl) tabEl.click()
-  } catch (e) {}
-  // 2) Find + click the download button (allow a beat for the tab to settle is
-  //    handled by the caller re-invoking; here we try immediately).
-  const btn = clickable().find(el => norm(el.textContent) === wantBtn && el.offsetParent !== null)
-  if (btn) { try { btn.click() } catch (e) { return { ok: false, error: 'click-threw' } } return { ok: true, clicked: wantBtn } }
-  return { ok: false, error: 'button-not-found', diag: { url: location.href.slice(0, 140), sawButtons: clickable().map(e => norm(e.textContent)).filter(t => t.includes('download')).slice(0, 6) } }
+  const all = Array.from(document.querySelectorAll('button, a, [role="button"], input[type="button"], span, div'))
+  const cands = all.filter(el => norm(el.textContent).includes(wantBtn))
+  cands.sort((a, b) => (a.textContent || '').length - (b.textContent || '').length)
+  const btn = cands[0]
+  const present = !!btn
+  let clicked = false
+  if (present && doClick) {
+    try {
+      // Click the button, or a real <button>/<a> ancestor if the text sits on a
+      // child span. This makes the SPA's handler fire reliably.
+      const target = btn.closest('button, a, [role="button"]') || btn
+      target.click(); clicked = true
+    } catch (e) {}
+  }
+  const bodyText = document.body ? document.body.innerText : ''
+  return {
+    present, clicked,
+    url: location.href.slice(0, 140),
+    sawDownload: Array.from(new Set(all.map(e => norm(e.textContent)).filter(t => t.includes('download') && t.length < 80))).slice(0, 8),
+    campaignsCount: (bodyText.match(/campaigns\s*\(([\d,]+)\)/i) || [])[1] || null,
+    signedOut: /\/ap\/signin/.test(location.href),
+  }
 }
 
 // Wait for a ZIP download to appear after we click, capture its URL, fetch the
@@ -2358,17 +2386,33 @@ async function captureCcDownload(tabId, which, timeoutMs) {
   }
   try { chrome.downloads.onCreated.addListener(onCreated) } catch (e) { return { ok: false, error: 'no-downloads-permission' } }
 
-  // Click (retry a couple times to let the tab/tab-switch settle).
-  let clicked = null
-  for (let a = 0; a < 4 && Date.now() < deadline; a++) {
-    const r = await chrome.scripting.executeScript({ target: { tabId }, func: clickCcDownloadInPage, args: [which] })
-    clicked = (r && r[0] && r[0].result) || null
-    if (clicked && clicked.ok) break
-    await _sleep(2500)
+  // Select the correct tab, then POLL for the download button to appear — the
+  // Creator Connections grid holds hundreds of thousands of campaigns and can
+  // take a while to render (longer in a throttled background tab), so the button
+  // simply isn't there for the first many seconds. We poll up to 2 minutes,
+  // re-selecting the tab periodically, and only click once it's actually present.
+  try { await chrome.scripting.executeScript({ target: { tabId }, func: ccSelectTabInPage, args: [which] }) } catch (e) {}
+  await _sleep(4000)
+  let lastDiag = null, clickedOk = false
+  const clickDeadline = Math.min(deadline, Date.now() + 120000)
+  let tick = 0
+  while (Date.now() < clickDeadline && !clickedOk) {
+    try {
+      const r = await chrome.scripting.executeScript({ target: { tabId }, func: ccDownloadButtonInPage, args: [which, true] })
+      lastDiag = (r && r[0] && r[0].result) || lastDiag
+      if (lastDiag && lastDiag.signedOut) {
+        try { chrome.downloads.onCreated.removeListener(onCreated) } catch (e) {}
+        return { ok: false, error: 'signed-out (open Amazon Creator Connections and sign in, then retry)', diag: lastDiag }
+      }
+      if (lastDiag && lastDiag.clicked) { clickedOk = true; break }
+    } catch (e) { /* tab still loading — keep polling */ }
+    // Every ~15s, re-assert the tab selection in case the SPA reset it.
+    if (++tick % 5 === 0) { try { await chrome.scripting.executeScript({ target: { tabId }, func: ccSelectTabInPage, args: [which] }) } catch (e) {} }
+    await _sleep(3000)
   }
-  if (!clicked || !clicked.ok) {
+  if (!clickedOk) {
     try { chrome.downloads.onCreated.removeListener(onCreated) } catch (e) {}
-    return { ok: false, error: (clicked && clicked.error) || 'download-button-not-found', diag: clicked && clicked.diag }
+    return { ok: false, error: 'download-button-not-found (grid never showed the export button)', diag: lastDiag }
   }
 
   // Wait for the download to be created (this is the long "server building the
@@ -2438,7 +2482,7 @@ async function scanCcCatalogBackground() {
     const accepted = await harvestCcExport(tabId, 'accepted', 300000)
 
     if (!avail.ok && !accepted.ok) {
-      return { ok: false, error: 'both exports failed', available: avail, accepted: accepted }
+      return { ok: false, error: 'both exports failed', available: _ccSumm(avail), accepted: _ccSumm(accepted) }
     }
 
     // Stage: available first (reset clears staging), accepted appended.

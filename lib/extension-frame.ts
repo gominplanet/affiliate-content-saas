@@ -404,8 +404,9 @@ export async function requestCcCatalogScan(): Promise<CcCatalogScanResult> {
   return resp
 }
 
-/** Minimum SCOUT version that carries the CC catalog scan handler. */
-export const CC_CATALOG_MIN_SCOUT = '1.16.25'
+/** Minimum SCOUT version with the robust CC catalog scan (polls for the export
+ *  button + returns diagnostics). 1.16.25 had a fragile first cut. */
+export const CC_CATALOG_MIN_SCOUT = '1.16.26'
 
 /** -1 / 0 / 1 dotted-version compare; a null/unknown left side sorts oldest. */
 function _cmpVersion(a: string | null | undefined, b: string): number {
