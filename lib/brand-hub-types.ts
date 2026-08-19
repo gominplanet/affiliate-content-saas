@@ -93,6 +93,14 @@ export interface CollabRow {
   created_at?: string | null
 }
 
+export interface MessageRow {
+  brand_name?: string | null
+  direction?: string | null   // outbound | inbound
+  channel?: string | null     // cc | pitch | inquiry
+  body?: string | null
+  created_at?: string | null
+}
+
 /**
  * A brand-side link for a pitch, if we have one. Prefers the brand's own site;
  * falls back to the product the pitch is about (a full URL, or an ASIN turned
@@ -153,8 +161,16 @@ export function buildBrandHub(
   inquiries: InquiryRow[],
   campaigns: CampaignRow[],
   collabs: CollabRow[],
+  messages: MessageRow[] = [],
 ): BrandHubData {
   const byKey = new Map<string, Acc>()
+
+  // Brands that have a full message log — for those we show every logged message
+  // and suppress the single campaigns.last_message snapshot to avoid duplicating
+  // the latest one.
+  const keyFor = (name: string) => normalizeBrandKey(name) || name.trim().toLowerCase()
+  const loggedBrandKeys = new Set<string>()
+  for (const m of messages) { const n = (m.brand_name || '').trim(); if (n) loggedBrandKeys.add(keyFor(n)) }
 
   const ensure = (rawName: string): Acc => {
     const key = normalizeBrandKey(rawName) || rawName.trim().toLowerCase() || 'unknown'
@@ -236,10 +252,14 @@ export function buildBrandHub(
     })
     if (cp.messaged_at) {
       acc.statuses.add('Messaged')
-      acc.events.push({
-        type: 'campaign_messaged', at: cp.messaged_at,
-        title: 'Messaged brand on Amazon', detail: (cp.last_message || '').trim() || undefined, product,
-      })
+      // When we have the full message log for this brand, the per-message events
+      // below carry the history — skip the single-snapshot event here.
+      if (!loggedBrandKeys.has(acc.key)) {
+        acc.events.push({
+          type: 'campaign_messaged', at: cp.messaged_at,
+          title: 'Messaged brand on Amazon', detail: (cp.last_message || '').trim() || undefined, product,
+        })
+      }
     }
     if (cp.accepted_at) {
       acc.statuses.add('Accepted')
@@ -257,6 +277,23 @@ export function buildBrandHub(
         title: 'Post published', product, url: cp.wordpress_url,
       })
     }
+  }
+
+  // Full message history (append-only log) — one event per message, so the
+  // Brand Hub timeline shows the whole back-and-forth, not just the latest.
+  for (const m of messages) {
+    const name = (m.brand_name || '').trim()
+    if (!name) continue
+    const acc = ensure(name)
+    acc.channels.add('campaign')
+    const inbound = m.direction === 'inbound'
+    acc.statuses.add(inbound ? 'Inquiry received' : 'Messaged')
+    acc.events.push({
+      type: inbound ? 'inquiry' : 'campaign_messaged',
+      at: m.created_at || new Date(0).toISOString(),
+      title: inbound ? 'Message received' : 'Messaged brand on Amazon',
+      detail: (m.body || '').trim() || undefined,
+    })
   }
 
   const brands: BrandEntity[] = []

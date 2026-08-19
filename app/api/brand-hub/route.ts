@@ -10,7 +10,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getAuthAndOwner } from '@/lib/agency-auth'
-import { buildBrandHub, type InquiryRow, type CampaignRow, type CollabRow } from '@/lib/brand-hub-types'
+import { buildBrandHub, type InquiryRow, type CampaignRow, type CollabRow, type MessageRow } from '@/lib/brand-hub-types'
 
 export const maxDuration = 30
 
@@ -46,7 +46,7 @@ export async function GET() {
       .eq('user_id', ownerId).order('created_at', { ascending: false }).limit(1000)
   }
 
-  const [inqRes, campRes, collabRes] = await Promise.all([
+  const [inqRes, campRes, collabRes, msgRes] = await Promise.all([
     sb.from('brand_inquiries')
       .select('brand_name,contact_name,contact_email,message,source_url,read_at,archived,created_at')
       .eq('owner_id', ownerId).order('created_at', { ascending: false }).limit(1000),
@@ -62,12 +62,20 @@ export async function GET() {
         .select('brand_name,product_or_asin,generated_email,platforms,website_url,youtube_url,created_at')
         .eq('user_id', ownerId).order('created_at', { ascending: false }).limit(1000)
     })(),
+    // Full message log (migration 262) — tolerate its absence on a lagging DB.
+    (async () => {
+      const res = await sb.from('brand_messages')
+        .select('brand_name,direction,channel,body,created_at')
+        .eq('user_id', ownerId).order('created_at', { ascending: false }).limit(2000)
+      return res.error ? { data: [] } : res
+    })(),
   ])
 
   const data = buildBrandHub(
     (inqRes.data as InquiryRow[]) || [],
     (campRes.data as CampaignRow[]) || [],
     (collabRes.data as CollabRow[]) || [],
+    (msgRes.data as MessageRow[]) || [],
   )
   return NextResponse.json(data)
 }
