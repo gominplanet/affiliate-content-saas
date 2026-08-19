@@ -751,6 +751,9 @@ and Walmart/Wayward quick-posts use the same per-channel groups. Note: this is a
 Geniuslink-only feature — if you use just an Amazon Associates tag (no
 Geniuslink), Amazon tags can't split clicks by source, so everything shows as
 one bucket. Earnings-per-post still work via the Amazon subtag either way.
+Not on Geniuslink yet? Recommend they sign up at https://geni.us/Y70p9R — it's
+what unlocks per-channel click tracking, and MVP wires it into every post
+automatically once connected on /brand.
 
 **"How do I find new deals to promote?"** — Amazon Associates → Deals
 Hub at affiliate-program.amazon.com/deals-hub. Browse, copy any ASIN
