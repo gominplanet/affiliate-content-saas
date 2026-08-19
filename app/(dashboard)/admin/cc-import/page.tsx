@@ -13,7 +13,6 @@ import PageHero from '@/components/layout/PageHero'
 import { Loader2, RefreshCw, Database, ArrowRight, CheckCircle2, AlertTriangle, Tag } from 'lucide-react'
 import { toast } from 'sonner'
 import CcCatalogUploader from '@/components/admin/CcCatalogUploader'
-import CcScoutRefresh from '@/components/admin/CcScoutRefresh'
 
 interface KeepaStatus { tokensLeft: number | null; refillRate: number | null; refillIn: number | null }
 interface Counts { staged: number | null; live: number | null; enriched: number | null; enrichable: number | null; hasStaged: boolean | null; keepa: KeepaStatus | null }
@@ -270,7 +269,7 @@ export default function AdminCcImportPage() {
       <div className="card p-5 mb-5">
         <p className="text-[13px] font-semibold mb-3" style={{ color: 'var(--text)' }}>Weekly steps</p>
         <ol className="text-[13px] leading-relaxed list-decimal pl-5 space-y-1.5" style={{ color: 'var(--text-soft)' }}>
-          <li><b>Drag your CSV file(s)</b> into the upload box below and click <b>Upload to staging</b>. Multiple files are fine : they combine automatically.</li>
+          <li><b>Drag the two ZIP files</b> from Amazon (Download all available + Download all accepted campaigns) into the upload box below and click <b>Upload to staging</b>. MVP unzips them in your browser. Loose CSVs work too, and multiple files combine automatically.</li>
           <li>Confirm the <b>Staged</b> count looks right (tens of thousands).</li>
           <li>Click <b>Merge into live catalog</b>. Enriched images/sales/ratings survive; campaigns that fell out are purged.</li>
         </ol>
@@ -279,11 +278,8 @@ export default function AdminCcImportPage() {
         </div>
       </div>
 
-      {/* One-click SCOUT refresh — the automated path (replaces steps 1-3 above
-          when SCOUT is installed). The manual uploader below stays as fallback. */}
-      <CcScoutRefresh onDone={loadCounts} />
-
-      {/* Uploader — parses the CSV in the browser and streams it to staging. */}
+      {/* Uploader — unzips the CC ZIPs + parses the CSVs in the browser and
+          streams them to staging. */}
       <CcCatalogUploader onDone={loadCounts} />
 
       {/* Counts */}
