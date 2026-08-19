@@ -209,14 +209,36 @@ export async function GET(request: Request) {
 
     const cards = creatorsApiConfigured() ? await getItemsByAsin(found.asins) : new Map()
 
+    // FREE signal enrichment: rating / reviews / monthly-sold aren't returned by
+    // the finder or the Creators API (and per-product Keepa calls are the paid
+    // MVP-picks path). But we OFTEN already hold these for an ASIN in our own
+    // caches — the storefront product cards and the shared Deal Radar cache. Pull
+    // from those at zero Keepa cost so plain result cards show signals wherever we
+    // have them; ASINs we've never seen just stay title/image/price.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sb = supabase as any
+    const sig = new Map<string, { rating: number | null; reviewCount: number | null; monthlySold: number | null }>()
+    try {
+      const [{ data: sc }, { data: dr }] = await Promise.all([
+        sb.from('storefront_product_cards').select('asin,rating,review_count,monthly_sold').in('asin', found.asins),
+        sb.from('deal_radar_cache').select('asin,rating,review_count,monthly_sold').in('asin', found.asins),
+      ])
+      for (const r of (dr ?? []) as Array<{ asin: string; rating: number | null; review_count: number | null; monthly_sold: number | null }>) sig.set(r.asin, { rating: r.rating, reviewCount: r.review_count, monthlySold: r.monthly_sold })
+      for (const r of (sc ?? []) as Array<{ asin: string; rating: number | null; review_count: number | null; monthly_sold: number | null }>) sig.set(r.asin, { rating: r.rating, reviewCount: r.review_count, monthlySold: r.monthly_sold }) // prefer our fresher storefront card
+    } catch { /* enrichment is best-effort */ }
+
     const products = found.asins.map(asin => {
       const card = cards.get(asin)
+      const s = sig.get(asin)
       return {
         asin,
         title: card?.title ?? null,
         imageUrl: card?.imageUrl ?? null,
         priceNow: card?.priceCents != null ? Math.round(card.priceCents) / 100 : null,
         productUrl: taggedLink(asin, tag),
+        rating: s?.rating ?? null,
+        reviewCount: s?.reviewCount ?? null,
+        monthlySold: s?.monthlySold ?? null,
       }
     })
 

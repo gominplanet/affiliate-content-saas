@@ -379,7 +379,7 @@ function ProductCard({ p, canAct, saved, onToggleSave, onDeepDive }: {
         {p.priceNow != null ? (
           <span className="text-[15px] font-extrabold" style={{ color: '#16a34a' }}>${p.priceNow.toFixed(2)}</span>
         ) : <div className="h-[1.1rem]" />}
-        {p.mvpApproved && (
+        {(p.rating != null || p.monthlySold != null || (p.videoCount ?? 0) > 0) && (
           <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10.5px]" style={{ color: 'var(--text-faint)' }}>
             {p.rating != null && <span>★{p.rating.toFixed(1)}{p.reviewCount != null ? ` (${p.reviewCount.toLocaleString()})` : ''}</span>}
             {p.monthlySold != null && <span>{p.monthlySold.toLocaleString()}+ sold/mo</span>}
