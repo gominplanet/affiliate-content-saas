@@ -1882,6 +1882,147 @@ async function scanAmazonVideoForAsin(asin, callerTabId) {
   }
 }
 
+// ── Idea Lists: BACKGROUND capture (no foreground tab) ───────────────────────
+// The MVP app used to window.open() the Amazon list in the FOREGROUND, stealing
+// focus and forcing the user to babysit the tab. These handlers do it the SCOUT
+// way instead: open the list/storefront in a BACKGROUND tab (active:false), read
+// it via an injected harvest, push to MVP, and CLOSE the tab. The user never
+// leaves MVP. Same pattern as the CC/video background scans above.
+
+// Injected into a single idea-list page. Scrolls to load every product tile,
+// then collects asin/title/image + the list title/declared count. Self-contained
+// (runs in page world — no chrome APIs).
+async function harvestIdeaListInPage() {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  let last = -1, stable = 0
+  for (let i = 0; i < 40 && stable < 3; i++) {
+    try { window.scrollTo(0, document.body.scrollHeight) } catch (e) {}
+    await sleep(1000)
+    const n = document.querySelectorAll('[data-asin]').length
+    if (n === last) stable++; else { stable = 0; last = n }
+  }
+  try { window.scrollTo(0, 0) } catch (e) {}
+  await sleep(300)
+  const seen = new Set(), items = []
+  document.querySelectorAll('[data-asin]').forEach((el) => {
+    const asin = (el.getAttribute('data-asin') || '').trim().toUpperCase()
+    if (!/^[A-Z0-9]{10}$/.test(asin) || seen.has(asin)) return
+    seen.add(asin)
+    let title = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim()
+    const price = title.search(/\$\s?\d/); if (price > 0) title = title.slice(0, price)
+    title = title.replace(/^(Best ?Seller|Amazon['’]?s Choice|Overall Pick|Editor['’]?s Pick|Limited time deal|Sponsored|New|Popular pick)\s*/i, '').trim()
+    const img = el.querySelector('img')
+    const src = img && (img.currentSrc || img.getAttribute('src') || img.getAttribute('data-src'))
+    items.push({ asin, title: title.slice(0, 200) || null, image: (src && /\.(jpg|jpeg|png|webp)/i.test(src)) ? src : null })
+  })
+  const h1 = document.querySelector('h1')
+  const title = ((h1 && h1.textContent) || '').replace(/\s+/g, ' ').trim().slice(0, 160) || null
+  const cm = ((document.body && document.body.innerText) || '').match(/([\d,]+)\s+Items?\b/i)
+  return { ok: true, items, title, itemCount: cm ? parseInt(cm[1].replace(/,/g, ''), 10) : null, signedOut: /\/ap\/signin/.test(location.href) }
+}
+
+async function scanIdeaListBackground(rawUrl) {
+  const url = String(rawUrl || '')
+  const idM = url.match(/\/list\/([A-Za-z0-9]{6,})/)
+  if (!/amazon\./i.test(url) || !idM) return { ok: false, error: 'bad-url' }
+  const listId = idM[1]
+  const full = url + (url.indexOf('#') >= 0 ? '' : '#mvp-sync')
+  let tabId = null
+  try {
+    // BACKGROUND — the user stays in MVP; we never steal focus.
+    const tab = await chrome.tabs.create({ url: full, active: false })
+    tabId = tab.id
+    await waitForTabLoad(tabId, 30000)
+    await _sleep(2500) // let the SPA grid paint before scrolling
+    const results = await chrome.scripting.executeScript({ target: { tabId }, func: harvestIdeaListInPage })
+    const r = (results && results[0] && results[0].result) || null
+    if (!r || !r.ok) return { ok: false, error: 'no-result' }
+    if (r.signedOut) return { ok: false, error: 'signed-out' }
+    if (!r.items || !r.items.length) return { ok: true, count: 0 }
+    const cleanUrl = url.split('#')[0].split('?')[0]
+    const push = await pushIdeaListToMvp({ list: {
+      amazonListId: listId, title: r.title, url: cleanUrl,
+      itemCount: r.itemCount, coverImage: (r.items[0] && r.items[0].image) || null, items: r.items,
+    } })
+    return { ok: !!(push && push.ok), count: r.items.length, upserted: push && push.upserted, error: (push && push.ok) ? undefined : (push && push.error) }
+  } catch (e) {
+    return { ok: false, error: (e && e.message) || 'scan-failed' }
+  } finally {
+    // active:false the whole time, so there's no focus to restore — just close.
+    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+  }
+}
+
+// Injected into the storefront root. Clicks the "Idea Lists" tab, scrolls, and
+// collects every list's id/title/url/count/cover. Self-contained.
+async function harvestStorefrontListsInPage() {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  const JUNK = /^(subtotal|total|cart|checkout|save[d]? for later|buy again|your orders?|wish ?list|see more|view all|add to list)$/i
+  const idFrom = (h) => { const m = String(h || '').match(/\/(?:shop\/[^/]+\/)?list\/([A-Za-z0-9]{6,})/i); return m ? m[1] : null }
+  const hm = location.pathname.match(/\/shop\/([^/?#]+)/i); const handle = hm ? hm[1] : null
+  const urlFor = (id) => handle ? `https://www.amazon.com/shop/${handle}/list/${id}` : `https://www.amazon.com/list/${id}`
+  try {
+    for (const el of document.querySelectorAll('a,button,[role="tab"],[role="button"],li,span')) {
+      const t = (el.textContent || '').replace(/\s+/g, ' ').trim()
+      if (/^idea lists$/i.test(t) && el.offsetParent !== null) { try { el.click() } catch (e) {} break }
+    }
+  } catch (e) {}
+  await sleep(1500)
+  let last = -1, stable = 0
+  for (let i = 0; i < 15 && stable < 3; i++) {
+    try { window.scrollTo(0, document.body.scrollHeight) } catch (e) {}
+    await sleep(1000)
+    const n = document.querySelectorAll('a[href*="/list/"]').length
+    if (n === last) stable++; else { stable = 0; last = n }
+  }
+  try { window.scrollTo(0, 0) } catch (e) {}
+  const byId = new Map()
+  document.querySelectorAll('a[href*="/list/"]').forEach((a) => {
+    const id = idFrom(a.getAttribute('href') || a.href); if (!id || byId.has(id)) return
+    const card = a.closest('li,[role="listitem"],[data-testid],article') || a.parentElement || a
+    let label = (a.textContent || '').replace(/\s+/g, ' ').trim() || (((card.querySelector('h2,h3,[class*=title]')) || {}).textContent || '')
+    label = (label || '').replace(/\s+/g, ' ').trim()
+    if (JUNK.test(label)) return
+    const cnt = (card.innerText || '').match(/([\d,]+)\s+Items?\b/i)
+    const img = card.querySelector('img')
+    const src = img && (img.currentSrc || img.getAttribute('src') || img.getAttribute('data-src'))
+    byId.set(id, {
+      amazonListId: id, title: label.slice(0, 200) || null, url: urlFor(id),
+      itemCount: cnt ? parseInt(cnt[1].replace(/,/g, ''), 10) : null,
+      coverImage: (src && /\.(jpg|jpeg|png|webp)/i.test(src)) ? src : null,
+    })
+  })
+  return { ok: true, handle, lists: Array.from(byId.values()).slice(0, 40), signedOut: /\/ap\/signin/.test(location.href) }
+}
+
+async function scanStorefrontBackground(rawUrl) {
+  const url = String(rawUrl || '')
+  const hm = url.match(/\/shop\/([^/?#\s]+)/i)
+  if (!/amazon\./i.test(url) || !hm) return { ok: false, error: 'bad-url' }
+  const full = url + (url.indexOf('#') >= 0 ? '' : '#mvp-sync')
+  let tabId = null
+  try {
+    const tab = await chrome.tabs.create({ url: full, active: false })
+    tabId = tab.id
+    await waitForTabLoad(tabId, 30000)
+    await _sleep(2500)
+    const results = await chrome.scripting.executeScript({ target: { tabId }, func: harvestStorefrontListsInPage })
+    const r = (results && results[0] && results[0].result) || null
+    if (!r || !r.ok) return { ok: false, error: 'no-result' }
+    if (r.signedOut) return { ok: false, error: 'signed-out' }
+    // Teach SCOUT the owner handle so later manual storefront visits still sync
+    // (matches the content-script behaviour on an #mvp-sync visit).
+    if (r.handle) { try { chrome.storage.local.set({ mvpOwnerHandle: r.handle }) } catch (e) {} }
+    if (!r.lists || !r.lists.length) return { ok: true, count: 0 }
+    const push = await pushIdeaListToMvp({ lists: r.lists })
+    return { ok: !!(push && push.ok), count: r.lists.length, error: (push && push.ok) ? undefined : (push && push.error) }
+  } catch (e) {
+    return { ok: false, error: (e && e.message) || 'scan-failed' }
+  } finally {
+    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+  }
+}
+
 // ── Read the Amazon PRODUCT page (title / bullets / description / image) ─────
 // Runs in the user's logged-in browser, so it succeeds where the MVP server's
 // scrape is blocked (Amazon hard-blocks datacenter IPs). Self-contained — runs
@@ -3629,6 +3770,22 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'MVP_PING') {
     sendResponse({ ok: true, version: chrome.runtime.getManifest().version })
     return // sync response
+  }
+  if (msg.type === 'MVP_SCAN_IDEA_LIST') {
+    // Read a full idea list in a BACKGROUND tab (user stays in MVP), then close it.
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 120000)
+    scanIdeaListBackground(msg.url)
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true // async response
+  }
+  if (msg.type === 'MVP_SCAN_STOREFRONT') {
+    // Enumerate the storefront's idea lists in a BACKGROUND tab, then close it.
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 120000)
+    scanStorefrontBackground(msg.url)
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true // async response
   }
   if (msg.type === 'MVP_YT_INJECT_DISCLOSURES') {
     // Inject disclosures into Studio's OWN signed metadata_update (dirty + Save).

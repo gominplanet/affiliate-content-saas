@@ -308,6 +308,35 @@ export async function requestMessageBrand(detailsUrl: string, message: string): 
   return { ok: !!resp.ok, error: resp.error, reason: resp.reason }
 }
 
+export interface IdeaScanResult { ok: boolean; count?: number; upserted?: number; error?: string }
+
+/**
+ * Read a single Amazon idea list in a BACKGROUND SCOUT tab and push its products
+ * to MVP, then close the tab. The user never leaves MVP (no foreground tab, no
+ * focus steal). Best-effort: resolves with { ok:false, error } when SCOUT isn't
+ * installed so the caller can fall back to the old window.open flow.
+ */
+export async function requestIdeaListScan(url: string): Promise<IdeaScanResult> {
+  if (!url) return { ok: false, error: 'no-url' }
+  if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
+  const resp = await sendToExtension<IdeaScanResult>({ type: 'MVP_SCAN_IDEA_LIST', url }, 120000)
+  if (!resp) return { ok: false, error: 'timeout' }
+  return { ok: !!resp.ok, count: resp.count, upserted: resp.upserted, error: resp.error }
+}
+
+/**
+ * Enumerate the creator's storefront idea lists in a BACKGROUND SCOUT tab and
+ * push the metadata to MVP, then close the tab. Same no-foreground contract as
+ * requestIdeaListScan.
+ */
+export async function requestStorefrontScan(url: string): Promise<IdeaScanResult> {
+  if (!url) return { ok: false, error: 'no-url' }
+  if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
+  const resp = await sendToExtension<IdeaScanResult>({ type: 'MVP_SCAN_STOREFRONT', url }, 120000)
+  if (!resp) return { ok: false, error: 'timeout' }
+  return { ok: !!resp.ok, count: resp.count, error: resp.error }
+}
+
 /** Ping SCOUT, tolerant of a cold MV3 service worker.
  *
  *  Chrome unloads an extension's service worker after ~30s idle. A single short
