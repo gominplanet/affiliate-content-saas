@@ -11,8 +11,8 @@ import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { scrubBanned } from '@/lib/scrub'
 
-export type SeoFixType = 'internal_links' | 'faq' | 'title_length' | 'image_alt' | 'disclosure' | 'keyword_intro' | 'keyword_subhead'
-export const SEO_FIX_TYPES: SeoFixType[] = ['internal_links', 'faq', 'title_length', 'image_alt', 'disclosure', 'keyword_intro', 'keyword_subhead']
+export type SeoFixType = 'internal_links' | 'faq' | 'title_length' | 'keyword_title' | 'image_alt' | 'disclosure' | 'keyword_intro' | 'keyword_subhead'
+export const SEO_FIX_TYPES: SeoFixType[] = ['internal_links', 'faq', 'title_length', 'keyword_title', 'image_alt', 'disclosure', 'keyword_intro', 'keyword_subhead']
 
 // Standard FTC affiliate disclosure. Neutral (not Amazon-specific) so it's valid
 // for every network the creator might use, and it contains the words the scorer
@@ -80,7 +80,6 @@ export function fixableFailing(post: FixablePost, siteHost: string): SeoFixType[
   const { checks } = scorePostSeo({ title, contentHtml: post.content || '', siteHost, postType: post.post_type || 'review', seoKeyword: post.seo_keyword })
   return checks
     .filter(c => !c.pass && (SEO_FIX_TYPES as string[]).includes(c.id))
-    .filter(c => !(c.id === 'title_length' && title.length <= 65))
     .map(c => c.id as SeoFixType)
 }
 
@@ -100,21 +99,45 @@ export async function applyPostFixes(opts: {
   const state = { title: post.title || '', content: post.content || '' }
   const reasons: Partial<Record<SeoFixType, string>> = {}
 
-  const applyTitle = async (): Promise<boolean> => {
-    // Auto-fixer can only shorten — expanding a short title would mean
-    // inventing a hook/spec/year that wasn't in the source. Edit it
-    // manually in WordPress (or regenerate the post from the source video).
-    if (state.title.length <= 65) { reasons.title_length = 'Title is short — edit it manually in WordPress to add a hook (we don’t auto-expand to avoid fabricating).'; return false }
+  // Title rewrite — satisfies BOTH title_length (30-65 chars) and keyword_title
+  // (the primary keyword in the title). Grounded in the article so it never
+  // fabricates: the model may add the year or a concise angle, but no specs,
+  // prices, or claims that aren't in the post. Runs once even if both title
+  // checks are queued.
+  let titleDone = false
+  const applyTitle = async (which: 'title_length' | 'keyword_title'): Promise<boolean> => {
+    if (titleDone) return false // already handled by the sibling title fix this run
+    const kw = (post.seo_keyword || '').trim()
+    const plain = state.content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 1500)
+    const year = new Date().getUTCFullYear()
     const client = createAnthropicClient()
     const resp = await client.messages.create({
       model: 'claude-haiku-4-5-20251001', max_tokens: 60,
-      messages: [{ role: 'user', content: `Shorten this product-review blog title to 60 characters or fewer for SEO. Keep the exact product name and the main hook; do not invent anything; no surrounding quotes. Return ONLY the new title.\n\nTitle: ${state.title}` }],
+      messages: [{ role: 'user', content: `Rewrite this blog post title for SEO.
+Requirements:
+- Between 30 and 65 characters.
+- Keep the real product name from the current title.
+${kw ? `- Naturally include the phrase "${kw}" (or a very close variant).` : ''}
+- You may add the year (${year}) or a short, honest angle/benefit, but do NOT invent specs, prices, ratings, or any claim that isn't supported by the article below.
+- No surrounding quotes, no markdown, no emojis.
+Return ONLY the new title.
+
+Current title: ${state.title}
+Article (for grounding): ${plain}` }],
     })
     recordAnthropicUsage(resp, { userId, tier, feature: 'seo_fix_title', model: 'claude-haiku-4-5-20251001' })
     let next = scrubBanned((resp.content[0] as { type: string; text: string }).text || '').trim().replace(/^["']+|["']+$/g, '')
-    if (!next || next.length > 65) next = state.title.slice(0, 60).replace(/\s+\S*$/, '').trim()
-    if (!next || next === state.title) { reasons.title_length = 'Could not shorten the title.'; return false }
-    state.title = next; return true
+    if (next.length > 65) next = next.slice(0, 63).replace(/\s+\S*$/, '').trim()
+    const lengthOk = next.length >= 30 && next.length <= 65
+    const kwOk = !kw || kwSatisfied(next, kw)
+    if (!next || !lengthOk || !kwOk || next === state.title) {
+      const r = 'Could not produce a compliant title automatically. Edit it by hand, or regenerate the post from the source video.'
+      reasons[which] = r
+      return false
+    }
+    state.title = next
+    titleDone = true
+    return true
   }
 
   const applyInternalLinks = async (): Promise<boolean> => {
@@ -249,7 +272,9 @@ export async function applyPostFixes(opts: {
   }
 
   const fixers: Record<SeoFixType, () => Promise<boolean>> = {
-    title_length: applyTitle, internal_links: applyInternalLinks, image_alt: applyImageAlt, faq: applyFaq,
+    title_length: () => applyTitle('title_length'),
+    keyword_title: () => applyTitle('keyword_title'),
+    internal_links: applyInternalLinks, image_alt: applyImageAlt, faq: applyFaq,
     disclosure: applyDisclosure, keyword_intro: applyKeywordIntro, keyword_subhead: applyKeywordSubhead,
   }
 

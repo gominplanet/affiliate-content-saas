@@ -56,15 +56,14 @@ const scoreColor = (s: number) => (s >= 80 ? '#34c759' : s >= 60 ? '#ff9500' : '
 // route hydrates the live body from WordPress first, so we don't gate on
 // hasBody here. Keeping this in lockstep with the server is what stops "Fix all
 // N" from promising fixes the engine then skips.
-const AUTO_FIX_IDS = ['internal_links', 'faq', 'image_alt', 'disclosure', 'keyword_intro', 'keyword_subhead'] as const
+const AUTO_FIX_IDS = ['internal_links', 'faq', 'image_alt', 'disclosure', 'keyword_intro', 'keyword_subhead', 'keyword_title'] as const
 type AutoFixId = typeof AUTO_FIX_IDS[number] | 'title_length'
 const isAutoFixable = (p: { title: string }, c: Check): boolean => {
   if (c.pass) return false
-  // title_length is auto-fixable only when too LONG (we shorten; never auto-
-  // expand). keyword_title is intentionally absent — the user fixes titles by
-  // hand. The keyword_intro/keyword_subhead checks only fail when a target
-  // keyword IS set, so offering their Fix here is always actionable.
-  if (c.id === 'title_length') return (p.title || '').length > 65
+  // MVP now rewrites the title for BOTH failing cases — too short and
+  // keyword-missing — grounded in the article (no fabrication), so both
+  // title_length and keyword_title are auto-fixable.
+  if (c.id === 'title_length') return true
   return (AUTO_FIX_IDS as readonly string[]).includes(c.id)
 }
 
