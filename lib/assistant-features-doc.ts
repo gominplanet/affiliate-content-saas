@@ -25,7 +25,9 @@
  *   I'm on Creator and don't see it" exchange.
  */
 
-export const MVP_FEATURES_DOC = `
+import { APP_SEARCH_INDEX } from './app-search-index'
+
+const FEATURE_GUIDE = `
 # MVP AFFILIATE — FEATURE GUIDE (for assistant grounding)
 
 Use this guide to answer user questions about how to use the app. Every fact
@@ -37,15 +39,14 @@ rather than inventing a feature.
 
 ## NAVIGATION OVERVIEW
 
-The sidebar groups everything under headings the user can collapse:
+The left sidebar groups tools under collapsible headings (Set up, Create,
+Source & Earn, Grow, Collaborate, Find & Earn, Help). A topbar "Search MVP"
+box jumps straight to any tool by name.
 
-- **Today** — Dashboard, Library (all their generated posts)
-- **Set up** — Blog Set Up, Connect Socials, Brand Profile, Voice Training,
-  Face Models, Customize Blog, Tutorials
-- **Create** — YouTube Co-Pilot, Comparison, Buying Guides, Newsletter, Deals
-  Hub, Collaborations, Creator Campaigns, Script, Photobooth
-- **Channels** — Connected social platforms (Instagram Burner, TikTok publish)
-- **Settings** — MVP Help Desk, Plan & Billing, Virtual Assistants, Community
+For the exact, always-current list of every page and its route, see the
+"WHERE EVERYTHING LIVES" section at the very END of this guide. When a user
+asks "where is X" or "how do I get to Y", answer from that list — it's kept
+in sync with the real navigation automatically.
 
 URLs cited below are exact (e.g. /setup, /brand, /co-pilot).
 
@@ -231,9 +232,12 @@ caps apply.
 
 ---
 
-## CREATOR CAMPAIGNS (Pro)
+## CREATOR CAMPAIGNS (CC CAMPAIGNS)
 
-URL: /campaigns · Sidebar: Create → Creator Campaigns
+URL: /cc-campaigns · Sidebar: Source & Earn (also linked from the Amazon
+research launchpad). The older /campaigns queue still works but the main
+surface is now /cc-campaigns (see the CC CAMPAIGNS BROWSER section below for
+the richer, decision-data version).
 
 For Amazon Creator Connections — campaigns the user can promote for
 commission. Two paths:
@@ -405,6 +409,190 @@ page's head via the WordPress theme/plugin — no editing WordPress. Then
 they click Verify on the service. Only meta tags are allowed (scripts and
 styles are stripped). After saving, the tag stays on every page so
 verification keeps passing.
+
+---
+
+## AMZ PRODUCT FINDER
+
+URL: /amz-finder · Sidebar: Source & Earn → AMZ Product Finder
+
+Search the whole Amazon catalogue by keyword, price, rating, review count,
+best-seller rank, and category. Save winners to a buy-to-review shortlist,
+turn one into a review post, or send it to the thumbnail generator. Research
+is free on every paid plan (Trial can browse but can't take paid actions).
+Turn on "MVP picks" (paid plans) to deep-verify products that have a real
+video carousel and genuine monthly demand. Amazon-only by design.
+
+---
+
+## DEAL RADAR
+
+URL: /deal-radar · Sidebar: Source & Earn
+
+An always-on, live feed of real Amazon price drops (plus a Walmart tab).
+Each deal card shows the discount %, a verification badge ("All-time low" or
+"32% below its usual price"), rating + reviews, "X+ bought/mo", and a
+countdown on lightning deals. A "double-win" ticker flags deals that are BOTH
+on sale AND paying a Creator Connections bounty. One click turns any deal
+into a blog post, a quick social post, or adds it to a multi-product roundup.
+The feed is shared across MVP and refreshes through the day, so it's always
+fresh. Filters: category, "Real deals" only, "Has video", minimum discount.
+
+---
+
+## CC CAMPAIGNS BROWSER
+
+URL: /cc-campaigns · Sidebar: Source & Earn
+
+The research surface for Amazon Creator Connections. Every live campaign shows
+decision data right on the card: commission %, estimated $/sale, spots left
+(with a fullness bar and a FULL badge), a brand payout-trust badge ("Pays
+out" when the brand's budget is actually reaching creators), monthly demand,
+rating, and days left. One click drafts a blog post; you accept a campaign
+in-app through the SCOUT browser extension, and you can message the brand with
+an AI-drafted pitch. Two modes: Browse (the shared catalog) and Smart-Scan (a
+live sweep of your own Amazon campaign grid). MVP never bulk-accepts anything
+— every accept is a single, deliberate action you take. The catalog stays
+locked until SCOUT confirms you actually have the Creator Connections invite.
+
+---
+
+## AMZ STOREFRONT (earnings dashboard)
+
+URL: /storefront · Sidebar: Find & Earn → AMZ Storefront
+
+Your Amazon affiliate earnings dashboard. Headline numbers with
+period-over-period deltas: earnings, revenue, units shipped, clicks,
+conversion %, and earnings-per-click. Below that, a sortable per-product
+table (what's selling, what's new, biggest movers vs the prior period) and
+trend charts (earnings over time, top earners, revenue by category). Data
+comes from the SCOUT browser extension reading your Amazon Associates
+reports, with a weekly/monthly toggle. Tip: to build history, open your past
+Amazon report ranges while SCOUT is installed so it can capture them.
+
+---
+
+## PULSE (hashtag reach learning)
+
+URL: /pulse · Sidebar: Grow → Pulse
+
+Pulse learns which hashtags actually earn reach on your Instagram Reels. It
+checks each post's reach about a day after publishing, ranks your tags by how
+far above your own baseline they perform, and automatically feeds the proven
+ones into future AI-generated captions. The panel shows your best tags, your
+underperformers, and what's working across MVP creators in your niche (numbers
+are aggregate — no other creator's posts are exposed). It needs a handful of
+posts before personal ranking unlocks.
+
+---
+
+## CLIP FACTORY & SHORTS STUDIO
+
+URL: /clip-factory · Sidebar: Create → Clip Factory (Pro)
+
+Turn one long YouTube video into vertical short clips with burned-in animated
+captions. Three steps: Create (pick the moments, or let MVP suggest the best
+clips) → Enhance → Publish. Publishing goes to TikTok and Instagram today.
+(YouTube Shorts publishing is fully built and turns on once Google finishes
+verifying our upload permission — set it up, but don't promise it as live yet;
+when it's on, you'll reconnect YouTube once to enable it.)
+
+---
+
+## AUTO-PILOT (hands-off daily blog)
+
+Where: a toggle on the Blog Post Generator (/content) called "Auto-pilot".
+
+When on, a daily job publishes ONE post from your next un-blogged YouTube
+video, on a schedule you choose: every day, every other day, or specific days
+(3x / 2x / 1x a week). You can also have it auto-post to the socials you pick
+as each post goes live. One post a day is the max on EVERY plan — if you want
+more, generate them manually. Every day suits Studio and Pro; on Creator, pick
+a lighter cadence so it lasts the month. If you hit your monthly post
+allowance it pauses, emails you, and resumes next billing cycle. When it's on,
+the button turns purple and says it's ON.
+
+---
+
+## SEO & INDEXING
+
+URL: /seo · Sidebar: Grow → SEO & Indexing
+
+Scores every published post on the things that matter (title length + keyword,
+word count, headings, internal links, image alt text, FAQ, affiliate
+disclosure, comparison table) and helps you fix what's failing: one-click
+auto-fixes per issue, "Fix all", an AI title rewrite, or type the exact title
+yourself. It also submits posts to Google for indexing and can rebuild a weak
+legacy post from its source video (keeps the URL, replaces the body). Note:
+MVP now writes new posts correctly from the start, so this page is mostly for
+older/imported posts.
+
+---
+
+## SITE TOOLS
+
+URL: /tools/... · Sidebar: Site Tools
+
+Quick one-purpose fixers for a blog:
+- **Title Check** (/tools/title-audit) — flags posts whose title doesn't match the body.
+- **Clean Links** (/tools/clean-links) — strips duplicate or old affiliate tags/wraps.
+- **Duplicates** (/tools/duplicates) — finds same-product posts that hurt SEO.
+- **Fix 404s** (/tools/redirects) — adds 301 redirects for dead URLs.
+- **Fix Formatting** (/tools/fix-formatting) — repairs broken Gutenberg block markers.
+
+---
+
+## BRAND INQUIRIES (inbound inbox)
+
+URL: /brand-inquiries · Sidebar: Collaborate → Brand Inquiries
+
+The inbox for brands that message you through the "Work with brands" form on
+your own blog. See unread messages, read/archive them, and reply by email.
+Turn the blog form on or off in the settings panel on this page. This is for
+INBOUND brand contact; for OUTBOUND pitches use Brand Deals (/collaborations),
+and for Amazon campaign research use CC Campaigns (/cc-campaigns).
+
+---
+
+## INSTAGRAM / FACEBOOK DM (Labs)
+
+URL: /instagram-dm · Sidebar: Channels (Pro)
+
+Comment-to-DM automation: when someone comments a keyword (e.g. "LINK") on
+your Instagram or Facebook post, they automatically get a DM with that post's
+affiliate link, and optionally a public "sent you a DM" reply. You can set it
+up now and configure keywords/messages, but it stays in "Labs" and doesn't
+send until Meta approves the messaging permission. Don't tell users it's
+sending live yet.
+
+---
+
+## SOCIAL LAUNCH KIT
+
+URL: /social-launch-kit · Sidebar: Set up
+
+Generates a matching set to spin up new social accounts fast: handle/name
+ideas, a bio, a banner, and an avatar, aligned to the user's brand.
+
+---
+
+## ADS (display monetization)
+
+URL: /ads · Sidebar: Set up → Ads
+
+Connect your Google AdSense publisher ID (ca-pub-...) so display ads run on
+your blog — banner, in-content, and sidebar placements — and manage ads.txt.
+This is separate from affiliate income; it's ad revenue on your traffic.
+
+---
+
+## OTHER CREATE TOOLS
+
+- **Scriptwriter** (/script) — writes a full video script from a product or topic. Monthly cap by tier.
+- **Idea Lists** (/idea-lists) — turn an Amazon storefront idea list into a shoppable roundup post.
+- **MVP x LTK** (/ltk) — turn products into LTK-style link posts.
+- **PartnerBoost / Walmart** (/partnerboost) — find Walmart + DTC brand deals and deep links beyond Amazon, and generate posts from Walmart offers.
+- **MVP x Levanta** (/levanta) — Amazon creator network for commissionable brand links.
 
 ---
 
@@ -596,3 +784,31 @@ not duplicate or junk links.
 ---
 END OF FEATURE GUIDE
 `
+
+/**
+ * Compact, always-current "where everything lives" map, generated from the
+ * SAME APP_SEARCH_INDEX that powers the topbar search box. This is the cheap
+ * insurance against the hand-written guide above drifting: even for a feature
+ * that isn't written up in prose, the assistant can still point the user to
+ * the exact, current route. Admin-only destinations are excluded.
+ */
+function renderSiteMap(): string {
+  const byGroup = new Map<string, string[]>()
+  for (const e of APP_SEARCH_INDEX) {
+    if (e.admin) continue
+    const line = `- ${e.label} -> ${e.href}${e.keywords ? ` (${e.keywords})` : ''}`
+    const arr = byGroup.get(e.group) || []
+    arr.push(line)
+    byGroup.set(e.group, arr)
+  }
+  let out = '\n\n## WHERE EVERYTHING LIVES (exact routes — use these to send users to the right place)\n\n'
+  out += "This list is generated from the app's own navigation, so the routes are always current. "
+  out += 'If a user asks "where is X" or "how do I get to Y", find it here and give them the exact link. '
+  out += 'The words in parentheses are search synonyms (what a user might call it), not part of the URL.\n\n'
+  for (const [group, lines] of byGroup) {
+    out += `**${group}**\n${lines.join('\n')}\n\n`
+  }
+  return out
+}
+
+export const MVP_FEATURES_DOC = FEATURE_GUIDE + renderSiteMap()
