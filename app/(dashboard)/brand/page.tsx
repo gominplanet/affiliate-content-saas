@@ -8,6 +8,7 @@ import { Save, Check, Plus, Trash2, GripVertical, Upload, X, RefreshCw, Loader2,
 import { createBrowserClient } from '@/lib/supabase/client'
 import { InfoTip } from '@/components/ui/InfoTip'
 import GeniuslinkGroupsPanel from '@/components/brand/GeniuslinkGroupsPanel'
+import { GENIUSLINK_SIGNUP_URL, GENIUSLINK_PITCH } from '@/lib/geniuslink-signup'
 
 async function uploadBrandImage(
   file: File,
@@ -1037,6 +1038,15 @@ export default function BrandPage() {
                   )
                 )}
               </div>
+              {!(geniuslinkKey && geniuslinkSecret) && (
+                <div className="mb-3 rounded-lg px-3 py-2.5" style={{ background: 'rgba(124,58,237,0.06)', border: '1px solid rgba(124,58,237,0.25)' }}>
+                  <p className="text-[12px] font-semibold text-[#7C3AED]">Don&apos;t have Geniuslink yet?</p>
+                  <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mt-0.5 leading-relaxed">{GENIUSLINK_PITCH}</p>
+                  <a href={GENIUSLINK_SIGNUP_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 mt-2 text-[11px] font-semibold px-3 py-1.5 rounded-md bg-[#7C3AED] text-white hover:bg-[#6D28D9]">
+                    Get Geniuslink →
+                  </a>
+                </div>
+              )}
               <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mb-3 leading-relaxed">
                 In Geniuslink, open <a href="https://my.geni.us/tools" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">Tools → &ldquo;Integrate with our API&rdquo;</a>, click <strong>Add an API key</strong>, then copy the API Key and API Secret here. (API access requires a paid Geniuslink plan.)
               </p>
