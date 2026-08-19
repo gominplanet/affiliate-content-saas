@@ -15,7 +15,7 @@ import PageHero from '@/components/layout/PageHero'
 import SeoHubTabs from '@/components/seo/SeoHubTabs'
 import GetFound404Upload from '@/components/seo/GetFound404Upload'
 import { SeoGuide } from '@/components/guide/tool-guides'
-import { Gauge, Loader2, RefreshCw, ExternalLink, CheckCircle, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight, Wand2, X, Zap, Youtube, DollarSign, ImageOff, Link2 } from 'lucide-react'
+import { Gauge, Loader2, RefreshCw, ExternalLink, CheckCircle, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight, Wand2, X, Zap, Youtube, DollarSign, ImageOff, Link2, Pencil } from 'lucide-react'
 import { toast } from 'sonner'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { type Tier } from '@/lib/tier'
@@ -77,6 +77,8 @@ export default function SeoPage() {
   const [filterNotIndexed, setFilterNotIndexed] = useState(false)  // "Request indexing" worklist
   const [fixing, setFixing] = useState<string | null>(null)   // `${postId}:${fix}`
   const [fixMsg, setFixMsg] = useState<{ ok: boolean; text: string; postId?: string } | null>(null)
+  const [titleDraft, setTitleDraft] = useState<{ postId: string; value: string } | null>(null)  // manual title editor
+  const [savingTitle, setSavingTitle] = useState(false)
   const [bulkPreview, setBulkPreview] = useState<{ total: number; toFix: number; totalFixes: number; preview: { postId: string; title: string; fixes: number }[] } | null>(null)
   const [bulkLoading, setBulkLoading] = useState(false)
   const [bulkApplying, setBulkApplying] = useState(false)
@@ -242,6 +244,26 @@ export default function SeoPage() {
       await load()
     } catch { setFixMsg({ ok: false, text: 'Something went wrong.', postId }) }
     finally { setFixing(null) }
+  }, [load])
+
+  // Manual title editor — set the title by hand from the panel. Hits
+  // /api/seo/edit-title (updates WordPress + re-scores), then reloads.
+  const saveTitle = useCallback(async (postId: string, title: string) => {
+    const clean = title.trim()
+    if (clean.length < 5) { setFixMsg({ ok: false, text: 'That title is too short.', postId }); return }
+    setSavingTitle(true); setFixMsg(null)
+    try {
+      const res = await fetch('/api/seo/edit-title', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ postId, title: clean }),
+      })
+      const d = await res.json()
+      if (!res.ok || d.error) { setFixMsg({ ok: false, text: d.error || 'Couldn’t save the title.', postId }); return }
+      setFixMsg({ ok: true, text: `Title updated on WordPress — re-scored to ${d.score}/100.`, postId })
+      setTitleDraft(null)
+      await load()
+    } catch { setFixMsg({ ok: false, text: 'Something went wrong.', postId }) }
+    finally { setSavingTitle(false) }
   }, [load])
 
   // "Request indexing" — submit directly via Google's Indexing API instead
@@ -1333,6 +1355,55 @@ export default function SeoPage() {
                         >
                           <Youtube size={11} /> Rebuild from video
                         </button>
+                      )}
+                      {/* Manual title editor — the optional companion to the
+                          one-click AI title fix. Some creators just want to
+                          type the exact title themselves; this writes it
+                          straight to WordPress and re-scores. Published posts
+                          only (no WP post = nothing to update). */}
+                      {p.wordpressPostId && (
+                        <div className="mb-3 rounded-lg border border-[var(--border-2,#e5e5e7)] dark:border-white/10 px-3 py-2.5">
+                          {titleDraft?.postId === p.postId ? (
+                            <div className="flex flex-col gap-2">
+                              <label className="text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Edit title</label>
+                              <textarea
+                                value={titleDraft.value}
+                                onChange={e => setTitleDraft({ postId: p.postId, value: e.target.value })}
+                                rows={2}
+                                maxLength={200}
+                                className="w-full resize-none rounded-md border border-[var(--border-2,#e5e5e7)] dark:border-white/15 bg-transparent px-2.5 py-1.5 text-xs text-[#1d1d1f] dark:text-[#f5f5f7] focus:outline-none focus:ring-1 focus:ring-[#7C3AED]"
+                                placeholder="Type the exact title you want…"
+                                autoFocus
+                              />
+                              <div className="flex items-center gap-2">
+                                <span className={`text-[10px] ${titleDraft.value.trim().length > 65 || titleDraft.value.trim().length < 30 ? 'text-[#ff9500]' : 'text-[#34c759]'}`}>
+                                  {titleDraft.value.trim().length} chars {titleDraft.value.trim().length < 30 ? '(aim 30–65)' : titleDraft.value.trim().length > 65 ? '(aim 30–65)' : '✓'}
+                                </span>
+                                <div className="ml-auto flex items-center gap-2">
+                                  <button
+                                    onClick={() => setTitleDraft(null)}
+                                    disabled={savingTitle}
+                                    className="px-2.5 py-1 rounded-md text-[11px] font-semibold text-[#6e6e73] dark:text-[#ebebf0] hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-60"
+                                  >Cancel</button>
+                                  <button
+                                    onClick={() => saveTitle(p.postId, titleDraft.value)}
+                                    disabled={savingTitle || titleDraft.value.trim().length < 5}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold text-white bg-[#7C3AED] hover:bg-[#6D28D9] disabled:opacity-60"
+                                  >
+                                    {savingTitle ? <Loader2 size={10} className="animate-spin" /> : null} Save title
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setTitleDraft({ postId: p.postId, value: p.title || '' })}
+                              className="flex items-center gap-1.5 text-[11px] font-semibold text-[#5856d6] hover:underline"
+                            >
+                              <Pencil size={11} /> Edit title manually
+                            </button>
+                          )}
+                        </div>
                       )}
                       <ul className="flex flex-col gap-1.5">
                         {p.checks.filter(c => c.weight > 0).map(c => {
