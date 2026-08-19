@@ -16,6 +16,7 @@ import { getChannelOAuthToken } from '@/lib/youtube-channels'
 import { YouTubeOAuthService } from '@/services/youtube'
 import { youtubeUploadEnabled } from '@/lib/feature-flags'
 import { recordUsage } from '@/lib/ai-usage'
+import { recordReachSample } from '@/lib/reach-pulse'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -77,6 +78,14 @@ export async function POST(request: Request) {
     const yt = new YouTubeOAuthService(token)
     const { id } = await yt.uploadShort(bytes, { title, description, tags, privacyStatus: body.privacyStatus || 'public' })
     recordUsage({ userId: user.id, tier, feature: 'youtube_short_upload', model: 'youtube-data-api', images: 1 })
+    // Pulse: log this Short so the collector reads its views ~a day later and
+    // learns which hashtags/times earn reach on YouTube. Best-effort, never blocks.
+    void recordReachSample({
+      userId: user.id, platform: 'youtube', mediaId: id,
+      caption: description,
+      hashtags: tags.map(t => (t.startsWith('#') ? t : `#${t}`)),
+      productText: title,
+    }).catch(() => {})
     return NextResponse.json({ ok: true, videoId: id, url: `https://youtube.com/shorts/${id}` })
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'YouTube upload failed.'
