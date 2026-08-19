@@ -161,6 +161,26 @@ export class YouTubeService {
 
     return { videos, nextPageToken: playlistData.nextPageToken }
   }
+
+  /** Public view counts for a set of video ids (statistics.viewCount). API-key
+   *  only — a video's view count is public. Missing/private ids are simply
+   *  absent from the result. Used by Pulse to measure a Short's reach ~a day
+   *  after publishing. */
+  async getViewCounts(ids: string[]): Promise<Record<string, number>> {
+    const out: Record<string, number> = {}
+    const uniq = [...new Set((ids || []).filter(Boolean))]
+    for (let i = 0; i < uniq.length; i += 50) {
+      const chunk = uniq.slice(i, i + 50)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data = await this.get<any>('/videos', { part: 'statistics', id: chunk.join(',') })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const v of (data.items ?? []) as any[]) {
+        if (!v?.id) continue
+        out[v.id] = parseInt(v.statistics?.viewCount ?? '0', 10) || 0
+      }
+    }
+    return out
+  }
 }
 
 export function createYouTubeService(apiKey: string) {

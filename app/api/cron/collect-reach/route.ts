@@ -15,6 +15,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getMediaInsights } from '@/services/instagram'
+import { createYouTubeService } from '@/services/youtube'
 import { maybeDecrypt } from '@/lib/secrets'
 
 export const runtime = 'nodejs'
@@ -44,7 +45,7 @@ export async function GET(request: Request) {
   // Pending rows old enough to have real numbers, with a media id to query.
   const { data: pending, error: pErr } = await admin
     .from('reach_samples')
-    .select('id,user_id,media_id,reach')
+    .select('id,user_id,media_id,reach,platform')
     .eq('status', 'pending')
     .not('media_id', 'is', null)
     .lte('posted_at', matureBefore)
@@ -52,83 +53,89 @@ export async function GET(request: Request) {
     .limit(BATCH)
   if (pErr) return NextResponse.json({ error: `query failed: ${pErr.message}` }, { status: 500 })
 
-  const rows = (pending ?? []) as Array<{ id: string; user_id: string; media_id: string }>
+  const rows = (pending ?? []) as Array<{ id: string; user_id: string; media_id: string; platform: string | null }>
   if (rows.length === 0) return NextResponse.json({ ok: true, collected: 0, note: 'nothing due' })
 
-  // Resolve each user's IG token once.
-  const userIds = [...new Set(rows.map(r => r.user_id))]
-  const tokenByUser = new Map<string, string | null>()
-  {
+  // Split by platform. Instagram reads per-media reach; YouTube reads public
+  // view counts. Legacy rows with a null platform are treated as Instagram.
+  const igRows = rows.filter(r => (r.platform ?? 'instagram') === 'instagram')
+  const ytRows = rows.filter(r => r.platform === 'youtube')
+
+  let collected = 0, failed = 0, retried = 0
+  // Track (user, platform) pairs so baselines are computed WITHIN a platform —
+  // YouTube views (thousands) must never share a median with IG reach (hundreds).
+  const touched = new Set<string>()
+
+  // ── Instagram: per-media insights (reach) ──────────────────────────────────
+  if (igRows.length) {
+    const userIds = [...new Set(igRows.map(r => r.user_id))]
+    const tokenByUser = new Map<string, string | null>()
     const { data: integs } = await admin
-      .from('integrations')
-      .select('user_id,instagram_access_token')
-      .in('user_id', userIds)
+      .from('integrations').select('user_id,instagram_access_token').in('user_id', userIds)
     for (const it of (integs ?? []) as Array<{ user_id: string; instagram_access_token: string | null }>) {
       tokenByUser.set(it.user_id, (maybeDecrypt(it.instagram_access_token) as string | undefined) || null)
     }
+    for (const row of igRows) {
+      const token = tokenByUser.get(row.user_id) || null
+      if (!token) { await bumpAttempt(admin, row.id); retried++; continue }
+      const ins = await getMediaInsights({ mediaId: row.media_id, accessToken: token })
+      if (!ins || ins.reach == null) { const f = await bumpAttempt(admin, row.id); f ? failed++ : retried++; continue }
+      await admin.from('reach_samples').update({
+        reach: ins.reach, plays: ins.plays, likes: ins.likes, comments: ins.comments,
+        saves: ins.saves, shares: ins.shares, platform: 'instagram',
+        status: 'collected', fetched_at: new Date().toISOString(),
+      }).eq('id', row.id)
+      collected++
+      touched.add(`${row.user_id}:instagram`)
+    }
   }
 
-  let collected = 0, failed = 0, retried = 0
-  const touchedUsers = new Set<string>()
-
-  for (const row of rows) {
-    const token = tokenByUser.get(row.user_id) || null
-    if (!token) {
-      // Can't read without a token — count an attempt, retry later, fail eventually.
-      await bumpAttempt(admin, row.id)
-      retried++
-      continue
+  // ── YouTube: public view counts (the reach proxy for Shorts) ────────────────
+  if (ytRows.length) {
+    const apiKey = process.env.YOUTUBE_API_KEY
+    if (!apiKey) {
+      for (const row of ytRows) { await bumpAttempt(admin, row.id); retried++ }
+    } else {
+      const yt = createYouTubeService(apiKey)
+      let views: Record<string, number> = {}
+      try { views = await yt.getViewCounts(ytRows.map(r => r.media_id)) } catch { views = {} }
+      for (const row of ytRows) {
+        const v = views[row.media_id]
+        if (v == null) { const f = await bumpAttempt(admin, row.id); f ? failed++ : retried++; continue }
+        await admin.from('reach_samples').update({
+          reach: v, plays: v, status: 'collected', fetched_at: new Date().toISOString(),
+        }).eq('id', row.id)
+        collected++
+        touched.add(`${row.user_id}:youtube`)
+      }
     }
-    const ins = await getMediaInsights({ mediaId: row.media_id, accessToken: token })
-    if (!ins || ins.reach == null) {
-      // Media may still be processing, or gone. Attempt++ and move on.
-      const failedNow = await bumpAttempt(admin, row.id)
-      failedNow ? failed++ : retried++
-      continue
-    }
-    await admin.from('reach_samples').update({
-      reach: ins.reach,
-      plays: ins.plays,
-      likes: ins.likes,
-      comments: ins.comments,
-      saves: ins.saves,
-      shares: ins.shares,
-      status: 'collected',
-      fetched_at: new Date().toISOString(),
-    }).eq('id', row.id)
-    collected++
-    touchedUsers.add(row.user_id)
   }
 
-  // Recompute each touched user's baseline (median reach over ALL their collected
-  // samples) and stamp lift on every collected row that doesn't have one yet.
-  for (const uid of touchedUsers) {
+  // Baselines: median reach PER (user, platform), lift stamped within platform,
+  // only on rows that don't have a lift yet (existing lifts stay stable).
+  for (const key of touched) {
+    const [uid, platform] = key.split(':')
     const { data: coll } = await admin
       .from('reach_samples')
       .select('id,reach,lift')
       .eq('user_id', uid)
+      .eq('platform', platform)
       .eq('status', 'collected')
       .not('reach', 'is', null)
     const all = (coll ?? []) as Array<{ id: string; reach: number; lift: number | null }>
     const med = median(all.map(r => r.reach))
     if (!med || med <= 0) continue
-    // Only fill rows missing a lift; existing lifts stay stable (the baseline
-    // shifts slowly and we don't want to churn every row every run). Each row
-    // gets a different lift (reach/median), so we can't collapse this into one
-    // constant UPDATE, but we can run the writes with bounded concurrency
-    // instead of one serial round-trip per row (was the batch's wall-clock hog).
     const missing = all.filter(r => r.lift == null)
     const CONC = 10
     for (let i = 0; i < missing.length; i += CONC) {
       await Promise.all(missing.slice(i, i + CONC).map(r =>
-        admin.from('reach_samples')
-          .update({ account_median_reach: med, lift: r.reach / med })
-          .eq('id', r.id),
+        admin.from('reach_samples').update({ account_median_reach: med, lift: r.reach / med }).eq('id', r.id),
       ))
     }
   }
 
-  return NextResponse.json({ ok: true, collected, failed, retried, users: touchedUsers.size })
+  const users = new Set([...touched].map(k => k.split(':')[0])).size
+  return NextResponse.json({ ok: true, collected, failed, retried, users })
 }
 
 /** attempts++ ; mark 'failed' once we hit the ceiling. Returns true if it flipped to failed. */
