@@ -35,6 +35,24 @@ interface AutoBlogState {
   recentVideoIds?: string[]
   /** Socials to auto-post when the daily post goes live. Empty = blog only. */
   socials?: string[]
+  /** How often to publish. Default 'daily'. The *_week variants fire only on the
+   *  weekdays listed in `days` (0=Sun..6=Sat, UTC). */
+  cadence?: 'daily' | 'alternate' | '3x_week' | '2x_week' | '1x_week'
+  days?: number[]
+}
+
+/** Is today a publish day for this cadence, given the last run? */
+function shouldRunToday(state: AutoBlogState): boolean {
+  const lastMs = state.lastRunAt ? new Date(state.lastRunAt).getTime() : 0
+  const hoursSince = (Date.now() - lastMs) / 36e5
+  const cadence = state.cadence || 'daily'
+  if (cadence === 'daily') return hoursSince >= MIN_HOURS_BETWEEN_RUNS
+  if (cadence === 'alternate') return hoursSince >= 44 // ~every other day
+  // Weekly cadences: publish only on the chosen weekdays, once per day.
+  const days = Array.isArray(state.days) ? state.days : []
+  if (!days.length) return false
+  const todayDow = new Date().getUTCDay()
+  return days.includes(todayDow) && hoursSince >= MIN_HOURS_BETWEEN_RUNS
 }
 
 export async function GET(request: Request) {
@@ -74,11 +92,8 @@ export async function GET(request: Request) {
     }
 
     try {
-      // Already published today?
-      if (state.lastRunAt) {
-        const hrs = (Date.now() - new Date(state.lastRunAt).getTime()) / 36e5
-        if (hrs < MIN_HOURS_BETWEEN_RUNS) { handledUsers.add(userId); results.push({ user: userId, status: 'already_ran_today' }); continue }
-      }
+      // Is today a publish day for this user's cadence (and not already run)?
+      if (!shouldRunToday(state)) { handledUsers.add(userId); results.push({ user: userId, status: 'not_scheduled_today' }); continue }
 
       const { data: integ } = await admin
         .from('integrations')
