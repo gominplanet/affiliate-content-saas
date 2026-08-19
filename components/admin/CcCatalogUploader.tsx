@@ -12,6 +12,7 @@ import { useCallback, useRef, useState } from 'react'
 import Papa from 'papaparse'
 import { UploadCloud, FileSpreadsheet, Loader2, CheckCircle2, X } from 'lucide-react'
 import { toast } from 'sonner'
+import { unzipCsvFiles } from '@/lib/cc-zip-browser'
 
 // Staging columns we can fill. Required ones can't be left unmapped.
 const FIELDS = [
@@ -56,6 +57,7 @@ export default function CcCatalogUploader({ onDone }: { onDone?: () => void }) {
   const [inserted, setInserted] = useState(0)
   const [err, setErr] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
+  const [unzipping, setUnzipping] = useState(false)
   // ON (default): this upload clears staging first (a fresh weekly import).
   // OFF: append these files to what's already staged (add more files one batch
   // at a time without wiping the earlier ones).
@@ -82,11 +84,34 @@ export default function CcCatalogUploader({ onDone }: { onDone?: () => void }) {
     })
   }, [])
 
-  const pick = useCallback((list: FileList | null) => {
-    const arr = Array.from(list ?? []).filter(f => /\.csv$/i.test(f.name) || f.type.includes('csv'))
-    if (!arr.length) { toast.error('Please choose CSV files.'); return }
-    setFiles(arr); setErr(null); setPhase('idle'); setPct(0); setInserted(0)
-    readHeader(arr[0]) // all files are assumed to share one header layout
+  const pick = useCallback(async (list: FileList | null) => {
+    const chosen = Array.from(list ?? [])
+    const csvs = chosen.filter(f => /\.csv$/i.test(f.name) || f.type.includes('csv'))
+    const zips = chosen.filter(f => /\.zip$/i.test(f.name) || f.type.includes('zip'))
+    if (!csvs.length && !zips.length) { toast.error('Please choose the CC ZIP file(s) or CSV files.'); return }
+    setErr(null); setPhase('idle'); setPct(0); setInserted(0)
+
+    // Unzip any dropped ZIPs (Amazon's "Download all … campaigns" exports) into
+    // the CSVs inside, then treat them exactly like directly-chosen CSVs.
+    let all = [...csvs]
+    if (zips.length) {
+      setUnzipping(true)
+      try {
+        for (const z of zips) {
+          const extracted = await unzipCsvFiles(z)
+          if (!extracted.length) toast.error(`${z.name} had no CSV inside.`)
+          all = all.concat(extracted)
+        }
+      } catch (e) {
+        setUnzipping(false)
+        const msg = e instanceof Error ? e.message : 'Could not read that ZIP.'
+        setErr(msg); setPhase('error'); toast.error(msg); return
+      }
+      setUnzipping(false)
+    }
+    if (!all.length) { toast.error('No CSV files found in your selection.'); return }
+    setFiles(all)
+    readHeader(all[0]) // all files are assumed to share one header layout
   }, [readHeader])
 
   const missingReq = FIELDS.filter(f => f.required && !mapping[f.key]).map(f => f.label)
@@ -205,9 +230,9 @@ export default function CcCatalogUploader({ onDone }: { onDone?: () => void }) {
 
   return (
     <div className="card p-5 mb-5">
-      <p className="text-[13px] font-semibold mb-1" style={{ color: 'var(--text)' }}>Upload CSV files</p>
+      <p className="text-[13px] font-semibold mb-1" style={{ color: 'var(--text)' }}>Upload the CC exports</p>
       <p className="text-[12px] mb-3" style={{ color: 'var(--text-soft)' }}>
-        Drop your Creator Connections CSV(s) here. They&rsquo;re read in your browser and streamed into staging in small batches, so file size doesn&rsquo;t matter. Keep this tab open until it finishes.
+        Drop the two ZIP files straight from Amazon (&ldquo;Download all available campaigns&rdquo; + &ldquo;Download all accepted campaigns&rdquo;) &mdash; MVP unzips them in your browser and reads the CSVs inside. Loose CSVs work too. Everything is streamed into staging in small batches, so file size doesn&rsquo;t matter. Keep this tab open until it finishes.
       </p>
 
       {/* Drop zone */}
@@ -215,14 +240,24 @@ export default function CcCatalogUploader({ onDone }: { onDone?: () => void }) {
         onDragOver={e => { e.preventDefault(); setDragOver(true) }}
         onDragLeave={() => setDragOver(false)}
         onDrop={e => { e.preventDefault(); setDragOver(false); pick(e.dataTransfer.files) }}
-        onClick={() => phase !== 'uploading' && inputRef.current?.click()}
+        onClick={() => phase !== 'uploading' && !unzipping && inputRef.current?.click()}
         className="rounded-xl border-2 border-dashed p-6 text-center cursor-pointer transition-colors"
         style={{ borderColor: dragOver ? '#7C3AED' : 'var(--border)', background: dragOver ? 'rgba(124,58,237,0.05)' : 'transparent' }}>
-        <input ref={inputRef} type="file" accept=".csv,text/csv" multiple className="hidden"
+        <input ref={inputRef} type="file" accept=".zip,application/zip,.csv,text/csv" multiple className="hidden"
           onChange={e => pick(e.target.files)} />
-        <UploadCloud size={26} className="mx-auto mb-2" style={{ color: '#7C3AED' }} />
-        <p className="text-[13px] font-medium" style={{ color: 'var(--text)' }}>Drag CSV files here, or click to choose</p>
-        <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-faint)' }}>Multiple files OK · they combine automatically</p>
+        {unzipping ? (
+          <>
+            <Loader2 size={26} className="mx-auto mb-2 animate-spin" style={{ color: '#7C3AED' }} />
+            <p className="text-[13px] font-medium" style={{ color: 'var(--text)' }}>Unzipping…</p>
+            <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-faint)' }}>Reading the CSVs out of your ZIP(s)</p>
+          </>
+        ) : (
+          <>
+            <UploadCloud size={26} className="mx-auto mb-2" style={{ color: '#7C3AED' }} />
+            <p className="text-[13px] font-medium" style={{ color: 'var(--text)' }}>Drag the ZIP file(s) here, or click to choose</p>
+            <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-faint)' }}>The two Amazon ZIPs (or loose CSVs) · they combine automatically</p>
+          </>
+        )}
       </div>
 
       {/* Selected files */}
