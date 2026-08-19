@@ -16,12 +16,15 @@ import { normalizeTier, TIERS } from '@/lib/tier'
 
 export const runtime = 'nodejs'
 
+const SUPPORTED_SOCIALS = ['facebook', 'threads', 'twitter', 'linkedin', 'bluesky', 'telegram', 'pinterest']
+
 interface AutoBlogState {
   enabled: boolean
   lastRunAt: string | null
   pausedReason: string | null
   pausedAt: string | null
   recentVideoIds?: string[]
+  socials: string[]
 }
 
 function readState(customizations: unknown): AutoBlogState {
@@ -33,10 +36,11 @@ function readState(customizations: unknown): AutoBlogState {
     pausedReason: typeof a.pausedReason === 'string' ? a.pausedReason : null,
     pausedAt: typeof a.pausedAt === 'string' ? a.pausedAt : null,
     recentVideoIds: Array.isArray(a.recentVideoIds) ? (a.recentVideoIds as string[]) : [],
+    socials: Array.isArray(a.socials) ? (a.socials as string[]).filter(p => SUPPORTED_SOCIALS.includes(p)) : [],
   }
 }
 
-const OFF: AutoBlogState = { enabled: false, lastRunAt: null, pausedReason: null, pausedAt: null }
+const OFF: AutoBlogState = { enabled: false, lastRunAt: null, pausedReason: null, pausedAt: null, socials: [] }
 
 export async function GET() {
   const supabase = await createServerClient()
@@ -71,9 +75,15 @@ export async function PUT(req: Request) {
     return NextResponse.json({ error: 'Reconnect your WordPress site (Setup → WordPress) to use auto-pilot.' }, { status: 400 })
   }
 
-  let body: { enabled?: boolean }
+  let body: { enabled?: boolean; socials?: string[] }
   try { body = await req.json() } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }) }
   const enabled = body.enabled === true
+  // Socials are optional in the payload — only overwrite when provided, so a
+  // plain on/off toggle doesn't wipe the saved channel selection.
+  const socialsProvided = Array.isArray(body.socials)
+  const socials = socialsProvided
+    ? [...new Set(body.socials!.filter(p => SUPPORTED_SOCIALS.includes(p)))]
+    : null
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: row } = await (supabase as any)
@@ -87,6 +97,7 @@ export async function PUT(req: Request) {
     pausedReason: enabled ? null : prev.pausedReason,
     pausedAt: enabled ? null : prev.pausedAt,
     recentVideoIds: prev.recentVideoIds ?? [],
+    socials: socials ?? prev.socials,
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

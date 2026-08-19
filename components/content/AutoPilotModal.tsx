@@ -11,12 +11,22 @@ import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { X, Loader2, Rocket } from 'lucide-react'
 
-interface AutoState { enabled: boolean; lastRunAt: string | null; pausedReason: string | null }
+interface AutoState { enabled: boolean; lastRunAt: string | null; pausedReason: string | null; socials: string[] }
+
+const SOCIALS: Array<{ key: string; label: string }> = [
+  { key: 'facebook', label: 'Facebook' },
+  { key: 'twitter', label: 'X' },
+  { key: 'threads', label: 'Threads' },
+  { key: 'linkedin', label: 'LinkedIn' },
+  { key: 'bluesky', label: 'Bluesky' },
+  { key: 'telegram', label: 'Telegram' },
+  { key: 'pinterest', label: 'Pinterest' },
+]
 
 export default function AutoPilotModal({ onClose, onChange }: { onClose: () => void; onChange?: (enabled: boolean) => void }) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [state, setState] = useState<AutoState>({ enabled: false, lastRunAt: null, pausedReason: null })
+  const [state, setState] = useState<AutoState>({ enabled: false, lastRunAt: null, pausedReason: null, socials: [] })
 
   useEffect(() => {
     let cancelled = false
@@ -24,7 +34,7 @@ export default function AutoPilotModal({ onClose, onChange }: { onClose: () => v
       try {
         const res = await fetch('/api/blog/autopilot')
         const d = await res.json()
-        if (!cancelled && d.autopilot) setState(d.autopilot)
+        if (!cancelled && d.autopilot) setState({ socials: [], ...d.autopilot })
       } catch { /* keep defaults */ } finally {
         if (!cancelled) setLoading(false)
       }
@@ -32,22 +42,27 @@ export default function AutoPilotModal({ onClose, onChange }: { onClose: () => v
     return () => { cancelled = true }
   }, [])
 
-  async function setEnabled(enabled: boolean) {
+  async function save(patch: { enabled?: boolean; socials?: string[] }) {
     setSaving(true)
     try {
       const res = await fetch('/api/blog/autopilot', {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }),
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch),
       })
       const d = await res.json()
       if (!res.ok) throw new Error(d.error || 'Could not save')
-      setState(d.autopilot)
+      setState({ socials: [], ...d.autopilot })
       onChange?.(d.autopilot?.enabled === true)
-      toast.success(enabled ? 'Auto-pilot on — one post a day' : 'Auto-pilot off')
+      if (patch.enabled !== undefined) toast.success(patch.enabled ? 'Auto-pilot on — one post a day' : 'Auto-pilot off')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Could not save')
     } finally {
       setSaving(false)
     }
+  }
+  const setEnabled = (enabled: boolean) => save({ enabled })
+  function toggleSocial(key: string) {
+    const next = state.socials.includes(key) ? state.socials.filter(s => s !== key) : [...state.socials, key]
+    save({ enabled: state.enabled, socials: next })
   }
 
   const pausedNote = state.pausedReason === 'cap'
@@ -98,10 +113,35 @@ export default function AutoPilotModal({ onClose, onChange }: { onClose: () => v
               </div>
             )}
 
+            {state.enabled && (
+              <div>
+                <label className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Also auto-post to socials</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {SOCIALS.map(s => {
+                    const on = state.socials.includes(s.key)
+                    return (
+                      <button
+                        key={s.key}
+                        type="button"
+                        disabled={saving}
+                        onClick={() => toggleSocial(s.key)}
+                        className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm transition disabled:opacity-60"
+                        style={{ borderColor: on ? '#7C3AED' : 'var(--border-2,#e5e5e7)', background: on ? 'rgba(124,58,237,0.08)' : 'transparent', color: 'var(--text,#1d1d1f)' }}
+                      >
+                        <span>{s.label}</span>
+                        <span className="text-[10px] font-bold" style={{ color: on ? '#7C3AED' : '#c7c7cc' }}>{on ? 'ON' : ''}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+                <p className="text-[10px] text-[#86868b] mt-1.5">When the daily post goes live it also posts to the channels you pick here (default caption: title + link). Only connected channels on your plan will fire.</p>
+              </div>
+            )}
+
             <ul className="text-[12px] text-[#6e6e73] dark:text-[#ebebf0] space-y-1.5 leading-relaxed">
               <li>• Turns your next un-blogged YouTube video into a full post (hero + in-article images).</li>
               <li>• Up to one post a day, drawn from your monthly post allowance. Studio and Pro cover a post every day; Creator posts daily until its monthly posts are used, then pauses.</li>
-              <li>• No social posting, just your blog.</li>
+              <li>• Blog only by default. Turn on any socials above to auto-post them as each blog post goes live.</li>
               <li>• When your monthly allowance runs out it pauses, emails you, and resumes next cycle. Want more before then? Generate posts manually.</li>
             </ul>
 

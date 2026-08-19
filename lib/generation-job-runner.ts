@@ -16,6 +16,63 @@
 
 import type { GenerationJob } from '@/lib/generation-jobs'
 import { isWpConnectionError } from '@/lib/wp-connection-health'
+import { normalizeTier, tierAllowsSocial } from '@/lib/tier'
+import { getConnectedPlatforms } from '@/lib/channel-health'
+import { DEFAULT_SOCIAL_OFFSETS_MIN, type SchedulableSocial } from '@/lib/schedule-types'
+
+const AUTOPILOT_SOCIALS: SchedulableSocial[] = ['facebook', 'threads', 'twitter', 'linkedin', 'bluesky', 'telegram', 'pinterest']
+
+/**
+ * After an AUTO-PILOT blog job publishes, queue the social cascade the creator
+ * opted into (job.input.autoSocials). The post is already live by the time the
+ * job returns, so we schedule each connected/allowed channel a couple minutes
+ * out with a default caption (title + link); the process-scheduled cron fires
+ * them. Best-effort — a cascade failure never fails the blog job.
+ */
+async function cascadeAutopilotSocials(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  admin: any,
+  job: GenerationJob,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  result: Record<string, any>,
+): Promise<void> {
+  const socials = Array.isArray(job.input?.autoSocials) ? (job.input.autoSocials as string[]) : []
+  if (!socials.length) return
+  const postId = result?.postId as string | undefined
+  if (!postId) return
+  const title = (result?.title as string) || 'New post'
+  const wpUrl = (result?.wordpressUrl as string) || ''
+
+  const { data: integ } = await admin.from('integrations').select('tier').eq('user_id', job.user_id).maybeSingle()
+  const tier = normalizeTier(integ?.tier)
+  const connected = await getConnectedPlatforms(admin, job.user_id)
+
+  const caption = `${title}${wpUrl ? `\n\n${wpUrl}` : ''}`.slice(0, 900)
+  const now = Date.now()
+  const rows = socials
+    .filter((p): p is SchedulableSocial => AUTOPILOT_SOCIALS.includes(p as SchedulableSocial))
+    .filter(p => tierAllowsSocial(tier, p) && connected.has(p))
+    .map(p => ({
+      user_id: job.user_id,
+      blog_post_id: postId,
+      platform: p,
+      // At least 2 min out so it fires after the blog is fully live; keep the
+      // per-platform spacing so channels don't all post at once.
+      scheduled_at: new Date(now + Math.max(2, DEFAULT_SOCIAL_OFFSETS_MIN[p] ?? 2) * 60_000).toISOString(),
+      body_text: caption,
+      status: 'pending' as const,
+      kind: 'social' as const,
+      parent_id: null,
+    }))
+  if (!rows.length) return
+
+  let { error } = await admin.from('scheduled_posts').insert(rows)
+  if (error && /column .* does not exist|does not exist|unknown column/i.test(error.message || '')) {
+    const legacy = rows.map(({ kind, parent_id, ...r }) => r)
+    error = (await admin.from('scheduled_posts').insert(legacy)).error
+  }
+  if (error) console.warn('[auto-blog] social cascade insert failed:', error.message)
+}
 
 // How long the worker awaits the internal generate self-call before aborting.
 // Default 290s stays just under the legacy 300s function cap. When the operator
@@ -49,8 +106,15 @@ export async function runGenerationJob(
   job: GenerationJob,
 ): Promise<Record<string, unknown>> {
   switch (job.kind) {
-    case 'blog':
-      return runServiceRouteJob(job, '/api/blog/generate', 'blog generation')
+    case 'blog': {
+      const result = await runServiceRouteJob(job, '/api/blog/generate', 'blog generation')
+      // Auto-pilot opt-in: cascade the published post to the creator's chosen
+      // socials. Best-effort — never fail the blog job over a social hiccup.
+      try { await cascadeAutopilotSocials(_admin, job, result) } catch (e) {
+        console.warn('[auto-blog] social cascade skipped:', e instanceof Error ? e.message : String(e))
+      }
+      return result
+    }
     case 'campaign':
       return runServiceRouteJob(job, '/api/campaigns/generate', 'campaign generation')
     case 'comparison':
