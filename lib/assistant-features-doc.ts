@@ -738,6 +738,20 @@ Routing. Geniuslink (preferred — geo-targets shoppers to their local
 Amazon store) OR Amazon Associates tracking tag (simple fallback —
 appended to URLs).
 
+**"How do I know which channel my clicks came from (blog vs Facebook vs
+Pinterest)?"** — This works ONLY with Geniuslink connected. When you publish
+the same post to different places, MVP automatically routes each channel's
+link into its own Geniuslink GROUP: your blog to a group named after your
+domain, YouTube to MVP-YOUTUBE, and each social channel to MVP-FACEBOOK,
+MVP-PINTEREST, MVP-TWITTER, MVP-THREADS, MVP-LINKEDIN, MVP-BLUESKY,
+MVP-TELEGRAM, MVP-TIKTOK. MVP creates these groups for you on first use — you
+don't set anything up. Then in your Geniuslink dashboard, clicks are broken out
+by group, so you can see exactly which channel is driving traffic. Deal Radar
+and Walmart/Wayward quick-posts use the same per-channel groups. Note: this is a
+Geniuslink-only feature — if you use just an Amazon Associates tag (no
+Geniuslink), Amazon tags can't split clicks by source, so everything shows as
+one bucket. Earnings-per-post still work via the Amazon subtag either way.
+
 **"How do I find new deals to promote?"** — Amazon Associates → Deals
 Hub at affiliate-program.amazon.com/deals-hub. Browse, copy any ASIN
 or product URL, paste into /deals.

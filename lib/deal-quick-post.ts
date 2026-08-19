@@ -15,6 +15,7 @@ import { publishDealToSocials, QUICK_POST_PLATFORMS, type QuickPostPlatform, typ
 import { publishDealStory } from '@/lib/deal-story-publish'
 import { buildDealCardImage } from '@/lib/deal-card'
 import { createGeniuslinkService } from '@/services/geniuslink'
+import { CHANNEL_GROUP_NAMES, channelKey } from '@/lib/geniuslink-group'
 import type { Tier } from '@/lib/tier'
 
 export interface DealQuickPostInput {
@@ -192,7 +193,10 @@ export async function buildPlatformGeniuslinks(
   }
 
   for (const p of platforms) {
-    const name = p.toUpperCase()
+    // Unified per-channel group name (MVP-FACEBOOK, …) so deal posts land in the
+    // SAME buckets as the rest of MVP's per-channel attribution, not a separate
+    // bare-named group.
+    const name = CHANNEL_GROUP_NAMES[channelKey(p) || ''] || `MVP-${p.toUpperCase()}`.slice(0, 20)
     try {
       let groupId = groupsByName.get(name.toLowerCase()) ?? null
       if (!groupId) {

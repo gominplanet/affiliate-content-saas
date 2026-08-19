@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { scrubBanned } from '@/lib/scrub'
 import { createServerClient } from '@/lib/supabase/server'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
+import { channelShareUrl } from '@/lib/channel-share-url'
 import { ThreadsService } from '@/services/threads'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
@@ -68,6 +69,13 @@ export async function POST(request: NextRequest) {
 
     if (!p) return NextResponse.json({ error: 'Post not found' }, { status: 404 })
 
+    // Per-channel Geniuslink: the Threads link lands in MVP-THREADS. We resolve
+    // it up front and feed it INTO the prompt so the model bakes the right link.
+    const thShareUrl = (await channelShareUrl({
+      supabase, post: p, channel: 'threads', userId: user.id,
+      apiKey: ig?.geniuslink_api_key, apiSecret: ig?.geniuslink_api_secret,
+    })) || (p.geniuslink_blog_url || p.wordpress_url)
+
     const thSocialCount = readSocialCount(p, 'threads')
     const thCap = evaluateSocialCap(thSocialCount)
     if (!dryRun && thCap.exceeded) {
@@ -98,7 +106,7 @@ export async function POST(request: NextRequest) {
 
 Blog title: ${p.title}
 Blog excerpt: ${p.excerpt || p.content?.substring(0, 300) || ''}
-Blog URL: ${p.geniuslink_blog_url || p.wordpress_url}
+Blog URL: ${thShareUrl}
 
 Write ONLY the post text, nothing else. Do not include a disclaimer or #ad tag.`,
         }],

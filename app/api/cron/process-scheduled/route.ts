@@ -46,6 +46,7 @@ import { resolveBestThumbnail } from '@/lib/youtube-frames'
 import { resolvePostAffiliateLink } from '@/lib/ig-dm'
 import { ensureAffiliateGeniuslink } from '@/lib/blog-share-url'
 import { resolveGeniuslinkGroupId } from '@/lib/geniuslink-group'
+import { channelShareUrl } from '@/lib/channel-share-url'
 import { parseLinkPrefs, linkPrefFor, composeCaption, primaryCardUrl, effectiveDisclosure, youtubeWatchUrl } from '@/lib/social-link-mode'
 import { buildPinAssets, composePinDescription } from '@/lib/pin-assets'
 import { getAccountHeadlineStyle } from '@/lib/thumbnail-style'
@@ -376,7 +377,7 @@ async function publishOne(
   const [postRes, intRes] = await Promise.all([
     admin
       .from('blog_posts')
-      .select('id,title,wordpress_url,wordpress_post_id,wordpress_site_id,geniuslink_code,content,twitter_post_id,threads_post_id,linkedin_post_id,facebook_post_id,bluesky_post_uri,pinterest_pin_id,telegram_message_id,youtube_videos(thumbnail_url,youtube_video_id)')
+      .select('id,title,wordpress_url,wordpress_post_id,wordpress_site_id,geniuslink_code,geniuslink_blog_url,geniuslink_channel_urls,content,twitter_post_id,threads_post_id,linkedin_post_id,facebook_post_id,bluesky_post_uri,pinterest_pin_id,telegram_message_id,youtube_videos(thumbnail_url,youtube_video_id)')
       .eq('id', row.blog_post_id)
       .single(),
     admin
@@ -444,6 +445,26 @@ async function publishOne(
       }
     } catch { /* keep the stored URL on any failure */ }
   }
+
+  // Per-channel Geniuslink attribution: mint (or reuse) a channel-grouped
+  // geni.us link for THIS post's blog URL so the Geniuslink dashboard splits
+  // clicks by source (MVP-FACEBOOK vs MVP-PINTEREST vs …). row.platform IS the
+  // channel. Best-effort — falls back to the plain URL on any hiccup. Pass the
+  // freshly-repaired `url` as the destination so we never wrap a stale ?p= link.
+  try {
+    const chUrl = await channelShareUrl({
+      supabase: admin,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      post: { ...(post as any), wordpress_url: url },
+      channel: row.platform,
+      userId: row.user_id,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      apiKey: (integration as any).geniuslink_api_key,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      apiSecret: (integration as any).geniuslink_api_secret,
+    })
+    if (chUrl) url = chUrl
+  } catch { /* keep the plain url */ }
 
   // Per-user link prefs (affiliate on/off × content blog/video/none) for FB /
   // LinkedIn / Bluesky, plus the video URL + Amazon-tag flag for disclosure.

@@ -8,6 +8,8 @@
 import { PinterestService } from '@/services/pinterest'
 import { createWordPressService } from '@/services/wordpress'
 import { scrubBanned } from '@/lib/scrub'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { channelWrapLink } from '@/lib/channel-share-url'
 
 const GENERIC = /^(blog|uncategorized|general|news|misc|other|posts?)$/i
 
@@ -59,7 +61,18 @@ export async function publishPinForPost(args: PublishArgs): Promise<{ pinId: str
   if (!useOverride && !/^https?:\/\//i.test(blogLink)) {
     throw new PinPublishError('This post has no blog URL to link the pin to.', 400)
   }
-  const destLink = useOverride ? override : blogLink
+  let destLink = useOverride ? override : blogLink
+  // Per-channel Geniuslink: route the pin's link into MVP-PINTEREST so pin
+  // clicks attribute to Pinterest. Best-effort — no creds / already a geni.us
+  // link / API hiccup leaves the link untouched. (A product-override link that's
+  // already a geni.us keeps its existing group; the blog link is the common case.)
+  try {
+    destLink = await channelWrapLink({
+      supabase: createAdminClient(), destination: destLink, channel: 'pinterest',
+      userId: p.user_id, apiKey: ig?.geniuslink_api_key, apiSecret: ig?.geniuslink_api_secret,
+      label: (p.title as string) || 'Pin',
+    })
+  } catch { /* keep destLink */ }
 
   // Never fall back to a raw (unscrubbed) value — that would leak the
   // banned word in the edge case where the scrubbed string is empty.

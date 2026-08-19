@@ -12,6 +12,7 @@ import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } 
 import { resolveBlogPostId } from '@/lib/resolve-post-id'
 import { recordSocialPermalink } from '@/lib/social-permalink'
 import { blogShareUrl } from '@/lib/blog-share-url'
+import { channelShareUrl } from '@/lib/channel-share-url'
 import { socialPermalink } from '@/lib/brand-recap'
 import { fetchOgImage, stripLinkPlaceholders } from '@/lib/og-image'
 import { AFFILIATE_DISCLAIMER_DEFAULT } from '@/lib/social-disclaimer'
@@ -58,7 +59,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: postRow } = await supabase
       .from('blog_posts')
-      .select('id,title,excerpt,content,wordpress_url,wordpress_site_id,geniuslink_blog_url,video_id,social_publish_counts,geniuslink_code')
+      .select('id,title,excerpt,content,wordpress_url,wordpress_site_id,geniuslink_blog_url,geniuslink_channel_urls,video_id,social_publish_counts,geniuslink_code')
       .eq('id', postId)
       .eq('user_id', user.id)
       .single()
@@ -187,7 +188,12 @@ Return ONLY the post text, no extra commentary.`,
     const videoUrl = youtubeWatchUrl(ytVideoId)
     const disclosure = effectiveDisclosure(brand?.affiliate_disclaimer || AFFILIATE_DISCLAIMER_DEFAULT, affiliateLink, !!integration?.amazon_associates_tag)
     const cleaned = scrubBanned(stripLinkPlaceholders(rawText))
-    const shareUrl = blogShareUrl(post) || (post.wordpress_url as string)
+    // Per-channel Geniuslink: LinkedIn share lands in MVP-LINKEDIN. Best-effort.
+    const shareUrl = (await channelShareUrl({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      supabase, post: post as any, channel: 'linkedin', userId: user.id,
+      apiKey: integration?.geniuslink_api_key, apiSecret: integration?.geniuslink_api_secret,
+    })) || blogShareUrl(post) || (post.wordpress_url as string)
     const composed = composeCaption({
       product: pref.product, content: pref.content, writeUp: cleaned,
       blogUrl: shareUrl, videoUrl, affiliateLink, disclosure, blogLabel: 'Read the full review',
