@@ -10,6 +10,7 @@ import PageHero from '@/components/layout/PageHero'
 import { toast } from 'sonner'
 import { Loader2, Search, Sparkles, ExternalLink, ListChecks, Pencil, RefreshCw } from 'lucide-react'
 import { errText } from '@/lib/err-text'
+import { requestIdeaListScan, requestStorefrontScan } from '@/lib/extension-frame'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { HeadlineStyleToggle, useHeadlineStyle, headlineStyleValue } from '@/components/thumbnails/HeadlineStyleToggle'
 
@@ -63,10 +64,22 @@ export default function IdeaListsPage() {
     const m = (raw || '').match(/amazon\.[a-z.]+\/shop\/([^/?#\s]+)/i) || (raw || '').trim().match(/^@?([A-Za-z0-9._-]{2,})$/)
     if (!m) { toast.error('Enter your Amazon storefront link (amazon.com/shop/yourhandle).'); return }
     const root = `https://www.amazon.com/shop/${m[1]}`
-    // #mvp-sync tells SCOUT this visit is MVP-initiated, so it runs the idea-list
-    // scan. A plain storefront visit (no marker) leaves idea lists alone.
-    window.open(`${root}#mvp-sync`, '_blank', 'noopener,noreferrer')
     setStorefrontUrl(root)
+    // Prefer SCOUT's BACKGROUND read — the storefront opens in a hidden tab, gets
+    // enumerated, and closes, so the user never leaves MVP. Only fall back to a
+    // foreground tab when SCOUT isn't installed to do it quietly.
+    setSyncing(true)
+    try {
+      const r = await requestStorefrontScan(root)
+      if (r.ok) { toast.success(r.count ? `Synced ${r.count} idea list${r.count === 1 ? '' : 's'}` : 'Storefront checked'); await loadSynced() }
+      else if (r.error === 'not-installed' || r.error === 'timeout') {
+        // #mvp-sync tells SCOUT this visit is MVP-initiated, so it runs the scan.
+        window.open(`${root}#mvp-sync`, '_blank', 'noopener,noreferrer')
+      } else {
+        toast.error('Could not read your storefront. Open it on Amazon and try again.')
+      }
+    } catch { window.open(`${root}#mvp-sync`, '_blank', 'noopener,noreferrer') }
+    finally { setSyncing(false) }
     if (persist) {
       try {
         const supabase = createBrowserClient()
@@ -118,6 +131,22 @@ export default function IdeaListsPage() {
     return false
   }
 
+  // Get a synced list's products WITHOUT a foreground tab: SCOUT opens the list
+  // in a hidden background tab, reads it, and closes it — the user stays in MVP.
+  // Only when SCOUT can't (not installed / timed out) do we fall back to the old
+  // open-the-tab-and-poll flow.
+  const ensureListProducts = useCallback(async (listId: string, listUrl: string): Promise<boolean> => {
+    const r = await requestIdeaListScan(listUrl)
+    if (r.ok) { await loadSynced(); return (r.count ?? 0) > 0 }
+    if (r.error === 'not-installed' || r.error === 'timeout') {
+      const tab = window.open(listUrl + '#mvp-sync', '_blank')   // fallback: foreground + poll
+      const ok = await pollForProducts(listId)
+      try { tab?.close() } catch { /* user can close */ }
+      return ok
+    }
+    return false
+  }, [loadSynced])
+
   // Manual mode: rank every product in the list so the creator can hand-pick.
   // If a synced list hasn't pulled its products yet, sync it first (open Amazon,
   // SCOUT reads it) — no auto→create→manual round-trip.
@@ -132,10 +161,8 @@ export default function IdeaListsPage() {
         // call read the list URL server-side (~first 20) so there's always
         // something to pick from.
         if (l && !l.hasItems && active.url) {
-          const tab = window.open(active.url + '#mvp-sync', '_blank')   // #mvp-sync authorizes SCOUT (your own list)
-          const ok = await pollForProducts(active.listId!)
-          try { tab?.close() } catch { /* user can close */ }
-          if (!ok) toast('Loaded the first products from Amazon — open the list with SCOUT for the full set.')
+          const ok = await ensureListProducts(active.listId!, active.url)
+          if (!ok) toast('Loaded the first products from Amazon — SCOUT reads the full set in the background.')
         }
       }
       const payload = active.source === 'synced' ? { listId: active.listId, listUrl: active.url } : { items: active.items }
@@ -186,15 +213,12 @@ export default function IdeaListsPage() {
       const l = synced.find(s => s.id === active.listId)
       if (l && !l.hasItems) {
         if (!active.url) { toast.error('No Amazon link for this list — paste its URL above instead.'); return }
-        // Open synchronously inside the click so the popup isn't blocked. No
-        // `noopener` here on purpose — we keep the handle so we can auto-close
-        // the tab once SCOUT has read the products (least friction for the user).
-        const tab = window.open(active.url + '#mvp-sync', '_blank')   // #mvp-sync authorizes SCOUT (your own list)
+        // SCOUT reads the list in a hidden background tab (user stays here) and
+        // closes it. Falls back to a foreground tab only if SCOUT isn't available.
         setSyncing(true)
-        const ok = await pollForProducts(active.listId!)
+        const ok = await ensureListProducts(active.listId!, active.url)
         setSyncing(false)
-        try { tab?.close() } catch { /* user can close it */ }
-        if (!ok) { toast.error('Amazon didn’t finish loading this list in time. Click Create again to retry.'); return }
+        if (!ok) { toast.error('Couldn’t finish reading this list. Click Create again to retry.'); return }
         toast.success('Products synced — building your guide')
       }
     }
@@ -278,7 +302,7 @@ export default function IdeaListsPage() {
           )}
           {active.source === 'synced' && !synced.find(s => s.id === active.listId)?.hasItems && (
             <div className="rounded-lg border border-[#7C3AED]/40 bg-[#7C3AED]/10 p-2.5 text-[11px] text-[#5b3aa6] dark:text-[#c9b6ff] mb-3">
-              This list&apos;s products load on demand. When you click <strong>Create shopping guide</strong>, MVP opens it on Amazon so SCOUT reads every product, then builds the guide automatically. Keep the Amazon tab open until it finishes (SCOUT needs it visible).
+              This list&apos;s products load on demand. When you click <strong>Create shopping guide</strong>, SCOUT reads every product from Amazon in the background (no tab to babysit — you stay right here), then builds the guide automatically.
             </div>
           )}
           {/* Mode: MVP picks (auto) vs I choose (manual) */}
