@@ -35,6 +35,17 @@ export async function GET(req: Request) {
   // already granted (we don't re-pick the account for an upgrade).
   const wantUpload = new URL(req.url).searchParams.get('intent') === 'upload'
 
+  // Who may grant the sensitive youtube.upload scope. Dark to the public until
+  // Google verifies it; admins can grant it now (to record the verification demo
+  // + dogfood). Once NEXT_PUBLIC_YOUTUBE_UPLOAD_ENABLED flips on, everyone can.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: intRow } = await (supabase as any)
+    .from('integrations').select('tier').eq('user_id', user.id).single()
+  const uploadEligible = youtubeUploadEnabled({ tier: intRow?.tier as string | null })
+  // Add the upload scope when the viewer is eligible AND either they explicitly
+  // asked for it (incremental auth) or the public flag is on (grab it on connect).
+  const addUploadScope = uploadEligible && (wantUpload || youtubeUploadEnabled())
+
   // Encode user ID (+ optional return path) in state so the callback can
   // identify the user without a session cookie. JSON now; the callback still
   // accepts the legacy bare-uid format for any in-flight old requests.
@@ -58,7 +69,7 @@ export async function GET(req: Request) {
     // for everyone once the flag is flipped after Google verifies the scope — so
     // a normal connect never requests upload and verification needs no upload
     // demo video.
-    ...((wantUpload || youtubeUploadEnabled()) ? ['https://www.googleapis.com/auth/youtube.upload'] : []),
+    ...(addUploadScope ? ['https://www.googleapis.com/auth/youtube.upload'] : []),
   ].join(' '))
   url.searchParams.set('access_type', 'offline')
   // Incremental authorization ONLY for the on-demand upload upgrade: there we
