@@ -108,6 +108,7 @@ export async function POST(request: Request) {
 
     const input: CollabInput = {
       brandName,
+      brandUrl: body.brandUrl?.toString().trim() || '',
       amazonStorefront: body.amazonStorefront?.toString().trim() || '',
       websiteUrl: body.websiteUrl?.toString().trim() || '',
       youtubeUrl: body.youtubeUrl?.toString().trim() || '',
@@ -157,6 +158,7 @@ export async function POST(request: Request) {
       .insert({
         user_id: ownerId,
         brand_name: input.brandName,
+        brand_url: input.brandUrl || null,
         amazon_storefront: input.amazonStorefront || null,
         website_url: input.websiteUrl || null,
         youtube_url: input.youtubeUrl || null,

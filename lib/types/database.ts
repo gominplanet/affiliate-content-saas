@@ -567,6 +567,7 @@ export type Database = {
           banner_ads: boolean
           banner_ads_amount: string | null
           brand_name: string
+          brand_url: string | null
           collabs_done: string | null
           created_at: string
           example_links: string[]
@@ -589,6 +590,7 @@ export type Database = {
           banner_ads?: boolean
           banner_ads_amount?: string | null
           brand_name: string
+          brand_url?: string | null
           collabs_done?: string | null
           created_at?: string
           example_links?: string[]
@@ -611,6 +613,7 @@ export type Database = {
           banner_ads?: boolean
           banner_ads_amount?: string | null
           brand_name?: string
+          brand_url?: string | null
           collabs_done?: string | null
           created_at?: string
           example_links?: string[]

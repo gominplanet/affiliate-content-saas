@@ -51,9 +51,17 @@ export async function GET() {
       .select('brand_name,contact_name,contact_email,message,source_url,read_at,archived,created_at')
       .eq('owner_id', ownerId).order('created_at', { ascending: false }).limit(1000),
     fetchCampaigns(),
-    sb.from('collaborations')
-      .select('brand_name,generated_email,platforms,website_url,youtube_url,created_at')
-      .eq('user_id', ownerId).order('created_at', { ascending: false }).limit(1000),
+    // brand_url is migration 260 — if a DB is a beat behind, drop it and retry
+    // rather than blanking every pitch.
+    (async () => {
+      const cols = 'brand_name,brand_url,product_or_asin,generated_email,platforms,website_url,youtube_url,created_at'
+      const res = await sb.from('collaborations').select(cols)
+        .eq('user_id', ownerId).order('created_at', { ascending: false }).limit(1000)
+      if (!res.error) return res
+      return sb.from('collaborations')
+        .select('brand_name,product_or_asin,generated_email,platforms,website_url,youtube_url,created_at')
+        .eq('user_id', ownerId).order('created_at', { ascending: false }).limit(1000)
+    })(),
   ])
 
   const data = buildBrandHub(
