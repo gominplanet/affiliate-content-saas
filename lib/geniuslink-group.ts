@@ -203,6 +203,91 @@ export async function resolveGeniuslinkYouTubeGroupId(opts: ResolveYouTubeOpts):
   return groupId
 }
 
+// ── Per-social-channel groups ────────────────────────────────────────────────
+// Blog links route to the per-domain group and YouTube to MVP-YOUTUBE. Every
+// OTHER social channel gets its own MVP-<CHANNEL> group so the Geniuslink
+// dashboard splits clicks by where the post went out. All names are ≤ 20 chars
+// (Geniuslink's hard cap). 'x' is an alias for twitter.
+export const CHANNEL_GROUP_NAMES: Record<string, string> = {
+  facebook: 'MVP-FACEBOOK',
+  pinterest: 'MVP-PINTEREST',
+  twitter: 'MVP-TWITTER',
+  x: 'MVP-TWITTER',
+  threads: 'MVP-THREADS',
+  linkedin: 'MVP-LINKEDIN',
+  bluesky: 'MVP-BLUESKY',
+  telegram: 'MVP-TELEGRAM',
+  tiktok: 'MVP-TIKTOK',
+  instagram: 'MVP-INSTAGRAM',
+  youtube: YOUTUBE_COPILOT_GROUP_NAME,
+}
+
+/** Normalize a caller's platform string to a channel key we have a group for. */
+export function channelKey(platform: string | null | undefined): string | null {
+  const k = (platform || '').trim().toLowerCase()
+  if (!k) return null
+  if (k === 'x' || k === 'twitter/x') return 'twitter'
+  return CHANNEL_GROUP_NAMES[k] ? k : null
+}
+
+interface ResolveChannelOpts {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any
+  userId: string
+  channel: string
+  apiKey: string | null | undefined
+  apiSecret: string | null | undefined
+}
+
+/**
+ * Resolve the Geniuslink group id for a social channel, creating + caching it on
+ * first use. Cache lives in integrations.geniuslink_channel_groups (a jsonb map
+ * channel→groupId, migration 261). Returns null on any failure so callers fall
+ * back to the default group with no behaviour regression.
+ */
+export async function resolveGeniuslinkChannelGroupId(opts: ResolveChannelOpts): Promise<number | null> {
+  const { supabase, userId, apiKey, apiSecret } = opts
+  if (!apiKey || !apiSecret) return null
+  const key = channelKey(opts.channel)
+  if (!key) return null
+  const name = CHANNEL_GROUP_NAMES[key]
+  if (!name) return null
+
+  // Step 1 — cached id on the integrations row.
+  const { data: row } = await supabase
+    .from('integrations')
+    .select('geniuslink_channel_groups')
+    .eq('user_id', userId)
+    .maybeSingle() as { data: { geniuslink_channel_groups: Record<string, number> | null } | null }
+  const cache = (row?.geniuslink_channel_groups && typeof row.geniuslink_channel_groups === 'object')
+    ? row.geniuslink_channel_groups : {}
+  const cached = cache[key]
+  if (typeof cached === 'number' && cached > 0) return cached
+
+  // Step 2 + 3 — find or create the MVP-<CHANNEL> group.
+  const svc = createGeniuslinkService(apiKey, apiSecret)
+  let groupId: number | null = null
+  try {
+    groupId = await svc.getOrCreateGroupId(name)
+  } catch (err) {
+    console.error(`[geniuslink-group] channel-group resolve failed (${key}):`, err)
+    return null
+  }
+  if (!groupId) return null
+
+  // Step 4 — merge into the cached map. Best-effort; another send re-resolves.
+  await supabase
+    .from('integrations')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .update({ geniuslink_channel_groups: { ...cache, [key]: groupId } } as any)
+    .eq('user_id', userId)
+    .then(() => undefined, (err: unknown) => {
+      console.error('[geniuslink-group] channel-group cache write failed:', err)
+    })
+
+  return groupId
+}
+
 /**
  * Append Amazon's per-click subID parameter (ascsubtag) to an Amazon
  * destination URL. The subtag rides through Geniuslink's redirect and
