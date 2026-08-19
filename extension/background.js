@@ -2320,20 +2320,29 @@ async function armCcDrainOnMvp() {
   }
 }
 
-// In-page: select the New Opportunities / Active tab so the right export button
-// is the one on screen. Best-effort; returns light diag.
-function ccSelectTabInPage(which) {
-  const wantTab = which === 'accepted' ? 'active' : 'new opportunities'
+// In-page: get to the view that has the bulk-export button. The CC page opens on
+// the "Sponsored Products for Creators" tab by default, but the "Download all …"
+// buttons live under "Affiliate+ campaigns" → its New Opportunities / Active
+// sub-tab. So we click Affiliate+ first, let it load, then the sub-tab. Async so
+// the two clicks are correctly ordered within one injection. Best-effort.
+async function ccSelectTabInPage(which) {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const norm = (s) => (s || '').replace(/\s+/g, ' ').trim().toLowerCase()
-  const els = Array.from(document.querySelectorAll('button, a, [role="tab"], [role="button"], span, div'))
-  let clicked = false
-  try {
-    // Prefer a short element (the tab label itself, not a big wrapper).
-    const cands = els.filter(el => norm(el.textContent) === wantTab)
+  const pick = (match) => {
+    const els = Array.from(document.querySelectorAll('button, a, [role="tab"], [role="button"], span, div, li'))
+    const cands = els.filter(el => { const t = norm(el.textContent); return t.length < 60 && match(t) })
     cands.sort((a, b) => (a.textContent || '').length - (b.textContent || '').length)
-    if (cands[0]) { cands[0].click(); clicked = true }
-  } catch (e) {}
-  return { clicked, url: location.href.slice(0, 140) }
+    return cands[0] || null
+  }
+  const click = (el) => { if (!el) return false; try { (el.closest('button, a, [role="tab"], [role="button"], li') || el).click(); return true } catch (e) { return false } }
+  // 1) Top-level: Affiliate+ campaigns (the tab that actually offers the full
+  //    catalog export). The '+' survives normalization.
+  const onAffiliate = click(pick(t => t === 'affiliate+ campaigns' || (t.includes('affiliate+') && t.includes('campaign'))))
+  await sleep(1800) // let the Affiliate+ view + its sub-tabs render
+  // 2) Sub-tab: New Opportunities (available) or Active (accepted).
+  const wantSub = which === 'accepted' ? 'active' : 'new opportunities'
+  const onSub = click(pick(t => t === wantSub))
+  return { onAffiliate, onSub, url: location.href.slice(0, 140) }
 }
 
 // In-page: find the "Download all …" button. If doClick, click it. ALWAYS
