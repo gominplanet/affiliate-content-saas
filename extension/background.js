@@ -2023,6 +2023,104 @@ async function scanStorefrontBackground(rawUrl) {
   }
 }
 
+// ── Storefront earnings: one-click BACKGROUND sync (the "Load more history"
+// button on /storefront calls this). Opens the Amazon Associates report in a
+// hidden tab, scrapes the per-ASIN earnings table for the current view AND the
+// standard quick-ranges (Last Week / This Month / Last Month), pushes to MVP,
+// and closes. Self-contained scraper ported from content.js mvpEarningsScout.
+async function harvestEarningsInPage() {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  const num = (s) => { const n = parseFloat(String(s || '').replace(/[^0-9.\-]/g, '')); return isFinite(n) ? n : null }
+  const toISO = (s) => { const d = new Date(s); return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10) }
+  function pickPeriod() {
+    const txt = document.body.innerText || ''
+    const sel = (txt.match(/\b(This Week|Last Week|This Month|Last Month|Year to Date|Last \d+ Days?)\b/i) || [])[1] || ''
+    let type = /week/i.test(sel) ? 'weekly' : /month|year/i.test(sel) ? 'monthly' : ''
+    let start = null, end = null
+    const m = txt.match(/([A-Z][a-z]{2})\s+(\d{1,2})(?:,?\s*(\d{4}))?\s*(?:-|–|—|to)\s*([A-Z][a-z]{2})\s+(\d{1,2}),?\s*(\d{4})/)
+    if (m) { const year = m[6]; start = toISO(`${m[1]} ${m[2]} ${m[3] || year}`); end = toISO(`${m[4]} ${m[5]} ${year}`) }
+    if (!type) type = (start && end && Math.round((Date.parse(end) - Date.parse(start)) / 86400000) <= 10) ? 'weekly' : 'monthly'
+    return { type, start, end }
+  }
+  function findTable() {
+    for (const t of document.querySelectorAll('table')) {
+      const head = ((t.querySelector('thead') || t).innerText || '').toLowerCase()
+      if (/total earnings/.test(head) && /items shipped/.test(head)) return t
+    }
+    return null
+  }
+  function colMap(table) {
+    const ths = [...table.querySelectorAll('thead th, thead td')]; const map = {}
+    ths.forEach((th, i) => {
+      const h = (th.innerText || '').toLowerCase().replace(/\s+/g, ' ').trim()
+      if (h === 'clicks' && map.clicks == null) map.clicks = i
+      else if (/items shipped revenue/.test(h) && map.revenue == null) map.revenue = i
+      else if (/total earnings/.test(h) && map.commission == null) map.commission = i
+      else if (/^items shipped$/.test(h) && map.units == null) map.units = i
+    })
+    return map
+  }
+  function scrapeCurrent() {
+    const table = findTable(); if (!table) return []
+    const map = colMap(table); const { type, start, end } = pickPeriod(); if (!start || !end) return []
+    const out = []
+    for (const tr of table.querySelectorAll('tbody tr')) {
+      const cells = [...tr.children]; if (!cells.length) continue
+      const asin = (tr.innerHTML.match(/\/(?:dp|gp\/product|product)\/([A-Z0-9]{10})/) || [])[1]; if (!asin) continue
+      const cell = (i) => (i != null && cells[i]) ? (cells[i].innerText || '').trim() : ''
+      const link = tr.querySelector('a[href*="/product/"], a[href*="/dp/"]')
+      const title = ((link && (link.getAttribute('title') || link.textContent)) || '').trim().slice(0, 300)
+      const rec = { asin, periodType: type, periodStart: start, periodEnd: end }
+      if (title) rec.productTitle = title
+      if (map.revenue != null) rec.revenue = num(cell(map.revenue))
+      if (map.commission != null) rec.commission = num(cell(map.commission))
+      if (map.units != null) rec.units = num(cell(map.units))
+      if (map.clicks != null) rec.clicks = num(cell(map.clicks))
+      if (rec.revenue == null && rec.commission == null && rec.units == null) continue
+      out.push(rec)
+    }
+    return out
+  }
+  const seen = new Set(); const all = []
+  const add = (rows) => { for (const r of rows) { const k = r.asin + '|' + r.periodType + '|' + r.periodStart; if (!seen.has(k)) { seen.add(k); all.push(r) } } }
+  // Give the SPA a beat, then scrape the current view + the quick-ranges.
+  await sleep(500)
+  add(scrapeCurrent())
+  for (const label of ['Last Week', 'This Month', 'Last Month']) {
+    try {
+      let clicked = false
+      for (const el of document.querySelectorAll('a,button,[role="button"],[role="tab"],span,li,label')) {
+        const t = (el.textContent || '').replace(/\s+/g, ' ').trim()
+        if (t.toLowerCase() === label.toLowerCase() && el.offsetParent !== null) { el.click(); clicked = true; break }
+      }
+      if (clicked) { await sleep(2800); add(scrapeCurrent()) }
+    } catch (e) {}
+  }
+  return { ok: true, rows: all, signedOut: /\/ap\/signin/.test(location.href) }
+}
+
+async function scanStorefrontEarningsBackground() {
+  const url = 'https://affiliate-program.amazon.com/home/reports'
+  let tabId = null
+  try {
+    const tab = await chrome.tabs.create({ url, active: false })
+    tabId = tab.id
+    await waitForTabLoad(tabId, 30000)
+    await _sleep(3500) // the report SPA needs time to render the table
+    const results = await chrome.scripting.executeScript({ target: { tabId }, func: harvestEarningsInPage })
+    const r = (results && results[0] && results[0].result) || null
+    if (!r || !r.ok) return { ok: false, error: 'no-result' }
+    if (r.signedOut) return { ok: false, error: 'signed-out' }
+    if (!r.rows || !r.rows.length) return { ok: true, count: 0 }
+    const push = await pushEarningsToMvp(r.rows)
+    return { ok: !!(push && push.ok), count: r.rows.length, upserted: push && push.upserted, error: (push && push.ok) ? undefined : (push && push.error) }
+  } catch (e) {
+    return { ok: false, error: (e && e.message) || 'scan-failed' }
+  } finally {
+    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+  }
+}
+
 // ── Read the Amazon PRODUCT page (title / bullets / description / image) ─────
 // Runs in the user's logged-in browser, so it succeeds where the MVP server's
 // scrape is blocked (Amazon hard-blocks datacenter IPs). Self-contained — runs
@@ -3783,6 +3881,15 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     // Enumerate the storefront's idea lists in a BACKGROUND tab, then close it.
     const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 120000)
     scanStorefrontBackground(msg.url)
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true // async response
+  }
+  if (msg.type === 'MVP_SCAN_EARNINGS') {
+    // One-click storefront sync: scrape the Amazon earnings report (current view
+    // + quick-ranges) in a BACKGROUND tab, push to MVP, then close.
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 120000)
+    scanStorefrontEarningsBackground()
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async response
