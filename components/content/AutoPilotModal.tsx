@@ -101,8 +101,8 @@ export default function AutoPilotModal({ onClose, onChange }: { onClose: () => v
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
-      <div className="card w-full max-w-md p-5 bg-white dark:bg-[#18181b]" onClick={e => e.stopPropagation()}>
-        <div className="flex items-start justify-between mb-3">
+      <div className="card w-full max-w-lg p-0 max-h-[86vh] flex flex-col bg-white dark:bg-[#18181b]" onClick={e => e.stopPropagation()}>
+        <div className="shrink-0 flex items-start justify-between px-5 pt-5 pb-3 border-b border-[var(--border-2,#e5e5e7)]">
           <div className="flex items-center gap-2">
             <Rocket size={18} className="text-[#7C3AED]" />
             <div>
@@ -113,6 +113,7 @@ export default function AutoPilotModal({ onClose, onChange }: { onClose: () => v
           <button onClick={onClose} className="text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-white p-1" title="Close"><X size={18} /></button>
         </div>
 
+        <div className="flex-1 overflow-y-auto px-5 py-4">
         {loading ? (
           <div className="flex items-center gap-2 text-sm text-[#86868b] py-10 justify-center"><Loader2 size={16} className="animate-spin" /> Loading…</div>
         ) : (
@@ -213,18 +214,22 @@ export default function AutoPilotModal({ onClose, onChange }: { onClose: () => v
               </div>
             )}
 
-            <ul className="text-[12px] text-[#6e6e73] dark:text-[#ebebf0] space-y-1.5 leading-relaxed">
-              <li>• Turns your next un-blogged YouTube video into a full post (hero + in-article images).</li>
-              <li>• Posts on the schedule you pick above (up to one a day), drawn from your monthly post allowance. Every day suits Studio and Pro; on Creator, pick a lighter cadence so it lasts the month.</li>
-              <li>• Blog only by default. Turn on any socials above to auto-post them as each blog post goes live.</li>
-              <li>• When your monthly allowance runs out it pauses, emails you, and resumes next cycle. Want more before then? Generate posts manually.</li>
-            </ul>
-
-            <div className="flex justify-end border-t border-[var(--border-2,#e5e5e7)] pt-3">
-              <button onClick={onClose} className="px-4 py-2 rounded-lg text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] hover:bg-[var(--surface-hover,#f5f5f7)]">Done</button>
-            </div>
+            <details className="text-[12px] text-[#6e6e73] dark:text-[#ebebf0]">
+              <summary className="cursor-pointer text-[#7C3AED] font-medium">How it works</summary>
+              <ul className="space-y-1.5 leading-relaxed mt-2">
+                <li>• Turns your next un-blogged YouTube video into a full post (hero + in-article images).</li>
+                <li>• Posts on the schedule above (up to one a day), from your monthly post allowance. Every day suits Studio and Pro; on Creator, pick a lighter cadence so it lasts the month.</li>
+                <li>• Blog only by default. Turn on socials above to auto-post as each post goes live.</li>
+                <li>• Out of monthly allowance? It pauses, emails you, and resumes next cycle. Want more sooner? Generate posts manually.</li>
+              </ul>
+            </details>
           </div>
         )}
+        </div>
+
+        <div className="shrink-0 flex justify-end px-5 py-3 border-t border-[var(--border-2,#e5e5e7)]">
+          <button onClick={onClose} className="px-4 py-2 rounded-lg text-xs font-semibold bg-[#7C3AED] text-white hover:bg-[#6D28D9]">Done</button>
+        </div>
       </div>
     </div>
   )
