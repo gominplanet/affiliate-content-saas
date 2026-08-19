@@ -100,9 +100,9 @@ export default function AutoPilotModal({ onClose, onChange }: { onClose: () => v
 
             <ul className="text-[12px] text-[#6e6e73] dark:text-[#ebebf0] space-y-1.5 leading-relaxed">
               <li>• Turns your next un-blogged YouTube video into a full post (hero + in-article images).</li>
-              <li>• One post per day, every plan. Want more? Generate them manually.</li>
-              <li>• No social posting — just your blog.</li>
-              <li>• Counts toward your monthly post allowance; pauses and emails you if you run out, then resumes next cycle.</li>
+              <li>• Up to one post a day, drawn from your monthly post allowance. Studio and Pro cover a post every day; Creator posts daily until its monthly posts are used, then pauses.</li>
+              <li>• No social posting, just your blog.</li>
+              <li>• When your monthly allowance runs out it pauses, emails you, and resumes next cycle. Want more before then? Generate posts manually.</li>
             </ul>
 
             <div className="flex justify-end border-t border-[var(--border-2,#e5e5e7)] pt-3">
