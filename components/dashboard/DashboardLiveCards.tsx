@@ -15,7 +15,8 @@ import { TrendingUp, MousePointerClick, ArrowUpRight, Loader2 } from 'lucide-rea
 import { GENIUSLINK_SIGNUP_URL } from '@/lib/geniuslink-signup'
 
 interface SeoSummary { decaying: number; striking: number; notIndexed: number; total: number }
-interface ClicksSummary { clicks: number; topTitle: string | null; topClicks: number }
+interface ClickGroup { name: string; kind: 'youtube' | 'blog' | 'social'; clicks: number }
+interface ClicksSummary { clicks: number; topTitle: string | null; topClicks: number; groups: ClickGroup[] }
 
 export function DashboardLiveCards() {
   const [seo, setSeo] = useState<SeoSummary | null | 'error'>(null)
@@ -37,12 +38,13 @@ export function DashboardLiveCards() {
 
     fetch('/api/analytics/clicks')
       .then(r => r.ok ? r.json() : Promise.reject())
-      .then((d: { totals?: { clicks?: number }; posts?: Array<{ title?: string; clicks?: number }> }) => {
+      .then((d: { totals?: { clicks?: number }; posts?: Array<{ title?: string; clicks?: number }>; groups?: ClickGroup[] }) => {
         const top = (d.posts ?? [])[0]
         setClicks({
           clicks: d.totals?.clicks ?? 0,
           topTitle: top?.title ?? null,
           topClicks: top?.clicks ?? 0,
+          groups: (d.groups ?? []).filter(g => g.clicks > 0).sort((a, b) => b.clicks - a.clicks),
         })
       })
       .catch(() => setClicks('error'))
@@ -91,6 +93,26 @@ export function DashboardLiveCards() {
             <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-faint)' }}>
               total link clicks{clicks.topTitle ? <> · top: <span style={{ color: 'var(--text-soft)' }}>{clicks.topTitle}</span> ({clicks.topClicks})</> : ''}
             </p>
+            {clicks.groups.length > 0 && (
+              <div className="mt-3 pt-3 border-t" style={{ borderColor: 'var(--border)' }}>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.1em] mb-1.5" style={{ color: 'var(--text-faint)' }}>
+                  Where they came from
+                </p>
+                <div className="flex flex-col gap-1">
+                  {clicks.groups.slice(0, 5).map((g, i) => (
+                    <div key={`${g.kind}-${g.name}-${i}`} className="flex items-center justify-between text-[12px]">
+                      <span className="inline-flex items-center gap-1.5 truncate" style={{ color: 'var(--text-soft)' }}>
+                        <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: kindTone(g.kind) }} />
+                        <span className="truncate">{g.name}</span>
+                      </span>
+                      <span className="tabular-nums font-medium ml-2 flex-shrink-0" style={{ color: 'var(--text)' }}>
+                        {g.clicks.toLocaleString()}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </Card>
@@ -122,6 +144,13 @@ function Stat({ n, label, tone }: { n: number; label: string; tone: string }) {
       <span className="text-[11px] ml-1.5" style={{ color: 'var(--text-faint)' }}>{label}</span>
     </div>
   )
+}
+
+/** Dot colour per click-source kind: YouTube red, blog purple, socials orange. */
+function kindTone(kind: 'youtube' | 'blog' | 'social'): string {
+  if (kind === 'youtube') return '#ff3b30'
+  if (kind === 'blog') return '#7C3AED'
+  return '#FF9500'
 }
 
 function Skeleton() {

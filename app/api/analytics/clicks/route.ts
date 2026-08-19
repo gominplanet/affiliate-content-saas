@@ -37,6 +37,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createGeniuslinkService } from '@/services/geniuslink'
+import { CHANNEL_LABELS } from '@/lib/geniuslink-group'
 
 interface BlogPostRow {
   id: string
@@ -61,7 +62,7 @@ interface WordPressSiteRow {
 
 interface SourceGroup {
   name: string
-  kind: 'youtube' | 'blog'
+  kind: 'youtube' | 'blog' | 'social'
   clicks: number
   linkCount: number
 }
@@ -103,7 +104,7 @@ export async function GET() {
 
     // ── Load blog posts, YT videos (with codes), and WP sites in parallel ─────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const [postsRes, ytVideosRes, sitesRes, nullCodeRes] = await Promise.all([
+    const [postsRes, ytVideosRes, sitesRes, nullCodeRes, channelUrlsRes] = await Promise.all([
       // Note: `content` (full article HTML, tens of KB each) is NOT selected
       // here — it's only needed to recover a missing geniuslink_code, so we pull
       // it separately for just the null-code subset (nullCodeRes below). After
@@ -136,6 +137,20 @@ export async function GET() {
         .eq('user_id', user.id)
         .eq('status', 'published')
         .is('geniuslink_code', null),
+      // Per-channel wrapped blog links (MVP-FACEBOOK, MVP-PINTEREST, …) — the
+      // jsonb map channelShareUrl caches per post. Only posts actually shared to
+      // a social channel have it, so this set is naturally small. Cap to the 200
+      // most-recent so the per-code click fan-out below stays bounded. Column is
+      // migration 261 — tolerate its absence on a lagging DB.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (supabase as any)
+        .from('blog_posts')
+        .select('id,geniuslink_channel_urls')
+        .eq('user_id', user.id)
+        .eq('status', 'published')
+        .not('geniuslink_channel_urls', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(200),
     ])
     const posts: BlogPostRow[] = (postsRes.data ?? []) as BlogPostRow[]
     const ytVideos: YouTubeVideoRow[] = ((ytVideosRes.data ?? []) as unknown) as YouTubeVideoRow[]
@@ -144,6 +159,23 @@ export async function GET() {
       ((nullCodeRes.data ?? []) as Array<{ id: string; content: string | null }>)
         .map(r => [r.id, r.content]),
     )
+
+    // Per-channel codes: for each shared post, pull the geni.us code out of every
+    // channel-wrapped URL and bucket it by channel key (facebook, pinterest, …).
+    // A channel can have many codes (one per shared post) — we sum their clicks.
+    const channelCodes = new Map<string, Set<string>>()
+    for (const row of ((channelUrlsRes?.data ?? []) as Array<{ geniuslink_channel_urls: Record<string, string> | null }>)) {
+      const map = row.geniuslink_channel_urls
+      if (!map || typeof map !== 'object') continue
+      for (const [ch, url] of Object.entries(map)) {
+        const code = extractCode(url)
+        if (!code) continue
+        const key = ch.toLowerCase()
+        if (!CHANNEL_LABELS[key]) continue // only channels we label
+        if (!channelCodes.has(key)) channelCodes.set(key, new Set())
+        channelCodes.get(key)!.add(code)
+      }
+    }
 
     // Backfill: extract geni.us/CODE from the (separately-fetched) content for
     // any post missing the column. Persist so we don't re-scrape next time.
@@ -174,6 +206,7 @@ export async function GET() {
     const allCodes = new Set<string>()
     posts.forEach(p => { if (p.geniuslink_code) allCodes.add(p.geniuslink_code) })
     ytVideos.forEach(v => { if (v.geniuslink_yt_code) allCodes.add(v.geniuslink_yt_code) })
+    channelCodes.forEach(set => set.forEach(code => allCodes.add(code)))
     const uniqueCodes = Array.from(allCodes)
 
     const CONCURRENCY = 8
@@ -251,6 +284,18 @@ export async function GET() {
         clicks: b.clicks,
         linkCount: b.linkCount,
       }))
+    // Finally the social channels — Facebook, Pinterest, X, … — each summing the
+    // clicks on its channel-wrapped links. This is the "where did the clicks come
+    // from?" split: a click here is one the channel drove to the blog.
+    Array.from(channelCodes.entries())
+      .map(([key, codes]) => ({
+        name: CHANNEL_LABELS[key] ?? key,
+        kind: 'social' as const,
+        clicks: Array.from(codes).reduce((s, code) => s + (clicksByCode.get(code) ?? 0), 0),
+        linkCount: codes.size,
+      }))
+      .sort((a, b) => b.clicks - a.clicks)
+      .forEach(g => groups.push(g))
 
     return NextResponse.json({
       connected: true,

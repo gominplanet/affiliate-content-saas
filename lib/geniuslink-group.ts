@@ -222,6 +222,21 @@ export const CHANNEL_GROUP_NAMES: Record<string, string> = {
   youtube: YOUTUBE_COPILOT_GROUP_NAME,
 }
 
+/** Human-friendly label for a channel key — for click-attribution summaries. */
+export const CHANNEL_LABELS: Record<string, string> = {
+  facebook: 'Facebook',
+  pinterest: 'Pinterest',
+  twitter: 'X',
+  x: 'X',
+  threads: 'Threads',
+  linkedin: 'LinkedIn',
+  bluesky: 'Bluesky',
+  telegram: 'Telegram',
+  tiktok: 'TikTok',
+  instagram: 'Instagram',
+  youtube: 'YouTube',
+}
+
 /** Normalize a caller's platform string to a channel key we have a group for. */
 export function channelKey(platform: string | null | undefined): string | null {
   const k = (platform || '').trim().toLowerCase()
