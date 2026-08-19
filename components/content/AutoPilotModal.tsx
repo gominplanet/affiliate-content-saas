@@ -13,7 +13,7 @@ import { X, Loader2, Rocket } from 'lucide-react'
 
 interface AutoState { enabled: boolean; lastRunAt: string | null; pausedReason: string | null }
 
-export default function AutoPilotModal({ onClose }: { onClose: () => void }) {
+export default function AutoPilotModal({ onClose, onChange }: { onClose: () => void; onChange?: (enabled: boolean) => void }) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [state, setState] = useState<AutoState>({ enabled: false, lastRunAt: null, pausedReason: null })
@@ -41,6 +41,7 @@ export default function AutoPilotModal({ onClose }: { onClose: () => void }) {
       const d = await res.json()
       if (!res.ok) throw new Error(d.error || 'Could not save')
       setState(d.autopilot)
+      onChange?.(d.autopilot?.enabled === true)
       toast.success(enabled ? 'Auto-pilot on — one post a day' : 'Auto-pilot off')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Could not save')

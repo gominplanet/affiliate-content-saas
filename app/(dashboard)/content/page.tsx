@@ -2402,6 +2402,21 @@ export default function ContentPage() {
   // "Share with brand" modal pre-fills from.
   const [brandSettingsOpen, setBrandSettingsOpen] = useState(false)
   const [autoPilotOpen, setAutoPilotOpen] = useState(false)
+  const [autoPilotOn, setAutoPilotOn] = useState(false)
+
+  // Reflect the auto-pilot ON state on the toolbar button (green + "ON") so the
+  // user can see it's active at a glance, without opening the modal.
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch('/api/blog/autopilot')
+        const d = await res.json()
+        if (!cancelled && d.autopilot) setAutoPilotOn(d.autopilot.enabled === true)
+      } catch { /* leave off */ }
+    })()
+    return () => { cancelled = true }
+  }, [])
   const [linkModeOpen, setLinkModeOpen] = useState(false)
   // Affiliate-link repair — dryRun finds posts with a broken affiliate link
   // (e.g. a dead amazon.com/dp/UNDERWATER) and previews old→new before writing.
@@ -3982,7 +3997,7 @@ export default function ContentPage() {
         <ToolButton tint="blue" icon={<Handshake size={18} />} label="Brand message" desc="Edit the recap you send"
           onClick={() => setBrandSettingsOpen(true)}
           title="Customize the recap message the &ldquo;Share with brand&rdquo; button sends — tone, sign-off, and template" />
-        <ToolButton tint="violet" icon={<Rocket size={18} />} label="Auto-pilot" desc="One post a day, hands-off"
+        <ToolButton tint="violet" icon={<Rocket size={18} />} label="Auto-pilot" desc="One post a day, hands-off" active={autoPilotOn}
           onClick={() => setAutoPilotOpen(true)}
           title="Turn on to auto-publish one blog post a day from your next un-blogged video (hero + images, no social)" />
         <ToolButton tint="violet" icon={<Link2 size={18} />} label="Link settings" desc="Blog / affiliate / both"
@@ -4761,7 +4776,7 @@ export default function ContentPage() {
       {/* Brand message settings — the recap template "Share with brand" uses. */}
       {brandSettingsOpen && <BrandRecapSettingsModal onClose={() => setBrandSettingsOpen(false)} />}
       {/* Auto-pilot — one post a day from the next un-blogged video. */}
-      {autoPilotOpen && <AutoPilotModal onClose={() => setAutoPilotOpen(false)} />}
+      {autoPilotOpen && <AutoPilotModal onClose={() => setAutoPilotOpen(false)} onChange={setAutoPilotOn} />}
       <SocialLinkModeModal open={linkModeOpen} onClose={() => setLinkModeOpen(false)} />
 
       {/* Recategorize preview modal — dryRun first, apply on confirm. */}
@@ -5007,7 +5022,7 @@ const TOOL_TINTS: Record<string, { bg: string; fg: string }> = {
 // A larger, self-describing toolbar tile: a colour-coded icon chip, a bold
 // label, and a one-line "what it does". Replaces the old row of identical grey
 // pills so each action says what it does and reads by colour.
-function ToolButton({ tint, icon, label, desc, onClick, loading, disabled, title }: {
+function ToolButton({ tint, icon, label, desc, onClick, loading, disabled, title, active }: {
   tint: keyof typeof TOOL_TINTS
   icon: React.ReactNode
   label: string
@@ -5016,6 +5031,9 @@ function ToolButton({ tint, icon, label, desc, onClick, loading, disabled, title
   loading?: boolean
   disabled?: boolean
   title?: string
+  /** When true, the button shows an unmistakable "ON" state (green accent +
+   *  badge) so the user can see the feature is active without opening it. */
+  active?: boolean
 }) {
   const t = TOOL_TINTS[tint]
   return (
@@ -5024,14 +5042,21 @@ function ToolButton({ tint, icon, label, desc, onClick, loading, disabled, title
       disabled={disabled}
       title={title}
       className="flex w-full items-center gap-3 rounded-2xl border pl-2.5 pr-4 py-3.5 text-left transition-all hover:shadow-md disabled:opacity-60 active:scale-[0.99]"
-      style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}
+      style={{
+        borderColor: active ? '#16a34a' : 'var(--border)',
+        background: active ? 'rgba(22,163,74,0.10)' : 'var(--surface)',
+        boxShadow: active ? '0 0 0 1px #16a34a inset' : undefined,
+      }}
     >
-      <span className="grid place-items-center w-11 h-11 rounded-xl flex-shrink-0" style={{ background: t.bg, color: t.fg }}>
+      <span className="grid place-items-center w-11 h-11 rounded-xl flex-shrink-0" style={{ background: active ? 'rgba(22,163,74,0.18)' : t.bg, color: active ? '#16a34a' : t.fg }}>
         {loading ? <Loader2 size={19} className="animate-spin" /> : icon}
       </span>
       <span className="flex flex-col leading-tight min-w-0">
-        <span className="text-[14px] font-bold truncate" style={{ color: 'var(--text)' }}>{label}</span>
-        <span className="text-[12px] truncate" style={{ color: 'var(--text-faint)' }}>{desc}</span>
+        <span className="text-[14px] font-bold truncate flex items-center gap-1.5" style={{ color: 'var(--text)' }}>
+          {label}
+          {active && <span className="text-[9px] font-bold px-1.5 py-[1px] rounded-full flex-shrink-0" style={{ background: '#16a34a', color: '#fff', letterSpacing: '0.03em' }}>ON</span>}
+        </span>
+        <span className="text-[12px] truncate" style={{ color: active ? '#16a34a' : 'var(--text-faint)' }}>{active ? 'On — publishing daily' : desc}</span>
       </span>
     </button>
   )
