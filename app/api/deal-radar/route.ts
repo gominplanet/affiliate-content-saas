@@ -30,27 +30,33 @@ type SortKey = 'opportunity' | 'discount' | 'commission' | 'ending' | 'bestselle
  * a labelled ESTIMATE only. Creator Connections deals override this with the
  * campaign's actual bounty rate. Default 3% for anything unmapped.
  */
+// Aligned to Amazon's published US Associates standard fee schedule. Still an
+// ESTIMATE, and labelled as such in the UI: a browse category blends several fee
+// buckets (e.g. Home & Kitchen = Kitchen 4.5% + Home 3%) and Amazon revises
+// these, so the real per-item rate can differ. Creator Connections deals
+// override this with the campaign's actual bounty rate.
 const AMAZON_RATE_BY_CATEGORY: Record<number, number> = {
-  172282: 2,      // Electronics
-  1055398: 3,     // Home & Kitchen
+  172282: 3,      // Electronics (headphones/accessories bucket ~3%)
+  1055398: 4,     // Home & Kitchen (Kitchen 4.5% / Home 3% blend)
   3375251: 3,     // Sports & Outdoors
-  3760901: 2,     // Health & Household
-  3760911: 3,     // Beauty
-  228013: 5,      // Tools & Home Improvement
-  165793011: 3,   // Toys & Games
+  3760901: 1,     // Health & Household (Health & Personal Care = 1%)
+  3760911: 3,     // Beauty (standard; Luxury/Premium beauty are higher)
+  228013: 3,      // Tools & Home Improvement (Tools = 3%, was wrongly 5)
+  165793011: 2,   // Toys & Games (Toys = 2%, was wrongly 3)
   2619533011: 3,  // Pet Supplies
-  1064954: 3,     // Office
+  1064954: 4,     // Office (All Other Categories = 4%)
   15684181: 4.5,  // Automotive
-  165796011: 3,   // Baby
-  7141123011: 4,  // Clothing, Shoes & Jewelry
-  541966: 2.5,    // Computers
-  2335752011: 3,  // Cell Phones
+  165796011: 3,   // Baby Products
+  7141123011: 4,  // Clothing, Shoes & Jewelry (Fashion/Apparel = 4%)
+  541966: 2.5,    // Computers (PC/components = 2.5%)
+  2335752011: 1,  // Cell Phones (unlocked phones/wireless = ~1%)
   16310101: 1,    // Grocery
   11091801: 3,    // Musical Instruments
   2972638011: 3,  // Patio, Lawn & Garden
-  468642: 1,      // Video Games
+  468642: 1,      // Video Games (consoles 1% / games 2% → conservative 1)
 }
-const DEFAULT_AMAZON_RATE = 3
+// "All Other Categories" on the fee schedule = 4%.
+const DEFAULT_AMAZON_RATE = 4
 
 interface DealRow {
   asin: string
