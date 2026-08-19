@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Activity, TrendingUp, TrendingDown, Users, Loader2 } from 'lucide-react'
+import { Activity, TrendingUp, TrendingDown, Users, Loader2, Clock } from 'lucide-react'
 
 /**
  * Pulse panel — a read-only view of which hashtags are actually earning reach,
@@ -11,6 +11,14 @@ import { Activity, TrendingUp, TrendingDown, Users, Loader2 } from 'lucide-react
  */
 
 interface TagStat { tag: string; samples: number; avgLift: number }
+interface TimeBucket { key: number; avgLift: number; samples: number }
+interface BestTimes {
+  samples: number
+  bestWeekday: TimeBucket | null
+  bestHour: TimeBucket | null
+  topWindows: Array<{ weekday: number; hour: number; avgLift: number; samples: number }>
+  byWeekday: TimeBucket[]
+}
 interface Summary {
   collecting: boolean
   sampleCount: number
@@ -18,10 +26,15 @@ interface Summary {
   personalTop: TagStat[]
   personalBottom: TagStat[]
   pooled: Array<{ niche: string; tags: TagStat[] }>
+  bestTimes: BestTimes | null
 }
 
 const pct = (lift: number) => `${lift >= 1 ? '+' : ''}${Math.round((lift - 1) * 100)}%`
 const nicheLabel = (k: string) => k.replace(/-/g, ' ')
+const DOW = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+const DOW_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const fmtHour = (h: number) => { const am = h < 12; const h12 = h % 12 === 0 ? 12 : h % 12; return `${h12}${am ? 'am' : 'pm'}` }
+const fmtWindow = (w: { weekday: number; hour: number }) => `${DOW_SHORT[w.weekday]} ${fmtHour(w.hour)}`
 
 function TagRow({ t, tone }: { t: TagStat; tone: 'up' | 'down' | 'neutral' }) {
   const color = tone === 'up' ? '#34c759' : tone === 'down' ? '#ff9500' : '#7C3AED'
@@ -42,7 +55,9 @@ export default function PulsePanel({ alwaysShow = false }: { alwaysShow?: boolea
 
   useEffect(() => {
     let alive = true
-    fetch('/api/pulse/summary')
+    // Pass the viewer's tz offset so best-times read in their own clock.
+    const tz = new Date().getTimezoneOffset()
+    fetch(`/api/pulse/summary?tz=${tz}`)
       .then(r => (r.ok ? r.json() : null))
       .then((d: Summary | null) => { if (alive && d) setData(d) })
       .catch(() => {})
@@ -53,7 +68,9 @@ export default function PulsePanel({ alwaysShow = false }: { alwaysShow?: boolea
   if (loading) return null
   if (!data) return null
 
-  const hasAnything = data.personalTop.length > 0 || data.personalBottom.length > 0 || data.pooled.length > 0
+  const bt = data.bestTimes
+  const hasBestTimes = !!bt && (bt.topWindows.length > 0 || !!bt.bestWeekday || !!bt.bestHour)
+  const hasAnything = data.personalTop.length > 0 || data.personalBottom.length > 0 || data.pooled.length > 0 || hasBestTimes
   // On embedded surfaces, stay out of the way until there's something to show.
   // The dedicated /pulse page passes alwaysShow so the "collecting" state is
   // still visible at zero data.
@@ -65,7 +82,7 @@ export default function PulsePanel({ alwaysShow = false }: { alwaysShow?: boolea
         <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-[#7C3AED]/12 text-[#7C3AED]"><Activity size={15} /></span>
         <div>
           <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Pulse</p>
-          <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Which hashtags actually earn reach. Lift = how far a post beat your own average.</p>
+          <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">What actually earns reach — your best hashtags and posting times. Lift = how far a post beat your own average.</p>
         </div>
       </div>
 
@@ -74,6 +91,26 @@ export default function PulsePanel({ alwaysShow = false }: { alwaysShow?: boolea
           <div className="flex items-center gap-2 text-[12px] text-[#6e6e73] dark:text-[#a1a1a6]">
             <Loader2 size={13} className="animate-spin text-[#7C3AED]" />
             Learning from your posts — {data.sampleCount}/{data.minForPersonal} measured so far. Your personal ranking unlocks once a few more Reels have their numbers in.
+          </div>
+        )}
+
+        {hasBestTimes && bt && (
+          <div>
+            <p className="flex items-center gap-1.5 text-[12px] font-semibold text-[#0a84ff] mb-1.5"><Clock size={13} /> Best times to post</p>
+            {bt.topWindows.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {bt.topWindows.map((w, i) => (
+                  <span key={i} className="text-[12px] font-medium px-2 py-1 rounded-lg" style={{ background: 'rgba(10,132,255,0.1)', color: '#0a63cc' }}>
+                    {fmtWindow(w)} <span className="font-semibold">{pct(w.avgLift)}</span>
+                  </span>
+                ))}
+              </div>
+            )}
+            <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">
+              {bt.bestWeekday ? `${DOW[bt.bestWeekday.key]}s are your strongest day (${pct(bt.bestWeekday.avgLift)} vs your average).` : ''}
+              {bt.bestHour ? ` Around ${fmtHour(bt.bestHour.key)} tends to land best.` : ''}
+              {' '}Based on {bt.samples} measured post{bt.samples === 1 ? '' : 's'}, in your timezone.
+            </p>
           </div>
         )}
 
