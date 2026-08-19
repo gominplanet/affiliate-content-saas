@@ -119,7 +119,9 @@ export async function POST(request: Request) {
         }
       })
       .filter((r): r is NonNullable<typeof r> => r !== null)
-      .slice(0, 500)
+      // Historical report pages (a full month, or a wide custom range) can carry
+      // far more rows than a current-week view — allow a big backfill batch.
+      .slice(0, 2000)
 
     if (rows.length === 0) return NextResponse.json({ ok: true, upserted: 0 }, { headers: CORS })
 
