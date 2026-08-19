@@ -2121,6 +2121,368 @@ async function scanStorefrontEarningsBackground() {
   }
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// CC CATALOG AUTO-REFRESH — replace the weekly manual CSV upload.
+//
+// Amazon's Creator Connections page has two native "Download all …" buttons
+// (available opportunities + accepted campaigns) that, after a server-side
+// build, deliver a ZIP of CSV parts. Today the admin downloads both by hand,
+// unzips, and loads the CSVs into the shared catalog staging table. SCOUT does
+// the same, hands-off: clicks each button in a background tab, captures the ZIP
+// via chrome.downloads, unzips + parses it IN THE WORKER (Chrome 114+ ships
+// DecompressionStream('deflate-raw'), so no library), POSTs the rows to the
+// existing /api/admin/import-cc-catalog/stage endpoint, and arms the background
+// drain. One admin operation → the whole user base gets the refreshed catalog.
+//
+// Everything below is self-contained worker code. The only page interaction is
+// clicking a tab + a download button (clickCcDownloadInPage).
+// ════════════════════════════════════════════════════════════════════════════
+
+const CC_REQUESTS_URL = 'https://affiliate-program.amazon.com/p/connect/requests'
+
+// Inflate a raw-DEFLATE byte array (ZIP method 8) using the platform stream.
+async function _inflateRaw(u8) {
+  const ds = new DecompressionStream('deflate-raw')
+  const stream = new Response(u8).body.pipeThrough(ds)
+  const buf = await new Response(stream).arrayBuffer()
+  return new Uint8Array(buf)
+}
+
+// Minimal ZIP reader: walk the central directory and return [{name, text}] for
+// every entry. Handles stored (method 0) + deflate (method 8); bails clearly on
+// ZIP64 (sizes we can't represent here). Enough for Amazon's CSV export ZIPs.
+async function _unzipToTexts(arrayBuffer) {
+  const bytes = new Uint8Array(arrayBuffer)
+  const dv = new DataView(arrayBuffer)
+  // Find End Of Central Directory (sig 0x06054b50), scanning back from the end.
+  let eocd = -1
+  for (let i = bytes.length - 22; i >= 0 && i >= bytes.length - 22 - 65536; i--) {
+    if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break }
+  }
+  if (eocd < 0) throw new Error('not a zip (no EOCD)')
+  const cdCount = dv.getUint16(eocd + 10, true)
+  let cdOffset = dv.getUint32(eocd + 16, true)
+  const out = []
+  let p = cdOffset
+  for (let n = 0; n < cdCount; n++) {
+    if (dv.getUint32(p, true) !== 0x02014b50) break // central dir header
+    const method = dv.getUint16(p + 10, true)
+    const compSize = dv.getUint32(p + 20, true)
+    const fnLen = dv.getUint16(p + 28, true)
+    const extraLen = dv.getUint16(p + 30, true)
+    const commentLen = dv.getUint16(p + 32, true)
+    const localOff = dv.getUint32(p + 42, true)
+    if (compSize === 0xffffffff || localOff === 0xffffffff) throw new Error('zip64 not supported')
+    const name = new TextDecoder().decode(bytes.subarray(p + 46, p + 46 + fnLen))
+    // Jump to the local header to find where the data actually starts.
+    if (dv.getUint32(localOff, true) === 0x04034b50) {
+      const lFnLen = dv.getUint16(localOff + 26, true)
+      const lExtraLen = dv.getUint16(localOff + 28, true)
+      const dataStart = localOff + 30 + lFnLen + lExtraLen
+      const comp = bytes.subarray(dataStart, dataStart + compSize)
+      let raw
+      if (method === 0) raw = comp
+      else if (method === 8) raw = await _inflateRaw(comp)
+      else throw new Error('unsupported zip method ' + method)
+      if (/\.csv$/i.test(name)) out.push({ name, text: new TextDecoder('utf-8').decode(raw) })
+    }
+    p += 46 + fnLen + extraLen + commentLen
+  }
+  return out
+}
+
+// RFC-4180-ish CSV parser → array of {header: value} objects. Handles quoted
+// fields, embedded commas/newlines, and doubled-quote escapes.
+function _parseCsv(text) {
+  const rows = []
+  let field = '', row = [], inQ = false
+  // Strip a UTF-8 BOM so the first header doesn't carry it.
+  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1)
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i]
+    if (inQ) {
+      if (c === '"') { if (text[i + 1] === '"') { field += '"'; i++ } else inQ = false }
+      else field += c
+    } else if (c === '"') inQ = true
+    else if (c === ',') { row.push(field); field = '' }
+    else if (c === '\n') { row.push(field); rows.push(row); row = []; field = '' }
+    else if (c === '\r') { /* swallow — \r\n handled by the \n */ }
+    else field += c
+  }
+  if (field.length || row.length) { row.push(field); rows.push(row) }
+  if (!rows.length) return { headers: [], objects: [] }
+  const headers = rows[0].map(h => (h || '').trim())
+  const objects = []
+  for (let r = 1; r < rows.length; r++) {
+    if (rows[r].length === 1 && rows[r][0] === '') continue // blank line
+    const o = {}
+    for (let c = 0; c < headers.length; c++) o[headers[c]] = rows[r][c]
+    objects.push(o)
+  }
+  return { headers, objects }
+}
+
+// Map a CSV row (unknown Amazon header names) onto the staging schema keys the
+// /stage endpoint expects. Header matching is fuzzy (lowercased, alnum-only)
+// with alias lists, so small header wording changes don't break the import.
+const _CC_FIELD_ALIASES = {
+  campaign_id: ['campaignid', 'campaign', 'id'],
+  campaign_name: ['campaignname', 'campaigntitle', 'name', 'title'],
+  brand_name: ['brandname', 'brand'],
+  asins: ['asins', 'asin', 'asinlist', 'products', 'productasins'],
+  commission_pct: ['commission', 'commissionpct', 'commissionpercent', 'commissionpercentage', 'commissionrate'],
+  starts_at: ['startdate', 'startsat', 'start', 'begins', 'begindate'],
+  ends_at: ['enddate', 'endsat', 'end', 'expires', 'expiration', 'expirationdate'],
+  budget: ['budget', 'totalbudget', 'campaignbudget'],
+  budget_remaining: ['budgetremaining', 'remainingbudget', 'remaining'],
+  available_slot: ['availableslots', 'slotsavailable', 'availableslot', 'openslots', 'slotsremaining'],
+  total_slot: ['totalslots', 'slots', 'slottotal', 'maxslots'],
+}
+const _ccNorm = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, '')
+
+// Build header→field lookup once per CSV (headers are stable across rows).
+function _ccHeaderMap(headers) {
+  const map = {} // field → header
+  const normd = headers.map(h => ({ h, n: _ccNorm(h) }))
+  for (const field of Object.keys(_CC_FIELD_ALIASES)) {
+    const aliases = _CC_FIELD_ALIASES[field]
+    // Exact normalized match first, then contains.
+    let hit = normd.find(x => x.n === field || aliases.includes(x.n))
+    if (!hit) hit = normd.find(x => aliases.some(a => x.n === a))
+    if (!hit) hit = normd.find(x => aliases.some(a => x.n.includes(a)))
+    if (hit) map[field] = hit.h
+  }
+  return map
+}
+
+function _ccMapRow(obj, headerMap) {
+  const get = (field) => { const h = headerMap[field]; return h == null ? undefined : obj[h] }
+  const asinCell = get('asins')
+  let asins = []
+  if (asinCell != null) {
+    asins = String(asinCell)
+      .replace(/[{}\[\]"']/g, ' ')
+      .split(/[,;|\s]+/)
+      .map(a => a.trim().toUpperCase())
+      .filter(a => /^[A-Z0-9]{10}$/.test(a))
+    asins = Array.from(new Set(asins))
+  }
+  return {
+    campaign_id: get('campaign_id'),
+    campaign_name: get('campaign_name'),
+    brand_name: get('brand_name'),
+    asins,
+    commission_pct: get('commission_pct'),
+    starts_at: get('starts_at'),
+    ends_at: get('ends_at'),
+    budget: get('budget'),
+    budget_remaining: get('budget_remaining'),
+    available_slot: get('available_slot'),
+    total_slot: get('total_slot'),
+  }
+}
+
+// POST staged rows to MVP in chunks (session-cookie bridge; the endpoint is
+// admin-gated). reset:true on the very first chunk clears staging.
+async function stageCcRowsToMvp(rows, resetFirst) {
+  const CHUNK = 2000
+  let inserted = 0, reset = !!resetFirst
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    const chunk = rows.slice(i, i + CHUNK)
+    const res = await fetch(`${MVP_ORIGIN}/api/admin/import-cc-catalog/stage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ rows: chunk, reset }),
+    })
+    reset = false // only the first request resets
+    let body = null; try { body = await res.json() } catch (e) {}
+    if (!res.ok) return { ok: false, inserted, status: res.status, error: (body && body.error) || `HTTP ${res.status}` }
+    inserted += (body && body.inserted) || 0
+  }
+  return { ok: true, inserted }
+}
+
+// Arm the server-side background drain (merge → purge) once staging is loaded.
+async function armCcDrainOnMvp() {
+  try {
+    const res = await fetch(`${MVP_ORIGIN}/api/admin/import-cc-catalog`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ mode: 'background' }),
+    })
+    let body = null; try { body = await res.json() } catch (e) {}
+    if (res.ok) return { ok: true, message: body && body.message }
+    return { ok: false, status: res.status, error: (body && body.error) || `HTTP ${res.status}`, needsConfirm: !!(body && body.needsConfirm) }
+  } catch (e) {
+    return { ok: false, error: (e && e.message) || 'network error' }
+  }
+}
+
+// Click the CC download button in-page. `which` = 'available' | 'accepted'.
+// Selects the matching tab first (New Opportunities / Active), then clicks the
+// download control by its visible text. Returns { ok, clicked, tab, diag }.
+function clickCcDownloadInPage(which) {
+  const wantTab = which === 'accepted' ? 'active' : 'new opportunities'
+  const wantBtn = which === 'accepted' ? 'download all accepted campaigns' : 'download all available campaigns'
+  const norm = (s) => (s || '').replace(/\s+/g, ' ').trim().toLowerCase()
+  const clickable = () => Array.from(document.querySelectorAll('button, a, [role="button"], span, div'))
+  // 1) Select the correct tab if it isn't already.
+  try {
+    const tabEl = clickable().find(el => norm(el.textContent) === wantTab && el.offsetParent !== null)
+    if (tabEl) tabEl.click()
+  } catch (e) {}
+  // 2) Find + click the download button (allow a beat for the tab to settle is
+  //    handled by the caller re-invoking; here we try immediately).
+  const btn = clickable().find(el => norm(el.textContent) === wantBtn && el.offsetParent !== null)
+  if (btn) { try { btn.click() } catch (e) { return { ok: false, error: 'click-threw' } } return { ok: true, clicked: wantBtn } }
+  return { ok: false, error: 'button-not-found', diag: { url: location.href.slice(0, 140), sawButtons: clickable().map(e => norm(e.textContent)).filter(t => t.includes('download')).slice(0, 6) } }
+}
+
+// Wait for a ZIP download to appear after we click, capture its URL, fetch the
+// bytes ourselves (so nothing depends on reading the user's disk), then clean up
+// the on-disk file. `triggerFn` performs the in-page click. Generation can take
+// minutes, so the wait is generous.
+async function captureCcDownload(tabId, which, timeoutMs) {
+  const deadline = Date.now() + (timeoutMs || 300000)
+  // Register the listener BEFORE clicking so we never miss a fast download.
+  let resolved = null
+  const onCreated = (item) => {
+    const u = (item && (item.finalUrl || item.url)) || ''
+    const fn = (item && item.filename) || ''
+    // Heuristic match: a zip, or a filename that smells like a campaign export.
+    if (/\.zip($|\?)/i.test(u) || /\.zip$/i.test(fn) || /campaign/i.test(fn) || /campaign/i.test(u)) {
+      if (!resolved) resolved = { id: item.id, url: u }
+    }
+  }
+  try { chrome.downloads.onCreated.addListener(onCreated) } catch (e) { return { ok: false, error: 'no-downloads-permission' } }
+
+  // Click (retry a couple times to let the tab/tab-switch settle).
+  let clicked = null
+  for (let a = 0; a < 4 && Date.now() < deadline; a++) {
+    const r = await chrome.scripting.executeScript({ target: { tabId }, func: clickCcDownloadInPage, args: [which] })
+    clicked = (r && r[0] && r[0].result) || null
+    if (clicked && clicked.ok) break
+    await _sleep(2500)
+  }
+  if (!clicked || !clicked.ok) {
+    try { chrome.downloads.onCreated.removeListener(onCreated) } catch (e) {}
+    return { ok: false, error: (clicked && clicked.error) || 'download-button-not-found', diag: clicked && clicked.diag }
+  }
+
+  // Wait for the download to be created (this is the long "server building the
+  // export" wait), then for it to finish so the URL is fully valid.
+  while (!resolved && Date.now() < deadline) await _sleep(1500)
+  try { chrome.downloads.onCreated.removeListener(onCreated) } catch (e) {}
+  if (!resolved) return { ok: false, error: 'download-never-started (timed out waiting for the export)' }
+
+  // Wait for completion.
+  const id = resolved.id
+  while (Date.now() < deadline) {
+    const items = await new Promise(res => { try { chrome.downloads.search({ id }, res) } catch (e) { res([]) } })
+    const it = items && items[0]
+    if (it && it.state === 'complete') { if (it.finalUrl || it.url) resolved.url = it.finalUrl || it.url; break }
+    if (it && it.state === 'interrupted') return { ok: false, error: 'download-interrupted' }
+    await _sleep(1500)
+  }
+
+  // Fetch the bytes ourselves (host_permissions cover the export origin). Then
+  // remove the on-disk copy so we don't litter the admin's Downloads folder.
+  let buf = null, fetchErr = null
+  try {
+    const res = await fetch(resolved.url, { credentials: 'include' })
+    if (!res.ok) fetchErr = `HTTP ${res.status}`
+    else buf = await res.arrayBuffer()
+  } catch (e) { fetchErr = (e && e.message) || 'fetch-failed' }
+  try { chrome.downloads.removeFile(id, () => { void chrome.runtime.lastError }) } catch (e) {}
+  try { chrome.downloads.erase({ id }) } catch (e) {}
+  if (!buf) return { ok: false, error: 'zip-fetch-failed: ' + (fetchErr || 'unknown') + ' (url host: ' + _urlHost(resolved.url) + ')', url: resolved.url }
+  return { ok: true, buf }
+}
+
+function _urlHost(u) { try { return new URL(u).host } catch (e) { return '?' } }
+
+// Download → unzip → parse → map, for one CC export ('available' | 'accepted').
+async function harvestCcExport(tabId, which, timeoutMs) {
+  const cap = await captureCcDownload(tabId, which, timeoutMs)
+  if (!cap.ok) return { ok: false, which, error: cap.error, diag: cap.diag }
+  let csvs
+  try { csvs = await _unzipToTexts(cap.buf) } catch (e) { return { ok: false, which, error: 'unzip-failed: ' + ((e && e.message) || e) } }
+  if (!csvs.length) return { ok: false, which, error: 'zip-had-no-csv' }
+  const rows = []
+  let headers = null, headerMap = null, sample = null
+  for (const csv of csvs) {
+    const parsed = _parseCsv(csv.text)
+    if (!parsed.objects.length) continue
+    const hm = _ccHeaderMap(parsed.headers)
+    if (!headers) { headers = parsed.headers; headerMap = hm }
+    for (const o of parsed.objects) { const m = _ccMapRow(o, hm); if (!sample) sample = m; rows.push(m) }
+  }
+  return { ok: true, which, rows, headers, headerMap, sample, files: csvs.map(c => c.name) }
+}
+
+// Full orchestration: both exports → staging → arm drain. Background tab, closed
+// at the end. Returns a rich summary so the MVP UI (and we) can verify mapping.
+async function scanCcCatalogBackground() {
+  let tabId = null
+  try {
+    const tab = await chrome.tabs.create({ url: CC_REQUESTS_URL, active: false })
+    tabId = tab.id
+    await waitForTabLoad(tabId, 40000)
+    await _sleep(5000) // the CC requests SPA is heavy — let the grid + buttons render
+
+    // 1) Available opportunities (the big one). ~6 min budget for generation.
+    const avail = await harvestCcExport(tabId, 'available', 360000)
+    // 2) Accepted campaigns.
+    const accepted = await harvestCcExport(tabId, 'accepted', 300000)
+
+    if (!avail.ok && !accepted.ok) {
+      return { ok: false, error: 'both exports failed', available: avail, accepted: accepted }
+    }
+
+    // Stage: available first (reset clears staging), accepted appended.
+    let staged = 0, stageErr = null, didReset = false
+    if (avail.ok && avail.rows.length) {
+      const s = await stageCcRowsToMvp(avail.rows, true); didReset = true
+      if (s.ok) staged += s.inserted; else stageErr = 'available: ' + s.error
+    }
+    if (accepted.ok && accepted.rows.length && !stageErr) {
+      const s = await stageCcRowsToMvp(accepted.rows, !didReset)
+      if (s.ok) staged += s.inserted; else stageErr = 'accepted: ' + s.error
+    }
+    if (stageErr) return { ok: false, error: 'staging failed — ' + stageErr, staged, available: _ccSumm(avail), accepted: _ccSumm(accepted) }
+
+    // Arm the background drain (merge → purge overnight). The endpoint's own
+    // 85%-staged safety guard refuses to merge if a bad parse staged too few
+    // rows, so a mapping mistake fails safe instead of wiping the live catalog.
+    const armed = await armCcDrainOnMvp()
+
+    return {
+      ok: true,
+      staged,
+      armed: armed.ok,
+      armMessage: armed.message,
+      armError: armed.ok ? undefined : armed.error,
+      needsConfirm: armed.needsConfirm,
+      available: _ccSumm(avail),
+      accepted: _ccSumm(accepted),
+    }
+  } catch (e) {
+    return { ok: false, error: (e && e.message) || 'cc-catalog-scan-failed' }
+  } finally {
+    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+  }
+}
+
+// Compact per-export summary for the response (verify mapping without dumping
+// hundreds of thousands of rows).
+function _ccSumm(r) {
+  if (!r) return null
+  if (!r.ok) return { ok: false, error: r.error, diag: r.diag }
+  return { ok: true, rows: r.rows.length, files: r.files, headers: r.headers, headerMap: r.headerMap, sample: r.sample }
+}
+
 // ── Read the Amazon PRODUCT page (title / bullets / description / image) ─────
 // Runs in the user's logged-in browser, so it succeeds where the MVP server's
 // scrape is blocked (Amazon hard-blocks datacenter IPs). Self-contained — runs
@@ -3890,6 +4252,17 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     // + quick-ranges) in a BACKGROUND tab, push to MVP, then close.
     const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 120000)
     scanStorefrontEarningsBackground()
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true // async response
+  }
+  if (msg.type === 'MVP_SCAN_CC_CATALOG') {
+    // Admin-only: refresh the SHARED CC catalog. Clicks Amazon's two "Download
+    // all …" buttons in a BACKGROUND tab, captures + unzips + parses the CSV
+    // ZIPs, stages the rows, and arms the server-side drain. Amazon builds the
+    // export server-side (can take minutes), so this gets a long channel.
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 780000)
+    scanCcCatalogBackground()
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async response
