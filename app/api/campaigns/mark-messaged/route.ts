@@ -25,12 +25,26 @@ export async function POST(request: Request) {
     const message = typeof body.message === 'string' ? body.message.trim().slice(0, 6000) : ''
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (supabase as any)
+    const sb = supabase as any
+    const { error } = await sb
       .from('campaigns')
       .update({ messaged_at: new Date().toISOString(), ...(message ? { last_message: message } : {}) })
       .eq('user_id', ownerId)
       .eq('asin', asin)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    // Append to the per-brand message log so Brand Hub shows the full
+    // back-and-forth (campaigns.last_message only keeps the latest). Best-effort.
+    if (message) {
+      try {
+        const { data: camp } = await sb.from('campaigns')
+          .select('brand_name,campaign_name,product_title').eq('user_id', ownerId).eq('asin', asin).maybeSingle()
+        const brandName = (camp?.brand_name || camp?.campaign_name || camp?.product_title || '').trim() || null
+        await sb.from('brand_messages').insert({
+          user_id: ownerId, brand_name: brandName, direction: 'outbound', channel: 'cc', body: message,
+        })
+      } catch { /* log is best-effort */ }
+    }
     return NextResponse.json({ ok: true })
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 })
