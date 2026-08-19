@@ -14,6 +14,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier, type Tier } from '@/lib/tier'
 import { getChannelOAuthToken } from '@/lib/youtube-channels'
 import { YouTubeOAuthService } from '@/services/youtube'
+import { youtubeUploadEnabled } from '@/lib/feature-flags'
 import { recordUsage } from '@/lib/ai-usage'
 
 export const runtime = 'nodejs'
@@ -39,6 +40,12 @@ export async function POST(request: Request) {
   const tier = normalizeTier(intRow?.tier) as Tier
   if (tier !== 'pro' && tier !== 'admin') {
     return NextResponse.json({ error: 'Publishing to YouTube is a Pro feature.', tierRequired: 'pro' }, { status: 403 })
+  }
+  // Dark to the public until Google verifies the youtube.upload scope. Admins
+  // pass so we can record the verification demo + dogfood; everyone else gets a
+  // clean "not yet" until NEXT_PUBLIC_YOUTUBE_UPLOAD_ENABLED flips on.
+  if (!youtubeUploadEnabled({ tier })) {
+    return NextResponse.json({ error: "Publishing to YouTube isn't available yet — it's coming soon.", notEnabled: true }, { status: 403 })
   }
 
   const token = await getChannelOAuthToken(supabase, user.id, body.channelId ?? null)

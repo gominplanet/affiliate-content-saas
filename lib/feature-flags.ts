@@ -34,14 +34,21 @@ export type GatedSocialPlatform = 'facebook' | 'instagram' | 'threads' | 'tiktok
 const LIVE_SOCIAL: ReadonlySet<GatedSocialPlatform> = new Set(['facebook', 'instagram', 'threads', 'pinterest', 'tiktok'])
 
 /**
- * YouTube Shorts UPLOAD (publishing a video TO YouTube) gate. OFF by default:
- * it needs the sensitive `youtube.upload` OAuth scope, which requires Google
- * verification of the app AND every creator to reconnect YouTube to grant it.
- * Flip on by setting NEXT_PUBLIC_YOUTUBE_UPLOAD_ENABLED=true in Vercel ONLY after
- * Google verification is approved. NEXT_PUBLIC so the client (toggle visibility)
- * and the server (scope request + publish route) read the same flag.
+ * YouTube Shorts UPLOAD (publishing a video TO YouTube) gate. OFF for the
+ * public by default: it needs the sensitive `youtube.upload` OAuth scope, which
+ * requires Google verification of the app AND every creator to reconnect
+ * YouTube to grant it. Flip on for everyone by setting
+ * NEXT_PUBLIC_YOUTUBE_UPLOAD_ENABLED=true in Vercel ONLY after Google
+ * verification is approved. NEXT_PUBLIC so the client (button visibility) and
+ * the server (scope request + publish route) read the same flag.
+ *
+ * ADMIN EXCEPTION: while the public flag is off, admin-tier accounts can still
+ * reach it — that's what lets us record Google's required verification demo
+ * (and dogfood) without exposing it to every user first. Pass the viewer's tier
+ * to get the admin override; call with no args for the pure public-flag value.
  */
-export function youtubeUploadEnabled(): boolean {
+export function youtubeUploadEnabled(opts?: { tier?: string | null }): boolean {
+  if (opts?.tier === 'admin') return true
   return process.env.NEXT_PUBLIC_YOUTUBE_UPLOAD_ENABLED === 'true'
 }
 

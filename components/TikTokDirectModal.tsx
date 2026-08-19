@@ -58,6 +58,7 @@ export function TikTokDirectModal({
   videoId,
   burnedVideoUrl,
   initialCaption,
+  tier,
   onClose,
   onPosted,
 }: {
@@ -67,6 +68,8 @@ export function TikTokDirectModal({
    *  and skips the videoId-only bits (product input, upload zone, YT links). */
   burnedVideoUrl?: string
   initialCaption?: string
+  /** Viewer tier — drives the admin-only gate on the YouTube cross-post option. */
+  tier?: string | null
   onClose: () => void
   /** Fires once when the publish status flips to "published". The Vertical
    *  Videos row uses this to update its TikTok pill state. */
@@ -119,8 +122,9 @@ export function TikTokDirectModal({
   const [pinErr, setPinErr] = useState<string | null>(null)
   // …and a YouTube Short (publishes the same vertical render TO the creator's
   // own channel). Gated behind the youtube.upload scope flag — invisible until
-  // Google verifies the app and the flag is flipped on.
-  const ytEnabled = youtubeUploadEnabled()
+  // Google verifies the app and the flag is flipped on. Admin tier sees it early
+  // (verification demo + dogfood) via the tier override.
+  const ytEnabled = youtubeUploadEnabled({ tier })
   const [alsoYt, setAlsoYt] = useState(false)
   const [ytResult, setYtResult] = useState<'idle' | 'posting' | 'done' | 'failed'>('idle')
   const [ytErr, setYtErr] = useState<string | null>(null)

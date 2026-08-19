@@ -37,6 +37,7 @@ import {
   type CtaDestination, type CtaMode,
 } from '@/lib/cta-stickers'
 import type { Tier } from '@/lib/tier'
+import { youtubeUploadEnabled } from '@/lib/feature-flags'
 
 const TikTokDirectModal = dynamic(
   () => import('@/components/TikTokDirectModal').then(m => ({ default: m.TikTokDirectModal })),
@@ -968,7 +969,11 @@ export default function ClipFactoryPage() {
             <div className="flex flex-wrap items-center gap-2">
               <PostPill label="TikTok" color="#FE2C55" icon={<Music2 size={13} />} posted={!!posted.tiktok} onClick={() => setTtOpen(true)} />
               <PostPill label="Instagram" color="#E1306C" icon={<Instagram size={13} />} posted={!!posted.instagram} onClick={() => setIgOpen(true)} />
-              <PostPill label="YouTube" color="#FF0000" icon={<Youtube size={13} />} posted={!!posted.youtube} busy={publishingYt} onClick={postYouTube} />
+              {/* YouTube Shorts publishing — admin-only until Google verifies the
+                  upload scope and we flip NEXT_PUBLIC_YOUTUBE_UPLOAD_ENABLED on. */}
+              {youtubeUploadEnabled({ tier }) && (
+                <PostPill label="YouTube" color="#FF0000" icon={<Youtube size={13} />} posted={!!posted.youtube} busy={publishingYt} onClick={postYouTube} />
+              )}
               <a href={publishUrl} download target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-medium border border-black/10 dark:border-white/15 text-[#1d1d1f] dark:text-[#f5f5f7]"><Download size={13} /> Download</a>
             </div>
             {/* Reel COVER frame for the Instagram Reel — pick the still IG shows as
@@ -1027,6 +1032,7 @@ export default function ClipFactoryPage() {
         <TikTokDirectModal
           burnedVideoUrl={publishUrl}
           initialCaption={publishCaption}
+          tier={tier}
           onClose={() => setTtOpen(false)}
           onPosted={() => { setPosted(p => ({ ...p, tiktok: true })); setTtOpen(false); toast.success('Posted to TikTok') }}
         />

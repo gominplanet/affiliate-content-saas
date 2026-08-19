@@ -1770,6 +1770,7 @@ const VideoCard = memo(function VideoCardImpl({
                   videoId={id}
                   youtubeVideoId={(video.youtube_video_id as string) || null}
                   videoTitle={title || ''}
+                  tier={userTier}
                   onClose={() => setShortsMakerOpen(false)}
                 />
               )}
@@ -1864,6 +1865,7 @@ const VideoCard = memo(function VideoCardImpl({
           {ttModalOpen && (
             <TikTokDirectModal
               videoId={id}
+              tier={userTier}
               onClose={() => setTtModalOpen(false)}
               onPosted={() => setTtDirectPosted(true)}
             />

@@ -23,6 +23,7 @@ import { errText } from '@/lib/err-text'
 import { ensureDisclaimer } from '@/lib/social-disclaimer'
 import { buildYouTubeShortTitle } from '@/lib/youtube-title'
 import { buildYouTubeTags } from '@/lib/youtube-tags'
+import { youtubeUploadEnabled } from '@/lib/feature-flags'
 import { SUBTITLE_STYLES, type SubtitleStyle, type ShortRow } from '@/lib/shorts-types'
 
 // TikTok publish reuses the existing compliant modal (creator info + privacy
@@ -86,12 +87,14 @@ function PostPill({
 }
 
 export function ShortsStudioModal({
-  videoId, youtubeVideoId, videoTitle, onClose,
+  videoId, youtubeVideoId, videoTitle, onClose, tier,
 }: {
   videoId: string
   youtubeVideoId: string | null
   videoTitle: string
   onClose: () => void
+  /** Viewer tier — drives the admin-only gate on YouTube Shorts publishing. */
+  tier?: string | null
 }) {
   const [loading, setLoading] = useState(true)
   const [planning, setPlanning] = useState(false)
@@ -602,15 +605,19 @@ export function ShortsStudioModal({
                             postedAt={clip.postedInstagram}
                             onClick={() => setIgPost({ id: clip.id, url: clip.renderedUrl!, caption: captionFor(clip) })}
                           />
-                          <PostPill
-                            label="YouTube"
-                            color="#FF0000"
-                            icon={<Youtube size={12} />}
-                            posted={!!clip.postedYoutube}
-                            postedAt={clip.postedYoutube}
-                            busy={publishing === clip.id + ':yt'}
-                            onClick={() => postYouTube(clip)}
-                          />
+                          {/* YouTube Shorts publishing — admin-only until Google
+                              verifies the upload scope and we flip the flag on. */}
+                          {youtubeUploadEnabled({ tier }) && (
+                            <PostPill
+                              label="YouTube"
+                              color="#FF0000"
+                              icon={<Youtube size={12} />}
+                              posted={!!clip.postedYoutube}
+                              postedAt={clip.postedYoutube}
+                              busy={publishing === clip.id + ':yt'}
+                              onClick={() => postYouTube(clip)}
+                            />
+                          )}
                         </>
                       )}
                       {clip.status === 'failed' && clip.renderError && (
@@ -633,6 +640,7 @@ export function ShortsStudioModal({
         <TikTokDirectModal
           burnedVideoUrl={ttPost.url}
           initialCaption={ttPost.caption}
+          tier={tier}
           onClose={() => setTtPost(null)}
           onPosted={() => { void markPosted(ttPost.id, 'tiktok'); setTtPost(null); toast.success('Posted to TikTok') }}
         />
