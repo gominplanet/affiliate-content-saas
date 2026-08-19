@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { scrubBanned } from '@/lib/scrub'
 import { createServerClient } from '@/lib/supabase/server'
 import { decryptIntegrationRow, encryptIntegrationWrite } from '@/lib/integration-secrets'
+import { channelShareUrl } from '@/lib/channel-share-url'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { learnProfileToPrompt } from '@/lib/learn'
 import {
@@ -54,7 +55,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: postRow } = await supabase
       .from('blog_posts')
-      .select('id,title,excerpt,content,wordpress_url,geniuslink_blog_url,social_publish_counts')
+      .select('id,title,excerpt,content,wordpress_url,geniuslink_blog_url,geniuslink_channel_urls,social_publish_counts')
       .eq('id', postId)
       .eq('user_id', user.id)
       .single()
@@ -90,7 +91,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: intRow } = await supabase
       .from('integrations')
-      .select('twitter_access_token,twitter_refresh_token,twitter_expires_at')
+      .select('twitter_access_token,twitter_refresh_token,twitter_expires_at,geniuslink_api_key,geniuslink_api_secret')
       .eq('user_id', user.id)
       .single()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -192,7 +193,10 @@ Return ONLY the tweet text.`,
     // text handed back to the modal — and saved as scheduled_posts.body_text
     // — still contained banned words.
     tweetText = scrubBanned(tweetText)
-    const finalText = `${tweetText} ${(post as any).geniuslink_blog_url || post.wordpress_url}`
+    // Per-channel Geniuslink: the X link lands in MVP-TWITTER. Best-effort.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const twShareUrl = (await channelShareUrl({ supabase, post: post as any, channel: 'twitter', userId: user.id, apiKey: integration?.geniuslink_api_key, apiSecret: integration?.geniuslink_api_secret })) || ((post as any).geniuslink_blog_url || post.wordpress_url)
+    const finalText = `${tweetText} ${twShareUrl}`
 
     if (dryRun) {
       return NextResponse.json({ ok: true, dryRun: true, text: tweetText, finalText })

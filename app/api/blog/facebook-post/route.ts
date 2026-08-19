@@ -20,6 +20,7 @@ import { ensureAffiliateGeniuslink } from '@/lib/blog-share-url'
 import { resolveGeniuslinkGroupId } from '@/lib/geniuslink-group'
 import { parseLinkPrefs, linkPrefFor, composeCaption, primaryCardUrl, effectiveDisclosure, youtubeWatchUrl } from '@/lib/social-link-mode'
 import { blogShareUrl } from '@/lib/blog-share-url'
+import { channelShareUrl } from '@/lib/channel-share-url'
 import { spendGate } from '@/lib/ai-spend'
 
 export const maxDuration = 60
@@ -52,7 +53,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: postRow } = await supabase
       .from('blog_posts')
-      .select('id,title,excerpt,content,wordpress_url,wordpress_site_id,geniuslink_blog_url,video_id,social_publish_counts,geniuslink_code')
+      .select('id,title,excerpt,content,wordpress_url,wordpress_site_id,geniuslink_blog_url,geniuslink_channel_urls,video_id,social_publish_counts,geniuslink_code')
       .eq('id', postId)
       .eq('user_id', user.id)
       .single()
@@ -199,7 +200,13 @@ Return ONLY the post text, nothing else.`,
     reviewText = scrubBanned(reviewText)
     // The link to SHARE: a geni.us short link when the user enabled wrapping
     // (cached on the row), else the raw WordPress URL.
-    const shareUrl = blogShareUrl(post) || (post.wordpress_url as string)
+    // Per-channel Geniuslink: the Facebook share link lands in MVP-FACEBOOK so
+    // clicks attribute to Facebook. Best-effort — falls back to the plain share.
+    const shareUrl = (await channelShareUrl({
+      supabase, post: post as { id: string; wordpress_url?: string | null; geniuslink_blog_url?: string | null; geniuslink_channel_urls?: Record<string, string> | null; title?: string | null },
+      channel: 'facebook', userId: user.id,
+      apiKey: integration?.geniuslink_api_key, apiSecret: integration?.geniuslink_api_secret,
+    })) || blogShareUrl(post) || (post.wordpress_url as string)
     const caption = composeCaption({
       product: pref.product, content: pref.content, writeUp: reviewText,
       blogUrl: shareUrl, videoUrl, affiliateLink, disclosure, blogLabel: 'Read the full post',

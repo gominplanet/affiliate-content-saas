@@ -118,7 +118,7 @@ export async function publishToFacebook(opts: {
   if (!intRow.facebook_page_id || !intRow.facebook_page_access_token) throw new Error('Facebook Page is not connected.')
 
   const { linkUrl, asin, note } = await resolveAffiliateLink({
-    userId: opts.userId, intRow, asin: opts.asin, productUrl: opts.productUrl, productTitle: opts.productTitle,
+    userId: opts.userId, intRow, asin: opts.asin, productUrl: opts.productUrl, productTitle: opts.productTitle, channel: 'facebook',
   })
 
   const body = (opts.caption || '').trim() || await writeSocialCaption({ userId: opts.userId, tier: opts.tier, productTitle: opts.productTitle, productUrl: opts.productUrl, asin })
@@ -150,7 +150,7 @@ export async function publishToInstagram(opts: {
   const isStory = opts.postType === 'story'
 
   const { linkUrl, asin, note } = await resolveAffiliateLink({
-    userId: opts.userId, intRow, asin: opts.asin, productUrl: opts.productUrl, productTitle: opts.productTitle,
+    userId: opts.userId, intRow, asin: opts.asin, productUrl: opts.productUrl, productTitle: opts.productTitle, channel: 'instagram',
   })
 
   let caption = (opts.caption || '').trim() || await writeSocialCaption({ userId: opts.userId, tier: opts.tier, productTitle: opts.productTitle, productUrl: opts.productUrl, asin })

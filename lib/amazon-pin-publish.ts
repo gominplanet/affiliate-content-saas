@@ -8,6 +8,8 @@
 import { PinterestService } from '@/services/pinterest'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { getOrCreateAmazonGeniuslink } from '@/lib/geniuslink-cache'
+import { resolveGeniuslinkChannelGroupId } from '@/lib/geniuslink-group'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { asinFromAmazonUrl, resolveFinalUrl } from '@/lib/product-link'
 import { fetchAmazonProduct } from '@/services/amazon'
 import { createAnthropicClient } from '@/lib/anthropic'
@@ -64,6 +66,10 @@ export async function resolveAffiliateLink(opts: {
   asin?: string
   productUrl?: string
   productTitle?: string
+  /** When set, mint the link into this social channel's Geniuslink group
+   *  (MVP-FACEBOOK, …) so clicks attribute per channel. Omit for the default
+   *  per-ASIN group. */
+  channel?: string
 }): Promise<{ linkUrl: string; asin: string; note: string | null }> {
   const { intRow } = opts
   let asin = (opts.asin || '').trim().toUpperCase() || asinFromAmazonUrl(opts.productUrl || '') || ''
@@ -80,11 +86,22 @@ export async function resolveAffiliateLink(opts: {
   if (intRow.geniuslink_api_key && intRow.geniuslink_api_secret && destination) {
     try {
       const svc = createGeniuslinkService(intRow.geniuslink_api_key, intRow.geniuslink_api_secret)
-      if (asin) {
+      // Per-channel attribution: when a channel is given, mint a fresh link in
+      // that channel's group (MVP-FACEBOOK, …). This bypasses the per-ASIN cache
+      // on purpose — the cache holds one link per ASIN, which can't be split by
+      // channel. Without a channel, keep the cached per-ASIN link.
+      let channelGroupId: number | null = null
+      if (opts.channel) {
+        channelGroupId = await resolveGeniuslinkChannelGroupId({
+          supabase: createAdminClient(), userId: opts.userId, channel: opts.channel,
+          apiKey: intRow.geniuslink_api_key, apiSecret: intRow.geniuslink_api_secret,
+        }).catch(() => null)
+      }
+      if (asin && !opts.channel) {
         const { url } = await getOrCreateAmazonGeniuslink({ userId: opts.userId, asin, destination, service: svc, note: opts.productTitle || asin })
         linkUrl = url
       } else {
-        linkUrl = await svc.createLink(destination, opts.productTitle || 'product')
+        linkUrl = await svc.createLink(destination, opts.productTitle || 'product', channelGroupId ? { groupId: channelGroupId } : undefined)
       }
     } catch (e) {
       note = `Geniuslink hiccup — used your plain affiliate link instead. ${e instanceof Error ? e.message : ''}`.trim()
@@ -165,9 +182,9 @@ export async function publishAmazonPin(opts: {
   const { intRow } = opts
   if (!intRow.pinterest_access_token) throw new Error('Pinterest is not connected.')
 
-  // Resolve ASIN + geni.us affiliate link (shared across pin / IG / FB).
+  // Resolve ASIN + geni.us affiliate link, routed to the MVP-PINTEREST group.
   const { linkUrl, asin, note: geniuslinkNote } = await resolveAffiliateLink({
-    userId: opts.userId, intRow, asin: opts.asin, productUrl: opts.productUrl, productTitle: opts.productTitle,
+    userId: opts.userId, intRow, asin: opts.asin, productUrl: opts.productUrl, productTitle: opts.productTitle, channel: 'pinterest',
   })
   if (!linkUrl) throw new Error('No product link to pin to. Paste an Amazon link or ASIN.')
 
