@@ -337,6 +337,20 @@ export async function requestStorefrontScan(url: string): Promise<IdeaScanResult
   return { ok: !!resp.ok, count: resp.count, error: resp.error }
 }
 
+/**
+ * One-click storefront sync: SCOUT opens the Amazon Associates earnings report
+ * in a BACKGROUND tab, scrapes the current view + the quick-ranges (Last Week /
+ * This Month / Last Month), pushes them to MVP, and closes the tab. The user
+ * stays on /storefront. Best-effort: resolves { ok:false } when SCOUT isn't
+ * installed so the caller can show the manual fallback.
+ */
+export async function requestEarningsScan(): Promise<IdeaScanResult> {
+  if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
+  const resp = await sendToExtension<IdeaScanResult>({ type: 'MVP_SCAN_EARNINGS' }, 120000)
+  if (!resp) return { ok: false, error: 'timeout' }
+  return { ok: !!resp.ok, count: resp.count, upserted: resp.upserted, error: resp.error }
+}
+
 /** Ping SCOUT, tolerant of a cold MV3 service worker.
  *
  *  Chrome unloads an extension's service worker after ~30s idle. A single short

@@ -11,6 +11,7 @@
 
 import { useCallback, useEffect, useState, Fragment } from 'react'
 import Link from 'next/link'
+import { requestEarningsScan } from '@/lib/extension-frame'
 import {
   Loader2, Sparkles, Wand2, Share2, Handshake, PackageSearch, ArrowRight, ArrowUpRight, ArrowDownRight,
   AlertCircle, DollarSign, MousePointerClick, Package, Percent, TrendingUp, ExternalLink,
@@ -250,6 +251,31 @@ export default function AmazonBrainstorm() {
 
   useEffect(() => { load(period) }, [period, load])
 
+  // One-click history sync: SCOUT reads the Amazon earnings report in a hidden
+  // background tab (current view + quick-ranges) and pushes it, then we refresh.
+  const [syncing, setSyncing] = useState(false)
+  const [syncMsg, setSyncMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const syncFromAmazon = useCallback(async () => {
+    setSyncing(true); setSyncMsg(null)
+    try {
+      const r = await requestEarningsScan()
+      if (r.ok) {
+        await load(period)
+        setSyncMsg({ ok: true, text: r.count ? `Synced ${r.count} row${r.count === 1 ? '' : 's'} from Amazon.` : 'Checked Amazon — nothing new to add right now.' })
+      } else if (r.error === 'not-installed') {
+        setSyncMsg({ ok: false, text: 'Install SCOUT first — it reads your Amazon report. Then click Sync again.' })
+      } else if (r.error === 'signed-out') {
+        setSyncMsg({ ok: false, text: 'Sign in to Amazon Associates in this browser, then click Sync again.' })
+      } else {
+        setSyncMsg({ ok: false, text: "Couldn't read your Amazon report just now. Open it once on Amazon, then try again." })
+      }
+    } catch {
+      setSyncMsg({ ok: false, text: 'Sync failed — try again in a moment.' })
+    } finally {
+      setSyncing(false)
+    }
+  }, [load, period])
+
   async function generate() {
     setAiBusy(true); setAiError(null)
     try {
@@ -320,25 +346,30 @@ export default function AmazonBrainstorm() {
           ranges backfills months/years automatically — most creators just
           don't know to do it. */}
       {!loading && !error && data?.hasData && data.coverage && (
-        <details className="mb-4 rounded-xl border" style={{ borderColor: 'var(--border)' }}>
-          <summary className="cursor-pointer list-none px-4 py-2.5 flex items-center justify-between gap-3 text-[12.5px]" style={{ color: 'var(--text-soft)' }}>
-            <span>
+        <div className="mb-4 rounded-xl border px-4 py-3" style={{ borderColor: 'var(--border)' }}>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <span className="text-[12.5px]" style={{ color: 'var(--text-soft)' }}>
               <span className="font-semibold" style={{ color: 'var(--text)' }}>
                 {data.coverage.periods} {period === 'weekly' ? 'week' : 'month'}{data.coverage.periods !== 1 ? 's' : ''} of history
               </span>
               {data.coverage.earliestStart ? ` captured, back to ${fmtPeriod(period, data.coverage.earliestStart)}` : ' captured'}
             </span>
-            <span className="font-semibold shrink-0" style={{ color: ACCENT }}>Load more history</span>
-          </summary>
-          <div className="px-4 pb-3 pt-1 text-[12.5px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
-            SCOUT syncs whatever report period you have open on Amazon. To pull in past months and years:
-            <ol className="mt-1.5 ml-4 list-decimal space-y-1">
-              <li>Open your <a href="https://affiliate-program.amazon.com/home/reports" target="_blank" rel="noopener noreferrer" className="font-medium hover:underline" style={{ color: ACCENT }}>Amazon earnings report</a> with SCOUT installed.</li>
-              <li>Switch the date range to a past period (Last Month, or a custom range for older months and years). SCOUT captures each one automatically as it loads, a few seconds each.</li>
-              <li>Step back through the ranges you want, then come back here and refresh. Each period you open is saved permanently.</li>
-            </ol>
+            <button
+              onClick={() => void syncFromAmazon()}
+              disabled={syncing}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-semibold text-white disabled:opacity-60"
+              style={{ backgroundColor: ACCENT }}
+            >
+              {syncing ? <><Loader2 size={13} className="animate-spin" /> Syncing from Amazon…</> : 'Load more history'}
+            </button>
           </div>
-        </details>
+          {syncMsg && (
+            <p className="text-[12px] mt-2" style={{ color: syncMsg.ok ? '#16a34a' : '#c0392b' }}>{syncMsg.text}</p>
+          )}
+          <p className="text-[11px] mt-2" style={{ color: 'var(--text-faint)' }}>
+            One click and SCOUT reads your Amazon report in the background (latest + recent past periods) and closes the tab — nothing to babysit.
+          </p>
+        </div>
       )}
 
       {loading && (
