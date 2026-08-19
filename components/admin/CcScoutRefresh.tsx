@@ -125,6 +125,7 @@ function ExportLine({ label, s }: { label: string; s?: CcExportSummary | null })
             {Array.isArray(d.sawDownload) && d.sawDownload.length > 0 && (
               <div>Download-ish buttons seen: {d.sawDownload.join(' · ')}</div>
             )}
+            {d.hasIframe != null && <div>iframes on page: {String(d.hasIframe)}</div>}
             {d.url && <div className="truncate">Page: {d.url}</div>}
           </div>
         )}
