@@ -75,6 +75,7 @@ export const APP_SEARCH_INDEX: AppSearchEntry[] = [
   { label: 'Fix Formatting', href: '/tools/fix-formatting', group: 'Site Tools', keywords: 'fix formatting raw block code gutenberg broken layout repair' },
 
   // ── Collaborate ──────────────────────────────────────────────────────────
+  { label: 'Brand Hub', href: '/brand-hub', group: 'Collaborate', keywords: 'brand hub history timeline relationships crm messages campaigns contacted inbound pitches consolidated all brands who reached out' },
   { label: 'Brand Deals', href: '/collaborations', group: 'Collaborate', keywords: 'brand deals collaborations pitch outreach sponsor media kit share with brand' },
   { label: 'Media Kit', href: '/collaborations', group: 'Collaborate', keywords: 'media kit press kit stats one sheet brand recap' },
   { label: 'Brand Inquiries', href: '/brand-inquiries', group: 'Collaborate', keywords: 'brand inquiries inbox messages work with brands inbound' },
