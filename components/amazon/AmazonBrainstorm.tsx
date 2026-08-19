@@ -39,9 +39,11 @@ interface Product {
   campaign: Campaign | null
 }
 interface SeriesPoint { start: string; earnings: number; revenue: number; units: number; clicks: number; conversion: number; epc: number }
+interface Coverage { periods: number; earliestStart: string | null; latestStart: string | null }
 interface Analytics {
   period: 'weekly' | 'monthly'; hasData: boolean
   available: { weekly: number; monthly: number }
+  coverage?: Coverage
   latest: { start: string; end: string | null } | null
   previous: { start: string } | null
   totals: Totals | null; totalsPrev: Totals | null; products: Product[]
@@ -312,6 +314,32 @@ export default function AmazonBrainstorm() {
           </span>
         )}
       </div>
+
+      {/* Sales-history coverage + how to load more. SCOUT captures whatever
+          report period is on screen, keyed per period, so opening past date
+          ranges backfills months/years automatically — most creators just
+          don't know to do it. */}
+      {!loading && !error && data?.hasData && data.coverage && (
+        <details className="mb-4 rounded-xl border" style={{ borderColor: 'var(--border)' }}>
+          <summary className="cursor-pointer list-none px-4 py-2.5 flex items-center justify-between gap-3 text-[12.5px]" style={{ color: 'var(--text-soft)' }}>
+            <span>
+              <span className="font-semibold" style={{ color: 'var(--text)' }}>
+                {data.coverage.periods} {period === 'weekly' ? 'week' : 'month'}{data.coverage.periods !== 1 ? 's' : ''} of history
+              </span>
+              {data.coverage.earliestStart ? ` captured, back to ${fmtPeriod(period, data.coverage.earliestStart)}` : ' captured'}
+            </span>
+            <span className="font-semibold shrink-0" style={{ color: ACCENT }}>Load more history</span>
+          </summary>
+          <div className="px-4 pb-3 pt-1 text-[12.5px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
+            SCOUT syncs whatever report period you have open on Amazon. To pull in past months and years:
+            <ol className="mt-1.5 ml-4 list-decimal space-y-1">
+              <li>Open your <a href="https://affiliate-program.amazon.com/home/reports" target="_blank" rel="noopener noreferrer" className="font-medium hover:underline" style={{ color: ACCENT }}>Amazon earnings report</a> with SCOUT installed.</li>
+              <li>Switch the date range to a past period (Last Month, or a custom range for older months and years). SCOUT captures each one automatically as it loads, a few seconds each.</li>
+              <li>Step back through the ranges you want, then come back here and refresh. Each period you open is saved permanently.</li>
+            </ol>
+          </div>
+        </details>
+      )}
 
       {loading && (
         <div className="rounded-2xl border p-10 flex items-center justify-center gap-2 text-[13px]" style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }}>

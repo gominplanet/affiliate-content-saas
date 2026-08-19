@@ -211,8 +211,10 @@ export async function GET(request: NextRequest) {
       }
     })
 
-    // Time-series: totals per period (oldest→newest, last 12) for the trend
-    // chart. Grouped from the same period-type rows.
+    // Time-series: totals per period (oldest→newest) for the trend chart.
+    // Grouped from the same period-type rows. Capped at 52 points so a full
+    // year of weeks — or years of months — of captured history all shows,
+    // instead of the old 12-period window that hid most backfilled data.
     const byPeriod = new Map<string, Row[]>()
     for (const r of ofType) {
       const arr = byPeriod.get(r.period_start)
@@ -220,17 +222,26 @@ export async function GET(request: NextRequest) {
     }
     const series = [...byPeriod.entries()]
       .sort((a, b) => (a[0] < b[0] ? -1 : 1))
-      .slice(-12)
+      .slice(-52)
       .map(([start, rows]) => {
         const t = totalsFor(rows)
         return { start, earnings: t.earnings, revenue: t.revenue, units: t.units, clicks: t.clicks, conversion: t.conversion, epc: t.epc }
       })
+
+    // History coverage for the current period type — powers the "X periods
+    // captured, earliest MMM YYYY" indicator + the backfill nudge.
+    const coverage = {
+      periods: starts.length,
+      earliestStart: starts.length ? starts[starts.length - 1] : null,
+      latestStart: starts[0] ?? null,
+    }
 
     const end = latestRows[0]?.period_end ?? null
     return NextResponse.json({
       period: wanted,
       hasData: true,
       available,
+      coverage,
       latest: { start: latestStart, end },
       previous: prevStart ? { start: prevStart } : null,
       totals,
