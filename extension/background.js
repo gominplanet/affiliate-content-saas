@@ -2351,28 +2351,42 @@ async function ccSelectTabInPage(which) {
 // is contains-based (not exact) and picks the most specific element, so extra
 // icons/wrappers/whitespace don't hide the button. `which` = available|accepted.
 function ccDownloadButtonInPage(which, doClick) {
-  const wantBtn = which === 'accepted' ? 'download all accepted campaigns' : 'download all available campaigns'
+  const word = which === 'accepted' ? 'accepted' : 'available'
   const norm = (s) => (s || '').replace(/\s+/g, ' ').trim().toLowerCase()
-  const all = Array.from(document.querySelectorAll('button, a, [role="button"], input[type="button"], span, div'))
-  const cands = all.filter(el => norm(el.textContent).includes(wantBtn))
-  cands.sort((a, b) => (a.textContent || '').length - (b.textContent || '').length)
+  // Match on visible text OR aria-label/title (some controls label via attrs).
+  const label = (el) => {
+    const t = norm(el.textContent)
+    if (t) return t
+    try { return norm(el.getAttribute('aria-label') || el.getAttribute('title') || '') } catch (e) { return '' }
+  }
+  const all = Array.from(document.querySelectorAll('button, a, [role="button"], input[type="button"], [onclick]'))
+  // The real export: "download all <available|accepted> campaigns", NOT the
+  // post-click "preparing download for all … campaigns" state.
+  const isExport = (t) => t.includes('download all') && t.includes('campaign') && t.includes(word) && !t.includes('preparing')
+  let cands = all.filter(el => isExport(label(el)))
+  // Fallback: any "download all … campaigns" (in case the word ordering shifts).
+  if (!cands.length) cands = all.filter(el => { const t = label(el); return t.includes('download all') && t.includes('campaign') && !t.includes('preparing') })
+  cands.sort((a, b) => label(a).length - label(b).length)
   const btn = cands[0]
   const present = !!btn
   let clicked = false
   if (present && doClick) {
+    try { btn.scrollIntoView({ block: 'center' }) } catch (e) {}
     try {
-      // Click the button, or a real <button>/<a> ancestor if the text sits on a
-      // child span. This makes the SPA's handler fire reliably.
       const target = btn.closest('button, a, [role="button"]') || btn
       target.click(); clicked = true
     } catch (e) {}
   }
+  // Rich diagnostics: every clickable whose label mentions download/export.
+  const seen = []
+  for (const el of all) { const t = label(el); if (t && (t.includes('download') || t.includes('export')) && t.length < 90) seen.push(t) }
   const bodyText = document.body ? document.body.innerText : ''
   return {
     present, clicked,
-    url: location.href.slice(0, 140),
-    sawDownload: Array.from(new Set(all.map(e => norm(e.textContent)).filter(t => t.includes('download') && t.length < 80))).slice(0, 8),
+    url: location.href.slice(0, 160),
+    sawDownload: Array.from(new Set(seen)).slice(0, 12),
     campaignsCount: (bodyText.match(/campaigns\s*\(([\d,]+)\)/i) || [])[1] || null,
+    hasIframe: document.querySelectorAll('iframe').length,
     signedOut: /\/ap\/signin/.test(location.href),
   }
 }
@@ -2402,33 +2416,39 @@ async function captureCcDownload(tabId, which, timeoutMs) {
   // re-selecting the tab periodically, and only click once it's actually present.
   try { await chrome.scripting.executeScript({ target: { tabId }, func: ccSelectTabInPage, args: [which] }) } catch (e) {}
   await _sleep(4000)
-  let lastDiag = null, clickedOk = false
-  const clickDeadline = Math.min(deadline, Date.now() + 120000)
-  let tick = 0
-  while (Date.now() < clickDeadline && !clickedOk) {
-    try {
-      const r = await chrome.scripting.executeScript({ target: { tabId }, func: ccDownloadButtonInPage, args: [which, true] })
-      lastDiag = (r && r[0] && r[0].result) || lastDiag
-      if (lastDiag && lastDiag.signedOut) {
-        try { chrome.downloads.onCreated.removeListener(onCreated) } catch (e) {}
-        return { ok: false, error: 'signed-out (open Amazon Creator Connections and sign in, then retry)', diag: lastDiag }
-      }
-      if (lastDiag && lastDiag.clicked) { clickedOk = true; break }
-    } catch (e) { /* tab still loading — keep polling */ }
-    // Every ~15s, re-assert the tab selection in case the SPA reset it.
-    if (++tick % 5 === 0) { try { await chrome.scripting.executeScript({ target: { tabId }, func: ccSelectTabInPage, args: [which] }) } catch (e) {} }
+  // One loop that (a) keeps trying to click the export button until it clicks,
+  // AND (b) waits for a download to appear. We DON'T bail when the button can't
+  // be clicked: Amazon flips the button to "Preparing download…" once triggered
+  // (by us or a prior run) and builds the file for minutes, so the file can
+  // still arrive even when the button text no longer matches. We only fail if
+  // NO download shows up by the deadline.
+  let lastDiag = null, clickedOk = false, tick = 0
+  while (Date.now() < deadline && !resolved) {
+    if (!clickedOk) {
+      try {
+        const r = await chrome.scripting.executeScript({ target: { tabId }, func: ccDownloadButtonInPage, args: [which, true] })
+        lastDiag = (r && r[0] && r[0].result) || lastDiag
+        if (lastDiag && lastDiag.signedOut) {
+          try { chrome.downloads.onCreated.removeListener(onCreated) } catch (e) {}
+          return { ok: false, error: 'signed-out (open Amazon Creator Connections and sign in, then retry)', diag: lastDiag }
+        }
+        if (lastDiag && lastDiag.clicked) clickedOk = true
+      } catch (e) { /* tab still loading — keep polling */ }
+      // Re-assert the tab selection every ~15s until we've clicked.
+      if (!clickedOk && ++tick % 5 === 0) { try { await chrome.scripting.executeScript({ target: { tabId }, func: ccSelectTabInPage, args: [which] }) } catch (e) {} }
+    }
     await _sleep(3000)
   }
-  if (!clickedOk) {
-    try { chrome.downloads.onCreated.removeListener(onCreated) } catch (e) {}
-    return { ok: false, error: 'download-button-not-found (grid never showed the export button)', diag: lastDiag }
-  }
-
-  // Wait for the download to be created (this is the long "server building the
-  // export" wait), then for it to finish so the URL is fully valid.
-  while (!resolved && Date.now() < deadline) await _sleep(1500)
   try { chrome.downloads.onCreated.removeListener(onCreated) } catch (e) {}
-  if (!resolved) return { ok: false, error: 'download-never-started (timed out waiting for the export)' }
+  if (!resolved) {
+    return {
+      ok: false,
+      error: clickedOk
+        ? 'export-never-delivered (clicked the button, but no file arrived in time)'
+        : 'download-button-not-found (grid never showed the export button)',
+      diag: lastDiag,
+    }
+  }
 
   // Wait for completion.
   const id = resolved.id
