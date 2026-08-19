@@ -17,6 +17,8 @@ import { normalizeTier, TIERS } from '@/lib/tier'
 export const runtime = 'nodejs'
 
 const SUPPORTED_SOCIALS = ['facebook', 'threads', 'twitter', 'linkedin', 'bluesky', 'telegram', 'pinterest']
+const CADENCES = ['daily', 'alternate', '3x_week', '2x_week', '1x_week'] as const
+type Cadence = typeof CADENCES[number]
 
 interface AutoBlogState {
   enabled: boolean
@@ -25,6 +27,8 @@ interface AutoBlogState {
   pausedAt: string | null
   recentVideoIds?: string[]
   socials: string[]
+  cadence: Cadence
+  days: number[]
 }
 
 function readState(customizations: unknown): AutoBlogState {
@@ -37,10 +41,12 @@ function readState(customizations: unknown): AutoBlogState {
     pausedAt: typeof a.pausedAt === 'string' ? a.pausedAt : null,
     recentVideoIds: Array.isArray(a.recentVideoIds) ? (a.recentVideoIds as string[]) : [],
     socials: Array.isArray(a.socials) ? (a.socials as string[]).filter(p => SUPPORTED_SOCIALS.includes(p)) : [],
+    cadence: CADENCES.includes(a.cadence as Cadence) ? (a.cadence as Cadence) : 'daily',
+    days: Array.isArray(a.days) ? (a.days as number[]).filter(n => Number.isInteger(n) && n >= 0 && n <= 6) : [],
   }
 }
 
-const OFF: AutoBlogState = { enabled: false, lastRunAt: null, pausedReason: null, pausedAt: null, socials: [] }
+const OFF: AutoBlogState = { enabled: false, lastRunAt: null, pausedReason: null, pausedAt: null, socials: [], cadence: 'daily', days: [] }
 
 export async function GET() {
   const supabase = await createServerClient()
@@ -75,14 +81,17 @@ export async function PUT(req: Request) {
     return NextResponse.json({ error: 'Reconnect your WordPress site (Setup → WordPress) to use auto-pilot.' }, { status: 400 })
   }
 
-  let body: { enabled?: boolean; socials?: string[] }
+  let body: { enabled?: boolean; socials?: string[]; cadence?: string; days?: number[] }
   try { body = await req.json() } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }) }
   const enabled = body.enabled === true
-  // Socials are optional in the payload — only overwrite when provided, so a
-  // plain on/off toggle doesn't wipe the saved channel selection.
-  const socialsProvided = Array.isArray(body.socials)
-  const socials = socialsProvided
-    ? [...new Set(body.socials!.filter(p => SUPPORTED_SOCIALS.includes(p)))]
+  // Socials/cadence/days are optional in the payload — only overwrite when
+  // provided, so a plain on/off toggle doesn't wipe the saved config.
+  const socials = Array.isArray(body.socials)
+    ? [...new Set(body.socials.filter(p => SUPPORTED_SOCIALS.includes(p)))]
+    : null
+  const cadence = CADENCES.includes(body.cadence as Cadence) ? (body.cadence as Cadence) : null
+  const days = Array.isArray(body.days)
+    ? [...new Set(body.days.filter(n => Number.isInteger(n) && n >= 0 && n <= 6))].sort((a, b) => a - b)
     : null
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -98,6 +107,8 @@ export async function PUT(req: Request) {
     pausedAt: enabled ? null : prev.pausedAt,
     recentVideoIds: prev.recentVideoIds ?? [],
     socials: socials ?? prev.socials,
+    cadence: cadence ?? prev.cadence,
+    days: days ?? prev.days,
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

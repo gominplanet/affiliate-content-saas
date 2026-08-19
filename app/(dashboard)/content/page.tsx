@@ -5088,7 +5088,7 @@ function ToolButton({ tint, icon, label, desc, onClick, loading, disabled, title
           {label}
           {active && <span className="text-[9px] font-bold px-1.5 py-[1px] rounded-full flex-shrink-0" style={{ background: '#16a34a', color: '#fff', letterSpacing: '0.03em' }}>ON</span>}
         </span>
-        <span className="text-[12px] truncate" style={{ color: active ? '#16a34a' : 'var(--text-faint)' }}>{active ? 'On — publishing daily' : desc}</span>
+        <span className="text-[12px] truncate" style={{ color: active ? '#16a34a' : 'var(--text-faint)' }}>{active ? 'On — auto-publishing' : desc}</span>
       </span>
     </button>
   )
