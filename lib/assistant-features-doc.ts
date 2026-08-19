@@ -542,6 +542,24 @@ Quick one-purpose fixers for a blog:
 
 ---
 
+## BRAND HUB (all brand relationships in one place)
+
+URL: /brand-hub · Sidebar: Collaborate → Brand Hub
+
+One consolidated history of every brand the creator has dealt with, pulled
+together from three places that used to be separate: inbound inquiries (blog
+form), outbound pitches (Brand Deals), and Amazon Creator Connections
+campaigns. Each brand gets one card with a timeline: who reached out, pitches
+sent, campaigns added/messaged/accepted/joined, and posts published for them,
+newest first. Filter by channel (inbound / pitched / campaign), search by
+brand, and see a headline status per brand (Joined > Accepted > Messaged >
+Pitched > Inquiry received). It's the place to answer "have I talked to this
+brand before, and what happened?" Read-only overview; take actions in the
+underlying tools (reply to an inquiry, send a new pitch in Brand Deals,
+message a brand in CC Campaigns).
+
+---
+
 ## BRAND INQUIRIES (inbound inbox)
 
 URL: /brand-inquiries · Sidebar: Collaborate → Brand Inquiries

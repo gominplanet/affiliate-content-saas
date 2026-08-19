@@ -41,7 +41,7 @@ import {
   UserCog, AlertTriangle, DollarSign, Newspaper, Plug, Wrench,
   Camera, MessageCircle, Activity, BarChart3, Wand2, ShieldCheck,
   Share2, UserSquare, LifeBuoy, Link2, FlaskConical, Store, Send, ShoppingBag, Megaphone,
-  Inbox, PackageSearch, Rocket, Database,
+  Inbox, PackageSearch, Rocket, Database, History,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { DEALS_HUB_PAUSED } from '@/lib/deal-occasion'
@@ -552,6 +552,8 @@ export default function DashboardShellV2({
     {
       label: 'Collaborate',
       items: [
+        // One consolidated timeline of every brand relationship (inbound + pitches + campaigns).
+        { href: '/brand-hub', icon: <History size={15} />, label: 'Brand Hub' },
         { href: '/collaborations', icon: <Handshake size={15} />, label: 'Brand Deals' },
         // Inbound: brand messages from the blog's "Work with brands" banner.
         { href: '/brand-inquiries', icon: <Inbox size={15} />, label: 'Brand Inquiries', badge: unreadBrand > 0 ? unreadBrand : undefined },
@@ -710,6 +712,7 @@ export default function DashboardShellV2({
       { href: '/link-in-bio', icon: <Link2 size={15} />, label: 'Link in Bio' },
       { href: '/storefront', icon: <BarChart3 size={15} />, label: 'AMZ Storefront', subheading: 'Find & earn' },
       { href: '/amazon/research', icon: <PackageSearch size={15} />, label: 'Research' },
+      { href: '/brand-hub', icon: <History size={15} />, label: 'Brand Hub' },
       { href: '/collaborations', icon: <Handshake size={15} />, label: 'Brand Deals' },
       { href: '/brand-inquiries', icon: <Inbox size={15} />, label: 'Brand Inquiries', badge: unreadBrand > 0 ? unreadBrand : undefined },
       { href: '/brand', icon: <Palette size={15} />, label: 'Brand Profile', subheading: 'Your brand' },
