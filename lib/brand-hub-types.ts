@@ -84,11 +84,29 @@ export interface CampaignRow {
 
 export interface CollabRow {
   brand_name?: string | null
+  brand_url?: string | null
+  product_or_asin?: string | null
   generated_email?: string | null
   platforms?: string[] | null
   website_url?: string | null
   youtube_url?: string | null
   created_at?: string | null
+}
+
+/**
+ * A brand-side link for a pitch, if we have one. Prefers the brand's own site;
+ * falls back to the product the pitch is about (a full URL, or an ASIN turned
+ * into an Amazon link). Returns undefined when there's nothing brand-relevant —
+ * we deliberately never fall back to the creator's own links.
+ */
+export function pitchBrandLink(c: CollabRow): string | undefined {
+  const brand = (c.brand_url || '').trim()
+  if (brand) return /^https?:\/\//i.test(brand) ? brand : `https://${brand}`
+  const p = (c.product_or_asin || '').trim()
+  if (!p) return undefined
+  if (/^https?:\/\//i.test(p)) return p
+  if (/^[A-Z0-9]{10}$/i.test(p)) return `https://www.amazon.com/dp/${p.toUpperCase()}`
+  return undefined
 }
 
 // ── Normalization ────────────────────────────────────────────────────────────
@@ -185,15 +203,15 @@ export function buildBrandHub(
     acc.channels.add('pitch')
     acc.counts.pitches += 1
     acc.statuses.add('Pitched')
-    // NOTE: collaborations.website_url / youtube_url are the CREATOR's own links
-    // (from their outreach profile), not the brand's — so we deliberately don't
-    // surface an "Open" link here. It would just open the creator's own blog,
-    // which is useless in a per-brand timeline. The email body is the payload.
+    // The "Open" link is a BRAND-side link only (brand_url, else the pitched
+    // product). We never fall back to collaborations.website_url/youtube_url —
+    // those are the CREATOR's own links and opening them is useless here.
     acc.events.push({
       type: 'pitch',
       at: c.created_at || new Date(0).toISOString(),
       title: 'Pitch email sent',
       detail: (c.generated_email || '').trim() || undefined,
+      url: pitchBrandLink(c),
       platforms: (c.platforms || []).filter(Boolean),
     })
   }

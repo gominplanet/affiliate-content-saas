@@ -10,6 +10,9 @@ import { recordUsage, usageFromAnthropic } from '@/lib/ai-usage'
 
 export interface CollabInput {
   brandName: string
+  /** The BRAND's own website / contact page (optional) — stored so the Brand
+   *  Hub timeline can link straight to the brand. Not the creator's own site. */
+  brandUrl?: string
   amazonStorefront?: string
   websiteUrl?: string
   youtubeUrl?: string

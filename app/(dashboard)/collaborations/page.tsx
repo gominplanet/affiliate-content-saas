@@ -45,6 +45,7 @@ function YesNo({ value, onChange }: { value: boolean; onChange: (v: boolean) => 
 export default function CollaborationsPage() {
   const { confirm, ConfirmHost } = useConfirm()
   const [brandName, setBrandName] = useState('')
+  const [brandUrl, setBrandUrl] = useState('')
   const [productOrAsin, setProductOrAsin] = useState('')
   const [amazonStorefront, setAmazonStorefront] = useState('')
   const [websiteUrl, setWebsiteUrl] = useState('')
@@ -218,7 +219,7 @@ export default function CollaborationsPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          brandName, productOrAsin, amazonStorefront, websiteUrl, youtubeUrl, portfolioUrl, mediaKitUrl,
+          brandName, brandUrl, productOrAsin, amazonStorefront, websiteUrl, youtubeUrl, portfolioUrl, mediaKitUrl,
           platforms: [...platforms],
           bannerAds, bannerAdsAmount, freeSample, productionFee, productionFeeAmount, copyrightFee, copyrightFeeAmount, shareAddress,
           livestreams, livestreamLink,
@@ -326,9 +327,13 @@ export default function CollaborationsPage() {
       <div className="card p-5 mb-5 max-w-3xl">
         <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-3">1 · Your channels & the brand</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="sm:col-span-2">
+          <div>
             <label className={lbl}>Brand name <span className="text-[#ff3b30]">*</span></label>
             <input value={brandName} onChange={e => setBrandName(e.target.value)} placeholder="The brand you want to collaborate with" className="input-field text-sm w-full" />
+          </div>
+          <div>
+            <label className={lbl}>Brand website <span className="text-[#86868b]">(optional)</span></label>
+            <input value={brandUrl} onChange={e => setBrandUrl(e.target.value)} placeholder="brand.com — so Brand Hub links to them" className="input-field text-sm w-full" />
           </div>
           <div className="sm:col-span-2">
             <label className={lbl}>Product name or ASIN <span className="text-[#86868b]">(the specific product you want to pitch)</span></label>
