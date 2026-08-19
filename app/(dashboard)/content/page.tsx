@@ -119,6 +119,13 @@ const BlogEditModal = dynamic(
   { ssr: false },
 )
 
+// ScheduleEditModal — change a scheduled post's date/time + add/remove social
+// platforms (no regeneration). Lazy-loaded like the others.
+const ScheduleEditModal = dynamic(
+  () => import('@/components/content/ScheduleEditModal'),
+  { ssr: false },
+)
+
 // Shape returned by /api/blog/scheduled-list — flat enough that we don't
 // need a separate type module.
 //
@@ -2084,6 +2091,8 @@ function ScheduledList({
   const [showHistory, setShowHistory] = useState(false)
   // Edit a scheduled post's article right here (title + body), no WP admin.
   const [editPostId, setEditPostId] = useState<string | null>(null)
+  // Edit a scheduled post's date/time + social platforms.
+  const [editSchedule, setEditSchedule] = useState<ScheduledItem | null>(null)
   if (loading) {
     return (
       <div className="flex items-center gap-2 text-sm text-[#86868b] dark:text-[#8e8e93] py-12 justify-center">
@@ -2166,6 +2175,16 @@ function ScheduledList({
     <div className="flex flex-col gap-2">
       {editPostId && (
         <BlogEditModal postId={editPostId} onClose={() => setEditPostId(null)} onSaved={onRefresh} />
+      )}
+      {editSchedule && editSchedule.blog_post_id && (
+        <ScheduleEditModal
+          blogPostId={editSchedule.blog_post_id}
+          scheduledAt={editSchedule.scheduled_at}
+          platforms={editSchedule.cascade ?? []}
+          title={editSchedule.blog_posts?.title ?? null}
+          onClose={() => setEditSchedule(null)}
+          onSaved={onRefresh}
+        />
       )}
       <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
         <div className="flex items-center gap-3 text-xs">
@@ -2295,6 +2314,14 @@ function ScheduledList({
                   className="text-xs font-medium text-[#7C3AED] hover:underline"
                 >
                   Edit post
+                </button>
+              )}
+              {item.kind === 'blog_publish' && item.blog_post_id && item.status === 'pending' && (
+                <button
+                  onClick={() => setEditSchedule(item)}
+                  className="text-xs font-medium text-[#7C3AED] hover:underline"
+                >
+                  Edit schedule
                 </button>
               )}
               {item.status === 'pending' && !item.synthetic && (
