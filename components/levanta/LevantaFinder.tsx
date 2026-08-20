@@ -12,6 +12,7 @@
 import { useEffect, useState } from 'react'
 import { Sparkles, Play, Loader2, ExternalLink, CheckCircle2, Clock, Star, ShoppingCart, Bookmark, MessageCircle, SlidersHorizontal } from 'lucide-react'
 import MessageBrandFlow, { type MessageBrandTarget } from '@/components/campaigns/MessageBrandFlow'
+import GenerateOptionsModal, { type GenerateOptions } from '@/components/content/GenerateOptionsModal'
 
 const CYAN = '#0E7490'
 
@@ -42,6 +43,7 @@ export default function LevantaFinder({ onSavedChange }: { onSavedChange?: () =>
   const [note, setNote] = useState('')
   const [matches, setMatches] = useState<Match[] | null>(null)
   const [gen, setGen] = useState<Record<string, GenState>>({})
+  const [optionsFor, setOptionsFor] = useState<Match | null>(null)
   const [done, setDone] = useState<string[]>([]) // ASINs already generated → excluded next scan
   const [saved, setSaved] = useState<Set<string>>(new Set()) // ASINs already on the Saved shelf
   const [seen, setSeen] = useState<Set<string>>(new Set()) // every ASIN already SHOWN → paged past on re-scan
@@ -120,7 +122,8 @@ export default function LevantaFinder({ onSavedChange }: { onSavedChange?: () =>
     }
   }
 
-  async function generate(m: Match) {
+  async function generate(m: Match, o: GenerateOptions) {
+    setOptionsFor(null)
     setGen((g) => ({ ...g, [m.asin]: { loading: true } }))
     try {
       const res = await fetch('/api/levanta/generate', {
@@ -131,7 +134,8 @@ export default function LevantaFinder({ onSavedChange }: { onSavedChange?: () =>
             asin: m.asin, title: m.title, image: m.image, price: m.price,
             category: m.category, brandName: m.brandName, marketplace: m.marketplace,
           },
-          draft: !publishLive,
+          draft: o.publish === 'draft',
+          options: { format: o.format, length: o.length, heroStyle: o.heroStyle, socials: o.socials },
         }),
       })
       const j = await res.json()
@@ -281,7 +285,7 @@ export default function LevantaFinder({ onSavedChange }: { onSavedChange?: () =>
                       <CheckCircle2 size={13} /> {g.draft ? 'Review draft' : 'View post'} <ExternalLink size={11} />
                     </a>
                   ) : (
-                    <button onClick={() => generate(m)} disabled={g.loading}
+                    <button onClick={() => setOptionsFor(m)} disabled={g.loading}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold text-white disabled:opacity-60"
                       style={{ background: 'linear-gradient(45deg, #0E7490 0%, #22D3EE 100%)' }}>
                       {g.loading ? <><Loader2 size={12} className="animate-spin" /> Generating…</> : <><Sparkles size={12} /> Generate post</>}
@@ -295,6 +299,15 @@ export default function LevantaFinder({ onSavedChange }: { onSavedChange?: () =>
       )}
 
       {msg && <MessageBrandFlow target={msg} onClose={() => setMsg(null)} />}
+      {optionsFor && (
+        <GenerateOptionsModal
+          productTitle={optionsFor.title || optionsFor.asin}
+          busy={!!gen[optionsFor.asin]?.loading}
+          initial={{ publish: publishLive ? 'live' : 'draft' }}
+          onClose={() => setOptionsFor(null)}
+          onConfirm={(o) => generate(optionsFor, o)}
+        />
+      )}
     </div>
   )
 }
