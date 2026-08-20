@@ -16,10 +16,9 @@ import { toast } from 'sonner'
 import {
   Radar, Search, Loader2, Star, Zap, BadgePercent, ExternalLink,
   ArrowRight, Sparkles, TrendingUp, RefreshCw, ShieldCheck, ShieldAlert,
-  Send, Check, AlertCircle, X as CloseIcon, HelpCircle, Mail, Info, Coins, Flame, Plus, Layers, Video, ChevronDown, Bookmark,
-  BarChart3, CalendarDays, TrendingDown, Minus,
+  Send, Check, AlertCircle, X as CloseIcon, HelpCircle, Mail, Info, Flame, Plus, Layers, Video, ChevronDown, Bookmark,
 } from 'lucide-react'
-import { formatSalesRank, formatAgeWithDate, formatRankTrend } from '@/lib/product-card-signals'
+import ProductSignalCard from '@/components/product/ProductSignalCard'
 import { Button } from '@/components/ui/button'
 import QuickPostModal from '@/components/deal/QuickPostModal'
 import WalmartOffers from '@/components/walmart/WalmartOffers'
@@ -701,122 +700,70 @@ function SaveDealButton({ deal: d, variant = 'quiet' }: { deal: Deal; variant?: 
 
 function DealCard({ deal: d, onQuickPost, selected = false, onToggleSelect, locked = false, socialOnly = false }: { deal: Deal; onQuickPost: (d: Deal) => void; selected?: boolean; onToggleSelect?: (asin: string) => void; locked?: boolean; socialOnly?: boolean }) {
   const { gen, postUrl, makePost } = useMakePost(d)
-  return (
-    <div className="rounded-xl border bg-card overflow-hidden flex flex-col transition-shadow hover:shadow-md">
-      <a href={d.amazonUrl} target="_blank" rel="noopener noreferrer" className="relative flex items-center justify-center bg-white h-44 p-3">
-        {d.imageUrl
-          ? <img loading="lazy" decoding="async" src={d.imageUrl} alt="" className="max-h-full max-w-full object-contain" />
-          : <div className="flex items-center justify-center text-muted-foreground"><BadgePercent size={28} /></div>}
-        {d.discountPct != null && (
-          <span className="absolute top-2 left-2 text-xs font-bold bg-red-600 text-white rounded px-1.5 py-0.5">-{d.discountPct}%</span>
-        )}
-        {d.dealType === 'lightning' && (
-          <span className="absolute top-2 right-2 text-[10px] font-bold bg-amber-500 text-white rounded px-1.5 py-0.5 inline-flex items-center gap-0.5"><Zap size={10} /> Lightning</span>
-        )}
-        {d.postedUrl && (
-          <span className="absolute bottom-2 left-2 text-[10px] font-bold bg-emerald-600 text-white rounded px-1.5 py-0.5 inline-flex items-center gap-0.5"><Check size={10} /> Posted</span>
-        )}
-        {d.opportunityScore != null && d.opportunityScore >= 55 && (
-          <span className="absolute bottom-2 right-2 text-[10px] font-bold bg-violet-600 text-white rounded px-1.5 py-0.5 inline-flex items-center gap-0.5" title="High opportunity: strong discount, real deal, in demand"><Flame size={10} /> Top pick</span>
-        )}
-      </a>
-      <div className="p-3 flex flex-col gap-1.5 flex-1">
-        <div className="text-sm font-medium line-clamp-2 leading-snug min-h-[2.5rem]">{d.title}</div>
-        {d.brand && <div className="text-xs text-muted-foreground">{d.brand}</div>}
-        <div className="flex items-center gap-2">
-          {money(d.priceNow) && <span className="text-base font-bold">{money(d.priceNow)}</span>}
-          {money(d.priceWas) && d.priceWas! > (d.priceNow ?? 0) && (
-            <span className="text-xs text-muted-foreground line-through">{money(d.priceWas)}</span>
-          )}
+  const model = {
+    asin: d.asin, parentAsin: d.parentAsin,
+    imageUrl: d.imageUrl, imageHref: d.amazonUrl,
+    brand: d.brand, title: d.title,
+    priceNow: d.priceNow, priceWas: d.priceWas, discountPct: d.discountPct,
+    rating: d.rating, reviewCount: d.reviewCount, monthlySold: d.monthlySold,
+    hasVideo: d.hasVideo,
+    salesRank: d.salesRank, salesRankAvg90: d.salesRankAvg90, salesRankCategory: d.salesRankCategory,
+    category: d.category, listedSince: d.listedSince,
+    commission: d.estCommissionCents != null && d.estCommissionCents > 0
+      ? { cents: d.estCommissionCents, ratePct: d.commissionRatePct, isBounty: d.commissionIsBounty }
+      : null,
+  }
+  const overlays = (
+    <>
+      {d.dealType === 'lightning' && (
+        <span className="absolute top-2 right-2 z-10 text-[10px] font-bold bg-amber-500 text-white rounded-full px-2 py-0.5 inline-flex items-center gap-0.5"><Zap size={10} /> Lightning</span>
+      )}
+      {d.postedUrl && (
+        <span className="absolute bottom-2 left-2 z-10 text-[10px] font-bold bg-emerald-600 text-white rounded-full px-2 py-0.5 inline-flex items-center gap-0.5"><Check size={10} /> Posted</span>
+      )}
+      {d.opportunityScore != null && d.opportunityScore >= 55 && (
+        <span className="absolute bottom-2 right-2 z-10 text-[10px] font-bold bg-violet-600 text-white rounded-full px-2 py-0.5 inline-flex items-center gap-0.5" title="High opportunity: strong discount, real deal, in demand"><Flame size={10} /> Top pick</span>
+      )}
+    </>
+  )
+  const extra = (
+    <>
+      {d.dealType === 'lightning' && d.lightningEndsAt && <Countdown endsAt={d.lightningEndsAt} />}
+      {d.verdict && <VerdictBadge verdict={d.verdict} />}
+      {d.campaign && (
+        <div className="flex flex-col gap-0.5">
+          <a href={d.campaign.detailsUrl || '#'} target="_blank" rel="noopener noreferrer"
+             className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:underline">
+            <Sparkles size={12} /> +{d.campaign.commissionPct}% Creator Connections
+          </a>
+          {/* CC intelligence: spots left / full / ending — the "should I bother" line */}
+          <div className="flex items-center gap-1.5 flex-wrap text-[10px]">
+            {d.campaign.isFull ? (
+              <span className="px-1.5 py-0.5 rounded font-semibold text-[#b3261e] bg-[#ff3b30]/12">Campaign full</span>
+            ) : d.campaign.spotsLeft != null && d.campaign.totalSlots != null ? (
+              <span className={`px-1.5 py-0.5 rounded font-medium ${(d.campaign.pctFilled ?? 0) > 80 ? 'text-[#8a6d00] bg-[#ffcc00]/15' : 'text-[var(--text-3)] bg-[var(--surface-2)]'}`}>
+                {d.campaign.spotsLeft.toLocaleString()} spots left
+              </span>
+            ) : null}
+            {!d.campaign.isFull && d.campaign.daysLeft != null && d.campaign.daysLeft <= 2 && (
+              <span className="px-1.5 py-0.5 rounded font-semibold text-[#b3261e] bg-[#ff3b30]/12">
+                Ends {d.campaign.daysLeft <= 0 ? 'today' : d.campaign.daysLeft === 1 ? 'tomorrow' : `in ${d.campaign.daysLeft}d`}
+              </span>
+            )}
+          </div>
         </div>
-        {d.dealType === 'lightning' && d.lightningEndsAt && <Countdown endsAt={d.lightningEndsAt} />}
-        {d.rating != null && (
-          <div className="flex items-center gap-1 text-xs text-muted-foreground">
-            <Star size={12} className="fill-amber-400 text-amber-400" /> {d.rating.toFixed(1)}
-            {d.reviewCount != null && <span>({d.reviewCount.toLocaleString()})</span>}
-          </div>
-        )}
-        {d.monthlySold != null && (
-          <div className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 dark:text-blue-400 w-fit">
-            <TrendingUp size={12} /> {d.monthlySold.toLocaleString()}+ bought/mo
-          </div>
-        )}
-        {/* Keepa signals: sales rank, rank trend, category, product age */}
-        {(() => {
-          const rank = formatSalesRank(d.salesRank, d.salesRankCategory)
-          const trend = formatRankTrend(d.salesRank, d.salesRankAvg90)
-          const age = formatAgeWithDate(d.listedSince)
-          if (!rank && !trend && !d.category && !age) return null
-          const trendColor = trend?.direction === 'rising'
-            ? 'text-emerald-600 dark:text-emerald-400'
-            : trend?.direction === 'slipping'
-            ? 'text-rose-600 dark:text-rose-400'
-            : 'text-muted-foreground'
-          const TrendIcon = trend?.direction === 'rising' ? TrendingUp : trend?.direction === 'slipping' ? TrendingDown : Minus
-          return (
-            <div className="flex flex-col gap-0.5 text-xs text-muted-foreground">
-              {rank && <span className="inline-flex items-center gap-1"><BarChart3 size={12} /> {rank}</span>}
-              {trend && (
-                <span className={`inline-flex items-center gap-1 font-medium ${trendColor}`} title={`${trend.label}: ${trend.detail}`}>
-                  <TrendIcon size={12} /> {trend.label} <span className="font-normal text-muted-foreground">{trend.detail}</span>
-                </span>
-              )}
-              {!rank && d.category && <span className="inline-flex items-center gap-1"><Layers size={12} /> {d.category}</span>}
-              {age && <span className="inline-flex items-center gap-1"><CalendarDays size={12} /> {age}</span>}
-              {d.parentAsin && (
-                <span className="inline-flex items-center gap-1 font-mono text-[10px] opacity-70"
-                      title={d.parentAsin !== d.asin ? `One variation of family ${d.parentAsin}` : 'Standalone listing'}>
-                  <Layers size={11} /> {d.asin}{d.parentAsin !== d.asin ? ' · variation' : ''}
-                </span>
-              )}
-            </div>
-          )
-        })()}
-        {d.hasVideo && (
-          <div className="inline-flex items-center gap-1 text-xs font-medium text-fuchsia-600 dark:text-fuchsia-400 w-fit"
-               title="This listing has a product-carousel video — great for a Short or Reel">
-            <Video size={12} /> Has video
-          </div>
-        )}
-        {d.estCommissionCents != null && d.estCommissionCents > 0 && (
-          <div className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400 w-fit"
-               title={d.commissionIsBounty ? 'Creator Connections bounty rate' : 'Estimated Amazon commission (category rate)'}>
-            <Coins size={12} /> ≈ {money((d.estCommissionCents) / 100)}/sale
-            <span className="font-normal text-muted-foreground">· {d.commissionIsBounty ? `${d.commissionRatePct}% bounty` : `${d.commissionRatePct}% est`}</span>
-          </div>
-        )}
-        {d.verdict && <VerdictBadge verdict={d.verdict} />}
-        {d.campaign && (
-          <div className="flex flex-col gap-0.5">
-            <a href={d.campaign.detailsUrl || '#'} target="_blank" rel="noopener noreferrer"
-               className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:underline">
-              <Sparkles size={12} /> +{d.campaign.commissionPct}% Creator Connections
-            </a>
-            {/* CC intelligence: spots left / full / ending — the "should I bother" line */}
-            <div className="flex items-center gap-1.5 flex-wrap text-[10px]">
-              {d.campaign.isFull ? (
-                <span className="px-1.5 py-0.5 rounded font-semibold text-[#b3261e] bg-[#ff3b30]/12">Campaign full</span>
-              ) : d.campaign.spotsLeft != null && d.campaign.totalSlots != null ? (
-                <span className={`px-1.5 py-0.5 rounded font-medium ${(d.campaign.pctFilled ?? 0) > 80 ? 'text-[#8a6d00] bg-[#ffcc00]/15' : 'text-[var(--text-3)] bg-[var(--surface-2)]'}`}>
-                  {d.campaign.spotsLeft.toLocaleString()} spots left
-                </span>
-              ) : null}
-              {!d.campaign.isFull && d.campaign.daysLeft != null && d.campaign.daysLeft <= 2 && (
-                <span className="px-1.5 py-0.5 rounded font-semibold text-[#b3261e] bg-[#ff3b30]/12">
-                  Ends {d.campaign.daysLeft <= 0 ? 'today' : d.campaign.daysLeft === 1 ? 'tomorrow' : `in ${d.campaign.daysLeft}d`}
-                </span>
-              )}
-            </div>
-          </div>
-        )}
-        <div className="mt-auto pt-2 space-y-1.5">
-          {d.postedUrl && gen !== 'done' && (
-            <a href={d.postedUrl} target="_blank" rel="noopener noreferrer"
-               className="flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400 hover:underline">
-              <Check size={12} /> You&apos;ve posted this — view it
-            </a>
-          )}
-          {locked ? (
+      )}
+    </>
+  )
+  const footer = (
+    <>
+      {d.postedUrl && gen !== 'done' && (
+        <a href={d.postedUrl} target="_blank" rel="noopener noreferrer"
+           className="flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400 hover:underline">
+          <Check size={12} /> You&apos;ve posted this — view it
+        </a>
+      )}
+      {locked ? (
             /* Free plan: browse only. Posting a deal is a paid action. */
             <>
               <a href="/billing"
@@ -885,10 +832,9 @@ function DealCard({ deal: d, onQuickPost, selected = false, onToggleSelect, lock
           </div>
           </>
           )}
-        </div>
-      </div>
-    </div>
+    </>
   )
+  return <ProductSignalCard model={model} overlays={overlays} extra={extra} footer={footer} />
 }
 
 // Compact card for the "double wins" ticker. Same two actions as DealCard —

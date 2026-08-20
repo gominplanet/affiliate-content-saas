@@ -14,11 +14,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
   Loader2, Search, Bookmark, BookmarkCheck, ShoppingCart, PenLine, Check,
-  ArrowRight, BarChart3, ImageOff, SlidersHorizontal, Sparkles, Video, Lock,
+  ArrowRight, BarChart3, SlidersHorizontal, Sparkles, Lock,
 } from 'lucide-react'
 import ProductDeepDiveModal from '@/components/product/ProductDeepDiveModal'
 import MvpPicksInfo from '@/components/campaigns/MvpPicksInfo'
-import { formatSalesRank, formatAgeWithDate, formatRankTrend } from '@/lib/product-card-signals'
+import ProductSignalCard from '@/components/product/ProductSignalCard'
 
 interface Product {
   asin: string
@@ -352,91 +352,60 @@ function ProductCard({ p, canAct, saved, onToggleSave, onDeepDive }: {
     } catch { toast.error('Could not write the review.'); setGen('idle') }
   }
 
-  return (
-    <div className="rounded-xl border flex flex-col overflow-hidden h-full transition-shadow hover:shadow-md" style={{ borderColor: 'var(--border-2)', background: 'var(--surface)' }}>
-      <a href={p.productUrl} target="_blank" rel="noopener noreferrer" className="relative block aspect-square bg-white overflow-hidden">
-        {p.imageUrl ? (
-          // Absolutely filling the square so a tall/odd source photo can NEVER
-          // stretch the card taller than the rest — object-contain still shows
-          // the whole product, just letterboxed inside the fixed square.
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={p.imageUrl} alt="" className="absolute inset-0 w-full h-full object-contain p-3" />
-        ) : (
-          <div className="w-full h-full grid place-items-center" style={{ background: 'rgba(124,58,237,0.04)' }}>
-            <ImageOff size={22} style={{ color: 'rgba(124,58,237,0.3)' }} />
-          </div>
-        )}
-        <button
-          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDeepDive() }}
-          title="Price history & product data"
-          className="absolute top-2 right-2 inline-flex items-center gap-1 text-[10px] font-semibold rounded-full px-2 py-1 bg-black/55 text-white hover:bg-black/75 backdrop-blur-sm transition-colors">
-          <BarChart3 size={10} /> Data
-        </button>
-        {p.mvpApproved && (
-          <span className="absolute top-2 left-2 inline-flex items-center gap-1 text-[10px] font-bold rounded-full px-2 py-1 text-white" style={{ background: '#7C3AED' }}>
-            <Sparkles size={10} /> MVP pick
-          </span>
-        )}
-      </a>
-
-      <div className="p-2.5 flex flex-col gap-2 flex-1">
-        <p className="text-[12px] font-semibold leading-snug line-clamp-2 min-h-[2.1rem]" style={{ color: 'var(--text)' }}>
-          {p.title || <span className="font-mono text-[11px]" style={{ color: 'var(--text-faint)' }}>{p.asin}</span>}
-        </p>
-        {p.priceNow != null ? (
-          <span className="text-[15px] font-extrabold" style={{ color: '#16a34a' }}>${p.priceNow.toFixed(2)}</span>
-        ) : <div className="h-[1.1rem]" />}
-        {(p.rating != null || p.monthlySold != null || (p.videoCount ?? 0) > 0) && (
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10.5px]" style={{ color: 'var(--text-faint)' }}>
-            {p.rating != null && <span>★{p.rating.toFixed(1)}{p.reviewCount != null ? ` (${p.reviewCount.toLocaleString()})` : ''}</span>}
-            {p.monthlySold != null && <span>{p.monthlySold.toLocaleString()}+ sold/mo</span>}
-            {(p.videoCount ?? 0) > 0 && <span className="inline-flex items-center gap-0.5" style={{ color: '#7C3AED' }}><Video size={10} /> carousel</span>}
-          </div>
-        )}
-        {(() => {
-          const rank = formatSalesRank(p.salesRank, p.salesRankCategory)
-          const age = formatAgeWithDate(p.listedSince)
-          const trend = formatRankTrend(p.salesRank, p.salesRankAvg90)
-          const bits = [p.category, rank, age].filter(Boolean) as string[]
-          if (!bits.length && !trend) return null
-          const trendColor = trend?.direction === 'rising' ? '#059669' : trend?.direction === 'slipping' ? '#e11d48' : 'var(--text-faint)'
-          return (
-            <div className="text-[10.5px] leading-relaxed" style={{ color: 'var(--text-faint)' }}>
-              {bits.length > 0 && <div>{bits.join('  ·  ')}</div>}
-              {trend && <div style={{ color: trendColor, fontWeight: 500 }} title={trend.detail}>{trend.direction === 'rising' ? '▲' : trend.direction === 'slipping' ? '▼' : '■'} {trend.label} · {trend.detail}</div>}
-            </div>
-          )
-        })()}
-
-        <div className="mt-auto pt-1 space-y-1.5">
-          {gen === 'done' && postUrl ? (
-            <a href={postUrl} target="_blank" rel="noopener noreferrer"
-              className="w-full inline-flex items-center justify-center gap-1.5 text-xs font-semibold rounded-full py-2 text-white" style={{ background: '#34c759' }}>
-              <Check size={14} /> View review
-            </a>
-          ) : (
-            <button onClick={writeReview} disabled={gen === 'working'}
-              className="w-full inline-flex items-center justify-center gap-1.5 text-xs font-semibold rounded-full py-2 text-white disabled:opacity-60 transition"
-              style={{ background: '#7C3AED' }}>
-              {gen === 'working' ? <><Loader2 size={13} className="animate-spin" /> Writing…</> : <><PenLine size={13} /> Write review <ArrowRight size={13} /></>}
-            </button>
-          )}
-          <div className="flex items-center gap-1.5">
-            <button onClick={onToggleSave} title={saved ? 'Saved — click to remove' : 'Save for later'}
-              className="inline-flex items-center justify-center gap-1 text-[11px] font-semibold rounded-full px-2.5 py-1.5 border flex-1"
-              style={saved ? { borderColor: '#f59e0b', background: 'rgba(245,158,11,0.10)', color: '#b26a00' } : { borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
-              {saved ? <BookmarkCheck size={12} /> : <Bookmark size={12} />} {saved ? 'Saved' : 'Save'}
-            </button>
-            {/* Buy to review = the creator purchasing for themselves, so this is
-               a PLAIN Amazon link with NO affiliate tag (you can't tag your own
-               purchase). The tagged link is only for the content they publish. */}
-            <a href={`https://www.amazon.com/dp/${p.asin}`} target="_blank" rel="noopener noreferrer" title="Buy to review on Amazon"
-              className="inline-flex items-center justify-center gap-1 text-[11px] font-semibold rounded-full px-2.5 py-1.5 text-white flex-shrink-0" style={{ background: '#34c759' }}>
-              <ShoppingCart size={12} />
-            </a>
-          </div>
-        </div>
-      </div>
-    </div>
+  const model = {
+    asin: p.asin, parentAsin: p.parentAsin,
+    imageUrl: p.imageUrl, imageHref: p.productUrl,
+    title: p.title,
+    priceNow: p.priceNow,
+    rating: p.rating, reviewCount: p.reviewCount, monthlySold: p.monthlySold,
+    hasVideo: (p.videoCount ?? 0) > 0,
+    salesRank: p.salesRank, salesRankAvg90: p.salesRankAvg90, salesRankCategory: p.salesRankCategory,
+    category: p.category, listedSince: p.listedSince,
+  }
+  const overlays = (
+    <>
+      <button
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDeepDive() }}
+        title="Price history & product data"
+        className="absolute top-2 right-2 z-10 inline-flex items-center gap-1 text-[10px] font-semibold rounded-full px-2 py-1 bg-black/55 text-white hover:bg-black/75 backdrop-blur-sm transition-colors">
+        <BarChart3 size={10} /> Data
+      </button>
+      {p.mvpApproved && (
+        <span className="absolute top-2 left-2 z-10 inline-flex items-center gap-1 text-[10px] font-bold rounded-full px-2 py-1 text-white" style={{ background: '#7C3AED' }}>
+          <Sparkles size={10} /> MVP pick
+        </span>
+      )}
+    </>
   )
+  const footer = (
+    <>
+      {gen === 'done' && postUrl ? (
+        <a href={postUrl} target="_blank" rel="noopener noreferrer"
+          className="w-full inline-flex items-center justify-center gap-1.5 text-xs font-semibold rounded-full py-2 text-white" style={{ background: '#34c759' }}>
+          <Check size={14} /> View review
+        </a>
+      ) : (
+        <button onClick={writeReview} disabled={gen === 'working'}
+          className="w-full inline-flex items-center justify-center gap-1.5 text-xs font-semibold rounded-full py-2 text-white disabled:opacity-60 transition"
+          style={{ background: '#7C3AED' }}>
+          {gen === 'working' ? <><Loader2 size={13} className="animate-spin" /> Writing…</> : <><PenLine size={13} /> Write review <ArrowRight size={13} /></>}
+        </button>
+      )}
+      <div className="flex items-center gap-1.5">
+        <button onClick={onToggleSave} title={saved ? 'Saved — click to remove' : 'Save for later'}
+          className="inline-flex items-center justify-center gap-1 text-[11px] font-semibold rounded-full px-2.5 py-1.5 border flex-1"
+          style={saved ? { borderColor: '#f59e0b', background: 'rgba(245,158,11,0.10)', color: '#b26a00' } : { borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
+          {saved ? <BookmarkCheck size={12} /> : <Bookmark size={12} />} {saved ? 'Saved' : 'Save'}
+        </button>
+        {/* Buy to review = the creator purchasing for themselves, so this is
+           a PLAIN Amazon link with NO affiliate tag (you can't tag your own
+           purchase). The tagged link is only for the content they publish. */}
+        <a href={`https://www.amazon.com/dp/${p.asin}`} target="_blank" rel="noopener noreferrer" title="Buy to review on Amazon"
+          className="inline-flex items-center justify-center gap-1 text-[11px] font-semibold rounded-full px-2.5 py-1.5 text-white flex-shrink-0" style={{ background: '#34c759' }}>
+          <ShoppingCart size={12} />
+        </a>
+      </div>
+    </>
+  )
+  return <ProductSignalCard model={model} aspect="1 / 1" overlays={overlays} footer={footer} />
 }
