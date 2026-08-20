@@ -16,7 +16,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
   Loader2, Search, Bookmark, BookmarkCheck, MessageCircle, ShoppingCart,
-  PenLine, Check, ArrowRight, Coins, Users, Video, BarChart3, ImageOff, Lock, ShieldCheck, Sparkles,
+  PenLine, Check, ArrowRight, Coins, Users, Video, VideoOff, BarChart3, ImageOff, Lock, ShieldCheck, Sparkles,
 } from 'lucide-react'
 import type { MessageBrandCampaign } from '@/components/campaigns/MessageBrandModal'
 import ProductDeepDiveModal from '@/components/product/ProductDeepDiveModal'
@@ -315,6 +315,26 @@ export default function CampaignBrowsePanel({
             <Sparkles size={14} /> MVP picks
           </button>
           <MvpPicksInfo />
+          {/* Content Gap — in-demand products with NO creator video yet: the
+              "make a video, low competition" opportunity. Drives the existing
+              filters (0 videos + a demand floor + sort by most-bought). */}
+          {(() => {
+            const gapOn = videoBand === 'none' && minRecentSales >= 100 && sort === 'recentSales'
+            return (
+              <button
+                onClick={() => {
+                  if (gapOn) { setVideoBand(''); setMinRecentSales(0); setSort('commission') }
+                  else { setVideoBand('none'); setMinRecentSales(v => Math.max(v, 100)); setSort('recentSales'); setMvpPicks(false) }
+                }}
+                title="Content Gap: products people are buying (100+/mo) that have NO product-carousel video yet — low competition, easy to be first. Sorted by most bought."
+                className={`h-9 text-sm font-semibold rounded-full px-3.5 inline-flex items-center gap-1.5 border transition-all active:scale-[0.97] ${gapOn ? '' : 'bg-white dark:bg-[#1c1c1e]'}`}
+                style={gapOn
+                  ? { background: '#0ea5e9', color: '#fff', borderColor: '#0ea5e9' }
+                  : { color: 'var(--text-soft)', borderColor: 'var(--border)' }}>
+                <VideoOff size={14} /> Content Gap
+              </button>
+            )
+          })()}
           <Select value={sort} onChange={setSort} options={SORTS.map(s => ({ v: s.key, l: s.label }))} />
           <Select value={String(minCommission)} onChange={v => setMinCommission(Number(v))} options={[
             { v: '0', l: 'Any commission' }, { v: '5', l: '5%+' }, { v: '10', l: '10%+' }, { v: '15', l: '15%+' }, { v: '20', l: '20%+' },
