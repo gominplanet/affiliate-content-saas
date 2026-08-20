@@ -16,7 +16,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { type Tier } from '@/lib/tier'
 import { toUserMessage } from '@/lib/friendly-error'
-import { keepaProductFinder, fetchKeepaProductCard, keepaConfigured, type KeepaFinderFilters } from '@/services/keepa'
+import { keepaProductFinder, fetchKeepaProductCard, fetchKeepaTokenStatus, keepaConfigured, type KeepaFinderFilters } from '@/services/keepa'
 import { getItemsByAsin, creatorsApiConfigured } from '@/services/amazon-creators'
 import { recordUsage } from '@/lib/ai-usage'
 import { ONSITE_RULES } from '@/lib/cc-smart-rules'
@@ -34,6 +34,10 @@ const MVP_PICKS_VERIFY_CAP = 15
 // (price, rating, sales, rank, trend, age, video). The rest stay light and use
 // the on-demand "Data" button. Trial stays cache-only (already daily-capped).
 const LIVE_ENRICH_CAP = 12
+// Only live-enrich when the shared Keepa pool has at least this much headroom
+// beyond the enrichment cost, so enrichment never tips the key toward the 429/
+// negative-balance state that makes searches return nothing.
+const LIVE_ENRICH_MIN_TOKENS = 150
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -264,12 +268,22 @@ export async function GET(request: Request) {
 
     // Live-enrich the top N (paid tiers) so the most-looked-at cards are full
     // even for never-cached products. Cached Keepa reads, bounded to LIVE_ENRICH_CAP.
+    //
+    // TOKEN GUARD: the shared operator key feeds Deal Radar + CC enrichment +
+    // this finder too, and it can run dry (a 429 with a negative balance is what
+    // makes a search return nothing). So we only spend the ~12 enrichment tokens
+    // when the pool has real headroom — the token-status read is FREE (doesn't
+    // consume tokens). Low/unknown balance → skip enrichment, fall back to
+    // cache-only signals. Enrichment must never be the thing that drains search.
     const live = new Map<string, Awaited<ReturnType<typeof fetchKeepaProductCard>>>()
     if (tier !== 'trial' && found.asins.length) {
-      const slice = found.asins.slice(0, LIVE_ENRICH_CAP)
-      const enriched = await Promise.all(slice.map(async asin => ({ asin, card: await fetchKeepaProductCard(asin) })))
-      for (const { asin, card } of enriched) live.set(asin, card)
-      recordUsage({ userId: user.id, tier, feature: 'amazon_research_enrich', model: 'keepa-card' })
+      const { tokensLeft } = await fetchKeepaTokenStatus()
+      if (tokensLeft != null && tokensLeft > LIVE_ENRICH_MIN_TOKENS) {
+        const slice = found.asins.slice(0, LIVE_ENRICH_CAP)
+        const enriched = await Promise.all(slice.map(async asin => ({ asin, card: await fetchKeepaProductCard(asin) })))
+        for (const { asin, card } of enriched) live.set(asin, card)
+        recordUsage({ userId: user.id, tier, feature: 'amazon_research_enrich', model: 'keepa-card' })
+      }
     }
 
     const products = found.asins.map(asin => {

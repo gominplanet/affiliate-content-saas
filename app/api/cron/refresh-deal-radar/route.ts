@@ -59,9 +59,15 @@ const DEFAULT_CATEGORIES = [
   6358539011,  // Watches
 ]
 
-/** Below this many Keepa tokens we stop early and finish next run — never run
- *  the balance to zero mid-sweep. */
-const MIN_TOKENS_TO_CONTINUE = 40
+/** Reserve floor: stop early and finish next run while the shared pool is below
+ *  this, so interactive Keepa calls (AMZ Research finder searches, deep-dives)
+ *  always keep headroom. Raised 40 → 300 (2026-08) with the CC-enrichment floor
+ *  so the two background crons together can't pin the pool at zero and 429 live
+ *  searches. Override with DEAL_RADAR_MIN_TOKENS. */
+const MIN_TOKENS_TO_CONTINUE = (() => {
+  const n = Number(process.env.DEAL_RADAR_MIN_TOKENS)
+  return Number.isFinite(n) && n >= 0 ? n : 300
+})()
 /** Drop cached deals we haven't re-seen in this long (fell out of the feed). */
 const STALE_HOURS = 48
 
