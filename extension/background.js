@@ -2173,18 +2173,44 @@ async function harvestEarningsInPage(opts) {
   // Scrape the current view, then page through the rest of the table so we
   // capture EVERY product, not just the first ~25. Stops when a page adds no
   // new rows or there's no enabled Next control (bounded so it can't spin).
+  // A fingerprint of the rows currently on screen (first ASINs of each table),
+  // so we can tell when a Next click has actually loaded the next page rather
+  // than guessing with a fixed delay.
+  function tableSignature() {
+    let sig = ''
+    for (const { table } of findEarningsTables()) {
+      const trs = table.querySelectorAll('tbody tr')
+      for (let i = 0; i < Math.min(4, trs.length); i++) {
+        sig += (trs[i].innerHTML.match(/\/(?:dp|gp\/product|product)\/([A-Z0-9]{10})/) || [])[1] || ''
+      }
+      sig += '#' + trs.length
+    }
+    return sig
+  }
+  async function waitForTableChange(prevSig, ms) {
+    const start = Date.now()
+    while (Date.now() - start < ms) {
+      await sleep(300)
+      if (tableSignature() !== prevSig) { await sleep(400); return true } // settle after change
+    }
+    return false
+  }
   async function scrapeAllPages() {
     // Bump "results per page" to its max first — one reload, far fewer clicks.
-    try { if (setMaxPageSize()) await sleep(1800) } catch (e) {}
+    try { if (setMaxPageSize()) { const s = tableSignature(); await waitForTableChange(s, 6000) } } catch (e) {}
     add(scrapeCurrent())
     let last = all.length
-    for (let page = 0; page < 80; page++) {
+    for (let page = 0; page < 120; page++) {
       const next = findNextPageControl()
       if (!next) break
+      const prevSig = tableSignature()
       try { next.click() } catch (e) { break }
-      await sleep(1600)
+      // Wait until the table actually turns over (next page can take a few
+      // seconds to fetch); if it never changes, we're on the last page.
+      const changed = await waitForTableChange(prevSig, 8000)
+      if (!changed) break
       add(scrapeCurrent())
-      if (all.length === last) break // no new rows → reached the end (or Next was a no-op)
+      if (all.length === last) break // safety: no genuinely new rows
       last = all.length
     }
   }
