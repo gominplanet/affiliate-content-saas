@@ -16,6 +16,7 @@ import { LevantaGuide } from '@/components/guide/tool-guides'
 import ExternalKeyConnect from '@/components/integrations/ExternalKeyConnect'
 import LevantaFinder from '@/components/levanta/LevantaFinder'
 import LevantaSaved from '@/components/levanta/LevantaSaved'
+import GenerateOptionsModal, { type GenerateOptions } from '@/components/content/GenerateOptionsModal'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { normalizeTier } from '@/lib/tier'
@@ -55,6 +56,7 @@ export default function LevantaPage() {
   const [prodErr, setProdErr] = useState<Record<string, string>>({})
   const [prodLoading, setProdLoading] = useState<string | null>(null)
   const [gen, setGen] = useState<Record<string, GenState>>({}) // keyed by asin
+  const [optionsFor, setOptionsFor] = useState<{ b: Brand; p: Product } | null>(null)
 
   // Tier gate — Studio + Pro only (Source & Earn), mirroring tierAllowsFinders on
   // the API. null = still resolving. Creator / Trial get the FeatureLockedCard.
@@ -119,7 +121,8 @@ export default function LevantaPage() {
     }
   }
 
-  async function generate(b: Brand, p: Product) {
+  async function generate(b: Brand, p: Product, o: GenerateOptions) {
+    setOptionsFor(null)
     setGen((m) => ({ ...m, [p.asin]: { loading: true } }))
     try {
       const res = await fetch('/api/levanta/generate', {
@@ -130,7 +133,8 @@ export default function LevantaPage() {
             asin: p.asin, title: p.title, image: p.image, price: p.price,
             category: p.category, brandName: b.brandName, marketplace: p.marketplace || b.marketplace,
           },
-          draft: !publishLive,
+          draft: o.publish === 'draft',
+          options: { format: o.format, length: o.length, heroStyle: o.heroStyle, socials: o.socials },
         }),
       })
       const j = await res.json()
@@ -385,7 +389,7 @@ export default function LevantaPage() {
                                 <CheckCircle2 size={13} /> {g.draft ? 'Review draft' : 'View post'} <ExternalLink size={11} />
                               </a>
                             ) : (
-                              <button onClick={() => generate(b, p)} disabled={g.loading}
+                              <button onClick={() => setOptionsFor({ b, p })} disabled={g.loading}
                                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold text-white disabled:opacity-60"
                                 style={{ background: 'linear-gradient(45deg, #0E7490 0%, #22D3EE 100%)' }}>
                                 {g.loading ? <><Loader2 size={12} className="animate-spin" /> Generating…</> : <><Sparkles size={12} /> Generate post</>}
@@ -404,6 +408,15 @@ export default function LevantaPage() {
         })}
       </div>
       </>
+      )}
+      {optionsFor && (
+        <GenerateOptionsModal
+          productTitle={optionsFor.p.title || optionsFor.p.asin}
+          busy={!!gen[optionsFor.p.asin]?.loading}
+          initial={{ publish: publishLive ? 'live' : 'draft' }}
+          onClose={() => setOptionsFor(null)}
+          onConfirm={(o) => generate(optionsFor.b, optionsFor.p, o)}
+        />
       )}
     </div>
   )
