@@ -38,7 +38,7 @@ interface Product {
   brandId: string | null; access: boolean; image: string | null
   rating: string | null; ratingsTotal: number | null; platformEpc: number | null
 }
-type GenState = { loading?: boolean; url?: string; error?: string }
+type GenState = { loading?: boolean; url?: string; editUrl?: string; draft?: boolean; error?: string }
 
 export default function LevantaPage() {
   const [brands, setBrands] = useState<Brand[]>([])
@@ -135,7 +135,7 @@ export default function LevantaPage() {
       })
       const j = await res.json()
       if (!j.ok) { setGen((m) => ({ ...m, [p.asin]: { error: j.error || 'Generation failed' } })); return }
-      setGen((m) => ({ ...m, [p.asin]: { url: j.wordpressUrl } }))
+      setGen((m) => ({ ...m, [p.asin]: { url: j.wordpressUrl, editUrl: j.editUrl, draft: !!j.draft } }))
     } catch {
       setGen((m) => ({ ...m, [p.asin]: { error: 'Network error during generation.' } }))
     }
@@ -379,9 +379,10 @@ export default function LevantaPage() {
                           </div>
                           <div className="flex-shrink-0">
                             {g.url ? (
-                              <a href={g.url} target="_blank" rel="noopener noreferrer"
+                              // Draft permalinks 404 publicly — send drafts to the WP editor.
+                              <a href={(g.draft && g.editUrl) ? g.editUrl : g.url} target="_blank" rel="noopener noreferrer"
                                 className="inline-flex items-center gap-1 text-[12px] font-semibold" style={{ color: '#10B981' }}>
-                                <CheckCircle2 size={13} /> View post <ExternalLink size={11} />
+                                <CheckCircle2 size={13} /> {g.draft ? 'Review draft' : 'View post'} <ExternalLink size={11} />
                               </a>
                             ) : (
                               <button onClick={() => generate(b, p)} disabled={g.loading}
