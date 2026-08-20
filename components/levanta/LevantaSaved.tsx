@@ -10,6 +10,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { Bookmark, ShoppingCart, Sparkles, X, Loader2, Star, CheckCircle2, ExternalLink, MessageCircle } from 'lucide-react'
 import MessageBrandFlow, { type MessageBrandTarget } from '@/components/campaigns/MessageBrandFlow'
+import GenerateOptionsModal, { type GenerateOptions } from '@/components/content/GenerateOptionsModal'
 
 const CYAN = '#0E7490'
 
@@ -31,6 +32,7 @@ export default function LevantaSaved({ reloadKey }: { reloadKey: number }) {
   const [removing, setRemoving] = useState<Set<string>>(new Set())
   const [gen, setGen] = useState<Record<string, GenState>>({})
   const [msg, setMsg] = useState<MessageBrandTarget | null>(null)
+  const [optionsFor, setOptionsFor] = useState<SavedItem | null>(null)
 
   const load = useCallback(() => {
     fetch('/api/levanta/saved').then(r => r.json()).then(d => {
@@ -47,7 +49,8 @@ export default function LevantaSaved({ reloadKey }: { reloadKey: number }) {
     finally { setRemoving(prev => { const n = new Set(prev); n.delete(id); return n }) }
   }
 
-  async function generate(it: SavedItem) {
+  async function generate(it: SavedItem, opts: GenerateOptions) {
+    setOptionsFor(null)
     setGen(g => ({ ...g, [it.asin]: { loading: true } }))
     try {
       const res = await fetch('/api/levanta/generate', {
@@ -57,7 +60,8 @@ export default function LevantaSaved({ reloadKey }: { reloadKey: number }) {
             asin: it.asin, title: it.title, image: it.image_url, price: it.price,
             brandName: it.brand, marketplace: it.marketplace || 'amazon.com',
           },
-          draft: true, // shelf generates a draft to review — safe default
+          draft: opts.publish === 'draft',
+          options: { format: opts.format, length: opts.length, heroStyle: opts.heroStyle, socials: opts.socials },
         }),
       })
       const j = await res.json()
@@ -121,7 +125,7 @@ export default function LevantaSaved({ reloadKey }: { reloadKey: number }) {
                         <CheckCircle2 size={12} /> {g.draft ? 'Review draft' : 'View post'} <ExternalLink size={10} />
                       </a>
                     ) : (
-                      <button onClick={() => generate(it)} disabled={g.loading}
+                      <button onClick={() => setOptionsFor(it)} disabled={g.loading}
                         className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold text-white disabled:opacity-60"
                         style={{ background: 'linear-gradient(45deg, #0E7490 0%, #22D3EE 100%)' }}>
                         {g.loading ? <><Loader2 size={11} className="animate-spin" /> Generating…</> : <><Sparkles size={11} /> Generate post</>}
@@ -150,6 +154,14 @@ export default function LevantaSaved({ reloadKey }: { reloadKey: number }) {
       )}
 
       {msg && <MessageBrandFlow target={msg} onClose={() => setMsg(null)} />}
+      {optionsFor && (
+        <GenerateOptionsModal
+          productTitle={optionsFor.title || optionsFor.asin}
+          busy={!!gen[optionsFor.asin]?.loading}
+          onClose={() => setOptionsFor(null)}
+          onConfirm={(opts) => generate(optionsFor, opts)}
+        />
+      )}
     </div>
   )
 }

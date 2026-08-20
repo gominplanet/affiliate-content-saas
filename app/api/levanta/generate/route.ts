@@ -28,9 +28,13 @@ import { buildCampaignHero } from '@/lib/hero-image'
 import { pickProductReferenceImage } from '@/lib/product-image'
 import { scrubBanned } from '@/lib/scrub'
 import { spendGate } from '@/lib/ai-spend'
-import { type Tier } from '@/lib/tier'
+import { type Tier, normalizeTier, tierAllowsSocial } from '@/lib/tier'
+import { getConnectedPlatforms } from '@/lib/channel-health'
+import { DEFAULT_SOCIAL_OFFSETS_MIN, type SchedulableSocial } from '@/lib/schedule-types'
 import { freeTierGenerationBlock } from '@/lib/free-tier-gate'
 import { writeContentSchema } from '@/lib/content-schema'
+
+const AUTOPILOT_SOCIALS: SchedulableSocial[] = ['facebook', 'threads', 'twitter', 'linkedin', 'bluesky', 'telegram', 'pinterest']
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -79,7 +83,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: 'Connect your Levanta API key in External Integrations.' }, { status: 400 })
     }
 
-    const body = await request.json() as { product?: LevantaProductInput; draft?: boolean }
+    const body = await request.json() as {
+      product?: LevantaProductInput
+      draft?: boolean
+      options?: { format?: 'review' | 'guide' | 'listicle'; length?: 'standard' | 'deep'; heroStyle?: 'scene' | 'photo'; socials?: string[] }
+    }
+    const opts = body.options || {}
     const p = body.product || {}
     const asin = (p.asin || '').trim()
     if (!asin || !isValidAsin(asin)) {
@@ -156,6 +165,14 @@ export async function POST(request: NextRequest) {
       if (research?.brief) researchBrief = research.brief
     } catch { /* keep the scrape-only brief */ }
 
+    // Post-options: fold the creator's Format + Length choices into the brief so
+    // the writer honors them (appended AFTER the research pass so they survive).
+    const styleHints: string[] = []
+    if (opts.format === 'guide') styleHints.push('Write this as a BUYING GUIDE: what to look for in this kind of product, the features that matter most, and how this pick measures up on each.')
+    else if (opts.format === 'listicle') styleHints.push('Write this in a SCANNABLE LISTICLE style: short punchy sections under clear subheadings, each highlighting a standout feature and who it suits.')
+    if (opts.length === 'deep') styleHints.push('Go IN-DEPTH: cover more buyer questions and trade-offs in more detail — a longer, more thorough post than usual.')
+    if (styleHints.length) researchBrief += `\n\nStyle instructions (follow these): ${styleHints.join(' ')}`
+
     // ── Generate (reuses the campaign writer — informational, no fake testing) ─
     const claude = createClaudeService()
     const generated = await claude.generateCampaignBlogPost(
@@ -203,13 +220,17 @@ export async function POST(request: NextRequest) {
 
     let heroMediaId: number | null = null
     let heroUrl: string | null = null
-    try {
-      const hero = await buildCampaignHero({ heroPrompt: generated.imagePrompts?.hero, productImageUrl: cleanProductImage, productTitle: effTitle, ctx: { userId: user.id, tier } })
-      if (hero) {
-        const media = await wpService.uploadImageFromBase64(hero.b64, `${asin}-hero.jpg`, hero.mime)
-        heroMediaId = media.id ?? null; heroUrl = media.source_url || null
-      }
-    } catch { /* fall through to the photo floor */ }
+    // Hero-style option: 'photo' skips the AI scene and uses the product's own
+    // image directly (the photo floor below). Default 'scene' renders the styled hero.
+    if (opts.heroStyle !== 'photo') {
+      try {
+        const hero = await buildCampaignHero({ heroPrompt: generated.imagePrompts?.hero, productImageUrl: cleanProductImage, productTitle: effTitle, ctx: { userId: user.id, tier } })
+        if (hero) {
+          const media = await wpService.uploadImageFromBase64(hero.b64, `${asin}-hero.jpg`, hero.mime)
+          heroMediaId = media.id ?? null; heroUrl = media.source_url || null
+        }
+      } catch { /* fall through to the photo floor */ }
+    }
     if (!heroUrl && cleanProductImage) {
       try {
         const media = await wpService.uploadImageFromUrl(cleanProductImage, `${asin}-product.jpg`)
@@ -244,16 +265,57 @@ export async function POST(request: NextRequest) {
     // try/catch swallowed nothing useful). No row meant "Share with brand" and
     // every social action 404'd with "Post not found". Include slug + content +
     // excerpt (matching the comparison route) and surface any error.
+    let blogPostId: string | null = null
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error: bpErr } = await (supabase as any).from('blog_posts').insert({
+      const { data: bpRow, error: bpErr } = await (supabase as any).from('blog_posts').insert({
         user_id: user.id, title, slug, content, excerpt,
         status: status === 'draft' ? 'draft' : 'published',
         post_type: 'review', wordpress_url: wpPost.link, wordpress_post_id: wpPost.id,
         published_at: status === 'draft' ? null : new Date().toISOString(),
-      })
+      }).select('id').single()
       if (bpErr) console.error('[levanta] blog_posts insert failed:', bpErr.message)
+      blogPostId = (bpRow?.id as string) ?? null
     } catch (e) { console.error('[levanta] blog_posts insert threw:', e instanceof Error ? e.message : String(e)) }
+
+    // ── Social push (options.socials) ─────────────────────────────────────────
+    // When the creator picked channels AND the post published LIVE, schedule each
+    // one a couple minutes out (the process-scheduled cron fires them). Same
+    // tier + connected gating as auto-pilot, so only channels that can actually
+    // publish get queued. Draft posts skip this — nothing to share until it's live.
+    const chosenSocials = Array.isArray(opts.socials) ? opts.socials : []
+    if (status !== 'draft' && blogPostId && chosenSocials.length) {
+      try {
+        const { data: integSoc } = await supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+        const socTier = normalizeTier((integSoc as { tier?: string } | null)?.tier)
+        const connected = await getConnectedPlatforms(supabase, user.id)
+        const caption = `${title}\n\n${wpPost.link}`.slice(0, 900)
+        const now = Date.now()
+        const rows = chosenSocials
+          .filter((p): p is SchedulableSocial => AUTOPILOT_SOCIALS.includes(p as SchedulableSocial))
+          .filter(pl => tierAllowsSocial(socTier, pl) && connected.has(pl))
+          .map(pl => ({
+            user_id: user.id,
+            blog_post_id: blogPostId,
+            platform: pl,
+            scheduled_at: new Date(now + Math.max(2, DEFAULT_SOCIAL_OFFSETS_MIN[pl] ?? 2) * 60_000).toISOString(),
+            body_text: caption,
+            status: 'pending' as const,
+            kind: 'social' as const,
+            parent_id: null,
+          }))
+        if (rows.length) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          let { error: schErr } = await (supabase as any).from('scheduled_posts').insert(rows)
+          if (schErr && /column .* does not exist|does not exist|unknown column/i.test(schErr.message || '')) {
+            const legacy = rows.map(({ kind, parent_id, ...r }) => r)
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            schErr = (await (supabase as any).from('scheduled_posts').insert(legacy)).error
+          }
+          if (schErr) console.warn('[levanta] social cascade insert failed:', schErr.message)
+        }
+      } catch (e) { console.warn('[levanta] social cascade skipped:', e instanceof Error ? e.message : String(e)) }
+    }
 
     await writeContentSchema(supabase, wpService, {
       userId: user.id,
