@@ -535,10 +535,9 @@ export default function DashboardShellV2({
       label: 'Grow',
       items: [
         { href: '/seo', icon: <TrendingUp size={15} />, label: 'SEO & Indexing' },
-        // Storefront — SCOUT-synced Amazon earnings analytics (units, revenue,
-        // commission, clicks per product, weekly/monthly trend). Any paid tier
-        // can sync earnings via SCOUT, so it's open to all paid tiers.
-        { href: '/storefront', icon: <BarChart3 size={15} />, label: 'AMZ Storefront', gate: isPaid },
+        // Storefront moved into LABS 2026-08 (gate: isPro) while the SCOUT
+        // full-year + full-catalog sync is finished — released publicly once
+        // ready. See the Labs group below.
         // Pulse — which hashtags actually earn reach, learned from your posts +
         // pooled across MVP per niche. Feeds proven tags back into captions.
         { href: '/pulse', icon: <Activity size={15} />, label: 'Pulse', gate: isPro },
@@ -583,6 +582,10 @@ export default function DashboardShellV2({
     {
       label: 'Labs',
       items: [
+        // AMZ Storefront — SCOUT-synced Amazon earnings + full-catalog analytics.
+        // In LABS (Pro/admin-only) while the full-year + full-storefront sync is
+        // finished; graduates back to "Grow" (gate: isPaid) when it's ready.
+        { href: '/storefront', icon: <BarChart3 size={15} />, label: 'AMZ Storefront', gate: isPro },
         // Storefront Stats (/analytics) retired 2026-08 — the SCOUT-synced AMZ
         // Storefront dashboard (/brainstorm) is the real per-product earnings
         // view now, so the Geniuslink-clicks Labs page was dropped to kill the
@@ -710,8 +713,9 @@ export default function DashboardShellV2({
       { href: '/amazon/social', icon: <Share2 size={15} />, label: 'Social Influencer' },
       { href: '/social-launch-kit', icon: <Rocket size={15} />, label: 'Social Launch Kit' },
       { href: '/link-in-bio', icon: <Link2 size={15} />, label: 'Link in Bio' },
-      { href: '/storefront', icon: <BarChart3 size={15} />, label: 'AMZ Storefront', subheading: 'Find & earn' },
-      { href: '/amazon/research', icon: <PackageSearch size={15} />, label: 'Research' },
+      // AMZ Storefront pulled from the Amazon hub 2026-08 — in LABS (admin/Pro)
+      // until the SCOUT full-year + full-catalog sync is finished.
+      { href: '/amazon/research', icon: <PackageSearch size={15} />, label: 'Research', subheading: 'Find & earn' },
       { href: '/brand-hub', icon: <History size={15} />, label: 'Brand Hub' },
       { href: '/collaborations', icon: <Handshake size={15} />, label: 'Brand Deals' },
       { href: '/brand-inquiries', icon: <Inbox size={15} />, label: 'Brand Inquiries', badge: unreadBrand > 0 ? unreadBrand : undefined },
