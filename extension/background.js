@@ -101,6 +101,32 @@ async function pushIdeaListToMvp(payload) {
   }
 }
 
+// POST the full public-storefront catalog (asin/title/image/shelf) into MVP.
+// Same apex-first origin fallback as the earnings push (the app is on the apex
+// mvpaffiliate.io; www 301-redirects a credentialed POST → "Failed to fetch").
+async function pushCatalogToMvp(products) {
+  const rows = Array.isArray(products) ? products : []
+  if (!rows.length) return { reached: true, ok: true, upserted: 0 }
+  const origins = ['https://mvpaffiliate.io', 'https://www.mvpaffiliate.io']
+  let lastErr = 'network error'
+  for (const origin of origins) {
+    try {
+      const res = await fetch(`${origin}/api/storefront/catalog`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        redirect: 'follow',
+        body: JSON.stringify({ products: rows }),
+      })
+      let body = null
+      try { body = await res.json() } catch (e) {}
+      if (res.ok) return { reached: true, ok: true, upserted: body && body.upserted }
+      return { reached: true, ok: false, status: res.status, error: (body && body.error) || `HTTP ${res.status}` }
+    } catch (e) { lastErr = (e && e.message) || 'network error' }
+  }
+  return { reached: false, ok: false, error: lastErr }
+}
+
 // Draft an outreach message via MVP, from the WORKER (not the content script):
 // a content-script fetch amazon.com→mvpaffiliate.io is subject to Amazon's page
 // CSP `connect-src` and can be silently blocked. Same worker-first pattern as
@@ -2030,6 +2056,56 @@ async function scanStorefrontBackground(rawUrl) {
     if (!r.lists || !r.lists.length) return { ok: true, count: 0 }
     const push = await pushIdeaListToMvp({ lists: r.lists })
     return { ok: !!(push && push.ok), count: r.lists.length, error: (push && push.ok) ? undefined : (push && push.error) }
+  } catch (e) {
+    return { ok: false, error: (e && e.message) || 'scan-failed' }
+  } finally {
+    if (tabId != null) { try { await chrome.tabs.remove(tabId) } catch (e) {} }
+  }
+}
+
+// ── Storefront CATALOG: walk the creator's PUBLIC storefront and record every
+// product they feature (past the ~100-row earnings cap). Enumerate the idea
+// lists, then open each in the same hidden tab and harvest its product tiles.
+// Pushes the full ASIN/title/image set to MVP, which overlays real earnings.
+async function scanStorefrontCatalogBackground(rawUrl) {
+  const url = String(rawUrl || '')
+  const hm = url.match(/\/shop\/([^/?#\s]+)/i)
+  if (!/amazon\./i.test(url) || !hm) return { ok: false, error: 'bad-url' }
+  const root = url.split('#')[0]
+  let tabId = null
+  try {
+    const tab = await chrome.tabs.create({ url: root + '#mvp-sync', active: false })
+    tabId = tab.id
+    await waitForTabLoad(tabId, 30000)
+    await _sleep(2500)
+    // 1) Enumerate the storefront's idea lists.
+    const listRes = await chrome.scripting.executeScript({ target: { tabId }, func: harvestStorefrontListsInPage })
+    const lr = (listRes && listRes[0] && listRes[0].result) || null
+    if (!lr || !lr.ok) return { ok: false, error: 'no-result' }
+    if (lr.signedOut) return { ok: false, error: 'signed-out' }
+    const lists = (lr.lists || []).slice(0, 30) // cap so a huge storefront stays under the message timeout
+    // 2) Walk each list in the SAME tab, harvesting product tiles.
+    const seen = new Set(); const products = []
+    for (const list of lists) {
+      if (!list || !list.url) continue
+      try {
+        await chrome.tabs.update(tabId, { url: list.url })
+        await waitForTabLoad(tabId, 30000)
+        await _sleep(1200)
+        const iRes = await chrome.scripting.executeScript({ target: { tabId }, func: harvestIdeaListInPage })
+        const ir = (iRes && iRes[0] && iRes[0].result) || null
+        if (ir && ir.items) {
+          for (const it of ir.items) {
+            if (!it.asin || seen.has(it.asin)) continue
+            seen.add(it.asin)
+            products.push({ asin: it.asin, title: it.title || null, image: it.image || null, listTitle: list.title || null })
+          }
+        }
+      } catch (e) { /* skip a list that won't load */ }
+    }
+    if (!products.length) return { ok: true, count: 0 }
+    const push = await pushCatalogToMvp(products)
+    return { ok: !!(push && push.ok), count: products.length, lists: lists.length, error: (push && push.ok) ? undefined : (push && push.error) }
   } catch (e) {
     return { ok: false, error: (e && e.message) || 'scan-failed' }
   } finally {
@@ -4564,6 +4640,16 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     // + quick-ranges) in a BACKGROUND tab, push to MVP, then close.
     const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 120000)
     scanStorefrontEarningsBackground()
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true // async response
+  }
+  if (msg.type === 'MVP_SCAN_STOREFRONT_CATALOG') {
+    // Walk the creator's PUBLIC storefront (idea lists → product tiles) in a
+    // BACKGROUND tab and record every product, past the earnings ~100 cap.
+    // Bigger crawl (many lists), so allow the full timeout.
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 175000)
+    scanStorefrontCatalogBackground(msg.url)
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async response

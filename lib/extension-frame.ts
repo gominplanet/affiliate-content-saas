@@ -338,6 +338,19 @@ export async function requestStorefrontScan(url: string): Promise<IdeaScanResult
 }
 
 /**
+ * Walk the creator's PUBLIC storefront (idea lists → product tiles) in a
+ * BACKGROUND SCOUT tab and record EVERY product they feature — past the ~100
+ * earnings cap — then push the catalog to MVP. Bigger crawl, so a longer wait.
+ */
+export async function requestStorefrontCatalogScan(url: string): Promise<IdeaScanResult> {
+  if (!url) return { ok: false, error: 'no-url' }
+  if (!(await isExtensionAvailable())) return { ok: false, error: 'not-installed' }
+  const resp = await sendToExtension<IdeaScanResult>({ type: 'MVP_SCAN_STOREFRONT_CATALOG', url }, 180000)
+  if (!resp) return { ok: false, error: 'timeout' }
+  return { ok: !!resp.ok, count: resp.count, error: resp.error }
+}
+
+/**
  * One-click storefront sync: SCOUT opens the Amazon Associates earnings report
  * in a BACKGROUND tab, scrapes the current view + the quick-ranges (Last Week /
  * This Month / Last Month), pushes them to MVP, and closes the tab. The user

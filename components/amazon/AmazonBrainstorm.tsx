@@ -21,6 +21,7 @@ import PageHero from '@/components/layout/PageHero'
 import { useEffectiveTier } from '@/lib/useEffectiveTier'
 import { acceptCampaignViaScout } from '@/lib/accept-campaign'
 import StorefrontCharts from '@/components/amazon/StorefrontCharts'
+import StorefrontCatalog from '@/components/amazon/StorefrontCatalog'
 
 const ACCENT = '#C2410C'
 const GREEN = '#15803d'
@@ -545,6 +546,10 @@ export default function AmazonBrainstorm() {
 
           {/* Storefront health — products quietly costing the creator money */}
           <StorefrontHealth products={products} />
+
+          {/* Full storefront catalog — every product you feature (past the top
+              100), with real earnings overlaid. SCOUT reads the public store. */}
+          <StorefrontCatalog />
 
           {/* Per-product table */}
           <div className="rounded-2xl border overflow-hidden mb-8" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
