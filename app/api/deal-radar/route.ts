@@ -90,6 +90,7 @@ interface DealRow {
   parent_asin: string | null
   category: string | null
   sales_rank_category: string | null
+  sales_rank_avg90: number | null
   listed_since: string | null
 }
 
@@ -102,7 +103,10 @@ interface DealRow {
 const DEAL_COLS_BASE =
   'asin,title,brand,image_url,category_id,price_now_cents,price_was_cents,discount_pct,rating,review_count,sales_rank,deal_type,lightning_ends_at,campaign_id,campaign_commission_pct,campaign_brand,campaign_details_url,campaign_available_slot,campaign_total_slot,campaign_budget_remaining,campaign_ends_at,price_avg90_cents,price_low_cents,deal_quality,lowest_label,monthly_sold,opportunity_score,has_video'
 const DEAL_COLS_EXTRA = 'parent_asin,category,sales_rank_category,listed_since'
-const DEAL_COLS = `${DEAL_COLS_BASE},${DEAL_COLS_EXTRA}`
+// Migration 264 landed after 263, so it can be absent while 263 is present.
+// Probed on its own tier below; only appended when the column actually exists.
+const DEAL_COLS_AVG90 = 'sales_rank_avg90'
+const DEAL_COLS = `${DEAL_COLS_BASE},${DEAL_COLS_EXTRA},${DEAL_COLS_AVG90}`
 
 export async function GET(request: Request) {
   try {
@@ -151,14 +155,20 @@ export async function GET(request: Request) {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sb = supabase as any
-    // The extra card-signal columns (migration 263) may not be applied on this
-    // DB yet. Probe once; on any error, fall back to the base columns so the
-    // feed still loads instead of 500-ing on an unknown column.
-    let cols = DEAL_COLS
+    // The extra card-signal columns land in two migrations (263, then 264) that
+    // can be applied at different times, so probe each tier and only select the
+    // columns that actually exist — otherwise an unknown column 500s the whole
+    // feed (the "cannot load deals" regression). 263 present but 264 absent is a
+    // real intermediate state, so avg90 is gated on its OWN probe.
+    let cols = DEAL_COLS_BASE
     try {
-      const probe = await sb.from('deal_radar_cache').select('parent_asin').limit(1)
-      if (probe.error) cols = DEAL_COLS_BASE
-    } catch { cols = DEAL_COLS_BASE }
+      const probe263 = await sb.from('deal_radar_cache').select('parent_asin').limit(1)
+      if (!probe263.error) cols = `${DEAL_COLS_BASE},${DEAL_COLS_EXTRA}`
+    } catch { /* 263 not applied — stay on base */ }
+    try {
+      const probe264 = await sb.from('deal_radar_cache').select(DEAL_COLS_AVG90).limit(1)
+      if (!probe264.error) cols = `${cols},${DEAL_COLS_AVG90}`
+    } catch { /* 264 not applied — omit avg90 */ }
     const build = () => {
       let query = sb.from('deal_radar_cache').select(cols)
       if (q) query = query.textSearch('fts', q, { type: 'websearch', config: 'english' })
@@ -331,6 +341,9 @@ function toClient(r: DealRow, amazonTag: string, postedUrl: string | null = null
     parentAsin: r.parent_asin,
     category: r.category,
     salesRank: r.sales_rank_category && r.sales_rank != null ? Number(r.sales_rank) : null,
+    // 90-day average rank — only meaningful next to the real current rank, so
+    // gate it the same way (named category present = enriched, not the ingest ref).
+    salesRankAvg90: r.sales_rank_category && r.sales_rank_avg90 != null ? Number(r.sales_rank_avg90) : null,
     salesRankCategory: r.sales_rank_category,
     listedSince: r.listed_since,
     dealType: lightningExpired ? 'price_drop' : r.deal_type,

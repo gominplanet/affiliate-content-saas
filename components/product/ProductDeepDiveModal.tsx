@@ -9,7 +9,7 @@
 
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { formatSalesRank, formatAgeWithDate } from '@/lib/product-card-signals'
+import { formatSalesRank, formatAgeWithDate, formatRankTrend } from '@/lib/product-card-signals'
 import {
   X, Star, TrendingUp, Video, ShieldCheck, ShieldAlert, PenLine,
   ExternalLink, Loader2, Check, ArrowRight,
@@ -32,6 +32,7 @@ interface DeepDive {
   category: string | null
   parentAsin: string | null
   salesRank: number | null
+  salesRankAvg90: number | null
   salesRankCategory: string | null
   listedSince: string | null
 }
@@ -139,9 +140,11 @@ export default function ProductDeepDiveModal({ asin, title, imageUrl, onClose }:
               {(() => {
                 const rank = formatSalesRank(data.salesRank, data.salesRankCategory)
                 const age = formatAgeWithDate(data.listedSince)
+                const trend = formatRankTrend(data.salesRank, data.salesRankAvg90)
                 const rows: Array<[string, string]> = []
                 if (data.category) rows.push(['Category', data.category])
                 if (rank) rows.push(['Sales rank', rank])
+                if (trend) rows.push(['Rank trend', `${trend.label} (${trend.detail})`])
                 if (age) rows.push(['Age', age])
                 if (data.parentAsin && data.parentAsin !== data.asin) rows.push(['Parent ASIN', data.parentAsin])
                 if (!rows.length) return null

@@ -23,7 +23,7 @@ import ProductDeepDiveModal from '@/components/product/ProductDeepDiveModal'
 import MvpPicksInfo from '@/components/campaigns/MvpPicksInfo'
 import { requestCcSmartScan } from '@/lib/extension-frame'
 import { campaignRules } from '@/lib/cc-smart-rules'
-import { formatSalesRank, formatAgeWithDate } from '@/lib/product-card-signals'
+import { formatSalesRank, formatAgeWithDate, formatRankTrend } from '@/lib/product-card-signals'
 
 interface Campaign {
   campaignId: string
@@ -54,6 +54,7 @@ interface Campaign {
   category: string | null
   parentAsin: string | null
   salesRank: number | null
+  salesRankAvg90?: number | null
   salesRankCategory: string | null
   listedSince: string | null
 }
@@ -509,11 +510,14 @@ function BrowseCard({ c, saved, covered, onToggleSave, onMessageBrand, onDeepDiv
         {(() => {
           const rank = formatSalesRank(c.salesRank, c.salesRankCategory)
           const age = formatAgeWithDate(c.listedSince)
+          const trend = formatRankTrend(c.salesRank, c.salesRankAvg90)
           const bits = [c.category, rank, age].filter(Boolean) as string[]
-          if (!bits.length) return null
+          if (!bits.length && !trend) return null
+          const trendColor = trend?.direction === 'rising' ? '#059669' : trend?.direction === 'slipping' ? '#e11d48' : undefined
           return (
             <div className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-0.5 leading-relaxed">
-              {bits.join('  ·  ')}
+              {bits.length > 0 && <div>{bits.join('  ·  ')}</div>}
+              {trend && <div style={{ color: trendColor, fontWeight: 500 }} title={trend.detail}>{trend.direction === 'rising' ? '▲' : trend.direction === 'slipping' ? '▼' : '■'} {trend.label} · {trend.detail}</div>}
             </div>
           )
         })()}

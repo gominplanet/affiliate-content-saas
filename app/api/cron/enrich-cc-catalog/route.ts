@@ -131,6 +131,7 @@ export async function GET(req: Request) {
     if (card.category) patch.category = card.category
     if (card.parentAsin) patch.parent_asin = card.parentAsin
     if (card.salesRank != null) patch.sales_rank = card.salesRank
+    if (card.salesRankAvg90 != null) patch.sales_rank_avg90 = card.salesRankAvg90
     if (card.salesRankCategory) patch.sales_rank_category = card.salesRankCategory
     if (card.listedSince) patch.listed_since = card.listedSince
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -42,3 +42,32 @@ export function formatAgeWithDate(listedSince?: string | null): string | null {
   if (age && when) return `${age} · listed ${when}`
   return age || (when ? `listed ${when}` : null)
 }
+
+export interface RankTrend {
+  /** 'rising' = climbing the charts (lower rank number), 'slipping' = falling. */
+  direction: 'rising' | 'slipping' | 'steady'
+  label: string
+  /** "#67 vs #120 avg" — current rank against the 90-day average. */
+  detail: string
+}
+
+/**
+ * Momentum from the current sales rank vs its 90-day average. A LOWER Amazon
+ * sales-rank number means MORE sales, so when now < avg90 the product is
+ * climbing (demand rising). We only call a trend when the move is meaningful
+ * (>10%), otherwise it's "steady" — avoids crying "rising!" on rank noise.
+ */
+export function formatRankTrend(
+  rankNow?: number | null,
+  rankAvg90?: number | null,
+): RankTrend | null {
+  const now = Number(rankNow)
+  const avg = Number(rankAvg90)
+  if (!Number.isFinite(now) || now <= 0 || !Number.isFinite(avg) || avg <= 0) return null
+  const pct = (avg - now) / avg // >0 → now is a lower (better) rank → rising
+  const detail = `#${Math.round(now).toLocaleString()} vs #${Math.round(avg).toLocaleString()} avg`
+  const THRESH = 0.1
+  if (pct > THRESH) return { direction: 'rising', label: 'Rank rising', detail }
+  if (pct < -THRESH) return { direction: 'slipping', label: 'Rank slipping', detail }
+  return { direction: 'steady', label: 'Rank steady', detail }
+}

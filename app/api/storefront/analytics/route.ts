@@ -168,6 +168,7 @@ export async function GET(request: NextRequest) {
               category: c.category,
               parent_asin: c.parentAsin,
               sales_rank: c.salesRank,
+              sales_rank_avg90: c.salesRankAvg90,
               sales_rank_category: c.salesRankCategory,
               listed_since: c.listedSince,
               refreshed_at: nowIso,
