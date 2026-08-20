@@ -2131,20 +2131,51 @@ async function harvestEarningsInPage(opts) {
     }
     return false
   }
+  // Amazon paginates the per-product report (~25 rows/page), so a single scrape
+  // only sees page 1. Find an ENABLED "next page" control to advance.
+  function findNextPageControl() {
+    for (const el of document.querySelectorAll('button,a,[role="button"],li[role="button"],[aria-label]')) {
+      if (!el || el.offsetParent === null) continue
+      if (el.hasAttribute && el.hasAttribute('disabled')) continue
+      if (el.getAttribute && el.getAttribute('aria-disabled') === 'true') continue
+      const cls = (el.className && el.className.toString ? el.className.toString() : '').toLowerCase()
+      if (/disabled/.test(cls)) continue
+      const label = (((el.getAttribute && el.getAttribute('aria-label')) || '') + ' ' + (el.textContent || '')).replace(/\s+/g, ' ').trim().toLowerCase()
+      if (label === 'next' || label === 'next page' || label === '›' || label === '→' || label === '»' || /go to next page|next page/.test(label)) return el
+    }
+    return null
+  }
   const seen = new Set(); const all = []
   const add = (rows) => { for (const r of rows) { const k = r.asin + '|' + r.periodType + '|' + r.periodStart + '|' + (r.source || 'scout'); if (!seen.has(k)) { seen.add(k); all.push(r) } } }
+  // Scrape the current view, then page through the rest of the table so we
+  // capture EVERY product, not just the first ~25. Stops when a page adds no
+  // new rows or there's no enabled Next control (bounded so it can't spin).
+  async function scrapeAllPages() {
+    add(scrapeCurrent())
+    let last = all.length
+    for (let page = 0; page < 80; page++) {
+      const next = findNextPageControl()
+      if (!next) break
+      try { next.click() } catch (e) { break }
+      await sleep(1600)
+      add(scrapeCurrent())
+      if (all.length === last) break // no new rows → reached the end (or Next was a no-op)
+      last = all.length
+    }
+  }
   // Give the SPA a beat, then scrape the current view. In currentOnly mode we
   // read the range the creator already set (e.g. "This Year") and DON'T touch
   // the date range — but we DO click the "Creator Connections" summary tab to
   // reveal that table (the tab switch keeps the selected date range), so one
   // sync captures both commissions AND CC. Then click back to Commissions.
   await sleep(500)
-  // Scrape whatever earnings tables are on the current view. scrapeCurrent
-  // reads BOTH the Commissions and Creator Connections tables if the page has
-  // them rendered, so the creator syncs once per summary tab to capture both.
-  // (We deliberately don't auto-click the "Creator Connections" tab: that text
-  // also matches the top-nav link, which navigated the whole report away.)
-  add(scrapeCurrent())
+  // Scrape whatever earnings tables are on the current view, paging through the
+  // WHOLE table (not just the first ~25). scrapeCurrent reads BOTH the
+  // Commissions and Creator Connections tables if the page has them rendered,
+  // so the creator syncs once per summary tab to capture both. (We deliberately
+  // don't auto-click the "Creator Connections" tab: that text also matches the
+  // top-nav link, which navigated the whole report away.)
+  await scrapeAllPages()
   if (!currentOnly) {
     for (const label of ['Last Week', 'This Month', 'Last Month']) {
       try {
@@ -2153,7 +2184,7 @@ async function harvestEarningsInPage(opts) {
           const t = (el.textContent || '').replace(/\s+/g, ' ').trim()
           if (t.toLowerCase() === label.toLowerCase() && el.offsetParent !== null) { el.click(); clicked = true; break }
         }
-        if (clicked) { await sleep(2800); add(scrapeCurrent()) }
+        if (clicked) { await sleep(2800); await scrapeAllPages() }
       } catch (e) {}
     }
   }
