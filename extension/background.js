@@ -2122,12 +2122,31 @@ async function harvestEarningsInPage(opts) {
     }
     return out
   }
+  // Visibility WITHOUT offsetParent — offsetParent is null for position:fixed /
+  // sticky elements (Amazon's pager can be pinned), which made us skip a Next
+  // button that's plainly on screen. Use the layout box instead.
+  function visible(el) {
+    if (!el || !el.getBoundingClientRect) return false
+    const r = el.getBoundingClientRect()
+    return (r.width > 0 || r.height > 0)
+  }
+  // Fire a real click sequence — some SPA buttons ignore a bare .click() and
+  // only respond to pointer/mouse events.
+  function robustClick(el) {
+    try { el.scrollIntoView({ block: 'center' }) } catch (e) {}
+    const opts = { bubbles: true, cancelable: true, view: window }
+    try { el.dispatchEvent(new MouseEvent('pointerdown', opts)) } catch (e) {}
+    try { el.dispatchEvent(new MouseEvent('mousedown', opts)) } catch (e) {}
+    try { el.dispatchEvent(new MouseEvent('mouseup', opts)) } catch (e) {}
+    try { el.click() } catch (e) {}
+    try { el.dispatchEvent(new MouseEvent('click', opts)) } catch (e) {}
+  }
   // Click a summary tab / control by its visible text (used to reveal the CC
   // earnings table without changing the date range). Returns true if clicked.
   function clickByText(label) {
     for (const el of document.querySelectorAll('a,button,[role="button"],[role="tab"],span,li,label')) {
       const t = (el.textContent || '').replace(/\s+/g, ' ').trim()
-      if (t.toLowerCase() === label.toLowerCase() && el.offsetParent !== null) { el.click(); return true }
+      if (t.toLowerCase() === label.toLowerCase() && visible(el)) { robustClick(el); return true }
     }
     return false
   }
@@ -2136,7 +2155,7 @@ async function harvestEarningsInPage(opts) {
   // size to its max first (fewer round-trips), then advance with Next.
   function setMaxPageSize() {
     for (const sel of document.querySelectorAll('select')) {
-      if (sel.offsetParent === null) continue
+      if (!visible(sel)) continue
       const opts = [...sel.options]
       const nums = opts.map((o) => parseInt(String(o.value || o.textContent || '').replace(/[^0-9]/g, ''), 10)).filter((n) => isFinite(n) && n > 0)
       // A "results per page" select: several numeric options, all sane sizes.
@@ -2155,7 +2174,7 @@ async function harvestEarningsInPage(opts) {
   }
   function findNextPageControl() {
     for (const el of document.querySelectorAll('button,a,[role="button"],li[role="button"],[aria-label]')) {
-      if (!el || el.offsetParent === null) continue
+      if (!visible(el)) continue
       if (el.hasAttribute && el.hasAttribute('disabled')) continue
       if (el.getAttribute && el.getAttribute('aria-disabled') === 'true') continue
       const cls = (el.className && el.className.toString ? el.className.toString() : '').toLowerCase()
@@ -2204,7 +2223,7 @@ async function harvestEarningsInPage(opts) {
       const next = findNextPageControl()
       if (!next) break
       const prevSig = tableSignature()
-      try { next.click() } catch (e) { break }
+      robustClick(next)
       // Wait until the table actually turns over (next page can take a few
       // seconds to fetch); if it never changes, we're on the last page.
       const changed = await waitForTableChange(prevSig, 8000)
