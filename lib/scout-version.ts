@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.16.28'
+export const SCOUT_LATEST_VERSION = '1.16.29'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Adds admin-only one-click CC catalog refresh: SCOUT clicks Amazon\'s "Download all campaigns" exports in the background, unzips + parses the CSVs, and stages the shared catalog for the overnight merge.'
+  'Storefront earnings now capture your FULL YEAR: SCOUT reads the report tab you already have open (set "This Year" + group by Linked Product) instead of a default 30-day view, so the storefront reflects the real year, not one month.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
