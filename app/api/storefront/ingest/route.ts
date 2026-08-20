@@ -129,7 +129,10 @@ export async function POST(request: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error } = await (admin as any)
       .from('storefront_earnings')
-      .upsert(rows, { onConflict: 'user_id,asin,period_type,period_start' })
+      // source joined the unique key in migration 268 (CSV import + CC). SCOUT
+      // rows carry source='scout', so this still upserts one row per product per
+      // period. Falls back to the pre-268 key if the migration isn't applied yet.
+      .upsert(rows, { onConflict: 'user_id,asin,period_type,period_start,source' })
     if (error) {
       console.warn('[storefront/ingest] upsert failed:', error.message)
       return NextResponse.json({ error: 'Could not save earnings.' }, { status: 500, headers: CORS })

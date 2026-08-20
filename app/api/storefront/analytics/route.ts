@@ -56,7 +56,8 @@ export async function GET(request: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Not signed in' }, { status: 401 })
 
-    const wanted = new URL(request.url).searchParams.get('period') === 'weekly' ? 'weekly' : 'monthly'
+    const pq = new URL(request.url).searchParams.get('period')
+    const wanted = pq === 'weekly' ? 'weekly' : pq === 'ytd' ? 'ytd' : 'monthly'
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sb = supabase as any
@@ -70,19 +71,36 @@ export async function GET(request: NextRequest) {
 
     // How many distinct periods we have per type (drives the toggle's disabled state).
     const distinct = (t: string) => new Set(rows.filter(r => r.period_type === t).map(r => r.period_start)).size
-    const available = { weekly: distinct('weekly'), monthly: distinct('monthly') }
+    const available = { weekly: distinct('weekly'), monthly: distinct('monthly'), ytd: distinct('ytd') }
 
     const ofType = rows.filter(r => r.period_type === wanted)
     if (ofType.length === 0) {
       return NextResponse.json({ period: wanted, hasData: false, available, latest: null, previous: null, totals: null, totalsPrev: null, products: [] })
     }
 
+    // A product can hold more than one row per period_start when sources differ
+    // (regular commissions + a Creator Connections campaign on the same ASIN in
+    // the same year). Merge by ASIN so the storefront sums both into one line.
+    const mergeByAsin = (input: Row[]): Row[] => {
+      const m = new Map<string, Row>()
+      for (const r of input) {
+        const cur = m.get(r.asin)
+        if (!cur) { m.set(r.asin, { ...r }); continue }
+        cur.units = (cur.units ?? 0) + (r.units ?? 0)
+        cur.revenue_cents = (cur.revenue_cents ?? 0) + (r.revenue_cents ?? 0)
+        cur.commission_cents = (cur.commission_cents ?? 0) + (r.commission_cents ?? 0)
+        cur.clicks = (cur.clicks ?? 0) + (r.clicks ?? 0)
+        if (!cur.product_title && r.product_title) cur.product_title = r.product_title
+      }
+      return [...m.values()]
+    }
+
     // Latest + previous distinct period_starts (already sorted desc).
     const starts = [...new Set(ofType.map(r => r.period_start))]
     const latestStart = starts[0]
     const prevStart = starts[1] ?? null
-    const latestRows = ofType.filter(r => r.period_start === latestStart)
-    const prevRows = prevStart ? ofType.filter(r => r.period_start === prevStart) : []
+    const latestRows = mergeByAsin(ofType.filter(r => r.period_start === latestStart))
+    const prevRows = prevStart ? mergeByAsin(ofType.filter(r => r.period_start === prevStart)) : []
 
     const totals = totalsFor(latestRows)
     const totalsPrev = prevStart ? totalsFor(prevRows) : null
