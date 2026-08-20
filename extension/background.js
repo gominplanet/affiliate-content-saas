@@ -1935,23 +1935,42 @@ async function scanAmazonVideoForAsin(asin, callerTabId) {
 async function harvestIdeaListInPage() {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   let last = -1, stable = 0
-  for (let i = 0; i < 40 && stable < 3; i++) {
+  // 20 scroll passes, stop after 2 stable — enough for storefront shelves
+  // without eating the crawl's time budget (40×1s per shelf caused timeouts).
+  for (let i = 0; i < 20 && stable < 2; i++) {
     try { window.scrollTo(0, document.body.scrollHeight) } catch (e) {}
-    await sleep(1000)
+    await sleep(800)
     const n = document.querySelectorAll('[data-asin]').length
     if (n === last) stable++; else { stable = 0; last = n }
   }
   try { window.scrollTo(0, 0) } catch (e) {}
   await sleep(300)
   const seen = new Set(), items = []
+  const cleanTitle = (s) => (s || '')
+    .replace(/\s+/g, ' ')
+    .replace(/^\$\s?[\d.,]+\s*/, '')                         // leading price
+    .replace(/^only \d+ left in stock[^.]*\.?\s*/i, '')      // "Only 5 left in stock - order soon."
+    .replace(/\border soon\.?\s*/i, '')
+    .replace(/\bquantity is[\d\s]+/i, '')                    // "Quantity is 1 1 1"
+    .replace(/^(best ?seller|amazon['’]?s choice|overall pick|editor['’]?s pick|limited time deal|sponsored|new|popular pick)\s*/i, '')
+    .trim()
   document.querySelectorAll('[data-asin]').forEach((el) => {
     const asin = (el.getAttribute('data-asin') || '').trim().toUpperCase()
     if (!/^[A-Z0-9]{10}$/.test(asin) || seen.has(asin)) return
     seen.add(asin)
-    let title = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim()
-    const price = title.search(/\$\s?\d/); if (price > 0) title = title.slice(0, price)
-    title = title.replace(/^(Best ?Seller|Amazon['’]?s Choice|Overall Pick|Editor['’]?s Pick|Limited time deal|Sponsored|New|Popular pick)\s*/i, '').trim()
     const img = el.querySelector('img')
+    // Prefer the product image's alt text (the clean product name) or a link
+    // title/aria-label; fall back to the tile's text with price/stock stripped.
+    let title = cleanTitle((img && img.getAttribute('alt')) || '')
+    if (!title || title.length < 5) {
+      const link = el.querySelector('a[title], a[aria-label]')
+      title = cleanTitle((link && (link.getAttribute('title') || link.getAttribute('aria-label'))) || '')
+    }
+    if (!title || title.length < 5) {
+      let t = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim()
+      const price = t.search(/\$\s?\d/); if (price > 0) t = t.slice(0, price)
+      title = cleanTitle(t)
+    }
     const src = img && (img.currentSrc || img.getAttribute('src') || img.getAttribute('data-src'))
     items.push({ asin, title: title.slice(0, 200) || null, image: (src && /\.(jpg|jpeg|png|webp)/i.test(src)) ? src : null })
   })
@@ -2099,7 +2118,8 @@ async function scanStorefrontCatalogBackground(rawUrl) {
     const listRes = await chrome.scripting.executeScript({ target: { tabId }, func: harvestStorefrontListsInPage })
     const lr = (listRes && listRes[0] && listRes[0].result) || null
     if (lr && lr.signedOut) return { ok: false, error: 'signed-out' }
-    const lists = ((lr && lr.lists) || []).slice(0, 30) // cap so a huge storefront stays under the message timeout
+    const lists = ((lr && lr.lists) || []).slice(0, 20) // cap so a huge storefront stays under the message timeout
+    const cleanListTitle = (t) => (t || '').replace(/\s*[\d,]+\s*items?$/i, '').replace(/\s+/g, ' ').trim() || null
     for (const list of lists) {
       if (!list || !list.url) continue
       try {
@@ -2108,7 +2128,7 @@ async function scanStorefrontCatalogBackground(rawUrl) {
         await _sleep(1200)
         const iRes = await chrome.scripting.executeScript({ target: { tabId }, func: harvestIdeaListInPage })
         const ir = (iRes && iRes[0] && iRes[0].result) || null
-        if (ir && ir.items) addItems(ir.items, list.title)
+        if (ir && ir.items) addItems(ir.items, cleanListTitle(list.title))
       } catch (e) { /* skip a list that won't load */ }
     }
     if (!products.length) return { ok: false, error: 'no-products' }
