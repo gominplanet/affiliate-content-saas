@@ -96,8 +96,13 @@ interface DealRow {
 // Explicit column list for every deal_radar_cache read — exactly the DealRow
 // fields. select('*') also shipped the generated `fts` tsvector (large, never
 // used client-side) on this frequently-polled feed; naming columns drops it.
-const DEAL_COLS =
-  'asin,title,brand,image_url,category_id,price_now_cents,price_was_cents,discount_pct,rating,review_count,sales_rank,deal_type,lightning_ends_at,campaign_id,campaign_commission_pct,campaign_brand,campaign_details_url,campaign_available_slot,campaign_total_slot,campaign_budget_remaining,campaign_ends_at,price_avg90_cents,price_low_cents,deal_quality,lowest_label,monthly_sold,opportunity_score,has_video,parent_asin,category,sales_rank_category,listed_since'
+// Base columns (always present). The extra Keepa card signals (migration 263)
+// are appended only when the DB actually has them — so a not-yet-migrated
+// database still loads deals instead of erroring on unknown columns.
+const DEAL_COLS_BASE =
+  'asin,title,brand,image_url,category_id,price_now_cents,price_was_cents,discount_pct,rating,review_count,sales_rank,deal_type,lightning_ends_at,campaign_id,campaign_commission_pct,campaign_brand,campaign_details_url,campaign_available_slot,campaign_total_slot,campaign_budget_remaining,campaign_ends_at,price_avg90_cents,price_low_cents,deal_quality,lowest_label,monthly_sold,opportunity_score,has_video'
+const DEAL_COLS_EXTRA = 'parent_asin,category,sales_rank_category,listed_since'
+const DEAL_COLS = `${DEAL_COLS_BASE},${DEAL_COLS_EXTRA}`
 
 export async function GET(request: Request) {
   try {
@@ -146,8 +151,16 @@ export async function GET(request: Request) {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sb = supabase as any
+    // The extra card-signal columns (migration 263) may not be applied on this
+    // DB yet. Probe once; on any error, fall back to the base columns so the
+    // feed still loads instead of 500-ing on an unknown column.
+    let cols = DEAL_COLS
+    try {
+      const probe = await sb.from('deal_radar_cache').select('parent_asin').limit(1)
+      if (probe.error) cols = DEAL_COLS_BASE
+    } catch { cols = DEAL_COLS_BASE }
     const build = () => {
-      let query = sb.from('deal_radar_cache').select(DEAL_COLS)
+      let query = sb.from('deal_radar_cache').select(cols)
       if (q) query = query.textSearch('fts', q, { type: 'websearch', config: 'english' })
       if (category != null) query = query.eq('category_id', category)
       if (minDiscount != null) query = query.gte('discount_pct', minDiscount)
@@ -171,7 +184,7 @@ export async function GET(request: Request) {
       // textSearch against a generated `fts` column may not exist on older DBs —
       // fall back to a title ILIKE so search still works pre-migration.
       if (q) {
-        let fb = sb.from('deal_radar_cache').select(DEAL_COLS).ilike('title', `%${q}%`)
+        let fb = sb.from('deal_radar_cache').select(cols).ilike('title', `%${q}%`)
         if (category != null) fb = fb.eq('category_id', category)
         if (minDiscount != null) fb = fb.gte('discount_pct', minDiscount)
         if (hasCampaign) fb = fb.not('campaign_commission_pct', 'is', null)
@@ -188,7 +201,7 @@ export async function GET(request: Request) {
     // Ticker (page 0 only): the double-wins — has a bounty, best commission first.
     let tickerRows: DealRow[] = []
     if (page === 0) {
-      const { data: tk } = await sb.from('deal_radar_cache').select(DEAL_COLS)
+      const { data: tk } = await sb.from('deal_radar_cache').select(cols)
         .not('campaign_commission_pct', 'is', null)
         .order('campaign_commission_pct', { ascending: false, nullsFirst: false })
         .limit(TICKER_SIZE)
