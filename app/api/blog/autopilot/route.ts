@@ -12,7 +12,8 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
-import { normalizeTier, TIERS } from '@/lib/tier'
+import { normalizeTier, TIERS, type Social } from '@/lib/tier'
+import { getConnectedPlatforms } from '@/lib/channel-health'
 
 export const runtime = 'nodejs'
 
@@ -48,18 +49,42 @@ function readState(customizations: unknown): AutoBlogState {
 
 const OFF: AutoBlogState = { enabled: false, lastRunAt: null, pausedReason: null, pausedAt: null, socials: [], cadence: 'daily', days: [] }
 
+/**
+ * Which of the auto-post socials this user can ACTUALLY fire. The cascade
+ * (lib/generation-job-runner) drops any platform the tier disallows or the user
+ * hasn't connected — silently. So the modal must know both, or a creator toggles
+ * a channel ON, sees it "ON", and nothing ever posts. Same detection the cascade
+ * uses (TIERS[tier].socials + getConnectedPlatforms) so what the UI offers is
+ * exactly what will fire.
+ */
+async function socialAvailability(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  userId: string,
+): Promise<{ tierSocials: string[]; connectedSocials: string[] }> {
+  const { data: integ } = await supabase.from('integrations').select('tier').eq('user_id', userId).maybeSingle()
+  const tier = normalizeTier(integ?.tier)
+  const tierSocials = SUPPORTED_SOCIALS.filter(p => TIERS[tier].socials.includes(p as Social))
+  const connectedSet = await getConnectedPlatforms(supabase, userId)
+  const connectedSocials = SUPPORTED_SOCIALS.filter(p => connectedSet.has(p))
+  return { tierSocials, connectedSocials }
+}
+
 export async function GET() {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const site = await getWordPressCredentials(supabase, user.id)
-  if (!site || site.site_id === 'legacy') return NextResponse.json({ autopilot: OFF, noSite: !site })
+  const { tierSocials, connectedSocials } = await socialAvailability(supabase, user.id)
+  if (!site || site.site_id === 'legacy') {
+    return NextResponse.json({ autopilot: OFF, noSite: !site, tierSocials, connectedSocials })
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: row } = await (supabase as any)
     .from('wordpress_sites').select('blog_customizations').eq('id', site.site_id).maybeSingle()
-  return NextResponse.json({ autopilot: readState(row?.blog_customizations) })
+  return NextResponse.json({ autopilot: readState(row?.blog_customizations), tierSocials, connectedSocials })
 }
 
 export async function PUT(req: Request) {

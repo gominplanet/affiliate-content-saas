@@ -40,6 +40,12 @@ export default function AutoPilotModal({ onClose, onChange }: { onClose: () => v
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [state, setState] = useState<AutoState>({ enabled: false, lastRunAt: null, pausedReason: null, socials: [], cadence: 'daily', days: [] })
+  // Which socials this user can actually auto-post to. tierSocials = allowed by
+  // plan; connectedSocials = actually wired up. The cascade only fires a channel
+  // that's in BOTH, so we gate the toggles the same way — no more picking a
+  // channel that silently never posts.
+  const [tierSocials, setTierSocials] = useState<string[]>([])
+  const [connectedSocials, setConnectedSocials] = useState<string[]>([])
 
   useEffect(() => {
     let cancelled = false
@@ -47,7 +53,11 @@ export default function AutoPilotModal({ onClose, onChange }: { onClose: () => v
       try {
         const res = await fetch('/api/blog/autopilot')
         const d = await res.json()
-        if (!cancelled && d.autopilot) setState({ socials: [], cadence: 'daily', days: [], ...d.autopilot })
+        if (!cancelled) {
+          if (d.autopilot) setState({ socials: [], cadence: 'daily', days: [], ...d.autopilot })
+          if (Array.isArray(d.tierSocials)) setTierSocials(d.tierSocials)
+          if (Array.isArray(d.connectedSocials)) setConnectedSocials(d.connectedSocials)
+        }
       } catch { /* keep defaults */ } finally {
         if (!cancelled) setLoading(false)
       }
@@ -73,7 +83,16 @@ export default function AutoPilotModal({ onClose, onChange }: { onClose: () => v
     }
   }
   const setEnabled = (enabled: boolean) => save({ enabled })
+  // A channel fires only if it's on the plan AND connected. 'ok' = selectable;
+  // 'plan' = tier doesn't include it; 'disconnected' = allowed but not wired up.
+  function socialStatus(key: string): 'ok' | 'plan' | 'disconnected' {
+    if (!tierSocials.includes(key)) return 'plan'
+    if (!connectedSocials.includes(key)) return 'disconnected'
+    return 'ok'
+  }
   function toggleSocial(key: string) {
+    // Don't let a creator select a channel the cascade would silently drop.
+    if (socialStatus(key) !== 'ok') return
     const next = state.socials.includes(key) ? state.socials.filter(s => s !== key) : [...state.socials, key]
     save({ enabled: state.enabled, socials: next })
   }
@@ -194,23 +213,34 @@ export default function AutoPilotModal({ onClose, onChange }: { onClose: () => v
                 <label className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Also auto-post to socials</label>
                 <div className="grid grid-cols-2 gap-2">
                   {SOCIALS.map(s => {
-                    const on = state.socials.includes(s.key)
+                    const status = socialStatus(s.key)
+                    const usable = status === 'ok'
+                    const on = usable && state.socials.includes(s.key)
+                    const note = status === 'plan' ? 'Not on your plan' : status === 'disconnected' ? 'Connect it first' : null
                     return (
                       <button
                         key={s.key}
                         type="button"
-                        disabled={saving}
+                        disabled={saving || !usable}
                         onClick={() => toggleSocial(s.key)}
-                        className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm transition disabled:opacity-60"
-                        style={{ borderColor: on ? '#7C3AED' : 'var(--border-2,#e5e5e7)', background: on ? 'rgba(124,58,237,0.08)' : 'transparent', color: 'var(--text,#1d1d1f)' }}
+                        title={note ? `${s.label} — ${note}` : s.label}
+                        className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm transition disabled:cursor-not-allowed"
+                        style={{
+                          borderColor: on ? '#7C3AED' : 'var(--border-2,#e5e5e7)',
+                          background: on ? 'rgba(124,58,237,0.08)' : 'transparent',
+                          color: usable ? 'var(--text,#1d1d1f)' : '#a1a1a6',
+                          opacity: usable ? 1 : 0.7,
+                        }}
                       >
                         <span>{s.label}</span>
-                        <span className="text-[10px] font-bold" style={{ color: on ? '#7C3AED' : '#c7c7cc' }}>{on ? 'ON' : ''}</span>
+                        {note
+                          ? <span className="text-[9px] font-medium text-[#a1a1a6]">{note}</span>
+                          : <span className="text-[10px] font-bold" style={{ color: on ? '#7C3AED' : '#c7c7cc' }}>{on ? 'ON' : ''}</span>}
                       </button>
                     )
                   })}
                 </div>
-                <p className="text-[10px] text-[#86868b] mt-1.5">When the daily post goes live it also posts to the channels you pick here (default caption: title + link). Only connected channels on your plan will fire.</p>
+                <p className="text-[10px] text-[#86868b] mt-1.5">When the daily post goes live it also posts to the channels you pick here (default caption: title + link). Channels not on your plan or not connected are greyed out — <a href="/connect-socials" className="text-[#7C3AED] font-medium">connect more</a>.</p>
               </div>
             )}
 
