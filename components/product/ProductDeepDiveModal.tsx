@@ -9,6 +9,7 @@
 
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
+import { formatSalesRank, formatAgeWithDate } from '@/lib/product-card-signals'
 import {
   X, Star, TrendingUp, Video, ShieldCheck, ShieldAlert, PenLine,
   ExternalLink, Loader2, Check, ArrowRight,
@@ -28,6 +29,11 @@ interface DeepDive {
   reviewCount: number | null
   monthlySold: number | null
   videoCount: number | null
+  category: string | null
+  parentAsin: string | null
+  salesRank: number | null
+  salesRankCategory: string | null
+  listedSince: string | null
 }
 
 const money = (n: number | null) => (n == null ? null : `$${n.toFixed(2)}`)
@@ -128,6 +134,28 @@ export default function ProductDeepDiveModal({ asin, title, imageUrl, onClose }:
                 <Cell label="Bought / mo" value={data.monthlySold != null ? `${data.monthlySold.toLocaleString()}+` : '—'} divider />
                 <Cell label="Carousel videos" value={data.videoCount != null ? String(data.videoCount) : '—'} divider />
               </div>
+
+              {/* Keepa detail signals — category, rank, age, parent (parity with Oink) */}
+              {(() => {
+                const rank = formatSalesRank(data.salesRank, data.salesRankCategory)
+                const age = formatAgeWithDate(data.listedSince)
+                const rows: Array<[string, string]> = []
+                if (data.category) rows.push(['Category', data.category])
+                if (rank) rows.push(['Sales rank', rank])
+                if (age) rows.push(['Age', age])
+                if (data.parentAsin && data.parentAsin !== data.asin) rows.push(['Parent ASIN', data.parentAsin])
+                if (!rows.length) return null
+                return (
+                  <div className="rounded-xl border divide-y" style={{ borderColor: 'var(--border-2)' }}>
+                    {rows.map(([k, v]) => (
+                      <div key={k} className="flex items-center justify-between gap-3 px-3.5 py-2 text-[12px]">
+                        <span style={{ color: 'var(--text-faint)' }}>{k}</span>
+                        <span className="font-medium text-right" style={{ color: 'var(--text)' }}>{v}</span>
+                      </div>
+                    ))}
+                  </div>
+                )
+              })()}
 
               <p className="text-[11px] leading-relaxed" style={{ color: 'var(--text-faint)' }}>
                 Fewer carousel videos = less competition. A price near its all-time low is the strongest reason to post now.

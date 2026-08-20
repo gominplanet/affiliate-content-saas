@@ -87,13 +87,17 @@ interface DealRow {
   monthly_sold: number | null
   opportunity_score: number | null
   has_video: boolean | null
+  parent_asin: string | null
+  category: string | null
+  sales_rank_category: string | null
+  listed_since: string | null
 }
 
 // Explicit column list for every deal_radar_cache read — exactly the DealRow
 // fields. select('*') also shipped the generated `fts` tsvector (large, never
 // used client-side) on this frequently-polled feed; naming columns drops it.
 const DEAL_COLS =
-  'asin,title,brand,image_url,category_id,price_now_cents,price_was_cents,discount_pct,rating,review_count,sales_rank,deal_type,lightning_ends_at,campaign_id,campaign_commission_pct,campaign_brand,campaign_details_url,campaign_available_slot,campaign_total_slot,campaign_budget_remaining,campaign_ends_at,price_avg90_cents,price_low_cents,deal_quality,lowest_label,monthly_sold,opportunity_score,has_video'
+  'asin,title,brand,image_url,category_id,price_now_cents,price_was_cents,discount_pct,rating,review_count,sales_rank,deal_type,lightning_ends_at,campaign_id,campaign_commission_pct,campaign_brand,campaign_details_url,campaign_available_slot,campaign_total_slot,campaign_budget_remaining,campaign_ends_at,price_avg90_cents,price_low_cents,deal_quality,lowest_label,monthly_sold,opportunity_score,has_video,parent_asin,category,sales_rank_category,listed_since'
 
 export async function GET(request: Request) {
   try {
@@ -307,6 +311,15 @@ function toClient(r: DealRow, amazonTag: string, postedUrl: string | null = null
     rating: r.rating != null ? Number(r.rating) : null,
     reviewCount: r.review_count,
     monthlySold: r.monthly_sold,
+    // Extra Keepa signals (parity with Oink). In the deal-ingest path sales_rank
+    // is initially the category REFERENCE id; the real current rank + its named
+    // category only land together during stats enrichment, so expose the numeric
+    // rank only when the named category is present (guarantees it's the real rank).
+    parentAsin: r.parent_asin,
+    category: r.category,
+    salesRank: r.sales_rank_category && r.sales_rank != null ? Number(r.sales_rank) : null,
+    salesRankCategory: r.sales_rank_category,
+    listedSince: r.listed_since,
     dealType: lightningExpired ? 'price_drop' : r.deal_type,
     lightningEndsAt: lightningExpired ? null : r.lightning_ends_at,
     amazonUrl,

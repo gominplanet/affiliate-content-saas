@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import ProductDeepDiveModal from '@/components/product/ProductDeepDiveModal'
 import MvpPicksInfo from '@/components/campaigns/MvpPicksInfo'
+import { formatSalesRank, formatAgeWithDate } from '@/lib/product-card-signals'
 
 interface Product {
   asin: string
@@ -31,6 +32,11 @@ interface Product {
   rating?: number | null
   reviewCount?: number | null
   videoCount?: number
+  category?: string | null
+  parentAsin?: string | null
+  salesRank?: number | null
+  salesRankCategory?: string | null
+  listedSince?: string | null
 }
 
 const SORTS = [
@@ -386,6 +392,13 @@ function ProductCard({ p, canAct, saved, onToggleSave, onDeepDive }: {
             {(p.videoCount ?? 0) > 0 && <span className="inline-flex items-center gap-0.5" style={{ color: '#7C3AED' }}><Video size={10} /> carousel</span>}
           </div>
         )}
+        {(() => {
+          const rank = formatSalesRank(p.salesRank, p.salesRankCategory)
+          const age = formatAgeWithDate(p.listedSince)
+          const bits = [p.category, rank, age].filter(Boolean) as string[]
+          if (!bits.length) return null
+          return <div className="text-[10.5px] leading-relaxed" style={{ color: 'var(--text-faint)' }}>{bits.join('  ·  ')}</div>
+        })()}
 
         <div className="mt-auto pt-1 space-y-1.5">
           {gen === 'done' && postUrl ? (

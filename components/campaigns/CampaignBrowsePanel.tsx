@@ -23,6 +23,7 @@ import ProductDeepDiveModal from '@/components/product/ProductDeepDiveModal'
 import MvpPicksInfo from '@/components/campaigns/MvpPicksInfo'
 import { requestCcSmartScan } from '@/lib/extension-frame'
 import { campaignRules } from '@/lib/cc-smart-rules'
+import { formatSalesRank, formatAgeWithDate } from '@/lib/product-card-signals'
 
 interface Campaign {
   campaignId: string
@@ -50,6 +51,11 @@ interface Campaign {
   monthlySold: number | null
   videoCount: number | null
   hasVideo: boolean
+  category: string | null
+  parentAsin: string | null
+  salesRank: number | null
+  salesRankCategory: string | null
+  listedSince: string | null
 }
 
 const SORTS: { key: string; label: string }[] = [
@@ -499,6 +505,18 @@ function BrowseCard({ c, saved, covered, onToggleSave, onMessageBrand, onDeepDiv
           { label: 'Budget', value: c.budgetRemaining != null ? (money(c.budgetRemaining) as string) : '—', sub: c.budget != null ? `of ${money(c.budget)}` : undefined },
           { label: 'Ends', value: dl != null ? `${dl}d` : '—', sub: endsDate || undefined, accent: dlColor },
         ]} />
+        {/* Keepa signals — category, sales rank, product age (parity with Oink) */}
+        {(() => {
+          const rank = formatSalesRank(c.salesRank, c.salesRankCategory)
+          const age = formatAgeWithDate(c.listedSince)
+          const bits = [c.category, rank, age].filter(Boolean) as string[]
+          if (!bits.length) return null
+          return (
+            <div className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-0.5 leading-relaxed">
+              {bits.join('  ·  ')}
+            </div>
+          )
+        })()}
 
         {/* Slots claimed */}
         {c.totalSlot != null && c.slotsClaimed != null && (

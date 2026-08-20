@@ -50,6 +50,61 @@ const PRICE_TYPE_BUY_BOX = 18
 /** Keepa CSV type indices inside the `current`/history arrays. */
 const KEEPA_CSV_RATING = 16        // star rating, stored as ×10 (45 = 4.5★)
 const KEEPA_CSV_REVIEW_COUNT = 17  // number of reviews
+const KEEPA_CSV_SALES = 3          // sales rank (lower = better-selling)
+
+// ── Shared product "extras" parse ────────────────────────────────────────────
+// Signals every /product response already carries (no extra tokens) that we now
+// surface on the cards: parent ASIN, current sales rank + its named category,
+// coarse category, and the product's first-listed date (age). Used by both
+// fetchKeepaProductCard and fetchKeepaProductStats.
+export interface KeepaExtras {
+  parentAsin: string | null
+  salesRank: number | null
+  salesRankCategory: string | null
+  /** ISO date (YYYY-MM-DD) the product was first listed, for a product-age read. */
+  listedSince: string | null
+  /** Coarse Amazon product group / category-tree root, a readable string. */
+  category: string | null
+}
+
+/** Keepa Time Minutes → ISO date (YYYY-MM-DD). Allows older listing years than
+ *  keepaMinutesToIso (products can predate 2020), so it's a separate helper. */
+function keepaMinutesToDate(min: unknown): string | null {
+  const m = Number(min)
+  if (!Number.isFinite(m) || m <= 0) return null
+  const ms = (m + 21564000) * 60000 // Keepa epoch offset → unix ms
+  const d = new Date(ms)
+  const y = d.getUTCFullYear()
+  if (isNaN(d.getTime()) || y < 2000 || y > 2100) return null
+  return d.toISOString().slice(0, 10)
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function parseKeepaExtras(p: any): KeepaExtras {
+  const parentAsin = (typeof p?.parentAsin === 'string' && /^[A-Z0-9]{10}$/i.test(p.parentAsin))
+    ? p.parentAsin.toUpperCase() : null
+  const cur = Array.isArray(p?.stats?.current) ? p.stats.current : []
+  const rankRaw = Number(cur[KEEPA_CSV_SALES])
+  const salesRank = Number.isFinite(rankRaw) && rankRaw > 0 ? rankRaw : null
+  // Named category for the rank: the categoryTree node matching salesRankReference,
+  // else the tree leaf (most-specific), else null.
+  const tree = Array.isArray(p?.categoryTree) ? p.categoryTree : []
+  const refId = Number(p?.salesRankReference)
+  let salesRankCategory: string | null = null
+  if (tree.length) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const match = Number.isFinite(refId) && refId > 0 ? tree.find((c: any) => Number(c?.catId) === refId) : null
+    const node = match || tree[tree.length - 1]
+    const nm = node && typeof node.name === 'string' ? node.name.trim() : ''
+    salesRankCategory = nm ? nm.slice(0, 60) : null
+  }
+  const rootName = tree.length ? String((tree[0] as { name?: unknown } | undefined)?.name || '').trim() : ''
+  const category = (typeof p?.productGroup === 'string' && p.productGroup.trim())
+    ? p.productGroup.trim().slice(0, 80)
+    : (rootName ? rootName.slice(0, 80) : null)
+  const listedSince = keepaMinutesToDate(p?.listedSince) ?? keepaMinutesToDate(p?.trackingSince)
+  return { parentAsin, salesRank, salesRankCategory, listedSince, category }
+}
 
 export function keepaConfigured(): boolean {
   return !!process.env.KEEPA_API_KEY
@@ -305,6 +360,13 @@ export interface DealAssessment {
    *  TRI-STATE: true = confirmed, false = checked & none, null = Keepa returned
    *  no `videos` data this call (unknown — don't overwrite a prior known value). */
   hasCarouselVideo: boolean | null
+  /** Extra card signals riding the same response: parent ASIN, sales rank + its
+   *  named category, coarse category, and first-listed date. Null on absence. */
+  parentAsin: string | null
+  salesRank: number | null
+  salesRankCategory: string | null
+  listedSince: string | null
+  category: string | null
 }
 
 /**
@@ -313,7 +375,7 @@ export interface DealAssessment {
  * (never throws) so the caller just skips verification for that ASIN.
  */
 export async function fetchKeepaProductStats(asin: string, domainId = KEEPA_DOMAIN_US): Promise<DealAssessment> {
-  const empty: DealAssessment = { currentCents: null, avg90Cents: null, allTimeLowCents: null, pctBelowAvg90: null, quality: null, label: null, monthlySold: null, hasCarouselVideo: null }
+  const empty: DealAssessment = { currentCents: null, avg90Cents: null, allTimeLowCents: null, pctBelowAvg90: null, quality: null, label: null, monthlySold: null, hasCarouselVideo: null, parentAsin: null, salesRank: null, salesRankCategory: null, listedSince: null, category: null }
   const key = process.env.KEEPA_API_KEY
   if (!key || !/^[A-Za-z0-9]{10}$/.test(asin)) return empty
   // stats=180 → Keepa computes avg30/90/180 + all-time min/max server-side.
@@ -336,6 +398,14 @@ export async function fetchKeepaProductStats(asin: string, domainId = KEEPA_DOMA
     assessment.monthlySold = Number.isFinite(ms) && ms > 0 ? ms : null
     // Carousel-video flag rides on the same response too (top-level `videos`).
     assessment.hasCarouselVideo = detectCarouselVideo(product.videos)
+    // Parent ASIN, sales rank + named category, category, first-listed date —
+    // all already in this response.
+    const extras = parseKeepaExtras(product)
+    assessment.parentAsin = extras.parentAsin
+    assessment.salesRank = extras.salesRank
+    assessment.salesRankCategory = extras.salesRankCategory
+    assessment.listedSince = extras.listedSince
+    assessment.category = extras.category
     return assessment
   } catch {
     return empty
@@ -396,12 +466,20 @@ export interface KeepaProductCard {
   /** Coarse Amazon product group (e.g. "Kitchen", "Health & Household") for
    *  revenue-by-category grouping. Null when Keepa doesn't return one. */
   category: string | null
+  /** Variation parent ASIN (groups colour/size variants), or null. */
+  parentAsin: string | null
+  /** Current sales rank (lower = better-selling), or null. */
+  salesRank: number | null
+  /** The named category the sales rank is in (e.g. "Health & Household"). */
+  salesRankCategory: string | null
+  /** ISO date the product was first listed on Amazon (product age), or null. */
+  listedSince: string | null
   /** Keepa token balance from this response, for the cron to pace on. */
   tokensLeft: number | null
 }
 
 export async function fetchKeepaProductCard(asin: string, domainId = KEEPA_DOMAIN_US): Promise<KeepaProductCard> {
-  const empty: KeepaProductCard = { imageUrl: null, priceNowCents: null, priceWasCents: null, discountPct: null, rating: null, reviewCount: null, monthlySold: null, videoCount: 0, hasCarouselVideo: null, category: null, tokensLeft: null }
+  const empty: KeepaProductCard = { imageUrl: null, priceNowCents: null, priceWasCents: null, discountPct: null, rating: null, reviewCount: null, monthlySold: null, videoCount: 0, hasCarouselVideo: null, category: null, parentAsin: null, salesRank: null, salesRankCategory: null, listedSince: null, tokensLeft: null }
   const key = process.env.KEEPA_API_KEY
   if (!key || !/^[A-Za-z0-9]{10}$/.test(asin)) return empty
   // stats=90 (current + 90-day avg for a discount read), rating=1 (current stars
@@ -433,14 +511,10 @@ export async function fetchKeepaProductCard(asin: string, domainId = KEEPA_DOMAI
     const ms = Number(p.monthlySold)
     const monthlySold = Number.isFinite(ms) && ms > 0 ? ms : null
     const { count, has } = countCarouselVideos(p.videos)
-    // Coarse category for revenue grouping: prefer Amazon's productGroup (a
-    // single readable string), fall back to the root of the category tree.
-    const rootCat = Array.isArray(p.categoryTree) && p.categoryTree.length
-      ? String((p.categoryTree[0] as { name?: unknown } | undefined)?.name || '') : ''
-    const category = (typeof p.productGroup === 'string' && p.productGroup.trim())
-      ? p.productGroup.trim().slice(0, 80)
-      : (rootCat.trim() ? rootCat.trim().slice(0, 80) : null)
-    return { imageUrl: keepaProductImageUrl(p.images), priceNowCents, priceWasCents, discountPct, rating, reviewCount, monthlySold, videoCount: count, hasCarouselVideo: has, category, tokensLeft }
+    // Parent ASIN, sales rank + named category, coarse category, first-listed date
+    // — all already in this response (no extra tokens).
+    const extras = parseKeepaExtras(p)
+    return { imageUrl: keepaProductImageUrl(p.images), priceNowCents, priceWasCents, discountPct, rating, reviewCount, monthlySold, videoCount: count, hasCarouselVideo: has, category: extras.category, parentAsin: extras.parentAsin, salesRank: extras.salesRank, salesRankCategory: extras.salesRankCategory, listedSince: extras.listedSince, tokensLeft }
   } catch {
     return empty
   }
@@ -500,7 +574,7 @@ function assessFromStats(stats: any): DealAssessment {
     else { quality = 'weak'; label = 'Around its usual price' }
   }
 
-  return { currentCents, avg90Cents, allTimeLowCents, pctBelowAvg90, quality, label, monthlySold: null, hasCarouselVideo: null }
+  return { currentCents, avg90Cents, allTimeLowCents, pctBelowAvg90, quality, label, monthlySold: null, hasCarouselVideo: null, parentAsin: null, salesRank: null, salesRankCategory: null, listedSince: null, category: null }
 }
 
 /** A Keepa stats price field is an int[] indexed by price type; -1 = none. */

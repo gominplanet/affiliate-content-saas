@@ -277,6 +277,13 @@ async function enrichPriceHistory(
       // Only write has_video when Keepa actually returned video data (non-null);
       // a null means "unknown this run" and must NOT clobber a known flag.
       ...(a.hasCarouselVideo != null ? { has_video: a.hasCarouselVideo } : {}),
+      // Extra card signals riding the same response (write only when present so a
+      // null this run never clobbers a previously-known value).
+      ...(a.parentAsin ? { parent_asin: a.parentAsin } : {}),
+      ...(a.category ? { category: a.category } : {}),
+      ...(a.salesRank != null ? { sales_rank: a.salesRank } : {}),
+      ...(a.salesRankCategory ? { sales_rank_category: a.salesRankCategory } : {}),
+      ...(a.listedSince ? { listed_since: a.listedSince } : {}),
       price_verified_at: new Date().toISOString(),
     }).eq('asin', row.asin)
     if (budget != null) budget -= 1 // a product-stats call is ~1 token
