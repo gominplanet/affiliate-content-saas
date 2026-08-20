@@ -33,6 +33,20 @@ const KEEPA_BASE = 'https://api.keepa.com'
 /** Amazon marketplace → Keepa domainId. 1 = amazon.com (US). */
 export const KEEPA_DOMAIN_US = 1
 
+/** The major marketplaces a US affiliate's geo-routed (OneLink/Geniuslink)
+ *  traffic actually lands on — the set worth a cross-marketplace availability
+ *  check on the deep-dive. Kept small so the check stays a few tokens. */
+export const KEEPA_MARKETPLACES: Array<{ domain: number; code: string; label: string }> = [
+  { domain: 1, code: 'US', label: 'United States' },
+  { domain: 2, code: 'UK', label: 'United Kingdom' },
+  { domain: 3, code: 'DE', label: 'Germany' },
+  { domain: 6, code: 'CA', label: 'Canada' },
+]
+
+/** Amazon's own US seller id — an offer from this seller means "Amazon sells it
+ *  directly", the strongest signal a listing is not a 3rd-party-only reseller. */
+const AMAZON_US_SELLER_ID = 'ATVPDKIKX0DER'
+
 /** Keepa price-type index we treat as "the price". 0 = Amazon, 1 = Marketplace
  *  New. We read Amazon first and fall back to New. */
 const PRICE_TYPE_AMAZON = 0
@@ -617,6 +631,92 @@ export async function fetchKeepaSalesRankHistory(asin: string, domainId = KEEPA_
   } catch {
     return empty
   }
+}
+
+// ── Sellers + marketplace availability (Tier C: competition read) ────────────
+//
+// The COSTLY tier: it uses Keepa's `&offers` param, which forces a live
+// (multi-token) refresh instead of a cached read — so it is NEVER fired on a
+// plain deep-dive open. It runs only when a creator explicitly asks ("Check
+// sellers & marketplaces"), so the spend tracks a deliberate action, not a
+// hover. Answers: how crowded is this listing (seller count), does Amazon /
+// the brand sell it directly, and which major marketplaces carry it (for
+// geo-routed international affiliate traffic).
+export interface KeepaSellers {
+  /** Number of live New-condition offers = sellers competing on the buy box. */
+  sellerCount: number | null
+  /** Amazon itself is one of the sellers (availabilityAmazon >= 0 or its seller id present). */
+  soldByAmazon: boolean
+  /** Exactly one seller — an exclusive listing, low competition. */
+  singleSeller: boolean
+  /** Marketplaces (of the curated major set) that currently carry this ASIN. */
+  marketplaces: Array<{ code: string; label: string; available: boolean }>
+  tokensLeft: number | null
+}
+
+export async function fetchKeepaSellers(asin: string, domainId = KEEPA_DOMAIN_US): Promise<KeepaSellers> {
+  const empty: KeepaSellers = { sellerCount: null, soldByAmazon: false, singleSeller: false, marketplaces: [], tokensLeft: null }
+  const key = process.env.KEEPA_API_KEY
+  if (!key || !/^[A-Za-z0-9]{10}$/.test(asin)) return empty
+
+  // 1) Offers on the primary marketplace — the seller/competition read. offers=20
+  //    forces a live refresh (the costly bit); buybox=1 for the winning seller.
+  let sellerCount: number | null = null
+  let soldByAmazon = false
+  let singleSeller = false
+  let tokensLeft: number | null = null
+  try {
+    const url = `${KEEPA_BASE}/product?key=${encodeURIComponent(key)}&domain=${domainId}&asin=${asin}&offers=20&stats=0&history=0&buybox=1`
+    const res = await fetch(url, { signal: AbortSignal.timeout(45_000) })
+    if (res.ok) {
+      const data = await res.json() as { products?: unknown[]; tokensLeft?: number }
+      tokensLeft = Number.isFinite(data.tokensLeft as number) ? (data.tokensLeft as number) : null
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const p = (Array.isArray(data.products) ? (data.products[0] as any) : null)
+      if (p) {
+        // Prefer the CURRENTLY-live offers (liveOffersOrder indexes into offers);
+        // fall back to the raw offers array length. Count distinct sellers.
+        const offers = Array.isArray(p.offers) ? p.offers : []
+        const liveIdx: number[] = Array.isArray(p.liveOffersOrder) ? p.liveOffersOrder : []
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const live = liveIdx.length ? liveIdx.map((i: number) => offers[i]).filter(Boolean) : offers
+        const sellerIds = new Set<string>()
+        for (const o of live) {
+          const sid = o && typeof o === 'object' ? String((o as { sellerId?: unknown }).sellerId || '') : ''
+          if (sid) sellerIds.add(sid)
+          if (sid === AMAZON_US_SELLER_ID) soldByAmazon = true
+        }
+        if (Number.isFinite(Number(p.availabilityAmazon)) && Number(p.availabilityAmazon) >= 0) soldByAmazon = true
+        if (sellerIds.size > 0) { sellerCount = sellerIds.size; singleSeller = sellerIds.size === 1 }
+        else if (live.length > 0) { sellerCount = live.length; singleSeller = live.length === 1 }
+      }
+    }
+  } catch { /* offers read is best-effort */ }
+
+  // 2) Marketplace availability — cheap CACHED existence probes (no offers) on the
+  //    curated major set. A marketplace "has it" when Keepa returns the product
+  //    with a title. ~1 token each; the small curated set bounds the total.
+  const marketplaces: KeepaSellers['marketplaces'] = []
+  await Promise.all(KEEPA_MARKETPLACES.map(async (mkt) => {
+    try {
+      const url = `${KEEPA_BASE}/product?key=${encodeURIComponent(key)}&domain=${mkt.domain}&asin=${asin}&stats=0&history=0`
+      const res = await fetch(url, { signal: AbortSignal.timeout(30_000) })
+      let available = false
+      if (res.ok) {
+        const data = await res.json() as { products?: unknown[] }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const p = (Array.isArray(data.products) ? (data.products[0] as any) : null)
+        available = !!(p && (typeof p.title === 'string' && p.title.trim().length > 0))
+      }
+      marketplaces.push({ code: mkt.code, label: mkt.label, available })
+    } catch {
+      marketplaces.push({ code: mkt.code, label: mkt.label, available: false })
+    }
+  }))
+  // Stable order (Promise.all resolves out of order).
+  marketplaces.sort((a, b) => KEEPA_MARKETPLACES.findIndex(m => m.code === a.code) - KEEPA_MARKETPLACES.findIndex(m => m.code === b.code))
+
+  return { sellerCount, soldByAmazon, singleSeller, marketplaces, tokensLeft }
 }
 
 /** Like detectCarouselVideo but returns the COUNT of brand/carousel videos. */

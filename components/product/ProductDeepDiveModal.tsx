@@ -12,8 +12,15 @@ import { toast } from 'sonner'
 import { formatSalesRank, formatAgeWithDate, formatRankTrend } from '@/lib/product-card-signals'
 import {
   X, Star, TrendingUp, Video, ShieldCheck, ShieldAlert, PenLine,
-  ExternalLink, Loader2, Check, ArrowRight,
+  ExternalLink, Loader2, Check, ArrowRight, Store, Globe,
 } from 'lucide-react'
+
+interface SellerInfo {
+  sellerCount: number | null
+  soldByAmazon: boolean
+  singleSeller: boolean
+  marketplaces: Array<{ code: string; label: string; available: boolean }>
+}
 
 interface DeepDive {
   asin: string
@@ -74,6 +81,20 @@ export default function ProductDeepDiveModal({ asin, title, imageUrl, onClose }:
   const [error, setError] = useState<string | null>(null)
   const [gen, setGen] = useState<'idle' | 'working' | 'done'>('idle')
   const [postUrl, setPostUrl] = useState<string | null>(null)
+  // Tier C — sellers/marketplaces load on demand (the costly Keepa `offers` call).
+  const [sellers, setSellers] = useState<SellerInfo | null>(null)
+  const [sellersState, setSellersState] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
+
+  const loadSellers = async () => {
+    if (sellersState === 'loading' || sellersState === 'done') return
+    setSellersState('loading')
+    try {
+      const res = await fetch(`/api/product/sellers?asin=${encodeURIComponent(asin)}`)
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) { toast.error(d.error || 'Could not load seller data.'); setSellersState('error'); return }
+      setSellers(d); setSellersState('done')
+    } catch { toast.error('Could not load seller data.'); setSellersState('error') }
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -209,6 +230,63 @@ export default function ProductDeepDiveModal({ asin, title, imageUrl, onClose }:
                   </div>
                 )
               })()}
+
+              {/* Tier C: sellers + marketplaces — on-demand (costly Keepa offers call). */}
+              <div className="rounded-xl border px-3.5 py-3" style={{ borderColor: 'var(--border-2)' }}>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-[12px] font-medium inline-flex items-center gap-1.5" style={{ color: 'var(--text)' }}>
+                    <Store size={13} /> Sellers &amp; marketplaces
+                  </span>
+                  {sellersState !== 'done' && (
+                    <button
+                      onClick={loadSellers}
+                      disabled={sellersState === 'loading'}
+                      className="text-[11px] font-semibold rounded-full px-2.5 py-1 border disabled:opacity-60"
+                      style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }}
+                    >
+                      {sellersState === 'loading' ? <span className="inline-flex items-center gap-1"><Loader2 size={11} className="animate-spin" /> Checking…</span>
+                        : sellersState === 'error' ? 'Retry' : 'Check'}
+                    </button>
+                  )}
+                </div>
+                {sellersState === 'idle' && (
+                  <p className="text-[11px] mt-1.5 leading-relaxed" style={{ color: 'var(--text-faint)' }}>
+                    Live check: how many sellers compete, whether Amazon sells it directly, and which major marketplaces carry it (for geo-routed links).
+                  </p>
+                )}
+                {sellersState === 'done' && sellers && (
+                  <div className="mt-2 flex flex-col gap-1.5 text-[12px]">
+                    {sellers.sellerCount != null && (
+                      <div className="flex items-center justify-between gap-3">
+                        <span style={{ color: 'var(--text-faint)' }}>Sellers competing</span>
+                        <span className="font-medium" style={{ color: sellers.singleSeller ? '#059669' : 'var(--text)' }}>
+                          {sellers.sellerCount}{sellers.singleSeller ? ' · exclusive listing' : ''}
+                        </span>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between gap-3">
+                      <span style={{ color: 'var(--text-faint)' }}>Sold by Amazon</span>
+                      <span className="font-medium" style={{ color: 'var(--text)' }}>{sellers.soldByAmazon ? 'Yes' : 'Third-party sellers'}</span>
+                    </div>
+                    {sellers.marketplaces.length > 0 && (
+                      <div className="flex items-start justify-between gap-3">
+                        <span className="inline-flex items-center gap-1" style={{ color: 'var(--text-faint)' }}><Globe size={12} /> Marketplaces</span>
+                        <span className="flex flex-wrap gap-1 justify-end">
+                          {sellers.marketplaces.map(m => (
+                            <span key={m.code} className="rounded px-1.5 py-0.5 text-[10.5px] font-semibold"
+                              style={m.available
+                                ? { background: 'rgba(5,150,105,0.12)', color: '#059669' }
+                                : { background: 'var(--surface-2,rgba(0,0,0,0.05))', color: 'var(--text-faint)', textDecoration: 'line-through' }}
+                              title={`${m.label} — ${m.available ? 'available' : 'not found'}`}>
+                              {m.code}
+                            </span>
+                          ))}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
 
               <p className="text-[11px] leading-relaxed" style={{ color: 'var(--text-faint)' }}>
                 Fewer carousel videos = less competition. A price near its all-time low is the strongest reason to post now.
