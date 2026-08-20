@@ -94,7 +94,9 @@ export async function POST(request: Request) {
         const periodStart = String(e.periodStart ?? '').trim()
         const periodEnd = String(e.periodEnd ?? '').trim()
         if (!ASIN_RE.test(asin)) return null
-        if (periodType !== 'weekly' && periodType !== 'monthly') return null
+        // 'ytd' = SCOUT read a whole-year on-screen view (the creator set "This
+        // Year"); weekly/monthly are the shorter report ranges.
+        if (periodType !== 'weekly' && periodType !== 'monthly' && periodType !== 'ytd') return null
         if (!DATE_RE.test(periodStart) || !DATE_RE.test(periodEnd)) return null
         const units = toInt(e.units)
         const revenue_cents = toCents(e.revenue)

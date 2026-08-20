@@ -2028,18 +2028,35 @@ async function scanStorefrontBackground(rawUrl) {
 // hidden tab, scrapes the per-ASIN earnings table for the current view AND the
 // standard quick-ranges (Last Week / This Month / Last Month), pushes to MVP,
 // and closes. Self-contained scraper ported from content.js mvpEarningsScout.
-async function harvestEarningsInPage() {
+async function harvestEarningsInPage(opts) {
+  const currentOnly = !!(opts && opts.currentOnly)
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const num = (s) => { const n = parseFloat(String(s || '').replace(/[^0-9.\-]/g, '')); return isFinite(n) ? n : null }
   const toISO = (s) => { const d = new Date(s); return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10) }
   function pickPeriod() {
     const txt = document.body.innerText || ''
-    const sel = (txt.match(/\b(This Week|Last Week|This Month|Last Month|Year to Date|Last \d+ Days?)\b/i) || [])[1] || ''
-    let type = /week/i.test(sel) ? 'weekly' : /month|year/i.test(sel) ? 'monthly' : ''
+    const sel = (txt.match(/\b(This Week|Last Week|This Month|Last Month|Year to Date|This Year|Last \d+ Days?)\b/i) || [])[1] || ''
+    // 'ytd' = a whole-year view (the creator set "This Year" / "Year to Date").
+    // Amazon caps the CSV download at 31 days, but the on-screen per-product
+    // table honors the selected range, so reading it is how we get the year.
+    let type = /week/i.test(sel) ? 'weekly'
+      : /year to date|this year/i.test(sel) ? 'ytd'
+      : /month/i.test(sel) ? 'monthly' : ''
     let start = null, end = null
     const m = txt.match(/([A-Z][a-z]{2})\s+(\d{1,2})(?:,?\s*(\d{4}))?\s*(?:-|–|—|to)\s*([A-Z][a-z]{2})\s+(\d{1,2}),?\s*(\d{4})/)
     if (m) { const year = m[6]; start = toISO(`${m[1]} ${m[2]} ${m[3] || year}`); end = toISO(`${m[4]} ${m[5]} ${year}`) }
-    if (!type) type = (start && end && Math.round((Date.parse(end) - Date.parse(start)) / 86400000) <= 10) ? 'weekly' : 'monthly'
+    // Classify by span when the label was ambiguous: >45d reads as a year view.
+    if (!type && start && end) {
+      const days = Math.round((Date.parse(end) - Date.parse(start)) / 86400000)
+      type = days <= 10 ? 'weekly' : days <= 45 ? 'monthly' : 'ytd'
+    }
+    if (!type) type = 'monthly'
+    // A year view with no parseable range on the page → assume calendar YTD.
+    if (type === 'ytd' && (!start || !end)) {
+      const now = new Date()
+      start = `${now.getFullYear()}-01-01`
+      end = now.toISOString().slice(0, 10)
+    }
     return { type, start, end }
   }
   function findTable() {
@@ -2083,24 +2100,55 @@ async function harvestEarningsInPage() {
   }
   const seen = new Set(); const all = []
   const add = (rows) => { for (const r of rows) { const k = r.asin + '|' + r.periodType + '|' + r.periodStart; if (!seen.has(k)) { seen.add(k); all.push(r) } } }
-  // Give the SPA a beat, then scrape the current view + the quick-ranges.
+  // Give the SPA a beat, then scrape the current view. In currentOnly mode we
+  // read the range the creator already set (e.g. "This Year") and DON'T click
+  // around — clicking quick-ranges would change their view and lose the year.
   await sleep(500)
   add(scrapeCurrent())
-  for (const label of ['Last Week', 'This Month', 'Last Month']) {
-    try {
-      let clicked = false
-      for (const el of document.querySelectorAll('a,button,[role="button"],[role="tab"],span,li,label')) {
-        const t = (el.textContent || '').replace(/\s+/g, ' ').trim()
-        if (t.toLowerCase() === label.toLowerCase() && el.offsetParent !== null) { el.click(); clicked = true; break }
-      }
-      if (clicked) { await sleep(2800); add(scrapeCurrent()) }
-    } catch (e) {}
+  if (!currentOnly) {
+    for (const label of ['Last Week', 'This Month', 'Last Month']) {
+      try {
+        let clicked = false
+        for (const el of document.querySelectorAll('a,button,[role="button"],[role="tab"],span,li,label')) {
+          const t = (el.textContent || '').replace(/\s+/g, ' ').trim()
+          if (t.toLowerCase() === label.toLowerCase() && el.offsetParent !== null) { el.click(); clicked = true; break }
+        }
+        if (clicked) { await sleep(2800); add(scrapeCurrent()) }
+      } catch (e) {}
+    }
   }
   return { ok: true, rows: all, signedOut: /\/ap\/signin/.test(location.href) }
 }
 
 async function scanStorefrontEarningsBackground() {
   const url = 'https://affiliate-program.amazon.com/home/reports'
+
+  // PRIMARY: read a reports tab the creator already has open. Amazon caps the
+  // CSV download at 31 days, but the on-screen per-product table honors the
+  // selected range — so if the creator set "This Year" + grouped by Linked
+  // Product, reading THAT tab captures the whole year in one pass. We scrape
+  // current-view-only so we never disturb their selection.
+  try {
+    const tabs = await chrome.tabs.query({ url: 'https://affiliate-program.amazon.com/home/reports*' })
+    const open = (tabs || []).find((t) => t && t.id != null)
+    if (open) {
+      const results = await chrome.scripting.executeScript({
+        target: { tabId: open.id }, func: harvestEarningsInPage, args: [{ currentOnly: true }],
+      })
+      const r = (results && results[0] && results[0].result) || null
+      if (r && r.ok && !r.signedOut && r.rows && r.rows.length) {
+        const push = await pushEarningsToMvp(r.rows)
+        return { ok: !!(push && push.ok), count: r.rows.length, upserted: push && push.upserted, error: (push && push.ok) ? undefined : (push && push.error) }
+      }
+      if (r && r.signedOut) return { ok: false, error: 'signed-out' }
+      // Open tab had no table yet (still loading, or a non-report sub-page) —
+      // fall through to the background scan.
+    }
+  } catch (e) { /* fall through to background scan */ }
+
+  // FALLBACK: no usable open tab — open our own background tab. This lands on
+  // Amazon's default range (recent period), so it can't reach the full year;
+  // it's the best-effort path when the creator hasn't opened the report.
   let tabId = null
   try {
     const tab = await chrome.tabs.create({ url, active: false })
