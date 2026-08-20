@@ -41,6 +41,7 @@ import { injectPriceStrip } from '@/lib/price-strip'
 import { enrichMultiProductLinks } from '@/lib/multi-product'
 import { injectInlineAffiliateLinks } from '@/lib/inline-affiliate'
 import { buildReviewSchemaGraph, parseRating, extractFaqFromHtml } from '@/lib/seo-schema'
+import { scoreAio } from '@/lib/aio-score'
 import { fal } from '@fal-ai/client'
 import { recordUsage } from '@/lib/ai-usage'
 import { pingIndexNowForUrl } from '@/lib/seo-on-publish'
@@ -2588,9 +2589,28 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
     after(deferredWork)
   }
 
+  // ── AIO readiness score (AI-answer visibility) ────────────────────────────
+  // Score the final post for how quotable it is by AI answer engines, persist it
+  // (blog_posts.aio jsonb, migration 266 — best-effort so an older DB never fails
+  // the publish), and return it so the composer can badge it immediately.
+  let aio: ReturnType<typeof scoreAio> | null = null
+  try {
+    aio = scoreAio({
+      html: content,
+      faqCount: extractFaqFromHtml(content).length,
+      hasProductSchema: true, // this route emits Review/Product schema for the product
+      hasAuthorAuthority: !!(authorBio && authorBio.trim()),
+      hasFreshness: true,     // the post carries a published/updated date
+    })
+    if (savedPost?.id) {
+      try { await (supabase as any).from('blog_posts').update({ aio }).eq('id', savedPost.id) } catch { /* column absent pre-266 */ }
+    }
+  } catch { /* scoring is best-effort — never block a publish */ }
+
   return NextResponse.json({
     success: true,
     postId: savedPost?.id,
+    aio,
     wordpressPostId: wpPost.id,
     wordpressUrl: wpPost.link,
     title: generated.title,
