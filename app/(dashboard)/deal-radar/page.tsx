@@ -555,7 +555,7 @@ export default function DealRadarPage() {
         <EmptyState hasFilters={!!hasFilters} isAdmin={tier === 'admin'} onClear={clearFilters} onRefresh={() => void load()} />
       ) : (
         <>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
             {deals.map((d) => <DealCard key={d.asin} deal={d} onQuickPost={setQuickPostDeal} selected={selected.has(d.asin)} onToggleSelect={isPaid && !isAmazonSocial ? toggleSelect : undefined} locked={!isPaid} socialOnly={isAmazonSocial} />)}
           </div>
           {hasMore && (
