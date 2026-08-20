@@ -24,7 +24,7 @@ interface SavedItem {
   rating: number | null
   marketplace: string | null
 }
-type GenState = { loading?: boolean; url?: string; error?: string }
+type GenState = { loading?: boolean; url?: string; editUrl?: string; draft?: boolean; error?: string }
 
 export default function LevantaSaved({ reloadKey }: { reloadKey: number }) {
   const [items, setItems] = useState<SavedItem[] | null>(null)
@@ -62,7 +62,7 @@ export default function LevantaSaved({ reloadKey }: { reloadKey: number }) {
       })
       const j = await res.json()
       if (!j.ok) { setGen(g => ({ ...g, [it.asin]: { error: j.error || 'Generation failed' } })); return }
-      setGen(g => ({ ...g, [it.asin]: { url: j.wordpressUrl } }))
+      setGen(g => ({ ...g, [it.asin]: { url: j.wordpressUrl, editUrl: j.editUrl, draft: !!j.draft } }))
     } catch {
       setGen(g => ({ ...g, [it.asin]: { error: 'Network error during generation.' } }))
     }
@@ -113,9 +113,12 @@ export default function LevantaSaved({ reloadKey }: { reloadKey: number }) {
                   {g.error && <p className="text-[11px] mt-1" style={{ color: '#ef4444' }}>{g.error}</p>}
                   <div className="flex items-center gap-2 mt-2 flex-wrap">
                     {g.url ? (
-                      <a href={g.url} target="_blank" rel="noopener noreferrer"
+                      // A draft's public permalink 404s (drafts aren't public), so
+                      // send drafts to the WP editor to review + publish; only a
+                      // LIVE post links to its public URL.
+                      <a href={(g.draft && g.editUrl) ? g.editUrl : g.url} target="_blank" rel="noopener noreferrer"
                         className="inline-flex items-center gap-1 text-[11px] font-semibold" style={{ color: '#10B981' }}>
-                        <CheckCircle2 size={12} /> View post <ExternalLink size={10} />
+                        <CheckCircle2 size={12} /> {g.draft ? 'Review draft' : 'View post'} <ExternalLink size={10} />
                       </a>
                     ) : (
                       <button onClick={() => generate(it)} disabled={g.loading}

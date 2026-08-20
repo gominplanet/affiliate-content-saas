@@ -30,7 +30,7 @@ interface Match {
   brandUrl?: string | null
   marketplace: string
 }
-type GenState = { loading?: boolean; url?: string; error?: string }
+type GenState = { loading?: boolean; url?: string; editUrl?: string; draft?: boolean; error?: string }
 
 export default function LevantaFinder({ onSavedChange }: { onSavedChange?: () => void }) {
   const [mode, setMode] = useState<'focus' | 'wide'>('focus')
@@ -136,7 +136,7 @@ export default function LevantaFinder({ onSavedChange }: { onSavedChange?: () =>
       })
       const j = await res.json()
       if (!j.ok) { setGen((g) => ({ ...g, [m.asin]: { error: j.error || 'Generation failed' } })); return }
-      setGen((g) => ({ ...g, [m.asin]: { url: j.wordpressUrl } }))
+      setGen((g) => ({ ...g, [m.asin]: { url: j.wordpressUrl, editUrl: j.editUrl, draft: !!j.draft } }))
       setDone((d) => (d.includes(m.asin) ? d : [...d, m.asin]))
     } catch {
       setGen((g) => ({ ...g, [m.asin]: { error: 'Network error during generation.' } }))
@@ -275,9 +275,10 @@ export default function LevantaFinder({ onSavedChange }: { onSavedChange?: () =>
                 </div>
                 <div className="flex-shrink-0">
                   {g.url ? (
-                    <a href={g.url} target="_blank" rel="noopener noreferrer"
+                    // Draft permalinks 404 publicly — send drafts to the WP editor.
+                    <a href={(g.draft && g.editUrl) ? g.editUrl : g.url} target="_blank" rel="noopener noreferrer"
                       className="inline-flex items-center gap-1 text-[12px] font-semibold" style={{ color: '#10B981' }}>
-                      <CheckCircle2 size={13} /> View post <ExternalLink size={11} />
+                      <CheckCircle2 size={13} /> {g.draft ? 'Review draft' : 'View post'} <ExternalLink size={11} />
                     </a>
                   ) : (
                     <button onClick={() => generate(m)} disabled={g.loading}
