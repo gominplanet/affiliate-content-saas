@@ -282,6 +282,7 @@ async function enrichPriceHistory(
       ...(a.parentAsin ? { parent_asin: a.parentAsin } : {}),
       ...(a.category ? { category: a.category } : {}),
       ...(a.salesRank != null ? { sales_rank: a.salesRank } : {}),
+      ...(a.salesRankAvg90 != null ? { sales_rank_avg90: a.salesRankAvg90 } : {}),
       ...(a.salesRankCategory ? { sales_rank_category: a.salesRankCategory } : {}),
       ...(a.listedSince ? { listed_since: a.listedSince } : {}),
       price_verified_at: new Date().toISOString(),

@@ -217,7 +217,7 @@ export async function GET(request: Request) {
     // have them; ASINs we've never seen just stay title/image/price.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sb = supabase as any
-    interface Sig { rating: number | null; reviewCount: number | null; monthlySold: number | null; category: string | null; parentAsin: string | null; salesRank: number | null; salesRankCategory: string | null; listedSince: string | null }
+    interface Sig { rating: number | null; reviewCount: number | null; monthlySold: number | null; category: string | null; parentAsin: string | null; salesRank: number | null; salesRankAvg90: number | null; salesRankCategory: string | null; listedSince: string | null }
     const sig = new Map<string, Sig>()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const toSig = (r: any): Sig => ({
@@ -226,6 +226,7 @@ export async function GET(request: Request) {
       // Only trust the numeric rank when the named category came with it (the
       // deal cache seeds sales_rank with a category ref id until enrichment).
       salesRank: r.sales_rank_category && r.sales_rank != null ? r.sales_rank : null,
+      salesRankAvg90: null, // filled by the separate avg90 pass below
       salesRankCategory: r.sales_rank_category ?? null, listedSince: r.listed_since ?? null,
     })
     try {
@@ -239,6 +240,19 @@ export async function GET(request: Request) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       for (const r of (sc ?? []) as any[]) sig.set(r.asin, toSig(r)) // prefer our fresher storefront card
     } catch { /* enrichment is best-effort */ }
+    // 90-day average rank (migration 264) — fetched separately so its column
+    // being absent can't blank the 263 signals fetched above. Only patches rows
+    // that already have a real named rank, so avg90 is only shown with a rank.
+    try {
+      const A90 = 'asin,sales_rank_avg90'
+      const [{ data: sca }, { data: dra }] = await Promise.all([
+        sb.from('storefront_product_cards').select(A90).in('asin', found.asins),
+        sb.from('deal_radar_cache').select(A90).in('asin', found.asins),
+      ])
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const patch = (rows: any[]) => { for (const r of rows) { const s = sig.get(r.asin); if (s && s.salesRank != null && r.sales_rank_avg90 != null) s.salesRankAvg90 = r.sales_rank_avg90 } }
+      patch((dra ?? []) as any[]); patch((sca ?? []) as any[])
+    } catch { /* avg90 column not applied yet — omit it */ }
 
     const products = found.asins.map(asin => {
       const card = cards.get(asin)
@@ -255,6 +269,7 @@ export async function GET(request: Request) {
         category: s?.category ?? null,
         parentAsin: s?.parentAsin ?? null,
         salesRank: s?.salesRank ?? null,
+        salesRankAvg90: s?.salesRankAvg90 ?? null,
         salesRankCategory: s?.salesRankCategory ?? null,
         listedSince: s?.listedSince ?? null,
       }

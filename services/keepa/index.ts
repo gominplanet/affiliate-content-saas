@@ -60,6 +60,8 @@ const KEEPA_CSV_SALES = 3          // sales rank (lower = better-selling)
 export interface KeepaExtras {
   parentAsin: string | null
   salesRank: number | null
+  /** 90-day average sales rank — for a rank-trend read (now vs avg). */
+  salesRankAvg90: number | null
   salesRankCategory: string | null
   /** ISO date (YYYY-MM-DD) the product was first listed, for a product-age read. */
   listedSince: string | null
@@ -86,6 +88,9 @@ function parseKeepaExtras(p: any): KeepaExtras {
   const cur = Array.isArray(p?.stats?.current) ? p.stats.current : []
   const rankRaw = Number(cur[KEEPA_CSV_SALES])
   const salesRank = Number.isFinite(rankRaw) && rankRaw > 0 ? rankRaw : null
+  const avg90 = Array.isArray(p?.stats?.avg90) ? p.stats.avg90 : []
+  const rankAvgRaw = Number(avg90[KEEPA_CSV_SALES])
+  const salesRankAvg90 = Number.isFinite(rankAvgRaw) && rankAvgRaw > 0 ? rankAvgRaw : null
   // Named category for the rank: the categoryTree node matching salesRankReference,
   // else the tree leaf (most-specific), else null.
   const tree = Array.isArray(p?.categoryTree) ? p.categoryTree : []
@@ -103,7 +108,7 @@ function parseKeepaExtras(p: any): KeepaExtras {
     ? p.productGroup.trim().slice(0, 80)
     : (rootName ? rootName.slice(0, 80) : null)
   const listedSince = keepaMinutesToDate(p?.listedSince) ?? keepaMinutesToDate(p?.trackingSince)
-  return { parentAsin, salesRank, salesRankCategory, listedSince, category }
+  return { parentAsin, salesRank, salesRankAvg90, salesRankCategory, listedSince, category }
 }
 
 export function keepaConfigured(): boolean {
@@ -364,6 +369,7 @@ export interface DealAssessment {
    *  named category, coarse category, and first-listed date. Null on absence. */
   parentAsin: string | null
   salesRank: number | null
+  salesRankAvg90: number | null
   salesRankCategory: string | null
   listedSince: string | null
   category: string | null
@@ -375,7 +381,7 @@ export interface DealAssessment {
  * (never throws) so the caller just skips verification for that ASIN.
  */
 export async function fetchKeepaProductStats(asin: string, domainId = KEEPA_DOMAIN_US): Promise<DealAssessment> {
-  const empty: DealAssessment = { currentCents: null, avg90Cents: null, allTimeLowCents: null, pctBelowAvg90: null, quality: null, label: null, monthlySold: null, hasCarouselVideo: null, parentAsin: null, salesRank: null, salesRankCategory: null, listedSince: null, category: null }
+  const empty: DealAssessment = { currentCents: null, avg90Cents: null, allTimeLowCents: null, pctBelowAvg90: null, quality: null, label: null, monthlySold: null, hasCarouselVideo: null, parentAsin: null, salesRank: null, salesRankAvg90: null, salesRankCategory: null, listedSince: null, category: null }
   const key = process.env.KEEPA_API_KEY
   if (!key || !/^[A-Za-z0-9]{10}$/.test(asin)) return empty
   // stats=180 → Keepa computes avg30/90/180 + all-time min/max server-side.
@@ -403,6 +409,7 @@ export async function fetchKeepaProductStats(asin: string, domainId = KEEPA_DOMA
     const extras = parseKeepaExtras(product)
     assessment.parentAsin = extras.parentAsin
     assessment.salesRank = extras.salesRank
+    assessment.salesRankAvg90 = extras.salesRankAvg90
     assessment.salesRankCategory = extras.salesRankCategory
     assessment.listedSince = extras.listedSince
     assessment.category = extras.category
@@ -470,6 +477,8 @@ export interface KeepaProductCard {
   parentAsin: string | null
   /** Current sales rank (lower = better-selling), or null. */
   salesRank: number | null
+  /** 90-day average sales rank — for a rank-trend read. */
+  salesRankAvg90: number | null
   /** The named category the sales rank is in (e.g. "Health & Household"). */
   salesRankCategory: string | null
   /** ISO date the product was first listed on Amazon (product age), or null. */
@@ -479,7 +488,7 @@ export interface KeepaProductCard {
 }
 
 export async function fetchKeepaProductCard(asin: string, domainId = KEEPA_DOMAIN_US): Promise<KeepaProductCard> {
-  const empty: KeepaProductCard = { imageUrl: null, priceNowCents: null, priceWasCents: null, discountPct: null, rating: null, reviewCount: null, monthlySold: null, videoCount: 0, hasCarouselVideo: null, category: null, parentAsin: null, salesRank: null, salesRankCategory: null, listedSince: null, tokensLeft: null }
+  const empty: KeepaProductCard = { imageUrl: null, priceNowCents: null, priceWasCents: null, discountPct: null, rating: null, reviewCount: null, monthlySold: null, videoCount: 0, hasCarouselVideo: null, category: null, parentAsin: null, salesRank: null, salesRankAvg90: null, salesRankCategory: null, listedSince: null, tokensLeft: null }
   const key = process.env.KEEPA_API_KEY
   if (!key || !/^[A-Za-z0-9]{10}$/.test(asin)) return empty
   // stats=90 (current + 90-day avg for a discount read), rating=1 (current stars
@@ -514,7 +523,7 @@ export async function fetchKeepaProductCard(asin: string, domainId = KEEPA_DOMAI
     // Parent ASIN, sales rank + named category, coarse category, first-listed date
     // — all already in this response (no extra tokens).
     const extras = parseKeepaExtras(p)
-    return { imageUrl: keepaProductImageUrl(p.images), priceNowCents, priceWasCents, discountPct, rating, reviewCount, monthlySold, videoCount: count, hasCarouselVideo: has, category: extras.category, parentAsin: extras.parentAsin, salesRank: extras.salesRank, salesRankCategory: extras.salesRankCategory, listedSince: extras.listedSince, tokensLeft }
+    return { imageUrl: keepaProductImageUrl(p.images), priceNowCents, priceWasCents, discountPct, rating, reviewCount, monthlySold, videoCount: count, hasCarouselVideo: has, category: extras.category, parentAsin: extras.parentAsin, salesRank: extras.salesRank, salesRankAvg90: extras.salesRankAvg90, salesRankCategory: extras.salesRankCategory, listedSince: extras.listedSince, tokensLeft }
   } catch {
     return empty
   }
@@ -574,7 +583,7 @@ function assessFromStats(stats: any): DealAssessment {
     else { quality = 'weak'; label = 'Around its usual price' }
   }
 
-  return { currentCents, avg90Cents, allTimeLowCents, pctBelowAvg90, quality, label, monthlySold: null, hasCarouselVideo: null, parentAsin: null, salesRank: null, salesRankCategory: null, listedSince: null, category: null }
+  return { currentCents, avg90Cents, allTimeLowCents, pctBelowAvg90, quality, label, monthlySold: null, hasCarouselVideo: null, parentAsin: null, salesRank: null, salesRankAvg90: null, salesRankCategory: null, listedSince: null, category: null }
 }
 
 /** A Keepa stats price field is an int[] indexed by price type; -1 = none. */

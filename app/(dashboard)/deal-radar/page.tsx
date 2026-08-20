@@ -17,9 +17,9 @@ import {
   Radar, Search, Loader2, Star, Zap, BadgePercent, ExternalLink,
   ArrowRight, Sparkles, TrendingUp, RefreshCw, ShieldCheck, ShieldAlert,
   Send, Check, AlertCircle, X as CloseIcon, HelpCircle, Mail, Info, Coins, Flame, Plus, Layers, Video, ChevronDown, Bookmark,
-  BarChart3, CalendarDays,
+  BarChart3, CalendarDays, TrendingDown, Minus,
 } from 'lucide-react'
-import { formatSalesRank, formatAgeWithDate } from '@/lib/product-card-signals'
+import { formatSalesRank, formatAgeWithDate, formatRankTrend } from '@/lib/product-card-signals'
 import { Button } from '@/components/ui/button'
 import QuickPostModal from '@/components/deal/QuickPostModal'
 import WalmartOffers from '@/components/walmart/WalmartOffers'
@@ -64,6 +64,7 @@ interface Deal {
   hasVideo: boolean
   /** Extra Keepa signals (parity with Oink). */
   parentAsin: string | null
+  salesRankAvg90: number | null
   category: string | null
   salesRank: number | null
   salesRankCategory: string | null
@@ -740,16 +741,34 @@ function DealCard({ deal: d, onQuickPost, selected = false, onToggleSelect, lock
             <TrendingUp size={12} /> {d.monthlySold.toLocaleString()}+ bought/mo
           </div>
         )}
-        {/* Keepa signals: sales rank, category, product age */}
+        {/* Keepa signals: sales rank, rank trend, category, product age */}
         {(() => {
           const rank = formatSalesRank(d.salesRank, d.salesRankCategory)
+          const trend = formatRankTrend(d.salesRank, d.salesRankAvg90)
           const age = formatAgeWithDate(d.listedSince)
-          if (!rank && !d.category && !age) return null
+          if (!rank && !trend && !d.category && !age) return null
+          const trendColor = trend?.direction === 'rising'
+            ? 'text-emerald-600 dark:text-emerald-400'
+            : trend?.direction === 'slipping'
+            ? 'text-rose-600 dark:text-rose-400'
+            : 'text-muted-foreground'
+          const TrendIcon = trend?.direction === 'rising' ? TrendingUp : trend?.direction === 'slipping' ? TrendingDown : Minus
           return (
             <div className="flex flex-col gap-0.5 text-xs text-muted-foreground">
               {rank && <span className="inline-flex items-center gap-1"><BarChart3 size={12} /> {rank}</span>}
+              {trend && (
+                <span className={`inline-flex items-center gap-1 font-medium ${trendColor}`} title={`${trend.label}: ${trend.detail}`}>
+                  <TrendIcon size={12} /> {trend.label} <span className="font-normal text-muted-foreground">{trend.detail}</span>
+                </span>
+              )}
               {!rank && d.category && <span className="inline-flex items-center gap-1"><Layers size={12} /> {d.category}</span>}
               {age && <span className="inline-flex items-center gap-1"><CalendarDays size={12} /> {age}</span>}
+              {d.parentAsin && (
+                <span className="inline-flex items-center gap-1 font-mono text-[10px] opacity-70"
+                      title={d.parentAsin !== d.asin ? `One variation of family ${d.parentAsin}` : 'Standalone listing'}>
+                  <Layers size={11} /> {d.asin}{d.parentAsin !== d.asin ? ' · variation' : ''}
+                </span>
+              )}
             </div>
           )
         })()}

@@ -18,7 +18,7 @@ import {
 } from 'lucide-react'
 import ProductDeepDiveModal from '@/components/product/ProductDeepDiveModal'
 import MvpPicksInfo from '@/components/campaigns/MvpPicksInfo'
-import { formatSalesRank, formatAgeWithDate } from '@/lib/product-card-signals'
+import { formatSalesRank, formatAgeWithDate, formatRankTrend } from '@/lib/product-card-signals'
 
 interface Product {
   asin: string
@@ -35,6 +35,7 @@ interface Product {
   category?: string | null
   parentAsin?: string | null
   salesRank?: number | null
+  salesRankAvg90?: number | null
   salesRankCategory?: string | null
   listedSince?: string | null
 }
@@ -395,9 +396,16 @@ function ProductCard({ p, canAct, saved, onToggleSave, onDeepDive }: {
         {(() => {
           const rank = formatSalesRank(p.salesRank, p.salesRankCategory)
           const age = formatAgeWithDate(p.listedSince)
+          const trend = formatRankTrend(p.salesRank, p.salesRankAvg90)
           const bits = [p.category, rank, age].filter(Boolean) as string[]
-          if (!bits.length) return null
-          return <div className="text-[10.5px] leading-relaxed" style={{ color: 'var(--text-faint)' }}>{bits.join('  ·  ')}</div>
+          if (!bits.length && !trend) return null
+          const trendColor = trend?.direction === 'rising' ? '#059669' : trend?.direction === 'slipping' ? '#e11d48' : 'var(--text-faint)'
+          return (
+            <div className="text-[10.5px] leading-relaxed" style={{ color: 'var(--text-faint)' }}>
+              {bits.length > 0 && <div>{bits.join('  ·  ')}</div>}
+              {trend && <div style={{ color: trendColor, fontWeight: 500 }} title={trend.detail}>{trend.direction === 'rising' ? '▲' : trend.direction === 'slipping' ? '▼' : '■'} {trend.label} · {trend.detail}</div>}
+            </div>
+          )
         })()}
 
         <div className="mt-auto pt-1 space-y-1.5">

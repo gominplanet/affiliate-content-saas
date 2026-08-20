@@ -51,6 +51,7 @@ export async function GET(request: Request) {
       category: card.category ?? verdict.category,
       parentAsin: card.parentAsin ?? verdict.parentAsin,
       salesRank: card.salesRank ?? verdict.salesRank,
+      salesRankAvg90: card.salesRankAvg90 ?? verdict.salesRankAvg90,
       salesRankCategory: card.salesRankCategory ?? verdict.salesRankCategory,
       listedSince: card.listedSince ?? verdict.listedSince,
     })
