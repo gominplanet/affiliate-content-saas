@@ -15,7 +15,7 @@ import { requestEarningsScan } from '@/lib/extension-frame'
 import {
   Loader2, Sparkles, Wand2, Share2, Handshake, PackageSearch, ArrowRight, ArrowUpRight, ArrowDownRight,
   AlertCircle, DollarSign, MousePointerClick, Package, Percent, TrendingUp, ExternalLink,
-  FileText, ChevronDown, Star, Check, Layers, X, CheckCircle2,
+  FileText, ChevronDown, Star, Check, Layers, X, CheckCircle2, HeartPulse,
 } from 'lucide-react'
 import PageHero from '@/components/layout/PageHero'
 import { useEffectiveTier } from '@/lib/useEffectiveTier'
@@ -188,6 +188,83 @@ function ProductDrawer({ p, hasBlog }: { p: Product; hasBlog: boolean }) {
         {hasBlog && <ActionBtn href={`/deals?asin=${p.asin}`} icon={<FileText size={14} />} label="Write blog post" />}
         <ActionBtn external href={p.amazonUrl} icon={<ExternalLink size={14} />} label="Visit Amazon" />
       </div>
+    </div>
+  )
+}
+
+/**
+ * Storefront health — flags products that are quietly costing the creator
+ * money, computed from the earnings data we already have (no extra calls):
+ *   • Dead weight — getting clicks but ZERO sales (often unavailable, or a weak
+ *     pick that sends traffic nowhere).
+ *   • Falling — earnings dropped 75%+ vs the previous period (losing the sale).
+ *   • Low conversion — plenty of clicks, but under 1% convert.
+ * Each row links to AMZ Research pre-filled to find a better replacement.
+ *
+ * (Oink also flags untagged / over-tagged videos; that needs storefront
+ * video-tag data MVP doesn't ingest — SCOUT is frozen — so it's out of scope.)
+ */
+function StorefrontHealth({ products }: { products: Product[] }) {
+  const [open, setOpen] = useState(true)
+  type Flag = { label: string; tone: string; dead: boolean }
+  const flagFor = (p: Product): Flag | null => {
+    if (p.clicks >= 5 && p.earnings === 0) return { label: 'Clicks, no sales', tone: RED, dead: true }
+    if (p.earningsPrev != null && p.earningsPrev >= 5 && p.earnings <= p.earningsPrev * 0.25) return { label: 'Earnings falling', tone: '#b45309', dead: false }
+    if (p.clicks >= 25 && p.earnings > 0 && p.conversion < 1) return { label: 'Low conversion', tone: '#b45309', dead: false }
+    return null
+  }
+  const flagged = products
+    .map(p => ({ p, f: flagFor(p) }))
+    .filter((x): x is { p: Product; f: Flag } => x.f != null)
+    .sort((a, b) => Number(b.f.dead) - Number(a.f.dead) || b.p.clicks - a.p.clicks)
+  const replaceHref = (p: Product) => {
+    const kw = (p.category || p.title || '').split(/\s+/).slice(0, 4).join(' ')
+    return `/amz-finder?q=${encodeURIComponent(kw)}`
+  }
+  if (!flagged.length) {
+    return (
+      <div className="rounded-2xl border p-4 mb-6 flex items-center gap-2" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+        <HeartPulse size={16} style={{ color: GREEN }} />
+        <span className="text-[13px] font-medium" style={{ color: 'var(--text)' }}>Storefront looks healthy — every product getting traffic is converting.</span>
+      </div>
+    )
+  }
+  return (
+    <div className="rounded-2xl border overflow-hidden mb-6" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+      <button onClick={() => setOpen(o => !o)} className="w-full px-4 py-3 border-b flex items-center justify-between gap-2" style={{ borderColor: 'var(--border)' }}>
+        <span className="inline-flex items-center gap-2 font-bold text-[14px]" style={{ color: 'var(--text)' }}>
+          <HeartPulse size={16} style={{ color: ACCENT }} /> Storefront health
+          <span className="text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: 'rgba(234,88,12,0.12)', color: ACCENT }}>{flagged.length} to review</span>
+        </span>
+        <ChevronDown size={16} style={{ color: 'var(--text-soft)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
+      </button>
+      {open && (
+        <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
+          {flagged.slice(0, 25).map(({ p, f }) => (
+            <div key={p.asin} className="flex items-center gap-3 px-4 py-2.5">
+              {p.image
+                ? <img src={p.image} alt="" className="w-10 h-10 rounded object-contain bg-white flex-shrink-0" />
+                : <div className="w-10 h-10 rounded flex-shrink-0" style={{ background: 'var(--surface-2)' }} />}
+              <div className="min-w-0 flex-1">
+                <div className="text-[12.5px] font-medium truncate" style={{ color: 'var(--text)' }}>{p.title}</div>
+                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                  <span className="text-[10.5px] font-semibold rounded px-1.5 py-0.5" style={{ background: `${f.tone}1a`, color: f.tone }}>{f.label}</span>
+                  <span className="text-[11px]" style={{ color: 'var(--text-faint)' }}>
+                    {p.clicks.toLocaleString()} clicks · {usd(p.earnings)}{p.earningsPrev != null ? ` (was ${usd(p.earningsPrev)})` : ''}
+                  </span>
+                </div>
+              </div>
+              <Link href={replaceHref(p)} className="text-[11px] font-semibold rounded-full px-2.5 py-1.5 inline-flex items-center gap-1 flex-shrink-0 text-white" style={{ background: ACCENT }} title="Find a better product in this space">
+                <PackageSearch size={12} /> Replace
+              </Link>
+              <a href={p.amazonUrl} target="_blank" rel="noopener noreferrer" className="rounded-full px-2 py-1.5 border inline-flex items-center flex-shrink-0" style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }} title="View on Amazon"><ExternalLink size={12} /></a>
+            </div>
+          ))}
+          <div className="px-4 py-2 text-[11px] leading-relaxed" style={{ color: 'var(--text-faint)' }}>
+            Clicks-no-sales usually means the product went unavailable or doesn&apos;t convert — replace it. Falling = earnings dropped 75%+ vs last period. &ldquo;Replace&rdquo; opens AMZ Research to find a better product in the same space.
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -416,6 +493,9 @@ export default function AmazonBrainstorm() {
 
           {/* Charts & visuals — collapsible so the table stays the default view */}
           <StorefrontCharts period={period} series={data.series ?? []} products={products} />
+
+          {/* Storefront health — products quietly costing the creator money */}
+          <StorefrontHealth products={products} />
 
           {/* Per-product table */}
           <div className="rounded-2xl border overflow-hidden mb-8" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
