@@ -77,7 +77,12 @@ export async function GET(request: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sb = supabase as any
     const BASE_COLS = 'campaign_id, campaign_name, brand_name, asins, commission_pct, starts_at, ends_at, budget, budget_remaining, available_slot, total_slot'
-    const SIGNAL_COLS = 'image_url, price_now_cents, price_was_cents, discount_pct, rating, review_count, monthly_sold, video_count, category, parent_asin, sales_rank, sales_rank_avg90, sales_rank_category, listed_since'
+    // NOTE: sales_rank_avg90 (migration 264) is deliberately NOT in this list.
+    // The whole signal SELECT fails as a unit if any column is missing, so
+    // coupling it to the newest migration would silently drop ALL card signals
+    // (rank/rating/sales) on a DB that has 263 but not 264. avg90 is a
+    // nice-to-have (rank-trend line) — not worth risking the rest of the page.
+    const SIGNAL_COLS = 'image_url, price_now_cents, price_was_cents, discount_pct, rating, review_count, monthly_sold, video_count, category, parent_asin, sales_rank, sales_rank_category, listed_since'
     const SIGNAL_SORTS = new Set<SortKey>(['recentSales', 'rating'])
 
     // `signals` on ⇒ select/filter/sort the enriched product columns (migration
