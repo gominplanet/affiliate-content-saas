@@ -2059,52 +2059,83 @@ async function harvestEarningsInPage(opts) {
     }
     return { type, start, end }
   }
-  function findTable() {
+  // Two earnings tables share this report page, one per summary tab:
+  //   • Commissions ("Total Earnings" + "Items Shipped Revenue") → source 'scout'
+  //   • Creator Connections ("Commission Income" + "Revenue", per campaign) →
+  //     source 'creator_connections'
+  // They're separate income streams (CC is usually the bigger half), so we tag
+  // each row with its source; MVP sums both per ASIN.
+  function findEarningsTables() {
+    const found = []
     for (const t of document.querySelectorAll('table')) {
       const head = ((t.querySelector('thead') || t).innerText || '').toLowerCase()
-      if (/total earnings/.test(head) && /items shipped/.test(head)) return t
+      if (/commission income/.test(head)) found.push({ table: t, source: 'creator_connections' })
+      else if (/total earnings/.test(head) && /items shipped/.test(head)) found.push({ table: t, source: 'scout' })
     }
-    return null
+    return found
   }
   function colMap(table) {
     const ths = [...table.querySelectorAll('thead th, thead td')]; const map = {}
     ths.forEach((th, i) => {
       const h = (th.innerText || '').toLowerCase().replace(/\s+/g, ' ').trim()
       if (h === 'clicks' && map.clicks == null) map.clicks = i
-      else if (/items shipped revenue/.test(h) && map.revenue == null) map.revenue = i
-      else if (/total earnings/.test(h) && map.commission == null) map.commission = i
+      else if (/items shipped revenue/.test(h) && map.revenue == null) map.revenue = i // Commissions
+      else if (h === 'revenue' && map.revenue == null) map.revenue = i                 // Creator Connections
+      else if (/total earnings/.test(h) && map.commission == null) map.commission = i  // Commissions
+      else if (/commission income/.test(h) && map.commission == null) map.commission = i // Creator Connections
       else if (/^items shipped$/.test(h) && map.units == null) map.units = i
     })
     return map
   }
   function scrapeCurrent() {
-    const table = findTable(); if (!table) return []
-    const map = colMap(table); const { type, start, end } = pickPeriod(); if (!start || !end) return []
+    const { type, start, end } = pickPeriod(); if (!start || !end) return []
     const out = []
-    for (const tr of table.querySelectorAll('tbody tr')) {
-      const cells = [...tr.children]; if (!cells.length) continue
-      const asin = (tr.innerHTML.match(/\/(?:dp|gp\/product|product)\/([A-Z0-9]{10})/) || [])[1]; if (!asin) continue
-      const cell = (i) => (i != null && cells[i]) ? (cells[i].innerText || '').trim() : ''
-      const link = tr.querySelector('a[href*="/product/"], a[href*="/dp/"]')
-      const title = ((link && (link.getAttribute('title') || link.textContent)) || '').trim().slice(0, 300)
-      const rec = { asin, periodType: type, periodStart: start, periodEnd: end }
-      if (title) rec.productTitle = title
-      if (map.revenue != null) rec.revenue = num(cell(map.revenue))
-      if (map.commission != null) rec.commission = num(cell(map.commission))
-      if (map.units != null) rec.units = num(cell(map.units))
-      if (map.clicks != null) rec.clicks = num(cell(map.clicks))
-      if (rec.revenue == null && rec.commission == null && rec.units == null) continue
-      out.push(rec)
+    for (const { table, source } of findEarningsTables()) {
+      const map = colMap(table)
+      for (const tr of table.querySelectorAll('tbody tr')) {
+        const cells = [...tr.children]; if (!cells.length) continue
+        const asin = (tr.innerHTML.match(/\/(?:dp|gp\/product|product)\/([A-Z0-9]{10})/) || [])[1]; if (!asin) continue
+        const cell = (i) => (i != null && cells[i]) ? (cells[i].innerText || '').trim() : ''
+        const link = tr.querySelector('a[href*="/product/"], a[href*="/dp/"]')
+        const title = ((link && (link.getAttribute('title') || link.textContent)) || '').trim().slice(0, 300)
+        const rec = { asin, periodType: type, periodStart: start, periodEnd: end, source }
+        if (title) rec.productTitle = title
+        if (map.revenue != null) rec.revenue = num(cell(map.revenue))
+        if (map.commission != null) rec.commission = num(cell(map.commission))
+        if (map.units != null) rec.units = num(cell(map.units))
+        if (map.clicks != null) rec.clicks = num(cell(map.clicks))
+        if (rec.revenue == null && rec.commission == null && rec.units == null) continue
+        out.push(rec)
+      }
     }
     return out
   }
+  // Click a summary tab / control by its visible text (used to reveal the CC
+  // earnings table without changing the date range). Returns true if clicked.
+  function clickByText(label) {
+    for (const el of document.querySelectorAll('a,button,[role="button"],[role="tab"],span,li,label')) {
+      const t = (el.textContent || '').replace(/\s+/g, ' ').trim()
+      if (t.toLowerCase() === label.toLowerCase() && el.offsetParent !== null) { el.click(); return true }
+    }
+    return false
+  }
   const seen = new Set(); const all = []
-  const add = (rows) => { for (const r of rows) { const k = r.asin + '|' + r.periodType + '|' + r.periodStart; if (!seen.has(k)) { seen.add(k); all.push(r) } } }
+  const add = (rows) => { for (const r of rows) { const k = r.asin + '|' + r.periodType + '|' + r.periodStart + '|' + (r.source || 'scout'); if (!seen.has(k)) { seen.add(k); all.push(r) } } }
   // Give the SPA a beat, then scrape the current view. In currentOnly mode we
-  // read the range the creator already set (e.g. "This Year") and DON'T click
-  // around — clicking quick-ranges would change their view and lose the year.
+  // read the range the creator already set (e.g. "This Year") and DON'T touch
+  // the date range — but we DO click the "Creator Connections" summary tab to
+  // reveal that table (the tab switch keeps the selected date range), so one
+  // sync captures both commissions AND CC. Then click back to Commissions.
   await sleep(500)
   add(scrapeCurrent())
+  if (currentOnly) {
+    try {
+      if (clickByText('Creator Connections')) {
+        await sleep(2500); add(scrapeCurrent())
+        clickByText('Commissions') // restore the creator's original view
+      }
+    } catch (e) {}
+  }
   if (!currentOnly) {
     for (const label of ['Last Week', 'This Month', 'Last Month']) {
       try {
@@ -2129,7 +2160,12 @@ async function scanStorefrontEarningsBackground() {
   // Product, reading THAT tab captures the whole year in one pass. We scrape
   // current-view-only so we never disturb their selection.
   try {
-    const tabs = await chrome.tabs.query({ url: 'https://affiliate-program.amazon.com/home/reports*' })
+    // Match either report URL: the classic /home/reports and the newer
+    // /p/reporting/earnings (where the Commissions + Creator Connections tabs live).
+    const tabs = [
+      ...(await chrome.tabs.query({ url: 'https://affiliate-program.amazon.com/home/reports*' })),
+      ...(await chrome.tabs.query({ url: 'https://affiliate-program.amazon.com/p/reporting/earnings*' })),
+    ]
     const open = (tabs || []).find((t) => t && t.id != null)
     if (open) {
       const results = await chrome.scripting.executeScript({

@@ -59,9 +59,18 @@ interface EarningRow {
   periodEnd?: string
   units?: number | null
   revenue?: number | null      // dollars (Items Shipped Revenue)
-  commission?: number | null   // dollars (Total Earnings)
+  commission?: number | null   // dollars (Total Earnings / Commission Income)
   clicks?: number | null
+  /** Which Amazon report the row came from: the regular Commissions table
+   *  ('scout') or the Creator Connections table ('creator_connections'). They
+   *  are separate income streams, so they're stored as distinct sources and the
+   *  analytics view sums both per ASIN. Defaults to 'scout'. */
+  source?: string
 }
+
+// Only these sources may be written by SCOUT. Anything else falls back to
+// 'scout' so a bad tag can't fragment a product's history into junk buckets.
+const ALLOWED_SOURCES = new Set(['scout', 'creator_connections'])
 
 const ASIN_RE = /^[A-Z0-9]{10}$/
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -105,6 +114,7 @@ export async function POST(request: Request) {
         // Need at least one real metric, else it's noise.
         if (units == null && revenue_cents == null && commission_cents == null) return null
         const title = (e.productTitle ?? '').toString().trim().slice(0, 300)
+        const src = String(e.source ?? '').trim().toLowerCase()
         return {
           user_id: user.id,
           asin,
@@ -116,7 +126,7 @@ export async function POST(request: Request) {
           revenue_cents,
           commission_cents,
           clicks,
-          source: 'scout',
+          source: ALLOWED_SOURCES.has(src) ? src : 'scout',
           synced_at: new Date().toISOString(),
         }
       })
