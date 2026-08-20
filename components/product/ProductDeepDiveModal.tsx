@@ -35,9 +35,36 @@ interface DeepDive {
   salesRankAvg90: number | null
   salesRankCategory: string | null
   listedSince: string | null
+  rankSparkline?: number[]
+  monthsTracked?: number
+  sellsConsistently?: boolean
 }
 
 const money = (n: number | null) => (n == null ? null : `$${n.toFixed(2)}`)
+
+/** Sales-rank sparkline. Rank is inverted (lower rank = better-selling), so the
+ *  line rises when the product is climbing — reads like a "sales" line, not a
+ *  "rank number" line. Pure inline SVG, no deps. */
+function RankSparkline({ ranks }: { ranks: number[] }) {
+  if (!ranks || ranks.length < 2) return null
+  const W = 132, H = 34, pad = 2
+  const min = Math.min(...ranks), max = Math.max(...ranks)
+  const span = max - min || 1
+  const pts = ranks.map((r, i) => {
+    const x = pad + (i / (ranks.length - 1)) * (W - pad * 2)
+    // Invert: a LOWER rank (better) should sit HIGHER on the chart.
+    const y = pad + ((r - min) / span) * (H - pad * 2)
+    return `${x.toFixed(1)},${y.toFixed(1)}`
+  })
+  // Rising line (last better than first) → green; else amber.
+  const improving = ranks[ranks.length - 1] <= ranks[0]
+  const stroke = improving ? '#059669' : '#d97706'
+  return (
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="overflow-visible" aria-hidden="true">
+      <polyline points={pts.join(' ')} fill="none" stroke={stroke} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
+  )
+}
 
 export default function ProductDeepDiveModal({ asin, title, imageUrl, onClose }: {
   asin: string; title?: string | null; imageUrl?: string | null; onClose: () => void
@@ -156,6 +183,29 @@ export default function ProductDeepDiveModal({ asin, title, imageUrl, onClose }:
                         <span className="font-medium text-right" style={{ color: 'var(--text)' }}>{v}</span>
                       </div>
                     ))}
+                  </div>
+                )
+              })()}
+
+              {/* Tier B: sales-rank history — steady-seller read + sparkline. */}
+              {(() => {
+                const spark = data.rankSparkline
+                if (!spark || spark.length < 2) return null
+                const months = data.monthsTracked ?? 0
+                const soldLine = data.monthlySold ? ` · ~${data.monthlySold.toLocaleString()}+/mo` : ''
+                const headline = data.sellsConsistently
+                  ? `Steady seller — ranked every month${months ? ` for ${months} month${months === 1 ? '' : 's'}` : ''}${soldLine}`
+                  : `Ranked ${months} of the last 12 months${soldLine}`
+                return (
+                  <div className="rounded-xl border px-3.5 py-3" style={{ borderColor: 'var(--border-2)' }}>
+                    <div className="flex items-center justify-between gap-3 mb-1.5">
+                      <span className="text-[12px] font-medium" style={{ color: 'var(--text)' }}>Sales-rank history</span>
+                      <span className="text-[10px]" style={{ color: 'var(--text-faint)' }}>last 12 mo · higher = selling better</span>
+                    </div>
+                    <RankSparkline ranks={spark} />
+                    <p className="text-[11.5px] mt-1.5 font-medium" style={{ color: data.sellsConsistently ? '#059669' : 'var(--text-soft)' }}>
+                      {headline}
+                    </p>
                   </div>
                 )
               })()}

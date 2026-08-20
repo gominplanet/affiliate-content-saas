@@ -6,12 +6,14 @@
  * recent monthly sales, and carousel-video count — everything Keepa can tell a
  * creator about whether a product is worth promoting, in one on-demand call.
  *
- * Reuses the two cheap cached /product reads we already have (no `offers`), so
- * one open ≈ 2 Keepa tokens. Signed-in only; sanitized errors.
+ * Three cheap cached /product reads (no `offers`): stats, card, and the
+ * sales-rank history (Tier B consistency sparkline), so one open ≈ 3 Keepa
+ * tokens. Only fired on an explicit deep-dive open, so cost tracks intent.
+ * Signed-in only; sanitized errors.
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { fetchKeepaProductStats, fetchKeepaProductCard, keepaConfigured } from '@/services/keepa'
+import { fetchKeepaProductStats, fetchKeepaProductCard, fetchKeepaSalesRankHistory, keepaConfigured } from '@/services/keepa'
 import { toUserMessage } from '@/lib/friendly-error'
 
 export const runtime = 'nodejs'
@@ -26,9 +28,10 @@ export async function GET(request: Request) {
     if (!/^[A-Z0-9]{10}$/.test(asin)) return NextResponse.json({ error: 'Enter a valid 10-character ASIN.' }, { status: 400 })
     if (!keepaConfigured()) return NextResponse.json({ error: 'Product data isn’t available right now. Please try again later.' }, { status: 503 })
 
-    const [card, verdict] = await Promise.all([
+    const [card, verdict, rankHistory] = await Promise.all([
       fetchKeepaProductCard(asin),
       fetchKeepaProductStats(asin),
+      fetchKeepaSalesRankHistory(asin),
     ])
 
     const cents = (n: number | null) => (n == null ? null : Math.round(n) / 100)
@@ -54,6 +57,10 @@ export async function GET(request: Request) {
       salesRankAvg90: card.salesRankAvg90 ?? verdict.salesRankAvg90,
       salesRankCategory: card.salesRankCategory ?? verdict.salesRankCategory,
       listedSince: card.listedSince ?? verdict.listedSince,
+      // Tier B: sales-rank history — sparkline + monthly-consistency read.
+      rankSparkline: rankHistory.sparkline,
+      monthsTracked: rankHistory.monthsTracked,
+      sellsConsistently: rankHistory.consistent,
     })
   } catch (err) {
     console.error('[product/deep-dive]', err instanceof Error ? err.message : err)
