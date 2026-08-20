@@ -44,8 +44,10 @@ async function pushCampaignsToMvp(token, campaigns) {
 // POST scraped Amazon Influencer earnings into MVP (Storefront Stats v2), from
 // the worker (same CSP-avoidance reason as pushCampaignsToMvp). Returns
 // { reached, ok, upserted, error }.
-async function pushEarningsToMvp(earnings) {
-  if (!Array.isArray(earnings) || earnings.length === 0) return { reached: true, ok: true, upserted: 0 }
+async function pushEarningsToMvp(earnings, totals) {
+  const rows = Array.isArray(earnings) ? earnings : []
+  const tot = Array.isArray(totals) ? totals : []
+  if (rows.length === 0 && tot.length === 0) return { reached: true, ok: true, upserted: 0 }
   // Session bridge: the worker fetch carries the user's mvpaffiliate.io cookie
   // so the revived /api/storefront/ingest authenticates via the signed-in
   // session. Try BOTH origins: the app is served on the apex mvpaffiliate.io,
@@ -61,7 +63,7 @@ async function pushEarningsToMvp(earnings) {
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         redirect: 'follow',
-        body: JSON.stringify({ earnings }),
+        body: JSON.stringify({ earnings: rows, totals: tot }),
       })
       let body = null
       try { body = await res.json() } catch (e) {}
@@ -2238,6 +2240,32 @@ async function harvestEarningsInPage(opts) {
   // the date range — but we DO click the "Creator Connections" summary tab to
   // reveal that table (the tab switch keeps the selected date range), so one
   // sync captures both commissions AND CC. Then click back to Commissions.
+  // Read Amazon's SUMMARY numbers — the real totals for the whole period, not
+  // just the ~100 rows the product table caps at. The per-product table can't
+  // page past 100 from an extension, so these summary figures are what makes the
+  // storefront headline correct. Source = which tab is showing (CC table present
+  // → creator_connections, else the regular Commissions summary).
+  function readSummaryTotals() {
+    const txt = (document.body.innerText || '').replace(/ /g, ' ')
+    const { type, start, end } = pickPeriod()
+    if (!start) return null
+    const source = findEarningsTables().some((t) => t.source === 'creator_connections') ? 'creator_connections' : 'scout'
+    const money = (re) => { const m = txt.match(re); return m ? parseFloat(m[1].replace(/,/g, '')) : null }
+    const intOf = (re) => { const m = txt.match(re); return m ? parseInt(m[1].replace(/,/g, ''), 10) : null }
+    // "Total Earnings (Includes Bonus)" is unique to the summary on the
+    // Commissions tab; on the CC tab "Total Earnings" appears only in the
+    // summary (no such column). Try the qualified label first, then the plain.
+    const earnings = money(/Total Earnings\s*\(Includes Bonus\)[\s\S]{0,30}?\$\s*([\d,]+\.\d{2})/i)
+      ?? money(/Total Earnings[\s\S]{0,30}?\$\s*([\d,]+\.\d{2})/i)
+    const revenue = money(/Total Revenue[\s\S]{0,30}?\$\s*([\d,]+\.\d{2})/i)
+    const units = intOf(/Shipped Items[\s\S]{0,20}?([\d][\d,]{0,11})/i)
+    const clicks = intOf(/(?:^|\n)\s*Clicks[\s\S]{0,20}?([\d][\d,]{0,11})/i)
+    if (earnings == null && revenue == null) return null
+    return { source, periodType: type, periodStart: start, periodEnd: end, earnings, revenue, units, clicks }
+  }
+  const totals = []
+  const addTotal = (t) => { if (t) { const k = t.source + '|' + t.periodType + '|' + t.periodStart; if (!totals.some((x) => (x.source + '|' + x.periodType + '|' + x.periodStart) === k)) totals.push(t) } }
+
   await sleep(500)
   // Scrape whatever earnings tables are on the current view, paging through the
   // WHOLE table (not just the first ~25). scrapeCurrent reads BOTH the
@@ -2246,6 +2274,7 @@ async function harvestEarningsInPage(opts) {
   // don't auto-click the "Creator Connections" tab: that text also matches the
   // top-nav link, which navigated the whole report away.)
   await scrapeAllPages()
+  addTotal(readSummaryTotals())
   if (!currentOnly) {
     for (const label of ['Last Week', 'This Month', 'Last Month']) {
       try {
@@ -2254,11 +2283,11 @@ async function harvestEarningsInPage(opts) {
           const t = (el.textContent || '').replace(/\s+/g, ' ').trim()
           if (t.toLowerCase() === label.toLowerCase() && el.offsetParent !== null) { el.click(); clicked = true; break }
         }
-        if (clicked) { await sleep(2800); await scrapeAllPages() }
+        if (clicked) { await sleep(2800); await scrapeAllPages(); addTotal(readSummaryTotals()) }
       } catch (e) {}
     }
   }
-  return { ok: true, rows: all, signedOut: /\/ap\/signin/.test(location.href) }
+  return { ok: true, rows: all, totals, signedOut: /\/ap\/signin/.test(location.href) }
 }
 
 async function scanStorefrontEarningsBackground() {
@@ -2286,9 +2315,9 @@ async function scanStorefrontEarningsBackground() {
         target: { tabId: open.id }, func: harvestEarningsInPage, args: [{ currentOnly: true }],
       })
       const r = (results && results[0] && results[0].result) || null
-      if (r && r.ok && !r.signedOut && r.rows && r.rows.length) {
-        const push = await pushEarningsToMvp(r.rows)
-        return { ok: !!(push && push.ok), count: r.rows.length, upserted: push && push.upserted, error: (push && push.ok) ? undefined : (push && push.error) }
+      if (r && r.ok && !r.signedOut && ((r.rows && r.rows.length) || (r.totals && r.totals.length))) {
+        const push = await pushEarningsToMvp(r.rows, r.totals)
+        return { ok: !!(push && push.ok), count: (r.rows && r.rows.length) || 0, upserted: push && push.upserted, error: (push && push.ok) ? undefined : (push && push.error) }
       }
       if (r && r.signedOut) return { ok: false, error: 'signed-out' }
       // Open tab had no table yet (still loading, or a non-report sub-page) —
@@ -2309,9 +2338,9 @@ async function scanStorefrontEarningsBackground() {
     const r = (results && results[0] && results[0].result) || null
     if (!r || !r.ok) return { ok: false, error: 'no-result' }
     if (r.signedOut) return { ok: false, error: 'signed-out' }
-    if (!r.rows || !r.rows.length) return { ok: true, count: 0 }
-    const push = await pushEarningsToMvp(r.rows)
-    return { ok: !!(push && push.ok), count: r.rows.length, upserted: push && push.upserted, error: (push && push.ok) ? undefined : (push && push.error) }
+    if ((!r.rows || !r.rows.length) && (!r.totals || !r.totals.length)) return { ok: true, count: 0 }
+    const push = await pushEarningsToMvp(r.rows, r.totals)
+    return { ok: !!(push && push.ok), count: (r.rows && r.rows.length) || 0, upserted: push && push.upserted, error: (push && push.ok) ? undefined : (push && push.error) }
   } catch (e) {
     return { ok: false, error: (e && e.message) || 'scan-failed' }
   } finally {
