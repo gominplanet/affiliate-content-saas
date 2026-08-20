@@ -15,7 +15,7 @@ import { requestEarningsScan } from '@/lib/extension-frame'
 import {
   Loader2, Sparkles, Wand2, Share2, Handshake, PackageSearch, ArrowRight, ArrowUpRight, ArrowDownRight,
   AlertCircle, DollarSign, MousePointerClick, Package, Percent, TrendingUp, ExternalLink,
-  FileText, ChevronDown, Star, Check, Layers, X, CheckCircle2, HeartPulse,
+  FileText, ChevronDown, Star, Check, Layers, X, CheckCircle2, HeartPulse, Upload,
 } from 'lucide-react'
 import PageHero from '@/components/layout/PageHero'
 import { useEffectiveTier } from '@/lib/useEffectiveTier'
@@ -41,9 +41,11 @@ interface Product {
 }
 interface SeriesPoint { start: string; earnings: number; revenue: number; units: number; clicks: number; conversion: number; epc: number }
 interface Coverage { periods: number; earliestStart: string | null; latestStart: string | null }
+type Period = 'weekly' | 'monthly' | 'ytd'
+
 interface Analytics {
-  period: 'weekly' | 'monthly'; hasData: boolean
-  available: { weekly: number; monthly: number }
+  period: Period; hasData: boolean
+  available: { weekly: number; monthly: number; ytd: number }
   coverage?: Coverage
   latest: { start: string; end: string | null } | null
   previous: { start: string } | null
@@ -65,9 +67,10 @@ const usd = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits
 const usdShort = (n: number) => (Math.abs(n) >= 1000 ? `$${(n / 1000).toFixed(1)}k` : usd(n))
 const int = (n: number) => n.toLocaleString('en-US')
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-function fmtPeriod(period: 'weekly' | 'monthly', start?: string | null, end?: string | null): string {
+function fmtPeriod(period: Period, start?: string | null, end?: string | null): string {
   if (!start) return ''
   const [ys, ms, ds] = start.split('-').map(Number)
+  if (period === 'ytd') return `${ys} year to date`
   if (period === 'monthly') return `${MONTHS[(ms || 1) - 1]} ${ys}`
   const s = `${MONTHS[(ms || 1) - 1]} ${ds}`
   if (end) { const [, me, de] = end.split('-').map(Number); return `${s} – ${MONTHS[(me || 1) - 1]} ${de}` }
@@ -270,7 +273,7 @@ function StorefrontHealth({ products }: { products: Product[] }) {
 }
 
 export default function AmazonBrainstorm() {
-  const [period, setPeriod] = useState<'weekly' | 'monthly'>('monthly')
+  const [period, setPeriod] = useState<Period>('monthly')
   const [data, setData] = useState<Analytics | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -312,7 +315,7 @@ export default function AmazonBrainstorm() {
   const [suggestions, setSuggestions] = useState<Suggestion[] | null>(null)
   const [grounded, setGrounded] = useState(true)
 
-  const load = useCallback(async (p: 'weekly' | 'monthly') => {
+  const load = useCallback(async (p: Period) => {
     setLoading(true); setError(null)
     try {
       const res = await fetch(`/api/storefront/analytics?period=${p}`)
@@ -352,6 +355,37 @@ export default function AmazonBrainstorm() {
       setSyncing(false)
     }
   }, [load, period])
+
+  // ── Full-year import: the creator downloads their Amazon report CSV
+  //    ("Download Reports" on the report page) and drops it here. One file =
+  //    the whole year, per product — no waiting on SCOUT to page months. Two
+  //    report types (regular Commissions + Creator Connections) import
+  //    separately and sum in the Year-to-date view.
+  const [importing, setImporting] = useState(false)
+  const [importMsg, setImportMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const importReport = useCallback(async (file: File, csvSource: 'amazon_commissions' | 'creator_connections') => {
+    setImporting(true); setImportMsg(null)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('source', csvSource)
+      fd.append('year', String(new Date().getFullYear()))
+      const res = await fetch('/api/storefront/import-earnings', { method: 'POST', body: fd })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok || j.ok === false) {
+        setImportMsg({ ok: false, text: j.error || 'Could not read that file.' })
+        return
+      }
+      const label = csvSource === 'creator_connections' ? 'Creator Connections' : 'Commissions'
+      setImportMsg({ ok: true, text: `Imported ${j.imported} product${j.imported === 1 ? '' : 's'} from your ${label} report (${usd(j.totalEarnings || 0)} earnings).` })
+      setPeriod('ytd')
+      await load('ytd')
+    } catch {
+      setImportMsg({ ok: false, text: 'Import failed — try again.' })
+    } finally {
+      setImporting(false)
+    }
+  }, [load])
 
   async function generate() {
     setAiBusy(true); setAiError(null)
@@ -394,18 +428,18 @@ export default function AmazonBrainstorm() {
       {/* Period toggle */}
       <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
         <div className="inline-flex rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
-          {(['monthly', 'weekly'] as const).map((p) => {
+          {([['ytd', 'Year to date'], ['monthly', 'Monthly'], ['weekly', 'Weekly']] as const).map(([p, label]) => {
             const has = (data?.available?.[p] ?? 0) > 0
             const active = period === p
             return (
               <button
                 key={p}
                 onClick={() => setPeriod(p)}
-                className="px-4 py-2 text-[13px] font-semibold capitalize transition-colors disabled:opacity-40"
+                className="px-4 py-2 text-[13px] font-semibold transition-colors disabled:opacity-40"
                 style={active ? { background: ACCENT, color: '#fff' } : { background: 'transparent', color: 'var(--text-soft)' }}
-                title={has ? '' : 'No ' + p + ' data synced yet'}
+                title={has ? '' : (p === 'ytd' ? 'Upload your Amazon report to see the full year' : 'No ' + p + ' data synced yet')}
               >
-                {p}
+                {label}
               </button>
             )
           })}
@@ -422,7 +456,7 @@ export default function AmazonBrainstorm() {
           report period is on screen, keyed per period, so opening past date
           ranges backfills months/years automatically — most creators just
           don't know to do it. */}
-      {!loading && !error && data?.hasData && data.coverage && (
+      {!loading && !error && data?.hasData && data.coverage && period !== 'ytd' && (
         <div className="mb-4 rounded-xl border px-4 py-3" style={{ borderColor: 'var(--border)' }}>
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <span className="text-[12.5px]" style={{ color: 'var(--text-soft)' }}>
@@ -446,6 +480,39 @@ export default function AmazonBrainstorm() {
           <p className="text-[11px] mt-2" style={{ color: 'var(--text-faint)' }}>
             One click and SCOUT reads your Amazon report in the background (latest + recent past periods) and closes the tab — nothing to babysit.
           </p>
+        </div>
+      )}
+
+      {/* Import your full year — the reliable path. Amazon's "Download Reports"
+          export is the whole year in one CSV; SCOUT only reads one period at a
+          time and misses Creator Connections entirely. Drop both report files
+          here and the Year-to-date view sums them into your real income. */}
+      {!loading && !error && (
+        <div className="mb-4 rounded-xl border px-4 py-3.5" style={{ borderColor: 'rgba(234,88,12,0.28)', background: 'linear-gradient(180deg, rgba(234,88,12,0.04), transparent)' }}>
+          <div className="flex items-start gap-2.5">
+            <span className="w-7 h-7 rounded-lg grid place-items-center text-white flex-shrink-0 mt-0.5" style={{ backgroundColor: ACCENT }}><Upload size={14} /></span>
+            <div className="min-w-0 flex-1">
+              <p className="font-bold text-[13.5px]" style={{ color: 'var(--text)' }}>Import your full year</p>
+              <p className="text-[12px] mt-0.5 leading-relaxed" style={{ color: 'var(--text-soft)' }}>
+                On Amazon&rsquo;s report page, click <span className="font-semibold" style={{ color: 'var(--text)' }}>Download Reports</span>, set the range to <span className="font-semibold" style={{ color: 'var(--text)' }}>This Year</span>, and drop the CSV here. Do it once for <span className="font-semibold" style={{ color: 'var(--text)' }}>Commissions</span> and once for <span className="font-semibold" style={{ color: 'var(--text)' }}>Creator Connections</span> — the Year-to-date view adds them together.
+              </p>
+              <div className="flex items-center gap-2 mt-2.5 flex-wrap">
+                <label className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-semibold text-white cursor-pointer ${importing ? 'opacity-60 pointer-events-none' : ''}`} style={{ backgroundColor: ACCENT }}>
+                  {importing ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />} Commissions CSV
+                  <input type="file" accept=".csv,text/csv" className="hidden" disabled={importing}
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) void importReport(f, 'amazon_commissions'); e.target.value = '' }} />
+                </label>
+                <label className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-semibold cursor-pointer border ${importing ? 'opacity-60 pointer-events-none' : ''}`} style={{ borderColor: ACCENT, color: ACCENT }}>
+                  {importing ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />} Creator Connections CSV
+                  <input type="file" accept=".csv,text/csv" className="hidden" disabled={importing}
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) void importReport(f, 'creator_connections'); e.target.value = '' }} />
+                </label>
+              </div>
+              {importMsg && (
+                <p className="text-[12px] mt-2" style={{ color: importMsg.ok ? '#16a34a' : '#c0392b' }}>{importMsg.text}</p>
+              )}
+            </div>
+          </div>
         </div>
       )}
 

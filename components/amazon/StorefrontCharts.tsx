@@ -27,7 +27,7 @@ interface Product {
   conversion: number; epc: number; earningsDelta: number | null; category?: string | null
 }
 interface Props {
-  period: 'weekly' | 'monthly'
+  period: 'weekly' | 'monthly' | 'ytd'
   series: SeriesPoint[]
   products: Product[]
 }
@@ -37,7 +37,8 @@ const usd = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits
 const usdShort = (n: number) => (Math.abs(n) >= 1000 ? `$${(n / 1000).toFixed(1)}k` : `$${Math.round(n)}`)
 const int = (n: number) => n.toLocaleString('en-US')
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-function periodLabel(period: 'weekly' | 'monthly', start: string): string {
+function periodLabel(period: 'weekly' | 'monthly' | 'ytd', start: string): string {
+  if (period === 'ytd') return start.slice(0, 4)
   const [y, m, d] = start.split('-').map(Number)
   if (period === 'monthly') return `${MONTHS[(m || 1) - 1]} ${String(y).slice(2)}`
   return `${MONTHS[(m || 1) - 1]} ${d}`
@@ -62,7 +63,7 @@ function Empty({ msg }: { msg: string }) {
 }
 
 // ── 1. Earnings trend (area + line) ──────────────────────────────────────────
-function EarningsTrend({ period, series }: { period: 'weekly' | 'monthly'; series: SeriesPoint[] }) {
+function EarningsTrend({ period, series }: { period: 'weekly' | 'monthly' | 'ytd'; series: SeriesPoint[] }) {
   if (series.length < 2) return <Empty msg="Your earnings trend appears once you have two or more synced periods. Keep SCOUT syncing and this fills in next period." />
   const W = 640, H = 200, padL = 44, padR = 16, padT = 14, padB = 26
   const max = Math.max(...series.map(s => s.earnings), 1)
