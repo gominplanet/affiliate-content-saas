@@ -6,7 +6,7 @@ import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import { Youtube, Instagram, Facebook, Twitter, Music2, AtSign, Globe, Link2 } from 'lucide-react'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { themeFor, presetFor, type LinkPage, type LinkPageItem } from '@/lib/link-in-bio'
+import { themeFor, presetFor, shopCtaLabel, type LinkPage, type LinkPageItem } from '@/lib/link-in-bio'
 
 // Brand glyph for a link button (server component).
 function Glyph({ slug, size = 18 }: { slug: string | null; size?: number }) {
@@ -39,9 +39,9 @@ function ProductGrid({ items, accent }: { items: LinkPageItem[]; accent: string 
             <div style={{ fontSize: 13.5, fontWeight: 600, lineHeight: 1.35, color: '#1d1d1f', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', minHeight: '2.7em' }}>
               {it.title}
             </div>
-            <span style={{ marginTop: 'auto', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: accent, color: '#fff', fontSize: 13, fontWeight: 700, borderRadius: 10, padding: '9px 12px' }}>
-              Shop now
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M7 17 17 7M8 7h9v9"/></svg>
+            <span style={{ marginTop: 'auto', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: accent, color: '#fff', fontSize: 13, fontWeight: 700, borderRadius: 10, padding: '9px 12px', lineHeight: 1.2, textAlign: 'center' }}>
+              {shopCtaLabel(it)}
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M7 17 17 7M8 7h9v9"/></svg>
             </span>
           </div>
         </a>

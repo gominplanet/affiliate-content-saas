@@ -31,6 +31,45 @@ export interface LinkPage {
   accent?: string | null
 }
 
+// ── Retailer detection (for the "Buy now from <retailer>" CTA) ──────────────
+// Match the destination URL's host first (most reliable); fall back to the
+// item's `source` tag, then to an ASIN (which implies Amazon). Returns null when
+// the retailer can't be determined (e.g. a wrapped geni.us link with no ASIN) —
+// the caller shows a generic "Shop now" then.
+const RETAILER_HOSTS: Array<[RegExp, string]> = [
+  [/amazon\.|amzn\.|a\.co\//i, 'Amazon'],
+  [/walmart\./i, 'Walmart'],
+  [/target\.com/i, 'Target'],
+  [/bestbuy\./i, 'Best Buy'],
+  [/etsy\./i, 'Etsy'],
+  [/ebay\./i, 'eBay'],
+  [/homedepot\./i, 'Home Depot'],
+  [/lowes\./i, "Lowe's"],
+  [/wayfair\./i, 'Wayfair'],
+  [/chewy\./i, 'Chewy'],
+  [/costco\./i, 'Costco'],
+  [/macys\./i, "Macy's"],
+  [/sephora\./i, 'Sephora'],
+  [/ulta\./i, 'Ulta'],
+  [/nike\./i, 'Nike'],
+  [/newegg\./i, 'Newegg'],
+]
+
+export function retailerForItem(it: { url?: string | null; asin?: string | null; source?: string | null }): string | null {
+  const url = it.url || ''
+  for (const [re, name] of RETAILER_HOSTS) if (re.test(url)) return name
+  const src = it.source || ''
+  for (const [re, name] of RETAILER_HOSTS) if (re.test(src)) return name
+  if (it.asin) return 'Amazon' // an ASIN is always an Amazon product
+  return null
+}
+
+/** The product-tile CTA label: "Buy now from Amazon" etc., else "Shop now". */
+export function shopCtaLabel(it: { url?: string | null; asin?: string | null; source?: string | null }): string {
+  const r = retailerForItem(it)
+  return r ? `Buy now from ${r}` : 'Shop now'
+}
+
 export interface LinkPageItem {
   id: string
   page_id: string
