@@ -349,7 +349,10 @@ export default function AmazonBrainstorm() {
       } else if (r.error === 'signed-out') {
         setSyncMsg({ ok: false, text: 'Sign in to Amazon Associates in this browser, then click Sync again.' })
       } else {
-        setSyncMsg({ ok: false, text: "Couldn't read your Amazon report just now. Open it once on Amazon, then try again." })
+        // Surface the raw reason so a stuck sync is debuggable instead of a
+        // vague "try again" (e.g. 'no-result' = SCOUT couldn't find the table).
+        const why = r.error ? ` (${r.error})` : ''
+        setSyncMsg({ ok: false, text: `Couldn't read your Amazon report just now${why}. Open your report on Amazon (set This Year), leave the tab open, then Sync again.` })
       }
     } catch {
       setSyncMsg({ ok: false, text: 'Sync failed — try again in a moment.' })

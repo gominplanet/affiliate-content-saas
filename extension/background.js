@@ -2128,14 +2128,15 @@ async function harvestEarningsInPage(opts) {
   // sync captures both commissions AND CC. Then click back to Commissions.
   await sleep(500)
   add(scrapeCurrent())
-  if (currentOnly) {
-    try {
-      if (clickByText('Creator Connections')) {
-        await sleep(2500); add(scrapeCurrent())
-        clickByText('Commissions') // restore the creator's original view
-      }
-    } catch (e) {}
-  }
+  // Always reveal the Creator Connections table too (the tab switch keeps the
+  // selected date range), so one sync captures both commissions AND CC in
+  // either mode. Restore the Commissions tab after.
+  try {
+    if (clickByText('Creator Connections')) {
+      await sleep(2500); add(scrapeCurrent())
+      clickByText('Commissions')
+    }
+  } catch (e) {}
   if (!currentOnly) {
     for (const label of ['Last Week', 'This Month', 'Last Month']) {
       try {
@@ -2152,7 +2153,11 @@ async function harvestEarningsInPage(opts) {
 }
 
 async function scanStorefrontEarningsBackground() {
-  const url = 'https://affiliate-program.amazon.com/home/reports'
+  // Amazon's live earnings report (Commissions + Creator Connections tabs). The
+  // legacy /home/reports path no longer renders the per-product table, so a
+  // background scan there found nothing and surfaced as "Couldn't read your
+  // report". Open the current report URL instead.
+  const url = 'https://affiliate-program.amazon.com/p/reporting/earnings'
 
   // PRIMARY: read a reports tab the creator already has open. Amazon caps the
   // CSV download at 31 days, but the on-screen per-product table honors the
