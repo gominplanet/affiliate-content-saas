@@ -2131,8 +2131,28 @@ async function harvestEarningsInPage(opts) {
     }
     return false
   }
-  // Amazon paginates the per-product report (~25 rows/page), so a single scrape
-  // only sees page 1. Find an ENABLED "next page" control to advance.
+  // Amazon paginates the per-product report (a "25 results per page" dropdown +
+  // "Prev / Next →" buttons), so a single scrape only sees page 1. Bump the page
+  // size to its max first (fewer round-trips), then advance with Next.
+  function setMaxPageSize() {
+    for (const sel of document.querySelectorAll('select')) {
+      if (sel.offsetParent === null) continue
+      const opts = [...sel.options]
+      const nums = opts.map((o) => parseInt(String(o.value || o.textContent || '').replace(/[^0-9]/g, ''), 10)).filter((n) => isFinite(n) && n > 0)
+      // A "results per page" select: several numeric options, all sane sizes.
+      if (nums.length >= 2 && Math.max(...nums) >= 50 && Math.max(...nums) <= 1000) {
+        const max = Math.max(...nums)
+        const idx = opts.findIndex((o) => parseInt(String(o.value || o.textContent || '').replace(/[^0-9]/g, ''), 10) === max)
+        if (idx >= 0 && sel.selectedIndex !== idx) {
+          sel.selectedIndex = idx
+          sel.value = opts[idx].value
+          sel.dispatchEvent(new Event('change', { bubbles: true }))
+          return true
+        }
+      }
+    }
+    return false
+  }
   function findNextPageControl() {
     for (const el of document.querySelectorAll('button,a,[role="button"],li[role="button"],[aria-label]')) {
       if (!el || el.offsetParent === null) continue
@@ -2141,7 +2161,10 @@ async function harvestEarningsInPage(opts) {
       const cls = (el.className && el.className.toString ? el.className.toString() : '').toLowerCase()
       if (/disabled/.test(cls)) continue
       const label = (((el.getAttribute && el.getAttribute('aria-label')) || '') + ' ' + (el.textContent || '')).replace(/\s+/g, ' ').trim().toLowerCase()
-      if (label === 'next' || label === 'next page' || label === '›' || label === '→' || label === '»' || /go to next page|next page/.test(label)) return el
+      // Match the pager "Next" (renders as "Next →") but not longer unrelated
+      // text; also accept a bare arrow. Skip "previous"/"prev".
+      if (/prev/.test(label)) continue
+      if ((/\bnext\b/.test(label) && label.length <= 16) || label === '›' || label === '→' || label === '»') return el
     }
     return null
   }
@@ -2151,6 +2174,8 @@ async function harvestEarningsInPage(opts) {
   // capture EVERY product, not just the first ~25. Stops when a page adds no
   // new rows or there's no enabled Next control (bounded so it can't spin).
   async function scrapeAllPages() {
+    // Bump "results per page" to its max first — one reload, far fewer clicks.
+    try { if (setMaxPageSize()) await sleep(1800) } catch (e) {}
     add(scrapeCurrent())
     let last = all.length
     for (let page = 0; page < 80; page++) {
