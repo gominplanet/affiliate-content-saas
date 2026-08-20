@@ -2091,13 +2091,18 @@ async function harvestEarningsInPage(opts) {
   function colMap(table) {
     const ths = [...table.querySelectorAll('thead th, thead td')]; const map = {}
     ths.forEach((th, i) => {
-      const h = (th.innerText || '').toLowerCase().replace(/\s+/g, ' ').trim()
-      if (h === 'clicks' && map.clicks == null) map.clicks = i
-      else if (/items shipped revenue/.test(h) && map.revenue == null) map.revenue = i // Commissions
-      else if (h === 'revenue' && map.revenue == null) map.revenue = i                 // Creator Connections
-      else if (/total earnings/.test(h) && map.commission == null) map.commission = i  // Commissions
+      // Sortable headers carry a sort caret / icon, so exact-match ("clicks",
+      // "items shipped") failed and those columns came through as 0. Strip
+      // everything but letters+spaces first, then match on the clean label.
+      const h = (th.innerText || '').toLowerCase().replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim()
+      if (/\bclicks\b/.test(h) && map.clicks == null) map.clicks = i
+      else if (h === 'items shipped revenue' && map.revenue == null) map.revenue = i     // Commissions
+      else if (h === 'revenue' && map.revenue == null) map.revenue = i                   // Creator Connections
+      else if (h === 'total earnings' && map.commission == null) map.commission = i      // Commissions
       else if (/commission income/.test(h) && map.commission == null) map.commission = i // Creator Connections
-      else if (/^items shipped$/.test(h) && map.units == null) map.units = i
+      // Units = the "Items Shipped" COUNT, not the Revenue/Earnings columns that
+      // start with the same words, and not "Items Returned".
+      else if (h === 'items shipped' && map.units == null) map.units = i
     })
     return map
   }
