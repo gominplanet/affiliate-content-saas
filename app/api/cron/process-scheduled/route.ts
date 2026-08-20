@@ -836,7 +836,19 @@ async function publishOne(
         // Without it, buildPinAssets skips the art-director path and composites
         // text over the post thumbnail, so scheduled pins looked off-brand vs
         // the preview (the exact mismatch a creator reported).
-        assets = await buildPinAssets(fullPost ?? post, { userId: row.user_id, tier: (integration as any).tier ?? null }, { artDirector: true, headlineStyle: await getAccountHeadlineStyle(admin, row.user_id) })
+        //
+        // BUDGET CAP: the art-director build makes several model calls (image
+        // gen + brand-leak checks, with retries). On this 60s cron that can eat
+        // the whole function budget and get killed mid-pin — which surfaces as
+        // "Publish kept timing out" and burns the retry cap. Race it against a
+        // budget: if the polished build isn't ready in time, fall through to the
+        // fast thumbnail pin below so a pin still goes out this tick.
+        const PIN_BUILD_BUDGET_MS = 30_000
+        assets = await Promise.race([
+          buildPinAssets(fullPost ?? post, { userId: row.user_id, tier: (integration as any).tier ?? null }, { artDirector: true, headlineStyle: await getAccountHeadlineStyle(admin, row.user_id) }),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), PIN_BUILD_BUDGET_MS)),
+        ])
+        if (!assets) console.warn(`[cron/pinterest] row ${row.id}: art-director build exceeded ${PIN_BUILD_BUDGET_MS}ms — using thumbnail pin so it ships this tick`)
       } catch (e) {
         console.warn('[cron/pinterest] buildPinAssets failed — falling back to thumbnail:', e instanceof Error ? e.message : String(e))
       }
