@@ -480,7 +480,7 @@ export default function AmazonBrainstorm() {
                 <p className="text-[12px] mt-2" style={{ color: syncMsg.ok ? '#16a34a' : '#c0392b' }}>{syncMsg.text}</p>
               )}
               <p className="text-[11px] mt-2" style={{ color: 'var(--text-faint)' }}>
-                Creator Connections earnings live on a separate Amazon tab — full-year CC is coming next.
+                Captures both your Commissions and Creator Connections earnings in one sync, so this reflects your real total income.
               </p>
             </div>
           </div>

@@ -8,12 +8,12 @@
  *     store installs to "update" — isScoutOutdated survives only as a
  *     low-level helper, not a user-facing gate.
  */
-export const SCOUT_LATEST_VERSION = '1.16.29'
+export const SCOUT_LATEST_VERSION = '1.16.30'
 
 /** One-line "what's new". No longer shown in a nag (store installs auto-update);
  *  kept as a changelog note for whoever bumps the version. */
 export const SCOUT_WHATS_NEW =
-  'Storefront earnings now capture your FULL YEAR: SCOUT reads the report tab you already have open (set "This Year" + group by Linked Product) instead of a default 30-day view, so the storefront reflects the real year, not one month.'
+  'Storefront now captures your FULL YEAR including Creator Connections: SCOUT reads the report tab you have open (set "This Year"), grabbing both the Commissions and Creator Connections tables in one sync so the storefront reflects your real total income, not one month of commissions.'
 
 /** Canonical download for the latest SCOUT build (public/, rebuilt from
  *  extension/ on every version bump). Used by the EPC banner + the top-bar
