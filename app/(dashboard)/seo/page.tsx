@@ -13,6 +13,7 @@ import OpportunitiesPanel from '@/components/seo/OpportunitiesPanel'
 import Link from 'next/link'
 import PageHero from '@/components/layout/PageHero'
 import SeoHubTabs from '@/components/seo/SeoHubTabs'
+import AiVisibilityCard from '@/components/seo/AiVisibilityCard'
 import GetFound404Upload from '@/components/seo/GetFound404Upload'
 import { SeoGuide } from '@/components/guide/tool-guides'
 import { Gauge, Loader2, RefreshCw, ExternalLink, CheckCircle, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight, Wand2, X, Zap, Youtube, DollarSign, ImageOff, Link2, Pencil } from 'lucide-react'
@@ -798,6 +799,9 @@ export default function SeoPage() {
       />
 
       <SeoHubTabs />
+
+      {/* AI-answer visibility — can ChatGPT/Perplexity/Google-AI crawlers read the site? */}
+      <AiVisibilityCard />
 
       {/* Super dummy-proof hero: explains it in plain words, one button does the
           whole get-found loop, and a drop zone fixes 404s straight from a Search
