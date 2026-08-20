@@ -66,6 +66,8 @@ export default function StorefrontCatalog() {
         setMsg({ ok: false, text: 'Install SCOUT first — it reads your public storefront. Then Import again.' })
       } else if (r.error === 'bad-url') {
         setMsg({ ok: false, text: 'That link isn’t a storefront URL. It should look like amazon.com/shop/yourname.' })
+      } else if (r.error === 'no-products') {
+        setMsg({ ok: false, text: 'Opened your storefront but couldn’t read any products. Open it once on Amazon and let it fully load, then Import again.' })
       } else {
         setMsg({ ok: false, text: `Couldn’t read your storefront just now${r.error ? ` (${r.error})` : ''}. Open it once on Amazon, then Import again.` })
       }

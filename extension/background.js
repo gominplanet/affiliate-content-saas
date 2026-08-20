@@ -2078,14 +2078,28 @@ async function scanStorefrontCatalogBackground(rawUrl) {
     tabId = tab.id
     await waitForTabLoad(tabId, 30000)
     await _sleep(2500)
-    // 1) Enumerate the storefront's idea lists.
+    const seen = new Set(); const products = []
+    const addItems = (items, listTitle) => {
+      for (const it of (items || [])) {
+        if (!it.asin || seen.has(it.asin)) continue
+        seen.add(it.asin)
+        products.push({ asin: it.asin, title: it.title || null, image: it.image || null, listTitle: listTitle || null })
+      }
+    }
+    // 1) Harvest products shown DIRECTLY on the storefront root — many stores
+    //    show their products on the main page and have no /list/ idea-list
+    //    shelves at all (harvestIdeaListInPage scrolls + reads [data-asin]).
+    try {
+      const rootRes = await chrome.scripting.executeScript({ target: { tabId }, func: harvestIdeaListInPage })
+      const rr = (rootRes && rootRes[0] && rootRes[0].result) || null
+      if (rr && rr.signedOut) return { ok: false, error: 'signed-out' }
+      if (rr && rr.items) addItems(rr.items, 'Storefront')
+    } catch (e) {}
+    // 2) Also enumerate idea lists (if the store uses them) and walk each.
     const listRes = await chrome.scripting.executeScript({ target: { tabId }, func: harvestStorefrontListsInPage })
     const lr = (listRes && listRes[0] && listRes[0].result) || null
-    if (!lr || !lr.ok) return { ok: false, error: 'no-result' }
-    if (lr.signedOut) return { ok: false, error: 'signed-out' }
-    const lists = (lr.lists || []).slice(0, 30) // cap so a huge storefront stays under the message timeout
-    // 2) Walk each list in the SAME tab, harvesting product tiles.
-    const seen = new Set(); const products = []
+    if (lr && lr.signedOut) return { ok: false, error: 'signed-out' }
+    const lists = ((lr && lr.lists) || []).slice(0, 30) // cap so a huge storefront stays under the message timeout
     for (const list of lists) {
       if (!list || !list.url) continue
       try {
@@ -2094,16 +2108,10 @@ async function scanStorefrontCatalogBackground(rawUrl) {
         await _sleep(1200)
         const iRes = await chrome.scripting.executeScript({ target: { tabId }, func: harvestIdeaListInPage })
         const ir = (iRes && iRes[0] && iRes[0].result) || null
-        if (ir && ir.items) {
-          for (const it of ir.items) {
-            if (!it.asin || seen.has(it.asin)) continue
-            seen.add(it.asin)
-            products.push({ asin: it.asin, title: it.title || null, image: it.image || null, listTitle: list.title || null })
-          }
-        }
+        if (ir && ir.items) addItems(ir.items, list.title)
       } catch (e) { /* skip a list that won't load */ }
     }
-    if (!products.length) return { ok: true, count: 0 }
+    if (!products.length) return { ok: false, error: 'no-products' }
     const push = await pushCatalogToMvp(products)
     return { ok: !!(push && push.ok), count: products.length, lists: lists.length, error: (push && push.ok) ? undefined : (push && push.error) }
   } catch (e) {

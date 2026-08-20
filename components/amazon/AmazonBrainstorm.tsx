@@ -211,7 +211,9 @@ function ProductDrawer({ p, hasBlog }: { p: Product; hasBlog: boolean }) {
  * video-tag data MVP doesn't ingest — SCOUT is frozen — so it's out of scope.)
  */
 function StorefrontHealth({ products }: { products: Product[] }) {
-  const [open, setOpen] = useState(true)
+  // Collapsed by default — it opened on every visit and, on a partial current
+  // month, flagged almost everything as "falling", which read as alarming noise.
+  const [open, setOpen] = useState(false)
   type Flag = { label: string; tone: string; dead: boolean }
   const flagFor = (p: Product): Flag | null => {
     if (p.clicks >= 5 && p.earnings === 0) return { label: 'Clicks, no sales', tone: RED, dead: true }
@@ -275,8 +277,19 @@ function StorefrontHealth({ products }: { products: Product[] }) {
   )
 }
 
+const PERIOD_KEY = 'mvp-storefront-period'
 export default function AmazonBrainstorm() {
-  const [period, setPeriod] = useState<Period>('monthly')
+  // Default to the creator's LAST-USED view, else Year to date — the complete
+  // picture. It used to hard-default to Monthly, so a return visit always landed
+  // on a single (often partial) month and looked like the data had "reset".
+  const [period, setPeriodState] = useState<Period>('ytd')
+  useEffect(() => {
+    try { const s = localStorage.getItem(PERIOD_KEY) as Period | null; if (s === 'weekly' || s === 'monthly' || s === 'ytd') setPeriodState(s) } catch { /* private mode */ }
+  }, [])
+  const setPeriod = useCallback((p: Period) => {
+    setPeriodState(p)
+    try { localStorage.setItem(PERIOD_KEY, p) } catch { /* ignore */ }
+  }, [])
   const [data, setData] = useState<Analytics | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -324,7 +337,15 @@ export default function AmazonBrainstorm() {
       const res = await fetch(`/api/storefront/analytics?period=${p}`)
       const json = await res.json().catch(() => ({}))
       if (!res.ok) { setError(json?.error || 'Could not load your storefront data.'); setData(null); return }
-      setData(json as Analytics)
+      const a = json as Analytics
+      setData(a)
+      // If the chosen view has no data but another does, fall to the richest one
+      // that does (ytd > monthly > weekly) so we never show an empty tab when
+      // real data is one click away.
+      if (!a.hasData && a.available) {
+        const best = (['ytd', 'monthly', 'weekly'] as Period[]).find(pp => pp !== p && (a.available?.[pp] ?? 0) > 0)
+        if (best) setPeriod(best)
+      }
     } catch {
       setError('Network error — try again.')
     } finally {
