@@ -529,6 +529,96 @@ export async function fetchKeepaProductCard(asin: string, domainId = KEEPA_DOMAI
   }
 }
 
+// ── Sales-rank history (Tier B: consistency sparkline) ───────────────────────
+//
+// The deep-dive's "is this a steady seller?" read. One cached /product call with
+// history=1 gives us the full sales-rank time series (csv[3]); from it we draw a
+// small sparkline and count how many recent months the product was actually
+// ranked (a ranked month = it was selling that month). No `offers`, ~1 token —
+// only fired on an explicit deep-dive open, so cost is bounded to intent.
+export interface KeepaRankHistory {
+  /** Downsampled RAW sales ranks, oldest→newest (lower = better-selling). */
+  sparkline: number[]
+  /** Distinct calendar months in the window that carried a real rank. */
+  monthsTracked: number
+  /** Ranked in ~every month of the window (a steady seller, not a flash). */
+  consistent: boolean
+  /** Amazon's "X+ bought/mo" badge, for the "~X/mo" line. Null when absent. */
+  monthlySold: number | null
+  tokensLeft: number | null
+}
+
+/** Parse Keepa's flat [minute, value, minute, value, …] history into points,
+ *  dropping the -1 "no data" sentinels. Values are raw (rank or price). */
+function parseKeepaCsvSeries(csvField: unknown): Array<{ t: number; v: number }> {
+  if (!Array.isArray(csvField)) return []
+  const out: Array<{ t: number; v: number }> = []
+  for (let i = 0; i + 1 < csvField.length; i += 2) {
+    const min = Number(csvField[i])
+    const val = Number(csvField[i + 1])
+    if (!Number.isFinite(min) || min <= 0) continue
+    if (!Number.isFinite(val) || val < 0) continue // -1 = out of stock / unranked
+    out.push({ t: (min + 21564000) * 60000, v: val })
+  }
+  return out
+}
+
+export async function fetchKeepaSalesRankHistory(asin: string, domainId = KEEPA_DOMAIN_US): Promise<KeepaRankHistory> {
+  const empty: KeepaRankHistory = { sparkline: [], monthsTracked: 0, consistent: false, monthlySold: null, tokensLeft: null }
+  const key = process.env.KEEPA_API_KEY
+  if (!key || !/^[A-Za-z0-9]{10}$/.test(asin)) return empty
+  // history=1 → full time series (we need csv[3]); days=365 bounds the payload to
+  // the last year; stats=0 (we don't need the computed block here).
+  const url = `${KEEPA_BASE}/product?key=${encodeURIComponent(key)}&domain=${domainId}&asin=${asin}&history=1&days=365`
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(30_000) })
+    if (!res.ok) return empty
+    const data = await res.json() as { products?: unknown[]; tokensLeft?: number }
+    const tokensLeft = Number.isFinite(data.tokensLeft as number) ? (data.tokensLeft as number) : null
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const p = (Array.isArray(data.products) ? (data.products[0] as any) : null)
+    if (!p) return { ...empty, tokensLeft }
+    const series = parseKeepaCsvSeries(Array.isArray(p.csv) ? p.csv[KEEPA_CSV_SALES] : null)
+    const ms = Number(p.monthlySold)
+    const monthlySold = Number.isFinite(ms) && ms > 0 ? ms : null
+    if (!series.length) return { ...empty, monthlySold, tokensLeft }
+
+    // Keep the last 365 days and sort oldest→newest.
+    const cutoff = series[series.length - 1].t - 365 * 24 * 60 * 60 * 1000
+    const recent = series.filter(pt => pt.t >= cutoff).sort((a, b) => a.t - b.t)
+
+    // Distinct months with a real rank sample = months the product was selling.
+    const months = new Set<string>()
+    for (const pt of recent) {
+      const d = new Date(pt.t)
+      months.add(`${d.getUTCFullYear()}-${d.getUTCMonth()}`)
+    }
+    const monthsTracked = months.size
+    // "Consistent" = ranked in at least 5 of the last 6 months (steady, not a spike).
+    const sixMoAgo = recent[recent.length - 1].t - 6 * 30.44 * 24 * 60 * 60 * 1000
+    const recentMonths = new Set<string>()
+    for (const pt of recent) {
+      if (pt.t < sixMoAgo) continue
+      const d = new Date(pt.t)
+      recentMonths.add(`${d.getUTCFullYear()}-${d.getUTCMonth()}`)
+    }
+    const consistent = recentMonths.size >= 5
+
+    // Downsample to ≤40 evenly-spaced points for a compact sparkline.
+    const MAX = 40
+    let sparkline: number[]
+    if (recent.length <= MAX) sparkline = recent.map(pt => pt.v)
+    else {
+      sparkline = []
+      const step = recent.length / MAX
+      for (let i = 0; i < MAX; i++) sparkline.push(recent[Math.floor(i * step)].v)
+    }
+    return { sparkline, monthsTracked, consistent, monthlySold, tokensLeft }
+  } catch {
+    return empty
+  }
+}
+
 /** Like detectCarouselVideo but returns the COUNT of brand/carousel videos. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function countCarouselVideos(videos: any): { count: number; has: boolean | null } {
