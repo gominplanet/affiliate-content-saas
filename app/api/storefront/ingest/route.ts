@@ -72,6 +72,19 @@ interface EarningRow {
 // 'scout' so a bad tag can't fragment a product's history into junk buckets.
 const ALLOWED_SOURCES = new Set(['scout', 'creator_connections'])
 
+// Authoritative summary total for a period+source (from the report's summary
+// tiles) — dollars in, cents stored.
+interface TotalRow {
+  periodType?: string
+  periodStart?: string
+  periodEnd?: string
+  source?: string
+  earnings?: number | null
+  revenue?: number | null
+  units?: number | null
+  clicks?: number | null
+}
+
 const ASIN_RE = /^[A-Z0-9]{10}$/
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 const toCents = (v: unknown): number | null => {
@@ -89,9 +102,52 @@ export async function POST(request: Request) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Not signed in' }, { status: 401, headers: CORS })
 
-    const body = await request.json().catch(() => ({})) as { earnings?: EarningRow[] }
+    const body = await request.json().catch(() => ({})) as { earnings?: EarningRow[]; totals?: TotalRow[] }
     const earnings = Array.isArray(body.earnings) ? body.earnings : []
-    if (earnings.length === 0) return NextResponse.json({ ok: true, upserted: 0 }, { headers: CORS })
+    const totalsIn = Array.isArray(body.totals) ? body.totals : []
+
+    // Authoritative summary totals (from the report's summary tiles) — the real
+    // headline numbers, independent of the ~100-row product cap. Best-effort:
+    // upsert whatever parsed; failures here never block the product rows.
+    let totalsSaved = 0
+    if (totalsIn.length) {
+      const admin0 = createAdminClient()
+      const trows = totalsIn
+        .map((t) => {
+          const periodType = String(t.periodType ?? '').trim().toLowerCase()
+          const periodStart = String(t.periodStart ?? '').trim()
+          const periodEnd = String(t.periodEnd ?? '').trim()
+          const src = String(t.source ?? '').trim().toLowerCase()
+          if (periodType !== 'weekly' && periodType !== 'monthly' && periodType !== 'ytd') return null
+          if (!DATE_RE.test(periodStart)) return null
+          const earnings_cents = toCents(t.earnings)
+          const revenue_cents = toCents(t.revenue)
+          if (earnings_cents == null && revenue_cents == null) return null
+          return {
+            user_id: user.id,
+            period_type: periodType,
+            period_start: periodStart,
+            period_end: DATE_RE.test(periodEnd) ? periodEnd : null,
+            source: ALLOWED_SOURCES.has(src) ? src : 'scout',
+            earnings_cents,
+            revenue_cents,
+            units: toInt(t.units),
+            clicks: toInt(t.clicks),
+            synced_at: new Date().toISOString(),
+          }
+        })
+        .filter((r): r is NonNullable<typeof r> => r !== null)
+      if (trows.length) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { error: tErr } = await (admin0 as any)
+          .from('storefront_period_totals')
+          .upsert(trows, { onConflict: 'user_id,period_type,period_start,source' })
+        if (tErr) console.warn('[storefront/ingest] totals upsert failed:', tErr.message)
+        else totalsSaved = trows.length
+      }
+    }
+
+    if (earnings.length === 0) return NextResponse.json({ ok: true, upserted: 0, totalsSaved }, { headers: CORS })
 
     // Validate + normalize. Skip anything without a clean ASIN, valid period
     // type, and an ISO date range — so a bad scrape degrades to fewer rows,

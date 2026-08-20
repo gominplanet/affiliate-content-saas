@@ -50,6 +50,8 @@ interface Analytics {
   latest: { start: string; end: string | null } | null
   previous: { start: string } | null
   totals: Totals | null; totalsPrev: Totals | null; products: Product[]
+  totalsSource?: 'summary' | 'products'
+  productCount?: number
   series?: SeriesPoint[]
 }
 
@@ -531,6 +533,12 @@ export default function AmazonBrainstorm() {
               </div>
             ))}
           </div>
+
+          {data?.totalsSource === 'summary' && (
+            <p className="text-[11.5px] -mt-4 mb-6 px-1" style={{ color: 'var(--text-faint)' }}>
+              Headline totals are your full Amazon report (all products). The cards below are your top {data.productCount ?? products.length} earners — the ones worth posting more of.
+            </p>
+          )}
 
           {/* Charts & visuals — collapsible so the table stays the default view */}
           <StorefrontCharts period={period} series={data.series ?? []} products={products} />

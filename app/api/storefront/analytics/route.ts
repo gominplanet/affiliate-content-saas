@@ -105,6 +105,38 @@ export async function GET(request: NextRequest) {
     const totals = totalsFor(latestRows)
     const totalsPrev = prevStart ? totalsFor(prevRows) : null
 
+    // Authoritative headline: Amazon's summary totals (all products), which beat
+    // summing the ~100-row product cap. Read the period_totals rows SCOUT landed
+    // for this period, sum across sources (commissions + CC), and override the
+    // product-sum headline for any metric we actually have. Product-sum stays
+    // the fallback (and always drives the per-product list + charts).
+    let totalsSource: 'summary' | 'products' = 'products'
+    try {
+      const { data: totRows } = await sb
+        .from('storefront_period_totals')
+        .select('period_type,period_start,source,earnings_cents,revenue_cents,units,clicks')
+        .eq('user_id', user.id)
+        .eq('period_type', wanted)
+        .eq('period_start', latestStart)
+      const tr = (totRows ?? []) as Array<{ earnings_cents: number | null; revenue_cents: number | null; units: number | null; clicks: number | null }>
+      if (tr.length) {
+        const sEarn = tr.reduce((s, r) => s + money(r.earnings_cents), 0)
+        const sRev = tr.reduce((s, r) => s + money(r.revenue_cents), 0)
+        const sUnits = tr.reduce((s, r) => s + (r.units ?? 0), 0)
+        const sClicks = tr.reduce((s, r) => s + (r.clicks ?? 0), 0)
+        // A real summary total is never LESS than the tracked top-100 sum, so
+        // only trust a summary figure that meets or exceeds it — this quietly
+        // rejects a mis-parsed number without letting it corrupt the headline.
+        if (sEarn >= totals.earnings && sEarn > 0) { totals.earnings = Math.round(sEarn * 100) / 100; totalsSource = 'summary' }
+        if (sRev >= totals.revenue && sRev > 0) totals.revenue = Math.round(sRev * 100) / 100
+        if (sUnits >= totals.units && sUnits > 0) totals.units = sUnits
+        if (sClicks >= totals.clicks && sClicks > 0) totals.clicks = sClicks
+        // Recompute the derived ratios off the authoritative figures.
+        totals.conversion = Math.round(ratio(totals.units, totals.clicks) * 1000) / 10
+        totals.epc = Math.round(ratio(totals.earnings, totals.clicks) * 100) / 100
+      }
+    } catch { /* totals table absent (migration 269 not run) — product-sum stands */ }
+
     // Prior-period per-ASIN earnings, for per-product trend.
     const prevByAsin = new Map<string, number>()
     for (const r of prevRows) prevByAsin.set(r.asin, money(r.commission_cents))
@@ -269,6 +301,8 @@ export async function GET(request: NextRequest) {
       previous: prevStart ? { start: prevStart } : null,
       totals,
       totalsPrev,
+      totalsSource,
+      productCount: products.length,
       series,
       products: enriched,
     })
