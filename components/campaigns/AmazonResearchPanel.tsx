@@ -25,6 +25,8 @@ interface Product {
   title: string | null
   imageUrl: string | null
   priceNow: number | null
+  priceWas?: number | null
+  discountPct?: number | null
   productUrl: string
   // Present on MVP picks results (carousel-verified, buy-to-review vetted).
   mvpApproved?: boolean
@@ -356,7 +358,7 @@ function ProductCard({ p, canAct, saved, onToggleSave, onDeepDive }: {
     asin: p.asin, parentAsin: p.parentAsin,
     imageUrl: p.imageUrl, imageHref: p.productUrl,
     title: p.title,
-    priceNow: p.priceNow,
+    priceNow: p.priceNow, priceWas: p.priceWas, discountPct: p.discountPct,
     rating: p.rating, reviewCount: p.reviewCount, monthlySold: p.monthlySold,
     hasVideo: (p.videoCount ?? 0) > 0,
     salesRank: p.salesRank, salesRankAvg90: p.salesRankAvg90, salesRankCategory: p.salesRankCategory,

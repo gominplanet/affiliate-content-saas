@@ -27,6 +27,14 @@ import { normalizeTier } from '@/lib/tier'
 // bounded and paid-only.
 const MVP_PICKS_VERIFY_CAP = 15
 
+// Live-enrich the TOP N results of every search (paid tiers) with a cached
+// Keepa product call (~1 token each, no offers). The finder only returns ASINs,
+// and cache-only enrichment leaves fresh searches (products we've never seen)
+// bare — so the first cards a creator actually looks at now carry full signals
+// (price, rating, sales, rank, trend, age, video). The rest stay light and use
+// the on-demand "Data" button. Trial stays cache-only (already daily-capped).
+const LIVE_ENRICH_CAP = 12
+
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
 
@@ -254,24 +262,41 @@ export async function GET(request: Request) {
       patch((dra ?? []) as any[]); patch((sca ?? []) as any[])
     } catch { /* avg90 column not applied yet — omit it */ }
 
+    // Live-enrich the top N (paid tiers) so the most-looked-at cards are full
+    // even for never-cached products. Cached Keepa reads, bounded to LIVE_ENRICH_CAP.
+    const live = new Map<string, Awaited<ReturnType<typeof fetchKeepaProductCard>>>()
+    if (tier !== 'trial' && found.asins.length) {
+      const slice = found.asins.slice(0, LIVE_ENRICH_CAP)
+      const enriched = await Promise.all(slice.map(async asin => ({ asin, card: await fetchKeepaProductCard(asin) })))
+      for (const { asin, card } of enriched) live.set(asin, card)
+      recordUsage({ userId: user.id, tier, feature: 'amazon_research_enrich', model: 'keepa-card' })
+    }
+
     const products = found.asins.map(asin => {
       const card = cards.get(asin)
       const s = sig.get(asin)
+      const lc = live.get(asin)
       return {
         asin,
         title: card?.title ?? null,
-        imageUrl: card?.imageUrl ?? null,
-        priceNow: card?.priceCents != null ? Math.round(card.priceCents) / 100 : null,
+        imageUrl: card?.imageUrl ?? lc?.imageUrl ?? null,
+        // Creators-API price first (the tagged storefront price), then the live
+        // Keepa buy-box price for products the Creators API didn't return.
+        priceNow: card?.priceCents != null ? Math.round(card.priceCents) / 100
+          : lc?.priceNowCents != null ? Math.round(lc.priceNowCents) / 100 : null,
+        priceWas: lc?.priceWasCents != null ? Math.round(lc.priceWasCents) / 100 : null,
+        discountPct: lc?.discountPct ?? null,
         productUrl: taggedLink(asin, tag),
-        rating: s?.rating ?? null,
-        reviewCount: s?.reviewCount ?? null,
-        monthlySold: s?.monthlySold ?? null,
-        category: s?.category ?? null,
-        parentAsin: s?.parentAsin ?? null,
-        salesRank: s?.salesRank ?? null,
-        salesRankAvg90: s?.salesRankAvg90 ?? null,
-        salesRankCategory: s?.salesRankCategory ?? null,
-        listedSince: s?.listedSince ?? null,
+        rating: lc?.rating ?? s?.rating ?? null,
+        reviewCount: lc?.reviewCount ?? s?.reviewCount ?? null,
+        monthlySold: lc?.monthlySold ?? s?.monthlySold ?? null,
+        videoCount: lc?.videoCount ?? undefined,
+        category: lc?.category ?? s?.category ?? null,
+        parentAsin: lc?.parentAsin ?? s?.parentAsin ?? null,
+        salesRank: lc?.salesRank ?? s?.salesRank ?? null,
+        salesRankAvg90: lc?.salesRankAvg90 ?? s?.salesRankAvg90 ?? null,
+        salesRankCategory: lc?.salesRankCategory ?? s?.salesRankCategory ?? null,
+        listedSince: lc?.listedSince ?? s?.listedSince ?? null,
       }
     })
 
