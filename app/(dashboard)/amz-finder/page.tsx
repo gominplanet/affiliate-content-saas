@@ -28,6 +28,7 @@ import { requestFindCampaign } from '@/lib/extension-frame'
 import MessageBrandModal, { type MessageBrandCampaign } from '@/components/campaigns/MessageBrandModal'
 import AmazonResearchPanel from '@/components/campaigns/AmazonResearchPanel'
 import SavedFinds from '@/components/campaigns/SavedFinds'
+import MadeForYouFeed from '@/components/product/MadeForYouFeed'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
 
@@ -69,6 +70,10 @@ export default function AmzFinderPage() {
 
       {tier !== undefined && (
       <>
+      {/* ── Made for your channel — products matched to what already earns for
+             this creator (affinity profile), shown before the generic search. ── */}
+      <MadeForYouFeed />
+
       {/* ── Amazon Product Research — the regular catalogue browse. Free to
              research on every tier; paid actions gated by canUseFinder. ── */}
       <div className="mb-2">
